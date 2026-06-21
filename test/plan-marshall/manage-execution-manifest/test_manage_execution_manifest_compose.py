@@ -3002,47 +3002,22 @@ def test_compose_snapshots_resolved_step_params_from_keyed_map(plan_context):
 
 
 # =============================================================================
-# LIST serial-form marshal.json read-through (dual-form reader)
+# Keyed-map marshal.json read-through
 #
-# ``_read_marshal_phase_step_map`` / ``_read_marshal_phase_steps`` are dual-form
-# readers: they accept BOTH the canonical LIST serial form (bare strings +
-# single-key objects) and the legacy keyed-map form, normalizing both to the
-# same internal id-keyed map. These tests feed the migrated LIST form through
-# the composer end-to-end and assert the manifest is identical to what the
-# legacy keyed-map form produces — proving the migrated on-disk marshal.json
-# round-trips correctly. (The keyed-map snapshot assertion above stays as the
-# legacy-form regression; the manifest's own ``step_params`` snapshot remains an
-# id-keyed dict — only the marshal.json on-disk form changed to a LIST.)
+# ``_read_marshal_phase_step_map`` / ``_read_marshal_phase_steps`` read the
+# canonical keyed-map on-disk form, normalizing each value to the internal
+# id-keyed map. These tests feed the keyed map through the composer end-to-end
+# and assert the manifest snapshots the resolved params and the composed step
+# sets. (The manifest's own ``step_params`` snapshot is an id-keyed dict; the
+# manifest's ``steps`` / ``verification_steps`` are bare-name id lists.)
 # =============================================================================
 
 
-def _write_full_marshal_list_form(
-    fixture_dir: Path,
-    *,
-    phase_6_steps: list[str],
-    phase_5_steps: list[str] | None = None,
-) -> None:
-    """Write a marshal.json with phase-5/6 steps in the canonical LIST serial form.
+def test_compose_reads_keyed_map_marshal_preserves_prefixes(plan_context):
+    """A keyed-map marshal.json composes the declared step set, preserving project: prefixes.
 
-    The id lists are emitted as the LIST form (bare strings for ownerless steps),
-    matching the migrated on-disk shape the dual-form reader accepts. Prefixes are
-    preserved. No CI provider is declared, so the bot-enforcement guard is a no-op.
-    """
-    marshal_path = fixture_dir / 'marshal.json'
-    plan_block: dict = {'phase-6-finalize': {'steps': list(phase_6_steps)}}
-    if phase_5_steps is not None:
-        plan_block['phase-5-execute'] = {'verification_steps': list(phase_5_steps)}
-    data = {'plan': plan_block}
-    marshal_path.write_text(json.dumps(data), encoding='utf-8')
-
-
-def test_compose_reads_list_form_marshal_same_as_keyed_map(plan_context):
-    """A LIST-form marshal.json composes to the same manifest as the legacy keyed-map.
-
-    Feeds the identical step set once as the LIST form and once as the keyed-map
-    form, and asserts both manifests carry the same phase_6.steps and
-    phase_5.verification_steps — the dual-form reader normalizes both to the same
-    internal map, so the migrated LIST form is behavior-preserving.
+    The keyed map is the sole on-disk form; the composer reads it and preserves
+    the ``project:`` prefix (only ``default:`` is stripped at intake).
     """
     phase_6 = [
         'default:commit-push',
@@ -3055,22 +3030,6 @@ def test_compose_reads_list_form_marshal_same_as_keyed_map(plan_context):
     ]
     phase_5 = ['verify:quality-gate', 'verify:module-tests']
 
-    # LIST form.
-    _write_full_marshal_list_form(
-        plan_context.fixture_dir, phase_6_steps=phase_6, phase_5_steps=phase_5
-    )
-    cmd_compose(
-        _compose_ns(
-            plan_id='list-form-marshal',
-            change_type='feature',
-            scope_estimate='multi_module',
-            affected_files_count=11,
-        )
-    )
-    list_manifest = read_manifest('list-form-marshal')
-    assert list_manifest is not None
-
-    # Legacy keyed-map form (the existing _write_full_marshal helper).
     _write_full_marshal(
         plan_context.fixture_dir, phase_6_steps=phase_6, phase_5_steps=phase_5
     )
@@ -3085,55 +3044,45 @@ def test_compose_reads_list_form_marshal_same_as_keyed_map(plan_context):
     keyed_manifest = read_manifest('keyed-map-marshal')
     assert keyed_manifest is not None
 
-    # both on-disk forms read to the same composed step sets
-    assert list_manifest['phase_6']['steps'] == keyed_manifest['phase_6']['steps']
-    assert (
-        list_manifest['phase_5']['verification_steps']
-        == keyed_manifest['phase_5']['verification_steps']
-    )
-    # the project: prefix survives the LIST-form read (only default: is stripped)
-    assert 'project:finalize-step-deploy-target' in list_manifest['phase_6']['steps']
+    # the project: prefix survives the keyed-map read (only default: is stripped)
+    assert 'project:finalize-step-deploy-target' in keyed_manifest['phase_6']['steps']
+    # the phase-5 verification step set is composed from the keyed map
+    assert keyed_manifest['phase_5']['verification_steps'] == phase_5
 
 
-def test_compose_snapshots_step_params_from_list_form(plan_context):
-    """compose snapshots resolved params from a LIST-form marshal.json.
+def test_compose_snapshots_step_params_from_keyed_map(plan_context):
+    """compose snapshots resolved params from a keyed-map marshal.json.
 
-    Seeds a marshal.json whose phase-6-finalize steps are the LIST serial form
-    with param-bearing single-key objects on branch-cleanup and sonar-roundtrip.
-    The dual-form reader normalizes the LIST to the internal map, so the composer
-    snapshots the same resolved params into body.phase_6.step_params (keyed by the
-    bare in-manifest step id) as the keyed-map form would. Ownerless bare-string
-    steps snapshot as {}.
+    Seeds a marshal.json whose phase-6-finalize steps are the keyed-map form with
+    param-bearing values on branch-cleanup and sonar-roundtrip. The composer
+    snapshots the resolved params into body.phase_6.step_params (keyed by the
+    bare in-manifest step id). Config-less steps snapshot as {}.
     """
     marshal_path = plan_context.fixture_dir / 'marshal.json'
-    phase_6_list = [
-        'default:commit-push',
-        'default:create-pr',
-        {'default:automated-review': {'review_bot_buffer_seconds': 240}},
-        {
-            'default:sonar-roundtrip': {
-                'touched_file_cleanup': 'touched_files_zero',
-                'do_transition': True,
-                'ce_wait_timeout_seconds': 720,
-            }
+    phase_6_map = {
+        'default:commit-push': {},
+        'default:create-pr': {},
+        'default:automated-review': {'review_bot_buffer_seconds': 240},
+        'default:sonar-roundtrip': {
+            'touched_file_cleanup': 'touched_files_zero',
+            'do_transition': True,
+            'ce_wait_timeout_seconds': 720,
         },
-        'default:lessons-capture',
-        {
-            'default:branch-cleanup': {
-                'pr_merge_strategy': 'rebase',
-                'final_merge_without_asking': True,
-                'auto_rebase_threshold': 'no_overlap_only',
-            }
+        'default:lessons-capture': {},
+        'default:branch-cleanup': {
+            'pr_merge_strategy': 'rebase',
+            'final_merge_without_asking': True,
+            'auto_rebase_threshold': 'no_overlap_only',
         },
-        'default:record-metrics',
-        'default:archive-plan',
-    ]
-    data = {'plan': {'phase-6-finalize': {'steps': phase_6_list}}}
+        'default:record-metrics': {},
+        'default:archive-plan': {},
+    }
+    data = {'plan': {'phase-6-finalize': {'steps': phase_6_map}}}
     marshal_path.write_text(json.dumps(data), encoding='utf-8')
 
     result = cmd_compose(
         _compose_ns(
-            plan_id='snapshot-params-list',
+            plan_id='snapshot-params-keyed',
             change_type='feature',
             scope_estimate='multi_module',
             affected_files_count=11,
@@ -3141,7 +3090,7 @@ def test_compose_snapshots_step_params_from_list_form(plan_context):
     )
     assert result is not None and result['status'] == 'success'
 
-    manifest = read_manifest('snapshot-params-list')
+    manifest = read_manifest('snapshot-params-keyed')
     assert manifest is not None
     step_params = manifest['phase_6']['step_params']
     # the snapshot is keyed by the bare in-manifest step id (default: stripped)
@@ -3156,37 +3105,36 @@ def test_compose_snapshots_step_params_from_list_form(plan_context):
         'ce_wait_timeout_seconds': 720,
     }
     assert step_params['automated-review'] == {'review_bot_buffer_seconds': 240}
-    # an ownerless bare-string selected step snapshots as the empty param object
+    # a config-less selected step snapshots as the empty param object
     assert step_params['commit-push'] == {}
     # every in-manifest step has a snapshot entry
     assert set(step_params.keys()) == set(manifest['phase_6']['steps'])
 
 
-def test_compose_reads_list_form_phase_5_verification_steps(plan_context):
-    """The LIST-form read-through applies to phase-5 verification_steps as well.
+def test_compose_reads_keyed_map_phase_5_verification_steps(plan_context):
+    """The keyed-map read-through applies to phase-5 verification_steps as well.
 
     Mirrors the phase-6 read-through for the phase-5 verification_steps key —
-    marshal.json is the source of truth over the agent CSV, and the LIST form is
-    read identically to the keyed-map form.
+    marshal.json is the source of truth over the agent CSV.
     """
     phase_5 = ['verify:quality-gate', 'verify:module-tests', 'verify:coverage']
-    _write_full_marshal_list_form(
+    _write_full_marshal(
         plan_context.fixture_dir,
         phase_6_steps=list(DEFAULT_PHASE_6_STEPS),
         phase_5_steps=phase_5,
     )
     cmd_compose(
         _compose_ns(
-            plan_id='list-form-phase-5',
+            plan_id='keyed-map-phase-5',
             change_type='feature',
             scope_estimate='multi_module',
             affected_files_count=8,
-            phase_5_steps='WRONG,STUFF',  # noise — marshal.json LIST should win
+            phase_5_steps='WRONG,STUFF',  # noise — marshal.json keyed map should win
         )
     )
-    manifest = read_manifest('list-form-phase-5')
+    manifest = read_manifest('keyed-map-phase-5')
     assert manifest is not None
-    # marshal.json LIST form wins over the agent CSV
+    # marshal.json keyed map wins over the agent CSV
     assert manifest['phase_5']['verification_steps'] == phase_5
 
 

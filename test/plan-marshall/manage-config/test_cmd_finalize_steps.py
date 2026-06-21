@@ -66,37 +66,25 @@ def _read_finalize_section(fixture_dir: Path) -> dict:
     return config.get('plan', {}).get('phase-6-finalize', {})
 
 
-# ``apply-preset`` persists ``plan.phase-6-finalize.steps`` in the canonical LIST
-# serial form: a JSON array whose elements are bare strings (ownerless steps) or
-# single-key objects ``{step_id: {params}}`` (param-bearing steps). Array order is
-# the execution order. These helpers extract the ordered id list and a single
-# step's nested param object from that LIST form.
+# ``apply-preset`` persists ``plan.phase-6-finalize.steps`` in the canonical
+# keyed-map form: an id-keyed object ``{step_id: {params}}`` (``{}`` for a
+# config-less step) whose key insertion order is the execution order. These
+# helpers extract the ordered id list and a single step's nested param object
+# from that keyed map.
 
 
-def _step_ids(steps_list: list) -> list:
-    """Return the ordered step-id list from a LIST-form steps array."""
-    ids = []
-    for element in steps_list:
-        if isinstance(element, str):
-            ids.append(element)
-        elif isinstance(element, dict) and len(element) == 1:
-            ids.append(next(iter(element)))
-    return ids
+def _step_ids(steps_map: dict) -> list:
+    """Return the ordered step-id list from a keyed-map steps object."""
+    return list(steps_map.keys())
 
 
-def _params_for(steps_list: list, step_id: str):
-    """Return a step's params from a LIST-form steps array.
+def _params_for(steps_map: dict, step_id: str):
+    """Return a step's params from a keyed-map steps object.
 
-    Returns the nested param dict for a param-bearing single-key object, or
-    ``None`` for an ownerless bare-string element. Raises ``KeyError`` when the
-    step id is absent.
+    Returns the step's nested param object (``{}`` for a config-less step).
+    Raises ``KeyError`` when the step id is absent.
     """
-    for element in steps_list:
-        if isinstance(element, str) and element == step_id:
-            return None
-        if isinstance(element, dict) and len(element) == 1 and step_id in element:
-            return element[step_id]
-    raise KeyError(step_id)
+    return steps_map[step_id]
 
 
 # ``apply-preset`` sorts the preset's step list ascending by resolved
@@ -140,9 +128,9 @@ def test_apply_preset_local_writes_local_steps(plan_context):
     assert result['steps_count'] == len(FinalizeStepPresets.LOCAL)
 
     section = _read_finalize_section(plan_context.fixture_dir)
-    # steps persists as the canonical LIST serial form; array order is the
+    # steps persists as the canonical keyed-map form; key insertion order is the
     # execution order.
-    assert isinstance(section['steps'], list)
+    assert isinstance(section['steps'], dict)
     assert _step_ids(section['steps']) == FinalizeStepPresets.LOCAL
 
 
@@ -153,7 +141,7 @@ def test_apply_preset_standard_writes_standard_steps(plan_context):
 
     assert result['status'] == 'success'
     section = _read_finalize_section(plan_context.fixture_dir)
-    assert isinstance(section['steps'], list)
+    assert isinstance(section['steps'], dict)
     assert _step_ids(section['steps']) == FinalizeStepPresets.STANDARD
 
 
@@ -165,10 +153,10 @@ def test_apply_preset_full_writes_full_steps_sorted(plan_context):
     assert result['status'] == 'success'
     assert result['steps_count'] == len(FinalizeStepPresets.FULL)
     section = _read_finalize_section(plan_context.fixture_dir)
-    # The persisted LIST's ids are the FULL preset sorted ascending by
+    # The persisted keyed-map's ids are the FULL preset sorted ascending by
     # frontmatter order — same membership, ascending order (plan-retrospective
     # before archive-plan), not the literal constant order.
-    assert isinstance(section['steps'], list)
+    assert isinstance(section['steps'], dict)
     assert _step_ids(section['steps']) == _FULL_SORTED
     assert set(_step_ids(section['steps'])) == set(FinalizeStepPresets.FULL)
 
@@ -186,56 +174,52 @@ def test_apply_preset_preserves_sibling_phase6_knobs(plan_context):
     # default:automated-review inside the keyed-map steps structure.
     before = _read_finalize_section(plan_context.fixture_dir)
     assert before['max_iterations'] == 3
-    # The seed is the legacy keyed-map (dict); the param-bearing step nests its
+    # The seed is the keyed map (dict); the param-bearing step nests its
     # params under the step id.
     assert before['steps']['default:automated-review']['review_bot_buffer_seconds'] == 300
 
     cmd_finalize_steps_apply_preset(Namespace(preset='standard'))
 
     after = _read_finalize_section(plan_context.fixture_dir)
-    assert isinstance(after['steps'], list)
+    assert isinstance(after['steps'], dict)
     assert _step_ids(after['steps']) == FinalizeStepPresets.STANDARD
     # Flat phase-level knob untouched by the steps write.
     assert after['max_iterations'] == 3
-    # The nested step param is preserved across the LIST-form rewrite (the
-    # writer reads existing per-step params through the dual-form reader and
-    # carries them over for steps the preset keeps).
+    # The nested step param is preserved across the keyed-map rewrite (the
+    # writer reads existing per-step params through `_steps_map` and carries
+    # them over for steps the preset keeps).
     assert _params_for(after['steps'], 'default:automated-review') == {
         'review_bot_buffer_seconds': 300
     }
 
 
 # =============================================================================
-# (2b) LIST-form on-disk input — write LIST form + preserve params (no drop)
+# (2b) keyed-map on-disk input — write keyed map + preserve params (no drop)
 # =============================================================================
 #
-# These lock the Deliverable-3 apply-preset fix: the writer (a) emits the
-# canonical LIST serial form via `keyed_map_to_list_form`, and (b) reads
-# existing per-step params through the dual-form reader so a LIST-form existing
-# config is NOT dropped. Before the fix, a plain `isinstance(existing, dict)`
-# check silently dropped every per-step param when the on-disk `steps` value was
-# already a LIST — the param-drop regression these tests guard against.
+# These lock the apply-preset param-preservation contract: the writer (a)
+# persists the canonical keyed-map form, and (b) reads existing per-step params
+# through `_steps_map` so an existing config's params are NOT dropped.
 
 
-def _seed_list_form_finalize_steps(fixture_dir: Path, steps_list: list) -> None:
-    """Overwrite ``plan.phase-6-finalize.steps`` on disk with a LIST-form value."""
+def _seed_finalize_steps_map(fixture_dir: Path, steps_map: dict) -> None:
+    """Overwrite ``plan.phase-6-finalize.steps`` on disk with a keyed-map value."""
     marshal_path = fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    config.setdefault('plan', {}).setdefault('phase-6-finalize', {})['steps'] = steps_list
+    config.setdefault('plan', {}).setdefault('phase-6-finalize', {})['steps'] = steps_map
     marshal_path.write_text(json.dumps(config), encoding='utf-8')
 
 
-def test_apply_preset_writes_list_form_to_disk(plan_context):
-    """apply-preset persists ``plan.phase-6-finalize.steps`` as the canonical LIST form.
+def test_apply_preset_writes_keyed_map_form_to_disk(plan_context):
+    """apply-preset persists ``plan.phase-6-finalize.steps`` as the canonical keyed map.
 
-    The default fixture seeds the legacy keyed-map; after apply-preset the
-    on-disk value is a JSON array (LIST form), with ownerless steps as bare
-    strings — proving the writer emits the canonical serial form via
-    ``keyed_map_to_list_form`` rather than re-persisting the keyed map.
+    The default fixture seeds the keyed map; after apply-preset the on-disk value
+    is still a JSON object (keyed-map form), with config-less steps mapping to
+    {} — proving the writer persists the keyed map directly.
     """
     create_marshal_json(plan_context.fixture_dir)
 
-    # Precondition: the seed is the legacy keyed-map (dict) on disk.
+    # Precondition: the seed is the keyed map (dict) on disk.
     before = _read_finalize_section(plan_context.fixture_dir)
     assert isinstance(before['steps'], dict)
 
@@ -243,16 +227,15 @@ def test_apply_preset_writes_list_form_to_disk(plan_context):
     assert result['status'] == 'success'
 
     section = _read_finalize_section(plan_context.fixture_dir)
-    # Persisted as the canonical LIST form (a list, not a dict).
-    assert isinstance(section['steps'], list)
+    # Persisted as the canonical keyed map (a dict, not a list).
+    assert isinstance(section['steps'], dict)
     # Same membership/order as LOCAL.
     assert _step_ids(section['steps']) == FinalizeStepPresets.LOCAL
-    # The seed carries no params on commit-push, so it persists as a bare string
-    # (no noisy {step_id: {}} object — empty-{} suppression).
+    # The seed carries no params on commit-push, so it maps to an empty {}.
     assert 'default:commit-push' in section['steps']
-    assert _params_for(section['steps'], 'default:commit-push') is None
-    # branch-cleanup carried params in the keyed-map seed, so it survives the
-    # migration as a param-bearing single-key object in the LIST form.
+    assert _params_for(section['steps'], 'default:commit-push') == {}
+    # branch-cleanup carried params in the keyed-map seed, so it keeps its nested
+    # param object.
     assert _params_for(section['steps'], 'default:branch-cleanup') == {
         'pr_merge_strategy': 'squash',
         'final_merge_without_asking': False,
@@ -260,45 +243,42 @@ def test_apply_preset_writes_list_form_to_disk(plan_context):
     }
 
 
-def test_apply_preset_preserves_params_when_existing_config_is_list_form(plan_context):
-    """apply-preset preserves existing per-step params when the on-disk config is already LIST form.
+def test_apply_preset_preserves_params_from_existing_keyed_map(plan_context):
+    """apply-preset preserves existing per-step params from the on-disk keyed map.
 
-    This is the param-drop regression guard: the writer must read existing params
-    through the dual-form reader. With a LIST-form existing config carrying params
-    on ``default:branch-cleanup``, applying a preset that KEEPS that step must
-    carry the params over — a plain ``isinstance(existing, dict)`` check would
-    have dropped them because the existing value is a LIST.
+    This is the param-preservation guard: the writer must read existing params
+    through `_steps_map`. With a keyed-map existing config carrying params on
+    ``default:branch-cleanup``, applying a preset that KEEPS that step must carry
+    the params over.
     """
     create_marshal_json(plan_context.fixture_dir)
-    # Replace the seeded keyed-map with a LIST-form value carrying params on a
-    # step every preset retains (branch-cleanup is in LOCAL/STANDARD/FULL).
-    _seed_list_form_finalize_steps(
+    # Replace the seeded keyed-map with one carrying params on a step every preset
+    # retains (branch-cleanup is in LOCAL/STANDARD/FULL).
+    _seed_finalize_steps_map(
         plan_context.fixture_dir,
-        [
-            'default:commit-push',
-            {
-                'default:branch-cleanup': {
-                    'pr_merge_strategy': 'rebase',
-                    'final_merge_without_asking': True,
-                }
+        {
+            'default:commit-push': {},
+            'default:branch-cleanup': {
+                'pr_merge_strategy': 'rebase',
+                'final_merge_without_asking': True,
             },
-            'default:archive-plan',
-        ],
+            'default:archive-plan': {},
+        },
     )
 
-    # Precondition: the existing on-disk config is the LIST form (a list).
+    # Precondition: the existing on-disk config is the keyed map (a dict).
     before = _read_finalize_section(plan_context.fixture_dir)
-    assert isinstance(before['steps'], list)
+    assert isinstance(before['steps'], dict)
 
     result = cmd_finalize_steps_apply_preset(Namespace(preset='local'))
     assert result['status'] == 'success'
 
     section = _read_finalize_section(plan_context.fixture_dir)
-    assert isinstance(section['steps'], list)
-    # The preset's full step set is written, in LIST form.
+    assert isinstance(section['steps'], dict)
+    # The preset's full step set is written, in keyed-map form.
     assert _step_ids(section['steps']) == FinalizeStepPresets.LOCAL
-    # The existing params on the retained step survived the LIST-form rewrite —
-    # NOT dropped (the param-drop regression this test guards).
+    # The existing params on the retained step survived the rewrite —
+    # NOT dropped (the param-preservation contract this test guards).
     assert _params_for(section['steps'], 'default:branch-cleanup') == {
         'pr_merge_strategy': 'rebase',
         'final_merge_without_asking': True,
@@ -320,7 +300,7 @@ def test_apply_preset_is_idempotent(plan_context):
     second = _read_finalize_section(plan_context.fixture_dir)
 
     assert first == second
-    assert isinstance(second['steps'], list)
+    assert isinstance(second['steps'], dict)
     assert _step_ids(second['steps']) == _FULL_SORTED
 
 
@@ -331,8 +311,8 @@ def test_apply_preset_overwrites_previous_preset(plan_context):
     cmd_finalize_steps_apply_preset(Namespace(preset='local'))
 
     section = _read_finalize_section(plan_context.fixture_dir)
-    # No residue from FULL — the LIST's ids are exactly LOCAL.
-    assert isinstance(section['steps'], list)
+    # No residue from FULL — the keyed map's ids are exactly LOCAL.
+    assert isinstance(section['steps'], dict)
     assert _step_ids(section['steps']) == FinalizeStepPresets.LOCAL
 
 
@@ -367,7 +347,7 @@ def test_apply_preset_uppercase_alias_succeeds(plan_context):
 
     assert result['status'] == 'success'
     section = _read_finalize_section(plan_context.fixture_dir)
-    assert isinstance(section['steps'], list)
+    assert isinstance(section['steps'], dict)
     assert _step_ids(section['steps']) == _FULL_SORTED
 
 
@@ -394,7 +374,7 @@ def test_apply_preset_persists_steps_in_ascending_frontmatter_order(plan_context
     assert result['status'] == 'success'
 
     persisted_steps = _read_finalize_section(plan_context.fixture_dir)['steps']
-    assert isinstance(persisted_steps, list)
+    assert isinstance(persisted_steps, dict)
     persisted_ids = _step_ids(persisted_steps)
     resolved, err = _resolve_step_orders(persisted_ids, 'phase-6-finalize')
     assert err is None

@@ -55,37 +55,24 @@ from conftest import run_script  # noqa: E402, I001
 
 
 # `plan.phase-6-finalize.steps` and `plan.phase-5-execute.verification_steps`
-# serialize on disk as the canonical LIST form: a JSON array whose elements are
-# bare strings (ownerless steps) or single-key objects `{step_id: {params}}`
-# (param-bearing steps). Array order is the execution order. These helpers
-# extract the ordered id list and a single step's nested param object from that
-# LIST form.
+# serialize on disk as the canonical keyed map: an id-keyed object
+# `{step_id: {params}}` (`{}` for a config-less step) whose key insertion order
+# is the execution order. These helpers extract the ordered id list and a single
+# step's nested param object from that keyed map.
 
 
-def _step_ids(steps_list: list) -> list:
-    """Return the ordered step-id list from a LIST-form steps array."""
-    ids = []
-    for element in steps_list:
-        if isinstance(element, str):
-            ids.append(element)
-        elif isinstance(element, dict) and len(element) == 1:
-            ids.append(next(iter(element)))
-    return ids
+def _step_ids(steps_map: dict) -> list:
+    """Return the ordered step-id list from a keyed-map steps object."""
+    return list(steps_map.keys())
 
 
-def _params_for(steps_list: list, step_id: str):
-    """Return a step's params from a LIST-form steps array.
+def _params_for(steps_map: dict, step_id: str):
+    """Return a step's params from a keyed-map steps object.
 
-    Returns the nested param dict for a param-bearing single-key object, or
-    ``None`` for an ownerless bare-string element. Raises ``KeyError`` when the
-    step id is absent.
+    Returns the step's nested param object (``{}`` for a config-less step).
+    Raises ``KeyError`` when the step id is absent.
     """
-    for element in steps_list:
-        if isinstance(element, str) and element == step_id:
-            return None
-        if isinstance(element, dict) and len(element) == 1 and step_id in element:
-            return element[step_id]
-    raise KeyError(step_id)
+    return steps_map[step_id]
 
 # =============================================================================
 # phase-5-execute Verification Pipeline Command Tests (Tier 2)
@@ -137,12 +124,11 @@ def test_execute_set_steps_single_canonical_verify_round_trips(plan_context):
     assert result['status'] == 'success'
 
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    # verification_steps persists as the canonical LIST serial form; an ownerless
-    # step is a bare string, not a {step_id: null} / {step_id: {}} object
-    # (empty-{} suppression). The read path coerces it to {}.
-    assert config['plan']['phase-5-execute']['verification_steps'] == [
-        'default:verify:quality-gate'
-    ]
+    # verification_steps persists as the canonical keyed map; a config-less step
+    # maps to an empty {} param object.
+    assert config['plan']['phase-5-execute']['verification_steps'] == {
+        'default:verify:quality-gate': {}
+    }
 
 
 def test_execute_set_steps_multiple_canonical_verify_succeeds_ordered_by_list_position(plan_context):
@@ -636,11 +622,10 @@ def test_execute_set_steps_round_trip_cache_layout(plan_context):
 
     assert result['status'] == 'success', f'Expected success (no missing_order) in cache layout, got {result}'
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    # ownerless step persists as a bare string in the LIST form (no {step_id: null}
-    # / {step_id: {}} object — empty-{} suppression)
-    assert config['plan']['phase-5-execute']['verification_steps'] == [
-        'default:verify:quality-gate'
-    ]
+    # config-less step persists as a {step_id: {}} entry in the keyed map
+    assert config['plan']['phase-5-execute']['verification_steps'] == {
+        'default:verify:quality-gate': {}
+    }
 
 
 def test_execute_set_steps_round_trip_source_layout(plan_context):
@@ -671,11 +656,10 @@ def test_execute_set_steps_round_trip_source_layout(plan_context):
 
     assert result['status'] == 'success', f'Expected success (no missing_order) in source layout, got {result}'
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    # ownerless step persists as a bare string in the LIST form (no {step_id: null}
-    # / {step_id: {}} object — empty-{} suppression)
-    assert config['plan']['phase-5-execute']['verification_steps'] == [
-        'default:verify:quality-gate'
-    ]
+    # config-less step persists as a {step_id: {}} entry in the keyed map
+    assert config['plan']['phase-5-execute']['verification_steps'] == {
+        'default:verify:quality-gate': {}
+    }
 
 
 # =============================================================================
@@ -1094,7 +1078,7 @@ def test_finalize_step_set_writes_single_param_and_round_trips(plan_context):
     )
     assert get_result['params']['review_bot_buffer_seconds'] == 240
 
-    # persisted on disk inside the LIST step structure (single-key object)
+    # persisted on disk inside the keyed-map step structure (nested param object)
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     persisted = _params_for(config['plan']['phase-6-finalize']['steps'], 'default:automated-review')
     assert persisted['review_bot_buffer_seconds'] == 240
@@ -1228,7 +1212,7 @@ def test_finalize_step_set_simplify_round_trips_under_owning_step(plan_context):
     assert set_result['status'] == 'success'
     assert set_result['params']['simplify'] == 'never'
 
-    # Persisted nested under the owning step's single-key object in the LIST form.
+    # Persisted nested under the owning step's value in the keyed map.
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     persisted = _params_for(config['plan']['phase-6-finalize']['steps'], 'default:finalize-step-simplify')
     assert persisted['simplify'] == 'never'
@@ -1270,22 +1254,22 @@ def test_finalize_get_folded_knob_field_is_rejected(plan_context):
 
 
 # =============================================================================
-# Dual-form READER tests: _steps_map normalizes the LIST and keyed-map on-disk
-# serial forms to the SAME internal {step_id: {params}} dict.
+# READER tests: _steps_map normalizes the keyed-map on-disk form to the internal
+# {step_id: {params}} dict.
 # =============================================================================
 #
 # _steps_map is a pure normalizer over the value read from
-# section[list_key]: it accepts the new LIST form (bare strings + single-key
-# objects), the legacy keyed-map dict, or None, and returns a fresh ordered dict.
+# section[step_key]: it accepts the canonical keyed-map dict (or None), coerces
+# each config-less value to {}, and returns a fresh ordered dict.
 
 
-def test_steps_map_list_form_normalizes_bare_and_keyed_elements():
-    """A LIST input (bare-string ownerless + single-key object with params) normalizes correctly."""
+def test_steps_map_normalizes_config_less_and_param_bearing_values():
+    """A keyed-map input (config-less {} + param-bearing object) normalizes correctly."""
     result = _cmd_quality_phases._steps_map(
-        [
-            'default:commit-push',
-            {'default:automated-review': {'review_bot_buffer_seconds': 300}},
-        ]
+        {
+            'default:commit-push': {},
+            'default:automated-review': {'review_bot_buffer_seconds': 300},
+        }
     )
 
     assert result == {
@@ -1294,30 +1278,14 @@ def test_steps_map_list_form_normalizes_bare_and_keyed_elements():
     }
 
 
-def test_steps_map_keyed_and_list_forms_normalize_identically():
-    """keyed-map and LIST inputs yield the SAME normalized internal dict."""
-    list_form = [
-        'default:commit-push',
-        {'default:automated-review': {'review_bot_buffer_seconds': 300}},
-        'default:archive-plan',
-    ]
-    keyed_form = {
-        'default:commit-push': {},
-        'default:automated-review': {'review_bot_buffer_seconds': 300},
-        'default:archive-plan': {},
-    }
-
-    from_list = _cmd_quality_phases._steps_map(list_form)
-    from_keyed = _cmd_quality_phases._steps_map(keyed_form)
-
-    assert from_list == from_keyed
-    assert from_list == keyed_form
-
-
-def test_steps_map_list_form_preserves_input_order():
-    """LIST element order is preserved as the internal dict's key (execution) order."""
+def test_steps_map_preserves_input_order():
+    """Key insertion order is preserved as the internal dict's (execution) order."""
     result = _cmd_quality_phases._steps_map(
-        ['default:archive-plan', 'default:commit-push', 'default:create-pr']
+        {
+            'default:archive-plan': {},
+            'default:commit-push': {},
+            'default:create-pr': {},
+        }
     )
 
     assert list(result.keys()) == [
@@ -1327,27 +1295,27 @@ def test_steps_map_list_form_preserves_input_order():
     ]
 
 
-def test_steps_map_empty_list_yields_empty_dict():
-    """An empty LIST normalizes to an empty dict (edge case)."""
-    assert _cmd_quality_phases._steps_map([]) == {}
+def test_steps_map_empty_dict_yields_empty_dict():
+    """An empty keyed map normalizes to an empty dict (edge case)."""
+    assert _cmd_quality_phases._steps_map({}) == {}
 
 
-def test_steps_map_single_entry_list_forms():
-    """Single-entry LIST forms — one bare string, one single-key object (edge case)."""
-    assert _cmd_quality_phases._steps_map(['default:commit-push']) == {
+def test_steps_map_single_entry_keyed_map():
+    """Single-entry keyed maps — one config-less, one param-bearing (edge case)."""
+    assert _cmd_quality_phases._steps_map({'default:commit-push': {}}) == {
         'default:commit-push': {}
     }
     assert _cmd_quality_phases._steps_map(
-        [{'default:automated-review': {'review_bot_buffer_seconds': 300}}]
+        {'default:automated-review': {'review_bot_buffer_seconds': 300}}
     ) == {'default:automated-review': {'review_bot_buffer_seconds': 300}}
 
 
-def test_steps_map_single_key_object_with_null_params_coerces_to_empty():
-    """A single-key object whose value is null/{} coerces to an empty param dict."""
-    assert _cmd_quality_phases._steps_map([{'default:commit-push': None}]) == {
+def test_steps_map_null_value_coerces_to_empty():
+    """A keyed-map value that is null/{} coerces to an empty param dict."""
+    assert _cmd_quality_phases._steps_map({'default:commit-push': None}) == {
         'default:commit-push': {}
     }
-    assert _cmd_quality_phases._steps_map([{'default:commit-push': {}}]) == {
+    assert _cmd_quality_phases._steps_map({'default:commit-push': {}}) == {
         'default:commit-push': {}
     }
 
@@ -1363,31 +1331,27 @@ def test_steps_map_returns_fresh_dict_callers_can_mutate():
 
 
 # =============================================================================
-# Legacy keyed-map -> LIST-form migration round-trip (write verbs persist LIST)
+# Keyed-map write round-trip (write verbs persist the keyed map)
 # =============================================================================
 #
 # `create_marshal_json` seeds `verification_steps` / `steps` on disk in the
-# LEGACY keyed-map serial form (a JSON object). The dual-form reader
-# (`_steps_map`) normalizes that to the internal id-keyed map, and every
-# config WRITE verb re-serializes through `keyed_map_to_list_form` so the
-# on-disk value is rewritten in the canonical
-# LIST form. These tests assert the full read-modify-write cycle is LIST-native:
-# the first write verb MIGRATES the legacy keyed map to a LIST, and a second
-# write verb operating on the now-LIST on-disk value is IDEMPOTENT (stays a
-# LIST, no keyed-map regression).
+# canonical keyed-map form (a JSON object). The reader (`_steps_map`) normalizes
+# that to the internal id-keyed map, and every config WRITE verb persists the
+# keyed map directly. These tests assert the full read-modify-write cycle stays
+# keyed-map-native: a write verb rewrites the keyed map (still a dict), and a
+# second write verb is IDEMPOTENT (stays a keyed map).
 
 
-def test_execute_remove_step_migrates_legacy_keyed_map_to_list_form(plan_context):
-    """A write verb against a legacy keyed-map `verification_steps` rewrites it as a LIST.
+def test_execute_remove_step_persists_keyed_map_form(plan_context):
+    """A write verb against a keyed-map `verification_steps` rewrites it as a keyed map.
 
-    The seeded fixture stores `verification_steps` as the legacy keyed-map
-    (a dict). After `remove-step` the on-disk value is the canonical LIST form
-    (a JSON array of bare strings / single-key objects), proving the dual-form
-    reader + LIST-form writer migrate the legacy shape on the first write.
+    The seeded fixture stores `verification_steps` as the keyed map (a dict).
+    After `remove-step` the on-disk value is still the canonical keyed map (a
+    JSON object), with the remaining config-less step mapping to {}.
     """
     create_marshal_json(plan_context.fixture_dir)
 
-    # Precondition: the seed is the legacy keyed-map (dict) on disk.
+    # Precondition: the seed is the keyed map (dict) on disk.
     before = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     assert isinstance(before['plan']['phase-5-execute']['verification_steps'], dict)
 
@@ -1403,27 +1367,27 @@ def test_execute_remove_step_migrates_legacy_keyed_map_to_list_form(plan_context
 
     after = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     persisted = after['plan']['phase-5-execute']['verification_steps']
-    # Migrated to the canonical LIST form (a list, not a dict).
-    assert isinstance(persisted, list)
-    # The remaining ownerless step is a bare string in the LIST form.
-    assert persisted == ['default:verify:module-tests']
+    # Persisted as the canonical keyed map (a dict, not a list).
+    assert isinstance(persisted, dict)
+    # The remaining config-less step maps to {} in the keyed map.
+    assert persisted == {'default:verify:module-tests': {}}
 
 
-def test_finalize_remove_step_migrates_legacy_keyed_map_and_is_idempotent(plan_context):
-    """First write verb migrates legacy keyed-map -> LIST; a second write stays LIST (idempotent).
+def test_finalize_remove_step_persists_keyed_map_and_is_idempotent(plan_context):
+    """Each write verb persists the keyed map; a second write stays a keyed map (idempotent).
 
-    Round-trips the full read-modify-write cycle: the seed is the legacy
-    keyed-map; the first `remove-step` rewrites it as a LIST; reading that LIST
-    back and applying a second `remove-step` re-serializes a LIST again with no
-    keyed-map regression — the write path is idempotent over the LIST form.
+    Round-trips the full read-modify-write cycle: the seed is the keyed map; the
+    first `remove-step` rewrites it as a keyed map; reading that back and applying
+    a second `remove-step` re-persists a keyed map again — the write path is
+    idempotent over the keyed-map form.
     """
     create_marshal_json(plan_context.fixture_dir)
 
-    # Precondition: legacy keyed-map (dict) on disk, with a param-bearing step.
+    # Precondition: keyed map (dict) on disk, with a param-bearing step.
     before = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     assert isinstance(before['plan']['phase-6-finalize']['steps'], dict)
 
-    # First write — migrates the legacy keyed-map to the LIST form.
+    # First write — rewrites the keyed map.
     first = cmd_plan(
         Namespace(sub_noun='phase-6-finalize', verb='remove-step', step='default:lessons-capture')
     )
@@ -1431,14 +1395,14 @@ def test_finalize_remove_step_migrates_legacy_keyed_map_and_is_idempotent(plan_c
 
     after_first = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     steps_after_first = after_first['plan']['phase-6-finalize']['steps']
-    assert isinstance(steps_after_first, list)
+    assert isinstance(steps_after_first, dict)
     assert 'default:lessons-capture' not in _step_ids(steps_after_first)
-    # The param-bearing step round-trips as a single-key object in the LIST form.
+    # The param-bearing step keeps its nested object in the keyed map.
     assert _params_for(steps_after_first, 'default:automated-review') == {
         'review_bot_buffer_seconds': 300
     }
 
-    # Second write — operates on the now-LIST on-disk value; result is still a LIST.
+    # Second write — operates on the keyed-map on-disk value; result is still a keyed map.
     second = cmd_plan(
         Namespace(sub_noun='phase-6-finalize', verb='remove-step', step='default:sonar-roundtrip')
     )
@@ -1446,26 +1410,25 @@ def test_finalize_remove_step_migrates_legacy_keyed_map_and_is_idempotent(plan_c
 
     after_second = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     steps_after_second = after_second['plan']['phase-6-finalize']['steps']
-    # Idempotent over the LIST form — no keyed-map regression on the second write.
-    assert isinstance(steps_after_second, list)
+    # Idempotent over the keyed-map form — no shape regression on the second write.
+    assert isinstance(steps_after_second, dict)
     assert 'default:sonar-roundtrip' not in _step_ids(steps_after_second)
-    # The param-bearing step still survives in single-key-object form.
+    # The param-bearing step still survives with its nested object.
     assert _params_for(steps_after_second, 'default:automated-review') == {
         'review_bot_buffer_seconds': 300
     }
 
 
-def test_step_set_against_legacy_keyed_map_persists_list_form(plan_context):
-    """`step set` against a legacy keyed-map `steps` persists the LIST form on disk.
+def test_step_set_against_keyed_map_persists_keyed_map_form(plan_context):
+    """`step set` against a keyed-map `steps` persists the keyed map on disk.
 
-    The param-writing verb reads the legacy keyed-map through the dual-form
-    reader, mutates one step's nested params, and re-serializes through the
-    LIST-form writer. The on-disk value is the canonical LIST, with the touched
-    step rendered as a single-key object.
+    The param-writing verb reads the keyed map, mutates one step's nested params,
+    and persists the keyed map directly. The on-disk value is the canonical keyed
+    map, with the touched step carrying its nested param object.
     """
     create_marshal_json(plan_context.fixture_dir)
 
-    # Precondition: legacy keyed-map (dict) on disk.
+    # Precondition: keyed map (dict) on disk.
     before = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     assert isinstance(before['plan']['phase-6-finalize']['steps'], dict)
 
@@ -1484,23 +1447,22 @@ def test_step_set_against_legacy_keyed_map_persists_list_form(plan_context):
 
     after = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     persisted = after['plan']['phase-6-finalize']['steps']
-    # Migrated to the canonical LIST form on the param write.
-    assert isinstance(persisted, list)
-    # The touched param-bearing step is a single-key object carrying the override.
+    # Persisted as the canonical keyed map on the param write.
+    assert isinstance(persisted, dict)
+    # The touched param-bearing step carries the override in its nested object.
     params = _params_for(persisted, 'default:branch-cleanup')
     assert params['pr_merge_strategy'] == 'rebase'
-    # An ownerless step persists as a bare string (empty-{} suppression).
+    # A config-less step persists as a {step_id: {}} entry.
     assert 'default:commit-push' in _step_ids(persisted)
-    assert _params_for(persisted, 'default:commit-push') is None
+    assert _params_for(persisted, 'default:commit-push') == {}
 
 
-def test_set_steps_against_legacy_keyed_map_preserves_params_in_list_form(plan_context):
-    """`set-steps` over a legacy keyed-map preserves existing per-step params in the LIST form.
+def test_set_steps_against_keyed_map_preserves_params(plan_context):
+    """`set-steps` over a keyed map preserves existing per-step params.
 
-    Reordering the steps via `set-steps` reads the legacy keyed map through the
-    dual-form reader, so the per-step params of retained steps survive into the
-    rewritten LIST form rather than being dropped — the param-preservation
-    contract across the keyed-map -> LIST migration.
+    Reordering the steps via `set-steps` reads the keyed map, so the per-step
+    params of retained steps survive into the rewritten keyed map rather than
+    being dropped — the param-preservation contract over the keyed-map form.
     """
     create_marshal_json(plan_context.fixture_dir)
 
@@ -1516,8 +1478,8 @@ def test_set_steps_against_legacy_keyed_map_preserves_params_in_list_form(plan_c
 
     after = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     persisted = after['plan']['phase-6-finalize']['steps']
-    assert isinstance(persisted, list)
-    # The retained param-bearing step keeps its params through the migration.
+    assert isinstance(persisted, dict)
+    # The retained param-bearing step keeps its params.
     assert _params_for(persisted, 'default:automated-review') == {
         'review_bot_buffer_seconds': 300
     }

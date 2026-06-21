@@ -84,20 +84,15 @@ _MIGRATED_KNOBS = (
 _STEP_OWNED_KNOB = ('default:branch-cleanup', 'final_merge_without_asking', False)
 
 
-def _params_for(steps_list: list, step_id: str):
-    """Return a step's params from the LIST serial form of steps.
+def _params_for(steps_map: dict, step_id: str):
+    """Return a step's params from the keyed-map form of steps.
 
-    `plan.phase-6-finalize.steps` serializes as the canonical LIST form: bare
-    strings (ownerless steps) or single-key objects `{step_id: {params}}`. Returns
-    the nested param dict for a param-bearing step, or ``None`` for an ownerless
-    one. Raises ``KeyError`` when the step id is absent.
+    `plan.phase-6-finalize.steps` serializes as the canonical keyed map:
+    `{step_id: {params}}` (`{}` for a config-less step). Returns the step's nested
+    param object, or ``None`` when the step id is absent (preserving the
+    `.get(param)` call-site contract).
     """
-    for element in steps_list:
-        if isinstance(element, str) and element == step_id:
-            return None
-        if isinstance(element, dict) and len(element) == 1 and step_id in element:
-            return element[step_id]
-    raise KeyError(step_id)
+    return steps_map.get(step_id)
 
 
 def _hash_marshal(fixture_dir):
