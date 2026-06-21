@@ -307,7 +307,7 @@ For each unique D.module in deliverables:
   Pre-fetch: architecture module --module {D.module}  → cache as arch_cache[D.module]
 
 For each deliverable D:
-  IF (D.change_type == verification OR D.affected_files is empty) AND (D.affected_files is empty OR every affected_files entry has intent == read):
+  IF D.affected_files is empty OR (D.change_type == verification AND every affected_files entry has intent == read):
     IF D.profiles != [verification]:
       Log warning (see above)
     D.profiles = [verification]
