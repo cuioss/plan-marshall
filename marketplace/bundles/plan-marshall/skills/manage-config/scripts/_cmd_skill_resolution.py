@@ -374,6 +374,8 @@ def _discover_all_recipes() -> list[dict]:
         # Frontmatter). recipe_domain is required; a recipe whose frontmatter
         # omits it is silently skipped (intentional discovery containment).
         frontmatter = _leading_frontmatter_block(content)
+        if not frontmatter:
+            continue
         domain_match = re.search(r'^recipe_domain:\s*(.+)$', frontmatter, re.MULTILINE)
         domain = domain_match.group(1).strip().strip("'\"") if domain_match else ''
         profile_match = re.search(r'^recipe_profile:\s*(.+)$', frontmatter, re.MULTILINE)
