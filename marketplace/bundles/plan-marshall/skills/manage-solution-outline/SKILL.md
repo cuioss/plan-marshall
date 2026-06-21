@@ -211,6 +211,18 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 `--project-dir` (default `.`) and `--plan-id` are mutually exclusive routing flags.
 
+**Output** (TOON):
+
+```toon
+status: success
+module_count: 2
+modules[2]{name,path,purpose,responsibility}:
+  default,.,Root project module,Project-wide responsibilities
+  plan-marshall,marketplace/bundles/plan-marshall,Workflow orchestration,Plan lifecycle
+```
+
+Each `modules[]` entry additionally carries `key_packages`, `tips`, `insights`, `best_practices`, and `skills_by_profile` when the module's enriched architecture store populates them. The hint fields (`tips`, `insights`, `best_practices`) are **presence-gated** — each is emitted only when the corresponding `enriched.json` array is non-empty, and omitted entirely otherwise. Consumers (e.g. `phase-3-outline` rendering the `## Architecture Hints` section) read these fields directly off each module entry.
+
 ---
 
 ## Error Responses
