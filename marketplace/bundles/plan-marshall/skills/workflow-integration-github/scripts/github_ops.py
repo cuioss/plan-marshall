@@ -1111,45 +1111,34 @@ def _normalize_conclusion(check: dict) -> str:
     return _BUCKET_TO_CONCLUSION.get(str(bucket).lower(), '')
 
 
-def _extract_run_id_from_link(link: str | None) -> str:
-    """Extract the workflow run id from a check ``link`` URL.
+def _extract_segment_from_link(link: str | None, marker: str, *, numeric_only: bool = False) -> str:
+    """Extract a URL path segment that follows ``marker`` from a GitHub check link.
 
     GitHub check links follow the pattern
     ``https://github.com/<owner>/<repo>/actions/runs/<run_id>/job/<job_id>``.
-    Returns the run id segment when present, otherwise an empty string.
+    Returns the segment immediately after ``marker``, or an empty string when
+    the marker is absent. When ``numeric_only=True``, non-numeric segments
+    (e.g. a missing ``job_id``) return an empty string instead.
     """
 
     if not link:
         return ''
-    marker = '/actions/runs/'
     idx = link.find(marker)
     if idx == -1:
         return ''
     tail = link[idx + len(marker):]
-    run_id = tail.split('/', 1)[0]
-    return run_id
+    segment = tail.split('/', 1)[0]
+    if numeric_only and not re.match(r'^\d+$', segment):
+        return ''
+    return segment
+
+
+def _extract_run_id_from_link(link: str | None) -> str:
+    return _extract_segment_from_link(link, '/actions/runs/')
 
 
 def _extract_job_id_from_link(link: str | None) -> str:
-    """Extract the nested job id from a check ``link`` URL.
-
-    GitHub check links for reusable-workflow callers follow the pattern
-    ``https://github.com/<owner>/<repo>/actions/runs/<run_id>/job/<job_id>``.
-    Returns the ``job_id`` segment when present, otherwise an empty string
-    (the link points at the run only, with no nested job).
-    """
-
-    if not link:
-        return ''
-    marker = '/job/'
-    idx = link.find(marker)
-    if idx == -1:
-        return ''
-    tail = link[idx + len(marker):]
-    job_id = tail.split('/', 1)[0]
-    if not re.match(r'^\d+$', job_id):
-        return ''
-    return job_id
+    return _extract_segment_from_link(link, '/job/', numeric_only=True)
 
 
 def _build_failing_check_entry(check: dict) -> dict:
