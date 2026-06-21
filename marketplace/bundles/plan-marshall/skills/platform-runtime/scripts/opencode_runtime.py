@@ -398,6 +398,24 @@ class OpenCodeRuntime(Runtime):
             },
         )
 
+    def metrics_normalized_tokens(
+        self,
+        session_id: str,
+        windows: list[tuple[str, str, str]],
+        output_file: str,
+    ) -> str:
+        """Honest no-op: OpenCode exposes no session transcript to normalize.
+
+        OpenCode does not provide a session transcript, so there is nothing to
+        walk or normalize. Returns ``transcript_not_found`` so the
+        finalize/retrospective enrich steps degrade gracefully (skip enrichment).
+        """
+        return toon_noop(
+            "metrics normalized-tokens",
+            "transcript_not_found",
+            "pass --total-tokens manually to metrics capture",
+        )
+
     # ------------------------------------------------------------------
     # Subagent dispatch
     # ------------------------------------------------------------------

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Platform router for plan-marshall — dispatches 16 operations to the correct
+Platform router for plan-marshall — dispatches 17 operations to the correct
 target implementation based on ``runtime.target`` in ``.plan/marshal.json``.
 
 Usage:
@@ -23,6 +23,7 @@ Operations:
     permission web-analyze  --scope global|project|both
     permission web-apply    --scope project|global  [--add <json>]  [--remove <json>]  [--dry-run]
     metrics capture         --plan-id <id>  --phase <phase>  [--total-tokens <n>]
+    metrics normalized-tokens  --session-id <id>  --windows-file <path>  --output-file <path>
     subagent dispatch       --agent <name>  [--prompt-file <path>]  [--context <json>]
     health-check            --checks all|permissions|display|mcp-diagnostics
 
@@ -406,6 +407,39 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         return runtime.metrics_capture(ns.plan_id, ns.phase, ns.total_tokens)
 
     # ------------------------------------------------------------------
+    # metrics normalized-tokens
+    # ------------------------------------------------------------------
+    if operation == "metrics normalized-tokens":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime metrics normalized-tokens")
+        p.add_argument("--session-id", required=True)
+        p.add_argument("--windows-file", required=True,
+                       help="Path to a JSON file holding the [[phase, start_iso, end_iso], ...] windows")
+        p.add_argument("--output-file", required=True,
+                       help="Path the per-phase normalized-token JSON result is written to")
+        ns = p.parse_args(remaining)
+        try:
+            raw = Path(ns.windows_file).read_text(encoding="utf-8")
+            parsed = json.loads(raw)
+        except (OSError, json.JSONDecodeError) as exc:
+            return toon_error(
+                "metrics normalized-tokens",
+                "invalid_argument",
+                f"--windows-file must be a readable JSON file: {exc}",
+            )
+        if not isinstance(parsed, list):
+            return toon_error(
+                "metrics normalized-tokens",
+                "invalid_argument",
+                "--windows-file must hold a JSON array of [phase, start_iso, end_iso] triples",
+            )
+        windows = [
+            (str(entry[0]), str(entry[1]), str(entry[2]))
+            for entry in parsed
+            if isinstance(entry, list) and len(entry) == 3
+        ]
+        return runtime.metrics_normalized_tokens(ns.session_id, windows, ns.output_file)
+
+    # ------------------------------------------------------------------
     # subagent dispatch
     # ------------------------------------------------------------------
     if operation == "subagent dispatch":
@@ -447,7 +481,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         "permission configure, permission analyze, permission fix, "
         "permission ensure-wildcards, permission ensure-steps, "
         "permission web-analyze, permission web-apply, "
-        "metrics capture, subagent dispatch, health-check",
+        "metrics capture, metrics normalized-tokens, subagent dispatch, health-check",
     )
 
 

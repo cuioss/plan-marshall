@@ -30,6 +30,7 @@ These are in the tree today. Treat them as the foundation, not as open work.
 | Target-aware executor (Claude-cache resolver or OpenCode 7-root resolver, switched on `runtime.target`) | `tools-script-executor/scripts/generate_executor.py` |
 | Distribution pipeline — target-parametrized `strategy.matrix`, `dist-{name}` orphan branch + `{name}/v*` tags | `.github/workflows/claude-distribute.yml` |
 | Token capture, multi-platform bootstrap, `marshal.json runtime.target`, OpenCode body-transformer wiring | see [01](01-finish-portability.md) "Already landed" |
+| **The 8 portability gaps (permission tooling, metrics/transcript engine, `session_id` validation, project-local skill + bundle/cache layout resolution, body-text tool-name transforms, terminal-title, target-aware authoring tools)** — routed through the `platform-runtime` layout/runtime ops or the OpenCode build target; `plugin-doctor` carries the engine / Claude-rule-pack split | see [01](01-finish-portability.md) (all gaps landed) |
 | Canonical build/distribution docs (present-tense AsciiDoc) | `doc/developer/marketplace-build.adoc`, `doc/developer/distribution.adoc`, `doc/concepts/execution-context.adoc` |
 
 **Design facts that supersede the retired seven-cluster plan** (do not re-introduce the
@@ -47,7 +48,7 @@ old assumptions):
 
 | # | Workstream | Open work | Document |
 |---|------------|-----------|----------|
-| 01 | Finish portability gaps | 8 code-level gaps from a full sweep: permission tooling (both sides), metrics/transcript engine, `session_id` validation, project-local skill resolution, bundle/cache discovery, body-text tool-name transforms, terminal-title verification, target-aware authoring tools. All route to one of four homes (platform-runtime / OpenCode build target / stays-agnostic / target-specific skill) per the placement model | [01-finish-portability.md](01-finish-portability.md) |
+| 01 | Finish portability gaps | **Landed** — all 8 code-level gaps closed: permission tooling (both sides), metrics/transcript engine, `session_id` validation, project-local skill resolution, bundle/cache discovery, body-text tool-name transforms, terminal-title, target-aware authoring tools. Each routed to one of the four homes (platform-runtime / OpenCode build target / stays-agnostic / target-specific skill). The closing-audit grep returns only accepted hits | [01-finish-portability.md](01-finish-portability.md) |
 | 02 | Validate the OpenCode runtime live | Never run on a real OpenCode install. Accepted risks unconfirmed; smoke flows not executed. Setup checks (sections 0–1) are automatable and pass; sections 2–3 need an interactive session. Runbook: [02-verification-protocol.md](02-verification-protocol.md) | [02-validate-opencode-runtime.md](02-validate-opencode-runtime.md) |
 | 02-protocol | Verification runbook for 02 | Companion checklist — exact commands, expected observations, pass/fail per check | [02-verification-protocol.md](02-verification-protocol.md) |
 | 03 | Add the OpenCode distribution target | Matrix entry + generation-gate CI exist; the OpenCode install/consumption path is unverified on a live client | [03-distribution-opencode-target.md](03-distribution-opencode-target.md) |
@@ -67,9 +68,10 @@ old assumptions):
                                            └──► 05 opencode-documentation
 ```
 
-- **01 first.** The remaining bypass call sites (permission tooling, transcript
-  resolution, `session_id` validation) must route through `platform-runtime` before anyone
-  runs the runtime on OpenCode, so the live validation in 02 exercises the real path.
+- **01 landed.** The former bypass call sites (permission tooling, transcript resolution,
+  `session_id` validation, project-local skill + bundle/cache layout resolution, authoring
+  tools) now route through `platform-runtime`, so the live validation in 02 exercises the real
+  path. The two-target assumption was kept out of the migrations per 07.
 - **02 is the gate.** OpenCode has never been run. 02 confirms or escalates the accepted
   risks (subagent `AskUserQuestion`, `task`-tool dispatch, parallel dispatch, instruction
   following) and runs the smoke flows. 03/04/05 are only worth finishing once 02 proves the

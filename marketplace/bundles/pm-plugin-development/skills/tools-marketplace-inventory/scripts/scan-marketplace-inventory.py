@@ -49,14 +49,17 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Constants
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
-CLAUDE_DIR = '.claude'
-PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
 DEFAULT_OUTPUT_SUBDIR = 'tools-marketplace-inventory'
 
 
 # Shared path resolution (from script-shared)
 from marketplace_bundles import extract_bundle_name, find_bundles  # noqa: E402, I001
-from marketplace_paths import get_base_path as _shared_get_base_path, get_temp_dir, safe_relative_path  # noqa: E402, I001
+from marketplace_paths import (  # noqa: E402, I001
+    get_base_path as _shared_get_base_path,
+    get_temp_dir,
+    iter_project_skill_dirs,
+    safe_relative_path,
+)
 
 
 # find_bundles imported from marketplace_bundles
@@ -335,26 +338,29 @@ def discover_tests(bundle_name: str) -> list[dict[str, Any]]:
 
 
 def discover_project_skills() -> dict[str, Any] | None:
-    """Discover project-level skills from .claude/skills/ directory.
+    """Discover project-level skills from the active target's skill roots.
 
-    Returns a pseudo-bundle dict for project-skills, or None if no skills found.
+    Routes through the platform-runtime layout op (via
+    ``marketplace_paths.iter_project_skill_dirs``) so both the Claude
+    ``.claude/skills`` tree and the OpenCode layout are scanned. Returns a
+    pseudo-bundle dict for project-skills, or ``None`` if no skills found. A
+    skill directory that appears under more than one root is recorded once
+    (highest-priority root wins).
     """
-    claude_skills = Path('.claude/skills')
-    if not claude_skills.is_dir():
-        return None
-
     bundle: dict[str, Any] = {
         'name': 'project-skills',
-        'path': '.claude/skills',
+        'path': 'project-skills',
         'skills': [],
         'scripts': [],
     }
 
-    for skill_dir in sorted(claude_skills.iterdir()):
-        if not skill_dir.is_dir():
+    seen_skills: set[str] = set()
+    for skill_dir in iter_project_skill_dirs():
+        if not skill_dir.is_dir() or skill_dir.name in seen_skills:
             continue
         skill_md = skill_dir / 'SKILL.md'
         if skill_md.exists():
+            seen_skills.add(skill_dir.name)
             skill_entry: dict[str, Any] = {
                 'name': skill_dir.name,
                 'path': safe_relative_path(skill_dir),
@@ -748,7 +754,7 @@ def main() -> int:
     parser.add_argument(
         '--include-project-skills',
         action='store_true',
-        help='Include project-level skills from .claude/skills/. Adds project-skills pseudo-bundle.',
+        help="Include project-level skills from the active target's skill roots. Adds project-skills pseudo-bundle.",
     )
 
     args = parser.parse_args()

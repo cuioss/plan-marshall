@@ -17,6 +17,25 @@ This module implements the two transforms documented in ``transforms.md``:
   is built by ``build_user_invocable_lookup`` from a marketplace scan of
   ``user-invocable: true`` skills.
 
+* **Transform 3: Registered-idiom rewrite (data-driven)** — Claude-native
+  tool idioms (``AskUserQuestion``, ``Task:``, ``Skill: <entry>``) are
+  registered as per-target rewrite *data* in
+  ``mapping.json::body_idiom_rewrites``. The shared engine
+  (:func:`rewrite_registered_idioms`) reads the registry and applies each
+  idiom's *disposition*:
+
+    - ``rewrite_inline_code`` — rewrite backtick-wrapped tool references
+      (e.g. `` `AskUserQuestion` `` → `` `question` ``) to the OpenCode tool
+      name. Bare prose mentions of the concept are left alone.
+    - ``preserve`` — a deliberate, leaf-aware non-rewrite (e.g. ``Task:`` —
+      the dispatcher's leaf-constraint prose must NOT be blanket-rewritten).
+    - ``source_fix`` — the divergence is fixed in the source, not at emit time
+      (e.g. ``Skill: <entry>`` placeholder prose).
+
+  The engine **fails closed**: any registered idiom carrying an *unknown*
+  disposition raises :class:`UnmappedIdiomError` at build time, so a new
+  Claude idiom cannot be silently emitted un-dispositioned.
+
 Both transforms are idempotent — running them on already-transformed
 text is a no-op.
 
@@ -30,11 +49,24 @@ matching the ``BodyTransformer`` signature consumed by
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from marketplace.targets.opencode.frontmatter import parse_frontmatter
+
+# Path to the OpenCode target mapping data (relative to this module).
+_MAPPING_JSON = Path(__file__).resolve().parent / 'mapping.json'
+
+# The set of dispositions the engine knows how to honour. A registered idiom
+# carrying any other disposition is a build-time error (fail-closed).
+_KNOWN_DISPOSITIONS = frozenset({'rewrite_inline_code', 'preserve', 'source_fix'})
+
+
+class UnmappedIdiomError(ValueError):
+    """A registered Claude idiom carries an unknown disposition (fail-closed build)."""
 
 # Match a full-line ``Skill: bundle:skill`` directive. The leading and
 # trailing anchors are ``MULTILINE`` so the regex applies per-line in a
@@ -112,19 +144,91 @@ def rewrite_slash_commands(body: str, lookup: dict[str, str]) -> str:
     return pattern.sub(replace, body)
 
 
-def make_body_transformer(lookup: dict[str, str]) -> BodyTransformer:
-    """Compose Transform 1 + Transform 2 into a ``BodyTransformer`` callable.
+def load_idiom_registry(mapping_path: Path | None = None) -> dict[str, dict[str, Any]]:
+    """Load the ``body_idiom_rewrites`` registry from ``mapping.json``.
+
+    Returns the registry dict mapping each registered idiom name to its
+    disposition record. Returns an empty dict when the key is absent. The load
+    validates every registered disposition up-front (fail-closed) — see
+    :func:`assert_dispositions_known`.
+    """
+    path = mapping_path or _MAPPING_JSON
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    registry = data.get('body_idiom_rewrites', {})
+    if not isinstance(registry, dict):
+        return {}
+    assert_dispositions_known(registry)
+    return registry
+
+
+def assert_dispositions_known(registry: dict[str, dict[str, Any]]) -> None:
+    """Fail closed: every registered idiom must carry a known disposition.
+
+    Raises :class:`UnmappedIdiomError` when any registered idiom's
+    ``disposition`` is missing or not one of :data:`_KNOWN_DISPOSITIONS`. This is
+    the structural guard that a NEW Claude idiom cannot be added to the registry
+    (or emitted) without an explicit, engine-handled disposition.
+    """
+    for idiom, record in registry.items():
+        disposition = record.get('disposition') if isinstance(record, dict) else None
+        if disposition not in _KNOWN_DISPOSITIONS:
+            raise UnmappedIdiomError(
+                f'Registered idiom {idiom!r} has unknown disposition {disposition!r}; '
+                f'known dispositions: {sorted(_KNOWN_DISPOSITIONS)}'
+            )
+
+
+def rewrite_registered_idioms(body: str, registry: dict[str, dict[str, Any]]) -> str:
+    """Apply Transform 3: data-driven registered-idiom rewrites.
+
+    Iterates the registry (fail-closed-validated by :func:`load_idiom_registry`)
+    and applies each idiom's disposition:
+
+    - ``rewrite_inline_code`` — rewrite backtick-wrapped `` `{idiom}` `` to the
+      OpenCode tool name (`` `{opencode_tool}` ``). Bare prose mentions are left.
+    - ``preserve`` / ``source_fix`` — no body change (deliberate non-rewrite /
+      source-side fix).
+
+    Idempotent: a ``rewrite_inline_code`` whose replacement is already present
+    does not re-match (the source idiom name no longer appears in that backtick
+    span).
+    """
+    for idiom, record in registry.items():
+        disposition = record.get('disposition')
+        if disposition != 'rewrite_inline_code':
+            continue
+        opencode_tool = record.get('opencode_tool')
+        if not opencode_tool:
+            continue
+        # Rewrite only the backtick-wrapped tool reference, never bare prose.
+        body = body.replace(f'`{idiom}`', f'`{opencode_tool}`')
+    return body
+
+
+def make_body_transformer(
+    lookup: dict[str, str],
+    idiom_registry: dict[str, dict[str, Any]] | None = None,
+) -> BodyTransformer:
+    """Compose Transform 1 + Transform 2 + Transform 3 into a ``BodyTransformer``.
 
     The returned callable matches the ``emitter.BodyTransformer``
     signature: ``(body, bundle, kind) -> rewritten body``. The bundle
     and kind arguments are reserved for future per-context behavior; the
     current transforms apply uniformly to skill, agent, and command
     bodies.
+
+    ``idiom_registry`` defaults to the ``mapping.json`` registry loaded via
+    :func:`load_idiom_registry` (which fails closed on an unknown disposition).
     """
+    registry = idiom_registry if idiom_registry is not None else load_idiom_registry()
 
     def transform(body: str, _bundle: str, _kind: str) -> str:
         body = rewrite_skill_directives(body)
         body = rewrite_slash_commands(body, lookup)
+        body = rewrite_registered_idioms(body, registry)
         return body
 
     return transform
@@ -176,9 +280,13 @@ __all__ = [
     'BodyTransformer',
     'SKILL_DIRECTIVE_RE',
     'SKILL_REWRITTEN_RE',
+    'UnmappedIdiomError',
+    'assert_dispositions_known',
     'build_slash_command_re',
     'build_user_invocable_lookup',
+    'load_idiom_registry',
     'make_body_transformer',
+    'rewrite_registered_idioms',
     'rewrite_skill_directives',
     'rewrite_slash_commands',
 ]

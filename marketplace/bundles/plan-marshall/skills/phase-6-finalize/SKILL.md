@@ -69,9 +69,9 @@ See [references/workflow-overview.md](references/workflow-overview.md) for the v
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `plan_id` | string | Yes | Plan identifier |
-| `session_id` | string | Yes | Current host-platform session id — forwarded to `default:record-metrics` for `manage-metrics enrich`, which reads the matching transcript JSONL to capture main-context token usage. Without it, `enrich` cannot locate the transcript and session tokens are lost from the final report. |
+| `session_id` | string | Yes | Current host-platform session id — forwarded to `default:record-metrics` for `manage-metrics enrich`, which hands it to the platform-runtime `metrics normalized-tokens` op to capture main-context token usage. Without it, the runtime op cannot locate the session and session tokens are lost from the final report. |
 
-### How to obtain session_id and transcript_path
+### How to obtain session_id
 
 **session_id**: the platform-runtime `session capture` operation stores the session id in the plan's `status.json` at plan-init time. Read it back via:
 
@@ -82,7 +82,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 
 Parse `value` from the TOON output. On `status: error` or empty `value`, the orchestrator's `session_id` resolver (in `plan-marshall/workflow/execution.md`) does NOT abort immediately — it first attempts exactly one `platform-runtime session capture --plan-id {plan_id}` retry and re-reads the metadata field. An absent `session_id` at finalize entry is therefore recoverable as long as the platform session is still live. Only when that single late capture also fails (`status: error` or `value` still empty) does the resolver abort finalize with a clear message — do **not** invent a filler value.
 
-**transcript_path**: when a step needs the absolute path of the session transcript JSONL, the path follows the pattern `~/.claude/projects/{cwd-slug}/{session_id}.jsonl` where `{cwd-slug}` is the absolute project cwd with each `/` replaced by `-`. The `manage-metrics enrich` command resolves this internally given the `session_id`. On `transcript_not_found`, degrade gracefully (skip `enrich`).
+**token enrichment**: `manage-metrics enrich` never parses a session transcript itself — it forwards the `session_id` (and the plan's phase windows) to the platform-runtime `metrics normalized-tokens` op, which owns the entire transcript engine for the active target. On Claude the op walks the session transcript and returns the normalized per-phase token categories; on OpenCode (no transcript) it returns a `no-op` with `transcript_not_found`. `enrich` degrades gracefully on that `no-op` — it skips enrichment and the final report simply carries no transcript-sourced session tokens.
 
 ## Phase-Entry Worktree Assertion
 

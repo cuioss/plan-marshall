@@ -1174,7 +1174,15 @@ def test_include_tests_without_flag_has_no_tests(scan, synthetic_marketplace):
 
 
 def test_include_project_skills_discovers_skills(scan, synthetic_marketplace):
-    """--include-project-skills discovers project-level skills from .claude/skills/."""
+    """--include-project-skills discovers project-level skills via the active target's roots.
+
+    Project-skill discovery routes through the platform-runtime layout op
+    (``marketplace_paths.iter_project_skill_dirs``). With no marshal.json the
+    helper falls back to the Claude default root (``.claude/skills``), so a
+    skill written under ``.claude/skills`` is still discovered. The pseudo-
+    bundle is target-named ``project-skills`` (no longer the Claude-only
+    ``.claude/skills`` literal in the ``path`` field).
+    """
     root = synthetic_marketplace.parent.parent  # tmp_path
     _write(
         root / '.claude' / 'skills' / 'proj-skill' / 'SKILL.md',
@@ -1189,7 +1197,7 @@ def test_include_project_skills_discovers_skills(scan, synthetic_marketplace):
 
     project_skills = next((b for b in bundles if b['name'] == 'project-skills'), None)
     assert project_skills is not None, 'project-skills pseudo-bundle should be present'
-    assert project_skills['path'] == '.claude/skills', 'project-skills path should be .claude/skills'
+    assert project_skills['path'] == 'project-skills', 'project-skills path should be the target-agnostic label'
     skills = project_skills.get('skills', [])
     assert len(skills) >= 1, 'Should find at least 1 project skill'
 
@@ -1216,6 +1224,49 @@ def test_include_project_skills_discovers_scripts(scan, synthetic_marketplace):
         if isinstance(script, dict):
             assert 'notation' in script, 'Script should have notation field'
             assert script['notation'].startswith('project-skills:'), 'Notation should start with project-skills:'
+
+
+def test_include_project_skills_scans_both_layout_roots(synthetic_marketplace, monkeypatch, capsys):
+    """--include-project-skills scans every project-local-skill root (both layouts).
+
+    On OpenCode the layout op reports a multi-root list. The scanner routes
+    through ``iter_project_skill_dirs``; this test forces a two-root layout
+    (mirroring the OpenCode executor's multi-root discovery) and asserts a
+    skill under EACH root is discovered, proving the scanner is no longer bound
+    to the single Claude ``.claude/skills`` tree.
+    """
+    root = synthetic_marketplace.parent.parent  # tmp_path
+    _write(
+        root / '.claude' / 'skills' / 'claude-skill' / 'SKILL.md',
+        '---\nname: claude-skill\ndescription: Claude tree skill\n---\n# Claude Skill\n',
+    )
+    _write(
+        root / '.opencode' / 'skill' / 'opencode-skill' / 'SKILL.md',
+        '---\nname: opencode-skill\ndescription: OpenCode tree skill\n---\n# OpenCode Skill\n',
+    )
+
+    module = _scan_module()
+    monkeypatch.setattr(
+        module,
+        'iter_project_skill_dirs',
+        lambda base=None: [
+            root / '.claude' / 'skills' / 'claude-skill',
+            root / '.opencode' / 'skill' / 'opencode-skill',
+        ],
+    )
+    run = _make_runner(module, monkeypatch, capsys)
+    # --full --format json yields structured skill dicts (default/TOON mode
+    # flattens skill entries to name strings).
+    result = run('--direct-result', '--include-project-skills', '--full', '--format', 'json')
+    assert result.returncode == 0, f'Script returned error: {result.stdout}'
+
+    import json
+
+    data = json.loads(result.stdout)
+    project_skills = data.get('bundles', {}).get('project-skills', {})
+    skills = project_skills.get('skills', [])
+    names = {s['name'] if isinstance(s, dict) else s for s in skills}
+    assert names == {'claude-skill', 'opencode-skill'}, f'both layout roots should be scanned, got {names}'
 
 
 def test_include_project_skills_without_flag_no_pseudo_bundle(scan, synthetic_marketplace):

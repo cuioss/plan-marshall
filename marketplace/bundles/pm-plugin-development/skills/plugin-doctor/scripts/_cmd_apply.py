@@ -8,7 +8,17 @@ import shutil
 from pathlib import Path
 
 from _analyze_simplicity import _restates_signature_only
-from _doctor_shared import read_json_input
+from _doctor_shared import read_json_input, resolve_runtime_target
+
+# Target-aware agent-frontmatter emission. On Claude an agent pins its model
+# with the bare alias ``model: sonnet``; on OpenCode the agent declares
+# ``mode: subagent`` and a provider-qualified ``model: anthropic/<id>``. The
+# active target is resolved through the platform-runtime layout op (via
+# ``_doctor_shared.resolve_runtime_target``), so the fix handler emits the
+# shape the active target's loader understands instead of hardcoding the
+# Claude form.
+_OPENCODE_AGENT_FRONTMATTER = 'tools: Read, Write, Edit\nmode: subagent\nmodel: anthropic/claude-sonnet-4\n'
+_CLAUDE_AGENT_FRONTMATTER = 'tools: Read, Write, Edit\nmodel: sonnet\n'
 
 
 def load_templates(script_dir: Path) -> dict:
@@ -45,7 +55,10 @@ name: {name}
 description: [Description needed]
 """
     if component_type == 'agent':
-        frontmatter += 'tools: Read, Write, Edit\nmodel: sonnet\n'
+        if resolve_runtime_target() == 'opencode':
+            frontmatter += _OPENCODE_AGENT_FRONTMATTER
+        else:
+            frontmatter += _CLAUDE_AGENT_FRONTMATTER
     frontmatter += '---\n\n'
 
     new_content = frontmatter + content

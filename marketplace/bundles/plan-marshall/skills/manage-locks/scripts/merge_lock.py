@@ -153,6 +153,7 @@ from typing import Any
 
 from _locks_core import holder_is_dead, log_lock_event  # type: ignore[import-not-found]
 from file_ops import get_executor_path  # type: ignore[import-not-found]
+from manage_terminal_title import TITLE_TOKEN_GLYPHS  # type: ignore[import-not-found]
 from marketplace_paths import (  # type: ignore[import-not-found]
     resolve_main_anchored_path,
 )
@@ -175,18 +176,19 @@ _BACKOFF_SECONDS = 0.25
 _DEFAULT_TIMEOUT_SECONDS = 30.0
 _LOCK_FILENAME = 'merge.lock'
 
-# Title-token icons for the two merge-lock phases. The glyph vocabulary is the
-# display contract owned by manage-terminal-title; these two are the lock-phase
-# pair (⏳ waiting on a live holder, 🔒 holding the lock). They feed the push
-# ``--icon`` only — the lock branching passes the bare STATE NAME to
-# manage-status, never a glyph (mirrors _build_queue_slot.py's build-phase pair).
-_ICON_LOCK_WAITING = '⏳'  # ⏳
-_ICON_LOCK_OWNED = '\U0001f512'  # 🔒
-
 # Title-token state names persisted via manage-status (the bare state string;
 # manage-terminal-title owns the state → glyph rendering).
 _STATE_LOCK_WAITING = 'lock-waiting'
 _STATE_LOCK_OWNED = 'lock-owned'
+
+# Title-token icons for the two merge-lock phases (⏳ waiting on a live holder,
+# 🔒 holding the lock), fed to the push ``--icon`` only — the lock branching
+# passes the bare STATE NAME to manage-status, never a glyph. The glyph
+# vocabulary is the display contract OWNED by manage-terminal-title; these two
+# are derived from its single ``TITLE_TOKEN_GLYPHS`` source of truth rather than
+# re-literalled here (mirrors _build_queue_slot.py's build-phase pair).
+_ICON_LOCK_WAITING = TITLE_TOKEN_GLYPHS[_STATE_LOCK_WAITING]
+_ICON_LOCK_OWNED = TITLE_TOKEN_GLYPHS[_STATE_LOCK_OWNED]
 
 _TITLE_TOKEN_NOTATION = 'plan-marshall:manage-status:manage-status'
 _PUSH_TOKEN_NOTATION = 'plan-marshall:platform-runtime:platform_runtime'

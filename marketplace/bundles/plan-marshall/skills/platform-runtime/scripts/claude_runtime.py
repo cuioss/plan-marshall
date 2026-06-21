@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -61,6 +62,53 @@ _USAGE_FIELD_RE = re.compile(
 _SESSION_ID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
+
+# ---------------------------------------------------------------------------
+# Transcript engine — Claude-shaped normalized-token computation.
+#
+# This block is the home of the Claude session-transcript engine, relocated
+# from manage-metrics: the ``~/.claude/projects/.../{session_id}.jsonl`` layout,
+# the ``{session_id}/subagents/agent-*.jsonl`` discovery, the ``<usage>`` return
+# tag, the ``message.usage`` four-field parse, and the Anthropic cache-pricing
+# weights. ``manage-metrics`` consumes the normalized numbers this engine emits
+# and never parses a transcript itself.
+# ---------------------------------------------------------------------------
+
+# Matches an embedded ``<usage>...</usage>`` block in subagent tool-result text.
+_USAGE_TAG_RE = re.compile(r"<usage>([\s\S]*?)</usage>", re.MULTILINE)
+
+# Matches the single-figure fields inside a ``<usage>`` tag body. The subagent
+# return tag carries a single token figure with no input/output split and no
+# cache fields, so these are the only keys it ever contains.
+_USAGE_TAG_FIELD_RE = re.compile(
+    r"^\s*(total_tokens|subagent_tokens|tool_uses|duration_ms)\s*:\s*(\d+)",
+    re.MULTILINE,
+)
+
+# Session-id match used by the subagent-transcript discovery (unanchored, to
+# match the legacy manage-metrics ``re.fullmatch`` semantics over the same
+# canonical UUID shape).
+_TRANSCRIPT_SESSION_ID_RE = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+)
+
+# The four distinct Claude API usage fields. These live only in the raw
+# subagent-transcript ``message.usage`` dicts — the subagent ``<usage>`` return
+# tag carries a single token figure with no input/output split and no cache
+# fields.
+_USAGE_FOUR_FIELDS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+)
+
+# Billing weights (request-stated approximations): a cached read is ~0.1x the
+# cost of an input token, and a cache creation write is ~1.25x. The weighted
+# total is a billing-cost figure, NOT a work-comparable measure — cache_read
+# sums context re-reads across turns.
+_BILLING_WEIGHT_CACHE_READ = 0.1
+_BILLING_WEIGHT_CACHE_CREATION = 1.25
 
 # Missing-executor guard. While a worktree-backed plan sits mid-phase-5 the
 # executor can be absent from the main checkout's cwd. Each executor-invoking
@@ -119,6 +167,41 @@ _RENDER_TRIGGER_EVENTS: tuple[str, ...] = (
 # ``manage-terminal-title`` library skill (consumed via ``compose`` above). This
 # module is the resolve+read+emit layer only: it reads ``status.json`` and emits
 # the OSC/statusLine bytes the composer returns.
+#
+# The composer is target-neutral — it knows nothing about Claude hook events. The
+# Claude-specific event → neutral-process-state mapping lives HERE (the Claude
+# runtime), and the resolved neutral state is what gets passed to ``compose``.
+
+
+def _claude_event_to_process_state(
+    hook_event_name: str | None, tool_name: str | None
+) -> str | None:
+    """Map a Claude hook event (+ optional tool name) to a neutral process state.
+
+    Returns one of the ``manage_terminal_title.PROCESS_STATES`` values, or
+    ``None`` when no event was supplied (the composer then applies its active
+    default). This is the Claude-target-specific half of the old ``resolve_icon``
+    logic, relocated out of the pure composer:
+
+    - ``Stop`` → ``"done"``
+    - ``Notification`` → ``"waiting"``
+    - ``PreToolUse`` + ``tool_name == "AskUserQuestion"`` → ``"waiting"``
+    - ``PreToolUse`` + ``tool_name == "Bash"`` → ``"busy"``
+    - ``UserPromptSubmit`` / ``SessionStart`` / ``PostToolUse`` (any tool) and
+      any other event → ``"active"``
+    - missing event → ``None`` (composer applies the active default)
+    """
+    if hook_event_name is None:
+        return None
+    if hook_event_name == "Stop":
+        return "done"
+    if hook_event_name == "Notification":
+        return "waiting"
+    if hook_event_name == "PreToolUse" and tool_name == "AskUserQuestion":
+        return "waiting"
+    if hook_event_name == "PreToolUse" and tool_name == "Bash":
+        return "busy"
+    return "active"
 
 
 # Required render-trigger entries inspected by the ``display`` health check, in
@@ -783,6 +866,349 @@ def _sum_tokens_from_jsonl(transcript_path: Path) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Transcript engine — per-phase normalized-token computation helpers.
+# ---------------------------------------------------------------------------
+
+
+def _resolve_subagent_transcripts(
+    session_id: str,
+    parent_transcript_path: Path | None = None,
+) -> list[Path]:
+    """Return absolute paths of subagent transcript JSONLs for the parent session.
+
+    Subagent transcripts live under
+    ``{project_dir}/{parent_session_id}/subagents/agent-*.jsonl``.
+
+    Discovery is anchored to the resolved parent transcript location when
+    ``parent_transcript_path`` is supplied: the subagents directory is derived as
+    ``parent_transcript_path.parent / session_id / 'subagents'``. This pins
+    discovery to the actual project-dir the parent transcript was found under, so
+    the worktree-vs-main-checkout cwd no longer changes the answer. When
+    ``parent_transcript_path`` is ``None`` the legacy ``_resolve_cwd()``-slug path
+    is used as a fallback. Returns ``[]`` when the directory is absent or empty.
+
+    The session-id UUID format guard is preserved on both paths.
+    """
+    if not re.fullmatch(_TRANSCRIPT_SESSION_ID_RE, session_id):
+        return []
+
+    if parent_transcript_path is not None:
+        subagents_dir = parent_transcript_path.parent / session_id / "subagents"
+    else:
+        try:
+            home = Path.home()
+        except (OSError, RuntimeError):
+            return []
+        projects = home / ".claude" / "projects"
+        cwd_slug = _resolve_cwd().replace("/", "-")
+        subagents_dir = projects / cwd_slug / session_id / "subagents"
+
+    try:
+        if not subagents_dir.is_dir():
+            return []
+        return sorted(p for p in subagents_dir.glob("agent-*.jsonl") if p.is_file())
+    except OSError:
+        return []
+
+
+def _add_usage_four_fields(usage: dict[str, Any], bucket: dict[str, int]) -> None:
+    """Accumulate the four ``message.usage`` fields from *usage* into *bucket*."""
+    for field in _USAGE_FOUR_FIELDS:
+        raw = usage.get(field)
+        if isinstance(raw, bool):
+            continue
+        if isinstance(raw, int):
+            bucket[field] = bucket.get(field, 0) + raw
+
+
+def _sum_subagent_transcript(path: Path) -> tuple[dict[str, int], str | None]:
+    """Sum the four ``message.usage`` fields across one subagent transcript JSONL.
+
+    Returns ``(four_field_bucket, first_timestamp_iso)``. ``first_timestamp_iso``
+    is ``None`` when no line carried a timestamp.
+    """
+    bucket: dict[str, int] = dict.fromkeys(_USAGE_FOUR_FIELDS, 0)
+    first_timestamp: str | None = None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except (json.JSONDecodeError, AttributeError):
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                if first_timestamp is None:
+                    ts = entry.get("timestamp")
+                    if isinstance(ts, str) and ts:
+                        first_timestamp = ts
+                msg = entry.get("message", {})
+                usage = msg.get("usage", {}) if isinstance(msg, dict) else {}
+                if isinstance(usage, dict) and usage:
+                    _add_usage_four_fields(usage, bucket)
+    except OSError:
+        return dict.fromkeys(_USAGE_FOUR_FIELDS, 0), None
+    return bucket, first_timestamp
+
+
+def _window_for_timestamp(
+    timestamp_iso: str | None,
+    windows: list[tuple[str, datetime, datetime]],
+) -> str | None:
+    """Return the phase name whose window contains *timestamp_iso*, else None.
+
+    Boundary ties resolve to the newer phase via latest-window-wins (reversed
+    iteration).
+    """
+    if not timestamp_iso:
+        return None
+    try:
+        ts = datetime.fromisoformat(timestamp_iso.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    for phase_name, start_dt, end_dt in reversed(windows):
+        if start_dt <= ts <= end_dt:
+            return phase_name
+    return None
+
+
+def _attribute_subagent_usage(
+    timestamp_iso: str | None,
+    windows: list[tuple[str, datetime, datetime]],
+    body: str,
+    per_phase: dict[str, dict[str, int]],
+) -> bool:
+    """Parse a ``<usage>`` body and add its totals to the matching phase row.
+
+    Returns True when the totals were attributed, False when no phase window
+    contained the timestamp.
+    """
+    matching_phase = _window_for_timestamp(timestamp_iso, windows)
+    if matching_phase is None:
+        return False
+
+    fields = {m.group(1): int(m.group(2)) for m in _USAGE_TAG_FIELD_RE.finditer(body)}
+    bucket = per_phase.setdefault(
+        matching_phase,
+        {"total_tokens": 0, "tool_uses": 0, "duration_ms": 0, "samples": 0},
+    )
+    # The harness sometimes emits the sub-agent token figure under the
+    # ``subagent_tokens`` key instead of the canonical ``total_tokens``; accept
+    # either so the token bucket is never silently dropped to zero.
+    bucket["total_tokens"] += fields.get("total_tokens", fields.get("subagent_tokens", 0))
+    bucket["tool_uses"] += fields.get("tool_uses", 0)
+    bucket["duration_ms"] += fields.get("duration_ms", 0)
+    bucket["samples"] += 1
+    return True
+
+
+def _billing_weighted_total(four_fields: dict[str, int]) -> int:
+    """Compute the billing-weighted token total from the four-field usage view.
+
+    ``input + output + round(0.1 * cache_read) + round(1.25 * cache_creation)``.
+    A billing-cost figure, NOT a work-comparable measure.
+    """
+    return (
+        four_fields.get("input_tokens", 0)
+        + four_fields.get("output_tokens", 0)
+        + round(four_fields.get("cache_read_input_tokens", 0) * _BILLING_WEIGHT_CACHE_READ)
+        + round(four_fields.get("cache_creation_input_tokens", 0) * _BILLING_WEIGHT_CACHE_CREATION)
+    )
+
+
+def _extract_text_payload(content: object) -> str:
+    """Best-effort flattening of a tool_result content payload to a single string."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        chunks: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if isinstance(text, str):
+                    chunks.append(text)
+        return "\n".join(chunks)
+    return ""
+
+
+def _find_enrich_transcript(session_id: str) -> Path | None:
+    """Locate the parent JSONL transcript for *session_id* under ~/.claude/projects.
+
+    Mirrors the legacy manage-metrics ``cmd_enrich`` discovery: scan project-dir
+    subtrees whose name contains the session id, then fall back to the direct
+    ``{session_id}.jsonl`` file pattern. Returns ``None`` when no transcript is
+    found.
+    """
+    projects_dir = Path.home() / ".claude" / "projects"
+    if not projects_dir.exists():
+        return None
+
+    for session_dir in projects_dir.rglob("*"):
+        if session_dir.is_dir() and session_id in session_dir.name:
+            for jsonl_file in session_dir.glob("*.jsonl"):
+                return jsonl_file
+
+    for project_dir in projects_dir.iterdir():
+        if project_dir.is_dir():
+            candidate = project_dir / f"{session_id}.jsonl"
+            if candidate.exists():
+                return candidate
+    return None
+
+
+def _parse_windows(windows: list[tuple[str, str, str]]) -> list[tuple[str, datetime, datetime]]:
+    """Parse ``(phase, start_iso, end_iso)`` tuples into datetime windows.
+
+    Entries whose start/end are unparseable are dropped (mirroring the legacy
+    ``_phase_window_lookup`` filter).
+    """
+    parsed: list[tuple[str, datetime, datetime]] = []
+    for entry in windows:
+        if len(entry) != 3:
+            continue
+        phase_name, start_str, end_str = entry
+        try:
+            start_dt = datetime.fromisoformat(str(start_str))
+            end_dt = datetime.fromisoformat(str(end_str))
+        except (ValueError, TypeError):
+            continue
+        parsed.append((phase_name, start_dt, end_dt))
+    return parsed
+
+
+def _compute_normalized_tokens(
+    session_id: str,
+    windows: list[tuple[str, str, str]],
+) -> tuple[dict[str, dict[str, int]], dict[str, int]] | None:
+    """Walk the Claude session transcript and compute per-phase normalized tokens.
+
+    Returns ``(per_phase, counters)`` where ``per_phase`` maps each attributed
+    phase to a normalized bucket carrying the four ``message.usage`` fields, the
+    billing-weighted total, and the subagent ``<usage>`` attribution
+    (``subagent_total_tokens`` / ``subagent_tool_uses`` / ``subagent_duration_ms``
+    / ``subagent_samples``). ``counters`` carries the attribution counters.
+
+    Returns ``None`` when no parent transcript can be located (the caller maps
+    this to a ``transcript_not_found`` no-op).
+    """
+    transcript_path = _find_enrich_transcript(session_id)
+    if transcript_path is None:
+        return None
+
+    parsed_windows = _parse_windows(windows)
+
+    message_count = 0
+    per_phase_subagent: dict[str, dict[str, int]] = {}
+    subagent_calls_attributed = 0
+    per_phase_four_fields: dict[str, dict[str, int]] = {}
+
+    def _four_field_bucket(phase_name: str) -> dict[str, int]:
+        return per_phase_four_fields.setdefault(phase_name, dict.fromkeys(_USAGE_FOUR_FIELDS, 0))
+
+    try:
+        with open(transcript_path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except (json.JSONDecodeError, AttributeError):
+                    continue
+
+                msg = entry.get("message", {}) if isinstance(entry, dict) else {}
+                usage = msg.get("usage", {}) if isinstance(msg, dict) else {}
+                if isinstance(usage, dict) and usage:
+                    if usage.get("total_tokens") or usage.get("input_tokens") or usage.get("output_tokens"):
+                        message_count += 1
+                        if parsed_windows:
+                            timestamp = entry.get("timestamp") if isinstance(entry, dict) else None
+                            if isinstance(timestamp, str):
+                                parent_phase = _window_for_timestamp(timestamp, parsed_windows)
+                                if parent_phase is not None:
+                                    _add_usage_four_fields(usage, _four_field_bucket(parent_phase))
+
+                if not parsed_windows:
+                    continue
+                content = msg.get("content") if isinstance(msg, dict) else None
+                payloads: list[str] = []
+                if isinstance(content, list):
+                    for item in content:
+                        if not isinstance(item, dict):
+                            continue
+                        if item.get("type") == "tool_result":
+                            payloads.append(_extract_text_payload(item.get("content")))
+                        elif item.get("type") == "text":
+                            text = item.get("text")
+                            if isinstance(text, str):
+                                payloads.append(text)
+                elif isinstance(content, str):
+                    payloads.append(content)
+
+                timestamp = entry.get("timestamp") if isinstance(entry, dict) else None
+                for payload in payloads:
+                    if not payload or "<usage>" not in payload:
+                        continue
+                    for tag_match in _USAGE_TAG_RE.finditer(payload):
+                        if _attribute_subagent_usage(
+                            timestamp, parsed_windows, tag_match.group(1), per_phase_subagent
+                        ):
+                            subagent_calls_attributed += 1
+    except OSError:
+        return None
+
+    subagent_transcripts_walked = 0
+    if parsed_windows:
+        for sub_path in _resolve_subagent_transcripts(session_id, transcript_path):
+            subagent_transcripts_walked += 1
+            sub_fields, sub_ts = _sum_subagent_transcript(sub_path)
+            sub_phase = _window_for_timestamp(sub_ts, parsed_windows)
+            if sub_phase is None:
+                continue
+            bucket = _four_field_bucket(sub_phase)
+            for field in _USAGE_FOUR_FIELDS:
+                bucket[field] += sub_fields.get(field, 0)
+
+    # Compose the per-phase normalized result. Each phase carries the four-field
+    # view, the billing-weighted total, and the subagent <usage> attribution.
+    per_phase: dict[str, dict[str, int]] = {}
+    phase_names = set(per_phase_four_fields) | set(per_phase_subagent)
+    for phase_name in phase_names:
+        four = per_phase_four_fields.get(phase_name, dict.fromkeys(_USAGE_FOUR_FIELDS, 0))
+        sub = per_phase_subagent.get(phase_name)
+        phase_bucket: dict[str, int] = {
+            "input": four.get("input_tokens", 0),
+            "output": four.get("output_tokens", 0),
+            "cache_read": four.get("cache_read_input_tokens", 0),
+            "cache_creation": four.get("cache_creation_input_tokens", 0),
+            "input_tokens": four.get("input_tokens", 0),
+            "output_tokens": four.get("output_tokens", 0),
+            "cache_read_input_tokens": four.get("cache_read_input_tokens", 0),
+            "cache_creation_input_tokens": four.get("cache_creation_input_tokens", 0),
+            "billing_weighted_total": _billing_weighted_total(four),
+        }
+        phase_bucket["total"] = _billing_weighted_total(four)
+        if sub is not None:
+            phase_bucket["subagent_total_tokens"] = sub["total_tokens"]
+            phase_bucket["subagent_tool_uses"] = sub["tool_uses"]
+            phase_bucket["subagent_duration_ms"] = sub["duration_ms"]
+            phase_bucket["subagent_samples"] = sub["samples"]
+        per_phase[phase_name] = phase_bucket
+
+    counters = {
+        "message_count": message_count,
+        "subagent_phases_attributed": len(per_phase_subagent),
+        "subagent_calls_attributed": subagent_calls_attributed,
+        "subagent_transcripts_walked": subagent_transcripts_walked,
+        "four_field_phases_attributed": len(per_phase_four_fields),
+    }
+    return per_phase, counters
+
+
+# ---------------------------------------------------------------------------
 # Permission helpers (thin wrappers over existing scripts)
 # ---------------------------------------------------------------------------
 
@@ -1302,11 +1728,12 @@ class ClaudeRuntime(Runtime):
         # Step 4: Parse the hook event (hook mode only) and compose the title.
         #
         # statusLine mode receives no hook stdin payload, so it composes with
-        # event=None (the composer applies the active icon for non-terminal
-        # phases and the ✅ override for terminal ones). Hook mode reads the
-        # JSON payload Claude Code writes to stdin and passes the event +
-        # tool_name to the composer. The parse is best-effort: missing, empty,
-        # or malformed stdin yields event=None and never raises.
+        # process_state=None (the composer applies the active icon for
+        # non-terminal phases and the ✅ override for terminal ones). Hook mode
+        # reads the JSON payload Claude Code writes to stdin, then maps the event
+        # + tool_name to the composer's neutral process state. The parse is
+        # best-effort: missing, empty, or malformed stdin yields event=None and
+        # never raises.
         #
         # The parsed ``hook_event_name`` and ``source`` are also retained for
         # Step 5's conditional ``sessionTitle`` emit. Both default to None so a
@@ -1328,7 +1755,11 @@ class ClaudeRuntime(Runtime):
                 source = None
                 tool_name = None
 
-        composed = compose(state, hook_event_name, tool_name=tool_name)
+        # Map the Claude hook event → the composer's target-neutral process
+        # state, then compose. The composer no longer knows any Claude event
+        # vocabulary; this mapping is the Claude-target half.
+        process_state = _claude_event_to_process_state(hook_event_name, tool_name)
+        composed = compose(state, process_state)
         if not composed:
             return ""
 
@@ -1999,6 +2430,50 @@ class ClaudeRuntime(Runtime):
                 "session_id": session_id,
                 "tokens_captured": captured,
                 "cursor_updated": True,
+            },
+        )
+
+    def metrics_normalized_tokens(
+        self,
+        session_id: str,
+        windows: list[tuple[str, str, str]],
+        output_file: str,
+    ) -> str:
+        """Walk the Claude transcript and write per-phase normalized tokens to JSON.
+
+        Computes the per-phase ``{input, output, cache_read, cache_creation,
+        total, billing_weighted_total, subagent_*}`` view from the session
+        transcript, writes it to *output_file* as JSON, and returns a success TOON
+        carrying the attribution counters. Returns a ``transcript_not_found`` no-op
+        when no transcript can be located.
+        """
+        computed = _compute_normalized_tokens(session_id, windows)
+        if computed is None:
+            return toon_noop(
+                "metrics normalized-tokens",
+                "transcript_not_found",
+                "pass --total-tokens manually to metrics capture",
+            )
+
+        per_phase, counters = computed
+        try:
+            out_path = Path(output_file)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps(per_phase), encoding="utf-8")
+        except OSError as exc:
+            return toon_error(
+                "metrics normalized-tokens",
+                "io_error",
+                f"Failed to write normalized-token result to {output_file}: {exc}",
+            )
+
+        return toon_success(
+            "metrics normalized-tokens",
+            {
+                "session_id": session_id,
+                "output_file": output_file,
+                "phases_attributed": len(per_phase),
+                **counters,
             },
         )
 

@@ -172,6 +172,62 @@ def test_apply_rule_11_fix_already_present():
 
 
 # =============================================================================
+# Target-aware missing-frontmatter emission (Claude rule-pack)
+# =============================================================================
+# apply_missing_frontmatter emits agent frontmatter target-aware: on Claude an
+# agent pins `model: sonnet`; on OpenCode it declares `mode: subagent` plus a
+# provider-qualified `model: anthropic/...`. The active target is resolved via
+# _doctor_shared.resolve_runtime_target (re-exported into _cmd_apply).
+
+
+def _apply_missing_frontmatter(tmp_dir, agent_rel_path):
+    """Run apply on a frontmatter-less agent file and return its new content."""
+    agent_file = Path(tmp_dir) / agent_rel_path
+    agent_file.parent.mkdir(parents=True, exist_ok=True)
+    agent_file.write_text('# Test Agent\n\nNo frontmatter here.\n')
+    fix_json = json.dumps({'type': 'missing-frontmatter', 'file': agent_rel_path})
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        f.write(fix_json)
+        f.flush()
+        args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+        data = cmd_apply(args)
+        Path(f.name).unlink()
+    return data, agent_file.read_text()
+
+
+def test_missing_frontmatter_emits_claude_agent_shape(monkeypatch):
+    """On Claude, a missing-frontmatter agent fix emits `model: sonnet`."""
+    monkeypatch.setattr(_cmd_apply_mod, 'resolve_runtime_target', lambda: 'claude')
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        data, content = _apply_missing_frontmatter(tmp_dir, 'agents/new-agent.md')
+        assert data['success'] is True, f'Fix should succeed: {data}'
+        assert 'model: sonnet' in content, f'Claude agent should pin model: sonnet, got:\n{content}'
+        assert 'mode: subagent' not in content, 'Claude agent must not declare OpenCode mode: subagent'
+        assert 'anthropic/' not in content, 'Claude agent must not use a provider-qualified model id'
+
+
+def test_missing_frontmatter_emits_opencode_agent_shape(monkeypatch):
+    """On OpenCode, a missing-frontmatter agent fix emits mode: subagent + model: anthropic/..."""
+    monkeypatch.setattr(_cmd_apply_mod, 'resolve_runtime_target', lambda: 'opencode')
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        data, content = _apply_missing_frontmatter(tmp_dir, 'agents/new-agent.md')
+        assert data['success'] is True, f'Fix should succeed: {data}'
+        assert 'mode: subagent' in content, f'OpenCode agent should declare mode: subagent, got:\n{content}'
+        assert 'model: anthropic/' in content, 'OpenCode agent should use a provider-qualified model id'
+        assert 'model: sonnet' not in content, 'OpenCode agent must not use the bare Claude alias'
+
+
+def test_missing_frontmatter_skill_is_target_agnostic(monkeypatch):
+    """A non-agent (skill) file gets no model/mode line regardless of target."""
+    monkeypatch.setattr(_cmd_apply_mod, 'resolve_runtime_target', lambda: 'opencode')
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        data, content = _apply_missing_frontmatter(tmp_dir, 'skills/new-skill/SKILL.md')
+        assert data['success'] is True, f'Fix should succeed: {data}'
+        assert 'model:' not in content, 'Skill frontmatter carries no model pin'
+        assert 'mode: subagent' not in content, 'Skill frontmatter carries no subagent mode'
+
+
+# =============================================================================
 # Rule 11 Verify Tests (Tier 2 - direct import)
 # =============================================================================
 

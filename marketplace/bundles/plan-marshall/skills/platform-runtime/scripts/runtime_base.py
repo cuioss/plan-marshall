@@ -428,6 +428,52 @@ class Runtime(ABC):
             Serialized TOON string (success, error, or no-op).
         """
 
+    @abstractmethod
+    def metrics_normalized_tokens(
+        self,
+        session_id: str,
+        windows: list[tuple[str, str, str]],
+        output_file: str,
+    ) -> str:
+        """Compute per-phase normalized token categories from the session transcript.
+
+        This is the platform-owned transcript engine. The runtime walks the
+        platform's session transcript (and any subagent transcripts), normalizes
+        every usage record into the five canonical categories
+        ``{input, output, cache_read, cache_creation, total}`` per phase, attributes
+        each record to the phase window that contains its timestamp, and writes the
+        per-phase result to *output_file* as JSON. ``manage-metrics`` reads that file
+        and persists the numbers — it never parses a transcript itself.
+
+        The JSON written to *output_file* is an object mapping each phase name to a
+        normalized bucket:
+
+        ``{phase_name: {input, output, cache_read, cache_creation, total,
+        billing_weighted_total, subagent_total_tokens, subagent_tool_uses,
+        subagent_duration_ms, subagent_samples}}``
+
+        On Claude: reads ``~/.claude/projects/.../{session_id}.jsonl`` and the
+        ``{session_id}/subagents/agent-*.jsonl`` transcripts, parses ``message.usage``
+        four-field records and ``<usage>`` return tags, and writes the per-phase JSON.
+        Returns ``no-op`` with code ``transcript_not_found`` when no transcript exists.
+
+        On OpenCode: returns ``no-op`` with code ``transcript_not_found`` — OpenCode
+        exposes no session transcript.
+
+        Args:
+            session_id: Platform session identifier whose transcript is walked.
+            windows: Ordered ``[(phase_name, start_iso, end_iso), ...]`` phase
+                windows used to attribute each usage record to a phase.
+            output_file: Path the per-phase normalized JSON result is written to.
+
+        Returns:
+            Serialized TOON string (success, error, or no-op). The success payload
+            carries attribution counters (``message_count``,
+            ``subagent_calls_attributed``, ``subagent_transcripts_walked``,
+            ``four_field_phases_attributed``); the no-op carries
+            ``error: transcript_not_found``.
+        """
+
     # ------------------------------------------------------------------
     # Subagent dispatch
     # ------------------------------------------------------------------

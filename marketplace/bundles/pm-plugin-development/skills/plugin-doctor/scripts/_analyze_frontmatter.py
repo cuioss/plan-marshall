@@ -17,14 +17,15 @@ canonical extension-point notation documented in
 
 Scope
 -----
-Two trees, both scanned:
+Two tree families, both scanned:
 
 - ``marketplace/bundles/*/skills/recipe-*/SKILL.md``
-- ``.claude/skills/recipe-*/SKILL.md`` (the project-local recipe tree,
-  resolved relative to the marketplace bundles root)
+- ``recipe-*/SKILL.md`` under every project-local-skill root for the active
+  target (the Claude ``.claude/skills`` tree, or the OpenCode layout),
+  resolved through the platform-runtime layout op.
 
 A skill is in scope when its directory name matches ``recipe-*``. The
-``.claude/skills`` tree carries no allowlist — it is scanned in full.
+project-local-skill trees carry no allowlist — they are scanned in full.
 
 Pattern alignment
 -----------------
@@ -47,6 +48,8 @@ Public API
 from __future__ import annotations
 
 from pathlib import Path
+
+from _doctor_shared import resolve_project_skill_trees
 
 RULE_ID = 'recipe-missing-implements'
 RULE_NAME = 'analyze_frontmatter'
@@ -104,12 +107,13 @@ def _parse_frontmatter_keys(text: str) -> dict[str, str] | None:
 
 
 def _recipe_skill_dirs(marketplace_root: Path) -> list[Path]:
-    """Enumerate every ``recipe-*`` skill directory across both trees.
+    """Enumerate every ``recipe-*`` skill directory across both tree families.
 
     The marketplace tree is ``marketplace_root/{bundle}/skills/recipe-*``; the
-    project-local tree is ``{repo_root}/.claude/skills/recipe-*`` where the
-    repo root is the parent of the ``marketplace`` directory (``marketplace_root``
-    is ``marketplace/bundles``, so two parents up is the repo root).
+    project-local trees are ``recipe-*`` directories under every project-local-
+    skill root the active target's layout op reports (the Claude
+    ``.claude/skills`` tree or the OpenCode layout), resolved via
+    ``resolve_project_skill_trees``.
     """
     dirs: list[Path] = []
     try:
@@ -130,15 +134,15 @@ def _recipe_skill_dirs(marketplace_root: Path) -> list[Path]:
             if skill_dir.is_dir():
                 dirs.append(skill_dir)
 
-    # .claude/skills lives at the repo root: marketplace_root is
-    # <repo>/marketplace/bundles, so repo_root = marketplace_root.parent.parent.
-    claude_skills = marketplace_root.parent.parent / '.claude' / 'skills'
-    if claude_skills.is_dir():
+    # Project-local-skill trees are resolved through the platform-runtime layout
+    # op so both the Claude ``.claude/skills`` tree and the OpenCode layout are
+    # covered. The literal ``.claude/skills`` anchor is no longer hardcoded here.
+    for skill_root in resolve_project_skill_trees(marketplace_root):
         try:
-            claude_recipe_dirs = sorted(claude_skills.glob('recipe-*'))
+            project_recipe_dirs = sorted(skill_root.glob('recipe-*'))
         except OSError:
-            claude_recipe_dirs = []
-        for skill_dir in claude_recipe_dirs:
+            continue
+        for skill_dir in project_recipe_dirs:
             if skill_dir.is_dir():
                 dirs.append(skill_dir)
     return dirs

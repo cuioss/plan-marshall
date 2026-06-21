@@ -3,6 +3,7 @@
 
 import pytest
 from input_validation import (  # type: ignore[import-not-found]  # noqa: I001
+    add_session_id_arg,
     is_valid_component,
     is_valid_domain_name,
     is_valid_field_name,
@@ -352,6 +353,40 @@ class TestSessionIdLengthBound:
     def test_above_upper_bound(self):
         with pytest.raises(ValueError, match='Invalid session_id'):
             validate_session_id('A' * 129)
+
+
+class TestSessionIdIsOpaqueTargetAgnosticToken:
+    """The session_id validator accepts any opaque token the target runtime supplies.
+
+    The contract is target-agnostic — it is NOT a Claude-UUID-shape validator. The
+    docstring/help describe an opaque session token with no Claude reference.
+    """
+
+    def test_accepts_non_uuid_opaque_token(self):
+        """A short non-UUID opaque token is accepted (proves the regex is not UUID-shaped)."""
+        assert validate_session_id('opencode-session-7') == 'opencode-session-7'
+        assert validate_session_id('s1') == 's1'
+
+    def test_accepts_claude_uuid_token(self):
+        """A canonical Claude UUID is also accepted — the contract spans both targets."""
+        assert validate_session_id('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee') == (
+            'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+        )
+
+    def test_docstring_and_help_carry_no_claude_reference(self):
+        """The validator docstring and the --session-id help describe an opaque token."""
+        import argparse
+
+        assert 'Claude' not in (validate_session_id.__doc__ or '')
+        assert 'UUID' not in (validate_session_id.__doc__ or '')
+
+        parser = argparse.ArgumentParser()
+        add_session_id_arg(parser)
+        session_action = next(
+            a for a in parser._actions if '--session-id' in getattr(a, 'option_strings', [])
+        )
+        assert 'Claude' not in (session_action.help or '')
+        assert 'UUID' not in (session_action.help or '')
 
 
 class TestPhaseIdEnum:

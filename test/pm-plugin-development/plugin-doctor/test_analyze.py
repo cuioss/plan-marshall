@@ -1851,5 +1851,58 @@ def test_simplicity_classification_other_four_not_safe():
 
 
 # =============================================================================
+# Target-aware build-output exemption (Claude rule-pack: hardcoded-model-on-canonical)
+# =============================================================================
+# The build-output-directory exemption literal in
+# ``check_hardcoded_model_on_canonical`` is a Claude rule-pack concern: the
+# emitted-variant directory is named for the active target (``target/claude/``
+# vs ``target/opencode/``). ``_build_output_prefix`` resolves it target-aware
+# via ``resolve_runtime_target`` so the literal is no longer hardcoded.
+
+_AGENT_ROLE_FRONTMATTER = (
+    f'name: my-agent\n'
+    f'implements: {_analyze_markdown_mod.DYNAMIC_LEVEL_EXECUTOR_REF}\n'
+    f'model: sonnet\n'
+)
+
+
+def test_build_output_prefix_defaults_to_claude(monkeypatch):
+    """With the active target Claude, the build-output prefix is target/claude/."""
+    monkeypatch.setattr(_analyze_markdown_mod, 'resolve_runtime_target', lambda: 'claude')
+    assert _analyze_markdown_mod._build_output_prefix() == 'target/claude/'
+
+
+def test_build_output_prefix_target_aware_for_opencode(monkeypatch):
+    """With the active target OpenCode, the build-output prefix is target/opencode/."""
+    monkeypatch.setattr(_analyze_markdown_mod, 'resolve_runtime_target', lambda: 'opencode')
+    assert _analyze_markdown_mod._build_output_prefix() == 'target/opencode/'
+
+
+def test_build_output_prefix_unknown_target_falls_back_to_claude(monkeypatch):
+    """An unrecognised target falls back to the Claude build-output prefix."""
+    monkeypatch.setattr(_analyze_markdown_mod, 'resolve_runtime_target', lambda: 'mystery')
+    assert _analyze_markdown_mod._build_output_prefix() == 'target/claude/'
+
+
+def test_hardcoded_model_exempts_active_target_build_output(monkeypatch):
+    """A model-pinned role agent under the ACTIVE target's build-output dir is exempt."""
+    monkeypatch.setattr(_analyze_markdown_mod, 'resolve_runtime_target', lambda: 'opencode')
+    findings = _analyze_markdown_mod.check_hardcoded_model_on_canonical(
+        _AGENT_ROLE_FRONTMATTER, 'target/opencode/my-bundle/agents/my-agent-level-3.md'
+    )
+    assert findings == [], 'build-output variants under the active target dir are exempt'
+
+
+def test_hardcoded_model_fires_on_source_of_truth(monkeypatch):
+    """The same role agent at the source-of-truth path is NOT exempt (rule fires)."""
+    monkeypatch.setattr(_analyze_markdown_mod, 'resolve_runtime_target', lambda: 'opencode')
+    findings = _analyze_markdown_mod.check_hardcoded_model_on_canonical(
+        _AGENT_ROLE_FRONTMATTER, 'marketplace/bundles/my-bundle/agents/my-agent.md'
+    )
+    assert len(findings) == 1
+    assert findings[0]['branch'] == 'shadowing_with_implements'
+
+
+# =============================================================================
 # Main
 # =============================================================================

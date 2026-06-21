@@ -74,6 +74,57 @@ class TestMappingJsonSchema:
             assert tool in data['tool_permissions'], f'unmapped tool: {tool}'
 
 
+class TestBodyIdiomRewritesSchema:
+    """The `body_idiom_rewrites` registry is the data-driven Transform-3 source."""
+
+    _KNOWN_DISPOSITIONS = {'rewrite_inline_code', 'preserve', 'source_fix'}
+
+    def test_registry_present(self, opencode_config_dir: Path):
+        data = load_mapping(opencode_config_dir)
+        assert 'body_idiom_rewrites' in data
+        assert isinstance(data['body_idiom_rewrites'], dict)
+
+    def test_three_registered_idioms_present(self, opencode_config_dir: Path):
+        data = load_mapping(opencode_config_dir)
+        registry = data['body_idiom_rewrites']
+        for idiom in ('AskUserQuestion', 'Task:', 'Skill: <entry>'):
+            assert idiom in registry, f'unmapped registered idiom: {idiom}'
+
+    def test_every_disposition_is_known(self, opencode_config_dir: Path):
+        """Fail-closed schema: every registered disposition is one of the known set."""
+        data = load_mapping(opencode_config_dir)
+        for idiom, record in data['body_idiom_rewrites'].items():
+            assert isinstance(record, dict), f'{idiom} record must be a dict'
+            disposition = record.get('disposition')
+            assert disposition in self._KNOWN_DISPOSITIONS, (
+                f'{idiom} carries unknown disposition {disposition!r}'
+            )
+
+    def test_askuserquestion_rewrites_to_question_tool(self, opencode_config_dir: Path):
+        data = load_mapping(opencode_config_dir)
+        entry = data['body_idiom_rewrites']['AskUserQuestion']
+        assert entry['disposition'] == 'rewrite_inline_code'
+        assert entry['opencode_tool'] == 'question'
+
+    def test_task_is_preserve_leaf_aware(self, opencode_config_dir: Path):
+        data = load_mapping(opencode_config_dir)
+        assert data['body_idiom_rewrites']['Task:']['disposition'] == 'preserve'
+
+    def test_skill_entry_is_source_fix(self, opencode_config_dir: Path):
+        data = load_mapping(opencode_config_dir)
+        assert data['body_idiom_rewrites']['Skill: <entry>']['disposition'] == 'source_fix'
+
+    def test_rewrite_inline_code_entries_carry_opencode_tool(self, opencode_config_dir: Path):
+        """Every rewrite_inline_code disposition must name a non-empty opencode_tool."""
+        data = load_mapping(opencode_config_dir)
+        for idiom, record in data['body_idiom_rewrites'].items():
+            if record.get('disposition') == 'rewrite_inline_code':
+                tool = record.get('opencode_tool')
+                assert isinstance(tool, str) and tool, (
+                    f'{idiom} rewrite_inline_code missing opencode_tool'
+                )
+
+
 # ---------------------------------------------------------------------------
 # frontmatter-rules.json
 # ---------------------------------------------------------------------------

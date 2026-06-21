@@ -23,11 +23,11 @@ from _dep_detection import (  # type: ignore[import-not-found]
     extract_frontmatter,
 )
 from marketplace_bundles import resolve_bundles_root
+from marketplace_paths import get_bundle_cache_roots  # type: ignore[import-not-found]
 
 # Constants for path discovery
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
 CLAUDE_DIR = '.claude'
-PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
 
 
 @dataclass
@@ -329,6 +329,22 @@ def build_dependency_index(
     return index
 
 
+def _first_existing_bundle_cache_root() -> Path | None:
+    """Return the first deployed-bundle cache root that exists on disk, else None.
+
+    Routes through the platform-runtime ``layout bundle-cache-root`` op (via
+    ``marketplace_paths.get_bundle_cache_roots``), so deployed-bundle discovery
+    covers both the Claude ``~/.claude/plugins/cache/plan-marshall`` cache root
+    and the OpenCode user-global skill roots. The literal Claude cache subpath
+    is no longer hardcoded here.
+    """
+    for root in get_bundle_cache_roots():
+        candidate = Path(root).expanduser()
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 def get_base_path(scope: str) -> Path:
     """Determine base path based on scope.
 
@@ -350,9 +366,9 @@ def get_base_path(scope: str) -> Path:
             return Path.cwd() / MARKETPLACE_BUNDLES_PATH
         if marketplace_from_script.is_dir():
             return marketplace_from_script
-        # Fall back to plugin cache
-        cache = Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
-        if cache.is_dir():
+        # Fall back to the deployed-bundle cache (target-aware roots).
+        cache = _first_existing_bundle_cache_root()
+        if cache is not None:
             return cache
         raise FileNotFoundError(f'Neither {MARKETPLACE_BUNDLES_PATH} nor plugin cache found.')
 
@@ -364,10 +380,12 @@ def get_base_path(scope: str) -> Path:
         raise FileNotFoundError(f'{MARKETPLACE_BUNDLES_PATH} directory not found')
 
     if scope == 'plugin-cache':
-        cache = Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
-        if cache.is_dir():
+        cache = _first_existing_bundle_cache_root()
+        if cache is not None:
             return cache
-        raise FileNotFoundError(f'Plugin cache not found: {cache}')
+        raise FileNotFoundError(
+            f'Plugin cache not found in any of: {", ".join(get_bundle_cache_roots())}'
+        )
 
     if scope == 'project':
         project_claude = Path.cwd() / CLAUDE_DIR
