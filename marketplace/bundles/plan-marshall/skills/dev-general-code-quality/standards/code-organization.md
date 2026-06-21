@@ -247,6 +247,36 @@ The test has two parts, not one: *(1) can the boundary actually produce this fai
 
 **Action:** Delete the surplus structure and verify nothing breaks. For each anti-pattern above, the resolution is removal or inlining — never "keep it but document the intent". When the surplus is a public/protected element or could plausibly serve an imminent requirement, ask the user before removing (mirrors the [Unused Code](#unused-code) "Do NOT remove when" exceptions). This section is the constructive counterpart to [Over-Abstraction](#over-abstraction): Over-Abstraction targets indirection layers after they exist; Minimum Viable Code prevents the surplus from being written in the first place. The two reinforce each other — apply Minimum Viable Code at authoring time, Over-Abstraction at refactoring time.
 
+### Do Not Guard Contract-Typed Values
+
+**Trigger**: A new conditional accesses a parameter (or other value) that is *already annotated with a concrete contract type*, wrapped in a redundant runtime type guard.
+
+When a parameter is annotated with a concrete type — `metadata: dict[str, Any]`, `names: list[str]`, `count: int` — that annotation IS the contract. Adding `isinstance(metadata, dict)` before using it is defensive theatre: in correct code the guard can never be false, so it adds a dead branch and, worse, misleads the next reader into believing the value is polymorphic when the signature says it is not.
+
+```
+// BAD -- redundant guard on a value the signature already pins
+function merge(metadata: dict[str, Any]) -> dict {
+    if (isinstance(metadata, dict)) {   // can never be false in correct code
+        return metadata
+    }
+    return {}
+}
+
+// GOOD -- trust the contract; the annotation is the guarantee
+function merge(metadata: dict[str, Any]) -> dict {
+    return metadata
+}
+```
+
+**Reserve runtime type checks for the two cases where the static type genuinely does not pin the value:**
+
+* **Genuine polymorphism** — the parameter is `Any`, a union (`dict | list`), or `Optional[...]`, so the runtime type really is unknown and the branch is load-bearing. If you find yourself needing the guard, widen the annotation to the real union so the signature reflects the contract the guard enforces.
+* **Untrusted-input ingestion boundary** — the value crossed a trust boundary (parsed from an external file, a network payload, user config) where the declared type is an *assumption* the data may violate. There the `isinstance` check is required, not redundant (see the required-vs-speculative carve-out under [Minimum Viable Code](#minimum-viable-code)).
+
+This is the inverse of the fail-closed gate-read rule in `error-handling.md` (§ "Fail-Closed Read-Only Gate Verbs"): that rule adds a *missing* guard at a real I/O boundary, while this rule removes a *superfluous* guard on a value the type signature already guarantees. The discriminator is identical — *can this value actually be the wrong type here?* If yes (polymorphism / ingestion boundary), keep the guard; if the annotation already pins it, strip the guard.
+
+**Action:** Remove the redundant guard. If the value is genuinely polymorphic, widen the annotation instead of keeping the guard against a too-narrow type.
+
 ## Unused Code
 
 **Trigger**: Code that is never executed or called.

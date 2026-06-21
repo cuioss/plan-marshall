@@ -110,6 +110,7 @@ _asimp = _load('_analyze_simplicity.py', '_asimp_fixtures')
 _acra = _load('_analyze_cmd_root_anchoring.py', '_acra_fixtures')
 _aepp = _load('_analyze_executor_path_in_production.py', '_aepp_fixtures')
 _apps = _load('_analyze_plan_path_in_scripts.py', '_apps_fixtures')
+_afcgr = _load('_analyze_fail_closed_gate_reads.py', '_afcgr_fixtures')
 _amfv = _load('_analyze_metadata_field_validity.py', '_amfv_fixtures')
 _arbm = _load('_analyze_resolution_branch_markers.py', '_arbm_fixtures')
 _asat = _load('_analyze_shell_active_tokens.py', '_asat_fixtures')
@@ -593,6 +594,31 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
         files={
             'bundles/b/skills/s/scripts/y.py': (
                 "PLAN_DIR = '.plan/plans/' + 'x'\n"
+            ),
+        },
+    )
+    corpus['fail-closed-gate-read'] = FixtureSpec(
+        analyzer=_afcgr.analyze_fail_closed_gate_reads,
+        files={
+            'bundles/b/skills/s/scripts/gate.py': (
+                'from pathlib import Path\n'
+                '\n'
+                'def cmd_check(args):\n'
+                '    p = Path(args.path)\n'
+                '    if p.exists():\n'
+                '        content = p.read_text(encoding="utf-8")\n'
+                '    return content\n'
+            ),
+        },
+    )
+    corpus['redundant-contract-typed-isinstance'] = FixtureSpec(
+        analyzer=_afcgr.analyze_fail_closed_gate_reads,
+        files={
+            'bundles/b/skills/s/scripts/guard.py': (
+                'def merge(metadata: dict) -> dict:\n'
+                '    if isinstance(metadata, dict):\n'
+                '        return metadata\n'
+                '    return {}\n'
             ),
         },
     )

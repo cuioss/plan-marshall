@@ -20,6 +20,7 @@ from _analyze_cmd_root_anchoring import analyze_cmd_root_anchoring
 from _analyze_coverage import analyze_tool_coverage, cmd_coverage
 from _analyze_crossfile import DEFAULT_SIMILARITY_THRESHOLD, cmd_cross_file
 from _analyze_executor_path_in_production import analyze_executor_path_in_production
+from _analyze_fail_closed_gate_reads import analyze_fail_closed_gate_reads
 from _analyze_historical_prose_in_skills import analyze_historical_prose_in_skills
 from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
 from _analyze_manage_findings_invocation import analyze_manage_findings_invocation
@@ -53,6 +54,7 @@ __all__ = [
     'analyze_cmd_root_anchoring',
     'analyze_defensive_catchall',
     'analyze_executor_path_in_production',
+    'analyze_fail_closed_gate_reads',
     'analyze_historical_prose_in_skills',
     'analyze_lesson_id_in_skill_prose',
     'analyze_manage_findings_invocation',

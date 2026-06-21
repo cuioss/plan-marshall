@@ -596,6 +596,127 @@ class TestDecisionLogSurfacing:
 
 
 # =============================================================================
+# Gate-verb fail-closed on I/O-boundary read failures
+# =============================================================================
+
+
+class TestGateVerbReadFailClosed:
+    """The manifest-consistency gate verb's three live filesystem reads must
+    fail closed on an OSError — a path that passes ``.exists()`` but raises on
+    ``read_text()`` (permission denied, the path resolves to a directory, a
+    mid-read deletion race) degrades to the documented fail-closed sentinel for
+    each loader, never an uncaught exception that crashes the verdict path:
+
+    - ``load_manifest`` → ``None`` (same skip sentinel as a missing manifest).
+    - ``load_decision_log_entries`` → ``[]`` (same empty-matches value as an
+      absent log).
+    - ``load_diff_files`` (``--diff-file`` arm) → a ``ValueError`` carrying the
+      OSError context, surfaced as a structured ``status: error`` TOON (an
+      explicitly supplied diff that cannot be read is a caller error, not a
+      silently-empty diff).
+
+    OSError is injected portably by replacing the target file with a directory
+    of the same name: ``Path.exists()`` returns ``True`` for a directory while
+    ``Path.read_text()`` raises ``IsADirectoryError`` (an ``OSError`` subclass).
+    """
+
+    def test_unreadable_manifest_degrades_to_skip_sentinel(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
+        # Replace the manifest file with a directory so read_text() raises an
+        # OSError while .exists() still passes.
+        manifest_path = plan_dir / 'execution.toon'
+        manifest_path.unlink()
+        manifest_path.mkdir()
+        diff = _write_diff(tmp_path, ['src/foo/bar.py'])
+
+        result = run_script(
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
+        )
+        # Fail closed: the unreadable manifest degrades to the same skip
+        # sentinel as a missing manifest — clean exit, skipped fragment, no
+        # uncaught exception.
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'skipped'
+        assert data['manifest_present'] is False
+        assert data['checks'] == []
+        assert data['findings'] == []
+        assert data.get('error') != 'internal_error'
+
+    def test_unreadable_decision_log_degrades_to_empty_entries(self, tmp_path, monkeypatch):
+        # A composer decision line WOULD normally surface, so an empty
+        # decision_log_entries proves the OSError fail-closed path took over
+        # rather than the read silently succeeding.
+        decision_lines = [
+            '[2026-04-17T10:00:00Z] [INFO] [aaaa] '
+            '(plan-marshall:manage-execution-manifest:compose) Rule default fired',
+        ]
+        plan_id, plan_dir = _setup_plan_with_manifest(
+            tmp_path,
+            monkeypatch,
+            manifest_body=_manifest_default(),
+            decision_lines=decision_lines,
+        )
+        # Replace the decision log file with a directory so read_text() raises.
+        log_path = plan_dir / 'logs' / 'decision.log'
+        log_path.unlink()
+        log_path.mkdir()
+        diff = _write_diff(tmp_path, ['src/foo/bar.py'])
+
+        result = run_script(
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
+        )
+        # Fail closed: the unreadable decision log degrades to the empty-matches
+        # sentinel rather than crashing the verdict path.
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert data['decision_log_entries'] == []
+        assert data.get('error') != 'internal_error'
+
+    def test_unreadable_diff_file_raises_structured_error(self, tmp_path, monkeypatch):
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_default())
+        # Create a DIRECTORY at the --diff-file path: .exists() passes but
+        # read_text() raises an OSError, which the loader converts to a
+        # ValueError surfaced as a structured error TOON.
+        diff_path = tmp_path / 'diff.txt'
+        diff_path.mkdir()
+
+        result = run_script(
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff_path),
+        )
+        # An explicitly supplied diff that cannot be read is a caller error:
+        # the gate fails closed with a structured status: error TOON (via
+        # safe_main rendering the ValueError), never a silently-empty diff and
+        # never a raw traceback.
+        assert not result.success
+        data = result.toon()
+        assert data['status'] == 'error'
+        assert 'could not be read' in data['message'].lower()
+
+
+# =============================================================================
 # Forward in check-artifact-consistency
 # =============================================================================
 

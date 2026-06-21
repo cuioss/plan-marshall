@@ -42,6 +42,7 @@ from _analyze_bash_fence_inline_code_exemption import (
     analyze_bash_fence_inline_code_exemption,
 )
 from _analyze_declared_vs_disk import analyze_declared_vs_disk
+from _analyze_fail_closed_gate_reads import analyze_fail_closed_gate_reads
 from _analyze_finalize_step_token import scan_finalize_step_token
 from _analyze_frontmatter import analyze_frontmatter
 from _analyze_historical_prose_in_skills import analyze_historical_prose_in_skills
@@ -1145,6 +1146,21 @@ def cmd_quality_gate(args) -> dict:
     skill_mode_findings = _scoped(analyze_skill_mode(marketplace_root))
     all_issues.extend(skill_mode_findings)
     rule_summaries.append({'rule': 'analyze_skill_mode', 'findings': len(skill_mode_findings)})
+
+    # fail-closed-gate-read + redundant-contract-typed-isinstance — the whole-tree
+    # Python-script pass that runs alongside analyze_plan_path_in_scripts /
+    # analyze_executor_path_in_production. Form A flags an unguarded file read
+    # inside a read-only gate/boundary verb (must be enclosed in a try that
+    # catches OSError so the verdict fails closed); Form B flags a redundant
+    # isinstance guard on a parameter already annotated with that concrete
+    # contract type. Findings carry absolute file paths, so _scoped's path filter
+    # applies uniformly under --paths. The tree is fail-closed almost everywhere
+    # already, so the post-fix tree produces zero residual findings.
+    fail_closed_gate_read_findings = _scoped(analyze_fail_closed_gate_reads(marketplace_root))
+    all_issues.extend(fail_closed_gate_read_findings)
+    rule_summaries.append(
+        {'rule': 'analyze_fail_closed_gate_reads', 'findings': len(fail_closed_gate_read_findings)}
+    )
 
     # manage-invocation rule cluster — validates documented script invocations
     # against each script-bearing skill's live argparse surface derived from
