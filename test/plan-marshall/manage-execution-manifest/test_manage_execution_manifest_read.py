@@ -6,6 +6,7 @@ the read path plus the CLI roundtrip for the missing-manifest error case.
 """
 
 import importlib.util
+import json
 from argparse import Namespace
 from pathlib import Path
 
@@ -38,6 +39,7 @@ def _load_module(name: str, filename: str):
 _mem = _load_module('_mem_script', 'manage-execution-manifest.py')
 cmd_compose = _mem.cmd_compose
 cmd_read = _mem.cmd_read
+_read_marshal_phase_step_map = _mem._read_marshal_phase_step_map
 DEFAULT_PHASE_5_STEPS = _mem.DEFAULT_PHASE_5_STEPS
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 
@@ -134,6 +136,140 @@ def test_read_snapshots_step_params_for_each_selected_step(plan_context):
     # seeds empty param objects since no marshal.json keyed map is present)
     assert set(step_params.keys()) == set(verification_steps)
     assert all(params == {} for params in step_params.values())
+
+
+# =============================================================================
+# Dual-form READER tests: _read_marshal_phase_step_map normalizes LIST and
+# keyed-map on-disk forms to the SAME internal {step_id: {params}} dict.
+# =============================================================================
+#
+# The reader reads marshal.json from get_marshal_path(), which honours
+# PLAN_BASE_DIR (set to tmp_path by the plan_context fixture). Each test writes
+# a marshal.json carrying the phase's step field in one of the two on-disk
+# serial forms and asserts the normalized internal dict.
+
+
+def _write_marshal_phase(fixture_dir: Path, phase_key: str, step_value) -> None:
+    """Write a minimal marshal.json with ``plan.{phase_key}.{field} = step_value``.
+
+    ``field`` is ``verification_steps`` for ``phase-5-execute`` and ``steps``
+    otherwise — matching the reader's phase-aware field selection. The marshal
+    lands at ``{fixture_dir}/marshal.json``, which is where ``get_marshal_path()``
+    resolves under the ``plan_context`` ``PLAN_BASE_DIR=tmp_path`` redirect.
+    """
+    field = 'verification_steps' if phase_key == 'phase-5-execute' else 'steps'
+    data = {'plan': {phase_key: {field: step_value}}}
+    (fixture_dir / 'marshal.json').write_text(json.dumps(data, indent=2))
+
+
+def test_read_step_map_list_form_round_trips_unchanged(plan_context):
+    """A LIST input (bare strings + single-key objects) normalizes to the internal dict."""
+    _write_marshal_phase(
+        plan_context.fixture_dir,
+        'phase-6-finalize',
+        [
+            'default:commit-push',
+            {'default:automated-review': {'review_bot_buffer_seconds': 300}},
+            'default:archive-plan',
+        ],
+    )
+
+    result = _read_marshal_phase_step_map('phase-6-finalize')
+
+    assert result == {
+        'default:commit-push': {},
+        'default:automated-review': {'review_bot_buffer_seconds': 300},
+        'default:archive-plan': {},
+    }
+
+
+def test_read_step_map_keyed_and_list_forms_normalize_identically_finalize(plan_context):
+    """keyed-map and LIST inputs produce IDENTICAL internal dicts for phase-6 steps."""
+    list_form = [
+        'default:commit-push',
+        {'default:automated-review': {'review_bot_buffer_seconds': 300}},
+        'default:archive-plan',
+    ]
+    keyed_form = {
+        'default:commit-push': {},
+        'default:automated-review': {'review_bot_buffer_seconds': 300},
+        'default:archive-plan': {},
+    }
+
+    _write_marshal_phase(plan_context.fixture_dir, 'phase-6-finalize', list_form)
+    from_list = _read_marshal_phase_step_map('phase-6-finalize')
+
+    _write_marshal_phase(plan_context.fixture_dir, 'phase-6-finalize', keyed_form)
+    from_keyed = _read_marshal_phase_step_map('phase-6-finalize')
+
+    assert from_list == from_keyed
+    assert from_list == keyed_form
+
+
+def test_read_step_map_keyed_and_list_forms_normalize_identically_execute(plan_context):
+    """keyed-map and LIST inputs produce IDENTICAL internal dicts for phase-5 verification_steps."""
+    list_form = ['default:verify:quality-gate', 'default:verify:module-tests']
+    keyed_form = {
+        'default:verify:quality-gate': {},
+        'default:verify:module-tests': {},
+    }
+
+    _write_marshal_phase(plan_context.fixture_dir, 'phase-5-execute', list_form)
+    from_list = _read_marshal_phase_step_map('phase-5-execute')
+
+    _write_marshal_phase(plan_context.fixture_dir, 'phase-5-execute', keyed_form)
+    from_keyed = _read_marshal_phase_step_map('phase-5-execute')
+
+    assert from_list == from_keyed
+    assert from_list == keyed_form
+
+
+def test_read_step_map_list_form_preserves_execution_order(plan_context):
+    """LIST array order is the execution order — the internal dict preserves it."""
+    _write_marshal_phase(
+        plan_context.fixture_dir,
+        'phase-6-finalize',
+        ['default:archive-plan', 'default:commit-push', 'default:create-pr'],
+    )
+
+    result = _read_marshal_phase_step_map('phase-6-finalize')
+
+    assert list(result.keys()) == [
+        'default:archive-plan',
+        'default:commit-push',
+        'default:create-pr',
+    ]
+
+
+def test_read_step_map_empty_list_normalizes_to_empty_dict(plan_context):
+    """An empty LIST normalizes to an empty internal dict (edge case)."""
+    _write_marshal_phase(plan_context.fixture_dir, 'phase-6-finalize', [])
+
+    result = _read_marshal_phase_step_map('phase-6-finalize')
+
+    assert result == {}
+
+
+def test_read_step_map_single_entry_list_forms(plan_context):
+    """Single-entry LIST forms — one bare string and one single-key object (edge case)."""
+    _write_marshal_phase(plan_context.fixture_dir, 'phase-6-finalize', ['default:commit-push'])
+    bare = _read_marshal_phase_step_map('phase-6-finalize')
+    assert bare == {'default:commit-push': {}}
+
+    _write_marshal_phase(
+        plan_context.fixture_dir,
+        'phase-6-finalize',
+        [{'default:automated-review': {'review_bot_buffer_seconds': 300}}],
+    )
+    keyed = _read_marshal_phase_step_map('phase-6-finalize')
+    assert keyed == {'default:automated-review': {'review_bot_buffer_seconds': 300}}
+
+
+def test_read_step_map_neither_list_nor_dict_returns_none(plan_context):
+    """A scalar step value (neither list nor dict) returns None — malformed input."""
+    _write_marshal_phase(plan_context.fixture_dir, 'phase-6-finalize', 'not-a-collection')
+
+    assert _read_marshal_phase_step_map('phase-6-finalize') is None
 
 
 # =============================================================================

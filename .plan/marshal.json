@@ -37,11 +37,11 @@
         "default:verify:compile",
         "default:verify:module-tests"
       ],
-      "verification_steps": {
-        "default:verify:quality-gate": {},
-        "default:verify:module-tests": {},
-        "default:verify:coverage": {}
-      },
+      "verification_steps": [
+        "default:verify:quality-gate",
+        "default:verify:module-tests",
+        "default:verify:coverage"
+      ],
       "effort": {
         "default": "level-4",
         "verification-feedback": "level-3"
@@ -60,40 +60,50 @@
       "loop_back_without_asking": false,
       "qgate": "auto",
       "checks_wait_timeout_seconds": 600,
-      "steps": {
-        "default:pre-push-quality-gate": null,
-        "project:finalize-step-plugin-doctor": null,
-        "project:finalize-step-pre-submission-self-review": null,
-        "default:commit-push": null,
-        "default:finalize-step-simplify": null,
-        "default:create-pr": null,
-        "default:ci-verify": null,
-        "default:automated-review": {
-          "review_bot_buffer_seconds": 180
+      "steps": [
+        "default:pre-push-quality-gate",
+        "project:finalize-step-plugin-doctor",
+        {
+          "project:finalize-step-pre-submission-self-review": {
+            "self_review": "auto",
+            "drop_review_on_scope_gate": false
+          }
         },
-        "project:finalize-step-review-retrospective": {},
-        "default:lessons-capture": {},
-        "default:branch-cleanup": {
-          "pr_merge_strategy": "squash",
-          "final_merge_without_asking": true,
-          "auto_rebase_threshold": "no_overlap_only"
+        "default:commit-push",
+        {
+          "default:finalize-step-simplify": {
+            "simplify": "auto"
+          }
         },
-        "project:finalize-step-deploy-target": null,
-        "project:finalize-step-sync-plugin-cache": null,
-        "plan-marshall:plan-retrospective": null,
-        "project:finalize-step-lessons-housekeeping": null,
-        "default:record-metrics": null,
-        "default:finalize-step-print-phase-breakdown": null,
-        "default:archive-plan": null
-      },
+        "default:create-pr",
+        "default:ci-verify",
+        {
+          "default:automated-review": {
+            "review_bot_buffer_seconds": 180
+          }
+        },
+        "project:finalize-step-review-retrospective",
+        "default:lessons-capture",
+        {
+          "default:branch-cleanup": {
+            "pr_merge_strategy": "squash",
+            "final_merge_without_asking": true,
+            "auto_rebase_threshold": "no_overlap_only"
+          }
+        },
+        "project:finalize-step-deploy-target",
+        "project:finalize-step-sync-plugin-cache",
+        "plan-marshall:plan-retrospective",
+        "project:finalize-step-lessons-housekeeping",
+        "default:record-metrics",
+        "default:finalize-step-print-phase-breakdown",
+        "default:archive-plan"
+      ],
       "effort": {
         "default": "level-3",
         "verification-feedback": "level-3",
         "post-run-review": "level-4"
-      },
-      "self_review": "auto",
-      "simplify": "auto",
-      "drop_review_on_scope_gate": false
+      }
     }
   },
   "build": {

@@ -6,6 +6,7 @@ the validate path plus the CLI happy-path roundtrip.
 """
 
 import importlib.util
+import json
 from argparse import Namespace
 from pathlib import Path
 
@@ -38,7 +39,9 @@ def _load_module(name: str, filename: str):
 _mem = _load_module('_mem_script', 'manage-execution-manifest.py')
 cmd_compose = _mem.cmd_compose
 cmd_validate = _mem.cmd_validate
+cmd_step_params_get = _mem.cmd_step_params_get
 get_manifest_path = _mem.get_manifest_path
+read_manifest = _mem.read_manifest
 DEFAULT_PHASE_5_STEPS = _mem.DEFAULT_PHASE_5_STEPS
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 
@@ -209,6 +212,120 @@ def test_validate_detects_plan_id_mismatch(plan_context):
     assert result is not None and result['status'] == 'error'
     assert result['error'] == 'invalid_manifest'
     assert 'plan_id mismatch' in result['message']
+
+
+# =============================================================================
+# LIST-form marshal.json -> DICT manifest step_params snapshot bridge
+# =============================================================================
+#
+# marshal.json persists `verification_steps` / `steps` in the canonical LIST
+# serial form (bare strings + single-key objects). The composer reads that LIST
+# through the dual-form reader (`_read_marshal_phase_step_map`) and snapshots the
+# per-step params into the manifest as an id-keyed DICT (`body[phase].step_params`).
+# The manifest snapshot deliberately STAYS a DICT — it is the plan-local override
+# surface that `step-params get/set` resolve against, NOT a list. These tests lock
+# that bridge: a LIST-form marshal.json composes to a DICT manifest snapshot, the
+# params survive the LIST -> DICT crossing, validate succeeds against it, and
+# `step-params get` resolves the DICT snapshot.
+
+
+def _seed_list_form_marshal(fixture_dir: Path) -> None:
+    """Write a marshal.json whose phase-6-finalize steps are the canonical LIST form.
+
+    Ownerless steps are bare strings; the param-bearing step is a single-key
+    object — the on-disk serial form every config write verb now persists.
+    """
+    marshal_path = fixture_dir / 'marshal.json'
+    data = {
+        'plan': {
+            'phase-6-finalize': {
+                'steps': [
+                    'default:commit-push',
+                    'default:create-pr',
+                    {'default:automated-review': {'review_bot_buffer_seconds': 240}},
+                    'default:sonar-roundtrip',
+                    'default:lessons-capture',
+                    {
+                        'default:branch-cleanup': {
+                            'pr_merge_strategy': 'squash',
+                            'final_merge_without_asking': False,
+                        }
+                    },
+                    'default:record-metrics',
+                    'default:archive-plan',
+                ]
+            }
+        }
+    }
+    marshal_path.write_text(json.dumps(data), encoding='utf-8')
+
+
+def test_compose_from_list_form_marshal_snapshots_dict_step_params(plan_context):
+    """A LIST-form marshal.json composes to a DICT (id-keyed) manifest step_params snapshot.
+
+    The composer reads the LIST-form steps via the dual-form reader and writes
+    the per-step params into the manifest as an id-keyed DICT — NOT a list. This
+    locks the "manifest snapshot stays a DICT" contract across the LIST-form
+    marshal migration.
+    """
+    _seed_list_form_marshal(plan_context.fixture_dir)
+    cmd_compose(_compose_ns(plan_id='val-list-snapshot'))
+
+    manifest = read_manifest('val-list-snapshot')
+    assert manifest is not None
+    snapshot = manifest['phase_6']['step_params']
+    # The manifest snapshot is an id-keyed DICT (not the LIST serial form).
+    assert isinstance(snapshot, dict)
+    # The param-bearing step's params crossed the LIST -> DICT bridge intact
+    # (snapshot is keyed by the bare step id — the default: prefix is stripped).
+    assert snapshot['branch-cleanup'] == {
+        'pr_merge_strategy': 'squash',
+        'final_merge_without_asking': False,
+    }
+    # An ownerless step reads back as the empty dict (no params).
+    assert snapshot['commit-push'] == {}
+
+
+def test_validate_succeeds_against_list_form_sourced_manifest(plan_context):
+    """validate succeeds against a manifest composed from LIST-form marshal.json.
+
+    validate operates on the bare-name step lists and the DICT step_params
+    snapshot; sourcing the manifest from the LIST-form marshal.json must not trip
+    validation.
+    """
+    _seed_list_form_marshal(plan_context.fixture_dir)
+    cmd_compose(_compose_ns(plan_id='val-list-validate'))
+
+    result = cmd_validate(
+        _validate_ns(
+            plan_id='val-list-validate',
+            phase_5_steps=None,
+            phase_6_steps=None,
+        )
+    )
+    assert result is not None and result['status'] == 'success'
+    assert result['valid'] is True
+
+
+def test_step_params_get_resolves_dict_snapshot_from_list_form_marshal(plan_context):
+    """step-params get resolves against the DICT manifest snapshot sourced from LIST-form marshal.
+
+    The snapshot is the id-keyed DICT the composer wrote from the LIST-form
+    marshal.json; `step-params get` returns the full param object for a step in a
+    single call, resolving the bare-keyed DICT entry.
+    """
+    _seed_list_form_marshal(plan_context.fixture_dir)
+    cmd_compose(_compose_ns(plan_id='val-list-sp-get'))
+
+    result = cmd_step_params_get(
+        Namespace(plan_id='val-list-sp-get', phase='6-finalize', step_id='branch-cleanup')
+    )
+
+    assert result is not None and result['status'] == 'success'
+    assert result['params'] == {
+        'pr_merge_strategy': 'squash',
+        'final_merge_without_asking': False,
+    }
 
 
 # =============================================================================

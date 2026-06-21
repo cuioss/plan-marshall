@@ -13,6 +13,7 @@ from _config_core import (
     MarshalNotInitializedError,
     _coerce_value,
     error_exit,
+    keyed_map_to_list_form,
     load_config,
     require_initialized,
     save_config,
@@ -159,31 +160,49 @@ def _resolve_step_orders(
 
 
 def _steps_map(raw) -> dict:
-    """Return the keyed-map step structure as a fresh ordered dict.
+    """Return the step structure as a fresh ordered id-keyed dict.
 
-    The on-disk schema for ``verification_steps`` / ``steps`` is an id-keyed map
-    (``{step_id: {param: value, ...}, ...}``); key insertion order is the
-    execution order. This normaliser returns a shallow copy so callers can mutate
-    it without touching the loaded config. A non-dict top-level value (the key
-    absent / ``None`` / a malformed scalar or list from a hand-edited
-    marshal.json) yields an empty dict.
+    Two on-disk serial forms for ``verification_steps`` / ``steps`` are accepted
+    (dual-form reader, the transition affordance for consumer repos still
+    carrying the legacy keyed-map):
 
-    Per-step values are coerced: an ownerless step now seeds as ``None``
-    (serialized as ``null``), but a legacy ``{}`` and a TOON round-tripped ``''``
-    are also possible on-disk shapes. Every per-step value that is not a
-    non-empty dict (i.e. ``None`` / ``{}`` / ``''`` / any non-dict) is coerced to
-    an empty dict, so ``_cmd_step get`` returns ``{}`` for an ownerless step
-    regardless of its on-disk representation. A param-owning step keeps its
-    nested object.
+    * The new canonical LIST form: a JSON array whose elements are either bare
+      strings (ownerless steps) or single-key objects ``{step_id: {params}}``
+      (param-bearing steps). Array order is the execution order.
+    * The legacy keyed-map form: ``{step_id: {param: value, ...}, ...}``; key
+      insertion order is the execution order.
+
+    Both forms normalize to the SAME internal id-keyed dict, so callers (read /
+    modify / write verbs) are unaffected by which on-disk form was read. This
+    normaliser returns a fresh dict so callers can mutate it without touching
+    the loaded config. A top-level value that is neither a list nor a dict (the
+    key absent / ``None`` / a malformed scalar) yields an empty dict.
+
+    Per-step values are coerced: every value that is not a non-empty dict
+    (``None`` / ``{}`` / ``''`` / a bare-string list element / any non-dict) is
+    coerced to an empty dict, so ``_cmd_step get`` returns ``{}`` for an
+    ownerless step regardless of its on-disk representation. A param-owning step
+    keeps its nested object.
 
     Args:
-        raw: The value read from ``section[list_key]`` — expected to be a dict in
-            the keyed-map schema, or ``None`` when the key is absent.
+        raw: The value read from ``section[list_key]`` — the LIST form, the
+            legacy keyed-map dict, or ``None`` when the key is absent.
 
     Returns:
         A new dict mapping step id -> nested param object (``{}`` for ownerless
-        steps), in insertion order.
+        steps), in input order.
     """
+    if isinstance(raw, list):
+        result: dict = {}
+        for element in raw:
+            if isinstance(element, str):
+                if element:
+                    result[element] = {}
+            elif isinstance(element, dict) and len(element) == 1:
+                step_id, value = next(iter(element.items()))
+                if isinstance(step_id, str) and step_id:
+                    result[step_id] = value if isinstance(value, dict) else {}
+        return result
     if not isinstance(raw, dict):
         return {}
     return {
@@ -191,20 +210,6 @@ def _steps_map(raw) -> dict:
         for step_id, value in raw.items()
     }
 
-
-def _collapse_ownerless_steps(steps: dict) -> dict:
-    """Return a copy of the keyed-map with ownerless steps collapsed to ``None``.
-
-    The write-side mirror of :func:`_steps_map`'s per-step coercion: an ownerless
-    step (its param value is an empty dict ``{}``) is written as ``None``
-    (serialized as ``null`` by :func:`save_config`) so marshal.json never carries
-    a noisy empty ``{}`` object. A param-owning step keeps its nested object.
-    Applied right before persisting any mutated keyed-map (``step set`` /
-    ``set-steps`` / ``add-step`` / ``remove-step``), so every config-write path is
-    consistent with the no-empty-``{}`` contract; the read path
-    (:func:`_steps_map`) coerces ``null`` / ``{}`` / ``''`` back to ``{}``.
-    """
-    return {step_id: (params if params else None) for step_id, params in steps.items()}
 
 
 def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config: dict) -> dict:
@@ -243,7 +248,9 @@ def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config
         params = dict(steps[step_id])
         params[param] = value
         steps[step_id] = params
-        section[list_key] = _collapse_ownerless_steps(steps)
+        # Persist in the canonical LIST serial form (ownerless steps as bare
+        # strings, param-owning steps as single-key objects).
+        section[list_key] = keyed_map_to_list_form(steps)
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
@@ -341,8 +348,9 @@ def cmd_phase(args, phase_section: str) -> dict:
         sorted_ids = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
         # Build the ordered keyed map, preserving any existing per-step params.
         sorted_map = {step_id: existing.get(step_id, {}) for step_id in sorted_ids}
-        # Persist with ownerless steps collapsed to `null` (no empty `{}`).
-        section[list_key] = _collapse_ownerless_steps(sorted_map)
+        # Persist in the canonical LIST serial form (ownerless steps as bare
+        # strings, param-owning steps as single-key objects).
+        section[list_key] = keyed_map_to_list_form(sorted_map)
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
@@ -364,8 +372,9 @@ def cmd_phase(args, phase_section: str) -> dict:
         sorted_ids = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
         # Preserve existing per-step params; the new key starts with empty params.
         sorted_map = {step_id: existing.get(step_id, {}) for step_id in sorted_ids}
-        # Persist with ownerless steps collapsed to `null` (no empty `{}`).
-        section[list_key] = _collapse_ownerless_steps(sorted_map)
+        # Persist in the canonical LIST serial form (ownerless steps as bare
+        # strings, param-owning steps as single-key objects).
+        section[list_key] = keyed_map_to_list_form(sorted_map)
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
@@ -381,8 +390,9 @@ def cmd_phase(args, phase_section: str) -> dict:
             return error_exit(f"Step '{step}' not found in {phase_section}")
 
         del existing[step]
-        # Persist with ownerless steps collapsed to `null` (no empty `{}`).
-        section[list_key] = _collapse_ownerless_steps(existing)
+        # Persist in the canonical LIST serial form (ownerless steps as bare
+        # strings, param-owning steps as single-key objects).
+        section[list_key] = keyed_map_to_list_form(existing)
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)

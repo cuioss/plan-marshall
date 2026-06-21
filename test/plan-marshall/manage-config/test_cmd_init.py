@@ -38,7 +38,25 @@ _cmd_init_mod = _load_module('_cmd_init', '_cmd_init.py')
 cmd_init = _cmd_init_mod.cmd_init
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script  # noqa: E402
+from conftest import run_script  # noqa: E402, I001
+
+
+# `plan.phase-6-finalize.steps` and `plan.phase-5-execute.verification_steps`
+# serialize on disk as the canonical LIST form: a JSON array whose elements are
+# bare strings (ownerless steps) or single-key objects `{step_id: {params}}`
+# (param-bearing steps). Array order is the execution order. This helper extracts
+# the ordered id list from that LIST form.
+
+
+def _step_ids(steps_list: list) -> list:
+    """Return the ordered step-id list from a LIST-form steps array."""
+    ids = []
+    for element in steps_list:
+        if isinstance(element, str):
+            ids.append(element)
+        elif isinstance(element, dict) and len(element) == 1:
+            ids.append(next(iter(element)))
+    return ids
 
 # =============================================================================
 # Init Command Tests (Tier 2 - direct import)
@@ -170,18 +188,17 @@ def test_init_includes_verification_in_phase_5_execute(plan_context):
     assert 'phase-6-verify' not in plan, 'Should NOT have plan.phase-6-verify section'
     execute = plan['phase-5-execute']
     assert execute['max_iterations'] == 5
-    # verification_steps is an id-keyed map; key insertion order is the execution
-    # order. Verify steps own no params, so an ownerless step persists as null
-    # (None), NOT a noisy empty {} object (empty-{} suppression). The read path
-    # coerces null back to {}.
-    assert isinstance(execute['verification_steps'], dict)
-    assert list(execute['verification_steps'].keys()) == [
+    # verification_steps is the canonical LIST serial form; array order is the
+    # execution order. Verify steps own no params, so each ownerless step is a
+    # bare string, NOT a {step_id: null} / {step_id: {}} object (empty-{}
+    # suppression). The read path coerces each to {}.
+    assert isinstance(execute['verification_steps'], list)
+    assert _step_ids(execute['verification_steps']) == [
         'default:verify:quality-gate',
         'default:verify:module-tests',
         'default:verify:coverage',
     ]
-    assert all(params is None for params in execute['verification_steps'].values())
-    assert not any(params == {} for params in execute['verification_steps'].values())
+    assert all(isinstance(element, str) for element in execute['verification_steps'])
 
 
 def test_init_includes_phase_6_finalize(plan_context):
@@ -195,19 +212,20 @@ def test_init_includes_phase_6_finalize(plan_context):
     assert 'phase-6-finalize' in plan, 'Should have plan.phase-6-finalize section'
     finalize = plan['phase-6-finalize']
     assert finalize['max_iterations'] == 3
-    assert 'steps' in finalize, 'Should have steps map'
-    # steps is an id-keyed map; membership checks operate on keys.
-    assert isinstance(finalize['steps'], dict)
-    assert 'default:commit-push' in finalize['steps']
-    assert 'default:record-metrics' in finalize['steps']
-    assert 'default:archive-plan' in finalize['steps']
+    assert 'steps' in finalize, 'Should have steps list'
+    # steps is the canonical LIST serial form; membership checks operate on the
+    # ordered step-id list extracted from the bare-string / single-key elements.
+    assert isinstance(finalize['steps'], list)
+    step_ids = _step_ids(finalize['steps'])
+    assert 'default:commit-push' in step_ids
+    assert 'default:record-metrics' in step_ids
+    assert 'default:archive-plan' in step_ids
     # Ordering invariant: archive-plan must be the final finalize step (it moves the
     # plan directory, so nothing may run after it), and record-metrics must precede it
     # so metrics.md is written before the directory moves. The optional
     # print-phase-breakdown summary step legitimately runs between them — it reads
-    # metrics.md and writes into the plan dir before archive captures it. Key
-    # insertion order is the execution order.
-    step_ids = list(finalize['steps'].keys())
+    # metrics.md and writes into the plan dir before archive captures it. Array
+    # order is the execution order.
     record_idx = step_ids.index('default:record-metrics')
     archive_idx = step_ids.index('default:archive-plan')
     assert archive_idx == len(step_ids) - 1, 'default:archive-plan must be the final finalize step'

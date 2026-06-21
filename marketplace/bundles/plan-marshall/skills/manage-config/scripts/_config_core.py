@@ -217,6 +217,43 @@ def _coerce_value(value: str) -> str | bool | int:
     return value
 
 
+def keyed_map_to_list_form(steps: dict) -> list:
+    """Serialize an id-keyed step map into the canonical LIST serial form.
+
+    The canonical on-disk serial form for ``verification_steps`` / ``steps`` is a
+    JSON array whose elements are, per step:
+
+    * a bare string ``"step_id"`` for an ownerless step (no params — its param
+      value is ``None`` / an empty dict / any falsy value); and
+    * a single-key object ``{"step_id": {param: value, ...}}`` for a
+      param-bearing step (its param value is a non-empty dict).
+
+    Array order is the execution order, taken from the input map's key insertion
+    order. This is the write-side inverse of the dual-form reader
+    (``_steps_map`` in ``_cmd_quality_phases.py`` /
+    ``_read_marshal_phase_step_map`` in ``manage-execution-manifest.py``): an
+    ownerless step round-trips through the bare-string form (no noisy empty
+    ``{}`` object is written), and a param-owning step round-trips through the
+    single-key object form.
+
+    Args:
+        steps: An id-keyed map ``{step_id: params}``, where ``params`` is a
+            non-empty dict for a param-bearing step and ``None`` / ``{}`` / any
+            falsy value for an ownerless step.
+
+    Returns:
+        The LIST serial form: a list of bare strings and single-key objects, in
+        the input map's insertion order.
+    """
+    result: list = []
+    for step_id, params in steps.items():
+        if params:
+            result.append({step_id: params})
+        else:
+            result.append(step_id)
+    return result
+
+
 def is_nested_domain(domain_config: dict) -> bool:
     """Check if domain config uses nested structure.
 

@@ -25,50 +25,56 @@ Central reference for all extension-related configuration paths in `marshal.json
 | `plan.phase-3-outline.plan_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-4-plan.execute_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-5-execute.commit_and_push` | User config | phase-5-execute, phase-6-finalize | - |
-| `plan.phase-5-execute.verification_steps` (id-keyed map) | Built-in + `provides_verify_steps()` | phase-4-plan, phase-5-execute | [ext-point-verify-steps.md](ext-point-verify-steps.md) |
+| `plan.phase-5-execute.verification_steps` (LIST serial form) | Built-in + `provides_verify_steps()` | phase-4-plan, phase-5-execute | [ext-point-verify-steps.md](ext-point-verify-steps.md) |
 | `plan.phase-5-execute.max_iterations` | User config | phase-5-execute | - |
-| `plan.phase-6-finalize.steps` (id-keyed map; step-owned params nest under each step) | Built-in + `provides_finalize_steps()` | phase-6-finalize | [ext-point-finalize-steps.md](ext-point-finalize-steps.md) |
+| `plan.phase-6-finalize.steps` (LIST serial form; param-bearing steps carry a single-key object) | Built-in + `provides_finalize_steps()` | phase-6-finalize | [ext-point-finalize-steps.md](ext-point-finalize-steps.md) |
 | `plan.phase-6-finalize.max_iterations` | User config | phase-6-finalize (loop-back ceiling) | - |
 | `plan.phase-6-finalize.checks_wait_timeout_seconds` (flat phase-level) | User config | tools-integration-ci (CI-completion polling timeout) | - |
 
-## Canonical `steps` / `verification_steps` Shape (id-keyed map + nested params)
+## Canonical `steps` / `verification_steps` Serial Form (LIST)
 
-`plan.phase-5-execute.verification_steps` and `plan.phase-6-finalize.steps` are **id-keyed maps**, not ordered string lists. Each key is a step id; its value is the step's nested param object. This is the canonical consumer schema every `.plan/marshal.json` MUST follow — it is the shape `init` seeds, `sync-defaults` back-fills, and the wizard writes.
+`plan.phase-5-execute.verification_steps` and `plan.phase-6-finalize.steps` serialize on disk as an **ordered LIST** (a JSON array), not an id-keyed map. Each array element is either a bare step-id string (ownerless step) or a single-key object that nests the step's params (param-bearing step). This is the canonical serial form every `.plan/marshal.json` MUST follow on write — it is the shape `init` seeds, `sync-defaults` back-fills, and the wizard writes. The reader is dual-form (see [Dual-form reader](#dual-form-reader-migration-window) below): the legacy id-keyed map is still tolerated on input during the migration window, but the LIST is the only form anything writes.
 
-Three structural rules define the shape:
+Three structural rules define the serial form:
 
-1. **Keyed map, not a list.** The container is a JSON object whose keys are step ids (`default:commit_push`, `default:branch-cleanup`, a `project:` step, or a fully-qualified `bundle:skill` step). One-stop lookup by id replaces positional indexing into a list. Order is carried by the step's declared `order` value (sorted by `marshall-steward` at write time), not by key insertion order.
-2. **Step-owned params nest under their owning step.** A param consumed by exactly one step lives in that step's nested object — never as a flat phase-level sibling. Example: `final_merge_without_asking` is a param of `default:branch-cleanup`, so it nests under `steps['default:branch-cleanup']`, NOT under `phase-6-finalize` directly. Read/write step-owned params via the one-stop `manage-config plan {phase} step get/set --step-id {id}` verb (global default + wizard target) or `manage-execution-manifest step-params get/set` (per-plan runtime read/override).
-3. **No empty `{}` for ownerless steps.** A step that owns no params serializes with its value **omitted** — never as a noisy empty `{}` object. The read path coerces all absent/empty representations (key omitted, `null`, `{}`, or empty value) back to an empty param object, so consumers see a uniform `{}` regardless of how the step was written. Writers MUST emit the omitted form for ownerless steps.
+1. **A LIST, not a keyed map.** The container is a JSON array. Array order is the execution order. Each element identifies one step (`default:commit-push`, `default:branch-cleanup`, a `project:` step, or a fully-qualified `bundle:skill` step). The legacy keyed-map shape — a JSON object keyed by step id — is NOT the canonical write form; it is accepted only on read for backward compatibility.
+2. **Ownerless step → bare string; param-bearing step → single-key object.** A step that owns no params serializes as a bare `"step_id"` string. A step that owns params serializes as a single-key object `{ "step_id": { param: value, … } }` — the step id is the lone key, its value the nested param object. A param consumed by exactly one step lives in that step's nested object, never as a flat phase-level sibling. Example: `final_merge_without_asking` is a param of `default:branch-cleanup`, so it nests inside the `{ "default:branch-cleanup": { … } }` element, NOT under `phase-6-finalize` directly. Read/write step-owned params via the one-stop `manage-config plan {phase} step get/set --step-id {id}` verb (global default + wizard target) or `manage-execution-manifest step-params get/set` (per-plan runtime read/override).
+3. **No empty `{}`, no `null` for ownerless steps.** An ownerless step is the bare string and nothing else — never `{ "step_id": {} }` and never `{ "step_id": null }`. The dual-form reader coerces every per-step value back to an empty param object (`{}`) internally, so downstream consumers see a uniform `{}` for an ownerless step regardless of which on-disk form it was read from. Writers MUST emit the bare-string form for ownerless steps.
 
-### Canonical shape (illustrative)
+### Canonical serial form (illustrative)
 
 ```json
 {
   "plan": {
     "phase-5-execute": {
-      "verification_steps": {
-        "default:verify:quality-gate": {},
-        "default:verify:module-tests": {}
-      }
+      "verification_steps": [
+        "default:verify:quality-gate",
+        "default:verify:module-tests"
+      ]
     },
     "phase-6-finalize": {
-      "steps": {
-        "default:commit_push": {},
-        "default:automated-review": {
-          "review_bot_buffer_seconds": 180
+      "steps": [
+        "default:commit-push",
+        {
+          "default:automated-review": {
+            "review_bot_buffer_seconds": 180
+          }
         },
-        "default:sonar-roundtrip": {
-          "touched_file_cleanup": "new_code_only",
-          "do_transition": false,
-          "ce_wait_timeout_seconds": 600
+        {
+          "default:sonar-roundtrip": {
+            "touched_file_cleanup": "new_code_only",
+            "do_transition": false,
+            "ce_wait_timeout_seconds": 600
+          }
         },
-        "default:branch-cleanup": {
-          "pr_merge_strategy": "squash",
-          "final_merge_without_asking": false,
-          "auto_rebase_threshold": "no_overlap_only"
+        {
+          "default:branch-cleanup": {
+            "pr_merge_strategy": "squash",
+            "final_merge_without_asking": false,
+            "auto_rebase_threshold": "no_overlap_only"
+          }
         }
-      }
+      ]
     }
   }
 }
@@ -76,17 +82,23 @@ Three structural rules define the shape:
 
 Notes on the example:
 
-- `default:commit_push` and the two `verify:*` steps own no params, so their values are the omitted/empty form (rendered `{}` here only because JSON has no "omitted value within an object" literal — on disk an ownerless step's key may be absent entirely, and the read path treats absent and `{}` identically).
-- `default:automated-review`, `default:sonar-roundtrip`, and `default:branch-cleanup` own params, so each carries its nested param object. For `default:sonar-roundtrip` the `sonar_` prefix is dropped inside the scoped object.
+- `default:commit-push` and the two `verify:*` steps own no params, so each is a bare string element — no `{}`, no `null` wrapper.
+- `default:automated-review`, `default:sonar-roundtrip`, and `default:branch-cleanup` own params, so each is a single-key object whose value is the nested param object. For `default:sonar-roundtrip` the `sonar_` prefix is dropped inside the scoped object.
 - Param **defaults** are NOT held in any centralized constant. Each param-owning step declares its own params (`key`, `default`, `description`) in the `configurable:` block of its body-doc frontmatter; the parser (`plan-marshall:extension-api:configurable_contract`) materializes them. See [`manage-config/SKILL.md` § Phase-Local Run-at-all Gates and Automation Knobs](../../manage-config/SKILL.md) and [`extension-api/SKILL.md` § Configurable step-param contract](../SKILL.md#configurable-step-param-contract).
+
+### Dual-form reader (migration window)
+
+The reader accepts **both** the canonical LIST form and the legacy id-keyed map on disk, normalizing each to the same internal id-keyed dict (`{ step_id: param-object }`, `{}` for ownerless steps) so every downstream consumer is unaffected by which on-disk form was read. The shared serializer `_config_core.keyed_map_to_list_form` is the single write-side definition of the LIST form; its read-side inverses are `_steps_map` (in `_cmd_quality_phases.py`, the `manage-config` write/read verbs) and `_read_marshal_phase_step_map` (in `manage-execution-manifest.py`, the manifest composer). Keyed-map input is parsed for the duration of the migration window so consumer repos that still carry the old shape round-trip cleanly; the LIST form is the only shape any writer emits. The legacy keyed-map is a read-only transition affordance, NOT a second canonical write form.
+
+> **Distinct surface — do not conflate.** The per-plan execution-MANIFEST `step_params` block (`body[phase].step_params[step_id]`, persisted in `execution.toon`, read/written via `manage-execution-manifest step-params get/set`) is an id-keyed **dict** — internal plumbing for per-plan param overrides, documented in [`manage-execution-manifest`'s manifest schema](../../manage-execution-manifest/standards/manifest-schema.md). It is NOT the marshal.json serial form and is unchanged by the LIST migration. The LIST serial form governs `steps` / `verification_steps` in **marshal.json** only; the manifest `step_params` snapshot remains a dict.
 
 ### Consumer-repo migration target
 
-Consumer `.plan/marshal.json` files (e.g. plan-marshall's own consumer repos) MUST adopt this keyed-map + nested-param + no-empty-`{}` shape. The migration is **additive**: rewrite the legacy `steps` / `verification_steps` list (or any keyed map that still serialized ownerless steps as `{}`) into the keyed map with ownerless steps omitted and step-owned params nested under their owning step. Preserve each repo's uncommitted changes; do not strip operator customizations. The migration target is the post-suppression shape above — no empty `{}` objects, every param nested under its owner.
+Consumer `.plan/marshal.json` files (e.g. plan-marshall's own consumer repos) MUST adopt the LIST serial form on write. The migration is **additive**: rewrite the legacy `steps` / `verification_steps` keyed map into the ordered LIST — ownerless steps as bare strings, param-bearing steps as single-key objects nesting their params, no empty `{}` and no `null`. Preserve execution order and each repo's uncommitted operator customizations; do not strip them. The dual-form reader tolerates the un-migrated keyed-map shape in the interim, so the migration can land independently of the reader change.
 
 ## Run-at-all Gates and Finalize Automation Knobs (marshal.json)
 
-The lifecycle run-at-all gates and the two flat finalize automation knobs are flat phase-local knobs under their owning phase — `deep_lane` / `escalation` under `plan.phase-1-init`, `revalidation` under `plan.phase-2-refine`, `qgate` under `plan.phase-3-outline`, and the finalize `qgate` gate plus the two flat automation knobs (`finalize_without_asking` / `loop_back_without_asking`) under `plan.phase-6-finalize`. Read the flat knobs at runtime via `manage-config plan <phase> get --field <knob>`. (Per rule 2 of the keyed-map section above, the finalize `self_review` and `simplify` gates and `final_merge_without_asking` / `drop_review_on_scope_gate` are NOT flat — they are step-owned params nested under their owning step; see the step-owned param rows below.) See [`manage-config/SKILL.md`](../../manage-config/SKILL.md) § "Phase-Local Run-at-all Gates and Automation Knobs" for the full schema.
+The lifecycle run-at-all gates and the two flat finalize automation knobs are flat phase-local knobs under their owning phase — `deep_lane` / `escalation` under `plan.phase-1-init`, `revalidation` under `plan.phase-2-refine`, `qgate` under `plan.phase-3-outline`, and the finalize `qgate` gate plus the two flat automation knobs (`finalize_without_asking` / `loop_back_without_asking`) under `plan.phase-6-finalize`. Read the flat knobs at runtime via `manage-config plan <phase> get --field <knob>`. (Per rule 2 of the LIST serial-form section above, the finalize `self_review` and `simplify` gates and `final_merge_without_asking` / `drop_review_on_scope_gate` are NOT flat — they are step-owned params nested inside their owning step's single-key list element; see the step-owned param rows below.) See [`manage-config/SKILL.md`](../../manage-config/SKILL.md) § "Phase-Local Run-at-all Gates and Automation Knobs" for the full schema.
 
 | Path | Set By | Used By | Extension Point Doc |
 |------|--------|---------|---------------------|
@@ -157,7 +169,7 @@ Classification key:
 
 | Cluster (source) | Kind | Classification | Rationale |
 |------------------|------|----------------|-----------|
-| `DEFAULT_PLAN_FINALIZE['steps'][*]` step-owned params (`_config_defaults.py`) | id-keyed map + nested params | **adopted** | Already migrated by this plan — each finalize step declares its params via the `configurable` contract; `_FINALIZE_STEP_PARAMS` deleted. |
+| `DEFAULT_PLAN_FINALIZE['steps'][*]` step-owned params (`_config_defaults.py`) | LIST serial form + nested params | **adopted** | Each finalize step declares its params via the `configurable` contract (`_FINALIZE_STEP_PARAMS` deleted); the seed serializes to the canonical LIST form via `keyed_map_to_list_form`. |
 | `DEFAULT_PLAN_INIT` knobs — `deep_lane`, `escalation`, `init_without_asking`, `branch_strategy`, `use_worktree`, `effort` (`_config_defaults.py`) | flat phase knobs | **not-a-fit** | Phase-level run-at-all gates and lifecycle knobs consumed by the init lane router / orchestrator — no single owning step, decision-machinery inputs not step-body params. |
 | `DEFAULT_PLAN_REFINE` knobs — `confidence_threshold`, `compatibility`, `simplicity`, `revalidation`, `effort` (`_config_defaults.py`) | flat phase knobs | **not-a-fit** | Phase-level refine knobs / run-at-all gate; consumed by the light-lane + deep-refine pass, not by a step body. |
 | `DEFAULT_PLAN_OUTLINE` knobs — `plan_without_asking`, `qgate`, `effort` (`_config_defaults.py`) | flat phase knobs | **not-a-fit** | Phase-level outline knobs / run-at-all gate; `qgate` is decision machinery, deliberately kept flat. |

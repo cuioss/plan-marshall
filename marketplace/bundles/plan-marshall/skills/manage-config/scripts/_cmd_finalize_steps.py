@@ -11,10 +11,11 @@ The write path imports :class:`FinalizeStepPresets` from this skill.
 this module only adds the preset writer.
 """
 
-from _cmd_quality_phases import _resolve_step_orders
+from _cmd_quality_phases import _resolve_step_orders, _steps_map
 from _config_core import (
     error_exit,
     is_initialized,
+    keyed_map_to_list_form,
     load_config,
     save_config,
     success_exit,
@@ -56,8 +57,9 @@ def cmd_finalize_steps_apply_preset(args) -> dict:
        against a preset that passed the registry import-time check drifting
        out of sync with the registry at write time.
     3. Load ``marshal.json``, merge the ``steps`` list into the
-       ``plan.phase-6-finalize`` entry (creating the entry if absent), and
-       save.
+       ``plan.phase-6-finalize`` entry (creating the entry if absent) in the
+       canonical LIST serial form (bare strings for ownerless steps, single-key
+       objects for param-bearing steps), and save.
     """
     if not is_initialized():
         return error_exit('marshal.json not initialized; run /marshall-steward first')
@@ -97,14 +99,20 @@ def cmd_finalize_steps_apply_preset(args) -> dict:
     if err is not None:
         return err
     sorted_ids = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
-    # `steps` is an id-keyed map (step_id -> nested param object). Preserve any
-    # existing per-step params for steps the preset keeps, and seed empty params
-    # for newly-introduced steps. Key insertion order is the execution order.
-    existing = phase_entry.get('steps')
-    existing_params = existing if isinstance(existing, dict) else {}
-    phase_entry['steps'] = {
-        step_id: existing_params.get(step_id, {}) for step_id in sorted_ids
-    }
+    # Read any existing per-step params through the dual-form reader so the
+    # preset preserves them whether the on-disk `steps` value is the canonical
+    # LIST serial form (bare strings + single-key objects) or the legacy
+    # keyed-map form. `_steps_map` normalizes both to the internal id-keyed map
+    # ({step_id: param-object}, {} for ownerless steps); a plain
+    # `isinstance(existing, dict)` check would silently drop every per-step param
+    # when `existing` is already a LIST.
+    existing_params = _steps_map(phase_entry.get('steps'))
+    # Build the ordered id-keyed map (preset order = execution order), preserving
+    # existing params for retained steps and seeding empty params for new ones,
+    # then serialize to the canonical LIST form before persisting so this write
+    # site emits the same serial form as every other config write path.
+    ordered_map = {step_id: existing_params.get(step_id, {}) for step_id in sorted_ids}
+    phase_entry['steps'] = keyed_map_to_list_form(ordered_map)
 
     save_config(config)
 

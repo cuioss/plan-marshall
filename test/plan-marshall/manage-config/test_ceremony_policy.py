@@ -66,6 +66,33 @@ _cmd_init_mod = _load_module('_cmd_init_for_dissolution_test', '_cmd_init.py')
 # Import shared infrastructure (conftest.py sets up PYTHONPATH).
 import conftest  # noqa: E402, F401
 
+
+def _params_for(steps_list: list, step_id: str):
+    """Return a step's params from the LIST serial form of steps.
+
+    `plan.phase-6-finalize.steps` serializes as the canonical LIST form: bare
+    strings (ownerless steps) or single-key objects `{step_id: {params}}`. Returns
+    the nested param dict for a param-bearing step, or ``None`` for an ownerless
+    one. Raises ``KeyError`` when the step id is absent.
+    """
+    for element in steps_list:
+        if isinstance(element, str) and element == step_id:
+            return None
+        if isinstance(element, dict) and len(element) == 1 and step_id in element:
+            return element[step_id]
+    raise KeyError(step_id)
+
+
+def _step_ids(steps_list: list) -> list:
+    """Return the ordered step-id list from the LIST serial form of steps."""
+    ids = []
+    for element in steps_list:
+        if isinstance(element, str):
+            ids.append(element)
+        elif isinstance(element, dict) and len(element) == 1:
+            ids.append(next(iter(element)))
+    return ids
+
 # The distributed run-at-all gates that stay FLAT phase-level siblings, and the
 # phase block each lives under. The two finalize gates that fold under their
 # owning step (`simplify`, `self_review`) are intentionally absent here — they
@@ -197,8 +224,8 @@ def test_seeded_folded_knob_materializes_under_owning_built_in_step(owner_step, 
     config = _config_defaults_mod.get_default_config()
     steps = config['plan']['phase-6-finalize']['steps']
 
-    assert owner_step in steps, f'{owner_step} must be a seeded built-in finalize step'
-    assert steps[owner_step][knob] == default
+    assert owner_step in _step_ids(steps), f'{owner_step} must be a seeded built-in finalize step'
+    assert _params_for(steps, owner_step)[knob] == default
 
 
 @pytest.mark.parametrize('owner_step,knob,default', _OPT_IN_FOLDED_KNOBS)
@@ -214,7 +241,7 @@ def test_opt_in_folded_knob_absent_from_default_seed(owner_step, knob, default):
     config = _config_defaults_mod.get_default_config()
     steps = config['plan']['phase-6-finalize']['steps']
 
-    assert owner_step not in steps, (
+    assert owner_step not in _step_ids(steps), (
         f'{owner_step} is an opt-in project step and must NOT be in the default seed'
     )
 
