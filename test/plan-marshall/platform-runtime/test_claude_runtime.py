@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for claude_runtime.py — ClaudeRuntime implementation of all 15 operations.
+"""Tests for claude_runtime.py — ClaudeRuntime implementation of all 18 operations.
 
 Covers every method defined by the Runtime ABC:
   1.  project_initial_setup       — creates dirs, writes marshal.json, installs hook

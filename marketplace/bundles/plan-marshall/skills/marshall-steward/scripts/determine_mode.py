@@ -102,6 +102,7 @@ for _ancestor in Path(__file__).resolve().parents:
         break
 
 from marketplace_bundles import resolve_skills_root  # type: ignore[import-not-found]  # noqa: E402
+from marketplace_paths import iter_project_skill_dirs  # type: ignore[import-not-found]  # noqa: E402
 
 _SKILLS_DIR = resolve_skills_root(Path(__file__))
 for _lib in ('ref-toon-format',):
@@ -592,35 +593,33 @@ def discover_shipped_project_finalize_steps(project_root: Path) -> list[str]:
     """Discover the ``project:`` finalize-step skills the repo ships.
 
     A project-local finalize-step skill lives at
-    ``<project_root>/.claude/skills/finalize-step-<name>/SKILL.md``. Each such
+    ``<project_root>/<skill-root>/finalize-step-<name>/SKILL.md`` (the skill
+    root is resolved per target via the platform-runtime layout op). Each such
     skill is referenced from ``phase-6-finalize.steps`` as
     ``project:finalize-step-<name>``. This helper enumerates the shipped
     skills and returns the corresponding ``project:`` step notations, sorted
     for determinism.
 
-    Returns an empty list when ``.claude/skills/`` is absent (a consumer
+    Returns an empty list when no project-local-skill root exists (a consumer
     project that ships no project-local finalize steps).
     """
-    skills_dir = project_root / '.claude' / 'skills'
-    if not skills_dir.is_dir():
-        return []
     notations: list[str] = []
-    for child in sorted(skills_dir.iterdir()):
-        if not child.is_dir():
-            continue
-        if not child.name.startswith('finalize-step-'):
+    seen: set[str] = set()
+    for child in iter_project_skill_dirs(base=project_root):
+        if not child.name.startswith('finalize-step-') or child.name in seen:
             continue
         if not (child / 'SKILL.md').is_file():
             continue
+        seen.add(child.name)
         notations.append(f'project:{child.name}')
-    return notations
+    return sorted(notations)
 
 
 def detect_missing_project_finalize_steps(plan_dir: Path, project_root: Path) -> list[str]:
     """Return the shipped ``project:`` finalize steps absent from the steps array.
 
     Compares the ``project:`` finalize-step skills the repo ships (discovered
-    from ``<project_root>/.claude/skills/finalize-step-*``) against
+    from the target's project-local-skill ``finalize-step-*`` roots) against
     ``marshal.json::plan["phase-6-finalize"]["steps"]`` and returns any shipped
     ``project:`` step missing from that array — the steward surfaces these so a
     re-run on the meta-project does not silently drop its hand-maintained
@@ -644,8 +643,9 @@ def cmd_check_missing_finalize_steps(args: argparse.Namespace) -> dict:
 
     - built-in ``default:`` steps newly added to ``BUILT_IN_FINALIZE_STEPS``
       that an existing project's marshal.json predates, and
-    - ``project:`` finalize steps the repo ships (under ``.claude/skills/``)
-      that are absent from ``phase-6-finalize.steps`` — the meta-project case
+    - ``project:`` finalize steps the repo ships (under the target's
+      project-local-skill roots) that are absent from
+      ``phase-6-finalize.steps`` — the meta-project case
       where re-running the steward must not silently drop hand-maintained
       project-local steps.
 

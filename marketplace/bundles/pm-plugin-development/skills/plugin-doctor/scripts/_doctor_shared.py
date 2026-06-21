@@ -18,6 +18,10 @@ from pathlib import Path
 
 from file_ops import get_temp_dir  # type: ignore[import-not-found]
 from marketplace_bundles import resolve_bundles_root
+from marketplace_paths import (  # type: ignore[import-not-found]
+    _read_runtime_target,
+    get_project_skill_roots,
+)
 
 # =============================================================================
 # Constants
@@ -285,6 +289,57 @@ def extract_bundle_name(path: str) -> str:
     except ValueError:
         pass
     return 'unknown'
+
+
+# =============================================================================
+# Target-aware project-local-skill discovery (engine/rule-pack split)
+# =============================================================================
+# The doctor is a target-agnostic linting ENGINE plus a swappable Claude
+# rule-pack (see ``references/rule-provenance.md`` § "Engine / Claude rule-pack
+# split"). Project-local-skill discovery is an ENGINE concern: every analyzer
+# that scans the project-local skill tree (recipe trees, finalize-step trees,
+# self-declared-rule trees) MUST route through the helpers below rather than
+# hardcoding ``.claude/skills`` — that literal is the Claude-only layout owned
+# by ``claude_runtime.py``. The helpers delegate to the platform-runtime layout
+# op (via ``marketplace_paths.get_project_skill_roots``), so the same analyzer
+# covers both the Claude ``.claude/skills/**`` tree and the OpenCode layout.
+
+
+def resolve_runtime_target() -> str:
+    """Return the active runtime target (``"claude"`` / ``"opencode"``).
+
+    Delegates to the platform-runtime-backed reader in ``marketplace_paths``;
+    returns ``"claude"`` when no runtime is resolvable (every runtime-less
+    environment is a Claude checkout). Target-aware rule-pack branches (e.g.
+    target-aware frontmatter emission) consume this accessor instead of
+    re-reading ``marshal.json`` directly.
+    """
+    return _read_runtime_target()
+
+
+def resolve_project_skill_trees(marketplace_root: Path) -> list[Path]:
+    """Return every project-local-skill root directory for the active target.
+
+    Routes through the platform-runtime ``layout skill-roots`` op (via
+    ``marketplace_paths.get_project_skill_roots``). On Claude this resolves to
+    ``{repo_root}/.claude/skills``; on OpenCode it resolves to the executor's
+    multi-root list. Relative roots are anchored against the repo root, derived
+    from ``marketplace_root`` (which is ``{repo_root}/marketplace/bundles``, so
+    two parents up is the repo root); ``~``-anchored / absolute roots resolve
+    independently. Only roots that exist on disk are returned, in priority
+    order.
+
+    Analyzers that previously inlined ``marketplace_root.parent.parent /
+    '.claude' / 'skills'`` call this helper instead so both layouts are scanned.
+    """
+    repo_root = marketplace_root.parent.parent
+    trees: list[Path] = []
+    for root in get_project_skill_roots():
+        expanded = Path(root).expanduser()
+        candidate = expanded if expanded.is_absolute() else repo_root / root
+        if candidate.is_dir():
+            trees.append(candidate)
+    return trees
 
 
 # =============================================================================

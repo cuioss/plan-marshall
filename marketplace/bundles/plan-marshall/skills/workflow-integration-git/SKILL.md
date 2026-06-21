@@ -128,11 +128,13 @@ Stage specific files relevant to the logical change (use `git -C {worktree_path}
 git -C {worktree_path} add <specific-files>
 ```
 
-Author the commit message via the `Write` tool to a `.plan/temp/` file (the path is permission-pre-approved via `Write(.plan/**)` and lives inside the workspace — never `/tmp/`). The message MUST end with the Co-Authored-By trailer. BOTH the `Write` and the `git commit -F` MUST use the worktree-absolute `{worktree_path}/.plan/temp/...` path: the harness `Write` tool resolves a relative path against the main checkout while `git -C {worktree_path}` resolves it against the worktree, so a relative-path round-trip would reference two different files and the commit could read a stale message. `{worktree_path}` is already resolved in Step 0, so no new resolution step is required.
+Author the commit message via the `Write` tool to a `.plan/temp/` file (the path is permission-pre-approved via `Write(.plan/**)` and lives inside the workspace — never `/tmp/`). The message MUST end with the `Co-Authored-By` trailer for the **active assistant** — the trailer identity is target-aware, not hardcoded: on Claude it is `Co-Authored-By: Claude <noreply@anthropic.com>`; on another target it is that target's assistant co-author identity. BOTH the `Write` and the `git commit -F` MUST use the worktree-absolute `{worktree_path}/.plan/temp/...` path: the harness `Write` tool resolves a relative path against the main checkout while `git -C {worktree_path}` resolves it against the worktree, so a relative-path round-trip would reference two different files and the commit could read a stale message. `{worktree_path}` is already resolved in Step 0, so no new resolution step is required.
 
 ```
-Write(file_path="{worktree_path}/.plan/temp/{plan_id}-commit-msg.txt", content="{commit_message}\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n")
+Write(file_path="{worktree_path}/.plan/temp/{plan_id}-commit-msg.txt", content="{commit_message}\n\n{coauthor_trailer}\n")
 ```
+
+`{coauthor_trailer}` is the active target's assistant co-author trailer — `Co-Authored-By: Claude <noreply@anthropic.com>` on Claude.
 
 Then commit using `-F` to read the message from the file — this is one Bash call with no `&&`, no heredoc, no `$(...)` substitution:
 

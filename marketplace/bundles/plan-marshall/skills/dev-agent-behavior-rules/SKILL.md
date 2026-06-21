@@ -113,7 +113,7 @@ When issuing `python3 .plan/execute-script.py {notation} {subcmd} ...` calls, qu
 
 ### Subagents are leaves — no further dispatch
 
-You may be running inside a dispatched `execution-context` envelope. A dispatched subagent is a **leaf** — it cannot spawn further subagents (no `Task:` dispatches). All cross-envelope dispatch originates only from the main-context orchestrator. When a workflow step calls for a further dispatch, return control to the orchestrator with the signal it needs (the workflow's declared return payload); do not attempt the dispatch yourself. Loading `Skill:` directives in-context is permitted — that is in-context skill loading, not subagent dispatch.
+You may be running inside a dispatched `execution-context` envelope. A dispatched subagent is a **leaf** — it cannot spawn further subagents (no further subagent dispatches; `Task:` is the Claude tool name for that dispatch, `task` on OpenCode). All cross-envelope dispatch originates only from the main-context orchestrator. When a workflow step calls for a further dispatch, return control to the orchestrator with the signal it needs (the workflow's declared return payload); do not attempt the dispatch yourself. In-context skill loading is permitted — loading a named skill into the current context (the `Skill:` directive on Claude, the `skill` tool on OpenCode) is in-context skill loading, not subagent dispatch.
 
 Canonical contract: [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) is the single source of truth for the leaf/dispatch-topology invariant. Do not restate the topology diagram here — see that document for the normative statement.
 

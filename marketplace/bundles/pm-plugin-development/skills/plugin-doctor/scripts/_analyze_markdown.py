@@ -10,6 +10,7 @@ from _analyze_shared import (
     extract_frontmatter,
     read_frontmatter_disable_list,
 )
+from _doctor_shared import resolve_runtime_target
 
 
 def check_frontmatter_fields(frontmatter: str) -> dict:
@@ -285,6 +286,26 @@ DYNAMIC_LEVEL_EXECUTOR_REF = (
     'plan-marshall:extension-api/standards/ext-point-dynamic-level-executor'
 )
 
+# Per-target build-output directory prefix. Variants emitted by the build
+# target live under ``target/{target}/`` (e.g. ``target/claude/`` for the
+# Claude rule-pack target), outside the doctor's source-of-truth scan path
+# (``marketplace/bundles/``), so they are exempt from the
+# ``hardcoded-model-on-canonical`` rule. The prefix is target-specific because
+# the build-output directory is named for the target; the literal
+# ``target/claude/`` is a Claude rule-pack concern, not an engine constant.
+_BUILD_OUTPUT_PREFIXES = {
+    'claude': 'target/claude/',
+    'opencode': 'target/opencode/',
+}
+
+
+def _build_output_prefix() -> str:
+    """Return the active target's build-output directory prefix.
+
+    Falls back to the Claude prefix when the target is unrecognised (every
+    runtime-less environment is a Claude checkout)."""
+    return _BUILD_OUTPUT_PREFIXES.get(resolve_runtime_target(), 'target/claude/')
+
 
 def check_hardcoded_model_on_canonical(frontmatter: str, file_path: str) -> list:
     """Check the ``hardcoded-model-on-canonical`` rule on canonical agent files.
@@ -300,9 +321,11 @@ def check_hardcoded_model_on_canonical(frontmatter: str, file_path: str) -> list
        or ``effort:``. The build target sets these on emitted variants;
        silent shadowing on the canonical is prohibited.
 
-    Variants emitted by the build target live under ``target/claude/``,
-    outside the doctor's source-of-truth scan path
-    (``marketplace/bundles/``), so they are exempt.
+    Variants emitted by the build target live under ``target/{target}/``
+    (e.g. ``target/claude/`` for the Claude rule-pack target), outside the
+    doctor's source-of-truth scan path (``marketplace/bundles/``), so they
+    are exempt. The exempt prefix is resolved target-aware via
+    ``_build_output_prefix``.
 
     Returns a list of finding dicts: ``{branch, code, message}`` — empty
     when neither branch fires.
@@ -310,7 +333,7 @@ def check_hardcoded_model_on_canonical(frontmatter: str, file_path: str) -> list
     findings: list = []
 
     # Build target output is exempt — the rule only fires on source-of-truth files.
-    if 'target/claude/' in file_path:
+    if _build_output_prefix() in file_path:
         return findings
 
     has_model = bool(re.search(r'^model:', frontmatter, re.MULTILINE))

@@ -643,3 +643,42 @@ class TestSkillToScriptDeps:
         """deps echoes the resolved component_type for a skill component."""
         result = cmd_deps(synthetic_index, _ALPHA, depth=10, dep_types=set(DependencyType))
         assert result['component_type'] == 'skill'
+
+
+class TestGetBasePathBundleCacheRouting:
+    """get_base_path routes deployed-bundle (plugin-cache) discovery through the layout op.
+
+    The plugin-cache / auto fallback scopes resolve their cache root via
+    ``_first_existing_bundle_cache_root`` →
+    ``marketplace_paths.get_bundle_cache_roots`` (the platform-runtime layout
+    op), so the Claude ``~/.claude/plugins/cache/...`` subpath is no longer
+    hardcoded. Forcing the roots to a tmp dir proves the routing.
+    """
+
+    def test_plugin_cache_scope_uses_layout_op_roots(self, tmp_path, monkeypatch):
+        """plugin-cache scope returns the first existing layout-op cache root."""
+        cache = tmp_path / "deployed-cache"
+        cache.mkdir()
+        monkeypatch.setattr(
+            _dep_index_mod, "get_bundle_cache_roots", lambda: (str(cache),)
+        )
+        assert _dep_index_mod.get_base_path("plugin-cache") == cache
+
+    def test_plugin_cache_scope_skips_missing_root(self, tmp_path, monkeypatch):
+        """A non-existent first root is skipped in favour of an existing later root."""
+        present = tmp_path / "present-cache"
+        present.mkdir()
+        monkeypatch.setattr(
+            _dep_index_mod,
+            "get_bundle_cache_roots",
+            lambda: (str(tmp_path / "missing"), str(present)),
+        )
+        assert _dep_index_mod.get_base_path("plugin-cache") == present
+
+    def test_plugin_cache_scope_raises_when_no_root_exists(self, tmp_path, monkeypatch):
+        """When no layout-op cache root exists, plugin-cache scope raises."""
+        monkeypatch.setattr(
+            _dep_index_mod, "get_bundle_cache_roots", lambda: (str(tmp_path / "nope"),)
+        )
+        with pytest.raises(FileNotFoundError):
+            _dep_index_mod.get_base_path("plugin-cache")

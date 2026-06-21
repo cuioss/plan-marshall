@@ -52,7 +52,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover
   --include-files
 ```
 
-Then check for `README.adoc` and `CLAUDE.md` at project root (drift checking) using the Read tool — these are well-known top-level paths that do not need a discovery resolver.
+Then check for `README.adoc` and the project's agent-instructions file at project root (drift checking) using the Read tool — these are well-known top-level paths that do not need a discovery resolver. The agent-instructions filename is target-aware: `CLAUDE.md` on Claude, `AGENTS.md` on OpenCode (read whichever is present).
 
 Present discovered documentation scope to user for confirmation. Skip if `paths` is empty.
 
@@ -115,11 +115,11 @@ One deliverable for project-wide drift detection:
   - `module`: `documentation`
   - `depends`: `none`
 - **Profiles**: `verification`
-- **Affected files**: `README.adoc`, `CLAUDE.md` (or equivalent project docs)
+- **Affected files**: `README.adoc`, the agent-instructions file (`CLAUDE.md` on Claude / `AGENTS.md` on OpenCode), or equivalent project docs
 - **Change per file**: Read-only drift analysis — no files modified
 - **Verification**: Compare documented bundles/modules against the actual directory structure surfaced by `manage-files discover` (see Drift Detection workflow below)
 - **Success Criteria**:
-  - All bundles/modules on disk are listed in README and CLAUDE.md
+  - All bundles/modules on disk are listed in README and the agent-instructions file
   - No documentation references non-existent bundles/modules
   - Bundle counts match actual directory contents
 
@@ -204,7 +204,7 @@ Compare documentation against actual project structure:
    ```
 
 2. Read README.adoc and extract documented bundle names
-3. Read CLAUDE.md and extract documented bundle names
+3. Read the agent-instructions file (`CLAUDE.md` on Claude / `AGENTS.md` on OpenCode) and extract documented bundle names
 4. Report any discrepancies as findings with `severity: warning`
 
 ---

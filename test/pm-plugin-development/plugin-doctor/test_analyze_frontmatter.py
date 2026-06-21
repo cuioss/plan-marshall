@@ -8,19 +8,21 @@ resolve it as a recipe provider. A ``recipe-*`` skill whose ``SKILL.md`` omits
 ``implements:`` (or declares a divergent value) is invisible to recipe
 discovery — this analyzer flags that gap.
 
-Two trees are scanned:
+Two tree families are scanned:
   * ``marketplace_root/{bundle}/skills/recipe-*/SKILL.md``
-  * ``{repo_root}/.claude/skills/recipe-*/SKILL.md`` where the repo root is
-    ``marketplace_root.parent.parent`` (``marketplace_root`` is
-    ``marketplace/bundles``).
+  * ``recipe-*/SKILL.md`` under every project-local-skill root the active
+    target's layout op reports (the Claude ``.claude/skills`` tree, or the
+    OpenCode layout), resolved via ``_doctor_shared.resolve_project_skill_trees``.
 
 Test layers:
   * Recipe skill with the canonical ``implements:`` → no finding (positive)
   * Recipe skill missing ``implements:`` → one finding (negative)
   * Recipe skill with a divergent ``implements:`` → one finding (boundary)
-  * Non-recipe skills and the project-local ``.claude/skills`` tree
+  * Non-recipe skills and the project-local skill trees (Claude default + a
+    forced multi-root OpenCode-style layout)
 """
 
+import pytest
 from pathlib import Path
 
 from conftest import load_script_module
@@ -30,6 +32,7 @@ def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
 
 
+_ds = _load_module('_doctor_shared', '_doctor_shared.py')
 _af = _load_module('_analyze_frontmatter', '_analyze_frontmatter.py')
 
 analyze_frontmatter = _af.analyze_frontmatter
@@ -222,3 +225,32 @@ class TestClaudeSkillsTree:
         findings = analyze_frontmatter(root)
 
         assert findings == []
+
+
+class TestMultiRootLayout:
+    """Both project-local-skill roots are scanned (target-aware, OpenCode-style).
+
+    On OpenCode the layout op reports a multi-root list. The analyzer resolves
+    its project-local trees through ``_doctor_shared.resolve_project_skill_trees``,
+    which routes through ``marketplace_paths.get_project_skill_roots``. Forcing
+    that helper to a two-root layout proves the analyzer scans EVERY reported
+    root, not just the single Claude ``.claude/skills`` tree.
+    """
+
+    def test_recipe_under_each_root_flagged(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        root = _bundles_root(tmp_path)
+        claude_recipe = tmp_path / '.claude' / 'skills' / 'recipe-claude'
+        opencode_recipe = tmp_path / '.opencode' / 'skill' / 'recipe-opencode'
+        for skill_dir in (claude_recipe, opencode_recipe):
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            (skill_dir / 'SKILL.md').write_text(_frontmatter(None), encoding='utf-8')
+
+        # Force the layout op to report both roots (mirrors the OpenCode
+        # executor's multi-root discovery). resolve_project_skill_trees anchors
+        # relative roots at the repo root (tmp_path here).
+        monkeypatch.setattr(_ds, 'get_project_skill_roots', lambda: ('.claude/skills', '.opencode/skill'))
+
+        findings = analyze_frontmatter(root)
+
+        flagged = {f['details']['skill'] for f in findings}
+        assert flagged == {'recipe-claude', 'recipe-opencode'}, f'both roots should be scanned, got {flagged}'

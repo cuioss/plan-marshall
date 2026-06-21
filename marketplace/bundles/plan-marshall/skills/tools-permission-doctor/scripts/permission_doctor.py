@@ -11,16 +11,31 @@ Provides:
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 
-from permission_common import (  # type: ignore[import-not-found]
+# Bootstrap sys.path so the platform-runtime library resolves without the
+# executor. Walk up to the skills/ root and append platform-runtime/scripts.
+for _ancestor in Path(__file__).resolve().parents:
+    if _ancestor.name == 'skills' and (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
+        _rt_path = str(_ancestor / 'platform-runtime' / 'scripts')
+        if _rt_path not in sys.path:
+            sys.path.append(_rt_path)
+        break
+
+from claude_runtime import (  # type: ignore[import-not-found]  # noqa: E402
+    _extract_project_steps,
+    _load_marshal_config,
+    _skill_permission_covered,
+)
+from permission_common import (  # type: ignore[import-not-found]  # noqa: E402
     EXIT_SUCCESS,
     get_global_settings_path,
     get_project_settings_path,
     load_settings,
     resolve_scope_to_paths,
 )
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
 
 # =============================================================================
 # detect-redundant subcommand
@@ -393,68 +408,39 @@ def cmd_detect_suspicious(args) -> dict:
 # detect-missing-project-step-permissions subcommand
 # =============================================================================
 
-# Phases in marshal.json that may contain project:{skill} step references
-PROJECT_STEP_PHASES = ('phase-5-execute', 'phase-6-finalize')
-
-
 def load_marshal_config(path: str) -> tuple[dict, str | None]:
     """Load marshal.json config file.
 
-    Args:
-        path: Absolute or relative path to marshal.json.
+    Thin delegator over the runtime's ``_load_marshal_config`` — the single home
+    for marshal parsing.
 
     Returns:
         Tuple of (config_dict, error_message). Error is None on success.
     """
-    marshal_path = Path(path)
-    if not marshal_path.exists():
-        return {}, f'marshal.json not found: {path}'
-
-    try:
-        with open(marshal_path, encoding='utf-8') as f:
-            data = json.load(f)
-        return data, None
-    except json.JSONDecodeError as e:
-        return {}, f'Invalid JSON in {path}: {e}'
+    return _load_marshal_config(path)
 
 
 def extract_project_steps(marshal_config: dict) -> list[dict]:
     """Enumerate project:{skill} step references from marshal.json.
 
-    Scans phases in PROJECT_STEP_PHASES under `plan.{phase}.steps` and filters
-    entries beginning with `project:`.
+    Thin delegator over the runtime's ``_extract_project_steps``.
 
     Returns:
         List of dicts with keys: skill, step, phase.
     """
-    plan = marshal_config.get('plan', {})
-    project_steps = []
-
-    for phase in PROJECT_STEP_PHASES:
-        phase_config = plan.get(phase, {})
-        steps = phase_config.get('steps', [])
-        for step in steps:
-            if isinstance(step, str) and step.startswith('project:'):
-                skill = step[len('project:') :]
-                project_steps.append({'skill': skill, 'step': step, 'phase': phase})
-
-    return project_steps
+    return _extract_project_steps(marshal_config)
 
 
 def skill_permission_covered(skill: str, allow_list: list[str]) -> str | None:
     """Check if a skill is covered by an allow rule.
 
-    Matches exact `Skill({skill})` or covering wildcard `Skill({skill}:*)`.
+    Thin delegator over the runtime's ``_skill_permission_covered`` — matches
+    exact ``Skill({skill})`` or covering wildcard ``Skill({skill}:*)``.
 
     Returns:
         The matching rule string, or None if no match found.
     """
-    exact = f'Skill({skill})'
-    wildcard = f'Skill({skill}:*)'
-    for rule in allow_list:
-        if rule == exact or rule == wildcard:
-            return rule
-    return None
+    return _skill_permission_covered(skill, allow_list)
 
 
 def cmd_detect_missing_project_step_permissions(args) -> dict:

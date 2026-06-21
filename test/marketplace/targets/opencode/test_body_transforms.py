@@ -9,9 +9,13 @@ import pytest
 from marketplace.targets.opencode.body_transforms import (
     SKILL_DIRECTIVE_RE,
     SKILL_REWRITTEN_RE,
+    UnmappedIdiomError,
+    assert_dispositions_known,
     build_slash_command_re,
     build_user_invocable_lookup,
+    load_idiom_registry,
     make_body_transformer,
+    rewrite_registered_idioms,
     rewrite_skill_directives,
     rewrite_slash_commands,
 )
@@ -345,3 +349,116 @@ def test_integration_real_marketplace_pickup_at_least_one():
 
     lookup = build_user_invocable_lookup(marketplace)
     assert len(lookup) >= 1, 'expected at least one user-invocable skill in real marketplace'
+
+
+# ---------------------------------------------------------------------------
+# Transform 3 — registered-idiom rewrite (data-driven, fail-closed)
+# ---------------------------------------------------------------------------
+
+
+def _registry(**overrides) -> dict:
+    """Build a registry dict for the three registered idioms with optional overrides."""
+    base = {
+        'AskUserQuestion': {'disposition': 'rewrite_inline_code', 'opencode_tool': 'question'},
+        'Task:': {'disposition': 'preserve'},
+        'Skill: <entry>': {'disposition': 'source_fix'},
+    }
+    base.update(overrides)
+    return base
+
+
+def test_rewrite_inline_code_rewrites_backtick_tool_reference():
+    """`AskUserQuestion` (backtick-wrapped) rewrites to the OpenCode `question` tool."""
+    body = 'Escalate via `AskUserQuestion` when ambiguous.\n'
+    result = rewrite_registered_idioms(body, _registry())
+    assert '`question`' in result
+    assert '`AskUserQuestion`' not in result
+
+
+def test_rewrite_inline_code_leaves_bare_prose_mention():
+    """A bare (non-backtick) prose mention of the concept is left alone."""
+    body = 'The AskUserQuestion escalation mechanism is target-neutral.\n'
+    result = rewrite_registered_idioms(body, _registry())
+    # No backtick reference → no rewrite; the prose concept name stays.
+    assert 'AskUserQuestion escalation mechanism' in result
+
+
+def test_rewrite_inline_code_idempotent():
+    """Re-running the rewrite on already-transformed text is a no-op."""
+    body = 'Escalate via `AskUserQuestion`.\n'
+    once = rewrite_registered_idioms(body, _registry())
+    twice = rewrite_registered_idioms(once, _registry())
+    assert once == twice
+
+
+def test_preserve_disposition_leaves_task_references():
+    """`Task:` carries the preserve disposition — leaf-constraint prose is untouched."""
+    body = 'This is a leaf — no `Task:` dispatch. Every plan-marshall `Task:` invocation...\n'
+    result = rewrite_registered_idioms(body, _registry())
+    assert result == body
+    assert '`Task:`' in result
+    assert '`task`' not in result
+
+
+def test_source_fix_disposition_leaves_skill_entry_placeholder():
+    """`Skill: <entry>` carries the source_fix disposition — no emit-time rewrite."""
+    body = 'For each entry in skills[]: `Skill: <entry>`\n'
+    result = rewrite_registered_idioms(body, _registry())
+    assert result == body
+
+
+def test_assert_dispositions_known_accepts_valid_registry():
+    """A registry with only known dispositions passes the fail-closed guard."""
+    assert_dispositions_known(_registry())  # does not raise
+
+
+def test_assert_dispositions_known_fails_closed_on_unknown_disposition():
+    """An unmapped/unknown disposition raises UnmappedIdiomError (fail-closed build)."""
+    bad = _registry(NewClaudeIdiom={'disposition': 'do_something_unknown'})
+    with pytest.raises(UnmappedIdiomError, match='NewClaudeIdiom'):
+        assert_dispositions_known(bad)
+
+
+def test_assert_dispositions_known_fails_closed_on_missing_disposition():
+    """A registered idiom with no disposition field raises (fail-closed)."""
+    bad = _registry(NoDisposition={'opencode_tool': 'whatever'})
+    with pytest.raises(UnmappedIdiomError):
+        assert_dispositions_known(bad)
+
+
+def test_load_idiom_registry_reads_real_mapping_json():
+    """The real mapping.json registry loads and validates fail-closed (no raise)."""
+    registry = load_idiom_registry()
+    # The three registered idioms are present with their documented dispositions.
+    assert registry['AskUserQuestion']['disposition'] == 'rewrite_inline_code'
+    assert registry['AskUserQuestion']['opencode_tool'] == 'question'
+    assert registry['Task:']['disposition'] == 'preserve'
+    assert registry['Skill: <entry>']['disposition'] == 'source_fix'
+
+
+def test_load_idiom_registry_fails_closed_on_bad_mapping(tmp_path: Path):
+    """A mapping.json with an unknown disposition raises at load time."""
+    bad_mapping = tmp_path / 'mapping.json'
+    _write(
+        bad_mapping,
+        '{"body_idiom_rewrites": {"Foo": {"disposition": "bogus"}}}',
+    )
+    with pytest.raises(UnmappedIdiomError):
+        load_idiom_registry(bad_mapping)
+
+
+def test_make_body_transformer_applies_transform_3_from_real_mapping():
+    """make_body_transformer wires Transform 3 using the real mapping.json registry."""
+    transform = make_body_transformer({})
+    body = 'Escalate via `AskUserQuestion`.\n'
+    result = transform(body, 'demo', 'skill')
+    assert '`question`' in result
+    assert '`AskUserQuestion`' not in result
+
+
+def test_make_body_transformer_transform_3_preserves_task():
+    """The composed transformer preserves `Task:` (leaf-aware disposition)."""
+    transform = make_body_transformer({})
+    body = 'no `Task:` dispatch here\n'
+    result = transform(body, 'demo', 'skill')
+    assert result == body

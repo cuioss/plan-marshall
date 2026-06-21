@@ -7,7 +7,7 @@ mode: script-executor
 
 # Platform Runtime Skill
 
-Script-based platform abstraction that routes 15 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
+Script-based platform abstraction that routes 18 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
 
 ## Enforcement
 
@@ -27,12 +27,14 @@ Script-based platform abstraction that routes 15 goal-based operations to the co
 
 ## What This Skill Provides
 
-Fifteen operations covering the full platform lifecycle:
+Eighteen operations covering the full platform lifecycle:
 
 | Operation | Purpose |
 |-----------|---------|
 | `project initial-setup` | One-time project setup: create `.plan/`, seed `marshal.json`, install platform hook |
 | `project install-hook` | Install the terminal-title hook bundle; with the orthogonal `--enforcement` opt-in, install ONLY the PreToolUse enforcement hook entry without touching the terminal-title wiring |
+| `layout skill-roots` | Resolve the ordered project-local skill root directories for the active target |
+| `layout bundle-cache-root` | Resolve the deployed-bundle cache root directories for the active target |
 | `session capture` | Persist current session id via `manage-status`; no-op on OpenCode |
 | `permission configure` | Write raw permission list to platform settings |
 | `permission analyze` | Read-only audit of permission hygiene, redundancy, and missing-steps |
@@ -44,6 +46,7 @@ Fifteen operations covering the full platform lifecycle:
 | `session render-title` | Emit OSC title sequence from writer artifact; no-op on OpenCode |
 | `session push-title-token` | Parse `--plan-id` and `--icon`, emit OSC escape to `/dev/tty` (Claude); no-op on OpenCode |
 | `metrics capture` | Record token consumption for a planning phase |
+| `metrics normalized-tokens` | Resolve normalized transcript token totals for the active target |
 | `subagent dispatch` | Return platform-specific subagent invocation parameters |
 | `health-check` | Verify platform integration |
 

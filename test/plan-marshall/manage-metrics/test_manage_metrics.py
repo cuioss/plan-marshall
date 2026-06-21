@@ -933,716 +933,195 @@ class TestClampWorkedToWall:
 
 
 # =============================================================================
-# Test: enrich subagent attribution (Tier 2 - direct import)
+# Test: enrich delegates to the platform-runtime normalized-tokens op
 # =============================================================================
+#
+# manage-metrics no longer parses a transcript. cmd_enrich computes this plan's
+# phase windows, invokes the platform-runtime `metrics normalized-tokens` op via
+# subprocess, reads the per-phase JSON sidecar the op writes, and persists the
+# normalized numbers. These tests patch the subprocess boundary so the op's
+# behaviour is simulated without a real Claude transcript.
 
 
-def _write_synthetic_transcript(transcript_path: Path, entries: list[dict]) -> None:
-    """Materialise a JSONL transcript file from a list of entry dicts."""
-    transcript_path.parent.mkdir(parents=True, exist_ok=True)
-    with transcript_path.open('w', encoding='utf-8') as f:
-        for entry in entries:
-            f.write(json.dumps(entry) + '\n')
+_ENRICH_TWO_PHASE_METRICS = (
+    'plan_id: {plan_id}\n\n'
+    'phases:\n'
+    '  5-execute:\n'
+    '    start_time: 2026-01-01T10:00:00+00:00\n'
+    '    end_time: 2026-01-01T11:00:00+00:00\n'
+)
 
 
-def _agent_return_entry(timestamp: str, usage_block: str) -> dict:
-    """Build a JSONL entry shaped like a Claude Code tool_result with embedded <usage>."""
-    return {
-        'timestamp': timestamp,
-        'message': {
-            'role': 'user',
-            'content': [
-                {
-                    'type': 'tool_result',
-                    'tool_use_id': 'toolu_test',
-                    'content': [
-                        {'type': 'text', 'text': usage_block},
-                    ],
-                }
-            ],
-        },
-    }
+class _FakeCompleted:
+    """Minimal stand-in for subprocess.CompletedProcess carrying a TOON stdout."""
+
+    def __init__(self, stdout: str) -> None:
+        self.stdout = stdout
+        self.returncode = 0
+        self.stderr = ''
 
 
-def _main_context_entry(
-    timestamp: str,
-    input_tokens: int,
-    output_tokens: int,
-    cache_read_input_tokens: int = 0,
-    cache_creation_input_tokens: int = 0,
-) -> dict:
-    """Build a JSONL entry shaped like an assistant message with main-context usage.
+def _patch_runtime_op(monkeypatch, *, status: str, per_phase: dict | None, counters: dict | None):
+    """Patch subprocess.run so the runtime-op call writes *per_phase* and returns a TOON.
 
-    The optional ``cache_read_input_tokens`` / ``cache_creation_input_tokens``
-    arguments let a fixture exercise the four-field parent-orchestrator walk;
-    they default to 0 so existing single-figure callers are unchanged.
+    The fake reads the ``--output-file`` argument from the constructed argv and
+    writes ``per_phase`` to it as JSON (mirroring what the real Claude runtime op
+    does), then returns a CompletedProcess whose stdout is a TOON envelope with the
+    requested ``status`` and ``counters``.
     """
-    usage = {'input_tokens': input_tokens, 'output_tokens': output_tokens}
-    if cache_read_input_tokens:
-        usage['cache_read_input_tokens'] = cache_read_input_tokens
-    if cache_creation_input_tokens:
-        usage['cache_creation_input_tokens'] = cache_creation_input_tokens
-    return {
-        'timestamp': timestamp,
-        'message': {
-            'role': 'assistant',
-            'usage': usage,
-            'content': [{'type': 'text', 'text': 'Working...'}],
-        },
-    }
+    counters = counters or {}
+
+    def _fake_run(argv, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        output_file = None
+        for i, token in enumerate(argv):
+            if token == '--output-file' and i + 1 < len(argv):
+                output_file = argv[i + 1]
+        if status == 'success' and per_phase is not None and output_file is not None:
+            Path(output_file).write_text(json.dumps(per_phase), encoding='utf-8')
+        lines = [f'status: {status}', 'operation: metrics normalized-tokens']
+        for key, value in counters.items():
+            lines.append(f'{key}: {value}')
+        return _FakeCompleted('\n'.join(lines) + '\n')
+
+    monkeypatch.setattr(manage_metrics.subprocess, 'run', _fake_run)
 
 
-_DETERMINISTIC_METRICS_TOON = """plan_id: {plan_id}
+class TestEnrichDelegatesToRuntimeOp:
+    """cmd_enrich consumes the runtime op's normalized per-phase numbers."""
 
-[5-execute]
-  start_time: 2026-03-27T10:00:00+00:00
-  end_time: 2026-03-27T10:30:00+00:00
-
-[6-finalize]
-  start_time: 2026-03-27T10:30:01+00:00
-  end_time: 2026-03-27T11:00:00+00:00
-"""
-
-
-class TestEnrichSubagentAttribution:
-    """enrich walks tool_result content for <usage> tags and attributes by phase window."""
-
-    def _seed_deterministic_metrics(self, plan_dir: Path, plan_id: str) -> None:
-        """Write metrics.toon with hand-picked, well-separated phase windows."""
-        metrics_path = plan_dir / 'work' / 'metrics.toon'
-        metrics_path.parent.mkdir(parents=True, exist_ok=True)
-        metrics_path.write_text(_DETERMINISTIC_METRICS_TOON.format(plan_id=plan_id))
-
-    def test_attributes_subagent_usage_to_matching_phase(self, plan_context, monkeypatch, tmp_path):
-        """Subagent <usage> tags fall into the phase whose start/end window contains them."""
-        self._seed_deterministic_metrics(plan_context.plan_dir_for('enrich-attr'), 'enrich-attr')
-
-        session_id = 'session-attr'
-        projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
-        transcript_path = projects_root / f'{session_id}.jsonl'
-        entries = [
-            _main_context_entry('2026-03-27T10:15:00+00:00', input_tokens=1000, output_tokens=200),
-            _agent_return_entry(
-                '2026-03-27T10:15:00+00:00',
-                '<usage>total_tokens: 4000\ntool_uses: 5\nduration_ms: 25000</usage>',
-            ),
-            _agent_return_entry(
-                '2026-03-27T10:45:00+00:00',
-                '<usage>total_tokens: 9000\ntool_uses: 18\nduration_ms: 90000</usage>',
-            ),
-        ]
-        _write_synthetic_transcript(transcript_path, entries)
-
-        monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
-
-        result = cmd_enrich(_ns_enrich('enrich-attr', session_id))
-
-        assert result['status'] == 'success'
-        assert result['enriched'] is True
-        assert result['subagent_phases_attributed'] == 2
-        assert result['subagent_calls_attributed'] == 2
-
-        metrics_after = (plan_context.plan_dir_for('enrich-attr') / 'work' / 'metrics.toon').read_text()
-        assert 'subagent_total_tokens: 4000' in metrics_after
-        assert 'subagent_total_tokens: 9000' in metrics_after
-
-    def test_ignores_subagent_usage_outside_phase_windows(self, plan_context, monkeypatch, tmp_path):
-        """Subagent calls whose timestamps predate / postdate any phase window are dropped."""
-        self._seed_deterministic_metrics(plan_context.plan_dir_for('enrich-out'), 'enrich-out')
-
-        session_id = 'session-out'
-        projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
-        transcript_path = projects_root / f'{session_id}.jsonl'
-        entries = [
-            # timestamp before any phase started
-            _agent_return_entry(
-                '1999-01-01T00:00:00+00:00',
-                '<usage>total_tokens: 9999\ntool_uses: 99\nduration_ms: 99999</usage>',
-            ),
-        ]
-        _write_synthetic_transcript(transcript_path, entries)
-
-        monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
-
-        result = cmd_enrich(_ns_enrich('enrich-out', session_id))
-        assert result['status'] == 'success'
-        assert result['subagent_calls_attributed'] == 0
-        assert result['subagent_phases_attributed'] == 0
-
-        metrics_after = (plan_context.plan_dir_for('enrich-out') / 'work' / 'metrics.toon').read_text()
-        assert 'subagent_total_tokens' not in metrics_after
-
-    def test_attributes_subagent_tokens_alias_key(self, plan_context, monkeypatch, tmp_path):
-        """A <usage> block emitting the `subagent_tokens` alias still yields subagent_total_tokens > 0."""
-        self._seed_deterministic_metrics(plan_context.plan_dir_for('enrich-alias'), 'enrich-alias')
-
-        session_id = 'session-alias'
-        projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
-        transcript_path = projects_root / f'{session_id}.jsonl'
-        entries = [
-            _agent_return_entry(
-                '2026-03-27T10:15:00+00:00',
-                '<usage>subagent_tokens: 7000\ntool_uses: 6\nduration_ms: 30000</usage>',
-            ),
-        ]
-        _write_synthetic_transcript(transcript_path, entries)
-
-        monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
-
-        result = cmd_enrich(_ns_enrich('enrich-alias', session_id))
-
-        assert result['status'] == 'success'
-        assert result['enriched'] is True
-        assert result['subagent_calls_attributed'] == 1
-
-        metrics_after = (plan_context.plan_dir_for('enrich-alias') / 'work' / 'metrics.toon').read_text()
-        assert 'subagent_total_tokens: 7000' in metrics_after
-
-
-_TWO_PHASE_METRICS_TOON = """plan_id: {plan_id}
-
-[2-refine]
-  start_time: 2026-03-27T09:00:00+00:00
-  end_time: 2026-03-27T09:30:00+00:00
-
-[5-execute]
-  start_time: 2026-03-27T10:00:00+00:00
-  end_time: 2026-03-27T10:30:00+00:00
-"""
-
-
-def _seed_subagent_jsonl(
-    sub_dir: Path,
-    name: str,
-    entries: list[dict],
-) -> Path:
-    """Write a subagent transcript JSONL with the given message entries."""
-    sub_dir.mkdir(parents=True, exist_ok=True)
-    path = sub_dir / name
-    with path.open('w', encoding='utf-8') as f:
-        for entry in entries:
-            f.write(json.dumps(entry) + '\n')
-    return path
-
-
-def _subagent_msg(
-    timestamp: str,
-    input_tokens: int,
-    output_tokens: int,
-    cache_read_input_tokens: int = 0,
-    cache_creation_input_tokens: int = 0,
-) -> dict:
-    """Build a subagent JSONL entry shaped like a Claude Code assistant message.
-
-    The optional cache arguments mirror ``_main_context_entry`` so a fixture can
-    drive the four-field subagent-transcript summation; they default to 0 so the
-    existing two-field callers are unaffected.
-    """
-    usage = {'input_tokens': input_tokens, 'output_tokens': output_tokens}
-    if cache_read_input_tokens:
-        usage['cache_read_input_tokens'] = cache_read_input_tokens
-    if cache_creation_input_tokens:
-        usage['cache_creation_input_tokens'] = cache_creation_input_tokens
-    return {
-        'timestamp': timestamp,
-        'message': {
-            'role': 'assistant',
-            'usage': usage,
-            'content': [{'type': 'text', 'text': 'sub work'}],
-        },
-    }
-
-
-class TestEnrichSubagentTranscriptWalk:
-    """cmd_enrich walks ~/.claude/projects/{slug}/{sid}/subagents/agent-*.jsonl per message."""
-
-    _METRICS_FIXTURE = _TWO_PHASE_METRICS_TOON
-
-    def _seed_two_phase_metrics(self, plan_dir: Path, plan_id: str) -> None:
-        metrics_path = plan_dir / 'work' / 'metrics.toon'
-        metrics_path.parent.mkdir(parents=True, exist_ok=True)
-        metrics_path.write_text(self._METRICS_FIXTURE.format(plan_id=plan_id))
-
-    def _patch_session_paths(self, monkeypatch, tmp_path) -> str:
-        """Monkeypatch Path.home and manage_metrics._resolve_cwd to a controlled root.
-
-        Returns the fixed cwd used by manage_metrics for slug derivation.
-        """
-        fake_cwd = '/fake/repo'
-        monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
-        monkeypatch.setattr(manage_metrics, '_resolve_cwd', lambda: fake_cwd)
-        return fake_cwd
-
-    def test_two_subagent_files_counted(self, plan_context, monkeypatch, tmp_path):
-        """Two agent-*.jsonl files under {slug}/{sid}/subagents/ are walked and counted."""
-        self._seed_two_phase_metrics(plan_context.plan_dir_for('enrich-sub-01'), 'enrich-sub-01')
-
-        fake_cwd = self._patch_session_paths(monkeypatch, tmp_path)
-        slug = fake_cwd.replace('/', '-')
-        session_id = '11111111-1111-1111-1111-111111111101'
-
-        # Parent transcript: at least one valid message to drive the walk.
-        parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
-        parent_transcript = parent_root / f'{session_id}.jsonl'
-        _write_synthetic_transcript(parent_transcript, [
-            _main_context_entry('2026-03-27T09:15:00+00:00', input_tokens=100, output_tokens=10),
-        ])
-
-        sub_dir = parent_root / session_id / 'subagents'
-        _seed_subagent_jsonl(
-            sub_dir,
-            'agent-001.jsonl',
-            [
-                _subagent_msg('2026-03-27T09:20:00+00:00', 500, 50),
-                _subagent_msg('2026-03-27T09:25:00+00:00', 700, 70),
-            ],
+    def test_persists_normalized_four_fields_and_billing_total(self, plan_context, monkeypatch):
+        """A success op response is persisted into the plan's metrics phase row."""
+        plan_dir = plan_context.plan_dir_for('enrich-delegate-01')
+        manage_metrics.write_metrics(
+            'enrich-delegate-01',
+            {'plan_id': 'enrich-delegate-01'},
         )
-        _seed_subagent_jsonl(
-            sub_dir,
-            'agent-002.jsonl',
-            [
-                _subagent_msg('2026-03-27T10:10:00+00:00', 900, 90),
-            ],
+        # Seed the phase window the op will be handed.
+        (plan_dir / 'work').mkdir(parents=True, exist_ok=True)
+        (plan_dir / 'work' / 'metrics.toon').write_text(
+            _ENRICH_TWO_PHASE_METRICS.format(plan_id='enrich-delegate-01'), encoding='utf-8'
         )
 
-        result = cmd_enrich(_ns_enrich('enrich-sub-01', session_id))
-
-        assert result['status'] == 'success'
-        assert result['subagent_transcripts_walked'] == 2
-
-    def test_main_context_only_fixture_walks_no_subagents(self, plan_context, monkeypatch, tmp_path):
-        """No subagent directory → subagent_transcripts_walked is zero."""
-        self._seed_two_phase_metrics(plan_context.plan_dir_for('enrich-sub-02'), 'enrich-sub-02')
-
-        fake_cwd = self._patch_session_paths(monkeypatch, tmp_path)
-        slug = fake_cwd.replace('/', '-')
-        session_id = '11111111-1111-1111-1111-111111111102'
-
-        parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
-        parent_transcript = parent_root / f'{session_id}.jsonl'
-        _write_synthetic_transcript(parent_transcript, [
-            _main_context_entry('2026-03-27T09:15:00+00:00', input_tokens=100, output_tokens=10),
-        ])
-        # Deliberately do NOT seed a subagents directory.
-
-        result = cmd_enrich(_ns_enrich('enrich-sub-02', session_id))
-
-        assert result['status'] == 'success'
-        assert result['subagent_transcripts_walked'] == 0
-
-    def test_subagent_transcripts_walked_matches_file_count(self, plan_context, monkeypatch, tmp_path):
-        """The subagent_transcripts_walked count matches the number of agent-*.jsonl files discovered."""
-        self._seed_two_phase_metrics(plan_context.plan_dir_for('enrich-sub-04'), 'enrich-sub-04')
-
-        fake_cwd = self._patch_session_paths(monkeypatch, tmp_path)
-        slug = fake_cwd.replace('/', '-')
-        session_id = '11111111-1111-1111-1111-111111111104'
-
-        parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
-        parent_transcript = parent_root / f'{session_id}.jsonl'
-        _write_synthetic_transcript(parent_transcript, [
-            _main_context_entry('2026-03-27T09:15:00+00:00', input_tokens=10, output_tokens=1),
-        ])
-        sub_dir = parent_root / session_id / 'subagents'
-        for i, name in enumerate(['agent-a.jsonl', 'agent-b.jsonl', 'agent-c.jsonl']):
-            _seed_subagent_jsonl(
-                sub_dir,
-                name,
-                [_subagent_msg(f'2026-03-27T09:{20 + i}:00+00:00', 10, 1)],
-            )
-
-        result = cmd_enrich(_ns_enrich('enrich-sub-04', session_id))
-        assert result['status'] == 'success'
-        assert result['subagent_transcripts_walked'] == 3
-
-
-# =============================================================================
-# Test: enrich four-field usage view + billing-weighted total (Tier 2)
-# =============================================================================
-
-
-class TestSumSubagentTranscript:
-    """Direct coverage of _sum_subagent_transcript four-field summation + timestamp."""
-
-    def test_sums_four_fields_across_lines(self, tmp_path):
-        """The four message.usage fields accumulate across every JSONL line."""
-        path = _seed_subagent_jsonl(
-            tmp_path / 'subs',
-            'agent-001.jsonl',
-            [
-                _subagent_msg(
-                    '2026-03-27T10:05:00+00:00',
-                    input_tokens=100,
-                    output_tokens=10,
-                    cache_read_input_tokens=2000,
-                    cache_creation_input_tokens=300,
-                ),
-                _subagent_msg(
-                    '2026-03-27T10:06:00+00:00',
-                    input_tokens=50,
-                    output_tokens=5,
-                    cache_read_input_tokens=1000,
-                    cache_creation_input_tokens=100,
-                ),
-            ],
-        )
-        fields, first_ts = manage_metrics._sum_subagent_transcript(path)
-        assert fields['input_tokens'] == 150
-        assert fields['output_tokens'] == 15
-        assert fields['cache_read_input_tokens'] == 3000
-        assert fields['cache_creation_input_tokens'] == 400
-        # The first JSONL line's timestamp is the transcript spawn timestamp.
-        assert first_ts == '2026-03-27T10:05:00+00:00'
-
-    def test_missing_fields_default_to_zero(self, tmp_path):
-        """A usage dict lacking the cache fields contributes zero for them."""
-        path = _seed_subagent_jsonl(
-            tmp_path / 'subs',
-            'agent-002.jsonl',
-            [_subagent_msg('2026-03-27T10:05:00+00:00', input_tokens=80, output_tokens=8)],
-        )
-        fields, _ = manage_metrics._sum_subagent_transcript(path)
-        assert fields['input_tokens'] == 80
-        assert fields['output_tokens'] == 8
-        assert fields['cache_read_input_tokens'] == 0
-        assert fields['cache_creation_input_tokens'] == 0
-
-    def test_no_timestamp_returns_none(self, tmp_path):
-        """A transcript whose lines carry no timestamp yields first_ts=None."""
-        sub_dir = tmp_path / 'subs'
-        sub_dir.mkdir(parents=True, exist_ok=True)
-        path = sub_dir / 'agent-003.jsonl'
-        path.write_text(
-            json.dumps({'message': {'usage': {'input_tokens': 10, 'output_tokens': 1}}}) + '\n',
-            encoding='utf-8',
-        )
-        fields, first_ts = manage_metrics._sum_subagent_transcript(path)
-        assert fields['input_tokens'] == 10
-        assert first_ts is None
-
-
-class TestBillingWeightedTotal:
-    """Direct coverage of the _billing_weighted_total arithmetic and weights."""
-
-    def test_arithmetic_with_stated_weights(self):
-        """billing = input + output + round(0.1*cache_read) + round(1.25*cache_creation)."""
-        four = {
-            'input_tokens': 1000,
-            'output_tokens': 200,
-            'cache_read_input_tokens': 5000,
-            'cache_creation_input_tokens': 400,
+        per_phase = {
+            '5-execute': {
+                'input': 1000,
+                'output': 200,
+                'cache_read': 10000,
+                'cache_creation': 400,
+                'input_tokens': 1000,
+                'output_tokens': 200,
+                'cache_read_input_tokens': 10000,
+                'cache_creation_input_tokens': 400,
+                'billing_weighted_total': 2700,
+                'total': 2700,
+                'subagent_total_tokens': 7000,
+                'subagent_tool_uses': 6,
+                'subagent_duration_ms': 30000,
+                'subagent_samples': 1,
+            }
         }
-        # 1000 + 200 + round(0.1*5000=500) + round(1.25*400=500) = 2200
-        assert manage_metrics._billing_weighted_total(four) == 2200
-
-    def test_rounding_is_applied_per_term(self):
-        """Each cache term is rounded independently (banker's rounding via round())."""
-        four = {
-            'input_tokens': 0,
-            'output_tokens': 0,
-            'cache_read_input_tokens': 7,  # round(0.7) = 1
-            'cache_creation_input_tokens': 2,  # round(2.5) = 2 (banker's rounding)
-        }
-        assert manage_metrics._billing_weighted_total(four) == 1 + 2
-
-    def test_weight_constants_match_request(self):
-        """The module-level weight constants are the request-stated approximations."""
-        assert manage_metrics.BILLING_WEIGHT_CACHE_READ == 0.1
-        assert manage_metrics.BILLING_WEIGHT_CACHE_CREATION == 1.25
-
-    def test_missing_fields_treated_as_zero(self):
-        """An empty four-field dict yields a zero billing total."""
-        assert manage_metrics._billing_weighted_total({}) == 0
-
-
-# Two well-separated phase windows whose boundary touches at a single instant:
-# 5-execute ends at 10:30:00 and 6-finalize starts at the SAME instant, so a
-# subagent spawned exactly at 10:30:00 exercises the latest-window-wins tie rule.
-_BOUNDARY_TOUCHING_METRICS_TOON = """plan_id: {plan_id}
-
-[5-execute]
-  start_time: 2026-03-27T10:00:00+00:00
-  end_time: 2026-03-27T10:30:00+00:00
-
-[6-finalize]
-  start_time: 2026-03-27T10:30:00+00:00
-  end_time: 2026-03-27T11:00:00+00:00
-"""
-
-
-class TestEnrichFourFieldUsageView:
-    """cmd_enrich sources the four message.usage fields from subagent transcripts
-    (parent-anchored discovery) plus parent-orchestrator turns, attributes each
-    whole transcript to a phase window, and persists the billing-weighted total."""
-
-    def _seed_two_phase_metrics(self, plan_dir: Path, plan_id: str, toon: str) -> None:
-        metrics_path = plan_dir / 'work' / 'metrics.toon'
-        metrics_path.parent.mkdir(parents=True, exist_ok=True)
-        metrics_path.write_text(toon.format(plan_id=plan_id))
-
-    def test_four_fields_summed_from_subagent_and_parent(self, plan_context, monkeypatch, tmp_path):
-        """Per-phase four-field totals = subagent-transcript sum + parent-window sum."""
-        self._seed_two_phase_metrics(
-            plan_context.plan_dir_for('enrich-4f-sum'), 'enrich-4f-sum', _TWO_PHASE_METRICS_TOON
-        )
-        session_id = '22222222-2222-2222-2222-222222222201'
-        slug = 'plan'
-        parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
-        parent_transcript = parent_root / f'{session_id}.jsonl'
-        # Parent orchestrator turn inside 5-execute (10:00-10:30) carrying cache fields.
-        _write_synthetic_transcript(parent_transcript, [
-            _main_context_entry(
-                '2026-03-27T10:10:00+00:00',
-                input_tokens=100,
-                output_tokens=20,
-                cache_read_input_tokens=1000,
-                cache_creation_input_tokens=40,
-            ),
-        ])
-        # Subagent transcript also inside 5-execute (first timestamp 10:12:00).
-        sub_dir = parent_root / session_id / 'subagents'
-        _seed_subagent_jsonl(
-            sub_dir,
-            'agent-001.jsonl',
-            [
-                _subagent_msg(
-                    '2026-03-27T10:12:00+00:00',
-                    input_tokens=900,
-                    output_tokens=180,
-                    cache_read_input_tokens=9000,
-                    cache_creation_input_tokens=360,
-                ),
-            ],
+        _patch_runtime_op(
+            monkeypatch,
+            status='success',
+            per_phase=per_phase,
+            counters={
+                'message_count': 4,
+                'subagent_phases_attributed': 1,
+                'subagent_calls_attributed': 1,
+                'subagent_transcripts_walked': 1,
+                'four_field_phases_attributed': 1,
+            },
         )
 
-        monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
+        result = cmd_enrich(_ns_enrich('enrich-delegate-01', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
 
-        result = cmd_enrich(_ns_enrich('enrich-4f-sum', session_id))
         assert result['status'] == 'success'
         assert result['enriched'] is True
+        assert result['message_count'] == 4
         assert result['subagent_transcripts_walked'] == 1
         assert result['four_field_phases_attributed'] == 1
 
-        metrics_after = manage_metrics.read_metrics_raw('enrich-4f-sum')
-        five = metrics_after['phases']['5-execute']
-        # parent(100) + subagent(900) = 1000 input; 20 + 180 = 200 output;
-        # 1000 + 9000 = 10000 cache_read; 40 + 360 = 400 cache_creation.
+        five = manage_metrics.read_metrics_raw('enrich-delegate-01')['phases']['5-execute']
         assert five['input_tokens'] == 1000
         assert five['output_tokens'] == 200
         assert five['cache_read_input_tokens'] == 10000
         assert five['cache_creation_input_tokens'] == 400
-        # billing = 1000 + 200 + round(0.1*10000=1000) + round(1.25*400=500) = 2700.
         assert five['billing_weighted_total'] == 2700
+        assert five['subagent_total_tokens'] == 7000
+        assert five['subagent_tool_uses'] == 6
+        assert five['subagent_duration_ms'] == 30000
+        assert five['subagent_samples'] == 1
 
-    def test_slug_gap_regression_discovery_anchored_to_parent(self, plan_context, monkeypatch, tmp_path):
-        """Even when _resolve_cwd returns a divergent git-root slug, discovery still
-        finds the subagent transcripts via the parent-anchored path (worktree-vs-main
-        slug gap no longer zeroes the metric)."""
-        self._seed_two_phase_metrics(
-            plan_context.plan_dir_for('enrich-4f-slug'), 'enrich-4f-slug', _TWO_PHASE_METRICS_TOON
-        )
-        session_id = '22222222-2222-2222-2222-222222222202'
-        # Parent transcript lives under the WORKTREE-derived project-dir slug.
-        worktree_slug = '-Users-oliver-git-plan-marshall-worktrees-some-plan'
-        parent_root = tmp_path / 'home' / '.claude' / 'projects' / worktree_slug
-        parent_transcript = parent_root / f'{session_id}.jsonl'
-        _write_synthetic_transcript(parent_transcript, [
-            _main_context_entry('2026-03-27T10:10:00+00:00', input_tokens=10, output_tokens=2),
-        ])
-        sub_dir = parent_root / session_id / 'subagents'
-        _seed_subagent_jsonl(
-            sub_dir,
-            'agent-001.jsonl',
-            [
-                _subagent_msg(
-                    '2026-03-27T10:12:00+00:00',
-                    input_tokens=500,
-                    output_tokens=50,
-                    cache_read_input_tokens=4000,
-                    cache_creation_input_tokens=80,
-                ),
-            ],
-        )
+    def test_noop_response_degrades_gracefully(self, plan_context, monkeypatch):
+        """A `no-op` op response (no transcript) yields enriched=False, no persistence."""
+        manage_metrics.write_metrics('enrich-delegate-02', {'plan_id': 'enrich-delegate-02'})
+        _patch_runtime_op(monkeypatch, status='no-op', per_phase=None, counters={})
 
-        monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
-        # _resolve_cwd returns a DIFFERENT (main-checkout) git root — the slug it
-        # would derive does NOT match the parent transcript's project-dir. The
-        # legacy slug-from-git-root path would look under the wrong directory and
-        # return []. The parent-anchored discovery must ignore this and still find
-        # the subagent transcript.
-        monkeypatch.setattr(
-            manage_metrics, '_resolve_cwd', lambda: '/Users/oliver/git/plan-marshall'
-        )
+        result = cmd_enrich(_ns_enrich('enrich-delegate-02', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
 
-        result = cmd_enrich(_ns_enrich('enrich-4f-slug', session_id))
         assert result['status'] == 'success'
-        # Discovery succeeded despite the divergent _resolve_cwd slug.
-        assert result['subagent_transcripts_walked'] == 1
-        assert result['four_field_phases_attributed'] == 1
+        assert result['enriched'] is False
+        # No four-field data should have been written.
+        phases = manage_metrics.read_metrics_raw('enrich-delegate-02').get('phases', {})
+        five = phases.get('5-execute', {})
+        assert 'input_tokens' not in five
 
-        five = manage_metrics.read_metrics_raw('enrich-4f-slug')['phases']['5-execute']
-        # parent(10) + subagent(500) = 510 input — proves the subagent fields were
-        # NOT silently zeroed by a slug mismatch.
-        assert five['input_tokens'] == 510
-        assert five['cache_read_input_tokens'] == 4000
+    def test_op_invocation_failure_degrades_gracefully(self, plan_context, monkeypatch):
+        """When the subprocess raises, cmd_enrich reports enriched=False (no crash)."""
+        manage_metrics.write_metrics('enrich-delegate-03', {'plan_id': 'enrich-delegate-03'})
 
-    def test_whole_transcript_attributed_to_spawn_window(self, plan_context, monkeypatch, tmp_path):
-        """A subagent transcript is attributed AS A WHOLE to the window containing
-        its first-message timestamp — even when later lines fall in another window."""
-        self._seed_two_phase_metrics(
-            plan_context.plan_dir_for('enrich-4f-whole'), 'enrich-4f-whole', _TWO_PHASE_METRICS_TOON
-        )
-        session_id = '22222222-2222-2222-2222-222222222203'
-        slug = 'plan'
-        parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
-        parent_transcript = parent_root / f'{session_id}.jsonl'
-        _write_synthetic_transcript(parent_transcript, [
-            _main_context_entry('2026-03-27T09:15:00+00:00', input_tokens=1, output_tokens=1),
-        ])
-        sub_dir = parent_root / session_id / 'subagents'
-        # First message at 09:15 lands in 2-refine (09:00-09:30); a LATER line at
-        # 10:10 would fall in 5-execute, but whole-transcript attribution must
-        # assign the entire sum to 2-refine (the spawn window).
-        _seed_subagent_jsonl(
-            sub_dir,
-            'agent-001.jsonl',
-            [
-                _subagent_msg('2026-03-27T09:15:00+00:00', input_tokens=300, output_tokens=30),
-                _subagent_msg('2026-03-27T10:10:00+00:00', input_tokens=700, output_tokens=70),
-            ],
-        )
+        def _raise(*args, **kwargs):  # noqa: ANN002, ANN003
+            raise OSError('boom')
 
-        monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
+        monkeypatch.setattr(manage_metrics.subprocess, 'run', _raise)
 
-        result = cmd_enrich(_ns_enrich('enrich-4f-whole', session_id))
+        result = cmd_enrich(_ns_enrich('enrich-delegate-03', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
+
         assert result['status'] == 'success'
-
-        phases = manage_metrics.read_metrics_raw('enrich-4f-whole')['phases']
-        # The whole 300+700=1000 input sum lands in 2-refine, NOT split across windows.
-        assert phases['2-refine']['input_tokens'] == 1000 + 1  # +1 from the parent turn at 09:15
-        # 5-execute received no subagent attribution (parent had no turn there either).
-        assert '5-execute' not in phases or not phases['5-execute'].get('input_tokens')
-
-    def test_boundary_timestamp_resolves_latest_window_wins(self, plan_context, monkeypatch, tmp_path):
-        """A transcript spawned exactly on a phase boundary is attributed to the
-        newer window (latest-window-wins)."""
-        self._seed_two_phase_metrics(
-            plan_context.plan_dir_for('enrich-4f-bound'),
-            'enrich-4f-bound',
-            _BOUNDARY_TOUCHING_METRICS_TOON,
-        )
-        session_id = '22222222-2222-2222-2222-222222222204'
-        slug = 'plan'
-        parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
-        parent_transcript = parent_root / f'{session_id}.jsonl'
-        # Parent turn placed well inside 5-execute so the parent walk does not
-        # confound the boundary attribution under test.
-        _write_synthetic_transcript(parent_transcript, [
-            _main_context_entry('2026-03-27T10:15:00+00:00', input_tokens=0, output_tokens=0),
-        ])
-        sub_dir = parent_root / session_id / 'subagents'
-        # Spawn timestamp == 10:30:00 == 5-execute end == 6-finalize start.
-        _seed_subagent_jsonl(
-            sub_dir,
-            'agent-001.jsonl',
-            [_subagent_msg('2026-03-27T10:30:00+00:00', input_tokens=600, output_tokens=60)],
-        )
-
-        monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
-
-        result = cmd_enrich(_ns_enrich('enrich-4f-bound', session_id))
-        assert result['status'] == 'success'
-
-        phases = manage_metrics.read_metrics_raw('enrich-4f-bound')['phases']
-        # latest-window-wins → 6-finalize, not 5-execute.
-        assert phases['6-finalize']['input_tokens'] == 600
-        assert not phases.get('5-execute', {}).get('input_tokens')
-
-    def test_total_tokens_field_left_untouched(self, plan_context, monkeypatch, tmp_path):
-        """The four-field walk never overwrites the existing total_tokens semantics."""
-        plan_dir = plan_context.plan_dir_for('enrich-4f-total')
-        # Seed metrics with a pre-existing total_tokens on 5-execute.
-        metrics_path = plan_dir / 'work' / 'metrics.toon'
-        metrics_path.parent.mkdir(parents=True, exist_ok=True)
-        metrics_path.write_text(
-            'plan_id: enrich-4f-total\n\n'
-            '[5-execute]\n'
-            '  start_time: 2026-03-27T10:00:00+00:00\n'
-            '  end_time: 2026-03-27T10:30:00+00:00\n'
-            '  total_tokens: 123456\n'
-        )
-        session_id = '22222222-2222-2222-2222-222222222205'
-        slug = 'plan'
-        parent_root = tmp_path / 'home' / '.claude' / 'projects' / slug
-        parent_transcript = parent_root / f'{session_id}.jsonl'
-        _write_synthetic_transcript(parent_transcript, [
-            _main_context_entry('2026-03-27T10:10:00+00:00', input_tokens=5, output_tokens=1),
-        ])
-        sub_dir = parent_root / session_id / 'subagents'
-        _seed_subagent_jsonl(
-            sub_dir,
-            'agent-001.jsonl',
-            [_subagent_msg('2026-03-27T10:12:00+00:00', input_tokens=900, output_tokens=90)],
-        )
-
-        monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
-
-        result = cmd_enrich(_ns_enrich('enrich-4f-total', session_id))
-        assert result['status'] == 'success'
-
-        five = manage_metrics.read_metrics_raw('enrich-4f-total')['phases']['5-execute']
-        # total_tokens is the existing generation-tokens figure — unchanged.
-        assert five['total_tokens'] == 123456
-        # The new four-field view is persisted alongside it.
-        assert five['input_tokens'] == 905
+        assert result['enriched'] is False
 
 
-class TestEnrichDoesNotExtendUsageFieldRegex:
-    """Regression: the single-figure <usage> tag channel is unchanged.
+class TestManageMetricsHasNoTranscriptCode:
+    """Regression: the Claude-transcript engine no longer lives in manage-metrics.
 
-    USAGE_FIELD_RE must NOT be widened to read the four cache fields — the
-    <usage> return tag does not carry them (corrected data-source premise). The
-    tag channel keeps attributing only the single subagent token figure.
+    The transcript engine (transcript discovery, message.usage parse, <usage> tag,
+    strict-UUID, cache-pricing weights) was relocated to claude_runtime. These
+    assertions guard against a re-introduction.
     """
 
-    def test_usage_field_re_does_not_match_cache_fields(self):
-        """USAGE_FIELD_RE matches only the four single-figure keys, not cache fields."""
-        body = (
-            'total_tokens: 4000\n'
-            'tool_uses: 5\n'
-            'duration_ms: 25000\n'
-            'input_tokens: 999\n'
-            'cache_read_input_tokens: 8888\n'
-        )
-        matched = {m.group(1) for m in manage_metrics.USAGE_FIELD_RE.finditer(body)}
-        # Only the single-figure tag keys are captured — never the cache fields.
-        assert matched == {'total_tokens', 'tool_uses', 'duration_ms'}
-        assert 'input_tokens' not in matched
-        assert 'cache_read_input_tokens' not in matched
+    def test_no_transcript_engine_symbols(self):
+        """The removed transcript-engine helpers/constants are absent from the module."""
+        for symbol in (
+            'USAGE_TAG_RE',
+            'USAGE_FIELD_RE',
+            'SESSION_ID_RE',
+            'USAGE_FOUR_FIELDS',
+            'BILLING_WEIGHT_CACHE_READ',
+            'BILLING_WEIGHT_CACHE_CREATION',
+            '_sum_subagent_transcript',
+            '_billing_weighted_total',
+            '_attribute_subagent_usage',
+            '_add_usage_four_fields',
+            '_window_for_timestamp',
+            '_extract_text_payload',
+            '_resolve_subagent_transcripts',
+        ):
+            assert not hasattr(manage_metrics, symbol), f'{symbol} should have been relocated'
 
-    def test_attribute_subagent_usage_only_records_single_figure(self):
-        """_attribute_subagent_usage records the single token figure, not cache fields."""
-        windows = [
-            (
-                '5-execute',
-                manage_metrics.datetime.fromisoformat('2026-03-27T10:00:00+00:00'),
-                manage_metrics.datetime.fromisoformat('2026-03-27T10:30:00+00:00'),
-            )
-        ]
-        per_phase: dict[str, dict[str, int]] = {}
-        attributed = manage_metrics._attribute_subagent_usage(
-            '2026-03-27T10:15:00+00:00',
-            windows,
-            'total_tokens: 4000\ntool_uses: 5\nduration_ms: 25000\ncache_read_input_tokens: 9999',
-            per_phase,
-        )
-        assert attributed is True
-        bucket = per_phase['5-execute']
-        assert bucket['total_tokens'] == 4000
-        assert bucket['tool_uses'] == 5
-        assert bucket['duration_ms'] == 25000
-        # The cache field is NOT recorded by this channel.
-        assert 'cache_read_input_tokens' not in bucket
+    def test_source_has_no_claude_transcript_path_or_parse(self):
+        """The manage-metrics source no longer hard-codes the Claude transcript layout.
+
+        The ``.claude/projects`` path derivation and the transcript JSONL parse are
+        the transcript engine — both relocated to claude_runtime. (The ``<usage>``
+        return-tag continues to be consumed by the accumulate-agent-usage storage
+        path, so its string still legitimately appears; the assertion targets only
+        the transcript-engine markers.)
+        """
+        source = Path(SCRIPT_PATH).read_text(encoding='utf-8')
+        assert '.claude/projects' not in source
+        # The strict-UUID transcript guard and cache-pricing weights are gone.
+        assert 'SESSION_ID_RE' not in source
+        assert 'BILLING_WEIGHT' not in source
 
 
 class TestGenerateRendersFourFieldUsage:

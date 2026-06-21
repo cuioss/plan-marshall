@@ -90,9 +90,11 @@ def validate_lesson_id(lesson_id: str) -> str:
 
 
 def validate_session_id(session_id: str) -> str:
-    """Validate session_id is the Claude Code UUID-shape token.
+    """Validate session_id is an opaque session token (the target runtime supplies it).
 
-    Allows letters, digits, underscore, hyphen; 1-128 chars.
+    The session id is a runtime-supplied opaque token, not a fixed-shape
+    identifier: any target may supply it in its own format. The contract is
+    target-agnostic — letters, digits, underscore, hyphen; 1-128 chars.
     """
     if not session_id or not SESSION_ID_RE.match(session_id):
         raise ValueError(f'Invalid session_id format: {session_id!r}. Must match {SESSION_ID_RE.pattern}')
@@ -426,7 +428,7 @@ def add_session_id_arg(parser, required: bool = True) -> None:
         '--session-id',
         required=required,
         type=validate_session_id,
-        help='Claude Code session identifier',
+        help='Opaque session identifier (the target runtime supplies it)',
     )
 
 

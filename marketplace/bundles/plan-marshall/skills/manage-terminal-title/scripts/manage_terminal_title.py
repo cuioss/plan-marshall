@@ -19,29 +19,57 @@ Composition has three independent inputs:
   for an active phase. Suppressed for terminal phases regardless of the
   persisted token state — a finished plan holds no live lock state. See
   :data:`TITLE_TOKEN_GLYPHS`.
-* **Icon** — the process icon resolved from the hook event (➤ active / ? waiting
-  / ✓ done), with a terminal-state override to ✅ (:data:`_ICON_TERMINAL`) for a
-  finished plan regardless of which event fired. See :func:`resolve_icon` and
-  :func:`compose`.
+* **Icon** — the process icon resolved from a target-neutral process state (➤
+  active / ? waiting / ⚙ busy / ✓ done), with a terminal-state override to ✅
+  (:data:`_ICON_TERMINAL`) for a finished plan regardless of the process state.
+  See :func:`resolve_icon` and :func:`compose`.
+
+The composer is target-neutral by construction: it knows nothing about Claude
+hook events. The caller (e.g. ``platform-runtime``'s ``claude_runtime``) maps its
+target-specific event vocabulary to one of the :data:`PROCESS_STATES` values and
+passes that neutral state in.
 """
 
 from __future__ import annotations
 
-# --- Icon palette (event → process icon) -----------------------------------
+# --- Process-state enum (target-neutral) ------------------------------------
+#
+# The composer resolves the process icon from a target-neutral process state,
+# NOT from any target's event vocabulary. A target runtime maps its own events
+# (Claude's SessionStart/UserPromptSubmit/Notification/Stop/PreToolUse/...) to one
+# of these values before calling :func:`compose` / :func:`resolve_icon`.
+PROCESS_STATE_ACTIVE = "active"
+PROCESS_STATE_WAITING = "waiting"
+PROCESS_STATE_BUSY = "busy"
+PROCESS_STATE_DONE = "done"
+
+PROCESS_STATES: frozenset[str] = frozenset(
+    {PROCESS_STATE_ACTIVE, PROCESS_STATE_WAITING, PROCESS_STATE_BUSY, PROCESS_STATE_DONE}
+)
+
+# --- Icon palette (process state → process icon) ----------------------------
 #
 #   ➤  active / in-progress
 #   ?  waiting on user input ("needs attention")
-#   ✓  done (per-turn ``Stop`` event)
+#   ✓  done (per-turn done state)
 #   ✅  terminal (whole plan complete / archived) — the thick U+2705 check-mark,
 #       deliberately distinct from the thin ✓ ``_ICON_DONE`` used per turn.
-#   ⚙  busy / executing a long-running tool — surfaced on ``PreToolUse`` +
-#       ``Bash``, deliberately distinct from ➤ ``_ICON_ACTIVE`` and the ?
-#       ``_ICON_WAITING`` icon.
+#   ⚙  busy / executing a long-running tool, deliberately distinct from ➤
+#       ``_ICON_ACTIVE`` and the ? ``_ICON_WAITING`` icon.
 _ICON_ACTIVE = "➤"  # ➤
 _ICON_WAITING = "?"
 _ICON_DONE = "✓"  # ✓
 _ICON_TERMINAL = "✅"  # ✅
 _ICON_BUSY = "⚙"  # ⚙
+
+# Process-state → icon map. The terminal-phase ✅ override is applied by
+# :func:`compose`, NOT here.
+_PROCESS_STATE_ICONS: dict[str, str] = {
+    PROCESS_STATE_ACTIVE: _ICON_ACTIVE,
+    PROCESS_STATE_WAITING: _ICON_WAITING,
+    PROCESS_STATE_BUSY: _ICON_BUSY,
+    PROCESS_STATE_DONE: _ICON_DONE,
+}
 
 
 # --- Title-token glyph vocabulary (lock state → glyph) ----------------------
@@ -68,37 +96,25 @@ _BODY_PREFIX = "pm"
 _COMPLETED_PHASE_LABEL = "Completed"
 
 
-def resolve_icon(event: str | None, tool_name: str | None = None) -> str:
-    """Map a hook event (+ optional tool name) to the canonical process icon.
+def resolve_icon(process_state: str | None) -> str:
+    """Map a target-neutral process state to the canonical process icon.
 
-    Palette:
+    Palette (one of the :data:`PROCESS_STATES` values):
 
-    - ``UserPromptSubmit`` → ``➤``
-    - ``Notification`` → ``?`` (canonical "needs attention")
-    - ``PreToolUse`` with ``tool_name == "AskUserQuestion"`` → ``?``
-    - ``PreToolUse`` with ``tool_name == "Bash"`` → ``⚙`` (busy / long-running tool)
-    - ``PostToolUse`` with ``tool_name == "AskUserQuestion"`` → ``➤``
-    - ``PostToolUse`` with any other tool (e.g. ``Bash``) → ``➤``
-    - ``Stop`` → ``✓``
-    - ``SessionStart`` → ``➤``
-    - Unknown / missing event → ``➤`` (defensive default)
+    - ``"active"`` → ``➤``
+    - ``"waiting"`` → ``?`` (canonical "needs attention")
+    - ``"busy"`` → ``⚙`` (busy / long-running tool)
+    - ``"done"`` → ``✓``
+    - Unknown / missing state → ``➤`` (defensive default)
 
-    The function never raises; callers pass best-effort values parsed from the
-    hook stdin payload and rely on the defensive default for any unmapped or
-    missing input. The terminal-phase ✅ override is applied by :func:`compose`,
-    NOT here — this function resolves the process icon only.
+    The function never raises; callers pass best-effort values and rely on the
+    defensive default for any unmapped or missing input. The composer is
+    target-neutral — the Claude hook-event → process-state mapping lives in the
+    caller (``platform-runtime``'s ``claude_runtime``), NOT here. The
+    terminal-phase ✅ override is applied by :func:`compose`, NOT here — this
+    function resolves the process icon only.
     """
-    if event == "Stop":
-        return _ICON_DONE
-    if event == "Notification":
-        return _ICON_WAITING
-    if event == "PreToolUse" and tool_name == "AskUserQuestion":
-        return _ICON_WAITING
-    if event == "PreToolUse" and tool_name == "Bash":
-        return _ICON_BUSY
-    # UserPromptSubmit, SessionStart, PostToolUse (any tool), and every
-    # unknown/missing event fall through to the active default.
-    return _ICON_ACTIVE
+    return _PROCESS_STATE_ICONS.get(process_state, _ICON_ACTIVE)  # type: ignore[arg-type]
 
 
 def _compose_body(state_dict: dict[str, object]) -> str | None:
@@ -136,28 +152,26 @@ def _compose_body(state_dict: dict[str, object]) -> str | None:
 
 def compose(
     state_dict: dict[str, object],
-    event: str | None,
+    process_state: str | None,
     icon_override: str | None = None,
-    tool_name: str | None = None,
 ) -> str | None:
     """Compose the full ``'{icon} {glyph} {body}'`` terminal-title string.
 
-    Pure function of the passed plan state and the hook event. Performs NO
-    filesystem or network I/O.
+    Pure function of the passed plan state and a target-neutral process state.
+    Performs NO filesystem or network I/O.
 
     Args:
         state_dict: The plan state — ``current_phase`` (str), optional
             ``short_description`` (str), and optional ``title_token`` (one of
             the :data:`TITLE_TOKEN_GLYPHS` keys).
-        event: The hook event name driving the process icon (``UserPromptSubmit``,
-            ``Notification``, ``Stop``, ``PreToolUse``, ``PostToolUse``,
-            ``SessionStart``, …). ``None`` for push-mode / statusLine, where
-            ``icon_override`` supplies the icon instead.
+        process_state: The target-neutral process state driving the process icon
+            — one of the :data:`PROCESS_STATES` values (``"active"``,
+            ``"waiting"``, ``"busy"``, ``"done"``). ``None`` for push-mode /
+            statusLine, where ``icon_override`` supplies the icon instead. The
+            caller maps its own target-specific events to this neutral state.
         icon_override: Push-mode icon. When provided it supersedes the
-            event-resolved icon for non-terminal phases. The terminal-phase ✅
+            state-resolved icon for non-terminal phases. The terminal-phase ✅
             override still wins over ``icon_override`` for a finished plan.
-        tool_name: Optional tool name accompanying ``PreToolUse`` /
-            ``PostToolUse`` events (used by :func:`resolve_icon`).
 
     Returns:
         The composed ``'{icon} {glyph} {body}'`` string (glyph omitted when no
@@ -168,11 +182,11 @@ def compose(
     Icon selection:
 
     - When ``current_phase`` is terminal (``complete`` / ``archived``), the icon
-      is forced to ✅ (:data:`_ICON_TERMINAL`) regardless of ``event`` /
+      is forced to ✅ (:data:`_ICON_TERMINAL`) regardless of ``process_state`` /
       ``icon_override`` — the process icons ➤ (active) and ? (waiting) MUST NOT
       appear for a finished plan.
     - Otherwise the icon is ``icon_override`` when given, else
-      :func:`resolve_icon`\\(``event``, ``tool_name``).
+      :func:`resolve_icon`\\(``process_state``).
 
     Glyph selection:
 
@@ -195,7 +209,7 @@ def compose(
     elif icon_override is not None:
         icon = icon_override
     else:
-        icon = resolve_icon(event, tool_name)
+        icon = resolve_icon(process_state)
 
     # A finished plan holds no live lock state, so the title_token glyph is
     # suppressed for terminal phases. The suppression is at the glyph-prepend,

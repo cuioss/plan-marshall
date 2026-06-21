@@ -7,7 +7,6 @@ Handles: resolve-domain-skills, resolve-workflow-skill-extension, get-skills-by-
 """
 
 import re
-from pathlib import Path
 
 from _cmd_skill_domains import (
     _build_skill_dict_with_descriptions,
@@ -30,6 +29,9 @@ from _config_core import (
 # Direct imports - PYTHONPATH set by executor
 from extension_discovery import (  # type: ignore[import-not-found]
     discover_all_extensions,
+)
+from marketplace_paths import (  # type: ignore[import-not-found]
+    iter_project_skill_dirs,
 )
 
 
@@ -330,55 +332,55 @@ def _discover_all_recipes() -> list[dict]:
         except Exception:
             pass
 
-    # Source 2: Project recipe-* skills
-    claude_skills = Path('.claude/skills')
-    if claude_skills.is_dir():
-        for skill_dir in sorted(claude_skills.iterdir()):
-            if not skill_dir.is_dir() or not skill_dir.name.startswith('recipe-'):
-                continue
-            skill_md = skill_dir / 'SKILL.md'
-            if not skill_md.exists():
-                continue
+    # Source 2: Project recipe-* skills (across the target's layout roots)
+    seen_recipe: set[str] = set()
+    for skill_dir in iter_project_skill_dirs():
+        if not skill_dir.name.startswith('recipe-') or skill_dir.name in seen_recipe:
+            continue
+        skill_md = skill_dir / 'SKILL.md'
+        if not skill_md.exists():
+            continue
 
-            content = skill_md.read_text()
+        seen_recipe.add(skill_dir.name)
+        content = skill_md.read_text()
 
-            # Extract frontmatter description
-            description = ''
-            fm_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
-            if fm_match:
-                description = fm_match.group(1).strip()
+        # Extract frontmatter description
+        description = ''
+        fm_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
+        if fm_match:
+            description = fm_match.group(1).strip()
 
-            # Extract recipe discovery metadata from frontmatter keys — the
-            # structured project-recipe counterpart to provides_recipes(). The
-            # markdown body is NOT scanned for these keys; frontmatter is the
-            # sole source of truth (see ext-point-recipe.md § Project Recipe
-            # Frontmatter). recipe_domain is required; a recipe whose frontmatter
-            # omits it is silently skipped (intentional discovery containment).
-            domain_match = re.search(r'^recipe_domain:\s*(.+)$', content, re.MULTILINE)
-            domain = domain_match.group(1).strip().strip("'\"") if domain_match else ''
-            profile_match = re.search(r'^recipe_profile:\s*(.+)$', content, re.MULTILINE)
-            profile = profile_match.group(1).strip().strip("'\"") if profile_match else ''
-            package_source_match = re.search(r'^recipe_package_source:\s*(.+)$', content, re.MULTILINE)
-            package_source = package_source_match.group(1).strip().strip("'\"") if package_source_match else ''
+        # Extract recipe discovery metadata from frontmatter keys — the
+        # structured project-recipe counterpart to provides_recipes(). The
+        # markdown body is NOT scanned for these keys; frontmatter is the
+        # sole source of truth (see ext-point-recipe.md § Project Recipe
+        # Frontmatter). recipe_domain is required; a recipe whose frontmatter
+        # omits it is silently skipped (intentional discovery containment).
+        domain_match = re.search(r'^recipe_domain:\s*(.+)$', content, re.MULTILINE)
+        domain = domain_match.group(1).strip().strip("'\"") if domain_match else ''
+        profile_match = re.search(r'^recipe_profile:\s*(.+)$', content, re.MULTILINE)
+        profile = profile_match.group(1).strip().strip("'\"") if profile_match else ''
+        package_source_match = re.search(r'^recipe_package_source:\s*(.+)$', content, re.MULTILINE)
+        package_source = package_source_match.group(1).strip().strip("'\"") if package_source_match else ''
 
-            if not domain:
-                continue
+        if not domain:
+            continue
 
-            key = skill_dir.name[len('recipe-') :]
-            all_recipes.append(
-                {
-                    'key': key,
-                    'name': description or skill_dir.name,
-                    'description': description,
-                    'skill': f'project:{skill_dir.name}',
-                    'default_change_type': 'tech_debt',
-                    'scope': 'codebase_wide',
-                    'domain': domain,
-                    'profile': profile,
-                    'package_source': package_source,
-                    'source': 'project',
-                }
-            )
+        key = skill_dir.name[len('recipe-') :]
+        all_recipes.append(
+            {
+                'key': key,
+                'name': description or skill_dir.name,
+                'description': description,
+                'skill': f'project:{skill_dir.name}',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+                'domain': domain,
+                'profile': profile,
+                'package_source': package_source,
+                'source': 'project',
+            }
+        )
 
     return all_recipes
 
@@ -432,7 +434,6 @@ def _discover_all_finalize_steps() -> list[dict]:
     )
 
     all_steps: list[dict] = []
-    claude_skills = Path('.claude/skills')
 
     # Source 1: Built-in steps — read order from workflow/{name}.md or
     # standards/{name}.md frontmatter (workflow/ takes precedence). Resolve the
@@ -458,25 +459,27 @@ def _discover_all_finalize_steps() -> list[dict]:
             }
         )
 
-    # Source 2: Project finalize-step-* skills (e.g. plugin-doctor, regenerate-executor)
-    if claude_skills.is_dir():
-        for skill_dir in sorted(claude_skills.iterdir()):
-            if not skill_dir.is_dir() or not skill_dir.name.startswith('finalize-step-'):
-                continue
-            skill_md = skill_dir / 'SKILL.md'
-            if not skill_md.exists():
-                continue
+    # Source 2: Project finalize-step-* skills (e.g. plugin-doctor,
+    # regenerate-executor) across the target's project-local-skill roots.
+    seen_finalize: set[str] = set()
+    for skill_dir in iter_project_skill_dirs():
+        if not skill_dir.name.startswith('finalize-step-') or skill_dir.name in seen_finalize:
+            continue
+        skill_md = skill_dir / 'SKILL.md'
+        if not skill_md.exists():
+            continue
 
-            step_ref = f'project:{skill_dir.name}'
-            all_steps.append(
-                {
-                    'name': step_ref,
-                    'description': get_skill_description(step_ref),
-                    'type': 'project',
-                    'source': 'project',
-                    'order': _read_frontmatter_order(skill_md),
-                }
-            )
+        seen_finalize.add(skill_dir.name)
+        step_ref = f'project:{skill_dir.name}'
+        all_steps.append(
+            {
+                'name': step_ref,
+                'description': get_skill_description(step_ref),
+                'type': 'project',
+                'source': 'project',
+                'order': _read_frontmatter_order(skill_md),
+            }
+        )
 
     # Source 4: Bundle-optional finalize steps (opt-in via OPTIONAL_BUNDLE_FINALIZE_STEPS)
     # These appear in list-finalize-steps but are absent from DEFAULT_PLAN_FINALIZE,

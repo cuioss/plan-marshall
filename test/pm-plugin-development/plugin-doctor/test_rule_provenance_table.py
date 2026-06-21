@@ -299,3 +299,30 @@ def test_provenance_contract_section_present():
     assert 'Provenance contract for new rules' in content, (
         'rule-provenance.md must include a "Provenance contract for new rules" section.'
     )
+
+
+def test_engine_rule_pack_split_section_present():
+    """rule-provenance.md is the documented engine / Claude rule-pack fork point.
+
+    The section must name BOTH partitions (engine + Claude rule-pack) and
+    enumerate the Claude rule-pack members so a future-target maintainer knows
+    which rows are swappable.
+    """
+    content = PROVENANCE_PATH.read_text(encoding='utf-8')
+    assert '## Engine / Claude rule-pack split' in content, (
+        'rule-provenance.md must carry the "## Engine / Claude rule-pack split" fork-point section.'
+    )
+    # The Claude rule-pack members named in the design contract must appear so
+    # the fork point is concrete, not just a heading.
+    for member in (
+        '_KNOWN_TOOLS',
+        'agent-task-tool-prohibited',
+        'hardcoded-model-on-canonical',
+        'target/claude/',
+    ):
+        assert member in content, f'engine/rule-pack split must enumerate Claude rule-pack member {member!r}'
+    # The split must reference the layout-op routing that makes the engine
+    # target-agnostic for project-local-skill discovery.
+    assert 'get_project_skill_roots' in content, (
+        'engine/rule-pack split must document the layout-op routing for project-local-skill discovery.'
+    )

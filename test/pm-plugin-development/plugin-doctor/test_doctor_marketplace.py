@@ -1134,6 +1134,68 @@ def test_quality_gate_argparse_violation_fails(tmp_path):
     assert data['total_issues'] >= 1, 'Should report at least one finding'
 
 
+def _build_project_local_recipe_fixture(temp_root: Path) -> Path:
+    """Build a fixture with a project-local-skill recipe missing ``implements:``.
+
+    The recipe lives under the project-local-skill tree (``.claude/skills`` —
+    the Claude default the layout op falls back to), so the doctor's
+    ``recipe-missing-implements`` analyzer must discover it via
+    ``resolve_project_skill_trees`` (the layout-op routing). A clean marketplace
+    bundle is created alongside it so the only finding is the project-local one.
+    """
+    bundles_dir = temp_root / 'marketplace' / 'bundles'
+    bundles_dir.mkdir(parents=True)
+    bundle = bundles_dir / 'qg-clean'
+    bundle.mkdir()
+    plugin_dir = bundle / '.claude-plugin'
+    plugin_dir.mkdir()
+    (plugin_dir / 'plugin.json').write_text(json.dumps({'name': 'qg-clean', 'version': '1.0.0'}))
+
+    # Project-local recipe skill, missing the required implements: field.
+    recipe_dir = temp_root / '.claude' / 'skills' / 'recipe-local-thing'
+    recipe_dir.mkdir(parents=True)
+    (recipe_dir / 'SKILL.md').write_text(
+        '---\nname: recipe-local-thing\ndescription: A project-local recipe\n---\n\n# Recipe Local Thing\n'
+    )
+    return temp_root
+
+
+def test_analyze_scans_project_local_recipe_tree_via_layout_op(tmp_path):
+    """analyze discovers a project-local recipe missing implements: (layout-op routing).
+
+    Proves the doctor's ``recipe-missing-implements`` analyzer reaches the
+    project-local-skill tree through ``resolve_project_skill_trees`` (the
+    platform-runtime layout op), not only the marketplace bundle tree.
+    """
+    temp_root = _build_project_local_recipe_fixture(tmp_path)
+    result = run_script(
+        SCRIPT_PATH,
+        'analyze',
+        env_overrides={
+            'PM_MARKETPLACE_ROOT': str(temp_root / 'marketplace'),
+            'PLAN_BASE_DIR': str(temp_root / '.plan'),
+            'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_root / 'credentials'),
+        },
+    )
+
+    data = parse_output(result)
+    # recipe-missing-implements is unfixable (fixable: False), so it lands in
+    # the categorized_unfixable bucket of the analyze output.
+    issues = (
+        data.get('issues', [])
+        + data.get('categorized_unfixable', [])
+        + data.get('categorized_safe', [])
+        + data.get('categorized_risky', [])
+    )
+    recipe_findings = [
+        i for i in issues if isinstance(i, dict) and i.get('type') == 'recipe-missing-implements'
+    ]
+    assert recipe_findings, f'project-local recipe missing implements: should be flagged, got: {data}'
+    assert any('recipe-local-thing' in str(i.get('file', '')) for i in recipe_findings), (
+        f'finding should reference the project-local recipe SKILL.md, got: {recipe_findings}'
+    )
+
+
 def test_real_marketplace_quality_gate_has_zero_findings():
     """The real marketplace tree passes quality-gate with zero findings.
 

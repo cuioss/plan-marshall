@@ -73,12 +73,61 @@ transform is required.
 **Idempotence:** Rewritten slashes are already namespaced; the regex
 does not match them on a second pass.
 
+## Transform 3 — Registered-idiom rewrite (data-driven)
+
+The source stays Claude-native. Claude-native tool idioms that diverge
+on OpenCode are registered as per-target rewrite **data** in
+`mapping.json::body_idiom_rewrites`, and the shared engine
+(`rewrite_registered_idioms`) applies each idiom's *disposition*. This
+keeps the divergence in one declarative place rather than scattered
+inline string replaces, and lets the build **fail closed** when a new
+Claude idiom is registered without an engine-handled disposition.
+
+**Registry shape** (`mapping.json::body_idiom_rewrites`):
+
+```json
+{
+  "AskUserQuestion": { "disposition": "rewrite_inline_code", "opencode_tool": "question" },
+  "Task:":           { "disposition": "preserve" },
+  "Skill: <entry>":  { "disposition": "source_fix" }
+}
+```
+
+**Dispositions** (the closed set the engine honours):
+
+| Disposition | Engine behaviour |
+|-------------|------------------|
+| `rewrite_inline_code` | Rewrite the backtick-wrapped tool reference `` `{idiom}` `` → `` `{opencode_tool}` ``. Bare prose mentions of the concept are left alone. |
+| `preserve` | A deliberate non-rewrite — the body is unchanged. |
+| `source_fix` | The divergence is fixed in the source, not at emit time — the body is unchanged. |
+
+**Fail-closed.** `load_idiom_registry` validates the registry up-front
+via `assert_dispositions_known`: any registered idiom whose `disposition`
+is missing or not one of the three above raises `UnmappedIdiomError` at
+build time. A new Claude idiom therefore cannot be added to the registry
+(or emitted) without an explicit, engine-handled disposition.
+
+**Idempotence.** A `rewrite_inline_code` whose replacement is already
+present does not re-match — the source idiom name no longer appears in
+that backtick span.
+
+### Disposition of the three registered idioms
+
+| Idiom | Disposition | Rationale |
+|-------|-------------|-----------|
+| `AskUserQuestion` (313× across bodies) | `rewrite_inline_code` → `` `question` `` | OpenCode's escalation tool is `question`/`ask`. Only the backtick-wrapped tool reference is rewritten; bare prose mentions of the escalation *mechanism* stay as the concept name (a blanket rewrite would corrupt prose). |
+| `Task:` | `preserve` | **Leaf-aware** (doc 06 item 3). The dispatcher's leaf-constraint prose — "no `Task:` dispatch", "every plan-marshall `Task:` invocation" — is descriptive, and a blanket `Task:` → `task` rewrite corrupts it. The divergence is real terminology drift, dispositioned here as a deliberate non-rewrite rather than a naive substitution. |
+| `Skill: <entry>` | `source_fix` | The `<entry>` is a runtime placeholder, not an identifier (doc 06 item 2). The one true source change — the placeholder-loop prose in `dev-agent-behavior-rules` is reworded target-neutrally (deliverable 9), so no emit-time rewrite is needed. |
+
 ## What is *not* transformed
 
 The emitter does **not** rewrite:
 
-* Tool-name mentions in prose (`AskUserQuestion`, `EnterPlanMode`,
-  etc.) — addressed by source-side cleanup, not at emit time.
+* Bare prose mentions of tool names (`AskUserQuestion`, `EnterPlanMode`,
+  etc.) outside a backtick tool reference — only the registered
+  `rewrite_inline_code` backtick form is rewritten (Transform 3);
+  everything else is source-side cleanup or a deliberate `preserve` /
+  `source_fix` disposition.
 * `.claude/` paths or hook event names in prose.
 * Argument syntax (`key=value` vs `$ARGUMENTS`) — neither runtime
   parses these; both pass them as a string to the LLM.
@@ -95,8 +144,11 @@ The module exposes:
 |--------|---------|
 | `rewrite_skill_directives(body)` | Apply Transform 1 only. |
 | `rewrite_slash_commands(body, lookup)` | Apply Transform 2 with the supplied lookup. |
+| `rewrite_registered_idioms(body, registry)` | Apply Transform 3 with the supplied idiom registry. |
+| `load_idiom_registry(mapping_path=None)` | Load + fail-closed-validate the `body_idiom_rewrites` registry from `mapping.json`. |
+| `assert_dispositions_known(registry)` | Fail-closed guard: raise `UnmappedIdiomError` on any unknown disposition. |
 | `build_user_invocable_lookup(marketplace_dir)` | Scan source bundles for `user-invocable: true` skills. |
-| `make_body_transformer(lookup)` | Compose Transform 1 + Transform 2 into a `BodyTransformer` callable matching the emitter's contract. |
+| `make_body_transformer(lookup, idiom_registry=None)` | Compose Transform 1 + Transform 2 + Transform 3 into a `BodyTransformer` callable matching the emitter's contract. |
 
 The emitter is wired up via:
 

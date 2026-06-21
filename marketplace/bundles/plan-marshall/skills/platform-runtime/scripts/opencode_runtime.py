@@ -8,10 +8,11 @@ OpenCode-specific behaviour:
   to the shell environment (upstream issue #9292).
 - project initial-setup succeeds but reports ``hook_installed: false`` for the
   same reason.
-- All permission and web operations succeed: OpenCode uses its own settings
-  format, but the no-op contract for this cluster is deferred to the router
-  layer.  The OpenCode runtime stubs these operations as success so the router
-  can delegate to the appropriate settings backend without special-casing.
+- All permission and web operations return an honest ``no-op`` with a reason
+  and alternative: OpenCode has no validated permission backend, and the Claude
+  permission grammar (``Skill()``/``Bash()``/``WebFetch()`` patterns) does not
+  map onto OpenCode's settings format. These ops never fabricate a success that
+  claims a write happened.
 - metrics capture succeeds when ``total_tokens`` is provided; returns ``no-op``
   otherwise (no automatic transcript scan without a session id).
 - subagent dispatch succeeds, mapping the ``Task`` tool to OpenCode's ``task``.
@@ -108,6 +109,76 @@ class OpenCodeRuntime(Runtime):
         )
 
     # ------------------------------------------------------------------
+    # Filesystem layout resolution
+    # ------------------------------------------------------------------
+
+    def layout_skill_roots(self) -> str:
+        """Return the OpenCode project-local-skill roots (executor's root order).
+
+        Mirrors ``generate_executor.py``'s OpenCode discovery-root list: the
+        ``$OPENCODE_CONFIG_DIR`` override (when set), the project-local roots,
+        and the ``~``-anchored user-global roots. The list is returned in
+        priority order; callers probe first-match-wins.
+        """
+        import os
+        import pathlib
+
+        home = pathlib.Path.home()
+        roots: list[str] = []
+
+        env_config_dir = os.environ.get("OPENCODE_CONFIG_DIR", "")
+        if env_config_dir:
+            roots.append(str(pathlib.Path(env_config_dir) / "skills"))
+
+        roots.extend(
+            [
+                ".opencode/skills",
+                ".claude/skills",
+                ".agents/skills",
+                str(home / ".config" / "opencode" / "skills"),
+                str(home / ".claude" / "skills"),
+                str(home / ".agents" / "skills"),
+            ]
+        )
+
+        return toon_success(
+            "layout skill-roots",
+            {"target": "opencode", "roots": roots},
+        )
+
+    def layout_bundle_cache_root(self) -> str:
+        """Return the OpenCode deployed-bundle cache root(s).
+
+        OpenCode has no separate single plugin-cache directory; deployed
+        bundles live under the project-local-skill discovery roots themselves.
+        Return the ``~``-anchored user-global skill roots (the cross-checkout
+        discovery homes) in priority order, mirroring the executor's discovery
+        order. Callers probe first-match-wins.
+        """
+        import os
+        import pathlib
+
+        home = pathlib.Path.home()
+        roots: list[str] = []
+
+        env_config_dir = os.environ.get("OPENCODE_CONFIG_DIR", "")
+        if env_config_dir:
+            roots.append(str(pathlib.Path(env_config_dir) / "skills"))
+
+        roots.extend(
+            [
+                str(home / ".config" / "opencode" / "skills"),
+                str(home / ".claude" / "skills"),
+                str(home / ".agents" / "skills"),
+            ]
+        )
+
+        return toon_success(
+            "layout bundle-cache-root",
+            {"target": "opencode", "roots": roots},
+        )
+
+    # ------------------------------------------------------------------
     # Session operations
     # ------------------------------------------------------------------
 
@@ -142,34 +213,40 @@ class OpenCodeRuntime(Runtime):
     # Permission operations
     # ------------------------------------------------------------------
 
-    def permission_configure(self, scope: str, permissions: list[str]) -> str:
-        """Write a raw permission list to OpenCode settings.
+    # OpenCode has no validated permission backend. Each permission op returns
+    # an honest ``no-op`` (reason + alternative) rather than a fabricated success
+    # that claims a write happened. The Claude permission grammar
+    # (``Skill()``/``Bash()``/``WebFetch()`` patterns, the
+    # ``permissions.{allow,deny,ask}`` schema) is Claude-specific and does not
+    # map onto OpenCode's settings format; surfacing a fake ``permissions_written``
+    # count would mislead callers into believing the operation took effect.
+    _PERMISSION_NOOP_REASON = (
+        "OpenCode has no validated permission backend; the Claude permission "
+        "grammar does not map onto OpenCode's settings format"
+    )
+    _PERMISSION_NOOP_ALTERNATIVE = (
+        "Manage OpenCode permissions through OpenCode's own settings; this op is "
+        "Claude-only"
+    )
 
-        Validates scope.  Actual settings file write is a stub — the router
-        layer is responsible for targeting the correct backend file.
-        """
+    def permission_configure(self, scope: str, permissions: list[str]) -> str:
+        """Honest no-op: OpenCode has no validated permission-write backend."""
         if scope not in ("project", "global"):
             return toon_error(
                 "permission configure",
                 "invalid_scope",
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
-        target_file = (
-            ".opencode/settings.json" if scope == "project" else "~/.opencode/settings.json"
-        )
-        return toon_success(
+        return toon_noop(
             "permission configure",
-            {
-                "scope": scope,
-                "permissions_written": len(permissions),
-                "target_file": target_file,
-            },
+            self._PERMISSION_NOOP_REASON,
+            self._PERMISSION_NOOP_ALTERNATIVE,
         )
 
     def permission_analyze(
         self, scope: str, checks: list[str], marshal_path: str | None
     ) -> str:
-        """Read-only permission audit stub for OpenCode."""
+        """Honest no-op: OpenCode has no Claude-grammar permission audit."""
         valid_scopes = ("global", "project", "both")
         if scope not in valid_scopes:
             return toon_error(
@@ -185,13 +262,10 @@ class OpenCodeRuntime(Runtime):
                     "invalid_check",
                     f"Unknown check {check!r}; valid checks are: {', '.join(sorted(valid_checks))}",
                 )
-        return toon_success(
+        return toon_noop(
             "permission analyze",
-            {
-                "scope": scope,
-                "checks_run": checks,
-                "total_findings": 0,
-            },
+            self._PERMISSION_NOOP_REASON,
+            self._PERMISSION_NOOP_ALTERNATIVE,
         )
 
     def permission_fix(
@@ -201,7 +275,7 @@ class OpenCodeRuntime(Runtime):
         permissions: list[str],
         dry_run: bool,
     ) -> str:
-        """Apply permission fixes stub for OpenCode."""
+        """Honest no-op: OpenCode has no validated permission-fix backend."""
         if scope not in ("project", "global"):
             return toon_error(
                 "permission fix",
@@ -215,50 +289,32 @@ class OpenCodeRuntime(Runtime):
                 "invalid_operation",
                 f"--operation must be one of {sorted(valid_ops)}; got {operation!r}",
             )
-        target_file = (
-            ".opencode/settings.json" if scope == "project" else "~/.opencode/settings.json"
-        )
-        return toon_success(
+        return toon_noop(
             "permission fix",
-            {
-                "scope": scope,
-                "fix_operation": operation,
-                "dry_run": dry_run,
-                "target_file": target_file,
-                "changes_applied": 0 if dry_run else len(permissions),
-            },
+            self._PERMISSION_NOOP_REASON,
+            self._PERMISSION_NOOP_ALTERNATIVE,
         )
 
     def permission_ensure_wildcards(
         self, scope: str, marketplace_dir: str, dry_run: bool
     ) -> str:
-        """Ensure marketplace wildcard permissions stub for OpenCode."""
+        """Honest no-op: OpenCode has no marketplace-wildcard permission backend."""
         if scope not in ("project", "global"):
             return toon_error(
                 "permission ensure-wildcards",
                 "invalid_scope",
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
-        target_file = (
-            ".opencode/settings.json" if scope == "project" else "~/.opencode/settings.json"
-        )
-        return toon_success(
+        return toon_noop(
             "permission ensure-wildcards",
-            {
-                "scope": scope,
-                "marketplace_dir": marketplace_dir,
-                "dry_run": dry_run,
-                "bundles_scanned": 0,
-                "wildcards_added": 0,
-                "wildcards_already_present": 0,
-                "target_file": target_file,
-            },
+            self._PERMISSION_NOOP_REASON,
+            self._PERMISSION_NOOP_ALTERNATIVE,
         )
 
     def permission_ensure_steps(
         self, marshal_path: str, scope: str, dry_run: bool
     ) -> str:
-        """Ensure per-step permissions stub for OpenCode."""
+        """Honest no-op: OpenCode has no per-step permission backend."""
         import pathlib
 
         if not pathlib.Path(marshal_path).exists():
@@ -273,24 +329,14 @@ class OpenCodeRuntime(Runtime):
                 "invalid_scope",
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
-        target_file = (
-            ".opencode/settings.json" if scope == "project" else "~/.opencode/settings.json"
-        )
-        return toon_success(
+        return toon_noop(
             "permission ensure-steps",
-            {
-                "marshal": marshal_path,
-                "scope": scope,
-                "dry_run": dry_run,
-                "steps_scanned": 0,
-                "permissions_added": 0,
-                "permissions_already_present": 0,
-                "target_file": target_file,
-            },
+            self._PERMISSION_NOOP_REASON,
+            self._PERMISSION_NOOP_ALTERNATIVE,
         )
 
     def permission_web_analyze(self, scope: str) -> str:
-        """Read-only web permission analysis stub for OpenCode."""
+        """Honest no-op: OpenCode has no WebFetch-grammar permission audit."""
         valid_scopes = ("global", "project", "both")
         if scope not in valid_scopes:
             return toon_error(
@@ -298,12 +344,10 @@ class OpenCodeRuntime(Runtime):
                 "invalid_scope",
                 f"--scope must be 'global', 'project', or 'both'; got {scope!r}",
             )
-        return toon_success(
+        return toon_noop(
             "permission web-analyze",
-            {
-                "scope": scope,
-                "total_domains": 0,
-            },
+            self._PERMISSION_NOOP_REASON,
+            self._PERMISSION_NOOP_ALTERNATIVE,
         )
 
     def permission_web_apply(
@@ -313,25 +357,17 @@ class OpenCodeRuntime(Runtime):
         remove: list[str],
         dry_run: bool,
     ) -> str:
-        """Add or remove web domain permissions stub for OpenCode."""
+        """Honest no-op: OpenCode has no WebFetch-domain permission backend."""
         if scope not in ("project", "global"):
             return toon_error(
                 "permission web-apply",
                 "invalid_scope",
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
-        target_file = (
-            ".opencode/settings.json" if scope == "project" else "~/.opencode/settings.json"
-        )
-        return toon_success(
+        return toon_noop(
             "permission web-apply",
-            {
-                "scope": scope,
-                "dry_run": dry_run,
-                "domains_added": 0 if dry_run else len(add),
-                "domains_removed": 0 if dry_run else len(remove),
-                "target_file": target_file,
-            },
+            self._PERMISSION_NOOP_REASON,
+            self._PERMISSION_NOOP_ALTERNATIVE,
         )
 
     # ------------------------------------------------------------------
@@ -361,6 +397,24 @@ class OpenCodeRuntime(Runtime):
                 "tokens_captured": total_tokens,
                 "source": "manual",
             },
+        )
+
+    def metrics_normalized_tokens(
+        self,
+        session_id: str,
+        windows: list[tuple[str, str, str]],
+        output_file: str,
+    ) -> str:
+        """Honest no-op: OpenCode exposes no session transcript to normalize.
+
+        OpenCode does not provide a session transcript, so there is nothing to
+        walk or normalize. Returns ``transcript_not_found`` so the
+        finalize/retrospective enrich steps degrade gracefully (skip enrichment).
+        """
+        return toon_noop(
+            "metrics normalized-tokens",
+            "transcript_not_found",
+            "pass --total-tokens manually to metrics capture",
         )
 
     # ------------------------------------------------------------------

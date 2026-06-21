@@ -11,6 +11,19 @@ Every rule emitted by `plugin-doctor` must have a documented provenance — the 
 | **style** | Naming conventions, ordering, formatting conventions that do not affect runtime behaviour but degrade authoring experience when drifted. |
 | **safety** | Enforces a `dev-agent-behavior-rules` hard rule. Violations are runtime hazards (security prompts, shell-construct rejection, prefix-binding silent failures). |
 
+## Engine / Claude rule-pack split
+
+`plugin-doctor` is a **target-agnostic linting engine** plus a **swappable Claude rule-pack**. The bulk of the analyzers — structural / notation / bloat / prose / argparse-surface rules — validate marketplace artifacts the same way regardless of which assistant target the bundles are built for; those are **engine** rules. A small set of rules encode Claude-specific assumptions about tool names, frontmatter shapes, and the model DSL; those are the **Claude rule-pack**. This document is the documented **fork point**: when a second target (e.g. OpenCode) needs its own rule-pack, the Claude rule-pack rows below are the surface that gets swapped, and the engine rows stay shared.
+
+| Aspect | Engine (target-agnostic) | Claude rule-pack (target-specific) |
+|--------|--------------------------|-------------------------------------|
+| **Scope** | structural / notation / bloat / prose / argparse-surface / lesson-ID-hygiene / simplification rules — the bulk of the analyzers | tool/permission/model-DSL rules and the Claude build-output exemption |
+| **Members** | every rule in the tables below NOT named in the Claude rule-pack row | `_KNOWN_TOOLS`-based tool validation, comma-vs-array `tools:` syntax, `agent-task-tool-prohibited`, `agent-skill-tool-visibility`, `hardcoded-model-on-canonical`, and the build-output-directory exemption literal (`target/claude/` in `_analyze_markdown.py::check_hardcoded_model_on_canonical`, resolved target-aware via `_build_output_prefix`) |
+| **Layout discovery** | project-local-skill trees are resolved through the platform-runtime layout op (`_doctor_shared.resolve_project_skill_trees` → `marketplace_paths.get_project_skill_roots`), so the same analyzer covers both the Claude `.claude/skills/**` tree and the OpenCode layout | the literal `.claude/skills` anchor and `~/.claude/plugins/cache/...` deployed-bundle path are Claude-only layouts owned by `claude_runtime.py`; engine analyzers never hardcode them |
+| **Frontmatter emission** | n/a (engine rules do not emit frontmatter) | target-aware agent frontmatter: `model: sonnet` on Claude vs `mode: subagent` + `model: anthropic/...` on OpenCode (`_cmd_apply.py::apply_missing_frontmatter`, resolved via `_doctor_shared.resolve_runtime_target`) |
+
+The split is structural, not a separate dispatch path: engine and rule-pack rules run in the same analyzer pass. The fork point is documentary — a target maintainer reads this table to know which rows their target must re-author and which it inherits unchanged.
+
 ## Rule Provenance Table
 
 The table enumerates every rule emitted by the in-tree analyzers. The `Emitter` column names the module that constructs the finding; `Source` cites the lesson, decision, or architectural contract that introduced the rule.

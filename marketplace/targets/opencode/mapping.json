@@ -16,6 +16,21 @@
     "TaskGet": "todoread",
     "TaskList": "todoread"
   },
+  "body_idiom_rewrites": {
+    "AskUserQuestion": {
+      "disposition": "rewrite_inline_code",
+      "opencode_tool": "question",
+      "note": "Backtick-wrapped `AskUserQuestion` tool references rewrite to the OpenCode `question` tool. Bare prose mentions of the escalation mechanism are left as the concept name."
+    },
+    "Task:": {
+      "disposition": "preserve",
+      "note": "Leaf-aware: the dispatcher's leaf-constraint prose ('no Task: dispatch', 'every plan-marshall Task: invocation') is descriptive and MUST NOT be blanket-rewritten to `task`. Deliberate non-rewrite per doc 06 item 3."
+    },
+    "Skill: <entry>": {
+      "disposition": "source_fix",
+      "note": "The `<entry>` runtime placeholder is reworded target-neutrally in the source (dev-agent-behavior-rules) rather than rewritten at emit time. The one true source change, handled in deliverable 9."
+    }
+  },
   "model_map": {
     "opus": {
       "id": "claude-opus-4-8",

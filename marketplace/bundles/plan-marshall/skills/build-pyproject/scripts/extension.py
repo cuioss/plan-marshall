@@ -14,8 +14,31 @@ Python build, so neither is a build-map config route.
 """
 
 import fnmatch
+from pathlib import Path
 
+import marketplace_paths  # type: ignore[import-not-found]
 from extension_base import BuildExtensionBase  # type: ignore[import-not-found]
+
+
+def _project_local_skill_globs() -> list[tuple[str, str]]:
+    """Build ``(glob, 'production')`` routes for the target's project-local-skill roots.
+
+    Routes through the platform-runtime layout op (memoised per process) so the
+    production-source classification covers the correct project-local-skill
+    layout per target (Claude → ``.claude/skills``; OpenCode → its repo-relative
+    roots). ``~``-anchored / absolute user-global roots are dropped: ``classify_globs``
+    routes are repo-relative fnmatch globs over git-tracked files, and a tracked
+    ``.py`` never lives under a user-global root.
+
+    Resolved via the ``marketplace_paths`` module attribute (not a bound name)
+    so the layout-op source can be substituted in tests.
+    """
+    globs: list[tuple[str, str]] = []
+    for root in marketplace_paths.get_project_skill_roots():
+        if root.startswith('~') or Path(root).is_absolute():
+            continue
+        globs.append((f'{root}/*.py', 'production'))
+    return globs
 
 
 class BuildExtension(BuildExtensionBase):
@@ -101,8 +124,10 @@ class BuildExtension(BuildExtensionBase):
         consumer, where a single ``*`` spans ``/`` — so ``marketplace/bundles/*.py``
         covers every production ``.py`` anywhere beneath ``marketplace/bundles/``
         and ``test/*.py`` covers every test module beneath ``test/``. The
-        production routes enumerate the four roots a plan-marshall ``.py`` can live
-        under (``build.py`` at the repo root, ``.claude/skills/``,
+        production routes enumerate the roots a plan-marshall ``.py`` can live
+        under (``build.py`` at the repo root, the target's project-local-skill
+        root(s) — resolved via the platform-runtime layout op, Claude →
+        ``.claude/skills/`` / OpenCode → its repo-relative roots —
         ``marketplace/bundles/``, ``marketplace/targets/``); the git-tracked
         completeness validator (``validate_tree_completeness``) reports any tracked
         ``.py`` these routes forgot. The sole config route is ``pyproject.toml`` —
@@ -112,7 +137,7 @@ class BuildExtension(BuildExtensionBase):
         """
         return [
             ('build.py', 'production'),
-            ('.claude/skills/*.py', 'production'),
+            *_project_local_skill_globs(),
             ('marketplace/bundles/*.py', 'production'),
             ('marketplace/targets/*.py', 'production'),
             ('test/*.py', 'test'),

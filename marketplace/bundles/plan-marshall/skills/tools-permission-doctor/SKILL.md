@@ -19,10 +19,11 @@ Read-only permission analysis for host-platform settings. Detects redundant perm
 - Do not skip anti-pattern detection when analyzing settings
 
 **Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission_doctor {command} {args}`
-- Use `tools-permission-fix` for any write operations
-- User-approved permissions must be excluded from suspicious reports
-- On non-Claude targets (e.g. OpenCode), prefer `platform-runtime permission analyze --checks redundant,suspicious,missing-steps --scope {scope}` instead of the direct doctor scripts. The runtime delegates to the platform-specific settings path.
+- Platform-neutral audits go through `python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime permission analyze --checks {checks} --scope {scope}` — the runtime resolves the active platform's settings path and load. This is the preferred entry point.
+- The individual `permission_doctor` detection scripts run through `python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission_doctor {command} {args}`, addressed by `--scope` (never a literal settings path).
+- Use `tools-permission-fix` for any write operations.
+- User-approved permissions must be excluded from suspicious reports.
+- Do not hardcode a platform settings-file path (no `~/.claude/settings.json`). Address the host platform by `--scope`; the runtime layer resolves the settings location for the active platform.
 
 ## What This Skill Provides
 
@@ -144,31 +145,34 @@ summary:
 
 ---
 
-### Operation: analyze-settings
+### Operation: analyze (platform-routed)
 
-High-level analysis of settings files for permission issues.
-
-**Workflow**: Runs detect-redundant and detect-suspicious operations and consolidates results.
+High-level, platform-neutral analysis. The runtime resolves the active platform's settings, runs the requested checks, and consolidates results — no settings path is named in the body.
 
 **Input**:
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime permission analyze \
+  --checks redundant,suspicious,missing-steps \
+  --scope both \
+  [--marshal .plan/marshal.json]
 ```
-global_settings: ~/.claude/settings.json
-local_settings: .claude/settings.json
-```
+
+(`--marshal` is required only when the `missing-steps` check is included.)
 
 **Output (TOON)**:
 ```
-redundant_issues:
-  ...
-suspicious_issues:
-  ...
-total_issues: 5
-recommendations[2]:
-- Remove 3 redundant permissions from local settings
-- Review 2 suspicious permissions in global settings
+status: success
+scope: both
+checks_run[3]:
+- missing-steps
+- redundant
+- suspicious
+total_findings: 5
 ```
 
-**Usage**: Entry point for permission analysis. Consolidates multiple detection results.
+On a platform with no validated permission backend (e.g. OpenCode), the op returns an honest `no-op` with a `reason` and `alternative` instead of a fabricated finding set.
+
+**Usage**: Preferred entry point for permission analysis. Consolidates the detection results across checks for the active platform.
 
 ## Scripts
 
@@ -192,9 +196,7 @@ This skill is designed to run without user prompts. Required permissions:
 **Script Execution:**
 - `Bash(python3 .plan/execute-script.py *)` - Script execution via executor
 
-**File Operations:**
-- `Read(~/.claude/settings.json)` - Read global settings
-- `Read(.claude/settings.json)` - Read project settings
+**Settings access** is performed inside the runtime / script layer, which resolves the active platform's settings location — the skill body reads no settings file directly.
 
 **Ensuring Non-Prompting:**
 - All operations are read-only analysis

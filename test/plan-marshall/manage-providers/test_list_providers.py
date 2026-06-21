@@ -13,6 +13,8 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
+import marketplace_paths
+import pytest
 from marketplace_paths import CLAUDE_DIR, PLUGIN_CACHE_SUBPATH
 
 import conftest  # noqa: F401
@@ -154,6 +156,23 @@ class TestScanForProvidersCacheOnly:
     ``FileNotFoundError`` here, so provider discovery was impossible in a
     cache-only (installed-plugin, no source tree) environment.
     """
+
+    @pytest.fixture(autouse=True)
+    def _route_bundle_cache_to_patched_home(self, monkeypatch):
+        """Route the deployed-bundle cache resolver at the patched ``Path.home()``.
+
+        ``get_plugin_cache_path`` now resolves through the memoised
+        platform-runtime ``layout bundle-cache-root`` op. These cache-only tests
+        pin ``Path.home()`` to a tmp dir; clear the per-process memo and compute
+        the cache root from the (patched) home at call time so resolution is
+        deterministic and order-independent under xdist.
+        """
+        monkeypatch.setattr(marketplace_paths, '_BUNDLE_CACHE_ROOTS_CACHE', None)
+        monkeypatch.setattr(
+            marketplace_paths,
+            'get_bundle_cache_roots',
+            lambda: (str(Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH),),
+        )
 
     @staticmethod
     def _write_cache_provider(home: Path, body: str) -> Path:

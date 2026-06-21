@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Platform router for plan-marshall — dispatches 15 operations to the correct
+Platform router for plan-marshall — dispatches 18 operations to the correct
 target implementation based on ``runtime.target`` in ``.plan/marshal.json``.
 
 Usage:
@@ -10,6 +10,8 @@ Usage:
 Operations:
     project initial-setup   --project-dir <path>  --target claude|opencode
     project install-hook    --target <settings-file-path>  [--enforcement]
+    layout skill-roots      (no arguments)
+    layout bundle-cache-root (no arguments)
     session capture         --plan-id <id>
     session render-title    (no arguments)
     session push-title-token --plan-id <id>  --icon <glyph>
@@ -21,6 +23,7 @@ Operations:
     permission web-analyze  --scope global|project|both
     permission web-apply    --scope project|global  [--add <json>]  [--remove <json>]  [--dry-run]
     metrics capture         --plan-id <id>  --phase <phase>  [--total-tokens <n>]
+    metrics normalized-tokens  --session-id <id>  --windows-file <path>  --output-file <path>
     subagent dispatch       --agent <name>  [--prompt-file <path>]  [--context <json>]
     health-check            --checks all|permissions|display|mcp-diagnostics
 
@@ -262,6 +265,24 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         )
 
     # ------------------------------------------------------------------
+    # layout skill-roots
+    # ------------------------------------------------------------------
+    if operation == "layout skill-roots":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime layout skill-roots")
+        p.parse_args(remaining)
+        return runtime.layout_skill_roots()
+
+    # ------------------------------------------------------------------
+    # layout bundle-cache-root
+    # ------------------------------------------------------------------
+    if operation == "layout bundle-cache-root":
+        p = argparse.ArgumentParser(
+            allow_abbrev=False, prog="platform_runtime layout bundle-cache-root"
+        )
+        p.parse_args(remaining)
+        return runtime.layout_bundle_cache_root()
+
+    # ------------------------------------------------------------------
     # session capture
     # ------------------------------------------------------------------
     if operation == "session capture":
@@ -390,6 +411,39 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         return runtime.metrics_capture(ns.plan_id, ns.phase, ns.total_tokens)
 
     # ------------------------------------------------------------------
+    # metrics normalized-tokens
+    # ------------------------------------------------------------------
+    if operation == "metrics normalized-tokens":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime metrics normalized-tokens")
+        p.add_argument("--session-id", required=True)
+        p.add_argument("--windows-file", required=True,
+                       help="Path to a JSON file holding the [[phase, start_iso, end_iso], ...] windows")
+        p.add_argument("--output-file", required=True,
+                       help="Path the per-phase normalized-token JSON result is written to")
+        ns = p.parse_args(remaining)
+        try:
+            raw = Path(ns.windows_file).read_text(encoding="utf-8")
+            parsed = json.loads(raw)
+        except (OSError, json.JSONDecodeError) as exc:
+            return toon_error(
+                "metrics normalized-tokens",
+                "invalid_argument",
+                f"--windows-file must be a readable JSON file: {exc}",
+            )
+        if not isinstance(parsed, list):
+            return toon_error(
+                "metrics normalized-tokens",
+                "invalid_argument",
+                "--windows-file must hold a JSON array of [phase, start_iso, end_iso] triples",
+            )
+        windows = [
+            (str(entry[0]), str(entry[1]), str(entry[2]))
+            for entry in parsed
+            if isinstance(entry, list) and len(entry) == 3
+        ]
+        return runtime.metrics_normalized_tokens(ns.session_id, windows, ns.output_file)
+
+    # ------------------------------------------------------------------
     # subagent dispatch
     # ------------------------------------------------------------------
     if operation == "subagent dispatch":
@@ -426,11 +480,12 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         "unknown_operation",
         f"Unknown operation {operation!r}; "
         "valid operations: project initial-setup, project install-hook, "
+        "layout skill-roots, layout bundle-cache-root, "
         "session capture, session render-title, session push-title-token, "
         "permission configure, permission analyze, permission fix, "
         "permission ensure-wildcards, permission ensure-steps, "
         "permission web-analyze, permission web-apply, "
-        "metrics capture, subagent dispatch, health-check",
+        "metrics capture, metrics normalized-tokens, subagent dispatch, health-check",
     )
 
 
@@ -445,7 +500,7 @@ def _build_operation(argv: list[str]) -> tuple[str, list[str]]:
     Operations are two-word identifiers (e.g. ``project initial-setup``).
     Some are single-hyphenated second words (``health-check``).
 
-    Supported prefix tokens: project, session, permission, metrics, subagent, health-check.
+    Supported prefix tokens: project, layout, session, permission, metrics, subagent, health-check.
     """
     if not argv:
         return ("", [])

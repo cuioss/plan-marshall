@@ -2,7 +2,7 @@
 """
 Abstract base class and shared TOON helpers for platform-runtime.
 
-Defines the Runtime ABC with all 15 platform operations. Concrete subclasses
+Defines the Runtime ABC with all 18 platform operations. Concrete subclasses
 (ClaudeRuntime, OpenCodeRuntime) implement each operation for their target.
 
 TOON helpers delegate to the canonical toon_parser from ref-toon-format — no
@@ -164,6 +164,65 @@ class Runtime(ABC):
             ``env_status``; the ``enforcement`` path carries ``target``,
             ``enforcement_installed``, ``enforcement_status``, and
             ``already_present``.
+        """
+
+    # ------------------------------------------------------------------
+    # Filesystem layout resolution
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def layout_skill_roots(self) -> str:
+        """Resolve the project-local-skill discovery root(s) for this target.
+
+        Returns the ordered list of directory paths (relative to a project
+        root, or ``~``-anchored for user-global roots) where ``project:``
+        skills — finalize-steps, recipes, verify-steps, domain-attachable
+        skills — are discovered on this target. Callers resolve each returned
+        root against the relevant base directory and probe in list order
+        (first match wins).
+
+        On Claude: returns the single ``.claude/skills`` root.
+
+        On OpenCode: returns the multi-root list mirroring the executor's
+        discovery order (``$OPENCODE_CONFIG_DIR/skills``, ``.opencode/skills``,
+        ``.claude/skills``, ``.agents/skills`` and the ``~``-anchored
+        user-global variants).
+
+        The result does not change for the lifetime of a process (the target
+        is fixed by ``marshal.json``), so callers memoise it per process —
+        this is the documented mitigation for the subprocess hop on hot
+        config/manifest paths.
+
+        Returns:
+            Serialized TOON string carrying ``roots[N]`` — the ordered list of
+            project-local-skill discovery roots for the active target.
+        """
+
+    @abstractmethod
+    def layout_bundle_cache_root(self) -> str:
+        """Resolve the deployed-bundle (plugin-cache) root for this target.
+
+        Returns the root directory under which this target deploys installed
+        marketplace bundles for discovery outside the source checkout —
+        i.e. where ``extension.py`` / bundle scripts are found when running
+        from an installed plugin rather than the marketplace repo.
+
+        On Claude: returns the single ``~/.claude/plugins/cache/plan-marshall``
+        cache root.
+
+        On OpenCode: OpenCode has no separate single plugin-cache; deployed
+        bundles live under the project-local-skill discovery roots themselves.
+        The op returns those root(s) so callers can probe them in priority
+        order (first match wins), mirroring ``layout_skill_roots``.
+
+        The result does not change for the lifetime of a process (the target
+        is fixed by ``marshal.json``), so callers memoise it per process.
+
+        Returns:
+            Serialized TOON string carrying ``roots[N]`` — the ordered list of
+            deployed-bundle cache roots for the active target (``~``-anchored
+            absolute paths). Claude returns a single-element list; OpenCode
+            returns its multi-root list.
         """
 
     # ------------------------------------------------------------------
@@ -375,6 +434,52 @@ class Runtime(ABC):
 
         Returns:
             Serialized TOON string (success, error, or no-op).
+        """
+
+    @abstractmethod
+    def metrics_normalized_tokens(
+        self,
+        session_id: str,
+        windows: list[tuple[str, str, str]],
+        output_file: str,
+    ) -> str:
+        """Compute per-phase normalized token categories from the session transcript.
+
+        This is the platform-owned transcript engine. The runtime walks the
+        platform's session transcript (and any subagent transcripts), normalizes
+        every usage record into the five canonical categories
+        ``{input, output, cache_read, cache_creation, total}`` per phase, attributes
+        each record to the phase window that contains its timestamp, and writes the
+        per-phase result to *output_file* as JSON. ``manage-metrics`` reads that file
+        and persists the numbers — it never parses a transcript itself.
+
+        The JSON written to *output_file* is an object mapping each phase name to a
+        normalized bucket:
+
+        ``{phase_name: {input, output, cache_read, cache_creation, total,
+        billing_weighted_total, subagent_total_tokens, subagent_tool_uses,
+        subagent_duration_ms, subagent_samples}}``
+
+        On Claude: reads ``~/.claude/projects/.../{session_id}.jsonl`` and the
+        ``{session_id}/subagents/agent-*.jsonl`` transcripts, parses ``message.usage``
+        four-field records and ``<usage>`` return tags, and writes the per-phase JSON.
+        Returns ``no-op`` with code ``transcript_not_found`` when no transcript exists.
+
+        On OpenCode: returns ``no-op`` with code ``transcript_not_found`` — OpenCode
+        exposes no session transcript.
+
+        Args:
+            session_id: Platform session identifier whose transcript is walked.
+            windows: Ordered ``[(phase_name, start_iso, end_iso), ...]`` phase
+                windows used to attribute each usage record to a phase.
+            output_file: Path the per-phase normalized JSON result is written to.
+
+        Returns:
+            Serialized TOON string (success, error, or no-op). The success payload
+            carries attribution counters (``message_count``,
+            ``subagent_calls_attributed``, ``subagent_transcripts_walked``,
+            ``four_field_phases_attributed``); the no-op carries
+            ``error: transcript_not_found``.
         """
 
     # ------------------------------------------------------------------

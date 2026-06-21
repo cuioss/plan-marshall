@@ -17,16 +17,24 @@ from typing import Any
 # Direct import - executor sets up PYTHONPATH for cross-skill imports
 import resolve_project_dir as _routing  # type: ignore[import-not-found]
 from marketplace_bundles import resolve_bundles_root, resolve_skills_root  # type: ignore[import-not-found]
+from marketplace_paths import get_bundle_cache_roots  # type: ignore[import-not-found]
 from plan_logging import log_entry
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
 def get_plugin_cache_path() -> Path:
-    """Get the plugin cache path from environment or default."""
+    """Get the deployed-bundle cache path from environment or the layout op.
+
+    Honors an explicit ``PLUGIN_CACHE_PATH`` env override; otherwise routes
+    through the platform-runtime ``layout bundle-cache-root`` op (memoised via
+    ``marketplace_paths.get_bundle_cache_roots``) and returns the highest-priority
+    root. On Claude this is ``~/.claude/plugins/cache/plan-marshall``; on OpenCode
+    it is the highest-priority user-global skill root.
+    """
     env_path = os.environ.get('PLUGIN_CACHE_PATH')
     if env_path:
         return Path(env_path)
-    return Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
+    return Path(get_bundle_cache_roots()[0]).expanduser()
 
 
 def get_marketplace_bundles_path() -> Path:
