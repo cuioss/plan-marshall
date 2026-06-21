@@ -1080,6 +1080,41 @@ class TestEnrichDelegatesToRuntimeOp:
         assert result['status'] == 'success'
         assert result['enriched'] is False
 
+    def test_non_dict_phase_bucket_is_skipped_without_raising(self, plan_context, monkeypatch):
+        """A non-dict per-phase bucket value is skipped, not crashed on (TypeError guard)."""
+        plan_dir = plan_context.plan_dir_for('enrich-delegate-04')
+        manage_metrics.write_metrics('enrich-delegate-04', {'plan_id': 'enrich-delegate-04'})
+        (plan_dir / 'work').mkdir(parents=True, exist_ok=True)
+        (plan_dir / 'work' / 'metrics.toon').write_text(
+            _ENRICH_TWO_PHASE_METRICS.format(plan_id='enrich-delegate-04'), encoding='utf-8'
+        )
+
+        # A malformed op sidecar: one valid bucket and one non-dict bucket value.
+        per_phase = {
+            '5-execute': {
+                'input_tokens': 50,
+                'output_tokens': 10,
+                'billing_weighted_total': 60,
+                'total': 60,
+            },
+            '6-finalize': 'not-a-dict',
+        }
+        _patch_runtime_op(
+            monkeypatch,
+            status='success',
+            per_phase=per_phase,
+            counters={'message_count': 1},
+        )
+
+        # Must not raise on the non-dict bucket.
+        result = cmd_enrich(_ns_enrich('enrich-delegate-04', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
+
+        assert result['status'] == 'success'
+        phases = manage_metrics.read_metrics_raw('enrich-delegate-04')['phases']
+        # The valid bucket was persisted; the non-dict bucket was skipped.
+        assert phases['5-execute']['input_tokens'] == 50
+        assert 'input_tokens' not in phases.get('6-finalize', {})
+
 
 class TestManageMetricsHasNoTranscriptCode:
     """Regression: the Claude-transcript engine no longer lives in manage-metrics.

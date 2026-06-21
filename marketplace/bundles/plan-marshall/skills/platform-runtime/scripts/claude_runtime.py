@@ -1155,16 +1155,19 @@ def _find_enrich_transcript(session_id: str) -> Path | None:
     if not projects_dir.exists():
         return None
 
-    for session_dir in projects_dir.rglob("*"):
-        if session_dir.is_dir() and session_id in session_dir.name:
-            for jsonl_file in session_dir.glob("*.jsonl"):
-                return jsonl_file
+    try:
+        for session_dir in projects_dir.rglob("*"):
+            if session_dir.is_dir() and session_id in session_dir.name:
+                for jsonl_file in session_dir.glob("*.jsonl"):
+                    return jsonl_file
 
-    for project_dir in projects_dir.iterdir():
-        if project_dir.is_dir():
-            candidate = project_dir / f"{session_id}.jsonl"
-            if candidate.exists():
-                return candidate
+        for project_dir in projects_dir.iterdir():
+            if project_dir.is_dir():
+                candidate = project_dir / f"{session_id}.jsonl"
+                if candidate.exists():
+                    return candidate
+    except OSError:
+        return None
     return None
 
 
@@ -1298,8 +1301,17 @@ def _compute_normalized_tokens(
             "cache_read_input_tokens": four.get("cache_read_input_tokens", 0),
             "cache_creation_input_tokens": four.get("cache_creation_input_tokens", 0),
             "billing_weighted_total": _billing_weighted_total(four),
+            "subagent_total_tokens": 0,
+            "subagent_tool_uses": 0,
+            "subagent_duration_ms": 0,
+            "subagent_samples": 0,
         }
-        phase_bucket["total"] = _billing_weighted_total(four)
+        phase_bucket["total"] = (
+            four.get("input_tokens", 0)
+            + four.get("output_tokens", 0)
+            + four.get("cache_read_input_tokens", 0)
+            + four.get("cache_creation_input_tokens", 0)
+        )
         if sub is not None:
             phase_bucket["subagent_total_tokens"] = sub["total_tokens"]
             phase_bucket["subagent_tool_uses"] = sub["tool_uses"]
@@ -1993,6 +2005,8 @@ class ClaudeRuntime(Runtime):
 
         settings_path = _settings_path_for_scope(scope)
         settings = _load_settings(settings_path)
+        if "error" in settings:
+            return toon_error("permission configure", "invalid_settings", settings["error"])
         settings["permissions"]["allow"] = list(permissions)
 
         if not _save_settings(settings_path, settings):
@@ -2087,19 +2101,20 @@ class ClaudeRuntime(Runtime):
         # Missing-steps check: find project:{skill} steps without matching permission.
         if "missing-steps" in expanded and marshal_path:
             marshal_data, marshal_err = _load_marshal_config(marshal_path)
-            if not marshal_err and marshal_data:
-                steps = _extract_project_steps(marshal_data)
-                target_allow = project_allow if scope == "project" else list(set(global_allow + project_allow))
-                for step_entry in steps:
-                    skill_name = step_entry.get("skill", "")
-                    if skill_name and not _skill_permission_covered(skill_name, target_allow):
-                        findings.append(
-                            {
-                                "check": "missing-steps",
-                                "severity": "high",
-                                "details": f"project:{skill_name} has no matching skill permission",
-                            }
-                        )
+            if marshal_err:
+                return toon_error("permission analyze", "invalid_marshal", marshal_err)
+            steps = _extract_project_steps(marshal_data)
+            target_allow = project_allow if scope == "project" else list(set(global_allow + project_allow))
+            for step_entry in steps:
+                skill_name = step_entry.get("skill", "")
+                if skill_name and not _skill_permission_covered(skill_name, target_allow):
+                    findings.append(
+                        {
+                            "check": "missing-steps",
+                            "severity": "high",
+                            "details": f"project:{skill_name} has no matching skill permission",
+                        }
+                    )
 
         summary: dict[str, int] = {"high": 0, "medium": 0, "info": 0}
         for f in findings:
@@ -2143,6 +2158,8 @@ class ClaudeRuntime(Runtime):
 
         settings_path = _settings_path_for_scope(scope)
         settings = _load_settings(settings_path)
+        if "error" in settings:
+            return toon_error("permission fix", "invalid_settings", settings["error"])
         allow: list[str] = settings["permissions"]["allow"]
 
         changes_applied = 0
@@ -2256,6 +2273,8 @@ class ClaudeRuntime(Runtime):
 
         settings_path = _settings_path_for_scope(scope)
         settings = _load_settings(settings_path)
+        if "error" in settings:
+            return toon_error("permission ensure-wildcards", "invalid_settings", settings["error"])
         allow: list[str] = settings["permissions"]["allow"]
 
         # Discover bundles from the marketplace directory.
@@ -2324,12 +2343,14 @@ class ClaudeRuntime(Runtime):
             )
 
         marshal_data, marshal_err = _load_marshal_config(marshal_path)
-        steps: list[dict[str, Any]] = []
-        if not marshal_err and marshal_data:
-            steps = _extract_project_steps(marshal_data)
+        if marshal_err:
+            return toon_error("permission ensure-steps", "invalid_marshal", marshal_err)
+        steps: list[dict[str, Any]] = _extract_project_steps(marshal_data)
 
         settings_path = _settings_path_for_scope(scope)
         settings = _load_settings(settings_path)
+        if "error" in settings:
+            return toon_error("permission ensure-steps", "invalid_settings", settings["error"])
         allow: list[str] = settings["permissions"]["allow"]
 
         steps_scanned = len(steps)
@@ -2460,6 +2481,8 @@ class ClaudeRuntime(Runtime):
 
         settings_path = _settings_path_for_scope(scope)
         settings = _load_settings(settings_path)
+        if "error" in settings:
+            return toon_error("permission web-apply", "invalid_settings", settings["error"])
         allow: list[str] = settings["permissions"]["allow"]
 
         _WF_RE = re.compile(r"^WebFetch\((.+)\)$")

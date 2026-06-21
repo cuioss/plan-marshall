@@ -24,6 +24,7 @@ from typing import Any
 
 import claude_runtime  # type: ignore[import-not-found]
 import permission_common  # type: ignore[import-not-found]
+import platform_runtime  # type: ignore[import-not-found]
 import permission_doctor  # type: ignore[import-not-found]
 import permission_fix  # type: ignore[import-not-found]
 import permission_web  # type: ignore[import-not-found]
@@ -160,6 +161,117 @@ class TestRuntimeOwnsSettingsIO:
         """_load_marshal_config returns an error string for an absent marshal.json."""
         _config, err = _load_marshal_config(str(tmp_path / "absent.json"))
         assert err is not None
+
+
+class TestWriteOpsFailClosedOnMalformedSettings:
+    """The five write ops fail closed (invalid_settings) rather than clobbering a malformed file."""
+
+    def _malformed_settings(self, tmp_path: Path) -> Path:
+        path = tmp_path / ".claude" / "settings.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{not valid json", encoding="utf-8")
+        return path
+
+    def _pin_scope_path(self, monkeypatch, settings_path: Path) -> None:
+        monkeypatch.setattr(
+            claude_runtime, "_settings_path_for_scope", lambda scope: settings_path
+        )
+
+    def test_configure_fails_closed(self, tmp_path: Path, monkeypatch) -> None:
+        settings = self._malformed_settings(tmp_path)
+        before = settings.read_bytes()
+        self._pin_scope_path(monkeypatch, settings)
+        result = _parse(claude_runtime.ClaudeRuntime().permission_configure("project", ["Read(**)"]))
+        assert result["status"] == "error"
+        assert result["error"] == "invalid_settings"
+        assert settings.read_bytes() == before
+
+    def test_fix_fails_closed(self, tmp_path: Path, monkeypatch) -> None:
+        settings = self._malformed_settings(tmp_path)
+        before = settings.read_bytes()
+        self._pin_scope_path(monkeypatch, settings)
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_fix("project", "add", ["Read(**)"], False)
+        )
+        assert result["status"] == "error"
+        assert result["error"] == "invalid_settings"
+        assert settings.read_bytes() == before
+
+    def test_ensure_wildcards_fails_closed(self, tmp_path: Path, monkeypatch) -> None:
+        settings = self._malformed_settings(tmp_path)
+        before = settings.read_bytes()
+        self._pin_scope_path(monkeypatch, settings)
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_ensure_wildcards(
+                "project", str(tmp_path / "marketplace"), False
+            )
+        )
+        assert result["status"] == "error"
+        assert result["error"] == "invalid_settings"
+        assert settings.read_bytes() == before
+
+    def test_ensure_steps_fails_closed(self, tmp_path: Path, monkeypatch) -> None:
+        # A VALID marshal so the marshal guard passes and the settings guard is reached.
+        marshal = tmp_path / "marshal.json"
+        marshal.write_text(json.dumps({"plan": {}}), encoding="utf-8")
+        settings = self._malformed_settings(tmp_path)
+        before = settings.read_bytes()
+        self._pin_scope_path(monkeypatch, settings)
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_ensure_steps(str(marshal), "project", False)
+        )
+        assert result["status"] == "error"
+        assert result["error"] == "invalid_settings"
+        assert settings.read_bytes() == before
+
+    def test_web_apply_fails_closed(self, tmp_path: Path, monkeypatch) -> None:
+        settings = self._malformed_settings(tmp_path)
+        before = settings.read_bytes()
+        self._pin_scope_path(monkeypatch, settings)
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_web_apply(
+                "project", add=["a.com"], remove=[], dry_run=False
+            )
+        )
+        assert result["status"] == "error"
+        assert result["error"] == "invalid_settings"
+        assert settings.read_bytes() == before
+
+
+class TestAuditOpsFailClosedOnMalformedMarshal:
+    """permission_analyze / permission_ensure_steps reject a malformed marshal.json (invalid_marshal)."""
+
+    def _malformed_marshal(self, tmp_path: Path) -> Path:
+        marshal = tmp_path / "marshal.json"
+        marshal.write_text("{not valid json", encoding="utf-8")
+        return marshal
+
+    def test_analyze_fails_closed_on_malformed_marshal(self, tmp_path: Path, monkeypatch) -> None:
+        marshal = self._malformed_marshal(tmp_path)
+        # Settings need not exist — analyze tolerates malformed/absent settings (read-only).
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_analyze("both", ["missing-steps"], str(marshal))
+        )
+        assert result["status"] == "error"
+        assert result["error"] == "invalid_marshal"
+
+    def test_ensure_steps_fails_closed_on_malformed_marshal(self, tmp_path: Path, monkeypatch) -> None:
+        marshal = self._malformed_marshal(tmp_path)
+        settings = tmp_path / ".claude" / "settings.json"
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(json.dumps({"permissions": {"allow": []}}), encoding="utf-8")
+        before = settings.read_bytes()
+        monkeypatch.setattr(
+            claude_runtime, "_settings_path_for_scope", lambda scope: settings
+        )
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_ensure_steps(str(marshal), "project", False)
+        )
+        assert result["status"] == "error"
+        assert result["error"] == "invalid_marshal"
+        # The malformed-marshal guard fires before any settings write.
+        assert settings.read_bytes() == before
 
 
 # =============================================================================
@@ -301,3 +413,142 @@ class TestOpenCodePermissionsHonestNoop:
         result = _parse(self.runtime.permission_configure("workspace", ["Read(**)"]))
         assert result["status"] == "error"
         assert result["error"] == "invalid_scope"
+
+
+# =============================================================================
+# 4. Cross-cutting regression: the fail-closed paths drive end-to-end via the
+#    public platform-runtime dispatch router (not the bound runtime methods).
+# =============================================================================
+
+
+class TestFailClosedDispatchRegression:
+    """Drive the fail-closed write/audit paths end-to-end through ``platform_runtime.main``.
+
+    This is the user-visible regression angle distinct from the helper-level unit
+    assertions above: a malformed ``.claude/settings.json`` is never silently
+    clobbered, and a malformed ``marshal.json`` never produces a false-success
+    audit. The tests exercise the public router (operation string + argv), which
+    resolves the Claude runtime from a marshal.json selecting the claude target.
+    These tests fail if any write op is reverted to clobber-on-malformed or any
+    audit op is reverted to false-success.
+    """
+
+    def _claude_project(self, tmp_path: Path, monkeypatch) -> Path:
+        """Make tmp_path a claude-target project with cwd pinned to it; return its .claude dir."""
+        plan_dir = tmp_path / ".plan"
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        (plan_dir / "marshal.json").write_text(
+            json.dumps({"runtime": {"target": "claude"}}), encoding="utf-8"
+        )
+        monkeypatch.chdir(tmp_path)
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        return claude_dir
+
+    def _malformed_project_settings(self, claude_dir: Path) -> Path:
+        settings = claude_dir / "settings.json"
+        settings.write_text("{not valid json", encoding="utf-8")
+        return settings
+
+    def _run(self, capsys, argv: list[str]) -> dict[str, Any]:
+        rc = platform_runtime.main(argv)
+        assert rc == 0
+        return _parse(capsys.readouterr().out)
+
+    def test_configure_write_fails_closed_via_dispatch(self, tmp_path, monkeypatch, capsys) -> None:
+        claude_dir = self._claude_project(tmp_path, monkeypatch)
+        settings = self._malformed_project_settings(claude_dir)
+        before = settings.read_bytes()
+        parsed = self._run(
+            capsys, ["permission", "configure", "--scope", "project", "--permissions", "Read(**)"]
+        )
+        assert parsed["status"] == "error"
+        assert parsed["error"] == "invalid_settings"
+        assert settings.read_bytes() == before
+
+    def test_fix_write_fails_closed_via_dispatch(self, tmp_path, monkeypatch, capsys) -> None:
+        claude_dir = self._claude_project(tmp_path, monkeypatch)
+        settings = self._malformed_project_settings(claude_dir)
+        before = settings.read_bytes()
+        parsed = self._run(
+            capsys,
+            ["permission", "fix", "--scope", "project", "--operation", "add", "--permissions", "Read(**)"],
+        )
+        assert parsed["status"] == "error"
+        assert parsed["error"] == "invalid_settings"
+        assert settings.read_bytes() == before
+
+    def test_ensure_wildcards_write_fails_closed_via_dispatch(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        claude_dir = self._claude_project(tmp_path, monkeypatch)
+        settings = self._malformed_project_settings(claude_dir)
+        before = settings.read_bytes()
+        parsed = self._run(
+            capsys,
+            ["permission", "ensure-wildcards", "--scope", "project", "--marketplace-dir", "marketplace/"],
+        )
+        assert parsed["status"] == "error"
+        assert parsed["error"] == "invalid_settings"
+        assert settings.read_bytes() == before
+
+    def test_ensure_steps_write_fails_closed_via_dispatch(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        claude_dir = self._claude_project(tmp_path, monkeypatch)
+        settings = self._malformed_project_settings(claude_dir)
+        before = settings.read_bytes()
+        # A VALID marshal so the marshal guard passes and the settings guard fires.
+        marshal = tmp_path / "valid-marshal.json"
+        marshal.write_text(json.dumps({"plan": {}}), encoding="utf-8")
+        parsed = self._run(
+            capsys,
+            ["permission", "ensure-steps", "--marshal", str(marshal), "--scope", "project"],
+        )
+        assert parsed["status"] == "error"
+        assert parsed["error"] == "invalid_settings"
+        assert settings.read_bytes() == before
+
+    def test_web_apply_write_fails_closed_via_dispatch(self, tmp_path, monkeypatch, capsys) -> None:
+        claude_dir = self._claude_project(tmp_path, monkeypatch)
+        settings = self._malformed_project_settings(claude_dir)
+        before = settings.read_bytes()
+        parsed = self._run(
+            capsys,
+            ["permission", "web-apply", "--scope", "project", "--add", json.dumps(["example.com"])],
+        )
+        assert parsed["status"] == "error"
+        assert parsed["error"] == "invalid_settings"
+        assert settings.read_bytes() == before
+
+    def test_analyze_audit_fails_closed_on_malformed_marshal_via_dispatch(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        self._claude_project(tmp_path, monkeypatch)
+        marshal = tmp_path / "bad-marshal.json"
+        marshal.write_text("{not valid json", encoding="utf-8")
+        parsed = self._run(
+            capsys,
+            ["permission", "analyze", "--scope", "both", "--checks", "missing-steps", "--marshal", str(marshal)],
+        )
+        assert parsed["status"] == "error"
+        assert parsed["error"] == "invalid_marshal"
+
+    def test_ensure_steps_audit_fails_closed_on_malformed_marshal_via_dispatch(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        claude_dir = self._claude_project(tmp_path, monkeypatch)
+        # Valid settings so a false-success would actually write; the malformed
+        # marshal must fail BEFORE any settings access.
+        settings = claude_dir / "settings.json"
+        settings.write_text(json.dumps({"permissions": {"allow": []}}), encoding="utf-8")
+        before = settings.read_bytes()
+        marshal = tmp_path / "bad-marshal.json"
+        marshal.write_text("{not valid json", encoding="utf-8")
+        parsed = self._run(
+            capsys,
+            ["permission", "ensure-steps", "--marshal", str(marshal), "--scope", "project"],
+        )
+        assert parsed["status"] == "error"
+        assert parsed["error"] == "invalid_marshal"
+        assert settings.read_bytes() == before
