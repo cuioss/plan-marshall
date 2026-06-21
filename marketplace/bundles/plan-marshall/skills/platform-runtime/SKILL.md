@@ -138,3 +138,32 @@ artifact. See `manage-terminal-title/standards/terminal-title-architecture.md` f
 the canonical end-to-end architecture: state (`manage-status`), composer
 (`manage-terminal-title`), resolve+emit (`platform-runtime`), session-plan
 binding, output channels, platform abstraction, and the glyph + icon vocabulary.
+
+## PreToolUse Enforcement Hook
+
+A conditional PreToolUse enforcement hook deterministically blocks five
+mechanically-checkable hard-rule violation families, but ONLY when the call
+originates inside a plan-marshall plan context — failing open everywhere else.
+It is implemented by three sibling scripts:
+
+- `pretooluse_gate.py` — the shared, pure-function module that is the SINGLE
+  home of the PreToolUse payload-field knowledge and the `Signal1 OR Signal2`
+  fail-open context-gate predicate. Imported by both leaves below; owns no rule
+  matchers.
+- `claude_pretooluse_capture.py` — the observe-only leaf that validates the
+  shared gate's field names against real payloads before enforcement is armed.
+- `claude_pretooluse_hook.py` — the enforcement leaf that imports the shared
+  gate and adds only the five rule families plus the `permissionDecision: deny`
+  envelope.
+
+The enforcement hook is installed on demand via the orthogonal
+`project install-hook --enforcement` path (independent of the terminal-title
+bundle), surfaces a dedicated `PreToolUse:enforcement` present/MISSING label on
+the `health-check --checks display` diagnostic, and is registered through the
+marshall-steward Configuration → Enforcement Hook menu
+([`../marshall-steward/references/menu-enforcement-hook.md`](../marshall-steward/references/menu-enforcement-hook.md)).
+The context gate, the five rule families with their redirect reasons, the
+fail-open / best-effort-no-raise contract, and the capture-validates-the-gate
+dependency chain are documented in
+[`standards/pretooluse-enforcement.md`](standards/pretooluse-enforcement.md) —
+the canonical reference; the rule list is not restated here.
