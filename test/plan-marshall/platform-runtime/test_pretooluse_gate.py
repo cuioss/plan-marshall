@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
 
 from conftest import get_script_path  # type: ignore[import-not-found]
 
