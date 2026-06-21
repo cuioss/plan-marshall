@@ -260,6 +260,36 @@ def test_context_gate_true_on_reader_subagent_identity() -> None:
 
 
 # =============================================================================
+# Signal 2 — path-boundary precision (regression: substring false-positive)
+# =============================================================================
+
+
+def test_signal2_not_triggered_by_partial_segment_match() -> None:
+    # A path that merely contains the WORKTREE_PATH_SEGMENT as a substring but
+    # not as a proper directory boundary must NOT trigger Signal 2.
+    # E.g. if WORKTREE_PATH_SEGMENT is "worktrees", then a path like
+    # "/tmp/fake-worktrees-extra/plans" must not match.
+    partial_path = f"/tmp/fake-{gate.WORKTREE_PATH_SEGMENT}-extra/plans"
+    payload = {gate.CWD_FIELD: partial_path}
+    assert gate.context_gate(payload) is False
+
+
+def test_signal2_triggered_on_proper_directory_boundary() -> None:
+    # A cwd that resolves exactly under the segment as a directory component
+    # must trigger Signal 2.
+    proper_path = f"/Users/dev/project/{gate.WORKTREE_PATH_SEGMENT}/my-plan/subdir"
+    payload = {gate.CWD_FIELD: proper_path}
+    assert gate.context_gate(payload) is True
+
+
+def test_signal2_triggered_on_trailing_segment_match() -> None:
+    # A cwd that ends exactly at the segment boundary (no sub-path) also matches.
+    trailing_path = f"/Users/dev/project/{gate.WORKTREE_PATH_SEGMENT}"
+    payload = {gate.CWD_FIELD: trailing_path}
+    assert gate.context_gate(payload) is True
+
+
+# =============================================================================
 # No rule-matcher logic present (enforcement stays in D3)
 # =============================================================================
 

@@ -198,7 +198,13 @@ def _signal_sub_agent(payload: dict[str, Any]) -> bool:
 def _signal_worktree_cwd(payload: dict[str, Any]) -> bool:
     """Signal 2 — the cwd resolves under the plan-worktree path segment."""
     current = cwd(payload)
-    return current is not None and WORKTREE_PATH_SEGMENT in current
+    if current is None:
+        return False
+    # Normalize to forward-slash and ensure both sides have directory boundaries
+    # so a partial substring match (e.g. "worktrees-extra") cannot trigger this.
+    normalized_cwd = current.replace("\\", "/").rstrip("/") + "/"
+    normalized_segment = "/" + WORKTREE_PATH_SEGMENT.replace("\\", "/").strip("/") + "/"
+    return normalized_segment in normalized_cwd
 
 
 def context_gate(payload: dict[str, Any]) -> bool:

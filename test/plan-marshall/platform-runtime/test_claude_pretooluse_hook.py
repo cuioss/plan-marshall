@@ -345,3 +345,57 @@ def test_marker_value_satisfies_signal1() -> None:
     payload = _signal1_payload("Read", {"file_path": "x"})
     # Read is a benign non-matching tool: gate satisfied, but no rule fires.
     assert hook.evaluate(payload) is None
+
+
+# =============================================================================
+# _program_name — path-prefix normalization
+# =============================================================================
+
+
+def test_program_name_strips_absolute_path_prefix() -> None:
+    assert hook._program_name("/usr/bin/cat") == "cat"
+
+
+def test_program_name_strips_bin_path_prefix() -> None:
+    assert hook._program_name("/bin/grep") == "grep"
+
+
+def test_program_name_preserves_bare_name() -> None:
+    assert hook._program_name("cat") == "cat"
+
+
+def test_program_name_preserves_pw_literal() -> None:
+    # ./pw is matched as a literal in R5; _program_name must not strip it.
+    assert hook._program_name("./pw") == "./pw"
+
+
+def test_program_name_returns_empty_on_empty_command() -> None:
+    assert hook._program_name("") == ""
+
+
+# =============================================================================
+# R2/R3/R5 — path-prefixed bypass prevention
+# =============================================================================
+
+
+def test_r2_denies_path_prefixed_cat() -> None:
+    # /usr/bin/cat must trip R2 the same as bare cat.
+    assert hook.evaluate(_signal2_payload("Bash", _bash("/usr/bin/cat file.txt"))) == hook._R2_REASON
+
+
+def test_r2_denies_path_prefixed_grep() -> None:
+    assert hook.evaluate(_signal2_payload("Bash", _bash("/bin/grep pattern file"))) == hook._R2_REASON
+
+
+def test_r3_denies_path_prefixed_gh() -> None:
+    # /usr/bin/gh must trip R3 the same as bare gh.
+    assert hook.evaluate(_signal2_payload("Bash", _bash("/usr/bin/gh pr create"))) == hook._R3_REASON
+
+
+def test_r5_denies_path_prefixed_mvn() -> None:
+    # /usr/local/bin/mvn must trip R5 the same as bare mvn.
+    assert hook.evaluate(_signal2_payload("Bash", _bash("/usr/local/bin/mvn verify"))) == hook._R5_REASON
+
+
+def test_r5_denies_path_prefixed_npm() -> None:
+    assert hook.evaluate(_signal2_payload("Bash", _bash("/usr/bin/npm install"))) == hook._R5_REASON

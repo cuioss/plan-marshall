@@ -724,6 +724,26 @@ class TestInstallEnforcementHook:
         # Still exactly one enforcement entry — no duplication.
         assert _count_command(wiring["hooks"]["PreToolUse"], _ENFORCEMENT_HOOK_COMMAND) == 1
 
+    def test_already_present_does_not_rewrite_file(self, rt, tmp_path):
+        """A second --enforcement run on an already-present entry must not rewrite the file.
+
+        Validates the no-write-on-already_present fix: the file's mtime and content
+        must be byte-identical after the idempotent second call.
+        """
+        import os
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target), enforcement=True)
+
+        content_before = target.read_bytes()
+        mtime_before = os.stat(target).st_mtime_ns
+
+        result = _parsed(rt.project_install_hook(str(target), enforcement=True))
+
+        assert result["enforcement_status"] == "already_present"
+        # File must not have been touched (byte-identical, same mtime).
+        assert target.read_bytes() == content_before
+        assert os.stat(target).st_mtime_ns == mtime_before
+
     def test_plain_install_does_not_add_enforcement_entry(self, rt, tmp_path):
         """A plain install-hook (no --enforcement) never installs the enforcement entry."""
         target = tmp_path / ".claude" / "settings.local.json"

@@ -350,15 +350,13 @@ def _install_enforcement_hook(settings_path: Path) -> dict[str, Any]:
             hooks_block["PreToolUse"] = pre_tool_use
 
         if _has_enforcement_entry(pre_tool_use):
-            enforcement_status = "already_present"
-        else:
-            pre_tool_use.append(_enforcement_entry())
-            enforcement_status = "installed"
+            return {"io_ok": True, "enforcement_status": "already_present"}
 
+        pre_tool_use.append(_enforcement_entry())
         if not _write_json(settings_path, settings_data):
             return failure
 
-        return {"io_ok": True, "enforcement_status": enforcement_status}
+        return {"io_ok": True, "enforcement_status": "installed"}
     except (OSError, ValueError):
         return failure
 

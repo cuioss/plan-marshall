@@ -132,6 +132,20 @@ def _first_word(command: str) -> str:
     return stripped.split()[0].lower()
 
 
+def _program_name(command: str) -> str:
+    """Return the normalized executable name from the first command token.
+
+    Strips any leading path component so that ``/bin/cat``, ``/usr/bin/cat``,
+    and ``cat`` all resolve to ``"cat"``.  The special ``./pw`` token is
+    preserved as-is so the R5 literal check continues to work.
+    """
+    token = _first_word(command)
+    if not token or token == "./pw":
+        return token
+    # Strip path prefix (e.g. /usr/bin/cat -> cat) but keep bare names intact.
+    return token.rsplit("/", 1)[-1]
+
+
 def _bash_command(tool_name: str | None, tool_input: dict[str, Any]) -> str | None:
     """Return the Bash ``command`` string, or ``None`` for a non-Bash call.
 
@@ -171,7 +185,7 @@ def _match_r2_file_ops(
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
-    if _first_word(command) in _R2_FILE_OPS:
+    if _program_name(command) in _R2_FILE_OPS:
         return _R2_REASON
     return None
 
@@ -183,7 +197,7 @@ def _match_r3_provider_cli(
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
-    if _first_word(command) in _R3_PROVIDER_CLIS:
+    if _program_name(command) in _R3_PROVIDER_CLIS:
         return _R3_REASON
     return None
 
@@ -213,7 +227,7 @@ def _match_r5_hardcoded_build(
     if command is None:
         return None
     first = _first_word(command)
-    if first == "./pw" or first in _R5_BUILD_PROGRAMS:
+    if first == "./pw" or _program_name(command) in _R5_BUILD_PROGRAMS:
         return _R5_REASON
     return None
 
