@@ -953,8 +953,12 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
     # no sonar_-prefixed key survives inside the scoped object
     assert not any(k.startswith('sonar_') for k in sonar)
 
-    # review buffer nests under default:automated-review
-    assert _params_for(steps, 'default:automated-review') == {'review_bot_buffer_seconds': 180}
+    # review buffer + re-review gates nest under default:automated-review
+    assert _params_for(steps, 'default:automated-review') == {
+        'review_bot_buffer_seconds': 180,
+        're_review_on_loopback': False,
+        're_review_on_branch_cleanup': True,
+    }
 
     # branch-cleanup params nest under default:branch-cleanup
     assert _params_for(steps, 'default:branch-cleanup') == {

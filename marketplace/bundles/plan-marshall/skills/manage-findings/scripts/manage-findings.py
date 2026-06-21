@@ -30,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from _findings_core import (
+    BOT_KINDS,
     CERTAINTY_VALUES,
     FINDING_TYPES,
     PR_COMMENT_KINDS,
@@ -78,6 +79,8 @@ def cmd_add(args: argparse.Namespace) -> dict:
         severity=args.severity,
         author=args.author,
         kind=args.kind,
+        reviewed_commit_sha=args.reviewed_commit_sha,
+        bot_kind=args.bot_kind,
     )
 
 
@@ -96,6 +99,7 @@ def cmd_query(args: argparse.Namespace) -> dict:
         file_pattern=args.file_pattern,
         author=args.author,
         kind=args.kind,
+        bot_kind=args.bot_kind,
     )
 
 
@@ -231,6 +235,12 @@ def main() -> int:
     add_parser.add_argument('--severity', choices=SEVERITIES, help='Severity level')
     add_parser.add_argument('--author', help='Comment-author login (for pr-comment findings)')
     add_parser.add_argument('--kind', choices=PR_COMMENT_KINDS, help='pr-comment structure discriminator')
+    add_parser.add_argument(
+        '--reviewed-commit-sha', dest='reviewed_commit_sha', help='PR HEAD SHA reviewed (for pr-comment findings)'
+    )
+    add_parser.add_argument(
+        '--bot-kind', dest='bot_kind', choices=BOT_KINDS, help='Reviewer-bot identity derived from author'
+    )
     add_parser.set_defaults(func=cmd_add)
 
     # query
@@ -242,6 +252,9 @@ def main() -> int:
     query_parser.add_argument('--file-pattern', help='Glob pattern for file_path')
     query_parser.add_argument('--author', help='Filter by comment-author login')
     query_parser.add_argument('--kind', choices=PR_COMMENT_KINDS, help='Filter by pr-comment kind')
+    query_parser.add_argument(
+        '--bot-kind', dest='bot_kind', choices=BOT_KINDS, help='Filter by reviewer-bot identity'
+    )
     query_parser.add_argument(
         '--include-qgate',
         action='store_true',

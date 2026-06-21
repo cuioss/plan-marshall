@@ -232,6 +232,134 @@ def test_query_findings_unified_filters_qgate_by_author(plan_context):
 
 
 # =============================================================================
+# Test: pr-comment reviewed_commit_sha / bot_kind first-class fields
+# =============================================================================
+
+
+def test_add_finding_persists_reviewed_commit_sha_and_bot_kind(plan_context):
+    """A pr-comment finding round-trips reviewed_commit_sha and bot_kind."""
+    add_finding(
+        'store-prc-rcs-persist',
+        'pr-comment',
+        'CodeRabbit nit',
+        'Consider extracting a helper',
+        author='coderabbitai[bot]',
+        kind='inline',
+        reviewed_commit_sha='abc1234def5678',
+        bot_kind='coderabbit',
+    )
+
+    result = query_findings('store-prc-rcs-persist', finding_type='pr-comment')
+    assert result['filtered_count'] == 1
+    record = result['findings'][0]
+    assert record['reviewed_commit_sha'] == 'abc1234def5678'
+    assert record['bot_kind'] == 'coderabbit'
+
+
+def test_add_finding_omits_reviewed_commit_sha_and_bot_kind_when_absent(plan_context):
+    """Findings added without the new fields do not carry those keys."""
+    add_finding('store-prc-rcs-absent', 'bug', 'Plain bug', 'No reviewer metadata')
+
+    result = query_findings('store-prc-rcs-absent', finding_type='bug')
+    assert result['filtered_count'] == 1
+    record = result['findings'][0]
+    assert 'reviewed_commit_sha' not in record
+    assert 'bot_kind' not in record
+
+
+def test_add_finding_invalid_bot_kind(plan_context):
+    """An unknown bot_kind value returns the canonical error shape."""
+    result = add_finding(
+        'store-prc-badbotkind',
+        'pr-comment',
+        'Title',
+        'Detail',
+        bot_kind='sonarcloud',
+    )
+    assert result['status'] == 'error'
+    assert 'Invalid bot_kind' in result['message']
+
+
+def test_query_findings_by_bot_kind(plan_context):
+    """query_findings filters by exact bot_kind match."""
+    add_finding('store-prc-bybotkind', 'pr-comment', 'C1', 'd', author='coderabbitai[bot]', bot_kind='coderabbit')
+    add_finding('store-prc-bybotkind', 'pr-comment', 'C2', 'd', author='gemini-code-assist[bot]', bot_kind='gemini')
+    add_finding('store-prc-bybotkind', 'pr-comment', 'C3', 'd', author='coderabbitai[bot]', bot_kind='coderabbit')
+
+    result = query_findings('store-prc-bybotkind', bot_kind='coderabbit')
+    assert result['total_count'] == 3
+    assert result['filtered_count'] == 2
+    assert {f['title'] for f in result['findings']} == {'C1', 'C3'}
+
+
+def test_query_findings_bot_kind_excludes_unfielded(plan_context):
+    """The bot_kind filter excludes pr-comment findings that carry no bot_kind."""
+    add_finding('store-prc-botkind-mix', 'pr-comment', 'Legacy', 'd', author='octocat', kind='inline')
+    add_finding('store-prc-botkind-mix', 'pr-comment', 'Bot', 'd', bot_kind='gemini')
+
+    result = query_findings('store-prc-botkind-mix', bot_kind='gemini')
+    assert result['total_count'] == 2
+    assert result['filtered_count'] == 1
+    assert result['findings'][0]['title'] == 'Bot'
+
+
+def test_query_findings_unified_carries_reviewed_commit_sha_and_bot_kind(plan_context):
+    """The unified read surfaces reviewed_commit_sha/bot_kind on the merged plan slice."""
+    add_finding(
+        'store-prc-rcs-unified',
+        'pr-comment',
+        'Plan comment',
+        'd',
+        bot_kind='coderabbit',
+        reviewed_commit_sha='deadbeef',
+    )
+
+    unified = query_findings_unified('store-prc-rcs-unified')
+    assert unified['plan_count'] == 1
+    record = next(f for f in unified['findings'] if f['title'] == 'Plan comment')
+    assert record['reviewed_commit_sha'] == 'deadbeef'
+    assert record['bot_kind'] == 'coderabbit'
+
+
+def test_query_findings_unified_filters_by_bot_kind(plan_context):
+    """The unified read narrows the merged result by bot_kind."""
+    add_finding('store-prc-unified-bk', 'pr-comment', 'From coderabbit', 'd', bot_kind='coderabbit')
+    add_finding('store-prc-unified-bk', 'pr-comment', 'From gemini', 'd', bot_kind='gemini')
+
+    unified = query_findings_unified('store-prc-unified-bk', bot_kind='coderabbit')
+    assert unified['plan_count'] == 1
+    assert unified['findings'][0]['title'] == 'From coderabbit'
+
+
+def test_add_finding_pr_comment_backward_compatible_without_new_fields(plan_context):
+    """Existing pr-comment findings (author/kind only) remain valid and queryable.
+
+    Backward-compatibility guard: a pr-comment finding created with the pre-existing
+    author/kind surface and neither reviewed_commit_sha nor bot_kind persists and
+    round-trips unchanged, and a bot_kind filter does not surface it.
+    """
+    add_finding(
+        'store-prc-bwcompat',
+        'pr-comment',
+        'Old-style comment',
+        'Pre-enrichment finding',
+        author='octocat',
+        kind='review_body',
+    )
+
+    result = query_findings('store-prc-bwcompat', finding_type='pr-comment')
+    assert result['filtered_count'] == 1
+    record = result['findings'][0]
+    assert record['author'] == 'octocat'
+    assert record['kind'] == 'review_body'
+    assert 'reviewed_commit_sha' not in record
+    assert 'bot_kind' not in record
+
+    filtered = query_findings('store-prc-bwcompat', bot_kind='coderabbit')
+    assert filtered['filtered_count'] == 0
+
+
+# =============================================================================
 # Test: resolve_finding
 # =============================================================================
 

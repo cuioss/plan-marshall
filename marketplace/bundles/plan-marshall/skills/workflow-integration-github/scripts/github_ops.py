@@ -1218,6 +1218,88 @@ def _fetch_pr_head_sha(pr_number: int | str) -> str:
     return str(data.get('headRefOid') or '')
 
 
+def fetch_pr_head_sha(pr_number: int | str) -> str:
+    """Public wrapper over :func:`_fetch_pr_head_sha`.
+
+    Exposes the PR HEAD-SHA resolution for the re-review strategy registry
+    (``github_re_review.py``), which needs the current HEAD to match a fresh
+    bot review against. Returns the SHA on success or an empty string on any
+    failure path, mirroring the private helper's no-abort contract.
+    """
+
+    return _fetch_pr_head_sha(pr_number)
+
+
+def post_pr_comment(pr_number: int | str, body: str) -> dict:
+    """Post a comment on a PR via ``gh pr comment``.
+
+    Used by the re-review strategy registry to post a bot review-trigger
+    comment (e.g. ``/gemini review``). Reuses the existing ``run_gh`` wrapper —
+    no new HTTP path. Returns a structured envelope with ``status`` of
+    ``success`` or ``error``.
+    """
+
+    returncode, stdout, stderr = run_gh(['pr', 'comment', str(pr_number), '--body', body])
+    if returncode != 0:
+        return make_error('post_pr_comment', 'Failed to post comment', stderr.strip())
+    return {
+        'status': 'success',
+        'operation': 'post_pr_comment',
+        'pr_number': pr_number,
+        'output': stdout.strip(),
+    }
+
+
+def fetch_pr_reviews_with_commits(pr_number: int | str) -> dict:
+    """Fetch a PR's reviews with their reviewed commit SHA and submission time.
+
+    ``gh pr view --json reviews`` does not expose each review's reviewed commit,
+    so the re-review registry needs the raw ``commit.oid`` plus ``submittedAt``
+    and the author login to match a fresh review against the current HEAD. Uses
+    the ``gh api`` REST path (still via ``run_gh``) — the GraphQL
+    ``PullRequestReview`` node exposes ``commit`` only on a recent schema, while
+    the REST ``/reviews`` payload carries ``commit_id`` directly.
+
+    Returns a structured envelope. On success ``reviews`` is a list of
+    ``{user, state, submitted_at, commit_sha}`` dicts.
+    """
+
+    owner, repo = get_repo_info()
+    if not owner or not repo:
+        return make_error('fetch_pr_reviews_with_commits', 'Could not determine repository owner/name')
+
+    endpoint = f'repos/{owner}/{repo}/pulls/{pr_number}/reviews'
+    returncode, stdout, stderr = run_gh(['api', endpoint, '--paginate'])
+    if returncode != 0:
+        return make_error('fetch_pr_reviews_with_commits', f'Failed to fetch reviews for PR {pr_number}', stderr.strip())
+
+    try:
+        raw_reviews = json.loads(stdout)
+    except json.JSONDecodeError:
+        return make_error('fetch_pr_reviews_with_commits', 'Failed to parse gh api output', stdout[:100])
+
+    if not isinstance(raw_reviews, list):
+        return make_error('fetch_pr_reviews_with_commits', 'Unexpected reviews payload shape', str(raw_reviews)[:100])
+
+    reviews = [
+        {
+            'user': (r.get('user') or {}).get('login', 'unknown'),
+            'state': r.get('state', 'UNKNOWN'),
+            'submitted_at': r.get('submitted_at') or '',
+            'commit_sha': r.get('commit_id') or '',
+        }
+        for r in raw_reviews
+        if isinstance(r, dict)
+    ]
+    return {
+        'status': 'success',
+        'operation': 'fetch_pr_reviews_with_commits',
+        'pr_number': pr_number,
+        'review_count': len(reviews),
+        'reviews': reviews,
+    }
+
+
 def _derive_overall_status(checks: list[dict]) -> tuple[str, list[dict], list[dict]]:
     """Derive ``overall | final_status`` plus failing-checks transport.
 

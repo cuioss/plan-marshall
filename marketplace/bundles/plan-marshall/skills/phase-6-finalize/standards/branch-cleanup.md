@@ -318,6 +318,65 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: rebased onto origin/{base_branch}, force-pushed with lease, CI passed"
 ```
 
+### Re-review the rebased HEAD (trigger A)
+
+**Only if `state == open`** (a rebase + force-push happened above). The rebase/force-push advanced the feature branch HEAD past the `reviewed_commit_sha` of the staged `pr-comment` findings, so the bot reviews on record are stale for the rebased tree — branch-cleanup's own rebase commit is unreviewed. This step re-requests a fresh bot review for the new HEAD and surfaces it through the existing `comments-stage` → triage pipeline. It honors the SAME `bot_kind`-keyed D2 registry as trigger B (see [`../workflow/automated-review.md`](../workflow/automated-review.md) § "Re-review after a loop-back fix commit (trigger B)") — it does NOT post a duplicate review request for a bot that auto-reviews on push (CodeRabbit), and explicitly re-triggers a bot that does not (Gemini). The trigger fires on the rebased HEAD even when the pre-rebase tree was already reviewed; this is NOT a skip-on-complete-then-move-on.
+
+The gate is the `re_review_on_branch_cleanup` config knob (default `true`) owned by the `default:automated-review` step. Read it from the plan-local execution-manifest step-params snapshot:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  step-params get --plan-id {plan_id} --phase 6-finalize --step-id automated-review
+```
+
+Read `re_review_on_branch_cleanup` off the returned `params` object (default: `true`). **When `re_review_on_branch_cleanup == false`**, skip this entire section and proceed to the **Pre-Merge Confirmation Gate**.
+
+**When `re_review_on_branch_cleanup == true`**:
+
+1. Read the most recent `bot_kind` from the plan's staged `pr-comment` findings:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
+     --plan-id {plan_id} --type pr-comment
+   ```
+
+   If the result's `findings` list is empty, there is no prior reviewer identity to re-trigger — skip this section and proceed to the **Pre-Merge Confirmation Gate**. Otherwise capture `{bot_kind}` from the most recent finding. A finding with no `bot_kind` (human author) is NOT a bot review — skip the re-review for it.
+
+2. Resolve the rebased branch's new HEAD SHA and the force-push time:
+
+   ```bash
+   git -C {worktree_path} rev-parse HEAD
+   ```
+
+   Capture stdout as `{head_sha}`.
+
+   ```bash
+   git -C {worktree_path} show -s --format=%cI HEAD
+   ```
+
+   Capture stdout as `{push_time}` (the ISO-8601 commit time of the rebased HEAD — the force-push time used as the CodeRabbit trigger lower bound).
+
+3. Invoke the D2 re-review registry for the new HEAD. For a CodeRabbit `bot_kind` the `request_fresh_review` is a NO-OP — the `force-push-with-lease` itself auto-triggered CodeRabbit's review, so NO `@coderabbitai review` comment is posted and the await uses `{push_time}` as the trigger time; for a Gemini `bot_kind` the registry posts `/gemini review` then awaits. See [`workflow-integration-github` SKILL.md § Canonical invocations → `github_re_review re-review`](../../workflow-integration-github/SKILL.md#github_re_review-re-review):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
+     --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} --plan-id {plan_id}
+   ```
+
+   Read `matched` from the returned TOON. The fresh review (when matched) is now on the PR. Re-run the producer + triage pipeline so the rebase commit is reviewed: call `comments-stage` (which re-stamps every finding's `reviewed_commit_sha` to the new HEAD) and re-triage the new findings through the existing per-finding dispatch:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
+     comments-stage --pr-number {pr_number} --plan-id {plan_id}
+   ```
+
+   Then enumerate the pending `pr-comment` findings and dispatch the per-finding triage core exactly as documented in [`../workflow/automated-review.md`](../workflow/automated-review.md) § "Consumer: enumerate pending pr-comment findings" and § "Dispatch the per-finding triage core" — this reuses the existing pipeline rather than adding a parallel path. Log the re-review outcome:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: re-reviewed rebased HEAD {head_sha} (bot_kind={bot_kind}, matched={matched})"
+   ```
+
 ### Pre-Merge Confirmation Gate
 
 **Only if `state == open`** (when `state == merged` there is nothing to merge — skip this entire section and proceed to **Wait for Merge CI**, which itself is a no-op on the `state == merged` path).

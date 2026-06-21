@@ -32,6 +32,7 @@ from typing import Any
 
 import github_ops as _github  # type: ignore[import-not-found]
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd  # type: ignore[import-not-found]
+from github_re_review import bot_kind_for_author  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
     compile_patterns_from_config,
@@ -226,6 +227,12 @@ def cmd_comments_stage(args):
     # whose id is already present.
     existing_comment_ids = _existing_pr_comment_ids(query_findings, plan_id)
 
+    # Stamp every finding with the PR HEAD SHA at ingestion time so re-review
+    # matching can tell whether HEAD has advanced past the reviewed commit.
+    # Fetched once for the whole batch (empty string on any failure path — the
+    # field is then simply omitted from the record).
+    reviewed_commit_sha = _github.fetch_pr_head_sha(pr_number)
+
     stored_hashes: list[str] = []
     skipped_noise = 0
     skipped_duplicate = 0
@@ -289,6 +296,11 @@ def cmd_comments_stage(args):
         if isinstance(line, int) and line > 0:
             line_arg = line
 
+        # Derive bot_kind from the comment author login (coderabbitai ->
+        # coderabbit, gemini-code-assist -> gemini); a human author resolves to
+        # None and leaves bot_kind unset on the finding.
+        bot_kind = bot_kind_for_author(author)
+
         add_result = add_finding(
             plan_id=plan_id,
             finding_type='pr-comment',
@@ -298,6 +310,8 @@ def cmd_comments_stage(args):
             line=line_arg,
             author=author,
             kind=kind,
+            reviewed_commit_sha=reviewed_commit_sha or None,
+            bot_kind=bot_kind,
         )
         if add_result.get('status') == 'success':
             stored_hashes.append(add_result.get('hash_id', ''))
