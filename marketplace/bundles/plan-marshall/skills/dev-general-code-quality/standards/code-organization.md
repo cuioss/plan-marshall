@@ -253,7 +253,7 @@ The test has two parts, not one: *(1) can the boundary actually produce this fai
 
 When a parameter is annotated with a concrete type — `metadata: dict[str, Any]`, `names: list[str]`, `count: int` — that annotation IS the contract. Adding `isinstance(metadata, dict)` before using it is defensive theatre: in correct code the guard can never be false, so it adds a dead branch and, worse, misleads the next reader into believing the value is polymorphic when the signature says it is not.
 
-```
+```text
 // BAD -- redundant guard on a value the signature already pins
 function merge(metadata: dict[str, Any]) -> dict {
     if (isinstance(metadata, dict)) {   // can never be false in correct code

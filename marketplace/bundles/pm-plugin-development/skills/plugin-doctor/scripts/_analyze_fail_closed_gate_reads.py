@@ -88,27 +88,27 @@ _CONCRETE_CONTRACT_TYPES: frozenset[str] = frozenset(
 )
 
 # ---------------------------------------------------------------------------
-# Whitelist — path-component-anchored
+# Whitelist — path-suffix-anchored (exact directory structure)
 # ---------------------------------------------------------------------------
 
-_WHITELIST_COMPONENT_SETS: list[frozenset[str]] = [
+_WHITELIST_SUFFIXES: list[tuple[str, ...]] = [
     # Self-reference: this analyzer file (the markers are the detection target).
-    frozenset({'_analyze_fail_closed_gate_reads.py'}),
+    ('pm-plugin-development', 'skills', 'plugin-doctor', 'scripts', '_analyze_fail_closed_gate_reads.py'),
     # Canonical source: file_ops.py IS the fail-closed read implementation.
-    frozenset({'tools-file-ops', 'file_ops.py'}),
+    ('tools-file-ops', 'scripts', 'file_ops.py'),
 ]
 
 
 def is_whitelisted(file_path: Path) -> bool:
     """Return True when ``file_path`` matches any whitelist entry.
 
-    Each whitelist entry is a frozenset of path-component strings that must
-    ALL appear as exact matches among the components of ``file_path``.
+    Each whitelist entry is a suffix tuple that must match the trailing
+    components of ``file_path`` exactly — only canonical path shapes are
+    exempt, not any path that happens to contain the component strings.
     """
-    parts_set = set(file_path.parts)
-    parts_set.add(file_path.name)
-    for required_components in _WHITELIST_COMPONENT_SETS:
-        if required_components.issubset(parts_set):
+    parts = file_path.parts
+    for suffix in _WHITELIST_SUFFIXES:
+        if len(parts) >= len(suffix) and parts[-len(suffix):] == suffix:
             return True
     return False
 

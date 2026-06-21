@@ -236,7 +236,7 @@ A read-only gate or boundary verb — a function that forms a *verdict* by readi
 
 "I could not evaluate the invariant" is itself an answer the caller needs. A gate that crashes on an I/O error has strictly worse failure semantics than one that returns an error, because the caller cannot distinguish "the invariant could not be evaluated" from a hard process death — and may silently advance past an unverified gate. Deliver the failure as a structured `status: error` (or the verb's documented fail-closed sentinel), never a stack trace.
 
-```
+```text
 // BAD — .exists() guard, but the read can still raise OSError
 function checkConsistency(planDir) {
     path = planDir / "outline.md"
