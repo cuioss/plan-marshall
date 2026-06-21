@@ -106,7 +106,7 @@ def _read_queue(queue_path: Path) -> dict:
 
 
 def _waiting_plan_ids(queue_path: Path) -> list[str]:
-    """Return the FIFO ``waiting`` plan_ids in stored (admit-ts) order."""
+    """Return the FIFO ``waiting`` plan_ids in stored (serialized arrival / list) order."""
     return [e['plan_id'] for e in _read_queue(queue_path).get('waiting', [])]
 
 
@@ -230,10 +230,11 @@ class TestAcquire:
 
 class TestFifoAdmission:
     """The FIFO admission layer: ``acquire`` enqueues into ``merge-queue.json`` and
-    admits ONLY the FIFO-front plan (oldest by admit-``ts``). A non-front plan
-    returns ``admission: blocked`` WITHOUT attempting the ``O_EXCL`` create — even
-    when the lock file is FREE, a non-front plan never contends the kernel race.
-    This is the fairness property that makes the longest-waiting plan merge next."""
+    admits ONLY the FIFO-front plan (the first entry in serialized arrival order). A
+    non-front plan returns ``admission: blocked`` WITHOUT attempting the ``O_EXCL``
+    create — even when the lock file is FREE, a non-front plan never contends the
+    kernel race. This is the fairness property that makes the longest-waiting plan
+    merge next."""
 
     def test_non_front_plan_blocks_even_when_lock_is_free(self, isolated_base: dict) -> None:
         """A non-front plan is blocked purely by FIFO ordering — the lock file does
@@ -326,6 +327,43 @@ class TestFifoAdmission:
         assert 'poll_window_seconds' not in result
         # blocked is NOT a hard error — no error_code is set.
         assert result.get('error_code') is None
+
+    def test_front_is_list_position_not_min_ts_under_inverted_ts(self, isolated_base: dict) -> None:
+        """Regression: the FIFO front is the FIRST ``waiting`` entry (serialized
+        arrival order), NOT the entry with the smallest admit-``ts``.
+
+        Under concurrent enqueue a ``ts`` sampled before the serialized ``rmw_json``
+        section can disagree with the append order, so a ``min(ts)`` front selector
+        could pick a different plan than the file's first entry. During a drain that
+        made the genuine list-front poll ``blocked`` with no holder — the
+        no-double-grant drain flake. The queue below has append order
+        ``[first, second]`` but INVERTED admit-``ts`` (``first``'s ts is LARGER), so
+        a min-ts selector would wrongly elect ``second`` as the front.
+        """
+        base = isolated_base['base']
+        for name in ('first', 'second'):
+            _make_live_plan(base, name)
+        # Append order [first, second], but ts is inverted (first.ts > second.ts).
+        isolated_base['queue_path'].write_text(
+            json.dumps({'waiting': [
+                {'plan_id': 'first', 'ts': 2.0},
+                {'plan_id': 'second', 'ts': 1.0},
+            ]}),
+            encoding='utf-8',
+        )
+        assert not isolated_base['lock_path'].exists()
+
+        # 'first' is the list-position front → admitted. A min-ts selector would
+        # have elected 'second' and wrongly blocked 'first' here.
+        first = merge_lock.run_acquire(Namespace(plan_id='first', timeout=5.0))
+        assert first['admission'] == 'admitted', first
+        assert first['holder'] == 'first'
+
+        # 'second' (later in arrival order despite the smaller ts) is blocked
+        # behind the now-live front.
+        second = merge_lock.run_acquire(Namespace(plan_id='second', timeout=5.0))
+        assert second['admission'] == 'blocked', second
+        assert second['blocking_plan_id'] == 'first'
 
 
 # =============================================================================
