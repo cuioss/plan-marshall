@@ -7,14 +7,12 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 | Input | Source | Type |
 |-------|--------|------|
 | `change_type` | `solution_outline.md` deliverable metadata | enum: `analysis|feature|enhancement|bug_fix|tech_debt|verification` |
-| `compatibility` | `marshal.json::plan.phase-2-refine.compatibility` (read by the composer; default `breaking`) | enum: `breaking|deprecation|smart_and_ask` |
 | `track` | `phase-3-outline` | enum: `simple|complex` |
 | `scope_estimate` | `solution_outline.md` solution-level metadata (deliverable 2) | enum: `none|surgical|single_module|multi_module|broad` |
 | `recipe_key` | `--recipe-key` argument when supplied, else read by the composer from `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`) | string or absent |
 | `affected_files_count` | `references.json::affected_files` length | int (≥0) |
 | `commit_and_push` | `manage-config plan phase-5-execute get --field commit_and_push` | bool (default: `true`) |
 | `build_map_globs` | derived from `marshal.json::build.map` — the union of every entry's `glob` across all domains | list[string] (default: empty when build_map absent) |
-| `whole_tree_invariant_trigger_globs` | the constant `_WHOLE_TREE_INVARIANT_TRIGGER_GLOBS` in `manage-execution-manifest.py` — the two trigger categories (doctor / sweep-test) consumed by the `whole_tree_gate_inactive` additive arm; the bundle changed-set (`affected_files` ∪ outline/legacy fallbacks, via `_read_bundle_change_paths`) is matched against these globs | list[string] (fixed) |
 | `live_footprint` | derived on demand from the worktree (`{base}...HEAD` ∪ porcelain via `compute_plan_branch_diff`); empty before the worktree is materialized | list[string] (default: empty) |
 | `phase_5_candidates` | `marshal.json::plan.phase-5-execute.verification_steps` (phase-aware list-field — see [Phase-aware step source](#phase-aware-step-source)) | list[string] |
 | `phase_6_candidates` | `marshal.json::plan.phase-6-finalize.steps` | list[string] |
@@ -90,8 +88,7 @@ The pre-filters run in this order:
 2. **`pre_push_quality_gate_inactive`** — drops `pre-push-quality-gate` when activation conditions fail.
 3. **`pre_submission_self_review_inactive`** — drops `pre-submission-self-review` when the live plan footprint is empty.
 4. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`.
-5. **`whole_tree_gate_inactive`** — drops `finalize-step-whole-tree-gate` unless EITHER the breaking arm (`compatibility == breaking` AND `change_type ∈ {tech_debt, feature, enhancement, bug_fix}` AND `affected_files_count > 0`) OR the additive trigger arm (`affected_files_count > 0` AND the changed set intersects a whole-tree-invariant trigger glob, regardless of compatibility) passes.
-6. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, and `plugin-doctor`; `single_module` drops only `plan-retrospective`. `automated-review` is dropped ONLY via the explicit `drop_review_on_scope_gate` opt-in, never by the implicit scope gate.
+5. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, and `plugin-doctor`; `single_module` drops only `plan-retrospective`. `automated-review` is dropped ONLY via the explicit `drop_review_on_scope_gate` opt-in, never by the implicit scope gate.
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by any pre-filter that ran before the row matrix.
 
@@ -176,44 +173,6 @@ When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt}` AND `affec
 
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `pre_submission_self_review_inactive` and *before* every row of the seven-row matrix.
 
-### Pre-Filter: `whole_tree_gate_inactive`
-
-**Gate-pass predicate**: `finalize-step-whole-tree-gate` is KEPT (the pre-filter is a no-op) whenever **EITHER** activation arm passes:
-
-- **Breaking arm**: `compatibility == breaking` AND `change_type ∈ {tech_debt, feature, enhancement, bug_fix}` AND `affected_files_count > 0`.
-- **Trigger arm** (additive): `affected_files_count > 0` AND the plan's changed set intersects a whole-tree-invariant trigger glob — **regardless of `compatibility` or `change_type`**.
-
-**Effect**: when NEITHER arm passes, `finalize-step-whole-tree-gate` is removed from `phase_6_candidates` before the rows are evaluated. The pre-filter is the subtraction-only expression of the gate: the step is a candidate by default and dropped when both arms fail, matching the manifest architecture where rows and pre-filters only ever narrow the candidate list.
-
-**Why a clean-slate/breaking arm**: the whole-tree completeness gate's original purpose is to catch survivors of deletions a clean-slate/breaking plan was meant to remove — a deleted symbol, contract, or description that still survives somewhere in the `marketplace/` tree. A `deprecation` or `smart_and_ask` plan deliberately KEEPS old surfaces alongside new ones, so a surviving reference is the expected outcome, not a defect — running the survivor sweep there would FAIL legitimately-retained references. The breaking arm therefore activates the survivor sweep only for `compatibility == breaking`. The `change_type` restriction excludes `analysis` (no code change) and `verification` (tests only, deletes nothing); the `affected_files_count > 0` condition excludes plans that touched zero files (nothing was deleted).
-
-**Why the additive trigger arm**: some whole-tree invariants can be broken by a NON-breaking plan. A changed plugin-doctor / plan-doctor rule re-classifies the entire marketplace; a changed whole-tree grep-sweep guard test must re-run with the full scan root. These violations only surface when the ENTIRE tree is verified — phase-5 task verification is build-map-scoped and false-greens on them. So when the changed set touches one of these surfaces the gate must fire even on a `deprecation` / `smart_and_ask` plan. The trigger arm therefore bypasses the breaking and `change_type` restrictions by design (per Decision 1 — the trigger surface, not the compatibility posture, is what makes the whole-tree check necessary).
-
-**Whole-tree-invariant trigger globs** — this section is the single doc home for the two trigger categories (D2's gate-body doc cross-references here, it does not duplicate). The composer matches each repo-relative changed path against these globs via `fnmatch.fnmatch`; the constant `_WHOLE_TREE_INVARIANT_TRIGGER_GLOBS` in `manage-execution-manifest.py` is the single source of the literal patterns.
-
-| Trigger category | Globs | Why whole-tree |
-|------------------|-------|----------------|
-| doctor | `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**/*.py`, `marketplace/bundles/plan-marshall/skills/plan-doctor/**/*.py` | A changed analyzer / rule re-classifies the whole marketplace — the marketplace-wide doctor pass must re-run. |
-| sweep-test | `test/plan-marshall/**/test_*sweep*.py`, `test/marketplace/**/test_*sweep*.py` | A changed whole-tree grep-sweep guard test must re-run with the full `marketplace/` scan root, not module-scoped. |
-
-**Why a pre-filter (not an eighth row)**: Activation depends only on `compatibility`, `change_type`, `affected_files_count`, and the changed-set ∩ trigger-globs predicate, and uses no language detection — it is domain-agnostic by construction (both the survivor sweep and the trigger checks apply to any code or doc change in scope). The gate is orthogonal to the scope / recipe inputs the seven-row matrix consumes, and expressing it as a pre-filter keeps the seven-row matrix unchanged. It mirrors the `simplify_inactive` pre-filter's shape, adding `compatibility` as the clean-slate discriminator for the breaking arm and the trigger-glob predicate as the additive arm.
-
-**Decision log lines** (in addition to the row's own log line and any other pre-filter log line):
-
-```
-(plan-marshall:manage-execution-manifest:compose) finalize-step-whole-tree-gate omitted — compatibility={value} change_type={value} affected_files_count={N}
-```
-
-is emitted when both arms fail and the step is dropped. When the step is KEPT via the additive trigger arm (NOT the breaking arm), a distinct line records the trigger-based activation so it is auditable apart from the default breaking-arm activation:
-
-```
-(plan-marshall:manage-execution-manifest:compose) finalize-step-whole-tree-gate activated via whole-tree-invariant trigger — changed set hit a trigger glob, affected_files_count={N}
-```
-
-When the gate passes via the breaking arm, the pre-filter is a no-op and emits no log entry (a kept-via-breaking gate is the default and needs no audit line); `finalize-step-whole-tree-gate` survives into the seven-row matrix.
-
-**Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `simplify_inactive` and *before* `scope_gated_finalize` and every row of the seven-row matrix.
-
 ### Pre-Filter: `scope_gated_finalize`
 
 **Condition**: `scope_estimate ∈ {surgical, single_module}`. This is the sole entry condition for the pre-filter. `drop_review_on_scope_gate == true` is a *modifier* that only takes effect when the scope condition already holds — it is never a standalone trigger, so on `multi_module` / `broad` / `none` plans the override is inert.
@@ -226,7 +185,7 @@ When the gate passes via the breaking arm, the pre-filter is a no-op and emits n
 
 **The deliberate `automated-review` carve-out**: the implicit scope gate NEVER drops `automated-review`. The active `bot_enforcement_guard` (documented below) re-adds `automated-review` in-place on any GitHub/GitLab plan where it is missing, so an implicit drop would be a silently-undone no-op — and dropping it would contradict the documented invariant that "review gates a project opted into are NEVER silently suppressed by the planner". The only path that suppresses `automated-review` is the explicit `drop_review_on_scope_gate` opt-in: when `marshal.json`'s `plan.phase-6-finalize.drop_review_on_scope_gate` is `true` **and** the plan is itself scope-gated (`scope_estimate ∈ {surgical, single_module}`), the scope gate additionally drops `automated-review`. The override is scoped, not global — on `multi_module` / `broad` / `none` plans it is inert, so flipping the project-wide knob can never silently disable bot review on a large plan. The default (`false`) keeps the bot-review invariant intact. This resolves the request's "exclude automated-review for surgical scope" instruction by extending — not contradicting — the bot-enforcement model: the exclusion is opt-in and explicit, never implicit.
 
-**Why a pre-filter (not an eighth row)**: the subtraction depends only on `scope_estimate` (and the `drop_review_on_scope_gate` config knob), both orthogonal to the change-type / recipe inputs the seven-row matrix consumes. Modeling it as a pre-filter keeps the seven-row matrix unchanged and is consistent with the composer's "rows and pre-filters only ever narrow the candidate list" architecture. It runs after `whole_tree_gate_inactive` and before the matrix and the bot-enforcement guard, so every row — and the guard — sees a candidate list already narrowed by the scope gate.
+**Why a pre-filter (not an eighth row)**: the subtraction depends only on `scope_estimate` (and the `drop_review_on_scope_gate` config knob), both orthogonal to the change-type / recipe inputs the seven-row matrix consumes. Modeling it as a pre-filter keeps the seven-row matrix unchanged and is consistent with the composer's "rows and pre-filters only ever narrow the candidate list" architecture. It runs after `simplify_inactive` and before the matrix and the bot-enforcement guard, so every row — and the guard — sees a candidate list already narrowed by the scope gate.
 
 **Decision log line** (one per subtraction, in addition to the row's own log line and any other pre-filter log line):
 
@@ -236,7 +195,7 @@ When the gate passes via the breaking arm, the pre-filter is a no-op and emits n
 
 When `scope_estimate ∈ {none, multi_module, broad}` and `drop_review_on_scope_gate == false`, the pre-filter is a no-op and emits no log entry; the full candidate set survives into the seven-row matrix.
 
-**Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `whole_tree_gate_inactive` and *before* every row of the seven-row matrix and the bot-enforcement guard.
+**Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `simplify_inactive` and *before* every row of the seven-row matrix and the bot-enforcement guard.
 
 ## Generic documentation recognition (no build owner)
 

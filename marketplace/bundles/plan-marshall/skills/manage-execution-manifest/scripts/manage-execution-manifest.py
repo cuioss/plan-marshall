@@ -17,7 +17,6 @@ Usage:
 """
 
 import argparse
-import fnmatch
 import json
 import shlex
 import subprocess
@@ -132,7 +131,6 @@ EXECUTION_LOG_KEY = 'execution_log'
 # ``standards/{name}.md`` role-files to read.
 DEFAULT_PHASE_5_STEPS = ('verify:quality-gate', 'verify:module-tests')
 DEFAULT_PHASE_6_STEPS = (
-    'finalize-step-whole-tree-gate',
     'commit-push',
     'finalize-step-simplify',
     'create-pr',
@@ -145,6 +143,7 @@ DEFAULT_PHASE_6_STEPS = (
     'record-metrics',
     'archive-plan',
 )
+
 
 def _strip_default_prefix(step: str) -> str:
     """Return the bare step name regardless of the optional ``default:`` prefix."""
@@ -556,111 +555,6 @@ def _read_recipe_source(plan_id: str) -> str | None:
     return None
 
 
-def _read_bundle_change_paths(plan_id: str) -> list[str]:
-    """Read the union of bundle change paths from references.json + solution outline.
-
-    The composer runs from `phase-4-plan` Step 8b — at outline/plan time, BEFORE
-    Phase 5 has committed any changes. ``references.json::affected_files`` is the
-    canonical pre-execute source when populated by upstream phases. The legacy
-    ``modified_files`` key is no longer written by current plans (the persisted
-    ledger was removed; the footprint is derived on demand from the worktree);
-    it is unioned in here only as a back-compat fallback for older plans that
-    still carry it.
-
-    For plans where ``references.json::affected_files`` is unset (the common
-    pre-execute shape produced by current phase-3-outline / phase-4-plan flows),
-    the composer falls back to the deliverable-level ``Affected files:`` blocks
-    in ``solution_outline.md``. This closes the empirical gap where a
-    deliverable listed bundle source paths but ``references.json`` did not
-    surface them, so the predicate had nothing to match against.
-
-    Reading all three sources and unioning their entries means the rule fires:
-
-    - on the first compose (via ``affected_files`` in references OR the
-      solution outline fallback);
-    - on any older plan that still carries the legacy ``modified_files`` key.
-
-    Returns an empty list when none of the sources can be read — the rule
-    simply does not fire in that case.
-    """
-    seen: set[str] = set()
-    union: list[str] = []
-
-    references_path = get_plan_dir(plan_id) / FILE_REFERENCES
-    if references_path.exists():
-        payload = read_json(references_path, default={})
-        if isinstance(payload, dict):
-            for field in ('affected_files', 'modified_files'):
-                entries = payload.get(field)
-                if not isinstance(entries, list):
-                    continue
-                for entry in entries:
-                    if not isinstance(entry, str):
-                        continue
-                    normalized = entry.strip()
-                    if not normalized or normalized in seen:
-                        continue
-                    seen.add(normalized)
-                    union.append(normalized)
-
-    # Fallback: harvest deliverable-level Affected files from the solution
-    # outline. Cross-skill import via PYTHONPATH (set by the executor and the
-    # test conftest). Any import or parse failure is swallowed silently — the
-    # rule simply skips the fallback in that case.
-    for entry in _read_solution_outline_affected_files(plan_id):
-        if entry not in seen:
-            seen.add(entry)
-            union.append(entry)
-
-    return union
-
-
-def _read_solution_outline_affected_files(plan_id: str) -> list[str]:
-    """Best-effort read of deliverable-level ``Affected files:`` from the outline.
-
-    Imports ``_plan_parsing`` (sibling skill ``manage-solution-outline``) to
-    parse the document and extract per-deliverable ``affected_files`` lists,
-    then flattens them into a single ordered, de-duplicated list. Returns an
-    empty list when the outline is missing, malformed, or the import is not
-    on ``sys.path``. The composer treats missing data as "rule does not fire".
-    """
-    outline_path = get_plan_dir(plan_id) / 'solution_outline.md'
-    if not outline_path.exists():
-        return []
-    try:
-        # Local import: keeps cmd_compose's import surface narrow and lets
-        # the fallback degrade gracefully when _plan_parsing is unavailable.
-        from _plan_parsing import (  # type: ignore[import-not-found]
-            extract_deliverables,
-            parse_document_sections,
-        )
-    except ImportError:
-        return []
-    try:
-        content = outline_path.read_text(encoding='utf-8')
-        sections = parse_document_sections(content)
-        deliverables_section = sections.get('deliverables') if isinstance(sections, dict) else None
-        if not isinstance(deliverables_section, str):
-            return []
-        deliverables = extract_deliverables(deliverables_section)
-    except (OSError, ValueError, AttributeError):
-        return []
-
-    seen: set[str] = set()
-    flat: list[str] = []
-    for d in deliverables:
-        if not isinstance(d, dict):
-            continue
-        files = d.get('affected_files')
-        if not isinstance(files, list):
-            continue
-        for f in files:
-            if isinstance(f, str) and f and f not in seen:
-                seen.add(f)
-                flat.append(f)
-    return flat
-
-
 def _looks_docs_only(phase_5_candidates: list[str], role_cache: dict[str, str | None]) -> bool:
     """Heuristic: docs-only plans don't request module-tests or coverage.
 
@@ -969,33 +863,6 @@ def _log_simplify_omitted(plan_id: str, change_type: str, affected_files_count: 
     message = (
         '(plan-marshall:manage-execution-manifest:compose) finalize-step-simplify omitted — '
         f'change_type={change_type} affected_files_count={affected_files_count}'
-    )
-    _emit_decision_log(plan_id, message)
-
-
-def _log_whole_tree_gate_omitted(
-    plan_id: str, compatibility: str, change_type: str, affected_files_count: int
-) -> None:
-    """Emit the decision-log entry for the ``whole_tree_gate_inactive`` pre-filter."""
-    message = (
-        '(plan-marshall:manage-execution-manifest:compose) finalize-step-whole-tree-gate omitted — '
-        f'compatibility={compatibility} change_type={change_type} affected_files_count={affected_files_count}'
-    )
-    _emit_decision_log(plan_id, message)
-
-
-def _log_whole_tree_gate_trigger_activated(plan_id: str, affected_files_count: int) -> None:
-    """Emit the decision-log entry for trigger-arm activation of the whole-tree gate.
-
-    Distinct from the breaking-arm activation (which produces no dedicated line —
-    a kept-via-breaking gate is the default and needs no audit entry) so that a
-    gate kept by the additive whole-tree-invariant trigger arm is auditable on
-    its own. Emitted only when the trigger arm kept the step regardless of
-    compatibility posture.
-    """
-    message = (
-        '(plan-marshall:manage-execution-manifest:compose) finalize-step-whole-tree-gate activated via '
-        f'whole-tree-invariant trigger — changed set hit a trigger glob, affected_files_count={affected_files_count}'
     )
     _emit_decision_log(plan_id, message)
 
@@ -1376,149 +1243,6 @@ def _apply_simplify_inactive(
         return phase_6_candidates, False
 
     return [s for s in phase_6_candidates if s != 'finalize-step-simplify'], True
-
-
-# Code-bearing change types that gate ``finalize-step-whole-tree-gate``
-# activation. Broader than ``_SIMPLIFY_CHANGE_TYPES`` because the whole-tree
-# survivor sweep is meaningful for ``enhancement`` deletions too; ``analysis``
-# (no code change) and ``verification`` (tests only, deletes nothing) are
-# excluded. See standards/decision-rules.md § Pre-Filter: whole_tree_gate_inactive.
-_WHOLE_TREE_GATE_CHANGE_TYPES = frozenset({'tech_debt', 'feature', 'enhancement', 'bug_fix'})
-
-
-# The SINGLE source of the two whole-tree-invariant trigger categories' globs.
-# A plan whose changed set intersects any of these globs touches a surface whose
-# correctness can ONLY be verified by exercising the entire tree — so the
-# whole-tree gate must fire regardless of the plan's compatibility posture. This
-# is the additive OR-arm that complements the clean-slate/breaking activation
-# arm in ``_apply_whole_tree_gate_inactive``. Matching is via ``fnmatch.fnmatch``
-# against the repo-relative changed paths the composer reads from
-# ``_read_bundle_change_paths``. See standards/decision-rules.md
-# § Pre-Filter: whole_tree_gate_inactive for the per-category rationale.
-#
-#   (a) doctor trigger        — plugin-doctor / plan-doctor analyzer & rule
-#                               scripts; a changed rule re-classifies the whole
-#                               marketplace, so the marketplace-wide doctor pass
-#                               must re-run.
-#   (b) sweep-test trigger    — whole-tree grep-sweep guard tests; a changed
-#                               guard test must be re-run with the full
-#                               marketplace scan root.
-_WHOLE_TREE_INVARIANT_TRIGGER_GLOBS = (
-    # (a) doctor trigger
-    'marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**/*.py',
-    'marketplace/bundles/plan-marshall/skills/plan-doctor/**/*.py',
-    # (b) sweep-test trigger
-    'test/plan-marshall/**/test_*sweep*.py',
-    'test/marketplace/**/test_*sweep*.py',
-)
-
-
-def _changed_set_hits_whole_tree_invariant(changed_paths: list[str]) -> bool:
-    """Return True when any changed path matches a whole-tree-invariant trigger glob.
-
-    Mirrors the glob-match style of the build_map predicate: each repo-relative
-    changed path is tested against every glob in
-    ``_WHOLE_TREE_INVARIANT_TRIGGER_GLOBS`` via ``fnmatch.fnmatch``. The first
-    match short-circuits to True. An empty ``changed_paths`` (the common
-    pre-execute shape, or a plan whose sources lie outside the trigger surface)
-    yields False, so the additive arm contributes nothing in that case and the
-    breaking-arm alone governs activation.
-    """
-    for path in changed_paths:
-        for pattern in _WHOLE_TREE_INVARIANT_TRIGGER_GLOBS:
-            if fnmatch.fnmatch(path, pattern):
-                return True
-    return False
-
-
-def _read_compatibility() -> str:
-    """Read ``plan.phase-2-refine.compatibility`` from marshal.json.
-
-    Returns ``'breaking'`` when the file is missing, the keys are absent, or the
-    value is not a non-empty string — matching ``DEFAULT_PLAN_REFINE['compatibility']``,
-    so a fresh project (or one that never overrode the knob) resolves to the
-    default the rest of the pipeline assumes. The composer reads marshal.json
-    straight through, mirroring ``_read_drop_review_on_scope_gate``.
-    """
-    marshal_path = get_marshal_path()
-    if marshal_path is None or not marshal_path.exists():
-        return 'breaking'
-    try:
-        data = read_json(marshal_path, default={})
-    except (OSError, json.JSONDecodeError):
-        return 'breaking'
-    if not isinstance(data, dict):
-        return 'breaking'
-    plan = data.get('plan')
-    if not isinstance(plan, dict):
-        return 'breaking'
-    refine = plan.get('phase-2-refine')
-    if not isinstance(refine, dict):
-        return 'breaking'
-    value = refine.get('compatibility')
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    return 'breaking'
-
-
-def _apply_whole_tree_gate_inactive(
-    phase_6_candidates: list[str],
-    compatibility: str,
-    change_type: str,
-    affected_files_count: int,
-    changed_paths: list[str] | None = None,
-) -> tuple[list[str], bool, bool]:
-    """Pre-filter: drop ``finalize-step-whole-tree-gate`` when its gate fails.
-
-    The gate activates (keeps the step) when EITHER activation arm passes:
-
-    **Breaking arm** — the original clean-slate/breaking activation. The
-    whole-tree completeness gate exists to catch survivors of deletions a
-    clean-slate/breaking plan was meant to remove, so this arm passes whenever
-    ALL of:
-
-    1. ``compatibility == 'breaking'`` — a ``deprecation`` / ``smart_and_ask``
-       plan deliberately keeps old surfaces alongside new ones, so a surviving
-       reference is expected, not a defect;
-    2. ``change_type ∈ {tech_debt, feature, enhancement, bug_fix}`` — the
-       code-bearing change types; ``analysis`` / ``verification`` delete
-       nothing; and
-    3. ``affected_files_count > 0``.
-
-    **Trigger arm** (additive) — the gate ALSO passes, regardless of
-    compatibility posture, when the plan's changed set intersects a whole-tree
-    invariant trigger glob AND ``affected_files_count > 0``. A plugin-doctor /
-    plan-doctor rule change, a whole-tree grep-sweep guard test change, or a
-    generator / bundle-source change can violate an invariant that only the
-    whole tree exercises — so the gate must fire even on a ``deprecation`` /
-    ``smart_and_ask`` plan. This arm bypasses the breaking and change-type
-    restrictions by design (see standards/decision-rules.md § Decision 1).
-
-    When NEITHER arm passes, ``finalize-step-whole-tree-gate`` is removed from
-    ``phase_6_candidates``. The pre-filter is a no-op when the step is already
-    absent from the candidate set (e.g., a project marshal.json that never lists
-    it). Returns a triple of (filtered candidates, omitted flag, trigger-activated
-    flag): ``omitted`` is True when the pre-filter dropped the step; ``trigger``
-    is True when the step was KEPT via the additive trigger arm (so the call site
-    can log trigger-activation distinctly from breaking-arm activation).
-    """
-    if 'finalize-step-whole-tree-gate' not in phase_6_candidates:
-        return phase_6_candidates, False, False
-
-    if (
-        compatibility == 'breaking'
-        and change_type in _WHOLE_TREE_GATE_CHANGE_TYPES
-        and affected_files_count > 0
-    ):
-        # Gate passes — keep the step.
-        return phase_6_candidates, False, False
-
-    # Additive trigger arm: a whole-tree-invariant trigger fired, so keep the
-    # gate regardless of compatibility / change_type.
-    if affected_files_count > 0 and _changed_set_hits_whole_tree_invariant(changed_paths or []):
-        return phase_6_candidates, False, True
-
-    return [s for s in phase_6_candidates if s != 'finalize-step-whole-tree-gate'], True, False
 
 
 # Scope-gated phase-6 subtraction sets. Each entry lists the step references the
@@ -2541,9 +2265,9 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     #      when the live footprint is empty.
     #   4. simplify_inactive — drop finalize-step-simplify when
     #      change_type ∉ {feature, bug_fix, tech_debt} OR affected_files_count == 0.
-    #   5. whole_tree_gate_inactive — drop finalize-step-whole-tree-gate unless
-    #      compatibility == breaking AND change_type ∈ {tech_debt, feature,
-    #      enhancement, bug_fix} AND affected_files_count > 0.
+    #   5. scope_gated_finalize — drop heavyweight phase-6 review/audit steps by
+    #      scope_estimate; automated-review suppressed ONLY via the explicit
+    #      drop_review_on_scope_gate opt-in.
     # Each pre-filter returns (filtered_candidates, fired_flag); we log a
     # dedicated decision-log line per fired pre-filter in addition to the row
     # log line emitted by _log_decision below.
@@ -2570,35 +2294,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         phase_6_candidates, args.change_type, affected_files_count
     )
 
-    # Pre-filter 5 (whole_tree_gate_inactive) keeps finalize-step-whole-tree-gate
-    # when EITHER activation arm passes: the breaking arm (compatibility ==
-    # breaking AND change_type ∈ {tech_debt, feature, enhancement, bug_fix} AND
-    # affected_files_count > 0) OR the additive whole-tree-invariant trigger arm
-    # (the changed set intersects a doctor / sweep-test trigger glob AND
-    # affected_files_count > 0, regardless of compatibility). The breaking arm:
-    # the whole-tree survivor sweep only makes sense on a breaking plan —
-    # deprecation / smart_and_ask plans deliberately keep old surfaces, so a
-    # surviving reference there is expected, not a defect. The trigger arm: a
-    # plugin-doctor rule or grep-sweep guard test change can break an invariant
-    # that only the whole tree exercises, so the gate must fire even on a
-    # non-breaking plan. compatibility is read from
-    # marshal.json (plan.phase-2-refine.compatibility, default breaking); the
-    # changed set is the union from _read_bundle_change_paths. Runs after
-    # simplify_inactive and before scope_gated_finalize per
-    # standards/decision-rules.md.
-    compatibility = _read_compatibility()
-    whole_tree_changed_paths = _read_bundle_change_paths(plan_id)
-    phase_6_candidates, whole_tree_gate_omitted, whole_tree_gate_trigger_activated = (
-        _apply_whole_tree_gate_inactive(
-            phase_6_candidates,
-            compatibility,
-            args.change_type,
-            affected_files_count,
-            whole_tree_changed_paths,
-        )
-    )
-
-    # Pre-filter 6 (scope_gated_finalize) drops heavyweight phase-6 review/audit
+    # Pre-filter 5 (scope_gated_finalize) drops heavyweight phase-6 review/audit
     # steps by scope: surgical drops the three non-guarded steps, single_module
     # drops only plan-retrospective, and the drop_review_on_scope_gate escape
     # hatch additionally drops automated-review. It runs after the other
@@ -2798,10 +2494,6 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_pre_submission_self_review_omitted(plan_id)
     if simplify_omitted:
         _log_simplify_omitted(plan_id, args.change_type, affected_files_count)
-    if whole_tree_gate_omitted:
-        _log_whole_tree_gate_omitted(plan_id, compatibility, args.change_type, affected_files_count)
-    if whole_tree_gate_trigger_activated:
-        _log_whole_tree_gate_trigger_activated(plan_id, affected_files_count)
     for dropped_step in scope_gated_dropped:
         _log_scope_gated_finalize_subtraction(plan_id, args.scope_estimate, dropped_step)
     for change in ceremony_forced_in:
@@ -2830,8 +2522,6 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'pre_push_quality_gate_omitted': pre_push_quality_gate_omitted,
         'pre_submission_self_review_omitted': pre_submission_self_review_omitted,
         'simplify_omitted': simplify_omitted,
-        'whole_tree_gate_omitted': whole_tree_gate_omitted,
-        'compatibility': compatibility,
         'scope_gated_finalize_dropped': scope_gated_dropped,
         'drop_review_on_scope_gate': drop_review_on_scope_gate,
         'ceremony_finalize_gates': ceremony_finalize_gates,

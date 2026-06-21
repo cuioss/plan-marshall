@@ -1,6 +1,6 @@
 ---
 name: finalize-step-plugin-doctor
-description: Finalize-phase wrapper that runs the scopeable plugin-doctor quality-gate against the marketplace source of skills the plan touched, gating structural lint before push
+description: Finalize-phase wrapper that runs the plugin-doctor quality-gate — scoped to the skills the plan touched, or whole-tree when a plugin-doctor/plan-doctor rule changes or the scope read is indeterminate — gating structural lint before push
 user-invocable: false
 mode: script-executor
 allowed-tools: Bash
@@ -13,7 +13,9 @@ order: 6
 
 Run the plugin-doctor `quality-gate` invariant rule set (argparse safety, argument-naming, manage-invocation, extension contracts, shell-substitution, lesson-id / historical prose, role-field) scoped to the marketplace source of any skill the plan modifies — gating structural lint **before push**. Catches structural breakage that the Python `quality-gate` (ruff/mypy/pytest) cannot detect. The `affected_files` read (Step 1) and skill-dir extraction (Step 2) SUPPLY the `--paths` targets the gate scopes to; the skip-clean exit (Step 3) skips the gate when the read succeeds and the plan touched no skill.
 
-Ordered at `order: 6` so it slots between `default:finalize-step-pre-push-quality-gate` (order 5) and `project:finalize-step-pre-submission-self-review` (order 7) — structural lint gates before the commit is pushed, not after CI. Slot 6 is distinct from `default:finalize-step-whole-tree-gate` (order 9), so no two active finalize steps share a canonical `order`.
+The wrapper runs in one of three mutually-exclusive modes, selected deterministically (see Step 2.5 for the precedence): it runs **whole-tree** (no `--paths`) when the changed set touches a plugin-doctor / plan-doctor analyzer or rule script — a rule change re-classifies skills the diff never touched, so only a full marketplace pass catches the breakage (the **F1 trigger**); it runs **whole-tree** when the `affected_files` read is indeterminate (broken, not empty); and otherwise it **scopes** the gate to the changed skill directories (the common case).
+
+Ordered at `order: 6` so it slots between `default:finalize-step-pre-push-quality-gate` (order 5) and `project:finalize-step-pre-submission-self-review` (order 7) — structural lint gates before the commit is pushed, not after CI.
 
 When the plan runs in an isolated worktree, the gate first regenerates a worktree-bound executor so the `manage-invocation-invalid` rule probes each script's `--help` against the worktree's TRUE argparse surface. Without this step, the worktree's `.plan/execute-script.py` is a symlink to the main checkout's executor, whose embedded mappings resolve every `manage-*` notation to the main-checkout (pre-plan) script — making a newly added subcommand read as a false-positive "unregistered" and a newly required flag read as a false-negative that masks the real CI finding.
 
@@ -51,9 +53,19 @@ For each matching file, extract the skill directory path (everything up to and i
 
 Example: `marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` → `marketplace/bundles/plan-marshall/skills/phase-5-execute`
 
+### Step 2.5: Select gate mode (F1 trigger → whole-tree)
+
+The gate runs in exactly one of three modes. Evaluate them in this fixed precedence order and pick the first that applies:
+
+1. **F1-trigger whole-tree mode** — at least one entry in the Step 1 `affected_files` list matches either `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**` OR `marketplace/bundles/plan-marshall/skills/plan-doctor/**` (a plugin-doctor / plan-doctor analyzer or rule script changed). A rule change re-classifies skills the diff never touched, so the gate MUST run over the whole marketplace — Step 5 runs `quality-gate` with **no `--paths`** against the resolved `--marketplace-root`. This precedes the skip-clean exit: even when no skill directory survived Step 2 filtering, an F1-trigger hit forces a whole-tree run rather than a skip.
+2. **Indeterminate-read whole-tree fallback** — the Step 1 read returned `status: error` / `error: field_not_found` (the scope-deriving read is broken, not empty). Step 5 runs `quality-gate` with **no `--paths`** (see Step 3 Case (b)).
+3. **Scoped mode** (the common case) — neither whole-tree condition holds; Step 5 scopes the gate to the skill directories extracted in Step 2.
+
+When the F1 trigger fires, skip the Step 3 skip-clean exit entirely and proceed to Step 4, then run the whole-tree invocation in Step 5. The two whole-tree modes (F1 trigger, indeterminate read) share the same no-`--paths` invocation — they differ only in what selects them.
+
 ### Step 3: Skip-clean exit (only on a successful, genuinely-empty read)
 
-The skip-clean exit is taken ONLY when the Step 1 read succeeded (`status: success`) AND zero skill paths remain after Step 2 filtering — the plan genuinely touched no skill. An errored (`status: error` / `error: field_not_found`) read is **indeterminate** (the input is broken, not empty) and MUST NOT take this exit; it falls through to the whole-tree fallback below.
+The skip-clean exit is taken ONLY when the Step 2.5 F1 trigger did NOT fire AND the Step 1 read succeeded (`status: success`) AND zero skill paths remain after Step 2 filtering — the plan genuinely touched no skill. An F1-trigger hit (Step 2.5 mode 1) forces a whole-tree run and MUST NOT take this exit. An errored (`status: error` / `error: field_not_found`) read is **indeterminate** (the input is broken, not empty) and MUST NOT take this exit either; it falls through to the whole-tree fallback below.
 
 **Case (a) — successful read, zero skill paths after filtering** (the plan touched no skill): log, record the step as done, and return success:
 
@@ -115,7 +127,7 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marke
   quality-gate --paths {space-separated skill directory paths} --marketplace-root {marketplace root}
 ```
 
-**Whole-tree fallback** (the indeterminate case — Step 3 Case (b): the `affected_files` read errored / `field_not_found`): run the `quality-gate` with **no `--paths` scoping** against the same resolved marketplace root, so the structural lint still runs over the whole tree rather than false-skipping off a broken scope-deriving read:
+**Whole-tree invocation** (either whole-tree mode from Step 2.5 — the F1 trigger fired, OR the indeterminate case of Step 3 Case (b) where the `affected_files` read errored / `field_not_found`): run the `quality-gate` with **no `--paths` scoping** against the same resolved marketplace root, so the structural lint runs over the whole tree — catching a doctor / plan-doctor rule change that breaks an otherwise-untouched skill (F1), and not false-skipping off a broken scope-deriving read (indeterminate):
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace \
@@ -145,7 +157,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 | Missing `pm-plugin-development` bundle | Fatal config error — the project opted into the wrapper without the dependency |
 | Empty `worktree_path` (main-checkout flow) | Skip Step 4 regeneration — the executor already reflects the current checkout; proceed to the scan |
 | Worktree executor regeneration fails | Non-fatal — log WARN and gate against the existing executor; finalize does not hard-block on a mapping refresh |
-| `affected_files` read succeeds, zero skill paths after filtering | Skip-clean exit (plan touched no skills) — record `mark-step-done --outcome done --display-detail "no skill changes detected"` so the `phase_steps_complete` handshake invariant counts the step as done |
+| Changed set touches a plugin-doctor / plan-doctor analyzer or rule script (F1 trigger, Step 2.5 mode 1) | Whole-tree mode: do NOT skip-clean even when no skill dir survived Step 2; run the whole-tree `quality-gate` (Step 5, no `--paths`) so a rule change that breaks an untouched skill is caught, then record the outcome from that gate run |
+| `affected_files` read succeeds, zero skill paths after filtering, F1 trigger did NOT fire | Skip-clean exit (plan touched no skills) — record `mark-step-done --outcome done --display-detail "no skill changes detected"` so the `phase_steps_complete` handshake invariant counts the step as done |
 | `affected_files` read returns `status: error` / `error: field_not_found` | Indeterminate: do NOT skip-clean; fall back to the whole-tree `quality-gate` (Step 5, no `--paths`) so structural lint still runs, then record the outcome from that gate run |
 | plugin-doctor `status: fail` / `total_issues > 0` | Fatal — record `mark-step-done --outcome failed --display-detail "plugin-doctor: {total_issues} violations"`, then abort finalize before `default:commit-push` |
 | plugin-doctor `status: pass` / `total_issues: 0` | Record `mark-step-done --outcome done --display-detail "plugin-doctor clean: {N} skills gated"` |
