@@ -1,10 +1,13 @@
 """Regression test for the phase-4-plan Verification-Only Guard contract.
 
 The guard must NOT collapse a deliverable's profile set to ``[verification]``
-when the deliverable's explicit ``Profiles`` list already contains
-``implementation``. The explicit profile declaration is authoritative over
-``change_type``. This test asserts the guard's documented contract by
-inspecting the workflow doc (``SKILL.md``) where the guard logic lives.
+when the deliverable carries any write-intent affected file
+(``write-new`` / ``write-replace`` / ``delete``). The per-file write-intent
+set — sourced from ``affected_files[N].intent`` — is authoritative over a
+``change_type == verification`` label: the override fires ONLY when the
+deliverable is read-only (``affected_files`` empty OR every entry ``read``).
+This test asserts the guard's documented contract by inspecting the workflow
+doc (``SKILL.md``) where the guard logic lives.
 """
 
 from pathlib import Path
@@ -59,18 +62,19 @@ def _extract_guard_block(text: str) -> str:
         cursor = close_idx + len("\n```")
 
 
-def test_guard_documents_implementation_profile_short_circuit(skill_text: str) -> None:
-    """The guard's pseudocode and prose must encode the short-circuit.
+def test_guard_documents_write_intent_predicate(skill_text: str) -> None:
+    """The guard's pseudocode and prose must encode the write-intent predicate.
 
     Specifically:
     - The pseudocode keeps the existing verification override condition
       (``change_type == verification`` OR ``affected_files is empty``).
-    - The pseudocode adds a short-circuit so the override only fires when
-      the deliverable's explicit ``Profiles`` list does NOT contain
-      ``implementation``.
-    - The surrounding prose explicitly states the explicit ``Profiles``
-      list is authoritative over ``change_type`` when it names
-      ``implementation``.
+    - The pseudocode fires the override ONLY when the deliverable is read-only
+      — ``affected_files`` empty OR every entry has ``intent == read``.
+    - The deprecated ``"implementation" NOT IN D.profiles`` carve-out is GONE
+      (it was the source of the lesson's bug: a write-bearing deliverable with
+      a non-``implementation`` profile was silently collapsed to verification).
+    - The surrounding prose explicitly states the per-file write-intent set is
+      authoritative over ``change_type``.
     """
     block = _extract_guard_block(skill_text)
 
@@ -84,29 +88,32 @@ def test_guard_documents_implementation_profile_short_circuit(skill_text: str) -
         "the legacy override condition must remain documented."
     )
 
-    # The new short-circuit must be present in the pseudocode. Accept the
-    # canonical phrasing or a clearly-equivalent alternative.
-    canonical = '"implementation" NOT IN D.profiles'
-    equivalent = '"implementation" in D.profiles'
-    assert canonical in block or equivalent in block, (
-        "Guard pseudocode is missing the implementation-profile short-circuit. "
-        f"Expected '{canonical}' (or equivalent referencing "
-        f"'\"implementation\" in D.profiles') in the pseudocode block."
+    # The write-intent predicate must gate the override: it fires only when the
+    # deliverable is read-only (every affected_files entry has intent == read).
+    assert "intent == read" in block, (
+        "Guard pseudocode is missing the write-intent predicate. Expected the "
+        "override to fire only when 'every affected_files entry has intent == read'."
     )
 
-    # Prose around the guard must explicitly state the explicit Profiles list
-    # is authoritative over change_type. We assert key phrasing tokens rather
-    # than a full sentence to keep the test robust to minor wording tweaks.
+    # Regression guard: the deprecated implementation-profile carve-out — the
+    # exact source of the lesson's bug — must NOT reappear in the pseudocode.
+    assert '"implementation" NOT IN D.profiles' not in block, (
+        "Guard pseudocode reintroduced the deprecated "
+        "'\"implementation\" NOT IN D.profiles' carve-out — the write-intent "
+        "predicate must be the sole override gate (lesson 2026-06-20-12-002)."
+    )
+
+    # Prose around the guard must state the per-file write-intent set is
+    # authoritative over change_type. We assert key phrasing tokens rather than
+    # a full sentence to keep the test robust to minor wording tweaks.
     marker_index = skill_text.find("**Verification-Only Guard**")
     prose_window = skill_text[marker_index : marker_index + 2000]
-    assert "explicit" in prose_window.lower() and "profiles" in prose_window.lower(), (
-        "Guard prose must reference the explicit Profiles list."
+    assert "write-intent" in prose_window.lower(), (
+        "Guard prose must reference the per-file write-intent set."
     )
-    assert "authoritative" in prose_window.lower() or "wins" in prose_window.lower(), (
-        "Guard prose must state the explicit Profiles list is authoritative "
-        "over change_type (use 'authoritative' or 'wins')."
+    assert "authoritative" in prose_window.lower(), (
+        "Guard prose must state the write-intent set is authoritative over change_type."
     )
-    assert "implementation" in prose_window, (
-        "Guard prose must name the 'implementation' profile as the trigger "
-        "for the short-circuit."
+    assert "intent" in prose_window.lower(), (
+        "Guard prose must name the affected-file 'intent' enum as the override signal."
     )
