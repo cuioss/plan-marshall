@@ -28,7 +28,7 @@ Analyzes WebFetch domains across global and project settings, researches domains
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `scope` | string | no | both | Which settings to analyze: `global`, `local`, or `both`. Controls which `--global-file` and `--local-file` arguments are passed to the `analyze` script. |
+| `scope` | string | no | both | Which settings to analyze: `global`, `project`, or `both`. Passed as `--scope` to the platform-routed web-permission ops; the runtime resolves the active platform's settings location. |
 
 ## Prerequisites
 
@@ -61,15 +61,16 @@ Loads trusted domain lists and categorization criteria. The security assessment 
 
 ### Step 2: Collect and Analyze WebFetch Permissions
 
-Run the analysis script to collect domains from both settings files, categorize them, detect duplicates, and generate recommendations:
+Run the platform-routed web-permission audit. The runtime resolves the active platform's settings, extracts the WebFetch domains, and reports them by scope — no settings path is named in the body:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission_web analyze \
-    --global-file ~/.claude/settings.json \
-    --local-file ./.claude/settings.local.json
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime permission web-analyze \
+    --scope both
 ```
 
-The script handles missing files gracefully (reports them in output). On invalid JSON, it returns a failure status with the parse error.
+The runtime handles missing settings gracefully. On a platform with no validated permission backend (e.g. OpenCode), it returns an honest `no-op` with a `reason` and `alternative` instead of a fabricated domain set.
+
+Feed the returned domain list into the categorization, duplicate, and redundancy analysis below (the `categorize` subcommand classifies a domain list against the static known-domain lists without naming any settings file).
 
 **Error handling for missing/invalid files**: Ask the user via `AskUserQuestion` with options to create defaults, skip the file, or abort.
 
@@ -174,18 +175,18 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-If applying, use the `apply` subcommand for deterministic modification:
+If applying, route the change through the platform-neutral web-apply op. The runtime targets the active platform's settings for the given `--scope`; the body names no settings file:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission_web apply \
-    --file ~/.claude/settings.json \
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime permission web-apply \
+    --scope global \
     --add '["docs.oracle.com"]' \
     --remove '["redundant-domain.com"]'
 ```
 
-Repeat for local settings file if needed. Track counts from script output in permissions_added and permissions_removed counters.
+Repeat with `--scope project` for project-local domains if needed. Track counts from the runtime output in permissions_added and permissions_removed counters. On a platform with no validated permission backend, the op returns an honest `no-op` (reason + alternative) rather than reporting a write that did not happen.
 
-**Error handling:** If apply returns failure, ask the user (retry, skip file, abort). Track all successful updates in files_modified counter.
+**Error handling:** If the op returns failure, ask the user (retry, skip scope, abort). Track all successful updates in files_modified counter.
 
 ### Step 8: Report Results
 
