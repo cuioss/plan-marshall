@@ -76,14 +76,14 @@ Read `re_review_on_loopback` off the returned `params` object (default: `false`)
 
 **When `re_review_on_loopback == true`**, evaluate the HEAD-vs-`reviewed_commit_sha` advance:
 
-1. Read the most recent `reviewed_commit_sha` and `bot_kind` from the staged `pr-comment` findings. Query the store and read the two fields off the latest finding:
+1. Read the most recent **bot-authored** `pr-comment` finding's `reviewed_commit_sha` and `bot_kind`. Scan the staged findings from newest to oldest and select the most recent one with a non-empty `bot_kind` — a later human-authored comment (which carries no `bot_kind`) must NOT suppress re-review of an older bot review that went stale after the HEAD advance. Query the store:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
      --plan-id {plan_id} --type pr-comment
    ```
 
-   If the result's `findings` list is empty, there is no prior reviewed SHA to compare against — skip this section and proceed to "Wait for review-bot comments". Otherwise capture `{reviewed_commit_sha}` and `{bot_kind}` from the most recent finding. A finding with no `bot_kind` (human author) is NOT a bot review — skip the re-review for it.
+   Walk `findings` newest-first and capture `{reviewed_commit_sha}` and `{bot_kind}` from the first finding whose `bot_kind` is non-empty. If no bot-authored finding exists (the list is empty, or every finding is human-authored), there is no prior bot review to re-trigger — skip this section and proceed to "Wait for review-bot comments".
 
 2. Resolve the current worktree HEAD SHA:
 

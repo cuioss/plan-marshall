@@ -333,14 +333,14 @@ Read `re_review_on_branch_cleanup` off the returned `params` object (default: `t
 
 **When `re_review_on_branch_cleanup == true`**:
 
-1. Read the most recent `bot_kind` from the plan's staged `pr-comment` findings:
+1. Read the most recent **bot-authored** `pr-comment` finding's `bot_kind`. Scan the plan's staged findings from newest to oldest and select the most recent one with a non-empty `bot_kind` — a later human-authored comment (which carries no `bot_kind`) must NOT suppress re-review of an older bot review that went stale after the rebase:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
      --plan-id {plan_id} --type pr-comment
    ```
 
-   If the result's `findings` list is empty, there is no prior reviewer identity to re-trigger — skip this section and proceed to the **Pre-Merge Confirmation Gate**. Otherwise capture `{bot_kind}` from the most recent finding. A finding with no `bot_kind` (human author) is NOT a bot review — skip the re-review for it.
+   Walk `findings` newest-first and capture `{bot_kind}` from the first finding whose `bot_kind` is non-empty. If no bot-authored finding exists (the list is empty, or every finding is human-authored), there is no prior bot review to re-trigger — skip this section and proceed to the **Pre-Merge Confirmation Gate**.
 
 2. Resolve the rebased branch's new HEAD SHA and the force-push time:
 
