@@ -2,6 +2,10 @@
 """
 WebFetch permission analysis - domain categorization, duplicate detection, and consolidation.
 
+Settings file paths are supplied by the caller (the SKILL body resolves the
+platform's settings location); this script does not resolve any platform-specific
+settings path itself.
+
 Usage:
     permission_web.py analyze --global-file <path> --local-file <path>
     permission_web.py categorize --domains <json-array>
@@ -14,14 +18,14 @@ Subcommands:
     apply          Apply domain changes to a settings file (writes to disk)
 
 Examples:
-    # Analyze global and local settings
-    permission_web.py analyze --global-file ~/.claude/settings.json --local-file .claude/settings.local.json
+    # Analyze global and local settings (caller supplies the resolved paths)
+    permission_web.py analyze --global-file <global-settings> --local-file <local-settings>
 
     # Categorize specific domains
     permission_web.py categorize --domains '["docs.oracle.com", "suspicious-site.xyz"]'
 
     # Apply changes to settings
-    permission_web.py apply --file ~/.claude/settings.json --add '["docs.oracle.com"]' --remove '["old.com"]'
+    permission_web.py apply --file <settings> --add '["docs.oracle.com"]' --remove '["old.com"]'
 """
 
 import json
@@ -542,9 +546,9 @@ def main():
         description='WebFetch permission analysis',
         epilog="""
 Examples:
-  permission_web.py analyze --global-file ~/.claude/settings.json --local-file .claude/settings.local.json
+  permission_web.py analyze --global-file <global-settings> --local-file <local-settings>
   permission_web.py categorize --domains '["docs.oracle.com", "unknown-site.xyz"]'
-  permission_web.py apply --file ~/.claude/settings.json --add '["docs.oracle.com"]' --remove '["old.domain.com"]'
+  permission_web.py apply --file <settings> --add '["docs.oracle.com"]' --remove '["old.domain.com"]'
 """,
         subcommands=[
             {

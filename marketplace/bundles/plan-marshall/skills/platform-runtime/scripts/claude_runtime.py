@@ -28,9 +28,6 @@ for _ancestor in Path(__file__).resolve().parents:
             "ref-toon-format",
             "manage-terminal-title",
             "tools-file-ops",
-            "tools-permission-doctor",
-            "tools-permission-fix",
-            "workflow-permission-web",
             "script-shared",
         ):
             _lib_path = str(_ancestor / _lib / "scripts")
@@ -791,20 +788,18 @@ def _sum_tokens_from_jsonl(transcript_path: Path) -> int:
 
 
 def _claude_project_settings_path(project_dir: str | None = None) -> Path:
-    """Return the Claude project settings file path to write to."""
-    try:
-        # Import via the already-bootstrapped sys.path.
-        from permission_common import get_project_settings_path_for_write  # type: ignore[import-not-found]
+    """Return the Claude project settings file path to write to.
 
-        if project_dir:
-            return get_project_settings_path_for_write(Path(project_dir))
-        return get_project_settings_path_for_write()
-    except ImportError:
-        base = Path(project_dir) if project_dir else Path.cwd()
-        settings_json = base / ".claude" / "settings.json"
-        if settings_json.exists():
-            return settings_json
-        return base / ".claude" / "settings.local.json"
+    Prefers ``.claude/settings.json`` when it already exists; otherwise targets
+    ``.claude/settings.local.json``. This is the single home for Claude project
+    settings-path resolution — the ``tools-permission-*`` scripts delegate here
+    rather than owning the path-resolution logic themselves.
+    """
+    base = Path(project_dir) if project_dir else Path.cwd()
+    settings_json = base / ".claude" / "settings.json"
+    if settings_json.exists():
+        return settings_json
+    return base / ".claude" / "settings.local.json"
 
 
 def _claude_global_settings_path() -> Path:
@@ -818,12 +813,13 @@ def _settings_path_for_scope(scope: str) -> Path:
 
 
 def _load_settings(path: Path) -> dict[str, Any]:
-    try:
-        from permission_common import load_settings_path  # type: ignore[import-not-found]
+    """Load Claude settings JSON, returning a defaulted skeleton when absent.
 
-        return load_settings_path(path)
-    except ImportError:
-        pass
+    This is the single home for Claude settings load logic; the
+    ``tools-permission-*`` scripts delegate here. A missing file yields the
+    empty-permissions skeleton; malformed JSON yields the same skeleton with an
+    ``error`` key so callers can surface the parse failure.
+    """
     if not path.exists():
         return {"permissions": {"allow": [], "deny": [], "ask": []}}
     try:
@@ -834,17 +830,84 @@ def _load_settings(path: Path) -> dict[str, Any]:
             if key not in data["permissions"]:
                 data["permissions"][key] = []
         return data
-    except (OSError, json.JSONDecodeError):
+    except json.JSONDecodeError as exc:
+        return {"error": f"Invalid JSON: {exc}", "permissions": {"allow": [], "deny": [], "ask": []}}
+    except OSError:
         return {"permissions": {"allow": [], "deny": [], "ask": []}}
 
 
 def _save_settings(path: Path, settings: dict[str, Any]) -> bool:
+    """Write Claude settings JSON. Single home for the save logic."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
         return True
     except OSError:
         return False
+
+
+def _skill_permission_covered(skill: str, allow_list: list[str]) -> str | None:
+    """Return the allow-rule covering *skill*, or ``None``.
+
+    Matches an exact ``Skill({skill})`` rule or a covering ``Skill({skill}:*)``
+    wildcard. This is the single home for the skill-coverage check — relocated
+    from ``permission_doctor`` so the runtime owns it with no back-import.
+    """
+    exact = f"Skill({skill})"
+    wildcard = f"Skill({skill}:*)"
+    for rule in allow_list:
+        if rule == exact or rule == wildcard:
+            return rule
+    return None
+
+
+# Phases in marshal.json that may carry ``project:{skill}`` step references.
+_PROJECT_STEP_PHASES = ("phase-5-execute", "phase-6-finalize")
+
+
+def _load_marshal_config(path: str) -> tuple[dict[str, Any], str | None]:
+    """Load marshal.json, returning ``(config, error)``.
+
+    Relocated from ``permission_doctor`` so the runtime owns marshal parsing for
+    the missing-steps / ensure-steps permission ops without a back-import.
+    """
+    marshal_path = Path(path)
+    if not marshal_path.exists():
+        return {}, f"marshal.json not found: {path}"
+    try:
+        data = json.loads(marshal_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return {}, f"Invalid marshal.json (expected object) in {path}"
+        return data, None
+    except json.JSONDecodeError as exc:
+        return {}, f"Invalid JSON in {path}: {exc}"
+    except OSError as exc:
+        return {}, f"Could not read {path}: {exc}"
+
+
+def _extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str]]:
+    """Enumerate ``project:{skill}`` step references from marshal.json.
+
+    Scans the phases in ``_PROJECT_STEP_PHASES`` under ``plan.{phase}.steps`` and
+    returns one ``{skill, step, phase}`` dict per ``project:``-prefixed entry.
+    Relocated from ``permission_doctor`` (single home in the runtime).
+    """
+    plan = marshal_config.get("plan", {})
+    if not isinstance(plan, dict):
+        return []
+    project_steps: list[dict[str, str]] = []
+    for phase in _PROJECT_STEP_PHASES:
+        phase_config = plan.get(phase, {})
+        if not isinstance(phase_config, dict):
+            continue
+        steps = phase_config.get("steps", [])
+        if not isinstance(steps, list):
+            continue
+        for step in steps:
+            if isinstance(step, str) and step.startswith("project:"):
+                skill = step[len("project:") :]
+                project_steps.append({"skill": skill, "step": step, "phase": phase})
+    return project_steps
 
 
 # ---------------------------------------------------------------------------
@@ -1453,29 +1516,20 @@ class ClaudeRuntime(Runtime):
 
         # Missing-steps check: find project:{skill} steps without matching permission.
         if "missing-steps" in expanded and marshal_path:
-            try:
-                from permission_doctor import (  # type: ignore[import-not-found]  # noqa: I001
-                    extract_project_steps,
-                    load_marshal_config,
-                    skill_permission_covered,
-                )
-
-                marshal_data, marshal_err = load_marshal_config(marshal_path)
-                if not marshal_err and marshal_data:
-                    steps = extract_project_steps(marshal_data)
-                    target_allow = project_allow if scope == "project" else list(set(global_allow + project_allow))
-                    for step_entry in steps:
-                        skill_name = step_entry.get("skill", "")
-                        if skill_name and not skill_permission_covered(skill_name, target_allow):
-                            findings.append(
-                                {
-                                    "check": "missing-steps",
-                                    "severity": "high",
-                                    "details": f"project:{skill_name} has no matching skill permission",
-                                }
-                            )
-            except ImportError:
-                pass
+            marshal_data, marshal_err = _load_marshal_config(marshal_path)
+            if not marshal_err and marshal_data:
+                steps = _extract_project_steps(marshal_data)
+                target_allow = project_allow if scope == "project" else list(set(global_allow + project_allow))
+                for step_entry in steps:
+                    skill_name = step_entry.get("skill", "")
+                    if skill_name and not _skill_permission_covered(skill_name, target_allow):
+                        findings.append(
+                            {
+                                "check": "missing-steps",
+                                "severity": "high",
+                                "details": f"project:{skill_name} has no matching skill permission",
+                            }
+                        )
 
         summary: dict[str, int] = {"high": 0, "medium": 0, "info": 0}
         for f in findings:
@@ -1699,53 +1753,37 @@ class ClaudeRuntime(Runtime):
                 f"{marshal_path} not found; run 'project initial-setup' first",
             )
 
+        marshal_data, marshal_err = _load_marshal_config(marshal_path)
         steps: list[dict[str, Any]] = []
-        try:
-            from permission_doctor import (  # type: ignore[import-not-found]  # noqa: I001
-                extract_project_steps,
-                load_marshal_config,
-                skill_permission_covered,
-            )
+        if not marshal_err and marshal_data:
+            steps = _extract_project_steps(marshal_data)
 
-            marshal_data, marshal_err = load_marshal_config(marshal_path)
-            if not marshal_err and marshal_data:
-                steps = extract_project_steps(marshal_data)
+        settings_path = _settings_path_for_scope(scope)
+        settings = _load_settings(settings_path)
+        allow: list[str] = settings["permissions"]["allow"]
 
-            settings_path = _settings_path_for_scope(scope)
-            settings = _load_settings(settings_path)
-            allow: list[str] = settings["permissions"]["allow"]
+        steps_scanned = len(steps)
+        permissions_added = 0
+        permissions_already_present = 0
+        proposed_additions: list[str] = []
 
-            steps_scanned = len(steps)
-            permissions_added = 0
-            permissions_already_present = 0
-            proposed_additions: list[str] = []
-
-            for step_entry in steps:
-                skill_name = step_entry.get("skill", "")
-                if not skill_name:
-                    continue
-                skill_perm = f"Skill({skill_name})"
-                if skill_permission_covered(skill_name, allow):
-                    permissions_already_present += 1
+        for step_entry in steps:
+            skill_name = step_entry.get("skill", "")
+            if not skill_name:
+                continue
+            skill_perm = f"Skill({skill_name})"
+            if _skill_permission_covered(skill_name, allow):
+                permissions_already_present += 1
+            else:
+                if dry_run:
+                    proposed_additions.append(skill_perm)
                 else:
-                    if dry_run:
-                        proposed_additions.append(skill_perm)
-                    else:
-                        allow.append(skill_perm)
-                        permissions_added += 1
+                    allow.append(skill_perm)
+                    permissions_added += 1
 
-            if not dry_run:
-                settings["permissions"]["allow"] = allow
-                _save_settings(settings_path, settings)
-
-        except ImportError:
-            settings_path = _settings_path_for_scope(scope)
-            settings = _load_settings(settings_path)
-            allow = settings["permissions"]["allow"]
-            steps_scanned = 0
-            permissions_added = 0
-            permissions_already_present = 0
-            proposed_additions = []
+        if not dry_run:
+            settings["permissions"]["allow"] = allow
+            _save_settings(settings_path, settings)
 
         result: dict[str, Any] = {
             "marshal": marshal_path,

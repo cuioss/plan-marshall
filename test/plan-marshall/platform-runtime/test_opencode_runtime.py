@@ -2,8 +2,10 @@
 """Tests for opencode_runtime.py — OpenCode implementation of all 16 operations.
 
 Asserts the no-op contract for session/display operations that OpenCode does not
-support, success paths for permission and metrics operations, and error paths for
-invalid arguments across all 16 operations defined in the Runtime ABC.
+support, the honest no-op contract for the permission operations (OpenCode has no
+validated permission backend), the success/no-op paths for metrics operations, and
+error paths for invalid arguments across all 16 operations defined in the Runtime
+ABC.
 """
 
 import json  # noqa: I001
@@ -170,168 +172,140 @@ def test_session_push_title_token_noop_fields(runtime: OpenCodeRuntime) -> None:
 
 
 # =============================================================================
-# 5. permission_configure
+# Permission operations — all honest no-op (no validated OpenCode backend)
+#
+# OpenCode has no validated permission backend and the Claude permission grammar
+# does not map onto OpenCode's settings format, so every permission op returns an
+# honest ``no-op`` with reason + alternative rather than a fabricated success.
+# Scope / operation validation still runs first, so invalid inputs return
+# ``error`` before the no-op path.
 # =============================================================================
 
 
-def test_permission_configure_project_scope(runtime: OpenCodeRuntime) -> None:
-    """permission_configure with project scope succeeds and targets .opencode/settings.json."""
+def _assert_permission_noop(result: dict) -> None:
+    """Assert *result* is an honest no-op with reason + alternative naming OpenCode."""
+    assert result["status"] == "no-op"
+    assert "reason" in result
+    assert "alternative" in result
+    assert "OpenCode" in result["reason"]
+    # An honest no-op never claims a write happened.
+    assert "permissions_written" not in result
+    assert "changes_applied" not in result
+    assert "domains_added" not in result
+    assert "domains_removed" not in result
+
+
+# 5. permission_configure
+
+
+def test_permission_configure_is_noop(runtime: OpenCodeRuntime) -> None:
+    """permission_configure returns an honest no-op (no fake permissions_written count)."""
     result = _parse(runtime.permission_configure("project", ["Read(**)", "Write(**)"]))
-    assert result["status"] == "success"
-    assert result["scope"] == "project"
-    assert result["permissions_written"] == 2
-    assert ".opencode/settings.json" in result["target_file"]
+    assert result["operation"] == "permission configure"
+    _assert_permission_noop(result)
 
 
-def test_permission_configure_global_scope(runtime: OpenCodeRuntime) -> None:
-    """permission_configure with global scope targets ~/.opencode/settings.json."""
+def test_permission_configure_global_scope_is_noop(runtime: OpenCodeRuntime) -> None:
+    """permission_configure with global scope is also an honest no-op."""
     result = _parse(runtime.permission_configure("global", ["Read(**)"]))
-    assert result["status"] == "success"
-    assert "~/.opencode/settings.json" in result["target_file"]
+    _assert_permission_noop(result)
 
 
 def test_permission_configure_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
-    """permission_configure with invalid scope returns error."""
+    """permission_configure with invalid scope returns error before the no-op path."""
     result = _parse(runtime.permission_configure("workspace", ["Read(**)"]))
     assert result["status"] == "error"
     assert result["error"] == "invalid_scope"
 
 
-def test_permission_configure_empty_permissions(runtime: OpenCodeRuntime) -> None:
-    """permission_configure with empty permissions list succeeds with count 0."""
-    result = _parse(runtime.permission_configure("project", []))
-    assert result["status"] == "success"
-    assert result["permissions_written"] == 0
-
-
-# =============================================================================
 # 6. permission_analyze
-# =============================================================================
 
 
-def test_permission_analyze_all_checks(runtime: OpenCodeRuntime) -> None:
-    """permission_analyze with scope=both and checks=[all] succeeds."""
+def test_permission_analyze_is_noop(runtime: OpenCodeRuntime) -> None:
+    """permission_analyze returns an honest no-op (no Claude-grammar audit on OpenCode)."""
     result = _parse(runtime.permission_analyze("both", ["all"], None))
-    assert result["status"] == "success"
-    assert result["scope"] == "both"
-    assert result["total_findings"] == 0
-
-
-def test_permission_analyze_project_scope(runtime: OpenCodeRuntime) -> None:
-    """permission_analyze with project scope succeeds."""
-    result = _parse(runtime.permission_analyze("project", ["redundant"], None))
-    assert result["status"] == "success"
-    assert result["scope"] == "project"
-
-
-def test_permission_analyze_global_scope(runtime: OpenCodeRuntime) -> None:
-    """permission_analyze with global scope succeeds."""
-    result = _parse(runtime.permission_analyze("global", ["suspicious", "missing-steps"], None))
-    assert result["status"] == "success"
+    assert result["operation"] == "permission analyze"
+    _assert_permission_noop(result)
 
 
 def test_permission_analyze_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
-    """permission_analyze with invalid scope returns error."""
+    """permission_analyze with invalid scope returns error before the no-op path."""
     result = _parse(runtime.permission_analyze("workspace", ["all"], None))
     assert result["status"] == "error"
     assert result["error"] == "invalid_scope"
 
 
 def test_permission_analyze_invalid_check_returns_error(runtime: OpenCodeRuntime) -> None:
-    """permission_analyze with an unknown check name returns error."""
+    """permission_analyze with an unknown check name returns error before the no-op path."""
     result = _parse(runtime.permission_analyze("global", ["nonexistent-check"], None))
     assert result["status"] == "error"
     assert result["error"] == "invalid_check"
 
 
-# =============================================================================
 # 7. permission_fix
-# =============================================================================
 
 
-def test_permission_fix_normalize_dry_run(runtime: OpenCodeRuntime) -> None:
-    """permission_fix normalize dry_run=True succeeds with changes_applied=0."""
-    result = _parse(runtime.permission_fix("project", "normalize", [], True))
-    assert result["status"] == "success"
-    assert result["dry_run"] is True
-    assert result["changes_applied"] == 0
-
-
-def test_permission_fix_add_not_dry_run(runtime: OpenCodeRuntime) -> None:
-    """permission_fix add with permissions applies the count when dry_run=False."""
+def test_permission_fix_is_noop(runtime: OpenCodeRuntime) -> None:
+    """permission_fix returns an honest no-op (no fake changes_applied count)."""
     perms = ["Read(**)", "Write(.plan/**)"]
     result = _parse(runtime.permission_fix("project", "add", perms, False))
-    assert result["status"] == "success"
-    assert result["dry_run"] is False
-    assert result["changes_applied"] == len(perms)
+    assert result["operation"] == "permission fix"
+    _assert_permission_noop(result)
 
 
-def test_permission_fix_all_valid_operations(runtime: OpenCodeRuntime) -> None:
-    """permission_fix accepts all documented operation names."""
+def test_permission_fix_all_valid_operations_are_noop(runtime: OpenCodeRuntime) -> None:
+    """permission_fix accepts all documented operation names and returns no-op for each."""
     for op in ("normalize", "add", "remove", "ensure", "consolidate"):
         result = _parse(runtime.permission_fix("global", op, [], False))
-        assert result["status"] == "success", f"Expected success for operation {op!r}"
+        assert result["status"] == "no-op", f"Expected no-op for operation {op!r}"
 
 
 def test_permission_fix_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
-    """permission_fix with invalid scope returns error."""
+    """permission_fix with invalid scope returns error before the no-op path."""
     result = _parse(runtime.permission_fix("unknown", "normalize", [], False))
     assert result["status"] == "error"
     assert result["error"] == "invalid_scope"
 
 
 def test_permission_fix_invalid_operation_returns_error(runtime: OpenCodeRuntime) -> None:
-    """permission_fix with unknown operation name returns error."""
+    """permission_fix with unknown operation name returns error before the no-op path."""
     result = _parse(runtime.permission_fix("project", "delete-all", [], False))
     assert result["status"] == "error"
     assert result["error"] == "invalid_operation"
 
 
-# =============================================================================
 # 8. permission_ensure_wildcards
-# =============================================================================
 
 
-def test_permission_ensure_wildcards_project_scope(runtime: OpenCodeRuntime) -> None:
-    """permission_ensure_wildcards with project scope succeeds."""
+def test_permission_ensure_wildcards_is_noop(runtime: OpenCodeRuntime) -> None:
+    """permission_ensure_wildcards returns an honest no-op (no fake wildcards_added count)."""
     result = _parse(runtime.permission_ensure_wildcards("project", "marketplace/", False))
-    assert result["status"] == "success"
-    assert result["scope"] == "project"
-    assert "bundles_scanned" in result
-    assert "wildcards_added" in result
-
-
-def test_permission_ensure_wildcards_dry_run(runtime: OpenCodeRuntime) -> None:
-    """permission_ensure_wildcards dry_run=True includes dry_run field."""
-    result = _parse(runtime.permission_ensure_wildcards("global", "marketplace/", True))
-    assert result["status"] == "success"
-    assert result["dry_run"] is True
+    assert result["operation"] == "permission ensure-wildcards"
+    _assert_permission_noop(result)
+    assert "wildcards_added" not in result
 
 
 def test_permission_ensure_wildcards_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
-    """permission_ensure_wildcards with invalid scope returns error."""
+    """permission_ensure_wildcards with invalid scope returns error before the no-op path."""
     result = _parse(runtime.permission_ensure_wildcards("workspace", "marketplace/", False))
     assert result["status"] == "error"
     assert result["error"] == "invalid_scope"
 
 
-# =============================================================================
 # 9. permission_ensure_steps
-# =============================================================================
 
 
-def test_permission_ensure_steps_success(
+def test_permission_ensure_steps_is_noop(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path
 ) -> None:
-    """permission_ensure_steps succeeds when marshal.json exists."""
+    """permission_ensure_steps returns an honest no-op when marshal.json exists."""
     marshal_path = tmp_path / "marshal.json"
     marshal_path.write_text(json.dumps({"runtime": {"target": "opencode"}}), encoding="utf-8")
 
     result = _parse(runtime.permission_ensure_steps(str(marshal_path), "project", False))
-    assert result["status"] == "success"
-    assert result["scope"] == "project"
-    assert "steps_scanned" in result
-    assert "permissions_added" in result
+    assert result["operation"] == "permission ensure-steps"
+    _assert_permission_noop(result)
+    assert "permissions_added" not in result
 
 
 def test_permission_ensure_steps_missing_marshal_returns_error(
@@ -347,7 +321,7 @@ def test_permission_ensure_steps_missing_marshal_returns_error(
 def test_permission_ensure_steps_invalid_scope_returns_error(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path
 ) -> None:
-    """permission_ensure_steps with invalid scope returns error."""
+    """permission_ensure_steps with invalid scope returns error before the no-op path."""
     marshal_path = tmp_path / "marshal.json"
     marshal_path.write_text("{}", encoding="utf-8")
 
@@ -356,72 +330,36 @@ def test_permission_ensure_steps_invalid_scope_returns_error(
     assert result["error"] == "invalid_scope"
 
 
-# =============================================================================
 # 10. permission_web_analyze
-# =============================================================================
 
 
-def test_permission_web_analyze_global_scope(runtime: OpenCodeRuntime) -> None:
-    """permission_web_analyze with global scope succeeds."""
+def test_permission_web_analyze_is_noop(runtime: OpenCodeRuntime) -> None:
+    """permission_web_analyze returns an honest no-op (no Claude WebFetch audit on OpenCode)."""
     result = _parse(runtime.permission_web_analyze("global"))
-    assert result["status"] == "success"
-    assert result["scope"] == "global"
-    assert "total_domains" in result
-
-
-def test_permission_web_analyze_project_scope(runtime: OpenCodeRuntime) -> None:
-    """permission_web_analyze with project scope succeeds."""
-    result = _parse(runtime.permission_web_analyze("project"))
-    assert result["status"] == "success"
-
-
-def test_permission_web_analyze_both_scope(runtime: OpenCodeRuntime) -> None:
-    """permission_web_analyze with scope=both succeeds."""
-    result = _parse(runtime.permission_web_analyze("both"))
-    assert result["status"] == "success"
+    assert result["operation"] == "permission web-analyze"
+    _assert_permission_noop(result)
 
 
 def test_permission_web_analyze_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
-    """permission_web_analyze with invalid scope returns error."""
+    """permission_web_analyze with invalid scope returns error before the no-op path."""
     result = _parse(runtime.permission_web_analyze("local"))
     assert result["status"] == "error"
     assert result["error"] == "invalid_scope"
 
 
-# =============================================================================
 # 11. permission_web_apply
-# =============================================================================
 
 
-def test_permission_web_apply_add_domains(runtime: OpenCodeRuntime) -> None:
-    """permission_web_apply add mode succeeds and reports domains_added count."""
+def test_permission_web_apply_is_noop(runtime: OpenCodeRuntime) -> None:
+    """permission_web_apply returns an honest no-op (no fake domains_added/removed count)."""
     domains = ["example.com", "api.github.com"]
     result = _parse(runtime.permission_web_apply("project", add=domains, remove=[], dry_run=False))
-    assert result["status"] == "success"
-    assert result["domains_added"] == len(domains)
-    assert result["domains_removed"] == 0
-
-
-def test_permission_web_apply_remove_domains(runtime: OpenCodeRuntime) -> None:
-    """permission_web_apply remove mode succeeds and reports domains_removed count."""
-    result = _parse(runtime.permission_web_apply("global", add=[], remove=["old.example.com"], dry_run=False))
-    assert result["status"] == "success"
-    assert result["domains_removed"] == 1
-
-
-def test_permission_web_apply_dry_run_reports_zero(runtime: OpenCodeRuntime) -> None:
-    """permission_web_apply dry_run=True returns zero changes applied."""
-    result = _parse(
-        runtime.permission_web_apply("project", add=["example.com"], remove=[], dry_run=True)
-    )
-    assert result["status"] == "success"
-    assert result["dry_run"] is True
-    assert result["domains_added"] == 0
-    assert result["domains_removed"] == 0
+    assert result["operation"] == "permission web-apply"
+    _assert_permission_noop(result)
 
 
 def test_permission_web_apply_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
-    """permission_web_apply with invalid scope returns error."""
+    """permission_web_apply with invalid scope returns error before the no-op path."""
     result = _parse(runtime.permission_web_apply("workspace", add=[], remove=[], dry_run=False))
     assert result["status"] == "error"
     assert result["error"] == "invalid_scope"
