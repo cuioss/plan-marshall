@@ -356,14 +356,14 @@ Read `re_review_on_branch_cleanup` off the returned `params` object (default: `t
 
    Capture stdout as `{push_time}` (the ISO-8601 commit time of the rebased HEAD — the force-push time used as the CodeRabbit trigger lower bound).
 
-3. Invoke the D2 re-review registry for the new HEAD. For a CodeRabbit `bot_kind` the `request_fresh_review` is a NO-OP — the `force-push-with-lease` itself auto-triggered CodeRabbit's review, so NO `@coderabbitai review` comment is posted and the await uses `{push_time}` as the trigger time; for a Gemini `bot_kind` the registry posts `/gemini review` then awaits. See [`workflow-integration-github` SKILL.md § Canonical invocations → `github_re_review re-review`](../../workflow-integration-github/SKILL.md#github_re_review-re-review):
+3. Invoke the D2 re-review registry for the new HEAD. Read `re_review_await_timeout_seconds` off the same `automated-review` `params` object returned by the `step-params get` call above (default: 600) and pass it as `--timeout {re_review_await_timeout_seconds}` so the await budget is operator-configurable rather than the hardcoded `DEFAULT_CI_TIMEOUT`. For a CodeRabbit `bot_kind` the `request_fresh_review` is a NO-OP — the `force-push-with-lease` itself auto-triggered CodeRabbit's review, so NO `@coderabbitai review` comment is posted and the await uses `{push_time}` as the trigger time; for a Gemini `bot_kind` the registry posts `/gemini review` then awaits. See [`workflow-integration-github` SKILL.md § Canonical invocations → `github_re_review re-review`](../../workflow-integration-github/SKILL.md#github_re_review-re-review):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
-     --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} --plan-id {plan_id}
+     --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
    ```
 
-   Read `matched` from the returned TOON. The fresh review (when matched) is now on the PR. Re-run the producer + triage pipeline so the rebase commit is reviewed: call `comments-stage` (which re-stamps every finding's `reviewed_commit_sha` to the new HEAD) and re-triage the new findings through the existing per-finding dispatch:
+   Read both `matched` AND `timed_out` from the returned TOON. **When `matched: true`**, the fresh review is now on the PR. Re-run the producer + triage pipeline so the rebase commit is reviewed: call `comments-stage` (which re-stamps every finding's `reviewed_commit_sha` to the new HEAD) and re-triage the new findings through the existing per-finding dispatch:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
@@ -376,6 +376,79 @@ Read `re_review_on_branch_cleanup` off the returned `params` object (default: `t
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: re-reviewed rebased HEAD {head_sha} (bot_kind={bot_kind}, matched={matched})"
    ```
+
+   **When `timed_out: true` (and `matched: false`)**, the await budget expired with no fresh bot review for the rebased HEAD — proceed to "On re-review timeout (trigger A)" below instead of falling through to the Pre-Merge Confirmation Gate with an unreviewed HEAD.
+
+#### On re-review timeout (trigger A)
+
+This sub-block is evaluated ONLY when the `github_re_review re-review` call above returned `timed_out: true` AND `matched: false` — the await budget (`re_review_await_timeout_seconds`) expired before a fresh bot review landed for the rebased HEAD. Trigger A runs **inline in the orchestrator** (not a dispatched leaf), so the timeout branch fires `AskUserQuestion` directly here (mirroring the budget-exhaustion merge-queue and pre-merge confirmation gates in this document) rather than returning `escalate_ask`. Read `re_review_on_timeout` off the same `automated-review` `params` object returned by the `step-params get` call above (default: `ask`) and branch on its value. **Every branch is decision-logged** — a timeout is always an explicit, auditable decision; the `proceed`/"Merge anyway" outcomes log at WARNING naming the unreviewed HEAD SHA.
+
+- **`proceed`** (explicit opt-in to advance the unreviewed HEAD): decision-log at WARNING naming the unreviewed `{head_sha}`, then continue to the **Pre-Merge Confirmation Gate** below (today's silent-proceed, now an explicit, logged choice):
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level WARNING \
+    --message "(plan-marshall:phase-6-finalize) Branch cleanup re-review timeout (trigger A): re_review_on_timeout=proceed — advancing UNREVIEWED head_sha={head_sha} to the pre-merge gate after {re_review_await_timeout_seconds}s budget expired"
+  ```
+
+- **`defer`** (auto-skip the merge, no prompt): decision-log, then take the SAME skip path as the interactive "No, skip merge" branch in the **Pre-Merge Confirmation Gate** below — set `{merge_consent} = deferred`, skip the **Merge PR**, **Wait for Merge CI**, **Remove Worktree**, and **Switch to Base Branch** sections, emit the `mark-step-done` payload using **Branch C — declined by user**, and return:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-6-finalize) Branch cleanup re-review timeout (trigger A): re_review_on_timeout=defer — deferring merge for unreviewed head_sha={head_sha}; re-enter finalize later"
+  ```
+
+- **`ask`** (default — fire an inline `AskUserQuestion`): present the three operator choices, mirroring the budget-exhaustion merge-queue prompt style in this document:
+
+  ```
+  AskUserQuestion:
+    questions:
+      - question: "The re-review of the rebased HEAD timed out with no fresh bot review. How should branch cleanup proceed?"
+        header: "Branch Cleanup — Re-review timeout (trigger A)"
+        description: |
+          **PR**: #{pr_number}
+          **Rebased HEAD**: {head_sha} (UNREVIEWED)
+          **Await budget**: {re_review_await_timeout_seconds}s (exhausted)
+
+          The bot did not post a fresh review for the rebased HEAD within
+          the configured budget. Proceeding to merge would merge an
+          unreviewed commit.
+        options:
+          - label: "Wait another {re_review_await_timeout_seconds}s"
+            description: "Re-issue the re-review and await a fresh budget"
+          - label: "Merge anyway — proceed unreviewed"
+            description: "Advance the unreviewed HEAD to the pre-merge gate"
+          - label: "Defer merge"
+            description: "Skip the merge; re-enter finalize later"
+        multiSelect: false
+  ```
+
+  Branch on the operator's selection:
+
+  - **"Wait another {re_review_await_timeout_seconds}s"** → re-enter the inline trigger-A await with a fresh budget: re-issue the `github_re_review re-review` call in step 3 above (with the same `--timeout {re_review_await_timeout_seconds}`) and re-evaluate `matched`/`timed_out`. Log the decision:
+
+    ```bash
+    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+      decision --plan-id {plan_id} --level INFO \
+      --message "(plan-marshall:phase-6-finalize) Branch cleanup re-review timeout (trigger A): user chose to wait another {re_review_await_timeout_seconds}s — re-issuing re-review for head_sha={head_sha}"
+    ```
+
+  - **"Merge anyway — proceed unreviewed"** → decision-log at WARNING naming the unreviewed `{head_sha}`, then continue to the **Pre-Merge Confirmation Gate** below (same effect as the `proceed` policy):
+
+    ```bash
+    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+      decision --plan-id {plan_id} --level WARNING \
+      --message "(plan-marshall:phase-6-finalize) Branch cleanup re-review timeout (trigger A): user chose merge-anyway — advancing UNREVIEWED head_sha={head_sha} to the pre-merge gate"
+    ```
+
+  - **"Defer merge"** → take the SAME skip path as the `defer` policy above (set `{merge_consent} = deferred`, skip Merge PR / Wait for Merge CI / Remove Worktree / Switch to Base Branch, emit `mark-step-done` Branch C, return). Log the decision:
+
+    ```bash
+    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+      decision --plan-id {plan_id} --level INFO \
+      --message "(plan-marshall:phase-6-finalize) Branch cleanup re-review timeout (trigger A): user chose defer — deferring merge for unreviewed head_sha={head_sha}"
+    ```
 
 ### Pre-Merge Confirmation Gate
 
