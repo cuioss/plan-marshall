@@ -86,7 +86,6 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture e
 ```
 
 - **Module selection**: use `--module default` when the fact is cross-cutting (not specific to one bundle/module — a project-wide convention or root-level fact); use the owning module otherwise. The `default` module is the first-class home for cross-cutting project knowledge.
-- **Fact-shape → verb mapping**: implementation gotcha → `enrich tip`; learned observation → `enrich insight`; established convention → `enrich best-practice`.
 - **No dual-write (breaking)**: a KNOWLEDGE signal routed to architecture does NOT also create a lesson. Routing to hints and filing a lesson are mutually exclusive per signal — this is the whole point of the partition.
 
 When every candidate signal is KNOWLEDGE (only enrich calls were made, no lesson allocated), record the outcome via Branch B3 in the Mark-Step-Complete section below.
