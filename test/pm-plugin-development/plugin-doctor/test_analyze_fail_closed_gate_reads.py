@@ -301,9 +301,16 @@ class TestFormBNegatives:
 
 class TestWhitelistAndEmpty:
     def test_is_whitelisted_self_and_file_ops(self) -> None:
-        assert is_whitelisted(Path('/x/scripts/_analyze_fail_closed_gate_reads.py'))
+        assert is_whitelisted(
+            Path(
+                '/x/marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_fail_closed_gate_reads.py'
+            )
+        )
         assert is_whitelisted(Path('/x/tools-file-ops/scripts/file_ops.py'))
         assert not is_whitelisted(Path('/x/scripts/other.py'))
+        # Suffix-anchored, not unordered component containment: a bare filename
+        # outside the canonical plugin-doctor location is NOT whitelisted.
+        assert not is_whitelisted(Path('/x/scripts/_analyze_fail_closed_gate_reads.py'))
 
     def test_empty_tree_returns_empty(self, tmp_path: Path) -> None:
         mp = _make_marketplace(tmp_path)
