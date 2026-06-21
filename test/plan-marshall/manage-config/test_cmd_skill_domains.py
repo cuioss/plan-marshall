@@ -247,6 +247,7 @@ def test_skill_domains_get_system_returns_defaults_and_optionals(plan_context, m
     assert result['status'] == 'success'
     assert 'defaults' in result
     assert 'plan-marshall:dev-agent-behavior-rules' in result['defaults']
+    assert 'optionals' in result
     # execute_task_skills was removed from the system domain — get must not surface it.
     assert 'execute_task_skills' not in result
 
