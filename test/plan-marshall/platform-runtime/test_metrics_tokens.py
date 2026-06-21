@@ -130,7 +130,8 @@ def test_claude_normalized_tokens_writes_per_phase_json(tmp_path, monkeypatch):
     assert five["cache_creation"] == 40
     # billing = 100 + 20 + round(0.1*1000=100) + round(1.25*40=50) = 270.
     assert five["billing_weighted_total"] == 270
-    assert five["total"] == 270
+    # total is the canonical four-field sum: 100 + 20 + 1000 + 40 = 1160.
+    assert five["total"] == 1160
     # The <usage> tag attribution lands in the same phase window.
     assert five["subagent_total_tokens"] == 4000
     assert five["subagent_tool_uses"] == 5
@@ -181,6 +182,32 @@ def test_claude_normalized_tokens_subagent_transcript_summed(tmp_path, monkeypat
     assert five["output"] == 182
     assert five["cache_read"] == 9000
     assert five["cache_creation"] == 360
+
+
+def test_claude_normalized_tokens_subagent_keys_zero_without_subagent_usage(tmp_path, monkeypatch):
+    """A phase with no subagent usage still carries the four subagent_* keys at 0."""
+    session_id = "22222222-2222-2222-2222-222222222203"
+    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    transcript = projects_root / f"{session_id}.jsonl"
+    _write_jsonl(
+        transcript,
+        [_main_context_entry("2026-03-27T10:10:00+00:00", input_tokens=100, output_tokens=20)],
+    )
+
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+
+    output_file = tmp_path / "normalized.json"
+    result = _parse(
+        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
+    )
+    assert result["status"] == "success"
+
+    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+    # No <usage> tag and no subagent transcript → keys present, all zero.
+    assert five["subagent_total_tokens"] == 0
+    assert five["subagent_tool_uses"] == 0
+    assert five["subagent_duration_ms"] == 0
+    assert five["subagent_samples"] == 0
 
 
 def test_claude_normalized_tokens_missing_transcript_is_noop(tmp_path, monkeypatch):

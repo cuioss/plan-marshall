@@ -308,6 +308,23 @@ def cmd_resolve_execute_task_skill(args) -> dict:
 # =============================================================================
 
 
+def _leading_frontmatter_block(content: str) -> str:
+    """Return the leading ``---``...``---`` YAML frontmatter block of *content*.
+
+    Mirrors the leading-frontmatter delimiting logic in
+    ``_read_frontmatter_order``: the block is recognized only when the first
+    line is ``---`` and a closing ``---`` follows. Returns the text between the
+    delimiters, or an empty string when no leading frontmatter block is present.
+    """
+    lines = content.split('\n')
+    if not lines or lines[0].strip() != '---':
+        return ''
+    for i in range(1, len(lines)):
+        if lines[i].strip() == '---':
+            return '\n'.join(lines[1:i])
+    return ''
+
+
 def _discover_all_recipes() -> list[dict]:
     """Discover all recipes at runtime from extensions and project skills."""
     all_recipes: list[dict] = []
@@ -356,11 +373,12 @@ def _discover_all_recipes() -> list[dict]:
         # sole source of truth (see ext-point-recipe.md § Project Recipe
         # Frontmatter). recipe_domain is required; a recipe whose frontmatter
         # omits it is silently skipped (intentional discovery containment).
-        domain_match = re.search(r'^recipe_domain:\s*(.+)$', content, re.MULTILINE)
+        frontmatter = _leading_frontmatter_block(content)
+        domain_match = re.search(r'^recipe_domain:\s*(.+)$', frontmatter, re.MULTILINE)
         domain = domain_match.group(1).strip().strip("'\"") if domain_match else ''
-        profile_match = re.search(r'^recipe_profile:\s*(.+)$', content, re.MULTILINE)
+        profile_match = re.search(r'^recipe_profile:\s*(.+)$', frontmatter, re.MULTILINE)
         profile = profile_match.group(1).strip().strip("'\"") if profile_match else ''
-        package_source_match = re.search(r'^recipe_package_source:\s*(.+)$', content, re.MULTILINE)
+        package_source_match = re.search(r'^recipe_package_source:\s*(.+)$', frontmatter, re.MULTILINE)
         package_source = package_source_match.group(1).strip().strip("'\"") if package_source_match else ''
 
         if not domain:

@@ -884,3 +884,69 @@ def test_cli_resolve_domain_skills(plan_context):
 
     assert result.success, f'Should succeed: {result.stderr}'
     assert 'pm-dev-java:java-core' in result.stdout
+
+
+# =============================================================================
+# _discover_all_recipes frontmatter-scoping Tests
+# =============================================================================
+
+
+def _make_recipe_skill(parent: Path, name: str, content: str) -> Path:
+    """Create a recipe-* skill dir with a SKILL.md carrying *content*."""
+    skill_dir = parent / name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / 'SKILL.md').write_text(content, encoding='utf-8')
+    return skill_dir
+
+
+def test_discover_recipes_ignores_recipe_domain_in_markdown_body(tmp_path):
+    """A recipe_domain:-shaped line in the markdown BODY (not frontmatter) is ignored."""
+    skill_dir = _make_recipe_skill(
+        tmp_path,
+        'recipe-frontmatter-scoped',
+        '---\n'
+        'description: A frontmatter-scoped recipe\n'
+        'recipe_domain: java\n'
+        '---\n'
+        '\n'
+        '# Body\n'
+        '\n'
+        'recipe_domain: hijacked\n'
+        'recipe_profile: bogus\n',
+    )
+
+    with (
+        patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]),
+        patch.object(_cmd_skill_resolution, 'iter_project_skill_dirs', return_value=[skill_dir]),
+    ):
+        recipes = _cmd_skill_resolution._discover_all_recipes()
+
+    assert len(recipes) == 1
+    recipe = recipes[0]
+    # The frontmatter value wins; the body's hijacked/bogus lines are ignored.
+    assert recipe['domain'] == 'java'
+    assert recipe['profile'] == ''
+
+
+def test_discover_recipes_skips_recipe_with_domain_only_in_body(tmp_path):
+    """A recipe whose recipe_domain appears ONLY in the body is silently skipped."""
+    skill_dir = _make_recipe_skill(
+        tmp_path,
+        'recipe-body-only',
+        '---\n'
+        'description: No recipe_domain in frontmatter\n'
+        '---\n'
+        '\n'
+        '# Body\n'
+        '\n'
+        'recipe_domain: java\n',
+    )
+
+    with (
+        patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]),
+        patch.object(_cmd_skill_resolution, 'iter_project_skill_dirs', return_value=[skill_dir]),
+    ):
+        recipes = _cmd_skill_resolution._discover_all_recipes()
+
+    # recipe_domain is required and only present in the body → the recipe is skipped.
+    assert recipes == []

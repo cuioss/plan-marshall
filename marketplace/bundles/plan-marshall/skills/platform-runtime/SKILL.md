@@ -104,6 +104,8 @@ No-op policy and caller obligations: `standards/no-op-policy.md`
 | `prompt_not_found` | `subagent dispatch` prompt file not found |
 | `unknown_target` | `runtime.target` not in registry |
 | `hook_not_configured` | SessionStart hook missing; `$CLAUDE_CODE_SESSION_ID` unset |
+| `invalid_settings` | Settings file malformed (JSON parse error); fail-closed before write — `permission configure/fix/ensure-wildcards/ensure-steps/web-apply` |
+| `invalid_marshal` | `.plan/marshal.json` malformed (parse error); fail-closed instead of zero-step audit — `permission analyze/ensure-steps` |
 
 ## No-Op Behavior
 

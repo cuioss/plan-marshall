@@ -1351,6 +1351,8 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
     phases_state = data.setdefault('phases', {})
 
     for phase_name, bucket in per_phase.items():
+        if not isinstance(bucket, dict):
+            continue
         phase_row = phases_state.setdefault(phase_name, {})
         for field in (
             'input_tokens',
