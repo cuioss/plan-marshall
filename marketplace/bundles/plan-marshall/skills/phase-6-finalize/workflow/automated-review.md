@@ -14,6 +14,12 @@ configurable:
   - key: re_review_on_branch_cleanup
     default: true
     description: Gate (default-on) for re-requesting a fresh bot review after branch-cleanup rebases and force-pushes the feature branch onto base (trigger A). The automated-review step owns this knob; branch-cleanup reads it to decide whether to re-review the rebased HEAD. When false, the rebased/force-pushed HEAD is NOT re-reviewed.
+  - key: re_review_await_timeout_seconds
+    default: 600
+    description: Await budget (seconds) threaded through the --timeout flag on the github_re_review re-review CLI, replacing the hardcoded DEFAULT_CI_TIMEOUT passed to await_fresh_review. Bounds how long both re-review triggers (A and B) poll for a fresh bot review before the await times out.
+  - key: re_review_on_timeout
+    default: ask
+    description: "Timeout policy applied at both re-review triggers (A and B) when the await budget expires with no fresh bot review (timed_out: true, matched: false). One of ask|defer|proceed. ask halts and asks the operator (interactive); defer auto-skips the merge without prompting (safe default-action); proceed is the explicit opt-in to advance the unreviewed HEAD, decision-logged at WARNING."
 ---
 
 # Automated Review
@@ -93,14 +99,46 @@ Read `re_review_on_loopback` off the returned `params` object (default: `false`)
 
    Capture stdout as `{head_sha}`. **When `{head_sha} == {reviewed_commit_sha}`**, HEAD has NOT advanced past the reviewed commit — there is nothing new to re-review. Skip this section and proceed to "Wait for review-bot comments".
 
-3. **When `{head_sha} != {reviewed_commit_sha}`** (HEAD advanced past the reviewed commit) AND `{bot_kind}` is set: capture the loop-back fix-commit push time as `{push_time}` (the ISO-8601 commit/push time of the HEAD commit — `git -C {worktree_path} show -s --format=%cI HEAD`), then invoke the D2 re-review registry for the new HEAD. For a CodeRabbit `bot_kind` the `request_fresh_review` is a NO-OP — the loop-back fix-commit push already auto-triggered the review, so no `@coderabbitai review` comment is posted and the await uses `{push_time}` as the trigger time; for a Gemini `bot_kind` the registry posts `/gemini review` then awaits. See [`workflow-integration-github` SKILL.md § Canonical invocations → `github_re_review re-review`](../../workflow-integration-github/SKILL.md#github_re_review-re-review):
+3. **When `{head_sha} != {reviewed_commit_sha}`** (HEAD advanced past the reviewed commit) AND `{bot_kind}` is set: capture the loop-back fix-commit push time as `{push_time}` (the ISO-8601 commit/push time of the HEAD commit — `git -C {worktree_path} show -s --format=%cI HEAD`), then invoke the D2 re-review registry for the new HEAD. Read `re_review_await_timeout_seconds` off the same `params` object returned by the `step-params get` call above (default: 600) and pass it as `--timeout {re_review_await_timeout_seconds}` so the await budget is operator-configurable rather than the hardcoded `DEFAULT_CI_TIMEOUT`. For a CodeRabbit `bot_kind` the `request_fresh_review` is a NO-OP — the loop-back fix-commit push already auto-triggered the review, so no `@coderabbitai review` comment is posted and the await uses `{push_time}` as the trigger time; for a Gemini `bot_kind` the registry posts `/gemini review` then awaits. See [`workflow-integration-github` SKILL.md § Canonical invocations → `github_re_review re-review`](../../workflow-integration-github/SKILL.md#github_re_review-re-review):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
-     --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} --plan-id {plan_id}
+     --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
    ```
 
-   Read `matched` from the returned TOON. The fresh review (when matched) is now on the PR; proceed to "Wait for review-bot comments" and "Producer: stage PR comments as findings" below, which re-runs `comments-stage` — this re-stamps every finding's `reviewed_commit_sha` to the new HEAD and re-triages the new comments through the existing per-finding dispatch pipeline. The `reviewed_commit_sha` is updated implicitly by that fresh `comments-stage` run; no separate update call is needed.
+   Read both `matched` AND `timed_out` from the returned TOON. **When `matched: true`**, the fresh review is now on the PR; proceed to "Wait for review-bot comments" and "Producer: stage PR comments as findings" below, which re-runs `comments-stage` — this re-stamps every finding's `reviewed_commit_sha` to the new HEAD and re-triages the new comments through the existing per-finding dispatch pipeline. The `reviewed_commit_sha` is updated implicitly by that fresh `comments-stage` run; no separate update call is needed. **When `timed_out: true` (and `matched: false`)**, the await budget expired with no fresh bot review for the new HEAD — proceed to "On re-review timeout (trigger B)" below instead of falling through silently.
+
+### On re-review timeout (trigger B)
+
+This sub-block is evaluated ONLY when the `github_re_review re-review` call above returned `timed_out: true` AND `matched: false` — the await budget (`re_review_await_timeout_seconds`) expired before a fresh bot review landed for the new HEAD. Leaving the timeout unhandled means the unreviewed HEAD silently proceeds to the merge gate (the gap this contract closes). Read `re_review_on_timeout` off the same `params` object returned by the `step-params get` call above (default: `ask`) and branch on its value. **Every branch is decision-logged** — a timeout is always an explicit, auditable decision.
+
+- **`proceed`** (explicit opt-in to advance the unreviewed HEAD): decision-log at WARNING naming the unreviewed `{head_sha}`, then fall through to "Wait for review-bot comments" below (today's silent-proceed, now an explicit, logged choice):
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level WARNING \
+    --message "(plan-marshall:phase-6-finalize:automated-review) re-review timeout (trigger B): re_review_on_timeout=proceed — advancing UNREVIEWED head_sha={head_sha} after {re_review_await_timeout_seconds}s budget expired"
+  ```
+
+- **`defer`** (auto-skip the merge, no prompt): decision-log, then return `status: escalate_ask` with `action: defer` so the orchestrator skips the merge for this run:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-6-finalize:automated-review) re-review timeout (trigger B): re_review_on_timeout=defer — returning escalate_ask{action: defer}; orchestrator skips the merge for head_sha={head_sha}"
+  ```
+
+  Then return the `escalate_ask` TOON (see "Output" below) with `action: defer`, `reason: re_review_timeout`, `timed_out: true`, `head_sha: {head_sha}`, `timeout_seconds: {re_review_await_timeout_seconds}`, `pr_number: {pr_number}`.
+
+- **`ask`** (default — halt and ask the operator): decision-log, then return `status: escalate_ask` with `reason: re_review_timeout` and the three prompt options encoded in the TOON so the orchestrator (phase-6-finalize SKILL.md Step 3) fires the `AskUserQuestion`. The dispatched leaf does NOT fire `AskUserQuestion` itself — it returns the escalation envelope and the inline orchestrator owns the prompt:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-6-finalize:automated-review) re-review timeout (trigger B): re_review_on_timeout=ask — returning escalate_ask{reason: re_review_timeout} for head_sha={head_sha}; orchestrator will fire AskUserQuestion"
+  ```
+
+  The `escalate_ask` return carries `prompt_options[]` enumerating the three operator choices: "Wait another {re_review_await_timeout_seconds}s" (realized by the orchestrator re-dispatching `automated-review` from scratch with a fresh budget — NOT a resume), "Merge anyway — proceed unreviewed", and "Defer merge". See the `escalate_ask` row in "Output" below for the full field set.
 
 ### Wait for review-bot comments
 
@@ -331,7 +369,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 ## Output
 
 ```toon
-status: success | error | loop_back
+status: success | error | loop_back | escalate_ask
 display_detail: "<{N} comments resolved, {fix_tasks} fix tasks, {accepted} accepted>"
 comments_processed: {N}
 comments_resolved: {N}
@@ -339,3 +377,31 @@ fix_tasks_created: {N}
 ```
 
 Orchestrator workflow — the LLM core is delegated to `verification-feedback` (`producer=pr-comment`) via the internal sub-dispatch. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded via `mark-step-done --display-detail`. On `loop_back`, the calling step re-fires on the next phase entry per the HEAD-dependent resumability rules above.
+
+### `escalate_ask` return (re-review timeout)
+
+When the "On re-review timeout (trigger B)" sub-block fires with `re_review_on_timeout` of `defer` or `ask`, this step returns `status: escalate_ask` instead of `success`/`loop_back`. The dispatched leaf does NOT fire `AskUserQuestion` itself — it returns this envelope and the inline orchestrator (phase-6-finalize SKILL.md Step 3) owns the prompt. The `proceed` policy does NOT return `escalate_ask` — the leaf falls through to "Wait for review-bot comments" and the run terminates normally (`success`/`loop_back`); `proceed` is the documented non-escalating case.
+
+```toon
+status: escalate_ask
+display_detail: "re-review timeout — {action} (head {head_sha_short})"
+action: defer | ask
+reason: re_review_timeout
+timed_out: true
+head_sha: {full HEAD SHA the timed-out re-review targeted}
+timeout_seconds: {re_review_await_timeout_seconds}
+pr_number: {pr_number}
+prompt_options[3]:
+  - "Wait another {timeout_seconds}s"
+  - "Merge anyway — proceed unreviewed"
+  - "Defer merge"
+```
+
+Field contract:
+
+- `action`: `defer` when policy is `defer` (orchestrator skips the merge directly); `ask` when policy is `ask` (orchestrator fires `AskUserQuestion` with `prompt_options[]`).
+- `reason`: always `re_review_timeout` for this escalation — distinguishes it from any future escalation reasons.
+- `head_sha`: the full worktree HEAD SHA the timed-out re-review was awaiting; the unreviewed commit the operator decision applies to.
+- `prompt_options[]`: the three operator choices the orchestrator presents when `action: ask`. "Wait another {timeout_seconds}s" is realized by the orchestrator re-dispatching `automated-review` from scratch with a fresh budget (the harness cannot resume a spawned agent — see [SKILL.md](../SKILL.md) Step 3). Present only when `action: ask`; omitted for `action: defer`.
+
+The orchestrator-side handling of this return (reading `re_review_on_timeout`, branching on `action`, firing `AskUserQuestion`, and the "wait again" fresh re-dispatch) lives in [`../SKILL.md`](../SKILL.md) Step 3 — this document owns the return shape; the dispatcher owns the consumption.
