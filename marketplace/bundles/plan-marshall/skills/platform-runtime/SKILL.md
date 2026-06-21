@@ -27,11 +27,12 @@ Script-based platform abstraction that routes 15 goal-based operations to the co
 
 ## What This Skill Provides
 
-Fifteen operations covering the full platform lifecycle:
+Sixteen operations covering the full platform lifecycle:
 
 | Operation | Purpose |
 |-----------|---------|
 | `project initial-setup` | One-time project setup: create `.plan/`, seed `marshal.json`, install platform hook |
+| `project install-hook` | Install the terminal-title hook bundle; with the orthogonal `--enforcement` opt-in, install ONLY the PreToolUse enforcement hook entry without touching the terminal-title wiring |
 | `session capture` | Persist current session id via `manage-status`; no-op on OpenCode |
 | `permission configure` | Write raw permission list to platform settings |
 | `permission analyze` | Read-only audit of permission hygiene, redundancy, and missing-steps |
@@ -47,6 +48,8 @@ Fifteen operations covering the full platform lifecycle:
 | `health-check` | Verify platform integration |
 
 See `standards/contract.md` for per-operation TOON schemas (success, error, no-op paths).
+
+The `health-check --checks display` surface inspects each terminal-title render entry plus a dedicated `PreToolUse:enforcement` present/MISSING label for the orthogonal enforcement hook, so a partial or absent enforcement install is diagnosable and repairable independently of the terminal-title wiring.
 
 ## Architecture
 
