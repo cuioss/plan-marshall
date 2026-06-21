@@ -27,7 +27,7 @@ Script-based platform abstraction that routes 15 goal-based operations to the co
 
 ## What This Skill Provides
 
-Sixteen operations covering the full platform lifecycle:
+Fifteen operations covering the full platform lifecycle:
 
 | Operation | Purpose |
 |-----------|---------|
