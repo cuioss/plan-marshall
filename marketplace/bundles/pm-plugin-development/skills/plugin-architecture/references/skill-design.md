@@ -17,7 +17,7 @@ Skill directory names use verb phrases:
 execute-task
 build-maven
 manage-files
-resolve-execute-task-skill
+plan-retrospective
 sync-plugin-cache
 ```
 

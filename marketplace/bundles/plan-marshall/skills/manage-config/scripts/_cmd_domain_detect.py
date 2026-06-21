@@ -69,7 +69,7 @@ def _collect_aliases(domain: str, domain_config: dict[str, Any]) -> set[str]:
     """Return the lowercase token set that should match this domain.
 
     Includes the domain key itself, any ``bundle`` reference, and any
-    skill names from ``defaults``/``optionals``/``execute_task_skills``
+    skill names from ``defaults``/``optionals``
     so users can mention specific skills (e.g., "java-core") and have
     the detector route to the right domain.
     """
@@ -96,7 +96,7 @@ def _collect_aliases(domain: str, domain_config: dict[str, Any]) -> set[str]:
             for item in obj:
                 _walk(item)
 
-    for key in ('defaults', 'optionals', 'execute_task_skills', 'project_skills'):
+    for key in ('defaults', 'optionals', 'project_skills'):
         if key in domain_config:
             _walk(domain_config[key])
 

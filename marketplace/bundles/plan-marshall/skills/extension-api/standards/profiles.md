@@ -71,26 +71,6 @@ Domains configure profile overrides in marshal.json:
 
 ---
 
-## Resolution API
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-execute-task-skill --profile {profile}
-```
-
-**Parameters**:
-- `--profile`: Profile from task (e.g., `implementation`, `module_testing`)
-
-**Output**:
-```toon
-status	success
-profile	{profile}
-skill	{resolved skill reference}
-fallback	{true if using system default}
-```
-
----
-
 ## Override Requirements
 
 Domain-specific profile skills MUST:
@@ -106,7 +86,7 @@ Domain-specific profile skills CAN:
 2. **Use domain-specific verification** - Different commands
 3. **Apply domain patterns** - Coding standards, idioms
 
-**Error handling**: If a profile skill reference in marshal.json points to a non-existent skill, resolution falls back to the system default (`plan-marshall:execute-task`) with `fallback=true`. The invalid reference is logged as a warning.
+**Profile dispatch**: Every profile's system default is the unified `plan-marshall:execute-task` skill, which dispatches on `task.profile` internally. Domains may still override per profile via the `{domain}.workflow_skills.{profile}` mechanism described above (Resolution Flow + marshal.json Configuration); absent an override, the unified skill is the resolved default.
 
 ---
 

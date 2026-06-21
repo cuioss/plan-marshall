@@ -238,8 +238,8 @@ def test_skill_domains_validate_nested_profile_skill(plan_context):
     assert 'in_defaults' in result.stdout.lower()
 
 
-def test_skill_domains_get_system_has_execute_task_skills(plan_context, monkeypatch):
-    """Test skill-domains get returns system domain with execute_task_skills."""
+def test_skill_domains_get_system_returns_defaults_and_optionals(plan_context, monkeypatch):
+    """Test skill-domains get returns system domain with defaults/optionals (no execute_task_skills)."""
     create_nested_marshal_json(plan_context.fixture_dir)
 
     result = cmd_skill_domains(Namespace(verb='get', domain='system'))
@@ -247,10 +247,8 @@ def test_skill_domains_get_system_has_execute_task_skills(plan_context, monkeypa
     assert result['status'] == 'success'
     assert 'defaults' in result
     assert 'plan-marshall:dev-agent-behavior-rules' in result['defaults']
-    assert 'execute_task_skills' in result
-    # Every profile maps to the unified execute-task skill (no per-profile
-    # execute-task-{profile} variants exist).
-    assert all(skill == 'plan-marshall:execute-task' for skill in result['execute_task_skills'].values())
+    # execute_task_skills was removed from the system domain — get must not surface it.
+    assert 'execute_task_skills' not in result
 
 
 # =============================================================================
@@ -987,7 +985,6 @@ def test_configure_preserves_project_skills(plan_context, monkeypatch):
             'system': {
                 'defaults': ['plan-marshall:dev-agent-behavior-rules'],
                 'project_skills': ['project:system-skill'],
-                'execute_task_skills': {'implementation': 'plan-marshall:execute-task'},
             },
             'java': {
                 'bundle': 'pm-dev-java',
@@ -1057,7 +1054,6 @@ def test_configure_preserves_build_map_and_active_profiles(plan_context, monkeyp
             'system': {
                 'defaults': ['plan-marshall:dev-agent-behavior-rules'],
                 'project_skills': ['project:system-skill'],
-                'execute_task_skills': {'implementation': 'plan-marshall:execute-task'},
             },
             'java': {
                 'bundle': 'pm-dev-java',
@@ -1123,7 +1119,7 @@ def test_configure_drops_project_skills_for_removed_domains(plan_context, monkey
     """Test configure drops project_skills for domains that are no longer selected."""
     config = {
         'skill_domains': {
-            'system': {'defaults': [], 'execute_task_skills': {}},
+            'system': {'defaults': []},
             'java': {'bundle': 'pm-dev-java', 'project_skills': ['project:java-helper']},
             'javascript': {'bundle': 'pm-dev-frontend', 'project_skills': ['project:js-helper']},
         },
@@ -1173,7 +1169,6 @@ def test_get_nested_includes_project_skills(plan_context, monkeypatch):
             'system': {
                 'defaults': ['plan-marshall:dev-agent-behavior-rules'],
                 'project_skills': ['project:my-tool'],
-                'execute_task_skills': {},
             },
         },
         'system': {'retention': {}},

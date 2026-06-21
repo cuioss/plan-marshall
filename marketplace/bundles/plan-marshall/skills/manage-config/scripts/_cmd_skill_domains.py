@@ -567,9 +567,6 @@ def cmd_skill_domains(args) -> dict:
             # Include bundle reference if present
             if 'bundle' in domain_config:
                 result['bundle'] = domain_config['bundle']
-            # Include execute_task_skills if present
-            if 'execute_task_skills' in domain_config:
-                result['execute_task_skills'] = domain_config['execute_task_skills']
             # Include workflow_skill_extensions if present
             if 'workflow_skill_extensions' in domain_config:
                 result['workflow_skill_extensions'] = domain_config['workflow_skill_extensions']

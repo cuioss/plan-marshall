@@ -1,14 +1,14 @@
 # Execute-Task Skills
 
-How tasks are routed to the appropriate execute-task skill and the shared workflow that all execute-task skills follow.
+How tasks are routed to the unified execute-task skill and the shared workflow that it follows for every profile.
 
 ---
 
 ## Routing Overview
 
-Execute-task skills are workflow skills that handle the actual implementation or testing work during task execution. Unlike phase skills (which are system-only), execute-task skills are configured via marshal.json and can be extended.
+The unified `plan-marshall:execute-task` skill handles the actual implementation or testing work during task execution. The phase-5-execute envelope loads it in-context once per task; the skill reads the task's `profile` and follows the matching profile workflow.
 
-**Key Design**: Profile determines execution skill; domain determines knowledge skills.
+**Key Design**: Profile determines execution behavior; domain determines knowledge skills.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -16,30 +16,18 @@ Execute-task skills are workflow skills that handle the actual implementation or
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  TASK-001.json                                                   │
-│  ├─ profile: implementation     ←─ Determines execute-task skill │
+│  ├─ profile: implementation     ←─ Selects the profile workflow  │
 │  ├─ domain: java                ←─ (informational only)          │
 │  └─ skills: [java-core, ...]    ←─ Domain knowledge skills       │
 │                                                                  │
 │                    │                                             │
 │                    ▼                                             │
 │                                                                  │
-│  resolve-execute-task-skill --profile implementation             │
-│                    │                                             │
-│                    ▼                                             │
+│  Skill: plan-marshall:execute-task    ←─ Unified execute-task    │
+│  Skill: pm-dev-java:java-core         ←─ Domain skills           │
+│  Skill: pm-dev-java:java-cdi          ←─ from task.skills        │
 │                                                                  │
-│  marshal.json: skill_domains.system.execute_task_skills          │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ "execute_task_skills": {                                    │ │
-│  │   "implementation": "plan-marshall:execute-task",           │ │
-│  │   "module_testing": "plan-marshall:execute-task"            │ │
-│  │ }                                                           │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                    │                                             │
-│                    ▼                                             │
-│                                                                  │
-│  Skill: plan-marshall:execute-task         ←─ Execute-task skill │
-│  Skill: pm-dev-java:java-core              ←─ Domain skills      │
-│  Skill: pm-dev-java:java-cdi               ←─ from task.skills   │
+│  The skill dispatches on task.profile internally.               │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -60,66 +48,9 @@ Execute-task skills are workflow skills that handle the actual implementation or
 
 ---
 
-## Resolve API
+## Profile Dispatch
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-execute-task-skill --profile {profile}
-```
-
-**Output**:
-```toon
-status: success
-profile: implementation
-execute_task_skill: plan-marshall:execute-task
-```
-
-**Error (unknown profile)**:
-```toon
-status: error
-error: Unknown profile 'X'. Available profiles: implementation, module_testing
-```
-
----
-
-## marshal.json Configuration
-
-Execute-task skills are configured in the system domain:
-
-```json
-{
-  "skill_domains": {
-    "system": {
-      "workflow_skills": { ... },
-      "execute_task_skills": {
-        "implementation": "plan-marshall:execute-task",
-        "module_testing": "plan-marshall:execute-task",
-        "verification": "plan-marshall:execute-task"
-      }
-    }
-  }
-}
-```
-
-**Convention**: All profiles map to `plan-marshall:execute-task` by default. The skill handles profile dispatch internally.
-
----
-
-## Automatic Configuration
-
-Marshall-steward auto-populates execute_task_skills during setup:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  configure-execute-task-skills
-```
-
-**Discovery Process**:
-1. Scans all configured domains in marshal.json
-2. Extracts profile keys from each domain (excluding reserved keys like `core`, `workflow_skills`)
-3. Includes DEFAULT_PROFILES from `_config_defaults.py`
-4. Maps each profile to `plan-marshall:execute-task`
-5. Persists to `skill_domains.system.execute_task_skills`
+The unified `plan-marshall:execute-task` skill dispatches on `task.profile` internally — there is no per-profile skill lookup. Every profile (`implementation`, `module_testing`, `verification`) is handled by the same skill, which selects the matching profile workflow at runtime.
 
 ---
 
@@ -146,21 +77,11 @@ The profile system is open for extension. While `_config_defaults.py` defines a 
        }]
    ```
 
-2. **Create corresponding execute-task skill**:
-   ```
-   marketplace/bundles/plan-marshall/skills/execute-my_new_profile/
-   └── SKILL.md  # Defines execution workflow for this profile
-   ```
+2. **Add a profile workflow section** to `plan-marshall:execute-task/SKILL.md` describing how the new profile executes (the unified skill dispatches on `task.profile`).
 
-3. **Run marshall-steward to auto-discover**:
+3. **Run marshall-steward to auto-discover** the new profile's skill domains:
    ```bash
    /marshall-steward
-   ```
-
-4. **Verify configuration**:
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-     resolve-execute-task-skill --profile my_new_profile
    ```
 
 ---

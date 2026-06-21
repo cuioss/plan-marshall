@@ -222,13 +222,11 @@ def is_nested_domain(domain_config: dict) -> bool:
 
     Nested domains have one of:
     - 'bundle' key (technical domains with profiles in extension.py)
-    - 'execute_task_skills' key (system domain with profile-to-execute-task-skill mapping)
     - 'workflow_skill_extensions' key (domain extensions for outline/triage)
     - 'project_skills' key (project-level skills attached to a domain)
     """
     return (
         'bundle' in domain_config
-        or 'execute_task_skills' in domain_config
         or 'workflow_skill_extensions' in domain_config
         or 'project_skills' in domain_config
     )

@@ -166,13 +166,7 @@
   "skill_domains": {
     "system": {
       "defaults": [],
-      "optionals": [],
-      "execute_task_skills": {
-        "implementation": "plan-marshall:execute-task",
-        "module_testing": "plan-marshall:execute-task",
-        "integration_testing": "plan-marshall:execute-task",
-        "verification": "plan-marshall:execute-task"
-      }
+      "optionals": []
     },
     "general-dev": {
       "bundle": "plan-marshall"

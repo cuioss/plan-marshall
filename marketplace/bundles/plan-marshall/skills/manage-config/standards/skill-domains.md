@@ -45,7 +45,6 @@ The `system` domain is required and contains:
 | `defaults` | array | No | Base skills loaded for all tasks |
 | `optionals` | array | No | Optional base skills available for selection |
 | `workflow_skills` | object | Yes | Maps 6 phases to workflow skill references |
-| `execute_task_skills` | object | Yes | Maps profiles to execute-task skills |
 
 ```json
 {
@@ -66,33 +65,11 @@ The `system` domain is required and contains:
 }
 ```
 
-### Execute-Task Skills
+### Profiles
 
-Execute-task skills map profile values to the workflow skill that executes tasks of that profile:
+Profile values (`implementation`, `module_testing`, `integration_testing`, `verification`) select which workflow the unified `plan-marshall:execute-task` skill runs at task-execution time. The skill dispatches on `task.profile` internally — there is no per-profile skill mapping in marshal.json.
 
-```json
-{
-  "execute_task_skills": {
-    "implementation": "plan-marshall:execute-task",
-    "module_testing": "plan-marshall:execute-task",
-    "integration_testing": "plan-marshall:execute-task"
-  }
-}
-```
-
-| Profile | Purpose | Default Execute-Task Skill |
-|---------|---------|----------------------------|
-| `implementation` | Production code tasks | `plan-marshall:execute-task` |
-| `module_testing` | Unit/module test tasks | `plan-marshall:execute-task` |
-| `integration_testing` | Integration test tasks | `plan-marshall:execute-task` |
-
-**Extensibility**: The profile list is open for extension. To add a new profile:
-
-1. Add profile key to `skills_by_profile` in domain `extension.py`
-2. No per-profile skill is needed — every profile maps to the unified `plan-marshall:execute-task` skill
-3. Marshall-steward auto-discovers and registers in `execute_task_skills`
-
-**Convention**: every profile maps to the unified `plan-marshall:execute-task` skill by default.
+**Extensibility**: The profile list is open for extension. To add a new profile, add its key to `skills_by_profile` in the domain `extension.py` and a matching profile workflow section to `plan-marshall:execute-task/SKILL.md`. No per-profile skill registration is needed.
 
 ### Technical Domain Structure (Profile-Based)
 
@@ -341,17 +318,15 @@ manage-config skill-domains active-profiles remove
 
 1. **System domain required**: `skill_domains.system` must exist
 2. **Workflow skills required**: `system.workflow_skills` must have all 6 phases
-3. **Execute-task skills required**: `system.execute_task_skills` must exist with at least `implementation`
-4. **Profile structure**: If domain has profiles, must have at least `core`
-5. **Extension types**: Only `outline` and `triage` are valid extension types
-6. **Skill format**: All skills must be `bundle:skill` format
+3. **Profile structure**: If domain has profiles, must have at least `core`
+4. **Extension types**: Only `outline` and `triage` are valid extension types
+5. **Skill format**: All skills must be `bundle:skill` format
 
 ## Reserved Keys
 
 These keys are reserved in domain configuration and cannot be used as profile names:
 
 - `workflow_skills` - System domain only
-- `execute_task_skills` - System domain only
 - `workflow_skill_extensions` - Domain extensions
 - `active_profiles` - Profile filtering (global or per-domain)
 - `core` - Core skills for all profiles

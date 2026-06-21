@@ -149,7 +149,7 @@ The canonical phase name format is `{N}-{name}` (e.g., `1-init`). Context-specif
 
 ### Profiles
 
-Profiles control which skills are loaded during task execution. See [execute-task-skills.md](execute-task-skills.md) for execute-task skill routing and profile naming conventions.
+Profiles control which skills are loaded during task execution. See [execute-task-skills.md](execute-task-skills.md) for profile dispatch within the unified execute-task skill and profile naming conventions.
 
 All profiles map to the unified `plan-marshall:execute-task` skill, which handles profile dispatch internally. Default profiles: `implementation`, `module_testing`, `integration_testing`, `verification`.
 

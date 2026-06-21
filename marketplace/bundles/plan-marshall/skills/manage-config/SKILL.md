@@ -236,10 +236,6 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 # Get aggregated skills for java implementation profile
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-domain-skills --domain java --profile implementation
-
-# Resolve execute-task skill for a profile
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-execute-task-skill --profile module_testing
 ```
 
 ### Extension Defaults
@@ -454,8 +450,6 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `resolve-workflow-skill-extension` | `--domain --type` (outline, triage) |
 | `get-workflow-skills` | Get all workflow skills from system domain |
 | `get-skills-by-profile` | `--domain` (skills organized by profile) |
-| `configure-execute-task-skills` | Auto-discover profiles and register execute-task skills |
-| `resolve-execute-task-skill` | `--profile` (resolve execute-task skill for profile) |
 | `ext-defaults` | get, set, set-default, list, remove |
 | `system` | retention get, retention set |
 | `project` | `get/set` (`default_base_branch`, `working_prefixes`) |
@@ -487,12 +481,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
   "skill_domains": {
     "system": {
       "defaults": ["plan-marshall:dev-agent-behavior-rules"],
-      "optionals": ["plan-marshall:dev-agent-behavior-rules"],
-      "execute_task_skills": {
-        "implementation": "plan-marshall:execute-task",
-        "module_testing": "plan-marshall:execute-task",
-        "integration_testing": "plan-marshall:execute-task"
-      }
+      "optionals": ["plan-marshall:dev-agent-behavior-rules"]
     },
     "java": {
       "bundle": "pm-dev-java",
@@ -645,7 +634,6 @@ The `system` domain contains execute-task skills and base skills applied to all 
 |-------|---------|
 | `defaults` | Base skills loaded for all tasks (`plan-marshall:dev-agent-behavior-rules`) |
 | `optionals` | Optional base skills available for selection |
-| `execute_task_skills` | Maps profiles to the unified execute-task skill; every profile maps to `plan-marshall:execute-task` |
 
 ### Technical Domains (Profile Structure)
 
@@ -700,7 +688,6 @@ Script characteristics:
 | Client | Operation | Purpose |
 |--------|-----------|---------|
 | `phase-1-init` | plan get, resolve-domain-skills | Read plan config, resolve skills |
-| `phase-4-plan` | resolve-execute-task-skill | Resolve execute-task skill for task profile |
 | `phase-5-execute` | resolve-domain-skills | Load skills for task execution |
 | `manage-run-config` | system retention get | Read retention settings for cleanup |
 
@@ -1041,19 +1028,6 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config resolv
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config get-skills-by-profile \
   --domain DOMAIN
-```
-
-### configure-execute-task-skills
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config configure-execute-task-skills
-```
-
-### resolve-execute-task-skill
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config resolve-execute-task-skill \
-  --profile PROFILE
 ```
 
 ### list-recipes
