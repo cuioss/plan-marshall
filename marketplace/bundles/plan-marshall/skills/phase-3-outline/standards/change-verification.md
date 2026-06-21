@@ -2,6 +2,19 @@
 
 Instructions for `verification` change type. Handles validation and confirmation requests. This is a read-only type — no code changes.
 
+## Read-Intent-Only Invariant (normative)
+
+A `verification` deliverable is read-only **by definition**: it consults its targets to determine a pass/fail verdict and produces no code changes. The per-file intent markers a deliverable carries (see the phase-3-outline SKILL.md § "Per-file intent marker") MUST therefore be consistent with that definition.
+
+**Invariant**: when a deliverable is assigned `change_type: verification`, **every** entry in its `**Affected files:**` list MUST carry intent `read`. A `verification` deliverable that also carries any affected file with intent `write-new` or `write-replace` is **self-inconsistent** — it simultaneously claims "no code changes" (the change-type) and "this file is created/modified" (the write intent). This combination is an **outline authoring error**, not a legitimate deliverable shape. (A `delete` intent is likewise a mutation and is equally inconsistent with `verification`; the read-intent-only invariant admits `read` alone.)
+
+**Corrective action**: do NOT soften the deliverable to make the inconsistency pass. Instead, **re-classify the deliverable** to the change-type that matches its actual intent:
+
+- The deliverable both verifies a condition AND modifies code to satisfy it → it is not a verification deliverable. Re-classify to `bug_fix` (when the write fixes a defect), `feature` / `enhancement` (when the write adds or extends behaviour), or `tech_debt` (when the write is a non-behavioural cleanup) — whichever non-verification change-type the write intent actually expresses.
+- If the verification and the write are genuinely separate concerns, **split** them into two deliverables: a `read`-only `verification` deliverable and a separate non-verification deliverable carrying the write-intent files.
+
+Re-classification (or the split) is the only valid resolution — narrowing or relabelling the write-intent file to `read` so the invariant superficially holds, while the deliverable's `**Change per file:**` still describes a code change, re-introduces the same inconsistency and is prohibited.
+
 ## Exit-code convention for `manage-*` script calls
 
 Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
