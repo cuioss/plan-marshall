@@ -97,6 +97,7 @@ class OpenCodeRuntime(Runtime):
         target: str,
         overwrite_statusline: bool = False,
         overwrite_env_disable: bool = False,
+        enforcement: bool = False,
     ) -> str:
         """No-op: OpenCode has no Claude-style SessionStart settings hook."""
         return toon_noop(

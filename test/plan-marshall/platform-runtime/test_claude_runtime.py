@@ -36,6 +36,7 @@ import pytest
 # sys.path manipulation.
 from claude_runtime import (  # type: ignore[import-not-found]
     ClaudeRuntime,
+    _ENFORCEMENT_HOOK_COMMAND,
     _HOOK_COMMAND,
     _RENDER_HOOK_COMMAND,
     _STATUSLINE_COMMAND,
@@ -681,6 +682,168 @@ class TestInstallTerminalTitleHooks:
             assert result["error"] == "unknown_target", f"target={invalid!r}: {result}"
             # No stray file ever created.
             assert not (tmp_path / invalid).exists()
+
+
+# =============================================================================
+# 1c. project_install_hook --enforcement — orthogonal PreToolUse enforcement entry
+# =============================================================================
+
+
+class TestInstallEnforcementHook:
+    """Tests for the orthogonal ``project install-hook --enforcement`` path.
+
+    The enforcement install adds ONLY the matcher-less PreToolUse enforcement
+    entry (keyed on ``_ENFORCEMENT_HOOK_COMMAND``); it is idempotent, orthogonal
+    to the terminal-title bundle, and never disturbs existing hooks.
+    """
+
+    def test_fresh_enforcement_install_adds_entry(self, rt, tmp_path):
+        """--enforcement installs the PreToolUse enforcement entry and reports installed."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        result = _parsed(rt.project_install_hook(str(target), enforcement=True))
+
+        assert result["status"] == "success"
+        assert result["enforcement_installed"] is True
+        assert result["enforcement_status"] == "installed"
+        assert result["already_present"] is False
+
+        wiring = json.loads(target.read_text())
+        pre = wiring["hooks"]["PreToolUse"]
+        assert _count_command(pre, _ENFORCEMENT_HOOK_COMMAND) == 1
+
+    def test_idempotent_second_enforcement_run_already_present(self, rt, tmp_path):
+        """A second --enforcement run reports already_present and adds nothing."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target), enforcement=True)
+        result = _parsed(rt.project_install_hook(str(target), enforcement=True))
+
+        assert result["enforcement_status"] == "already_present"
+        assert result["already_present"] is True
+
+        wiring = json.loads(target.read_text())
+        # Still exactly one enforcement entry — no duplication.
+        assert _count_command(wiring["hooks"]["PreToolUse"], _ENFORCEMENT_HOOK_COMMAND) == 1
+
+    def test_already_present_does_not_rewrite_file(self, rt, tmp_path):
+        """A second --enforcement run on an already-present entry must not rewrite the file.
+
+        Validates the no-write-on-already_present fix: the file's mtime and content
+        must be byte-identical after the idempotent second call.
+        """
+        import os
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target), enforcement=True)
+
+        content_before = target.read_bytes()
+        mtime_before = os.stat(target).st_mtime_ns
+
+        result = _parsed(rt.project_install_hook(str(target), enforcement=True))
+
+        assert result["enforcement_status"] == "already_present"
+        # File must not have been touched (byte-identical, same mtime).
+        assert target.read_bytes() == content_before
+        assert os.stat(target).st_mtime_ns == mtime_before
+
+    def test_plain_install_does_not_add_enforcement_entry(self, rt, tmp_path):
+        """A plain install-hook (no --enforcement) never installs the enforcement entry."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+
+        wiring = json.loads(target.read_text())
+        pre = wiring["hooks"].get("PreToolUse", [])
+        assert _count_command(pre, _ENFORCEMENT_HOOK_COMMAND) == 0
+
+    def test_enforcement_install_does_not_add_terminal_title_wiring(self, rt, tmp_path):
+        """--enforcement installs ONLY the enforcement entry — no render/statusLine/env wiring."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target), enforcement=True)
+
+        wiring = json.loads(target.read_text())
+        hooks = wiring.get("hooks", {})
+        # No render entries anywhere, no statusLine, no env disable.
+        for block in hooks.values():
+            assert _count_command(block, _RENDER_HOOK_COMMAND) == 0
+        assert "statusLine" not in wiring
+        assert "CLAUDE_CODE_DISABLE_TERMINAL_TITLE" not in wiring.get("env", {})
+        # SessionStart was never created (no capture/render entries added).
+        assert "SessionStart" not in hooks
+
+    def test_enforcement_install_preserves_existing_terminal_title_hooks(self, rt, tmp_path):
+        """Installing enforcement onto a terminal-title-wired file preserves all render entries."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        # First fully wire terminal-title.
+        rt.project_install_hook(str(target))
+        before = json.loads(target.read_text())
+        # Then add enforcement orthogonally.
+        rt.project_install_hook(str(target), enforcement=True)
+        after = json.loads(target.read_text())
+
+        hooks = after["hooks"]
+        # Existing render entries intact.
+        assert _count_command(hooks["SessionStart"], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(hooks["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(hooks["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
+        # statusLine + env preserved verbatim.
+        assert after["statusLine"] == before["statusLine"]
+        assert after["env"] == before["env"]
+        # Enforcement entry added alongside the render entries.
+        assert _count_command(hooks["PreToolUse"], _ENFORCEMENT_HOOK_COMMAND) == 1
+
+    def test_terminal_title_install_preserves_existing_enforcement_entry(self, rt, tmp_path):
+        """Installing terminal-title onto an enforcement-wired file preserves the enforcement entry."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        # First install enforcement only.
+        rt.project_install_hook(str(target), enforcement=True)
+        # Then install the terminal-title bundle.
+        rt.project_install_hook(str(target))
+
+        wiring = json.loads(target.read_text())
+        pre = wiring["hooks"]["PreToolUse"]
+        # Enforcement entry survives the terminal-title install.
+        assert _count_command(pre, _ENFORCEMENT_HOOK_COMMAND) == 1
+        # And the render entries were added.
+        assert _count_command(pre, _RENDER_HOOK_COMMAND) == 2
+
+
+class TestDisplayEnforcementLabel:
+    """Tests for the dedicated ``PreToolUse:enforcement`` display present/MISSING label."""
+
+    def test_display_reports_enforcement_missing_before_install(self, rt, tmp_path, monkeypatch):
+        """The display check reports PreToolUse:enforcement MISSING before the install."""
+        monkeypatch.chdir(tmp_path)
+        result = _parsed(rt.health_check("display"))
+        display_result = next(r for r in result["results"] if r["check"] == "display")
+        assert "PreToolUse:enforcement: MISSING" in display_result["detail"]
+
+    def test_display_reports_enforcement_present_after_install(self, rt, tmp_path, monkeypatch):
+        """The display check reports PreToolUse:enforcement present after the enforcement install."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target), enforcement=True)
+        monkeypatch.chdir(tmp_path)
+
+        result = _parsed(rt.health_check("display"))
+        display_result = next(r for r in result["results"] if r["check"] == "display")
+        assert "PreToolUse:enforcement: present" in display_result["detail"]
+
+    def test_enforcement_only_install_keeps_display_unhealthy_for_terminal_title(
+        self, rt, tmp_path, monkeypatch
+    ):
+        """An enforcement-only install does NOT make the terminal-title display healthy.
+
+        The enforcement entry is orthogonal: installing it alone leaves every
+        terminal-title render label MISSING, so the display stays unhealthy
+        while the enforcement label itself reports present.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target), enforcement=True)
+        monkeypatch.chdir(tmp_path)
+
+        result = _parsed(rt.health_check("display"))
+        display_result = next(r for r in result["results"] if r["check"] == "display")
+        assert display_result["healthy"] is False
+        detail = display_result["detail"]
+        assert "PreToolUse:enforcement: present" in detail
+        assert "SessionStart:matcher-less: MISSING" in detail
 
 
 # =============================================================================
@@ -2832,10 +2995,13 @@ class TestHealthCheck:
     )
 
     def test_display_healthy_when_fully_wired(self, rt, tmp_path, monkeypatch):
-        """display check is healthy when every required entry is present.
+        """display check is healthy when every required terminal-title entry is present.
 
-        A fresh project install-hook writes the complete wiring; the display
-        check must then report every label as ``present`` and ``healthy: true``.
+        A fresh terminal-title project install-hook writes the complete render
+        wiring; the display check must then report every terminal-title label as
+        ``present`` and ``healthy: true``. The orthogonal enforcement entry is
+        NOT installed by the terminal-title path, so it reports MISSING without
+        making the display unhealthy.
         """
         target = tmp_path / ".claude" / "settings.local.json"
         rt.project_install_hook(str(target))
@@ -2847,7 +3013,9 @@ class TestHealthCheck:
         detail = display_result["detail"]
         for label in self._DISPLAY_LABELS:
             assert f"{label}: present" in detail
-        assert "MISSING" not in detail
+        # The enforcement entry is orthogonal — absent after a terminal-title
+        # install — so it is the ONLY MISSING line and the display stays healthy.
+        assert "PreToolUse:enforcement: MISSING" in detail
 
     def test_display_unhealthy_when_render_hook_absent(self, rt, tmp_path, monkeypatch):
         """display check is unhealthy when no render-title hook entry is present.

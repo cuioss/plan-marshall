@@ -109,6 +109,19 @@ _STATUSLINE_COMMAND = (
     f"{_EXECUTOR_GUARD_SUFFIX}"
 )
 
+# Conditional PreToolUse enforcement hook command. Installed (opt-in) as a
+# matcher-less ``hooks.PreToolUse`` entry, ORTHOGONAL to the terminal-title
+# render wiring: it invokes the enforcement leaf that blocks the five hard-rule
+# violation families inside a plan-marshall plan context (fail-open everywhere
+# else). Keyed on its own command string so its present/MISSING detection is
+# independent of the render-entry detection.
+_ENFORCEMENT_HOOK_COMMAND = (
+    f"{_EXECUTOR_GUARD_PREFIX}"
+    "python3 .plan/execute-script.py "
+    "plan-marshall:platform-runtime:claude_pretooluse_hook"
+    f"{_EXECUTOR_GUARD_SUFFIX}"
+)
+
 # Render-trigger hook events that each receive a single matcher-less entry
 # invoking the renderer. SessionStart receives BOTH a matcher-less entry AND a
 # ``matcher: "clear"`` entry, so it is handled separately below.
@@ -168,6 +181,18 @@ def _diagnose_display_entries(settings_data: dict[str, Any]) -> tuple[list[str],
         if not present:
             healthy = False
 
+    # Enforcement-hook entry — keyed on _ENFORCEMENT_HOOK_COMMAND, NOT the render
+    # command, so it has its own present/MISSING label. The opt-in enforcement
+    # install is orthogonal to the terminal-title bundle: its absence does NOT
+    # mark the display unhealthy (a user may enable terminal-title without it).
+    pre_tool_use = hooks_block.get("PreToolUse", [])
+    enforcement_present = isinstance(pre_tool_use, list) and _has_enforcement_entry(
+        pre_tool_use
+    )
+    lines.append(
+        f"PreToolUse:enforcement: {'present' if enforcement_present else 'MISSING'}"
+    )
+
     statusline = settings_data.get("statusLine")
     statusline_present = isinstance(statusline, dict) and bool(statusline.get("command"))
     lines.append(f"statusLine: {'present' if statusline_present else 'MISSING'}")
@@ -224,6 +249,25 @@ def _has_capture_entry(entries: list[Any]) -> bool:
     return False
 
 
+def _has_enforcement_entry(entries: list[Any]) -> bool:
+    """Return True when *entries* already contains the PreToolUse enforcement hook.
+
+    Keyed on ``_ENFORCEMENT_HOOK_COMMAND`` (not the render command), so the
+    enforcement entry's presence is detected independently of the terminal-title
+    render entries that may also live in ``hooks.PreToolUse``.
+    """
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        hooks = entry.get("hooks", [])
+        if not isinstance(hooks, list):
+            continue
+        for h in hooks:
+            if isinstance(h, dict) and h.get("command") == _ENFORCEMENT_HOOK_COMMAND:
+                return True
+    return False
+
+
 def _render_entry(matcher: str = "") -> dict[str, Any]:
     """Build a render-hook entry with the given matcher."""
     return {
@@ -250,6 +294,71 @@ def _capture_entry() -> dict[str, Any]:
             }
         ],
     }
+
+
+def _enforcement_entry() -> dict[str, Any]:
+    """Build the matcher-less PreToolUse enforcement entry."""
+    return {
+        "matcher": "",
+        "hooks": [
+            {
+                "type": "command",
+                "command": _ENFORCEMENT_HOOK_COMMAND,
+                "timeout": 5000,
+            }
+        ],
+    }
+
+
+def _install_enforcement_hook(settings_path: Path) -> dict[str, Any]:
+    """Idempotently install ONLY the PreToolUse enforcement entry into *settings_path*.
+
+    Adds the matcher-less enforcement entry to ``hooks.PreToolUse`` without
+    touching any existing entry — the terminal-title render matchers
+    (``AskUserQuestion`` / ``Bash``) in the same block, and every SessionStart
+    capture/render entry, are preserved verbatim. The install is orthogonal to
+    the terminal-title bundle: it never installs render wiring.
+
+    Args:
+        settings_path: Path to the JSON settings file. Created (with parent
+            dirs) when absent.
+
+    Returns:
+        Dict with keys:
+
+        - ``io_ok`` (bool): True iff the file was read AND written successfully.
+        - ``enforcement_status`` (str): ``installed`` when freshly added,
+          ``already_present`` when the entry was already there (no write).
+
+        Returns ``io_ok: False`` with ``enforcement_status: error`` on any I/O
+        failure.
+    """
+    failure: dict[str, Any] = {"io_ok": False, "enforcement_status": "error"}
+
+    try:
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_data = _read_json(settings_path) or {}
+
+        hooks_block = settings_data.setdefault("hooks", {})
+        if not isinstance(hooks_block, dict):
+            hooks_block = {}
+            settings_data["hooks"] = hooks_block
+
+        pre_tool_use = hooks_block.setdefault("PreToolUse", [])
+        if not isinstance(pre_tool_use, list):
+            pre_tool_use = []
+            hooks_block["PreToolUse"] = pre_tool_use
+
+        if _has_enforcement_entry(pre_tool_use):
+            return {"io_ok": True, "enforcement_status": "already_present"}
+
+        pre_tool_use.append(_enforcement_entry())
+        if not _write_json(settings_path, settings_data):
+            return failure
+
+        return {"io_ok": True, "enforcement_status": "installed"}
+    except (OSError, ValueError):
+        return failure
 
 
 def _install_terminal_title_hooks(
@@ -1039,12 +1148,20 @@ class ClaudeRuntime(Runtime):
         target: str,
         overwrite_statusline: bool = False,
         overwrite_env_disable: bool = False,
+        enforcement: bool = False,
     ) -> str:
         """Install the full terminal-title hook wiring into the named settings file.
 
         Installs the SessionStart capture entry, seven render-trigger hook
         entries, the ``statusLine`` command, and
         ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``. Each block is idempotent.
+
+        When ``enforcement`` is True, installs ONLY the orthogonal PreToolUse
+        enforcement entry (the ``claude_pretooluse_hook`` matcher-less entry) and
+        does NOT install the terminal-title bundle. The two install modes are
+        independent: ``project install-hook`` installs terminal-title;
+        ``project install-hook --enforcement`` installs the enforcement entry;
+        neither disturbs the other's entries.
 
         The ``target`` argument is one of two shapes:
 
@@ -1082,6 +1199,28 @@ class ClaudeRuntime(Runtime):
                     f"target {target!r} must be the platform identifier 'claude' "
                     f"or an absolute path to a .json settings file",
                 )
+
+        # Orthogonal enforcement-only install path: install ONLY the PreToolUse
+        # enforcement entry and return — never touch the terminal-title bundle.
+        if enforcement:
+            enforcement_result = _install_enforcement_hook(settings_path)
+            if not enforcement_result["io_ok"]:
+                return toon_error(
+                    "project install-hook",
+                    "io_error",
+                    f"Failed to install enforcement hook into {settings_path}",
+                )
+            enforcement_status = enforcement_result["enforcement_status"]
+            return toon_success(
+                "project install-hook",
+                {
+                    "target": target,
+                    "settings_path": str(settings_path),
+                    "enforcement_installed": True,
+                    "enforcement_status": enforcement_status,
+                    "already_present": enforcement_status == "already_present",
+                },
+            )
 
         install_result = _install_terminal_title_hooks(
             settings_path,
