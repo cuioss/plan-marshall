@@ -46,10 +46,11 @@ from typing import Any
 # capture run reveals a different field name.
 # =============================================================================
 
-#: Field carrying the sub-agent identity (Signal 1). Best-guess primary name,
-#: with documented fallback candidates the accessor also checks. The expected
-#: value matches the ``execution-context*`` prefix when the call originates
-#: inside a dispatched execution-context sub-agent.
+#: Field carrying the sub-agent identity (Signal 1). Empirically confirmed via the
+#: D2 capture run: a dispatched sub-agent call carries ``agent_type`` (and also
+#: ``agent_id``); a main-session call carries neither. The value is bundle-qualified
+#: — e.g. ``plan-marshall:execution-context-level-4`` — so it is matched by the
+#: ``:execution-context`` substring marker below, NOT by a bare prefix.
 SUB_AGENT_IDENTITY_FIELD = "agent_type"
 
 #: Documented fallback candidates for the Signal-1 identity field, checked in
@@ -69,9 +70,12 @@ TOOL_NAME_FIELD = "tool_name"
 #: ``{"file_path": "..."}`` for Edit).
 TOOL_INPUT_FIELD = "tool_input"
 
-#: Prefix the sub-agent identity value carries when the call originates inside a
-#: dispatched execution-context sub-agent (Signal 1).
-EXECUTION_CONTEXT_PREFIX = "execution-context"
+#: Substring marker the sub-agent identity value carries when the call originates
+#: inside a dispatched execution-context sub-agent (Signal 1). The identity is
+#: bundle-qualified (``{bundle}:execution-context[-reader]-level-N``), so the gate
+#: matches this marker as a substring rather than a prefix — confirmed against real
+#: payloads by the D2 capture run.
+EXECUTION_CONTEXT_MARKER = ":execution-context"
 
 #: Path segment that marks a plan worktree (Signal 2). A ``cwd`` resolving under
 #: this segment indicates the call runs inside a plan-marshall plan worktree.
@@ -181,9 +185,14 @@ def tool_input(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _signal_sub_agent(payload: dict[str, Any]) -> bool:
-    """Signal 1 — the sub-agent identity matches the execution-context prefix."""
+    """Signal 1 — the sub-agent identity carries the execution-context marker.
+
+    The identity value is bundle-qualified (e.g.
+    ``plan-marshall:execution-context-level-4``), so the marker is matched as a
+    substring, not a prefix.
+    """
     identity = sub_agent_identity(payload)
-    return identity is not None and identity.startswith(EXECUTION_CONTEXT_PREFIX)
+    return identity is not None and EXECUTION_CONTEXT_MARKER in identity
 
 
 def _signal_worktree_cwd(payload: dict[str, Any]) -> bool:
@@ -199,8 +208,9 @@ def context_gate(payload: dict[str, Any]) -> bool:
     inside a plan-marshall plan context and is therefore eligible for
     enforcement:
 
-    - **Signal 1** — the sub-agent identity matches the ``execution-context``
-      prefix (the call runs inside a dispatched execution-context sub-agent).
+    - **Signal 1** — the sub-agent identity carries the ``:execution-context``
+      marker, e.g. ``plan-marshall:execution-context-level-4`` (the call runs
+      inside a dispatched execution-context sub-agent).
     - **Signal 2** — the working directory resolves under
       ``.plan/local/worktrees/`` (the call runs inside a plan worktree).
 

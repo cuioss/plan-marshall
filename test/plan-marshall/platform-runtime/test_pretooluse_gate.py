@@ -48,8 +48,12 @@ def _worktree_cwd() -> str:
 
 
 def _signal1_payload() -> dict:
-    """Payload where only Signal 1 fires (execution-context sub-agent identity)."""
-    return {gate.SUB_AGENT_IDENTITY_FIELD: "execution-context-level-3"}
+    """Payload where only Signal 1 fires (execution-context sub-agent identity).
+
+    Uses the real bundle-qualified ``agent_type`` value observed in live
+    PreToolUse payloads (D2 capture) — NOT a bare ``execution-context-*``.
+    """
+    return {gate.SUB_AGENT_IDENTITY_FIELD: "plan-marshall:execution-context-level-3"}
 
 
 def _signal2_payload() -> dict:
@@ -231,11 +235,29 @@ def test_context_gate_absent_signal1_falls_back_to_signal2() -> None:
     assert gate.context_gate(payload) is True
 
 
-def test_context_gate_signal1_requires_execution_context_prefix() -> None:
-    # A sub-agent identity that does not match the execution-context prefix does
-    # not fire Signal 1.
+def test_context_gate_signal1_requires_execution_context_marker() -> None:
+    # A sub-agent identity that does not carry the :execution-context marker does
+    # not fire Signal 1 (e.g. a non-execution-context agent type).
     payload = {gate.SUB_AGENT_IDENTITY_FIELD: "phase-5-execute"}
     assert gate.context_gate(payload) is False
+
+
+def test_context_gate_true_on_real_bundle_qualified_subagent_identity() -> None:
+    # Regression (D2 capture): the real agent_type value in live PreToolUse
+    # payloads is bundle-qualified, e.g. "plan-marshall:execution-context-level-4".
+    # An earlier startswith("execution-context") prefix match silently failed to
+    # gate EVERY real sub-agent call whose cwd was not a worktree. Signal 1 MUST
+    # fire on the bundle-qualified value.
+    payload = {gate.SUB_AGENT_IDENTITY_FIELD: "plan-marshall:execution-context-level-4"}
+    assert gate.context_gate(payload) is True
+
+
+def test_context_gate_true_on_reader_subagent_identity() -> None:
+    # The reader variant is also a plan-marshall sub-agent and carries the marker.
+    payload = {
+        gate.SUB_AGENT_IDENTITY_FIELD: "plan-marshall:execution-context-reader-level-2"
+    }
+    assert gate.context_gate(payload) is True
 
 
 # =============================================================================
