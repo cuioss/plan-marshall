@@ -402,7 +402,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Only when the FIFO poll loop exhausts `{wait_budget}` without admission does the escalation fire. Surface the FIFO-front `blocking_plan_id` from the final `admission: blocked` poll:
 
-```
+```yaml
 AskUserQuestion:
   questions:
     - question: "Another plan ({blocking_plan_id}) is at the front of the merge queue. Keep waiting, or skip this merge?"

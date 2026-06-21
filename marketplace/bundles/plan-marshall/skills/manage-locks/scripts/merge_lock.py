@@ -270,12 +270,26 @@ def _queue_waiting(state: dict[str, Any]) -> list[dict[str, Any]]:
     without a string ``plan_id``) degrades to an empty list so a malformed
     ``merge-queue.json`` is rebuilt from scratch rather than crashing the mutator.
     Each retained entry must carry a string ``plan_id`` (the FIFO identity) and is
-    ordered by its admit-``ts`` for FIFO-front selection.
+    ordered by its admit-``ts`` for FIFO-front selection.  A non-numeric ``ts``
+    value (e.g., a string from a manually edited state file) is coerced to ``0.0``
+    so it sorts as the oldest entry rather than raising ``TypeError`` in
+    ``_fifo_front``'s ``min()`` call.
     """
     raw = state.get('waiting')
     if not isinstance(raw, list):
         return []
-    return [e for e in raw if isinstance(e, dict) and isinstance(e.get('plan_id'), str)]
+    waiting: list[dict[str, Any]] = []
+    for e in raw:
+        if not isinstance(e, dict):
+            continue
+        plan_id = e.get('plan_id')
+        if not isinstance(plan_id, str):
+            continue
+        ts = e.get('ts', 0.0)
+        if not isinstance(ts, (int, float)):
+            ts = 0.0
+        waiting.append({'plan_id': plan_id, 'ts': float(ts)})
+    return waiting
 
 
 def _prune_dead_waiting(waiting: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -659,15 +673,16 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
     # Reentrant self-holder short-circuit FIRST — before touching the FIFO queue.
     # If this same plan already holds the lock, the finalize auto-merge path is
     # re-entering; grant immediately so it does not self-deadlock or churn the
-    # queue. The plan is not enqueued (it already holds the lock), so report the
-    # current queue depth without mutating it.
+    # queue. The plan is not enqueued (it already holds the lock); waiting_count
+    # is returned as 0 (not read from the queue) to avoid unnecessary I/O on
+    # a fast-path that performs no queue mutation.
     if lock_path.exists() and _read_holder(lock_path) == plan_id:
         return _admitted_result(plan_id, 'already_held', lock_path, reclaimed=False, waiting_count=0)
 
     # FIFO enqueue (idempotent, position-preserving) — decides admission eligibility.
     try:
         enqueue = _enqueue_fifo(plan_id, time.time())
-    except (RuntimeError, TimeoutError) as exc:
+    except (RuntimeError, OSError) as exc:
         return make_error(str(exc), code=ErrorCode.NOT_FOUND, plan_id=plan_id)
     waiting_count: int = enqueue['waiting_count']
 
