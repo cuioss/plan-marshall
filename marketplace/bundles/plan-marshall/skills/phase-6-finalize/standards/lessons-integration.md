@@ -77,6 +77,7 @@ Parse `path` from the TOON output of Step A and write the detailed context and r
 - Standard procedure was followed
 - The issue was trivial and obvious
 - The finding is project-specific (won't apply elsewhere)
+- The finding is a durable informational project fact, NOT a defect plus corrective action — a KNOWLEDGE signal, not an ACTIONABLE one. A lesson captures a defect + a "do X instead of Y" rule; a durable fact (an implementation gotcha, a learned observation, an established convention) belongs in the per-module architecture-hints store, not the lessons corpus. Route it to `architecture enrich` (the ACTIONABLE-vs-KNOWLEDGE partition). The routing mechanics — verb selection, `default`-module rule for cross-cutting facts, no-dual-write — live in [`../workflow/lessons-capture.md`](../workflow/lessons-capture.md) § "Classify each candidate signal: ACTIONABLE vs KNOWLEDGE"; do not duplicate them here.
 - A similar lesson already exists — extend it instead (Gate 1 `merge_into`; see the shared policy)
 - An active plan already covers the issue — fold the observation into that plan instead of filing a standalone lesson (Gate 2; see the shared policy)
 

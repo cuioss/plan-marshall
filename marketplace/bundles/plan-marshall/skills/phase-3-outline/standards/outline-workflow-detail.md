@@ -370,6 +370,8 @@ For each entry in module_mapping:
 3. Map domain from references.json
 4. Use module from module_mapping
 
+**Render architecture hints (Simple Track)**: when a `get-module-context` result is available, the Simple-Track authoring path renders the same `## Architecture Hints` section described in [Step 10 → 10b-bis: Render architecture hints](#10b-bis-render-architecture-hints) — selecting the plan's declared module(s) plus the `default` module's cross-cutting entries, and omitting the section when all hint lists are empty. The mechanics live once in 10b-bis; do not restate them here.
+
 #### Deliverable Structure
 
 Use template from `plan-marshall:manage-solution-outline/templates/deliverable-template.md`:
@@ -685,6 +687,23 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 **Available architecture commands**: `compile`, `test-compile`, `module-tests`, `quality-gate`, `verify`, `coverage`, `clean`. Do NOT use `test` (use `module-tests` instead).
 
 Use the returned `executable` value as the Verification Command.
+
+#### 10b-bis: Render architecture hints
+
+Read the per-module architecture hints and render them into the solution outline so phase-4-plan can consume durable project facts during task derivation. The hints store is populated by the finalize-time KNOWLEDGE-routing step (`architecture enrich tip|insight|best-practice`); this is the consuming side that turns it into a read surface.
+
+1. Call the deterministic reader for the per-module hint inventory:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline get-module-context \
+     --plan-id {plan_id}
+   ```
+
+   On `status: not_found` (architecture not discovered), skip this sub-step silently — there are no hints to render. On `status: success`, each `modules[]` entry carries the optional `tips`, `insights`, and `best_practices` lists (absent when empty).
+
+2. **Select the relevant entries**: the plan's declared module(s) from `references.json` PLUS the `default` module's entries. The `default` module is the home for cross-cutting (non-module-specific) project facts — fold its `tips`/`insights`/`best_practices` into the section so project-wide knowledge always surfaces, regardless of which module(s) the plan touches.
+
+3. **Render a `## Architecture Hints` section** into `solution_outline.md` (authored in 10c below) listing the non-empty `tips`, `insights`, and `best_practices` for the selected entries. Group by module name; within each module label the three lists. **Omit the entire `## Architecture Hints` section when every selected entry's hint lists are empty** — this keeps the required-section contract unchanged (the section is purely additive and never becomes a required section).
 
 #### 10c: Write Solution Outline
 

@@ -62,9 +62,38 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 Skill: plan-marshall:manage-lessons
 ```
 
+### Classify each candidate signal: ACTIONABLE vs KNOWLEDGE
+
+Before running the lesson-creation policy gates, partition each candidate signal into one of two shapes. Only ACTIONABLE signals proceed to the lesson-creation gates; KNOWLEDGE signals route to the architecture-hints store instead and do NOT also create a lesson.
+
+- **ACTIONABLE** — a defect plus a corrective action (a recurrence with a "do X instead of Y" rule). These are the genuine lessons: keep the `manage-lessons add` path below.
+- **KNOWLEDGE** — a durable, non-actionable project fact with no defect + corrective-action shape (an implementation gotcha, a learned observation about how the codebase behaves, an established convention). A KNOWLEDGE fact is NOT a lesson — route it to the per-module architecture-hints store via `architecture enrich`.
+
+For each KNOWLEDGE signal, call the deterministic enrich verb that matches the fact's shape (each verb takes its own text flag — see `manage-architecture` SKILL.md § "enrich tip / insight / best-practice"):
+
+```bash
+# implementation gotcha
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich tip \
+  --module {module} --tip "{the durable fact}"
+
+# learned observation
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich insight \
+  --module {module} --insight "{the durable fact}"
+
+# established convention
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich best-practice \
+  --module {module} --practice "{the durable fact}"
+```
+
+- **Module selection**: use `--module default` when the fact is cross-cutting (not specific to one bundle/module — a project-wide convention or root-level fact); use the owning module otherwise. The `default` module is the first-class home for cross-cutting project knowledge.
+- **Fact-shape → verb mapping**: implementation gotcha → `enrich tip`; learned observation → `enrich insight`; established convention → `enrich best-practice`.
+- **No dual-write (breaking)**: a KNOWLEDGE signal routed to architecture does NOT also create a lesson. Routing to hints and filing a lesson are mutually exclusive per signal — this is the whole point of the partition.
+
+When every candidate signal is KNOWLEDGE (only enrich calls were made, no lesson allocated), record the outcome via Branch B3 in the Mark-Step-Complete section below.
+
 ### Run the lesson-creation policy gates first
 
-Before allocating a new lesson, run the canonical three-gate sequence defined in [`../../manage-lessons/standards/lesson-creation-policy.md`](../../manage-lessons/standards/lesson-creation-policy.md): Gate 1 (dedup against the existing corpus), Gate 2 (active-plan check), then Gate 3 (create). Do not restate the gate mechanics here — follow the standard.
+Run the gates below only for the ACTIONABLE signals identified above. Before allocating a new lesson, run the canonical three-gate sequence defined in [`../../manage-lessons/standards/lesson-creation-policy.md`](../../manage-lessons/standards/lesson-creation-policy.md): Gate 1 (dedup against the existing corpus), Gate 2 (active-plan check), then Gate 3 (create). Do not restate the gate mechanics here — follow the standard.
 
 - **Gate 1 → `merge_into`**: extend the existing lesson (append a `## Recurrence` section / broaden scope) instead of adding a new one. Record nothing new; this is a Branch B2 outcome below.
 - **Gate 1 → `already_closed`**: follow the standard's closed-lesson contract (deletion requires user confirmation). Branch B2 outcome.
@@ -144,6 +173,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done \
   --display-detail "folded into existing lesson/plan, no new lesson"
+```
+
+**Branch B3 — facts routed to architecture hints, no new lesson recorded**: every candidate signal was KNOWLEDGE and was routed to the architecture-hints store via `architecture enrich`; no lesson was allocated. `{N}` is the count of `architecture enrich` calls made in this step.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done \
+  --display-detail "{N} fact(s) routed to architecture"
 ```
 
 **Branch C — no lesson-bearing signals (skip)**: NOT emitted by this body. The `outcome=skipped` recording is now the dispatcher's responsibility (see `phase-6-finalize/SKILL.md` Step 3 item 4b) and fires before this workflow is dispatched. This body only runs when at least one signal was non-zero, so its `mark-step-done` calls are exclusively Branches A or B above.
