@@ -63,6 +63,8 @@ def _add_ns(
     severity=None,
     author=None,
     kind=None,
+    reviewed_commit_sha=None,
+    bot_kind=None,
 ):
     return Namespace(
         plan_id=plan_id,
@@ -77,6 +79,8 @@ def _add_ns(
         severity=severity,
         author=author,
         kind=kind,
+        reviewed_commit_sha=reviewed_commit_sha,
+        bot_kind=bot_kind,
     )
 
 
@@ -89,6 +93,7 @@ def _query_ns(
     include_qgate=False,
     author=None,
     kind=None,
+    bot_kind=None,
 ):
     return Namespace(
         plan_id=plan_id,
@@ -99,6 +104,7 @@ def _query_ns(
         include_qgate=include_qgate,
         author=author,
         kind=kind,
+        bot_kind=bot_kind,
     )
 
 
@@ -351,6 +357,95 @@ def test_cli_pr_comment_invalid_kind_rejected(plan_context):
         'd',
         '--kind',
         'not-a-kind',
+    )
+    assert not result.success
+
+
+def test_finding_add_pr_comment_with_reviewed_commit_sha_and_bot_kind(plan_context):
+    """cmd_add forwards reviewed_commit_sha and bot_kind onto a pr-comment finding."""
+    result = cmd_add(
+        _add_ns(
+            type='pr-comment',
+            title='CodeRabbit comment',
+            detail='Extract a helper',
+            author='coderabbitai[bot]',
+            kind='inline',
+            reviewed_commit_sha='abc1234',
+            bot_kind='coderabbit',
+        )
+    )
+    assert result['status'] == 'success'
+
+    query = cmd_query(_query_ns(type='pr-comment'))
+    assert query['filtered_count'] == 1
+    record = query['findings'][0]
+    assert record['reviewed_commit_sha'] == 'abc1234'
+    assert record['bot_kind'] == 'coderabbit'
+
+
+def test_finding_query_by_bot_kind(plan_context):
+    """cmd_query filters pr-comment findings by bot_kind."""
+    cmd_add(_add_ns(type='pr-comment', title='C1', detail='d', bot_kind='coderabbit'))
+    cmd_add(_add_ns(type='pr-comment', title='C2', detail='d', bot_kind='gemini'))
+
+    result = cmd_query(_query_ns(bot_kind='gemini'))
+    assert result['filtered_count'] == 1
+    assert result['findings'][0]['title'] == 'C2'
+
+
+def test_finding_add_without_new_fields_still_succeeds(plan_context):
+    """Existing add shape (no reviewed_commit_sha/bot_kind) keeps working and omits the keys."""
+    result = cmd_add(_add_ns(type='pr-comment', title='Old-style', detail='d', author='octocat', kind='inline'))
+    assert result['status'] == 'success'
+
+    query = cmd_query(_query_ns(type='pr-comment'))
+    record = query['findings'][0]
+    assert 'reviewed_commit_sha' not in record
+    assert 'bot_kind' not in record
+
+
+def test_cli_pr_comment_reviewed_commit_sha_bot_kind_roundtrip(plan_context):
+    """CLI plumbing: add a pr-comment with --reviewed-commit-sha/--bot-kind and read them back."""
+    pid = 'cli-prc-rcs-rt'
+    add_result = run_script(
+        SCRIPT_PATH,
+        'add',
+        '--plan-id',
+        pid,
+        '--type',
+        'pr-comment',
+        '--title',
+        'CLI bot comment',
+        '--detail',
+        'd',
+        '--reviewed-commit-sha',
+        'deadbeef',
+        '--bot-kind',
+        'coderabbit',
+    )
+    assert add_result.success, f'Script failed: {add_result.stderr}'
+
+    list_result = run_script(SCRIPT_PATH, 'list', '--plan-id', pid, '--bot-kind', 'coderabbit')
+    assert list_result.success, f'Script failed: {list_result.stderr}'
+    data = parse_toon(list_result.stdout)
+    assert data['filtered_count'] == 1
+
+
+def test_cli_pr_comment_invalid_bot_kind_rejected(plan_context):
+    """CLI plumbing: --bot-kind outside the allowed set is rejected by argparse."""
+    result = run_script(
+        SCRIPT_PATH,
+        'add',
+        '--plan-id',
+        'cli-prc-badbotkind',
+        '--type',
+        'pr-comment',
+        '--title',
+        'Bad bot_kind',
+        '--detail',
+        'd',
+        '--bot-kind',
+        'sonarcloud',
     )
     assert not result.success
 

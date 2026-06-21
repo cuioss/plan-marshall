@@ -55,6 +55,9 @@ CERTAINTY_VALUES = VALID_CERTAINTIES
 # Valid kind discriminator values for pr-comment findings.
 PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
 
+# Valid reviewer-bot identity values for pr-comment findings (derived from author).
+BOT_KINDS = ['coderabbit', 'gemini']
+
 
 # --- Path Helpers ---
 
@@ -150,6 +153,8 @@ def add_finding(
     severity: str | None = None,
     author: str | None = None,
     kind: str | None = None,
+    reviewed_commit_sha: str | None = None,
+    bot_kind: str | None = None,
 ) -> dict[str, Any]:
     """Add a finding record."""
     if finding_type not in FINDING_TYPES:
@@ -160,6 +165,9 @@ def add_finding(
 
     if kind and kind not in PR_COMMENT_KINDS:
         return {'status': 'error', 'message': f'Invalid kind: {kind}. Must be one of {PR_COMMENT_KINDS}'}
+
+    if bot_kind and bot_kind not in BOT_KINDS:
+        return {'status': 'error', 'message': f'Invalid bot_kind: {bot_kind}. Must be one of {BOT_KINDS}'}
 
     hash_id = generate_hash_id()
     record: dict[str, Any] = {
@@ -190,6 +198,10 @@ def add_finding(
         record['author'] = author
     if kind:
         record['kind'] = kind
+    if reviewed_commit_sha:
+        record['reviewed_commit_sha'] = reviewed_commit_sha
+    if bot_kind:
+        record['bot_kind'] = bot_kind
 
     append_jsonl(get_findings_path(plan_id, finding_type), record)
 
@@ -216,6 +228,7 @@ def query_findings(
     file_pattern: str | None = None,
     author: str | None = None,
     kind: str | None = None,
+    bot_kind: str | None = None,
 ) -> dict[str, Any]:
     """Query findings across all per-type files, merging results.
 
@@ -231,7 +244,7 @@ def query_findings(
     type_filter = {t.strip() for t in finding_type.split(',')} if finding_type else None
     filtered = _filter_records(
         records,
-        exact_filters={'resolution': resolution, 'author': author, 'kind': kind},
+        exact_filters={'resolution': resolution, 'author': author, 'kind': kind, 'bot_kind': bot_kind},
         type_filter=type_filter,
         file_pattern=file_pattern,
         promoted=promoted,
@@ -255,14 +268,15 @@ def query_findings_unified(
     file_pattern: str | None = None,
     author: str | None = None,
     kind: str | None = None,
+    bot_kind: str | None = None,
 ) -> dict[str, Any]:
     """Query the per-plan findings store merged with pending per-phase Q-Gate findings.
 
     Returns the union of:
     - the per-PLAN findings (via `query_findings`, honouring the same
-      type/resolution/promoted/file_pattern/author/kind filters), and
+      type/resolution/promoted/file_pattern/author/kind/bot_kind filters), and
     - the PENDING Q-Gate findings across every phase in `QGATE_PHASES`, with the
-      same `finding_type` / `file_pattern` / `author` / `kind` filters applied for parity.
+      same `finding_type` / `file_pattern` / `author` / `kind` / `bot_kind` filters applied for parity.
 
     Only Q-Gate records whose `resolution == 'pending'` are merged — resolved
     Q-Gate findings are never surfaced through this read. The per-plan slice keeps
@@ -280,6 +294,7 @@ def query_findings_unified(
         file_pattern=file_pattern,
         author=author,
         kind=kind,
+        bot_kind=bot_kind,
     )
     plan_findings = plan_result['findings']
 
@@ -293,7 +308,7 @@ def query_findings_unified(
         qgate_findings.extend(
             _filter_records(
                 records,
-                exact_filters={'author': author, 'kind': kind},
+                exact_filters={'author': author, 'kind': kind, 'bot_kind': bot_kind},
                 type_filter=type_filter,
                 file_pattern=file_pattern,
             )

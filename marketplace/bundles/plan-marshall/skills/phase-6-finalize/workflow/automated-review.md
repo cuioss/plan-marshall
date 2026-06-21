@@ -8,6 +8,12 @@ configurable:
   - key: review_bot_buffer_seconds
     default: 180
     description: Buffer (seconds) before the automated-review bot comment poll, consumed by the pr wait-for-comments wait.
+  - key: re_review_on_loopback
+    default: false
+    description: Gate (default-off) for re-requesting a fresh bot review after a phase-5 loop-back fix commit advances HEAD past the reviewed_commit_sha of the staged pr-comment findings (trigger B). When false, a loop-back fix commit is NOT re-reviewed by the automated bots.
+  - key: re_review_on_branch_cleanup
+    default: true
+    description: Gate (default-on) for re-requesting a fresh bot review after branch-cleanup rebases and force-pushes the feature branch onto base (trigger A). The automated-review step owns this knob; branch-cleanup reads it to decide whether to re-review the rebased HEAD. When false, the rebased/force-pushed HEAD is NOT re-reviewed.
 ---
 
 # Automated Review
@@ -54,6 +60,47 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 ```
 
 Read `pr_number` from the TOON output. If `ci pr view` returns `status: error` (no PR exists for the branch), this step has nothing to process — record `done` with a `display_detail` of `no PR available` (Branch B in "Mark Step Complete" below) and return.
+
+### Re-review after a loop-back fix commit (trigger B)
+
+This step fires on a **re-entry** of `automated-review` after a phase-5 loop-back: a fix commit produced during the loop-back has advanced the worktree HEAD past the `reviewed_commit_sha` stamped on the staged `pr-comment` findings, so the bot reviews on record are stale for the new tree. It is gated by the `re_review_on_loopback` config knob (default `false`) and reuses the D2 `bot_kind`-keyed re-review registry — it does NOT post a duplicate review request for a bot that auto-reviews on push (CodeRabbit), and it explicitly re-triggers a bot that does not (Gemini). The fresh review is then surfaced through the existing `comments-stage` → triage pipeline below — this is NOT a parallel path.
+
+Read the gate from the plan-local execution-manifest step-params snapshot (the same one-stop call used for `review_bot_buffer_seconds`):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  step-params get --plan-id {plan_id} --phase 6-finalize --step-id automated-review
+```
+
+Read `re_review_on_loopback` off the returned `params` object (default: `false`). **When `re_review_on_loopback == false`**, skip this entire section and proceed directly to "Wait for review-bot comments" below.
+
+**When `re_review_on_loopback == true`**, evaluate the HEAD-vs-`reviewed_commit_sha` advance:
+
+1. Read the most recent **bot-authored** `pr-comment` finding's `reviewed_commit_sha` and `bot_kind`. Scan the staged findings from newest to oldest and select the most recent one with a non-empty `bot_kind` — a later human-authored comment (which carries no `bot_kind`) must NOT suppress re-review of an older bot review that went stale after the HEAD advance. Query the store:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
+     --plan-id {plan_id} --type pr-comment
+   ```
+
+   Walk `findings` newest-first and capture `{reviewed_commit_sha}` and `{bot_kind}` from the first finding whose `bot_kind` is non-empty. If no bot-authored finding exists (the list is empty, or every finding is human-authored), there is no prior bot review to re-trigger — skip this section and proceed to "Wait for review-bot comments".
+
+2. Resolve the current worktree HEAD SHA:
+
+   ```bash
+   git -C {worktree_path} rev-parse HEAD
+   ```
+
+   Capture stdout as `{head_sha}`. **When `{head_sha} == {reviewed_commit_sha}`**, HEAD has NOT advanced past the reviewed commit — there is nothing new to re-review. Skip this section and proceed to "Wait for review-bot comments".
+
+3. **When `{head_sha} != {reviewed_commit_sha}`** (HEAD advanced past the reviewed commit) AND `{bot_kind}` is set: capture the loop-back fix-commit push time as `{push_time}` (the ISO-8601 commit/push time of the HEAD commit — `git -C {worktree_path} show -s --format=%cI HEAD`), then invoke the D2 re-review registry for the new HEAD. For a CodeRabbit `bot_kind` the `request_fresh_review` is a NO-OP — the loop-back fix-commit push already auto-triggered the review, so no `@coderabbitai review` comment is posted and the await uses `{push_time}` as the trigger time; for a Gemini `bot_kind` the registry posts `/gemini review` then awaits. See [`workflow-integration-github` SKILL.md § Canonical invocations → `github_re_review re-review`](../../workflow-integration-github/SKILL.md#github_re_review-re-review):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
+     --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} --plan-id {plan_id}
+   ```
+
+   Read `matched` from the returned TOON. The fresh review (when matched) is now on the PR; proceed to "Wait for review-bot comments" and "Producer: stage PR comments as findings" below, which re-runs `comments-stage` — this re-stamps every finding's `reviewed_commit_sha` to the new HEAD and re-triages the new comments through the existing per-finding dispatch pipeline. The `reviewed_commit_sha` is updated implicitly by that fresh `comments-stage` run; no separate update call is needed.
 
 ### Wait for review-bot comments
 

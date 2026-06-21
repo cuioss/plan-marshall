@@ -1111,45 +1111,34 @@ def _normalize_conclusion(check: dict) -> str:
     return _BUCKET_TO_CONCLUSION.get(str(bucket).lower(), '')
 
 
-def _extract_run_id_from_link(link: str | None) -> str:
-    """Extract the workflow run id from a check ``link`` URL.
+def _extract_segment_from_link(link: str | None, marker: str, *, numeric_only: bool = False) -> str:
+    """Extract a URL path segment that follows ``marker`` from a GitHub check link.
 
     GitHub check links follow the pattern
     ``https://github.com/<owner>/<repo>/actions/runs/<run_id>/job/<job_id>``.
-    Returns the run id segment when present, otherwise an empty string.
+    Returns the segment immediately after ``marker``, or an empty string when
+    the marker is absent. When ``numeric_only=True``, non-numeric segments
+    (e.g. a missing ``job_id``) return an empty string instead.
     """
 
     if not link:
         return ''
-    marker = '/actions/runs/'
     idx = link.find(marker)
     if idx == -1:
         return ''
     tail = link[idx + len(marker):]
-    run_id = tail.split('/', 1)[0]
-    return run_id
+    segment = tail.split('/', 1)[0]
+    if numeric_only and not re.match(r'^\d+$', segment):
+        return ''
+    return segment
+
+
+def _extract_run_id_from_link(link: str | None) -> str:
+    return _extract_segment_from_link(link, '/actions/runs/')
 
 
 def _extract_job_id_from_link(link: str | None) -> str:
-    """Extract the nested job id from a check ``link`` URL.
-
-    GitHub check links for reusable-workflow callers follow the pattern
-    ``https://github.com/<owner>/<repo>/actions/runs/<run_id>/job/<job_id>``.
-    Returns the ``job_id`` segment when present, otherwise an empty string
-    (the link points at the run only, with no nested job).
-    """
-
-    if not link:
-        return ''
-    marker = '/job/'
-    idx = link.find(marker)
-    if idx == -1:
-        return ''
-    tail = link[idx + len(marker):]
-    job_id = tail.split('/', 1)[0]
-    if not re.match(r'^\d+$', job_id):
-        return ''
-    return job_id
+    return _extract_segment_from_link(link, '/job/', numeric_only=True)
 
 
 def _build_failing_check_entry(check: dict) -> dict:
@@ -1216,6 +1205,95 @@ def _fetch_pr_head_sha(pr_number: int | str) -> str:
     except json.JSONDecodeError:
         return ''
     return str(data.get('headRefOid') or '')
+
+
+def fetch_pr_head_sha(pr_number: int | str) -> str:
+    """Public wrapper over :func:`_fetch_pr_head_sha`.
+
+    Exposes the PR HEAD-SHA resolution for the re-review strategy registry
+    (``github_re_review.py``), which needs the current HEAD to match a fresh
+    bot review against. Returns the SHA on success or an empty string on any
+    failure path, mirroring the private helper's no-abort contract.
+    """
+
+    return _fetch_pr_head_sha(pr_number)
+
+
+def post_pr_comment(pr_number: int | str, body: str) -> dict:
+    """Post a comment on a PR via ``gh pr comment``.
+
+    Used by the re-review strategy registry to post a bot review-trigger
+    comment (e.g. ``/gemini review``). Reuses the existing ``run_gh`` wrapper —
+    no new HTTP path. Returns a structured envelope with ``status`` of
+    ``success`` or ``error``.
+    """
+
+    returncode, stdout, stderr = run_gh(['pr', 'comment', str(pr_number), '--body', body])
+    if returncode != 0:
+        return make_error('post_pr_comment', 'Failed to post comment', stderr.strip())
+    return {
+        'status': 'success',
+        'operation': 'post_pr_comment',
+        'pr_number': pr_number,
+        'output': stdout.strip(),
+    }
+
+
+def fetch_pr_reviews_with_commits(pr_number: int | str) -> dict:
+    """Fetch a PR's reviews with their reviewed commit SHA and submission time.
+
+    ``gh pr view --json reviews`` does not expose each review's reviewed commit,
+    so the re-review registry needs the raw ``commit.oid`` plus ``submittedAt``
+    and the author login to match a fresh review against the current HEAD. Uses
+    the ``gh api`` REST path (still via ``run_gh``) — the GraphQL
+    ``PullRequestReview`` node exposes ``commit`` only on a recent schema, while
+    the REST ``/reviews`` payload carries ``commit_id`` directly.
+
+    Returns a structured envelope. On success ``reviews`` is a list of
+    ``{user, state, submitted_at, commit_sha}`` dicts.
+    """
+
+    owner, repo = get_repo_info()
+    if not owner or not repo:
+        return make_error('fetch_pr_reviews_with_commits', 'Could not determine repository owner/name')
+
+    endpoint = f'repos/{owner}/{repo}/pulls/{pr_number}/reviews'
+    returncode, stdout, stderr = run_gh(['api', endpoint, '--paginate', '--slurp'])
+    if returncode != 0:
+        return make_error('fetch_pr_reviews_with_commits', f'Failed to fetch reviews for PR {pr_number}', stderr.strip())
+
+    try:
+        raw_pages = json.loads(stdout)
+    except json.JSONDecodeError:
+        return make_error('fetch_pr_reviews_with_commits', 'Failed to parse gh api output', stdout[:100])
+
+    if not isinstance(raw_pages, list):
+        return make_error('fetch_pr_reviews_with_commits', 'Unexpected reviews payload shape', str(raw_pages)[:100])
+
+    # --slurp wraps all pages into an outer array; flatten pages into a single list.
+    raw_reviews: list[dict] = []
+    for page in raw_pages:
+        if isinstance(page, list):
+            raw_reviews.extend(r for r in page if isinstance(r, dict))
+        elif isinstance(page, dict):
+            raw_reviews.append(page)
+
+    reviews = [
+        {
+            'user': (r.get('user') or {}).get('login', 'unknown'),
+            'state': r.get('state', 'UNKNOWN'),
+            'submitted_at': r.get('submitted_at') or '',
+            'commit_sha': r.get('commit_id') or '',
+        }
+        for r in raw_reviews
+    ]
+    return {
+        'status': 'success',
+        'operation': 'fetch_pr_reviews_with_commits',
+        'pr_number': pr_number,
+        'review_count': len(reviews),
+        'reviews': reviews,
+    }
 
 
 def _derive_overall_status(checks: list[dict]) -> tuple[str, list[dict], list[dict]]:

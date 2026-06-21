@@ -287,6 +287,194 @@ def test_ci_status_with_head(monkeypatch):
     assert checks_call[2] == 'feature/x'
 
 
+# =============================================================================
+# Re-review registry helpers: fetch_pr_head_sha, post_pr_comment,
+# fetch_pr_reviews_with_commits
+#
+# These three functions back the post-merge re-review strategy registry
+# (github_re_review.py). Each goes through run_gh; get_repo_info (itself a
+# run_gh caller) is mocked directly where the function under test consults it.
+# Tests never shell out to the real gh CLI.
+# =============================================================================
+
+
+def test_fetch_pr_head_sha_returns_sha_on_success(monkeypatch):
+    """The public wrapper resolves headRefOid from gh pr view JSON."""
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        return 0, '{"headRefOid": "abc123def"}', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    sha = github_ops.fetch_pr_head_sha(42)
+
+    assert sha == 'abc123def'
+    # The wrapper forwards to gh pr view --json headRefOid for the PR.
+    assert captured == [['pr', 'view', '42', '--json', 'headRefOid']]
+
+
+def test_fetch_pr_head_sha_returns_empty_on_gh_failure(monkeypatch):
+    """A non-zero gh exit yields an empty string (no-abort contract)."""
+    monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (1, '', 'boom'))
+
+    assert github_ops.fetch_pr_head_sha(42) == ''
+
+
+def test_fetch_pr_head_sha_returns_empty_on_unparseable_json(monkeypatch):
+    """Malformed gh JSON yields an empty string rather than raising."""
+    monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (0, 'not-json', ''))
+
+    assert github_ops.fetch_pr_head_sha(42) == ''
+
+
+def test_fetch_pr_head_sha_returns_empty_when_field_missing(monkeypatch):
+    """A JSON payload without headRefOid yields an empty string."""
+    monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (0, '{"other": "x"}', ''))
+
+    assert github_ops.fetch_pr_head_sha(42) == ''
+
+
+def test_post_pr_comment_success(monkeypatch):
+    """A successful gh pr comment returns a success envelope with the output."""
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        return 0, 'https://github.com/octo/repo/pull/42#issuecomment-1\n', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.post_pr_comment(42, '/gemini review')
+
+    assert result['status'] == 'success'
+    assert result['operation'] == 'post_pr_comment'
+    assert result['pr_number'] == 42
+    assert result['output'] == 'https://github.com/octo/repo/pull/42#issuecomment-1'
+    assert captured == [['pr', 'comment', '42', '--body', '/gemini review']]
+
+
+def test_post_pr_comment_gh_failure_returns_error(monkeypatch):
+    """A non-zero gh exit surfaces as an error envelope carrying stderr."""
+    monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (1, '', 'no such PR\n'))
+
+    result = github_ops.post_pr_comment(42, '/gemini review')
+
+    assert result['status'] == 'error'
+    assert result['operation'] == 'post_pr_comment'
+    assert 'no such PR' in result['context']
+
+
+def test_fetch_pr_reviews_with_commits_success(monkeypatch):
+    """Reviews are projected to {user, state, submitted_at, commit_sha} rows."""
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        # --slurp wraps all pages into an outer array; simulate a single page.
+        payload = (
+            '[[{"user": {"login": "coderabbitai"}, "state": "COMMENTED", '
+            '"submitted_at": "2026-01-01T00:05:00Z", "commit_id": "headsha"}]]'
+        )
+        return 0, payload, ''
+
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.fetch_pr_reviews_with_commits(42)
+
+    assert result['status'] == 'success'
+    assert result['operation'] == 'fetch_pr_reviews_with_commits'
+    assert result['review_count'] == 1
+    assert result['reviews'] == [
+        {
+            'user': 'coderabbitai',
+            'state': 'COMMENTED',
+            'submitted_at': '2026-01-01T00:05:00Z',
+            'commit_sha': 'headsha',
+        }
+    ]
+    # REST /reviews endpoint is consulted with --paginate --slurp.
+    assert captured == [['api', 'repos/octo/repo/pulls/42/reviews', '--paginate', '--slurp']]
+
+
+def test_fetch_pr_reviews_with_commits_defaults_missing_fields(monkeypatch):
+    """Reviews missing user/state/submitted_at/commit_id get safe defaults."""
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
+    # --slurp wraps pages in an outer array; simulate a single page with one empty review.
+    monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (0, '[[{}]]', ''))
+
+    result = github_ops.fetch_pr_reviews_with_commits(42)
+
+    assert result['status'] == 'success'
+    assert result['reviews'] == [
+        {'user': 'unknown', 'state': 'UNKNOWN', 'submitted_at': '', 'commit_sha': ''}
+    ]
+
+
+def test_fetch_pr_reviews_with_commits_skips_non_dict_rows(monkeypatch):
+    """Non-dict entries in the reviews page array are filtered out."""
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
+    # --slurp wraps pages in an outer array; non-dict entries within the page are skipped.
+    monkeypatch.setattr(
+        github_ops,
+        'run_gh',
+        lambda *_a, **_kw: (0, '[["junk", {"user": {"login": "bot"}, "commit_id": "s"}]]', ''),
+    )
+
+    result = github_ops.fetch_pr_reviews_with_commits(42)
+
+    assert result['status'] == 'success'
+    assert result['review_count'] == 1
+    assert result['reviews'][0]['user'] == 'bot'
+
+
+def test_fetch_pr_reviews_with_commits_no_repo_info(monkeypatch):
+    """When repo owner/name cannot be resolved, an error envelope is returned."""
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: (None, None))
+
+    result = github_ops.fetch_pr_reviews_with_commits(42)
+
+    assert result['status'] == 'error'
+    assert result['operation'] == 'fetch_pr_reviews_with_commits'
+    assert 'owner/name' in result['error']
+
+
+def test_fetch_pr_reviews_with_commits_gh_failure(monkeypatch):
+    """A non-zero gh api exit surfaces as an error envelope."""
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
+    monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (1, '', 'api error\n'))
+
+    result = github_ops.fetch_pr_reviews_with_commits(42)
+
+    assert result['status'] == 'error'
+    assert 'Failed to fetch reviews' in result['error']
+    assert 'api error' in result['context']
+
+
+def test_fetch_pr_reviews_with_commits_unparseable_json(monkeypatch):
+    """Malformed gh api JSON surfaces as a parse error envelope."""
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
+    monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (0, 'not-json', ''))
+
+    result = github_ops.fetch_pr_reviews_with_commits(42)
+
+    assert result['status'] == 'error'
+    assert 'Failed to parse' in result['error']
+
+
+def test_fetch_pr_reviews_with_commits_non_list_payload(monkeypatch):
+    """A non-list reviews payload surfaces as an unexpected-shape error."""
+    monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
+    monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (0, '{"message": "x"}', ''))
+
+    result = github_ops.fetch_pr_reviews_with_commits(42)
+
+    assert result['status'] == 'error'
+    assert 'Unexpected reviews payload shape' in result['error']
+
+
 def test_ci_status_dual_flag_rejected(monkeypatch):
     run_gh_stub, _ = _capture_run_gh()
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)

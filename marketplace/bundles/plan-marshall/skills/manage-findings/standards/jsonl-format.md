@@ -89,8 +89,10 @@ Each line in a `findings/{type}.jsonl` file is a JSON object:
 | `rule` | string | Rule identifier (e.g., linter rule, Sonar rule) |
 | `author` | string | Reviewer/comment-author login (e.g. coderabbitai, gemini-code-assist) — indexed/queryable; primary attribution field for pr-comment findings |
 | `kind` | string | pr-comment structure discriminator: inline / review_body / issue_comment — indexed/queryable; drives the actionable-vs-meta classification in the review retrospective |
+| `reviewed_commit_sha` | string | PR HEAD SHA at the time the comment was ingested — the commit the reviewer bot saw; indexed/queryable, used to detect when HEAD has advanced past the last reviewed commit and a re-review is owed |
+| `bot_kind` | string | Reviewer-bot identity derived from `author`: `coderabbit` or `gemini` — indexed/queryable; distinct from `kind` (which describes comment structure), this identifies WHICH bot reviewed and keys the re-review strategy registry |
 
-For `pr-comment` findings, the queryable `author` and `kind` fields are the source of truth for reviewer identity and comment structure; the author/kind lines written into the `detail` blob are retained for human readability only.
+For `pr-comment` findings, the queryable `author`, `kind`, `reviewed_commit_sha`, and `bot_kind` fields are the source of truth for reviewer identity, comment structure, and re-review matching; the author/kind lines written into the `detail` blob are retained for human readability only. `bot_kind` (the reviewer's identity) is distinct from `kind` (the comment's structure), and `reviewed_commit_sha` together with `bot_kind` are indexed/queryable so the re-review mechanism can match a reviewer to the commit it last saw.
 
 ### Resolution semantics
 

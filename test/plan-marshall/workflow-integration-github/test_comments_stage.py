@@ -41,6 +41,20 @@ _is_obvious_noise = github_pr._is_obvious_noise
 cmd_comments_stage = github_pr.cmd_comments_stage
 
 
+@pytest.fixture(autouse=True)
+def _stub_pr_head_sha():
+    """Stub the PR HEAD-SHA fetch so comments-stage tests never hit ``gh``.
+
+    ``cmd_comments_stage`` resolves the PR HEAD SHA (for ``reviewed_commit_sha``)
+    via ``github_ops.fetch_pr_head_sha`` once per batch. Without this stub the
+    helper would spawn a real ``gh pr view`` subprocess in every comments-stage
+    test. Tests that assert on a specific SHA re-patch the same target inside a
+    ``with`` block, which takes precedence over this default for its duration.
+    """
+    with patch('github_pr._github.fetch_pr_head_sha', return_value='stub-head-sha'):
+        yield
+
+
 # =============================================================================
 # Pre-filter (_is_obvious_noise) — drops obvious automated/acknowledgment noise
 # =============================================================================
@@ -710,6 +724,164 @@ class TestCommentsStageAuthorKindFields:
         q = query_findings('gh-pr-author-unknown', finding_type='pr-comment')
         assert q['filtered_count'] == 1
         assert q['findings'][0]['author'] == 'unknown'
+
+
+# =============================================================================
+# reviewed_commit_sha + bot_kind population on stored pr-comment findings
+# =============================================================================
+
+
+class TestCommentsStageReviewedShaAndBotKind:
+    """Every stored pr-comment finding carries the PR HEAD SHA at ingestion
+    time (``reviewed_commit_sha``) and the reviewer-bot identity derived from
+    the comment author login (``bot_kind``).
+
+    Deliverable 3 stamps these two re-review-matching fields at ingestion:
+    ``reviewed_commit_sha`` is the PR HEAD SHA fetched once for the whole batch
+    (so re-review matching can tell whether HEAD has advanced past the reviewed
+    commit), and ``bot_kind`` is derived from each comment's author login via the
+    registry's ``bot_kind_for_author`` (coderabbitai -> coderabbit,
+    gemini-code-assist -> gemini; a human author leaves ``bot_kind`` unset).
+    """
+
+    def test_reviewed_commit_sha_stamped_from_pr_head(self, plan_context):
+        """Each stored finding's ``reviewed_commit_sha`` equals the fetched PR HEAD SHA."""
+        comments = [
+            {
+                'id': 'C1',
+                'kind': 'inline',
+                'author': 'coderabbitai',
+                'body': 'This null dereference needs a guard before the call.',
+                'path': 'src/Main.java',
+                'line': 42,
+                'thread_id': 'PRRT_a',
+            },
+        ]
+
+        plan_context.plan_dir_for('gh-pr-reviewed-sha')
+        with (
+            patch('github_pr._github.fetch_pr_comments_data') as mock_fetch,
+            patch('github_pr._github.fetch_pr_head_sha', return_value='abc123def456') as mock_head,
+        ):
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': len(comments),
+                'unresolved': len(comments),
+            }
+            result = cmd_comments_stage(_stage_make_args(140, 'gh-pr-reviewed-sha'))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1
+        # HEAD SHA is fetched once for the whole batch, not per comment.
+        assert mock_head.call_count == 1
+
+        from _findings_core import query_findings  # type: ignore[import-not-found]
+
+        q = query_findings('gh-pr-reviewed-sha', finding_type='pr-comment')
+        assert q['filtered_count'] == 1
+        stored = q['findings'][0]
+        assert stored['reviewed_commit_sha'] == 'abc123def456'
+
+    @pytest.mark.parametrize(
+        ('author', 'expected_bot_kind'),
+        [
+            pytest.param('coderabbitai', 'coderabbit', id='coderabbit'),
+            pytest.param('gemini-code-assist', 'gemini', id='gemini'),
+        ],
+    )
+    def test_bot_kind_derived_from_author_login(self, author, expected_bot_kind, plan_context):
+        """The stored finding's ``bot_kind`` is the canonical key for a known bot login."""
+        comments = [
+            {
+                'id': 'B1',
+                'kind': 'inline',
+                'author': author,
+                'body': 'A substantive review point about error propagation here.',
+                'path': 'src/Worker.java',
+                'line': 17,
+                'thread_id': 'PRRT_b',
+            },
+        ]
+
+        plan_id = f'gh-pr-botkind-{expected_bot_kind}'
+        plan_context.plan_dir_for(plan_id)
+        with (
+            patch('github_pr._github.fetch_pr_comments_data') as mock_fetch,
+            patch('github_pr._github.fetch_pr_head_sha', return_value='headsha00'),
+        ):
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': len(comments),
+                'unresolved': len(comments),
+            }
+            result = cmd_comments_stage(_stage_make_args(141, plan_id))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1
+
+        from _findings_core import query_findings  # type: ignore[import-not-found]
+
+        q = query_findings(plan_id, finding_type='pr-comment')
+        assert q['filtered_count'] == 1
+        stored = q['findings'][0]
+        assert stored['bot_kind'] == expected_bot_kind
+        # The bot_kind is queryable as a first-class filter.
+        by_bot = query_findings(plan_id, finding_type='pr-comment', bot_kind=expected_bot_kind)
+        assert by_bot['filtered_count'] == 1
+
+    def test_non_bot_author_leaves_bot_kind_unset_without_error(self, plan_context):
+        """A comment from an unrecognised (human) login stores a finding with no
+        ``bot_kind`` field — gracefully, not as an error.
+
+        The producer derives ``bot_kind`` via the registry's
+        ``bot_kind_for_author``, which returns ``None`` for any login outside
+        the bot registry. ``add_finding`` then omits the field entirely (it is
+        only written when present), so a human-authored comment yields a valid
+        finding with ``bot_kind`` absent — never a rejection.
+        """
+        comments = [
+            {
+                'id': 'H1',
+                'kind': 'inline',
+                'author': 'human-reviewer',
+                'body': 'Please rename this variable for clarity and consistency.',
+                'path': 'src/B.java',
+                'line': 9,
+                'thread_id': 'PRRT_h',
+            },
+        ]
+
+        plan_context.plan_dir_for('gh-pr-botkind-human')
+        with (
+            patch('github_pr._github.fetch_pr_comments_data') as mock_fetch,
+            patch('github_pr._github.fetch_pr_head_sha', return_value='headsha01'),
+        ):
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': len(comments),
+                'unresolved': len(comments),
+            }
+            result = cmd_comments_stage(_stage_make_args(142, 'gh-pr-botkind-human'))
+
+        # No error: the finding is stored successfully.
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1
+        assert result['producer_mismatch_hash_id'] is None
+
+        from _findings_core import query_findings  # type: ignore[import-not-found]
+
+        q = query_findings('gh-pr-botkind-human', finding_type='pr-comment')
+        assert q['filtered_count'] == 1
+        stored = q['findings'][0]
+        # author is still recorded; bot_kind is simply absent (not 'unknown').
+        assert stored['author'] == 'human-reviewer'
+        assert 'bot_kind' not in stored
 
 
 # =============================================================================

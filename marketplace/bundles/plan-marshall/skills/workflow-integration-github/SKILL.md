@@ -37,6 +37,7 @@ GitHub provider for the findings-pipeline `pr-comment` producer. Fetches PR revi
 workflow-integration-github (GitHub PR comment workflow)
   ├─> github_ops.py (GitHub operations via gh CLI — PR, CI, issue)
   ├─> github_pr.py (PR comment triage — delegates to github_ops for fetch)
+  ├─> github_re_review.py (bot_kind-keyed re-review strategy registry)
   └─> triage_helpers (ref-toon-format) — shared triage, error handling
 ```
 
@@ -61,6 +62,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
 |--------|----------|---------|
 | github_ops | `plan-marshall:workflow-integration-github:github_ops` | GitHub PR, CI, and issue operations via gh CLI |
 | github_pr | `plan-marshall:workflow-integration-github:github_pr` | Producer-side PR review comment fetcher (fetch + pre-filter + store) |
+| github_re_review | `plan-marshall:workflow-integration-github:github_re_review` | `bot_kind`-keyed re-review strategy registry (request + await a fresh bot review for the current HEAD) |
 
 ## Consumers
 
@@ -147,14 +149,43 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
 
    After acting on each finding, the LLM should call `manage-findings resolve --hash-id {hash} --resolution fixed|suppressed|accepted` to mark progress.
 
+### Workflow 3: Re-Review After a HEAD-Advancing Branch Operation
+
+**Purpose:** Close the post-merge re-review gap. When a HEAD-advancing branch operation in phase-6-finalize (branch-cleanup rebase/force-push, or a phase-5 loop-back fix commit) advances HEAD past the `reviewed_commit_sha` of the staged `pr-comment` findings, the new commits are unreviewed by automated bots. The `re-review` subcommand requests a fresh bot review for the new HEAD and polls until a review lands for it.
+
+**Strategy registry:** `github_re_review.py` is a `bot_kind`-keyed registry with a strict two-method contract per strategy (`request_fresh_review`, `await_fresh_review`) and **no speculative extensibility**. The registry is **GitHub-only** — a sibling GitLab registry would be added separately without changing the consumer-side workflow docs. The canonical `bot_kind` list is imported from `manage-findings/_findings_core.BOT_KINDS`; the registry does **not** inline-copy the enum. Downstream consumers that need the enforcement-critical `bot_kind` list MUST reference that canonical source (or query a finding's `bot_kind` field) rather than hard-coding the values.
+
+The two strategies differ **only** in `request_fresh_review`:
+
+| `bot_kind` | `request_fresh_review` | Trigger time |
+|------------|------------------------|--------------|
+| `coderabbit` | **NO-OP** — CodeRabbit auto-reviews on push by default, so the branch-update push that advanced HEAD already triggered the review. Posts **no** comment. | The supplied `--push-time` (the branch-update / force-push time). |
+| `gemini` | Posts `/gemini review` (Gemini does **not** auto-review on push). | The comment-post time. |
+
+`await_fresh_review` is **identical** for both bots: poll the PR's reviews until one is found whose reviewed commit SHA equals `--head-sha` AND whose `submittedAt` strictly post-dates the trigger time.
+
+**Steps:**
+
+1. **Invoke the registry** for the new HEAD:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|gemini} --head-sha {new HEAD} --push-time {ISO8601 push time} --plan-id {plan_id}
+   ```
+
+   The subcommand resolves the strategy by `bot_kind`, runs `request_fresh_review` (NO-OP for CodeRabbit using `--push-time` as the trigger time; posts `/gemini review` for Gemini), then awaits the fresh review. It emits a TOON envelope with `matched: true|false` plus the matched review's metadata.
+
+2. **Consume the match outcome.** On `matched: true`, re-run `comments-stage` to ingest the fresh review's comments and re-triage through the existing per-finding pipeline (Workflow 2). On `matched: false` / `timed_out: true`, surface the timeout for human attention.
+
+**Registry extension pattern:** to support a new `bot_kind`, (1) add the value to `manage-findings/_findings_core.BOT_KINDS`, then (2) add a strategy subclass in `github_re_review.py` overriding only `request_fresh_review`. `await_fresh_review` is shared on the base class and is **not** re-implemented per bot.
+
 ## Comment Classification
 
 `standards/comment-patterns.json` is a **pre-filter only** — it drops obvious noise (bot signatures, "lgtm", "thanks!") before findings are written. Classification of surviving comments belongs to the LLM consumer, which reads the full body from each finding's `detail` field.
 
 ## Canonical invocations
 
-The canonical argparse surface for the two CLI scripts owned by this skill,
-`github_ops.py` and `github_pr.py`. The D4 plugin-doctor analyzer
+The canonical argparse surface for the three CLI scripts owned by this skill,
+`github_ops.py`, `github_pr.py`, and `github_re_review.py`. The D4 plugin-doctor analyzer
 (`_analyze_manage_invocation.py`) reads this section as source-of-truth for markdown
 notation occurrences across the marketplace. Consuming skills xref this section by
 name (e.g., "see `workflow-integration-github` Canonical invocations →
@@ -164,6 +195,8 @@ has no CLI surface and is not invoked directly.
 
 Both `github_ops` and `github_pr` accept the top-level `--plan-id PLAN_ID` /
 `--project-dir DIR` routing pair (mutually exclusive) consumed before argparse runs.
+`github_re_review` accepts the same `--project-dir DIR` routing flag; its
+`re-review` subcommand declares its own `--plan-id` (accepted for routing uniformity).
 
 ### github_ops pr view
 
@@ -402,6 +435,14 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr comments-stage \
   --pr-number N --plan-id PLAN_ID
+```
+
+### github_re_review re-review
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
+  --pr-number N --bot-kind {coderabbit|gemini} --head-sha SHA --push-time ISO8601 \
+  [--plan-id PLAN_ID]
 ```
 
 ## Error Handling
