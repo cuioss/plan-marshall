@@ -630,7 +630,7 @@ execution_order:
 - Tasks depending on same prior tasks can run in parallel
 - Sequential dependencies remain sequential
 
-`execution_order` is a parallelism schedule DERIVED FROM the `depends_on` graph — it never substitutes for it. A functional compile-order / build-order dependency between deliverables MUST be declared as a `depends_on` edge (see Step 4 § "`depends_on` is the dependency surface, not `execution_order`"); placing the dependent task in a later parallel group without the `depends_on` edge leaves the dependency invisible to the executor and is prohibited.
+A functional compile-order / build-order dependency MUST be declared as a `depends_on` edge — see Step 4 § "`depends_on` is the dependency surface, not `execution_order`". Placing the dependent task in a later group without the edge leaves the dependency invisible to the executor and is prohibited.
 
 ### Step 7a: Pack Tasks into Execution Envelopes
 
