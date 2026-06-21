@@ -283,6 +283,7 @@ def test_sync_defaults_backfills_verification_steps_as_list_of_bare_strings(plan
     verification_steps = config['plan']['phase-5-execute']['verification_steps']
     # the whole LIST is copied atomically; ownerless verify steps are bare strings
     assert isinstance(verification_steps, list)
+    assert verification_steps, 'verification_steps backfill should not be empty'
     assert all(isinstance(element, str) for element in verification_steps), (
         f'ownerless verify steps must be bare strings, got {verification_steps!r}'
     )
@@ -317,6 +318,7 @@ def test_sync_defaults_backfills_finalize_steps_as_list_serial_form(plan_context
         # default:finalize-step-simplify owns the folded `simplify` run-at-all gate
         'default:finalize-step-simplify',
     }
+    seen_param_owning: set[str] = set()
     for element in steps:
         if isinstance(element, dict):
             assert len(element) == 1, 'a param-bearing element must be a single-key object'
@@ -324,6 +326,7 @@ def test_sync_defaults_backfills_finalize_steps_as_list_serial_form(plan_context
             assert step_id in param_owning, (
                 f'only param-owning steps may be single-key objects; got {step_id!r}'
             )
+            seen_param_owning.add(step_id)
             assert isinstance(params, dict) and params, (
                 f'param-owning step {step_id!r} must carry a non-empty nested dict'
             )
@@ -332,6 +335,10 @@ def test_sync_defaults_backfills_finalize_steps_as_list_serial_form(plan_context
             assert element not in param_owning, (
                 f'param-owning step {element!r} must be a single-key object, not a bare string'
             )
+    assert seen_param_owning == param_owning, (
+        f'all param-owning steps must appear as single-key objects; '
+        f'missing: {param_owning - seen_param_owning!r}'
+    )
     # the LIST is never split into per-step dotted paths (atomic, no recursion);
     # when the whole `plan` block is absent it is added as the top-level `plan`
     # path, so no per-step steps path is ever reported
