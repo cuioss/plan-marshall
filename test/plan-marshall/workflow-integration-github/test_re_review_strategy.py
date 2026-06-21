@@ -412,6 +412,19 @@ def test_parse_iso_normalizes_trailing_z():
     assert parsed.utcoffset().total_seconds() == 0
 
 
+def test_parse_iso_naive_datetime_is_normalized_to_utc():
+    """A timezone-naive ISO timestamp is coerced to UTC rather than returning None.
+
+    Without this, comparing a naive datetime with a timezone-aware GitHub API
+    timestamp raises ``TypeError: can't compare offset-naive and offset-aware
+    datetimes``, crashing the re-review polling loop.
+    """
+    parsed = github_re_review._parse_iso('2026-01-01T00:00:00')
+
+    assert parsed is not None
+    assert parsed.utcoffset().total_seconds() == 0
+
+
 # =============================================================================
 # bot_kind_for_author (login -> canonical bot_kind)
 # =============================================================================

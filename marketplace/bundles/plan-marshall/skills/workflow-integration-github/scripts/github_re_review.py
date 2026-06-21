@@ -68,14 +68,19 @@ def _parse_iso(value: str) -> datetime | None:
     """Parse an ISO-8601 timestamp; return None on any malformed input.
 
     GitHub timestamps end in ``Z``; normalize to ``+00:00`` for fromisoformat.
+    Timezone-naive datetimes are normalized to UTC so comparisons with
+    timezone-aware GitHub API timestamps never raise a TypeError.
     """
     if not value:
         return None
     normalized = value.replace('Z', '+00:00')
     try:
-        return datetime.fromisoformat(normalized)
+        dt = datetime.fromisoformat(normalized)
     except ValueError:
         return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +115,8 @@ class _ReReviewStrategy:
         the matched review's metadata when found.
         """
         trigger_dt = _parse_iso(trigger_time)
+        if trigger_dt is None:
+            return make_error('await_fresh_review', f'Invalid trigger_time: {trigger_time!r}')
 
         def _check() -> tuple[bool, dict]:
             envelope = _github.fetch_pr_reviews_with_commits(pr_number)
@@ -146,15 +153,20 @@ class _ReReviewStrategy:
 
         A review matches when its reviewed commit SHA equals ``head_sha`` AND its
         ``submitted_at`` is strictly after ``trigger_dt``. A review with an
-        unparseable ``submitted_at`` never matches (fail-closed).
+        unparseable ``submitted_at`` never matches (fail-closed). When
+        ``trigger_dt`` is ``None`` (invalid or unparseable trigger time) the
+        comparison is fail-closed — no review matches, preventing stale reviews
+        from being incorrectly accepted.
         """
+        if trigger_dt is None:
+            return None
         for review in reviews:
             if review.get('commit_sha') != head_sha:
                 continue
             submitted_dt = _parse_iso(review.get('submitted_at') or '')
             if submitted_dt is None:
                 continue
-            if trigger_dt is None or submitted_dt > trigger_dt:
+            if submitted_dt > trigger_dt:
                 return review
         return None
 

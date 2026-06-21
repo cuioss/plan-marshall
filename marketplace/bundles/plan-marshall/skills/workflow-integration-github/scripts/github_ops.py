@@ -1258,17 +1258,25 @@ def fetch_pr_reviews_with_commits(pr_number: int | str) -> dict:
         return make_error('fetch_pr_reviews_with_commits', 'Could not determine repository owner/name')
 
     endpoint = f'repos/{owner}/{repo}/pulls/{pr_number}/reviews'
-    returncode, stdout, stderr = run_gh(['api', endpoint, '--paginate'])
+    returncode, stdout, stderr = run_gh(['api', endpoint, '--paginate', '--slurp'])
     if returncode != 0:
         return make_error('fetch_pr_reviews_with_commits', f'Failed to fetch reviews for PR {pr_number}', stderr.strip())
 
     try:
-        raw_reviews = json.loads(stdout)
+        raw_pages = json.loads(stdout)
     except json.JSONDecodeError:
         return make_error('fetch_pr_reviews_with_commits', 'Failed to parse gh api output', stdout[:100])
 
-    if not isinstance(raw_reviews, list):
-        return make_error('fetch_pr_reviews_with_commits', 'Unexpected reviews payload shape', str(raw_reviews)[:100])
+    if not isinstance(raw_pages, list):
+        return make_error('fetch_pr_reviews_with_commits', 'Unexpected reviews payload shape', str(raw_pages)[:100])
+
+    # --slurp wraps all pages into an outer array; flatten pages into a single list.
+    raw_reviews: list[dict] = []
+    for page in raw_pages:
+        if isinstance(page, list):
+            raw_reviews.extend(r for r in page if isinstance(r, dict))
+        elif isinstance(page, dict):
+            raw_reviews.append(page)
 
     reviews = [
         {
@@ -1278,7 +1286,6 @@ def fetch_pr_reviews_with_commits(pr_number: int | str) -> dict:
             'commit_sha': r.get('commit_id') or '',
         }
         for r in raw_reviews
-        if isinstance(r, dict)
     ]
     return {
         'status': 'success',

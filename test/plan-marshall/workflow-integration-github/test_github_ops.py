@@ -372,9 +372,10 @@ def test_fetch_pr_reviews_with_commits_success(monkeypatch):
 
     def run_gh_stub(args, capture_json=False, timeout=60):
         captured.append(list(args))
+        # --slurp wraps all pages into an outer array; simulate a single page.
         payload = (
-            '[{"user": {"login": "coderabbitai"}, "state": "COMMENTED", '
-            '"submitted_at": "2026-01-01T00:05:00Z", "commit_id": "headsha"}]'
+            '[[{"user": {"login": "coderabbitai"}, "state": "COMMENTED", '
+            '"submitted_at": "2026-01-01T00:05:00Z", "commit_id": "headsha"}]]'
         )
         return 0, payload, ''
 
@@ -394,14 +395,15 @@ def test_fetch_pr_reviews_with_commits_success(monkeypatch):
             'commit_sha': 'headsha',
         }
     ]
-    # REST /reviews endpoint (carries commit_id) is consulted, with --paginate.
-    assert captured == [['api', 'repos/octo/repo/pulls/42/reviews', '--paginate']]
+    # REST /reviews endpoint is consulted with --paginate --slurp.
+    assert captured == [['api', 'repos/octo/repo/pulls/42/reviews', '--paginate', '--slurp']]
 
 
 def test_fetch_pr_reviews_with_commits_defaults_missing_fields(monkeypatch):
     """Reviews missing user/state/submitted_at/commit_id get safe defaults."""
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
-    monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (0, '[{}]', ''))
+    # --slurp wraps pages in an outer array; simulate a single page with one empty review.
+    monkeypatch.setattr(github_ops, 'run_gh', lambda *_a, **_kw: (0, '[[{}]]', ''))
 
     result = github_ops.fetch_pr_reviews_with_commits(42)
 
@@ -412,12 +414,13 @@ def test_fetch_pr_reviews_with_commits_defaults_missing_fields(monkeypatch):
 
 
 def test_fetch_pr_reviews_with_commits_skips_non_dict_rows(monkeypatch):
-    """Non-dict entries in the reviews array are filtered out."""
+    """Non-dict entries in the reviews page array are filtered out."""
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
+    # --slurp wraps pages in an outer array; non-dict entries within the page are skipped.
     monkeypatch.setattr(
         github_ops,
         'run_gh',
-        lambda *_a, **_kw: (0, '["junk", {"user": {"login": "bot"}, "commit_id": "s"}]', ''),
+        lambda *_a, **_kw: (0, '[["junk", {"user": {"login": "bot"}, "commit_id": "s"}]]', ''),
     )
 
     result = github_ops.fetch_pr_reviews_with_commits(42)
