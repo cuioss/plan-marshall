@@ -1,0 +1,42 @@
+= Design Influences
+:nofooter:
+:toc: left
+:toclevels: 2
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
+
+This document is the single sanctioned place to record where plan-marshall's design
+was informed by prior art. The planning and reference documents elsewhere in the
+tree describe plan-marshall on its own terms and deliberately carry no external
+references; when an idea was prompted by studying another tool, the attribution
+lives here rather than scattered through those documents.
+
+== Why attribution is centralised
+
+Naming an external tool inside a skill, script, or planning document couples that
+document to something outside the project and dates quickly. The project's
+documents therefore state *what plan-marshall does and why*, in plan-marshall's own
+vocabulary. The intellectual debt is real, though, and worth recording once — this
+file is that record.
+
+== Workflow-as-process tools
+
+Several capability ideas were sharpened by reviewing external AI-development
+workflow toolkits (for example, gstack — a collection of opinionated Claude Code
+slash-command skills covering the think → plan → build → review → test → ship →
+reflect lifecycle). The useful observation common to that class of tool is that the
+differentiator is *encoded process*, not the model: standalone, composable
+capabilities a developer can reach for individually.
+
+plan-marshall already realises the deeper machinery that class of tool lacks —
+deterministic state, worktree isolation, a structured findings pipeline,
+multi-reviewer review, and the architecture-hints store. Where the comparison was
+productive was in identifying *cheaper paths onto* that machinery and *more signal
+fed back into* it. As those ideas land they fold into the permanent concept docs
+(xref:recipes.adoc[Recipes], xref:planning-workflow.adoc[Planning Workflow],
+xref:security.adoc[Security], xref:automatic-reviews.adoc[Automatic Reviews]). The
+plan-marshall realisations differ in substance: audits emit into the closed
+findings taxonomy rather than printing prose reports; shortcuts run inline yet
+still create a plan-directory; verification stays encoded (committed e2e tests, not
+a live browser daemon), and interactive exploration is left to the user's own
+tools.

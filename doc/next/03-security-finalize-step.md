@@ -1,4 +1,4 @@
-# 03 — Security audit as a finalize step (+ profile question)
+# 03 — Security audit as a finalize step (uses a `security` profile)
 
 **Shares the audit engine with [02](02-audit-recipes.md)'s `recipe-security-audit`.**
 
@@ -23,17 +23,22 @@ dispatcher/orchestrator owns the continuation and records the outcome (the
 post-dispatch carve-out from PR #747). Only the terminal `done` / `loop_back` /
 `failed` paths mark the step.
 
-**General approach + per-domain context loading** (as directed):
+**General approach + two-layer focused context loading** (as directed):
 
 1. Compute the live footprint (`manage-references compute-footprint`).
 2. Detect affected domains (java / python / js / oci / …).
-3. Load the matching domain security skills as context:
-   - java → `pm-dev-java:java-core` (input-validation + security-patterns),
-     `java-quarkus`, `pm-dev-java-cui:cui-http`
-   - python → `pm-dev-python:python-core` (injection hardening)
-   - js → `pm-dev-frontend:javascript` (XSS / DOM trust)
-   - oci → `pm-dev-oci:oci-security` (OWASP Docker Top 10, supply chain)
-   - all → `untrusted-ingestion`, `workflow-permission-web` (cross-cutting)
+3. Gather **focused** security context in two layers (general domain skills are not
+   security-focused enough; a security review must gather everything it can):
+   - **Cross-cutting layer (always loaded):** `plan-marshall:dev-general-security` —
+     OWASP Top Ten, STRIDE, trust-boundary and secure-coding principles that apply
+     regardless of domain. Plus the existing cross-cutting `untrusted-ingestion` /
+     `workflow-permission-web`.
+   - **Per-domain layer (resolved per affected module):** the module's
+     `skills_by_profile.security` skills — dedicated, security-focused skills each
+     domain declares for itself (carved out of the security sections currently
+     buried in the general domain skills, e.g. java-core's input-validation +
+     security-patterns, python-core's injection hardening, javascript's XSS/DOM
+     trust, oci-security's OWASP-Docker + supply chain).
 4. Run the audit (shared engine with [02](02-audit-recipes.md)'s
    `recipe-security-audit`); emit findings — mapped to valid `FINDING_TYPES`
    (`bug` / `anti-pattern`; no `security-issue` type, see [principles §2](principles.md))
@@ -41,32 +46,61 @@ post-dispatch carve-out from PR #747). Only the terminal `done` / `loop_back` /
 5. `configurable: [{key: security_audit, default: auto, description: "auto|always|never"}]`
    so it is gated like `finalize-step-simplify`.
 
-## Open decision — the profile
+## Decision — use a `security` profile
 
-Two options:
+**Resolved: introduce a `security` profile.** A general-skill-only approach is
+rejected — the general domain skills are not focused enough, and a security review
+must gather all the focused context it can. The only non-profile alternative is a
+central domain→security-skill map inside the audit step, which is the
+domain-enumeration anti-pattern (core maintaining a per-domain table; cf.
+`doc/refactor/principles.md` §6). The profile pushes the declaration into each
+domain where it belongs: every domain declares its own
+`skills_by_profile.security` in `get_skill_domains()`, and the audit resolves that
+key for the affected modules.
 
-- **(a) No profile (recommended to start).** The finalize step + recipe cover the
-  need; per-domain skills are loaded by domain detection, not by a profile. Lowest
-  blast radius — no change to `APPLICABLE_PROFILES`, phase-4, or
-  `skills_by_profile`.
-- **(b) Introduce a `security` profile.** Adds `security` to `APPLICABLE_PROFILES`
-  so deliverables can be security-typed and domains declare
-  `skills_by_profile.security`. More expressive (security becomes a first-class
-  task type) but touches phase-4 planning, architecture enrichment, and every
-  domain bundle.
+`security` is added to `ExtensionBase.APPLICABLE_PROFILES` so
+`skills_by_profile.security` is a valid enrichment/resolution key. It is a
+**resolution-only profile**: the audit (recipe + finalize step) resolves its skills
+directly; it is **not** auto-included in phase-4 task creation, so no plan spawns a
+"security task" unless a deliverable explicitly declares the profile (a separate,
+deferrable promotion to a planned task type).
 
-**Recommendation:** ship (a) first; promote to (b) only if we want security as a
-*planned task type* rather than an audit gate. Resolve at the outline gate.
+## Key deliverable — security-aspect extraction sweep
+
+The per-domain security skills are not authored from scratch: a dedicated task
+**scans every domain bundle, extracts all security-related aspects from the
+existing skills/standards, and relocates them into separate, security-focused
+structures**:
+
+- Sweep all `marketplace/bundles/*/skills/*` for security content (input
+  validation, injection sinks, trust boundaries, secrets, crypto, supply chain,
+  OWASP/STRIDE references — the same signal set the `ext-triage-*` extensions key
+  on).
+- **Domain-specific** extracted content → the dedicated per-domain security skill
+  declared under that domain's `skills_by_profile.security`.
+- **Cross-cutting** extracted content (OWASP Top Ten, STRIDE, general secure-coding
+  principles) → `plan-marshall:dev-general-security`.
+- Leave a cross-reference in the source general skill rather than duplicating, per
+  the no-duplication doc rule.
+
+This sweep is the systematic counterpart to "gather all the focused info we can":
+it guarantees nothing security-relevant stays buried in a general skill.
 
 ## Affected surface
 
 - New `phase-6-finalize/standards/finalize-step-security-audit.md`.
+- New `plan-marshall:dev-general-security` skill — cross-cutting OWASP Top Ten /
+  STRIDE / secure-coding (mirrors the `dev-general-*` family, e.g.
+  `dev-general-code-quality`).
+- `security` added to `ExtensionBase.APPLICABLE_PROFILES` +
+  `extension-api/standards/profiles.md`.
+- Per-domain `skills_by_profile.security` declarations in each domain's
+  `get_skill_domains()`, plus the dedicated per-domain security skills carved out of
+  the general domain skills' security sections.
 - `manage-execution-manifest` decision-rules (candidate set, ordering, ceremony gate).
 - marshal.json seed (`plan.phase-6-finalize.steps` + `security_audit` knob) in all
   three repos + consumer migration.
 - Shared audit engine (with [02](02-audit-recipes.md)).
-- (Option b only) `extension-api/standards/profiles.md`, phase-4-plan, domain
-  `get_skill_domains()`.
 
 ## Documentation to update (deliverables of this plan)
 
@@ -75,8 +109,9 @@ Two options:
 - `doc/concepts/automatic-reviews.adoc` — the new finalize step alongside
   automated-review and Sonar roundtrip.
 - `doc/user/configuration.adoc` — the `security_audit` (`auto|always|never`) knob.
-- (Option b only) `doc/concepts/extension-architecture.adoc` — the `security`
-  profile.
+- `doc/concepts/extension-architecture.adoc` — the `security` profile.
+- `doc/concepts/security.adoc` — the two-layer focused-context model
+  (`dev-general-security` + per-domain `skills_by_profile.security`).
 
 ## On completion
 
@@ -85,4 +120,6 @@ Delete this document and remove the `03` row from
 
 ## Scope
 
-Medium (option a) / large (option b). Shares the audit engine with [02](02-audit-recipes.md).
+Large — adds the `security` profile, a new `dev-general-security` skill, and
+per-domain security skills across the domain bundles. Shares the audit engine with
+[02](02-audit-recipes.md).

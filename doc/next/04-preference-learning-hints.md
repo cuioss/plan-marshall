@@ -1,11 +1,12 @@
 # 04 — Preference learning via architecture hints/best-practices
 
-**Independent. Highest reuse of existing machinery, smallest scope.**
+**Independent. Reuses the retrospective auditor's corpus sweep + dormation.**
 
 ## Problem
 
-External workflows bias future generations from user *approvals* ("emerges, not
-configured"). plan-marshall captures user gate dispositions (`manage-findings`
+User approvals are signal: the dispositions a user repeatedly makes at gates
+express durable preferences that should bias future work without being configured
+explicitly. plan-marshall captures user gate dispositions (`manage-findings`
 resolutions: `fixed` / `suppressed` / `accepted` / `taken_into_account`) but never
 feeds them back — they are historical records only. This workstream realizes
 preference learning through the PR #744 architecture-hints machinery rather than a
@@ -13,16 +14,25 @@ new store.
 
 ## Approach
 
-Close the loop using the existing enrichment surface:
+Detection lives in a **specialized cross-plan command**, modeled on (and likely
+extending) `.claude/skills/audit-archived-plan-retrospectives` — the project-local
+auditor that already sweeps the archived-plan corpus with a deterministic
+`scripts/audit.py` (script computes, LLM orchestrates), runs a
+`recurring-pattern-detector` check, and **dormates** reviewed plans to
+`.plan/temp/dormated-plans/`. That dormation IS the "implicit archiving" the
+learning sweep wants.
 
-1. At finalize, extend the ACTIONABLE/KNOWLEDGE partition already in
-   `phase-6-finalize/workflow/lessons-capture.md` (Branch B3) to also detect
-   recurring user-disposition patterns — e.g. a finding class the user repeatedly
-   `suppressed` / `accepted` in a module, or scope expansions repeatedly rejected.
-2. Route the *generalized preference* to `architecture enrich best-practice`
-   (module-specific) or `--module default` (cross-cutting) — the same verbs
-   KNOWLEDGE signals already use. No new store.
-3. The preference surfaces automatically: `get-module-context` →
+1. A **preference-pattern detector** (a new deterministic check in `audit.py`)
+   computes recurring user-disposition patterns across the archived corpus — e.g.
+   a finding class the user repeatedly `suppressed` / `accepted` in a module, or
+   scope expansions repeatedly rejected — emitting candidate preferences as TOON.
+2. The LLM half generalizes each surfaced pattern and routes it to
+   `architecture enrich best-practice` (module-specific) or `--module default`
+   (cross-cutting) — the same verbs KNOWLEDGE signals already use. No new store.
+3. The same sweep **implicitly archives** (dormates) the plans it has processed,
+   so learning and archiving are one pass — exactly the auditor's
+   learn-then-dormate shape, retargeted from lessons to architecture hints.
+4. The preference surfaces automatically: `get-module-context` →
    phase-3-outline `## Architecture Hints` (Step 10b-bis), biasing future outlines.
 
 ## Key design decisions
@@ -36,18 +46,28 @@ Close the loop using the existing enrichment surface:
 
 ## Affected surface
 
-- `phase-6-finalize/workflow/lessons-capture.md` — Branch B3 disposition-pattern
-  detection.
-- `manage-findings` — read dispositions; possibly a small "disposition summary"
-  query.
+- `.claude/skills/audit-archived-plan-retrospectives/` — new
+  `checks/preference-pattern-detector.md` + the corresponding compute in
+  `scripts/audit.py`; an LLM-orchestration step that routes generalized preferences
+  to `architecture enrich`. (Or a sibling command if the auditor is the wrong home —
+  see open decision.)
+- `manage-findings` — read dispositions across the corpus; possibly a small
+  "disposition summary" query.
 - `manage-architecture enrich best-practice` / `enrich insight` (reuse).
-- Docs: `phase-6-finalize/standards/lessons-integration.md`.
 
-## Open decision
+## Open decisions
 
-- **Detection locus:** per-plan at finalize (cheap, local) vs a periodic cross-plan
-  sweep (richer patterns, more cost). **Recommendation:** per-plan finalize first,
-  reusing the signal-threshold pattern already in lessons-capture.
+- **New check vs sibling command.** Add the preference detector as a check inside
+  `audit-archived-plan-retrospectives` (reuses its corpus sweep + hybrid model +
+  dormation) vs a standalone sibling command. **Recommendation:** a check in the
+  existing auditor — the corpus sweep and dormation are already there; duplicating
+  them in a sibling is the worse option.
+- **Portability.** The auditor is **project-local** (operates on
+  `.plan/local/archived-plans/`, which only exists in this meta-project). If
+  preference learning should also work in consumer projects, a lightweight
+  per-plan emitter at finalize (consumer-available) can feed the same
+  `architecture enrich` verbs; the cross-plan command stays the richer, meta-only
+  path. Resolve at the outline gate.
 
 ## Documentation to update (deliverables of this plan)
 
@@ -64,4 +84,5 @@ Delete this document and remove the `04` row from
 
 ## Scope
 
-Small–medium. Highest reuse; independent of the other workstreams.
+Small–medium — a new check + compute in the existing auditor, routing to the
+existing `architecture enrich` verbs. Independent of the other workstreams.

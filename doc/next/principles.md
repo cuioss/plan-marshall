@@ -38,12 +38,36 @@ one.
 
 ---
 
-## 3. Cheap paths are single-envelope
+## 3. Cheap paths run inline, not per-phase dispatched
 
 The token/wall-time win comes from running known-shape work inside one execution
 envelope (the recipe model) instead of fragmenting across the refine → outline →
 plan loop. Any "make it cheaper" workstream resolves to *routing onto a
 single-envelope path*, not to micro-optimizing the heavy path.
+
+The dominant cost being removed is **per-phase execution-context dispatch**. On the
+heavy path the orchestrator dispatches a separate `Task: execution-context-{level}`
+envelope for each phase (phase-2-refine, phase-3-outline, phase-4-plan,
+phase-5-execute) plus sibling q-gate-validation dispatches — each is a fresh agent
+with a full context reload (the per-dispatch envelope overhead behind the measured
+re-dispatch waste). A shortcut path must therefore **run the early phases inline in
+the orchestrator's own context** rather than spinning an execution-context per
+phase — especially the first phases (init / refine / outline), which on a
+known-shape request carry little cognition worth a dedicated envelope. Dispatch a
+separate execution-context only where a phase genuinely needs a different
+model/effort level or heavy isolated cognition (typically only phase-5-execute).
+
+This is the existing in-context rule (`extension-api/standards/dispatch-granularity.md`
+§ 4 — per-X loops iterate in one envelope) applied to the *phase* axis, and it
+follows the light-lane precedent that already folds Simple-outline +
+deliverable-derivation into a single envelope.
+
+**Cheap is not stateless.** Running phases inline (a *compute* decision) is separate
+from plan *state*: every plan — including a shortcut or recipe — still creates its
+own plan-directory (`.plan/local/plans/{plan_id}/`). State isolation keeps each run
+apart and means the plan-bound tooling (`manage-status`, `manage-findings`, the
+`ci` abstraction) works uniformly with no plan-less special case. Shortcuts shed
+the per-phase *envelopes*, never the plan-directory.
 
 ---
 

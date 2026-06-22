@@ -4,9 +4,9 @@
 
 ## Problem
 
-External workflows (gstack `/review`, `/cso`) deliver value *alone* without buying
-the whole methodology. plan-marshall has no standalone audit entry point — every
-capability requires a full plan. Recipes are exactly our standalone,
+A focused review or audit should deliver value *on its own*, without buying the
+whole planning methodology. plan-marshall has no standalone audit entry point —
+every capability requires a full plan. Recipes are exactly our standalone,
 single-envelope, low-token mechanism (`ext-point-recipe`), so audits should be
 recipes.
 
@@ -43,6 +43,12 @@ envelope.
   No duplicated per-domain logic.
 - **Surgical / diff-aware scope** so phase-4 manifest minimization already applies
   (surgical + verification → drops heavyweight finalize steps).
+- **Always create a plan-directory — even for short plans.** A recipe/shortcut runs
+  its phases inline (no per-phase execution-context, see [principles §3](principles.md))
+  but still gets its own `.plan/local/plans/{plan_id}/` so runs stay apart and the
+  plan-bound tooling (`manage-status`, `manage-findings`, the `ci` abstraction) works
+  uniformly with no plan-less special case. (This also removes the friction where a
+  plan-less change cannot use the `ci` abstraction's plan-bound `pr create`.)
 
 ## Affected surface
 

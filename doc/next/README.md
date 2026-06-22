@@ -3,8 +3,9 @@
 ## What this directory is
 
 A focused record of the next capability workstreams for plan-marshall, derived
-from a comparison against external AI-development workflows (notably gstack). Each
-document describes proposed work, grounded in the mechanisms that exist today.
+from a capability-gap review of the workflow. Each document describes proposed
+work, grounded in the mechanisms that exist today. For where these ideas were
+informed by prior art, see [`doc/concepts/design-influences.adoc`](../concepts/design-influences.adoc).
 
 These are **planning documents, not implementation.** Each workstream below names
 the real plan-marshall surface it builds on (router, recipes, finalize steps,
@@ -24,9 +25,9 @@ machinery and from feeding more signal back into it** — not from new subsystem
 |---|------------|--------------|-----------|----------|
 | 01 | Routing v2 | A recipe-match routing tier ahead of light/deep, so known-shape requests skip the full pipeline (token + wall-time) | `manage-status planning-lane`, recipe registry, lesson auto-suggest | [01-routing-v2.md](01-routing-v2.md) |
 | 02 | Audit recipes | `recipe-code-review` + `recipe-security-audit` as standalone, single-envelope entry points emitting into findings | `ext-point-recipe`, `manage-findings`, `ext-triage-*` | [02-audit-recipes.md](02-audit-recipes.md) |
-| 03 | Security audit finalize step | `default:finalize-step-security-audit` — domain-agnostic, loads per-domain security skills by affected-module domain | finalize-step discovery channel, per-domain security skills, `ext-triage-*` | [03-security-finalize-step.md](03-security-finalize-step.md) |
-| 04 | Preference learning via hints | Feed recurring user gate-dispositions back as `best_practices`/`insights` in `enriched.json` so future outlines bias toward learned preferences | PR #744 architecture-hints, `manage-findings` resolutions, lessons-capture B3 | [04-preference-learning-hints.md](04-preference-learning-hints.md) |
-| 05 | Live verification (integrate) | Wrap an existing browser/acceptance tool behind a thin recipe/finalize step — integrate, do not build a daemon | external tool (e.g. Playwright MCP), `architecture which-module`, `manage-findings` | [05-live-verification-integrate.md](05-live-verification-integrate.md) |
+| 03 | Security audit finalize step | `default:finalize-step-security-audit` — two-layer focused context (`dev-general-security` + per-domain `security` profile skills) | finalize-step discovery, `security` profile, `dev-general-security`, `ext-triage-*` | [03-security-finalize-step.md](03-security-finalize-step.md) |
+| 04 | Preference learning via hints | A cross-plan command (modeled on `audit-archived-plan-retrospectives`) detects recurring user gate-dispositions, routes them to `enriched.json` `best_practices`, and implicitly archives | PR #744 architecture-hints, `audit-archived-plan-retrospectives`, `manage-findings` | [04-preference-learning-hints.md](04-preference-learning-hints.md) |
+| 05 | Surface encoded-test verification | Make the principle explicit (verify = encoded e2e tests; explore = user's own tools) via a concept note + optional e2e-testing standard — no browser/daemon integration | domain test skills, concept docs | [05-surface-encoded-verification.md](05-surface-encoded-verification.md) |
 
 ## Sequencing
 
@@ -35,7 +36,7 @@ machinery and from feeding more signal back into it** — not from new subsystem
                    └──► 03 security-finalize-step (shares the audit engine)
 
 04 preference-learning-hints  (independent; highest reuse, smallest scope)
-05 live-verification          (independent; research spike first, lowest priority)
+05 surface-encoded-verification (independent; guidance/standard, lowest priority)
 ```
 
 - **02 is the keystone.** Recipes are the cheap single-envelope path; both 01
@@ -43,8 +44,8 @@ machinery and from feeding more signal back into it** — not from new subsystem
 - **01 is the headline** but only pays off once recipes exist to route to.
 - **03** ships the security audit as an automatic gate; its on-demand twin is the
   `recipe-security-audit` from 02. One audit engine, two entry points.
-- **04 and 05 are independent** and can proceed any time. 04 has the highest
-  reuse of existing machinery; 05 is the least-defined and should start as a spike.
+- **04 and 05 are independent** and can proceed any time. 04 reuses the retrospective
+  auditor's corpus sweep; 05 is guidance/standard work with no integration.
 
 ## Cross-cutting: the shared audit engine
 
@@ -75,8 +76,10 @@ This directory is self-consuming:
   one bounded LLM fallback pass (see [01](01-routing-v2.md)).
 - No new preference/learning store — preference signal reuses the existing
   `enriched.json` hints surface (see [04](04-preference-learning-hints.md)).
-- No home-grown browser daemon — live verification integrates an existing tool
-  (see [05](05-live-verification-integrate.md)).
+- No live browser verification or exploration surface — verification is encoded
+  e2e tests; exploration is the user's own tools (Chrome / browser MCP). 05 only
+  *surfaces* this principle (see [05](05-surface-encoded-verification.md)); it
+  builds no browser/daemon integration.
 - No `/careful`-style in-session destructive-command guard — worktree isolation
   and the existing Bash hard-rules already cover this; explicitly dropped.
 - No version numbers, changelogs, or dated update sections in any document.
