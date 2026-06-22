@@ -188,7 +188,7 @@ def test_r1_denies_leading_env_assignment() -> None:
 
 def test_r1_not_fired_on_plain_command() -> None:
     # A single command with no shell construct does not trip R1 (and is not a
-    # file-op / provider / build, so no rule fires).
+    # file-op or hard-coded build, so no rule fires).
     assert hook.evaluate(_signal2_payload("Bash", _bash("python3 script.py"))) is None
 
 
