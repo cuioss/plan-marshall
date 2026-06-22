@@ -5,9 +5,10 @@ Covers the three concerns of the post-merge re-review registry:
 
     1. Strategy resolution — each bot_kind key resolves to the correct strategy
        object; an unknown key resolves to None.
-    2. Trigger posting — ``request_fresh_review`` behaves per strategy:
-         coderabbit: NO-OP, posts no comment, returns the supplied push_time.
-         gemini:     posts ``/gemini review`` and returns the comment-post time.
+    2. Trigger posting — ``request_fresh_review`` posts an explicit trigger
+       comment per strategy and returns the comment-post time:
+         coderabbit: posts ``@coderabbitai review``.
+         gemini:     posts ``/gemini review``.
     3. Fresh-review matching — ``_match_review`` / ``await_fresh_review`` identifies
        a review whose reviewed commit SHA matches the pushed HEAD AND whose
        ``submitted_at`` post-dates the trigger time; fail-closed otherwise.
@@ -93,22 +94,55 @@ def test_strategies_are_distinct_objects():
 # =============================================================================
 
 
-def test_coderabbit_request_fresh_review_is_noop_and_returns_push_time(monkeypatch):
-    """CodeRabbit auto-reviews on push — no comment is posted; trigger == push_time."""
-    post_calls = {'count': 0}
+def test_coderabbit_request_fresh_review_posts_trigger_comment(monkeypatch):
+    """CodeRabbit posts exactly ``@coderabbitai review`` as the explicit trigger."""
+    post_calls = {'args': []}
 
-    def exploding_post(pr_number, body):  # pragma: no cover - must not run
-        post_calls['count'] += 1
-        raise AssertionError('CodeRabbit strategy must not post a trigger comment')
+    def fake_post(pr_number, body):
+        post_calls['args'].append((pr_number, body))
+        return {'status': 'success', 'operation': 'post_pr_comment', 'pr_number': pr_number}
 
-    monkeypatch.setattr(github_re_review._github, 'post_pr_comment', exploding_post)
+    monkeypatch.setattr(github_re_review._github, 'post_pr_comment', fake_post)
 
     strategy = github_re_review.resolve_strategy('coderabbit')
     result = strategy.request_fresh_review(42, '2026-01-01T00:00:00Z')
 
     assert result['status'] == 'success'
-    assert result['trigger_time'] == '2026-01-01T00:00:00Z'
-    assert post_calls['count'] == 0
+    # Exactly one comment posted, with the exact trigger literal.
+    assert post_calls['args'] == [(42, github_re_review.CODERABBIT_TRIGGER_COMMENT)]
+    assert github_re_review.CODERABBIT_TRIGGER_COMMENT == '@coderabbitai review'
+
+
+def test_coderabbit_request_fresh_review_trigger_time_is_post_time_not_push_time(monkeypatch):
+    """CodeRabbit's trigger time is the comment-post time, never the push time."""
+    monkeypatch.setattr(
+        github_re_review._github,
+        'post_pr_comment',
+        lambda *_a, **_kw: {'status': 'success'},
+    )
+    monkeypatch.setattr(github_re_review, '_now_iso', lambda: '2026-06-01T12:00:00+00:00')
+
+    strategy = github_re_review.resolve_strategy('coderabbit')
+    result = strategy.request_fresh_review(42, '2020-01-01T00:00:00Z')
+
+    assert result['trigger_time'] == '2026-06-01T12:00:00+00:00'
+    # The supplied push_time is deliberately discarded.
+    assert result['trigger_time'] != '2020-01-01T00:00:00Z'
+
+
+def test_coderabbit_request_fresh_review_propagates_post_failure(monkeypatch):
+    """A failed trigger-comment post surfaces as an error envelope."""
+    monkeypatch.setattr(
+        github_re_review._github,
+        'post_pr_comment',
+        lambda *_a, **_kw: {'status': 'error', 'error': 'comment failed'},
+    )
+
+    strategy = github_re_review.resolve_strategy('coderabbit')
+    result = strategy.request_fresh_review(42, '2026-01-01T00:00:00Z')
+
+    assert result['status'] == 'error'
+    assert result['operation'] == 'request_fresh_review'
 
 
 def test_gemini_request_fresh_review_posts_trigger_comment(monkeypatch):
@@ -310,14 +344,17 @@ def test_cmd_re_review_unknown_bot_kind_errors():
     assert 'copilot' in result['error']
 
 
-def test_cmd_re_review_coderabbit_happy_path(monkeypatch):
-    """coderabbit: no comment posted; await matches the fresh review for HEAD."""
+def test_cmd_re_review_coderabbit_posts_then_awaits(monkeypatch):
+    """coderabbit: posts @coderabbitai review, then awaits the fresh review for HEAD."""
     _noop_sleep(monkeypatch)
+    post_calls = {'args': []}
 
-    def exploding_post(*_a, **_kw):  # pragma: no cover - must not run
-        raise AssertionError('CodeRabbit must not post a trigger comment')
+    def fake_post(pr_number, body):
+        post_calls['args'].append((pr_number, body))
+        return {'status': 'success'}
 
-    monkeypatch.setattr(github_re_review._github, 'post_pr_comment', exploding_post)
+    monkeypatch.setattr(github_re_review._github, 'post_pr_comment', fake_post)
+    monkeypatch.setattr(github_re_review, '_now_iso', lambda: '2026-01-01T00:00:00+00:00')
     monkeypatch.setattr(
         github_re_review._github,
         'fetch_pr_reviews_with_commits',
@@ -330,6 +367,7 @@ def test_cmd_re_review_coderabbit_happy_path(monkeypatch):
     assert result['matched'] is True
     assert result['bot_kind'] == 'coderabbit'
     assert result['head_sha'] == 'headsha'
+    assert post_calls['args'] == [(42, '@coderabbitai review')]
 
 
 def test_cmd_re_review_gemini_posts_then_awaits(monkeypatch):
@@ -379,10 +417,16 @@ def test_cmd_re_review_short_circuits_on_request_failure(monkeypatch):
 def test_cmd_re_review_short_circuits_on_await_failure(monkeypatch):
     """request succeeds but await errors → the await error envelope is returned.
 
-    coderabbit's request is a NO-OP success, so the only failure surface is the
-    await fetch. The handler must return that error without stamping bot_kind.
+    coderabbit's request posts its trigger comment successfully, so the only
+    failure surface here is the await fetch. The handler must return that error
+    without stamping bot_kind.
     """
     _noop_sleep(monkeypatch)
+    monkeypatch.setattr(
+        github_re_review._github,
+        'post_pr_comment',
+        lambda *_a, **_kw: {'status': 'success'},
+    )
     monkeypatch.setattr(
         github_re_review._github,
         'fetch_pr_reviews_with_commits',
@@ -415,6 +459,11 @@ def test_cmd_re_review_threads_timeout_into_await(monkeypatch):
         captured['timeout'] = timeout
         return {'status': 'success', 'matched': True, 'head_sha': head_sha}
 
+    monkeypatch.setattr(
+        github_re_review._github,
+        'post_pr_comment',
+        lambda *_a, **_kw: {'status': 'success'},
+    )
     monkeypatch.setattr(github_re_review._ReReviewStrategy, 'await_fresh_review', fake_await)
 
     result = github_re_review.cmd_re_review(_re_review_args(bot_kind='coderabbit', timeout=37))
@@ -435,6 +484,11 @@ def test_cmd_re_review_threads_default_timeout_into_await(monkeypatch):
         captured['timeout'] = timeout
         return {'status': 'success', 'matched': False, 'head_sha': head_sha}
 
+    monkeypatch.setattr(
+        github_re_review._github,
+        'post_pr_comment',
+        lambda *_a, **_kw: {'status': 'success'},
+    )
     monkeypatch.setattr(github_re_review._ReReviewStrategy, 'await_fresh_review', fake_await)
 
     result = github_re_review.cmd_re_review(_re_review_args(bot_kind='coderabbit'))
@@ -518,10 +572,15 @@ def test_bot_kind_for_author_human_returns_none():
 def test_main_re_review_wires_args_and_prints_toon(monkeypatch, capsys):
     """main() parses argv, runs cmd_re_review, and prints a TOON envelope.
 
-    All gh I/O is mocked: coderabbit's request is a NO-OP and the fetch returns
-    a fresh review for HEAD so the handler reports matched=True.
+    All gh I/O is mocked: coderabbit's request posts its trigger comment and the
+    fetch returns a fresh review for HEAD so the handler reports matched=True.
     """
     _noop_sleep(monkeypatch)
+    monkeypatch.setattr(
+        github_re_review._github,
+        'post_pr_comment',
+        lambda *_a, **_kw: {'status': 'success'},
+    )
     monkeypatch.setattr(
         github_re_review._github,
         'fetch_pr_reviews_with_commits',

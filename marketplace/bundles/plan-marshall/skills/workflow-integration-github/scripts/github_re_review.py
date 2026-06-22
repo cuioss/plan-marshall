@@ -12,12 +12,14 @@ strategy — no speculative extensibility:
     request_fresh_review(pr_number, push_time) -> trigger_time
     await_fresh_review(pr_number, head_sha, trigger_time) -> envelope
 
-The two strategies differ ONLY in ``request_fresh_review``:
+The two strategies differ ONLY in the trigger comment ``request_fresh_review``
+posts — both post an explicit trigger and return the comment-post time:
 
-    coderabbit: NO-OP. CodeRabbit auto-reviews on push by default, so the
-                branch-update push that advanced HEAD already triggered the
-                review. The method posts NO comment and returns the supplied
-                ``push_time`` as the trigger time.
+    coderabbit: Posts ``@coderabbitai review``. CodeRabbit's incremental
+                auto-review on push is not a reliable trigger for the new HEAD
+                (it can be debounced or skipped on a force-push), so the explicit
+                comment is the trigger that guarantees a fresh review lands.
+                Returns the comment-post time as the trigger time.
     gemini:     Posts ``/gemini review`` (Gemini does NOT auto-review on push)
                 and returns the comment-post time as the trigger time.
 
@@ -57,6 +59,7 @@ from ci_base import (  # type: ignore[import-not-found]
 register_subcommands({'re-review'})
 
 GEMINI_TRIGGER_COMMENT = '/gemini review'
+CODERABBIT_TRIGGER_COMMENT = '@coderabbitai review'
 
 
 def _now_iso() -> str:
@@ -172,12 +175,19 @@ class _ReReviewStrategy:
 
 
 class _CodeRabbitStrategy(_ReReviewStrategy):
-    """CodeRabbit auto-reviews on push — ``request_fresh_review`` is a NO-OP."""
+    """CodeRabbit re-review is triggered by posting ``@coderabbitai review``."""
 
     def request_fresh_review(self, pr_number: int | str, push_time: str) -> dict:
-        # NO-OP: the branch-update push already triggered CodeRabbit's review.
-        # No comment is posted; the trigger time is the push time itself.
-        return {'status': 'success', 'trigger_time': push_time}
+        # Post the explicit ``@coderabbitai review`` trigger comment. CodeRabbit's
+        # incremental auto-review on push is not a reliable trigger for the new
+        # HEAD (it can be debounced or skipped on a force-push), so the explicit
+        # comment is the trigger that guarantees a fresh review lands. The
+        # ``push_time`` argument is unused for CodeRabbit — the trigger time is the
+        # comment-post time, exactly as for Gemini.
+        post_result = _github.post_pr_comment(pr_number, CODERABBIT_TRIGGER_COMMENT)
+        if post_result.get('status') != 'success':
+            return make_error('request_fresh_review', post_result.get('error', 'failed to post trigger comment'))
+        return {'status': 'success', 'trigger_time': _now_iso()}
 
 
 class _GeminiStrategy(_ReReviewStrategy):
@@ -267,7 +277,7 @@ def main() -> int:
     re_review.add_argument('--pr-number', type=int, required=True, help='PR number')
     re_review.add_argument('--bot-kind', choices=BOT_KINDS, required=True, help='Reviewer bot identity key')
     re_review.add_argument('--head-sha', required=True, help='Current HEAD SHA the fresh review must match')
-    re_review.add_argument('--push-time', required=True, help='ISO-8601 push time (CodeRabbit trigger time)')
+    re_review.add_argument('--push-time', required=True, help='ISO-8601 push time (retained for routing uniformity; both bots now post an explicit trigger comment)')
     re_review.add_argument(
         '--timeout',
         type=int,
