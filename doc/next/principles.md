@@ -28,6 +28,14 @@ A finding carries `type`, `severity`, `title`, `detail`, `file`, `line`, and is
 triaged via the domain `ext-triage-*` extension. New discovery surfaces add a
 producer; they do not add a new resolution model.
 
+The `type` comes from the **closed `manage-findings` taxonomy** (the 12-type
+`FINDING_TYPES` set: `bug`, `improvement`, `anti-pattern`, `triage`, `tip`,
+`insight`, `best-practice`, `build-error`, `test-failure`, `lint-issue`,
+`sonar-issue`, `pr-comment`). A new discovery surface **maps onto an existing
+type** — quality/review findings → `lint-issue`; security findings →
+`bug` / `anti-pattern` (there is no `security-issue` type) — it never adds a new
+one.
+
 ---
 
 ## 3. Cheap paths are single-envelope

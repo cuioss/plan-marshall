@@ -18,7 +18,9 @@ an optional finalize step or a recipe (`recipe-acceptance-check`) that:
 - maps the diff to affected entry points (reuse `architecture which-module` /
   `architecture files`),
 - runs the external tool,
-- emits pass/fail + evidence into `manage-findings`.
+- emits pass/fail + evidence into `manage-findings`, mapped to a valid
+  `FINDING_TYPES` entry (`test-failure` for a failed acceptance run, or
+  `lint-issue` for a quality/verify-gate finding — see [principles §2](principles.md)).
 
 Note on this repo's artifacts: plan-marshall's own deliverables are mostly skills
 and scripts, so the analogue of "open a browser" here is "run the changed workflow

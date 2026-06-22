@@ -30,7 +30,7 @@ machinery and from feeding more signal back into it** — not from new subsystem
 
 ## Sequencing
 
-```
+```text
 02 audit-recipes ──┬──► 01 routing-v2 (needs recipe targets to route to)
                    └──► 03 security-finalize-step (shares the audit engine)
 

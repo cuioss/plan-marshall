@@ -17,6 +17,12 @@ HEAD-dependent if it self-commits fixes; member of `MAY_MUTATE_WORKTREE_STEPS` i
 it edits. Discovery uses the **live `finalize-step-*` channel** (the dead
 `provides_finalize_steps()` hook was removed in PR #752 — do not reintroduce it).
 
+**`escalate_ask` no-mark invariant:** if the step needs a user decision it returns
+`status: escalate_ask` and **must not** call `mark-step-done` — the
+dispatcher/orchestrator owns the continuation and records the outcome (the
+post-dispatch carve-out from PR #747). Only the terminal `done` / `loop_back` /
+`failed` paths mark the step.
+
 **General approach + per-domain context loading** (as directed):
 
 1. Compute the live footprint (`manage-references compute-footprint`).
@@ -29,7 +35,9 @@ it edits. Discovery uses the **live `finalize-step-*` channel** (the dead
    - oci → `pm-dev-oci:oci-security` (OWASP Docker Top 10, supply chain)
    - all → `untrusted-ingestion`, `workflow-permission-web` (cross-cutting)
 4. Run the audit (shared engine with [02](02-audit-recipes.md)'s
-   `recipe-security-audit`); emit findings → triage via domain `ext-triage-*`.
+   `recipe-security-audit`); emit findings — mapped to valid `FINDING_TYPES`
+   (`bug` / `anti-pattern`; no `security-issue` type, see [principles §2](principles.md))
+   — → triage via domain `ext-triage-*`.
 5. `configurable: [{key: security_audit, default: auto, description: "auto|always|never"}]`
    so it is gated like `finalize-step-simplify`.
 

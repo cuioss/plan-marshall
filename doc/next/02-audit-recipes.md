@@ -33,7 +33,10 @@ envelope.
 
 - **Findings, not prose.** Audit recipes emit into `manage-findings` so triage,
   loop-back, and suppression all work for free — the structural difference from
-  external tools that print a report and stop.
+  external tools that print a report and stop. Findings map onto the closed
+  `FINDING_TYPES` taxonomy (see [principles §2](principles.md)): `recipe-code-review`
+  → `lint-issue`; `recipe-security-audit` → `bug` / `anti-pattern` (no
+  `security-issue` type exists).
 - **Shared audit engine.** The security audit *logic* (per-domain skill selection +
   audit run) is authored once and invoked from two entry points: this recipe
   (on-demand) and [03](03-security-finalize-step.md)'s finalize step (automatic).
