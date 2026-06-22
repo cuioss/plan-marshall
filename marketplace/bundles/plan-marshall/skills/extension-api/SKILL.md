@@ -69,8 +69,6 @@ extension-api/
     ├── ext-point-recipe.md         # Recipe extension point contract (4 implementations)
     ├── ext-point-build.md          # Build system extension point contract (4 implementations)
     ├── ext-point-provider.md     # Credential extension point contract (1 implementation)
-    ├── ext-point-verify-steps.md   # Verify steps extension point contract (0 implementations)
-    ├── ext-point-finalize-steps.md # Finalize steps extension point contract (0 implementations)
     ├── marshal-json-reference.md   # Central marshal.json config path reference
     ├── module-discovery.md         # Module discovery contract + output specification
     ├── canonical-commands.md       # Command vocabulary and resolution
@@ -107,7 +105,6 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 | `provides_triage() -> str \| None` | `None` | Return triage skill reference (covers PR review comments and Sonar issues) |
 | `provides_outline_skill() -> str \| None` | `None` | Return domain-specific outline skill reference |
 | `provides_recipes() -> list[dict]` | `[]` | Return recipe definitions for predefined transformations |
-| `provides_verify_steps() -> list[dict]` | `[]` | Return domain-specific verification steps |
 
 ---
 
@@ -122,8 +119,6 @@ Each extension point has a dedicated contract document with formal parameters, p
 | Outline | `provides_outline_skill()` | [ext-point-outline.md](standards/ext-point-outline.md) | 1 |
 | Recipe | `provides_recipes()` | [ext-point-recipe.md](standards/ext-point-recipe.md) | 4 |
 | Provider | `*_provider.py` | [ext-point-provider.md](standards/ext-point-provider.md) | 4 |
-| Verify Steps | `provides_verify_steps()` | [ext-point-verify-steps.md](standards/ext-point-verify-steps.md) | 0 |
-| Finalize Steps | `provides_finalize_steps()` | [ext-point-finalize-steps.md](standards/ext-point-finalize-steps.md) | 0 |
 
 For all extension-related configuration paths, see [marshal-json-reference.md](standards/marshal-json-reference.md).
 

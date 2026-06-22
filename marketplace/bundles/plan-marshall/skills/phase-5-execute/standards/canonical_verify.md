@@ -70,4 +70,4 @@ Follows the standard phase-5-execute verification result shape: a non-zero exit 
 
 ## Related Steps
 
-See the phase-5-execute SKILL.md **Built-in Step Dispatch Table** for the single parameterized `default:verify:{canonical}` built-in step. The verify-steps extension-point contract lives in [`../../extension-api/standards/ext-point-verify-steps.md`](../../extension-api/standards/ext-point-verify-steps.md) — do not inline-copy the step dispatch table in any consumer; xref this doc instead.
+See the phase-5-execute SKILL.md **Built-in Step Dispatch Table** for the single parameterized `default:verify:{canonical}` built-in step — do not inline-copy the step dispatch table in any consumer; xref this doc instead.

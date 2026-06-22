@@ -194,7 +194,7 @@ def main() -> int:
     sd_set_ext = sd_sub.add_parser('set-extensions', help='Set workflow skill extension', allow_abbrev=False)
     add_domain_arg(sd_set_ext)
     sd_set_ext.add_argument(
-        '--type', required=True, choices=['outline', 'triage', 'self-review'], help='Extension type'
+        '--type', required=True, choices=['outline', 'triage'], help='Extension type'
     )
     sd_set_ext.add_argument('--skill', required=True, help='Extension skill reference (bundle:skill)')
 

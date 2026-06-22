@@ -414,9 +414,9 @@ Both `verification_steps` and `per_deliverable_build` reference verify steps by 
 The `verification_steps` field serializes on disk as the canonical keyed map (a JSON object keyed by step id). Verify steps own no params, so every value is an empty `{}` object. Key insertion order is the execution order. The reader consumes the keyed map directly. Two key types:
 
 - **Built-in steps** (`default:verify:{canonical}`): the parameterized canonical-verify step — e.g. `default:verify:quality-gate` (run quality-gate), `default:verify:module-tests` (run full test suite), `default:verify:coverage` (coverage threshold).
-- **Extension steps** (colon notation): Fully-qualified skill references from domain bundles (e.g., `my-bundle:my-verify-step`)
+- **Project steps** (`project:verify-step-*`): project-local verify-step skills discovered under `.claude/skills/`.
 
-Built-in step keys are always first in the default map. Extension step keys are appended by `skill-domains configure` from `provides_verify_steps()` in each domain's `extension.py`. See [extension-contract.md](../../extension-api/standards/extension-contract.md) for the complete contract.
+Built-in step keys are always first in the default map; project `verify-step-*` skills follow. The `skill-domains configure` verb seeds the map with the built-in verify steps.
 
 Managed via (the step verbs operate on the keyed map, preserving key insertion order and any existing per-step params):
 - `plan phase-5-execute set-steps --steps default:verify:quality-gate,default:verify:module-tests`

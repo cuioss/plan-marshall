@@ -490,13 +490,6 @@ def get_workflow_extensions_from_extensions(extensions: list[dict[str, Any]]) ->
         except Exception:
             pass
 
-        try:
-            verify_steps = module.provides_verify_steps()
-            if verify_steps:
-                ext_info['verify_steps'] = verify_steps
-        except Exception:
-            pass
-
         if ext_info:
             workflow_extensions[ext['bundle']] = ext_info
 

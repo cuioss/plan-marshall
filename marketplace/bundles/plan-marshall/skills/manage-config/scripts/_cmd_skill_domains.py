@@ -8,9 +8,7 @@ Extension API functions:
 - get_skill_domains() -> domain metadata with profiles
 - provides_triage() -> triage skill reference or None
 - provides_outline_skill() -> outline skill reference or None
-- provides_verify_steps() -> list of verification step dicts
 - provides_recipes() -> list of recipe definition dicts
-- provides_finalize_steps() -> list of finalize step dicts
 """
 
 import copy
@@ -397,47 +395,12 @@ def load_profiles_from_bundle(bundle_name: str, domain_key: str | None = None) -
     return {'profiles': {}}
 
 
-def _collect_verify_steps(domain_key: str) -> list:
-    """Collect verify steps from a domain's extension.py.
-
-    Args:
-        domain_key: Domain key (e.g., 'java', 'documentation')
-
-    Returns:
-        List of verify step dicts [{name, agent, description}] or empty list
-    """
-    extensions = discover_all_extensions()
-
-    for ext in extensions:
-        module = ext.get('module')
-        if not module or not hasattr(module, 'get_skill_domains'):
-            continue
-
-        try:
-            all_domains = module.get_skill_domains()
-            for domain_info in all_domains:
-                if not domain_info:
-                    continue
-
-                domain_data = domain_info.get('domain', {})
-                if isinstance(domain_data, dict) and domain_data.get('key') == domain_key:
-                    if hasattr(module, 'provides_verify_steps'):
-                        steps: list = module.provides_verify_steps()
-                        return steps
-                    return []
-        except Exception:
-            continue
-
-    return []
-
-
 def _discover_all_verify_steps() -> list[dict]:
-    """Discover all verify steps from built-in, project, and extension sources.
+    """Discover all verify steps from built-in and project sources.
 
     Sources (in order):
     1. Built-in steps from _config_defaults.BUILT_IN_VERIFY_STEPS
     2. Project verify-step-* skills in .claude/skills/
-    3. Extension provides_verify_steps()
 
     Each result dict includes an `order` field (int) or `None` when the source
     authoritative file/return dict does not declare one. Sorting and collision
@@ -499,37 +462,13 @@ def _discover_all_verify_steps() -> list[dict]:
             }
         )
 
-    # Source 3: Extension provides_verify_steps()
-    extensions = discover_all_extensions()
-    for ext in extensions:
-        module = ext.get('module')
-        if not module or not hasattr(module, 'provides_verify_steps'):
-            continue
-        try:
-            steps = module.provides_verify_steps()
-            if not steps:
-                continue
-            for step in steps:
-                order_value = step.get('order')
-                all_steps.append(
-                    {
-                        'name': step.get('name', ''),
-                        'description': step.get('description', ''),
-                        'type': 'skill',
-                        'source': 'extension',
-                        'order': int(order_value) if isinstance(order_value, int) else None,
-                    }
-                )
-        except Exception:
-            pass
-
     return all_steps
 
 
 def cmd_list_verify_steps(args) -> dict:
     """List all available verify steps discovered at runtime.
 
-    Sources: built-in + project verify-step-* skills + extension provides_verify_steps().
+    Sources: built-in + project verify-step-* skills.
     """
     all_steps = _discover_all_verify_steps()
     return success_exit({'steps': all_steps, 'count': len(all_steps)})
@@ -817,7 +756,6 @@ def cmd_skill_domains(args) -> dict:
         # Apply domain config for each selected domain from bundle extension.py
         domains_configured = []
         domains_not_found = []
-        extension_verify_steps: list = []
 
         for domain_key in selected_domains:
             # Load from bundle extension.py (returns converted config directly)
@@ -825,13 +763,6 @@ def cmd_skill_domains(args) -> dict:
             if domain_config:
                 skill_domains[domain_key] = domain_config
                 domains_configured.append(domain_key)
-
-                # Collect verify steps from extension as flat references
-                steps = _collect_verify_steps(domain_key)
-                for step in steps:
-                    step_ref = step.get('name', '')
-                    if step_ref and step_ref not in extension_verify_steps:
-                        extension_verify_steps.append(step_ref)
             else:
                 domains_not_found.append(domain_key)
 
@@ -848,18 +779,17 @@ def cmd_skill_domains(args) -> dict:
         config['skill_domains'] = skill_domains
 
         # Persist verify steps to plan.phase-5-execute.verification_steps as an
-        # id-keyed map: built-in steps + extension steps, each keyed to its
-        # nested param object. Verification steps own no params, so every value
-        # is the empty object `{}`. Key insertion order (built-ins first, then
-        # extension steps in discovery order) is the execution order — this seeds
-        # the keyed-map shape that the manifest composer's keyed-map-only reader
+        # id-keyed map: built-in steps, each keyed to its nested param object.
+        # Verification steps own no params, so every value is the empty object
+        # `{}`. Key insertion order is the execution order — this seeds the
+        # keyed-map shape that the manifest composer's keyed-map-only reader
         # (`_read_marshal_phase_steps`, no list fallback) consumes.
         from _config_defaults import BUILT_IN_VERIFY_STEPS
 
         plan_config = config.get('plan', {})
         execute_section = plan_config.get('phase-5-execute', {})
         execute_section['verification_steps'] = {
-            step_id: {} for step_id in list(BUILT_IN_VERIFY_STEPS) + extension_verify_steps
+            step_id: {} for step_id in BUILT_IN_VERIFY_STEPS
         }
         plan_config['phase-5-execute'] = execute_section
         config['plan'] = plan_config
@@ -873,8 +803,6 @@ def cmd_skill_domains(args) -> dict:
         }
         if domains_not_found:
             result['domains_not_found'] = ','.join(domains_not_found)
-        if extension_verify_steps:
-            result['verify_steps'] = extension_verify_steps
 
         return success_exit(result)
 

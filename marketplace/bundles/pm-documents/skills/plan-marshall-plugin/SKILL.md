@@ -40,7 +40,6 @@ Configuration in `extension.py` implements the Extension API contract:
 | `provides_triage()` | Returns `pm-documents:ext-triage-docs` |
 | `provides_outline_skill()` | Returns `None` (uses generic outline) |
 | `provides_recipes()` | Returns `recipe-doc-verify`, `recipe-verify-architecture-diagrams`, `recipe-verify-ascii-diagrams` |
-| `provides_verify_steps()` | Returns `[]` (verification via recipe) |
 
 ## Integration
 

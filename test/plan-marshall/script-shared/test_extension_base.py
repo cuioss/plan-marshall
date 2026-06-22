@@ -177,10 +177,10 @@ def test_extension_base_default_outline_skill():
     assert ext.provides_outline_skill() is None
 
 
-def test_extension_base_default_verify_steps():
-    """Default provides_verify_steps returns empty list."""
+def test_extension_base_no_longer_exposes_verify_steps_hook():
+    """The dead provides_verify_steps hook is removed from ExtensionBase."""
     ext = ConcreteExtension()
-    assert ext.provides_verify_steps() == []
+    assert not hasattr(ext, 'provides_verify_steps')
 
 
 def test_extension_base_no_longer_exposes_axis_b_methods():

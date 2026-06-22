@@ -129,8 +129,8 @@ See the canonical per-key reference in link:../../marketplace/bundles/plan-marsh
 | **Project-local** (prefix `project:`)
 | Loaded from `.claude/skills/finalize-step-<step>/` — a project-specific finalize step (e.g. a custom deploy or notification).
 
-| **Extension-provided**
-| Contributed by an installed bundle via `provides_verify_steps()` (phase-5) or `provides_finalize_steps()` (phase-6). The bundle's `extension.py` declares them; the wizard appends them in domain-defined order.
+| **Bundle-optional**
+| Opt-in bundle finalize steps (phase-6) declared in `OPTIONAL_BUNDLE_FINALIZE_STEPS` (e.g. `plan-marshall:plan-retrospective`). They surface in `list-finalize-steps` but are absent from the default step list, so operators must select them explicitly in the wizard.
 |===
 
 Order is significant — phase-5 runs verify steps in key order until one fails; phase-6 runs finalize steps in key order until the pipeline completes or a `loop_back` outcome resets it. Configure the step list via `/marshall-steward` → Configuration, or the step-list verbs `manage-config plan phase-N set-steps --steps …` / `add-step` / `remove-step` (these operate on the keyed map's keys, preserving insertion order and any existing per-step params, persisting under `verification_steps` for phase-5-execute and `steps` for phase-6-finalize).
@@ -142,7 +142,7 @@ Step-owned parameters live in a two-tier source model:
 * **Global default (marshal.json keyed map)** — read/written with the one-stop `step` verb: `manage-config plan phase-6-finalize step get --step-id default:branch-cleanup` returns the step's complete nested parameter object in one call; `manage-config plan phase-6-finalize step set --step-id default:branch-cleanup --param pr_merge_strategy --value rebase` writes one parameter. This is the compose-time default and the `/marshall-steward` wizard's write target.
 * **Plan-local runtime (execution manifest snapshot)** — at plan-compose time the composer snapshots each selected step's resolved parameters into the per-plan execution manifest. The phase-5/6 runtime consumers read parameters from this plan-local snapshot via `manage-execution-manifest step-params get --phase {5-execute|6-finalize} --step-id {id}`, and a per-plan override is written with `manage-execution-manifest step-params set` (the manifest value then wins over the global default for that plan).
 
-Reference: `data-model.md` §§ phase-5-execute / phase-6-finalize; link:../../marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/manifest-schema.md[`manifest-schema.md`] § `step_params`; link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-verify-steps.md[`ext-point-verify-steps.md`]; link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-steps.md[`ext-point-finalize-steps.md`].
+Reference: `data-model.md` §§ phase-5-execute / phase-6-finalize; link:../../marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/manifest-schema.md[`manifest-schema.md`] § `step_params`.
 
 [#per-envelope-packing-budget]
 === Per-envelope packing budget and the cost-size token table
