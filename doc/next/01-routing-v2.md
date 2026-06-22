@@ -46,11 +46,35 @@ The token/wall-time win comes from the matched recipe running in a single envelo
   generalization of the lesson-cleanup auto-suggest to the whole recipe set.
 - **Secondary target:** the confidence-loop re-dispatch fragmentation (the real
   860K-token cost) is reduced because routed recipes run in one envelope.
+- **Classify the request *aspect*, not only the recipe shape.** Beyond matching a
+  named recipe, routing should recognize the *kind* of work — analysis / planning
+  vs implementation — because the aspect changes the outcome and the manifest. An
+  analysis or planning request produces analysis/plan artifacts (documents,
+  outlines, recommendations), not source changes, so it **needs no build/verify
+  gates** and its manifest drops the build, quality-gate, and test steps. (This very
+  session — analyze, then author planning docs, no build — is the canonical
+  analysis/planning aspect.) Implementation requests keep the build/verify path.
+  The aspect is a cheap heuristic signal (intent verbs + whether declared
+  affected files are docs/specs vs source), feeding the same single-envelope
+  inline path.
+- **Run the early phases inline — do not dispatch an execution-context per phase.**
+  Today the orchestrator dispatches a separate `Task: execution-context-{level}`
+  envelope for each of phase-2-refine / phase-3-outline / phase-4-plan. On a routed
+  shortcut the orchestrator runs init / refine / outline **inline in its own
+  context** and dispatches an execution-context only where a different model/effort
+  level or heavy isolated cognition is genuinely needed (typically only
+  phase-5-execute). This is the single biggest token/wall-time lever for shortcuts
+  (see [principles §3](principles.md)); the recipe-match decision itself stays
+  zero-token (Tier 1 heuristic). The light lane already folds Simple-outline +
+  deliverable-derivation into one envelope — generalize that to the early phases.
 
 ## Affected surface
 
 - `phase-1-init/SKILL.md` — generalize Step 5c into a recipe-match step; sequence
   it ahead of the Step 8b planning-lane call.
+- `plan-marshall/workflow/planning.md`, `plan-marshall/workflow/planning-outline.md` — the orchestrator
+  dispatch sites; add the inline-early-phase path so a routed shortcut skips the
+  per-phase execution-context dispatches.
 - `manage-status` planning-lane (sequencing only).
 - `manage-config` recipe-resolution verbs (read-only reuse).
 - New scoring helper (heuristic) — likely a small router script or a `manage-config`
