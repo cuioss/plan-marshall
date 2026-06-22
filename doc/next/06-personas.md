@@ -144,8 +144,10 @@ Personas are documents under one aggregator skill, not separate skills, so they 
   `persona: {key}` in its frontmatter to bind itself to a persona.
 - **Human reference:** "the Security Reviewer persona."
 - **Resolution stays doc-driven** (read the aggregator index + `personas/{key}.md`)
-  — no new runtime authority. A `dev-general-persona resolve --persona {key}` CLI
-  verb is added only if a script ever needs structured resolution.
+  — no new runtime authority. A `manage-personas resolve --persona-key {key}` CLI
+  verb (a separate script-executor skill, per the `manage-*` convention and the
+  typed-ID-suffix rule in `argument-naming.md`) is added only if a script ever needs
+  structured resolution.
 
 ## Affected surface
 
