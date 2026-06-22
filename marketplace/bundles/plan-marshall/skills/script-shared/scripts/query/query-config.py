@@ -9,8 +9,6 @@ Usage:
     query-config.py resolve-domain-skills --domain java --profile implementation
     query-config.py resolve-workflow-skill-extension --domain java --type outline
     query-config.py get-skills-by-profile --domain java
-    query-config.py configure-execute-task-skills
-    query-config.py resolve-execute-task-skill --profile implementation
     query-config.py list-recipes
     query-config.py resolve-recipe --recipe refactor-to-standards
     query-config.py resolve-outline-skill --domain java
@@ -22,12 +20,10 @@ import argparse
 
 from _cmd_skill_domains import cmd_list_verify_steps
 from _cmd_skill_resolution import (
-    cmd_configure_execute_task_skills,
     cmd_get_skills_by_profile,
     cmd_list_finalize_steps,
     cmd_list_recipes,
     cmd_resolve_domain_skills,
-    cmd_resolve_execute_task_skill,
     cmd_resolve_outline_skill,
     cmd_resolve_recipe,
     cmd_resolve_workflow_skill_extension,
@@ -69,19 +65,6 @@ def main() -> int:
     )
     p_gsbp.add_argument('--domain', required=True, help='Domain name (java, javascript, etc.)')
 
-    # --- configure-execute-task-skills ---
-    subparsers.add_parser(
-        'configure-execute-task-skills',
-        help='Configure execute-task skills from discovered profiles',
-        allow_abbrev=False,
-    )
-
-    # --- resolve-execute-task-skill ---
-    p_rte = subparsers.add_parser(
-        'resolve-execute-task-skill', help='Resolve execute-task skill for a profile', allow_abbrev=False
-    )
-    p_rte.add_argument('--profile', required=True, help='Profile name (e.g., implementation, module_testing)')
-
     # --- list-recipes ---
     subparsers.add_parser('list-recipes', help='List all available recipes from configured domains', allow_abbrev=False)
 
@@ -111,8 +94,6 @@ def main() -> int:
         'resolve-domain-skills': cmd_resolve_domain_skills,
         'resolve-workflow-skill-extension': cmd_resolve_workflow_skill_extension,
         'get-skills-by-profile': cmd_get_skills_by_profile,
-        'configure-execute-task-skills': cmd_configure_execute_task_skills,
-        'resolve-execute-task-skill': cmd_resolve_execute_task_skill,
         'list-recipes': cmd_list_recipes,
         'resolve-recipe': cmd_resolve_recipe,
         'resolve-outline-skill': cmd_resolve_outline_skill,

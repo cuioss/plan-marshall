@@ -33,12 +33,10 @@ from _cmd_skill_domains import (
     cmd_skill_domains,
 )
 from _cmd_skill_resolution import (
-    cmd_configure_execute_task_skills,
     cmd_get_skills_by_profile,
     cmd_list_finalize_steps,
     cmd_list_recipes,
     cmd_resolve_domain_skills,
-    cmd_resolve_execute_task_skill,
     cmd_resolve_outline_skill,
     cmd_resolve_recipe,
     cmd_resolve_workflow_skill_extension,
@@ -618,19 +616,6 @@ def main() -> int:
     )
     add_domain_arg(p_gsbp)
 
-    # --- configure-execute-task-skills ---
-    subparsers.add_parser(
-        'configure-execute-task-skills',
-        help='Configure execute-task skills from discovered profiles',
-        allow_abbrev=False,
-    )
-
-    # --- resolve-execute-task-skill ---
-    p_rte = subparsers.add_parser(
-        'resolve-execute-task-skill', help='Resolve execute-task skill for a profile', allow_abbrev=False
-    )
-    p_rte.add_argument('--profile', required=True, help='Profile name (e.g., implementation, module_testing)')
-
     # --- list-recipes ---
     subparsers.add_parser('list-recipes', help='List all available recipes from configured domains', allow_abbrev=False)
 
@@ -755,10 +740,6 @@ def main() -> int:
         result = cmd_resolve_workflow_skill_extension(args)
     elif args.noun == 'get-skills-by-profile':
         result = cmd_get_skills_by_profile(args)
-    elif args.noun == 'configure-execute-task-skills':
-        result = cmd_configure_execute_task_skills(args)
-    elif args.noun == 'resolve-execute-task-skill':
-        result = cmd_resolve_execute_task_skill(args)
     elif args.noun == 'domain-detect':
         result = cmd_domain_detect(args)
     elif args.noun == 'list-recipes':

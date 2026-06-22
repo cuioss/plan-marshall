@@ -2,8 +2,8 @@
 Skill resolution and discovery command handlers for manage-config.
 
 Handles: resolve-domain-skills, resolve-workflow-skill-extension, get-skills-by-profile,
-         configure-execute-task-skills, resolve-execute-task-skill, resolve-outline-skill,
-         list-recipes, resolve-recipe, list-verify-steps, list-finalize-steps
+         resolve-outline-skill, list-recipes, resolve-recipe, list-verify-steps,
+         list-finalize-steps
 """
 
 import re
@@ -18,11 +18,9 @@ from _config_core import (
     MarshalNotInitializedError,
     error_exit,
     get_skill_description,
-    is_nested_domain,
     load_config,
     require_initialized,
     resolve_bundle_path,
-    save_config,
     success_exit,
 )
 
@@ -215,92 +213,6 @@ def cmd_get_skills_by_profile(args) -> dict:
         skills_by_profile[profile_name] = combined
 
     return success_exit({'domain': domain, 'skills_by_profile': skills_by_profile})
-
-
-def cmd_configure_execute_task_skills(args) -> dict:
-    """Configure execute-task skills from discovered profiles."""
-    try:
-        require_initialized()
-    except MarshalNotInitializedError as e:
-        return error_exit(str(e))
-
-    config = load_config()
-    skill_domains = config.get('skill_domains', {})
-
-    # Ensure system domain exists
-    if 'system' not in skill_domains:
-        return error_exit('System domain not configured. Run skill-domains configure first.')
-
-    # Discover all unique profiles from configured domains
-    discovered_profiles = set()
-
-    for domain_key, domain_config in skill_domains.items():
-        if domain_key == 'system':
-            continue
-        if not is_nested_domain(domain_config):
-            continue
-
-        # Load profiles from extension.py
-        bundle = domain_config.get('bundle')
-        if bundle:
-            ext_data = load_profiles_from_bundle(bundle, domain_key)
-            profiles = ext_data.get('profiles', {})
-            for key in profiles.keys():
-                if key != 'core':
-                    discovered_profiles.add(key)
-
-    # Build execute_task_skills mapping: every profile maps to the unified
-    # plan-marshall:execute-task skill (the lone skill that exists; there are no
-    # per-profile execute-task-{profile} skills). This matches the
-    # DEFAULT_EXECUTE_TASK_SKILLS seed and the phase-5 resolve-execute-task-skill
-    # consumer.
-    execute_task_skills = {}
-    for profile in sorted(discovered_profiles):
-        # Skip quality profile - it's handled by verify phase, not task execution
-        if profile == 'quality':
-            continue
-        execute_task_skills[profile] = 'plan-marshall:execute-task'
-
-    # Update system domain with execute_task_skills
-    system_config = skill_domains['system']
-    system_config['execute_task_skills'] = execute_task_skills
-    skill_domains['system'] = system_config
-
-    config['skill_domains'] = skill_domains
-    save_config(config)
-
-    return success_exit(
-        {
-            'status': 'success',
-            'execute_task_skills_configured': len(execute_task_skills),
-            'skills': execute_task_skills,
-        }
-    )
-
-
-def cmd_resolve_execute_task_skill(args) -> dict:
-    """Resolve execute-task skill for a given profile."""
-    try:
-        require_initialized()
-    except MarshalNotInitializedError as e:
-        return error_exit(str(e))
-
-    profile = args.profile
-    config = load_config()
-    skill_domains = config.get('skill_domains', {})
-    system_config = skill_domains.get('system', {})
-    execute_task_skills = system_config.get('execute_task_skills', {})
-
-    if not execute_task_skills:
-        return error_exit('No execute_task_skills configured. Run configure-execute-task-skills first.')
-
-    if profile not in execute_task_skills:
-        available = sorted(execute_task_skills.keys())
-        return error_exit(f"Unknown profile '{profile}'. Available profiles: {', '.join(available)}")
-
-    execute_task_skill = execute_task_skills[profile]
-
-    return success_exit({'profile': profile, 'execute_task_skill': execute_task_skill})
 
 
 # =============================================================================

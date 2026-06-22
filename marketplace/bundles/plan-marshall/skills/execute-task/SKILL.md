@@ -9,7 +9,7 @@ mode: workflow
 
 **Role**: Unified, domain-agnostic workflow skill for executing tasks during phase-5-execute. Handles all profiles: `implementation`, `module_testing`, and `verification`. Loaded in-context as a `Skill:` by the single `plan-marshall:phase-5-execute` envelope, once per task — this is leaf-legal in-context skill loading, NOT a per-task `Task:` subagent dispatch.
 
-**Key Pattern**: The phase-5-execute envelope loads this skill in-context via `resolve-execute-task-skill --profile {profile}` (a `Skill:` load within the single envelope, not a subagent dispatch). The skill reads the task's profile and follows the appropriate workflow. Domain-specific knowledge comes from `task.skills` (loaded in-context alongside this skill).
+**Key Pattern**: The phase-5-execute envelope loads this unified skill in-context (a `Skill:` load within the single envelope, not a subagent dispatch). The skill reads the task's `profile` and dispatches internally to the appropriate profile workflow. Domain-specific knowledge comes from `task.skills` (loaded in-context alongside this skill).
 
 **Base Contract**: This skill follows the execute-task skill contract defined in [execute-task-skills.md](../ref-workflow-architecture/standards/execute-task-skills.md) for input/output contracts, error handling, and script notations.
 

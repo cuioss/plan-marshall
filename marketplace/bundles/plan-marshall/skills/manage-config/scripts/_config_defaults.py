@@ -14,33 +14,19 @@ from constants import (  # type: ignore[import-not-found]
 
 # Reserved keys in nested domain config (not profile names)
 # bundle: Reference to bundle providing this domain (e.g., 'pm-dev-java')
-# execute_task_skills: System domain only - profile to execute-task skill mapping
 # workflow_skill_extensions: Domain extensions (outline, triage)
 # defaults/optionals: System domain top-level skills
 RESERVED_DOMAIN_KEYS = [
     'bundle',
-    'execute_task_skills',
     'workflow_skill_extensions',
     'defaults',
     'optionals',
 ]
 
-# Execute-task skills map profile -> workflow skill
-# All profiles use the unified execute-task skill which handles profile dispatch internally.
-# Keys align with constants.VALID_PROFILES (source of truth for profile names)
-# These are defaults; marshall-steward auto-discovers from extension.py files
-DEFAULT_EXECUTE_TASK_SKILLS = {
-    'implementation': 'plan-marshall:execute-task',
-    'module_testing': 'plan-marshall:execute-task',
-    'integration_testing': 'plan-marshall:execute-task',
-    'verification': 'plan-marshall:execute-task',
-}
-
 # Default system domain configuration
-DEFAULT_SYSTEM_DOMAIN = {
+DEFAULT_SYSTEM_DOMAIN: dict[str, list[str]] = {
     'defaults': [],
     'optionals': [],
-    'execute_task_skills': DEFAULT_EXECUTE_TASK_SKILLS,
 }
 
 

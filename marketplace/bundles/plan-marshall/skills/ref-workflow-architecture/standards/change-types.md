@@ -20,7 +20,7 @@ Change types are orthogonal to other dimensions:
 | **Profile** | WHAT aspect of work | implementation, module_testing, quality |
 | **Change-type** | WHY you're doing it | analysis, feature, bug_fix |
 
-Change-type determines the outline workflow (how deliverables are discovered and structured). Profile determines task execution (which execute-task skill runs). A single deliverable with change-type `feature` may produce tasks with profiles `implementation` and `module_testing`. See [execute-task-skills.md](execute-task-skills.md) for profile→execute-task skill mapping.
+Change-type determines the outline workflow (how deliverables are discovered and structured). Profile determines task execution (which profile workflow the unified execute-task skill runs). A single deliverable with change-type `feature` may produce tasks with profiles `implementation` and `module_testing`. See [execute-task-skills.md](execute-task-skills.md) for the profile dispatch model.
 
 ### Skill-Based Handling
 
@@ -147,6 +147,6 @@ reasoning: "Request describes improving existing plugin functionality"
 
 ## Related
 
-- [execute-task-skills.md](execute-task-skills.md) - Profile-based execute-task skill routing and shared workflow
+- [execute-task-skills.md](execute-task-skills.md) - Profile dispatch within the unified execute-task skill and shared workflow
 - [phases.md](phases.md) - Phase workflow overview
 - `plan-marshall:manage-status:change-type-heuristic` - Deterministic keyword-classifier script (heuristic + LLM fallback via `effort`)

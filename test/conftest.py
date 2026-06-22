@@ -1036,7 +1036,7 @@ def create_marshal_json(base_dir: Path, skill_domains: dict | None = None, extra
 
     Example:
         marshal_path = create_marshal_json(temp_dir, skill_domains={
-            "system": {"defaults": [...], "execute_task_skills": {...}}
+            "system": {"defaults": [...], "optionals": [...]}
         })
     """
     # Determine the correct location for marshal.json
