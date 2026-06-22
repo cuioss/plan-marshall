@@ -1,6 +1,8 @@
 # 03 — Security audit as a finalize step (uses a `security` profile)
 
-**Shares the audit engine with [02](02-audit-recipes.md)'s `recipe-security-audit`.**
+**Shares the audit engine with [02](02-audit-recipes.md)'s `recipe-security-audit`.
+Ships as the "Security Reviewer" persona — depends on [06](06-personas.md), which
+lands first and defines that persona (one of three modeled there) over this bundle.**
 
 ## Problem
 
