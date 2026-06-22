@@ -934,7 +934,46 @@ def test_stuck_state_gate_unparseable_json_fails_closed(monkeypatch):
     ok, reason = github_ops._safe_merge_stuck_state_gate('42')
 
     assert ok is False
-    assert 'unparseable JSON' in reason
+    assert 'could not be parsed' in reason
+
+
+def test_stuck_state_gate_non_dict_payload_fails_closed(monkeypatch):
+    """A non-dict gate-query payload fails closed rather than raising."""
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    monkeypatch.setattr(
+        github_ops,
+        'run_gh',
+        _gate_run_gh(view=(0, '["unexpected", "list"]'), compare=(0, {'behind_by': 0})),
+    )
+
+    ok, reason = github_ops._safe_merge_stuck_state_gate('42')
+
+    assert ok is False
+    assert 'non-dictionary JSON' in reason
+
+
+def test_stuck_state_gate_non_list_rollup_fails_closed(monkeypatch):
+    """A statusCheckRollup that is not a list fails closed."""
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    monkeypatch.setattr(
+        github_ops,
+        'run_gh',
+        _gate_run_gh(
+            view=(0, {
+                'reviewDecision': 'APPROVED',
+                'statusCheckRollup': {'not': 'a list'},
+                'headRefOid': 'abc123',
+            }),
+            compare=(0, {'behind_by': 0}),
+        ),
+    )
+
+    ok, reason = github_ops._safe_merge_stuck_state_gate('42')
+
+    assert ok is False
+    assert 'not a list' in reason
 
 
 def test_behind_by_zero_compare_missing_field_fails_closed(monkeypatch):

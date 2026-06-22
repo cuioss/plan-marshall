@@ -1563,11 +1563,20 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
         # Readiness reached — delegate to the normal merge path.
         merge_result = cmd_pr_merge(_safe_merge_delegate_ns(args))
         if merge_result.get('status') != 'success':
-            return merge_result
+            # Normalize the delegated failure to this verb's operation so the
+            # safe-merge response contract holds for downstream consumers.
+            return make_error(
+                'pr_safe_merge',
+                merge_result.get('error', f'Failed to merge MR {iid}'),
+                merge_result.get('context', ''),
+            )
         merge_result['operation'] = 'pr_safe_merge'
         merge_result['merge_path'] = 'polled_clean'
         merge_result['polls'] = polls
         merge_result['duration_sec'] = duration_sec
+        # Prefer the integer MR IID resolved during polling over the branch
+        # name cmd_pr_merge echoes back when --head was used.
+        merge_result['pr_number'] = (poll_result.get('last_data') or {}).get('pr_number') or merge_result.get('pr_number')
         return merge_result
 
     # Timed out while not ready. GitLab has no admin fallback — the

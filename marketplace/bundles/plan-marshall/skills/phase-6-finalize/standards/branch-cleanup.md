@@ -613,11 +613,11 @@ Set `{merge_consent} = deferred`. Skip the **Merge PR**, **Wait for Merge CI**, 
 
 Issue a single `pr safe-merge` call. It polls the PR's mergeability until ready, then merges (and deletes the remote branch via `--delete-branch`); on GitHub it additionally falls back to an `--admin` merge when the PR stays stuck `mergeable_state: blocked` past the poll timeout AND every active ruleset requirement is provably met. This single verb replaces the former `pr merge` → `pr auto-merge` branch-protection fallback sequence: the poll-then-merge path and the stuck-state admin fallback are both internal to `pr safe-merge`.
 
-The GitHub-only `--admin` fallback is gated by the `{admin_merge_on_stuck_state}` param read from the one-stop `step-params get` call in the **Conflict-Severity Classifier** section above (default: `false`). **Pass `--admin-merge-on-stuck-state` only when `{admin_merge_on_stuck_state} == true`**; omit the flag entirely when it is `false` (the flag is `store_true`). On GitLab the flag is accepted but has no effect — there is no admin-merge equivalent, so a stuck MR surfaces as an error rather than force-merging.
+The GitHub-only `--admin` fallback is gated by the `{admin_merge_on_stuck_state}` param read from the one-stop `step-params get` call in the **Conflict-Severity Classifier** section above (default: `false`). Resolve `{admin_flag}` from that param: when `{admin_merge_on_stuck_state} == true`, `{admin_flag}` is the literal `--admin-merge-on-stuck-state`; when it is `false` (the default), `{admin_flag}` is the empty string and the flag is omitted entirely (it is `store_true`). On GitLab the flag is accepted but has no effect — there is no admin-merge equivalent, so a stuck MR surfaces as an error rather than force-merging.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr safe-merge \
-    --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch --admin-merge-on-stuck-state
+    --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch {admin_flag}
 ```
 
 If `safe-merge` fails (poll timeout with the admin fallback disabled or unmet, a GitLab stuck state, or any merge error) → log error and abort:

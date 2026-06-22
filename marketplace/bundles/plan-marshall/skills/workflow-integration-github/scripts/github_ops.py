@@ -1014,34 +1014,48 @@ def _safe_merge_stuck_state_gate(identifier: str) -> tuple[bool, str | None]:
     if returncode != 0:
         return False, f'stuck-state gate query failed: {stderr.strip()}'
 
+    # Fail closed on any structural anomaly in the gate-query payload: an admin
+    # merge is authorized only when every requirement is *provably* met, so a
+    # malformed or unexpectedly-shaped response must refuse, never raise an
+    # untyped exception that could bypass the gate.
     try:
         data = json.loads(stdout)
-    except json.JSONDecodeError:
-        return False, 'stuck-state gate query returned unparseable JSON'
+        if not isinstance(data, dict):
+            return False, 'stuck-state gate query returned non-dictionary JSON'
 
-    # Required approving reviews satisfied.
-    review_decision = (data.get('reviewDecision') or '').lower()
-    if review_decision and review_decision != 'approved':
-        return False, f'review decision is {review_decision!r}, not approved'
+        # Required approving reviews satisfied. A null/empty ``reviewDecision``
+        # means the ruleset does not require review approval (the requirement is
+        # vacuously met); an explicit non-approved value (REVIEW_REQUIRED /
+        # CHANGES_REQUESTED) is a real unmet requirement that refuses the gate.
+        review_decision = (data.get('reviewDecision') or '').lower()
+        if review_decision and review_decision != 'approved':
+            return False, f'review decision is {review_decision!r}, not approved'
 
-    # Required status checks all SUCCESS on the head SHA. ``statusCheckRollup``
-    # is the per-head-SHA rollup, so a non-SUCCESS conclusion here is a real
-    # unmet requirement, not staleness.
-    rollup = data.get('statusCheckRollup') or []
-    for check in rollup:
-        conclusion = (check.get('conclusion') or check.get('state') or '').upper()
-        # gh reports completed checks via ``conclusion`` (SUCCESS / NEUTRAL /
-        # SKIPPED are non-failing) and in-progress checks via empty conclusion.
-        if conclusion and conclusion not in ('SUCCESS', 'NEUTRAL', 'SKIPPED'):
-            name = check.get('name') or check.get('context') or 'unknown'
-            return False, f'required check {name!r} concluded {conclusion}'
-        if not conclusion:
-            name = check.get('name') or check.get('context') or 'unknown'
-            return False, f'required check {name!r} has not concluded'
+        # Required status checks all SUCCESS on the head SHA. ``statusCheckRollup``
+        # is the per-head-SHA rollup, so a non-SUCCESS conclusion here is a real
+        # unmet requirement, not staleness.
+        rollup = data.get('statusCheckRollup') or []
+        if not isinstance(rollup, list):
+            return False, 'statusCheckRollup is not a list'
+        for check in rollup:
+            if not isinstance(check, dict):
+                return False, 'statusCheckRollup contains a non-dictionary check entry'
+            conclusion = (check.get('conclusion') or check.get('state') or '').upper()
+            # gh reports completed checks via ``conclusion`` (SUCCESS / NEUTRAL /
+            # SKIPPED are non-failing) and in-progress checks via empty conclusion.
+            if conclusion and conclusion not in ('SUCCESS', 'NEUTRAL', 'SKIPPED'):
+                name = check.get('name') or check.get('context') or 'unknown'
+                return False, f'required check {name!r} concluded {conclusion}'
+            if not conclusion:
+                name = check.get('name') or check.get('context') or 'unknown'
+                return False, f'required check {name!r} has not concluded'
 
-    # Branch not behind base — the head must already contain the base tip,
-    # otherwise the ``blocked`` state reflects a real out-of-date branch.
-    head_oid = data.get('headRefOid')
+        # Branch not behind base — the head must already contain the base tip,
+        # otherwise the ``blocked`` state reflects a real out-of-date branch.
+        head_oid = data.get('headRefOid')
+    except (TypeError, ValueError, AttributeError) as exc:
+        return False, f'stuck-state gate query response could not be parsed: {exc}'
+
     if not head_oid:
         return False, 'could not resolve head SHA for behind-by check'
     behind_ok, behind_reason = _safe_merge_behind_by_zero(identifier, head_oid)
@@ -1076,10 +1090,12 @@ def _safe_merge_behind_by_zero(identifier: str, head_oid: str) -> tuple[bool, st
         return False, f'behind-by compare query failed: {stderr.strip()}'
     try:
         compare_data = json.loads(stdout)
-    except json.JSONDecodeError:
-        return False, 'behind-by compare query returned unparseable JSON'
+        if not isinstance(compare_data, dict):
+            return False, 'behind-by compare query returned non-dictionary JSON'
+        behind_by = compare_data.get('behind_by')
+    except (TypeError, ValueError, AttributeError) as exc:
+        return False, f'behind-by compare query response could not be parsed: {exc}'
 
-    behind_by = compare_data.get('behind_by')
     if behind_by is None:
         return False, 'compare response missing behind_by'
     if behind_by != 0:
@@ -1143,11 +1159,20 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
         # Readiness reached — delegate to the normal merge path.
         merge_result = cmd_pr_merge(_safe_merge_delegate_ns(args))
         if merge_result.get('status') != 'success':
-            return merge_result
+            # Normalize the delegated failure to this verb's operation so the
+            # safe-merge response contract holds for downstream consumers.
+            return make_error(
+                'pr_safe_merge',
+                merge_result.get('error', f'Failed to merge PR {identifier}'),
+                merge_result.get('context', ''),
+            )
         merge_result['operation'] = 'pr_safe_merge'
         merge_result['merge_path'] = 'polled_clean'
         merge_result['polls'] = polls
         merge_result['duration_sec'] = duration_sec
+        # Prefer the integer PR number resolved during polling over the branch
+        # name cmd_pr_merge echoes back when --head was used.
+        merge_result['pr_number'] = (poll_result.get('last_data') or {}).get('pr_number') or merge_result.get('pr_number')
         return merge_result
 
     # Timed out while not ready. Layer 2 admin fallback is GitHub-only and
@@ -1182,7 +1207,7 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
     result: dict = {
         'status': 'success',
         'operation': 'pr_safe_merge',
-        'pr_number': args.pr_number if args.pr_number else identifier,
+        'pr_number': (poll_result.get('last_data') or {}).get('pr_number') or (args.pr_number if args.pr_number else identifier),
         'strategy': args.strategy,
         'merge_path': 'admin_fallback',
         'polls': polls,

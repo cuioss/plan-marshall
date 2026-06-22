@@ -434,7 +434,7 @@ def test_safe_merge_can_be_merged_on_first_poll(monkeypatch):
 def test_safe_merge_recheck_then_can_be_merged(monkeypatch):
     """An MR that is recheck-pending then ready keeps polling, then merges."""
     _install_common(monkeypatch)
-    run_glab_stub, captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
+    run_glab_stub, _captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
     view_stub, view_calls = _sequenced_view_pr_data(
         ['cannot_be_merged_recheck', 'cannot_be_merged_recheck', 'can_be_merged']
