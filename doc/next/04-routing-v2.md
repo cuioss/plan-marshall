@@ -1,6 +1,6 @@
-# 01 — Routing v2: route informal requests onto cheap paths
+# 04 — Routing v2: route informal requests onto cheap paths
 
-**Headline workstream. Depends on [02 audit recipes](02-audit-recipes.md) for routing targets.**
+**Headline workstream. Depends on [03 audit recipes](03-audit-recipes.md) for routing targets.**
 
 ## Problem
 
@@ -35,7 +35,7 @@ Add a **recipe-match routing tier** ahead of the light/deep decision:
   recipe match.
 
 The token/wall-time win comes from the matched recipe running in a single envelope
-(guaranteed by [02](02-audit-recipes.md)), not from optimizing the heavy path.
+(guaranteed by [03](03-audit-recipes.md)), not from optimizing the heavy path.
 
 ## Key design decisions
 
@@ -99,9 +99,9 @@ The token/wall-time win comes from the matched recipe running in a single envelo
 
 ## On completion
 
-Delete this document and remove the `01` row from
+Delete this document and remove the `04` row from
 [`README.md`](README.md); this is part of the plan's finalize.
 
 ## Scope
 
-Medium. Blocked on [02](02-audit-recipes.md).
+Medium. Blocked on [03](03-audit-recipes.md).

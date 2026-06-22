@@ -1,4 +1,4 @@
-# 05 — Surface encoded-test verification
+# 06 — Surface encoded-test verification
 
 **Independent. Lowest priority; guidance/standard, not integration.**
 
@@ -44,7 +44,7 @@ Make the principle explicit and give encoded e2e verification a documented home 
 
 ## On completion
 
-Delete this document and remove the `05` row from [`README.md`](README.md); this is
+Delete this document and remove the `06` row from [`README.md`](README.md); this is
 part of the plan's finalize.
 
 ## Scope

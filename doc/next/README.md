@@ -8,55 +8,57 @@ work, grounded in the mechanisms that exist today. For where these ideas were
 informed by prior art, see [`doc/concepts/design-influences.adoc`](../concepts/design-influences.adoc).
 
 These are **planning documents, not implementation.** Each workstream below names
-the real plan-marshall surface it builds on (router, recipes, finalize steps,
+the real plan-marshall surface it builds on (personas, recipes, finalize steps,
 architecture hints) and the concrete files it would touch. Read
 [`principles.md`](principles.md) first — it governs every workstream (reuse over
-reinvention, findings-pipeline as the universal sink, no new stores, integrate
-external tools rather than rebuild them, document hygiene).
+reinvention, findings-pipeline as the universal sink, no new stores, encoded
+verification over live-run surfaces, document hygiene).
 
 The unifying thesis: **plan-marshall already has the deep machinery (deterministic
 state, worktree isolation, structured findings, multi-reviewer review, the
 architecture-hints store). The next gains come from cheaper paths onto that
 machinery and from feeding more signal back into it** — not from new subsystems.
 
+**The numbering reflects the recommended implementation order.**
+
 ## Workstreams
 
 | # | Workstream | What it adds | Builds on | Document |
 |---|------------|--------------|-----------|----------|
-| 01 | Routing v2 | A recipe-match routing tier ahead of light/deep, so known-shape requests skip the full pipeline (token + wall-time) | `manage-status planning-lane`, recipe registry, lesson auto-suggest | [01-routing-v2.md](01-routing-v2.md) |
-| 02 | Audit recipes | `recipe-code-review` + `recipe-security-audit` as standalone, single-envelope entry points emitting into findings | `ext-point-recipe`, `manage-findings`, `ext-triage-*` | [02-audit-recipes.md](02-audit-recipes.md) |
-| 03 | Security audit finalize step | `default:finalize-step-security-audit` — two-layer focused context (`dev-general-security` + per-domain `security` profile skills) | finalize-step discovery, `security` profile, `dev-general-security`, `ext-triage-*` | [03-security-finalize-step.md](03-security-finalize-step.md) |
-| 04 | Preference learning via hints | A cross-plan command (modeled on `audit-archived-plan-retrospectives`) detects recurring user gate-dispositions, routes them to `enriched.json` `best_practices`, and implicitly archives | PR #744 architecture-hints, `audit-archived-plan-retrospectives`, `manage-findings` | [04-preference-learning-hints.md](04-preference-learning-hints.md) |
-| 05 | Surface encoded-test verification | Make the principle explicit (verify = encoded e2e tests; explore = user's own tools) via a concept note + optional e2e-testing standard — no browser/daemon integration | domain test skills, concept docs | [05-surface-encoded-verification.md](05-surface-encoded-verification.md) |
-| 06 | Personas | A structured persona layer: `dev-general-persona` aggregator skill (complete shell — `SKILL.md` + `standards/` reasoning + `personas/` per-persona docs), data-declared and rendered per-target, naming capability bundles for humans; models all three (Security Reviewer, Auditor, Code Reviewer) | `dev-general-*` family, build-target render, the `security`/audit/review bundles | [06-personas.md](06-personas.md) |
+| 01 | Personas | The persona / ref / profile identity model: first-class `persona-*` skills (base, work-activity ↔ profiles, meta) + `ref-*` concerns, composed by flattening at dispatch; reframes the `dev-general-*` foundation family. Extensible to future personas (architect, planner, …) | profile system, `dev-general-*` family, build-target render | [01-personas.md](01-personas.md) |
+| 02 | Auditor (preference learning) | A cross-plan command (modeled on `audit-archived-plan-retrospectives`) detects recurring user gate-dispositions, routes them to `enriched.json` `best_practices`, and implicitly archives — the first real `persona-auditor` consumer | PR #744 architecture-hints, `audit-archived-plan-retrospectives`, `persona-auditor` | [02-auditor-preference-learning.md](02-auditor-preference-learning.md) |
+| 03 | Audit recipes | `recipe-code-review` + `recipe-security-audit` as standalone, single-envelope entry points emitting into findings | `ext-point-recipe`, `manage-findings`, `ext-triage-*` | [03-audit-recipes.md](03-audit-recipes.md) |
+| 04 | Routing v2 | A recipe-match routing tier ahead of light/deep, so known-shape requests skip the full pipeline (token + wall-time) | `manage-status planning-lane`, recipe registry, lesson auto-suggest | [04-routing-v2.md](04-routing-v2.md) |
+| 05 | Security audit finalize step | `default:finalize-step-security-audit` — two-layer focused context (`persona-security-expert` + per-domain `security` profile skills) | finalize-step discovery, `security` profile, `persona-security-expert` (01), `ext-triage-*` | [05-security-finalize-step.md](05-security-finalize-step.md) |
+| 06 | Surface encoded-test verification | Make the principle explicit (verify = encoded e2e tests; explore = user's own tools) via a concept note + optional e2e-testing standard — no browser/daemon integration | domain test skills, concept docs | [06-surface-encoded-verification.md](06-surface-encoded-verification.md) |
 
 ## Sequencing
 
-```text
-02 audit-recipes ──┬──► 01 routing-v2 (needs recipe targets to route to)
-                   └──► 03 security-finalize-step (shares the audit engine)
-06 personas ──────────► 03 security-finalize-step (03 consumes the Security Reviewer persona)
+The numbering is the recommended order; the dependency arrows below show why:
 
-04 preference-learning-hints  (independent; reuses the retrospective auditor)
-05 surface-encoded-verification (independent; guidance/standard, lowest priority)
+```text
+01 personas ──┬──► 05 security-finalize-step (ships as persona-security-expert)
+              └──► 02 auditor             (uses persona-auditor)
+03 audit-recipes ──┬──► 04 routing-v2     (needs recipe targets to route to)
+                   └──► 05 security-finalize-step (shares the audit engine)
+06 surface-encoded-verification           (independent; lowest priority)
 ```
 
-- **02 is the keystone.** Recipes are the cheap single-envelope path; both 01
-  (routes onto them) and 03 (shares the security audit engine) depend on it.
-- **01 is the headline** but only pays off once recipes exist to route to.
-- **06 precedes 03.** The persona layer lands first so the security audit ships as a
-  named "Security Reviewer" persona rather than an unnamed bundle. 06 models all
-  three personas (Security Reviewer, Auditor, Code Reviewer); it has no dependency
-  on 02, so it can run in parallel with it.
-- **03** ships the security audit as an automatic gate; its on-demand twin is the
-  `recipe-security-audit` from 02. One audit engine, two entry points. Depends on
-  both 02 (engine) and 06 (Security Reviewer persona).
-- **04 and 05 are independent** and can proceed any time. 04 reuses the retrospective
-  auditor's corpus sweep; 05 is guidance/standard work with no integration.
+- **01 personas is the foundation.** It establishes the identity model and reframes
+  the `dev-general-*` family that the others reference; it lands first.
+- **02 auditor** wires `persona-auditor` over the existing retrospective command and
+  adds preference detection — the first real multi-persona consumer, so it validates
+  the persona model early.
+- **03 audit-recipes is the keystone.** Recipes are the cheap single-envelope path;
+  04 routes onto them and 05 shares the security audit engine with them.
+- **04 routing** depends on 03 (recipe targets to route to).
+- **05 security** depends on 01 (`persona-security-expert` + the `security` profile)
+  and 03 (the shared audit engine). It ships as the named Security Expert persona.
+- **06 verification** is independent guidance, lowest priority.
 
 ## Cross-cutting: the shared audit engine
 
-Workstream 02 (`recipe-security-audit`) and 03 (`finalize-step-security-audit`)
+Workstream 03 (`recipe-security-audit`) and 05 (`finalize-step-security-audit`)
 MUST share one audit implementation with two entry points — on-demand recipe vs
 automatic finalize step. Author the per-domain skill-selection + audit-run logic
 once; both surfaces call it.
@@ -80,12 +82,14 @@ This directory is self-consuming:
 ## What we are NOT doing
 
 - No always-on LLM request classifier — routing stays heuristic-first with at most
-  one bounded LLM fallback pass (see [01](01-routing-v2.md)).
+  one bounded LLM fallback pass (see [04](04-routing-v2.md)).
 - No new preference/learning store — preference signal reuses the existing
-  `enriched.json` hints surface (see [04](04-preference-learning-hints.md)).
+  `enriched.json` hints surface (see [02](02-auditor-preference-learning.md)).
 - No live browser verification or exploration surface — see
-  [05](05-surface-encoded-verification.md), which only *surfaces* the
+  [06](06-surface-encoded-verification.md), which only *surfaces* the
   encoded-verification principle and builds no browser/daemon integration.
 - No `/careful`-style in-session destructive-command guard — worktree isolation
   and the existing Bash hard-rules already cover this; explicitly dropped.
+- No role-play persona prose — personas are structured, data-declared skills
+  (see [01](01-personas.md)), not "You are a seasoned…" preambles.
 - No version numbers, changelogs, or dated update sections in any document.

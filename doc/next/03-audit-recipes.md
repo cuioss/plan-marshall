@@ -1,6 +1,6 @@
-# 02 — Audit capabilities as recipes
+# 03 — Audit capabilities as recipes
 
-**Keystone workstream. [01](01-routing-v2.md) routes onto these; [03](03-security-finalize-step.md) shares the security audit engine.**
+**Keystone workstream. [04](04-routing-v2.md) routes onto these; [05](05-security-finalize-step.md) shares the security audit engine.**
 
 ## Problem
 
@@ -18,7 +18,7 @@ Introduce an **audit recipe family**, starting with:
   diff, emitting findings into `manage-findings` + triage (`ext-triage-*`). Single
   envelope.
 - **`recipe-security-audit`** — on-demand security audit. Shares the audit engine
-  with [03](03-security-finalize-step.md)'s finalize step (see "shared engine").
+  with [05](05-security-finalize-step.md)'s finalize step (see "shared engine").
 
 Recipe definition follows the verified contract: a `recipe-{name}/SKILL.md` with
 frontmatter `implements: plan-marshall:extension-api/standards/ext-point-recipe`,
@@ -39,7 +39,7 @@ envelope.
   `security-issue` type exists).
 - **Shared audit engine.** The security audit *logic* (per-domain skill selection +
   audit run) is authored once and invoked from two entry points: this recipe
-  (on-demand) and [03](03-security-finalize-step.md)'s finalize step (automatic).
+  (on-demand) and [05](05-security-finalize-step.md)'s finalize step (automatic).
   No duplicated per-domain logic.
 - **Surgical / diff-aware scope** so phase-4 manifest minimization already applies
   (surgical + verification → drops heavyweight finalize steps).
@@ -66,7 +66,7 @@ envelope.
 ## Documentation to update (deliverables of this plan)
 
 - `doc/concepts/recipes.adoc` — the new audit recipe family and the
-  shared-audit-engine relationship with [03](03-security-finalize-step.md).
+  shared-audit-engine relationship with [05](05-security-finalize-step.md).
 - `doc/concepts/automatic-reviews.adoc` — how on-demand `recipe-code-review`
   relates to the automated-review + Sonar gate.
 - `doc/concepts/security.adoc` — `recipe-security-audit` as the on-demand security
@@ -76,9 +76,9 @@ envelope.
 
 ## On completion
 
-Delete this document and remove the `02` row from
+Delete this document and remove the `03` row from
 [`README.md`](README.md); this is part of the plan's finalize.
 
 ## Scope
 
-Medium. Unblocks [01](01-routing-v2.md); shares the security engine with [03](03-security-finalize-step.md).
+Medium. Unblocks [04](04-routing-v2.md); shares the security engine with [05](05-security-finalize-step.md).
