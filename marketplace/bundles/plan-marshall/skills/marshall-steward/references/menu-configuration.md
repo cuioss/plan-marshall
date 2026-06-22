@@ -753,7 +753,7 @@ After completion, return to Main Menu.
 
 ## Configuration: Enforcement Hook
 
-Configure the conditional PreToolUse enforcement hook. When enabled, the hook deterministically blocks five mechanically-checkable hard-rule violation families (shell-construct compounds, Bash file-ops, direct `gh`/`glab`, generated-executor edits, hard-coded build commands) — but ONLY when the call originates inside a plan-marshall plan context, failing open everywhere else. The opt-in is orthogonal to the terminal-title wiring: enabling one does not enable the other. See [`../../platform-runtime/standards/pretooluse-enforcement.md`](../../platform-runtime/standards/pretooluse-enforcement.md) for the canonical contract.
+Configure the conditional PreToolUse enforcement hook. When enabled, the hook deterministically blocks four mechanically-checkable hard-rule violation families (shell-construct compounds, Bash file-ops, generated-executor edits, hard-coded build commands) — but ONLY when the call originates inside a plan-marshall plan context, failing open everywhere else. The opt-in is orthogonal to the terminal-title wiring: enabling one does not enable the other. See [`../../platform-runtime/standards/pretooluse-enforcement.md`](../../platform-runtime/standards/pretooluse-enforcement.md) for the canonical contract.
 
 Load and execute the dedicated reference:
 

@@ -18,6 +18,7 @@ Operating Plan Marshall in a target project. If you are working on Plan Marshall
 * xref:configuration.adoc[Configuration] — surface map of every configuration file Plan Marshall touches and what governs each.
 * xref:efforts.adoc[Efforts] — per-role model selection: wizard presets, polymorphic `marshal.json` shape, worked example, troubleshooting.
 * xref:terminal-title.adoc[Terminal Title] — VS Code and IntelliJ-specific integration for the per-session status indicator.
+* xref:enforcement-hook.adoc[Enforcement Hook] — the optional PreToolUse hook that blocks four hard-rule violation families inside a plan context; how to enable it via `/marshall-steward`.
 * xref:parallelism-and-locking.adoc[Parallelism and Locking] — operator guide for running concurrent plans: the build-queue knobs (`max_slots`, `max_retries`, `build.queue.upper_limit_seconds`), the main-anchored `[LOCK]` log, and a stuck-queue FAQ.
 
 == Concept Crossover

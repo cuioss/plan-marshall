@@ -5,7 +5,7 @@
 The leaf is a stdin->stdout hook script, so it is exercised both via subprocess (a
 fresh interpreter, exactly as Claude Code would invoke it — proving the whole
 fail-open + deny-envelope contract end to end) and via direct import of its pure
-``evaluate`` function (proving each R1–R5 matcher and the gate-delegation behaviour
+``evaluate`` function (proving each R1-R4 matcher and the gate-delegation behaviour
 without subprocess overhead).
 
 The shared ``pretooluse_gate`` module is imported directly (sibling-import
@@ -17,7 +17,7 @@ Coverage:
   - Gate fail-open when neither signal fires (emit nothing, exit 0).
   - Signal-1-only enforcement (sub-agent identity carries the execution-context
     marker) and Signal-2-only enforcement (worktree cwd).
-  - Each of R1–R5 producing a ``permissionDecision: deny`` with the expected
+  - Each of R1-R4 producing a ``permissionDecision: deny`` with the expected
     redirect-reason substring when the gate is satisfied.
   - Each rule NOT firing on a benign in-context call.
   - Malformed / empty stdin -> no output, exit 0; never raises.
@@ -188,7 +188,7 @@ def test_r1_denies_leading_env_assignment() -> None:
 
 def test_r1_not_fired_on_plain_command() -> None:
     # A single command with no shell construct does not trip R1 (and is not a
-    # file-op / provider / build, so no rule fires).
+    # file-op or hard-coded build, so no rule fires).
     assert hook.evaluate(_signal2_payload("Bash", _bash("python3 script.py"))) is None
 
 
@@ -209,51 +209,29 @@ def test_r2_not_fired_on_substring_program() -> None:
 
 
 # =============================================================================
-# R3 — direct gh / glab
+# R3 — generated-executor edit
 # =============================================================================
 
 
-def test_r3_denies_gh() -> None:
-    assert (
-        hook.evaluate(_signal2_payload("Bash", _bash("gh pr create"))) == hook._R3_REASON
-    )
-
-
-def test_r3_denies_glab() -> None:
-    assert (
-        hook.evaluate(_signal2_payload("Bash", _bash("glab mr list")))
-        == hook._R3_REASON
-    )
-
-
-def test_r3_not_fired_on_other_command() -> None:
-    assert hook.evaluate(_signal2_payload("Bash", _bash("github-cli --help"))) is None
-
-
-# =============================================================================
-# R4 — generated-executor edit
-# =============================================================================
-
-
-def test_r4_denies_edit_of_generated_executor() -> None:
+def test_r3_denies_edit_of_generated_executor() -> None:
     payload = {
         gate.CWD_FIELD: _worktree_cwd(),
         "tool_name": "Edit",
         "tool_input": {"file_path": ".plan/execute-script.py"},
     }
-    assert hook.evaluate(payload) == hook._R4_REASON
+    assert hook.evaluate(payload) == hook._R3_REASON
 
 
-def test_r4_denies_write_with_absolute_path() -> None:
+def test_r3_denies_write_with_absolute_path() -> None:
     payload = {
         gate.CWD_FIELD: _worktree_cwd(),
         "tool_name": "Write",
         "tool_input": {"file_path": "/Users/dev/project/.plan/execute-script.py"},
     }
-    assert hook.evaluate(payload) == hook._R4_REASON
+    assert hook.evaluate(payload) == hook._R3_REASON
 
 
-def test_r4_not_fired_on_other_path() -> None:
+def test_r3_not_fired_on_other_path() -> None:
     payload = {
         gate.CWD_FIELD: _worktree_cwd(),
         "tool_name": "Edit",
@@ -263,23 +241,23 @@ def test_r4_not_fired_on_other_path() -> None:
 
 
 # =============================================================================
-# R5 — hard-coded build
+# R4 — hard-coded build
 # =============================================================================
 
 
-def test_r5_denies_pw() -> None:
+def test_r4_denies_pw() -> None:
     assert (
-        hook.evaluate(_signal2_payload("Bash", _bash("./pw verify"))) == hook._R5_REASON
+        hook.evaluate(_signal2_payload("Bash", _bash("./pw verify"))) == hook._R4_REASON
     )
 
 
-def test_r5_denies_bare_build_programs() -> None:
+def test_r4_denies_bare_build_programs() -> None:
     for prog in ("mvn", "npm", "gradle"):
         payload = _signal2_payload("Bash", _bash(f"{prog} build"))
-        assert hook.evaluate(payload) == hook._R5_REASON
+        assert hook.evaluate(payload) == hook._R4_REASON
 
 
-def test_r5_not_fired_on_resolved_build() -> None:
+def test_r4_not_fired_on_resolved_build() -> None:
     # The architecture-resolved executor call is a plain python3 invocation and
     # trips no rule.
     cmd = "python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run"
@@ -365,7 +343,7 @@ def test_program_name_preserves_bare_name() -> None:
 
 
 def test_program_name_preserves_pw_literal() -> None:
-    # ./pw is matched as a literal in R5; _program_name must not strip it.
+    # ./pw is matched as a literal in R4; _program_name must not strip it.
     assert hook._program_name("./pw") == "./pw"
 
 
@@ -374,7 +352,7 @@ def test_program_name_returns_empty_on_empty_command() -> None:
 
 
 # =============================================================================
-# R2/R3/R5 — path-prefixed bypass prevention
+# R2/R4 — path-prefixed bypass prevention
 # =============================================================================
 
 
@@ -387,15 +365,10 @@ def test_r2_denies_path_prefixed_grep() -> None:
     assert hook.evaluate(_signal2_payload("Bash", _bash("/bin/grep pattern file"))) == hook._R2_REASON
 
 
-def test_r3_denies_path_prefixed_gh() -> None:
-    # /usr/bin/gh must trip R3 the same as bare gh.
-    assert hook.evaluate(_signal2_payload("Bash", _bash("/usr/bin/gh pr create"))) == hook._R3_REASON
+def test_r4_denies_path_prefixed_mvn() -> None:
+    # /usr/local/bin/mvn must trip R4 the same as bare mvn.
+    assert hook.evaluate(_signal2_payload("Bash", _bash("/usr/local/bin/mvn verify"))) == hook._R4_REASON
 
 
-def test_r5_denies_path_prefixed_mvn() -> None:
-    # /usr/local/bin/mvn must trip R5 the same as bare mvn.
-    assert hook.evaluate(_signal2_payload("Bash", _bash("/usr/local/bin/mvn verify"))) == hook._R5_REASON
-
-
-def test_r5_denies_path_prefixed_npm() -> None:
-    assert hook.evaluate(_signal2_payload("Bash", _bash("/usr/bin/npm install"))) == hook._R5_REASON
+def test_r4_denies_path_prefixed_npm() -> None:
+    assert hook.evaluate(_signal2_payload("Bash", _bash("/usr/bin/npm install"))) == hook._R4_REASON

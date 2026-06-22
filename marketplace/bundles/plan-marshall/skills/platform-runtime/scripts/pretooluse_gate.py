@@ -26,7 +26,7 @@ observe-only capture leaf (D2) validates them against real PreToolUse payloads;
 if a best-guess name is wrong, it is corrected HERE — in this one module —
 before the enforcement leaf is finalized.
 
-This module owns NO rule matchers. The R1–R5 enforcement rules are
+This module owns NO rule matchers. The R1-R4 enforcement rules are
 enforcement-only and live solely in the enforcement leaf.
 
 Best-effort / no-raise throughout: every accessor degrades to a safe default
