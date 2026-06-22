@@ -719,6 +719,8 @@ def cmd_get_module_context(args: argparse.Namespace) -> dict[str, Any]:
             module_info['tips'] = enriched['tips']
         if enriched.get('insights'):
             module_info['insights'] = enriched['insights']
+        if enriched.get('best_practices'):
+            module_info['best_practices'] = enriched['best_practices']
         if enriched.get('skills_by_profile'):
             module_info['skills_by_profile'] = enriched['skills_by_profile']
         modules_list.append(module_info)
