@@ -9,7 +9,7 @@ the user (fail OPEN).
 
 ALL payload parsing, field access, and the context-gate predicate are delegated
 to the shared ``pretooluse_gate`` module — this leaf adds NO field-name knowledge
-of its own. The only logic it owns is the R1–R4 rule matchers and the
+of its own. The only logic it owns is the R1-R4 rule matchers and the
 ``permissionDecision: deny`` envelope layered on top:
 
 - **R1 shell-construct compound** — a Bash command containing ``&&``, ``;``,
@@ -89,7 +89,7 @@ _R2_FILE_OPS = ("cat", "grep", "head", "tail", "find", "ls")
 
 #: R4 — hard-coded build invocations that must be resolved via the architecture
 #: API. ``./pw`` is matched as a literal; ``mvn`` / ``npm`` / ``gradle`` as bare
-#: leading programs.
+#: leading programs or path-prefixed executables (e.g. ``/usr/local/bin/mvn``).
 _R4_BUILD_PROGRAMS = ("mvn", "npm", "gradle")
 
 #: Per-rule one-line redirect reasons surfaced as ``permissionDecisionReason``.
@@ -225,7 +225,7 @@ def evaluate(payload: dict[str, Any]) -> str | None:
 
     Applies the shared context gate first (``Signal1 OR Signal2``); when the gate
     is not satisfied, returns ``None`` (fail OPEN — no enforcement). When the gate
-    is satisfied, runs the R1–R4 matchers in order against the shared gate's
+    is satisfied, runs the R1-R4 matchers in order against the shared gate's
     ``tool_name`` / ``tool_input`` accessors and returns the first matching rule's
     redirect reason, or ``None`` when no rule fires.
 

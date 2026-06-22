@@ -5,7 +5,7 @@
 The leaf is a stdin->stdout hook script, so it is exercised both via subprocess (a
 fresh interpreter, exactly as Claude Code would invoke it — proving the whole
 fail-open + deny-envelope contract end to end) and via direct import of its pure
-``evaluate`` function (proving each R1–R4 matcher and the gate-delegation behaviour
+``evaluate`` function (proving each R1-R4 matcher and the gate-delegation behaviour
 without subprocess overhead).
 
 The shared ``pretooluse_gate`` module is imported directly (sibling-import
@@ -17,7 +17,7 @@ Coverage:
   - Gate fail-open when neither signal fires (emit nothing, exit 0).
   - Signal-1-only enforcement (sub-agent identity carries the execution-context
     marker) and Signal-2-only enforcement (worktree cwd).
-  - Each of R1–R4 producing a ``permissionDecision: deny`` with the expected
+  - Each of R1-R4 producing a ``permissionDecision: deny`` with the expected
     redirect-reason substring when the gate is satisfied.
   - Each rule NOT firing on a benign in-context call.
   - Malformed / empty stdin -> no output, exit 0; never raises.
