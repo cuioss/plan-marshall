@@ -39,7 +39,7 @@ The lifecycle is a forward state machine — each phase advances to the next whe
 
 |6. Finalize
 |`phase-6-finalize`
-|Git workflow, finalize-step pipeline (pre-submission self-review, automated review, Sonar roundtrip, lessons capture, branch cleanup), commit, push, and PR creation. Domain-specific finalize steps can be plugged in via the `provides_finalize_steps()` extension point.
+|Git workflow, finalize-step pipeline (pre-submission self-review, automated review, Sonar roundtrip, lessons capture, branch cleanup), commit, push, and PR creation. Project-specific finalize steps can be plugged in via project `finalize-step-*` skills and bundle-optional steps.
 |===
 
 The phase pipeline is described in detail in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/phases.md[`ref-workflow-architecture/standards/phases.md`]. The lifecycle states a plan transitions through are catalogued in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/phase-lifecycle.md[`phase-lifecycle.md`].

@@ -97,10 +97,6 @@ class Extension(ExtensionBase):
 
         return self._build_applicable_result('high', signals, module_data=module_data, active_profiles=active_profiles)
 
-    def provides_verify_steps(self) -> list[dict]:
-        """No verify steps — documentation verification is handled via recipe."""
-        return []
-
     def provides_recipes(self) -> list[dict]:
         """Return documentation recipes."""
         return [

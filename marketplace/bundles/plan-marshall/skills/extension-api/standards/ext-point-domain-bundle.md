@@ -59,7 +59,7 @@ class Extension(ExtensionBase):
         }]
 ```
 
-See [extension-contract.md](extension-contract.md) for the complete method contract (required `get_skill_domains()`, optional `config_defaults`, `discover_modules`, `provides_triage`, `provides_outline_skill`, `provides_recipes`, `provides_verify_steps`, `provides_finalize_steps`, `classify_paths`, `classify_globs`, `classify_build_class`) and the minimal / build-bundle examples.
+See [extension-contract.md](extension-contract.md) for the complete method contract (required `get_skill_domains()`, optional `config_defaults`, `discover_modules`, `provides_triage`, `provides_outline_skill`, `provides_recipes`, `provides_retrospective_aspects`, `classify_paths`, `classify_globs`, `classify_build_class`) and the minimal / build-bundle examples.
 
 ## Hook API
 

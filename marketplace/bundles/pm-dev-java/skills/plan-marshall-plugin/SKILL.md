@@ -25,7 +25,6 @@ Configuration in `extension.py` implements the Extension API contract:
 | `get_skill_domains()` | Domain metadata with profiles |
 | `applies_to_module()` | Check Java applicability via build systems |
 | `provides_triage()` | Returns `pm-dev-java:ext-triage-java` |
-| `provides_verify_steps()` | Java verification agents |
 
 ## Build Operations
 

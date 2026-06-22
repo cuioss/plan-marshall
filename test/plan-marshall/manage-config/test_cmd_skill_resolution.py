@@ -429,8 +429,7 @@ def _run_discovery_in_cwd(cwd: Path) -> list[dict]:
 def test_list_finalize_steps_without_sync_skill_starts_with_built_ins(tmp_path):
     """Without a sync-plugin-cache project skill, output starts with built-in steps."""
     # tmp_path has no .claude/skills directory -> built-ins come first.
-    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
-        steps = _run_discovery_in_cwd(tmp_path)
+    steps = _run_discovery_in_cwd(tmp_path)
 
     assert len(steps) > 0
     # First entry must be a built-in default: step (not a project:sync-plugin-cache)
@@ -452,8 +451,7 @@ def test_list_finalize_steps_special_case_branch_retired(tmp_path):
     ordinary project-local finalize-step skill (Source 2), discovered the same
     way as ``finalize-step-plugin-doctor`` and ``finalize-step-deploy-target``.
     """
-    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
-        steps = _run_discovery_in_cwd(tmp_path)
+    steps = _run_discovery_in_cwd(tmp_path)
 
     names = [s['name'] for s in steps]
 
@@ -481,8 +479,7 @@ def test_list_finalize_steps_other_project_skills_remain_after_built_ins(tmp_pat
         '---\nname: finalize-step-zzz-other\ndescription: Another project finalize step\n---\n\n# Other\n'
     )
 
-    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
-        steps = _run_discovery_in_cwd(tmp_path)
+    steps = _run_discovery_in_cwd(tmp_path)
 
     names = [s['name'] for s in steps]
     other_idx = names.index('project:finalize-step-zzz-other')
@@ -492,45 +489,6 @@ def test_list_finalize_steps_other_project_skills_remain_after_built_ins(tmp_pat
     assert max(built_in_indices) < other_idx, (
         'Built-ins must precede project skills'
     )
-
-
-def test_list_finalize_steps_extension_steps_come_last(tmp_path):
-    """Extension-contributed steps appear after all built-in and project steps."""
-
-    class _FakeExtModule:
-        @staticmethod
-        def provides_finalize_steps():
-            return [
-                {'name': 'ext:finalize-step-from-extension', 'description': 'Provided by extension'},
-            ]
-
-    fake_extensions = [{'bundle': 'fake-bundle', 'module': _FakeExtModule()}]
-
-    # Drop in a generic project finalize-step-* skill to cover the full
-    # ordering contract (built-ins → project skills → extension skills).
-    skills_root = tmp_path / '.claude' / 'skills'
-    other_dir = skills_root / 'finalize-step-zzz-other'
-    other_dir.mkdir(parents=True)
-    (other_dir / 'SKILL.md').write_text(
-        '---\nname: finalize-step-zzz-other\ndescription: Other project finalize step\n---\n\n# Other\n'
-    )
-
-    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=fake_extensions):
-        steps = _run_discovery_in_cwd(tmp_path)
-
-    names = [s['name'] for s in steps]
-    assert 'ext:finalize-step-from-extension' in names
-
-    ext_idx = names.index('ext:finalize-step-from-extension')
-    # Every non-extension entry must precede the extension entry
-    for idx, step in enumerate(steps):
-        if step['source'] == 'extension':
-            continue
-        assert idx < ext_idx, (
-            f'Non-extension step {step["name"]!r} at {idx} must come before extension step at {ext_idx}'
-        )
-    # And the extension entry carries source=extension
-    assert steps[ext_idx]['source'] == 'extension'
 
 
 # =============================================================================
@@ -587,8 +545,7 @@ def test_read_frontmatter_order_tolerates_crlf(tmp_path):
 
 def test_list_finalize_steps_builtins_have_order(tmp_path):
     """Built-in finalize steps carry order values parsed from standards/*.md frontmatter."""
-    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
-        steps = _run_discovery_in_cwd(tmp_path)
+    steps = _run_discovery_in_cwd(tmp_path)
 
     by_name = {s['name']: s for s in steps if s['source'] == 'built-in'}
     assert by_name['default:commit-push']['order'] == 10
@@ -606,8 +563,7 @@ def test_list_finalize_steps_project_skill_order_from_frontmatter(tmp_path):
         '---\nname: finalize-step-custom\ndescription: Custom\norder: 150\n---\n\n# Custom\n'
     )
 
-    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
-        steps = _run_discovery_in_cwd(tmp_path)
+    steps = _run_discovery_in_cwd(tmp_path)
 
     custom = next(s for s in steps if s['name'] == 'project:finalize-step-custom')
     assert custom['order'] == 150
@@ -619,33 +575,10 @@ def test_list_finalize_steps_project_skill_without_order_returns_none(tmp_path):
     skill_dir.mkdir(parents=True)
     (skill_dir / 'SKILL.md').write_text('---\nname: finalize-step-bare\ndescription: Bare\n---\n\n# Bare\n')
 
-    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
-        steps = _run_discovery_in_cwd(tmp_path)
+    steps = _run_discovery_in_cwd(tmp_path)
 
     bare = next(s for s in steps if s['name'] == 'project:finalize-step-bare')
     assert bare['order'] is None
-
-
-def test_list_finalize_steps_extension_order_from_return_dict(tmp_path):
-    """Extension-contributed finalize steps propagate the `order` field from the return dict."""
-
-    class _FakeExtModule:
-        @staticmethod
-        def provides_finalize_steps():
-            return [
-                {'name': 'ext:with-order', 'description': 'With order', 'order': 500},
-                {'name': 'ext:without-order', 'description': 'No order'},
-            ]
-
-    fake_extensions = [{'bundle': 'fake-bundle', 'module': _FakeExtModule()}]
-
-    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=fake_extensions):
-        steps = _run_discovery_in_cwd(tmp_path)
-
-    with_order = next(s for s in steps if s['name'] == 'ext:with-order')
-    without_order = next(s for s in steps if s['name'] == 'ext:without-order')
-    assert with_order['order'] == 500
-    assert without_order['order'] is None
 
 
 # =============================================================================
@@ -661,8 +594,7 @@ def test_list_finalize_steps_includes_optional_bundle_step(tmp_path):
     marshall-steward's step picker even when the project has not yet added
     it to marshal.json.
     """
-    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
-        steps = _run_discovery_in_cwd(tmp_path)
+    steps = _run_discovery_in_cwd(tmp_path)
 
     names = [s['name'] for s in steps]
     assert 'plan-marshall:plan-retrospective' in names, (
@@ -699,8 +631,7 @@ def test_list_finalize_steps_optional_bundle_order_from_frontmatter(tmp_path):
     discovery must surface that exact value (not None) so marshall-steward can
     slot it into the sorted execution order.
     """
-    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
-        steps = _run_discovery_in_cwd(tmp_path)
+    steps = _run_discovery_in_cwd(tmp_path)
 
     retro = next(s for s in steps if s['name'] == 'plan-marshall:plan-retrospective')
     assert retro['order'] == 995, f'Expected order=995 from SKILL.md frontmatter, got {retro["order"]!r}'
@@ -715,8 +646,7 @@ def test_list_finalize_steps_optional_bundle_description_populated(tmp_path):
     must never equal the bare notation (which is the sentinel the resolver
     uses when nothing was found).
     """
-    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
-        steps = _run_discovery_in_cwd(tmp_path)
+    steps = _run_discovery_in_cwd(tmp_path)
 
     retro = next(s for s in steps if s['name'] == 'plan-marshall:plan-retrospective')
     description = retro['description']
@@ -726,7 +656,7 @@ def test_list_finalize_steps_optional_bundle_description_populated(tmp_path):
         'should have supplied a human-readable string'
     )
     # Fallback map supplies a curated human-readable description for the
-    # retrospective step; the Source 4 path also accepts the frontmatter
+    # retrospective step; the bundle-optional path also accepts the frontmatter
     # description parsed from SKILL.md. Both are acceptable outcomes — the
     # only regression we guard against is the bare-notation sentinel.
     fallback = _config_defaults.OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS['plan-marshall:plan-retrospective']
@@ -736,42 +666,6 @@ def test_list_finalize_steps_optional_bundle_description_populated(tmp_path):
         f'Description {description!r} is suspiciously short — expected either '
         f'the frontmatter description or fallback {fallback!r}'
     )
-
-
-def test_list_finalize_steps_optional_bundle_precedes_extensions(tmp_path):
-    """Optional bundle steps emit before extension-provided steps.
-
-    The source ordering contract: built-in + project + bundle-optional all
-    precede every extension entry. A regression that reversed Source 3/4 in
-    _discover_all_finalize_steps() would break marshall-steward's assumption
-    that extensions come last.
-    """
-
-    class _FakeExtModule:
-        @staticmethod
-        def provides_finalize_steps():
-            return [
-                {'name': 'ext:finalize-step-from-extension', 'description': 'Provided by extension'},
-            ]
-
-    fake_extensions = [{'bundle': 'fake-bundle', 'module': _FakeExtModule()}]
-
-    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=fake_extensions):
-        steps = _run_discovery_in_cwd(tmp_path)
-
-    names = [s['name'] for s in steps]
-    assert 'plan-marshall:plan-retrospective' in names
-    assert 'ext:finalize-step-from-extension' in names
-
-    retro_idx = names.index('plan-marshall:plan-retrospective')
-    ext_idx = names.index('ext:finalize-step-from-extension')
-    assert retro_idx < ext_idx, f'Opt-in bundle step (idx {retro_idx}) must precede extension step (idx {ext_idx})'
-    # Every extension entry must appear after the retrospective entry
-    for idx, step in enumerate(steps):
-        if step['source'] == 'extension':
-            assert idx > retro_idx, (
-                f'Extension step {step["name"]!r} at {idx} must come after bundle-optional retrospective at {retro_idx}'
-            )
 
 
 # =============================================================================
@@ -795,10 +689,7 @@ def test_discover_finalize_steps_source_layout_resolves_order(tmp_path):
     """Built-in finalize steps resolve non-None order in the source/marketplace layout."""
     base = _build_source_layout_finalize(tmp_path / 'bundles')
 
-    with (
-        patch.object(_cmd_skill_resolution, 'BUNDLES_DIR', base),
-        patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]),
-    ):
+    with patch.object(_cmd_skill_resolution, 'BUNDLES_DIR', base):
         steps = _run_discovery_in_cwd(tmp_path)
 
     built_ins = {s['name']: s for s in steps if s['source'] == 'built-in'}
@@ -812,10 +703,7 @@ def test_discover_finalize_steps_cache_layout_resolves_order(tmp_path):
     """Built-in finalize steps resolve non-None order in the versioned plugin-cache layout."""
     base = _build_cache_layout_finalize(tmp_path / 'bundles')
 
-    with (
-        patch.object(_cmd_skill_resolution, 'BUNDLES_DIR', base),
-        patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]),
-    ):
+    with patch.object(_cmd_skill_resolution, 'BUNDLES_DIR', base):
         steps = _run_discovery_in_cwd(tmp_path)
 
     built_ins = {s['name']: s for s in steps if s['source'] == 'built-in'}
@@ -830,18 +718,12 @@ def test_discover_finalize_steps_order_matches_across_layouts(tmp_path):
     source_base = _build_source_layout_finalize(tmp_path / 'source')
     cache_base = _build_cache_layout_finalize(tmp_path / 'cache')
 
-    with (
-        patch.object(_cmd_skill_resolution, 'BUNDLES_DIR', source_base),
-        patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]),
-    ):
+    with patch.object(_cmd_skill_resolution, 'BUNDLES_DIR', source_base):
         source_steps = {
             s['name']: s['order'] for s in _run_discovery_in_cwd(tmp_path) if s['source'] == 'built-in'
         }
 
-    with (
-        patch.object(_cmd_skill_resolution, 'BUNDLES_DIR', cache_base),
-        patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]),
-    ):
+    with patch.object(_cmd_skill_resolution, 'BUNDLES_DIR', cache_base):
         cache_steps = {
             s['name']: s['order'] for s in _run_discovery_in_cwd(tmp_path) if s['source'] == 'built-in'
         }

@@ -85,9 +85,8 @@ def _resolve_step_orders(
     """Resolve `(step, order)` pairs and detect missing/colliding orders.
 
     Order is taken exclusively from each step's authoritative source (frontmatter
-    on built-in standards docs, frontmatter on project-local SKILL.md for
-    `project:` steps, or the return-dict `order` field for extension-contributed
-    skills).
+    on built-in standards docs, or frontmatter on project-local SKILL.md for
+    `project:` steps).
 
     Canonical-verify steps (``default:verify:{canonical}`` / ``verify:{canonical}``)
     are a special case: they all share the single ``canonical_verify.md`` backing

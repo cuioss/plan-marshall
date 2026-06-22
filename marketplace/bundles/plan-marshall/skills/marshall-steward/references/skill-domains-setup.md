@@ -30,7 +30,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains configure --domains "{comma,separated,keys}"
 ```
 
-This populates `skill_domains` in marshal.json with: the `system` domain (always), each selected domain with bundle reference and workflow_skill_extensions (outline, triage), and domain verification steps from `provides_verify_steps()` auto-persisted to `plan.phase-5-execute.verification_domain_steps`.
+This populates `skill_domains` in marshal.json with: the `system` domain (always) and each selected domain with bundle reference and workflow_skill_extensions (outline, triage). It also seeds `plan.phase-5-execute.verification_steps` with the built-in verify steps.
 
 ## Configure Active Profiles
 

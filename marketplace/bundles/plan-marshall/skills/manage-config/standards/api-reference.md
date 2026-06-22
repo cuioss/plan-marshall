@@ -58,7 +58,7 @@ Used by `get-extensions` and `set-extensions`:
 ### configure Notes
 
 - Applies domain templates for each selected domain
-- Collects verify steps from domain extensions via `provides_verify_steps()`
+- Seeds `plan.phase-5-execute.verification_steps` with the built-in verify steps
 
 ---
 

@@ -1,6 +1,6 @@
 # Extension Point: Build System
 
-> **Type**: Module Discovery + Build Execution | **Hook Method**: `discover_modules()` + `ExecuteConfig` factory | **Implementations**: 4 | **Status**: Active
+> **Type**: Module Discovery + Build Execution | **Hook Method**: `discover_modules()` + `ExecuteConfig` factory | **Implementations**: 1 (consolidated — delegates to 4 build tools) | **Status**: Active
 
 ## Overview
 

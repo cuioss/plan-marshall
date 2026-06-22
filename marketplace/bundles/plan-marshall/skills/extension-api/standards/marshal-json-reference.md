@@ -25,9 +25,9 @@ Central reference for all extension-related configuration paths in `marshal.json
 | `plan.phase-3-outline.plan_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-4-plan.execute_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-5-execute.commit_and_push` | User config | phase-5-execute, phase-6-finalize | - |
-| `plan.phase-5-execute.verification_steps` (keyed-map serial form) | Built-in + `provides_verify_steps()` | phase-4-plan, phase-5-execute | [ext-point-verify-steps.md](ext-point-verify-steps.md) |
+| `plan.phase-5-execute.verification_steps` (keyed-map serial form) | Built-in + project `verify-step-*` skills | phase-4-plan, phase-5-execute | - |
 | `plan.phase-5-execute.max_iterations` | User config | phase-5-execute | - |
-| `plan.phase-6-finalize.steps` (keyed-map serial form; each value is the step's nested param object) | Built-in + `provides_finalize_steps()` | phase-6-finalize | [ext-point-finalize-steps.md](ext-point-finalize-steps.md) |
+| `plan.phase-6-finalize.steps` (keyed-map serial form; each value is the step's nested param object) | Built-in + project `finalize-step-*` skills + bundle-optional | phase-6-finalize | - |
 | `plan.phase-6-finalize.max_iterations` | User config | phase-6-finalize (loop-back ceiling) | - |
 | `plan.phase-6-finalize.checks_wait_timeout_seconds` (flat phase-level) | User config | tools-integration-ci (CI-completion polling timeout) | - |
 

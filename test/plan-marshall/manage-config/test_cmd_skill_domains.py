@@ -390,6 +390,75 @@ def test_set_extensions(plan_context, monkeypatch):
     assert result['skill'] == 'pm-dev-java:new-triage'
 
 
+def test_set_extensions_rejects_self_review_type(plan_context):
+    """argparse rejects `set-extensions --type self-review`.
+
+    The self-review surfacer is no longer resolved through a
+    workflow_skill_extensions registration — the consumer dispatch calls the
+    implementor's fixed notation directly — so `self-review` is no longer an
+    accepted `--type` choice. argparse must reject it (exit 2) before the
+    handler runs.
+    """
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = run_script(
+        SCRIPT_PATH,
+        'skill-domains',
+        'set-extensions',
+        '--domain',
+        'java',
+        '--type',
+        'self-review',
+        '--skill',
+        'pm-dev-java:whatever',
+        cwd=plan_context.fixture_dir,
+    )
+
+    assert not result.success, 'self-review must be rejected by argparse'
+    assert result.returncode == 2, f'Expected argparse exit 2, got {result.returncode}'
+    assert 'self-review' in result.stderr
+
+
+def test_set_extensions_accepts_outline_type(plan_context):
+    """argparse still accepts `set-extensions --type outline`."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = run_script(
+        SCRIPT_PATH,
+        'skill-domains',
+        'set-extensions',
+        '--domain',
+        'java',
+        '--type',
+        'outline',
+        '--skill',
+        'pm-dev-java:ext-outline-java',
+        cwd=plan_context.fixture_dir,
+    )
+
+    assert result.success, f'outline type must be accepted: {result.stderr}'
+
+
+def test_set_extensions_accepts_triage_type(plan_context):
+    """argparse still accepts `set-extensions --type triage`."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = run_script(
+        SCRIPT_PATH,
+        'skill-domains',
+        'set-extensions',
+        '--domain',
+        'java',
+        '--type',
+        'triage',
+        '--skill',
+        'pm-dev-java:ext-triage-java',
+        cwd=plan_context.fixture_dir,
+    )
+
+    assert result.success, f'triage type must be accepted: {result.stderr}'
+
+
 # =============================================================================
 # get-available / configure Tests (Tier 2)
 # =============================================================================
@@ -508,11 +577,10 @@ def test_configure_domains(plan_context, monkeypatch):
 def test_configure_seeds_verification_steps_as_keyed_map(plan_context, monkeypatch):
     """configure seeds plan.phase-5-execute.verification_steps as the id-keyed map.
 
-    The producer writes the built-in verify steps (plus any extension verify steps)
-    as an id-keyed map of empty param objects — NOT a flat list. Key insertion
-    order (built-ins first) is the execution order, and each verify step owns no
-    params so every value is the empty object. This is the keyed-map shape the
-    manifest composer's keyed-map-only reader consumes.
+    The producer writes the built-in verify steps as an id-keyed map of empty
+    param objects — NOT a flat list. Key insertion order is the execution order,
+    and each verify step owns no params so every value is the empty object. This
+    is the keyed-map shape the manifest composer's keyed-map-only reader consumes.
     """
     from _config_defaults import BUILT_IN_VERIFY_STEPS
 
@@ -1275,8 +1343,7 @@ def test_list_verify_steps_builtins_have_order(tmp_path):
     doc ``canonical_verify.md`` (``order: 10``), so each discovered step exposes
     order 10.
     """
-    with patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]):
-        steps = _run_verify_discovery_in_cwd(tmp_path)
+    steps = _run_verify_discovery_in_cwd(tmp_path)
 
     by_name = {s['name']: s for s in steps if s['source'] == 'built-in'}
     assert by_name['default:verify:quality-gate']['order'] == 10
@@ -1292,8 +1359,7 @@ def test_list_verify_steps_project_skill_order_from_frontmatter(tmp_path):
         '---\nname: verify-step-custom\ndescription: Custom\norder: 150\n---\n\n# Custom\n'
     )
 
-    with patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]):
-        steps = _run_verify_discovery_in_cwd(tmp_path)
+    steps = _run_verify_discovery_in_cwd(tmp_path)
 
     custom = next(s for s in steps if s['name'] == 'project:verify-step-custom')
     assert custom['order'] == 150
@@ -1305,33 +1371,10 @@ def test_list_verify_steps_project_skill_without_order_returns_none(tmp_path):
     skill_dir.mkdir(parents=True)
     (skill_dir / 'SKILL.md').write_text('---\nname: verify-step-bare\ndescription: Bare\n---\n\n# Bare\n')
 
-    with patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]):
-        steps = _run_verify_discovery_in_cwd(tmp_path)
+    steps = _run_verify_discovery_in_cwd(tmp_path)
 
     bare = next(s for s in steps if s['name'] == 'project:verify-step-bare')
     assert bare['order'] is None
-
-
-def test_list_verify_steps_extension_order_from_return_dict(tmp_path):
-    """Extension-contributed verify steps propagate the `order` field from the return dict."""
-
-    class _FakeExtModule:
-        @staticmethod
-        def provides_verify_steps():
-            return [
-                {'name': 'ext:verify-with-order', 'description': 'With order', 'order': 500},
-                {'name': 'ext:verify-without-order', 'description': 'No order'},
-            ]
-
-    fake_extensions = [{'bundle': 'fake-bundle', 'module': _FakeExtModule()}]
-
-    with patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=fake_extensions):
-        steps = _run_verify_discovery_in_cwd(tmp_path)
-
-    with_order = next(s for s in steps if s['name'] == 'ext:verify-with-order')
-    without_order = next(s for s in steps if s['name'] == 'ext:verify-without-order')
-    assert with_order['order'] == 500
-    assert without_order['order'] is None
 
 
 # =============================================================================
@@ -1357,10 +1400,7 @@ def test_discover_verify_steps_source_layout_resolves_order(tmp_path):
     """Built-in verify steps resolve non-None order in the source/marketplace layout."""
     base = _build_source_layout_verify(tmp_path / 'bundles')
 
-    with (
-        patch.object(_cmd_skill_domains, 'BUNDLES_DIR', base),
-        patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]),
-    ):
+    with patch.object(_cmd_skill_domains, 'BUNDLES_DIR', base):
         steps = _run_verify_discovery_in_cwd(tmp_path)
 
     built_ins = {s['name']: s for s in steps if s['source'] == 'built-in'}
@@ -1374,10 +1414,7 @@ def test_discover_verify_steps_cache_layout_resolves_order(tmp_path):
     """Built-in verify steps resolve non-None order in the versioned plugin-cache layout."""
     base = _build_cache_layout_verify(tmp_path / 'bundles')
 
-    with (
-        patch.object(_cmd_skill_domains, 'BUNDLES_DIR', base),
-        patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]),
-    ):
+    with patch.object(_cmd_skill_domains, 'BUNDLES_DIR', base):
         steps = _run_verify_discovery_in_cwd(tmp_path)
 
     built_ins = {s['name']: s for s in steps if s['source'] == 'built-in'}
@@ -1392,18 +1429,12 @@ def test_discover_verify_steps_order_matches_across_layouts(tmp_path):
     source_base = _build_source_layout_verify(tmp_path / 'source')
     cache_base = _build_cache_layout_verify(tmp_path / 'cache')
 
-    with (
-        patch.object(_cmd_skill_domains, 'BUNDLES_DIR', source_base),
-        patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]),
-    ):
+    with patch.object(_cmd_skill_domains, 'BUNDLES_DIR', source_base):
         source_steps = {
             s['name']: s['order'] for s in _run_verify_discovery_in_cwd(tmp_path) if s['source'] == 'built-in'
         }
 
-    with (
-        patch.object(_cmd_skill_domains, 'BUNDLES_DIR', cache_base),
-        patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]),
-    ):
+    with patch.object(_cmd_skill_domains, 'BUNDLES_DIR', cache_base):
         cache_steps = {
             s['name']: s['order'] for s in _run_verify_discovery_in_cwd(tmp_path) if s['source'] == 'built-in'
         }

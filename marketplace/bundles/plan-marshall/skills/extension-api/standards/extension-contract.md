@@ -303,8 +303,6 @@ Each extension point has its own contract document with formal parameters, pre-c
 | Outline | `provides_outline_skill()` | [ext-point-outline.md](ext-point-outline.md) | 1 |
 | Recipe | `provides_recipes()` | [ext-point-recipe.md](ext-point-recipe.md) | 4 |
 | Provider | `*_provider.py` | [ext-point-provider.md](ext-point-provider.md) | 4 |
-| Verify Steps | `provides_verify_steps()` | [ext-point-verify-steps.md](ext-point-verify-steps.md) | 0 |
-| Finalize Steps | `provides_finalize_steps()` | [ext-point-finalize-steps.md](ext-point-finalize-steps.md) | 0 |
 
 See each document for the complete contract, implementation template, and current implementations.
 
@@ -676,9 +674,6 @@ class Extension(ExtensionBase):
     def provides_triage(self) -> str | None:
         return "pm-dev-java:ext-triage-java"
 
-    def provides_verify_steps(self) -> list[dict]:
-        return []  # Coverage is now a built-in verify step (default:verify:coverage)
-
     def discover_modules(self, project_root: str) -> list:
         # Delegate to script in scripts/ directory
         from _maven_cmd_discover import discover_maven_modules
@@ -693,7 +688,7 @@ Three steps materialise a new domain bundle on top of this contract:
 
 1. **Create the manifest skill.** `marketplace/bundles/{bundle}/skills/plan-marshall-plugin/` with a `SKILL.md` declaring `implements: plan-marshall:extension-api/standards/ext-point-domain-bundle` and a sibling `extension.py` that subclasses `ExtensionBase` and implements `get_skill_domains()`. The scanner finds the bundle by that `implements:` frontmatter declaration, not by the directory name (see [ext-point-domain-bundle.md](ext-point-domain-bundle.md)). Start from the `Minimal Extension` example above; replace the domain key, name, and profile-skill lists with your domain's content.
 2. **Add domain skills.** `marketplace/bundles/{bundle}/skills/{skill}/SKILL.md` for each piece of domain knowledge the bundle provides. At minimum a `core` profile skill set so something loads during dispatches against the new domain. Implementation, module-testing, quality, and documentation profiles are added as the bundle's coverage justifies them.
-3. **Run `/marshall-steward`** in the consuming project. The wizard discovers the new bundle, calls `get_skill_domains()`, writes the registration into `marshal.json` under `skill_domains.{key}`, and prompts for any optional configuration (credentials via `ext-point-provider`, profile overrides, finalize steps via `provides_finalize_steps()`).
+3. **Run `/marshall-steward`** in the consuming project. The wizard discovers the new bundle, calls `get_skill_domains()`, writes the registration into `marshal.json` under `skill_domains.{key}`, and prompts for any optional configuration (credentials via `ext-point-provider`, profile overrides).
 
 Adding a single hook to an existing bundle is smaller — override the relevant method on the existing `Extension` class. The wizard picks the new declaration up on re-run. For an end-to-end "minimum looks like this" example, see [`pm-dev-frontend-cui:plan-marshall-plugin`](../../../../pm-dev-frontend-cui/skills/plan-marshall-plugin/) — `get_skill_domains` only, no other overrides.
 
@@ -741,17 +736,17 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 
 > **Note**: This table is a reference snapshot. For the authoritative live list, use `extension_discovery discover-all`.
 
-| Bundle | Domain Key | Triage | Outline Skill | Recipes | Verify Steps | Credentials | Notes |
-|--------|------------|--------|---------------|---------|-------------|-------------|-------|
-| pm-dev-java | java | [ext-triage-java](ext-point-triage.md) | - | - | - | - | Base Java bundle |
-| pm-dev-java-cui | java-cui | - | - | - | - | - | Additive to pm-dev-java |
-| pm-dev-frontend | javascript | [ext-triage-js](ext-point-triage.md) | - | - | - | - | |
-| pm-dev-python | python | [ext-triage-python](ext-point-triage.md) | - | - | - | - | |
-| pm-dev-oci | oci-containers | [ext-triage-oci](ext-point-triage.md) | - | - | - | - | |
-| pm-documents | documentation | [ext-triage-docs](ext-point-triage.md) | - | [recipes](ext-point-recipe.md) | - | - | Uses recipe for doc verification |
-| pm-requirements | requirements | [ext-triage-reqs](ext-point-triage.md) | - | - | - | - | |
-| pm-plugin-development | plan-marshall-plugin-dev | [ext-triage-plugin](ext-point-triage.md) | [ext-outline-workflow](ext-point-outline.md) | - | - | - | |
-| plan-marshall | build, general-dev | - | - | [1 recipe](ext-point-recipe.md) | - | [sonar](ext-point-provider.md) | Multi-domain |
+| Bundle | Domain Key | Triage | Outline Skill | Recipes | Credentials | Notes |
+|--------|------------|--------|---------------|---------|-------------|-------|
+| pm-dev-java | java | [ext-triage-java](ext-point-triage.md) | - | - | - | Base Java bundle |
+| pm-dev-java-cui | java-cui | - | - | - | - | Additive to pm-dev-java |
+| pm-dev-frontend | javascript | [ext-triage-js](ext-point-triage.md) | - | - | - | |
+| pm-dev-python | python | [ext-triage-python](ext-point-triage.md) | - | - | - | |
+| pm-dev-oci | oci-containers | [ext-triage-oci](ext-point-triage.md) | - | - | - | |
+| pm-documents | documentation | [ext-triage-docs](ext-point-triage.md) | - | [recipes](ext-point-recipe.md) | - | Uses recipe for doc verification |
+| pm-requirements | requirements | [ext-triage-reqs](ext-point-triage.md) | - | - | - | |
+| pm-plugin-development | plan-marshall-plugin-dev | [ext-triage-plugin](ext-point-triage.md) | [ext-outline-workflow](ext-point-outline.md) | - | - | |
+| plan-marshall | build, general-dev | - | - | [1 recipe](ext-point-recipe.md) | [sonar](ext-point-provider.md) | Multi-domain |
 
 ---
 
@@ -772,9 +767,9 @@ This is the only abstract method because every domain must:
 1. **Declare identity** — the domain key is used throughout marshal.json
 2. **Provide skills** — skills are the primary value a domain extension contributes
 
-### Why Six Optional Hooks?
+### Why Five Optional Hooks?
 
-All six hooks (config_defaults, provides_triage, provides_outline_skill, provides_recipes, provides_verify_steps, provides_finalize_steps) follow the same extension model:
+All five hooks (config_defaults, provides_triage, provides_outline_skill, provides_recipes, provides_retrospective_aspects) follow the same extension model:
 
 1. **Domain ownership** — each domain declares its own capabilities rather than core code hardcoding domain-specific behavior
 2. **Safe defaults** — all hooks return None or empty, so bundles only implement what they need

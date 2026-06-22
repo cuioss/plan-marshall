@@ -20,7 +20,8 @@ To create a new self-review surfacing implementor:
 2. Implement a `self_review.py` script exposing the `surface` subcommand (see CLI Contract below).
 3. Add `implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacing` to the skill's `SKILL.md` frontmatter.
 4. Register the script via the standard executor mapping (`{bundle}:ext-self-review-{domain}:self_review`).
-5. Declare the implementor under the domain's `skill_domains[domain].workflow_skill_extensions.self-review` field so `manage-config skill-domains get-extensions --domain {plan_domain}` returns it under the `self-review` key. (The `set-extensions` subcommand's `--type` choices include `self-review` alongside `outline` and `triage`.)
+
+The consumer dispatch ([`pre-submission-self-review.md`](../../phase-6-finalize/workflow/pre-submission-self-review.md) Step 1) calls the implementor's `surface` subcommand by its fixed notation directly — there is no registration step. For the plan-marshall domain the canonical implementor notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`; a consumer-domain implementor is wired in by the consumer's own dispatch using the implementor's executor notation.
 
 ### Implementor Frontmatter
 

@@ -240,7 +240,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-v
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set-steps --steps {comma_separated_selected_steps}
 ```
-Assert the `set-steps` response is `status: success`. A `missing_order` or `order_collision` error means a selected step's authoritative source (frontmatter on built-in standards docs / `SKILL.md` for `project:` steps / extension `provides_*_steps()` return-dict for skill steps) is missing or duplicates an `order` value — fix the source and re-run.
+Assert the `set-steps` response is `status: success`. A `missing_order` or `order_collision` error means a selected step's authoritative source (frontmatter on built-in standards docs / `SKILL.md` for `project:` steps) is missing or duplicates an `order` value — fix the source and re-run.
 
 After `set-steps` completes for phase-5-execute, validate that every `project:` step in the new selection has a matching `Skill()` allow rule:
 ```bash
@@ -299,7 +299,7 @@ On `Custom`, fall through to the per-step multi-select escape hatch — discover
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-finalize-steps
 ```
 
-The `list-finalize-steps` output includes four sources: built-in (`default:*`), project-local (`project:*`), extension-provided, and **bundle-optional** (`OPTIONAL_BUNDLE_FINALIZE_STEPS`). Bundle-optional entries — such as `plan-marshall:plan-retrospective` — surface in the multi-select but are intentionally absent from the default `plan.phase-6-finalize.steps` list, so operators must opt in explicitly by selecting them here. Example multi-select presentation (built-ins plus the opt-in retrospective):
+The `list-finalize-steps` output includes three sources: built-in (`default:*`), project-local (`project:*`), and **bundle-optional** (`OPTIONAL_BUNDLE_FINALIZE_STEPS`). Bundle-optional entries — such as `plan-marshall:plan-retrospective` — surface in the multi-select but are intentionally absent from the default `plan.phase-6-finalize.steps` list, so operators must opt in explicitly by selecting them here. Example multi-select presentation (built-ins plus the opt-in retrospective):
 
 ```
 AskUserQuestion:
@@ -323,7 +323,7 @@ AskUserQuestion:
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set-steps --steps {comma_separated_selected_steps}
 ```
-Assert the `set-steps` response is `status: success`. A `missing_order` or `order_collision` error means a selected step's authoritative source (frontmatter on built-in standards docs / `SKILL.md` for `project:` steps / extension `provides_*_steps()` return-dict for skill steps) is missing or duplicates an `order` value — fix the source and re-run.
+Assert the `set-steps` response is `status: success`. A `missing_order` or `order_collision` error means a selected step's authoritative source (frontmatter on built-in standards docs / `SKILL.md` for `project:` and bundle-optional steps) is missing or duplicates an `order` value — fix the source and re-run.
 
 After `set-steps` completes for phase-6-finalize, repeat the same project-step validation and auto-fix flow described above for phase-5-execute — the same `detect-missing-project-step-permissions` and `apply-project-step-permissions` calls cover both phases.
 
@@ -428,7 +428,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 This configures:
 - `system` domain (always) with task_executors
 - Each selected domain with bundle reference and workflow_skill_extensions
-- Auto-appends extension verify steps to `plan.phase-5-execute.steps`
+- Seeds the built-in verify steps into `plan.phase-5-execute.verification_steps`
 
 **Note**: The `configure` command replaces all existing domains with the selected ones.
 

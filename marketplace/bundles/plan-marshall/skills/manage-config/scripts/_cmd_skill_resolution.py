@@ -352,7 +352,7 @@ def cmd_resolve_recipe(args) -> dict:
 
 
 def _discover_all_finalize_steps() -> list[dict]:
-    """Discover all finalize steps from built-in, project, and extension sources.
+    """Discover all finalize steps from built-in, project, and bundle-optional sources.
 
     Each result dict includes an `order` field (int) or `None` when the source
     authoritative file/return dict does not declare one. Sorting and collision
@@ -413,16 +413,12 @@ def _discover_all_finalize_steps() -> list[dict]:
             }
         )
 
-    # Source 4: Bundle-optional finalize steps (opt-in via OPTIONAL_BUNDLE_FINALIZE_STEPS)
+    # Source 3: Bundle-optional finalize steps (opt-in via OPTIONAL_BUNDLE_FINALIZE_STEPS)
     # These appear in list-finalize-steps but are absent from DEFAULT_PLAN_FINALIZE,
     # so projects must explicitly add them to marshal.json to activate. Each entry
     # is a fully-qualified `bundle:skill` reference; we resolve to the SKILL.md path
     # under BUNDLES_DIR (marketplace layout) and parse frontmatter for order +
-    # description.
-    #
-    # Source ordering: emitted before Source 3 (extension) so that the existing
-    # contract — every non-extension step precedes every extension step — is
-    # preserved. De-duplication against earlier sources mirrors the project-skill
+    # description. De-duplication against earlier sources mirrors the project-skill
     # filter above.
     seen_names = {entry['name'] for entry in all_steps}
     for step_ref in OPTIONAL_BUNDLE_FINALIZE_STEPS:
@@ -448,30 +444,6 @@ def _discover_all_finalize_steps() -> list[dict]:
             }
         )
         seen_names.add(step_ref)
-
-    # Source 3: Extension provides_finalize_steps()
-    extensions = discover_all_extensions()
-    for ext in extensions:
-        module = ext.get('module')
-        if not module or not hasattr(module, 'provides_finalize_steps'):
-            continue
-        try:
-            steps = module.provides_finalize_steps()
-            if not steps:
-                continue
-            for step in steps:
-                order_value = step.get('order')
-                all_steps.append(
-                    {
-                        'name': step.get('name', step.get('skill', '')),
-                        'description': step.get('description', ''),
-                        'type': 'skill',
-                        'source': 'extension',
-                        'order': int(order_value) if isinstance(order_value, int) else None,
-                    }
-                )
-        except Exception:
-            pass
 
     return all_steps
 

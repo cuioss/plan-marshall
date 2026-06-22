@@ -24,7 +24,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Domain-Aware Candidate Surfacing
 
-The deterministic surfacer is pluggable via the `ext-self-review-{domain}` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the eighteen candidate sub-lists below as TOON. The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Step 1 resolves the implementor via `manage-config skill-domains` against the plan's declared domain.
+The deterministic surfacer is pluggable via the `ext-self-review-{domain}` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the eighteen candidate sub-lists below as TOON. The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Step 1 calls this implementor directly — the plan-marshall surfacer notation is the single canonical implementor, so no `get-extensions` registration lookup is needed.
 
 ## Inputs (inline step — Step 1)
 
@@ -81,14 +81,9 @@ Capture `{cov_scope}` and `{cov_instruction}` (when absent, treat as `inherit`).
 
 ### Step 1: Deterministic surface (inline)
 
-Resolve the domain implementor via `manage-config skill-domains`, then invoke its `surface` subcommand. The implementor derives the plan footprint live from the worktree (`{base}...HEAD` ∪ porcelain), computes the staged diff against the worktree's base branch, and emits the eighteen candidate sub-lists in a single TOON document on stdout.
+Invoke the plan-marshall-domain surfacer's `surface` subcommand directly. The implementor derives the plan footprint live from the worktree (`{base}...HEAD` ∪ porcelain), computes the staged diff against the worktree's base branch, and emits the eighteen candidate sub-lists in a single TOON document on stdout.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  skill-domains get-extensions --domain {plan_domain}
-```
-
-Read the `extensions.self-review` field from the TOON output to get the implementor skill notation (e.g., `pm-plugin-development:ext-self-review-plan-marshall`). The plan-marshall-domain default — recorded under `skill_domains.plan-marshall-plugin-dev.workflow_skill_extensions.self-review` — is `pm-plugin-development:ext-self-review-plan-marshall`. Then invoke the surface helper, forwarding `--contract-radius {N}` derived from `{cov_scope}` (`change-set` → `1`; `artifact`/`inherit` → `3`; `component`/`module`/`overall` → `5`):
+The implementor notation is fixed — `pm-plugin-development:ext-self-review-plan-marshall:self_review` — so it is called directly with no registration lookup. Forward `--contract-radius {N}` derived from `{cov_scope}` (`change-set` → `1`; `artifact`/`inherit` → `3`; `component`/`module`/`overall` → `5`):
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:ext-self-review-plan-marshall:self_review \
