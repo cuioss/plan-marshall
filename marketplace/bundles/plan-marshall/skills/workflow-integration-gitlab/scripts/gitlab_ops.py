@@ -1495,13 +1495,12 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
 _SAFE_MERGE_READY_STATES = frozenset({'can_be_merged'})
 
 
-def _safe_merge_delegate_ns(args: argparse.Namespace, iid: str) -> argparse.Namespace:
+def _safe_merge_delegate_ns(args: argparse.Namespace) -> argparse.Namespace:
     """Synthesize the argparse.Namespace cmd_pr_merge expects from safe-merge args.
 
     cmd_pr_merge reads ``pr_number``, ``head``, ``strategy``, and
-    ``delete_branch`` and re-resolves the IID itself, so the resolved ``iid`` is
-    informational only — the same MR is targeted whether it was supplied by
-    number or by branch.
+    ``delete_branch`` and re-resolves the MR IID itself, so only those four
+    fields are forwarded.
     """
     return argparse.Namespace(
         pr_number=args.pr_number,
@@ -1562,7 +1561,7 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
 
     if not poll_result.get('timed_out'):
         # Readiness reached — delegate to the normal merge path.
-        merge_result = cmd_pr_merge(_safe_merge_delegate_ns(args, iid))
+        merge_result = cmd_pr_merge(_safe_merge_delegate_ns(args))
         if merge_result.get('status') != 'success':
             return merge_result
         merge_result['operation'] = 'pr_safe_merge'
