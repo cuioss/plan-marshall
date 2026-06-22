@@ -76,10 +76,9 @@ This directory is self-consuming:
   one bounded LLM fallback pass (see [01](01-routing-v2.md)).
 - No new preference/learning store — preference signal reuses the existing
   `enriched.json` hints surface (see [04](04-preference-learning-hints.md)).
-- No live browser verification or exploration surface — verification is encoded
-  e2e tests; exploration is the user's own tools (Chrome / browser MCP). 05 only
-  *surfaces* this principle (see [05](05-surface-encoded-verification.md)); it
-  builds no browser/daemon integration.
+- No live browser verification or exploration surface — see
+  [05](05-surface-encoded-verification.md), which only *surfaces* the
+  encoded-verification principle and builds no browser/daemon integration.
 - No `/careful`-style in-session destructive-command guard — worktree isolation
   and the existing Bash hard-rules already cover this; explicitly dropped.
 - No version numbers, changelogs, or dated update sections in any document.

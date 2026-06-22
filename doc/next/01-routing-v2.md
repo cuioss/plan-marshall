@@ -72,7 +72,7 @@ The token/wall-time win comes from the matched recipe running in a single envelo
 
 - `phase-1-init/SKILL.md` — generalize Step 5c into a recipe-match step; sequence
   it ahead of the Step 8b planning-lane call.
-- `plan-marshall/workflow/planning.md`, `planning-outline.md` — the orchestrator
+- `plan-marshall/workflow/planning.md`, `plan-marshall/workflow/planning-outline.md` — the orchestrator
   dispatch sites; add the inline-early-phase path so a routed shortcut skips the
   per-phase execution-context dispatches.
 - `manage-status` planning-lane (sequencing only).

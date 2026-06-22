@@ -104,14 +104,13 @@ it guarantees nothing security-relevant stays buried in a general skill.
 
 ## Documentation to update (deliverables of this plan)
 
-- `doc/concepts/security.adoc` — the proactive security audit gate and its
-  per-domain skill loading.
+- `doc/concepts/security.adoc` — the proactive security audit gate, its per-domain
+  skill loading, and the two-layer focused-context model (`dev-general-security` +
+  per-domain `skills_by_profile.security`).
 - `doc/concepts/automatic-reviews.adoc` — the new finalize step alongside
   automated-review and Sonar roundtrip.
 - `doc/user/configuration.adoc` — the `security_audit` (`auto|always|never`) knob.
 - `doc/concepts/extension-architecture.adoc` — the `security` profile.
-- `doc/concepts/security.adoc` — the two-layer focused-context model
-  (`dev-general-security` + per-domain `skills_by_profile.security`).
 
 ## On completion
 
