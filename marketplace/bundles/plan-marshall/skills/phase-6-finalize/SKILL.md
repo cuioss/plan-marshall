@@ -981,7 +981,7 @@ FOR each step_id in manifest.phase_6.steps:
 
       Read `re_review_on_timeout` off the returned `params` object, then branch on the returned envelope's `action`/`reason`:
 
-      - **`action: defer`** (policy `defer`): skip the merge for this run — do NOT advance to `branch-cleanup`'s merge. Decision-log the deferral, record the step outcome so finalize can be re-entered later (re-issue the step on the next phase entry via the resumable re-entry check), and HALT the FOR loop returning control for re-entry:
+      - **`action: defer`** (policy `defer`): skip the merge for this run — do NOT advance to `branch-cleanup`'s merge. Decision-log the deferral, leave the `automated-review` step record ABSENT (do NOT call `mark-step-done` — the absent record is what makes the resumable re-entry check re-issue the step on the next finalize entry), and HALT the FOR loop returning control for re-entry. This is the deliberate inverse of the "Merge anyway" branch below: merge-anyway records a terminal `done` because the operator resolved the step, whereas defer intentionally records nothing so the step re-runs:
 
            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
              decision --plan-id {plan_id} --level INFO \
@@ -991,13 +991,18 @@ FOR each step_id in manifest.phase_6.steps:
 
       - **`reason: re_review_timeout` with policy `ask`**: fire an `AskUserQuestion` using the three options encoded in the returned `prompt_options[]`. Classify the halt under the existing `blocked_user_review` termination cause (item 5c) when it fires AskUserQuestion. Branch on the operator's selection:
         - **"Wait another {timeout_seconds}s"** → re-dispatch `automated-review` from scratch with a fresh budget (re-enter the Step 3 dispatch with the SAME role/level resolution — NOT a SendMessage resume; the harness cannot resume a spawned agent, see the harness-no-resume contract). The fresh dispatch re-runs the re-review await against a new budget.
-        - **"Merge anyway — proceed unreviewed"** → decision-log a WARNING naming the unreviewed `{head_sha}`, then continue the FOR loop (advance to `branch-cleanup`):
+        - **"Merge anyway — proceed unreviewed"** → decision-log a WARNING naming the unreviewed `{head_sha}`, then record the terminal step outcome on the `automated-review` REQUIRED step BEFORE advancing, then continue the FOR loop (advance to `branch-cleanup`). The terminal record is mandatory: `automated-review` is a member of `HEAD_DEPENDENT_STEPS` and a REQUIRED step in the `phase_steps_complete` handshake — without an `--outcome done` record on this branch the handshake deadlocks at the 6-finalize phase transition with a `step_record_missing` gap. Forward the same `{head_sha}` via `--head-at-completion` so the dispatcher's HEAD-comparison re-fires the step if a later loop-back commit advances the tree:
 
              python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
                decision --plan-id {plan_id} --level WARNING \
                --message "(plan-marshall:phase-6-finalize) automated-review re-review timeout: user chose merge-anyway — advancing UNREVIEWED head_sha={head_sha}"
 
-        - **"Defer merge"** → same as `action: defer` above (skip the merge, record for re-entry, HALT).
+             python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+               --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome done \
+               --display-detail "proceeded unreviewed (head {head_sha})" \
+               --head-at-completion {head_sha}
+
+        - **"Defer merge"** → same as `action: defer` above (skip the merge, leave the step record absent so the resumable re-entry check re-issues `automated-review` on the next finalize entry, and HALT).
 
   ### Loop-back Target Contract
 
