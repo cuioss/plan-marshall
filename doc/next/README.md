@@ -28,22 +28,29 @@ machinery and from feeding more signal back into it** — not from new subsystem
 | 03 | Security audit finalize step | `default:finalize-step-security-audit` — two-layer focused context (`dev-general-security` + per-domain `security` profile skills) | finalize-step discovery, `security` profile, `dev-general-security`, `ext-triage-*` | [03-security-finalize-step.md](03-security-finalize-step.md) |
 | 04 | Preference learning via hints | A cross-plan command (modeled on `audit-archived-plan-retrospectives`) detects recurring user gate-dispositions, routes them to `enriched.json` `best_practices`, and implicitly archives | PR #744 architecture-hints, `audit-archived-plan-retrospectives`, `manage-findings` | [04-preference-learning-hints.md](04-preference-learning-hints.md) |
 | 05 | Surface encoded-test verification | Make the principle explicit (verify = encoded e2e tests; explore = user's own tools) via a concept note + optional e2e-testing standard — no browser/daemon integration | domain test skills, concept docs | [05-surface-encoded-verification.md](05-surface-encoded-verification.md) |
+| 06 | Personas | A structured persona layer: `dev-general-persona` aggregator skill (complete shell — `SKILL.md` + `standards/` reasoning + `personas/` per-persona docs), data-declared and rendered per-target, naming capability bundles for humans; models all three (Security Reviewer, Auditor, Code Reviewer) | `dev-general-*` family, build-target render, the `security`/audit/review bundles | [06-personas.md](06-personas.md) |
 
 ## Sequencing
 
 ```text
 02 audit-recipes ──┬──► 01 routing-v2 (needs recipe targets to route to)
                    └──► 03 security-finalize-step (shares the audit engine)
+06 personas ──────────► 03 security-finalize-step (03 consumes the Security Reviewer persona)
 
-04 preference-learning-hints  (independent; highest reuse, smallest scope)
+04 preference-learning-hints  (independent; reuses the retrospective auditor)
 05 surface-encoded-verification (independent; guidance/standard, lowest priority)
 ```
 
 - **02 is the keystone.** Recipes are the cheap single-envelope path; both 01
   (routes onto them) and 03 (shares the security audit engine) depend on it.
 - **01 is the headline** but only pays off once recipes exist to route to.
+- **06 precedes 03.** The persona layer lands first so the security audit ships as a
+  named "Security Reviewer" persona rather than an unnamed bundle. 06 models all
+  three personas (Security Reviewer, Auditor, Code Reviewer); it has no dependency
+  on 02, so it can run in parallel with it.
 - **03** ships the security audit as an automatic gate; its on-demand twin is the
-  `recipe-security-audit` from 02. One audit engine, two entry points.
+  `recipe-security-audit` from 02. One audit engine, two entry points. Depends on
+  both 02 (engine) and 06 (Security Reviewer persona).
 - **04 and 05 are independent** and can proceed any time. 04 reuses the retrospective
   auditor's corpus sweep; 05 is guidance/standard work with no integration.
 
