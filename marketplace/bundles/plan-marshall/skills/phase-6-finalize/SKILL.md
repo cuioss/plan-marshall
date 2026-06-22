@@ -981,7 +981,7 @@ FOR each step_id in manifest.phase_6.steps:
 
       Read `re_review_on_timeout` off the returned `params` object, then branch on the returned envelope's `action`/`reason`:
 
-      - **`action: defer`** (policy `defer`): skip the merge for this run — do NOT advance to `branch-cleanup`'s merge. Decision-log the deferral, leave the `automated-review` step record ABSENT (do NOT call `mark-step-done` — the absent record is what makes the resumable re-entry check re-issue the step on the next finalize entry), and HALT the FOR loop returning control for re-entry. This is the deliberate inverse of the "Merge anyway" branch above: merge-anyway records a terminal `done` because the operator resolved the step, whereas defer intentionally records nothing so the step re-runs:
+      - **`action: defer`** (policy `defer`): skip the merge for this run — do NOT advance to `branch-cleanup`'s merge. Decision-log the deferral, leave the `automated-review` step record ABSENT (do NOT call `mark-step-done` — the absent record is what makes the resumable re-entry check re-issue the step on the next finalize entry), and HALT the FOR loop returning control for re-entry. This is the deliberate inverse of the "Merge anyway" branch below: merge-anyway records a terminal `done` because the operator resolved the step, whereas defer intentionally records nothing so the step re-runs:
 
            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
              decision --plan-id {plan_id} --level INFO \
@@ -999,7 +999,7 @@ FOR each step_id in manifest.phase_6.steps:
 
              python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
                --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome done \
-               --display-detail "proceeded unreviewed per operator (head {head_sha})" \
+               --display-detail "proceeded unreviewed (head {head_sha})" \
                --head-at-completion {head_sha}
 
         - **"Defer merge"** → same as `action: defer` above (skip the merge, leave the step record absent so the resumable re-entry check re-issues `automated-review` on the next finalize entry, and HALT).
