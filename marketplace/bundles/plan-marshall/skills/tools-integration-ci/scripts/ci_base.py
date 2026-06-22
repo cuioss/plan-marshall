@@ -775,6 +775,45 @@ def build_parser(
         help='Merge strategy (default: merge)',
     )
 
+    # pr safe-merge — poll readiness, then merge; GitHub-only admin fallback on stuck state.
+    # Accepts either --pr-number or --head (validated by handler). Registered once here and
+    # consumed by both providers, mirroring how merge/auto-merge are shared.
+    pr_safe = pr_sub.add_parser(
+        'safe-merge',
+        help='Poll PR readiness then merge, with a GitHub-only admin fallback on a stuck blocked state',
+        allow_abbrev=False,
+    )
+    pr_safe.add_argument('--pr-number', type=int, help='PR number')
+    add_head_arg(pr_safe)
+    pr_safe.add_argument(
+        '--strategy',
+        default='merge',
+        choices=['merge', 'squash', 'rebase'],
+        help='Merge strategy (default: merge)',
+    )
+    pr_safe.add_argument('--delete-branch', action='store_true', help='Delete branch after merge')
+    pr_safe.add_argument(
+        '--admin-merge-on-stuck-state',
+        dest='admin_merge_on_stuck_state',
+        action='store_true',
+        help='GitHub-only: when the PR stays mergeable_state=blocked past the poll timeout and every '
+        'active ruleset requirement is provably met, fall back to "gh pr merge --admin"',
+    )
+    pr_safe.add_argument(
+        '--poll-timeout',
+        dest='poll_timeout',
+        type=int,
+        default=DEFAULT_CI_TIMEOUT,
+        help=f'Max readiness-poll wait time in seconds (default: {DEFAULT_CI_TIMEOUT})',
+    )
+    pr_safe.add_argument(
+        '--poll-interval',
+        dest='poll_interval',
+        type=int,
+        default=DEFAULT_CI_INTERVAL,
+        help=f'Readiness-poll interval in seconds (default: {DEFAULT_CI_INTERVAL})',
+    )
+
     # pr update-branch — accepts either --pr-number or --head (validated by handler)
     pr_update_branch = pr_sub.add_parser(
         'update-branch', help='Update PR branch with base branch changes', allow_abbrev=False

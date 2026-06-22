@@ -243,12 +243,20 @@ The canonical argparse surface for `ci.py`. The plugin-doctor analyzer (`_analyz
 
 ### pr
 
-Sub-verbs: `view`, `list`, `reply`, `resolve-thread`, `thread-reply`, `reviews`, `comments`, `wait-for-comments`, `merge`, `auto-merge`, `update-branch`, `close`, `ready`, `submit-review`, `edit`, `prepare-body`, `prepare-comment`, `create`.
+Sub-verbs: `view`, `list`, `reply`, `resolve-thread`, `thread-reply`, `reviews`, `comments`, `wait-for-comments`, `merge`, `auto-merge`, `safe-merge`, `update-branch`, `close`, `ready`, `submit-review`, `edit`, `prepare-body`, `prepare-comment`, `create`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
   --title TITLE --plan-id PLAN_ID [--slot SLOT] [--base BASE] [--draft] [--head HEAD]
 ```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr safe-merge \
+  (--pr-number PR_NUMBER | --head HEAD) [--strategy merge|squash|rebase] [--delete-branch] \
+  [--admin-merge-on-stuck-state] [--poll-timeout SECONDS] [--poll-interval SECONDS]
+```
+
+`pr safe-merge` polls readiness before merging; `--admin-merge-on-stuck-state` (the GitHub-only stuck-state `--admin` fallback) has no effect on GitLab.
 
 ### checks
 

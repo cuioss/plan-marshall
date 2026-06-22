@@ -25,13 +25,14 @@ Source: [pr-operations.md](pr-operations.md)
 | `pr create` | `--title`, `--plan-id` | `--base`, `--head {branch}`, `--slot {name}`, `--draft` | Create a PR. Body is consumed from the scratch file allocated by `pr prepare-body`. Pass `--head` from main checkout against worktree branch. |
 | `pr merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy {merge\|squash\|rebase}`, `--delete-branch` | Merge a PR. Flag is `--strategy`, **not** `--merge-method` |
 | `pr auto-merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy {merge\|squash\|rebase}` | Enable auto-merge when all checks pass |
+| `pr safe-merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy {merge\|squash\|rebase}`, `--delete-branch`, `--admin-merge-on-stuck-state`, `--poll-timeout {seconds}`, `--poll-interval {seconds}` | Poll readiness then merge. GitHub-only `--admin` stuck-state fallback (gated by `--admin-merge-on-stuck-state` + provably-met ruleset); ignored on GitLab |
 | `pr close` | `--pr-number` | — | Close a PR without merging |
 | `pr ready` | `--pr-number` | — | Mark a draft PR as ready for review |
 | `pr edit` | `--pr-number`, `--plan-id` | `--title`, `--slot {name}` | Edit PR title and/or body. Body (if updated) is consumed from the scratch file allocated by `pr prepare-body --for edit`. |
 
 **Worktree-isolated plans**: When invoking from the main checkout against a plan running
 in `.plan/local/worktrees/{plan_id}`, pass `--head {plan_branch}` on every branch-aware
-operation (`pr create`, `pr view`, `pr merge`, `pr auto-merge`, `checks status`). The
+operation (`pr create`, `pr view`, `pr merge`, `pr auto-merge`, `pr safe-merge`, `checks status`). The
 underlying gh/glab CLIs derive the source branch from cwd HEAD, which would otherwise
 resolve to `main`. Examples:
 
@@ -53,6 +54,9 @@ ci pr merge --head plan/jwt-auth --strategy squash --delete-branch
 
 # Enable auto-merge by branch
 ci pr auto-merge --head plan/jwt-auth --strategy squash
+
+# Poll readiness then merge by branch (GitHub stuck-state admin fallback when enabled)
+ci pr safe-merge --head plan/jwt-auth --strategy squash --delete-branch --admin-merge-on-stuck-state
 ```
 
 ---

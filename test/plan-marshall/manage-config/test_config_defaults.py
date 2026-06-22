@@ -302,6 +302,44 @@ def test_get_default_config_includes_merge_queue_wait_budget_seconds():
     assert branch_cleanup['merge_queue_wait_budget_seconds'] == 1800
 
 
+def test_default_plan_finalize_includes_admin_merge_on_stuck_state():
+    """admin_merge_on_stuck_state nests under default:branch-cleanup with default False.
+
+    The knob is a step-owned param of `default:branch-cleanup`, declared in that
+    step's `configurable:` body-doc frontmatter and surfaced through
+    get_default_config() via resolve_step_defaults_optional. It gates the
+    GitHub-only stuck-state `--admin` fallback inside `ci pr safe-merge`;
+    `False` (the default) refuses the admin merge and surfaces the stuck PR to
+    the operator.
+    """
+    config = _config_defaults_mod.get_default_config()
+    branch_cleanup = _params_for(
+        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
+    )
+
+    assert 'admin_merge_on_stuck_state' in branch_cleanup, (
+        'admin_merge_on_stuck_state must nest under default:branch-cleanup in the seeded steps list'
+    )
+    assert branch_cleanup['admin_merge_on_stuck_state'] is False, (
+        'admin_merge_on_stuck_state default must be False (admin fallback opt-in, off by default)'
+    )
+    # not a flat sibling of steps anymore
+    assert 'admin_merge_on_stuck_state' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE
+
+
+def test_get_default_config_includes_admin_merge_on_stuck_state():
+    """get_default_config() surfaces admin_merge_on_stuck_state nested under default:branch-cleanup."""
+    config = _config_defaults_mod.get_default_config()
+
+    branch_cleanup = _params_for(
+        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
+    )
+    assert 'admin_merge_on_stuck_state' in branch_cleanup, (
+        'admin_merge_on_stuck_state must round-trip through the steps map under default:branch-cleanup'
+    )
+    assert branch_cleanup['admin_merge_on_stuck_state'] is False
+
+
 def test_default_plan_execute_omits_retired_per_task_budget_reserve_tokens():
     """DEFAULT_PLAN_EXECUTE must NOT carry the retired per_task_budget_reserve_tokens key.
 
@@ -952,6 +990,7 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
         'final_merge_without_asking': False,
         'auto_rebase_threshold': 'no_overlap_only',
         'merge_queue_wait_budget_seconds': 1800,
+        'admin_merge_on_stuck_state': False,
     }
 
     # a step that owns no params maps to an empty {} param object.
@@ -998,6 +1037,7 @@ def test_default_plan_finalize_drops_flat_step_owned_knobs():
         'final_merge_without_asking',
         'auto_rebase_threshold',
         'merge_queue_wait_budget_seconds',
+        'admin_merge_on_stuck_state',
     ):
         assert knob not in finalize, f'flat step-owned knob {knob!r} must not survive'
 

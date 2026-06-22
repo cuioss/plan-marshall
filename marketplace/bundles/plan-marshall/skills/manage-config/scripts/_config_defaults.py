@@ -480,7 +480,9 @@ def validate_sonar_touched_file_cleanup(value: str) -> None:
 #                                      ce_wait_timeout_seconds
 #   - default:automated-review      → review_bot_buffer_seconds
 #   - default:branch-cleanup        → pr_merge_strategy, final_merge_without_asking,
-#                                      auto_rebase_threshold
+#                                      auto_rebase_threshold,
+#                                      merge_queue_wait_budget_seconds,
+#                                      admin_merge_on_stuck_state
 #   - default:finalize-step-simplify → simplify (run-at-all gate)
 #   - project:finalize-step-pre-submission-self-review → self_review,
 #                                      drop_review_on_scope_gate (NOT a built-in

@@ -1,6 +1,6 @@
 # PR Operations
 
-Pull request lifecycle operations: create, view, merge, auto-merge, close, ready, edit. Also covers the `branch delete` leaf, which supports post-merge remote branch cleanup.
+Pull request lifecycle operations: create, view, merge, auto-merge, safe-merge, close, ready, edit. Also covers the `branch delete` leaf, which supports post-merge remote branch cleanup.
 
 ## Branch-Aware Operations: `--head BRANCH`
 
@@ -14,9 +14,10 @@ To handle this, branch-aware operations accept an explicit `--head BRANCH` argum
 | `pr view` | Branch whose PR to view (gh accepts a branch positional; glab uses `mr view {branch}`) |
 | `pr merge` | Branch identifying the PR to merge (alternative to `--pr-number`; glab resolves IID via `mr list --source-branch`) |
 | `pr auto-merge` | Same as `pr merge` |
+| `pr safe-merge` | Same as `pr merge` |
 | `ci status` | Same as `pr merge` |
 
-For `pr merge`, `pr auto-merge`, and `ci status`, supply **exactly one** of `--pr-number`
+For `pr merge`, `pr auto-merge`, `pr safe-merge`, and `ci status`, supply **exactly one** of `--pr-number`
 or `--head`. Supplying both returns `status: error` with message `specify exactly one of --pr-number or --head`.
 Supplying neither returns `status: error` with message `specify either --pr-number or --head`.
 
@@ -176,6 +177,40 @@ operation: pr_auto_merge
 pr_number: 123
 enabled: true
 ```
+
+---
+
+## Workflow: Safe-Merge PR
+
+**Pattern**: Provider-Agnostic Router
+
+Poll the PR's mergeability until it is ready, then merge — hardening the merge against post-force-push `mergeable_state: blocked` staleness, where GitHub reports a PR as not-mergeable while it recomputes mergeability after a push.
+
+On **GitHub only**, when readiness stays `blocked` past the poll timeout AND `--admin-merge-on-stuck-state` is set AND every active ruleset requirement is provably met (required checks all SUCCESS on the head SHA, branch not behind base, required approving reviews met, no required unresolved conversations), the verb falls back to `gh pr merge --admin`. The stuck-state gate fails closed: any unmet or unverifiable requirement refuses the admin merge. On **GitLab** there is no admin equivalent — `--admin-merge-on-stuck-state` is accepted for API uniformity but ignored, and a stuck-past-timeout MR returns an error rather than force-merging.
+
+### Step 1: Execute
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr safe-merge \
+    (--pr-number 123 | --head feature/x) [--strategy merge|squash|rebase] [--delete-branch] \
+    [--admin-merge-on-stuck-state] [--poll-timeout SECONDS] [--poll-interval SECONDS]
+```
+
+Supply exactly one of `--pr-number` or `--head`. The `--admin-merge-on-stuck-state` admin fallback is GitHub-only.
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: pr_safe_merge
+pr_number: 123
+strategy: squash
+merge_path: polled_clean
+polls: 1
+duration_sec: 0
+```
+
+`merge_path` is `polled_clean` when the PR became mergeable within the poll window and merged via the normal path, or `admin_fallback` when the GitHub-only stuck-state `--admin` merge was used.
 
 ---
 

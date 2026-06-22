@@ -15,6 +15,9 @@ configurable:
   - key: merge_queue_wait_budget_seconds
     default: 1800
     description: Bound (in seconds, ~30 min) the Pre-Merge Gate FIFO merge-queue poll loop — caps how long branch-cleanup waits for its turn at the head of the merge queue before falling back to the last-resort AskUserQuestion.
+  - key: admin_merge_on_stuck_state
+    default: false
+    description: Gate the GitHub-only stuck-state `--admin` fallback inside `ci pr safe-merge` — false refuses the admin merge and surfaces the stuck PR to the operator; true permits `gh pr merge --admin` only when the PR stays `mergeable_state: blocked` past the poll timeout AND every active ruleset requirement is provably met. Orthogonal to `final_merge_without_asking` (which gates whether the merge is attempted at all).
 ---
 
 # Branch Cleanup
@@ -112,7 +115,7 @@ This section dispatches the existing `baseline-reconcile` probe to classify the 
 
 #### Read the auto-proceed threshold
 
-The `auto_rebase_threshold`, `pr_merge_strategy`, and `final_merge_without_asking` params are all step-owned params of the `default:branch-cleanup` step. Read them from the plan-local execution-manifest step-params snapshot in a single one-stop call (the same `params` object is reused at the merge-strategy and pre-merge-gate reads below):
+The `auto_rebase_threshold`, `pr_merge_strategy`, `final_merge_without_asking`, and `admin_merge_on_stuck_state` params are all step-owned params of the `default:branch-cleanup` step. Read them from the plan-local execution-manifest step-params snapshot in a single one-stop call (the same `params` object is reused at the merge-strategy, pre-merge-gate, and Merge-PR reads below):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
@@ -559,7 +562,7 @@ AskUserQuestion:
 
 On **Wait and retry**, reset the wall-clock start time and re-enter the **FIFO poll/backoff loop** above (a fresh `{wait_budget}` window; the plan kept its FIFO position throughout). On **Skip merge**, set `{merge_consent} = deferred` and follow the same skip path as the interactive "No, skip merge" branch.
 
-Once `admission: admitted` is reached, proceed directly to **Merge PR (if not yet merged)** below. The `{merge_consent} = explicit_yes` flag is set so the auto-merge fallback path remains active on a branch-protection error.
+Once `admission: admitted` is reached, proceed directly to **Merge PR (if not yet merged)** below. The `{merge_consent} = explicit_yes` flag is set so the `pr safe-merge` poll-then-merge path (including its GitHub-only stuck-state admin fallback when `admin_merge_on_stuck_state` is enabled) is authorized.
 
 > **Sync note**: the merge-lock is the unified `plan-marshall:manage-locks:merge_lock` primitive (the file-based `O_EXCL` mutex). After this plan merges, the `finalize-step-sync-plugin-cache` step syncs the plugin cache and regenerates the executor against main (after the cache sync), so the notation resolves.
 
@@ -579,8 +582,7 @@ AskUserQuestion:
         **Current classifier** (post-rebase): classification={classification}, auto_reconciled={auto_reconciled}, upstream_commits={upstream_commit_count}
 
         **Actions on "Yes, merge"**:
-        - `pr merge --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch`
-        - On branch-protection error, fall back to `pr auto-merge` with the same strategy
+        - `pr safe-merge --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch` (polls readiness, then merges; GitHub-only `--admin` stuck-state fallback when `admin_merge_on_stuck_state` is enabled)
         - Switch to {base_branch}, pull latest, delete local branch {head_branch}
 
         **Actions on "No, skip merge"**:
@@ -588,7 +590,7 @@ AskUserQuestion:
         - Re-enter finalize later to merge (state == merged short-circuits this prompt if you merged manually)
       options:
         - label: "Yes, merge"
-          description: "Run pr merge --delete-branch with auto-merge fallback on branch protection"
+          description: "Run pr safe-merge --delete-branch (poll-then-merge, GitHub stuck-state admin fallback when enabled)"
         - label: "No, skip merge"
           description: "Defer merge; exit cleanly so finalize can be re-entered later"
       multiSelect: false
@@ -603,34 +605,25 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Set `{merge_consent} = deferred`. Skip the **Merge PR**, **Wait for Merge CI**, **Remove Worktree**, and **Switch to Base Branch** sections entirely; the rebased branch is left in place with no further mutation. Emit the `mark-step-done` payload below using **Branch C — declined by user** (deferral is the same shape from the workflow's point of view: cleanup was not completed this run, re-entry is expected) and return.
 
-**If user selects "Yes, merge"**: Set `{merge_consent} = explicit_yes` and proceed to **Merge PR (if not yet merged)** below. The auto-merge fallback path remains active on a branch-protection error (explicit consent was given for the merge action; the fallback is part of the same merge intent).
+**If user selects "Yes, merge"**: Set `{merge_consent} = explicit_yes` and proceed to **Merge PR (if not yet merged)** below. The `pr safe-merge` poll-then-merge path — including its GitHub-only stuck-state admin fallback when `admin_merge_on_stuck_state` is enabled — is authorized (explicit consent was given for the merge action; the stuck-state fallback is part of the same merge intent).
 
 ### Merge PR (if not yet merged)
 
 **Only if `state == open` AND the pre-merge gate above resolved to `{merge_consent} == explicit_yes`** (the `final_merge_without_asking == true` bypass also sets `{merge_consent} = explicit_yes`):
 
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr merge \
-    --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch
-```
+Issue a single `pr safe-merge` call. It polls the PR's mergeability until ready, then merges (and deletes the remote branch via `--delete-branch`); on GitHub it additionally falls back to an `--admin` merge when the PR stays stuck `mergeable_state: blocked` past the poll timeout AND every active ruleset requirement is provably met. This single verb replaces the former `pr merge` → `pr auto-merge` branch-protection fallback sequence: the poll-then-merge path and the stuck-state admin fallback are both internal to `pr safe-merge`.
 
-If merge fails with branch protection error ('base branch policy prohibits the merge'), fall back to auto-merge — the operator's "Yes, merge" answer (or the `final_merge_without_asking == true` bypass) is the consent for both the direct merge and its auto-merge fallback:
+The GitHub-only `--admin` fallback is gated by the `{admin_merge_on_stuck_state}` param read from the one-stop `step-params get` call in the **Conflict-Severity Classifier** section above (default: `false`). Resolve `{admin_flag}` from that param: when `{admin_merge_on_stuck_state} == true`, `{admin_flag}` is the literal `--admin-merge-on-stuck-state`; when it is `false` (the default), `{admin_flag}` is the empty string and the flag is omitted entirely (it is `store_true`). On GitLab the flag is accepted but has no effect — there is no admin-merge equivalent, so a stuck MR surfaces as an error rather than force-merging.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr auto-merge \
-    --pr-number {pr_number} --strategy {pr_merge_strategy}
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr safe-merge \
+    --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch {admin_flag}
 ```
 
-Log the fallback:
+If `safe-merge` fails (poll timeout with the admin fallback disabled or unmet, a GitLab stuck state, or any merge error) → log error and abort:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: direct merge blocked by branch protection, enabled auto-merge (merge_consent=explicit_yes)"
-```
-
-If auto-merge also fails → log error and abort:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: PR merge failed - {error}"
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: PR safe-merge failed - {error}"
 ```
 
 ### Wait for Merge CI
@@ -682,7 +675,7 @@ All git operations in this section target the main checkout because the worktree
 
 **Uniform local cleanup (both `state == open` and `state == merged`)**:
 
-The `--delete-branch` flag on `pr merge` deletes ONLY the remote branch (via the provider REST API). It does NOT touch the local clone — local branch deletion and base-branch checkout are always the workflow's responsibility and must run here regardless of the prior merge path. After worktree removal, the main checkout may still be on the feature branch and the local feature branch still exists.
+The `--delete-branch` flag on `pr safe-merge` deletes ONLY the remote branch (via the provider REST API). It does NOT touch the local clone — local branch deletion and base-branch checkout are always the workflow's responsibility and must run here regardless of the prior merge path. After worktree removal, the main checkout may still be on the feature branch and the local feature branch still exists.
 
 Switch to the base branch and pull the merge commit via `switch-and-pull` (see `workflow-integration-git` Canonical invocations → `switch-and-pull`):
 
