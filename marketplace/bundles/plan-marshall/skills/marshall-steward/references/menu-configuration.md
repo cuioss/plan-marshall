@@ -240,7 +240,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-v
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set-steps --steps {comma_separated_selected_steps}
 ```
-Assert the `set-steps` response is `status: success`. A `missing_order` or `order_collision` error means a selected step's authoritative source (frontmatter on built-in standards docs / `SKILL.md` for `project:` and bundle-optional steps) is missing or duplicates an `order` value — fix the source and re-run.
+Assert the `set-steps` response is `status: success`. A `missing_order` or `order_collision` error means a selected step's authoritative source (frontmatter on built-in standards docs / `SKILL.md` for `project:` steps) is missing or duplicates an `order` value — fix the source and re-run.
 
 After `set-steps` completes for phase-5-execute, validate that every `project:` step in the new selection has a matching `Skill()` allow rule:
 ```bash
