@@ -295,7 +295,7 @@ def test_signal2_triggered_on_trailing_segment_match() -> None:
 
 
 def test_module_exposes_no_rule_matchers() -> None:
-    # The shared gate owns parse + accessors + context_gate only; the R1-R5 rule
+    # The shared gate owns parse + accessors + context_gate only; the R1-R4 rule
     # matchers are enforcement-only and must not leak into this module.
     public_names = {name for name in dir(gate) if not name.startswith("_")}
     forbidden = {"match_rules", "rule_matchers", "deny", "permission_decision"}

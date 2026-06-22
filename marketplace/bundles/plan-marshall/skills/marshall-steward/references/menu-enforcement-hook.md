@@ -1,9 +1,9 @@
 # Menu Option: Enforcement Hook
 
 Configure the conditional PreToolUse enforcement hook. When enabled, the hook
-deterministically blocks five mechanically-checkable hard-rule violation
-families — shell-construct compounds, Bash file-ops, direct `gh`/`glab`, direct
-edits of the generated `.plan/execute-script.py`, and hard-coded build commands
+deterministically blocks four mechanically-checkable hard-rule violation
+families — shell-construct compounds, Bash file-ops, direct edits of the
+generated `.plan/execute-script.py`, and hard-coded build commands
 — but ONLY when the call originates inside a plan-marshall plan context (a
 dispatched execution-context sub-agent, or a working directory under
 `.plan/local/worktrees/`). Every other call passes through untouched: the hook
@@ -17,7 +17,7 @@ statusLine, or env entries.
 
 See
 [`../../platform-runtime/standards/pretooluse-enforcement.md`](../../platform-runtime/standards/pretooluse-enforcement.md)
-for the canonical contract — the context gate, the five rule families with
+for the canonical contract — the context gate, the four rule families with
 their redirect reasons, and the fail-open / best-effort-no-raise behaviour.
 
 ## Reachability
@@ -74,7 +74,7 @@ Prompt the user before writing anything:
 
 ```
 AskUserQuestion:
-  question: "Enable the conditional PreToolUse enforcement hook? It deterministically blocks five hard-rule violation families (shell-construct compounds, Bash file-ops, direct gh/glab, generated-executor edits, hard-coded builds) inside a plan-marshall plan context, and fails open everywhere else. This installs ONLY the enforcement entry into ./.claude/settings.local.json — it does not touch the terminal-title wiring."
+  question: "Enable the conditional PreToolUse enforcement hook? It deterministically blocks four hard-rule violation families (shell-construct compounds, Bash file-ops, generated-executor edits, hard-coded builds) inside a plan-marshall plan context, and fails open everywhere else. This installs ONLY the enforcement entry into ./.claude/settings.local.json — it does not touch the terminal-title wiring."
   header: "Enforcement Hook"
   options:
     - label: "Enable"
@@ -94,7 +94,7 @@ Install the enforcement entry via `project install-hook --enforcement`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
-  project install-hook --target .claude/settings.local.json --enforcement
+  project install-hook --target claude --enforcement
 ```
 
 Inspect the TOON response:
@@ -113,7 +113,7 @@ PreToolUse enforcement hook enabled.
 Enforcement entry: <enforcement_status>
 
 Restart or reload the Claude Code session so the harness arms the hook. The
-hook blocks the five hard-rule families only inside a plan-marshall plan
+hook blocks the four hard-rule families only inside a plan-marshall plan
 context; calls outside any plan pass through untouched. Enforcement is
 independent of the terminal-title wiring — enabling one does not enable the
 other.
