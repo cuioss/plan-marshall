@@ -1,8 +1,8 @@
-# 03 — Security audit as a finalize step (uses a `security` profile)
+# 05 — Security audit as a finalize step (uses a `security` profile)
 
-**Shares the audit engine with [02](02-audit-recipes.md)'s `recipe-security-audit`.
-Ships as the "Security Reviewer" persona — depends on [06](06-personas.md), which
-lands first and defines that persona (one of three modeled there) over this bundle.**
+**Shares the audit engine with [03](03-audit-recipes.md)'s `recipe-security-audit`.
+Ships as `persona-security-expert` — depends on [01](01-personas.md) for the
+persona / ref / profile model and the `security` profile.**
 
 ## Problem
 
@@ -29,19 +29,18 @@ post-dispatch carve-out from PR #747). Only the terminal `done` / `loop_back` /
 
 1. Compute the live footprint (`manage-references compute-footprint`).
 2. Detect affected domains (java / python / js / oci / …).
-3. Gather **focused** security context in two layers (general domain skills are not
-   security-focused enough; a security review must gather everything it can):
-   - **Cross-cutting layer (always loaded):** `plan-marshall:dev-general-security` —
-     OWASP Top Ten, STRIDE, trust-boundary and secure-coding principles that apply
-     regardless of domain. Plus the existing cross-cutting `untrusted-ingestion` /
-     `workflow-permission-web`.
-   - **Per-domain layer (resolved per affected module):** the module's
-     `skills_by_profile.security` skills — dedicated, security-focused skills each
-     domain declares for itself (carved out of the security sections currently
-     buried in the general domain skills, e.g. java-core's input-validation +
-     security-patterns, python-core's injection hardening, javascript's XSS/DOM
-     trust, oci-security's OWASP-Docker + supply chain).
-4. Run the audit (shared engine with [02](02-audit-recipes.md)'s
+3. Gather **focused** security context via `persona-security-expert` resolution
+   ([01](01-personas.md)) — general domain skills are not security-focused enough; a
+   security review must gather everything it can:
+   - **Action-general layer:** `persona-security-expert` — OWASP Top Ten, STRIDE,
+     trust-boundary and secure-coding principles (the action-general security
+     identity). Plus cross-cutting `untrusted-ingestion` / `workflow-permission-web`.
+   - **Per-domain layer:** the `security` profile × affected domain →
+     `skills_by_profile.security` skills, carved from the security sections currently
+     buried in the general domain skills (java-core input-validation +
+     security-patterns, python-core injection hardening, javascript XSS/DOM trust,
+     oci-security OWASP-Docker + supply chain).
+4. Run the audit (shared engine with [03](03-audit-recipes.md)'s
    `recipe-security-audit`); emit findings — mapped to valid `FINDING_TYPES`
    (`bug` / `anti-pattern`; no `security-issue` type, see [principles §2](principles.md))
    — → triage via domain `ext-triage-*`.
@@ -81,7 +80,7 @@ structures**:
 - **Domain-specific** extracted content → the dedicated per-domain security skill
   declared under that domain's `skills_by_profile.security`.
 - **Cross-cutting** extracted content (OWASP Top Ten, STRIDE, general secure-coding
-  principles) → `plan-marshall:dev-general-security`.
+  principles) → `persona-security-expert` (the action-general security identity, [01](01-personas.md)).
 - Leave a cross-reference in the source general skill rather than duplicating, per
   the no-duplication doc rule.
 
@@ -91,24 +90,23 @@ it guarantees nothing security-relevant stays buried in a general skill.
 ## Affected surface
 
 - New `phase-6-finalize/standards/finalize-step-security-audit.md`.
-- New `plan-marshall:dev-general-security` skill — cross-cutting OWASP Top Ten /
-  STRIDE / secure-coding (mirrors the `dev-general-*` family, e.g.
-  `dev-general-code-quality`).
+- `persona-security-expert` (the action-general security identity; defined in
+  [01](01-personas.md)) — OWASP Top Ten / STRIDE / secure-coding.
 - `security` added to `ExtensionBase.APPLICABLE_PROFILES` +
-  `extension-api/standards/profiles.md`.
+  `extension-api/standards/profiles.md` (per [01](01-personas.md)).
 - Per-domain `skills_by_profile.security` declarations in each domain's
   `get_skill_domains()`, plus the dedicated per-domain security skills carved out of
   the general domain skills' security sections.
 - `manage-execution-manifest` decision-rules (candidate set, ordering, ceremony gate).
 - marshal.json seed (`plan.phase-6-finalize.steps` + `security_audit` knob) in all
   three repos + consumer migration.
-- Shared audit engine (with [02](02-audit-recipes.md)).
+- Shared audit engine (with [03](03-audit-recipes.md)).
 
 ## Documentation to update (deliverables of this plan)
 
-- `doc/concepts/security.adoc` — the proactive security audit gate, its per-domain
-  skill loading, and the two-layer focused-context model (`dev-general-security` +
-  per-domain `skills_by_profile.security`).
+- `doc/concepts/security.adoc` — the proactive security audit gate and its
+  two-layer focused-context model (`persona-security-expert` + the `security` profile
+  × per-domain `skills_by_profile.security`).
 - `doc/concepts/automatic-reviews.adoc` — the new finalize step alongside
   automated-review and Sonar roundtrip.
 - `doc/user/configuration.adoc` — the `security_audit` (`auto|always|never`) knob.
@@ -116,11 +114,11 @@ it guarantees nothing security-relevant stays buried in a general skill.
 
 ## On completion
 
-Delete this document and remove the `03` row from
+Delete this document and remove the `05` row from
 [`README.md`](README.md); this is part of the plan's finalize.
 
 ## Scope
 
-Large — adds the `security` profile, a new `dev-general-security` skill, and
+Large — adds the `security` profile, `persona-security-expert` (defined in 01), and
 per-domain security skills across the domain bundles. Shares the audit engine with
-[02](02-audit-recipes.md).
+[03](03-audit-recipes.md).

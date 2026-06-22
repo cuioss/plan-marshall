@@ -81,12 +81,15 @@ router already has.
 
 ---
 
-## 5. Integrate, do not rebuild
+## 5. Verification stays encoded; integrate only when unavoidable
 
-Where a mature external tool exists (browser automation, acceptance testing), wrap
-it behind a thin plan-marshall surface (recipe or finalize step) rather than
-building an in-house equivalent. plan-marshall owns the orchestration and the
-findings contract; the external tool owns its domain.
+plan-marshall verifies through *encoded, reproducible* tests (module-tests,
+quality-gate, CI, e2e) and leaves interactive exploration to the tools the user
+already has (Chrome, a browser MCP) — it does **not** build or integrate a
+live-run / browser surface (see [06](06-surface-encoded-verification.md)). If some
+future capability genuinely requires an external tool, wrap it behind a thin
+plan-marshall surface that emits into the findings contract rather than rebuilding
+it in-house — never the reverse.
 
 ---
 
