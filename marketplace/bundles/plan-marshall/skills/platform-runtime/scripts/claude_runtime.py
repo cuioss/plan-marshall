@@ -156,7 +156,7 @@ _STATUSLINE_COMMAND = (
 
 # Conditional PreToolUse enforcement hook command. Installed (opt-in) as a
 # matcher-less ``hooks.PreToolUse`` entry, ORTHOGONAL to the terminal-title
-# render wiring: it invokes the enforcement leaf that blocks the five hard-rule
+# render wiring: it invokes the enforcement leaf that blocks the four hard-rule
 # violation families inside a plan-marshall plan context (fail-open everywhere
 # else). Keyed on its own command string so its present/MISSING detection is
 # independent of the render-entry detection.

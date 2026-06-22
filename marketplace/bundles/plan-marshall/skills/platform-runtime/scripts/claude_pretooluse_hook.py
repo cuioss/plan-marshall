@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Conditional PreToolUse enforcement leaf for Claude Code.
 
-Registered (opt-in) as a matcher-less ``hooks.PreToolUse`` entry. It blocks five
+Registered (opt-in) as a matcher-less ``hooks.PreToolUse`` entry. It blocks four
 mechanically-checkable hard-rule violation families, but ONLY when the call
 originates inside a plan-marshall plan context. Outside that context — and on
 every error path — it emits nothing and exits 0, so a hook bug can never block
@@ -9,7 +9,7 @@ the user (fail OPEN).
 
 ALL payload parsing, field access, and the context-gate predicate are delegated
 to the shared ``pretooluse_gate`` module — this leaf adds NO field-name knowledge
-of its own. The only logic it owns is the R1–R5 rule matchers and the
+of its own. The only logic it owns is the R1–R4 rule matchers and the
 ``permissionDecision: deny`` envelope layered on top:
 
 - **R1 shell-construct compound** — a Bash command containing ``&&``, ``;``,
@@ -17,11 +17,9 @@ of its own. The only logic it owns is the R1–R5 rule matchers and the
   a leading ``VAR=val cmd`` inline env-var assignment.
 - **R2 Bash file-ops** — a Bash command whose program is ``cat`` / ``grep`` /
   ``head`` / ``tail`` / ``find`` / ``ls``.
-- **R3 direct ``gh`` / ``glab``** — a Bash command invoking the ``gh`` or
-  ``glab`` CLI directly.
-- **R4 generated-executor edit** — an Edit/Write whose path is the generated
+- **R3 generated-executor edit** — an Edit/Write whose path is the generated
   ``.plan/execute-script.py``.
-- **R5 hard-coded build** — a Bash command invoking ``./pw`` or a bare ``mvn`` /
+- **R4 hard-coded build** — a Bash command invoking ``./pw`` or a bare ``mvn`` /
   ``npm`` / ``gradle``.
 
 Control flow:
@@ -64,14 +62,14 @@ import pretooluse_gate as gate  # noqa: E402
 # what counts as a violation, not how to read the payload.)
 # =============================================================================
 
-#: Tool name whose ``command`` string the Bash-family matchers (R1/R2/R3/R5)
+#: Tool name whose ``command`` string the Bash-family matchers (R1/R2/R4)
 #: inspect.
 _BASH_TOOL = "Bash"
 
-#: Tool names whose ``file_path`` the R4 generated-executor matcher inspects.
+#: Tool names whose ``file_path`` the R3 generated-executor matcher inspects.
 _FILE_EDIT_TOOLS = ("Edit", "Write")
 
-#: Generated executor path R4 forbids editing. Matched on the path tail so an
+#: Generated executor path R3 forbids editing. Matched on the path tail so an
 #: absolute or worktree-relative path both trip the rule.
 _GENERATED_EXECUTOR_TAIL = ".plan/execute-script.py"
 
@@ -89,13 +87,10 @@ _R1_LEADING_ASSIGNMENT_RE = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+\S")
 #: R2 — Bash file-operation programs that have dedicated Read/Glob/Grep tools.
 _R2_FILE_OPS = ("cat", "grep", "head", "tail", "find", "ls")
 
-#: R3 — direct CI/Git provider CLIs that must go through the CI abstraction.
-_R3_PROVIDER_CLIS = ("gh", "glab")
-
-#: R5 — hard-coded build invocations that must be resolved via the architecture
+#: R4 — hard-coded build invocations that must be resolved via the architecture
 #: API. ``./pw`` is matched as a literal; ``mvn`` / ``npm`` / ``gradle`` as bare
 #: leading programs.
-_R5_BUILD_PROGRAMS = ("mvn", "npm", "gradle")
+_R4_BUILD_PROGRAMS = ("mvn", "npm", "gradle")
 
 #: Per-rule one-line redirect reasons surfaced as ``permissionDecisionReason``.
 _R1_REASON = (
@@ -108,14 +103,10 @@ _R2_REASON = (
     "operations (cat/grep/head/tail/find/ls)."
 )
 _R3_REASON = (
-    "plan-marshall: use the CI abstraction "
-    "(plan-marshall:tools-integration-ci:ci), not direct gh/glab."
-)
-_R4_REASON = (
     "plan-marshall: never edit the generated .plan/execute-script.py — "
     "regenerate it via /sync-plugin-cache + /marshall-steward."
 )
-_R5_REASON = (
+_R4_REASON = (
     "plan-marshall: never hard-code build commands (./pw, mvn, npm, gradle) — "
     "resolve via plan-marshall:manage-architecture:architecture resolve."
 )
@@ -137,7 +128,7 @@ def _program_name(command: str) -> str:
 
     Strips any leading path component so that ``/bin/cat``, ``/usr/bin/cat``,
     and ``cat`` all resolve to ``"cat"``.  The special ``./pw`` token is
-    preserved as-is so the R5 literal check continues to work.
+    preserved as-is so the R4 literal check continues to work.
     """
     token = _first_word(command)
     if not token or token == "./pw":
@@ -190,22 +181,10 @@ def _match_r2_file_ops(
     return None
 
 
-def _match_r3_provider_cli(
+def _match_r3_generated_executor(
     tool_name: str | None, tool_input: dict[str, Any]
 ) -> str | None:
-    """R3 — Bash command invoking gh/glab directly."""
-    command = _bash_command(tool_name, tool_input)
-    if command is None:
-        return None
-    if _program_name(command) in _R3_PROVIDER_CLIS:
-        return _R3_REASON
-    return None
-
-
-def _match_r4_generated_executor(
-    tool_name: str | None, tool_input: dict[str, Any]
-) -> str | None:
-    """R4 — Edit/Write whose target path is the generated executor."""
+    """R3 — Edit/Write whose target path is the generated executor."""
     if tool_name not in _FILE_EDIT_TOOLS:
         return None
     path = tool_input.get("file_path")
@@ -215,20 +194,20 @@ def _match_r4_generated_executor(
     if normalized == _GENERATED_EXECUTOR_TAIL or normalized.endswith(
         "/" + _GENERATED_EXECUTOR_TAIL
     ):
-        return _R4_REASON
+        return _R3_REASON
     return None
 
 
-def _match_r5_hardcoded_build(
+def _match_r4_hardcoded_build(
     tool_name: str | None, tool_input: dict[str, Any]
 ) -> str | None:
-    """R5 — Bash command invoking ./pw or a bare mvn/npm/gradle."""
+    """R4 — Bash command invoking ./pw or a bare mvn/npm/gradle."""
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
     first = _first_word(command)
-    if first == "./pw" or _program_name(command) in _R5_BUILD_PROGRAMS:
-        return _R5_REASON
+    if first == "./pw" or _program_name(command) in _R4_BUILD_PROGRAMS:
+        return _R4_REASON
     return None
 
 
@@ -236,9 +215,8 @@ def _match_r5_hardcoded_build(
 _RULES: tuple[Callable[[str | None, dict[str, Any]], str | None], ...] = (
     _match_r1_shell_construct,
     _match_r2_file_ops,
-    _match_r3_provider_cli,
-    _match_r4_generated_executor,
-    _match_r5_hardcoded_build,
+    _match_r3_generated_executor,
+    _match_r4_hardcoded_build,
 )
 
 
@@ -247,7 +225,7 @@ def evaluate(payload: dict[str, Any]) -> str | None:
 
     Applies the shared context gate first (``Signal1 OR Signal2``); when the gate
     is not satisfied, returns ``None`` (fail OPEN — no enforcement). When the gate
-    is satisfied, runs the R1–R5 matchers in order against the shared gate's
+    is satisfied, runs the R1–R4 matchers in order against the shared gate's
     ``tool_name`` / ``tool_input`` accessors and returns the first matching rule's
     redirect reason, or ``None`` when no rule fires.
 

@@ -155,7 +155,7 @@ Install the full wiring by invoking `project install-hook`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
-  project install-hook --target .claude/settings.local.json
+  project install-hook --target claude
 ```
 
 Inspect the TOON response:
@@ -213,7 +213,7 @@ Already present:          <already_present_events>
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
-    project install-hook --target .claude/settings.local.json --overwrite-statusline
+    project install-hook --target claude --overwrite-statusline
   ```
 
   Expect `statusLine_status: overwritten` in the response.
@@ -246,7 +246,7 @@ Already present:          <already_present_events>
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
-    project install-hook --target .claude/settings.local.json --overwrite-env-disable
+    project install-hook --target claude --overwrite-env-disable
   ```
 
   Expect `env_status: overwritten` in the response.

@@ -1,6 +1,6 @@
 # PreToolUse Enforcement Hook
 
-The conditional PreToolUse enforcement hook deterministically blocks five
+The conditional PreToolUse enforcement hook deterministically blocks four
 mechanically-checkable hard-rule violation families — but ONLY when the call
 originates inside a plan-marshall plan context. Every other call passes through
 untouched. This document is the canonical reference for the hook's context gate,
@@ -15,7 +15,7 @@ Three scripts in `scripts/` implement the hook, layered shared-gate-first:
 |--------|------|
 | `pretooluse_gate.py` | Shared, pure-function library: the SINGLE home of payload-field knowledge and the context-gate predicate. Imported by both leaves; owns NO rule matchers. |
 | `claude_pretooluse_capture.py` | Observe-only leaf that imports the shared gate and records the raw payload + the gate's extracted fields + would-be verdict. Always exits 0 emitting nothing. Used to validate the gate's field names against real payloads before enforcement is armed. |
-| `claude_pretooluse_hook.py` | Enforcement leaf that imports the SAME shared gate and adds ONLY the R1–R5 rule matchers + the `permissionDecision: deny` envelope on top. |
+| `claude_pretooluse_hook.py` | Enforcement leaf that imports the SAME shared gate and adds ONLY the R1–R4 rule matchers + the `permissionDecision: deny` envelope on top. |
 
 The dependency ordering is **shared-gate (best-guess) → capture (validate /
 correct) → enforce (final)**: the shared gate's best-guess field names are
@@ -45,7 +45,7 @@ An absent Signal-1 field still lets Signal 2 satisfy the gate, and vice versa.
 
 ## Rule families
 
-The R1–R5 matchers are enforcement-only — they live solely in the enforcement
+The R1–R4 matchers are enforcement-only — they live solely in the enforcement
 leaf, layered on top of the shared gate, and run against the shared gate's
 `tool_name(payload)` / `tool_input(payload)` accessors. On the first matching
 rule the leaf emits a `permissionDecision: deny` envelope carrying a one-line
@@ -55,9 +55,8 @@ rule the leaf emits a `permissionDecision: deny` envelope carrying a one-line
 |------|----------|-----------------------------|
 | **R1 shell-construct compound** | A Bash command containing `&&`, `;`, `&`, a newline, a `for`/`while` loop, `$(...)` command substitution, or a leading `VAR=val cmd` inline env-var assignment | One command per Bash call — use separate Bash calls or dedicated tools |
 | **R2 Bash file-ops** | A Bash command whose program is `cat` / `grep` / `head` / `tail` / `find` / `ls` | Use the Read/Glob/Grep tools, not Bash, for file operations |
-| **R3 direct `gh` / `glab`** | A Bash command invoking the `gh` or `glab` CLI directly | Use the CI abstraction (`plan-marshall:tools-integration-ci:ci`) |
-| **R4 generated-executor edit** | An Edit/Write whose path is the generated `.plan/execute-script.py` | Regenerate the executor via `/sync-plugin-cache` + `/marshall-steward`; never edit it |
-| **R5 hard-coded build** | A Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle` | Resolve build commands via `plan-marshall:manage-architecture:architecture resolve` |
+| **R3 generated-executor edit** | An Edit/Write whose path is the generated `.plan/execute-script.py` | Regenerate the executor via `/sync-plugin-cache` + `/marshall-steward`; never edit it |
+| **R4 hard-coded build** | A Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle` | Resolve build commands via `plan-marshall:manage-architecture:architecture resolve` |
 
 ## Fail-open / best-effort-no-raise contract
 

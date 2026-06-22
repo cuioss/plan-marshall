@@ -1,0 +1,34 @@
+= Enforcement Hook
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
+
+Operational guidance for the optional PreToolUse enforcement hook that Plan Marshall can install via `/marshall-steward` → Configuration → Enforcement Hook.
+
+When enabled, the hook deterministically blocks four mechanically-checkable hard-rule violation families — but ONLY when the call originates inside a Plan Marshall plan context. Every other call passes through untouched. The hook is opt-in and orthogonal to the terminal-title wiring: enabling one does not enable the other.
+
+== Blocked families
+
+The hook blocks the first matching rule among four families:
+
+* **Shell-construct compounds** — a Bash command joining multiple commands with `&&`, `;`, `&`, a newline, a `for`/`while` loop, `$(...)` command substitution, or a leading `VAR=val cmd` inline env-var assignment. Use separate Bash calls or dedicated tools instead.
+* **Bash file-ops** — a Bash command whose program is `cat` / `grep` / `head` / `tail` / `find` / `ls`. Use the Read/Glob/Grep tools instead.
+* **Generated-executor edits** — an Edit or Write whose path is the generated `.plan/execute-script.py`. Regenerate it via `/sync-plugin-cache` + `/marshall-steward` rather than editing it.
+* **Hard-coded builds** — a Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle`. Resolve build commands via the architecture API instead.
+
+The exact matchers and their redirect reasons are the canonical contract in xref:../../marketplace/bundles/plan-marshall/skills/platform-runtime/standards/pretooluse-enforcement.md[pretooluse-enforcement.md]; this page does not restate the rule mechanics.
+
+== Context gate — fails open outside a plan context
+
+The hook enforces only when the call is eligible. Eligibility is the OR of two stateless signals: the call runs inside a dispatched execution-context sub-agent, or the working directory resolves under a plan worktree (`.plan/local/worktrees/`). When neither signal fires, the hook emits nothing and the call passes through — it fails open. It also fails open on every error path, so a hook bug can never block a tool call.
+
+== Enabling the hook
+
+Enable the hook from `/marshall-steward` → Configuration → Enforcement Hook. The wizard detects whether the entry is already present, confirms before writing, and idempotently installs only the matcher-less PreToolUse enforcement entry into `./.claude/settings.local.json`. It never touches the terminal-title render, statusLine, or env entries.
+
+After installation, restart or reload the Claude Code session so the harness arms the hook. The full detect → confirm → install flow is documented in xref:../../marketplace/bundles/plan-marshall/skills/marshall-steward/references/menu-enforcement-hook.md[menu-enforcement-hook.md].
