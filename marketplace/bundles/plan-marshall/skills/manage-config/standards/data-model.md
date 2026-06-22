@@ -503,6 +503,10 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | `review_bot_buffer_seconds` | int | 180 | Max seconds to wait after CI for new review-bot comments to arrive (used as `--timeout` for `pr wait-for-comments`; the polling subcommand exits as soon as a new comment is posted, so this is a ceiling, not a fixed delay). |
+| `re_review_on_loopback` | bool | false | Trigger gate for the post-branch-update re-review. When `true`, a loop-back that advances HEAD re-requests a bot review of the new commits; `false` (default) suppresses the loop-back re-review. |
+| `re_review_on_branch_cleanup` | bool | true | Trigger gate for the post-branch-update re-review. When `true` (default), a branch-cleanup operation that advances HEAD (rebase/merge during finalize) re-requests a bot review of the updated branch; `false` suppresses it. |
+| `re_review_await_timeout_seconds` | int | 600 | Ceiling (seconds) the step waits for a requested re-review to be acknowledged by the bot before the `re_review_on_timeout` policy fires. |
+| `re_review_on_timeout` | enum(`ask`\|`proceed`\|`defer`) | "ask" | Policy applied when `re_review_await_timeout_seconds` elapses without a bot acknowledgement. `ask` (default) halts and fires an `AskUserQuestion`; `proceed` advances the unreviewed HEAD to the merge gate (logged at WARNING); `defer` skips the merge for the unreviewed HEAD so finalize is re-entered later. Every branch is decision-logged. |
 
 `default:sonar-roundtrip` (the `sonar_` prefix is dropped within the scoped object):
 

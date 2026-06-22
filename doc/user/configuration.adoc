@@ -200,6 +200,24 @@ NOTE: `pr_merge_strategy` and `auto_rebase_threshold` are nested under the `defa
 
 NOTE: The `default:pre-push-quality-gate` finalize step has no dedicated activation key. Its activation is *derived from* `build.map` (see <<build-map>>): the step activates whenever a changed path matches a glob registered in the build_map.
 
+[#automated-review]
+=== Automated PR review and post-branch-update re-review
+
+The `default:automated-review` finalize step owns five step-params, nested under `plan.phase-6-finalize.steps['default:automated-review']` in the keyed map. Three govern the initial bot-review interaction (buffer wait and the two re-review triggers); two govern the post-trigger await — how long the step waits for a bot to acknowledge a re-review request and what it does when that wait elapses.
+
+[cols="1,1,3", options="header"]
+|===
+| Config key | Default | What it controls
+
+| `steps['default:automated-review'].review_bot_buffer_seconds` | `180` | Step-owned param of `default:automated-review`. Buffer (seconds) the step waits after pushing before polling for bot review comments, giving the review bots time to start their pass.
+| `steps['default:automated-review'].re_review_on_loopback` | `false` | Step-owned param of `default:automated-review`. When `true`, a loop-back that advances HEAD re-requests a bot review of the new commits; `false` (default) suppresses the loop-back re-review.
+| `steps['default:automated-review'].re_review_on_branch_cleanup` | `true` | Step-owned param of `default:automated-review`. When `true` (default), a branch-cleanup operation that advances HEAD (rebase/merge during finalize) triggers a re-review of the updated branch; `false` suppresses it.
+| `steps['default:automated-review'].re_review_await_timeout_seconds` | `600` | Step-owned param of `default:automated-review`. Ceiling (seconds) the step waits for a requested re-review to be acknowledged by the bot before the `re_review_on_timeout` policy fires.
+| `steps['default:automated-review'].re_review_on_timeout` | `ask` | Step-owned param of `default:automated-review`. Policy applied when `re_review_await_timeout_seconds` elapses without a bot acknowledgement. One of `ask` (default — halt and prompt the operator), `proceed` (advance the unreviewed HEAD to the merge gate), or `defer` (skip the merge so finalize is re-entered later).
+|===
+
+NOTE: These five params are nested under the `default:automated-review` step in the `plan.phase-6-finalize.steps` keyed map, not flat phase-level fields. Read the whole param object in one call with `manage-config plan phase-6-finalize step get --step-id default:automated-review`; write one with `manage-config plan phase-6-finalize step set --step-id default:automated-review --param re_review_on_timeout --value proceed`.
+
 [#open-in-ide]
 === Open in IDE
 
