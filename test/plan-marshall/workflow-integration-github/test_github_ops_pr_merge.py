@@ -16,6 +16,7 @@ through the REST leaf, never through local git.
 """
 
 import argparse
+import json
 
 import github_ops  # type: ignore[import-not-found]  # noqa: E402
 
@@ -416,3 +417,537 @@ def test_branch_delete_simple_branch_name_is_unchanged(monkeypatch):
 
     endpoint = captured[0][-1]
     assert endpoint == 'repos/octo/repo/git/refs/heads/main', endpoint
+
+
+# ---------------------------------------------------------------------------
+# cmd_pr_safe_merge — poll readiness then merge; GitHub-only admin fallback
+# ---------------------------------------------------------------------------
+#
+# Layer 1 (both providers): poll the PR's ``mergeStateStatus`` until it reaches
+# a mergeable state, then delegate to ``cmd_pr_merge``.
+# Layer 2 (GitHub-only): when readiness stays ``blocked`` past the poll timeout
+# AND ``--admin-merge-on-stuck-state`` is set AND every active ruleset
+# requirement is provably met, fall back to ``gh pr merge --admin``.
+
+
+def _safe_merge_ns(
+    *,
+    pr_number: int | None = 42,
+    head: str | None = None,
+    strategy: str = 'merge',
+    delete_branch: bool = False,
+    admin_merge_on_stuck_state: bool = False,
+    poll_timeout: int = 300,
+    poll_interval: int = 0,
+):
+    """Build the argparse.Namespace cmd_pr_safe_merge expects.
+
+    ``poll_interval`` defaults to 0 so the real ``poll_until`` loop never
+    sleeps during the polled-clean scenarios.
+    """
+    return argparse.Namespace(
+        pr_number=pr_number,
+        head=head,
+        strategy=strategy,
+        delete_branch=delete_branch,
+        admin_merge_on_stuck_state=admin_merge_on_stuck_state,
+        poll_timeout=poll_timeout,
+        poll_interval=poll_interval,
+    )
+
+
+def _pr_view_payload(merge_state: str) -> dict:
+    """A ``view_pr_data`` success payload with the given ``merge_state``."""
+    payload = _pr_view_success_payload()
+    payload['merge_state'] = merge_state
+    return payload
+
+
+def _sequenced_view_pr_data(states: list[str]):
+    """Build a stateful ``view_pr_data`` stub returning ``states`` in order.
+
+    The final state is repeated for any extra calls (e.g. the head-branch
+    resolution that ``cmd_pr_merge`` issues for ``--delete-branch``).
+    """
+    calls = {'i': 0}
+
+    def stub(head=None):
+        idx = min(calls['i'], len(states) - 1)
+        calls['i'] += 1
+        return _pr_view_payload(states[idx])
+
+    return stub, calls
+
+
+def _stuck_gate_ok(_identifier):
+    return True, None
+
+
+def _stuck_gate_fail(_identifier):
+    return False, 'required check verify has not concluded'
+
+
+# --- (a) successful merge on first poll (mergeable_state: clean) -------------
+
+
+def test_safe_merge_clean_on_first_poll(monkeypatch):
+    """A PR already ``clean`` merges on the first poll via the normal path."""
+    _install_common(monkeypatch)
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_payload('clean'))
+
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns())
+
+    assert result['status'] == 'success', result
+    assert result['operation'] == 'pr_safe_merge'
+    assert result['merge_path'] == 'polled_clean'
+    assert result['polls'] >= 1
+    assert 'duration_sec' in result
+
+    # Layer-1 delegation goes through the normal merge — no --admin flag.
+    merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
+    assert '--admin' not in merge_call, merge_call
+    _assert_no_delete_branch_flag(captured)
+
+
+# --- (b) retry on blocked state then clean ----------------------------------
+
+
+def test_safe_merge_blocked_then_clean(monkeypatch):
+    """A PR that is ``blocked`` then ``clean`` keeps polling, then merges."""
+    _install_common(monkeypatch)
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    view_stub, view_calls = _sequenced_view_pr_data(['blocked', 'blocked', 'clean'])
+    monkeypatch.setattr(github_ops, 'view_pr_data', view_stub)
+
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns(poll_interval=0))
+
+    assert result['status'] == 'success', result
+    assert result['merge_path'] == 'polled_clean'
+    # The loop ran at least three readiness polls before reaching clean.
+    assert view_calls['i'] >= 3, view_calls
+    # No admin fallback was needed.
+    merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
+    assert '--admin' not in merge_call, merge_call
+
+
+# --- (c) stuck-state detection after max retries (no admin) ------------------
+
+
+def test_safe_merge_stuck_blocked_no_admin_returns_error(monkeypatch):
+    """Timed-out while blocked, admin fallback NOT enabled → error, no merge."""
+    _install_common(monkeypatch)
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    # Drive the timeout deterministically: poll_until returns timed_out while
+    # the last observed state is ``blocked``.
+    monkeypatch.setattr(
+        github_ops,
+        'poll_until',
+        lambda *a, **kw: {
+            'timed_out': True,
+            'duration_sec': 300,
+            'polls': 5,
+            'last_data': _pr_view_payload('blocked'),
+        },
+    )
+
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns(admin_merge_on_stuck_state=False))
+
+    assert result['status'] == 'error', result
+    assert result['operation'] == 'pr_safe_merge'
+    assert 'admin fallback not enabled' in result['error'], result
+    # No merge was attempted at all.
+    merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
+    assert merge_calls == [], merge_calls
+
+
+# --- (d) admin fallback when admin_merge_on_stuck_state is enabled -----------
+
+
+def test_safe_merge_admin_fallback_on_stuck_blocked(monkeypatch):
+    """Stuck blocked + knob on + gate provably met → admin merge fallback."""
+    _install_common(monkeypatch)
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    monkeypatch.setattr(
+        github_ops,
+        'poll_until',
+        lambda *a, **kw: {
+            'timed_out': True,
+            'duration_sec': 300,
+            'polls': 5,
+            'last_data': _pr_view_payload('blocked'),
+        },
+    )
+    # Gate provably met — admin fallback proceeds.
+    monkeypatch.setattr(github_ops, '_safe_merge_stuck_state_gate', _stuck_gate_ok)
+
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns(admin_merge_on_stuck_state=True))
+
+    assert result['status'] == 'success', result
+    assert result['merge_path'] == 'admin_fallback', result
+    assert result['polls'] == 5
+    assert result['duration_sec'] == 300
+
+    # The admin merge used --admin and the resolved strategy.
+    merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
+    assert '--admin' in merge_call, merge_call
+    assert '--merge' in merge_call, merge_call
+    assert '42' in merge_call, merge_call
+
+
+def test_safe_merge_admin_fallback_blocked_by_unmet_gate(monkeypatch):
+    """Stuck blocked + knob on but ruleset NOT provably met → refuse, no merge."""
+    _install_common(monkeypatch)
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    monkeypatch.setattr(
+        github_ops,
+        'poll_until',
+        lambda *a, **kw: {
+            'timed_out': True,
+            'duration_sec': 300,
+            'polls': 5,
+            'last_data': _pr_view_payload('blocked'),
+        },
+    )
+    monkeypatch.setattr(github_ops, '_safe_merge_stuck_state_gate', _stuck_gate_fail)
+
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns(admin_merge_on_stuck_state=True))
+
+    assert result['status'] == 'error', result
+    assert 'ruleset requirements not provably met' in result['error'], result
+    assert 'required check verify has not concluded' in result['error'], result
+    # The gate failed closed — no merge of any kind was attempted.
+    merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
+    assert merge_calls == [], merge_calls
+
+
+def test_safe_merge_admin_fallback_only_for_blocked_state(monkeypatch):
+    """Timed out while NOT blocked (e.g. behind) → admin fallback does not apply."""
+    _install_common(monkeypatch)
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    monkeypatch.setattr(
+        github_ops,
+        'poll_until',
+        lambda *a, **kw: {
+            'timed_out': True,
+            'duration_sec': 300,
+            'polls': 5,
+            'last_data': _pr_view_payload('behind'),
+        },
+    )
+
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns(admin_merge_on_stuck_state=True))
+
+    assert result['status'] == 'error', result
+    assert 'applies only to a stuck blocked state' in result['error'], result
+    merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
+    assert merge_calls == [], merge_calls
+
+
+def test_safe_merge_admin_fallback_deletes_branch(monkeypatch):
+    """Admin fallback honours --delete-branch via the REST leaf follow-up."""
+    _install_common(monkeypatch)
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    monkeypatch.setattr(
+        github_ops,
+        'poll_until',
+        lambda *a, **kw: {
+            'timed_out': True,
+            'duration_sec': 300,
+            'polls': 5,
+            'last_data': _pr_view_payload('blocked'),
+        },
+    )
+    monkeypatch.setattr(github_ops, '_safe_merge_stuck_state_gate', _stuck_gate_ok)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+
+    result = github_ops.cmd_pr_safe_merge(
+        _safe_merge_ns(admin_merge_on_stuck_state=True, delete_branch=True)
+    )
+
+    assert result['status'] == 'success', result
+    assert result['merge_path'] == 'admin_fallback'
+    assert result['merged'] is True
+    assert result['branch_deleted'] == 'feature/x'
+    assert result['already_gone'] is False
+    # The branch delete went through the REST leaf, URL-encoded.
+    delete_calls = [c for c in captured if c[:3] == ['api', '-X', 'DELETE']]
+    assert len(delete_calls) == 1, delete_calls
+    assert delete_calls[0][-1].endswith('/git/refs/heads/feature%2Fx')
+
+
+# --- readiness-poll failure (PR not found / auth) propagates ----------------
+
+
+def test_safe_merge_poll_failure_propagates(monkeypatch):
+    """A check_fn failure during the readiness poll is surfaced as an error."""
+    _install_common(monkeypatch)
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    monkeypatch.setattr(
+        github_ops,
+        'poll_until',
+        lambda *a, **kw: {
+            'timed_out': False,
+            'duration_sec': 1,
+            'polls': 1,
+            'last_data': {'error': 'No PR found for current branch'},
+            'error': 'No PR found for current branch',
+        },
+    )
+
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns())
+
+    assert result['status'] == 'error', result
+    assert 'Readiness poll failed' in result['error'], result
+    merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
+    assert merge_calls == [], merge_calls
+
+
+# --- (f) existing cmd_pr_merge / cmd_pr_auto_merge tests unaffected ----------
+#
+# The existing cmd_pr_merge tests above (happy path, already-gone, api-error,
+# merge-failure, no-delete-branch, local-git regression) continue to assert
+# the unchanged merge contract. The two guards below pin the invariant that
+# safe-merge added neither an --admin flag nor a stuck-state gate call to the
+# normal merge/auto-merge paths.
+
+
+def test_pr_merge_unaffected_no_admin_or_safe_merge_fields(monkeypatch):
+    """cmd_pr_merge still returns the lean shape with no safe-merge fields."""
+    _install_common(monkeypatch)
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.cmd_pr_merge(_merge_ns(delete_branch=False))
+
+    assert result['status'] == 'success', result
+    assert result['operation'] == 'pr_merge'
+    for key in ('merge_path', 'polls', 'duration_sec'):
+        assert key not in result, f'{key} leaked into cmd_pr_merge result: {result}'
+    merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
+    assert '--admin' not in merge_call, merge_call
+
+
+def test_pr_auto_merge_unaffected(monkeypatch):
+    """cmd_pr_auto_merge still enables auto-merge without safe-merge wiring."""
+    _install_common(monkeypatch)
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.cmd_pr_auto_merge(
+        argparse.Namespace(pr_number=42, head=None, strategy='squash')
+    )
+
+    assert result['status'] == 'success', result
+    assert result['operation'] == 'pr_auto_merge'
+    assert result['enabled'] is True
+    merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
+    assert '--auto' in merge_call, merge_call
+    assert '--admin' not in merge_call, merge_call
+
+
+# ---------------------------------------------------------------------------
+# _safe_merge_stuck_state_gate / _safe_merge_behind_by_zero — the GitHub-only
+# admin-fallback safety gate. The end-to-end safe-merge tests above monkeypatch
+# the gate; these exercise its real ruleset-met verification (fail-closed).
+# ---------------------------------------------------------------------------
+
+
+def _gate_run_gh(*, view, compare):
+    """run_gh stub dispatching the gate's two query shapes.
+
+    ``view`` / ``compare`` are ``(returncode, json_obj_or_str)`` tuples for the
+    ``gh pr view --json ...`` and ``gh api .../compare/...`` calls respectively.
+    """
+
+    def _payload(obj):
+        return obj if isinstance(obj, str) else json.dumps(obj)
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        if args[:2] == ['pr', 'view']:
+            rc, obj = view
+            return rc, _payload(obj), '' if rc == 0 else 'view failed'
+        if args[:1] == ['api']:
+            rc, obj = compare
+            return rc, _payload(obj), '' if rc == 0 else 'compare failed'
+        return 0, '', ''
+
+    return run_gh_stub
+
+
+def test_stuck_state_gate_all_requirements_met(monkeypatch):
+    """Approved + all checks SUCCESS + behind_by 0 → gate passes."""
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    monkeypatch.setattr(
+        github_ops,
+        'run_gh',
+        _gate_run_gh(
+            view=(0, {
+                'reviewDecision': 'APPROVED',
+                'statusCheckRollup': [{'name': 'verify', 'conclusion': 'SUCCESS'}],
+                'mergeable': 'MERGEABLE',
+                'mergeStateStatus': 'BLOCKED',
+                'headRefOid': 'abc123',
+            }),
+            compare=(0, {'behind_by': 0}),
+        ),
+    )
+
+    ok, reason = github_ops._safe_merge_stuck_state_gate('42')
+
+    assert ok is True, reason
+    assert reason is None
+
+
+def test_stuck_state_gate_review_not_approved(monkeypatch):
+    """A non-approved review decision fails the gate closed."""
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    monkeypatch.setattr(
+        github_ops,
+        'run_gh',
+        _gate_run_gh(
+            view=(0, {
+                'reviewDecision': 'REVIEW_REQUIRED',
+                'statusCheckRollup': [{'name': 'verify', 'conclusion': 'SUCCESS'}],
+                'headRefOid': 'abc123',
+            }),
+            compare=(0, {'behind_by': 0}),
+        ),
+    )
+
+    ok, reason = github_ops._safe_merge_stuck_state_gate('42')
+
+    assert ok is False
+    assert 'not approved' in reason
+
+
+def test_stuck_state_gate_failing_required_check(monkeypatch):
+    """A non-SUCCESS required check fails the gate closed."""
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    monkeypatch.setattr(
+        github_ops,
+        'run_gh',
+        _gate_run_gh(
+            view=(0, {
+                'reviewDecision': 'APPROVED',
+                'statusCheckRollup': [{'name': 'verify', 'conclusion': 'FAILURE'}],
+                'headRefOid': 'abc123',
+            }),
+            compare=(0, {'behind_by': 0}),
+        ),
+    )
+
+    ok, reason = github_ops._safe_merge_stuck_state_gate('42')
+
+    assert ok is False
+    assert 'verify' in reason and 'FAILURE' in reason
+
+
+def test_stuck_state_gate_check_not_concluded(monkeypatch):
+    """An in-progress (no-conclusion) required check fails the gate closed."""
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    monkeypatch.setattr(
+        github_ops,
+        'run_gh',
+        _gate_run_gh(
+            view=(0, {
+                'reviewDecision': 'APPROVED',
+                'statusCheckRollup': [{'name': 'verify', 'status': 'IN_PROGRESS'}],
+                'headRefOid': 'abc123',
+            }),
+            compare=(0, {'behind_by': 0}),
+        ),
+    )
+
+    ok, reason = github_ops._safe_merge_stuck_state_gate('42')
+
+    assert ok is False
+    assert 'has not concluded' in reason
+
+
+def test_stuck_state_gate_behind_base(monkeypatch):
+    """A branch behind its base (behind_by != 0) fails the gate closed."""
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    monkeypatch.setattr(
+        github_ops,
+        'run_gh',
+        _gate_run_gh(
+            view=(0, {
+                'reviewDecision': 'APPROVED',
+                'statusCheckRollup': [{'name': 'verify', 'conclusion': 'SUCCESS'}],
+                'headRefOid': 'abc123',
+            }),
+            compare=(0, {'behind_by': 3}),
+        ),
+    )
+
+    ok, reason = github_ops._safe_merge_stuck_state_gate('42')
+
+    assert ok is False
+    assert 'behind base by 3' in reason
+
+
+def test_stuck_state_gate_query_failure_fails_closed(monkeypatch):
+    """A failed gate query fails closed rather than permitting the admin merge."""
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    monkeypatch.setattr(
+        github_ops,
+        'run_gh',
+        _gate_run_gh(view=(1, ''), compare=(0, {'behind_by': 0})),
+    )
+
+    ok, reason = github_ops._safe_merge_stuck_state_gate('42')
+
+    assert ok is False
+    assert 'gate query failed' in reason
+
+
+def test_stuck_state_gate_unparseable_json_fails_closed(monkeypatch):
+    """Unparseable gate-query JSON fails closed."""
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    monkeypatch.setattr(
+        github_ops,
+        'run_gh',
+        _gate_run_gh(view=(0, 'not-json{'), compare=(0, {'behind_by': 0})),
+    )
+
+    ok, reason = github_ops._safe_merge_stuck_state_gate('42')
+
+    assert ok is False
+    assert 'unparseable JSON' in reason
+
+
+def test_behind_by_zero_compare_missing_field_fails_closed(monkeypatch):
+    """A compare response missing behind_by fails closed."""
+    _install_common(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    monkeypatch.setattr(
+        github_ops,
+        'run_gh',
+        _gate_run_gh(view=(0, {'behind_by': None}), compare=(0, {})),
+    )
+
+    ok, reason = github_ops._safe_merge_behind_by_zero('42', 'abc123')
+
+    assert ok is False
+    assert 'missing behind_by' in reason

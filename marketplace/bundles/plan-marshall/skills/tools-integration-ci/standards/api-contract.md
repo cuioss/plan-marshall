@@ -428,6 +428,7 @@ The following subcommands all return the standard success shape (`status: succes
 |------------|---------------|----------------|-------|
 | `pr merge --pr-number N` | `--pr-number` | `--strategy merge\|squash\|rebase` (default `merge`), `--delete-branch` | Success adds `strategy`. |
 | `pr auto-merge --pr-number N` | `--pr-number` | `--strategy` | Enables auto-merge when all checks pass; success adds `enabled: true`. |
+| `pr safe-merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy merge\|squash\|rebase` (default `merge`), `--delete-branch`, `--admin-merge-on-stuck-state` (GitHub-only), `--poll-timeout`, `--poll-interval` | Polls readiness then merges. Success adds `strategy`, `merge_path` (`polled_clean`\|`admin_fallback`), `polls`, `duration_sec`. The `--admin` stuck-state fallback is GitHub-only, gated by `--admin-merge-on-stuck-state` + provably-met ruleset; ignored on GitLab. |
 | `pr update-branch --pr-number N` | `--pr-number` | — | Updates PR branch with base branch (GitHub REST API). |
 | `pr close --pr-number N` | `--pr-number` | — | Closes without merging. |
 | `pr ready --pr-number N` | `--pr-number` | — | Marks a draft as ready for review. |

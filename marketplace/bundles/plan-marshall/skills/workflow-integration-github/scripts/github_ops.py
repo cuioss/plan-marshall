@@ -983,6 +983,251 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
     }
 
 
+# Mergeable states for which a normal merge will succeed. ``clean`` is the
+# fully-ready state; ``unstable`` (non-required checks failing) and
+# ``has_hooks`` (merge will fire post-merge hooks) are also mergeable per the
+# GitHub mergeStateStatus contract. ``blocked`` / ``behind`` / ``dirty`` /
+# ``unknown`` are NOT mergeable and keep the readiness poll running.
+_SAFE_MERGE_READY_STATES = frozenset({'clean', 'unstable', 'has_hooks'})
+
+
+def _safe_merge_stuck_state_gate(identifier: str) -> tuple[bool, str | None]:
+    """Verify every active ruleset requirement is provably met for a stuck PR.
+
+    Issues a richer ``gh pr view`` query than :func:`view_pr_data` to confirm
+    the PR is admin-mergeable for the right reason — i.e. the ``blocked`` state
+    is GitHub's post-force-push staleness, not a genuinely-unmet requirement.
+
+    Returns ``(True, None)`` when every requirement is provably met, or
+    ``(False, reason)`` naming the first unmet requirement otherwise. The gate
+    fails closed: any query/parse failure returns ``(False, reason)``.
+    """
+    returncode, stdout, stderr = run_gh(
+        [
+            'pr',
+            'view',
+            identifier,
+            '--json',
+            'statusCheckRollup,reviewDecision,mergeable,mergeStateStatus,headRefOid',
+        ]
+    )
+    if returncode != 0:
+        return False, f'stuck-state gate query failed: {stderr.strip()}'
+
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return False, 'stuck-state gate query returned unparseable JSON'
+
+    # Required approving reviews satisfied.
+    review_decision = (data.get('reviewDecision') or '').lower()
+    if review_decision and review_decision != 'approved':
+        return False, f'review decision is {review_decision!r}, not approved'
+
+    # Required status checks all SUCCESS on the head SHA. ``statusCheckRollup``
+    # is the per-head-SHA rollup, so a non-SUCCESS conclusion here is a real
+    # unmet requirement, not staleness.
+    rollup = data.get('statusCheckRollup') or []
+    for check in rollup:
+        conclusion = (check.get('conclusion') or check.get('state') or '').upper()
+        # gh reports completed checks via ``conclusion`` (SUCCESS / NEUTRAL /
+        # SKIPPED are non-failing) and in-progress checks via empty conclusion.
+        if conclusion and conclusion not in ('SUCCESS', 'NEUTRAL', 'SKIPPED'):
+            name = check.get('name') or check.get('context') or 'unknown'
+            return False, f'required check {name!r} concluded {conclusion}'
+        if not conclusion:
+            name = check.get('name') or check.get('context') or 'unknown'
+            return False, f'required check {name!r} has not concluded'
+
+    # Branch not behind base — the head must already contain the base tip,
+    # otherwise the ``blocked`` state reflects a real out-of-date branch.
+    head_oid = data.get('headRefOid')
+    if not head_oid:
+        return False, 'could not resolve head SHA for behind-by check'
+    behind_ok, behind_reason = _safe_merge_behind_by_zero(identifier, head_oid)
+    if not behind_ok:
+        return False, behind_reason
+
+    return True, None
+
+
+def _safe_merge_behind_by_zero(identifier: str, head_oid: str) -> tuple[bool, str | None]:
+    """Confirm the PR head is not behind its base branch (``behind_by == 0``).
+
+    Resolves the base branch via ``gh pr view`` then queries the REST compare
+    endpoint (``GET /repos/{owner}/{repo}/compare/{base}...{head_oid}``) whose
+    ``behind_by`` field is the authoritative behind-count. Fails closed.
+    """
+    pr_view = view_pr_data(head=identifier)
+    if pr_view.get('status') != 'success':
+        return False, f'could not resolve base branch for behind-by check: {pr_view.get("error", "pr_view failed")}'
+    base_branch = pr_view.get('base_branch') or ''
+    if not base_branch:
+        return False, 'pr_view returned empty base branch for behind-by check'
+
+    owner, repo = get_repo_info()
+    if not owner or not repo:
+        return False, 'could not resolve repository owner/name for behind-by check'
+
+    base_encoded = quote(base_branch, safe='')
+    endpoint = f'repos/{owner}/{repo}/compare/{base_encoded}...{head_oid}'
+    returncode, stdout, stderr = run_gh(['api', endpoint])
+    if returncode != 0:
+        return False, f'behind-by compare query failed: {stderr.strip()}'
+    try:
+        compare_data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return False, 'behind-by compare query returned unparseable JSON'
+
+    behind_by = compare_data.get('behind_by')
+    if behind_by is None:
+        return False, 'compare response missing behind_by'
+    if behind_by != 0:
+        return False, f'branch is behind base by {behind_by} commit(s)'
+    return True, None
+
+
+def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
+    """Handle 'pr safe-merge' subcommand - poll readiness then merge.
+
+    Layer 1 (both providers): poll the PR's ``mergeStateStatus`` until it
+    reaches a mergeable state, then delegate the actual merge (including the
+    ``--delete-branch`` REST follow-up) to :func:`cmd_pr_merge`.
+
+    Layer 2 (GitHub-only): when readiness stays ``blocked`` past the poll
+    timeout AND ``--admin-merge-on-stuck-state`` is set AND every active
+    ruleset requirement is provably met, fall back to ``gh pr merge --admin``.
+    This targets GitHub's post-force-push ``mergeable_state: blocked``
+    staleness, where the merge requirements are met but GitHub has not
+    recomputed mergeability.
+
+    Returns canonical TOON with ``operation: pr_safe_merge``, ``merge_path``
+    (``polled_clean`` | ``admin_fallback``), ``polls``, and ``duration_sec``.
+    """
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('pr_safe_merge', err)
+
+    identifier, err_dict = _resolve_pr_identifier(args, 'pr_safe_merge')
+    if err_dict:
+        return err_dict
+    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
+
+    # Layer 1 — poll readiness via the shared poll_until helper.
+    def check_fn() -> tuple[bool, dict]:
+        data = view_pr_data(head=identifier)
+        if data.get('status') != 'success':
+            return False, {'error': data.get('error', 'pr_view failed')}
+        return True, data
+
+    def is_ready(data: dict) -> bool:
+        return data.get('merge_state') in _SAFE_MERGE_READY_STATES
+
+    poll_result = poll_until(
+        check_fn,
+        is_ready,
+        timeout=args.poll_timeout,
+        interval=args.poll_interval,
+    )
+
+    polls = poll_result.get('polls', 0)
+    duration_sec = poll_result.get('duration_sec', 0)
+
+    # A check_fn failure (PR not found / auth) is propagated immediately.
+    if poll_result.get('error'):
+        return make_error('pr_safe_merge', f'Readiness poll failed for PR {identifier}', poll_result['error'])
+
+    last_state = (poll_result.get('last_data') or {}).get('merge_state', 'unknown')
+
+    if not poll_result.get('timed_out'):
+        # Readiness reached — delegate to the normal merge path.
+        merge_result = cmd_pr_merge(_safe_merge_delegate_ns(args, identifier))
+        if merge_result.get('status') != 'success':
+            return merge_result
+        merge_result['operation'] = 'pr_safe_merge'
+        merge_result['merge_path'] = 'polled_clean'
+        merge_result['polls'] = polls
+        merge_result['duration_sec'] = duration_sec
+        return merge_result
+
+    # Timed out while not ready. Layer 2 admin fallback is GitHub-only and
+    # gated by the knob plus a provably-met ruleset.
+    if not args.admin_merge_on_stuck_state:
+        return make_error(
+            'pr_safe_merge',
+            f'PR {identifier} not mergeable after poll timeout (merge_state={last_state}); '
+            'admin fallback not enabled (--admin-merge-on-stuck-state)',
+        )
+
+    if last_state != 'blocked':
+        return make_error(
+            'pr_safe_merge',
+            f'PR {identifier} not mergeable after poll timeout (merge_state={last_state}); '
+            'admin fallback applies only to a stuck blocked state',
+        )
+
+    gate_ok, gate_reason = _safe_merge_stuck_state_gate(identifier)
+    if not gate_ok:
+        return make_error(
+            'pr_safe_merge',
+            f'PR {identifier} stuck blocked but ruleset requirements not provably met; '
+            f'refusing admin fallback: {gate_reason}',
+        )
+
+    # Every requirement provably met — perform the admin merge.
+    returncode, _stdout, stderr = run_gh(['pr', 'merge', identifier, '--admin', f'--{args.strategy}'])
+    if returncode != 0:
+        return make_error('pr_safe_merge', f'Admin merge failed for PR {identifier}', stderr.strip())
+
+    result: dict = {
+        'status': 'success',
+        'operation': 'pr_safe_merge',
+        'pr_number': args.pr_number if args.pr_number else identifier,
+        'strategy': args.strategy,
+        'merge_path': 'admin_fallback',
+        'polls': polls,
+        'duration_sec': duration_sec,
+    }
+
+    # Reuse the same REST-delete follow-up as the normal merge path.
+    if args.delete_branch:
+        result['merged'] = True
+        pr_view = view_pr_data(head=identifier)
+        if pr_view.get('status') != 'success':
+            result['branch_delete_error'] = (
+                f'Merge succeeded but could not resolve head branch for delete: '
+                f'{pr_view.get("error", "pr_view failed")}'
+            )
+            return result
+        head_branch = pr_view.get('head_branch') or ''
+        if not head_branch:
+            result['branch_delete_error'] = 'Merge succeeded but pr_view returned empty head_branch'
+            return result
+        delete_result = cmd_branch_delete(argparse.Namespace(branch=head_branch))
+        if delete_result.get('status') != 'success':
+            result['branch_delete_error'] = delete_result.get('error', f'Failed to delete remote branch {head_branch}')
+            return result
+        result['branch_deleted'] = head_branch
+        result['already_gone'] = delete_result.get('already_gone', False)
+
+    return result
+
+
+def _safe_merge_delegate_ns(args: argparse.Namespace, identifier: str) -> argparse.Namespace:
+    """Synthesize the argparse.Namespace cmd_pr_merge expects from safe-merge args.
+
+    cmd_pr_merge reads ``pr_number``, ``head``, ``strategy``, and
+    ``delete_branch``; the resolved identifier is preserved so the same PR is
+    targeted whether it was supplied by number or by branch.
+    """
+    return argparse.Namespace(
+        pr_number=args.pr_number,
+        head=args.head,
+        strategy=args.strategy,
+        delete_branch=args.delete_branch,
+    )
+
+
 def cmd_pr_update_branch(args: argparse.Namespace) -> dict:
     """Handle 'pr update-branch' subcommand - update PR branch with base branch changes."""
     is_auth, err = check_auth()
@@ -2099,6 +2344,7 @@ def main() -> int:
         ('pr', 'wait-for-comments'): cmd_pr_wait_for_comments,
         ('pr', 'merge'): cmd_pr_merge,
         ('pr', 'auto-merge'): cmd_pr_auto_merge,
+        ('pr', 'safe-merge'): cmd_pr_safe_merge,
         ('pr', 'update-branch'): cmd_pr_update_branch,
         ('pr', 'close'): cmd_pr_close,
         ('pr', 'ready'): cmd_pr_ready,

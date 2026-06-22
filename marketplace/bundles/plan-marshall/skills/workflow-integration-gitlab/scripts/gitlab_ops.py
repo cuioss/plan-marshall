@@ -1489,6 +1489,99 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
     }
 
 
+# GitLab ``merge_status`` values for which a merge will succeed. ``can_be_merged``
+# is the ready state; ``cannot_be_merged`` / ``cannot_be_merged_recheck`` /
+# ``unchecked`` / ``checking`` are NOT ready and keep the readiness poll running.
+_SAFE_MERGE_READY_STATES = frozenset({'can_be_merged'})
+
+
+def _safe_merge_delegate_ns(args: argparse.Namespace, iid: str) -> argparse.Namespace:
+    """Synthesize the argparse.Namespace cmd_pr_merge expects from safe-merge args.
+
+    cmd_pr_merge reads ``pr_number``, ``head``, ``strategy``, and
+    ``delete_branch`` and re-resolves the IID itself, so the resolved ``iid`` is
+    informational only — the same MR is targeted whether it was supplied by
+    number or by branch.
+    """
+    return argparse.Namespace(
+        pr_number=args.pr_number,
+        head=args.head,
+        strategy=args.strategy,
+        delete_branch=args.delete_branch,
+    )
+
+
+def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
+    """Handle 'pr safe-merge' subcommand - poll readiness then merge (poll-only).
+
+    GitLab implements **Layer 1 only**: poll the MR's ``merge_status`` until it
+    reaches ``can_be_merged``, then delegate the actual merge (including the
+    ``--delete-branch`` REST follow-up) to :func:`cmd_pr_merge`.
+
+    There is no admin-merge equivalent on GitLab, so ``--admin-merge-on-stuck-state``
+    is accepted for cross-provider API uniformity but has NO effect here. When
+    readiness stays unready past the poll timeout, the handler returns a
+    canonical error rather than force-merging — the GitHub-only Layer 2 admin
+    fallback does not exist on GitLab.
+
+    Returns canonical TOON with ``operation: pr_safe_merge``,
+    ``merge_path: polled_clean``, ``polls``, and ``duration_sec``.
+    """
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('pr_safe_merge', err)
+
+    iid, err_dict = _resolve_mr_iid(args, 'pr_safe_merge')
+    if err_dict:
+        return err_dict
+    assert iid is not None  # noqa: S101 — narrowing after err_dict guard
+
+    # Layer 1 — poll readiness via the shared poll_until helper.
+    def check_fn() -> tuple[bool, dict]:
+        data = view_pr_data(head=iid)
+        if data.get('status') != 'success':
+            return False, {'error': data.get('error', 'pr_view failed')}
+        return True, data
+
+    def is_ready(data: dict) -> bool:
+        return data.get('merge_state') in _SAFE_MERGE_READY_STATES
+
+    poll_result = poll_until(
+        check_fn,
+        is_ready,
+        timeout=args.poll_timeout,
+        interval=args.poll_interval,
+    )
+
+    polls = poll_result.get('polls', 0)
+    duration_sec = poll_result.get('duration_sec', 0)
+
+    # A check_fn failure (MR not found / auth) is propagated immediately.
+    if poll_result.get('error'):
+        return make_error('pr_safe_merge', f'Readiness poll failed for MR {iid}', poll_result['error'])
+
+    if not poll_result.get('timed_out'):
+        # Readiness reached — delegate to the normal merge path.
+        merge_result = cmd_pr_merge(_safe_merge_delegate_ns(args, iid))
+        if merge_result.get('status') != 'success':
+            return merge_result
+        merge_result['operation'] = 'pr_safe_merge'
+        merge_result['merge_path'] = 'polled_clean'
+        merge_result['polls'] = polls
+        merge_result['duration_sec'] = duration_sec
+        return merge_result
+
+    # Timed out while not ready. GitLab has no admin fallback — the
+    # --admin-merge-on-stuck-state knob is accepted for API uniformity but never
+    # force-merges here.
+    last_state = (poll_result.get('last_data') or {}).get('merge_state', 'unknown')
+    return make_error(
+        'pr_safe_merge',
+        f'MR {iid} not mergeable after poll timeout (merge_status={last_state}); '
+        'GitLab has no admin fallback for a stuck merge state',
+    )
+
+
 cmd_pr_close = make_pr_number_handler(
     'pr_close',
     lambda args: ['mr', 'close', str(args.pr_number)],
@@ -1755,6 +1848,7 @@ def main() -> int:
         ('pr', 'comments'): cmd_pr_comments,
         ('pr', 'merge'): cmd_pr_merge,
         ('pr', 'auto-merge'): cmd_pr_auto_merge,
+        ('pr', 'safe-merge'): cmd_pr_safe_merge,
         ('pr', 'close'): cmd_pr_close,
         ('pr', 'ready'): cmd_pr_ready,
         ('pr', 'edit'): cmd_pr_edit,
