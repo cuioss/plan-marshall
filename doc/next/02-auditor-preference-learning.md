@@ -48,7 +48,10 @@ learning sweep wants.
   ([01](01-personas.md)) — the meta-persona that composes the tester / reviewer /
   security-expert lenses — over the retrospective command, making the audit a named,
   multi-persona evaluation. It is the first real exercise of the persona composition
-  model, which is why it lands right after 01.
+  model, which is why it lands right after 01. Because 02 lands **before**
+  [05](05-security-finalize-step.md), the `persona-security-expert` lens is still a
+  *shell* at this point (its security content + `security` profile arrive with 05);
+  the auditor functions via its other lenses (tester, reviewer) until then.
 
 ## Affected surface
 

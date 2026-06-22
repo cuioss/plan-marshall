@@ -89,22 +89,16 @@ deliverables), so it gets no persona.
 | `persona-plan-marshall-agent` | `dev-agent-behavior-rules` | reframe (exists today) |
 | `persona-module-tester` | `dev-general-module-testing` | reframe (exists today) |
 | `ref-code-quality` | `dev-general-code-quality` | reframe (exists today) |
-| `persona-security-expert` | `dev-general-security` (planned in 05) + `persona-security-reviewer` (interim) | new, consolidates both |
+| `persona-security-expert` | — | new |
 | `persona-implementer` | — | new |
 | `persona-integration-tester` | — | new (profile already exists) |
 | `persona-documenter` | — | new (spelling: `documenter`; flip to `documentor` if preferred) |
-| `persona-code-reviewer` | `personas/code-reviewer.md` (interim sub-doc) | reframe to first-class skill |
-| `persona-auditor` | `personas/auditor.md` (interim sub-doc) | reframe to first-class skill |
+| `persona-code-reviewer` | — | new |
+| `persona-auditor` | — | new |
 
-Removed from the earlier draft of this plan:
-
-- `dev-general-persona` aggregator skill — **removed**. Personas are first-class
-  skills (`implements: persona`), discovered via the frontmatter-archetype machinery
-  + `plugin.json`. No container.
-- `personas/` sub-document directory — **removed**. Each former sub-doc is its own
-  `persona-*` skill.
-- `persona-security-reviewer` — **folded into** `persona-security-expert` (the
-  security review is that expert in review mode).
+Personas are first-class skills (`implements: persona`), discovered via the
+frontmatter-archetype machinery + `plugin.json` — there is no aggregator skill and
+no `personas/` sub-document container.
 
 ## Composition — flatten, never nest
 
@@ -146,11 +140,12 @@ to `resolve-recipe` / `architecture resolve`.
   automatically. The **primary** (identity) profile is unique per work persona so the
   reverse lookup is unambiguous (`plugin-doctor` enforces uniqueness); additional
   `profiles:` entries are *applied* profiles (e.g. `quality`).
-- **Meta entry points declare `persona:` explicitly** (recipes / finalize steps /
-  commands), and **exactly one** — a meta-persona encapsulates its multi-lens
-  composition internally. E.g. `finalize-step-security-audit` →
-  `persona: persona-security-expert`; `audit-archived-plan-retrospectives` →
-  `persona: persona-auditor`.
+- **Entry points (recipes / finalize steps / commands) declare `persona:`
+  explicitly** — they have no task profile to derive from — and **exactly one**. The
+  declared persona may be a *work-activity* persona (`finalize-step-security-audit` →
+  `persona: persona-security-expert`) or a *meta* persona that encapsulates a
+  multi-lens composition internally (`audit-archived-plan-retrospectives` →
+  `persona: persona-auditor`).
 - **Human reference:** "the Security Expert persona."
 
 ## Extensibility
