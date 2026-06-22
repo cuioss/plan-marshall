@@ -285,12 +285,20 @@ def test_await_fresh_review_propagates_fetch_failure(monkeypatch):
 # =============================================================================
 
 
-def _re_review_args(*, pr_number=42, bot_kind='coderabbit', head_sha='headsha', push_time='2026-01-01T00:00:00Z'):
+def _re_review_args(
+    *,
+    pr_number=42,
+    bot_kind='coderabbit',
+    head_sha='headsha',
+    push_time='2026-01-01T00:00:00Z',
+    timeout=ci_base.DEFAULT_CI_TIMEOUT,
+):
     return argparse.Namespace(
         pr_number=pr_number,
         bot_kind=bot_kind,
         head_sha=head_sha,
         push_time=push_time,
+        timeout=timeout,
         plan_id=None,
     )
 
@@ -387,6 +395,52 @@ def test_cmd_re_review_short_circuits_on_await_failure(monkeypatch):
     assert result['operation'] == 'await_fresh_review'
     # bot_kind is only stamped on a successful await envelope.
     assert 'bot_kind' not in result
+
+
+# =============================================================================
+# --timeout threading: args.timeout flows into await_fresh_review
+# =============================================================================
+
+
+def test_cmd_re_review_threads_timeout_into_await(monkeypatch):
+    """The CLI ``--timeout`` value must reach ``await_fresh_review`` verbatim.
+
+    The handler reads ``args.timeout`` and forwards it as the ``timeout`` kwarg
+    on the strategy's await call. Capture the kwarg the strategy receives and
+    assert it equals the value supplied on the args namespace.
+    """
+    captured = {}
+
+    def fake_await(self, pr_number, head_sha, trigger_time, *, timeout, interval=0):
+        captured['timeout'] = timeout
+        return {'status': 'success', 'matched': True, 'head_sha': head_sha}
+
+    monkeypatch.setattr(github_re_review._ReReviewStrategy, 'await_fresh_review', fake_await)
+
+    result = github_re_review.cmd_re_review(_re_review_args(bot_kind='coderabbit', timeout=37))
+
+    assert result['status'] == 'success'
+    assert captured['timeout'] == 37
+
+
+def test_cmd_re_review_threads_default_timeout_into_await(monkeypatch):
+    """When the default timeout is supplied, that exact default reaches await.
+
+    Guards against the handler hard-coding a different constant instead of
+    forwarding ``args.timeout``.
+    """
+    captured = {}
+
+    def fake_await(self, pr_number, head_sha, trigger_time, *, timeout, interval=0):
+        captured['timeout'] = timeout
+        return {'status': 'success', 'matched': False, 'head_sha': head_sha}
+
+    monkeypatch.setattr(github_re_review._ReReviewStrategy, 'await_fresh_review', fake_await)
+
+    result = github_re_review.cmd_re_review(_re_review_args(bot_kind='coderabbit'))
+
+    assert result['status'] == 'success'
+    assert captured['timeout'] == ci_base.DEFAULT_CI_TIMEOUT
 
 
 # =============================================================================
@@ -497,3 +551,77 @@ def test_main_re_review_wires_args_and_prints_toon(monkeypatch, capsys):
     assert 'success' in out
     assert 'coderabbit' in out
     assert 'headsha' in out
+
+
+def test_main_parses_timeout_flag_and_threads_it(monkeypatch):
+    """main() must parse ``--timeout`` and thread the value into the handler.
+
+    Capture the parsed args the handler receives by stubbing cmd_re_review, and
+    assert the namespace carries the exact ``--timeout`` integer from argv.
+    """
+    captured = {}
+
+    def fake_handler(args):
+        captured['timeout'] = args.timeout
+        return {'status': 'success'}
+
+    monkeypatch.setattr(github_re_review, 'cmd_re_review', fake_handler)
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'github_re_review.py',
+            're-review',
+            '--pr-number',
+            '42',
+            '--bot-kind',
+            'coderabbit',
+            '--head-sha',
+            'headsha',
+            '--push-time',
+            '2026-01-01T00:00:00Z',
+            '--timeout',
+            '77',
+        ],
+    )
+
+    rc = github_re_review.main()
+
+    assert rc == 0
+    assert captured['timeout'] == 77
+
+
+def test_main_timeout_defaults_when_flag_omitted(monkeypatch):
+    """When ``--timeout`` is absent, main() supplies the canonical default.
+
+    Asserts the argparse default is ``DEFAULT_CI_TIMEOUT`` rather than None, so
+    the handler always has a concrete integer to forward to await.
+    """
+    captured = {}
+
+    def fake_handler(args):
+        captured['timeout'] = args.timeout
+        return {'status': 'success'}
+
+    monkeypatch.setattr(github_re_review, 'cmd_re_review', fake_handler)
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'github_re_review.py',
+            're-review',
+            '--pr-number',
+            '42',
+            '--bot-kind',
+            'coderabbit',
+            '--head-sha',
+            'headsha',
+            '--push-time',
+            '2026-01-01T00:00:00Z',
+        ],
+    )
+
+    rc = github_re_review.main()
+
+    assert rc == 0
+    assert captured['timeout'] == ci_base.DEFAULT_CI_TIMEOUT

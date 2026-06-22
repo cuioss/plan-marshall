@@ -903,7 +903,7 @@ FOR each step_id in manifest.phase_6.steps:
       | Cause | Detection rule |
       |-------|----------------|
       | `step_complete` | The dispatched step returned cleanly (its `mark-step-done` call recorded `outcome: done`). |
-      | `blocked_user_review` | The dispatched step raised an `AskUserQuestion` review gate that halted dispatch (e.g., branch-cleanup confirmation, sonar-roundtrip `loop_back` prompt under `loop_back_without_asking=false`). |
+      | `blocked_user_review` | The dispatched step raised an `AskUserQuestion` review gate that halted dispatch (e.g., branch-cleanup confirmation, sonar-roundtrip `loop_back` prompt under `loop_back_without_asking=false`, or an `automated-review` `escalate_ask{reason: re_review_timeout}` return whose `ask` policy made the dispatcher fire the re-review-timeout `AskUserQuestion` — see item 7a). |
       | `blocked_session_restart` | The dispatch was cut short by a session restart, harness cancellation, or the per-agent timeout budget firing (timeout block at item 5 above). |
       | `error` | The dispatched step's `mark-step-done` call recorded `outcome: failed`. |
 
@@ -962,6 +962,34 @@ FOR each step_id in manifest.phase_6.steps:
   7. Log step completion:
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
        work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
+
+  7a. Escalate-ask continuation hook (consult the dispatched step's return status):
+      When the dispatched `automated-review` step returns `status: escalate_ask` (a re-review await timed out at trigger B — see `workflow/automated-review.md` § "On re-review timeout (trigger B)"), the leaf has returned an escalation envelope rather than firing an `AskUserQuestion` itself (a dispatched leaf cannot own the prompt — see the leaf/dispatch-topology contract in `ref-workflow-architecture/standards/agents.md`). The dispatcher owns the consumption. Read the policy knob and branch on the returned `action`/`reason`. The full field set of the `escalate_ask` return TOON is defined in [`workflow/automated-review.md`](workflow/automated-review.md) § "`escalate_ask` return (re-review timeout)" — read it there; do NOT restate the field set here.
+
+      Read the timeout policy from the `automated-review` step-params snapshot:
+
+         python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+           step-params get --plan-id {plan_id} --phase 6-finalize --step-id automated-review
+
+      Read `re_review_on_timeout` off the returned `params` object, then branch on the returned envelope's `action`/`reason`:
+
+      - **`action: defer`** (policy `defer`): skip the merge for this run — do NOT advance to `branch-cleanup`'s merge. Decision-log the deferral, record the step outcome so finalize can be re-entered later (re-issue the step on the next phase entry via the resumable re-entry check), and HALT the FOR loop returning control for re-entry:
+
+           python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+             decision --plan-id {plan_id} --level INFO \
+             --message "(plan-marshall:phase-6-finalize) automated-review returned escalate_ask{action: defer} — skipping merge for unreviewed head_sha={head_sha}; re-enter finalize later"
+
+      - **policy `proceed`** (the leaf already fell through to "Wait for review-bot comments" and the run terminated normally): the leaf does NOT return `escalate_ask` for `proceed` — no orchestrator branch is needed. This is the documented explicit non-escalating case; the unreviewed-HEAD WARNING was logged by the leaf.
+
+      - **`reason: re_review_timeout` with policy `ask`**: fire an `AskUserQuestion` using the three options encoded in the returned `prompt_options[]`. Classify the halt under the existing `blocked_user_review` termination cause (item 5c) when it fires AskUserQuestion. Branch on the operator's selection:
+        - **"Wait another {timeout_seconds}s"** → re-dispatch `automated-review` from scratch with a fresh budget (re-enter the Step 3 dispatch with the SAME role/level resolution — NOT a SendMessage resume; the harness cannot resume a spawned agent, see the harness-no-resume contract). The fresh dispatch re-runs the re-review await against a new budget.
+        - **"Merge anyway — proceed unreviewed"** → decision-log a WARNING naming the unreviewed `{head_sha}`, then continue the FOR loop (advance to `branch-cleanup`):
+
+             python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+               decision --plan-id {plan_id} --level WARNING \
+               --message "(plan-marshall:phase-6-finalize) automated-review re-review timeout: user chose merge-anyway — advancing UNREVIEWED head_sha={head_sha}"
+
+        - **"Defer merge"** → same as `action: defer` above (skip the merge, record for re-entry, HALT).
 
   ### Loop-back Target Contract
 

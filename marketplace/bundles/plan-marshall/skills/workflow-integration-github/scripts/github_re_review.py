@@ -31,7 +31,7 @@ bot_kind is added in one place.
 
 Usage:
     github_re_review.py re-review --pr-number N --bot-kind coderabbit \
-        --head-sha SHA --push-time ISO8601 --plan-id PLAN_ID
+        --head-sha SHA --push-time ISO8601 [--timeout SECONDS] --plan-id PLAN_ID
 
 Output: TOON format
 """
@@ -246,7 +246,7 @@ def cmd_re_review(args: argparse.Namespace) -> dict:
         return request_result
 
     trigger_time = request_result['trigger_time']
-    await_result = strategy.await_fresh_review(args.pr_number, args.head_sha, trigger_time)
+    await_result = strategy.await_fresh_review(args.pr_number, args.head_sha, trigger_time, timeout=args.timeout)
     if await_result.get('status') != 'success':
         return await_result
 
@@ -268,6 +268,12 @@ def main() -> int:
     re_review.add_argument('--bot-kind', choices=BOT_KINDS, required=True, help='Reviewer bot identity key')
     re_review.add_argument('--head-sha', required=True, help='Current HEAD SHA the fresh review must match')
     re_review.add_argument('--push-time', required=True, help='ISO-8601 push time (CodeRabbit trigger time)')
+    re_review.add_argument(
+        '--timeout',
+        type=int,
+        default=DEFAULT_CI_TIMEOUT,
+        help=f'Seconds to await the fresh review before timing out (default: {DEFAULT_CI_TIMEOUT})',
+    )
     re_review.add_argument('--plan-id', help='Plan identifier (accepted for routing uniformity)')
 
     args = parser.parse_args()

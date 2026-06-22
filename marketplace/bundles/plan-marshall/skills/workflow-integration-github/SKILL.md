@@ -169,12 +169,12 @@ The two strategies differ **only** in `request_fresh_review`:
 1. **Invoke the registry** for the new HEAD:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|gemini} --head-sha {new HEAD} --push-time {ISO8601 push time} --plan-id {plan_id}
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|gemini} --head-sha {new HEAD} --push-time {ISO8601 push time} [--timeout {seconds}] --plan-id {plan_id}
    ```
 
-   The subcommand resolves the strategy by `bot_kind`, runs `request_fresh_review` (NO-OP for CodeRabbit using `--push-time` as the trigger time; posts `/gemini review` for Gemini), then awaits the fresh review. It emits a TOON envelope with `matched: true|false` plus the matched review's metadata.
+   The subcommand resolves the strategy by `bot_kind`, runs `request_fresh_review` (NO-OP for CodeRabbit using `--push-time` as the trigger time; posts `/gemini review` for Gemini), then awaits the fresh review. The await budget is configurable via `--timeout` (default `DEFAULT_CI_TIMEOUT`); the phase-6-finalize trigger sites pass their `re_review_await_timeout_seconds` step-param value. It emits a TOON envelope with `matched: true|false` AND `timed_out: true|false` plus the matched review's metadata.
 
-2. **Consume the match outcome.** On `matched: true`, re-run `comments-stage` to ingest the fresh review's comments and re-triage through the existing per-finding pipeline (Workflow 2). On `matched: false` / `timed_out: true`, surface the timeout for human attention.
+2. **Consume the match outcome.** On `matched: true`, re-run `comments-stage` to ingest the fresh review's comments and re-triage through the existing per-finding pipeline (Workflow 2). On `matched: false` / `timed_out: true`, the await budget expired with no fresh review — the consumer decides how to handle the timeout. This registry surfaces `timed_out` and does NOT decide policy itself; the timeout-handling responsibility (the `re_review_on_timeout` ask/defer/proceed branches) lives in the two trigger docs: trigger A in [`phase-6-finalize/standards/branch-cleanup.md`](../phase-6-finalize/standards/branch-cleanup.md) § "On re-review timeout (trigger A)" and trigger B in [`phase-6-finalize/workflow/automated-review.md`](../phase-6-finalize/workflow/automated-review.md) § "On re-review timeout (trigger B)".
 
 **Registry extension pattern:** to support a new `bot_kind`, (1) add the value to `manage-findings/_findings_core.BOT_KINDS`, then (2) add a strategy subclass in `github_re_review.py` overriding only `request_fresh_review`. `await_fresh_review` is shared on the base class and is **not** re-implemented per bot.
 
@@ -442,8 +442,10 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
   --pr-number N --bot-kind {coderabbit|gemini} --head-sha SHA --push-time ISO8601 \
-  [--plan-id PLAN_ID]
+  [--timeout SECONDS] [--plan-id PLAN_ID]
 ```
+
+`--timeout SECONDS` bounds the `await_fresh_review` poll (default `DEFAULT_CI_TIMEOUT`); consumers (the trigger-A / trigger-B re-review sites in phase-6-finalize) supply their `re_review_await_timeout_seconds` step-param value here.
 
 ## Error Handling
 
