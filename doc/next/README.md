@@ -78,11 +78,9 @@ This directory is self-consuming:
   one bounded LLM fallback pass (see [04](04-routing-v2.md)).
 - No new preference/learning store — preference signal reuses the existing
   `enriched.json` hints surface.
-- No live browser verification or exploration surface — verification stays
-  encoded (reproducible, committed tests), and interactive exploration stays
-  with the user's own tools; see
+- No live browser verification or exploration surface — see
   [`doc/concepts/verification.adoc`](../concepts/verification.adoc) for the
-  canonical statement of that boundary. No browser/daemon integration is built.
+  canonical statement of that boundary.
 - No `/careful`-style in-session destructive-command guard — worktree isolation
   and the existing Bash hard-rules already cover this; explicitly dropped.
 - No role-play persona prose — personas are structured, data-declared skills
