@@ -555,7 +555,7 @@ class TestRequiredStepsRegistration:
         assert isinstance(steps, list)
         assert len(steps) > 0
         # Sanity — the canonical finalize steps are also present.
-        for canonical in ('commit-push', 'create-pr', 'archive-plan'):
+        for canonical in ('push', 'create-pr', 'archive-plan'):
             assert canonical in steps
 
 

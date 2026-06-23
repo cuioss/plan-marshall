@@ -534,7 +534,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "loop_back_without_asking": false,
       "qgate": "auto",
       "steps": {
-        "default:commit-push": {},
+        "default:push": {},
         "default:create-pr": {},
         "default:automated-review": { "review_bot_buffer_seconds": 180 },
         "default:sonar-roundtrip": {

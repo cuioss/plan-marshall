@@ -90,7 +90,7 @@ def test_required_steps_parser_accepts_prefixed_ids(tmp_path: Path) -> None:
         '# Required steps\n'
         '\n'
         '- project:finalize-step-pre-submission-self-review\n'
-        '- commit-push\n'
+        '- push\n'
         '- create-pr\n'
         '- default:archive-plan\n',
         encoding='utf-8',
@@ -100,7 +100,7 @@ def test_required_steps_parser_accepts_prefixed_ids(tmp_path: Path) -> None:
 
     assert parsed == [
         'project:finalize-step-pre-submission-self-review',
-        'commit-push',
+        'push',
         'create-pr',
         'default:archive-plan',
     ]
@@ -122,7 +122,7 @@ def test_phase_steps_complete_matches_manifest_id_when_recorded_prefixed(
     required = tmp_path / 'required-steps.md'
     required.write_text(
         '- project:finalize-step-pre-submission-self-review\n'
-        '- commit-push\n',
+        '- push\n',
         encoding='utf-8',
     )
     monkeypatch.setattr(inv, '_resolve_required_steps_path', lambda _p: required)
@@ -134,7 +134,7 @@ def test_phase_steps_complete_matches_manifest_id_when_recorded_prefixed(
                     'outcome': 'done',
                     'display_detail': 'self-review clean',
                 },
-                'commit-push': {
+                'push': {
                     'outcome': 'done',
                     'display_detail': 'committed abc123',
                 },
@@ -266,9 +266,9 @@ def test_renderer_lookup_strips_project_prefix_on_miss() -> None:
 
     # Default-prefix variant.
     phase_steps_default_bare = {
-        'commit-push': {'outcome': 'done', 'display_detail': 'committed abc123'},
+        'push': {'outcome': 'done', 'display_detail': 'committed abc123'},
     }
-    record = _renderer_lookup(phase_steps_default_bare, 'default:commit-push')
+    record = _renderer_lookup(phase_steps_default_bare, 'default:push')
     assert record is not None
     assert record['display_detail'] == 'committed abc123'
 

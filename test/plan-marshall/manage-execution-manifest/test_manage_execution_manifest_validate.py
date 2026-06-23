@@ -175,13 +175,13 @@ def test_validate_unknown_phase_6_step_flagged(plan_context):
             phase_5_steps=None,
             # Restrict allowed phase_6 steps to a tiny subset; everything
             # else in the manifest becomes "unknown".
-            phase_6_steps='commit-push',
+            phase_6_steps='push',
         )
     )
     assert result is not None and result['status'] == 'error'
     assert result['error'] == 'invalid_manifest'
     assert result['phase_6_unknown_steps_count'] >= 1
-    # All non-commit-push DEFAULT_PHASE_6_STEPS entries should be flagged.
+    # All non-push DEFAULT_PHASE_6_STEPS entries should be flagged.
     assert 'create-pr' in result['phase_6_unknown_steps']
 
 
@@ -239,7 +239,7 @@ def _seed_keyed_map_marshal(fixture_dir: Path) -> None:
         'plan': {
             'phase-6-finalize': {
                 'steps': {
-                    'default:commit-push': {},
+                    'default:push': {},
                     'default:create-pr': {},
                     'default:automated-review': {'review_bot_buffer_seconds': 240},
                     'default:sonar-roundtrip': {},
@@ -279,7 +279,7 @@ def test_compose_from_keyed_map_marshal_snapshots_dict_step_params(plan_context)
         'final_merge_without_asking': False,
     }
     # A config-less step reads back as the empty dict (no params).
-    assert snapshot['commit-push'] == {}
+    assert snapshot['push'] == {}
 
 
 def test_validate_succeeds_against_keyed_map_sourced_manifest(plan_context):

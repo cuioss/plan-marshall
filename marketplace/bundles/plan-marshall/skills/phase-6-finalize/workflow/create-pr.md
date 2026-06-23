@@ -2,6 +2,7 @@
 name: default:create-pr
 description: Create pull request
 order: 20
+mutates_source: false
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
@@ -20,7 +21,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Inputs
 
-- Branch has been pushed (handled by `commit-push` earlier in the manifest list)
+- Branch has been pushed (handled by `push` earlier in the manifest list)
 - `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All `ci` script invocations below MUST identify the worktree via either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override). The two flags are mutually exclusive. Examples below use the literal `--project-dir {worktree_path}` form; substitute `--plan-id {plan_id}` to use auto-resolution.
 
 ## Execution

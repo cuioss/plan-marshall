@@ -175,7 +175,7 @@ def test_compose_then_validate_succeeds_with_prefixed_marshal_steps(plan_context
     plan_id = 'validate-prefix-ok'
     prefixed_phase_5 = ['default:verify:quality-gate', 'default:verify:module-tests']
     prefixed_phase_6 = [
-        'default:commit-push',
+        'default:push',
         'default:create-pr',
         'default:automated-review',
         'default:lessons-capture',
@@ -217,7 +217,7 @@ def test_validate_bare_manifest_against_bare_allowlist_still_succeeds(plan_conte
     _write_full_marshal(
         plan_context.fixture_dir,
         phase_5_steps=['verify:quality-gate', 'verify:module-tests'],
-        phase_6_steps=['commit-push', 'create-pr', 'lessons-capture', 'archive-plan'],
+        phase_6_steps=['push', 'create-pr', 'lessons-capture', 'archive-plan'],
     )
     compose_result = cmd_compose(_compose_ns(plan_id=plan_id, affected_files_count=8))
     assert compose_result is not None and compose_result['status'] == 'success'
@@ -226,7 +226,7 @@ def test_validate_bare_manifest_against_bare_allowlist_still_succeeds(plan_conte
         _validate_ns(
             plan_id=plan_id,
             phase_5_steps='verify:quality-gate,verify:module-tests',
-            phase_6_steps='commit-push,create-pr,lessons-capture,archive-plan',
+            phase_6_steps='push,create-pr,lessons-capture,archive-plan',
         )
     )
     assert result is not None and result['status'] == 'success'
@@ -244,7 +244,7 @@ def test_validate_flags_genuinely_unknown_step_despite_prefix_stripping(plan_con
     _write_full_marshal(
         plan_context.fixture_dir,
         phase_5_steps=['default:verify:quality-gate', 'default:verify:module-tests'],
-        phase_6_steps=['default:commit-push', 'default:archive-plan'],
+        phase_6_steps=['default:push', 'default:archive-plan'],
     )
     compose_result = cmd_compose(_compose_ns(plan_id=plan_id, affected_files_count=8))
     assert compose_result is not None and compose_result['status'] == 'success'

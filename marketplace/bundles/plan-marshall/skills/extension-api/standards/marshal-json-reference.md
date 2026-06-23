@@ -37,7 +37,7 @@ Central reference for all extension-related configuration paths in `marshal.json
 
 Three structural rules define the serial form:
 
-1. **A keyed map, not a list.** The container is a JSON object keyed by step id. Key insertion order is the execution order. Each key identifies one step (`default:commit-push`, `default:branch-cleanup`, a `project:` step, or a fully-qualified `bundle:skill` step). A list value is not a valid on-disk form — the reader returns no step map for it.
+1. **A keyed map, not a list.** The container is a JSON object keyed by step id. Key insertion order is the execution order. Each key identifies one step (`default:push`, `default:branch-cleanup`, a `project:` step, or a fully-qualified `bundle:skill` step). A list value is not a valid on-disk form — the reader returns no step map for it.
 2. **Config-less step → `{}`; param-bearing step → nested param object.** A step that owns no params maps to an empty `{}` object. A step that owns params maps to a `{ param: value, … }` object — its value is the nested param object. A param consumed by exactly one step lives in that step's nested object, never as a flat phase-level sibling. Example: `final_merge_without_asking` is a param of `default:branch-cleanup`, so it nests inside `{ "default:branch-cleanup": { … } }`, NOT under `phase-6-finalize` directly. Read/write step-owned params via the one-stop `manage-config plan {phase} step get/set --step-id {id}` verb (global default + wizard target) or `manage-execution-manifest step-params get/set` (per-plan runtime read/override).
 3. **Config-less steps map to `{}`.** A config-less step's value is an empty `{}` object. The reader coerces any non-dict per-step value (`null`, the TOON-round-tripped `''`) back to `{}` internally, so downstream consumers see a uniform `{}` for a config-less step.
 
@@ -54,7 +54,7 @@ Three structural rules define the serial form:
     },
     "phase-6-finalize": {
       "steps": {
-        "default:commit-push": {},
+        "default:push": {},
         "default:automated-review": {
           "review_bot_buffer_seconds": 180
         },
@@ -76,7 +76,7 @@ Three structural rules define the serial form:
 
 Notes on the example:
 
-- `default:commit-push` and the two `verify:*` steps own no params, so each maps to an empty `{}` object.
+- `default:push` and the two `verify:*` steps own no params, so each maps to an empty `{}` object.
 - `default:automated-review`, `default:sonar-roundtrip`, and `default:branch-cleanup` own params, so each maps to its nested param object. For `default:sonar-roundtrip` the `sonar_` prefix is dropped inside the scoped object.
 - Param **defaults** are NOT held in any centralized constant. Each param-owning step declares its own params (`key`, `default`, `description`) in the `configurable:` block of its body-doc frontmatter; the parser (`plan-marshall:extension-api:configurable_contract`) materializes them. See [`manage-config/SKILL.md` § Phase-Local Run-at-all Gates and Automation Knobs](../../manage-config/SKILL.md) and [`extension-api/SKILL.md` § Configurable step-param contract](../SKILL.md#configurable-step-param-contract).
 

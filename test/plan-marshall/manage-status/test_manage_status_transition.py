@@ -1235,7 +1235,7 @@ class TestLoopBackTargetValidation:
             _mark_step_args(
                 plan_id,
                 '6-finalize',
-                'commit-push',
+                'push',
                 'done',
                 display_detail='step complete',
                 loop_back_target='5-execute',

@@ -34,7 +34,7 @@
     "change_type": "enhancement",
     "phase_steps": {
       "6-finalize": {
-        "commit-push": {
+        "push": {
           "outcome": "done",
           "display_detail": "-> 3455b3fd"
         },

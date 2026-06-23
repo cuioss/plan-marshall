@@ -1,7 +1,8 @@
 ---
 name: default:pre-submission-self-review
-description: Pre-submission structural self-review (symmetric pairs, regex over-fit, wording, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check, ordinal-reference re-check) before commit-push
+description: Pre-submission structural self-review (symmetric pairs, regex over-fit, wording, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check, ordinal-reference re-check) before push
 order: 7
+mutates_source: false
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
@@ -269,7 +270,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 Branch A (empty findings) persists nothing — there are no findings to write.
 
-The dispatcher's existing failure handling halts the phase on `outcome=failed`, matching the gating-step contract used by `pre-push-quality-gate`. The operator must address every finding (amend the diff: rename, tighten regex, rewrite wording, delete duplicate section, fix contract drift), re-run the step, and only then advance to `commit-push`.
+The dispatcher's existing failure handling halts the phase on `outcome=failed`, matching the gating-step contract used by `pre-push-quality-gate`. The operator must address every finding (amend the diff: rename, tighten regex, rewrite wording, delete duplicate section, fix contract drift), re-run the step, and only then advance to `push`.
 
 ## Worked example: the lesson that drove this workflow
 

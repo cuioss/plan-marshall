@@ -50,7 +50,6 @@ DEFAULT_PHASE_5_STEPS = _mem.DEFAULT_PHASE_5_STEPS
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 DEFAULT_ENVELOPE_COUNT = _mem.DEFAULT_ENVELOPE_COUNT
 _role_of = _mem._role_of
-_resolve_may_mutate_worktree_steps = _mem._resolve_may_mutate_worktree_steps
 
 # Quiet down the best-effort decision-log subprocess so tests don't depend on a
 # running executor. The handler is wrapped in try/except so failures are
@@ -198,7 +197,7 @@ def test_recipe_path_retains_review_gates_drops_only_legacy_ci_wait(plan_context
     assert 'sonar-roundtrip' in manifest['phase_6']['steps']
     # Legacy ci-wait still defensively narrowed out.
     assert 'ci-wait' not in manifest['phase_6']['steps']
-    assert 'commit-push' in manifest['phase_6']['steps']
+    assert 'push' in manifest['phase_6']['steps']
 
 
 def test_docs_only_skips_phase_5_verification_retains_review_gates(plan_context):
@@ -312,7 +311,7 @@ def test_surgical_tech_debt_retains_review_gates(plan_context):
     assert result is not None and result['rule_fired'] == 'surgical_tech_debt'
     manifest = read_manifest('matrix-tech')
     assert manifest is not None
-    assert 'commit-push' in manifest['phase_6']['steps']
+    assert 'push' in manifest['phase_6']['steps']
     # Review gates RETAINED.
     for retained in ('automated-review', 'sonar-roundtrip'):
         assert retained in manifest['phase_6']['steps']
@@ -343,7 +342,7 @@ def test_surgical_tech_debt_retains_review_gates(plan_context):
 
 _PREFIXED_PHASE_6 = (
     'default:pre-push-quality-gate',
-    'default:commit-push',
+    'default:push',
     'default:create-pr',
     'default:automated-review',
     'default:lessons-capture',
@@ -372,7 +371,7 @@ def test_rule_1_early_terminate_analysis_with_prefixed_candidates(plan_context):
     # No `default:`-prefixed entries survive anywhere in the manifest.
     assert not any(s.startswith('default:') for s in steps)
     # Heavy steps that would have leaked through pre-fix are absent.
-    for excluded in ('commit-push', 'create-pr', 'automated-review', 'pre-push-quality-gate', 'branch-cleanup'):
+    for excluded in ('push', 'create-pr', 'automated-review', 'pre-push-quality-gate', 'branch-cleanup'):
         assert excluded not in steps
 
 
@@ -404,7 +403,7 @@ def test_rule_2_recipe_with_prefixed_candidates(plan_context):
     # Legacy ci-wait dropped defensively.
     assert 'ci-wait' not in steps
     # Non-heavy steps survive (bare).
-    assert 'commit-push' in steps
+    assert 'push' in steps
     assert 'create-pr' in steps
     assert 'lessons-capture' in steps
 
@@ -437,7 +436,7 @@ def test_rule_3_docs_only_with_prefixed_candidates(plan_context):
     # Legacy ci-wait dropped defensively.
     assert 'ci-wait' not in steps
     # Non-review steps survive (bare).
-    assert 'commit-push' in steps
+    assert 'push' in steps
     assert 'lessons-capture' in steps
 
 
@@ -467,7 +466,7 @@ def test_rule_5_surgical_bug_fix_with_prefixed_candidates(plan_context):
     # Legacy ci-wait dropped defensively.
     assert 'ci-wait' not in steps
     assert 'lessons-capture' in steps
-    assert 'commit-push' in steps
+    assert 'push' in steps
 
 
 def test_rule_5_surgical_tech_debt_with_prefixed_candidates(plan_context):
@@ -498,7 +497,7 @@ def test_rule_5_surgical_tech_debt_with_prefixed_candidates(plan_context):
         assert retained in steps
     # Legacy ci-wait dropped defensively.
     assert 'ci-wait' not in steps
-    assert 'commit-push' in steps
+    assert 'push' in steps
 
 
 def test_rule_6_verification_no_files_with_prefixed_candidates(plan_context):
@@ -519,7 +518,7 @@ def test_rule_6_verification_no_files_with_prefixed_candidates(plan_context):
     # Boundary normalization strips `default:` at intake — output is bare.
     assert set(steps) == {'lessons-capture', 'archive-plan'}
     assert not any(s.startswith('default:') for s in steps)
-    for excluded in ('commit-push', 'create-pr', 'automated-review', 'pre-push-quality-gate', 'branch-cleanup'):
+    for excluded in ('push', 'create-pr', 'automated-review', 'pre-push-quality-gate', 'branch-cleanup'):
         assert excluded not in steps
 
 
@@ -535,7 +534,7 @@ def test_prefix_normalization_no_op_for_bare_candidates(plan_context):
     is defensively narrowed out when present in the candidate list.
     """
     bare = (
-        'commit-push',
+        'push',
         'create-pr',
         'automated-review',
         'sonar-roundtrip',
@@ -562,7 +561,7 @@ def test_prefix_normalization_no_op_for_bare_candidates(plan_context):
         assert retained in steps
     # Legacy ci-wait dropped defensively.
     assert 'ci-wait' not in steps
-    assert 'commit-push' in steps
+    assert 'push' in steps
     assert 'lessons-capture' in steps
 
 
@@ -596,7 +595,7 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_
     """
     mixed = [
         # Prefixed default entries.
-        'default:commit-push',
+        'default:push',
         'default:create-pr',
         'default:automated-review',
         # Bare default entries (no prefix to strip).
@@ -647,7 +646,7 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_
     # Every Phase-6 default-domain entry from the input survives as a bare
     # string after Row 7 (no cascade-rule subtractions on the default rule).
     for bare_default in (
-        'commit-push',
+        'push',
         'create-pr',
         'automated-review',
         'lessons-capture',
@@ -1183,7 +1182,7 @@ def test_compose_default_phase_6_steps_when_csv_omitted(plan_context):
     ],
 )
 def test_commit_and_push_pre_filter(plan_context, commit_and_push, expect_commit_push, expect_omitted):
-    """Pre-filter: commit_and_push=false drops commit-push; true retains it."""
+    """Pre-filter: commit_and_push=false drops push; true retains it."""
     slug = commit_and_push or 'absent'
     plan_id = f'matrix-cap-{slug}'
     result = cmd_compose(
@@ -1200,9 +1199,9 @@ def test_commit_and_push_pre_filter(plan_context, commit_and_push, expect_commit
     manifest = read_manifest(plan_id)
     assert manifest is not None
     if expect_commit_push:
-        assert 'commit-push' in manifest['phase_6']['steps']
+        assert 'push' in manifest['phase_6']['steps']
     else:
-        assert 'commit-push' not in manifest['phase_6']['steps']
+        assert 'push' not in manifest['phase_6']['steps']
 
 
 def test_commit_and_push_false_emits_decision_log_message(plan_context):
@@ -1252,11 +1251,11 @@ def test_commit_and_push_false_decision_log_message_matches_contract(plan_contex
         _mem._emit_decision_log = original_emit
 
     # Expect at least the omission entry; the rule-fired entry is also emitted.
-    omission_entries = [(pid, msg) for pid, msg in captured if 'commit-push omitted' in msg]
+    omission_entries = [(pid, msg) for pid, msg in captured if 'push omitted' in msg]
     assert len(omission_entries) == 1, f'expected one omission entry, got {captured!r}'
     pid, msg = omission_entries[0]
     assert pid == 'matrix-cap-msg'
-    assert msg == ('(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_and_push=false')
+    assert msg == ('(plan-marshall:manage-execution-manifest:compose) push omitted — commit_and_push=false')
 
 
 def test_commit_and_push_default_does_not_emit_omission_log(plan_context):
@@ -1299,7 +1298,7 @@ def test_commit_and_push_invalid_value_rejected(plan_context):
 
 
 def test_commit_and_push_false_with_recipe_still_drops_commit_push(plan_context):
-    """Pre-filter applies before the row matrix — recipe rule still loses commit-push."""
+    """Pre-filter applies before the row matrix — recipe rule still loses push."""
     result = cmd_compose(
         _compose_ns(
             plan_id='matrix-cap-recipe',
@@ -1313,7 +1312,7 @@ def test_commit_and_push_false_with_recipe_still_drops_commit_push(plan_context)
     assert result is not None and result['rule_fired'] == 'recipe'
     manifest = read_manifest('matrix-cap-recipe')
     assert manifest is not None
-    assert 'commit-push' not in manifest['phase_6']['steps']
+    assert 'push' not in manifest['phase_6']['steps']
 
 
 def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_push(plan_context):
@@ -1321,9 +1320,9 @@ def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_pus
 
     Pins the latent bug fixed by lesson ``2026-04-27-23-004``: before boundary
     normalization, ``_apply_commit_push_disabled`` compared candidate entries
-    against the bare-name set ``{commit-push, pre-push-quality-gate,
+    against the bare-name set ``{push, pre-push-quality-gate,
     pre-submission-self-review}``. When ``marshal.json`` emitted prefixed
-    candidates (e.g., ``default:commit-push``), the comparison silently failed
+    candidates (e.g., ``default:push``), the comparison silently failed
     and the gate steps survived in the manifest despite ``commit_and_push=false``.
 
     Boundary normalization in ``cmd_compose`` strips the ``default:`` prefix
@@ -1335,7 +1334,7 @@ def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_pus
     """
     prefixed = [
         'default:pre-push-quality-gate',
-        'default:commit-push',
+        'default:push',
         'default:create-pr',
         'default:automated-review',
         'default:lessons-capture',
@@ -1361,9 +1360,9 @@ def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_pus
     steps = manifest['phase_6']['steps']
 
     # Both gate steps are dropped (the latent bug — they would have
-    # survived as `default:commit-push` / `default:pre-push-quality-gate`
+    # survived as `default:push` / `default:pre-push-quality-gate`
     # before the boundary normalization landed).
-    assert 'commit-push' not in steps
+    assert 'push' not in steps
     assert 'pre-push-quality-gate' not in steps
 
     # Output is bare — no `default:` prefix anywhere.
@@ -1451,7 +1450,7 @@ def test_cli_compose_with_all_optional_flags_roundtrips(plan_context):
         '--phase-5-steps',
         'quality-gate,module-tests',
         '--phase-6-steps',
-        'commit-push,create-pr,branch-cleanup',
+        'push,create-pr,branch-cleanup',
     )
     assert result.success, f'compose failed: stderr={result.stderr!r}'
     data = result.toon()
@@ -1460,7 +1459,7 @@ def test_cli_compose_with_all_optional_flags_roundtrips(plan_context):
 
 
 def test_cli_compose_commit_and_push_false_omits_commit_push(plan_context):
-    """CLI accepts --commit-and-push false and emits a manifest without commit-push."""
+    """CLI accepts --commit-and-push false and emits a manifest without push."""
     result = run_script(
         SCRIPT_PATH,
         'compose',
@@ -1484,7 +1483,7 @@ def test_cli_compose_commit_and_push_false_omits_commit_push(plan_context):
     read_result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'cli-cap-false')
     assert read_result.success
     manifest = read_result.toon()
-    assert 'commit-push' not in manifest['phase_6']['steps']
+    assert 'push' not in manifest['phase_6']['steps']
 
 
 # =============================================================================
@@ -1742,9 +1741,9 @@ class TestPrePushQualityGatePreFilter:
         assert self._omit_entries(captured) == []
 
     def test_commit_and_push_false_strips_pre_push_too(self, plan_context):
-        """commit_and_push=false strips both commit-push and pre-push-quality-gate.
+        """commit_and_push=false strips both push and pre-push-quality-gate.
 
-        The commit-push-disabled pre-filter runs FIRST and removes both steps, so
+        The commit_push_disabled pre-filter runs FIRST and removes both steps, so
         the downstream pre-push-quality-gate filter sees the step already gone and
         is a no-op (no omission line emitted by the pre-push filter, regardless
         of glob match).
@@ -1772,14 +1771,14 @@ class TestPrePushQualityGatePreFilter:
 
         assert result is not None and result['status'] == 'success'
         assert result['commit_push_omitted'] is True
-        # The pre-push-quality-gate filter is a no-op once commit-push
+        # The pre-push-quality-gate filter is a no-op once the commit_push_disabled
         # filter has already removed the step.
         assert result['pre_push_quality_gate_omitted'] is False
         manifest = read_manifest(plan_id)
         assert manifest is not None
-        assert 'commit-push' not in manifest['phase_6']['steps']
+        assert 'push' not in manifest['phase_6']['steps']
         assert 'pre-push-quality-gate' not in manifest['phase_6']['steps']
-        # Pre-push-quality-gate omission line is NOT emitted (commit-push
+        # Pre-push-quality-gate omission line is NOT emitted (the commit_push_disabled
         # filter handled the removal).
         assert self._omit_entries(captured) == []
 
@@ -1899,7 +1898,7 @@ class TestPrePushQualityGatePreFilter:
         plan_id = 'pp-prefixed-globs-empty'
         prefixed = [
             'default:pre-push-quality-gate',
-            'default:commit-push',
+            'default:push',
             'default:create-pr',
             'default:archive-plan',
         ]
@@ -1938,7 +1937,7 @@ class TestPrePushQualityGatePreFilter:
         )
 
         # Other steps from the input survive as bare strings.
-        for kept in ('commit-push', 'create-pr', 'archive-plan'):
+        for kept in ('push', 'create-pr', 'archive-plan'):
             assert kept in steps
 
         # Omission line emitted exactly once.
@@ -1949,7 +1948,7 @@ class TestPrePushQualityGatePreFilter:
         plan_id = 'pp-prefixed-mod-empty'
         prefixed = [
             'default:pre-push-quality-gate',
-            'default:commit-push',
+            'default:push',
             'default:create-pr',
             'default:archive-plan',
         ]
@@ -1987,7 +1986,7 @@ class TestPrePushQualityGatePreFilter:
         plan_id = 'pp-prefixed-no-match'
         prefixed = [
             'default:pre-push-quality-gate',
-            'default:commit-push',
+            'default:push',
             'default:create-pr',
             'default:archive-plan',
         ]
@@ -2539,13 +2538,13 @@ class TestAutomatedReviewPlacement:
         """Build a phase_6 candidate CSV where ``automated-review`` follows ``anchor``.
 
         The candidate list mirrors the canonical ordering for the steps that
-        always remain (commit-push, create-pr, lessons-capture) so the manifest
+        always remain (push, create-pr, lessons-capture) so the manifest
         is otherwise plausible; only the ``automated-review`` / ``anchor`` pair
         is deliberately misordered. The anchor is inserted before
         ``automated-review`` so the validator's earliest-anchor scan returns
         precisely the parametrized name.
         """
-        return ','.join(['commit-push', 'create-pr', 'lessons-capture', anchor, 'automated-review'])
+        return ','.join(['push', 'create-pr', 'lessons-capture', anchor, 'automated-review'])
 
     def test_compose_rejects_automated_review_after_archive_plan(self, plan_context):
         """Misplaced ``automated-review`` after ``archive-plan`` → bot_enforcement_violation."""
@@ -2613,194 +2612,36 @@ class TestAutomatedReviewPlacement:
 
 
 # =============================================================================
-# Compose-time MAY_MUTATE placement validator — finalize-step-simplify after
-# commit-push (Deliverable 1 reorder + Deliverable 2 guard)
+# Default phase-6 ordering — finalize-step-simplify precedes the push barrier
 #
-# The default phase-6 step list places ``finalize-step-simplify`` at a later index
-# than ``commit-push`` so the step's may-mutate edits land on a worktree that
-# ``commit-push`` already flushed clean. ``_reorder_may_mutate_after_commit_push``
-# (importing the MAY_MUTATE set from its single owner
-# ``manage-status/_cmd_mark_step.py``) deterministically moves any MAY_MUTATE member
-# that precedes ``commit-push`` to the first position after ``commit-push`` rather
-# than rejecting the manifest — the corrected ordering is written into the
-# plan-scoped ``execution.toon`` only (``marshal.json`` is never touched).
-#
-# These tests defend the contract from the regression angle:
-#   1. The positive ordering assertion fails if the default reorder is reverted
-#      (simplify back ahead of commit-push without the auto-reorder firing) — the
-#      composer must always emit a manifest whose ``finalize-step-simplify`` follows
-#      ``commit-push``.
-#   2. The auto-reorder assertions: a candidate CSV that deliberately orders
-#      ``finalize-step-simplify`` (and other MAY_MUTATE steps) before ``commit-push``
-#      composes SUCCESSFULLY with the offending step(s) moved after ``commit-push``,
-#      a decision-log entry emitted per reordered step, and the manifest persisted.
+# The dispatcher's commit instrumentation commits each ``mutates_source: true``
+# step's output before advancing, so the correct ordering (simplify before the
+# pure ``push`` barrier) falls out of plain ``order:`` values with no special
+# placement invariant. This test pins the default ordering so a regression that
+# swaps the two in ``DEFAULT_PHASE_6_STEPS`` is caught.
 # =============================================================================
 
 
-class TestMayMutatePlacement:
-    """``finalize-step-simplify`` (a MAY_MUTATE step) must compose after ``commit-push``."""
+class TestDefaultPhase6Ordering:
+    """``finalize-step-simplify`` composes at an index earlier than ``push``."""
 
-    def test_default_compose_places_simplify_after_commit_push(self, plan_context):
-        # Deliverable 1 reorder lock-in: a default code-shaped feature compose
-        # (change_type=feature, files>0, so simplify_inactive keeps the step)
-        # MUST emit ``finalize-step-simplify`` at a later index than
-        # ``commit-push``. Reverting the reorder (swapping the two in
-        # DEFAULT_PHASE_6_STEPS) re-orders the composed list and fails this test —
-        # OR trips the Deliverable 2 validator, which also fails compose here.
-        result = cmd_compose(_compose_ns(plan_id='may-mutate-default-order'))
+    def test_default_compose_places_simplify_before_push(self, plan_context):
+        # A default code-shaped feature compose (change_type=feature, files>0, so
+        # simplify_inactive keeps the step) MUST emit ``finalize-step-simplify`` at
+        # an earlier index than the ``push`` barrier.
+        result = cmd_compose(_compose_ns(plan_id='default-order-simplify-before-push'))
 
         assert result is not None
         assert result['status'] == 'success', f'expected success, got {result!r}'
 
-        manifest = read_manifest('may-mutate-default-order')
+        manifest = read_manifest('default-order-simplify-before-push')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
         # Both steps survive the default feature compose.
-        assert 'commit-push' in steps
+        assert 'push' in steps
         assert 'finalize-step-simplify' in steps
-        # The reorder invariant: simplify follows commit-push.
-        assert steps.index('finalize-step-simplify') > steps.index('commit-push')
-
-    def test_simplify_is_a_may_mutate_worktree_step(self):
-        # The placement invariant only matters because finalize-step-simplify is a
-        # MAY_MUTATE step. The validator imports the set from its single owner; if
-        # the membership ever changed, the Deliverable 1 reorder would no longer be
-        # load-bearing. Pin the membership against the imported source-of-truth.
-        may_mutate = _resolve_may_mutate_worktree_steps()
-        assert 'finalize-step-simplify' in may_mutate
-
-    def test_compose_reorders_simplify_after_commit_push(self, plan_context):
-        # Auto-reorder case: an explicit candidate CSV that orders
-        # finalize-step-simplify BEFORE commit-push. Row 7 (default) preserves
-        # candidate ordering verbatim, so the misordering survives to the
-        # reorder, which moves finalize-step-simplify after commit-push and
-        # composes SUCCESSFULLY (rather than rejecting).
-        plan_id = 'may-mutate-simplify-before'
-        candidates = ','.join(
-            ['finalize-step-simplify', 'commit-push', 'create-pr', 'lessons-capture']
-        )
-
-        with _capture_decision_log() as captured:
-            result = cmd_compose(
-                _compose_ns(
-                    plan_id=plan_id,
-                    change_type='feature',
-                    affected_files_count=5,
-                    phase_6_steps=candidates,
-                )
-            )
-
-        assert result is not None
-        assert result['status'] == 'success', f'expected success, got {result!r}'
-        # The manifest IS persisted with the corrected ordering.
-        manifest = read_manifest(plan_id)
-        assert manifest is not None
-        steps = manifest['phase_6']['steps']
-        assert steps.index('finalize-step-simplify') > steps.index('commit-push')
-        # A decision-log entry naming the reordered step was emitted.
-        reorder_entries = [
-            (pid, msg)
-            for pid, msg in captured
-            if 'auto-reorder' in msg and 'finalize-step-simplify' in msg
-        ]
-        assert len(reorder_entries) == 1, f'expected one reorder entry, got {captured!r}'
-
-    def test_compose_reorders_multiple_may_mutate_after_commit_push(self, plan_context):
-        # Multiple MAY_MUTATE steps preceding commit-push are all moved after it,
-        # preserving their relative order, with one decision-log entry per step.
-        # ``sonar-roundtrip`` and ``finalize-step-simplify`` are used (rather than
-        # ``automated-review``) so the reorder is exercised in isolation from the
-        # automated-review-specific bot-enforcement / placement guards.
-        plan_id = 'may-mutate-multi-before'
-        candidates = ','.join(
-            [
-                'sonar-roundtrip',
-                'finalize-step-simplify',
-                'commit-push',
-                'create-pr',
-                'lessons-capture',
-            ]
-        )
-
-        with _capture_decision_log() as captured:
-            result = cmd_compose(
-                _compose_ns(
-                    plan_id=plan_id,
-                    change_type='feature',
-                    affected_files_count=5,
-                    phase_6_steps=candidates,
-                )
-            )
-
-        assert result is not None
-        assert result['status'] == 'success', f'expected success, got {result!r}'
-        manifest = read_manifest(plan_id)
-        assert manifest is not None
-        steps = manifest['phase_6']['steps']
-        commit_idx = steps.index('commit-push')
-        # Both MAY_MUTATE steps land after commit-push...
-        assert steps.index('sonar-roundtrip') > commit_idx
-        assert steps.index('finalize-step-simplify') > commit_idx
-        # ...preserving their original relative order (sonar-roundtrip first).
-        assert steps.index('sonar-roundtrip') < steps.index('finalize-step-simplify')
-        # One reorder decision-log entry per moved step.
-        reorder_entries = [(pid, msg) for pid, msg in captured if 'auto-reorder' in msg]
-        assert len(reorder_entries) == 2, f'expected two reorder entries, got {captured!r}'
-
-    def test_compose_accepts_simplify_after_commit_push_explicit_candidates(self, plan_context):
-        # Symmetric positive case: the SAME candidate set with the two steps in
-        # the correct order composes successfully. Proves the validator fires on
-        # ordering, not on mere co-presence of the two steps.
-        plan_id = 'may-mutate-simplify-after'
-        candidates = ','.join(
-            ['commit-push', 'finalize-step-simplify', 'create-pr', 'lessons-capture']
-        )
-
-        result = cmd_compose(
-            _compose_ns(
-                plan_id=plan_id,
-                change_type='feature',
-                affected_files_count=5,
-                phase_6_steps=candidates,
-            )
-        )
-
-        assert result is not None
-        assert result['status'] == 'success', f'expected success, got {result!r}'
-        manifest = read_manifest(plan_id)
-        assert manifest is not None
-        steps = manifest['phase_6']['steps']
-        assert steps.index('finalize-step-simplify') > steps.index('commit-push')
-
-    def test_compose_inert_when_commit_push_absent(self, plan_context):
-        # Carve-out: a no-push plan (commit_and_push=false drops commit-push) has
-        # nothing to order against, so the auto-reorder is a no-op even though
-        # finalize-step-simplify would otherwise be present. The compose succeeds
-        # and no reorder decision-log entry is emitted.
-        plan_id = 'may-mutate-no-commit-push'
-        candidates = ','.join(
-            ['finalize-step-simplify', 'create-pr', 'lessons-capture']
-        )
-
-        with _capture_decision_log() as captured:
-            result = cmd_compose(
-                _compose_ns(
-                    plan_id=plan_id,
-                    change_type='feature',
-                    affected_files_count=5,
-                    phase_6_steps=candidates,
-                    commit_and_push='false',
-                )
-            )
-
-        assert result is not None
-        assert result['status'] == 'success', f'expected success, got {result!r}'
-        manifest = read_manifest(plan_id)
-        assert manifest is not None
-        assert 'commit-push' not in manifest['phase_6']['steps']
-        # Carve-out: no auto-reorder decision-log entry on the no-commit-push path.
-        reorder_entries = [(pid, msg) for pid, msg in captured if 'auto-reorder' in msg]
-        assert not reorder_entries, f'expected no reorder entry, got {captured!r}'
+        # The ordering invariant: simplify precedes the push barrier.
+        assert steps.index('finalize-step-simplify') < steps.index('push')
 
 
 # =============================================================================
@@ -2855,7 +2696,7 @@ def test_marshal_json_preferred_over_csv_preserves_project_prefixes(plan_context
     treats marshal.json as the source of truth — agent CSV is fallback only.
     """
     full_phase_6 = [
-        'default:commit-push',
+        'default:push',
         'project:finalize-step-deploy-target',
         'project:finalize-step-sync-plugin-cache',
         'default:create-pr',
@@ -2870,7 +2711,7 @@ def test_marshal_json_preferred_over_csv_preserves_project_prefixes(plan_context
     # The CSV the agent built (prefixes stripped). marshal.json should win.
     bad_csv = ','.join(
         [
-            'commit-push',
+            'push',
             'deploy-target',
             'sync-plugin-cache',
             'create-pr',
@@ -2909,8 +2750,8 @@ def test_marshal_json_preferred_over_csv_preserves_project_prefixes(plan_context
     assert 'plugin-doctor' not in steps
     assert 'plan-retrospective' not in steps
     # `default:` prefixes ARE stripped by boundary normalization.
-    assert 'commit-push' in steps
-    assert 'default:commit-push' not in steps
+    assert 'push' in steps
+    assert 'default:push' not in steps
 
 
 def test_csv_fallback_when_marshal_json_missing(plan_context):
@@ -2934,7 +2775,7 @@ def test_csv_fallback_when_marshal_json_missing(plan_context):
     assert manifest is not None
     # All DEFAULT_PHASE_6_STEPS survive (no marshal.json to override).
     steps = manifest['phase_6']['steps']
-    for expected in ('commit-push', 'create-pr', 'lessons-capture', 'archive-plan'):
+    for expected in ('push', 'create-pr', 'lessons-capture', 'archive-plan'):
         assert expected in steps
 
 
@@ -2949,7 +2790,7 @@ def test_compose_snapshots_resolved_step_params_from_keyed_map(plan_context):
     """
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     phase_6_map = {
-        'default:commit-push': {},
+        'default:push': {},
         'default:create-pr': {},
         'default:automated-review': {'review_bot_buffer_seconds': 240},
         'default:sonar-roundtrip': {
@@ -2996,7 +2837,7 @@ def test_compose_snapshots_resolved_step_params_from_keyed_map(plan_context):
     }
     assert step_params['automated-review'] == {'review_bot_buffer_seconds': 240}
     # an ownerless selected step snapshots as the empty param object
-    assert step_params['commit-push'] == {}
+    assert step_params['push'] == {}
     # every in-manifest step has a snapshot entry
     assert set(step_params.keys()) == set(manifest['phase_6']['steps'])
 
@@ -3020,7 +2861,7 @@ def test_compose_reads_keyed_map_marshal_preserves_prefixes(plan_context):
     the ``project:`` prefix (only ``default:`` is stripped at intake).
     """
     phase_6 = [
-        'default:commit-push',
+        'default:push',
         'project:finalize-step-deploy-target',
         'default:create-pr',
         'default:lessons-capture',
@@ -3060,7 +2901,7 @@ def test_compose_snapshots_step_params_from_keyed_map(plan_context):
     """
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     phase_6_map = {
-        'default:commit-push': {},
+        'default:push': {},
         'default:create-pr': {},
         'default:automated-review': {'review_bot_buffer_seconds': 240},
         'default:sonar-roundtrip': {
@@ -3106,7 +2947,7 @@ def test_compose_snapshots_step_params_from_keyed_map(plan_context):
     }
     assert step_params['automated-review'] == {'review_bot_buffer_seconds': 240}
     # a config-less selected step snapshots as the empty param object
-    assert step_params['commit-push'] == {}
+    assert step_params['push'] == {}
     # every in-manifest step has a snapshot entry
     assert set(step_params.keys()) == set(manifest['phase_6']['steps'])
 
@@ -3402,7 +3243,7 @@ class TestDecisionLogShapePreserved:
 def test_marshal_json_phase_5_steps_also_preferred(plan_context):
     """The marshal.json source-of-truth path applies to phase-5 steps as well as phase-6."""
     custom_phase_5 = ['quality-gate', 'module-tests']
-    full_phase_6 = ['default:commit-push', 'default:create-pr', 'default:automated-review', 'default:archive-plan']
+    full_phase_6 = ['default:push', 'default:create-pr', 'default:automated-review', 'default:archive-plan']
     _write_full_marshal(
         plan_context.fixture_dir,
         phase_5_steps=custom_phase_5,
@@ -3657,7 +3498,7 @@ def test_duplicate_orchestrator_routings_are_deduped(plan_context, monkeypatch):
 # `plan-marshall:` prefixes survive intake and the scope gate matches them
 # against its match-sets.
 _SCOPE_GATE_PHASE_6 = (
-    'commit-push',
+    'push',
     'create-pr',
     'automated-review',
     'sonar-roundtrip',
@@ -3724,7 +3565,7 @@ class TestScopeGatedFinalizePreFilter:
         # automated-review RETAINED by default (no override).
         assert 'automated-review' in steps
         # Baseline steps survive.
-        assert 'commit-push' in steps
+        assert 'push' in steps
         assert 'lessons-capture' in steps
 
     def test_surgical_drops_generic_default_self_review_form(self, plan_context):
@@ -3757,7 +3598,7 @@ class TestScopeGatedFinalizePreFilter:
         assert 'pre-submission-self-review' not in steps
         assert 'default:pre-submission-self-review' not in steps
         # Baseline steps survive.
-        assert 'commit-push' in steps
+        assert 'push' in steps
 
     def test_drop_review_additionally_drops_automated_review(self, plan_context):
         """drop_review_on_scope_gate=true additionally drops automated-review."""

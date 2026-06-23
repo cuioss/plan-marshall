@@ -93,22 +93,22 @@ def _compose_ns(
 
 class TestSingleStepForm:
     def test_built_in_step_with_present_standards_returns_loadable(self, plan_context):
-        result = cmd_validate_loadable(_validate_loadable_ns('vl-builtin-ok', step_id='commit-push'))
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-builtin-ok', step_id='push'))
         assert result is not None
         assert result['status'] == 'success'
-        assert result['step_id'] == 'commit-push'
+        assert result['step_id'] == 'push'
         assert result['loadable'] is True
-        assert result['standards_path'].endswith('phase-6-finalize/standards/commit-push.md')
+        assert result['standards_path'].endswith('phase-6-finalize/standards/push.md')
         # Happy path carries no `message` field.
         assert 'message' not in result
 
     def test_default_prefix_is_stripped(self, plan_context):
         result = cmd_validate_loadable(
-            _validate_loadable_ns('vl-prefix', step_id='default:commit-push')
+            _validate_loadable_ns('vl-prefix', step_id='default:push')
         )
         assert result is not None
         assert result['loadable'] is True
-        assert result['step_id'] == 'commit-push', 'default: prefix must be stripped from echoed step_id'
+        assert result['step_id'] == 'push', 'default: prefix must be stripped from echoed step_id'
 
     def test_missing_standards_file_returns_actionable_message(self, plan_context):
         result = cmd_validate_loadable(
@@ -158,7 +158,7 @@ class TestArgumentValidation:
 
     def test_both_step_id_and_all_returns_invalid_arguments(self, plan_context):
         result = cmd_validate_loadable(
-            _validate_loadable_ns('vl-both', step_id='commit-push', use_all=True)
+            _validate_loadable_ns('vl-both', step_id='push', use_all=True)
         )
         assert result is not None
         assert result['status'] == 'error'
@@ -241,16 +241,16 @@ class TestHelperInvariants:
     def test_is_external_step_classifies_correctly(self):
         assert _mem._is_external_step('project:foo') is True
         assert _mem._is_external_step('plan-marshall:plan-retrospective') is True
-        assert _mem._is_external_step('commit-push') is False
-        assert _mem._is_external_step('default:commit-push') is False
+        assert _mem._is_external_step('push') is False
+        assert _mem._is_external_step('default:push') is False
 
     def test_resolve_standards_path_strips_default_prefix(self):
-        bare_path = _mem._resolve_standards_path('commit-push')
-        prefixed_path = _mem._resolve_standards_path('default:commit-push')
+        bare_path = _mem._resolve_standards_path('push')
+        prefixed_path = _mem._resolve_standards_path('default:push')
         assert bare_path == prefixed_path
 
     def test_resolve_standards_path_lands_under_phase_6_finalize_standards(self):
-        path = _mem._resolve_standards_path('commit-push')
+        path = _mem._resolve_standards_path('push')
         assert path.parent.name == 'standards'
         assert path.parent.parent.name == 'phase-6-finalize'
 
@@ -274,10 +274,10 @@ class TestArrayAuthorityContract:
         cmd_compose(_compose_ns('vl-order-ok'))
         manifest = _mem.read_manifest('vl-order-ok')
         assert manifest is not None
-        # Built-in steps in ascending order (commit-push=10, create-pr=20)
+        # Built-in steps in ascending order (push=10, create-pr=20)
         # followed by project steps in ascending order (80, 85).
         manifest['phase_6']['steps'] = [
-            'commit-push',
+            'push',
             'create-pr',
             'project:finalize-step-deploy-target',
             'project:finalize-step-sync-plugin-cache',
@@ -304,7 +304,7 @@ class TestArrayAuthorityContract:
         # Frontmatter order would call this an inversion: sync-plugin-cache (85)
         # precedes deploy-target (80). The array says this is the intended order.
         manifest['phase_6']['steps'] = [
-            'commit-push',
+            'push',
             'project:finalize-step-sync-plugin-cache',
             'project:finalize-step-deploy-target',
         ]
@@ -328,8 +328,8 @@ class TestArrayAuthorityContract:
 
     def test_builtin_step_order_resolves_from_standards_frontmatter(self):
         """Built-in step order is read from its standards/workflow doc frontmatter."""
-        assert _mem._resolve_step_order('commit-push') == 10
-        assert _mem._resolve_step_order('default:commit-push') == 10
+        assert _mem._resolve_step_order('push') == 10
+        assert _mem._resolve_step_order('default:push') == 10
         assert _mem._resolve_step_order('create-pr') == 20
 
     def test_all_path_reports_only_loadability_not_order(self, plan_context):
@@ -349,7 +349,7 @@ class TestArrayAuthorityContract:
         manifest = _mem.read_manifest('vl-order-skip')
         assert manifest is not None
         manifest['phase_6']['steps'] = [
-            'commit-push',
+            'push',
             'plan-marshall:plan-retrospective',
             'project:finalize-step-deploy-target',
             'ghost-step-not-on-disk',
@@ -380,13 +380,13 @@ class TestArrayAuthorityContract:
 
     def test_check_ascending_order_helper_returns_none_for_ascending(self):
         """The _check_ascending_order helper returns None for an ascending list."""
-        assert _mem._check_ascending_order(['commit-push', 'create-pr']) is None
+        assert _mem._check_ascending_order(['push', 'create-pr']) is None
 
     def test_check_ascending_order_helper_detects_inversion(self):
         """The _check_ascending_order helper returns a diagnostic for an inversion."""
-        message = _mem._check_ascending_order(['create-pr', 'commit-push'])
+        message = _mem._check_ascending_order(['create-pr', 'push'])
         assert message is not None
-        assert 'commit-push' in message
+        assert 'push' in message
         assert 'create-pr' in message
 
 
@@ -400,7 +400,7 @@ class TestCheckSeedMode:
         """A seed whose phase-6-finalize steps are inverted returns seed_order_inversion."""
         # An inversion: sync-plugin-cache (85) precedes deploy-target (80).
         inverted = [
-            'default:commit-push',
+            'default:push',
             'project:finalize-step-sync-plugin-cache',
             'project:finalize-step-deploy-target',
         ]
@@ -416,7 +416,7 @@ class TestCheckSeedMode:
     def test_correct_seed_passes(self, plan_context, monkeypatch):
         """A seed with ascending phase-6-finalize order returns success."""
         ascending = [
-            'default:commit-push',
+            'default:push',
             'default:create-pr',
             'project:finalize-step-deploy-target',
             'project:finalize-step-sync-plugin-cache',
@@ -444,7 +444,7 @@ class TestCheckSeedMode:
 
         def _spy(phase_key):
             seen.append(phase_key)
-            return ['default:commit-push']
+            return ['default:push']
 
         monkeypatch.setattr(_mem, '_read_marshal_phase_steps', _spy)
         cmd_validate_loadable(_validate_loadable_ns('vl-seed-key', check_seed=True))
@@ -468,7 +468,7 @@ class TestCheckSeedMode:
             'plan': {
                 'phase-6-finalize': {
                     'steps': {
-                        'default:commit-push': {},
+                        'default:push': {},
                         'default:create-pr': {},
                         'project:finalize-step-deploy-target': {},
                         'project:finalize-step-sync-plugin-cache': {},
@@ -521,7 +521,7 @@ class TestCheckSeedMode:
             'plan': {
                 'phase-6-finalize': {
                     'steps': [
-                        'default:commit-push',
+                        'default:push',
                         {'default:automated-review': {'review_bot_buffer_seconds': 300}},
                     ]
                 }
@@ -534,7 +534,7 @@ class TestCheckSeedMode:
     def test_check_seed_is_mutually_exclusive_with_step_id(self, plan_context):
         """Supplying both --step-id and --check-seed is an invalid_arguments error."""
         result = cmd_validate_loadable(
-            _validate_loadable_ns('vl-seed-both', step_id='commit-push', check_seed=True)
+            _validate_loadable_ns('vl-seed-both', step_id='push', check_seed=True)
         )
         assert result is not None
         assert result['status'] == 'error'

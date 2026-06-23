@@ -80,7 +80,7 @@ class FinalizeStepPresets:
     # ---- preset payloads -------------------------------------------------
 
     LOCAL: list[str] = [
-        'default:commit-push',
+        'default:push',
         'default:lessons-capture',
         'default:branch-cleanup',
         'default:record-metrics',
@@ -92,7 +92,7 @@ class FinalizeStepPresets:
     PR pipeline."""
 
     STANDARD: list[str] = [
-        'default:commit-push',
+        'default:push',
         'default:create-pr',
         'default:ci-verify',
         'default:automated-review',
@@ -107,7 +107,8 @@ class FinalizeStepPresets:
 
     FULL: list[str] = [
         'default:pre-push-quality-gate',
-        'default:commit-push',
+        'default:finalize-step-simplify',
+        'default:push',
         'default:create-pr',
         'default:ci-verify',
         'default:automated-review',

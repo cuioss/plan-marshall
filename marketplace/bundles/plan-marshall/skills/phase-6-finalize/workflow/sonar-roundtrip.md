@@ -3,6 +3,7 @@ name: default:sonar-roundtrip
 description: Sonar analysis roundtrip
 order: 40
 requires: [ci-complete]
+mutates_source: true
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 configurable:
   - key: touched_file_cleanup

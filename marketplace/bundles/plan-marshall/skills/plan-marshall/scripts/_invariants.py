@@ -365,7 +365,7 @@ def _parse_required_steps(path: Path) -> list[str]:
 
     Format: markdown with one step per line in a bullet item, e.g.::
 
-        - commit-push
+        - push
         - create-pr
         - record-metrics
 
@@ -398,7 +398,7 @@ def _read_manifest_steps(plan_id: str, phase: str) -> set[str] | None:
     The manifest lives at ``<base>/plans/{plan_id}/execution.toon`` and stores
     the phase step list under ``phase_{N}.steps`` where ``N`` is the leading
     numeric segment of the phase key (e.g. ``6-finalize`` → ``phase_6``). Step
-    IDs are returned verbatim — bare for built-ins (``commit-push``), prefixed
+    IDs are returned verbatim — bare for built-ins (``push``), prefixed
     for project / fully-qualified steps (``project:finalize-step-...``) — so
     they match the entries parsed from ``required-steps.md`` by exact string.
 

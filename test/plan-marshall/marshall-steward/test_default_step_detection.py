@@ -78,7 +78,7 @@ def test_missing_default_steps_are_surfaced(tmp_path: Path):
     plan_dir = tmp_path / '.plan'
     minimal_steps = [
         'default:pre-push-quality-gate',
-        'default:commit-push',
+        'default:push',
         'default:archive-plan',
     ]
     _write_marshal(plan_dir, minimal_steps)
@@ -92,7 +92,7 @@ def test_missing_default_steps_are_surfaced(tmp_path: Path):
     assert 'default:record-metrics' in missing
     # Dropped entries do NOT surface (they're already present).
     assert 'default:pre-push-quality-gate' not in missing
-    assert 'default:commit-push' not in missing
+    assert 'default:push' not in missing
 
 
 def test_complete_marshal_has_no_missing_defaults(tmp_path: Path):

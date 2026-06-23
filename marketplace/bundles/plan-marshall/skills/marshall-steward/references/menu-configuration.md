@@ -307,8 +307,8 @@ AskUserQuestion:
   header: "Finalize Steps"
   multiSelect: true
   options:
-    - label: "default:commit-push (Recommended)"
-      description: "Commit and push changes"
+    - label: "default:push (Recommended)"
+      description: "Push the converged branch to remote"
     - label: "default:create-pr"
       description: "Create pull request"
     - label: "default:automated-review"

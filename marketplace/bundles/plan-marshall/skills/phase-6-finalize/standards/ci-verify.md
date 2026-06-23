@@ -21,7 +21,7 @@ The canonical default order:
 
 ```
 pre-submission-self-review
-commit-push
+push
 create-pr
 ci-verify          ← here
 architecture-refresh

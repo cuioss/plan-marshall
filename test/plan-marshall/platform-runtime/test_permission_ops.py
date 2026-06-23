@@ -149,7 +149,7 @@ class TestRuntimeOwnsSettingsIO:
         """_load_marshal_config + _extract_project_steps live in the runtime."""
         marshal = tmp_path / "marshal.json"
         marshal.write_text(
-            json.dumps({"plan": {"phase-6-finalize": {"steps": ["project:my-step", "commit-push"]}}}),
+            json.dumps({"plan": {"phase-6-finalize": {"steps": ["project:my-step", "push"]}}}),
             encoding="utf-8",
         )
         config, err = _load_marshal_config(str(marshal))

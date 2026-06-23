@@ -224,7 +224,7 @@ def test_phase_absent_returns_not_recorded(plan_context):
     _make_plan(plan_id)
     _seed_step(plan_id, '1-init', 'step-a', 'done')
 
-    result = cmd_assert_step_recorded(_assert_args(plan_id, '6-finalize', 'commit-push'))
+    result = cmd_assert_step_recorded(_assert_args(plan_id, '6-finalize', 'push'))
 
     assert result['status'] == 'success'
     assert result['recorded'] is False
@@ -237,7 +237,7 @@ def test_phase_absent_with_require_terminal_returns_error(plan_context):
     _make_plan(plan_id)
     _seed_step(plan_id, '1-init', 'step-a', 'done')
 
-    result = cmd_assert_step_recorded(_assert_args(plan_id, '6-finalize', 'commit-push', require_terminal=True))
+    result = cmd_assert_step_recorded(_assert_args(plan_id, '6-finalize', 'push', require_terminal=True))
 
     assert result['status'] == 'error'
     assert result['error'] == 'step_record_missing'

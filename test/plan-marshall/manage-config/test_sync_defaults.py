@@ -193,7 +193,7 @@ def test_sync_defaults_backfills_missing_steps_into_pruned_keyed_map(plan_contex
     # user pruned the finalize steps to a single config-less entry
     _write_marshal(
         plan_context.fixture_dir,
-        {'plan': {'phase-6-finalize': {'steps': {'default:commit-push': {}}}}},
+        {'plan': {'phase-6-finalize': {'steps': {'default:push': {}}}}},
     )
 
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
@@ -203,7 +203,7 @@ def test_sync_defaults_backfills_missing_steps_into_pruned_keyed_map(plan_contex
     steps = config['plan']['phase-6-finalize']['steps']
     assert isinstance(steps, dict)
     # the user's pruned entry survives
-    assert 'default:commit-push' in steps
+    assert 'default:push' in steps
     # a missing default step is back-filled and reported as a new step key
     assert 'default:archive-plan' in steps
     assert 'plan.phase-6-finalize.steps.default:archive-plan' in result['added']

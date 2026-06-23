@@ -169,7 +169,7 @@ def test_read_step_map_keyed_map_round_trips_unchanged(plan_context):
         plan_context.fixture_dir,
         'phase-6-finalize',
         {
-            'default:commit-push': {},
+            'default:push': {},
             'default:automated-review': {'review_bot_buffer_seconds': 300},
             'default:archive-plan': {},
         },
@@ -178,7 +178,7 @@ def test_read_step_map_keyed_map_round_trips_unchanged(plan_context):
     result = _read_marshal_phase_step_map('phase-6-finalize')
 
     assert result == {
-        'default:commit-push': {},
+        'default:push': {},
         'default:automated-review': {'review_bot_buffer_seconds': 300},
         'default:archive-plan': {},
     }
@@ -190,7 +190,7 @@ def test_read_step_map_coerces_config_less_values_finalize(plan_context):
         plan_context.fixture_dir,
         'phase-6-finalize',
         {
-            'default:commit-push': None,
+            'default:push': None,
             'default:automated-review': {'review_bot_buffer_seconds': 300},
             'default:archive-plan': {},
         },
@@ -199,7 +199,7 @@ def test_read_step_map_coerces_config_less_values_finalize(plan_context):
     result = _read_marshal_phase_step_map('phase-6-finalize')
 
     assert result == {
-        'default:commit-push': {},
+        'default:push': {},
         'default:automated-review': {'review_bot_buffer_seconds': 300},
         'default:archive-plan': {},
     }
@@ -229,14 +229,14 @@ def test_read_step_map_keyed_map_preserves_execution_order(plan_context):
     _write_marshal_phase(
         plan_context.fixture_dir,
         'phase-6-finalize',
-        {'default:archive-plan': {}, 'default:commit-push': {}, 'default:create-pr': {}},
+        {'default:archive-plan': {}, 'default:push': {}, 'default:create-pr': {}},
     )
 
     result = _read_marshal_phase_step_map('phase-6-finalize')
 
     assert list(result.keys()) == [
         'default:archive-plan',
-        'default:commit-push',
+        'default:push',
         'default:create-pr',
     ]
 
@@ -252,9 +252,9 @@ def test_read_step_map_empty_keyed_map_normalizes_to_empty_dict(plan_context):
 
 def test_read_step_map_single_entry_keyed_map(plan_context):
     """Single-entry keyed maps — one config-less and one param-bearing (edge case)."""
-    _write_marshal_phase(plan_context.fixture_dir, 'phase-6-finalize', {'default:commit-push': {}})
+    _write_marshal_phase(plan_context.fixture_dir, 'phase-6-finalize', {'default:push': {}})
     config_less = _read_marshal_phase_step_map('phase-6-finalize')
-    assert config_less == {'default:commit-push': {}}
+    assert config_less == {'default:push': {}}
 
     _write_marshal_phase(
         plan_context.fixture_dir,
@@ -270,7 +270,7 @@ def test_read_step_map_non_dict_returns_none(plan_context):
     _write_marshal_phase(plan_context.fixture_dir, 'phase-6-finalize', 'not-a-collection')
     assert _read_marshal_phase_step_map('phase-6-finalize') is None
 
-    _write_marshal_phase(plan_context.fixture_dir, 'phase-6-finalize', ['default:commit-push'])
+    _write_marshal_phase(plan_context.fixture_dir, 'phase-6-finalize', ['default:push'])
     assert _read_marshal_phase_step_map('phase-6-finalize') is None
 
 

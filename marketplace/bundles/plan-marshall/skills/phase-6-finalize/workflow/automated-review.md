@@ -3,6 +3,7 @@ name: default:automated-review
 description: CI automated review
 order: 30
 requires: [ci-complete]
+mutates_source: true
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 configurable:
   - key: review_bot_buffer_seconds

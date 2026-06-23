@@ -34,9 +34,9 @@ _PLANNING_DOCS = (
     _REPO_ROOT / 'marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md',
 )
 
-# default:commit-push resolves to order 10 in the phase-6-finalize seed; the
+# default:push resolves to order 10 in the phase-6-finalize seed; the
 # wrapper MUST gate before it.
-_COMMIT_PUSH_ORDER = 10
+_PUSH_ORDER = 10
 
 
 def _read_frontmatter_order(skill_md: Path) -> int:
@@ -204,14 +204,14 @@ class TestRuleRunningScopeableGate:
         )
 
 
-class TestGateOrderingBeforeCommitPush:
-    """The wrapper is ordered before default:commit-push (order 10)."""
+class TestGateOrderingBeforePush:
+    """The wrapper is ordered before default:push (order 10)."""
 
-    def test_order_strictly_precedes_commit_push(self):
+    def test_order_strictly_precedes_push(self):
         order = _read_frontmatter_order(_WRAPPER_SKILL_MD)
-        assert order < _COMMIT_PUSH_ORDER, (
-            f'finalize-step-plugin-doctor order={order} must be < default:commit-push '
-            f'order={_COMMIT_PUSH_ORDER} so structural lint gates before push'
+        assert order < _PUSH_ORDER, (
+            f'finalize-step-plugin-doctor order={order} must be < default:push '
+            f'order={_PUSH_ORDER} so structural lint gates before push'
         )
 
 

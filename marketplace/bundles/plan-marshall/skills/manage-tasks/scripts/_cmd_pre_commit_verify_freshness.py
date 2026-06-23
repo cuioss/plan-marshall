@@ -2,7 +2,7 @@
 """Pre-commit verify-freshness command handler for manage-tasks.py.
 
 Closes the necessary-vs-sufficient gap between ``loop-exit-guard``
-(queue-empty proof) and the pre-commit-push state (worktree-actually-verified
+(queue-empty proof) and the pre-push state (worktree-actually-verified
 proof). The command answers a single deterministic question:
 
     Does the unified change-ledger contain a ``kind=build`` entry with
@@ -72,7 +72,7 @@ Outcomes:
 
 The full failure-mode contract — including the ``--force`` orchestrator
 escape and the cross-references to phase-5-execute Step 12a and
-phase-6-finalize ``commit-push`` — is documented in
+phase-6-finalize ``push`` — is documented in
 ``marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md`` §
 "Pre-Commit Verify Freshness".
 """

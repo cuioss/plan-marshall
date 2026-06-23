@@ -239,7 +239,7 @@ The wizard seeds `phase-6-finalize.steps` in `marshal.json` from the
 authoritative `BUILT_IN_FINALIZE_STEPS` list defined in
 `manage-config/scripts/_config_defaults.py`. The list intentionally
 covers only steps that are sensible defaults for **any** plan-marshall
-consumer (pre-push-quality-gate, commit-push, create-pr, ci-verify,
+consumer (pre-push-quality-gate, push, create-pr, ci-verify,
 automated-review, sonar-roundtrip, lessons-capture, branch-cleanup,
 record-metrics, archive-plan). `pre-push-quality-gate` is a built-in
 default like the rest; its activation is derived from

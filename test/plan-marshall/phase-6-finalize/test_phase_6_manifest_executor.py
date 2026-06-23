@@ -215,7 +215,7 @@ class TestExecutorDispatchScenarios:
         # Pruned step must NOT appear in dispatch.
         assert 'ci-wait' not in dispatched
         # Retained steps DO appear.
-        assert 'commit-push' in dispatched
+        assert 'push' in dispatched
         assert 'lessons-capture' in dispatched
         assert 'automated-review' in dispatched
         assert 'sonar-roundtrip' in dispatched
@@ -270,14 +270,14 @@ class TestResumableReentry:
         manifest = read_manifest('p6-resume-done')
         assert manifest is not None
 
-        # Simulate a prior run that completed commit-push and create-pr.
+        # Simulate a prior run that completed push and create-pr.
         state = {
-            'commit-push': {'outcome': 'done', 'display_detail': '-> abc1234'},
+            'push': {'outcome': 'done', 'display_detail': '-> abc1234'},
             'create-pr': {'outcome': 'done', 'display_detail': '#42'},
         }
         dispatched = _derive_executor_dispatch(manifest, state)
 
-        assert 'commit-push' not in dispatched, 'done-marked commit-push must be skipped on re-entry'
+        assert 'push' not in dispatched, 'done-marked push must be skipped on re-entry'
         assert 'create-pr' not in dispatched, 'done-marked create-pr must be skipped on re-entry'
         # Steps with no prior record must still dispatch.
         for step_id in manifest['phase_6']['steps']:

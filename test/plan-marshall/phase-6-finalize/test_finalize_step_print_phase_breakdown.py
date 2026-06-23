@@ -3,7 +3,7 @@ built-in finalize step.
 
 The step is a markdown standards document under
 ``marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/`` (no
-Python entry point — same shape as ``default:commit-push``,
+Python entry point — same shape as ``default:push``,
 ``default:record-metrics``, ``default:archive-plan``). These tests pin the
 contract that the phase-6-finalize dispatcher and the output-template
 renderer rely on:
@@ -84,7 +84,7 @@ class TestStandardsFrontmatter:
 
     def test_name_uses_default_prefix(self, frontmatter: dict[str, str]):
         # Built-in steps live under standards/ and their `name` carries the
-        # `default:` prefix verbatim — same as commit-push, record-metrics,
+        # `default:` prefix verbatim — same as push, record-metrics,
         # archive-plan, etc.
         assert frontmatter['name'] == 'default:finalize-step-print-phase-breakdown'
 

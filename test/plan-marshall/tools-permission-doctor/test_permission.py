@@ -352,7 +352,7 @@ class TestDetectMissingProjectStepPermissions:
 
     def test_no_project_steps_returns_empty(self, tmp_path):
         """Marshal without project: steps reports empty missing/present lists."""
-        marshal = self._write_marshal(tmp_path, {'phase-6-finalize': ['default:commit-push', 'default:create-pr']})
+        marshal = self._write_marshal(tmp_path, {'phase-6-finalize': ['default:push', 'default:create-pr']})
         settings = self._write_settings(tmp_path, [])
 
         result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))

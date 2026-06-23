@@ -88,7 +88,7 @@ def _manifest_default() -> str:
                 'verification_steps': ['quality-gate', 'module-tests'],
             },
             'phase_6': {
-                'steps': ['commit-push', 'create-pr', 'branch-cleanup'],
+                'steps': ['push', 'create-pr', 'branch-cleanup'],
             },
         }
     )
@@ -104,7 +104,7 @@ def _manifest_docs_only() -> str:
                 'verification_steps': [],
             },
             'phase_6': {
-                'steps': ['commit-push', 'create-pr'],
+                'steps': ['push', 'create-pr'],
             },
         }
     )
@@ -136,7 +136,7 @@ def _manifest_tests_only() -> str:
                 'verification_steps': ['module-tests'],
             },
             'phase_6': {
-                'steps': ['commit-push', 'create-pr'],
+                'steps': ['push', 'create-pr'],
             },
         }
     )
