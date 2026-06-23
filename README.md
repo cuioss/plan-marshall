@@ -6,7 +6,7 @@
 > **Under Development. Not released yet. Alpha-Version**
 
 [![Python Verify](https://github.com/cuioss/plan-marshall/actions/workflows/python-verify.yml/badge.svg)](https://github.com/cuioss/plan-marshall/actions/workflows/python-verify.yml)
-[![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg)](LICENSE.md)
+[![License: FSL-1.1-ALv2](https://img.shields.io/badge/license-FSL--1.1--ALv2-blue.svg)](LICENSE.md)
 
 ### What is it?
 
@@ -99,9 +99,9 @@ The canonical source of truth for every skill, standard, and extension point is 
 
 ## License
 
-This project is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0-only)](LICENSE.md).
+This project is licensed under the [Functional Source License, Version 1.1, ALv2 Future License (FSL-1.1-ALv2)](LICENSE.md).
 
-For organizations that cannot comply with the AGPL's copyleft requirements (e.g., proprietary or closed-source deployments), commercial licenses are available. [Request a commercial license](https://github.com/cuioss/plan-marshall/issues/new?template=commercial-licensing.yml).
+For organizations that cannot comply with the FSL's competing-use restriction during the licensed period (e.g., proprietary or closed-source deployments that compete with the software), commercial licenses are available. [Request a commercial license](https://github.com/cuioss/plan-marshall/issues/new?template=commercial-licensing.yml).
 
 ## Support
 

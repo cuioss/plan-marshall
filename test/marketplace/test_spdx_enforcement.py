@@ -66,7 +66,7 @@ def test_missing_header_is_flagged(build, tmp_path):
 
 def test_wrong_header_is_flagged(build, tmp_path):
     bad = tmp_path / 'wrong.py'
-    _write(bad, ['# SPDX-License-Identifier: AGPL-3.0-only', 'v = 1'])
+    _write(bad, ['# SPDX-License-Identifier: Apache-2.0', 'v = 1'])
 
     offenders = build.check_spdx_headers([str(tmp_path)])
 

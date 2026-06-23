@@ -27,7 +27,7 @@ A permissive license (MIT, Apache 2.0) would let anyone take the project and off
 
 == Why Not a Strong Copyleft License
 
-A strong copyleft license (such as the AGPL) would force every downstream integrator to publish their own source under the same terms. That deters the adoption the project wants: teams that embed Plan-Marshall in proprietary internal tooling. The FSL imposes no copyleft obligation on downstream code — the one restriction is the anti-substitution carve-out, nothing more.
+A strong copyleft license would force every downstream integrator to publish their own source under the same terms. That deters the adoption the project wants: teams that embed Plan-Marshall in proprietary internal tooling. The FSL imposes no copyleft obligation on downstream code — the one restriction is the anti-substitution carve-out, nothing more.
 
 == What This Means for Contributors
 

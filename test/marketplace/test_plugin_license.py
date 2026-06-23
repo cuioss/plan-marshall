@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests asserting every bundle plugin.json declares the FSL license.
 
-The license revert (AGPL-3.0-only -> FSL-1.1-ALv2) must be reflected in every
+The license revert to FSL-1.1-ALv2 must be reflected in every
 bundle manifest. This test reads all bundle ``plugin.json`` files under
 ``marketplace/bundles/*/.claude-plugin/`` and asserts each declares
 ``"license": "FSL-1.1-ALv2"``. It fails if any manifest declares a different
