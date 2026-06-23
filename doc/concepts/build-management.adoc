@@ -36,6 +36,7 @@ One second-order token effect: when a build's wait exceeds the prompt cache's ep
 
 == Related
 
+* xref:verification.adoc[Concepts › Verification] — encoded, reproducible tests are the verification surface the canonical commands run; interactive exploration stays with the user's own tools.
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/canonical-commands.md[`canonical-commands.md`] — full canonical-command vocabulary (`clean`, `compile`, `module-tests`, `integration-tests`, `e2e`, `coverage`, `quality-gate`, `verify`, `install`, `package`, …) with resolution rules per module type.
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/build-execution.md[`build-execution.md`] — input + output contract: every field in the success and failure TOON shapes, the parsed-errors block, the warnings-mode selector, the log-file conventions, the timeout-learning protocol.
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/build-api-reference.md[`build-api-reference.md`] — shared subcommand API across all build skills (`run`, `parse`, `coverage-report`, `check-warnings`, `discover`).

@@ -1,0 +1,32 @@
+= Verification
+:nofooter:
+:toc: left
+:toclevels: 2
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
+
+A recurring instinct when a plan touches anything user-facing is to "add a live-verification surface" — let the model open a browser, click around, and confirm the change looks right. Plan Marshall deliberately does not build that. Verification here is *encoded*: it lives in reproducible, committed tests — module-tests, quality-gate, CI, and e2e — that any session can re-run and that produce the same answer every time. An e2e test is just *more encoded tests*: a plan writes it as part of implementation, commits it, and the test infrastructure re-runs it on every subsequent change. An ephemeral live-browser run is not reproducible the way a committed e2e test is — its result evaporates with the session, the next run cannot replay it, and nothing downstream can gate on it. A live-run surface therefore works *against* the encoded model rather than with it.
+
+== Verification is encoded
+
+The verification surface is the set of reproducible, committed checks a plan can run: `module-tests`, `quality-gate`, CI, and `e2e`. Each is encoded as source that lives in the repository, runs through the canonical-command abstraction, and yields the same result on every invocation. When a plan needs to confirm a behaviour, it writes a test that asserts that behaviour, commits it, and lets the verification sweep re-run it — the assertion becomes a permanent, reproducible guard rather than a one-time observation.
+
+An e2e test is not a different *kind* of thing from a unit test; it is just more encoded tests at a wider scope. A plan that genuinely needs end-to-end coverage writes e2e tests as part of its implementation, and from then on the test infrastructure re-runs them exactly like any other encoded check. The cost of "verifying end-to-end" is paid once, in encoded form, and amortised across every future run.
+
+== Exploration is the user's own tools
+
+Interactive exploration — live poking-around in a browser, Chrome for Claude, a browser MCP — belongs to the tools the user already has. Plan Marshall orchestrates encoded work; it does not own, wrap, or reimplement interactive exploration. When a developer wants to look at a running app, they reach for their own browser and their own tooling, exactly as they would outside any planning workflow.
+
+This is a deliberate boundary, not a missing feature. Encoded verification and interactive exploration are different activities: one produces committed, reproducible guards that gate future change; the other is a momentary, human-driven look that informs the developer in the moment. Plan Marshall covers the first and leaves the second where it already lives.
+
+== Why not a live-run surface
+
+A live-browser run is ephemeral. Its result is not committed, cannot be replayed by the next session, and cannot gate a build — so building a live-verification surface inside the workflow adds a check that is, by construction, non-reproducible. That works directly against the encoded model: the value of verification here is that any run reproduces it, and an in-house live-run surface would introduce a verification path that no run can reproduce.
+
+If a future capability genuinely needs an external tool to confirm something, the right shape is a thin surface that *emits into the findings contract* — the same pipeline every other automated review feeds (xref:automatic-reviews.adoc[Concepts › Automatic Reviews]) — rather than a parallel live-run surface rebuilt in-house. The external tool runs behind that thin surface, its output is reduced to encoded findings, and the rest of the workflow consumes those findings exactly as it consumes any other. The boundary stays intact: encoded results in, no ephemeral live-run path bolted onto the model.
+
+== Related
+
+* xref:build-management.adoc[Concepts › Build Management] — the canonical-command surface (`verify`, `quality-gate`, `module-tests`, `e2e`, …) that encoded verification runs through.
+* xref:automatic-reviews.adoc[Concepts › Automatic Reviews] — the findings pipeline a future external tool would emit into rather than building a parallel live-run surface.
+* xref:planning-workflow.adoc[Concepts › Planning Workflow] — where encoded tests are written (phase-5 implementation) and re-run (verification sweep).
