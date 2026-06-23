@@ -18,19 +18,14 @@ BUILD_PY = PROJECT_ROOT / 'build.py'
 HEADER = '# SPDX-License-Identifier: FSL-1.1-ALv2'
 
 
-def _load_build_module():
-    """Load the repo-root build.py as an importable module."""
+@pytest.fixture(scope='module')
+def build():
     spec = importlib.util.spec_from_file_location('build_under_test', BUILD_PY)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules['build_under_test'] = module
     spec.loader.exec_module(module)
     return module
-
-
-@pytest.fixture(scope='module')
-def build():
-    return _load_build_module()
 
 
 def _write(path: Path, lines: list[str]) -> None:

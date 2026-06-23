@@ -119,18 +119,6 @@ def cmd_module_tests(module: str | None, parallel: bool = True) -> int:
     return run(cmd, f'module-tests: pytest {path}')
 
 
-def _spdx_first_line(lines: list[str]) -> str | None:
-    """Return the first non-shebang, non-encoding-cookie line, or None if absent."""
-    idx = 0
-    if lines and lines[0].startswith('#!'):
-        idx = 1
-    if idx < len(lines) and _CODING_RE.match(lines[idx]):
-        idx += 1
-    if idx < len(lines):
-        return lines[idx].rstrip('\n').rstrip('\r')
-    return None
-
-
 def check_spdx_headers(paths: list[str]) -> list[str]:
     """Return the list of project-owned .py files missing the FSL SPDX header.
 
@@ -154,7 +142,13 @@ def check_spdx_headers(paths: list[str]) -> list[str]:
                 print(f'quality-gate: SPDX-header check could not read {f}: {exc}', file=sys.stderr)
                 offenders.append(str(f))
                 continue
-            if _spdx_first_line(lines) != SPDX_HEADER:
+            idx = 0
+            if lines and lines[0].startswith('#!'):
+                idx = 1
+            if idx < len(lines) and _CODING_RE.match(lines[idx]):
+                idx += 1
+            candidate = lines[idx].rstrip('\n').rstrip('\r') if idx < len(lines) else None
+            if candidate != SPDX_HEADER:
                 offenders.append(str(f))
     return offenders
 
