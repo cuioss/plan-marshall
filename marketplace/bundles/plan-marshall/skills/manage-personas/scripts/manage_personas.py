@@ -106,7 +106,7 @@ def _read_persona_frontmatter(bundles_root: Path, persona_key: str) -> dict | No
     if path is None:
         return None
     try:
-        content = path.read_text()
+        content = path.read_text(encoding='utf-8')
     except OSError:
         # TOCTOU file-removal between _resolve_persona_path's is_file() check
         # and this read, a PermissionError, or a decode failure — treat as an
