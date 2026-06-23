@@ -1,0 +1,38 @@
+= Why This License
+:nofooter:
+:toc: left
+:toclevels: 2
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
+
+== Use It, But Don't Steal It
+
+Plan-Marshall is licensed under the Functional Source License, Version 1.1, with an Apache 2.0 future grant (FSL-1.1-ALv2). The short version: use it freely, build on it, ship it inside your own products — but don't repackage Plan-Marshall itself as a competing product. After two years, every release becomes Apache 2.0 and even that restriction lifts.
+
+This document records why the project chose FSL-1.1-ALv2 over a permissive license or a strong copyleft license.
+
+== What FSL-1.1-ALv2 Means
+
+FSL is source-available, not closed and not classic open source. Three properties define it:
+
+* *Source-available now.* The full source is published and may be read, modified, and used for any purpose except the one explicitly carved out.
+* *Apache 2.0 in the future.* Each version automatically converts to the permissive Apache License 2.0 two years after its release. The restriction is time-boxed, not perpetual.
+* *One narrow restriction.* The only thing you may not do is offer Plan-Marshall — or a derivative whose primary purpose is the same — as a commercial substitute for it. Internal use, integration, and downstream products that are not competing substitutes are all permitted.
+
+For the binding terms, see xref:../../LICENSE.md[LICENSE.md].
+
+== Why Not a Permissive License
+
+A permissive license (MIT, Apache 2.0) would let anyone take the project and offer it as a paid managed service in direct competition, contributing nothing back. The FSL closes that single gap while leaving every other use — including commercial use inside a larger product — fully open.
+
+== Why Not a Strong Copyleft License
+
+A strong copyleft license (such as the AGPL) would force every downstream integrator to publish their own source under the same terms. That deters the adoption the project wants: teams that embed Plan-Marshall in proprietary internal tooling. The FSL imposes no copyleft obligation on downstream code — the one restriction is the anti-substitution carve-out, nothing more.
+
+== What This Means for Contributors
+
+Contributions are accepted under a relicensing-grant CLA, not a copyright assignment: contributors keep ownership and grant the project the right to sublicense and relicense the contribution. This keeps the future Apache 2.0 conversion — and any later license decisions — legally clean. See xref:../../CONTRIBUTING.md[CONTRIBUTING.md] for the contribution terms.
+
+== Commercial Licensing
+
+If your intended use falls under the FSL's commercial-substitution restriction, a separate commercial license is available. The pointer to the commercial-licensing contact lives in xref:../../LICENSE.md[LICENSE.md].
