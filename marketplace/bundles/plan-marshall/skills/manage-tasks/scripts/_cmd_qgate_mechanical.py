@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Q-Gate mechanical checks for phase-4-plan Step 9.
 
 Pure regex + graph + filesystem deterministic checks over the just-written

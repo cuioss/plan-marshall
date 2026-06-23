@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Deterministic planning-lane router for phase-1-init.
 
 Computes ``planning_lane ∈ {light, deep}`` from cheap field reads + a

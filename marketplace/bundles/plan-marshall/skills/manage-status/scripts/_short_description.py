@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Derivation of the ``short_description`` field for manage-status.
 
 This helper encapsulates the algorithm that produces the terminal-title

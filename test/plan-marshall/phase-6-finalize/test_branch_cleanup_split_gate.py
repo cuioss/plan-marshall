@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the split confirmation-gate plumbing in branch-cleanup.
 
 The gate-decision logic itself lives in workflow doc text

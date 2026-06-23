@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the project-level finalize-step-sync-plugin-cache SKILL contract.
 
 Deliverable 5 relocates on-main executor regeneration OUT of ``integrate_into_main``

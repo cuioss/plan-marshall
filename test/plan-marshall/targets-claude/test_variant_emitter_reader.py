@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression test locking the data-driven variant-emission contract for the
 ``execution-context-reader`` canonical agent.
 

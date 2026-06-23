@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the build-queue-limit subcommand group of manage-run-config.
 
 Covers the build.queue.upper_limit_seconds knob added in D5:

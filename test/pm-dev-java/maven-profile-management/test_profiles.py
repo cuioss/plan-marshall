@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for profiles.py module.
 
 Seeds project architecture data using the per-module on-disk layout

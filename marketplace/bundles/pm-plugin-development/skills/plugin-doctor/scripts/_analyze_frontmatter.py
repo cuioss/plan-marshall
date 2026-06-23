@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Frontmatter analyzer for the ``recipe-missing-implements`` rule.
 
 Recipe skills are extension-point implementors: every ``recipe-*`` skill must

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Deterministic classification-validation gate (flag-not-block).
 
 Cross-checks a plan's ``change_type`` and ``scope_estimate`` against cheap

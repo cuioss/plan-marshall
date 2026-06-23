@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for `manage-config effort apply-preset --preset <name>` write subcommand.
 
 Covers the user-mandated "completely overwrites" semantic, the

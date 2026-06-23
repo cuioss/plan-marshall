@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the canonical-verify footprint pre-filter (inactive case).
 
 ``_apply_canonical_verify_inactive`` is the generic, canonical-agnostic

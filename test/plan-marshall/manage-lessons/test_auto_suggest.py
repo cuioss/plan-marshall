@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-lessons.py auto-suggest subcommand.
 
 Recipe-registry matcher for phase-1-init Step 5c. Scans the live

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Assemble per-aspect TOON fragments into a bundle consumed by compile-report.
 
 This is a stateful helper for ``plan-retrospective``: the orchestrator captures

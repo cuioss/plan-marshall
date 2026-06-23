@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
 """Verifier-echo tests for the cross-file rules (``duplication`` /
 ``extraction`` / ``terminology``).

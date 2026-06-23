@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Unit tests for Maven module discovery parsing functions (internal module testing).
 
 Tests the parsing functions with fixture data. These tests do NOT require Maven.

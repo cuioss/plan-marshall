@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``update`` subcommand of manage-lessons.py.
 
 Covers ``cmd_update`` direct invocation: updating the ``component`` field

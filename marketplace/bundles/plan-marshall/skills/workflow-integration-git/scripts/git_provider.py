@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """
 Provider extension and shared low-level helpers for Git integration.
 

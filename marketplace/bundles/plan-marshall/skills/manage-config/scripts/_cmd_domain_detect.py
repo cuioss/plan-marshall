@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Deterministic domain detector for phase-1-init Step 7.
 
 Walks the plan's clarified-request narrative for explicit mentions of

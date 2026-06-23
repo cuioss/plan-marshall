@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-logging.py CLI script.
 
 Write API: manage-log {type} --plan-id {plan_id} --level {level} --message "{message}"

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Find-project subcommand for Gradle project discovery.
 
 Delegates constants and settings parsing to _gradle_cmd_discover to avoid duplication.

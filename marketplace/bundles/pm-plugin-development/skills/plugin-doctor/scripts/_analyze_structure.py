@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Skill structure analysis subcommand.
 
 Also re-exports ``check_hardcoded_model_on_canonical`` from

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared check-warnings subcommand logic for all build skills.
 
 Extracts the common input parsing and classification flow that was duplicated

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
 """Suite-coverage meta-test — the test-layer replacement for the deleted
 runtime ``zero-match-rule`` detector.

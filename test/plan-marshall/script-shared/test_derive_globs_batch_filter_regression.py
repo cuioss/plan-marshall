@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Batch-filter-equivalence regression for ``derive_globs_from_tree``.
 
 Locks the ``fnmatch.filter`` batch route-prune refactor to the exact semantics

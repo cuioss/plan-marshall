@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Sibling fixtures helper for ``pm-dev-java/maven-profile-management`` tests.
 
 This module mirrors the canonical 6-axis matrix exposed by

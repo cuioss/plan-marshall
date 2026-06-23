@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Unified change-ledger CLI — the first-class worktree-sha + append + query API.
 
 Notation: ``plan-marshall:manage-change-ledger:manage-change-ledger``

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression tests for the phase-3-outline Q-Gate surgical bypass rule.
 
 phase-3-outline is a workflow-driven skill (no Python entry point of its own).

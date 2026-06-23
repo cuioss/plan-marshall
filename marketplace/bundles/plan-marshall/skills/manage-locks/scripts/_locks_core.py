@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared coordination core for the manage-locks primitives.
 
 Notation: imported as a module (PYTHONPATH) — ``from _locks_core import

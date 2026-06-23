@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for _warnings_classify module — unified warning categorization with pluggable matching."""
 
 import importlib

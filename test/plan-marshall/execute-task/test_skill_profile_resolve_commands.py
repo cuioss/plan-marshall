@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Lock the resolve-command contract for execute-task profiles.
 
 Lesson 2026-05-03-21-003 (and three consolidated antecedents) documented that

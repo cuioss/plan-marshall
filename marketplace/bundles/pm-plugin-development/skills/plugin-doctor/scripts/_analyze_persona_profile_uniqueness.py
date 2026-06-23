@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Persona-profile-uniqueness analyzer for the ``persona-profile-uniqueness`` rule.
 
 In the persona / ref / profile identity model, every persona skill

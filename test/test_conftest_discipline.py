@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Meta-project build-time guard enforcing conftest.py discipline across the test tree.
 
 This is a meta-project-only test — it is NOT shipped runtime enforcement and reads

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Module aggregation and virtual module splitting utilities.
 
 Handles splitting modules discovered by multiple extensions (e.g., Maven + npm)

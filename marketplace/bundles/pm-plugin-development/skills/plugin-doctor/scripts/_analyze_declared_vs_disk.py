@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Declared-vs-disk analyzer for the ``declared-component-vs-disk`` rule.
 
 This module implements the forward-direction half of the plugin.json

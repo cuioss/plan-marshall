@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Skill-mode analyzer for the ``skill-missing-mode`` rule.
 
 Every skill declares its execution archetype via the ``mode:`` frontmatter

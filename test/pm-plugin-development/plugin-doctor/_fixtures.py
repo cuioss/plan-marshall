@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
 """Shared firing-fixture corpus for the plugin-doctor test-layer suite-coverage check.
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
 """Tests for the ``no-lesson-id-in-skill-prose`` rule analyzer.
 

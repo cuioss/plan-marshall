@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Enrich command handlers for architecture script.
 
 Handles: enrich project, module, package, skills, dependencies, tip, insight, best-practice.

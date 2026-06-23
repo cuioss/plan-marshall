@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Command handlers for phase_handshake (capture, verify, list, clear).
 
 This module wires two worktree-related boundary checks on top of the

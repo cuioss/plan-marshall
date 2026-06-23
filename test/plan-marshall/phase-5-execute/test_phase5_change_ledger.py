@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Flow tests for the phase-5-execute per-deliverable commit + ``kind=change``
 ledger-append wiring documented in
 ``marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md`` Step 10a.

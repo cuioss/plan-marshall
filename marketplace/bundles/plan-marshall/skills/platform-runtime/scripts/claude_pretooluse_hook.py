@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Conditional PreToolUse enforcement leaf for Claude Code.
 
 Registered (opt-in) as a matcher-less ``hooks.PreToolUse`` entry. It blocks four

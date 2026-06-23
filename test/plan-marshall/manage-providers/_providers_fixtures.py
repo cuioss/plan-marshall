@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared isolation helpers for manage-providers tests.
 
 The autouse ``_plan_base_dir_sandbox`` fixture in ``test/conftest.py`` redirects

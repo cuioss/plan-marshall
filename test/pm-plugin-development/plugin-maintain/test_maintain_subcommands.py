@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Deep tests for maintain.py subcommands: analyze, check-duplication, update, readme.
 
 Tests exercise fixture-based scenarios beyond the basic help/missing-args tests

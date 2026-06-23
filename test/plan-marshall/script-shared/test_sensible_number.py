@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the sensible_number shared module.
 
 ``sensible_number.parse_sensible_int`` is the canonical human-friendly

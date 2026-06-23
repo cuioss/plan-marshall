@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the unified ``manage-locks/merge_lock.py`` — the single main-anchored
 merge-to-main serializer fronted by a FIFO admission queue.
 

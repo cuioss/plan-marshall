@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Two-state ``--plan-id`` / ``--project-dir`` resolution helper.
 
 Every Bucket B (worktree-scoped) script that historically accepted

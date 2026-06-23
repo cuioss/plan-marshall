@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared imports, helpers, and Namespace builders for manage-tasks tests.
 
 Sibling of the split test_manage_tasks_*.py files. Imported explicitly per

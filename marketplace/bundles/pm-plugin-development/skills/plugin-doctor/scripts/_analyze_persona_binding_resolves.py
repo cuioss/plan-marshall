@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Persona-binding-resolves analyzer for the ``persona-binding-resolves`` rule.
 
 In the persona / ref / profile identity model, ``manage-personas resolve``

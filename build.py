@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Build script with module filtering support.
 
 Provides canonical commands (compile, test-compile, module-tests, quality-gate, coverage, verify)
@@ -14,6 +15,7 @@ Usage:
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -22,6 +24,12 @@ from pathlib import Path
 BUNDLES_DIR = Path('marketplace/bundles')
 TEST_DIR = Path('test')
 CLAUDE_DIR = Path('.claude')
+TARGETS_DIR = Path('marketplace/targets')
+
+# Required SPDX header on every project-owned Python file (enforced below).
+SPDX_HEADER = '# SPDX-License-Identifier: FSL-1.1-ALv2'
+# PEP 263 encoding cookie: a comment matching coding[:=] on line 1 or 2.
+_CODING_RE = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)')
 
 # Native coverage threshold enforced by cmd_coverage via pytest's --cov-fail-under.
 # Sourcing this from marshal.json (rather than a static constant) is deliberately
@@ -111,6 +119,41 @@ def cmd_module_tests(module: str | None, parallel: bool = True) -> int:
     return run(cmd, f'module-tests: pytest {path}')
 
 
+def _spdx_first_line(lines: list[str]) -> str | None:
+    """Return the first non-shebang, non-encoding-cookie line, or None if absent."""
+    idx = 0
+    if lines and lines[0].startswith('#!'):
+        idx = 1
+    if idx < len(lines) and _CODING_RE.match(lines[idx]):
+        idx += 1
+    if idx < len(lines):
+        return lines[idx].rstrip('\n').rstrip('\r')
+    return None
+
+
+def check_spdx_headers(paths: list[str]) -> list[str]:
+    """Return the list of project-owned .py files missing the FSL SPDX header.
+
+    For each directory in ``paths``, every ``*.py`` file is examined; its first
+    non-shebang, non-encoding-cookie line must equal ``SPDX_HEADER``. A file path
+    in ``paths`` is checked directly. Pure-stdlib; introduces no new dependency.
+    """
+    offenders: list[str] = []
+    for entry in paths:
+        p = Path(entry)
+        if p.is_file() and p.suffix == '.py':
+            files = [p]
+        elif p.is_dir():
+            files = sorted(p.rglob('*.py'))
+        else:
+            continue
+        for f in files:
+            lines = f.read_text(encoding='utf-8').splitlines()
+            if _spdx_first_line(lines) != SPDX_HEADER:
+                offenders.append(str(f))
+    return offenders
+
+
 def cmd_quality_gate(module: str | None) -> int:
     """Run mypy + ruff + plugin-doctor static-analysis on production sources.
 
@@ -139,6 +182,21 @@ def cmd_quality_gate(module: str | None) -> int:
     exit_code = run(['uv', 'run', 'ruff', 'check'] + paths, f'quality-gate: ruff check {" ".join(paths)}')
     if exit_code != 0:
         return exit_code
+
+    # SPDX-header enforcement: every project-owned .py file in scope must carry
+    # the FSL-1.1-ALv2 SPDX header. Full-tree runs also cover marketplace/targets
+    # and build.py (the broader D5 scope beyond the ruff paths above).
+    spdx_paths = list(paths)
+    if module is None:
+        spdx_paths += [str(TARGETS_DIR), 'build.py']
+    offenders = check_spdx_headers(spdx_paths)
+    if offenders:
+        print('quality-gate: SPDX-header check FAILED — missing/incorrect header:', file=sys.stderr)
+        for offender in offenders:
+            print(f'    {offender}', file=sys.stderr)
+        print(f'    Each file must carry "{SPDX_HEADER}" as its first non-shebang line.', file=sys.stderr)
+        return 1
+    print('>>> quality-gate: SPDX-header check passed')
 
     if module is None:
         doctor_script = (

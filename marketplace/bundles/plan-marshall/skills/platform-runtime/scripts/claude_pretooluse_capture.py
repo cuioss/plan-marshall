@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Observe-only PreToolUse capture leaf for Claude Code.
 
 Registered TEMPORARILY as a matcher-less ``hooks.PreToolUse`` entry by the human

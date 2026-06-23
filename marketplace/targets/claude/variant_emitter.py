@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Variant emission for the Claude target.
 
 Detects canonical agents that declare ``implements:

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """6-axis canonical-identifier rejection tests for ``phase_handshake.py``.
 
 Covers the canonical identifier flags declared by the script:

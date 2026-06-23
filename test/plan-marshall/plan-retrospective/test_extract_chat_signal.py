@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ``extract-chat-signal.py``.
 
 The script reduces a Claude Code session JSONL transcript to its

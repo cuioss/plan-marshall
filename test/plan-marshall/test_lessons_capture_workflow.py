@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression tests for the dispatcher-level lessons-capture Signal Gate (B4).
 
 The deterministic three-signal Signal Gate (pending Q-Gate findings,

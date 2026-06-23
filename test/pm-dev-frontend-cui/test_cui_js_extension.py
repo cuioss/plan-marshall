@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for pm-dev-frontend-cui extension.py.
 
 Verifies the Extension class API contract:

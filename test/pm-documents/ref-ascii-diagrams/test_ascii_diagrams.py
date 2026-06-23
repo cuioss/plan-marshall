@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ascii_diagrams.py - ASCII box-diagram alignment validator.
 
 Direct-import tests of the alignment predicates, box-run detection, and

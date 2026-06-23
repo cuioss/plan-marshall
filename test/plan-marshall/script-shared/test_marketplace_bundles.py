@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for marketplace_bundles shared module."""
 
 from pathlib import Path

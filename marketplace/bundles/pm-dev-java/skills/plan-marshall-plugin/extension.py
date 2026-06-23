@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Extension API for pm-dev-java bundle.
 
 Slim domain registration providing skill domains, module applicability,

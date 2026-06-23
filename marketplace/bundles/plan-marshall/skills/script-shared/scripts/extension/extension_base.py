@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Public API for extension.py implementations.
 
 This module is the single public interface for domain bundle extensions.

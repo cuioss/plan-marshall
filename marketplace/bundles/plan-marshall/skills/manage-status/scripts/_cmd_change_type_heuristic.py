@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Deterministic change-type classifier for phase-3-outline Step 4.
 
 Scores the plan's clarified-request narrative against a small keyword

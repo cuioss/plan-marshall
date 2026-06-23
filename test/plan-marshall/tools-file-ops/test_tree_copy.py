@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``tools-file-ops`` ``copy_tree`` helper and its
 ``copy-tree`` CLI subcommand consumed by ``phase-1-init`` Step 5b.
 

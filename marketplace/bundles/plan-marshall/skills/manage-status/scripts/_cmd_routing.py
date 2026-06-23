@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """
 Routing and diagnostics command handlers for manage-status: route, get-routing-context, self-test.
 """

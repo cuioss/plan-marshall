@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for github_ops.py ci/issue wait-for-* poll handlers.
 
 Covers the three handlers added to the GitHub provider:

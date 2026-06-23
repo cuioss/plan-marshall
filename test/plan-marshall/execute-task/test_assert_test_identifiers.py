@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Unit tests for assert_test_identifiers helper.
 
 Covers the library function ``assert_identifiers_in_log(written_identifiers,

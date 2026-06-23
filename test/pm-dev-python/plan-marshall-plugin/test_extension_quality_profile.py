@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the pm-dev-python extension's quality-profile composition.
 
 Pins the quality profile's default skills so the language-agnostic

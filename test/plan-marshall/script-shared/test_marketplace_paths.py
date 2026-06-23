@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for marketplace_paths shared module.
 
 Resolution follows a SINGLE uniform cwd/worktree-relative rule (ADR-002):

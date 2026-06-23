@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Skill-scoped shared fixtures for ``manage-architecture`` tests.
 
 Hoisted from per-file duplicate helper definitions (D5 in

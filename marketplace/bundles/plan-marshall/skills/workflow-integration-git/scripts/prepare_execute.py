@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Atomic phase-5 move-in: materialize the worktree and move plan state in.
 
 Notation: ``plan-marshall:workflow-integration-git:prepare_execute``

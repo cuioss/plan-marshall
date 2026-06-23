@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Claude target sub-package.
 
 Imports the concrete `ClaudeTarget` class from `target.py` and registers

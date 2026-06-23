@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ``_ci_log_filter.py`` — CI failure-log error-extraction filtering.
 
 Covers the two public helpers of the central filter spec

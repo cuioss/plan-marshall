@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Bash-fence inline-code-exemption analyzer for the ``bash-fence-inline-code-exemption`` rule.
 
 This module is a reintroduction guard. It detects analyzer modules that scan

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Build result output formatting utilities.
 
 Shared formatting for build command results across build systems.

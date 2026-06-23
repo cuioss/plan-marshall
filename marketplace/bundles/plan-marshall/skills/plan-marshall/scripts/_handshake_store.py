@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Flat TOON storage for phase handshake captures.
 
 One file per plan at ``<base>/plans/{plan_id}/handshakes.toon`` with one row

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ``_parse_pom_xml`` — the subprocess-free POM coordinate parse.
 
 ``discover_maven_modules`` no longer shells out to Maven for the cheap module

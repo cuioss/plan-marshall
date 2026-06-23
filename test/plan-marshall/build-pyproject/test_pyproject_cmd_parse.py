@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for _pyproject_cmd_parse.py (direct parser API).
 
 Tests the pyproject build log parser directly (not through pyproject_build.py).

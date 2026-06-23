@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """cmd_* find_marketplace_root anchoring analyzer.
 
 This module implements the ``cmd-root-anchoring-missing`` rule, which checks

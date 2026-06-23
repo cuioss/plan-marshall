@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for skill-resolution commands in manage-config.
 
 Tests resolve-domain-skills, resolve-workflow-skill-extension, get-skills-by-profile,

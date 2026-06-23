@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Unified warning categorization with pluggable pattern matching.
 
 Provides categorize_warnings() with pluggable matchers (substring, wildcard, regex)

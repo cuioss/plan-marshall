@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
 """Regression tests for the q-gate-validation-agent worktree-linter validator.
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for discover_modules() Gradle support in Java extension.
 
 Tests the unified module discovery API for Gradle projects against

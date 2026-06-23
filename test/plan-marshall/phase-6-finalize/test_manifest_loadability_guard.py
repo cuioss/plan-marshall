@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for phase-6-finalize Step 1.5 (Manifest Loadability Check).
 
 phase-6-finalize is a workflow-driven skill — it has no Python entry point of

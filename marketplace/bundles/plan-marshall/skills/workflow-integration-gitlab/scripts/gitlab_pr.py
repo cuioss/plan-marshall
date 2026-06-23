@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """
 GitLab MR workflow operations - producer-side fetch + pre-filter + per-finding store.
 

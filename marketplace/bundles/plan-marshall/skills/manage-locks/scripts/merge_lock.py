@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Unified merge lock — the SINGLE main-anchored merge-to-main serializer with a
 FIFO admission queue.
 

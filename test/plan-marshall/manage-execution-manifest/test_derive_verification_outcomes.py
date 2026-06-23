@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Property/outcome tests for the single deterministic deriver (Deliverable 10).
 
 Where ``test_derive_verification.py`` (Deliverable 4) pins the deriver's

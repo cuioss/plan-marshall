@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for project detection in manage-config.
 
 Tests auto-detection of build systems and domains from project files.

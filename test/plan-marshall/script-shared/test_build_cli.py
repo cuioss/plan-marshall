@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Comprehensive unit tests for ``_build_cli.py`` and the four-state
 ``--plan-id`` / ``--project-dir`` routing helper it integrates.
 

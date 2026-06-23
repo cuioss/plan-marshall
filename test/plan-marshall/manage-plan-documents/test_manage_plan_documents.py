@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-plan-documents.py script.
 
 Tier 2 (direct import) tests with a handful of subprocess tests that pin the

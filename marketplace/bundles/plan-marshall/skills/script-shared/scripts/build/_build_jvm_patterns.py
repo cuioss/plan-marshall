@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared JVM error category patterns for Maven and Gradle parsers.
 
 Extracts common Java/Kotlin/Groovy error patterns that both Maven and Gradle

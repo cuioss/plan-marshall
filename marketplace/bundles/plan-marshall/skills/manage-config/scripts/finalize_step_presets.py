@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Named finalize-step presets for the ``manage-config finalize-steps apply-preset`` write API.
 
 Defines :class:`FinalizeStepPresets` — a constant-class that bundles a

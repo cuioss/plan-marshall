@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Argument-naming rule cluster — notation/subcommand/flag/Canonical-Forms cross-check.
 
 This module implements the ``ARGUMENT_NAMING_*`` rule cluster used by

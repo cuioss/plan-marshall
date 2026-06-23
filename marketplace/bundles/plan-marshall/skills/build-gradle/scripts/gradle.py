@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """
 Gradle build operations - run, parse, find projects, search markers, check warnings, coverage report.
 

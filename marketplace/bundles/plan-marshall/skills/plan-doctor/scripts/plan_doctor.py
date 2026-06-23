@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """
 plan-doctor: post-hoc plan-artifact diagnostics.
 

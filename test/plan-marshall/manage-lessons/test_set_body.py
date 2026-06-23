@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``set-body`` subcommand of manage-lessons.py.
 
 ``cmd_set_body`` implements the path-allocate body-write flow's overwrite
