@@ -69,6 +69,15 @@ Two boundaries that catch most violations:
 * **Refine never implements code.** If a `phase-2-refine` dispatch edits files outside `.plan/local/{plans,worktrees}/{plan_id}/`, that is a contract violation.
 * **Outline never mutates source files.** Outline is read-only outside the plan directory.
 
+== Architecture Hints
+
+`phase-3-outline` opens its work by reading the affected modules' architecture hints — durable, project-specific guidance surfaced through `get-module-context` from `enriched.json`. Two kinds of signal feed that surface:
+
+* **KNOWLEDGE-lesson hints** — actionable residue distilled from lessons learned, routed to `architecture enrich` so a recurring fix becomes a standing outline bias.
+* **Learned user preferences** — recurring user gate-dispositions (`suppressed`/`accepted`/`taken_into_account`) generalized into best-practice / insight strings and routed to the SAME `architecture enrich` sink. The cross-plan auditor learns them corpus-wide; the per-plan `default:finalize-step-preference-emitter` finalize step learns them per plan. See xref:audit-trail.adoc#_from_dispositions_to_durable_preferences[Audit Trail → From dispositions to durable preferences].
+
+Both kinds land in the same `enriched.json` `best_practices[]` / `insights[]` schema and surface identically in the phase-3-outline Architecture Hints section — so a future outline is biased not only by what past plans *learned to fix* but by what the project has *demonstrated it prefers*.
+
 == Related
 
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/phases.md[`ref-workflow-architecture/standards/phases.md`] — full phase pipeline specification

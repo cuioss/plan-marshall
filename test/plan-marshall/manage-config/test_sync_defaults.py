@@ -268,8 +268,8 @@ def test_sync_defaults_backfills_finalize_steps_as_keyed_map_form(plan_context):
     """Syncing an empty marshal.json back-fills finalize steps as the keyed-map form.
 
     Param-owning steps (sonar-roundtrip / automated-review / branch-cleanup /
-    finalize-step-simplify) land with a non-empty nested param object; the
-    remaining config-less steps map to {}.
+    finalize-step-simplify / finalize-step-preference-emitter) land with a
+    non-empty nested param object; the remaining config-less steps map to {}.
     """
     _write_marshal(plan_context.fixture_dir, {})
 
@@ -286,6 +286,8 @@ def test_sync_defaults_backfills_finalize_steps_as_keyed_map_form(plan_context):
         'default:branch-cleanup',
         # default:finalize-step-simplify owns the folded `simplify` run-at-all gate
         'default:finalize-step-simplify',
+        # default:finalize-step-preference-emitter owns the preference_min_recurrence knob
+        'default:finalize-step-preference-emitter',
     }
     for step_id, params in steps.items():
         assert isinstance(params, dict), f'every step value must be a dict; got {params!r}'

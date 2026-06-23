@@ -408,6 +408,7 @@ BUILT_IN_FINALIZE_STEPS = [
     'default:sonar-roundtrip',
     'default:lessons-capture',
     'default:branch-cleanup',
+    'default:finalize-step-preference-emitter',
     'default:record-metrics',
     'default:finalize-step-print-phase-breakdown',
     'default:archive-plan',
@@ -432,6 +433,7 @@ BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
     'default:sonar-roundtrip': 'Sonar analysis roundtrip (requires: [ci-complete] in consume-failures mode)',
     'default:lessons-capture': 'Capture lessons from triage findings and PR-review escalations (skipped when qgate_findings=0, pr_comments_promoted=0, and script_failure_clusters=0)',
     'default:branch-cleanup': 'Clean up post-merge branch state — merges the PR with --delete-branch when create-pr is in the manifest; otherwise prunes local + remote branches directly',
+    'default:finalize-step-preference-emitter': 'Per-plan preference-learning sweep — promotes recurring user gate-dispositions in the just-finished plan to durable architecture hints (skip-clean when nothing clears the threshold)',
     'default:record-metrics': 'Record final plan metrics before archive',
     'default:finalize-step-print-phase-breakdown': 'Optional finalize-summary supplement that captures the Phase Breakdown table from metrics.md and appends it after the per-step [OK] list',
     'default:archive-plan': 'Archive the completed plan',
@@ -486,6 +488,8 @@ def validate_sonar_touched_file_cleanup(value: str) -> None:
 #                                      merge_queue_wait_budget_seconds,
 #                                      admin_merge_on_stuck_state
 #   - default:finalize-step-simplify → simplify (run-at-all gate)
+#   - default:finalize-step-preference-emitter → preference_min_recurrence
+#                                      (per-plan disposition recurrence threshold)
 #   - project:finalize-step-pre-submission-self-review → self_review,
 #                                      drop_review_on_scope_gate (NOT a built-in
 #                                      step, so the seed does not include it; its

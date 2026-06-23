@@ -218,6 +218,21 @@ The `default:automated-review` finalize step owns five step-params, nested under
 
 NOTE: These five params are nested under the `default:automated-review` step in the `plan.phase-6-finalize.steps` keyed map, not flat phase-level fields. Read the whole param object in one call with `manage-config plan phase-6-finalize step get --step-id default:automated-review`; write one with `manage-config plan phase-6-finalize step set --step-id default:automated-review --param re_review_on_timeout --value proceed`.
 
+[#preference-learning]
+=== Preference-learning thresholds
+
+Recurring user gate-dispositions (`suppressed`/`accepted`/`taken_into_account`) are promoted into durable architecture hints by two distinct surfaces, each with its OWN threshold gate. They govern two different scopes, so the knob you can edit depends on which surface you mean — both are documented here side by side so a consumer reader sees the one available to them next to the one that is not.
+
+[cols="1,1,3", options="header"]
+|===
+| Threshold surface | Default | What it controls
+
+| `THRESHOLDS["preference_disposition_occurrences"]` (script constant in `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`) | `3` | The cross-plan auditor's gate: a `(module, finding-class, disposition)` tuple must recur across at least this many *distinct archived plans* to surface as a candidate preference. **Meta-project-only** — it lives in the auditor's `THRESHOLDS` table, which consumer projects do not ship and cannot edit. Mirrors the recurring-pattern detector's `systemic_occurrences` band.
+| `steps['default:finalize-step-preference-emitter'].preference_min_recurrence` (marshal.json config knob) | `2` | The per-plan emitter's gate: a disposition pattern must recur at least this many times *within the single just-finished plan* to be promoted at finalize. **Consumer-editable** — it is a step-owned param of the `default:finalize-step-preference-emitter` finalize step, declared via that step's `configurable:` block, so any consumer project can tune it in `marshal.json`.
+|===
+
+Both thresholds mirror the lessons-capture signal thresholds (a recurrence count gates promotion), and both feed the SAME `architecture enrich` sink (no new store). They govern two distinct surfaces — corpus-wide vs single-plan — so they are tuned independently. The per-plan knob is nested under its owning step in the `plan.phase-6-finalize.steps` keyed map: read it with `manage-config plan phase-6-finalize step get --step-id default:finalize-step-preference-emitter`; write it with `manage-config plan phase-6-finalize step set --step-id default:finalize-step-preference-emitter --param preference_min_recurrence --value 3`. See xref:../concepts/audit-trail.adoc#_from_dispositions_to_durable_preferences[Concepts → Audit Trail → From dispositions to durable preferences] for the dual-surface learning path.
+
 [#open-in-ide]
 === Open in IDE
 

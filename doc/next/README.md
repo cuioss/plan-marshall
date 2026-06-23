@@ -25,7 +25,6 @@ machinery and from feeding more signal back into it** — not from new subsystem
 
 | # | Workstream | What it adds | Builds on | Document |
 |---|------------|--------------|-----------|----------|
-| 02 | Auditor (preference learning) | A cross-plan command (modeled on `audit-archived-plan-retrospectives`) detects recurring user gate-dispositions, routes them to `enriched.json` `best_practices`, and implicitly archives — the first real `persona-auditor` consumer | PR #744 architecture-hints, `audit-archived-plan-retrospectives`, `persona-auditor` | [02-auditor-preference-learning.md](02-auditor-preference-learning.md) |
 | 03 | Audit recipes | `recipe-code-review` + `recipe-security-audit` as standalone, single-envelope entry points emitting into findings | `ext-point-recipe`, `manage-findings`, `ext-triage-*` | [03-audit-recipes.md](03-audit-recipes.md) |
 | 04 | Routing v2 | A recipe-match routing tier ahead of light/deep, so known-shape requests skip the full pipeline (token + wall-time) | `manage-status planning-lane`, recipe registry, lesson auto-suggest | [04-routing-v2.md](04-routing-v2.md) |
 | 05 | Security audit finalize step | `default:finalize-step-security-audit` — two-layer focused context (`persona-security-expert` + per-domain `security` profile skills) | finalize-step discovery, `security` profile, the landed `persona-security-expert`, `ext-triage-*` | [05-security-finalize-step.md](05-security-finalize-step.md) |
@@ -41,13 +40,10 @@ the workstreams that depended on it build directly on that surface:
 ```text
 03 audit-recipes ──┬──► 04 routing-v2     (needs recipe targets to route to)
                    └──► 05 security-finalize-step (shares the audit engine)
-02 auditor                                (uses persona-auditor — now available)
 05 security-finalize-step                 (uses persona-security-expert — now available)
 06 surface-encoded-verification           (independent; lowest priority)
 ```
 
-- **02 auditor** wires `persona-auditor` over the existing retrospective command and
-  adds preference detection — the first real multi-persona consumer.
 - **03 audit-recipes is the keystone.** Recipes are the cheap single-envelope path;
   04 routes onto them and 05 shares the security audit engine with them.
 - **04 routing** depends on 03 (recipe targets to route to).
@@ -84,7 +80,7 @@ This directory is self-consuming:
 - No always-on LLM request classifier — routing stays heuristic-first with at most
   one bounded LLM fallback pass (see [04](04-routing-v2.md)).
 - No new preference/learning store — preference signal reuses the existing
-  `enriched.json` hints surface (see [02](02-auditor-preference-learning.md)).
+  `enriched.json` hints surface.
 - No live browser verification or exploration surface — see
   [06](06-surface-encoded-verification.md), which only *surfaces* the
   encoded-verification principle and builds no browser/daemon integration.
