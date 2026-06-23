@@ -7,6 +7,13 @@ recipe registry and returns up to --max-suggestions recipes ordered
 by deterministic confidence (keyword overlap + domain + scope).
 Findings are emitted under --source qgate so the orchestrator's
 phase-1-init Step 5c can surface them in the audit log.
+
+The pure scoring core (``tokenize`` / ``score_recipe``) was extracted
+into ``script-shared/scripts/recipe_scoring.py`` so the auto-suggest
+path and the generalized ``manage-config recipe-match`` verb score
+against a single source. The unit coverage of that scoring core lives
+in ``test/plan-marshall/script-shared/test_recipe_scoring.py``; this
+module covers the ``cmd_auto_suggest`` orchestration on top of it.
 """
 
 from __future__ import annotations
@@ -40,8 +47,6 @@ def _load_module(name, filename):
 
 _mod = _load_module('_cmd_auto_suggest_under_test', '_cmd_auto_suggest.py')
 cmd_auto_suggest = _mod.cmd_auto_suggest
-_score_recipe = _mod._score_recipe
-_tokenize = _mod._tokenize
 
 
 def _ns(plan_id: str, *, max_suggestions: int = 3, no_emit: bool = True) -> Namespace:
@@ -71,55 +76,28 @@ def _write_status(plan_dir: Path, metadata: dict | None = None) -> None:
 
 
 # =============================================================================
-# Pure scoring unit tests
+# Refactored-import-path regression
 # =============================================================================
 
 
-def test_score_keyword_overlap_drives_match():
-    """Keyword overlap dominates when domain/scope are unset."""
-    recipe = {
-        'key': 'doc-verify',
-        'name': 'Verify Documentation',
-        'description': 'Recipe for verifying documentation quality across project',
-        'domain': 'documentation',
-        'scope': 'codebase_wide',
-    }
-    narrative = _tokenize(
-        'Verify documentation links and references across the entire project.'
+def test_auto_suggest_imports_scoring_core_from_script_shared():
+    """``_cmd_auto_suggest`` sources its scorer from the shared module.
+
+    After the extraction the module-local ``_score_recipe`` / ``_tokenize``
+    no longer exist; the names are imported from ``recipe_scoring``. Pin the
+    refactored import path so a regression that re-inlines the scorer (or
+    drops the import) is caught here rather than at a downstream caller.
+    """
+    assert not hasattr(_mod, '_score_recipe'), (
+        'module-local _score_recipe should be gone after the script-shared extraction'
     )
-    confidence, breakdown = _score_recipe(recipe, narrative, plan_domain=None, plan_scope=None)
-    assert confidence > 0.0
-    assert 'verifying' in breakdown['matched_keywords'] or 'verify' in breakdown['matched_keywords'] or 'documentation' in breakdown['matched_keywords']
-
-
-def test_score_domain_alignment_boosts_confidence():
-    """When plan.domain matches recipe.domain, confidence rises."""
-    recipe = {
-        'key': 'doc-verify',
-        'name': 'Verify Documentation',
-        'description': 'Recipe for verifying documentation quality',
-        'domain': 'documentation',
-        'scope': 'codebase_wide',
-    }
-    narrative = _tokenize('Verify documentation links.')
-    no_domain, _ = _score_recipe(recipe, narrative, plan_domain=None, plan_scope=None)
-    with_domain, _ = _score_recipe(recipe, narrative, plan_domain='documentation', plan_scope=None)
-    assert with_domain > no_domain
-
-
-def test_score_scope_alignment_boosts_confidence():
-    """A 'broad'-scoped plan aligns with a codebase_wide recipe."""
-    recipe = {
-        'key': 'refactor-to-profile-standards',
-        'name': 'Refactor to Profile Standards',
-        'description': 'Refactor code to comply with profile standards',
-        'domain': 'java',
-        'scope': 'codebase_wide',
-    }
-    narrative = _tokenize('Refactor code to comply with the new standards.')
-    no_scope, _ = _score_recipe(recipe, narrative, plan_domain=None, plan_scope=None)
-    with_scope, _ = _score_recipe(recipe, narrative, plan_domain=None, plan_scope='broad')
-    assert with_scope > no_scope
+    assert not hasattr(_mod, '_tokenize'), (
+        'module-local _tokenize should be gone after the script-shared extraction'
+    )
+    # The shared names are bound at module scope via the recipe_scoring import.
+    assert callable(_mod.score_recipe)
+    assert callable(_mod.tokenize)
+    assert callable(_mod.load_registry)
 
 
 # =============================================================================
