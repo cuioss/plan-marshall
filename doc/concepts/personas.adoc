@@ -97,6 +97,8 @@ In human terms, you refer to "the Security Expert persona" or "the Auditor perso
 
 A persona declares only its *direct* composition. It is **never** loaded by nested skill loading — one skill pulling in another at runtime, which is unreliable. Instead the resolver computes the full closure ahead of dispatch.
 
+image::../resources/diagrams/persona-composition.svg["Persona composition — the four declared kinds (base persona-plan-marshall-agent, a work persona with profiles and composes, a meta persona that composes other personas as lenses, and a ref concern) are read from frontmatter by manage-personas resolve, which flattens the composition DAG (base always included, composes: edges walked recursively with cycle rejection, profiles x domains resolved via the Extension API) into one flat deduped skills[] for the execution-context dispatch", align=center]
+
 xref:../../marketplace/bundles/plan-marshall/skills/manage-personas/SKILL.md[`manage-personas resolve --persona-key {key} [--domains a,b]`] walks the composition DAG and emits one flat, deduped `skills[]` by unioning, in deterministic order:
 
 . the base `plan-marshall:persona-plan-marshall-agent` (always, unconditionally);
