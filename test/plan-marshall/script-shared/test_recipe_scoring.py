@@ -67,12 +67,12 @@ def test_tokenize_lowercases_and_filters_stopwords():
 
 
 def test_tokenize_drops_short_tokens():
-    """Tokens of three characters or fewer are dropped as noise."""
+    """Tokens shorter than three characters are dropped as noise."""
     tokens = tokenize('go to ab abc abcd')
-    # 'go'/'to'/'ab' are <= 2 chars (or stop-words); 'abc' is exactly 3 and dropped.
+    # 'go'/'to'/'ab' are <= 2 chars (or stop-words) and dropped; 'abc' is 3 chars and kept.
     assert 'go' not in tokens
     assert 'ab' not in tokens
-    assert 'abc' not in tokens
+    assert 'abc' in tokens
     assert 'abcd' in tokens
 
 
