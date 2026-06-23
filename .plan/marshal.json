@@ -67,10 +67,10 @@
           "self_review": "auto",
           "drop_review_on_scope_gate": false
         },
-        "default:push": {},
         "default:finalize-step-simplify": {
           "simplify": "auto"
         },
+        "default:push": {},
         "default:create-pr": {},
         "default:ci-verify": {},
         "default:automated-review": {
