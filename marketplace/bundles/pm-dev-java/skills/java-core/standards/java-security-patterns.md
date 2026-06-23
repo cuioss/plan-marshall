@@ -1,5 +1,7 @@
 # Java Application Security Patterns
 
+> **Security surface.** This standard is the OUTBOUND leg (secure logging, secrets, startup validation) of the Java security surface owned by `Skill: pm-dev-java:java-security`. Resolve it through the `security` profile (`skills_by_profile.security`) for security review and hardening tasks.
+
 Security patterns for Java applications. These are language/framework-agnostic practices — applicable to any Java project.
 
 ## Secure Logging

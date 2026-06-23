@@ -1,5 +1,7 @@
 # Java Inbound Input Validation
 
+> **Security surface.** This standard is the INBOUND-validation leg of the Java security surface owned by `Skill: pm-dev-java:java-security`. Resolve it through the `security` profile (`skills_by_profile.security`) for security review and hardening tasks.
+
 Framework-agnostic validation of externally-sourced data at the trust boundary, using the `jakarta.validation` (Bean Validation) API. Applies to any Java 21+ project — no web framework required.
 
 **Scope (INBOUND only).** This standard covers validating data that enters the application from outside. It is deliberately disjoint from the related surfaces:
