@@ -1,6 +1,7 @@
 # 04 — Routing v2: route informal requests onto cheap paths
 
-**Headline workstream. Depends on [03 audit recipes](03-audit-recipes.md) for routing targets.**
+**Headline workstream. Its routing targets — the `recipe-code-review` and
+`recipe-security-audit` recipes (workstream 03) — have shipped.**
 
 ## Problem
 
@@ -35,7 +36,7 @@ Add a **recipe-match routing tier** ahead of the light/deep decision:
   recipe match.
 
 The token/wall-time win comes from the matched recipe running in a single envelope
-(guaranteed by [03](03-audit-recipes.md)), not from optimizing the heavy path.
+(guaranteed by the shipped audit recipes, workstream 03), not from optimizing the heavy path.
 
 ## Key design decisions
 
@@ -104,4 +105,4 @@ Delete this document and remove the `04` row from
 
 ## Scope
 
-Medium. Blocked on [03](03-audit-recipes.md).
+Medium. Unblocked — workstream 03 (the audit recipes) has shipped.

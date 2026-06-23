@@ -1,6 +1,6 @@
 # 05 — Security audit as a finalize step (uses a `security` profile)
 
-**Shares the audit engine with [03](03-audit-recipes.md)'s `recipe-security-audit`.
+**Shares the audit engine with the now-shipped `recipe-security-audit` (workstream 03).
 Ships as `persona-security-expert` — depends on [01](../concepts/personas.adoc) for the
 persona / ref / profile model and the `security` profile.**
 
@@ -40,7 +40,7 @@ post-dispatch carve-out from PR #747). Only the terminal `done` / `loop_back` /
      buried in the general domain skills (java-core input-validation +
      security-patterns, python-core injection hardening, javascript XSS/DOM trust,
      oci-security OWASP-Docker + supply chain).
-4. Run the audit using the **shared engine already authored by [03](03-audit-recipes.md)**
+4. Run the audit using the **shared engine already authored by workstream 03 (shipped)**
    at `marketplace/bundles/plan-marshall/skills/recipe-security-audit/standards/audit-engine.md`.
    05 does **not** re-author the engine — it reuses it. The five stages
    (footprint → domains → context → audit → emit/triage) are unchanged; 05 plugs
@@ -107,7 +107,7 @@ it guarantees nothing security-relevant stays buried in a general skill.
 - `manage-execution-manifest` decision-rules (candidate set, ordering, ceremony gate).
 - marshal.json seed (`plan.phase-6-finalize.steps` + `security_audit` knob) in all
   three repos + consumer migration.
-- Shared audit engine — **authored by [03](03-audit-recipes.md)** at
+- Shared audit engine — **authored by workstream 03 (shipped)** at
   `recipe-security-audit/standards/audit-engine.md`; 05 reuses it (additive stage-3
   input, no reshape) rather than authoring it. 05's remaining engine-adjacent work
   is the per-domain parts the engine does NOT cover: the `security` profile in
@@ -132,5 +132,5 @@ Delete this document and remove the `05` row from
 ## Scope
 
 Large — adds the `security` profile, `persona-security-expert` (defined in 01), and
-per-domain security skills across the domain bundles. Shares the audit engine with
-[03](03-audit-recipes.md).
+per-domain security skills across the domain bundles. Reuses the audit engine shipped
+by workstream 03.
