@@ -38,7 +38,7 @@ the shared contract below.)
 
 ## Emitted columns
 
-```
+```yaml
 threshold: 3
 candidate_count: M
 rows[M]{module,finding_class,disposition,occurrence_count,plan_ids,severity}

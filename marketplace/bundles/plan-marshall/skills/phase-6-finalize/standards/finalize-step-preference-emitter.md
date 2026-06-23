@@ -142,4 +142,4 @@ no-ops) and skip-clean when the plan has zero promotable dispositions.
 
 - [disposition-to-hint-routing.md](disposition-to-hint-routing.md) — the shared generalization + routing + privacy contract this step consumes (single source of truth)
 - [finalize-step-simplify.md](finalize-step-simplify.md) — the built-in finalize-step exemplar this step is modeled on (frontmatter, configurable block, mark-step-done tail)
-- [../../.claude/skills/audit-archived-plan-retrospectives/checks/preference-pattern-detector.md](../../../../.claude/skills/audit-archived-plan-retrospectives/checks/preference-pattern-detector.md) — the richer meta-only cross-plan preference path sharing the same contract and sink
+- [../../../../../../.claude/skills/audit-archived-plan-retrospectives/checks/preference-pattern-detector.md](../../../../../../.claude/skills/audit-archived-plan-retrospectives/checks/preference-pattern-detector.md) — the richer meta-only cross-plan preference path sharing the same contract and sink
