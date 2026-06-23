@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- theme-handling: A (theme-neutral) -->
+<!-- conforms to: pm-documents:ref-svg-diagrams (visual-language + diagram-type-block, left-to-right layout) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 910 470"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">Persona composition — flatten at dispatch</title>
+  <desc  id="desc">Left-to-right diagram of the persona / ref / profile identity model. On the left, the four declared kinds carry their binding in frontmatter: persona-plan-marshall-agent is the base loaded unconditionally; a work persona (persona-implementer) declares profiles and composes; a meta persona (persona-code-reviewer / persona-auditor) composes other personas as evaluation lenses and carries no profile; ref-code-quality is a concern that is composed, never worn. In the centre, manage-personas resolve computes the transitive closure of the composition DAG — base always included, composes: edges (ref-* plus personas) walked recursively with cycle rejection, and profiles x domains skills resolved via the Extension API. On the right it emits one flat, deduped, ordered skills[] passed to the execution-context dispatch. Composition flattens at dispatch; profiles: and composes: frontmatter are the binding source of truth, with no hardcoded table and no nested skill loading.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .col-header { font-size: 14px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .col-sub    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .item-c     { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; text-anchor: middle; }
+      .arrow-lbl  { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .stroke     { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .arrow      { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-fill { fill: #6e7681; }
+    </style>
+  </defs>
+
+  <!-- ============= Left column: declared kinds ============= -->
+  <text x="165" y="32" class="col-header">Declared in frontmatter</text>
+
+  <!-- Base persona -->
+  <rect class="stroke" x="20" y="48" width="290" height="62" rx="6" ry="6"/>
+  <text x="165" y="74" class="col-header">persona-plan-marshall-agent</text>
+  <text x="165" y="94" class="col-sub">base — implements: persona — always loaded</text>
+
+  <!-- Work-activity persona -->
+  <rect class="stroke" x="20" y="126" width="290" height="92" rx="6" ry="6"/>
+  <text x="165" y="150" class="col-header">persona-implementer</text>
+  <text x="165" y="168" class="col-sub">work activity</text>
+  <text x="165" y="189" class="item-c">profiles: [implementation, quality]</text>
+  <text x="165" y="207" class="item-c">composes: [ref-code-quality]</text>
+
+  <!-- Meta / evaluator persona -->
+  <rect class="stroke" x="20" y="234" width="290" height="84" rx="6" ry="6"/>
+  <text x="165" y="258" class="col-header">persona-code-reviewer</text>
+  <text x="165" y="276" class="col-sub">meta — also persona-auditor — no profile</text>
+  <text x="165" y="298" class="item-c">composes: work personas (lenses)</text>
+
+  <!-- Ref concern -->
+  <rect class="stroke" x="20" y="334" width="290" height="62" rx="6" ry="6"/>
+  <text x="165" y="360" class="col-header">ref-code-quality</text>
+  <text x="165" y="380" class="col-sub">implements: ref — concern, composed never worn</text>
+
+  <!-- Arrow: left column → resolver -->
+  <text x="330" y="216" class="arrow-lbl">read</text>
+  <line class="arrow" x1="312" y1="235" x2="348" y2="235" marker-end="url(#arrow)"/>
+
+  <!-- ============= Centre: resolver ============= -->
+  <rect class="stroke" x="350" y="150" width="262" height="180" rx="6" ry="6"/>
+  <text x="481" y="176" class="col-header">manage-personas resolve</text>
+  <text x="481" y="196" class="item-c">--persona-key {key} [--domains]</text>
+  <text x="481" y="221" class="col-sub">transitive DAG closure, then dedupe:</text>
+  <text x="481" y="242" class="item-c">1 · base (always)</text>
+  <text x="481" y="260" class="item-c">2 · composes: ref-* + personas</text>
+  <text x="481" y="278" class="item-c">3 · profiles: × {domains}</text>
+  <text x="481" y="302" class="col-sub">cycle in graph → rejected</text>
+
+  <!-- Arrow: resolver → output -->
+  <text x="631" y="216" class="arrow-lbl">emit</text>
+  <line class="arrow" x1="614" y1="235" x2="650" y2="235" marker-end="url(#arrow)"/>
+
+  <!-- ============= Right: flat skills[] ============= -->
+  <rect class="stroke" x="652" y="158" width="238" height="164" rx="6" ry="6"/>
+  <text x="771" y="184" class="col-header">skills[] → execution-context</text>
+  <text x="771" y="203" class="col-sub">flat · deduped · ordered</text>
+  <text x="771" y="225" class="item-c">persona-plan-marshall-agent</text>
+  <text x="771" y="243" class="item-c">ref-code-quality</text>
+  <text x="771" y="261" class="item-c">implementation × domain</text>
+  <text x="771" y="279" class="item-c">quality × domain</text>
+  <text x="771" y="300" class="col-sub">(plus composed lenses, if meta)</text>
+
+  <!-- ============= Footer ============= -->
+  <text x="455" y="430" class="col-sub">Composition flattens at dispatch — never nested skill loading.</text>
+  <text x="455" y="448" class="col-sub">profiles: and composes: frontmatter are the binding source of truth — no hardcoded table.</text>
+
+</svg>
