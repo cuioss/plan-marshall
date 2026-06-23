@@ -27,34 +27,34 @@ machinery and from feeding more signal back into it** — not from new subsystem
 |---|------------|--------------|-----------|----------|
 | 03 | Audit recipes | `recipe-code-review` + `recipe-security-audit` as standalone, single-envelope entry points emitting into findings | `ext-point-recipe`, `manage-findings`, `ext-triage-*` | [03-audit-recipes.md](03-audit-recipes.md) |
 | 04 | Routing v2 | A recipe-match routing tier ahead of light/deep, so known-shape requests skip the full pipeline (token + wall-time) | `manage-status planning-lane`, recipe registry, lesson auto-suggest | [04-routing-v2.md](04-routing-v2.md) |
-| 05 | Security audit finalize step | `default:finalize-step-security-audit` — two-layer focused context (`persona-security-expert` + per-domain `security` profile skills) | finalize-step discovery, `security` profile, the landed `persona-security-expert`, `ext-triage-*` | [05-security-finalize-step.md](05-security-finalize-step.md) |
 
 ## Sequencing
 
 The numbering is the recommended order; the dependency arrows below show why. The
 persona / ref / profile identity model has **landed** (the `persona-*` and `ref-*`
 skills, the `manage-personas` resolver, and the `profiles:` binding now exist), so
-the workstreams that depended on it build directly on that surface:
+the workstreams that depended on it build directly on that surface.
+
+The auditor (preference learning), the security-audit finalize step, and the
+encoded-verification surfacing workstreams have all **landed** (the
+`preference-pattern-detector` check, the `default:finalize-step-security-audit`
+step and resolution-only `security` profile, and the encoded-verification concept
+doc now exist), so they no longer appear below:
 
 ```text
-03 audit-recipes ──┬──► 04 routing-v2     (needs recipe targets to route to)
-                   └──► 05 security-finalize-step (shares the audit engine)
-05 security-finalize-step                 (uses persona-security-expert — now available)
+03 audit-recipes ──► 04 routing-v2        (needs recipe targets to route to)
 ```
 
 - **03 audit-recipes is the keystone.** Recipes are the cheap single-envelope path;
-  04 routes onto them and 05 shares the security audit engine with them.
+  04 routes onto them.
 - **04 routing** depends on 03 (recipe targets to route to).
-- **05 security** depends on the landed persona model (`persona-security-expert` +
-  the `security` profile) and 03 (the shared audit engine). It ships as the named
-  Security Expert persona.
 
 ## Cross-cutting: the shared audit engine
 
-Workstream 03 (`recipe-security-audit`) and 05 (`finalize-step-security-audit`)
-MUST share one audit implementation with two entry points — on-demand recipe vs
-automatic finalize step. Author the per-domain skill-selection + audit-run logic
-once; both surfaces call it.
+The on-demand `recipe-security-audit` (workstream 03) and the automatic
+`finalize-step-security-audit` (now landed) share one audit implementation with two
+entry points. The per-domain skill-selection + audit-run logic is authored once;
+both surfaces call it.
 
 ## Lifecycle of this directory
 
