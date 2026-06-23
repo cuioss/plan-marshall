@@ -280,7 +280,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │   │                                                                                                       │    │
 │   │  DEFAULT BUILT-IN STEPS — manifest order:                                                             │    │
 │   │                                                                                                       │    │
-│   │   /commit-push/                  (inline — trivial)                                                   │    │
+│   │   /push/                         (inline — trivial)                                                   │    │
 │   │   /pre-push-quality-gate/        (inline — build invocation)                                          │    │
 │   │   (CI completion resolved as dispatcher-side precondition before                                      │    │
 │   │    each consumer step that declares requires: [ci-complete] —                                         │    │
@@ -453,7 +453,7 @@ The granularity heuristics live in `../../extension-api/standards/dispatch-granu
 | phase-5-execute per-task execution | `phase-5-execute.default` per-task dispatch | One envelope per task. |
 | phase-5-execute Step 9 independent verification | Inline scripts | git diff + grep + exit-code; no LLM. |
 | phase-5-execute Step 11/11b triage | `phase-5-execute.verification-feedback` (producer=build-runner) | Producer pre-flight, then triage Steps 1-6. |
-| phase-6-finalize commit-push, branch-cleanup, etc. (10 steps) | Inline scripts | No LLM judgement. CI completion is a dispatcher-side precondition (`requires: [ci-complete]`) resolved inline before consumer dispatch, not a sibling step. |
+| phase-6-finalize push, branch-cleanup, etc. (10 steps) | Inline scripts | No LLM judgement. CI completion is a dispatcher-side precondition (`requires: [ci-complete]`) resolved inline before consumer dispatch, not a sibling step. |
 | phase-6-finalize create-pr | `--phase phase-6-finalize` (create-pr tracks phase default) | Body composition is LLM work. |
 | phase-6-finalize automated-review orchestration | Inline scripts + `phase-6-finalize.verification-feedback` (producer=pr-comment) | Producer + enumeration inline; triage shared envelope. |
 | phase-6-finalize sonar-roundtrip orchestration | Inline scripts + `phase-6-finalize.verification-feedback` (producer=sonar) | Same shape. |

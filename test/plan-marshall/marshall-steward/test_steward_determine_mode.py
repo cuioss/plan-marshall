@@ -231,7 +231,7 @@ def test_all_project_steps_present_reports_clean(tmp_path: Path):
     project_root = tmp_path / 'repo'
     plan_dir = project_root / '.plan'
     _ship_project_finalize_skills(project_root, _PROJECT_STEPS)
-    steps = [f'project:finalize-step-{n}' for n in _PROJECT_STEPS] + ['default:commit-push']
+    steps = [f'project:finalize-step-{n}' for n in _PROJECT_STEPS] + ['default:push']
     _write_finalize_steps_marshal(plan_dir, steps)
 
     missing = detect_missing_project_finalize_steps(plan_dir, project_root)
@@ -247,7 +247,7 @@ def test_dropped_project_step_is_reported(tmp_path: Path):
     steps = [
         'project:finalize-step-pre-submission-self-review',
         'project:finalize-step-sync-plugin-cache',
-        'default:commit-push',
+        'default:push',
     ]
     _write_finalize_steps_marshal(plan_dir, steps)
 
@@ -284,7 +284,7 @@ def test_cli_reports_missing_project_steps(tmp_path: Path):
     project_root = tmp_path / 'repo'
     plan_dir = project_root / '.plan'
     _ship_project_finalize_skills(project_root, _PROJECT_STEPS)
-    _write_finalize_steps_marshal(plan_dir, ['default:commit-push'])
+    _write_finalize_steps_marshal(plan_dir, ['default:push'])
 
     out = _run_finalize_cli(plan_dir, project_root)
     assert 'status: missing' in out

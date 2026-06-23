@@ -29,7 +29,7 @@ Subcommands:
                    - Script-level enforcement that the worktree state has
                      been observed by a fresh ``verify`` run before the
                      orchestrator may transition out of phase-5-execute or
-                     dispatch ``commit-push`` in phase-6-finalize. Returns
+                     dispatch ``push`` in phase-6-finalize. Returns
                      ``fresh``, ``stale``, or ``undecidable``; non-``fresh``
                      statuses are gate failures (fail-closed contract)
   derive-cost-size - Deterministically derive a task's cost_size (S/M/L/XL) and
@@ -433,7 +433,7 @@ def build_parser() -> argparse.ArgumentParser:
             '``reason: head_unresolvable`` — working-tree sha undefined). The '
             'gate is fail-closed: only ``fresh`` permits transition. Wired as a '
             'precondition by ``phase-5-execute`` Step 12a and ``phase-6-finalize`` '
-            '``commit-push``.'
+            '``push``.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,

@@ -341,8 +341,9 @@ DEFAULT_PLAN_EXECUTE = {
     # When true (the default), the execute loop commits per-deliverable on the
     # feature branch and phase-6-finalize pushes + opens a PR. When false, the
     # run is local-only: per-deliverable commits are still made, but the
-    # phase-6 commit-push/push/PR steps are stripped by the manage-execution-
-    # manifest commit_push_disabled pre-filter.
+    # phase-6 push, pre-push-quality-gate, and pre-submission-self-review steps
+    # are stripped by the manage-execution-manifest commit_push_disabled
+    # pre-filter.
     'commit_and_push': True,
     'max_iterations': 5,
     # Per-deliverable build gating phase-5-execute's chain-tail focused build
@@ -399,8 +400,8 @@ DEFAULT_PLAN_EXECUTE = {
 # Prefixed with 'default:' to distinguish from project: and fully-qualified skill steps
 BUILT_IN_FINALIZE_STEPS = [
     'default:pre-push-quality-gate',
-    'default:commit-push',
     'default:finalize-step-simplify',
+    'default:push',
     'default:create-pr',
     'default:ci-verify',
     'default:automated-review',
@@ -424,7 +425,7 @@ OPTIONAL_BUNDLE_FINALIZE_STEPS = [
 BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
     'default:pre-push-quality-gate': 'Run quality-gate per affected bundle as the last gate before push',
     'default:finalize-step-simplify': 'Holistic post-implementation simplification sweep — collapse accidental complexity introduced across the plan diff',
-    'default:commit-push': 'Commit and push changes',
+    'default:push': 'Push the converged branch (pure barrier; the dispatcher commits each mutating step upstream)',
     'default:create-pr': 'Create pull request',
     'default:ci-verify': 'Classify CI run failures into the multi-failure-mode taxonomy and emit one structured triage finding per failing check (requires: [ci-complete] in consume-failures mode)',
     'default:automated-review': 'CI automated review (CI completion is a dispatcher-resolved precondition declared via requires: [ci-complete] on this step; triage-only 900 s budget)',

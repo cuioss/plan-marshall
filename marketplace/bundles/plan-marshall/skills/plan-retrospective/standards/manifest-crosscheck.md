@@ -82,7 +82,7 @@ manifest:
     early_terminate: false
     verification_steps[*]: ['quality-gate', 'module-tests']
   phase_6:
-    steps[*]: ['commit-push', ...]
+    steps[*]: ['push', ...]
 decision_log_entries[*]: ['(plan-marshall:manage-execution-manifest:compose) Rule default fired — ...']
 diff:
   base: {base_ref or 'unknown'}

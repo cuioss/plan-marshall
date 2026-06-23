@@ -1010,7 +1010,7 @@ MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
         'phase-6-finalize': {
             'max_iterations': 3,
             'steps': {
-                'default:commit-push': {},
+                'default:push': {},
                 'default:create-pr': {},
                 'default:automated-review': {'review_bot_buffer_seconds': 300},
                 'default:sonar-roundtrip': {},

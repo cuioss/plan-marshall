@@ -25,14 +25,9 @@ The validation pass MUST refuse to enforce or report on any step that is NOT pre
 
 Per-step validation criteria below apply when the corresponding step appears in `manifest.phase_6.steps`. When a step is absent from the manifest, the section is not enforced for the current plan.
 
-## Commit Workflow (when `commit-push` is in the manifest)
+## Push Barrier (when `push` is in the manifest)
 
-- Stage all changes in working directory
-- Create commit with descriptive message (from request.md summary)
-- Use proper commit message format with generated attribution
-- Push to remote branch
-- Handle commit failures (conflicts, network)
-- Handle push failures (remote rejected, authentication)
+The pure-push-barrier contract (clean-tree assertion, freshness gate, push-without-commit, push-failure handling) is owned by [`push.md`](push.md) — see that document for the authoritative barrier semantics. This section enforces only that, when `push` is in the manifest, the barrier ran to completion against a clean converged tree.
 
 ## PR Creation (when `create-pr` is in the manifest)
 
@@ -137,7 +132,7 @@ recovery: {recovery_suggestion}
 
 ## Peer-Pattern Consistency Audit
 
-When a source lesson identifies a *missing pattern* in one finalize-standards file (e.g., "`branch-cleanup.md` does not declare its `order: <int>` frontmatter", "`commit-push.md` is missing the `manage-status mark-step-done` termination call"), the Q-Gate audit MUST extend the cleanup beyond the single file the lesson called out. A one-off fix is rarely sufficient — the same drift typically exists across peer files in the same `standards/` directory because they were authored by the same template, edited in the same plan, or copied from one another. Surfacing the divergence at audit time converts a one-off fix into a coverage sweep at marginal cost: the audit is **one grep**, and the fix is the same edit applied to the additional divergent files.
+When a source lesson identifies a *missing pattern* in one finalize-standards file (e.g., "`branch-cleanup.md` does not declare its `order: <int>` frontmatter", "`push.md` is missing the `manage-status mark-step-done` termination call"), the Q-Gate audit MUST extend the cleanup beyond the single file the lesson called out. A one-off fix is rarely sufficient — the same drift typically exists across peer files in the same `standards/` directory because they were authored by the same template, edited in the same plan, or copied from one another. Surfacing the divergence at audit time converts a one-off fix into a coverage sweep at marginal cost: the audit is **one grep**, and the fix is the same edit applied to the additional divergent files.
 
 **Audit procedure** (applies whenever a lesson surfaces a peer-pattern claim):
 

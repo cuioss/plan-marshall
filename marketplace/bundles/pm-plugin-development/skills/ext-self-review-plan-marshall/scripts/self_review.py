@@ -326,7 +326,7 @@ def _diff_hunks(project_dir: Path, base_branch: str) -> str:
     """Return the post-image diff of the working tree against the merge-base.
 
     The diff TARGET is the **working tree** (not ``HEAD``) precisely BECAUSE
-    ``pre-submission-self-review`` runs BEFORE ``commit-push`` — the changes
+    ``pre-submission-self-review`` runs BEFORE ``push`` — the changes
     under review are typically uncommitted (staged AND unstaged), so they must
     still be surfaced. This preserves the documented pre-commit timing contract.
 

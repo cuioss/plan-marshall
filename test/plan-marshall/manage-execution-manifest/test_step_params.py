@@ -92,7 +92,7 @@ def _seed_marshal_with_branch_cleanup_params(fixture_dir: Path) -> None:
         'plan': {
             'phase-6-finalize': {
                 'steps': {
-                    'default:commit-push': {},
+                    'default:push': {},
                     'default:create-pr': {},
                     'default:automated-review': {'review_bot_buffer_seconds': 240},
                     'default:sonar-roundtrip': {
@@ -143,7 +143,7 @@ def test_step_params_get_returns_empty_for_ownerless_step(plan_context):
     _seed_marshal_with_branch_cleanup_params(plan_context.fixture_dir)
     cmd_compose(_compose_ns('sp-get-empty'))
 
-    result = cmd_step_params_get(_get_ns('sp-get-empty', '6-finalize', 'commit-push'))
+    result = cmd_step_params_get(_get_ns('sp-get-empty', '6-finalize', 'push'))
 
     assert result is not None and result['status'] == 'success'
     assert result['params'] == {}
@@ -359,7 +359,7 @@ def test_denormalize_collapses_ownerless_step_params_to_none():
         },
         'phase_6': {
             'step_params': {
-                'commit-push': {},
+                'push': {},
                 'branch-cleanup': {'pr_merge_strategy': 'squash'},
             }
         },
@@ -369,7 +369,7 @@ def test_denormalize_collapses_ownerless_step_params_to_none():
 
     # ownerless steps collapse to None (serialized as null) — no empty {} block
     assert result['phase_5']['step_params'] == {'quality-gate': None, 'module-tests': None}
-    assert result['phase_6']['step_params']['commit-push'] is None
+    assert result['phase_6']['step_params']['push'] is None
     # param-owning step keeps its nested object
     assert result['phase_6']['step_params']['branch-cleanup'] == {'pr_merge_strategy': 'squash'}
     # the input manifest is never mutated
@@ -388,7 +388,7 @@ def test_normalize_step_params_block_coerces_all_empty_shapes_to_empty_dict():
         },
         'phase_6': {
             'step_params': {
-                'commit-push': None,
+                'push': None,
                 'branch-cleanup': {'pr_merge_strategy': 'squash'},
             }
         },
@@ -402,7 +402,7 @@ def test_normalize_step_params_block_coerces_all_empty_shapes_to_empty_dict():
         'module-tests': {},
         'coverage': {},
     }
-    assert manifest['phase_6']['step_params']['commit-push'] == {}
+    assert manifest['phase_6']['step_params']['push'] == {}
     # the param-owning step keeps its nested object
     assert manifest['phase_6']['step_params']['branch-cleanup'] == {'pr_merge_strategy': 'squash'}
 
@@ -416,7 +416,7 @@ def test_write_manifest_serializes_no_empty_dict_for_ownerless_steps(plan_contex
     """
     manifest = {
         'phase_5': {'step_params': {'quality-gate': {}, 'module-tests': {}}},
-        'phase_6': {'step_params': {'commit-push': {}, 'branch-cleanup': {'pr_merge_strategy': 'squash'}}},
+        'phase_6': {'step_params': {'push': {}, 'branch-cleanup': {'pr_merge_strategy': 'squash'}}},
     }
 
     write_manifest('sp-write-no-empty', manifest)
@@ -426,7 +426,7 @@ def test_write_manifest_serializes_no_empty_dict_for_ownerless_steps(plan_contex
     parsed = _mem.parse_toon(raw)
     # ownerless steps serialized as null (None), not as a {} block
     assert parsed['phase_5']['step_params'].get('quality-gate') is None
-    assert parsed['phase_6']['step_params'].get('commit-push') is None
+    assert parsed['phase_6']['step_params'].get('push') is None
     # param-owning step survived
     assert parsed['phase_6']['step_params']['branch-cleanup'] == {'pr_merge_strategy': 'squash'}
 
@@ -440,7 +440,7 @@ def test_write_then_read_manifest_round_trips_ownerless_step_to_empty_dict(plan_
     """
     manifest = {
         'phase_5': {'step_params': {'quality-gate': {}, 'module-tests': {}}},
-        'phase_6': {'step_params': {'commit-push': {}, 'branch-cleanup': {'pr_merge_strategy': 'squash'}}},
+        'phase_6': {'step_params': {'push': {}, 'branch-cleanup': {'pr_merge_strategy': 'squash'}}},
     }
 
     write_manifest('sp-round-trip', manifest)
@@ -450,7 +450,7 @@ def test_write_then_read_manifest_round_trips_ownerless_step_to_empty_dict(plan_
     # ownerless steps read back as the empty dict
     assert read_back['phase_5']['step_params']['quality-gate'] == {}
     assert read_back['phase_5']['step_params']['module-tests'] == {}
-    assert read_back['phase_6']['step_params']['commit-push'] == {}
+    assert read_back['phase_6']['step_params']['push'] == {}
     # param-owning step round-trips unchanged
     assert read_back['phase_6']['step_params']['branch-cleanup'] == {'pr_merge_strategy': 'squash'}
 
@@ -469,13 +469,13 @@ def test_compose_then_read_manifest_ownerless_steps_read_as_empty_dict(plan_cont
     raw = get_manifest_path('sp-compose-ownerless').read_text(encoding='utf-8')
     parsed_raw = _mem.parse_toon(raw)
     phase_6_raw = parsed_raw['phase_6']['step_params']
-    # commit-push is ownerless — its on-disk value is null (None), not a {} block
-    assert phase_6_raw.get('commit-push') is None
+    # push is ownerless — its on-disk value is null (None), not a {} block
+    assert phase_6_raw.get('push') is None
 
     # the read boundary coerces it back to {}
     read_back = read_manifest('sp-compose-ownerless')
     assert read_back is not None
-    assert read_back['phase_6']['step_params']['commit-push'] == {}
+    assert read_back['phase_6']['step_params']['push'] == {}
     # the param-owning step survives the round-trip
     assert read_back['phase_6']['step_params']['branch-cleanup'] == {
         'pr_merge_strategy': 'squash',

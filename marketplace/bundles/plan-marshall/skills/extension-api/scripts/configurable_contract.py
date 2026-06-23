@@ -390,7 +390,7 @@ def resolve_step_defaults_optional(step_id: str) -> dict[str, Any] | None:
 
     Args:
         step_id: The step identifier (``default:sonar-roundtrip``,
-            ``default:commit-push``, …).
+            ``default:push``, …).
 
     Returns:
         A mapping ``{param_key: <default value>}`` when the step declares a

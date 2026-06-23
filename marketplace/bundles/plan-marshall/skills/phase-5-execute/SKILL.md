@@ -984,7 +984,7 @@ Before invoking `manage-status transition --completed 5-execute` (see **Phase Tr
      --message "(plan-marshall:phase-5-execute) Worktree-freshness guard overridden via --force — transitioning with status={status}"
    ```
 
-   Append `reason={reason}` to the message body only when `status` is `undecidable`; the `stale` branch does not emit a `reason` field, so the appended fragment is omitted for that branch. This mirrors the `--force` escape format in `phase-6-finalize/standards/commit-push.md` § Freshness precondition.
+   Append `reason={reason}` to the message body only when `status` is `undecidable`; the `stale` branch does not emit a `reason` field, so the appended fragment is omitted for that branch. This mirrors the `--force` escape format in `phase-6-finalize/standards/push.md` § Freshness precondition.
 
    The `--force` escape is a deliberate safety valve for triage-driven aborts (the user has already decided the pending tasks are out-of-scope, or that the stale-freshness signal is being addressed elsewhere) — never invoke it programmatically from inside the loop.
 

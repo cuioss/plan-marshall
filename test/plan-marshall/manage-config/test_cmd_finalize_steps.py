@@ -101,7 +101,8 @@ def _params_for(steps_map: dict, step_id: str):
 # STANDARD are already in ascending order, so the sort is a no-op for them.
 _FULL_SORTED: list[str] = [
     'default:pre-push-quality-gate',
-    'default:commit-push',
+    'default:finalize-step-simplify',
+    'default:push',
     'default:create-pr',
     'default:ci-verify',
     'default:automated-review',
@@ -232,9 +233,9 @@ def test_apply_preset_writes_keyed_map_form_to_disk(plan_context):
     assert isinstance(section['steps'], dict)
     # Same membership/order as LOCAL.
     assert _step_ids(section['steps']) == FinalizeStepPresets.LOCAL
-    # The seed carries no params on commit-push, so it maps to an empty {}.
-    assert 'default:commit-push' in section['steps']
-    assert _params_for(section['steps'], 'default:commit-push') == {}
+    # The seed carries no params on push, so it maps to an empty {}.
+    assert 'default:push' in section['steps']
+    assert _params_for(section['steps'], 'default:push') == {}
     # branch-cleanup carried params in the keyed-map seed, so it keeps its nested
     # param object.
     assert _params_for(section['steps'], 'default:branch-cleanup') == {
@@ -258,7 +259,7 @@ def test_apply_preset_preserves_params_from_existing_keyed_map(plan_context):
     _seed_finalize_steps_map(
         plan_context.fixture_dir,
         {
-            'default:commit-push': {},
+            'default:push': {},
             'default:branch-cleanup': {
                 'pr_merge_strategy': 'rebase',
                 'final_merge_without_asking': True,

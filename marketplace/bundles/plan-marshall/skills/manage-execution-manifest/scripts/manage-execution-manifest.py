@@ -135,8 +135,8 @@ EXECUTION_LOG_KEY = 'execution_log'
 # ``standards/{name}.md`` role-files to read.
 DEFAULT_PHASE_5_STEPS = ('verify:quality-gate', 'verify:module-tests')
 DEFAULT_PHASE_6_STEPS = (
-    'commit-push',
     'finalize-step-simplify',
+    'push',
     'create-pr',
     'ci-verify',
     'automated-review',
@@ -828,7 +828,7 @@ def _log_decision(plan_id: str, rule: str, body: dict[str, Any]) -> None:
 
 def _log_commit_push_omitted(plan_id: str) -> None:
     """Emit the decision-log entry for the ``commit_push_disabled`` pre-filter."""
-    message = '(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_and_push=false'
+    message = '(plan-marshall:manage-execution-manifest:compose) push omitted — commit_and_push=false'
     _emit_decision_log(plan_id, message)
 
 
@@ -1062,7 +1062,7 @@ def _resolve_footprint(plan_id: str) -> list[str]:
 
 
 def _apply_commit_push_disabled(phase_6_candidates: list[str], commit_and_push: bool) -> tuple[list[str], bool]:
-    """Pre-filter: drop ``commit-push`` when ``commit_and_push is False``.
+    """Pre-filter: drop ``push`` when ``commit_and_push is False``.
 
     Also drops ``pre-push-quality-gate`` and ``pre-submission-self-review``
     because both gates are only meaningful when a downstream push exists.
@@ -1074,7 +1074,7 @@ def _apply_commit_push_disabled(phase_6_candidates: list[str], commit_and_push: 
     fired = False
     filtered: list[str] = []
     for step in phase_6_candidates:
-        if step in {'commit-push', 'pre-push-quality-gate', 'pre-submission-self-review'}:
+        if step in {'push', 'pre-push-quality-gate', 'pre-submission-self-review'}:
             fired = True
             continue
         filtered.append(step)
@@ -1762,101 +1762,6 @@ def _validate_automated_review_placement(phase_6_steps: list[str]) -> str | None
     return None
 
 
-def _resolve_may_mutate_worktree_steps() -> frozenset[str]:
-    """Resolve the ``MAY_MUTATE_WORKTREE_STEPS`` set from its single owner.
-
-    The set is owned by ``manage-status/scripts/_cmd_mark_step.py`` (the
-    dirty-worktree ``done`` guard). The composer imports it via the existing
-    PYTHONPATH cross-skill mechanism rather than re-declaring it, so the two
-    sources can never drift. On import failure — a partial environment where
-    the ``manage-status`` ``scripts/`` dir is not on ``sys.path`` — degrade to
-    the empty set, which makes :func:`_reorder_may_mutate_after_commit_push` a
-    no-op (consistent with the composer's "missing data → rule does not fire"
-    convention).
-    """
-    try:
-        from _cmd_mark_step import (  # type: ignore[import-not-found]
-            MAY_MUTATE_WORKTREE_STEPS,
-        )
-    except ImportError:
-        return frozenset()
-    return frozenset(MAY_MUTATE_WORKTREE_STEPS)
-
-
-def _reorder_may_mutate_after_commit_push(
-    phase_6_steps: list[str],
-) -> tuple[list[str], list[str]]:
-    """Compose-time auto-reorder for ``MAY_MUTATE_WORKTREE_STEPS`` ordering.
-
-    Every member of ``MAY_MUTATE_WORKTREE_STEPS`` (``automated-review``,
-    ``sonar-roundtrip``, ``finalize-step-simplify``) MUST run *after*
-    ``commit-push``. Phase-5 leaves defer their per-deliverable commits, so the
-    worktree is dirty at the first finalize step; a MAY_MUTATE step ordered
-    ahead of ``commit-push`` runs against that dirty tree, hits the
-    ``dirty_worktree_done_refused`` guard in ``mark-step-done``, and emits
-    ``loop_back`` instead of ``done`` — forcing an orchestrator commit-first
-    recovery detour. Rather than rejecting the manifest (which historically
-    pushed recovery onto the orchestrator and led to global ``marshal.json``
-    mutation), this helper deterministically moves each offending MAY_MUTATE
-    step to the first valid position immediately after ``commit-push``,
-    preserving relative order among the moved steps and among the non-moved
-    steps. The corrected ordering is written into the plan-scoped manifest
-    (``execution.toon``) only — ``marshal.json`` is never read or written here.
-
-    The MAY_MUTATE set is imported from its single owner
-    (:func:`_resolve_may_mutate_worktree_steps`); it is not re-declared here.
-    Both the bare step names and their ``default:`` forms are detected so a
-    re-prefixed candidate cannot slip past the reorder.
-
-    Returns ``(reordered_steps, reordered_names)`` where ``reordered_steps`` is
-    the corrected ordering and ``reordered_names`` is the bare names of the
-    steps that were moved (in their original relative order). The input list is
-    returned unchanged with an empty ``reordered_names`` when:
-
-    - ``commit-push`` is absent (a no-push / ``commit_push_omitted`` plan has
-      nothing to order against — the carve-out).
-    - Every MAY_MUTATE step already appears at an index later than
-      ``commit-push``.
-    - The MAY_MUTATE set could not be imported (degraded no-op).
-    """
-    may_mutate = _resolve_may_mutate_worktree_steps()
-    if not may_mutate:
-        return phase_6_steps, []
-
-    commit_push_index: int | None = None
-    for index, step in enumerate(phase_6_steps):
-        if step in {'commit-push', 'default:commit-push'}:
-            commit_push_index = index
-            break
-    if commit_push_index is None:
-        return phase_6_steps, []
-
-    offending_indices: list[int] = []
-    offending_steps: list[str] = []
-    reordered_names: list[str] = []
-    for index, step in enumerate(phase_6_steps):
-        if index >= commit_push_index:
-            break
-        bare = _strip_default_prefix(step)
-        if bare in may_mutate:
-            offending_indices.append(index)
-            offending_steps.append(step)
-            reordered_names.append(bare)
-
-    if not offending_steps:
-        return phase_6_steps, []
-
-    # Remove the offending steps by index (not by value) so that any occurrence
-    # of the same step name after ``commit-push`` is preserved.
-    offending_index_set = set(offending_indices)
-    remaining = [s for i, s in enumerate(phase_6_steps) if i not in offending_index_set]
-    insert_at = next(
-        i for i, s in enumerate(remaining) if s in {'commit-push', 'default:commit-push'}
-    ) + 1
-    reordered = remaining[:insert_at] + offending_steps + remaining[insert_at:]
-    return reordered, reordered_names
-
-
 # =============================================================================
 # execution_tier Routing (per-task verification command classification)
 # =============================================================================
@@ -2262,7 +2167,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # row matrix's change-type / scope / recipe inputs and operate on the
     # candidate list. The order is fixed and documented in
     # standards/decision-rules.md:
-    #   1. commit_push_disabled — drop commit-push (and pre-push-quality-gate
+    #   1. commit_push_disabled — drop push (and pre-push-quality-gate
     #      and pre-submission-self-review) when no push will occur.
     #   2. pre_push_quality_gate_inactive — drop pre-push-quality-gate when
     #      build.map carries no globs or no live-footprint entry
@@ -2440,36 +2345,6 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'error': 'bot_enforcement_violation',
             'message': placement_diagnostic,
         }
-
-    # Compose-time MAY_MUTATE placement auto-reorder: any ``MAY_MUTATE_WORKTREE_STEPS``
-    # member (``automated-review``, ``sonar-roundtrip``, ``finalize-step-simplify``)
-    # that sits at an index earlier than ``commit-push`` is deterministically moved
-    # to the first position after ``commit-push``. Phase-5 leaves defer commits, so
-    # the tree is dirty at the first finalize step; a MAY_MUTATE step ahead of
-    # ``commit-push`` hits the ``dirty_worktree_done_refused`` guard in
-    # ``mark-step-done`` and loop-backs. The reorder corrects the ordering in the
-    # plan-scoped ``execution.toon`` only (``marshal.json`` is never touched), runs
-    # on the final ordering (after the bot-enforcement guards), and is inert on
-    # no-push plans where ``commit-push`` is absent.
-    reordered_phase_6_steps, may_mutate_reordered = _reorder_may_mutate_after_commit_push(
-        final_phase_6_steps
-    )
-    if may_mutate_reordered:
-        body['phase_6']['steps'] = reordered_phase_6_steps
-        final_phase_6_steps = body['phase_6']['steps']
-        new_commit_push_index = next(
-            i
-            for i, s in enumerate(reordered_phase_6_steps)
-            if s in {'commit-push', 'default:commit-push'}
-        )
-        for offset, reordered_name in enumerate(may_mutate_reordered):
-            _emit_decision_log(
-                plan_id,
-                f'(plan-marshall:manage-execution-manifest:compose) may_mutate_placement '
-                f'auto-reorder — moved {reordered_name} to index '
-                f'{new_commit_push_index + 1 + offset} (after commit-push at index '
-                f'{new_commit_push_index})',
-            )
 
     # Snapshot the resolved per-step params for the FINAL selected steps into the
     # manifest body (write-time snapshot — the same model that governs the step
@@ -3267,7 +3142,7 @@ def _build_parser() -> argparse.ArgumentParser:
         '--commit-and-push',
         default=None,
         help='Resolved commit_and_push from phase-5-execute config (true|false). '
-        'When omitted defaults to true. When false, commit-push (and pre-push-quality-gate '
+        'When omitted defaults to true. When false, push (and pre-push-quality-gate '
         'and pre-submission-self-review) is omitted from phase_6.steps.',
     )
 

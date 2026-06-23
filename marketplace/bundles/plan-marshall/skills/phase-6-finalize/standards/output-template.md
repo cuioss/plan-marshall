@@ -26,7 +26,7 @@ Deliverables ({N_done}/{N_total})
   [OK]  2. {deliverable 2 title}
 
 Finalize steps ({N_done}/{N_total} done)
-  [OK]  commit-push                       -> {commit_hash}
+  [OK]  push                              pushed {branch}
   [OK]  create-pr                         #{pr_number}
   [OK]  automated-review                  {N} comment(s) resolved (no loop-back)
   [OK]  sonar-roundtrip                   quality gate passed
@@ -52,7 +52,7 @@ Deliverables ({N_done}/{N_total})
   [OK]  1. {deliverable 1 title}
 
 Finalize steps ({N_done}/{N_total} done)
-  [OK]  commit-push                       -> {commit_hash}
+  [OK]  push                              pushed {branch}
   [OK]  create-pr                         #{pr_number}
   [OK]  automated-review                  {N} comment(s) resolved (no loop-back)
   [OK]  sonar-roundtrip                   quality gate passed
@@ -82,7 +82,7 @@ Placeholder glossary:
 - `{TOKEN}` — one of `MERGED`, `OPEN`, `LOOP_BACK`, `SKIPPED`, `FAILED` (see rules below)
 - `{n}` — PR number, or `n/a` when no PR exists
 - `{N}` / `{N_done}` / `{N_total}` — integer counts
-- `{commit_hash}` — short hash (7 chars) returned by `commit-push`
+- `{branch}` — the feature branch name pushed by `push`
 - `{archive_path}` — relative path returned by `default:archive-plan`
 - `{summary}` — the 2-3 sentence Summary body from `solution_outline.md`, wrapped to ~78 chars with a 2-space indent. When the Summary is missing or empty, the renderer substitutes the literal placeholder `(no summary recorded)`.
 - All remaining `{...}` values come verbatim from each step's `display_detail`
@@ -207,7 +207,7 @@ When EITHER condition fails, the supplement is inactive and emission proceeds wi
 
 **Append emission**: when the toggle is active, after the per-step iteration in Emission Procedure step 5 completes (every configured step row including `record-metrics` has emitted unchanged), the renderer appends an additional section consisting of a blank line, the literal one-line header `Phase Breakdown`, a blank line, then the verbatim captured content (which already begins with `## Phase Breakdown` and ends with a single trailing newline). The Repository trailer (step 6 emission) follows after the appended section, separated by a blank line.
 
-**Unchanged blocks**: the supplement mode does NOT alter any step row in the Finalize-steps block. Every step row (`commit-push`, `create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `record-metrics`, `archive-plan`, etc.) emits identically to default mode. The Headline (step 1-2), Goal (step 3), Deliverables (step 4), and Repository trailer (step 6) blocks emit identically in both modes. The supplement adds a new section between the Finalize-steps block and the Repository trailer; it never replaces existing content.
+**Unchanged blocks**: the supplement mode does NOT alter any step row in the Finalize-steps block. Every step row (`push`, `create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `branch-cleanup`, `record-metrics`, `archive-plan`, etc.) emits identically to default mode. The Headline (step 1-2), Goal (step 3), Deliverables (step 4), and Repository trailer (step 6) blocks emit identically in both modes. The supplement adds a new section between the Finalize-steps block and the Repository trailer; it never replaces existing content.
 
 ## Emission Procedure
 
@@ -234,7 +234,7 @@ Walk the precedence chain:
 - `{N}` = total deliverables count from the outline.
 - `{state summary}` = short free-text summary authored by the renderer from step outcomes (e.g., `all steps done`, `1 step failed`, `loop-back iteration 2`).
 
-No commit hashes appear in the headline — they live inline with the `commit-push` row.
+No commit hashes appear in the headline — per-step outcomes live inline with their step rows.
 
 ### 3. Build Goal block
 
@@ -277,7 +277,7 @@ Header: `Finalize steps ({N_done}/{N_total} done)` where `N_total` = count of st
 Iterate the manifest `phase_6.steps` list in order. For each step, look the step entry up in the `phase_steps` map (captured in Snapshot Procedure step 1) using the **exact-then-strip-prefix lookup rule**:
 
 1. Attempt an exact match against the manifest step ID (e.g. `project:finalize-step-pre-submission-self-review`). If found, use that record.
-2. If the exact match misses AND the manifest step ID begins with `project:` or `default:`, strip the prefix and retry the lookup against the bare suffix (e.g. `finalize-step-pre-submission-self-review` or `commit-push`). If found, use that record.
+2. If the exact match misses AND the manifest step ID begins with `project:` or `default:`, strip the prefix and retry the lookup against the bare suffix (e.g. `finalize-step-pre-submission-self-review` or `push`). If found, use that record.
 3. Only if BOTH lookups miss does the renderer treat the entry as a missing record — emit `<missing display_detail>` for the detail column and surface the row in the `[FAILED]` precedence decision (Emission Procedure step 1).
 
 The strip-prefix retry is a **transitional defense** against legacy `mark-step-done` call sites that record under bare step names while the manifest carries the canonical prefixed form. The manifest-ID spelling is the canonical form (see `## display_detail Contract for Step Authors` below); step authors MUST record under the canonical manifest ID. The strip-prefix retry exists so a future drift between manifest and recorded keys surfaces as a recoverable lookup rather than a false `<missing display_detail>` row.
@@ -333,7 +333,7 @@ No trailing whitespace. No ANSI color codes. Plain text only.
 
 Every finalize step — built-in (`default:*`), project (`project:*`), and fully-qualified skill — MUST pass `--display-detail "{one-line}"` to its `mark-step-done` invocation. This is required, not optional. There is NO fallback to the raw step name.
 
-**Canonical step-ID spelling**: the `--step` argument MUST use the manifest-entry-ID spelling (`project:finalize-step-pre-submission-self-review`, not the bare `pre-submission-self-review`; `default:commit-push` is normalized by `mark-step-done` to the bare `commit-push` form used in `phase_steps`). The renderer's exact-then-strip-prefix lookup (Emission Procedure step 5 above) is a transitional defense against legacy call sites, not a license to drift — record under the canonical manifest ID so the exact-match branch wins and the strip-prefix retry stays dormant.
+**Canonical step-ID spelling**: the `--step` argument MUST use the manifest-entry-ID spelling (`project:finalize-step-pre-submission-self-review`, not the bare `pre-submission-self-review`; `default:push` is normalized by `mark-step-done` to the bare `push` form used in `phase_steps`). The renderer's exact-then-strip-prefix lookup (Emission Procedure step 5 above) is a transitional defense against legacy call sites, not a license to drift — record under the canonical manifest ID so the exact-match branch wins and the strip-prefix retry stays dormant.
 
 Detail string rules:
 
@@ -343,12 +343,26 @@ Detail string rules:
 - **Plain ASCII** — no unicode glyphs
 - **Concrete and user-facing** — describe what the step did, not how
 
+### `commit_message` Step-Return Contract (mutates_source steps)
+
+A finalize step that declares `mutates_source: true` in its frontmatter MAY return a `commit_message` element in its return TOON — the conventional-commit subject line the dispatcher's commit instrumentation (`phase-6-finalize/SKILL.md` Step 3 item 5f) uses when committing the step's worktree edits. The field is **optional**: when the step omits it (or returns no edits), the dispatcher derives the fallback `chore(finalize): apply {step-name} changes`. Read-only (`mutates_source: false`) steps never reach the instrumentation and MUST NOT return a `commit_message`.
+
+The field is one element of the same return TOON that carries `status` and `display_detail`:
+
+```toon
+status: done
+display_detail: "{one-line}"
+commit_message: "chore(simplify): collapse accidental complexity in {plan_id}"
+```
+
+The dispatcher owns the commit; the step authors only the message. The same single-line / plain-ASCII discipline as `display_detail` applies to `commit_message`.
+
 ### Concrete Examples per Built-in Step
 
 | Step | Outcome scenario | display_detail |
 |------|------------------|----------------|
-| `commit-push` | Changes committed and pushed | `-> a1b2c3d` |
-| `commit-push` | No changes to commit | `no changes` |
+| `push` | Branch pushed | `pushed feature/jwt-auth` |
+| `finalize-step-simplify` | Edits applied | `Simplify: 2 edits, 0 findings` |
 | `create-pr` | New PR created | `#212` |
 | `create-pr` | Existing PR re-used | `existing PR #212` |
 | `create-pr` | Skipped | `skipped` |

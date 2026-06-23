@@ -101,7 +101,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `phase_6.steps` | list | Ordered list of bare step IDs to execute (e.g., `commit-push`, `create-pr`, …). Authoritative. |
+| `phase_6.steps` | list | Ordered list of bare step IDs to execute (e.g., `push`, `create-pr`, …). Authoritative. |
 
 **Cross-phase config from `marshal.json`** (read in Step 2 alongside the manifest):
 
@@ -109,7 +109,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 |-------|------|-------------|
 | `phase-6-finalize.max_iterations` | integer | Maximum finalize-verify loops (default: 3) |
 | `phase-6-finalize.loop_back_without_asking` | bool | Symmetric counterpart to `phase-6-finalize.finalize_without_asking`. When `true`, a `loop_back` outcome from any phase-6-finalize step (FIX disposition, `pr-comment-overflow`, sonar-roundtrip FIX) auto-dispatches the execute pipeline inline and re-enters the finalize loop, capped by `max_iterations`. When `false` (default), the dispatcher halts and returns control to the user. Read at runtime via `manage-config plan phase-6-finalize get --field loop_back_without_asking`. See Step 3 § "Loop-back continuation" for the dispatch shape. |
-| `phase-5-execute.commit_and_push` | bool | When `true` (default), the unconditional per-deliverable commits made in phase-5 are pushed and a PR is created. When `false`, the run is local-only — the manifest's `commit_push_disabled` pre-filter strips `commit-push`, `pre-push-quality-gate`, and `pre-submission-self-review` so no push happens. |
+| `phase-5-execute.commit_and_push` | bool | When `true` (default), the unconditional per-deliverable commits made in phase-5 are pushed and a PR is created. When `false`, the run is local-only — the manifest's `commit_push_disabled` pre-filter strips `push`, `pre-push-quality-gate`, and `pre-submission-self-review` so no push happens. |
 | `phase-6-finalize.finalize_without_asking` | bool | Forward-direction auto-continuation: when `true`, after `5-execute → 6-finalize` transition the orchestrator dispatches `phase-6-finalize` inline rather than halting and prompting the user. Read at runtime via `manage-config plan phase-6-finalize get --field finalize_without_asking`. The reverse-direction symmetric counterpart is `phase-6-finalize.loop_back_without_asking`. |
 | `phase-1-init.branch_strategy` | string | feature / direct |
 
@@ -121,7 +121,7 @@ A step is active if and only if it appears in `manifest.phase_6.steps`. Absent s
 
 ## Dispatched workflows vs inline steps
 
-Of the 16 default + project finalize steps, **7 dispatch** and **9 run inline**. Every dispatched step resolves under the phase-scoped registry — `manage-config effort resolve-target --phase phase-6-finalize [--role <subkey>]`. Step → resolved role: `pre-submission-self-review` → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`); `create-pr` → `phase-6-finalize` (no `--role`); `lessons-capture` + `adr-propose` → `phase-6-finalize --role post-run-review`; `automated-review` + `sonar-roundtrip` → `phase-6-finalize --role verification-feedback` (`producer=pr-comment` / `sonar` runtime input); `architecture-refresh` is hybrid (Tier 0 inline scripts; Tier 1 fans out under `phase-6-finalize` per affected module — the only per-iteration parallel dispatch in the contract); `project:finalize-step-plugin-doctor` (meta-project only) → `phase-6-finalize --role verification-feedback` (`producer=plugin-doctor` runtime input). Two opt-in dispatched steps exist outside the default set: **retrospective** → `phase-6-finalize --role post-run-review` (8 LLM aspects iterate inside one envelope); `/workflow-pr-doctor` (slash-command surface) → `phase-6-finalize --role verification-feedback` (`producer=pr-state` runtime input). The 9 inline steps (`commit-push`, `branch-cleanup`, `pre-push-quality-gate`, `record-metrics`, `archive-plan`, `finalize-step-print-phase-breakdown`, `architecture-refresh` Tier 0, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`) are pure scripts or trivial orchestration that earn no envelope. CI completion is no longer a sibling step in this roster — it is a dispatcher-resolved precondition (`requires: [ci-complete]`) checked inline before any consumer step runs; see Step 3 § "Precondition resolution" below. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 5 (find the LLM core, not the wrapping step).
+Of the 16 default + project finalize steps, **7 dispatch** and **9 run inline**. Every dispatched step resolves under the phase-scoped registry — `manage-config effort resolve-target --phase phase-6-finalize [--role <subkey>]`. Step → resolved role: `pre-submission-self-review` → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`); `create-pr` → `phase-6-finalize` (no `--role`); `lessons-capture` + `adr-propose` → `phase-6-finalize --role post-run-review`; `automated-review` + `sonar-roundtrip` → `phase-6-finalize --role verification-feedback` (`producer=pr-comment` / `sonar` runtime input); `architecture-refresh` is hybrid (Tier 0 inline scripts; Tier 1 fans out under `phase-6-finalize` per affected module — the only per-iteration parallel dispatch in the contract); `project:finalize-step-plugin-doctor` (meta-project only) → `phase-6-finalize --role verification-feedback` (`producer=plugin-doctor` runtime input). Two opt-in dispatched steps exist outside the default set: **retrospective** → `phase-6-finalize --role post-run-review` (8 LLM aspects iterate inside one envelope); `/workflow-pr-doctor` (slash-command surface) → `phase-6-finalize --role verification-feedback` (`producer=pr-state` runtime input). The 9 inline steps (`push`, `branch-cleanup`, `pre-push-quality-gate`, `record-metrics`, `archive-plan`, `finalize-step-print-phase-breakdown`, `architecture-refresh` Tier 0, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`) are pure scripts or trivial orchestration that earn no envelope. CI completion is no longer a sibling step in this roster — it is a dispatcher-resolved precondition (`requires: [ci-complete]`) checked inline before any consumer step runs; see Step 3 § "Precondition resolution" below. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 5 (find the LLM core, not the wrapping step).
 
 ## Step Types
 
@@ -129,7 +129,7 @@ Three step types are supported, distinguished by prefix notation:
 
 | Type | Notation | Resolution |
 |------|----------|------------|
-| **built-in** | `default:` prefix (e.g., `default:commit-push`) | Strip prefix, read `standards/{name}.md` and follow all steps |
+| **built-in** | `default:` prefix (e.g., `default:push`) | Strip prefix, read `standards/{name}.md` and follow all steps |
 | **project (dispatched)** | `project:` prefix classified DISPATCHED (e.g., `project:finalize-step-plugin-doctor`) | `Task: execution-context-{level}` with `workflow: {step's own SKILL.md notation}` — see the Execute Step Pipeline step's DISPATCHED-step dispatch branch |
 | **project (inline)** | `project:` prefix classified INLINE (e.g., `project:finalize-step-deploy-target`) | `Skill: {notation}` with interface contract parameters |
 | **skill** | fully-qualified `bundle:skill` (e.g., `pm-dev-java:java-post-pr`) | DISPATCHED → `Task: execution-context-{level}`; INLINE → `Skill: {notation}` with interface contract parameters, per the same classification |
@@ -149,7 +149,7 @@ Each step declares an `order: <int>` value in its authoritative source — front
 |-----------|-------------------|-------------|
 | `default:pre-submission-self-review` | `workflow/pre-submission-self-review.md` | Pre-submission structural self-review (symmetric pairs, regex, wording, duplication, contract drift) |
 | `default:finalize-step-simplify` | `standards/finalize-step-simplify.md` | Holistic post-implementation simplification sweep — collapse accidental complexity introduced across the plan's diff (dispatches under `--phase phase-6-finalize`, no `--role`) |
-| `default:commit-push` | `standards/commit-push.md` | Commit and push changes |
+| `default:push` | `standards/push.md` | Push the converged branch (pure barrier; the dispatcher's commit instrumentation owns all commits) |
 | `default:create-pr` | `standards/create-pr.md` | Create pull request |
 | `default:ci-verify` | `workflow/ci-verify.md` | Classify CI run failures into the multi-failure-mode taxonomy and emit one structured triage finding per failing check (`requires: [ci-complete]` in consume-failures mode) |
 | `default:architecture-refresh` | `standards/architecture-refresh.md` | Refresh architecture descriptors (tier-0 deterministic discover + diff, tier-1 LLM re-enrichment) |
@@ -219,7 +219,7 @@ MANDATORY annotations for every argument:
 
 - `--phase` — MANDATORY. Always the literal string `6-finalize` for steps dispatched under this operation. This anchors the step record to the finalize phase; any other value routes the record into the wrong phase bucket and breaks the Step 4 renderer grouping.
 - `--outcome` — MANDATORY. Must be exactly one of `done`, `skipped`, or `failed`. Any other value (including misspellings or capitalized variants) is rejected by `manage-status`. The choice determines the headline classification and CANNOT be inferred from `display_detail` alone.
-- `--step` — MANDATORY. Must match the fully-qualified step name as listed in `marshal.json` (e.g. `default:commit-push`, `project:foo`, or `plan-marshall:some-skill:some-script`). Mismatches here create orphan status records that the renderer cannot pair with the dispatched step.
+- `--step` — MANDATORY. Must match the fully-qualified step name as listed in `marshal.json` (e.g. `default:push`, `project:foo`, or `plan-marshall:some-skill:some-script`). Mismatches here create orphan status records that the renderer cannot pair with the dispatched step.
 - `--display-detail` — MANDATORY. Single-line summary of what the step actually did, authored by the step itself. Subject to the constraints listed below. A missing, empty, or whitespace-only value triggers the `<missing display_detail>` placeholder and contributes a `[FAILED]` headline regardless of the `--outcome` value.
 
 **Notation:** the canonical 3-part notation is `plan-marshall:manage-status:manage-status` — every segment is kebab-case.
@@ -338,7 +338,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   read --plan-id {plan_id}
 ```
 
-Extract `phase_6.steps` — the ordered list of step IDs (e.g., `commit-push`, `create-pr`, `automated-review`, …) to execute. Step IDs in the manifest are **bare names** (no `default:` prefix). The dispatcher in Step 3 prepends `default:` when looking up built-in steps, but otherwise iterates the list verbatim.
+Extract `phase_6.steps` — the ordered list of step IDs (e.g., `push`, `create-pr`, `automated-review`, …) to execute. Step IDs in the manifest are **bare names** (no `default:` prefix). The dispatcher in Step 3 prepends `default:` when looking up built-in steps, but otherwise iterates the list verbatim.
 
 **If the manifest is missing** (`status: error, error: file_not_found`): abort finalize with an explicit error — the manifest is REQUIRED. Re-run `plan-marshall:manage-execution-manifest:compose` from outline phase to repair.
 
@@ -499,23 +499,24 @@ This step fires ONLY on `wait_failed`. `satisfied` and `wait_succeeded` resoluti
 
 The precondition resolver is dispatcher-internal — it produces no `phase_steps["6-finalize"]` record of its own (the precondition is not itself a finalize step). The dispatcher bears responsibility for the `wait_failed → ci_failure (precondition)` outcome mapping on the consumer step. Consumer step bodies (under `workflow/`) MUST declare `requires: [ci-complete]` in their YAML frontmatter to opt into the precondition; absent the declaration, the dispatcher proceeds directly to the step body and does not invoke the resolver.
 
-**Special case — HEAD-dependent steps**: six steps (`pre-push-quality-gate`, `automated-review`, `sonar-roundtrip`, `commit-push`, `ci-verify`, `finalize-step-simplify`) are HEAD-dependent. The first three plus `ci-verify` validate the live worktree tree via local quality-gate, PR-comment, Sonar, and CI infrastructure respectively; `commit-push` materializes the worktree's commit/push contract and MUST re-fire when a loop-back fix task produces a fresh commit *after* a prior `commit-push` recorded `outcome=done` against the now-stale HEAD; `finalize-step-simplify` applies simplification edits directly to the worktree and self-commits them, advancing HEAD. The general rule above is augmented for `step_id IN HEAD_DEPENDENT_STEPS` (defined below) with a worktree-HEAD comparison so a loop-back commit (typically produced by `automated-review` or `sonar-roundtrip` opening a fix task that produces a new commit) re-fires each gate against the newer code instead of skipping it on a stale `done` record:
+**Commit instrumentation contract**: the dispatcher owns every commit a finalize step's edits produce. A step states whether it mutates source via the `mutates_source: true|false` frontmatter fact on its authoritative doc (the `standards/{name}.md` or `workflow/{name}.md` that declares the step's `order:`). After a `mutates_source: true` step records its terminal `done`/`skipped` outcome, the dispatcher runs `git -C {worktree_path} status --porcelain`; if non-empty, it commits the changes on the feature branch via `Skill: workflow-integration-git` Commit Changes (`push: false`), using the step's returned `commit_message` field, falling back to `chore(finalize): apply {step_id} changes`. Read-only (`mutates_source: false`) steps are never instrumented. The per-step instrumentation runs at item 5f of the FOR loop (see below). Every mutating step's output is committed before the dispatcher advances, so a mutating step can never leave uncommitted edits that a later step silently drops; the correct ordering — push only once the mutating quality steps have converged — falls out of plain `order:` values with no special placement invariant.
+
+**Special case — HEAD-dependent steps**: five steps (`pre-push-quality-gate`, `automated-review`, `sonar-roundtrip`, `ci-verify`, `finalize-step-simplify`) are HEAD-dependent. The first three plus `ci-verify` validate the live worktree tree via local quality-gate, PR-comment, Sonar, and CI infrastructure respectively; `finalize-step-simplify` applies simplification edits directly to the worktree (the dispatcher's commit instrumentation — not a self-commit — commits those edits, advancing HEAD). The general rule above is augmented for `step_id IN HEAD_DEPENDENT_STEPS` (defined below) with a worktree-HEAD comparison so a loop-back commit (typically produced by `automated-review` or `sonar-roundtrip` opening a fix task that produces a new commit) re-fires each gate against the newer code instead of skipping it on a stale `done` record:
 
 | Persisted state | Live worktree HEAD | Action |
 |-----------------|--------------------|--------|
 | `outcome == done` AND `head_at_completion == HEAD` | matches | SKIP (steady-state — gate already validated this exact tree) |
-| `outcome == done` AND `head_at_completion == HEAD` | dirty (porcelain non-empty) | RE-FIRE (worktree has uncommitted changes — commit-push must re-run) |
 | `outcome == done` AND `head_at_completion != HEAD` | differs | RE-FIRE (treat as no record — HEAD has advanced past the validated SHA) |
 | `outcome == done` AND `head_at_completion` absent | n/a | RE-FIRE (record is incomplete without a SHA; safe default is to re-run) |
 | `outcome == failed` | n/a | RETRY (unchanged — same as the general rule) |
 | `outcome == loop_back` | n/a | RE-FIRE (treat as no record — same as the general rule for loop_back) |
 | no record OR any other value | n/a | DISPATCH (unchanged — same as the general rule) |
 
-The comparison consults both HEAD-advance AND `git status --porcelain` non-emptiness; the dirty-tree branch is scoped narrowly. **`commit-push` is the only step in `HEAD_DEPENDENT_STEPS` for which dirty-tree re-fire is meaningful** — the other five members do not trigger a dirty-tree re-fire: `pre-push-quality-gate`, `automated-review`, `sonar-roundtrip`, and `ci-verify` are read-only validators that do not produce commits, and `finalize-step-simplify` self-commits its edits so it leaves a clean tree. A dirty tree at any of their re-entries indicates an upstream contract violation (a loop-back fix task mutated the worktree without invoking `commit-push`) rather than a re-fire trigger; all five continue to follow the HEAD-only table. The dispatcher block resolves the `git status --porcelain` call only when `step_id == "commit-push"` AND the persisted record matches HEAD (`outcome == done AND head_at_completion == HEAD`); the porcelain check is skipped entirely for the other five steps.
+The comparison consults HEAD-advance only — there is no dirty-tree re-fire branch. The dispatcher's commit instrumentation (item 5f) commits every `mutates_source: true` step's output before the dispatcher advances, so no `HEAD_DEPENDENT_STEPS` member can leave an uncommitted tree at re-entry. A dirty tree at any re-entry indicates an upstream contract violation rather than a re-fire trigger; all five steps follow the HEAD-only table.
 
-`HEAD_DEPENDENT_STEPS = {"pre-push-quality-gate", "automated-review", "sonar-roundtrip", "commit-push", "ci-verify", "finalize-step-simplify"}`. Each step MUST persist `head_at_completion` on its terminal `--outcome done` `mark-step-done` call so the comparison above is meaningful. The standards docs for each step (`pre-push-quality-gate.md`, `automated-review.md`, `sonar-roundtrip.md`, `commit-push.md`, `finalize-step-simplify.md`) carry the per-step instructions for capturing `git rev-parse HEAD` immediately before the `mark-step-done` invocation and forwarding it via `--head-at-completion {sha}`. `finalize-step-simplify` is HEAD-dependent because it applies simplification edits directly to the worktree; a loop-back fix task that advances HEAD must re-fire it so the simplification pass runs against the newer tree instead of skipping on a stale `done` record. Branches that mark `loop_back` or `failed` do not need to persist the SHA — the dispatcher's general resumability handling for those outcomes does not consult it. CI completion is a separate dispatcher-resolved precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so the same HEAD-advance signal that invalidates a stale `done` record also invalidates the precondition cache.
+`HEAD_DEPENDENT_STEPS = {"pre-push-quality-gate", "automated-review", "sonar-roundtrip", "ci-verify", "finalize-step-simplify"}`. Each step MUST persist `head_at_completion` on its terminal `--outcome done` `mark-step-done` call so the comparison above is meaningful. The standards docs for each step (`pre-push-quality-gate.md`, `automated-review.md`, `sonar-roundtrip.md`, `finalize-step-simplify.md`) carry the per-step instructions for capturing `git rev-parse HEAD` immediately before the `mark-step-done` invocation and forwarding it via `--head-at-completion {sha}`. `finalize-step-simplify` is HEAD-dependent because its edits land directly in the worktree (committed by the dispatcher's instrumentation); a loop-back fix task that advances HEAD must re-fire it so the simplification pass runs against the newer tree instead of skipping on a stale `done` record. Branches that mark `loop_back` or `failed` do not need to persist the SHA — the dispatcher's general resumability handling for those outcomes does not consult it. CI completion is a separate dispatcher-resolved precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so the same HEAD-advance signal that invalidates a stale `done` record also invalidates the precondition cache.
 
-**Worktree-freshness precondition for `commit-push`**: `commit-push` additionally requires that the worktree state itself has been observed by a fresh `verify` run — `pre-push-quality-gate` validates *what the code is*, while `pre-commit-verify-freshness` (see `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness") validates *that a `verify` was actually performed against this version of the code*. The two checks are complementary, not redundant: a worktree mutated after the most recent successful build passes neither — `pre-push-quality-gate` may pass against the new tree if the orchestrator re-runs it, but `pre-commit-verify-freshness` fails because no `kind=build` change-ledger entry carries the current working-tree `worktree_sha`. The freshness gate is fail-closed: `commit-push` MUST refuse to proceed when `pre-commit-verify-freshness` returns `status: stale` or `status: undecidable`, recording `outcome=failed` with a structured `display_detail`. See `standards/commit-push.md` § "Freshness precondition" for the canonical call shape and the full status-to-action table.
+The `push` step is a pure push barrier and is NOT in `HEAD_DEPENDENT_STEPS`: the dispatcher re-invokes it explicitly after a post-PR `mutates_source` step commits (item 5f § "Post-PR re-push"), not via a HEAD-comparison re-fire. The freshness precondition that validates *that a `verify` was actually performed against this version of the code* (`pre-commit-verify-freshness`, see `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness") is retained on the `push` step itself — see `standards/push.md` § "Freshness precondition".
 
 Resolve the comparison HEAD inside the dispatcher block at the moment of the per-step check:
 
@@ -523,15 +524,7 @@ Resolve the comparison HEAD inside the dispatcher block at the moment of the per
 git -C {worktree_path} rev-parse HEAD
 ```
 
-When `step_id == "commit-push"` AND the persisted record matches HEAD (`outcome == done AND head_at_completion == HEAD`), the dispatcher MUST additionally consult the worktree's porcelain status before deciding SKIP vs RE-FIRE:
-
-```bash
-git -C {worktree_path} status --porcelain
-```
-
-A non-empty result selects the dirty-tree row in the table above (RE-FIRE); an empty result selects the steady-state row (SKIP). The porcelain call is gated on `step_id == "commit-push"` — the other five `HEAD_DEPENDENT_STEPS` members do not invoke it, so a dirty worktree does NOT re-fire them.
-
-Do NOT cache the live HEAD across loop iterations — read it fresh per step so a step that advances HEAD mid-loop (e.g., an inline commit produced by a loop-back fix task) is observed correctly by every later step's check. All other finalize steps keep the general rule above verbatim; this special case applies only to the six steps named in `HEAD_DEPENDENT_STEPS`.
+Do NOT cache the live HEAD across loop iterations — read it fresh per step so a step that advances HEAD mid-loop (e.g., a commit the dispatcher's instrumentation produced for a loop-back fix) is observed correctly by every later step's check. All other finalize steps keep the general rule above verbatim; this special case applies only to the five steps named in `HEAD_DEPENDENT_STEPS`.
 
 **Per-agent timeout wrapper**: Every Task agent dispatch in this loop runs under a per-agent timeout budget. If the dispatch does not return inside the budget, the wrapper logs an ERROR, marks the step `failed` via `manage-status mark-step-done`, and continues with the next step in the list (no abort, no re-throw). Inline-only steps are not timeout-wrapped because they execute in the main context where the host platform already manages call timeouts. Budgets:
 
@@ -591,7 +584,7 @@ Task: plan-marshall:{target}
 The 5-field prompt-body contract (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`) is documented in [`plan-marshall:extension-api/standards/ext-point-execution-context-workflow`](../extension-api/standards/ext-point-execution-context-workflow.md). The variant resolution (canonical no-suffix for `inherit`/empty level; `execution-context-{level}` otherwise) lives in [`plan-marshall:plan-marshall/standards/effort-variants.md`](../plan-marshall/standards/effort-variants.md).
 
 **Inline-only built-in steps** (require user interaction, sequential dependency, or are bounded polling primitives that fit comfortably under the host platform's per-call Bash ceiling):
-- `architecture-refresh` (AskUserQuestion for Tier-1 prompt mode; consumes `architecture-pre/` snapshot from phase-1-init Step 5d), `branch-cleanup` (AskUserQuestion), `record-metrics` (the last token-accounting step — runs after all token-consuming steps and before the read-only `print-phase-breakdown`/`archive-plan` tail, on the still-live plan directory), `archive-plan` (must be last, moves plan files). Note: `commit-push` is also inline-only but is HEAD-dependent (see § HEAD-dependent steps below), so it appears in `HEAD_DEPENDENT_STEPS` rather than here.
+- `architecture-refresh` (AskUserQuestion for Tier-1 prompt mode; consumes `architecture-pre/` snapshot from phase-1-init Step 5d), `branch-cleanup` (AskUserQuestion), `record-metrics` (the last token-accounting step — runs after all token-consuming steps and before the read-only `print-phase-breakdown`/`archive-plan` tail, on the still-live plan directory), `archive-plan` (must be last, moves plan files), `push` (a pure push barrier — NOT HEAD-dependent; the dispatcher re-invokes it after a post-PR `mutates_source` step commits).
 
 Per-step agent `<usage>` totals are persisted on disk by `manage-metrics accumulate-agent-usage` (called from step 5b below). The on-disk file `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` survives context compaction and is read by `default:record-metrics` at `end-phase` time. Do NOT maintain a parallel tally in model context — the on-disk file is authoritative.
 
@@ -602,7 +595,7 @@ loop_back_iteration = 0   # initialised once, before the FOR loop; persists acro
 
 FOR each step_id in manifest.phase_6.steps:
   # Resolve full step reference. Manifest entries may be:
-  #   - bare names (e.g. `commit-push`) — built-in, prepend `default:`
+  #   - bare names (e.g. `push`) — built-in, prepend `default:`
   #   - already-prefixed (`default:foo`, `project:bar`, `bundle:skill`) — use verbatim
   # The composer preserves `project:` / `bundle:skill` prefixes from marshal.json;
   # only `default:` may be stripped. So presence of `:` in step_id => external step.
@@ -629,11 +622,7 @@ FOR each step_id in manifest.phase_6.steps:
            - IF no record OR any other value: dispatch normally
      Log skip/retry/re-fire decisions at INFO level so the work.log reflects the re-entry path.
 
-     **HEAD-dependent step set**: `HEAD_DEPENDENT_STEPS = {"pre-push-quality-gate", "automated-review", "sonar-roundtrip", "commit-push", "ci-verify", "finalize-step-simplify"}`. The first three validate the live worktree tree via local quality-gate, PR-comment, and Sonar infrastructure respectively. `finalize-step-simplify` applies simplification edits directly to the worktree, so it re-fires when a loop-back commit advances HEAD past its previously-recorded `head_at_completion` — the same HEAD-comparison contract as the validators. A loop-back commit (typically produced by `automated-review` or `sonar-roundtrip` opening a fix task that produces a new commit) advances HEAD past the previously-validated SHA, and a stale `done` record on any of these three steps would produce a false-clean result on re-entry. `commit-push` enters the HEAD-dependent set because a loop-back fix task may produce a fresh commit *after* `commit-push` recorded `outcome=done` against the prior HEAD; without HEAD-comparison the dispatcher would skip `commit-push` on re-entry and leave the fix-task changes staged-but-uncommitted. The same `head_at_completion` comparison applies to all six. Other inline-only steps (`architecture-refresh`, `branch-cleanup`, `record-metrics`, `archive-plan`, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`) and pure-administrative agent steps (`create-pr`, `lessons-capture`) are NOT HEAD-dependent — their effect is captured by side-effect (a created PR, recorded lessons, regenerated `target/claude/` from the post-merge source tree) and is idempotent against HEAD advances; the general rule above applies to them. CI completion is resolved as a separate dispatcher-side precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so a HEAD advance also invalidates the precondition cache.
-
-> **MAY_MUTATE-after-commit-push ordering invariant**: the three may-mutate steps (`automated-review`, `sonar-roundtrip`, `finalize-step-simplify`) MUST appear in `phase_6.steps` at an index later than `commit-push`. The manifest composer enforces this at compose time by deterministically auto-reordering any offending may-mutate step to the first position after `commit-push` (emitting a decision-log entry per reordered step), so a misordered manifest is corrected and never reaches finalize dispatch in a violating order. The ordering rule, its rationale, the single-source `MAY_MUTATE_WORKTREE_STEPS` owner, and the carve-outs are documented centrally in [`../manage-execution-manifest/standards/decision-rules.md`](../manage-execution-manifest/standards/decision-rules.md) § "MAY_MUTATE-after-commit-push Placement Invariant" — see that section; the rule body is not restated here.
->
-> **Script-layer dirty-worktree invariant**: the three may-mutate steps are also enforced at the script layer by `manage-status mark-step-done`, which refuses `--outcome done` for any step in `MAY_MUTATE_WORKTREE_STEPS` while the resolved worktree is dirty (`git status --porcelain` non-empty), returning `error: dirty_worktree_done_refused`. This complements both the compose-time ordering invariant above and the HEAD-comparison contract: HEAD-comparison re-fires a step when a loop-back commit advances the tree past a stale `done` record; the dirty-worktree refusal prevents the inverse failure — recording `done` while an *uncommitted* inline edit still sits in the tree, which would let the dispatcher advance past `commit-push` and silently drop the mutation. `finalize-step-simplify` satisfies the invariant directly: it COMMITS its own worktree edits on the feature branch before marking `done` (see `standards/finalize-step-simplify.md` Step 4), so the tree is always clean at its `mark-step-done` and the refusal is never reached on its normal path. For `automated-review` and `sonar-roundtrip`, the refusal's two escape paths map directly onto the Loop-back Target Contract below: re-issue as `--outcome loop_back --loop-back-target 6-finalize` (inline replay so `commit-push` re-fires) or `--loop-back-target 5-execute` (fix-task rollback). See `manage-status/SKILL.md` § mark-step-done → "Dirty-worktree invariant on `done`".
+     **HEAD-dependent step set**: `HEAD_DEPENDENT_STEPS = {"pre-push-quality-gate", "automated-review", "sonar-roundtrip", "ci-verify", "finalize-step-simplify"}`. The first three plus `ci-verify` validate the live worktree tree via local quality-gate, PR-comment, Sonar, and CI infrastructure respectively. `finalize-step-simplify` applies simplification edits directly to the worktree (committed by the dispatcher's instrumentation, item 5f), so it re-fires when a loop-back commit advances HEAD past its previously-recorded `head_at_completion` — the same HEAD-comparison contract as the validators. A loop-back commit (typically produced by `automated-review` or `sonar-roundtrip` opening a fix task that produces a new commit) advances HEAD past the previously-validated SHA, and a stale `done` record on any of these steps would produce a false-clean result on re-entry. The same `head_at_completion` comparison applies to all five. The `push` step is NOT in the set — it is a pure push barrier the dispatcher re-invokes explicitly after a post-PR `mutates_source` step commits (item 5f § "Post-PR re-push"), not via HEAD-comparison. Other inline-only steps (`architecture-refresh`, `branch-cleanup`, `record-metrics`, `archive-plan`, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`) and pure-administrative agent steps (`create-pr`, `lessons-capture`) are NOT HEAD-dependent — their effect is captured by side-effect (a created PR, recorded lessons, regenerated `target/claude/` from the post-merge source tree) and is idempotent against HEAD advances; the general rule above applies to them. CI completion is resolved as a separate dispatcher-side precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so a HEAD advance also invalidates the precondition cache.
 
   2. Log step start:
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -808,7 +797,7 @@ FOR each step_id in manifest.phase_6.steps:
               --display-detail "timed out after {budget}s"
          c. Continue to the next step in the loop — DO NOT abort the pipeline.
 
-     - BUILT-IN (inline-only: commit-push, architecture-refresh, branch-cleanup, record-metrics, archive-plan):
+     - BUILT-IN (inline-only: push, architecture-refresh, branch-cleanup, record-metrics, archive-plan):
        Read the standards document from dispatch table and follow all steps in main context. Inline steps are not wrapped by the per-agent timeout block above — they execute under the host platform's standard per-call ceiling.
 
      - PROJECT/SKILL: Branch on the dispatched-vs-inline classification from the
@@ -896,7 +885,7 @@ FOR each step_id in manifest.phase_6.steps:
       No other finalize step forwards `--retrospective-tokens` — every non-retrospective dispatched step omits it so the accumulator's `retrospective_tokens` total stays equal to the retrospective spend alone.
 
   5c. Record dispatch-boundary row for the just-returned step (per-step, only when 5b also ran):
-      Apply the SAME gate as 5b — fire only when the step ran as a Task agent and did NOT time out. Inline-only steps (commit-push, architecture-refresh, branch-cleanup, record-metrics, archive-plan, project:finalize-step-deploy-target, project:finalize-step-sync-plugin-cache) skip this call uniformly, mirroring the 5b gate. The call fires per-step — once for each dispatched finalize step return — NOT once per phase entry.
+      Apply the SAME gate as 5b — fire only when the step ran as a Task agent and did NOT time out. Inline-only steps (push, architecture-refresh, branch-cleanup, record-metrics, archive-plan, project:finalize-step-deploy-target, project:finalize-step-sync-plugin-cache) skip this call uniformly, mirroring the 5b gate. The call fires per-step — once for each dispatched finalize step return — NOT once per phase entry.
 
       Classify the step's return into exactly one of the four phase-6-finalize termination causes:
 
@@ -920,7 +909,7 @@ FOR each step_id in manifest.phase_6.steps:
   5d. Post-dispatch completion guard (only when the dispatched step ran as a Task agent, did NOT time out, and did NOT return `status: escalate_ask`):
       Apply the SAME gate as 5b/5c, extended with a third carve-out. The guard fires ONLY when the step ran as a Task agent AND did NOT time out AND its return TOON does NOT carry `status: escalate_ask`. Three classes of step SKIP this guard uniformly:
 
-      - **Inline-only steps** (commit-push, architecture-refresh, branch-cleanup, record-metrics, archive-plan, project:finalize-step-deploy-target, project:finalize-step-sync-plugin-cache) — they record their own mark synchronously in the main context.
+      - **Inline-only steps** (push, architecture-refresh, branch-cleanup, record-metrics, archive-plan, project:finalize-step-deploy-target, project:finalize-step-sync-plugin-cache) — they record their own mark synchronously in the main context.
       - **Timed-out steps** — the timeout path at item 5 already recorded `outcome=failed` before continuing.
       - **`escalate_ask`-returning steps** — an `automated-review` step that returns `status: escalate_ask` (trigger B: re-review await timeout under an `ask` or `defer` policy) legitimately left NO terminal `mark-step-done` record, because the continuation is owned by item 7a (the escalate-ask continuation hook), NOT by the leaf. A dispatched leaf cannot fire the `AskUserQuestion` and cannot mark the step terminal — it returns the escalation envelope and item 7a consumes it. Asserting terminality for such a step is a FALSE POSITIVE that would halt the pipeline with `step_record_missing` BEFORE item 7a can run, leaving 7a unreachable. The dispatcher already has the return TOON in context (it read the same TOON to classify the termination cause under item 5c), so detecting `status: escalate_ask` adds no new read. This carve-out is the symmetric dispatcher-side counterpart of the leaf's no-mark contract documented in [`workflow/automated-review.md`](workflow/automated-review.md) § "`escalate_ask` return (re-review timeout)".
 
@@ -957,12 +946,46 @@ FOR each step_id in manifest.phase_6.steps:
 
       See `manage-execution-manifest` Canonical invocations → `record-step` for the authoritative argument surface. Contract:
 
-      - `--phase` is always `6-finalize` in this phase; `--step-id` is the finalize step ID / notation (e.g. `commit-push`, `create-pr`, `record-metrics`, or an external step's `project:` / `bundle:skill` notation).
+      - `--phase` is always `6-finalize` in this phase; `--step-id` is the finalize step ID / notation (e.g. `push`, `create-pr`, `record-metrics`, or an external step's `project:` / `bundle:skill` notation).
       - `--outcome` is `executed` when the step ran, `skipped` when the resumable re-entry check (item 1) skipped an already-`done` step or a HEAD-comparison decided no re-run was needed, and `error` when the step's `mark-step-done` recorded `outcome: failed` (including the 5d post-dispatch-guard violation path at item 5d.b — record the `error` row BEFORE halting the FOR loop so the failed attempt is on the execution log).
       - The token-attribution triple is the SAME triple captured by 5b — forward the `<usage>` integers for dispatched steps, and `0` for inline steps that carry no `<usage>` tag (the manifest schema documents the `0` default, so an inline step records a row with zero token attribution rather than a missing column). 5b sums these into the per-phase accumulator that fills the `total_tokens` column; 5e records the per-step breakdown. The two are complementary, not redundant.
       - The manifest MUST already exist (composed by `phase-4-plan` Step 8b); `record-step` returns `file_not_found` otherwise. The append is atomic and one decision-log line is emitted per record.
 
       **Exec-blind contract (finalize side)**: the `6-finalize` row in `metrics.toon` is kept non-zero by `default:record-metrics`'s `end-phase` write, which reads the `metrics-accumulator-6-finalize.toon` accumulator that 5b fills on every dispatched step return — see § Phase-boundary metric bookkeeping below. 5e's per-step `execution_log[]` rows are the auditable per-step breakdown behind that aggregate, mirroring phase-5-execute Step 8c so neither phase has an exec-blind (`total_tokens==0`) path.
+
+  5f. Commit instrumentation (after the step has recorded a terminal `done`/`skipped` outcome — see "Commit instrumentation contract" below):
+      The dispatcher owns EVERY commit a finalize step's edits produce. Read the step's declared `mutates_source` frontmatter fact from its authoritative doc (the `standards/{name}.md` or `workflow/{name}.md` that declares the step's `order:`). When `mutates_source` is `false` (or absent — read-only is the safe default), do nothing and proceed to item 6. When `mutates_source` is `true`, instrument the commit:
+
+      (a) Check the worktree for uncommitted changes the step produced:
+
+          git -C {worktree_path} status --porcelain
+
+      (b) IF the porcelain output is non-empty, commit the changes on the feature branch (no push — the `push` barrier owns the push). Use the step's returned `commit_message` field when the step supplied one in its return TOON; otherwise derive the conventional-commit fallback `chore(finalize): apply {step_id} changes`:
+
+          Skill: plan-marshall:workflow-integration-git
+          Parameters:
+            - message: {step's returned commit_message, else "chore(finalize): apply {step_id} changes"}
+            - push: false
+            - create-pr: false
+
+          **Re-stamp `head_at_completion` (mandatory for `HEAD_DEPENDENT_STEPS` members)**: the instrumentation commit advances the feature-branch HEAD past the SHA the step recorded on its terminal `mark-step-done` call (the step captured `git rev-parse HEAD` BEFORE its edits were committed, because the dispatcher — not the step — owns the commit). For a `mutates_source: true` step that is ALSO a `HEAD_DEPENDENT_STEPS` member (currently `finalize-step-simplify`, `automated-review`, `sonar-roundtrip`), leaving the stale pre-commit SHA on the record makes the item-1 re-entry check observe `head_at_completion != live HEAD` and RE-FIRE the step on every resume — defeating the SKIP optimization. After the commit succeeds, resolve the new HEAD (`{new_commit_sha}`) and re-stamp the step's record so a converged-tree re-entry SKIPs correctly:
+
+          ```bash
+          git -C {worktree_path} rev-parse HEAD
+          ```
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+            --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome done \
+            --head-at-completion {new_commit_sha} \
+            --display-detail "{the step's own display_detail, preserved}"
+          ```
+
+          This re-stamp is a no-op for `mutates_source: true` steps that are NOT in `HEAD_DEPENDENT_STEPS` (none today) — skip it when `step_id NOT IN HEAD_DEPENDENT_STEPS`.
+
+      (c) IF the porcelain output is empty, the mutating step produced no net change — record nothing and proceed to item 6. The step's pre-commit `head_at_completion` already equals the live HEAD (no commit was made), so no re-stamp is needed.
+
+      **Post-PR re-push**: when a `mutates_source: true` step that runs AFTER `create-pr` (e.g. `automated-review`, `sonar-roundtrip`) commits a loop-back fix via this instrumentation, the dispatcher re-invokes the `push` step so the PR HEAD advances and re-review fires. The `push` step is a pure barrier (it carries no commit logic and is NOT in `HEAD_DEPENDENT_STEPS`); the dispatcher re-invokes it explicitly here rather than relying on a HEAD-comparison re-fire. Read-only (`mutates_source: false`) steps never reach item 5f's instrumentation and never trigger a re-push.
 
   6. Capture archive result (only when step_id == "archive-plan"):
      Record the returned `archive_path` into model context alongside the pre-archive snapshot — it is consumed by Step 4 (Render Final Output Template).
@@ -1223,7 +1246,7 @@ Deliverables (5/5)
   [OK]  5. Add display_detail to 9 step standards docs
 
 Finalize steps (10/10 done)
-  [OK]  commit-push                       -> a1b2c3d
+  [OK]  push                              -> a1b2c3d
   [OK]  create-pr                         #212
   [OK]  automated-review                  3 comment(s) resolved (no loop-back)
   [OK]  sonar-roundtrip                   quality gate passed
@@ -1313,7 +1336,7 @@ This makes finalize safe to interrupt and re-enter — completed work is preserv
 
 In-step state checks (consulted by individual standards docs after dispatch — these guard idempotent operations, not skip activation):
 
-1. **Uncommitted changes?** `git status --porcelain` — empty → `commit-push` records "no changes" and marks done.
+1. **Uncommitted changes?** `git status --porcelain` — the dispatcher's commit instrumentation (item 5f) commits any `mutates_source: true` step's output before the `push` barrier runs, so `push` asserts a clean tree and pushes.
 2. **PR exists?** `ci pr view` — `status: success` → `create-pr` re-uses the existing PR.
 3. **Plan complete?** `manage-status read` — `current_phase: complete` → finalize has nothing to do; return immediately.
 
@@ -1324,7 +1347,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | Standard | Step Name | Purpose |
 |----------|-----------|---------|
 | `workflow/pre-submission-self-review.md` | `default:pre-submission-self-review` | Deterministic helper (resolved via `ext-self-review-{domain}` ext-point) + LLM cognitive review for symmetric-pair / regex-overfit / wording / duplication / contract-drift defects (hard-fail) |
-| `standards/commit-push.md` | `default:commit-push` | Commit strategy, git status, workflow-integration-git delegation |
+| `standards/push.md` | `default:push` | Pure push barrier — freshness precondition + workflow-integration-git push (no commit logic; the dispatcher's instrumentation owns commits) |
 | `standards/create-pr.md` | `default:create-pr` | PR existence check, body generation, CI pr create |
 | `workflow/ci-verify.md` | `default:ci-verify` | Classify CI run failures into multi-failure-mode taxonomy and emit one triage finding per failing check |
 | `standards/architecture-refresh.md` | `default:architecture-refresh` | Tier-0 deterministic `architecture discover --force` + `diff-modules --pre` driven `chore(architecture)` commit; Tier-1 LLM re-enrichment with `prompt`/`auto`/`disabled` modes; respects `architecture_refresh.tier_0` / `tier_1` run-config knobs and `change_type ∈ {bug_fix, verification}` shortcut |

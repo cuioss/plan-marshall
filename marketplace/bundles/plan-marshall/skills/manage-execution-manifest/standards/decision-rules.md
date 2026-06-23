@@ -84,7 +84,7 @@ Before evaluating the seven-row matrix below, the composer applies a fixed seque
 
 The pre-filters run in this order:
 
-1. **`commit_push_disabled`** — drops `commit-push`, `pre-push-quality-gate`, AND `pre-submission-self-review` when no push will occur.
+1. **`commit_push_disabled`** — drops `push`, `pre-push-quality-gate`, AND `pre-submission-self-review` when no push will occur.
 2. **`pre_push_quality_gate_inactive`** — drops `pre-push-quality-gate` when activation conditions fail.
 3. **`pre_submission_self_review_inactive`** — drops `pre-submission-self-review` when the live plan footprint is empty.
 4. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`.
@@ -101,14 +101,14 @@ After the seven-row matrix runs, two post-matrix transforms inspect the matrix o
 
 **Condition**: `commit_and_push == false`.
 
-**Effect**: `commit-push`, `pre-push-quality-gate`, AND `pre-submission-self-review` are all removed from `phase_6_candidates` before the rows are evaluated. The pre-filter removes the two pre-push gating steps because they are meaningless without a downstream push — they exist solely to gate code that will be sent to remote CI.
+**Effect**: `push`, `pre-push-quality-gate`, AND `pre-submission-self-review` are all removed from `phase_6_candidates` before the rows are evaluated. The pre-filter removes the two pre-push gating steps because they are meaningless without a downstream push — they exist solely to gate code that will be sent to remote CI.
 
 **Why a pre-filter (not an eighth row)**: `commit_and_push` is configuration known at outline time and is orthogonal to the row matrix's change-type / scope / recipe inputs. A row would have to either short-circuit (and re-implement the seven rows' Phase 5 logic) or duplicate the filter into every row. Modeling it as a pre-filter keeps the seven-row matrix unchanged and lets the composer emit one extra `decision.log` entry naming the omission.
 
 **Decision log line** (in addition to the row's own log line):
 
-```
-(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_and_push=false
+```text
+(plan-marshall:manage-execution-manifest:compose) push omitted — commit_and_push=false
 ```
 
 When `commit_and_push == true` (or absent — the default is `true`), the pre-filter is a no-op and emits no log entry.
@@ -285,34 +285,6 @@ When `ci_provider` is neither `github` nor `gitlab`, OR `default:automated-revie
 
 **Safety-net error path**: The function still has a non-`None` return contract (`str | None`) and the caller (`cmd_compose`) still translates a non-`None` return into a `bot_enforcement_violation` error TOON. In current code this branch is unreachable — the guard either no-ops (returns `None`) or remediates and returns `None`. The branch is retained as a hook for any future logic that detects a non-remediable violation (e.g., a malformed `phase_6_steps` list), so the legacy `bot-enforcement guard fired` log line and error TOON shape remain documented in the codebase even though they are not exercised by the current control flow.
 
-## MAY_MUTATE-after-commit-push Placement Invariant
-
-**This section is the central, single-source home for the MAY_MUTATE-after-commit-push ordering invariant.** Other docs that touch this invariant (`manage-execution-manifest/SKILL.md`, `phase-6-finalize/SKILL.md`, `phase-6-finalize/standards/finalize-step-simplify.md`, `manage-status/SKILL.md`) cross-reference this section by name rather than restating the rule body.
-
-**The invariant**: every step in the `MAY_MUTATE_WORKTREE_STEPS` set — `automated-review`, `sonar-roundtrip`, and `finalize-step-simplify` — MUST appear at a `phase_6.steps` index *later* than `commit-push`.
-
-**Type**: Composition-time placement auto-reorder (deterministic, NOT a pre-filter, NOT a rejection). Runs *after* the seven-row matrix, the `ceremony_finalize_selection` and `execution_tier` transforms, the `bot_enforcement_guard`, AND the `automated-review` placement validator have produced the final `phase_6.steps` ordering — so it sees the ordering exactly as it will be persisted. It is the last placement transform before the manifest is written.
-
-**Why the ordering is mandatory**: Phase-5 leaves defer their per-deliverable commits, so the worktree is dirty at the first finalize step. The script-layer dirty-worktree `done` guard in `manage-status mark-step-done` refuses `--outcome done` for any `MAY_MUTATE_WORKTREE_STEPS` member while the resolved worktree is dirty (`git status --porcelain` non-empty), returning `error: dirty_worktree_done_refused`. A MAY_MUTATE step ordered ahead of `commit-push` therefore runs against that dirty tree, hits the refusal, and emits `loop_back` instead of `done` — forcing an orchestrator commit-first recovery detour. The auto-reorder corrects such a misordering at compose time rather than leaving it for finalize-time loop-back thrash.
-
-**Single source of truth for the set**: the `MAY_MUTATE_WORKTREE_STEPS` set is owned by `manage-status/scripts/_cmd_mark_step.py` (the dirty-worktree `done` guard). The composer imports it via the existing PYTHONPATH cross-skill mechanism (`_resolve_may_mutate_worktree_steps`) rather than re-declaring it inline, so the compose-time reorder and the script-layer refusal can never drift. Both the bare step names and their `default:`-prefixed forms are detected, so a re-prefixed candidate cannot slip past the reorder.
-
-**Carve-outs (reorder is a no-op, manifest is accepted unchanged)**:
-
-- `commit-push` is absent — a no-push / `commit_push_omitted` plan has nothing to order against.
-- Every MAY_MUTATE step already appears at an index later than `commit-push`.
-- The MAY_MUTATE set could not be imported (degraded environment) — consistent with the composer's "missing data → rule does not fire" convention.
-
-**Effect on detection**: when any MAY_MUTATE step precedes `commit-push`, the composer deterministically moves each offending step to the first position after `commit-push` (preserving relative order among the moved steps and among the non-moved steps), emits one decision-log entry per reordered step, and **continues composing successfully** — the manifest IS written, with the corrected ordering. The reorder writes into the plan-scoped `execution.toon` only and never reads or writes `marshal.json`.
-
-**Decision log line** (emitted once per reordered step):
-
-```text
-(plan-marshall:manage-execution-manifest:compose) may_mutate_placement auto-reorder — moved {bare} to index {N} (after commit-push at index {M})
-```
-
-When no reorder is needed (any carve-out holds, or the ordering is already correct), the transform is a no-op and emits no log entry.
-
 ## execution_tier Routing
 
 **Type**: Composition-time per-task routing pass. Runs *after* the seven-row matrix has produced the body's `phase_5.verification_steps` and `phase_6.steps`, *before* the bot-enforcement guard. Mutates both the manifest body and the plan's `TASK-*.json` files.
@@ -413,7 +385,7 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 - `phase_5.verification_steps = []`
 - `phase_6.steps = phase_6_candidates − {ci-wait}`
 
-**Why**: A docs-shaped plan never needs to run tests or coverage. The candidate set already reflects this (no `module-tests`/`coverage`), so the manifest empties Phase 5's verification list. The only subtraction here is the legacy `ci-wait` step ID — kept as a defensive narrowing against project marshal.json files that still list it as a candidate. Review gates a project opted into (`automated-review`, `sonar-roundtrip`) are NEVER silently suppressed by the planner: a docs-only label is exactly the case where the bots' job is to catch what humans miss. We keep `commit-push`, `create-pr`, `lessons-capture`, `branch-cleanup`, `archive-plan`, AND the review gates so the doc change is reviewed, committed, surfaced, and recorded.
+**Why**: A docs-shaped plan never needs to run tests or coverage. The candidate set already reflects this (no `module-tests`/`coverage`), so the manifest empties Phase 5's verification list. The only subtraction here is the legacy `ci-wait` step ID — kept as a defensive narrowing against project marshal.json files that still list it as a candidate. Review gates a project opted into (`automated-review`, `sonar-roundtrip`) are NEVER silently suppressed by the planner: a docs-only label is exactly the case where the bots' job is to catch what humans miss. We keep `push`, `create-pr`, `lessons-capture`, `branch-cleanup`, `archive-plan`, AND the review gates so the doc change is reviewed, committed, surfaced, and recorded.
 
 ### Row 4 — `tests_only`
 

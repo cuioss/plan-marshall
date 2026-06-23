@@ -386,7 +386,7 @@ class TestLessonKindMapping:
 # These tests assert the resulting manifest is the documented slim shape:
 #
 #   Phase 5: quality-gate (and module-tests when present in the candidates)
-#   Phase 6: commit-push, create-pr, lessons-capture, branch-cleanup, archive-plan
+#   Phase 6: push, create-pr, lessons-capture, branch-cleanup, archive-plan
 #            (drops automated-review, sonar-roundtrip)
 #
 # When ``recipe_key`` is set, the recipe rule (rule 2) fires for ALL three
@@ -417,7 +417,7 @@ class TestRecipePathEndToEnd:
         legacy ``ci-wait`` step ID is defensively narrowed out when present
         in the candidate list. The recipe contract still produces a slim
         Phase 5 (bounded to quality-gate + module-tests) and retains the
-        must-run bookkeeping steps (commit-push, lessons-capture).
+        must-run bookkeeping steps (push, lessons-capture).
         """
         # Sanity: derive_change_type produces the expected change_type.
         assert derive_change_type(lesson_kind) == change_type
@@ -462,7 +462,7 @@ class TestRecipePathEndToEnd:
             f'recipe path MUST defensively drop legacy ci-wait (lesson_kind={lesson_kind})'
         )
         # And keeps the must-run steps from the recipe contract.
-        for required in ('commit-push', 'lessons-capture'):
+        for required in ('push', 'lessons-capture'):
             assert required in phase_6, f'recipe path must keep {required!r} in Phase 6 (lesson_kind={lesson_kind})'
 
     def test_recipe_path_takes_precedence_over_surgical_rule(self, plan_context):

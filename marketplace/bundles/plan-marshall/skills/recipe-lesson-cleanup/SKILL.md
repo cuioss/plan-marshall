@@ -152,7 +152,7 @@ Record each non-convergent comparison as `(directive, category, hypothesis_summa
 **Sub-step d — When verified-correct fix diverges, update the plan inputs.** For each directive in `over-broad`, `redundant`, or `mis-targeted`:
 
 1. Update the plan's `request.md` Clarifications block with the verified-correct fix and the rationale for divergence. The Clarifications block is the canonical place phase-3-outline reads for refined intent — by writing here, the recipe ensures Step 3's deliverable composition sees the verified version, not the hypothesis.
-2. Record the divergence so it surfaces in the eventual commit message or PR body. Both `phase-6-finalize:commit-push` and `phase-6-finalize:create-pr` consume the decision log and the request.md Clarifications block when composing message bodies — the entry below feeds both.
+2. Record the divergence so it surfaces in the eventual commit message or PR body. The dispatcher's per-deliverable commit instrumentation and `phase-6-finalize:create-pr` consume the decision log and the request.md Clarifications block when composing their message bodies — the entry below feeds both.
 
 Resolve the canonical `request.md` path, then update `## Clarifications` and `## Clarified Request` directly via Edit/Write — the same three-step path-allocate flow phase-2-refine uses:
 
@@ -288,9 +288,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Phase-4-plan reads the outline, sees `scope_estimate: surgical`, and applies the surgical cascade rules per change_type:
 
-- `surgical + bug_fix` → Phase 5 keeps `quality-gate` only; Phase 6 keeps `commit-push`, `create-pr`, `lessons-capture` only.
-- `surgical + enhancement` → Phase 5 keeps `quality-gate` only; Phase 6 keeps `commit-push`, `create-pr`, `lessons-capture` only.
-- `surgical + tech_debt` → Phase 5 keeps `quality-gate` only; Phase 6 keeps `commit-push`, `create-pr`, `lessons-capture` only.
+- `surgical + bug_fix` → Phase 5 keeps `quality-gate` only; Phase 6 keeps `push`, `create-pr`, `lessons-capture` only.
+- `surgical + enhancement` → Phase 5 keeps `quality-gate` only; Phase 6 keeps `push`, `create-pr`, `lessons-capture` only.
+- `surgical + tech_debt` → Phase 5 keeps `quality-gate` only; Phase 6 keeps `push`, `create-pr`, `lessons-capture` only.
 
 In all three surgical cases, the composer drops `automated-review` and `sonar-roundtrip` from Phase 6, matching the success criteria for this recipe.
 

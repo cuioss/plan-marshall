@@ -882,14 +882,14 @@ def test_plan_phase_2_refine_get_simplicity_returns_lean_default(plan_context):
     assert result['value'] == 'lean'
 
 
-def test_built_in_finalize_steps_places_simplify_after_commit_push():
-    """default:finalize-step-simplify sits AFTER default:commit-push in BUILT_IN_FINALIZE_STEPS.
+def test_built_in_finalize_steps_places_simplify_before_push():
+    """default:finalize-step-simplify sits BEFORE default:push in BUILT_IN_FINALIZE_STEPS.
 
-    simplify is a post-commit-push MAY_MUTATE step (PR #688). The canonical head
-    order is default:pre-push-quality-gate (index 0), default:commit-push
-    (index 1), then default:finalize-step-simplify (index 2) — matching the
-    MAY_MUTATE-after-commit-push invariant the compose-time placement guard
-    enforces.
+    simplify is a mutates_source step (order 8) and push is the pure barrier
+    (order 10), so simplify precedes push. The canonical head order is
+    default:pre-push-quality-gate (index 0), default:finalize-step-simplify
+    (index 1), then default:push (index 2) — matching the plain `order:` values
+    (no special placement invariant).
     """
     steps = _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
 
@@ -898,8 +898,8 @@ def test_built_in_finalize_steps_places_simplify_after_commit_push():
         'default:finalize-step-simplify must be seeded into BUILT_IN_FINALIZE_STEPS'
     )
     assert steps[0] == 'default:pre-push-quality-gate'
-    assert steps[1] == 'default:commit-push'
-    assert steps[2] == 'default:finalize-step-simplify'
+    assert steps[1] == 'default:finalize-step-simplify'
+    assert steps[2] == 'default:push'
 
 
 def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
@@ -918,19 +918,19 @@ def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
     )
 
 
-def test_built_in_finalize_steps_orders_commit_then_simplify():
-    """Canonical order: simplify after commit-push.
+def test_built_in_finalize_steps_orders_simplify_then_push():
+    """Canonical order: simplify before push.
 
-    simplify is a post-commit-push MAY_MUTATE step (PR #688), so it must follow
-    commit-push. The canonical chain is therefore commit-push < simplify.
+    simplify is a mutates_source step (order 8) and push is the pure barrier
+    (order 10), so the canonical chain is simplify < push.
     """
     steps = _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
 
-    commit_index = steps.index('default:commit-push')
     simplify_index = steps.index('default:finalize-step-simplify')
-    # direct mirror of the request mandate: simplify follows commit-push
-    assert simplify_index > commit_index, (
-        'finalize-step-simplify must follow commit-push'
+    push_index = steps.index('default:push')
+    # direct mirror of the request mandate: simplify precedes push
+    assert simplify_index < push_index, (
+        'finalize-step-simplify must precede push'
     )
 
 
@@ -1110,7 +1110,7 @@ def test_steps_map_reads_keyed_map_to_internal_id_keyed_dict():
     step keeps its nested object. Key insertion (= execution) order is preserved.
     """
     raw = {
-        'default:commit-push': {},
+        'default:push': {},
         'default:branch-cleanup': {'pr_merge_strategy': 'squash'},
         'default:create-pr': {},
     }
@@ -1118,30 +1118,30 @@ def test_steps_map_reads_keyed_map_to_internal_id_keyed_dict():
     result = _cmd_quality_phases_mod._steps_map(raw)
 
     assert result == {
-        'default:commit-push': {},
+        'default:push': {},
         'default:branch-cleanup': {'pr_merge_strategy': 'squash'},
         'default:create-pr': {},
     }
     # key insertion order is preserved in the normalized dict
-    assert list(result.keys()) == ['default:commit-push', 'default:branch-cleanup', 'default:create-pr']
+    assert list(result.keys()) == ['default:push', 'default:branch-cleanup', 'default:create-pr']
 
 
 def test_steps_map_coerces_none_value_to_empty_dict():
     """A None per-step value (a config-less step) coerces to {}."""
-    raw = {'default:commit-push': None, 'default:create-pr': None}
+    raw = {'default:push': None, 'default:create-pr': None}
 
     result = _cmd_quality_phases_mod._steps_map(raw)
 
-    assert result == {'default:commit-push': {}, 'default:create-pr': {}}
+    assert result == {'default:push': {}, 'default:create-pr': {}}
 
 
 def test_steps_map_coerces_empty_dict_to_empty_dict():
     """An empty {} per-step value coerces to {} (idempotent)."""
-    raw = {'default:commit-push': {}, 'default:create-pr': {}}
+    raw = {'default:push': {}, 'default:create-pr': {}}
 
     result = _cmd_quality_phases_mod._steps_map(raw)
 
-    assert result == {'default:commit-push': {}, 'default:create-pr': {}}
+    assert result == {'default:push': {}, 'default:create-pr': {}}
 
 
 def test_steps_map_coerces_toon_empty_string_to_empty_dict():
@@ -1150,11 +1150,11 @@ def test_steps_map_coerces_toon_empty_string_to_empty_dict():
     Persisting {} as TOON and reading it back yields the empty string '', so the
     read boundary must treat '' identically to None / {}.
     """
-    raw = {'default:commit-push': '', 'default:create-pr': ''}
+    raw = {'default:push': '', 'default:create-pr': ''}
 
     result = _cmd_quality_phases_mod._steps_map(raw)
 
-    assert result == {'default:commit-push': {}, 'default:create-pr': {}}
+    assert result == {'default:push': {}, 'default:create-pr': {}}
 
 
 def test_steps_map_mixed_shapes_read_identically_for_config_less_steps():
@@ -1165,7 +1165,7 @@ def test_steps_map_mixed_shapes_read_identically_for_config_less_steps():
     carries, while a param-owning step keeps its nested object.
     """
     raw = {
-        'default:commit-push': None,
+        'default:push': None,
         'default:create-pr': {},
         'default:lessons-capture': '',
         'default:branch-cleanup': {'pr_merge_strategy': 'squash'},
@@ -1174,7 +1174,7 @@ def test_steps_map_mixed_shapes_read_identically_for_config_less_steps():
     result = _cmd_quality_phases_mod._steps_map(raw)
 
     # every config-less representation reads back as the empty dict
-    assert result['default:commit-push'] == {}
+    assert result['default:push'] == {}
     assert result['default:create-pr'] == {}
     assert result['default:lessons-capture'] == {}
     # the param-owning step keeps its nested object untouched
@@ -1185,7 +1185,7 @@ def test_steps_map_non_dict_top_level_yields_empty_dict():
     """A non-dict top-level value (None / absent key / a stray list) yields an empty dict."""
     assert _cmd_quality_phases_mod._steps_map(None) == {}
     assert _cmd_quality_phases_mod._steps_map({}) == {}
-    assert _cmd_quality_phases_mod._steps_map(['default:commit-push']) == {}
+    assert _cmd_quality_phases_mod._steps_map(['default:push']) == {}
 
 
 def test_default_plan_coverage_is_inherit_inherit():

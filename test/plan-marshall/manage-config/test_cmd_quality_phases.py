@@ -310,7 +310,7 @@ def test_finalize_get(plan_context):
     assert result['status'] == 'success'
     assert 'max_iterations' in result
     assert 'steps' in result
-    assert 'default:commit-push' in result['steps']
+    assert 'default:push' in result['steps']
 
 
 def test_finalize_set_steps(plan_context):
@@ -321,7 +321,7 @@ def test_finalize_set_steps(plan_context):
         Namespace(
             sub_noun='phase-6-finalize',
             verb='set-steps',
-            steps='default:commit-push,default:create-pr,default:archive-plan',
+            steps='default:push,default:create-pr,default:archive-plan',
         )
     )
 
@@ -329,7 +329,7 @@ def test_finalize_set_steps(plan_context):
 
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     steps = config['plan']['phase-6-finalize']['steps']
-    assert _step_ids(steps) == ['default:commit-push', 'default:create-pr', 'default:archive-plan']
+    assert _step_ids(steps) == ['default:push', 'default:create-pr', 'default:archive-plan']
 
 
 def test_finalize_set_steps_empty_error(plan_context):
@@ -350,7 +350,7 @@ def test_finalize_add_step(plan_context, monkeypatch):
         _cmd_quality_phases,
         '_discover_steps_for_phase',
         lambda phase: [
-            {'name': 'default:commit-push', 'order': 10},
+            {'name': 'default:push', 'order': 10},
             {'name': 'default:create-pr', 'order': 20},
             {'name': 'default:automated-review', 'order': 30},
             {'name': 'default:sonar-roundtrip', 'order': 40},
@@ -392,7 +392,7 @@ def test_finalize_add_step_sorts_by_order(plan_context, monkeypatch):
         '_discover_steps_for_phase',
         lambda phase: [
             {'name': 'project:finalize-step-custom', 'order': 1},
-            {'name': 'default:commit-push', 'order': 10},
+            {'name': 'default:push', 'order': 10},
             {'name': 'default:create-pr', 'order': 20},
             {'name': 'default:automated-review', 'order': 30},
             {'name': 'default:sonar-roundtrip', 'order': 40},
@@ -428,7 +428,7 @@ def test_finalize_add_step_duplicate_error(plan_context):
         Namespace(
             sub_noun='phase-6-finalize',
             verb='add-step',
-            step='default:commit-push',
+            step='default:push',
             position=None,
         )
     )
@@ -496,14 +496,14 @@ def test_finalize_set_steps_sorts_by_order(plan_context):
         Namespace(
             sub_noun='phase-6-finalize',
             verb='set-steps',
-            steps='default:archive-plan,default:record-metrics,default:commit-push,default:create-pr',
+            steps='default:archive-plan,default:record-metrics,default:push,default:create-pr',
         )
     )
 
     assert result['status'] == 'success'
     # set-steps returns the keyed map; key insertion order is the execution order.
     assert list(result['steps'].keys()) == [
-        'default:commit-push',
+        'default:push',
         'default:create-pr',
         'default:record-metrics',
         'default:archive-plan',
@@ -518,7 +518,7 @@ def test_finalize_set_steps_missing_order_returns_error(plan_context):
         Namespace(
             sub_noun='phase-6-finalize',
             verb='set-steps',
-            steps='default:commit-push,pm-dev-java:java-post-pr',
+            steps='default:push,pm-dev-java:java-post-pr',
         )
     )
 
@@ -532,12 +532,12 @@ def test_finalize_set_steps_order_collision_returns_error(plan_context, monkeypa
     """set-steps fails with `error: order_collision` when two steps share the same discovered order."""
     create_marshal_json(plan_context.fixture_dir)
 
-    # Inject a discovery layout where commit-push and create-pr collide at order 20.
+    # Inject a discovery layout where push and create-pr collide at order 20.
     monkeypatch.setattr(
         _cmd_quality_phases,
         '_discover_steps_for_phase',
         lambda phase: [
-            {'name': 'default:commit-push', 'order': 20},
+            {'name': 'default:push', 'order': 20},
             {'name': 'default:create-pr', 'order': 20},
         ],
     )
@@ -546,14 +546,14 @@ def test_finalize_set_steps_order_collision_returns_error(plan_context, monkeypa
         Namespace(
             sub_noun='phase-6-finalize',
             verb='set-steps',
-            steps='default:commit-push,default:create-pr',
+            steps='default:push,default:create-pr',
         )
     )
 
     assert result['status'] == 'error'
     assert result['error'] == 'order_collision'
     assert result['order'] == 20
-    assert sorted(result['steps']) == ['default:commit-push', 'default:create-pr']
+    assert sorted(result['steps']) == ['default:create-pr', 'default:push']
     assert result['phase'] == 'phase-6-finalize'
 
 
@@ -822,7 +822,7 @@ def test_phase_6_finalize_set_steps_rejected_and_config_unchanged(plan_context):
             sub_noun='phase-6-finalize',
             verb='set',
             field='steps',
-            value='default:commit-push',
+            value='default:push',
         )
     )
 
@@ -1024,7 +1024,7 @@ def test_finalize_step_get_returns_empty_params_for_ownerless_step(plan_context)
             sub_noun='phase-6-finalize',
             verb='step',
             step_verb='get',
-            step_id='default:commit-push',
+            step_id='default:push',
         )
     )
 
@@ -1268,13 +1268,13 @@ def test_steps_map_normalizes_config_less_and_param_bearing_values():
     """A keyed-map input (config-less {} + param-bearing object) normalizes correctly."""
     result = _cmd_quality_phases._steps_map(
         {
-            'default:commit-push': {},
+            'default:push': {},
             'default:automated-review': {'review_bot_buffer_seconds': 300},
         }
     )
 
     assert result == {
-        'default:commit-push': {},
+        'default:push': {},
         'default:automated-review': {'review_bot_buffer_seconds': 300},
     }
 
@@ -1284,14 +1284,14 @@ def test_steps_map_preserves_input_order():
     result = _cmd_quality_phases._steps_map(
         {
             'default:archive-plan': {},
-            'default:commit-push': {},
+            'default:push': {},
             'default:create-pr': {},
         }
     )
 
     assert list(result.keys()) == [
         'default:archive-plan',
-        'default:commit-push',
+        'default:push',
         'default:create-pr',
     ]
 
@@ -1303,8 +1303,8 @@ def test_steps_map_empty_dict_yields_empty_dict():
 
 def test_steps_map_single_entry_keyed_map():
     """Single-entry keyed maps — one config-less, one param-bearing (edge case)."""
-    assert _cmd_quality_phases._steps_map({'default:commit-push': {}}) == {
-        'default:commit-push': {}
+    assert _cmd_quality_phases._steps_map({'default:push': {}}) == {
+        'default:push': {}
     }
     assert _cmd_quality_phases._steps_map(
         {'default:automated-review': {'review_bot_buffer_seconds': 300}}
@@ -1313,22 +1313,22 @@ def test_steps_map_single_entry_keyed_map():
 
 def test_steps_map_null_value_coerces_to_empty():
     """A keyed-map value that is null/{} coerces to an empty param dict."""
-    assert _cmd_quality_phases._steps_map({'default:commit-push': None}) == {
-        'default:commit-push': {}
+    assert _cmd_quality_phases._steps_map({'default:push': None}) == {
+        'default:push': {}
     }
-    assert _cmd_quality_phases._steps_map({'default:commit-push': {}}) == {
-        'default:commit-push': {}
+    assert _cmd_quality_phases._steps_map({'default:push': {}}) == {
+        'default:push': {}
     }
 
 
 def test_steps_map_returns_fresh_dict_callers_can_mutate():
     """The normalizer returns a fresh dict so callers may mutate it safely."""
-    raw = {'default:commit-push': {}}
+    raw = {'default:push': {}}
     result = _cmd_quality_phases._steps_map(raw)
     result['default:create-pr'] = {}
 
     # The source structure is untouched by the caller-side mutation.
-    assert raw == {'default:commit-push': {}}
+    assert raw == {'default:push': {}}
 
 
 # =============================================================================
@@ -1454,8 +1454,8 @@ def test_step_set_against_keyed_map_persists_keyed_map_form(plan_context):
     params = _params_for(persisted, 'default:branch-cleanup')
     assert params['pr_merge_strategy'] == 'rebase'
     # A config-less step persists as a {step_id: {}} entry.
-    assert 'default:commit-push' in _step_ids(persisted)
-    assert _params_for(persisted, 'default:commit-push') == {}
+    assert 'default:push' in _step_ids(persisted)
+    assert _params_for(persisted, 'default:push') == {}
 
 
 def test_set_steps_against_keyed_map_preserves_params(plan_context):
@@ -1471,7 +1471,7 @@ def test_set_steps_against_keyed_map_preserves_params(plan_context):
         Namespace(
             sub_noun='phase-6-finalize',
             verb='set-steps',
-            steps='default:automated-review,default:commit-push,default:create-pr',
+            steps='default:automated-review,default:push,default:create-pr',
         )
     )
 

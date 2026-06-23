@@ -182,7 +182,7 @@ The phase skill MUST either call `manage-status mark-step-done` for each unrecor
 ```markdown
 # Required steps for phase-6-finalize
 
-- commit-push
+- push
 - create-pr
 - automated-review
 - sonar-roundtrip

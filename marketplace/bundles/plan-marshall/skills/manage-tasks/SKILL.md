@@ -147,7 +147,7 @@ that residual seam.
 
 `pre-commit-verify-freshness` is the script-level enforcement of the
 necessary-vs-sufficient gap between `loop-exit-guard` (queue-empty proof) and
-the pre-commit-push state (worktree-actually-verified proof). `loop-exit-guard`
+the pre-push state (worktree-actually-verified proof). `loop-exit-guard`
 answers a structurally narrower question ("is the task queue empty?") than
 what the pre-commit gate needs ("has the codebase actually been verified
 against its current on-disk state?"). This verb closes the gap by querying the
@@ -156,7 +156,7 @@ unified change-ledger for a `kind=build` entry with `exit_code == 0` whose
 guards are complementary, not redundant: queue-emptiness and verify-freshness
 must BOTH be true before any pre-commit transition.
 
-The gap this closes: the orchestrator can dispatch `commit-push` against a tree
+The gap this closes: the orchestrator can dispatch `push` against a tree
 that no successful build has observed if the loop-exit guard is the only gate
 checked.
 
@@ -228,9 +228,9 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
 
 - `phase-5-execute/SKILL.md` § Step 12a — Pending-tasks transition guard
   (now a co-equal gate alongside `loop-exit-guard`).
-- `phase-6-finalize/SKILL.md` and `phase-6-finalize/standards/commit-push.md`
-  § "Freshness precondition" — fires BEFORE the no-changes-branch check of
-  `commit-push`.
+- `phase-6-finalize/SKILL.md` and `phase-6-finalize/standards/push.md`
+  § "Freshness precondition" — fires BEFORE the clean-tree assertion of
+  `push`.
 
 Both gates fail closed on any non-`fresh` status and emit a `[BLOCKED]` work-log
 line carrying the reason and the working-tree sha. The `--force` orchestrator

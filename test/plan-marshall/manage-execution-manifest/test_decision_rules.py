@@ -195,7 +195,7 @@ class TestPreSubmissionSelfReviewInactive:
         assert result['status'] == 'success'
         assert result['commit_push_omitted'] is True
         steps = result_phase_6_steps(result)
-        assert 'commit-push' not in steps
+        assert 'push' not in steps
         assert 'pre-push-quality-gate' not in steps
         assert 'pre-submission-self-review' not in steps
 
@@ -227,7 +227,7 @@ class TestPrePushQualityGateInactive:
         to exercise the pre-filter must inject it into the candidate set.
         """
         steps = list(DEFAULT_PHASE_6_STEPS)
-        steps.insert(steps.index('commit-push'), 'pre-push-quality-gate')
+        steps.insert(steps.index('push'), 'pre-push-quality-gate')
         return ','.join(steps)
 
     def test_keeps_gate_when_verdict_is_build(self, plan_context, monkeypatch):

@@ -46,7 +46,7 @@ phase_5:
 
 phase_6:
   steps[M]:
-    - commit-push
+    - push
     - create-pr
     - automated-review
     - sonar-roundtrip
@@ -68,7 +68,7 @@ execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timest
 | `phase_5.early_terminate` | bool | If `true`, Phase 5 transitions directly to Phase 6 without running tasks (analysis-only plans with empty affected_files) |
 | `phase_5.envelope_count` | int | Number of phase-5 `execution-context` envelopes the orchestrator should plan for. Written by `compose` from the optional `--envelope-count` input; defaults to `1` (a single budget-bounded envelope greedily drives the task loop) when the input is absent. A manifest composed before this field existed has no `phase_5.envelope_count` key, and every reader interprets an absent value as the same `1` default — so reads stay backward-compatible. |
 | `phase_5.verification_steps` | list[string] | Ordered list of Phase 5 verification step IDs (e.g., `quality-gate`, `module-tests`, `coverage`). Empty list means no verification needed (e.g., docs-only plans) |
-| `phase_6.steps` | list[string] | Ordered list of Phase 6 finalize step IDs to dispatch. Subset of the canonical step set: `commit-push`, `create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `adr-propose`, `branch-cleanup`, `archive-plan`, `record-metrics`, `lessons-integration`. CI completion is a dispatcher-resolved precondition declared via `requires: [ci-complete]` on consumer step frontmatters (see `phase-6-finalize/SKILL.md` Step 3 § "Precondition resolution") — it is not itself a step in the canonical set. |
+| `phase_6.steps` | list[string] | Ordered list of Phase 6 finalize step IDs to dispatch. Subset of the canonical step set: `push`, `create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `adr-propose`, `branch-cleanup`, `archive-plan`, `record-metrics`, `lessons-integration`. CI completion is a dispatcher-resolved precondition declared via `requires: [ci-complete]` on consumer step frontmatters (see `phase-6-finalize/SKILL.md` Step 3 § "Precondition resolution") — it is not itself a step in the canonical set. |
 | `phase_5.step_params` | object | Per-step param snapshot for the selected Phase 5 verify steps, keyed by the (bare) in-manifest step id; each value is the step's resolved param object snapshotted from the marshal.json keyed map at compose time. Verify steps own no params, so values are typically `{}`. Read via `step-params get`; per-plan overridable via `step-params set`. |
 | `phase_6.step_params` | object | Per-step param snapshot for the selected Phase 6 finalize steps, keyed by the (bare) in-manifest step id; each value is the step's resolved param object snapshotted from the marshal.json keyed map at compose time (e.g. `branch-cleanup` carries `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold`; `sonar-roundtrip` carries `touched_file_cleanup` / `do_transition` / `ce_wait_timeout_seconds`; `automated-review` carries `review_bot_buffer_seconds`). This is the **plan-local runtime source** that phase-5/6 consumers read via `step-params get` (per-plan overridable via `step-params set`), NOT the marshal.json keyed map (the compose-time default). |
 | `execution_log` | list[object] | Ordered append log of per-step execution records, written one row per `record-step` invocation. Each row carries `step_id` (the dispatched step), `phase` (`5-execute` or `6-finalize`), `outcome` (`executed`/`skipped`/`error`), the token-attribution triple `total_tokens`/`tool_uses`/`duration_ms` (default `0`), and an ISO-8601 `timestamp`. Absent until the first `record-step` call; the `compose`/`read`/`validate`/`validate-loadable` operations never read or write it. |
@@ -108,8 +108,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--recipe-key` (optional override): Forces the `recipe` rule. When omitted, the composer reads the provenance itself from `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`), so lesson- and recipe-derived plans select the `recipe` rule without the caller forwarding this flag.
 - `--affected-files-count` (optional, default 0): Count of affected files surfaced by the outline; used by the `early_terminate` rule
 - `--phase-5-steps` (optional): Comma-separated candidate Phase 5 verification step IDs. The composer prefers `marshal.json::plan.phase-5-execute.verification_steps` (the phase-aware list-field — phase-5 reads `verification_steps`, every other phase reads `steps`; see [decision-rules.md](standards/decision-rules.md) § "Phase-aware step source"), falling back to this CSV only when no marshal.json is present. The IDs may be the legacy bare role-file forms (`default:quality_check`, …) or the parameterized canonical-verify form `default:verify:{canonical}` (e.g. `default:verify:quality-gate`, `default:verify:module-tests`, `default:verify:coverage`), whose matrix role is derived from the trailing canonical segment (see [decision-rules.md](standards/decision-rules.md) § "Role derivation for canonical-verify steps"). The decision matrix selects a subset, then the generic footprint pre-filter (§ "Generic footprint pre-filter") drops any footprint-gated whole-tree canonical (`integration` / `e2e`) that the live footprint does not exercise.
-- `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs from `marshal.json` (e.g., `commit-push,create-pr,automated-review,sonar-roundtrip,lessons-capture,adr-propose,branch-cleanup,archive-plan`). The decision matrix selects a subset. If omitted, defaults to the full canonical set.
-- `--commit-and-push` (optional, default `true`): `true|false` — the resolved `commit_and_push` boolean from phase-5-execute config. When `false`, `commit-push`, `pre-push-quality-gate`, and `pre-submission-self-review` are all removed from the candidate set by the `commit_push_disabled` pre-filter before the matrix runs (a local-only run).
+- `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs from `marshal.json` (e.g., `push,create-pr,automated-review,sonar-roundtrip,lessons-capture,adr-propose,branch-cleanup,archive-plan`). The decision matrix selects a subset. If omitted, defaults to the full canonical set.
+- `--commit-and-push` (optional, default `true`): `true|false` — the resolved `commit_and_push` boolean from phase-5-execute config. When `false`, `push`, `pre-push-quality-gate`, and `pre-submission-self-review` are all removed from the candidate set by the `commit_push_disabled` pre-filter before the matrix runs (a local-only run).
 - `--envelope-count` (optional, default `1`): Number of phase-5 `execution-context` envelopes the orchestrator should plan for. Persisted into the manifest's `phase_5.envelope_count`. When omitted, defaults to `1` (a single budget-bounded envelope greedily drives the task loop until the queue is empty or a TASK-boundary re-dispatch point fires). A non-positive value is clamped to `1`. The field is written under every decision-matrix rule (including `early_terminate`), so the `phase_5` block always carries it.
 
 **Output** (TOON):
@@ -285,7 +285,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier
-- `--step-id` (mutually exclusive with `--all`): A single step id to check (bare name `commit-push` or prefixed `default:commit-push`; both forms accepted)
+- `--step-id` (mutually exclusive with `--all`): A single step id to check (bare name `push` or prefixed `default:push`; both forms accepted)
 - `--all` (mutually exclusive with `--step-id`): Walk every entry in `manifest.phase_6.steps` and report per-step results
 
 **Scope**: built-in steps only (bare names that resolve to `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/{name}.md`). External steps (`project:` / `bundle:skill`) are out of scope — `validate-loadable` returns `loadable: true` for them with no further check, on the rationale that their loadability is the host plugin cache's responsibility and a missing skill surfaces at `Skill: {ref}` dispatch time as a different failure mode.
@@ -294,8 +294,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 ```toon
 status: success
 plan_id: EXAMPLE-PLAN
-step_id: commit-push
-standards_path: marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/commit-push.md
+step_id: push
+standards_path: marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/push.md
 loadable: true
 ```
 
@@ -315,7 +315,7 @@ status: success
 plan_id: EXAMPLE-PLAN
 unloadable_count: 1
 results[3]{step_id,standards_path,loadable,message}:
-  commit-push,marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/commit-push.md,true,
+  push,marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/push.md,true,
   create-pr,marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md,true,
   ghost-step,marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/ghost-step.md,false,"step `ghost-step` referenced by `marshal.json` is missing standards file `…ghost-step.md` — the plan likely deleted the file without sweeping `marshal.json`"
 ```
@@ -473,10 +473,6 @@ After the seven-row matrix produces the final `phase_6.steps` (and after `execut
 `always` is the only path that re-adds a step the `scope_gated_finalize` pre-filter dropped — an operator-set `always` overrides the implicit scope gate. Of the three gates only `qgate` is a flat phase-local knob (`marshal.json::plan.phase-6-finalize.qgate`); `self_review` and `simplify` are step-owned params read via `_read_step_owned_knob` from their owning steps (`project:finalize-step-pre-submission-self-review` and `default:finalize-step-simplify` respectively). The transform NEVER touches `automated-review`, so the bot-review invariant (`bot_enforcement_guard`) is preserved verbatim regardless of any gate value.
 
 The composer emits one `decision.log` line per forced change (canonical prefix `(plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection`) and surfaces `ceremony_finalize_gates`, `ceremony_finalize_forced_in`, and `ceremony_finalize_forced_out` in the `compose` result for observability. The full rule (gate→step map, `automated-review` carve-out, post-matrix-transform rationale) is documented in [standards/decision-rules.md](standards/decision-rules.md) § "plan.phase-6-finalize Selection". The gate schema itself (run-at-all enum, defaults) is owned by [`manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) § phase-6-finalize.
-
-### MAY_MUTATE-after-commit-push placement invariant
-
-After the seven-row matrix, the `ceremony_finalize_selection` and `execution_tier` transforms, and the bot-enforcement guards have produced the final `phase_6.steps` ordering, the composer runs a deterministic placement auto-reorder: when any `MAY_MUTATE_WORKTREE_STEPS` member (`automated-review`, `sonar-roundtrip`, `finalize-step-simplify`) sits at an index earlier than `commit-push`, each offending step is moved to the first position after `commit-push` (preserving relative order), one `may_mutate_placement auto-reorder` decision-log line is emitted per reordered step, and compose continues successfully with the corrected ordering written into the plan-scoped `execution.toon` only (`marshal.json` is never touched). The set is imported from its single owner (`manage-status/scripts/_cmd_mark_step.py`) so the compose-time reorder can never drift from the script-layer dirty-worktree refusal. The ordering rule, its rationale, the carve-outs, and the decision-log shape are documented in [standards/decision-rules.md](standards/decision-rules.md) § "MAY_MUTATE-after-commit-push Placement Invariant" — see that section; the rule body is not restated here.
 
 ---
 

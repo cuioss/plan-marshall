@@ -316,8 +316,8 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │                                                                             │
 │     ┌──────────────────────────────────────────────────────────────┐       │
 │     │                                                              │       │
-│     │  1. commit_push                                              │       │
-│     │     └─▶ Stage, commit, push to remote                        │       │
+│     │  1. push                                                     │       │
+│     │     └─▶ Push converged branch to remote                      │       │
 │     │                                                              │       │
 │     │  2. automated_review                                         │       │
 │     │     └─▶ Create PR, wait for CI, collect bot feedback         │       │

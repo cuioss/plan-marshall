@@ -76,8 +76,8 @@ JSON structure and field definitions for project configuration.
       "loop_back_without_asking": false,
       "qgate": "auto",
       "steps": [
-        "default:commit-push",
         { "default:finalize-step-simplify": { "simplify": "auto" } },
+        "default:push",
         "default:create-pr",
         { "default:automated-review": { "review_bot_buffer_seconds": 180 } },
         {
@@ -399,7 +399,7 @@ Execute phase with integrated verification pipeline. Contains the `commit_and_pu
 
 | Field | Type | Default | Values |
 |-------|------|---------|--------|
-| `commit_and_push` | bool | true | true=commit per-deliverable + push at finalize; false=local-only run (commit-push/push/PR steps stripped by the manifest `commit_push_disabled` pre-filter) |
+| `commit_and_push` | bool | true | true=commit per-deliverable + push at finalize; false=local-only run (push/PR steps stripped by the manifest `commit_push_disabled` pre-filter) |
 | `max_iterations` | int | 5 | Maximum verify-execute-verify loops |
 | `per_deliverable_build` | list[string] | `["default:verify:compile","default:verify:module-tests"]` | A list of `default:verify:{canonical}` step IDs — the canonical-verify rungs phase-5-execute runs for the changed module at each per-deliverable chain-tail point (Step 10). The default runs `compile` + the module's scoped `module-tests`. Set to `[]` to disable the focused build (the whole-tree sweep at end-of-phase remains the only build). Each entry must be a `default:verify:{canonical}` ID; the retired enum strings (`off` / `compile-only` / `compile+scoped-test` / `full`) are rejected with a migration error. |
 | `cost_size_token_table` | dict | `{"S":"25K","M":"60K","L":"130K","XL":"260K"}` | Size→token table mapping each T-shirt `cost_size` (`S`/`M`/`L`/`XL`) to a predicted-token magnitude. The phase-4-plan bin-packer (`manage-tasks pack-envelopes`) reads it to map a task's derived `cost_size` to its `predicted_cost_tokens`. Keys must be exactly `S`/`M`/`L`/`XL`; each value parses via `sensible_number.parse_sensible_int`. Validated by `validate_cost_size_token_table`. The default magnitudes are calibrated to the forensic 134K–392K per-dispatch range and are tunable to recalibrate the cost model. |
@@ -457,8 +457,8 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
       "loop_back_without_asking": false,
       "qgate": "auto",
       "steps": {
-        "default:commit-push": {},
         "default:finalize-step-simplify": { "simplify": "auto" },
+        "default:push": {},
         "default:create-pr": {},
         "default:automated-review": { "review_bot_buffer_seconds": 180 },
         "default:sonar-roundtrip": {
@@ -540,13 +540,13 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
 **Two-tier source for step params**: the `steps` keyed map in `marshal.json` is the **compose-time default + wizard global-config write target** (read/written via `step get` / `step set`). The **plan-local runtime source** is the execution manifest — the composer snapshots each selected step's resolved params into the manifest body at compose time, and phase-5/6 runtime consumers read params via `manage-execution-manifest step-params get` (plan-local, per-plan overridable via `step-params set`), NOT from `marshal.json`. The execution manifest's `step_params` block is an id-keyed dict — a separate runtime-override surface. See [manage-execution-manifest/standards/manifest-schema.md](../../manage-execution-manifest/standards/manifest-schema.md) § `step_params`.
 
 Managed via (the step verbs operate on the keyed map, preserving key insertion order and existing per-step params):
-- `plan phase-6-finalize set-steps --steps default:commit-push,default:create-pr,…`
+- `plan phase-6-finalize set-steps --steps default:push,default:create-pr,…`
 - `plan phase-6-finalize add-step --step my-bundle:my-finalize-step`
 - `plan phase-6-finalize remove-step --step default:sonar-roundtrip`
 - `plan phase-6-finalize step get --step-id default:branch-cleanup` (returns the step's complete nested param object in one call)
 - `plan phase-6-finalize step set --step-id default:branch-cleanup --param pr_merge_strategy --value rebase` (writes one step-owned param into the step's nested object — the global-config write target)
 
-Default steps: `default:commit-push`, `default:create-pr`, `default:automated-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan`. Step types: built-in (`default:` prefix), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
+Default steps: `default:finalize-step-simplify`, `default:push`, `default:create-pr`, `default:automated-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan`. Step types: built-in (`default:` prefix), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
 
 ### Run-at-all gates and finalize automation knobs (phase-local)
 

@@ -67,7 +67,7 @@
           "self_review": "auto",
           "drop_review_on_scope_gate": false
         },
-        "default:commit-push": {},
+        "default:push": {},
         "default:finalize-step-simplify": {
           "simplify": "auto"
         },

@@ -34,9 +34,9 @@ def test_parse_required_steps_bullet_format(tmp_path: Path) -> None:
     f = tmp_path / 'required-steps.md'
     _write_required_steps(
         f,
-        '# Required steps\n\n- commit-push\n- create-pr\n- record-metrics\n',
+        '# Required steps\n\n- push\n- create-pr\n- record-metrics\n',
     )
-    assert inv._parse_required_steps(f) == ['commit-push', 'create-pr', 'record-metrics']
+    assert inv._parse_required_steps(f) == ['push', 'create-pr', 'record-metrics']
 
 
 def test_parse_required_steps_ignores_blank_and_comments(tmp_path: Path) -> None:
@@ -50,8 +50,8 @@ def test_parse_required_steps_ignores_blank_and_comments(tmp_path: Path) -> None
 
 def test_parse_required_steps_strips_inline_code(tmp_path: Path) -> None:
     f = tmp_path / 'required-steps.md'
-    _write_required_steps(f, '- `commit-push`\n- `create-pr`\n')
-    assert inv._parse_required_steps(f) == ['commit-push', 'create-pr']
+    _write_required_steps(f, '- `push`\n- `create-pr`\n')
+    assert inv._parse_required_steps(f) == ['push', 'create-pr']
 
 
 def test_parse_required_steps_empty_file(tmp_path: Path) -> None:
@@ -77,7 +77,7 @@ def test_parse_required_steps_missing_file_returns_empty(tmp_path: Path) -> None
 def test_resolve_required_steps_path_exists(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     bundles = tmp_path / 'bundles'
     target = bundles / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'required-steps.md'
-    _write_required_steps(target, '- commit-push\n')
+    _write_required_steps(target, '- push\n')
     monkeypatch.setattr(inv, 'find_marketplace_path', lambda: bundles)
     resolved = inv._resolve_required_steps_path('6-finalize')
     assert resolved == target
@@ -227,11 +227,11 @@ def test_read_manifest_steps_reads_phase_block(
     base = tmp_path / 'base'
     (base / 'plans' / 'pid').mkdir(parents=True)
     (base / 'plans' / 'pid' / 'execution.toon').write_text(
-        'manifest_version: 1\nphase_6:\n  steps[2]:\n    - commit-push\n    - "project:foo"\n',
+        'manifest_version: 1\nphase_6:\n  steps[2]:\n    - push\n    - "project:foo"\n',
         encoding='utf-8',
     )
     monkeypatch.setattr(inv, 'get_base_dir', lambda: base)
-    assert inv._read_manifest_steps('pid', '6-finalize') == {'commit-push', 'project:foo'}
+    assert inv._read_manifest_steps('pid', '6-finalize') == {'push', 'project:foo'}
 
 
 def test_read_manifest_steps_missing_returns_none(

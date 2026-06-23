@@ -343,7 +343,7 @@ def test_list_finalize_steps_returns_built_in(plan_context, monkeypatch):
 
     assert result['status'] == 'success'
     step_names = [s['name'] for s in result['steps']]
-    assert 'default:commit-push' in step_names
+    assert 'default:push' in step_names
     assert 'default:create-pr' in step_names
     assert 'default:record-metrics' in step_names
     assert 'default:archive-plan' in step_names
@@ -549,7 +549,7 @@ def test_list_finalize_steps_builtins_have_order(tmp_path):
     steps = _run_discovery_in_cwd(tmp_path)
 
     by_name = {s['name']: s for s in steps if s['source'] == 'built-in'}
-    assert by_name['default:commit-push']['order'] == 10
+    assert by_name['default:push']['order'] == 10
     assert by_name['default:create-pr']['order'] == 20
     assert by_name['default:automated-review']['order'] == 30
     assert by_name['default:archive-plan']['order'] == 1000

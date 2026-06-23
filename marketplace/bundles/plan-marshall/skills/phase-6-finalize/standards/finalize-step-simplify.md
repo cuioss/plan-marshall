@@ -1,7 +1,8 @@
 ---
 name: default:finalize-step-simplify
 description: Domain-agnostic phase-6 cognitive simplification pass — reviews the plan's changeset against the minimum-viable-code anti-patterns and deletes surplus structure directly in the worktree
-order: 11
+order: 8
+mutates_source: true
 configurable:
   - key: simplify
     default: auto
@@ -10,7 +11,7 @@ configurable:
 
 # Finalize Step: simplify
 
-Cognitive simplification pass for the `default:finalize-step-simplify` finalize step. Reviews the plan's change surface against the "minimum viable code" anti-patterns and deletes the surplus structure directly in the worktree, BEFORE `commit-push` materialises the commit. This is the dynamic, judgement-driven complement to plugin-doctor's static `SIMPLICITY_*` rules: the doctor catches the mechanically-recognisable patterns at edit time, this step reasons about everything else at finalize time.
+Cognitive simplification pass for the `default:finalize-step-simplify` finalize step. Reviews the plan's change surface against the "minimum viable code" anti-patterns and deletes the surplus structure directly in the worktree; the dispatcher's commit instrumentation commits the edits before the `push` barrier runs. This is the dynamic, judgement-driven complement to plugin-doctor's static `SIMPLICITY_*` rules: the doctor catches the mechanically-recognisable patterns at edit time, this step reasons about everything else at finalize time.
 
 Domain-agnostic **by construction** — the dispatched prompt loads ONLY the three domain-invariant foundation standards (D1/D2/D3 below). No language- or bundle-specific guidance is loaded, so the step applies uniformly to Java, Python, JavaScript, documentation, and marketplace changesets alike.
 
@@ -62,7 +63,7 @@ The step derives the plan's live footprint on demand from the worktree (via `com
 
 ## HEAD-dependency
 
-`finalize-step-simplify` is a member of `HEAD_DEPENDENT_STEPS` (see `phase-6-finalize/SKILL.md`). Because it applies edits directly to the worktree AND commits them on the feature branch (Step 4), a loop-back fix task that advances HEAD past the recorded `head_at_completion` MUST re-fire this step so the simplification pass runs against the newer tree. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call — after the step has committed its own edits, so the SHA reflects the simplify commit — and forward it via `--head-at-completion {sha}`.
+`finalize-step-simplify` is a member of `HEAD_DEPENDENT_STEPS` (see `phase-6-finalize/SKILL.md`). Because it applies edits directly to the worktree — which the dispatcher's commit instrumentation (`phase-6-finalize/SKILL.md` Step 3 item 5f) commits after the step records `done`, advancing HEAD — a loop-back fix task that advances HEAD past the recorded `head_at_completion` MUST re-fire this step so the simplification pass runs against the newer tree. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call and forward it via `--head-at-completion {sha}`.
 
 ## Workflow
 
@@ -155,25 +156,11 @@ Task: plan-marshall:{target}
 
 Parse the returned TOON: `findings[]` and `applied_edits`.
 
-### Step 4: Commit own edits, capture HEAD, and mark step done
+### Step 4: Capture HEAD, mark step done, and return commit_message
 
-The step always leaves the worktree clean before marking `done`. Branch on `applied_edits` (parsed from the Step 3 return TOON):
+The simplification edits are applied directly to the worktree in Step 3. This step does NOT commit them — the dispatcher's commit instrumentation (`phase-6-finalize/SKILL.md` Step 3 item 5f) commits any `mutates_source: true` step's output after it records `done`, using the `commit_message` this step returns. There is no hand-rolled self-commit and no `applied_edits` branch.
 
-**When `applied_edits > 0`** — commit the simplification edits on the feature branch so the tree is clean and the edits land as a forward commit. Load `plan-marshall:workflow-integration-git` and run its Commit Changes workflow:
-
-```
-Skill: plan-marshall:workflow-integration-git
-Parameters:
-  - message: "chore(simplify): collapse accidental complexity in {plan_id}"
-  - push: false
-  - create-pr: false
-```
-
-The commit advances HEAD; the downstream `commit-push` HEAD-comparison observes the advanced HEAD and pushes normally. Because the tree is now clean, the script-layer dirty-worktree guard in `mark-step-done` (`MAY_MUTATE_WORKTREE_STEPS`) is satisfied — this step records `done` directly and emits NO `loop_back` (see the dirty-worktree invariant note in `phase-6-finalize/SKILL.md`).
-
-**When `applied_edits == 0`** — no edits were applied, so there is nothing to commit and HEAD is unchanged. Skip the commit and proceed straight to the HEAD capture below.
-
-Capture the post-commit (or unchanged) HEAD for the HEAD-dependency contract:
+Capture the live HEAD for the HEAD-dependency contract:
 
 ```bash
 git -C {worktree_path} rev-parse HEAD
@@ -190,6 +177,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 The `display_detail` string appears in the renderer's per-step `[OK]` row. The `--head-at-completion` SHA is consulted by the dispatcher's HEAD-comparison on re-entry (see SKILL.md § HEAD-dependent steps).
 
+Return a `commit_message` element in this step's return TOON so the dispatcher's instrumentation uses it when committing the applied edits (when no edits were applied the porcelain check is empty and the dispatcher commits nothing, so the returned message is simply unused):
+
+```toon
+status: done
+display_detail: "Simplify: {applied_edits} edits, {findings_count} findings"
+commit_message: "chore(simplify): collapse accidental complexity in {plan_id}"
+```
+
 ## Error Handling
 
 | Scenario | Action |
@@ -197,7 +192,6 @@ The `display_detail` string appears in the renderer's per-step `[OK]` row. The `
 | Live footprint empty (`compute-footprint` returns no `files`) | Mark `done` with `display_detail "Simplify: no changeset"` — nothing to review |
 | `simplicity` field absent | Default to the `lean` posture description and proceed |
 | Dispatched agent returns an error TOON | Mark `failed` with the agent's error in `display_detail`; finalize halts per the dispatcher's error handling |
-| Step-4 commit fails (`applied_edits > 0` but the Commit Changes workflow errors) | Mark `failed` with the commit error in `display_detail`; do NOT mark `done` with an uncommitted dirty tree — finalize halts per the dispatcher's error handling |
 
 ## Related
 

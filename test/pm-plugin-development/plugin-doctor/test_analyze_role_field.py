@@ -392,7 +392,7 @@ class TestPathScope:
             / 'standards'
         )
         sibling.mkdir(parents=True)
-        _write(sibling / 'commit-push.md', '---\nname: commit-push\n---\n')
+        _write(sibling / 'push.md', '---\nname: push\n---\n')
 
         findings = analyze_role_field(tmp_path)
         assert findings == []

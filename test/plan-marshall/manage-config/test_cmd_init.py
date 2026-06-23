@@ -211,7 +211,7 @@ def test_init_includes_phase_6_finalize(plan_context):
     # ordered step-id list extracted from the keyed map's keys.
     assert isinstance(finalize['steps'], dict)
     step_ids = _step_ids(finalize['steps'])
-    assert 'default:commit-push' in step_ids
+    assert 'default:push' in step_ids
     assert 'default:record-metrics' in step_ids
     assert 'default:archive-plan' in step_ids
     # Ordering invariant: archive-plan must be the final finalize step (it moves the

@@ -274,7 +274,7 @@ value: feature
 
 ### mark-step-done
 
-Record the outcome of a phase step inside `status.metadata.phase_steps`. Phase skills use this to persist intra-phase progress (e.g., discovery, drift-detection) so that resuming a phase can skip completed steps. Outcomes are `done`, `skipped`, `loop_back`, or `failed`. An optional `--display-detail` one-line string is persisted alongside the outcome so downstream renderers (phase-6-finalize vertical-steps block, etc.) can surface user-facing step summaries. Loop-back outcomes carry a mandatory `--loop-back-target` granularity classifier (see "Loop-back target classification" below). Steps that may inline-edit the worktree carry a dirty-worktree invariant on the `done` outcome (see "Dirty-worktree invariant on `done`" below).
+Record the outcome of a phase step inside `status.metadata.phase_steps`. Phase skills use this to persist intra-phase progress (e.g., discovery, drift-detection) so that resuming a phase can skip completed steps. Outcomes are `done`, `skipped`, `loop_back`, or `failed`. An optional `--display-detail` one-line string is persisted alongside the outcome so downstream renderers (phase-6-finalize vertical-steps block, etc.) can surface user-facing step summaries. Loop-back outcomes carry a mandatory `--loop-back-target` granularity classifier (see "Loop-back target classification" below).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
@@ -307,18 +307,7 @@ The `--loop-back-target` flag encodes the granularity invariant from the phase-6
 
 The flag is REQUIRED on every `loop_back` outcome (returns `error: missing_loop_back_target` when absent) and FORBIDDEN on every other outcome (returns `error: unexpected_loop_back_target`). The `argparse` `choices` enforce the two-value enumeration at parse time. There is no backwards-compat fallback — every loop-back-emitting call site MUST classify the disposition before persisting the outcome.
 
-**Dirty-worktree invariant on `done`**:
-
-Some finalize steps may legitimately mutate the worktree during their body — applying review fixes, re-running formatters, or regenerating artifacts. These steps are enumerated in the `MAY_MUTATE_WORKTREE_STEPS` set: `automated-review`, `sonar-roundtrip`, and `finalize-step-simplify`. When such a step reports `--outcome done`, the resolved worktree MUST be clean. Marking one of these steps `done` while uncommitted changes sit in the tree would let the finalize dispatcher advance past `commit-push` (HEAD unchanged + outcome `done` → skip commit) and silently drop the mutation.
-
-The guard fires only when `--outcome=done` AND `--step` is in `MAY_MUTATE_WORKTREE_STEPS`. It resolves the worktree path from `status.metadata` (tri-state: `use_worktree==false` or empty `worktree_path` → main checkout `.`; non-empty → that path) and runs `git -C {path} status --porcelain`. When the porcelain output is non-empty (dirty), the command returns `error: dirty_worktree_done_refused` and refuses to persist the outcome. All other outcomes (`skipped`, `failed`, `loop_back`) and all steps outside the set fall through unchanged — the guard is additive to every call site that marks a clean tree done.
-
-Two escape paths resolve the refusal, both re-issuing the same step as a loop-back:
-
-- `--outcome loop_back --loop-back-target 6-finalize` — replay the step inline so `commit-push` re-fires and the mutation is committed (inline-fixable disposition).
-- `--outcome loop_back --loop-back-target 5-execute` — roll the change into a fix task (fix-task-required disposition).
-
-**Storage shape** (breaking — replaces the old bare-string shape):
+**Storage shape**:
 
 ```json
 status.metadata.phase_steps[{phase}][{step}] = {
@@ -329,15 +318,15 @@ status.metadata.phase_steps[{phase}][{step}] = {
 }
 ```
 
-Both the `metadata` and `phase_steps` containers are created on demand. Bare-string entries from prior versions are treated as drift — see conflict semantics below. The `head_at_completion` and `loop_back_target` keys are only present when the corresponding flag was supplied (per the `_build_entry` helper); `loop_back_target` is structurally guaranteed to be present iff `outcome == "loop_back"`.
+Both the `metadata` and `phase_steps` containers are created on demand. A non-dict (bare-string) entry is rejected with `error: legacy_string_entry` — see conflict semantics below. The `head_at_completion` and `loop_back_target` keys are only present when the corresponding flag was supplied (per the `_build_entry` helper); `loop_back_target` is structurally guaranteed to be present iff `outcome == "loop_back"`.
 
 **Semantics**:
 - **Idempotent on identical outcome AND display_detail AND head_at_completion AND loop_back_target**: If the step already has the requested outcome and all four fields match, no file write occurs and `changed: false` is returned.
 - **Detail / head / loop_back_target update**: If the outcome matches but any of `display_detail`, `head_at_completion`, or `loop_back_target` differ, the command updates the entry in place and returns `changed: true`.
 - **Conflict on differing outcome**: If the step already has a different outcome and `--force` is not supplied, the command returns `error: conflict` with the existing outcome surfaced in the response. Supplying `--force` overwrites the existing value (and detail / head / loop_back_target).
-- **Legacy drift rejection**: If the existing entry is a bare string (pre-migration shape), the command returns `error: legacy_string_entry` and refuses to write. The caller must migrate `status.metadata.phase_steps` to the dict shape before retrying — there is no automatic migration.
+- **Bare-string entry rejection**: If the existing entry is a bare string rather than a dict, the command returns `error: legacy_string_entry` and refuses to write. Only the dict shape above is accepted.
 
-> **Forward reference — `phase_steps_complete` invariant**: Downstream phase skills and verification helpers treat `status.metadata.phase_steps[{phase}]` as the authoritative record of which intra-phase steps have been marked `done` or `skipped`. A phase is considered `phase_steps_complete` when every step in the phase's declared step list has a dict entry with `outcome == 'done'`. The invariant reader rejects bare-string entries as legacy drift. Consumers must not fabricate entries by other means — always go through `mark-step-done`.
+> **Forward reference — `phase_steps_complete` invariant**: Downstream phase skills and verification helpers treat `status.metadata.phase_steps[{phase}]` as the authoritative record of which intra-phase steps have been marked `done` or `skipped`. A phase is considered `phase_steps_complete` when every step in the phase's declared step list has a dict entry with `outcome == 'done'`. The invariant reader rejects bare-string entries. Consumers must not fabricate entries by other means — always go through `mark-step-done`.
 
 **Output — idempotent no-op** (TOON):
 ```toon
@@ -385,17 +374,6 @@ step: discovery
 existing_outcome: done
 requested_outcome: done
 message: Step 'discovery' in phase '5-execute' has legacy bare-string storage ('done'); migrate status.metadata.phase_steps to the dict shape {"outcome": ..., "display_detail": ...} before retrying.
-```
-
-**Output — dirty-worktree refusal** (TOON):
-```toon
-status: error
-plan_id: my-feature
-error: dirty_worktree_done_refused
-phase: 6-finalize
-step: automated-review
-dirty: true
-message: Step 'automated-review' in phase '6-finalize' may mutate the worktree, but the working tree is dirty — refusing to mark it done. Re-issue with --outcome loop_back --loop-back-target 6-finalize to replay the step inline (commit-push the change), or --outcome loop_back --loop-back-target 5-execute to roll the change into a fix task.
 ```
 
 ### assert-step-recorded
@@ -1015,7 +993,6 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-t
 | `missing_loop_back_target` | 1 | `mark-step-done`: `--outcome=loop_back` supplied without `--loop-back-target`. The flag is REQUIRED on every loop_back outcome (no backwards-compat fallback). |
 | `invalid_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` value not in `5-execute`/`6-finalize`. (Argparse `choices` normally catches this at parse time; this error fires only when the validation is bypassed at the API layer.) |
 | `unexpected_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` supplied alongside an outcome other than `loop_back`. The flag is FORBIDDEN on `done`/`skipped`/`failed` outcomes. |
-| `dirty_worktree_done_refused` | 1 | `mark-step-done`: `--outcome=done` for a step in `MAY_MUTATE_WORKTREE_STEPS` (`automated-review`/`sonar-roundtrip`/`finalize-step-simplify`) while the resolved worktree is dirty (`git status --porcelain` non-empty). Re-issue as `--outcome loop_back --loop-back-target 6-finalize` (inline replay) or `--loop-back-target 5-execute` (fix-task rollback). |
 | `step_record_missing` | 0 | `assert-step-recorded --require-terminal`: no terminal record exists under any key for the named phase (the dispatched step returned without recording a `mark-step-done` outcome). Exit code is 0 — the post-dispatch guard branches on the TOON `error` field, not the process exit code. |
 | `step_record_mismatched_key` | 0 | `assert-step-recorded --require-terminal`: the queried step has no terminal record, but a near-miss orphan terminal record exists under a different key in the same phase (the dispatched step recorded under the wrong key — e.g. a bare skill name instead of its fully-qualified manifest `step_id`). Carries `orphan_key` and `orphan_outcome`. Exit code is 0 — the guard branches on the TOON `error` field. |
 | `worktree_unresolved` | 1 | `phase_handshake verify`: `metadata.use_worktree==true` and `metadata.worktree_path` is non-empty but does not resolve on the filesystem. `get-worktree-path` does not emit this error — it returns `worktree_state: pending` for the pre-materialization state. |

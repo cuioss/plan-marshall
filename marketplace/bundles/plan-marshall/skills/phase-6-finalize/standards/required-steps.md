@@ -30,7 +30,7 @@ otherwise a manifest pruning would deadlock the phase transition.
 ## Steps
 
 - finalize-step-simplify
-- commit-push
+- push
 - create-pr
 - ci-verify
 - architecture-refresh
