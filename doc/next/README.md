@@ -26,7 +26,6 @@ machinery and from feeding more signal back into it** — not from new subsystem
 | # | Workstream | What it adds | Builds on | Document |
 |---|------------|--------------|-----------|----------|
 | 02 | Auditor (preference learning) | A cross-plan command (modeled on `audit-archived-plan-retrospectives`) detects recurring user gate-dispositions, routes them to `enriched.json` `best_practices`, and implicitly archives — the first real `persona-auditor` consumer | PR #744 architecture-hints, `audit-archived-plan-retrospectives`, `persona-auditor` | [02-auditor-preference-learning.md](02-auditor-preference-learning.md) |
-| 03 | Audit recipes | `recipe-code-review` + `recipe-security-audit` as standalone, single-envelope entry points emitting into findings | `ext-point-recipe`, `manage-findings`, `ext-triage-*` | [03-audit-recipes.md](03-audit-recipes.md) |
 | 04 | Routing v2 | A recipe-match routing tier ahead of light/deep, so known-shape requests skip the full pipeline (token + wall-time) | `manage-status planning-lane`, recipe registry, lesson auto-suggest | [04-routing-v2.md](04-routing-v2.md) |
 | 05 | Security audit finalize step | `default:finalize-step-security-audit` — two-layer focused context (`persona-security-expert` + per-domain `security` profile skills) | finalize-step discovery, `security` profile, the landed `persona-security-expert`, `ext-triage-*` | [05-security-finalize-step.md](05-security-finalize-step.md) |
 | 06 | Surface encoded-test verification | Make the principle explicit (verify = encoded e2e tests; explore = user's own tools) via a concept note + optional e2e-testing standard — no browser/daemon integration | domain test skills, concept docs | [06-surface-encoded-verification.md](06-surface-encoded-verification.md) |
@@ -39,8 +38,8 @@ skills, the `manage-personas` resolver, and the `profiles:` binding now exist), 
 the workstreams that depended on it build directly on that surface:
 
 ```text
-03 audit-recipes ──┬──► 04 routing-v2     (needs recipe targets to route to)
-                   └──► 05 security-finalize-step (shares the audit engine)
+03 audit-recipes ✅ SHIPPED ──┬──► 04 routing-v2     (recipe targets now exist)
+                              └──► 05 security-finalize-step (shared engine now authored)
 02 auditor                                (uses persona-auditor — now available)
 05 security-finalize-step                 (uses persona-security-expert — now available)
 06 surface-encoded-verification           (independent; lowest priority)
@@ -48,8 +47,9 @@ the workstreams that depended on it build directly on that surface:
 
 - **02 auditor** wires `persona-auditor` over the existing retrospective command and
   adds preference detection — the first real multi-persona consumer.
-- **03 audit-recipes is the keystone.** Recipes are the cheap single-envelope path;
-  04 routes onto them and 05 shares the security audit engine with them.
+- **03 audit-recipes — SHIPPED (the keystone).** The `recipe-code-review` and
+  `recipe-security-audit` recipes now exist; 04 routes onto them and 05 reuses the
+  security audit engine they author.
 - **04 routing** depends on 03 (recipe targets to route to).
 - **05 security** depends on the landed persona model (`persona-security-expert` +
   the `security` profile) and 03 (the shared audit engine). It ships as the named
@@ -58,10 +58,11 @@ the workstreams that depended on it build directly on that surface:
 
 ## Cross-cutting: the shared audit engine
 
-Workstream 03 (`recipe-security-audit`) and 05 (`finalize-step-security-audit`)
-MUST share one audit implementation with two entry points — on-demand recipe vs
-automatic finalize step. Author the per-domain skill-selection + audit-run logic
-once; both surfaces call it.
+Workstream 03 (`recipe-security-audit`) — now SHIPPED — and 05
+(`finalize-step-security-audit`) share one audit implementation with two entry
+points: on-demand recipe vs automatic finalize step. 03 authored the shared engine
+(`recipe-security-audit/standards/audit-engine.md`); 05 reuses it, adding only
+per-domain `skills_by_profile.security` resolution as an additive stage-3 input.
 
 ## Lifecycle of this directory
 
