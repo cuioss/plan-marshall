@@ -2,7 +2,7 @@
 """Tests for the ``shell-substitution-in-skills`` rule analyzer.
 
 The analyzer detects ``$(`` command-substitution patterns inside plan-marshall
-skill markdown files. Such patterns violate the dev-agent-behavior-rules
+skill markdown files. Such patterns violate the persona-plan-marshall-agent
 "Bash: no shell constructs" hard rule.
 
 Two documentary contexts are exempt:

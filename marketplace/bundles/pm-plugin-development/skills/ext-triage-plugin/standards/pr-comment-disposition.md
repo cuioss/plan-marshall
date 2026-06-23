@@ -1,6 +1,6 @@
 # Marketplace Plugin PR Comment Disposition
 
-Decision criteria for disposing of automated PR review comments (gemini-code-assist, Copilot, plugin-doctor, markdownlint, ruff/mypy, Sonar, etc.) on marketplace plugin artifacts (skills, agents, commands, scripts, plugin.json, marketplace.json). Comments reach this disposition step **after** the validity check from `dev-agent-behavior-rules` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
+Decision criteria for disposing of automated PR review comments (gemini-code-assist, Copilot, plugin-doctor, markdownlint, ruff/mypy, Sonar, etc.) on marketplace plugin artifacts (skills, agents, commands, scripts, plugin.json, marketplace.json). Comments reach this disposition step **after** the validity check from `persona-plan-marshall-agent` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
 
 ## Disposition Outcomes
 
@@ -21,16 +21,16 @@ Concrete violations of marketplace plugin standards (see `pm-plugin-development:
 | plugin.json registration drift | Skill is `user-invocable: true` or context-loaded via `Skill:` directive but absent from plugin.json | `plugin-architecture` (plugin.json Registration Convention) |
 | plugin.json over-registration | Script-only skill (`user-invocable: false`, only 3-part script notation) listed in plugin.json | `plugin-architecture` |
 | Script notation mismatch | Script invoked as `{bundle}:{skill}:{script}` but file path doesn't follow `marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}` | `plugin-script-architecture` |
-| Direct `.plan/` access in script | Script reads/writes `.plan/` directly instead of through `manage-*` API | `plugin-script-architecture`, `dev-agent-behavior-rules` Hard Rules |
+| Direct `.plan/` access in script | Script reads/writes `.plan/` directly instead of through `manage-*` API | `plugin-script-architecture`, `persona-plan-marshall-agent` Hard Rules |
 | Missing Enforcement block | Script-bearing skill lacks `## Enforcement` block | `plugin-architecture` (Enforcement Block Pattern) |
 | Plugin-doctor `error` finding | Rule 8 (absolute paths in non-bootstrap), Rule 9 (script invocation discipline), Rule 10a (Enforcement block existence) | `plugin-doctor` |
 | Skill output not TOON | New script prints `json.dumps(...)` instead of `serialize_toon(...)` per project migration | `plugin-script-architecture`, `ref-toon-format` |
 | Tool-name casing wrong in adapter target | Frontmatter declares `read`/`write` (OpenCode form) instead of `Read`/`Write` (Claude form) for source files | `plugin-architecture` (Multi-Assistant Support) |
-| Hard-coded build command in script | Script invokes `./pw`, `mvn`, `npm`, `gradle` directly instead of resolving via `manage-architecture:architecture resolve` | `dev-agent-behavior-rules` Hard Rules |
-| Direct `gh` / `glab` call in script | Script uses CLI directly instead of `tools-integration-ci:ci` abstraction | `dev-agent-behavior-rules` Hard Rules |
-| Missing error-handling envelope on a newly-authored I/O / external-input boundary, or missing `isinstance` guard on an externally-sourced dict input | Unguarded `json.loads` on an external file (crashes on corrupt content); `.attr` / `.items()` on a value sourced from external config without a type check (crashes `AttributeError` on a corrupt non-dict) | `dev-agent-behavior-rules` Principle 7 carve-out + `dev-general-code-quality` #minimum-viable-code |
+| Hard-coded build command in script | Script invokes `./pw`, `mvn`, `npm`, `gradle` directly instead of resolving via `manage-architecture:architecture resolve` | `persona-plan-marshall-agent` Hard Rules |
+| Direct `gh` / `glab` call in script | Script uses CLI directly instead of `tools-integration-ci:ci` abstraction | `persona-plan-marshall-agent` Hard Rules |
+| Missing error-handling envelope on a newly-authored I/O / external-input boundary, or missing `isinstance` guard on an externally-sourced dict input | Unguarded `json.loads` on an external file (crashes on corrupt content); `.attr` / `.items()` on a value sourced from external config without a type check (crashes `AttributeError` on a corrupt non-dict) | `persona-plan-marshall-agent` Principle 7 carve-out + `ref-code-quality` #minimum-viable-code |
 | Test missing for new script | New script under `marketplace/bundles/*/skills/*/scripts/` has no corresponding test in `test/` | `plugin-script-architecture` (Testing) |
-| Script test bypasses executor | Test calls script via `PYTHONPATH=... python3 path/to/script.py` instead of via `execute-script.py` | `dev-agent-behavior-rules` (no smoke-tests via PYTHONPATH) |
+| Script test bypasses executor | Test calls script via `PYTHONPATH=... python3 path/to/script.py` instead of via `execute-script.py` | `persona-plan-marshall-agent` (no smoke-tests via PYTHONPATH) |
 | Component name not kebab-case | File or skill name uses `camelCase` or `snake_case` instead of project's kebab-case | `plugin-architecture` (Naming) |
 | Missing standards/ subdir for declarative content | Skill bundles standards inline in SKILL.md instead of under `standards/` | `plugin-architecture` |
 | Adapter compatibility break | Skill uses Claude-only tool (`Task`) without exclusion in adapter for OpenCode export | `plugin-architecture` (Multi-Assistant Support) |
@@ -57,7 +57,7 @@ Decline the suggestion with the corresponding template. Always reply before reso
 | Suggestion reverts a notation rename done by the plan | `Suggestion contradicts plan intent: this PR migrates `{old_notation}` → `{new_notation}` per `{plan_id}/{lesson_id}`. Reverting reintroduces the deprecated notation.` |
 | Suggestion adds a script-only skill back to plugin.json after the plan removed it | `Plan removes script-only skills from plugin.json per the registration convention (see plugin-architecture). Re-adding violates the convention this PR enforces.` |
 | Suggestion reintroduces JSON output where the plan migrated to TOON | `Plan migrates script output JSON → TOON per `{plan_id}` (see ref-toon-format). Reverting to `json.dumps` contradicts the migration intent.` |
-| Suggestion adds direct `.plan/` Read/Write where plan moved access through `manage-*` | `Plan enforces `.plan/` access via manage-* scripts only (dev-agent-behavior-rules Hard Rule). Direct access is the explicit anti-pattern this PR removes.` |
+| Suggestion adds direct `.plan/` Read/Write where plan moved access through `manage-*` | `Plan enforces `.plan/` access via manage-* scripts only (persona-plan-marshall-agent Hard Rule). Direct access is the explicit anti-pattern this PR removes.` |
 | Suggestion reintroduces a hard-coded `./pw`/`mvn`/`npm` after migration to architecture-resolved commands | `Plan migrates to architecture-resolved commands per `{plan_id}/{lesson_id}`. Hard-coded build invocations are the anti-pattern this PR eliminates.` |
 | Suggestion reintroduces direct `gh`/`glab` after migration to `tools-integration-ci` | `Plan migrates CI calls through `tools-integration-ci:ci` abstraction. Direct `gh`/`glab` is the anti-pattern this PR removes (see feedback_ci_abstraction_over_gh).` |
 
@@ -96,7 +96,7 @@ Use `AskUserQuestion` when the comment falls into any row below. Do NOT silently
 | Suggestion proposes a new architectural rule (new plugin-doctor rule, new enforcement block requirement) | Rule additions affect every existing skill; needs ADR-level decision |
 | Bot proposes a new build command, executor subcommand, or `manage-*` API verb | API surface additions affect downstream callers; needs maintainer review |
 | Suggestion conflicts between two automated reviewers (plugin-doctor says A, mypy says B) | Cannot satisfy both; user must pick the authoritative tool |
-| Bot suggests removing a hard rule from `dev-agent-behavior-rules` | Hard rules are intentional (per `feedback_dev_general_hard_rules`); never remove without explicit user direction |
+| Bot suggests removing a hard rule from `persona-plan-marshall-agent` | Hard rules are intentional (per `feedback_dev_general_hard_rules`); never remove without explicit user direction |
 | Bot proposes a new adapter target without a spec | Adapter additions affect long-term maintenance; needs maintainer decision |
 | Suggestion proposes reordering or skipping execute-task profile steps | Workflow shape is contractual; profile changes affect every plan execution path |
 
@@ -105,7 +105,7 @@ Use `AskUserQuestion` when the comment falls into any row below. Do NOT silently
 ```
 Bot comment received
   ↓
-Plan-intent check (dev-agent-behavior-rules PR review rule)
+Plan-intent check (persona-plan-marshall-agent PR review rule)
   Contradicts plan? → REPLY-AND-RESOLVE (Plan-Intent Contradiction)
   ↓
 Match FIX category from table above?
@@ -136,6 +136,6 @@ Default → ESCALATE (do not silently fix or resolve unknown categories)
 - `pm-plugin-development:plugin-architecture` — Architecture, frontmatter, registration conventions
 - `pm-plugin-development:plugin-script-architecture` — Script implementation and testing standards
 - `pm-plugin-development:plugin-doctor` — Quality gate rules
-- `plan-marshall:dev-agent-behavior-rules` — PR review hard rule (validate bot suggestions against plan intent)
+- `plan-marshall:persona-plan-marshall-agent` — PR review hard rule (validate bot suggestions against plan intent)
 - `plan-marshall:ref-toon-format` — TOON output format for scripts
 - [`../../../../plan-marshall/skills/plan-marshall/workflow/triage.md`](../../../../plan-marshall/skills/plan-marshall/workflow/triage.md) § "Design-decision reconciliation guard" — central guard that declines a review-bot or Sonar suggestion which would reverse a standing `decision.log` decision; enforcement-critical logic lives in the central standard only, not inlined here

@@ -133,7 +133,7 @@ When encountering Mockito in existing CUI code:
 
 ## Related Skills
 
-- `plan-marshall:dev-general-module-testing` - Language-agnostic testing principles (AAA, coverage, reliability)
+- `plan-marshall:persona-module-tester` - Language-agnostic testing principles (AAA, coverage, reliability)
 - `pm-dev-java:junit-core` - General JUnit 5 patterns (no CUI dependencies)
 - `pm-dev-java-cui:cui-logging` - CUI logging standards (use with cui-testing for log tests)
 

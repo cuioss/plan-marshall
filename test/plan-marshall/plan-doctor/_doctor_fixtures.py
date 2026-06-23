@@ -2,7 +2,7 @@
 """Local test fixtures for plan-doctor tests.
 
 This module is named ``_fixtures.py`` (NOT ``conftest.py``) per the repo's
-fixture-discovery convention documented in ``dev-general-module-testing``:
+fixture-discovery convention documented in ``persona-module-tester``:
 pytest auto-imports ``conftest.py`` modules anywhere on the collection path,
 which would shadow the per-bundle isolation we want here. ``_fixtures.py``
 is imported explicitly by the tests that need it.

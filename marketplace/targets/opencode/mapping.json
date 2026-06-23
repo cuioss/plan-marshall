@@ -28,7 +28,7 @@
     },
     "Skill: <entry>": {
       "disposition": "source_fix",
-      "note": "The `<entry>` runtime placeholder is reworded target-neutrally in the source (dev-agent-behavior-rules) rather than rewritten at emit time. The one true source change, handled in deliverable 9."
+      "note": "The `<entry>` runtime placeholder is reworded target-neutrally in the source (persona-plan-marshall-agent) rather than rewritten at emit time. The one true source change, handled in deliverable 9."
     }
   },
   "model_map": {

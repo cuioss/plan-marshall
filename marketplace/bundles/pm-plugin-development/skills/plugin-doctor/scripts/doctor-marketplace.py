@@ -55,6 +55,8 @@ from _analyze_manage_invocation import (
     derive_script_tree,
     scan_manage_invocation,
 )
+from _analyze_persona_binding_resolves import analyze_persona_binding_resolves
+from _analyze_persona_profile_uniqueness import analyze_persona_profile_uniqueness
 from _analyze_plugin_json import analyze_plugin_json_orphans
 from _analyze_resolver_matrix_coverage import analyze_resolver_matrix_coverage
 from _analyze_role_field import analyze_role_field
@@ -110,7 +112,7 @@ SCRIPT_DIR = Path(__file__).parent
 # matching the prior env-var-off default and avoiding noise on every run.
 #
 # This replaces the prior env-var gate, which violated the
-# ``dev-agent-behavior-rules`` hard rule against ``VAR=val cmd`` invocations.
+# ``persona-plan-marshall-agent`` hard rule against ``VAR=val cmd`` invocations.
 
 _OPTIN_RULE_NAMES = frozenset({'argument_naming', 'verb_chain', 'script_call_drift'})
 
@@ -503,7 +505,7 @@ def cmd_analyze(args) -> dict:
 
     # Marketplace-wide SIMPLICITY_* rule cluster (five static detectors).
     # Unconditionally active — the detectors are the mechanical enforcement
-    # layer for the dev-general-code-quality "minimum viable code" posture and
+    # layer for the ref-code-quality "minimum viable code" posture and
     # are cheap (one AST walk + regex pass per script). Rules 1-3 are risky
     # (fixable=False, confirm); rules 4-5 are safe (fixable=True, auto-apply).
     simplicity_issues = scan_simplicity(marketplace_root)
@@ -512,7 +514,7 @@ def cmd_analyze(args) -> dict:
 
     # Marketplace-wide shell-substitution-in-skills rule. Unconditionally
     # active (not gated by --rules) because it enforces a hard rule from
-    # dev-agent-behavior-rules and the analyzer is cheap (regex over markdown).
+    # persona-plan-marshall-agent and the analyzer is cheap (regex over markdown).
     shell_substitution_issues = analyze_shell_substitution_in_skills(marketplace_root)
     all_issues.extend(shell_substitution_issues)
     total_issues += len(shell_substitution_issues)
@@ -520,7 +522,7 @@ def cmd_analyze(args) -> dict:
     # Marketplace-wide bash-chain-shapes-in-skills rule. Unconditionally
     # active — detects compound Bash command sequences (&&, ;, trailing &)
     # inside fenced bash/sh blocks in plan-marshall skill markdown.  Enforces
-    # the dev-agent-behavior-rules "Bash: one command per call" hard rule.
+    # the persona-plan-marshall-agent "Bash: one command per call" hard rule.
     bash_chain_issues = analyze_bash_chain_shapes_in_skills(marketplace_root)
     all_issues.extend(bash_chain_issues)
     total_issues += len(bash_chain_issues)
@@ -903,7 +905,7 @@ def cmd_quality_gate(args) -> dict:
                                     applies to the ``analyze`` subcommand)
       - analyze_shell_substitution_in_skills (forbidden ``$(`` patterns in
                                     plan-marshall skill markdown — enforces
-                                    the dev-agent-behavior-rules "no shell
+                                    the persona-plan-marshall-agent "no shell
                                     constructs" hard rule)
       - analyze_skill_relative_temp_path (relative ``.plan/temp/...`` path
                                     consumed by ``git -C ... commit -F`` in
@@ -1146,6 +1148,36 @@ def cmd_quality_gate(args) -> dict:
     skill_mode_findings = _scoped(analyze_skill_mode(marketplace_root))
     all_issues.extend(skill_mode_findings)
     rule_summaries.append({'rule': 'analyze_skill_mode', 'findings': len(skill_mode_findings)})
+
+    # persona-profile-uniqueness — flags any two persona SKILL.md files
+    # (implements: persona) that declare the same primary (first) ``profiles:``
+    # entry. The persona<->primary-profile binding must be unique so phase-4-plan
+    # can reverse-look-up a task's persona unambiguously. Meta personas that omit
+    # ``profiles:`` carry no primary and are exempt. Findings carry absolute file
+    # paths, so _scoped's path filter applies uniformly under --paths.
+    persona_uniqueness_findings = _scoped(analyze_persona_profile_uniqueness(marketplace_root))
+    all_issues.extend(persona_uniqueness_findings)
+    rule_summaries.append(
+        {
+            'rule': 'analyze_persona_profile_uniqueness',
+            'findings': len(persona_uniqueness_findings),
+        }
+    )
+
+    # persona-binding-resolves — flags any persona that declares a ``profiles:``
+    # binding but whose composition DAG does not resolve (a missing composed
+    # persona or a composition cycle), so ``manage-personas resolve`` would
+    # return an error instead of a non-empty skills[]. Statically mirrors the
+    # resolver's DAG walk (no subprocess / no target-script import). Findings
+    # carry absolute file paths, so _scoped's path filter applies under --paths.
+    persona_binding_findings = _scoped(analyze_persona_binding_resolves(marketplace_root))
+    all_issues.extend(persona_binding_findings)
+    rule_summaries.append(
+        {
+            'rule': 'analyze_persona_binding_resolves',
+            'findings': len(persona_binding_findings),
+        }
+    )
 
     # fail-closed-gate-read + redundant-contract-typed-isinstance — the whole-tree
     # Python-script pass that runs alongside analyze_plan_path_in_scripts /

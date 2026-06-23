@@ -5,22 +5,22 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
-Claude Code ships two extremes: **accept-edits** prompts the developer on every meaningful action (safe but flow-killing) and **YOLO** (`--dangerously-skip-permissions`) skips every prompt (fast but a single LLM misstep can do anything within the user's shell). Plan Marshall sits between them with a different approach — **narrow what the LLM does at all**, so the permission surface is small enough to pre-approve with confidence. Three layers cooperate: a normative baseline (`dev-agent-behavior-rules` hard rules), a technical funnel (the script-executor proxy at `python3 .plan/execute-script.py`), and reader/orchestrator/writer isolation for untrusted external content (a read-only reader plus a deterministic validator script).
+Claude Code ships two extremes: **accept-edits** prompts the developer on every meaningful action (safe but flow-killing) and **YOLO** (`--dangerously-skip-permissions`) skips every prompt (fast but a single LLM misstep can do anything within the user's shell). Plan Marshall sits between them with a different approach — **narrow what the LLM does at all**, so the permission surface is small enough to pre-approve with confidence. Three layers cooperate: a normative baseline (`persona-plan-marshall-agent` hard rules), a technical funnel (the script-executor proxy at `python3 .plan/execute-script.py`), and reader/orchestrator/writer isolation for untrusted external content (a read-only reader plus a deterministic validator script).
 
 [CAUTION]
 ====
 **Does this solve the problem completely? No.**
 
-`dev-agent-behavior-rules` is skill-loaded *guidance*, not kernel-level enforcement. The LLM can still ignore the rules; nothing in Claude Code's runtime forces a subagent to honour a skill's `Prohibited actions` list. Plan Marshall lowers the probability of unsafe behaviour and bounds the blast radius via narrow allow-lists — it does not eliminate the risk.
+`persona-plan-marshall-agent` is skill-loaded *guidance*, not kernel-level enforcement. The LLM can still ignore the rules; nothing in Claude Code's runtime forces a subagent to honour a skill's `Prohibited actions` list. Plan Marshall lowers the probability of unsafe behaviour and bounds the blast radius via narrow allow-lists — it does not eliminate the risk.
 
 The model is **way fewer prompts than accept-edits, way more secure than YOLO**. For the remaining cases where Claude Code violates the rules anyway, you still get the prompt — just much less often than you would interactively, and the prompt itself is the safety net.
 ====
 
-image::../resources/diagrams/security-spectrum.svg[Plan Marshall on the Claude Code permission spectrum — three modes positioned along a prompt-frequency axis with blast-radius annotations underneath each. accept-edits sits at high prompts with small radius; YOLO at no prompts with unbounded radius; plan-marshall achieves YOLO's low prompt rate with bounded radius via the script-executor proxy plus dev-agent-behavior-rules hard rules. Marked as the sweet spot., align=center]
+image::../resources/diagrams/security-spectrum.svg[Plan Marshall on the Claude Code permission spectrum — three modes positioned along a prompt-frequency axis with blast-radius annotations underneath each. accept-edits sits at high prompts with small radius; YOLO at no prompts with unbounded radius; plan-marshall achieves YOLO's low prompt rate with bounded radius via the script-executor proxy plus persona-plan-marshall-agent hard rules. Marked as the sweet spot., align=center]
 
-== Layer 1 — `dev-agent-behavior-rules` as the normative baseline
+== Layer 1 — `persona-plan-marshall-agent` as the normative baseline
 
-Every plan-marshall subagent loads `plan-marshall:dev-agent-behavior-rules` as Tier-1 *before* anything else (see xref:skill-handling.adoc[Skill Handling]). The hard-rules block narrows what the subagent is allowed to *try*: no unconstrained generic subagents (every dispatch routes through `execution-context-{level}`), `.plan/` access through scripts only, one Bash command per call, no shell constructs (`for`/`while`/`$()`/subshells/heredocs), structured queries before `Glob`/`Grep`, build commands resolved via the architecture API rather than hard-coded, CI operations through the abstraction rather than direct `gh`/`glab`.
+Every plan-marshall subagent loads `plan-marshall:persona-plan-marshall-agent` as Tier-1 *before* anything else (see xref:skill-handling.adoc[Skill Handling]). The hard-rules block narrows what the subagent is allowed to *try*: no unconstrained generic subagents (every dispatch routes through `execution-context-{level}`), `.plan/` access through scripts only, one Bash command per call, no shell constructs (`for`/`while`/`$()`/subshells/heredocs), structured queries before `Glob`/`Grep`, build commands resolved via the architecture API rather than hard-coded, CI operations through the abstraction rather than direct `gh`/`glab`.
 
 These rules cut off the gnarliest LLM failure modes — shell injection through `$()`, runaway loops, ad-hoc subagents with full tool access — before they can fire. The rules are guidance, not enforcement, but loaded at every dispatch they sit in the subagent's context at every decision point.
 
@@ -54,14 +54,14 @@ Because every action routes through the script-executor proxy, every script invo
 
 == Related
 
-* link:../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/agent-behavior-rules.md[`agent-behavior-rules.md`] § Workflow Discipline (Hard Rules) — the normative baseline that every Tier-1 load enforces.
+* link:../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/agent-behavior-rules.md[`agent-behavior-rules.md`] § Workflow Discipline (Hard Rules) — the normative baseline that every Tier-1 load enforces.
 * link:../../marketplace/bundles/plan-marshall/skills/untrusted-ingestion/SKILL.md[`untrusted-ingestion/SKILL.md`] — the shared contract for untrusted external content: threat model, read-only-reader contract, output-schema rules, and the deterministic `validate_struct` containment boundary.
 * xref:../adr/003-Reader_isolation_as_a_tool-surface_lever.adoc[ADR-003: Reader isolation as a tool-surface lever] — the architectural decision behind Layer 3, including why containment is the deterministic script rather than the read-only surface alone.
 * link:../../marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md[`tools-script-executor/SKILL.md`] — the script-executor proxy contract, the embedded notation map, the error envelopes.
 * link:../../marketplace/bundles/plan-marshall/skills/tools-permission-doctor/standards/permission-architecture.md[`permission-architecture.md`] — the three-level settings hierarchy (global / project / local), resolution priority, sample patterns per scope, and the "when to use which file" guidance.
 * link:../../marketplace/bundles/plan-marshall/skills/tools-permission-doctor/SKILL.md[`tools-permission-doctor/SKILL.md`] — read-only permission analysis (`tools-permission-fix` covers the write operations).
 * link:../../marketplace/bundles/plan-marshall/skills/manage-providers/SKILL.md[`manage-providers/SKILL.md`] — credential storage outside `marshal.json` and `.plan/`, with the filesystem-protection invariants the credential store enforces.
-* xref:skill-handling.adoc[Concepts › Skill Handling] — why every subagent loads `dev-agent-behavior-rules` as Tier-1.
+* xref:skill-handling.adoc[Concepts › Skill Handling] — why every subagent loads `persona-plan-marshall-agent` as Tier-1.
 * xref:execution-context.adoc[Concepts › Execution Context] — why every subagent dispatch routes through the same generic dispatcher.
 * xref:audit-trail.adoc[Concepts › Audit Trail] — what every operation records to disk.
 * xref:../user/configuration.adoc[User Guide › Configuration] — surface map of `.claude/settings.json` / `.claude/settings.local.json`.

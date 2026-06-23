@@ -60,7 +60,7 @@ This skill implements its **OWN** plan system. You must:
 Load foundational development practices before any phase work:
 
 ```
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
 ### Action Resolution

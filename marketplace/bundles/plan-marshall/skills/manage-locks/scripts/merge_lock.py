@@ -91,7 +91,7 @@ the front indefinitely.
 
 **Main-anchored resolution — via the single sanctioned utility (ADR-002):** every
 other path resolution in the codebase is uniform cwd-relative (see
-``dev-agent-behavior-rules`` / ``tools-script-executor/standards/cwd-policy.md``
+``persona-plan-marshall-agent`` / ``tools-script-executor/standards/cwd-policy.md``
 and :func:`file_ops.get_base_dir`). The merge lock always resolves both its lock
 file AND its FIFO queue file against the MAIN checkout regardless of the caller's
 cwd, because cross-session coordination is inherently main-scoped: phase-5+
@@ -131,7 +131,7 @@ blind-``os.unlink(path)`` window, where a reclaimer could remove a live holder a
 concurrent reclaimer had just installed and both acquirers would then recreate and
 win — a silent double-grant of the ``k=1`` mutex. See the TOCTOU / check-then-act
 mitigation menu (option (c), atomic primitive) in
-``dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``.
+``ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``.
 
 **Title-token surface (best-effort, OUTSIDE the atomic window).** ``acquire`` and
 ``release`` surface the merge-lock state in the terminal title — ⏳ (``lock-waiting``)

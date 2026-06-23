@@ -246,7 +246,7 @@ def test_skill_domains_get_system_returns_defaults_and_optionals(plan_context, m
 
     assert result['status'] == 'success'
     assert 'defaults' in result
-    assert 'plan-marshall:dev-agent-behavior-rules' in result['defaults']
+    assert 'plan-marshall:persona-plan-marshall-agent' in result['defaults']
     assert 'optionals' in result
     # execute_task_skills was removed from the system domain — get must not surface it.
     assert 'execute_task_skills' not in result
@@ -260,7 +260,7 @@ def test_skill_domains_get_system_returns_defaults_and_optionals(plan_context, m
 def test_skill_domains_detect_runs(plan_context, monkeypatch):
     """Test skill-domains detect command runs successfully."""
     config = {
-        'skill_domains': {'system': {'defaults': ['plan-marshall:dev-agent-behavior-rules'], 'optionals': []}},
+        'skill_domains': {'system': {'defaults': ['plan-marshall:persona-plan-marshall-agent'], 'optionals': []}},
         'system': {'retention': {}},
         'plan': {
             'phase-1-init': {'branch_strategy': 'direct'},
@@ -1052,7 +1052,7 @@ def test_configure_preserves_project_skills(plan_context, monkeypatch):
     config = {
         'skill_domains': {
             'system': {
-                'defaults': ['plan-marshall:dev-agent-behavior-rules'],
+                'defaults': ['plan-marshall:persona-plan-marshall-agent'],
                 'project_skills': ['project:system-skill'],
             },
             'java': {
@@ -1121,7 +1121,7 @@ def test_configure_preserves_build_map_and_active_profiles(plan_context, monkeyp
         'skill_domains': {
             'active_profiles': ['quality', 'security'],
             'system': {
-                'defaults': ['plan-marshall:dev-agent-behavior-rules'],
+                'defaults': ['plan-marshall:persona-plan-marshall-agent'],
                 'project_skills': ['project:system-skill'],
             },
             'java': {
@@ -1236,7 +1236,7 @@ def test_get_nested_includes_project_skills(plan_context, monkeypatch):
     config = {
         'skill_domains': {
             'system': {
-                'defaults': ['plan-marshall:dev-agent-behavior-rules'],
+                'defaults': ['plan-marshall:persona-plan-marshall-agent'],
                 'project_skills': ['project:my-tool'],
             },
         },

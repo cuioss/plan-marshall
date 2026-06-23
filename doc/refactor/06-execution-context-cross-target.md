@@ -110,13 +110,13 @@ passthrough option to stay distinct, or they collapse to a single agent.
 
 ## Skill loading
 
-Step 2 of the dispatch sequence (load `dev-agent-behavior-rules`) uses a concrete
-`Skill: plan-marshall:dev-agent-behavior-rules` directive. The OpenCode body transform
+Step 2 of the dispatch sequence (load `persona-plan-marshall-agent`) uses a concrete
+`Skill: plan-marshall:persona-plan-marshall-agent` directive. The OpenCode body transform
 (`rewrite_skill_directives` in `marketplace/targets/opencode/body_transforms.py`) rewrites
 it to:
 
 ```text
-Call the `skill` tool with `{ name: "plan-marshall-dev-agent-behavior-rules" }` before continuing.
+Call the `skill` tool with `{ name: "plan-marshall-persona-plan-marshall-agent" }` before continuing.
 ```
 
 **Step 2: correct.**

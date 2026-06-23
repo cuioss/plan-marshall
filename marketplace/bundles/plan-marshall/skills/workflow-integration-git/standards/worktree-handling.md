@@ -113,7 +113,7 @@ The header is a reminder, not a path-routing mechanism — the binding holds whe
 
 **Applies in state 3 (post-materialization) only.** Pre-materialization, `{worktree_path}` is unset and the universal rule already governs main-checkout invocations (`git -C {main_checkout} ...`); the worktree-specific application below activates the moment Step 2.5 materializes the worktree directory.
 
-The universal "no `cd <path> && <tool>`" prohibition is established in [`dev-agent-behavior-rules/standards/tool-usage-patterns.md`](../../dev-agent-behavior-rules/standards/tool-usage-patterns.md) — that document defines the rule for every tool with a native cwd flag.
+The universal "no `cd <path> && <tool>`" prohibition is established in [`persona-plan-marshall-agent/standards/tool-usage-patterns.md`](../../persona-plan-marshall-agent/standards/tool-usage-patterns.md) — that document defines the rule for every tool with a native cwd flag.
 
 **Worktree-specific application**: when a plan runs in an isolated worktree, every git command that targets the plan's working tree MUST use the form:
 
@@ -147,7 +147,7 @@ This invariant is enforced at four layers:
 
 - **Layer A — `manage-*` scripts** resolve `.plan/` via the uniform cwd walk-up (ADR-002): they find the nearest ancestor of cwd containing `.plan/local`. During phase-5+ the orchestrator's cwd is pinned to the worktree, so these scripts resolve the worktree-resident `.plan/` copy moved in at phase-5 start. They are path-stable for a given pinned cwd by construction.
 - **Layer B — Bucket B `--plan-id` auto-routing** binds build / CI / Sonar wrappers to the worktree path internally; the main checkout is not reachable from those subprocess trees.
-- **Layer C — Raw tool flags** (`git -C`, `mvn -f`, `pytest --rootdir`, etc.) target the worktree explicitly when the agent invokes external CLIs directly. This is the call-site rule documented in `dev-agent-behavior-rules/standards/tool-usage-patterns.md`.
+- **Layer C — Raw tool flags** (`git -C`, `mvn -f`, `pytest --rootdir`, etc.) target the worktree explicitly when the agent invokes external CLIs directly. This is the call-site rule documented in `persona-plan-marshall-agent/standards/tool-usage-patterns.md`.
 - **Layer D — Phase-handshake strict-verify drift detection** catches free-form filesystem leaks that escape layers A/B/C. See the next section.
 
 ## Layer D: Phase-Handshake Drift Detection
@@ -408,7 +408,7 @@ Per the never-edit-main-checkout invariant above, `worktree-rebase-to` operates 
 
 ## Related
 
-- [`dev-agent-behavior-rules/standards/tool-usage-patterns.md`](../../dev-agent-behavior-rules/standards/tool-usage-patterns.md) — universal "no `cd && <tool>`" rule, native cwd flags for every tool.
+- [`persona-plan-marshall-agent/standards/tool-usage-patterns.md`](../../persona-plan-marshall-agent/standards/tool-usage-patterns.md) — universal "no `cd && <tool>`" rule, native cwd flags for every tool.
 - [`tools-script-executor/standards/cwd-policy.md`](../../tools-script-executor/standards/cwd-policy.md) — the single uniform cwd-relative resolution rule and the merge-lock exception for marketplace scripts.
 - [`phase-5-execute/SKILL.md`](../../phase-5-execute/SKILL.md) — Dispatch Protocol section anchors the Worktree Header at the orchestration layer.
 - [`execute-task/SKILL.md`](../../execute-task/SKILL.md) — execute-task input contract surfaces `plan_id` so the skill can resolve the worktree internally.

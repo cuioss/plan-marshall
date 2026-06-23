@@ -154,7 +154,7 @@ Read the resolved recipe's `coverage_gathering` field (from the recipe dict reso
 
 The three values are mutually distinct: `none` asks nothing, `required` always runs the two-question gather, `optional` gates the two-question gather behind one upfront yes/no.
 
-For `required` (always) and for `optional` when the operator chose to proceed, run the contract's canonical `AskUserQuestion` (scope + thoroughness, coupling-constrained, `inherit` default per the [coverage-gathering contract](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md)), expand the identifier, and persist BOTH the identifier and the expanded instruction to status metadata alongside the existing `recipe_*` fields:
+For `required` (always) and for `optional` when the operator chose to proceed, run the contract's canonical `AskUserQuestion` (scope + thoroughness, coupling-constrained, `inherit` default per the [coverage-gathering contract](../../persona-plan-marshall-agent/standards/coverage-gathering-contract.md)), expand the identifier, and persist BOTH the identifier and the expanded instruction to status metadata alongside the existing `recipe_*` fields:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config coverage expand \

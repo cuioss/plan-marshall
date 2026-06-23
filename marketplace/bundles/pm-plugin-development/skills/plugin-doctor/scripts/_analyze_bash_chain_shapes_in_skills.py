@@ -5,7 +5,7 @@ This module implements a deterministic regex-based static analyzer that
 detects compound Bash command sequences (``&&``, ``;``, trailing ``&``, and
 inline pipe-chains with embedded ``&&``/``;``) inside fenced ``bash``/``sh``
 blocks in skill/agent/command markdown files.  Such patterns violate the
-``dev-agent-behavior-rules`` "Bash: one command per call" hard rule because
+``persona-plan-marshall-agent`` "Bash: one command per call" hard rule because
 the host platform's permission UI flags compound commands, and compound shapes
 obscure the env-var / subprocess contract that each individual command owns.
 
@@ -139,15 +139,15 @@ def _make_finding(path: Path, line_no: int, chain_type: str, line: str, offset: 
     snippet = line[start:end]
     descriptions = {
         'and_and': (
-            'Compound ``&&`` chain in bash fence violates the dev-agent-behavior-rules '
+            'Compound ``&&`` chain in bash fence violates the persona-plan-marshall-agent '
             '"Bash: one command per call" hard rule. Split into separate Bash tool calls.'
         ),
         'semicolon': (
-            'Compound ``;`` chain in bash fence violates the dev-agent-behavior-rules '
+            'Compound ``;`` chain in bash fence violates the persona-plan-marshall-agent '
             '"Bash: one command per call" hard rule. Split into separate Bash tool calls.'
         ),
         'background': (
-            'Trailing ``&`` background dispatch in bash fence violates the dev-agent-behavior-rules '
+            'Trailing ``&`` background dispatch in bash fence violates the persona-plan-marshall-agent '
             '"Bash: one command per call" hard rule. Use run_in_background parameter instead.'
         ),
     }

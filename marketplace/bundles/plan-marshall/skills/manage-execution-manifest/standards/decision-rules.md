@@ -338,7 +338,7 @@ When no reorder is needed (any carve-out holds, or the ordering is already corre
 (plan-marshall:manage-execution-manifest:compose) execution_tier routing — mutated_tasks={N}, phase_5.verification_steps={list}
 ```
 
-**Cross-references**: `manage-architecture/standards/resolve-command.md` (the four-field augmented resolve TOON and the ≈600K-token re-dispatch failure mode that motivated it); `dev-agent-behavior-rules` (the sub-agent rule that consumes `bash_timeout_seconds`).
+**Cross-references**: `manage-architecture/standards/resolve-command.md` (the four-field augmented resolve TOON and the ≈600K-token re-dispatch failure mode that motivated it); `persona-plan-marshall-agent` (the sub-agent rule that consumes `bash_timeout_seconds`).
 
 ## Role-Field Intersection
 

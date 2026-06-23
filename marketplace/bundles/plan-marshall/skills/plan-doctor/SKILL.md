@@ -27,7 +27,7 @@ This skill complements the at-write-time validation in `manage-tasks` (which pre
 - Do not write findings outside the plan-scoped Q-Gate store — use `manage-findings qgate add` so they participate in the standard triage loop
 
 **Constraints:**
-- Strictly comply with `plan-marshall:dev-agent-behavior-rules` rules (one Bash command per call, no shell constructs, no improvisation)
+- Strictly comply with `plan-marshall:persona-plan-marshall-agent` rules (one Bash command per call, no shell constructs, no improvisation)
 - Findings are emitted to the Q-Gate store under phase `5-execute` so they surface in the Phase 5 triage path; the script also prints a TOON summary to stdout
 - Exit non-zero (`1`) when `findings_count > 0` so CI / orchestrators can fail fast on regressions
 

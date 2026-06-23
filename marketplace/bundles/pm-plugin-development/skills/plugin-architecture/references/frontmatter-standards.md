@@ -192,7 +192,7 @@ user-invocable: true
 
 ### Optional Fields
 
-Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The plugin schema for skills supports only: `name`, `description`, `user-invocable`, `mode`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`.
+Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The plugin schema for skills supports only: `name`, `description`, `user-invocable`, `mode`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`.
 
 **implements** (optional):
 
@@ -229,7 +229,7 @@ Declares the skill's execution archetype — the single, authoritative signal fo
 
 - **Placement**: in the YAML frontmatter, after the `user-invocable:` line.
 - **Validation**: the plugin-doctor `skill-missing-mode` rule flags any skill whose frontmatter omits `mode` or carries a value outside the enum above.
-- **Compliance**: agents reading a loaded skill comply with its declared `mode` — see the "Skill mode: comply with the declared archetype" rule in `plan-marshall:dev-agent-behavior-rules` (`standards/agent-behavior-rules.md`).
+- **Compliance**: agents reading a loaded skill comply with its declared `mode` — see the "Skill mode: comply with the declared archetype" rule in `plan-marshall:persona-plan-marshall-agent` (`standards/agent-behavior-rules.md`).
 
 ```yaml
 ---
@@ -237,6 +237,79 @@ name: java-core
 description: Core Java development standards for patterns, modern features, and performance optimization
 user-invocable: false
 mode: knowledge
+---
+```
+
+**profiles** (optional):
+
+Declares the closed list of persona identifiers — work-activity profiles — that a `persona-*` skill is applicable for. It is the binding source of truth the persona resolver (`manage-personas resolve`) reads to flatten a persona's composition DAG into a deduped `skills[]`.
+
+- **Field name**: `profiles`
+- **Format**: a YAML list of profile identifiers (multi-capable). The **first entry is the primary identity profile** — the one a persona is reverse-looked-up by from a task's profile. Later entries are secondary profiles the persona also applies (e.g. a work persona that also applies the `quality` ref).
+- **Scope**: only on `persona-*` skills. A persona that has no work-activity profile (a meta/evaluator persona that composes other personas as lenses) omits the field entirely; a `ref-*` skill never carries it.
+- **Uniqueness**: no two work personas may share the same primary (first) profile — enforced by the plugin-doctor `persona-profile-uniqueness` rule.
+
+```yaml
+---
+name: persona-implementer
+description: Production-code implementation persona
+user-invocable: false
+mode: knowledge
+implements: persona
+profiles: [implementation, quality]
+---
+```
+
+**priming_preamble** (optional):
+
+An optional persona-scoped loading preamble override — data only. The field is read by persona tooling but emits no target render in this plan (it is reserved for a later per-target render concept).
+
+- **Field name**: `priming_preamble`
+- **Format**: a YAML scalar (a string). Omit the field when no override is needed.
+- **Scope**: only on `persona-*` skills.
+
+```yaml
+---
+name: persona-code-reviewer
+description: Code-review persona that composes other personas as evaluation lenses
+user-invocable: false
+mode: knowledge
+implements: persona
+priming_preamble: "Adopt a reviewer's stance: read for correctness and intent, not authorship."
+---
+```
+
+**composes** (optional):
+
+Declares the **machine-readable composition edges** of a `persona-*` skill — the `bundle:skill` notations (`ref-*` concerns and, for meta/evaluator personas, other `persona-*` skills) that the persona DIRECTLY composes. It is the data source the persona resolver (`manage-personas resolve`) reads to walk the composition DAG; the prose `## Composition` section remains as human-facing documentation, but `composes:` is the resolver's binding source of truth — no nested skill loading and no hardcoded composition table.
+
+- **Field name**: `composes`
+- **Format**: a YAML list of `bundle:skill` notations. Each entry names a `ref-*` skill the persona applies or a `persona-*` skill the persona composes as a lens. The base `persona-plan-marshall-agent` is NOT listed — the resolver always includes the base unconditionally.
+- **Scope**: only on `persona-*` skills. Omit the field entirely when a persona composes nothing directly (it resolves via its `profiles:` alone, or it is the base). A `ref-*` skill never carries it.
+- **DAG**: composition edges must form a directed acyclic graph (base is a leaf composed by all; meta personas compose work personas; no cycles). The resolver detects and rejects cycles.
+
+```yaml
+---
+name: persona-implementer
+description: Production-code implementation persona
+user-invocable: false
+mode: knowledge
+implements: persona
+profiles: [implementation, quality]
+composes: [plan-marshall:ref-code-quality]
+---
+```
+
+A meta/evaluator persona lists the work personas it uses as evaluation lenses:
+
+```yaml
+---
+name: persona-code-reviewer
+description: Code-review persona that composes other personas as evaluation lenses
+user-invocable: false
+mode: knowledge
+implements: persona
+composes: [plan-marshall:persona-implementer, plan-marshall:persona-module-tester]
 ---
 ```
 
@@ -379,7 +452,7 @@ Agents must not declare `Task` — the host platform restricts Task from sub-age
 
 ### Issue 4: Unsupported Fields in Skills
 
-Skills must not declare `allowed-tools` or `tools`. The skill schema only supports: `name`, `description`, `user-invocable`, `mode`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`. Any other field is silently ignored — remove it.
+Skills must not declare `allowed-tools` or `tools`. The skill schema only supports: `name`, `description`, `user-invocable`, `mode`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`. Any other field is silently ignored — remove it.
 
 ### Issue 5: Invalid Tool Names
 

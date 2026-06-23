@@ -1,6 +1,6 @@
 # Java-Specific Refactoring Triggers
 
-For general refactoring triggers (code organization, method design, complexity, naming, unused code), see `plan-marshall:dev-general-code-quality` refactoring-triggers.md. This document covers Java-specific detection criteria and tools.
+For general refactoring triggers (code organization, method design, complexity, naming, unused code), see `plan-marshall:ref-code-quality` refactoring-triggers.md. This document covers Java-specific detection criteria and tools.
 
 ## Java-Specific SonarQube References
 
@@ -223,4 +223,4 @@ try {
 
 - maintenance-prioritization.md - Java-specific prioritization
 - compliance-checklist.md - How to verify fixes are complete
-- `plan-marshall:dev-general-code-quality` - General refactoring triggers and prioritization
+- `plan-marshall:ref-code-quality` - General refactoring triggers and prioritization

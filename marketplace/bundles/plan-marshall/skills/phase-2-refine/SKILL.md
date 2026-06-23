@@ -15,7 +15,7 @@ For detailed step-by-step procedures, see `standards/refine-workflow-detail.md`.
 ## Foundational Practices
 
 ```
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
 ## Enforcement
@@ -38,7 +38,7 @@ Skill: plan-marshall:dev-agent-behavior-rules
 Every other path is forbidden. The orchestrator's post-dispatch main-checkout assertion (see `plan-marshall:plan-marshall:planning.md` § "2-Refine Phase" → "Post-dispatch contract assertion") detects violations structurally; the plugin-doctor `REFINE_CONTRACT_VIOLATION` analyzer detects them at edit time.
 
 **Constraints:**
-- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
+- Strictly comply with all rules from persona-plan-marshall-agent, especially tool usage and workflow step discipline
 
 ## cwd for `.plan/execute-script.py` calls
 
@@ -155,7 +155,7 @@ Read `simplicity` from project config (`manage-config plan phase-2-refine get --
 | `pragmatic` | Prefer minimal, but keep low-risk structure that aids readability. |
 | `defensive` | Retain belt-and-suspenders structure (guards, abstraction seams) where the outcome is uncertain. |
 
-The enforcement-critical anti-pattern catalogue lives in the central standard at `dev-general-code-quality/standards/code-organization.md` [#minimum-viable-code](../dev-general-code-quality/standards/code-organization.md#minimum-viable-code) and the agent-facing principle at `dev-agent-behavior-rules/standards/agent-behavior-rules.md` (Principle 7); it is intentionally not duplicated here. Default `lean` when unconfigured — unlike `compatibility`, the simplicity knob defaults rather than failing, so existing plans without the key behave as `lean`.
+The enforcement-critical anti-pattern catalogue lives in the central standard at `ref-code-quality/standards/code-organization.md` [#minimum-viable-code](../ref-code-quality/standards/code-organization.md#minimum-viable-code) and the agent-facing principle at `persona-plan-marshall-agent/standards/agent-behavior-rules.md` (Principle 7); it is intentionally not duplicated here. Default `lean` when unconfigured — unlike `compatibility`, the simplicity knob defaults rather than failing, so existing plans without the key behave as `lean`.
 
 ### Step 6: Load Architecture Context
 
@@ -187,7 +187,7 @@ Three sub-analyses using `arch_context`:
 
 **Scope Size Estimation**: Derive `scope_estimate` from the `module_mapping` using the standard derivation helper (see `standards/refine-workflow-detail.md` Step 9 — Derivation Rules). Allowed values: `none | surgical | single_module | multi_module | broad`. The same enum and rule of thumb is documented in `manage-solution-outline:standards/solution-outline-standard.md` so the value flows unchanged into the solution outline. Persist the derived value to `references.json` via `manage-references set --field scope_estimate` and include it in the Persist and Return Results return TOON.
 
-> **Coverage contract**: `scope_estimate` is the *scope* dial of the two-dial coverage contract; its orthogonal partner is *thoroughness* (how completely in-radius items are covered and how deeply their relations are traced). Refine defaults to roughly T2 / change-set unless the request signals otherwise. See the scope × thoroughness ladders, the grade-to-the-floor rule, and the coupling constraint in [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md).
+> **Coverage contract**: `scope_estimate` is the *scope* dial of the two-dial coverage contract; its orthogonal partner is *thoroughness* (how completely in-radius items are covered and how deeply their relations are traced). Refine defaults to roughly T2 / change-set unless the request signals otherwise. See the scope × thoroughness ladders, the grade-to-the-floor rule, and the coupling constraint in [`persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md).
 
 ### Step 10: Evaluate Confidence
 

@@ -393,7 +393,7 @@ Common errors:
 
 ## Noun: coverage
 
-Resolve and expand the two-dial coverage cell — `thoroughness` (T1–T5) × `scope` (change-set…overall). `read`/`resolve` are the project-DEFAULT resolvers: each field walks `plan.<phase>.coverage.<field>` → `plan.coverage.<field>` → `inherit` independently from `.plan/marshal.json` only (no per-plan tier), mirroring the `effort` resolver. The scope↔thoroughness coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) is enforced at lookup/expand time. Coverage's consumers are the components that implement the [coverage-gathering contract](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md); they gather a per-invocation cell, `expand` it into the contract's operational instruction block, persist it in `status.json` metadata, and fall back to `resolve` (the project default) when no cell was gathered.
+Resolve and expand the two-dial coverage cell — `thoroughness` (T1–T5) × `scope` (change-set…overall). `read`/`resolve` are the project-DEFAULT resolvers: each field walks `plan.<phase>.coverage.<field>` → `plan.coverage.<field>` → `inherit` independently from `.plan/marshal.json` only (no per-plan tier), mirroring the `effort` resolver. The scope↔thoroughness coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) is enforced at lookup/expand time. Coverage's consumers are the components that implement the [coverage-gathering contract](../../persona-plan-marshall-agent/standards/coverage-gathering-contract.md); they gather a per-invocation cell, `expand` it into the contract's operational instruction block, persist it in `status.json` metadata, and fall back to `resolve` (the project default) when no cell was gathered.
 
 | Verb | Parameters | Description |
 |------|-----------|-------------|
@@ -438,7 +438,7 @@ An incoherent stored cell raises `error_type: coverage_coupling_violation`:
 
 | `error_type` | Meaning |
 |--------------|---------|
-| `coverage_coupling_violation` | The resolved cell has `thoroughness ≥ T4` while `scope < component`. Relation-tracing thoroughness cannot be honoured below `component` scope. Widen `scope` to at least `component` or lower `thoroughness` below `T4`. Constraint defined in [`dev-agent-behavior-rules/standards/thoroughness.md`](../../dev-agent-behavior-rules/standards/thoroughness.md) § Coupling Constraint. |
+| `coverage_coupling_violation` | The resolved cell has `thoroughness ≥ T4` while `scope < component`. Relation-tracing thoroughness cannot be honoured below `component` scope. Widen `scope` to at least `component` or lower `thoroughness` below `T4`. Constraint defined in [`persona-plan-marshall-agent/standards/thoroughness.md`](../../persona-plan-marshall-agent/standards/thoroughness.md) § Coupling Constraint. |
 
 `ALLOWED_THOROUGHNESS` and `ALLOWED_SCOPE` (in `_cmd_coverage.py`) are kept in lock-step with the T1–T5 and scope ladders in that standard.
 

@@ -126,6 +126,8 @@ _accf = _load('_cmd_cross_file.py', '_accf_fixtures')
 verify_findings = _accf.verify_findings
 _abfic = _load('_analyze_bash_fence_inline_code_exemption.py', '_abfic_fixtures')
 _asm = _load('_analyze_skill_mode.py', '_asm_fixtures')
+_appu = _load('_analyze_persona_profile_uniqueness.py', '_appu_fixtures')
+_apbr = _load('_analyze_persona_binding_resolves.py', '_apbr_fixtures')
 
 # ---------------------------------------------------------------------------
 # Registered-rule-ID extraction (relocated verbatim from the deleted
@@ -396,6 +398,50 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['skill-missing-mode'] = FixtureSpec(
         analyzer=_asm.analyze_skill_mode,
         files={_PM_SKILL: _GOOD_SKILL_FM + '\n# F\n'},
+    )
+    # persona-profile-uniqueness: two persona SKILL.md files declaring the same
+    # first ``profiles:`` entry triggers a primary-profile collision finding.
+    corpus['persona-profile-uniqueness'] = FixtureSpec(
+        analyzer=_appu.analyze_persona_profile_uniqueness,
+        files={
+            'plan-marshall/skills/persona-alpha/SKILL.md': (
+                '---\n'
+                'name: persona-alpha\n'
+                'description: Alpha persona\n'
+                'implements: persona\n'
+                'profiles:\n'
+                '  - implementation\n'
+                '---\n\n# Alpha\n'
+            ),
+            'plan-marshall/skills/persona-beta/SKILL.md': (
+                '---\n'
+                'name: persona-beta\n'
+                'description: Beta persona\n'
+                'implements: persona\n'
+                'profiles:\n'
+                '  - implementation\n'
+                '---\n\n# Beta\n'
+            ),
+        },
+    )
+    # persona-binding-resolves: a persona SKILL.md with ``profiles:`` set whose
+    # ``composes:`` references a non-existent persona triggers the
+    # composed_persona_not_found discriminator.
+    corpus['persona-binding-resolves'] = FixtureSpec(
+        analyzer=_apbr.analyze_persona_binding_resolves,
+        files={
+            'plan-marshall/skills/persona-broken/SKILL.md': (
+                '---\n'
+                'name: persona-broken\n'
+                'description: Broken persona\n'
+                'implements: persona\n'
+                'profiles:\n'
+                '  - implementation\n'
+                'composes:\n'
+                '  - plan-marshall:persona-nonexistent\n'
+                '---\n\n# Broken\n'
+            ),
+        },
     )
     corpus['no-historical-prose-in-skills'] = FixtureSpec(
         analyzer=_ahps.analyze_historical_prose_in_skills,
@@ -991,7 +1037,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT'] = FixtureSpec(
         analyzer=lambda root: _aan.scan_canonical_forms(root, {}),
         files={
-            'bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/argument-naming.md': (
+            'bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/argument-naming.md': (
                 '## Canonical Forms\n\n'
                 '| Script | Operation | Canonical form |\n'
                 '| --- | --- | --- |\n'

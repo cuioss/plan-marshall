@@ -3,7 +3,7 @@
 
 Mirrors the canonical 6-axis matrix exposed by
 ``test/plan-marshall/_pm_input_validation_fixtures.py`` for the ``--field``
-flag. Duplicated here per the ``dev-general-module-testing``
+flag. Duplicated here per the ``persona-module-tester``
 ``_fixtures.py`` convention because cross-bundle PYTHONPATH only covers
 ``test/plan-marshall`` and ``test/pm-plugin-development``. The basename is
 skill-prefixed (``_manage_interface_input_validation_fixtures.py``) to

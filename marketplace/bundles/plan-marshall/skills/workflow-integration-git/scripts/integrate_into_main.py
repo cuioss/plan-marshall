@@ -57,7 +57,7 @@ already-moved-back plan (real plan dir already resident on main, none in the
 worktree) is a no-op success.
 
 See the TOCTOU / check-then-act mitigation menu in
-``dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``
+``ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``
 and the lock-correctness notes in ``manage-locks/scripts/merge_lock.py``.
 """
 

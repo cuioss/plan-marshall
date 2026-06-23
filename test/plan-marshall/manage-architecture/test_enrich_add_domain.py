@@ -94,9 +94,14 @@ def test_add_domain_additive_merge():
                         all_skills.append(entry.get('skill', entry) if isinstance(entry, dict) else entry)
 
         java_skills = [s for s in all_skills if 'pm-dev-java:' in str(s)]
-        general_skills = [s for s in all_skills if 'plan-marshall:dev-general-' in str(s)]
+        _GENERAL_DEV_SKILLS = {
+            'plan-marshall:persona-plan-marshall-agent',
+            'plan-marshall:ref-code-quality',
+            'plan-marshall:persona-module-tester',
+        }
+        general_skills = [s for s in all_skills if str(s) in _GENERAL_DEV_SKILLS]
         assert len(java_skills) > 0, 'Should have java skills'
-        assert len(general_skills) > 0, 'Should have general-dev skills'
+        assert len(general_skills) > 0, 'Should have general-dev skills (persona-plan-marshall-agent, ref-code-quality, persona-module-tester)'
 
 
 def test_add_domain_preserves_existing():

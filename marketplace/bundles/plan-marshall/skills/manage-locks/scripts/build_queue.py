@@ -75,7 +75,7 @@ runs inside :func:`_locks_core.rmw_json`, which serializes the cycle with an
 ``O_EXCL`` guard-file mutex and commits via an atomic temp-file replace, so the
 slot boundary is never over-admitted and a FIFO promote never double-promotes or
 loses a waiting entry. The TOCTOU / check-then-act mitigation menu lives in
-``dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``
+``ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``
 and is not duplicated here.
 
 **Holder liveness via the shared core (no duplicate).** The plan-liveness

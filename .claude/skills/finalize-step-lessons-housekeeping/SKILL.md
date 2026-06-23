@@ -116,7 +116,7 @@ When a completely-covered lesson still carries durable knowledge, decide where t
 |--------------|-------------------|
 | Operating rule / convention / anti-pattern | The governing skill's `standards/*.md` |
 | Contract + recurrence-guard | The owning skill's `references/*.md` |
-| Repo-wide workflow / process hard rule | `CLAUDE.md` / `dev-agent-behavior-rules` |
+| Repo-wide workflow / process hard rule | `CLAUDE.md` / `persona-plan-marshall-agent` |
 | Decision with weighed alternatives | An ADR (NOT a convention/bug record) |
 | Open, un-shipped recurrence | Stays in `lessons-learned/` (retain) |
 | Pure "this bug was fixed", no reusable rule | Delete (remove outright, Step 4) |

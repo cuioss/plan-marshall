@@ -31,7 +31,7 @@ class Extension(ExtensionBase):
                                 'description': 'Core Python patterns — types, data structures, error handling, naming',
                             },
                             {
-                                'skill': 'plan-marshall:dev-general-code-quality',
+                                'skill': 'plan-marshall:ref-code-quality',
                                 'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
                             },
                         ],
@@ -44,7 +44,7 @@ class Extension(ExtensionBase):
                                 'description': 'Core Python patterns — types, data structures, error handling, naming',
                             },
                             {
-                                'skill': 'plan-marshall:dev-general-code-quality',
+                                'skill': 'plan-marshall:ref-code-quality',
                                 'description': 'Language-agnostic code quality, refactoring, and documentation principles',
                             },
                         ],
@@ -57,7 +57,7 @@ class Extension(ExtensionBase):
                                 'description': 'Pytest standards — fixtures, isolation, mocking, assertions, coverage',
                             },
                             {
-                                'skill': 'plan-marshall:dev-general-module-testing',
+                                'skill': 'plan-marshall:persona-module-tester',
                                 'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
                             },
                         ],
@@ -70,7 +70,7 @@ class Extension(ExtensionBase):
                                 'description': 'Core Python patterns — types, data structures, error handling, naming',
                             },
                             {
-                                'skill': 'plan-marshall:dev-general-code-quality',
+                                'skill': 'plan-marshall:ref-code-quality',
                                 'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
                             },
                         ],

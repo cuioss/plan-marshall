@@ -1,6 +1,6 @@
 # 02 — Auditor: preference learning via architecture hints
 
-**Depends on [01](01-personas.md) for `persona-auditor` — this is its first
+**Depends on [01](../concepts/personas.adoc) for `persona-auditor` — this is its first
 consumer. Reuses the retrospective auditor's corpus sweep + dormation.**
 
 ## Problem
@@ -45,7 +45,7 @@ learning sweep wants.
 - **Threshold-gated** so one-off dispositions do not pollute hints — mirror the
   existing lessons-capture signal thresholds.
 - **First `persona-auditor` consumer.** This workstream wires `persona-auditor`
-  ([01](01-personas.md)) — the meta-persona that composes the tester / reviewer /
+  ([01](../concepts/personas.adoc)) — the meta-persona that composes the tester / reviewer /
   security-expert lenses — over the retrospective command, making the audit a named,
   multi-persona evaluation. It is the first real exercise of the persona composition
   model, which is why it lands right after 01. Because 02 lands **before**
@@ -94,5 +94,5 @@ Delete this document and remove the `02` row from
 ## Scope
 
 Small–medium — a new check + compute in the existing auditor, routing to the
-existing `architecture enrich` verbs. Depends on [01](01-personas.md)
+existing `architecture enrich` verbs. Depends on [01](../concepts/personas.adoc)
 (`persona-auditor`); otherwise independent.

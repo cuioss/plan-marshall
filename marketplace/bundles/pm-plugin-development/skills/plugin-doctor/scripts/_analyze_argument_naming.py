@@ -6,7 +6,7 @@ plugin-doctor to detect drift between marketplace prose (SKILL.md, agent
 markdown, recipe markdown, standards) and the actual argparse declarations
 of the scripts those documents reference. The cluster also cross-checks the
 "Canonical Forms" table in
-``marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/argument-naming.md``
+``marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/argument-naming.md``
 against the same argparse declarations.
 
 Pattern alignment
@@ -607,7 +607,7 @@ def _canonical_forms_path(marketplace_root: Path) -> Path:
         / 'bundles'
         / 'plan-marshall'
         / 'skills'
-        / 'dev-agent-behavior-rules'
+        / 'persona-plan-marshall-agent'
         / 'standards'
         / 'argument-naming.md'
     )

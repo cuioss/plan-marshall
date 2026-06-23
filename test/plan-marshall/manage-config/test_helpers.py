@@ -127,7 +127,7 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
     config = {
         'skill_domains': {
             'system': {
-                'defaults': ['plan-marshall:dev-agent-behavior-rules'],
+                'defaults': ['plan-marshall:persona-plan-marshall-agent'],
                 'optionals': ['plan-marshall:diagnostic-patterns'],
             },
             'java': {

@@ -48,7 +48,7 @@ A small set of survivors is **explicitly justified and kept**:
 
 - **`--project-dir` escape hatch** — build / CI / Sonar / analysis scripts retain `--project-dir` as the documented explicit override for callers invoked **outside** a pinned-cwd context (test fixtures, ad-hoc invocations from outside any plan). `script_shared/scripts/resolve_project_dir.py` (`resolve_project_dir`, `add_plan_id_arg`, `extract_plan_id`) implements the three-state contract: `--project-dir` only → use it verbatim; `--plan-id` only → resolve via `manage-status get-worktree-path`, falling back to the cwd-relative plan root when `use_worktree=false`; both → `mutually_exclusive_args` error; neither → cwd-relative plan root.
 - **Main-session `get-worktree-path`** — retained only where a main-session caller legitimately needs the path: the orchestrator's initial pin (it reads the path `prepare_execute.py` returns, then pins its own cwd) and the shared utility's main resolution.
-- **Cross-tree `git -C {path}`** — retained for genuinely cross-tree or main-checkout-from-worktree contexts per the `dev-agent-behavior-rules` git rule. Inside a phase-5+ pinned-cwd context, prefer plain `git`.
+- **Cross-tree `git -C {path}`** — retained for genuinely cross-tree or main-checkout-from-worktree contexts per the `persona-plan-marshall-agent` git rule. Inside a phase-5+ pinned-cwd context, prefer plain `git`.
 
 ## Cross-session re-entry re-anchors cwd to the worktree
 

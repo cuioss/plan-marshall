@@ -2,7 +2,7 @@
 """Tests for the pm-dev-python extension's quality-profile composition.
 
 Pins the quality profile's default skills so the language-agnostic
-dev-general-code-quality skill stays at parity with the core and
+ref-code-quality skill stays at parity with the core and
 implementation profiles. The defect this guards: quality.defaults
 previously listed only pm-dev-python:python-core, dropping the
 code-quality guidance from the profile where it is most relevant.
@@ -45,9 +45,9 @@ def test_quality_profile_includes_python_core():
 
 
 def test_quality_profile_includes_dev_general_code_quality():
-    """The quality profile defaults the language-agnostic dev-general-code-quality skill."""
+    """The quality profile defaults the language-agnostic ref-code-quality skill."""
     # Act
     defaults = _quality_defaults()
 
     # Assert
-    assert 'plan-marshall:dev-general-code-quality' in defaults
+    assert 'plan-marshall:ref-code-quality' in defaults

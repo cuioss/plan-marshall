@@ -21,7 +21,7 @@ mode: workflow
 
 **Required skill load** (before any operation):
 ```
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 Skill: plan-marshall:workflow-integration-git
 Skill: plan-marshall:tools-integration-ci
 ```
@@ -36,7 +36,7 @@ Skill: plan-marshall:tools-integration-ci
 - Never invoke a build, CI, Sonar, or GitHub/GitLab script (`ci`, `pyproject_build`, `sonar`, `workflow-integration-*`) without an explicit routing flag. Forward `--plan-id {plan_id}` (preferred — auto-resolves the worktree via `manage-status get-worktree-path`) or `--project-dir {worktree_path}` / `--project-dir {main_checkout}` (escape hatch / explicit override after worktree removal). The two flags are mutually exclusive. The executor is cwd-pass-through; routing must be explicit at every call site.
 
 **Constraints:**
-- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
+- Strictly comply with all rules from persona-plan-marshall-agent, especially tool usage and workflow step discipline
 
 ## Exit-code convention for `manage-*` script calls
 
@@ -796,7 +796,7 @@ FOR each step_id in manifest.phase_6.steps:
          * default:lessons-capture  -> workflow: workflow/lessons-capture.md  | --phase phase-6-finalize --role post-run-review       | timeout: 300s
          * default:adr-propose      -> workflow: workflow/adr-propose.md      | --phase phase-6-finalize --role post-run-review       | timeout: 300s
 
-       The subagent's body loads `dev-agent-behavior-rules` + the prompt's `skills[]`, then `Read`s the workflow doc and executes its steps inside the dispatch envelope. Pass `--plan-id {plan_id}` and, when an `{iteration}` counter applies, `--iteration {iteration}` as workflow-specific runtime inputs in the prompt body. The Worktree Header is conveyed via the always-required `WORKTREE` prompt-body field; the subagent resolves the worktree path internally and propagates it into any further dispatches it issues.
+       The subagent's body loads `persona-plan-marshall-agent` + the prompt's `skills[]`, then `Read`s the workflow doc and executes its steps inside the dispatch envelope. Pass `--plan-id {plan_id}` and, when an `{iteration}` counter applies, `--iteration {iteration}` as workflow-specific runtime inputs in the prompt body. The Worktree Header is conveyed via the always-required `WORKTREE` prompt-body field; the subagent resolves the worktree path internally and propagates it into any further dispatches it issues.
 
        **On timeout** (the dispatch does not return within the budget):
          a. Log ERROR:
@@ -1368,7 +1368,7 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:ci_complete_preco
 | Resource | Purpose |
 |----------|---------|
 | [references/workflow-overview.md](references/workflow-overview.md) | Visual diagrams: 6-Phase Model and Shipping Pipeline |
-| `plan-marshall:dev-agent-behavior-rules` | Bash safety rules, tool usage patterns |
+| `plan-marshall:persona-plan-marshall-agent` | Bash safety rules, tool usage patterns |
 | `plan-marshall:workflow-integration-git` | Commit, push workflow |
 | `plan-marshall:tools-integration-ci` | PR operations, CI status |
 | `plan-marshall:workflow-integration-github` | CI monitoring, review handling (GitHub) |

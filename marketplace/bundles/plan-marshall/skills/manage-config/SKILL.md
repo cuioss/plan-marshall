@@ -206,9 +206,9 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ### Coverage two-knob configuration
 
-Coverage is a two-dial contract — `thoroughness` (T1–T5) × `scope` (change-set…overall) — orthogonal to the `effort` model-tier dial. A per-phase override lives under the phase entry's `coverage` key; the plan-wide fallback is `plan.coverage` (seeded `inherit/inherit`). The `read`/`resolve` verbs mirror the `effort` resolver's lookup shape, resolving each field independently from `marshal.json` only (the project-DEFAULT tier — no per-plan tier), and enforcing the scope↔thoroughness coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) at lookup time. See [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md) § Coupling Constraint.
+Coverage is a two-dial contract — `thoroughness` (T1–T5) × `scope` (change-set…overall) — orthogonal to the `effort` model-tier dial. A per-phase override lives under the phase entry's `coverage` key; the plan-wide fallback is `plan.coverage` (seeded `inherit/inherit`). The `read`/`resolve` verbs mirror the `effort` resolver's lookup shape, resolving each field independently from `marshal.json` only (the project-DEFAULT tier — no per-plan tier), and enforcing the scope↔thoroughness coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) at lookup time. See [`persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md) § Coupling Constraint.
 
-`coverage`'s consumers are the broad-pass components that implement the [coverage-gathering contract](../dev-agent-behavior-rules/standards/coverage-gathering-contract.md) — wide audits, compliance sweeps, simplification/refactor campaigns, pre-submission review. Each gathers a `(thoroughness, scope)` cell from the user at invocation, expands it via `coverage expand`, persists the identifier + expanded instruction in `status.json` metadata, and consumes the expanded instruction to govern its breadth/depth. `coverage resolve` is the project-default tier consulted when no per-invocation cell was gathered.
+`coverage`'s consumers are the broad-pass components that implement the [coverage-gathering contract](../persona-plan-marshall-agent/standards/coverage-gathering-contract.md) — wide audits, compliance sweeps, simplification/refactor campaigns, pre-submission review. Each gathers a `(thoroughness, scope)` cell from the user at invocation, expands it via `coverage expand`, persists the identifier + expanded instruction in `status.json` metadata, and consumes the expanded instruction to govern its breadth/depth. `coverage resolve` is the project-default tier consulted when no per-invocation cell was gathered.
 
 ```bash
 # Resolve the coverage cell for a phase (project default)
@@ -480,8 +480,8 @@ The defaults template contains only `system` domain. Technical domains (java, ja
 {
   "skill_domains": {
     "system": {
-      "defaults": ["plan-marshall:dev-agent-behavior-rules"],
-      "optionals": ["plan-marshall:dev-agent-behavior-rules"]
+      "defaults": ["plan-marshall:persona-plan-marshall-agent"],
+      "optionals": ["plan-marshall:persona-plan-marshall-agent"]
     },
     "java": {
       "bundle": "pm-dev-java",
@@ -632,7 +632,7 @@ The `system` domain contains execute-task skills and base skills applied to all 
 
 | Field | Purpose |
 |-------|---------|
-| `defaults` | Base skills loaded for all tasks (`plan-marshall:dev-agent-behavior-rules`) |
+| `defaults` | Base skills loaded for all tasks (`plan-marshall:persona-plan-marshall-agent`) |
 | `optionals` | Optional base skills available for selection |
 
 ### Technical Domains (Profile Structure)

@@ -106,7 +106,7 @@ void shouldParseAllTokenClaims() {
 
 ## Related Skills
 
-- `plan-marshall:dev-general-module-testing` - Language-agnostic testing principles
+- `plan-marshall:persona-module-tester` - Language-agnostic testing principles
 - `pm-dev-java:junit-integration` - Maven integration testing
 - `pm-dev-java-cui:cui-testing` - CUI test generator framework
 - `pm-dev-java:java-core` - Core Java patterns

@@ -26,13 +26,13 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 - Do not modify any .plan/ files directly — all plan state access goes through `manage-*` scripts and the scripts in this skill.
 
 **Constraints**:
-- Strictly comply with all rules from `plan-marshall:dev-agent-behavior-rules`.
+- Strictly comply with all rules from `plan-marshall:persona-plan-marshall-agent`.
 - Report filename is `quality-verification-report.md` in live modes (overwrite on repeat invocation) and `quality-verification-report-audit-{YYYYMMDDTHHMMSSZ}.md` in archived mode.
 
 ## Foundational Practices
 
 ```
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
 ## Dispatch shape: 9 aspects iterate inside one envelope
@@ -70,7 +70,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {plan_id}
 ```
 
-Do not extrapolate `status get`, `manage_status get`, or `manage-status:status` — none of those exist. The canonical script notation is the 3-part form `plan-marshall:manage-status:manage-status` (the third segment matches the on-disk script filename `manage-status.py`), and the only read verb is `read`. The full canonical-forms entry for `manage-status` (covering `read`, `metadata --get --field`, `transition`, `get-worktree-path`, `change-type-heuristic`, and friends) lives in [`dev-agent-behavior-rules/standards/argument-naming.md`](../dev-agent-behavior-rules/standards/argument-naming.md#manage--scripts) — that table is the regression guard against the invented-verb drift that motivated this entry (see lesson `2026-05-14-00-001`). Future maintainers editing this workflow MUST cross-check any new `manage-status` call against that table before committing.
+Do not extrapolate `status get`, `manage_status get`, or `manage-status:status` — none of those exist. The canonical script notation is the 3-part form `plan-marshall:manage-status:manage-status` (the third segment matches the on-disk script filename `manage-status.py`), and the only read verb is `read`. The full canonical-forms entry for `manage-status` (covering `read`, `metadata --get --field`, `transition`, `get-worktree-path`, `change-type-heuristic`, and friends) lives in [`persona-plan-marshall-agent/standards/argument-naming.md`](../persona-plan-marshall-agent/standards/argument-naming.md#manage--scripts) — that table is the regression guard against the invented-verb drift that motivated this entry (see lesson `2026-05-14-00-001`). Future maintainers editing this workflow MUST cross-check any new `manage-status` call against that table before committing.
 
 Capture the runtime session token for downstream metrics:
 
@@ -140,13 +140,13 @@ For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect
 
 The Execution-context dispatch audit (aspect 11) consumes the `[DISPATCH]` work-log lines emitted by every dispatch site per [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) — that standard is the authoritative source for the line shape, and this aspect is its enforcement consumer. The aspect asserts dispatch discipline in **both directions**: that every spawn that DID happen rode the canonical `execution-context-{level}` envelope, AND that every finalize/execute step classified DISPATCHED actually WAS dispatched. The inverse-coverage half (`dispatch_coverage_violation` category) cross-references the SKILL's own dispatched/inline classification against the `status.metadata.phase_steps["6-finalize"]` outcome records — a step marked done with zero matching `[DISPATCH]` evidence is flagged as inline-where-dispatch-was-required. Report readers tracing an audit finding back to its evidence land in `dispatch-logging.md` § "Emission contract" for the canonical log-line format.
 
-> **Coverage contract**: the Artifact-consistency aspect (aspect 1) is the *declared-vs-achieved coverage* comparison — declared in-scope files (`Affected files:`) vs the plan's actual footprint — which is the deterministic item-coverage half of the *thoroughness* dial, graded to the FLOOR. The footprint is derived live from the plan's worktree (`{base}...HEAD` ∪ porcelain) when one is on disk, falling back to the legacy `references.modified_files` key only for archived plans created before the ledger was removed. See the two-dial scope × thoroughness contract (ladders, grade-to-the-floor rule, coupling constraint) in [`../dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md).
+> **Coverage contract**: the Artifact-consistency aspect (aspect 1) is the *declared-vs-achieved coverage* comparison — declared in-scope files (`Affected files:`) vs the plan's actual footprint — which is the deterministic item-coverage half of the *thoroughness* dial, graded to the FLOOR. The footprint is derived live from the plan's worktree (`{base}...HEAD` ∪ porcelain) when one is on disk, falling back to the legacy `references.modified_files` key only for archived plans created before the ledger was removed. See the two-dial scope × thoroughness contract (ladders, grade-to-the-floor rule, coupling constraint) in [`../persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md).
 
 **Aspect 12 (manifest decisions)** is skipped when `execution.toon` is absent. When present, the aspect loads the manifest via `plan-marshall:manage-execution-manifest:manage-execution-manifest read --plan-id {plan-id}` and pairs it with matching `(plan-marshall:phase-4-plan:manifest)` decision-log entries — manifest = WHAT was decided, decision.log = WHY. The cross-check engine is `plan-marshall:plan-retrospective:check-manifest-consistency` which evaluates each manifest assumption against the actual end-of-execute diff and emits one finding per violation. See `standards/manifest-crosscheck.md` for the cross-check matrix.
 
 **Aspect 13** is skipped when `--session-id` is absent.
 
-> **Achieved thoroughness**: there is no mechanical achieved-thoroughness measurement. The *achieved* side of coverage is the floor-graded self-report defined in [`../dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md) § Floor-Graded Self-Report; the Artifact-consistency aspect (aspect 1, above) supplies the deterministic declared-vs-actual footprint (derived live from the worktree, or the legacy `references.modified_files` key for older archived plans) that the self-report grades against.
+> **Achieved thoroughness**: there is no mechanical achieved-thoroughness measurement. The *achieved* side of coverage is the floor-graded self-report defined in [`../persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md) § Floor-Graded Self-Report; the Artifact-consistency aspect (aspect 1, above) supplies the deterministic declared-vs-actual footprint (derived live from the worktree, or the legacy `references.modified_files` key for older archived plans) that the self-report grades against.
 
 **Domain-contributed aspects (merged after the fixed table, gated by plan domain)**:
 

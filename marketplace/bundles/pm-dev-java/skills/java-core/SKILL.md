@@ -91,7 +91,7 @@ Use when: Validating inbound data at the trust boundary — deserialized payload
 
 ## Related Skills
 
-- `plan-marshall:dev-general-code-quality` - Language-agnostic code quality principles
+- `plan-marshall:ref-code-quality` - Language-agnostic code quality principles
 - `pm-dev-java:java-null-safety` - JSpecify null annotations
 - `pm-dev-java:java-lombok` - Lombok patterns
 - `pm-dev-java:junit-core` - JUnit 5 testing patterns

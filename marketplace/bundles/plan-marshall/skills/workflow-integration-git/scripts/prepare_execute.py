@@ -38,7 +38,7 @@ canonical worktree path; the phase-5 orchestrator pins ITS OWN cwd to that path
 it is unchanged at every exit path as a defensive self-check.
 
 See the TOCTOU / check-then-act mitigation menu in
-``dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``.
+``ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``.
 """
 
 from __future__ import annotations

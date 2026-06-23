@@ -1,8 +1,9 @@
 ---
-name: dev-agent-behavior-rules
+name: persona-plan-marshall-agent
 description: Foundational agent behavior rules covering user interaction, tool usage, research, dependency management, and document proliferation
 user-invocable: false
 mode: knowledge
+implements: persona
 ---
 
 # Development Practices Skill
@@ -133,8 +134,8 @@ When operating against the main checkout outside a pinned context, plain `git` (
 
 ## Related
 
-- `dev-general-code-quality` — Complementary quality standards (SRP, CQS, complexity)
-- `dev-general-module-testing` — Testing methodology standards (AAA pattern, coverage)
+- `ref-code-quality` — Complementary quality standards (SRP, CQS, complexity)
+- `persona-module-tester` — Testing methodology standards (AAA pattern, coverage)
 
 ## Standards Reference
 

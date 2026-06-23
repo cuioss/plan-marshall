@@ -80,9 +80,9 @@ Per the plugin.json registration convention documented in `frontmatter-standards
 
 | Skill | Registered | Purpose |
 |-------|-----------|---------|
-| dev-general-code-quality | yes | Language-agnostic code organization, error handling |
-| dev-general-module-testing | yes | Language-agnostic testing methodology, coverage |
-| dev-agent-behavior-rules | yes | Foundational development rules, tool usage |
+| ref-code-quality | yes | Language-agnostic code organization, error handling |
+| persona-module-tester | yes | Language-agnostic testing methodology, coverage |
+| persona-plan-marshall-agent | yes | Foundational development rules, tool usage |
 | ref-toon-format | yes | TOON output format specification |
 | ref-workflow-architecture | yes | Central architecture documentation (this bundle) |
 | shared-workflow-helpers | script-only | Python library: triage_helpers.py |

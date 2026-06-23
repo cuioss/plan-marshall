@@ -63,7 +63,7 @@ Skills the caller MUST forward in `skills[]`: none (the workflow reads files wit
 
 ## Execution
 
-This step implements the [coverage-gathering contract](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md) as a runtime CONSUMER (not a gatherer — the cell is gathered upstream by the recipe / plan that produced the plan, or defaults to `inherit/inherit`). The expanded instruction governs the surfacer `--contract-radius`, the candidate-count gate threshold, and the per-candidate lens depth. `inherit/inherit` reproduces today's behavior bit-for-bit.
+This step implements the [coverage-gathering contract](../../persona-plan-marshall-agent/standards/coverage-gathering-contract.md) as a runtime CONSUMER (not a gatherer — the cell is gathered upstream by the recipe / plan that produced the plan, or defaults to `inherit/inherit`). The expanded instruction governs the surfacer `--contract-radius`, the candidate-count gate threshold, and the per-candidate lens depth. `inherit/inherit` reproduces today's behavior bit-for-bit.
 
 ### Step 0: Resolve the coverage instruction (inline)
 
@@ -173,7 +173,7 @@ Before scanning the line-level candidate lists, load the contract sources surfac
 
 For each non-empty candidate list, apply the corresponding cognitive check to the surfaced items only — never expand the review to candidates the helper did not surface.
 
-> **Coverage contract**: the per-candidate lens depth is governed by the coverage instruction resolved in Step 0 (`{cov_instruction}`). The surface-only rule above caps the scope to what the surfacer surfaced at every rung — never widen the candidate set past it. The thoroughness rung sets the depth: `inherit`/`T1`/`T2` → run the thirteen checks below as today (face-value per candidate); `T3`+ → additionally trace each surfaced candidate's siblings and cross-references before adjudicating it (the contract cross-references in Step 2a already supply the anchors). `inherit/inherit` reproduces today's behavior bit-for-bit. See the two-dial scope × thoroughness contract in [`../../dev-agent-behavior-rules/standards/thoroughness.md`](../../dev-agent-behavior-rules/standards/thoroughness.md) and the gather/expand/consume obligation in [`../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md`](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md).
+> **Coverage contract**: the per-candidate lens depth is governed by the coverage instruction resolved in Step 0 (`{cov_instruction}`). The surface-only rule above caps the scope to what the surfacer surfaced at every rung — never widen the candidate set past it. The thoroughness rung sets the depth: `inherit`/`T1`/`T2` → run the thirteen checks below as today (face-value per candidate); `T3`+ → additionally trace each surfaced candidate's siblings and cross-references before adjudicating it (the contract cross-references in Step 2a already supply the anchors). `inherit/inherit` reproduces today's behavior bit-for-bit. See the two-dial scope × thoroughness contract in [`../../persona-plan-marshall-agent/standards/thoroughness.md`](../../persona-plan-marshall-agent/standards/thoroughness.md) and the gather/expand/consume obligation in [`../../persona-plan-marshall-agent/standards/coverage-gathering-contract.md`](../../persona-plan-marshall-agent/standards/coverage-gathering-contract.md).
 
 #### Present-state grounding precondition (gates contract_drift and its variants on confirmed absence)
 

@@ -32,7 +32,7 @@ class Extension(ExtensionBase):
                                 'description': 'Core Java patterns including modern features and performance optimization',
                             },
                             {
-                                'skill': 'plan-marshall:dev-general-code-quality',
+                                'skill': 'plan-marshall:ref-code-quality',
                                 'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
                             },
                         ],
@@ -55,7 +55,7 @@ class Extension(ExtensionBase):
                         'package_source': 'packages',
                         'defaults': [
                             {
-                                'skill': 'plan-marshall:dev-general-code-quality',
+                                'skill': 'plan-marshall:ref-code-quality',
                                 'description': 'Language-agnostic code quality, refactoring, and documentation principles',
                             },
                         ],
@@ -82,7 +82,7 @@ class Extension(ExtensionBase):
                                 'description': 'JUnit 5 testing patterns with AAA structure, coverage analysis, and assertion standards',
                             },
                             {
-                                'skill': 'plan-marshall:dev-general-module-testing',
+                                'skill': 'plan-marshall:persona-module-tester',
                                 'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
                             },
                         ],

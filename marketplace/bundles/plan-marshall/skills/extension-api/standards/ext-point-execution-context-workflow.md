@@ -61,7 +61,7 @@ Every dispatch into the implementor delivers, via the parent dispatcher (`plan-m
 | `plan_id` | Yes | Plan identifier; sentinel `none` for free-standing dispatches. |
 | `WORKTREE` | Yes | Repo-relative working directory; `.` for main checkout. |
 | `skills[]` | Yes | Caller-loaded skills, loaded before the workflow body runs. May be empty. |
-| `plan-marshall:dev-agent-behavior-rules` | Yes (implicit) | Loaded by the dispatcher before any caller-specified skill. |
+| `plan-marshall:persona-plan-marshall-agent` | Yes (implicit) | Loaded by the dispatcher before any caller-specified skill. |
 
 Workflow-specific runtime inputs (e.g., `finding_type`, `track`, `scope`) flow through additional prompt-body fields the implementor declares in its own input table.
 
@@ -86,7 +86,7 @@ These constraints are structural — the renderer truncates or rejects values th
 
 The implementor MUST NOT carry inline prose stating "Dispatched via `Task: plan-marshall:execution-context-{level}` with this doc as `workflow`." That statement is the ext-point's job; the `implements:` declaration replaces it.
 
-The implementor MUST NOT redeclare `dev-agent-behavior-rules` in its own steps — the dispatcher loads it implicitly.
+The implementor MUST NOT redeclare `persona-plan-marshall-agent` in its own steps — the dispatcher loads it implicitly.
 
 ## Phase-context propagation for phase-agnostic workflows
 

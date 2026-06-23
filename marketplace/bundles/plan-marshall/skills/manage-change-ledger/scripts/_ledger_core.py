@@ -26,7 +26,7 @@ On the small per-record size this is atomic enough for a POSIX append, and
 introduced. The shape is deliberately pure-append — no read-modify-write, no
 find-and-update — so no check-then-act window exists and the cooperative-lock
 class does not apply. (See the TOCTOU / check-then-act mitigation menu in
-``dev-general-code-quality/standards/code-organization.md`` — the pure-append
+``ref-code-quality/standards/code-organization.md`` — the pure-append
 shape avoids the window entirely.)
 """
 

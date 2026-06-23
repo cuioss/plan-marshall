@@ -20,7 +20,7 @@ Every dispatch's context is built from up to three tiers, stacked in order:
 |===
 | Tier | Source | Role
 
-| **Tier 1 — System** | `skill_domains.system.defaults` in `marshal.json`. Loaded unconditionally by the dispatcher. | The foundation that *every* subagent gets — `dev-agent-behavior-rules` is the canonical Tier-1 skill, carrying the hard rules.
+| **Tier 1 — System** | `skill_domains.system.defaults` in `marshal.json`. Loaded unconditionally by the dispatcher. | The foundation that *every* subagent gets — `persona-plan-marshall-agent` is the canonical Tier-1 skill, carrying the hard rules.
 | **Tier 2 — Domain** | `skill_domains.{domain}` in `marshal.json`, materialised into `task.skills` via per-module `skills_by_profile`. | The domain knowledge appropriate to *this* task: Java patterns, JUnit conventions, frontend ESLint rules, OCI container standards.
 | **Workflow + Extensions** | Profile-routed (`execute-task` for phase-5) or finding-routed (`ext-triage-{domain}` during triage). Resolved via `manage-config` lookups and passed through `skills[]`. | The dispatch-site-specific logic: the workflow body that knows what to do, plus per-domain triage knowledge for finding-handling.
 |===
@@ -31,7 +31,7 @@ Tier 1 always loads first. Tier 2 and the workflow / extension entries load in t
 
 Skills travel through the planning pipeline as a deterministic data flow. Nothing about "which skills load" is decided by the model at runtime.
 
-image::../resources/diagrams/skill-loading-flow.svg[Skill loading data flow — architecture's skills_by_profile becomes task.skills at plan time, travels through the dispatch verbatim, and is loaded by execution-context as Tier 2 on top of the implicit Tier-1 dev-agent-behavior-rules, align=center]
+image::../resources/diagrams/skill-loading-flow.svg[Skill loading data flow — architecture's skills_by_profile becomes task.skills at plan time, travels through the dispatch verbatim, and is loaded by execution-context as Tier 2 on top of the implicit Tier-1 persona-plan-marshall-agent, align=center]
 
 Each transition is a `manage-*` script call or a workflow-driven assignment, not an LLM inference. The architecture-enrichment step records the per-module `skills_by_profile` map; phase-4-plan materialises it into per-task `task.skills` arrays; the dispatcher reads those arrays and issues a `Skill:` load per entry. A skill that didn't enter `skills_by_profile` at enrichment time will not be in `task.skills` at plan time and will not load at dispatch time. The trail is checkable end-to-end.
 
@@ -50,8 +50,8 @@ Grep the work log to answer "what did task N actually load." If a skill is missi
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/skill-loading.md[`skill-loading.md`] — canonical step-by-step of the two-tier loading plus extensions, including the dispatch-time six-step sequence the `execution-context` agent runs.
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/agents.md[`agents.md`] — agent inventory and the dispatch-vs-context-load distinction.
 * link:../../marketplace/bundles/plan-marshall/agents/execution-context.md[`execution-context.md`] — the dispatcher agent body that issues the per-`skills[]` loads.
-* link:../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/SKILL.md[`dev-agent-behavior-rules/SKILL.md`] — the canonical Tier-1 skill.
-* link:../../marketplace/bundles/plan-marshall/skills/dev-general-module-testing/SKILL.md[`dev-general-module-testing/SKILL.md`] — a profile-driven Tier-2 example (loaded only on `module_testing` profiles).
+* link:../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/SKILL.md[`persona-plan-marshall-agent/SKILL.md`] — the canonical Tier-1 skill.
+* link:../../marketplace/bundles/plan-marshall/skills/persona-module-tester/SKILL.md[`persona-module-tester/SKILL.md`] — a profile-driven Tier-2 example (loaded only on `module_testing` profiles).
 * link:../../marketplace/bundles/plan-marshall/skills/execute-task/SKILL.md[`execute-task/SKILL.md`] — the default profile-routed workflow body for phase-5 tasks.
 * link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/skill-domains.md[`skill-domains.md`] — the `marshal.json` schema for `skill_domains` (system, per-domain, workflow-skill overrides).
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/profiles.md[`profiles.md`] — profile detection signals and the override mechanism for replacing the workflow body per profile.

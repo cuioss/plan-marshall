@@ -106,7 +106,7 @@ break  # Exit fix loop
 
 ## Simplification rules (confirm-before-apply)
 
-The `SIMPLICITY_*` cluster enforces the "minimum viable code" posture (`plan-marshall:dev-general-code-quality` `standards/code-organization.md` § `#minimum-viable-code`). Four of the five rules are confirm-before-apply: they are detected (`fixable: false`) and surfaced for human review, with **no auto-apply handler** because each resolution changes a signature or rewrites call sites — a judgement call, not a mechanical edit. (The fifth, `SIMPLICITY_SIGNATURE_DOCSTRING`, IS auto-applicable; see `safe-fixes-guide.md`.)
+The `SIMPLICITY_*` cluster enforces the "minimum viable code" posture (`plan-marshall:ref-code-quality` `standards/code-organization.md` § `#minimum-viable-code`). Four of the five rules are confirm-before-apply: they are detected (`fixable: false`) and surfaced for human review, with **no auto-apply handler** because each resolution changes a signature or rewrites call sites — a judgement call, not a mechanical edit. (The fifth, `SIMPLICITY_SIGNATURE_DOCSTRING`, IS auto-applicable; see `safe-fixes-guide.md`.)
 
 For each finding below, present the file, the offending construct, the resolution, and the confirmation rationale (following the Standard Prompt Structure above):
 

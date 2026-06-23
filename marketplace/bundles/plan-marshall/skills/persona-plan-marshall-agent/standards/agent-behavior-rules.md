@@ -100,7 +100,7 @@ Task: plan-marshall:{target}
     name: {caller_phase}-research              # or research-best-practices when standalone
     plan_id: {plan_id}                          # 'none' sentinel for standalone runs
     skills[1]:
-    - plan-marshall:dev-agent-behavior-rules
+    - plan-marshall:persona-plan-marshall-agent
     workflow: plan-marshall:plan-marshall/workflow/research-best-practices.md
     WORKTREE: {worktree_path}
     caller_phase: {caller_phase}                # omit for standalone
@@ -233,9 +233,9 @@ For complete patterns including file operations, content search, Bash safety rul
 
 Implement only what the present requirement asks for. Do not add error handling for failures that cannot occur, configurability for callers that do not exist, abstractions for second implementations that are not planned, or comments that restate well-named code. When you feel the pull to add something "for future use" or "to be safe," stop and ask the user instead of building it on speculation. Surplus structure is a maintenance cost, not a free hedge: every speculative parameter, flag, or layer is something a future reader must understand and a maintainer must keep correct. The change is cheap to add later against a real requirement and expensive to retrofit-remove once callers depend on its accidental presence.
 
-**Carve-out — "minimum" excludes required real-boundary error handling.** "Error handling for failures that cannot occur" above is the *speculative* class, not all error handling. Genuinely-required error handling at a real I/O / external-input boundary — a guard at a real failure path that the boundary can actually produce (unguarded parse of an external file, a missing type-guard on externally-sourced data, a missing envelope on a network / filesystem boundary) — is NOT speculative and is in-scope to keep or add, never to strip as "surplus." The discriminator (required real-boundary handling vs speculative defensive complexity) lives once in the central standard and is not duplicated here — see [#minimum-viable-code](../../dev-general-code-quality/standards/code-organization.md#minimum-viable-code) § "Required-vs-speculative carve-out".
+**Carve-out — "minimum" excludes required real-boundary error handling.** "Error handling for failures that cannot occur" above is the *speculative* class, not all error handling. Genuinely-required error handling at a real I/O / external-input boundary — a guard at a real failure path that the boundary can actually produce (unguarded parse of an external file, a missing type-guard on externally-sourced data, a missing envelope on a network / filesystem boundary) — is NOT speculative and is in-scope to keep or add, never to strip as "surplus." The discriminator (required real-boundary handling vs speculative defensive complexity) lives once in the central standard and is not duplicated here — see [#minimum-viable-code](../../ref-code-quality/standards/code-organization.md#minimum-viable-code) § "Required-vs-speculative carve-out".
 
-For the full anti-pattern catalogue and the Trigger / Detection / Action treatment, see the central standard at `dev-general-code-quality/standards/code-organization.md` [#minimum-viable-code](../../dev-general-code-quality/standards/code-organization.md#minimum-viable-code) — enforcement-critical content lives there and is intentionally not duplicated here.
+For the full anti-pattern catalogue and the Trigger / Detection / Action treatment, see the central standard at `ref-code-quality/standards/code-organization.md` [#minimum-viable-code](../../ref-code-quality/standards/code-organization.md#minimum-viable-code) — enforcement-critical content lives there and is intentionally not duplicated here.
 
 **Example:** Asked to add a single retry, don't introduce a `RetryStrategy` interface with one implementation and a configurable backoff knob no caller sets — write the one retry the requirement asks for.
 
@@ -305,4 +305,3 @@ If the architecture verb truly cannot answer (e.g., target is sub-module, target
 | Need to add dependency | Ask user first |
 | Tempted to add code "for future use" | Implement the minimum; ask user before adding speculative structure (Principle 7) |
 | About to spawn an unconstrained generic subagent for phase work | Use `plan-marshall:execution-context-{level}` with a `workflow:` notation, or inline main-context execution |
-

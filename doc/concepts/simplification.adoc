@@ -17,7 +17,7 @@ Every plan records a `simplicity` posture at refine/outline time — one of `lea
 
 == Layer 2 — The minimum-viable-code rule
 
-`plan-marshall:dev-agent-behavior-rules` carries Principle 7 — "Implement the Minimum, Not the Maximum" — and every plan-marshall subagent loads that skill as Tier-1 before any work (see xref:skill-handling.adoc[Skill Handling]). The rule directs the model to write only what the present requirement asks for: no error handling for failures that cannot occur, no configurability for callers that do not exist, no abstraction for a second implementation that is not planned, no comment that restates well-named code. The full catalogue — the seven anti-patterns and their Trigger / Detection / Action treatment — lives in `dev-general-code-quality` `standards/code-organization.md` `#minimum-viable-code`, which both Principle 7 and the deeper layers cite as the single source of truth.
+`plan-marshall:persona-plan-marshall-agent` carries Principle 7 — "Implement the Minimum, Not the Maximum" — and every plan-marshall subagent loads that skill as Tier-1 before any work (see xref:skill-handling.adoc[Skill Handling]). The rule directs the model to write only what the present requirement asks for: no error handling for failures that cannot occur, no configurability for callers that do not exist, no abstraction for a second implementation that is not planned, no comment that restates well-named code. The full catalogue — the seven anti-patterns and their Trigger / Detection / Action treatment — lives in `ref-code-quality` `standards/code-organization.md` `#minimum-viable-code`, which both Principle 7 and the deeper layers cite as the single source of truth.
 
 **Strength**: skill-loaded *guidance* applied at authoring time. The model might still over-build. Layer 2 reduces the probability one edit at a time; the layer below it catches what slips through.
 
@@ -45,7 +45,7 @@ The point is not "the code cannot carry surplus." The point is that surplus is *
 * xref:process-enforcement.adoc[Concepts › Process Enforcement] — the sibling soft-to-hard layering that keeps the LLM on the documented process; simplification applies the same posture-then-mechanism shape to code surplus.
 * xref:automatic-reviews.adoc[Concepts › Automatic Reviews] — the findings pipeline that finalize-step-simplify's residual findings land in.
 * xref:planning-workflow.adoc[Concepts › Planning Workflow] — the six phases; the `simplicity` posture is set at refine/outline and consumed at finalize.
-* xref:skill-handling.adoc[Concepts › Skill Handling] — why `dev-agent-behavior-rules` (carrying Principle 7) loads Tier-1 on every dispatch.
-* link:../../marketplace/bundles/plan-marshall/skills/dev-general-code-quality/standards/code-organization.md[`code-organization.md`] — the `#minimum-viable-code` section: the seven anti-patterns that anchor all three layers.
-* link:../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/agent-behavior-rules.md[`agent-behavior-rules.md`] — Principle 7, "Implement the Minimum, Not the Maximum".
+* xref:skill-handling.adoc[Concepts › Skill Handling] — why `persona-plan-marshall-agent` (carrying Principle 7) loads Tier-1 on every dispatch.
+* link:../../marketplace/bundles/plan-marshall/skills/ref-code-quality/standards/code-organization.md[`code-organization.md`] — the `#minimum-viable-code` section: the seven anti-patterns that anchor all three layers.
+* link:../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/agent-behavior-rules.md[`agent-behavior-rules.md`] — Principle 7, "Implement the Minimum, Not the Maximum".
 * link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/finalize-step-simplify.md[`finalize-step-simplify.md`] — the phase-6 cognitive simplification pass (Layer 3).

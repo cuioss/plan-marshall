@@ -144,12 +144,12 @@ adapter does not transform.
 | `AskUserQuestion` (+ its `question/header/options/multiSelect` schema, 4-option cap) | every `ext-triage-*/standards/pr-comment-disposition.md` (java, js, python, oci, docs, reqs); `phase-1..6`; `scope-deviation-escalation.md`; `coverage-gathering-contract.md`; `marshall-steward` menus; recipes | all bundles |
 | `Task:` dispatch + `execution-context-{level}` variant naming | `phase-3/4/5/6/SKILL.md`, `workflow-overview.md`, `profiles.md`, `ref-workflow-architecture/standards/*`, `plan-marshall/workflow/*` | plan-marshall |
 | `Skill:` directive | pervasive across SKILL bodies (handled for *concrete* refs by the adapter; the `Skill: <entry>` loop placeholder is not — see [06](06-execution-context-cross-target.md)) | all bundles |
-| `Read`/`Write`/`Edit`/`Glob`/`Grep`/`Monitor` named as THE tools | `dev-agent-behavior-rules/standards/tool-usage-patterns.md` + `agent-behavior-rules.md` (**propagates to every agent**), `manage-plan-documents`, `manage-solution-outline`, `manage-tasks`, `manage-findings`, `pm-documents` recipes/refs, `tools-integration-ci` standards, `workflow-integration-git` invariants | all bundles |
+| `Read`/`Write`/`Edit`/`Glob`/`Grep`/`Monitor` named as THE tools | `persona-plan-marshall-agent/standards/tool-usage-patterns.md` + `agent-behavior-rules.md` (**propagates to every agent**), `manage-plan-documents`, `manage-solution-outline`, `manage-tasks`, `manage-findings`, `pm-documents` recipes/refs, `tools-integration-ci` standards, `workflow-integration-git` invariants | all bundles |
 | Frontmatter `tools:` lists | `agents/execution-context.md:9`, `execution-context-reader.md:9`, `plan-retrospective/SKILL.md:6`, command frontmatter | plan-marshall |
 | Read-only **capability stated only as Claude tool names** | `untrusted-ingestion/standards/reader-contract.md:9-13`, `threat-model.md` (security-critical containment contract) | plan-marshall |
 
 Destination: build-target (per-target tool-name rewrite **data** + shared engine, per the
-settled decision in [07](07-target-extensibility.md)); `dev-agent-behavior-rules` is the
+settled decision in [07](07-target-extensibility.md)); `persona-plan-marshall-agent` is the
 highest-leverage fix because every agent loads it.
 
 ### C2. Level → model table (concrete aliases + Claude env var)
@@ -202,7 +202,7 @@ interface, registry consolidation, parameterize the dispatch level).
 | `pm-requirements/README.md:7` | "provides **Claude Code** with expert knowledge…" |
 | `pm-documents/.../content-review.md:411,423` | "**Claude's role**: …" |
 | `pm-documents/skills/ref-svg-diagrams/SKILL.md:99` | "In **Claude Code**, use the Read tool…" |
-| `dev-agent-behavior-rules` (SKILL.md + tool-usage-patterns.md) | "trips the host platform's permission UI / security prompt / Bash sandbox heuristic" rationale assumes the Claude permission model |
+| `persona-plan-marshall-agent` (SKILL.md + tool-usage-patterns.md) | "trips the host platform's permission UI / security prompt / Bash sandbox heuristic" rationale assumes the Claude permission model |
 | `tools-integration-ci/standards/*`, `execution-context.md:38` | "Bash tool timeout (ms)", "run_in_background", "shell-heading heuristic" |
 | `manage-architecture/scripts/_cmd_client.py:110-120` | `_BASH_CEILING_SECONDS=600` "capped by the host platform at 600s" |
 | `pm-dev-frontend` README/css/javascript | point at the Anthropic-shipped `frontend-design` skill (Claude-only) |
@@ -218,7 +218,7 @@ all `github`/`gitlab`/`sonar` providers; `tools-integration-ci` scripts); metric
 storage/aggregation; `manage-change-ledger`, `manage-locks` core, `manage-logging` format,
 `manage-providers` (uses `~/.plan-marshall-credentials`, never `~/.claude`); `plan-doctor`;
 all `extension.py` (shared Extension API); `script-shared` build/extension/query layers;
-`ref-toon-format`, `dev-general-code-quality`, `dev-general-module-testing`. The `.plan/`
+`ref-toon-format`, `ref-code-quality`, `persona-module-tester`. The `.plan/`
 executor surface and `marshal.json` are target-agnostic by design. Env vars throughout are
 `PLAN_*`/`PLAN_MARSHALL_*`, never `CLAUDE_CODE_*` (outside platform-runtime).
 

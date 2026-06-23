@@ -4,7 +4,7 @@
 This module implements a deterministic regex-based static analyzer that
 detects ``$(`` command-substitution patterns inside markdown files under
 ``marketplace/bundles/plan-marshall/skills/``. Such patterns violate the
-``dev-agent-behavior-rules`` "Bash: no shell constructs" hard rule because the
+``persona-plan-marshall-agent`` "Bash: no shell constructs" hard rule because the
 host platform interprets them as a security-prompting shell construct when
 a subagent attempts to execute the documented command literally.
 
@@ -194,7 +194,7 @@ def _scan_file(path: Path) -> list[dict]:
                     'snippet': snippet,
                     'description': (
                         'Shell command substitution `$(...)` in plan-marshall skill markdown '
-                        "violates the dev-agent-behavior-rules 'no shell constructs' hard rule. "
+                        "violates the persona-plan-marshall-agent 'no shell constructs' hard rule. "
                         'Replace with the documented two-call + text-substitution pattern.'
                     ),
                 }
