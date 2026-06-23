@@ -31,6 +31,7 @@ class Extension(ExtensionBase):
                         'optionals': ['pm-dev-java-cui:cui-testing', 'pm-dev-java-cui:cui-http-testing'],
                     },
                     'quality': {'defaults': [], 'optionals': []},
+                    'security': {'defaults': ['pm-dev-java-cui:cui-http'], 'optionals': []},
                 },
             }
         ]

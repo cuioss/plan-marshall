@@ -71,6 +71,15 @@ class Extension(ExtensionBase):
                         ],
                         'optionals': [],
                     },
+                    'security': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-dev-frontend:javascript-security',
+                                'description': 'JavaScript security — DOM trust boundaries, XSS sinks, sanitization, and Trusted Types',
+                            },
+                        ],
+                        'optionals': [],
+                    },
                 },
             }
         ]

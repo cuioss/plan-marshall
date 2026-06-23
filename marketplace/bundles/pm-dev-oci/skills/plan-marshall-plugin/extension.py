@@ -92,6 +92,15 @@ class Extension(ExtensionBase):
                         ],
                         'optionals': [],
                     },
+                    'security': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-dev-oci:oci-security',
+                                'description': 'Container runtime hardening, supply-chain controls, and OWASP Docker Top 10',
+                            },
+                        ],
+                        'optionals': [],
+                    },
                 },
             }
         ]
