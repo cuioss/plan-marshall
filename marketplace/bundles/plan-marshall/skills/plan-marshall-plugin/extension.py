@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Extension API for plan-marshall bundle - build system discovery.
 
 Consolidates module discovery for Maven, Gradle, npm, and Python build systems.
@@ -93,12 +94,28 @@ class Extension(ExtensionBase):
         """Return built-in recipes provided by plan-marshall."""
         return [
             {
+                'key': 'code-review',
+                'name': 'Code Review',
+                'description': 'On-demand diff-aware structural/quality review emitting lint-issue findings into triage',
+                'skill': 'plan-marshall:recipe-code-review',
+                'default_change_type': 'feature',
+                'scope': 'module',
+            },
+            {
                 'key': 'refactor-to-profile-standards',
                 'name': 'Refactor to Profile Standards',
                 'description': 'Refactor code to comply with configured profile standards, package by package',
                 'skill': 'plan-marshall:recipe-refactor-to-profile-standards',
                 'default_change_type': 'tech_debt',
                 'scope': 'codebase_wide',
+            },
+            {
+                'key': 'security-audit',
+                'name': 'Security Audit',
+                'description': 'On-demand security audit over the footprint emitting bug/anti-pattern findings into triage',
+                'skill': 'plan-marshall:recipe-security-audit',
+                'default_change_type': 'feature',
+                'scope': 'module',
             },
         ]
 

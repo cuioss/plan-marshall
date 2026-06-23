@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """TargetBase — abstract contract for marketplace build targets.
 
 Every target reads source bundles from `marketplace/bundles/` (the canonical

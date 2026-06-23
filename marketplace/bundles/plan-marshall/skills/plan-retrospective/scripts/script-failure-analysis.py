@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Scan ``script-execution.log`` AND ``work.log`` for argparse / script-internal failures.
 
 Pure deterministic fact extractor — classifies non-zero-exit script calls by

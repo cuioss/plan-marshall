@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Test that `manage-config init` seeds plan.open_in_ide=true.
 
 Guards the marshall-steward seed contract: a fresh marshal.json produced by

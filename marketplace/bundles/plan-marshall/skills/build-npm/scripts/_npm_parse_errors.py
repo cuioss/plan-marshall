@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """npm error parser for npm install/dependency errors.
 
 Implements BuildParser protocol for npm command errors (ERESOLVE, E404, etc.).

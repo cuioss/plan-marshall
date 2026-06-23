@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """6-axis identifier-validation rejection-path tests for ``profiles.py``.
 
 Covers the ``--module`` flag on the ``list`` subcommand — the only

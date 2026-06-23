@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the manage-execution-manifest ``validate-loadable`` subcommand.
 
 Covers the loadability fail-fast guard consumed by phase-6-finalize Step 1.5:

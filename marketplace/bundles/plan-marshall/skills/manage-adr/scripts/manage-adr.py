@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Manage Architectural Decision Records (ADRs) in doc/adr/ directory.
 
 This script provides CRUD operations for ADRs with automatic numbering

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Issue parsing and warning filtering utilities.
 
 Shared data structures for build issues and warning filtering across build systems.

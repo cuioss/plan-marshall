@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Cross-file subcommand for verifying LLM cross-file analysis findings."""
 
 import json

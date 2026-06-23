@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the producer-side findings-store helpers in _build_shared.py.
 
 When ``build-*:run`` is invoked with ``--plan-id <P>``, every parsed

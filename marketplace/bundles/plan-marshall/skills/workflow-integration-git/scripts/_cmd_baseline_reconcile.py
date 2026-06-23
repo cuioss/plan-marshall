@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Mechanical baseline-reconciliation predicate for phase-2-refine Step 3d.
 
 Fetches the upstream tip, walks the commits landed on

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Storage-layout tests for the per-type findings JSONL split.
 
 These tests pin the contract for the post-split storage layer described in

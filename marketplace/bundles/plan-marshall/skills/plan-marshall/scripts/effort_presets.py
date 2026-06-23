@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Named effort-level presets for the ``manage-config effort apply-preset`` write API.
 
 Defines :class:`EffortPresets` — a constant-class that bundles a per-phase

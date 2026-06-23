@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """OpenCode body transforms — line-level rewrites applied to emitted bodies.
 
 This module implements the two transforms documented in ``transforms.md``:

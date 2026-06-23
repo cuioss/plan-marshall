@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the platform-runtime layout-resolution operation (Gap 4).
 
 Asserts the ``layout skill-roots`` op returns the correct project-local-skill

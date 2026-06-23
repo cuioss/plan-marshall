@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared constants for plan-marshall scripts.
 
 Centralizes string literals used across multiple skills to prevent typos

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ``_architecture_core.py`` — per-module on-disk layout.
 
 Pins the new persistence contract introduced by D2:

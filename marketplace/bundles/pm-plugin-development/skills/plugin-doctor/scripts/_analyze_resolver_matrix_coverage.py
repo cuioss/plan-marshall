@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Resolver-matrix-coverage analyzer for the ``resolver-matrix-coverage`` rule.
 
 This module implements a deterministic AST scanner that detects N-input

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared fixtures for 6-axis identifier-validation rejection-path tests.
 
 Used by every plan-marshall manage-* script test module that exercises

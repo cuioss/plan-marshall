@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for doctor-marketplace.py - batch marketplace analysis and fixing.
 
 Tests the hybrid Phase 1 script that provides automated batch operations:

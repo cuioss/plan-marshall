@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Deterministic plan-time bin-packer for manage-tasks.
 
 This module packs already-sized tasks into execution *envelope groups* bounded

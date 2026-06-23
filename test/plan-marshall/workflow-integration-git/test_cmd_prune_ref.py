@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for _cmd_prune_ref.py — prune-local-and-remote-ref verb.
 
 Tier 2 (direct import) tests covering:

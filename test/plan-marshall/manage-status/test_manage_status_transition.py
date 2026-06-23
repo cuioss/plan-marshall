@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-status.py transition + archive + delete + orphans + loop-back.
 
 Split from test_manage_status.py: covers cmd_transition (incl. inline

@@ -65,7 +65,28 @@ The recipe skill is the *single source of truth* for what its deliverables look 
 | link:../../marketplace/bundles/pm-dev-java-cui/skills/recipe-cui-logging-enforce/SKILL.md[`pm-dev-java-cui`]
 | `cui-logging-enforce`
 | Enforce CUI logging conventions module-by-module — migrate loggers, implement `LogRecord` constants, add coverage.
+
+| link:../../marketplace/bundles/plan-marshall/skills/recipe-code-review/SKILL.md[`plan-marshall`]
+| `code-review`
+| On-demand diff-aware structural/quality review over the current footprint. Emits `lint-issue` findings into the triage pipeline.
+
+| link:../../marketplace/bundles/plan-marshall/skills/recipe-security-audit/SKILL.md[`plan-marshall`]
+| `security-audit`
+| On-demand security audit over the current footprint using best-effort security context. Emits `bug` / `anti-pattern` findings into the triage pipeline.
 |===
+
+== The audit recipe family
+
+Most recipes (above) are *plan-shape* recipes: they shortcut the outline-discovery work and emit a deterministic deliverable set into a plan. The *audit* recipe family is a second kind — standalone, single-envelope entry points that run a cognitive review over a footprint and emit *findings*, not deliverables:
+
+* link:../../marketplace/bundles/plan-marshall/skills/recipe-code-review/SKILL.md[`recipe-code-review`] — a diff-aware structural/quality review; emits `lint-issue` findings.
+* link:../../marketplace/bundles/plan-marshall/skills/recipe-security-audit/SKILL.md[`recipe-security-audit`] — an on-demand security audit using best-effort security context (`persona-security-expert` + `untrusted-ingestion` + `workflow-permission-web`); emits `bug` / `anti-pattern` findings.
+
+Both take an optional path/file `scope` and an optional explicit `base_branch` (defaulting to the current-branch-vs-base diff), run inside their own plan-directory, and emit into `manage-findings` so the discovered issues flow through the same triage / suppression / loop-back / re-review pipeline every findings producer uses — the structural difference from external audit tools, which print a report and stop. This is the *universal-sink* principle: anything that discovers a problem emits into the findings pipeline rather than a one-off report.
+
+=== The shared audit engine
+
+`recipe-security-audit` does not inline its procedure. The five-stage security-audit procedure (compute footprint → detect affected domains → gather security context → run the cognitive audit → emit findings and dispatch to triage) is authored once in link:../../marketplace/bundles/plan-marshall/skills/recipe-security-audit/standards/audit-engine.md[`recipe-security-audit/standards/audit-engine.md`] and consumed by two callers running the *identical* stages: this recipe (the on-demand entry point) and — later — workstream 05's `finalize-step-security-audit` (the automatic pre-ship gate). Workstream 05 reuses the engine *additively* at stage 3 only — it supplies per-domain `skills_by_profile.security` skills as an extra context input layered on top of the engine's fixed action-general set, with stages 1, 2, 4, and 5 unchanged. The engine is never reshaped; the on-demand and automatic callers share it.
 
 == Where this fits
 

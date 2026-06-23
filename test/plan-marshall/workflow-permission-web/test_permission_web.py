@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for permission_web.py - WebFetch permission analysis script.
 
 Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.

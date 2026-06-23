@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Script-call drift analyzer for the ``script-call-drift`` rule.
 
 This module implements a deterministic ``--help``-based static analyzer that

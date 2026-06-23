@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for Rule 3 (identifier-validator regex vs corpus) of doctor-test-conventions.
 
 The rule extracts a regex literal from a registered validator file via

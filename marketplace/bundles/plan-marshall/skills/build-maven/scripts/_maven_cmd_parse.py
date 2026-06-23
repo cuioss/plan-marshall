@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Parse subcommand for Maven build output.
 
 Implements BuildParser protocol for unified build log parsing.

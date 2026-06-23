@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """End-to-end regression: emit-mode CLI propagates equality failure as exit 2.
 
 Locks the silent-failure path that PR #353 review surfaced: in emit mode

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared base module for CI provider scripts (GitHub, GitLab).
 
 Provides unified CLI runner, auth checker, error output, parser builder,

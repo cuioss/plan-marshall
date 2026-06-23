@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared utilities for doctor-marketplace subcommands.
 
 The ``FIXABLE_ISSUE_TYPES`` / ``SAFE_FIX_TYPES`` / ``RISKY_FIX_TYPES`` sets

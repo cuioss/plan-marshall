@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for `manage-config effort read` resolver subcommand.
 
 Tier 2 (direct import) tests covering the hierarchical resolver: the

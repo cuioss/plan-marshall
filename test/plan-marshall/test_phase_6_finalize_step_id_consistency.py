@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
 """Regression coverage for the phase-6-finalize step-ID consistency contract
 introduced by deliverable 2 of plan

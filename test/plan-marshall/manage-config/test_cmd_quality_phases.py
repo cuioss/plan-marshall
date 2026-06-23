@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for phase-based plan commands in manage-config.
 
 Tests plan phase-5-execute (including verification pipeline), phase-6-finalize pipeline commands,

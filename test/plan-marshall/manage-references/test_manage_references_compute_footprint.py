@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ``manage-references compute-footprint`` and the auto-routing
 contract that computes its ``--worktree-path`` argument.
 

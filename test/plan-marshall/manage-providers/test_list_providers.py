@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for _list_providers.py module.
 
 Covers discover-and-persist (bundle script directory scanning + marshal.json persistence)

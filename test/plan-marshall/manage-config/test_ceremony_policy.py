@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression tests for the dissolved ``ceremony_policy`` block (D9).
 
 The ``ceremony_policy`` block — its top-level JSON key, the ``DEFAULT_CEREMONY_POLICY``

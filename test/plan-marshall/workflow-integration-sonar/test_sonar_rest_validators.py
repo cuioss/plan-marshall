@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """6-axis canonical-identifier rejection tests for ``sonar_rest.py``.
 
 Covers the ``--component`` flag declared by the ``metrics`` subcommand

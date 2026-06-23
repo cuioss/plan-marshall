@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Real-git end-to-end regression test for the worktree move-in lifecycle.
 
 This is the test whose absence let the move-in defect ship (PR #556). It uses a

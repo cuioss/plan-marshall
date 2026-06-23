@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Distribution-contract tests for the three auto-continuation knobs (D9).
 
 When the ``ceremony_policy`` block was dissolved, the three auto-continuation knobs

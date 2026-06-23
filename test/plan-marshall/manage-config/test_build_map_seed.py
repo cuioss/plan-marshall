@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the marshal.json build_map seed under the top-level build block.
 
 Covers the relocated, required build_map cluster and the three behaviours the

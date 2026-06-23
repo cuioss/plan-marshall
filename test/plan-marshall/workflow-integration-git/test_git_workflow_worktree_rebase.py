@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for git_workflow.py worktree-rebase-to subcommand.
 
 Covers all eight documented worktree states the rebase dispatcher

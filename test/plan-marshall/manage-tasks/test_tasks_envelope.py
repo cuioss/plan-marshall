@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the deterministic envelope bin-packer (_tasks_envelope.py).
 
 The pure packer in ``_tasks_envelope.py`` groups already-sized tasks into

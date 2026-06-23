@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared PreToolUse gate — single home of payload-field knowledge + context predicate.
 
 This module is a pure-function library with no I/O of its own. Both the

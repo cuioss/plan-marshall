@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression tests for POC agent fixtures: agent-name resolution and per-agent model/effort.
 
 The fixtures at ``test/fixtures/poc-agent.md`` and

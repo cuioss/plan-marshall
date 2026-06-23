@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the plan-marshall-plugin extension's provides_recipes().
 
 Guards the registration of built-in recipes returned by the plan-marshall
@@ -47,6 +48,29 @@ def test_refactor_to_profile_standards_still_registered():
     recipe = _recipe_by_key(recipes, 'refactor-to-profile-standards')
     assert recipe is not None, 'refactor-to-profile-standards recipe must remain registered'
     assert recipe['skill'] == 'plan-marshall:recipe-refactor-to-profile-standards'
+
+
+def test_code_review_recipe_registered():
+    """recipe-code-review is registered with the expected ext-point-recipe fields."""
+    recipes = _load_extension().provides_recipes()
+    recipe = _recipe_by_key(recipes, 'code-review')
+    assert recipe is not None, 'code-review recipe must be registered'
+    assert recipe['skill'] == 'plan-marshall:recipe-code-review'
+    assert recipe['default_change_type'] == 'feature'
+    assert recipe['scope'] == 'module'
+    # All required ext-point-recipe dict keys are present.
+    assert {'key', 'name', 'description', 'skill', 'default_change_type', 'scope'} <= recipe.keys()
+
+
+def test_security_audit_recipe_registered():
+    """recipe-security-audit is registered with the expected ext-point-recipe fields."""
+    recipes = _load_extension().provides_recipes()
+    recipe = _recipe_by_key(recipes, 'security-audit')
+    assert recipe is not None, 'security-audit recipe must be registered'
+    assert recipe['skill'] == 'plan-marshall:recipe-security-audit'
+    assert recipe['default_change_type'] == 'feature'
+    assert recipe['scope'] == 'module'
+    assert {'key', 'name', 'description', 'skill', 'default_change_type', 'scope'} <= recipe.keys()
 
 
 def test_discoverable_via_list_recipes(plan_context):

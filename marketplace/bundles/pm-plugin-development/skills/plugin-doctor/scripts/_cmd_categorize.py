@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Categorize subcommand for categorizing fixes as safe or risky."""
 
 from _doctor_shared import RISKY_FIX_TYPES, SAFE_FIX_TYPES, read_json_input

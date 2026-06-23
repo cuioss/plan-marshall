@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``diff-modules`` reader verb in ``_cmd_client.py``.
 
 Pins the four-bucket classification contract (added/removed/changed/unchanged)

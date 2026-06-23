@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for cmd_run_common() shared logic.
 
 Tests the centralized cmd_run routing that replaces duplicated code

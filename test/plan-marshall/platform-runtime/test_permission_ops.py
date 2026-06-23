@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the Gap-1 permission-ops back-import elimination (TASK-5 re-scope).
 
 Asserts the re-scoped contract:

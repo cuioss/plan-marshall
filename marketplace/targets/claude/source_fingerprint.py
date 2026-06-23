@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared worktree-content fingerprint for the Claude target staleness guard.
 
 The fingerprint is the SHA-1 of the sorted concatenation of

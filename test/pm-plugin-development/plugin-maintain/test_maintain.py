@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for maintain.py - consolidated plugin maintenance tools.
 
 Tests plugin maintenance capabilities including:

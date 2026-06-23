@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Frontmatter transform engine for the OpenCode target.
 
 Reads ``mapping.json`` (``tool_permissions``, ``model_map``) and

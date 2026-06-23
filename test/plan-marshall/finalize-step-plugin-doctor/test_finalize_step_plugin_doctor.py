@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for finalize-step-plugin-doctor skill directory extraction logic.
 
 The finalize-step-plugin-doctor wrapper reads ``references.modified_files``,

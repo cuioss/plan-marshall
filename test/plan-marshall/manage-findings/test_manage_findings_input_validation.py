@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """6-axis identifier-validation rejection-path tests for ``manage-findings.py``.
 
 In-scope flags from TASK-1: ``--plan-id``, ``--component``, ``--module``,

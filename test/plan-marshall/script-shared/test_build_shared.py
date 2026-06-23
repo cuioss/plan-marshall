@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for _build_shared utilities and resolve_project_dir executor resolution."""
 
 import importlib

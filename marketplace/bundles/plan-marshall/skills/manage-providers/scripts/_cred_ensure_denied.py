@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """
 Add deny rules to Claude Code settings for credential directory protection.
 

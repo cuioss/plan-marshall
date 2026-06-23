@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Zero-orphaned-references sweep over the live marketplace + test tree.
 
 This plan retired several advisory surfaces that the legacy compose-driven

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Cross-check the per-plan execution manifest against the actual end-of-execute diff.
 
 Reads ``execution.toon`` (produced by ``plan-marshall:manage-execution-manifest``)

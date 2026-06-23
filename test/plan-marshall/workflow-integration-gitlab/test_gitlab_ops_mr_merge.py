@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for cmd_pr_merge (MR merge) branch-delete refactor — GitLab.
 
 Symmetric to ``test_github_ops_pr_merge.py`` for the GitHub provider.

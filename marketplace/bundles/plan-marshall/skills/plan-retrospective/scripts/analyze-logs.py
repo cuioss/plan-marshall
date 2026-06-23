@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Analyze ``work.log``, ``script-execution.log``, and ``decision.log`` for a plan.
 
 Counts entries by level, phase, and tag; extracts script durations and

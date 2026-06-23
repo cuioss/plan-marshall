@@ -43,6 +43,8 @@ Unified plan lifecycle management — create, list, outline, execute, finalize, 
 /plan-marshall lesson="2026-05-18-11-001"                       # Convert a specific lesson to a plan (action=lessons implied)
 /plan-marshall action=lessons-aggregate                         # Cross-lesson aggregation + superseded-stub prune
 /plan-marshall recipe="refactor-to-standards"                   # Create plan from a predefined recipe (action=recipe implied)
+/plan-marshall recipe="code-review"                             # On-demand diff-aware structural/quality review (emits lint-issue findings)
+/plan-marshall recipe="security-audit"                          # On-demand security audit (emits bug/anti-pattern findings)
 ----
 
 === Parameters
@@ -71,6 +73,20 @@ When `action=` is omitted, the effective action is resolved in this order — fi
 5. **No source/target parameters at all** → `list` (interactive menu).
 
 If two or more of `{task, issue, lesson, recipe, plan}` are supplied together without an explicit `action=`, the skill returns `status: error` naming the conflict. Pass an explicit `action=` or drop the conflicting parameter to resolve.
+
+=== Audit recipe parameters
+
+The audit recipes — `recipe=code-review` and `recipe=security-audit` — run a diff-aware review over the current footprint and emit findings into the triage pipeline (see xref:../concepts/recipes.adoc[Concepts › Recipes]). Both accept two optional parameters that bound the footprint:
+
+[cols="1,1,3", options="header"]
+|===
+| Parameter | Type | Description
+
+| `scope` | optional | Path or file restriction. When supplied, the review footprint is bounded to these paths. When omitted, the footprint is the full current-branch-vs-base diff.
+| `base_branch` | optional | Explicit base ref for the diff. When omitted, defaults to the configured base branch (falling back to `main`).
+|===
+
+With neither parameter, both recipes audit the full current-branch-vs-base diff.
 
 === Personas
 

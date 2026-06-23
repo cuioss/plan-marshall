@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the OpenCode body transforms (Skill: rewrite + slash-command rewrite)."""
 
 from __future__ import annotations

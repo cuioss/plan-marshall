@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Pure, platform-agnostic terminal-title composition.
 
 This module owns the title-composition contract shared across the plan-marshall

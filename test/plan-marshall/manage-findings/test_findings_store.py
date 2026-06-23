@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Unit tests for _findings_core.py - the storage engine for findings and Q-Gate findings."""
 
 from conftest import get_scripts_dir, load_script_module

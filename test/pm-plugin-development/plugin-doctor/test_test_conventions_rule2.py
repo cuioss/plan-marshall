@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for Rule 2 (subprocess.run PYTHONPATH propagation) of doctor-test-conventions.
 
 The rule walks every ``.py`` file under the test tree, locates calls of

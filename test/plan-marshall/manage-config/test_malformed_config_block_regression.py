@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Malformed-config-block robustness regression for the Pattern B2 guards.
 
 A hand-edited ``marshal.json`` can carry a non-dict value at a key the code

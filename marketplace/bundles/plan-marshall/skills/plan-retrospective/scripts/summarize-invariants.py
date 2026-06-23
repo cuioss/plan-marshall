@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Summarize phase-handshake invariant values captured in a plan's handshakes.
 
 Reads ``<plan_dir>/handshakes.toon`` (the canonical storage owned by

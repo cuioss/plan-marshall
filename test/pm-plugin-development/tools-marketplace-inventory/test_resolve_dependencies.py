@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for resolve-dependencies.py script.
 
 Tests dependency resolution including detection of various dependency types,

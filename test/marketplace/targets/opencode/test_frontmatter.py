@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Per-rule unit tests for OpenCode frontmatter transforms."""
 
 from __future__ import annotations

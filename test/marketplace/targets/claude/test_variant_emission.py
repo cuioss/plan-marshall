@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the Claude target's variant-emission contract.
 
 Covers ``variant_emitter`` directly plus the integration points in

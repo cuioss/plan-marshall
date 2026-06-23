@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``derive-verification`` deriver in ``_cmd_client.py``.
 
 Pins the single deterministic build_map consumer (Deliverable 4 of the

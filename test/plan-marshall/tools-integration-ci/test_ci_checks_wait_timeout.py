@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the marshal.json-resolved ``DEFAULT_CI_TIMEOUT`` in ``ci_base.py``.
 
 The resolver contract (``ci_base._resolve_ci_timeout``):

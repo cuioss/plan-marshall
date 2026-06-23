@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the triage workflow's loop_back_target granularity classification.
 
 The triage workflow (`plan-marshall/workflow/triage.md` § Step 7 "Loop-back

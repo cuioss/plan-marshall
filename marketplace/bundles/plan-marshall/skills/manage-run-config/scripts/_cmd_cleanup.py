@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Cleanup command handlers for manage-run-config.
 
 Handles: cleanup, cleanup-status

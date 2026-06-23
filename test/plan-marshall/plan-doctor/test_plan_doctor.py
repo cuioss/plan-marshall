@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Module tests for the ``plan-doctor`` skill.
 
 Covers the post-hoc plan-artifact diagnostics that scan ``TASK-*.json``

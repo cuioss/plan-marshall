@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Forward `--plan-id` to Bucket B executor invocations.
 
 This helper rewrites `python3 .plan/execute-script.py {notation} run ...`

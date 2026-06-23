@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for list-recipes and resolve-recipe commands in manage-config.
 
 Project recipes are discovered at runtime from `.claude/skills/recipe-*`
@@ -232,6 +233,76 @@ def test_profile_omitted_in_frontmatter_resolves_empty(plan_context, tmp_path, m
     assert result['status'] == 'success'
     assert result['profile'] == ''
     assert result['package_source'] == ''
+
+
+# =============================================================================
+# Extension-recipe surfacing Tests (Tier 2 - live provides_recipes() source)
+#
+# The two audit recipes are registered through the plan-marshall extension's
+# provides_recipes() (Source 1 of _discover_all_recipes), not the project-local
+# .claude/skills scanner (Source 2). They therefore surface from the live
+# bundle extension regardless of the temp fixture cwd. An isolated cwd keeps
+# the project-recipe (Source 2) noise out so the assertions stay focused on the
+# extension source.
+# =============================================================================
+
+
+def _recipe_by_key(recipes, key):
+    """Return the single recipe dict with the given key, or None."""
+    matches = [r for r in recipes if r.get('key') == key]
+    return matches[0] if matches else None
+
+
+def test_list_recipes_surfaces_code_review_extension_recipe(plan_context, tmp_path, monkeypatch):
+    """list-recipes surfaces the code-review recipe from provides_recipes()."""
+    _make_skills_root(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    result = cmd_list_recipes(Namespace())
+
+    assert result['status'] == 'success'
+    recipe = _recipe_by_key(result['recipes'], 'code-review')
+    assert recipe is not None, 'code-review must surface via list-recipes'
+    assert recipe['skill'] == 'plan-marshall:recipe-code-review'
+    assert recipe['source'] == 'extension'
+
+
+def test_list_recipes_surfaces_security_audit_extension_recipe(plan_context, tmp_path, monkeypatch):
+    """list-recipes surfaces the security-audit recipe from provides_recipes()."""
+    _make_skills_root(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    result = cmd_list_recipes(Namespace())
+
+    assert result['status'] == 'success'
+    recipe = _recipe_by_key(result['recipes'], 'security-audit')
+    assert recipe is not None, 'security-audit must surface via list-recipes'
+    assert recipe['skill'] == 'plan-marshall:recipe-security-audit'
+    assert recipe['source'] == 'extension'
+
+
+def test_resolve_recipe_resolves_code_review(plan_context, tmp_path, monkeypatch):
+    """resolve-recipe resolves the code-review extension recipe."""
+    _make_skills_root(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    result = cmd_resolve_recipe(Namespace(recipe='code-review'))
+
+    assert result['status'] == 'success'
+    assert result['recipe_key'] == 'code-review'
+    assert result['recipe_skill'] == 'plan-marshall:recipe-code-review'
+
+
+def test_resolve_recipe_resolves_security_audit(plan_context, tmp_path, monkeypatch):
+    """resolve-recipe resolves the security-audit extension recipe."""
+    _make_skills_root(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    result = cmd_resolve_recipe(Namespace(recipe='security-audit'))
+
+    assert result['status'] == 'success'
+    assert result['recipe_key'] == 'security-audit'
+    assert result['recipe_skill'] == 'plan-marshall:recipe-security-audit'
 
 
 # =============================================================================

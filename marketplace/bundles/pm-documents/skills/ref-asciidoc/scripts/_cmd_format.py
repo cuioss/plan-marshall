@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Format subcommand for auto-fixing AsciiDoc formatting issues."""
 
 import re

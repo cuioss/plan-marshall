@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression tests for the multi-domain recipe selection metadata contract.
 
 The built-in "Refactor to Profile Standards" recipe selection flow persists its

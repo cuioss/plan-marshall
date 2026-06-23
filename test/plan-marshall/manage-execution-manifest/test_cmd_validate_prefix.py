@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression tests for the cmd_validate prefix-normalization fix.
 
 Folded into this plan per operator decision. Two regressions are pinned here:

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Canonical human-friendly number parser for config values.
 
 This module is the single, reusable parser that turns human-friendly

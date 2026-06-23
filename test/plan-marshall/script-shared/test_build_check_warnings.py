@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for _build_check_warnings module — CLI layer for warning classification.
 
 Tests the factory function, argparse integration, JSON input parsing,

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Simplification rule detectors for the five ``SIMPLICITY_*`` rules.
 
 These five detectors are the mechanical enforcement layer for the

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """OpenCode emitter — walks source bundles and writes singular-layout output.
 
 Layout written under ``output_dir``::

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Extension API for pm-plugin-development bundle.
 
 Provides module discovery and skill domains for plugin development projects.

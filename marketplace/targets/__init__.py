@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """marketplace.targets — build-time target framework.
 
 Reads source bundles in `marketplace/bundles/` (Claude Code format, the

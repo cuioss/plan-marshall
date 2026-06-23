@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for pyproject coverage-report subcommand.
 
 Uses shared build_test_helpers for common coverage test patterns.

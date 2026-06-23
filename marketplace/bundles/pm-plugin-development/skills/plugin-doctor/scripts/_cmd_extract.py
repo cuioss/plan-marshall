@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Extract subcommand for extracting fixable issues from diagnosis."""
 
 from _doctor_shared import FIXABLE_ISSUE_TYPES, read_json_input

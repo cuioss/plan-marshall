@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Schema validation tests for OpenCode mapping/rules JSON config files."""
 
 from __future__ import annotations

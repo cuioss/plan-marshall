@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Plan-path-in-scripts analyzer for the ``plan-path-in-scripts`` rule.
 
 This module detects hand-rolled re-implementations of canonical

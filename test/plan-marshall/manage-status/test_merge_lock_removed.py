@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression guard for the removed ``manage-status merge-lock`` status-marker surface.
 
 The layer-#2 merge-lock status-marker scan was removed from ``manage-status`` (its

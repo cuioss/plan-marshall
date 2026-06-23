@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Role-field scanner for the ``phase-5-step-missing-role-field`` rule.
 
 This module implements a deterministic frontmatter scanner that flags

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Deterministic ``plugin.json`` generator for the Claude target.
 
 Reads a bundle directory, scans ``agents/*.md`` and ``commands/*.md``

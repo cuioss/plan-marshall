@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Retrospective aspect: scan plan-marshall CI-wrapper sources for tangle leaks.
 
 This is the ``plan-marshall-plugin-dev`` domain retrospective aspect contributed

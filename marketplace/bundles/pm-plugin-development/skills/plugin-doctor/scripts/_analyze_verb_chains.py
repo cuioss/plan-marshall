@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """AST-based verb-chain scanner for the ``prose-verb-chain-consistency`` rule.
 
 This module implements a lightweight static analyzer that detects stale

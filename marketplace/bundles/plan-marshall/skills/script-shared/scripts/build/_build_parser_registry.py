@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared parser registry for build output detection and routing.
 
 Provides a registry-based architecture for detecting which tool produced

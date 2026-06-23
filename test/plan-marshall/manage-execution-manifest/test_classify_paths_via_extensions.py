@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ``_classify_paths_via_extensions`` aggregator in manage-execution-manifest.py.
 
 Covers per-extension dispatch, longest-glob-wins overlap resolution, the

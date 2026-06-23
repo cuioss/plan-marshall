@@ -40,10 +40,17 @@ post-dispatch carve-out from PR #747). Only the terminal `done` / `loop_back` /
      buried in the general domain skills (java-core input-validation +
      security-patterns, python-core injection hardening, javascript XSS/DOM trust,
      oci-security OWASP-Docker + supply chain).
-4. Run the audit (shared engine with [03](03-audit-recipes.md)'s
-   `recipe-security-audit`); emit findings — mapped to valid `FINDING_TYPES`
-   (`bug` / `anti-pattern`; no `security-issue` type, see [principles §2](principles.md))
-   — → triage via domain `ext-triage-*`.
+4. Run the audit using the **shared engine already authored by [03](03-audit-recipes.md)**
+   at `marketplace/bundles/plan-marshall/skills/recipe-security-audit/standards/audit-engine.md`.
+   05 does **not** re-author the engine — it reuses it. The five stages
+   (footprint → domains → context → audit → emit/triage) are unchanged; 05 plugs
+   in **additively at stage 3 only**, supplying its per-domain
+   `skills_by_profile.security` skills (resolved for the stage-2 affected domains)
+   as an extra context input layered on top of the engine's fixed action-general
+   set. Stages 1, 2, 4, and 5 are untouched and the procedure is never reshaped —
+   this is the named plug-in point the engine documents. Findings are mapped to
+   valid `FINDING_TYPES` (`bug` / `anti-pattern`; no `security-issue` type, see
+   [principles §2](principles.md)) → triage via domain `ext-triage-*`.
 5. `configurable: [{key: security_audit, default: auto, description: "auto|always|never"}]`
    so it is gated like `finalize-step-simplify`.
 
@@ -100,7 +107,12 @@ it guarantees nothing security-relevant stays buried in a general skill.
 - `manage-execution-manifest` decision-rules (candidate set, ordering, ceremony gate).
 - marshal.json seed (`plan.phase-6-finalize.steps` + `security_audit` knob) in all
   three repos + consumer migration.
-- Shared audit engine (with [03](03-audit-recipes.md)).
+- Shared audit engine — **authored by [03](03-audit-recipes.md)** at
+  `recipe-security-audit/standards/audit-engine.md`; 05 reuses it (additive stage-3
+  input, no reshape) rather than authoring it. 05's remaining engine-adjacent work
+  is the per-domain parts the engine does NOT cover: the `security` profile in
+  `ExtensionBase.APPLICABLE_PROFILES`, the per-domain `skills_by_profile.security`
+  declarations, and the security-aspect extraction sweep below.
 
 ## Documentation to update (deliverables of this plan)
 

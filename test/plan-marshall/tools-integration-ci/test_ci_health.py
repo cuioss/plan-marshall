@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ci_health.py script.
 
 Tests provider detection, tool verification, and configuration persistence.

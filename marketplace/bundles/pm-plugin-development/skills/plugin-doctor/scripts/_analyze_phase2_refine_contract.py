@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Phase-2-refine contract analyzer for the ``refine-contract-violation`` rule.
 
 This module implements a deterministic regex-based static analyzer that

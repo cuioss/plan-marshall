@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Deterministic task cost-sizing for manage-tasks.
 
 This module IMPLEMENTS the cost-sizing rubric defined in

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """End-to-end regression tests for the dispatch-loop correctness fixes.
 
 Lesson ``2026-05-10-15-001`` shipped two structural fixes for the

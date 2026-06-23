@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression tests pinning the read-only manage-config contract for phase-2-refine.
 
 These tests demonstrate the failure mode documented in lesson 2026-05-28-23-001:

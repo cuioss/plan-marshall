@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """force-push-with-lease verb for git-workflow.py.
 
 Pushes the plan's feature branch to ``origin`` using ``--force-with-lease``

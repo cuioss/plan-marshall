@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """
 Skill domains command handlers for manage-config.
 

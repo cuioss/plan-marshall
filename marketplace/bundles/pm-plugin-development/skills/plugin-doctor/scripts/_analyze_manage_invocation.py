@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Generalized manage-* invocation analyzer for plugin-doctor.
 
 This module implements two rules:

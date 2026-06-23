@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Canonical retrospective section registry shared by the producer and consumer.
 
 This module is the single source of truth for the report's section→fragment-key

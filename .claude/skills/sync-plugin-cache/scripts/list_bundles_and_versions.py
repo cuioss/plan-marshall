@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Enumerate bundles + versions from ``target/claude/`` and emit a TOON table.
 
 Reads ``{source_root}/<bundle>/.claude-plugin/plugin.json`` from the

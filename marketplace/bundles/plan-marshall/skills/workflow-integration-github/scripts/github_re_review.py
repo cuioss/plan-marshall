@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """GitHub bot_kind-keyed re-review strategy registry.
 
 Closes the post-merge re-review gap: when a HEAD-advancing branch operation in

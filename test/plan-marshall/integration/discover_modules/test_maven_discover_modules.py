@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Integration tests for Maven discover_modules().
 
 Tests Maven module discovery against real projects in the local git directory.
