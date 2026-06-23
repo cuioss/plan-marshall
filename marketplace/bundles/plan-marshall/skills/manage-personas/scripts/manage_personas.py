@@ -35,11 +35,6 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]
 BASE_PERSONA = 'plan-marshall:persona-plan-marshall-agent'
 
 
-def _print(data: dict) -> None:
-    """Serialize a result dict to TOON on stdout."""
-    print(serialize_toon(data))
-
-
 def _leading_frontmatter(content: str) -> str:
     """Return the leading ``---``...``---`` YAML frontmatter block, or ''.
 
@@ -299,7 +294,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f'Unknown command: {args.command}')
         return 2
 
-    _print(result)
+    print(serialize_toon(result))
     return 0 if result.get('status') == 'success' else 1
 
 
