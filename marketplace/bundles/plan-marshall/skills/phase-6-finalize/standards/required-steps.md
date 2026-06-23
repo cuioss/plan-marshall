@@ -31,6 +31,7 @@ otherwise a manifest pruning would deadlock the phase transition.
 
 - finalize-step-simplify
 - push
+- finalize-step-preference-emitter
 - create-pr
 - ci-verify
 - architecture-refresh

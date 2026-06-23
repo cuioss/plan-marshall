@@ -1014,6 +1014,9 @@ def test_default_plan_finalize_config_less_steps_map_to_empty_dict():
         'default:branch-cleanup',
         # default:finalize-step-simplify owns the folded `simplify` run-at-all gate
         'default:finalize-step-simplify',
+        # default:finalize-step-preference-emitter owns the per-plan
+        # `preference_min_recurrence` promotion threshold knob
+        'default:finalize-step-preference-emitter',
     }
     for step_id, params in steps.items():
         assert isinstance(params, dict), f'every step value must be a dict; got {params!r}'
