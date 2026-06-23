@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Audit archived plans across fifteen retrospective checks.
+"""Audit archived plans across seventeen retrospective checks.
 
 Walks `.plan/local/archived-plans/{plan_id}/` directories and, per plan, runs a
 suite of deterministic checks:
@@ -84,6 +84,17 @@ suite of deterministic checks:
   task count exceeds the per-run corpus outlier threshold `max(3, median*2)`,
   recomputed fresh from the loaded corpus each run). A per-plan row carries
   `severity: genuine` whenever any of the five signals is populated.
+- `preference-pattern-detector` (cross-plan) — aggregates recurring user
+  gate-dispositions across the corpus. Walks each plan's
+  `artifacts/findings/*.jsonl`, derives a `(module, finding-class, disposition)`
+  tuple for every finding carrying a user-gate disposition
+  (`suppressed`/`accepted`/`taken_into_account`), counts distinct plans per tuple,
+  threshold-gates at `THRESHOLDS["preference_disposition_occurrences"]`, and emits
+  candidate-preference rows. The script OWNS only the threshold-gated surfacing;
+  the generalization (tuple → best-practice/insight string) and routing (to
+  `architecture enrich`) are LLM-orchestration steps documented once in
+  `phase-6-finalize/standards/disposition-to-hint-routing.md` and consumed by
+  SKILL.md Step 4c.
 - `cross-check-synthesis` (cross-plan, runs LAST) — the facet-completeness
   critic. It consumes the OTHER checks' retained structured results (not their
   emitted strings) and reports the cross-check couplings that single-check rows
@@ -148,6 +159,7 @@ CHECK_NAMES = [
     "input-integrity",
     "task-graph-redundancy",
     "architecture-lookup-ratio",
+    "preference-pattern-detector",
     # cross-check-synthesis is the facet-completeness critic; it consumes the
     # other checks' computed results, so it MUST be last in this list (run_checks
     # dispatches in CHECK_NAMES order and synthesis reads the retained results).
@@ -166,6 +178,7 @@ CROSS_PLAN_CHECKS = {
     "quality-chain",
     "sequence-and-build-minimality",
     "architecture-lookup-ratio",
+    "preference-pattern-detector",
     # cross-check-synthesis is cross-plan: it joins the other checks' corpus-level
     # results into coupling verdicts rather than emitting one row per plan.
     "cross-check-synthesis",
@@ -234,6 +247,10 @@ _LEGACY_BARE_NAME_ROLE: dict[str, str] = {
 THRESHOLDS: dict[str, Any] = {
     # Recurring-pattern systemic threshold (request: 3+ occurrences).
     "systemic_occurrences": 3,
+    # Preference-pattern-detector threshold: a (module, finding-class,
+    # disposition) recurrence must appear in at least this many distinct plans to
+    # surface as a candidate preference (mirrors the systemic-occurrences band).
+    "preference_disposition_occurrences": 3,
     # PR review-cycle threshold (hours) above which a plan is flagged slow.
     "pr_slow_review_hours": 24.0,
     # Disproportionate-token threshold: a phase consuming more than this share
@@ -1135,6 +1152,112 @@ def cross_recurring_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         "threshold": SYSTEMIC_THRESHOLD,
         "systemic_count": len(systemic),
         "rows": systemic,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Cross-plan: preference-pattern-detector
+# ---------------------------------------------------------------------------
+#
+# Aggregates recurring user gate-dispositions across the archived-plan corpus and
+# surfaces `(module, finding-class, disposition)` tuples that appear in N or more
+# distinct plans as candidate preferences. The disposition is the finding's
+# `resolution` field narrowed to the three user-gate dispositions
+# (`suppressed` / `accepted` / `taken_into_account`); the finding-class is the
+# same prefix-collapsed signature the recurring detector uses; the module is the
+# finding's `module` attribution (falling back to `component`, then `default`).
+#
+# This check OWNS only the threshold-gated surfacing of the tuples. The
+# generalization (tuple → best-practice / insight string) and routing (to
+# `architecture enrich`) are LLM-orchestration steps documented ONCE in
+# `phase-6-finalize/standards/disposition-to-hint-routing.md` and consumed by
+# SKILL.md Step 4c — the script never generalizes or routes.
+
+# The three user-gate dispositions a preference recurrence is built from. Other
+# `resolution` values (`fixed`, `pending`, etc.) are not preferences and are
+# excluded from the aggregation.
+_PREFERENCE_DISPOSITIONS = {"suppressed", "accepted", "taken_into_account"}
+
+
+def _preference_disposition(obj: dict[str, Any]) -> str | None:
+    """Return the finding's user-gate disposition, or None when it is not one.
+
+    Reads the `resolution` field directly and keeps only the three user-gate
+    dispositions. A `promoted` finding (lesson-promoted) is never a preference.
+    """
+    if obj.get("promoted"):
+        return None
+    res = str(obj.get("resolution") or "").strip().lower()
+    return res if res in _PREFERENCE_DISPOSITIONS else None
+
+
+def _preference_module(obj: dict[str, Any]) -> str:
+    """Return the finding's module attribution for preference aggregation.
+
+    Prefers the explicit `module` field, falls back to `component`, then to the
+    cross-cutting `default` bucket. Cross-cutting patterns (no concrete module)
+    route via `--module default` per the shared routing contract.
+    """
+    for key in ("module", "component"):
+        value = obj.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return "default"
+
+
+def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
+    """Aggregate `(module, finding-class, disposition)` recurrences corpus-wide.
+
+    Reuses the `read_jsonl` corpus walk over each plan's
+    `artifacts/findings/*.jsonl`. For each finding carrying a user-gate
+    disposition, derives a `(module, finding-class, disposition)` tuple, counts
+    the distinct plans each tuple appears in (a tuple appearing in multiple
+    findings within one plan contributes a single occurrence for that plan), and
+    threshold-gates at `THRESHOLDS["preference_disposition_occurrences"]`.
+    """
+    threshold = THRESHOLDS["preference_disposition_occurrences"]
+    tuple_to_plans: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+    for inputs in all_inputs:
+        findings_dir = inputs.plan_dir / "artifacts" / "findings"
+        if not findings_dir.is_dir():
+            continue
+        seen_in_plan: set[tuple[str, str, str]] = set()
+        for jsonl in findings_dir.glob("*.jsonl"):
+            for obj in read_jsonl(jsonl):
+                disposition = _preference_disposition(obj)
+                if disposition is None:
+                    continue
+                finding_class = _finding_signature(obj)
+                if not finding_class:
+                    continue
+                module = _preference_module(obj)
+                seen_in_plan.add((module, finding_class, disposition))
+        for key in seen_in_plan:
+            tuple_to_plans[key].add(inputs.plan_id)
+
+    candidates: list[dict[str, Any]] = [
+        {
+            "module": module,
+            "finding_class": finding_class,
+            "disposition": disposition,
+            "occurrence_count": len(plans),
+            "plan_ids": sorted(plans),
+        }
+        for (module, finding_class, disposition), plans in tuple_to_plans.items()
+        if len(plans) >= threshold
+    ]
+    candidates.sort(
+        key=lambda r: (
+            -int(r["occurrence_count"]),
+            str(r["module"]),
+            str(r["finding_class"]),
+            str(r["disposition"]),
+        )
+    )
+    return {
+        "threshold": threshold,
+        "candidate_count": len(candidates),
+        "rows": candidates,
     }
 
 
@@ -3591,6 +3714,37 @@ def emit_recurring_block(result: dict[str, Any]) -> str:
     return "\n".join(out) + "\n"
 
 
+def emit_preference_pattern_block(result: dict[str, Any]) -> str:
+    # Every surfaced preference cleared the occurrence threshold, so each row is a
+    # genuine signal — a candidate preference the orchestrator routes per the
+    # shared disposition-to-hint contract.
+    rows, genuine_signal_count = _severity_summary(result["rows"], lambda _r: True)
+    out = [
+        "check: preference-pattern-detector",
+        "status: success",
+        f"threshold: {result['threshold']}",
+        f"candidate_count: {result['candidate_count']}",
+        f"genuine_signal_count: {genuine_signal_count}",
+        f"rows[{len(rows)}]{{module,finding_class,disposition,occurrence_count,plan_ids,severity}}:",
+    ]
+    for r in rows:
+        out.append(
+            "  "
+            + ",".join(
+                _cell(c)
+                for c in [
+                    r["module"],
+                    r["finding_class"],
+                    r["disposition"],
+                    r["occurrence_count"],
+                    ";".join(r["plan_ids"]),
+                    r["severity"],
+                ]
+            )
+        )
+    return "\n".join(out) + "\n"
+
+
 def emit_trend_block(result: dict[str, Any]) -> str:
     # A trend row is a genuine signal only when a sustained regression fired for
     # the series; per-plan rows are the supporting series, not standalone signals.
@@ -4895,6 +5049,15 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
             "corpus_build_lookups"
         ]
 
+    if "preference-pattern-detector" in selected or synth_needed:
+        pref_result = cross_preference_pattern(all_inputs)
+        all_results["preference-pattern-detector"] = pref_result
+        if "preference-pattern-detector" in selected:
+            blocks.append(emit_preference_pattern_block(pref_result))
+            summary_metrics["preference-pattern-detector_candidates"] = pref_result[
+                "candidate_count"
+            ]
+
     # cross-check-synthesis MUST run LAST — it reads every upstream result the
     # blocks above retained into `all_results`.
     if synth_needed:
@@ -4913,7 +5076,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Audit archived plans across fifteen retrospective checks."
+        description="Audit archived plans across seventeen retrospective checks."
     )
     parser.add_argument(
         "--plan-dir",

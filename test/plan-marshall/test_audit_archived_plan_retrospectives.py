@@ -585,6 +585,7 @@ class TestThresholdsCentralization:
         # every magic number the checks consume must live in the table
         expected_keys = {
             'systemic_occurrences',
+            'preference_disposition_occurrences',
             'pr_slow_review_hours',
             'phase_token_share',
             'token_rate_outlier_multiple',
@@ -4714,6 +4715,319 @@ class TestCrossRecurringPattern:
         # nothing to aggregate
         assert result['systemic_count'] == 0
         assert result['rows'] == []
+
+# =============================================================================
+# preference-pattern-detector — aggregates recurring (module, finding-class,
+# disposition) tuples across the corpus and threshold-gates them as candidate
+# preferences.
+# =============================================================================
+
+def _write_preference_plan(
+    repo_root: Path,
+    plan_id: str,
+    findings: list[dict[str, Any]],
+) -> Any:
+    """Materialise a plan whose ``artifacts/findings/findings.jsonl`` carries the
+    supplied finding dicts verbatim (each carrying ``title``/``type``,
+    ``resolution``, and optionally ``module``)."""
+    import json as _json
+
+    plan_dir = repo_root / '.plan' / 'temp' / 'pref-corpus' / plan_id
+    findings_dir = plan_dir / 'artifacts' / 'findings'
+    findings_dir.mkdir(parents=True, exist_ok=True)
+    lines = '\n'.join(_json.dumps(f) for f in findings) + '\n'
+    (findings_dir / 'findings.jsonl').write_text(lines, encoding='utf-8')
+    return audit.collect_inputs(plan_dir)
+
+class TestCrossPreferencePattern:
+    """``cross_preference_pattern`` aggregates (module, finding-class, disposition)
+    tuples across plans and surfaces any appearing in N>=threshold plans."""
+
+    def test_tuple_in_three_plans_is_candidate(self, tmp_path: Path):
+        # the same (module, finding-class, disposition) tuple in exactly 3 plans.
+        all_inputs = [
+            _write_preference_plan(
+                tmp_path,
+                f'plan-{i}',
+                [{'title': 'Unused import: foo', 'resolution': 'suppressed', 'module': 'python'}],
+            )
+            for i in range(3)
+        ]
+
+        result = audit.cross_preference_pattern(all_inputs)
+
+        # colon suffix stripped, finding_class lowercased, count 3
+        assert result['threshold'] == 3
+        assert result['candidate_count'] == 1
+        row = result['rows'][0]
+        assert row['module'] == 'python'
+        assert row['finding_class'] == 'unused import'
+        assert row['disposition'] == 'suppressed'
+        assert row['occurrence_count'] == 3
+        assert row['plan_ids'] == ['plan-0', 'plan-1', 'plan-2']
+
+    def test_tuple_below_threshold_not_surfaced(self, tmp_path: Path):
+        # the tuple appears in only 2 plans — below the N>=3 threshold.
+        all_inputs = [
+            _write_preference_plan(
+                tmp_path, p,
+                [{'title': 'Magic number', 'resolution': 'accepted', 'module': 'python'}],
+            )
+            for p in ('plan-a', 'plan-b')
+        ]
+
+        result = audit.cross_preference_pattern(all_inputs)
+
+        assert result['candidate_count'] == 0
+        assert result['rows'] == []
+
+    def test_non_user_gate_resolution_excluded(self, tmp_path: Path):
+        # ``fixed`` and ``pending`` are NOT user-gate dispositions — excluded.
+        all_inputs = [
+            _write_preference_plan(
+                tmp_path, f'plan-{i}',
+                [{'title': 'Some finding', 'resolution': 'fixed', 'module': 'python'}],
+            )
+            for i in range(3)
+        ]
+
+        result = audit.cross_preference_pattern(all_inputs)
+
+        assert result['candidate_count'] == 0
+
+    def test_promoted_finding_is_not_a_preference(self, tmp_path: Path):
+        # a promoted (lesson) finding is never a preference even with a disposition.
+        all_inputs = [
+            _write_preference_plan(
+                tmp_path, f'plan-{i}',
+                [{'title': 'X', 'resolution': 'suppressed', 'module': 'python', 'promoted': True}],
+            )
+            for i in range(3)
+        ]
+
+        result = audit.cross_preference_pattern(all_inputs)
+
+        assert result['candidate_count'] == 0
+
+    def test_distinct_dispositions_are_distinct_tuples(self, tmp_path: Path):
+        # same module + finding-class, different disposition → two tuples, each
+        # below threshold when split.
+        all_inputs = []
+        for i in range(2):
+            all_inputs.append(
+                _write_preference_plan(
+                    tmp_path, f'sup-{i}',
+                    [{'title': 'Dup code', 'resolution': 'suppressed', 'module': 'python'}],
+                )
+            )
+        for i in range(2):
+            all_inputs.append(
+                _write_preference_plan(
+                    tmp_path, f'acc-{i}',
+                    [{'title': 'Dup code', 'resolution': 'accepted', 'module': 'python'}],
+                )
+            )
+
+        result = audit.cross_preference_pattern(all_inputs)
+
+        # neither disposition reaches 3 plans on its own
+        assert result['candidate_count'] == 0
+
+    def test_module_falls_back_to_component_then_default(self, tmp_path: Path):
+        # no ``module``: falls back to ``component``, then ``default``.
+        all_inputs = [
+            _write_preference_plan(
+                tmp_path, 'comp-0',
+                [{'title': 'C', 'resolution': 'accepted', 'component': 'cli'}],
+            ),
+            _write_preference_plan(
+                tmp_path, 'comp-1',
+                [{'title': 'C', 'resolution': 'accepted', 'component': 'cli'}],
+            ),
+            _write_preference_plan(
+                tmp_path, 'comp-2',
+                [{'title': 'C', 'resolution': 'accepted', 'component': 'cli'}],
+            ),
+        ]
+
+        result = audit.cross_preference_pattern(all_inputs)
+
+        assert result['candidate_count'] == 1
+        assert result['rows'][0]['module'] == 'cli'
+
+    def test_no_module_or_component_buckets_to_default(self, tmp_path: Path):
+        all_inputs = [
+            _write_preference_plan(
+                tmp_path, f'd-{i}',
+                [{'title': 'Cross', 'resolution': 'taken_into_account'}],
+            )
+            for i in range(3)
+        ]
+
+        result = audit.cross_preference_pattern(all_inputs)
+
+        assert result['candidate_count'] == 1
+        assert result['rows'][0]['module'] == 'default'
+        assert result['rows'][0]['disposition'] == 'taken_into_account'
+
+    def test_duplicate_tuple_within_plan_counts_once(self, tmp_path: Path):
+        # one plan repeats the tuple; two others carry it once → 3 distinct plans.
+        all_inputs = [
+            _write_preference_plan(
+                tmp_path, 'dup',
+                [
+                    {'title': 'Naming: a', 'resolution': 'suppressed', 'module': 'python'},
+                    {'title': 'Naming: b', 'resolution': 'suppressed', 'module': 'python'},
+                ],
+            ),
+            _write_preference_plan(
+                tmp_path, 'p2',
+                [{'title': 'Naming: c', 'resolution': 'suppressed', 'module': 'python'}],
+            ),
+            _write_preference_plan(
+                tmp_path, 'p3',
+                [{'title': 'Naming: d', 'resolution': 'suppressed', 'module': 'python'}],
+            ),
+        ]
+
+        result = audit.cross_preference_pattern(all_inputs)
+
+        row = result['rows'][0]
+        assert row['occurrence_count'] == 3
+        assert sorted(row['plan_ids']) == ['dup', 'p2', 'p3']
+
+    def test_rows_sorted_by_descending_occurrence(self, tmp_path: Path):
+        all_inputs = []
+        for i in range(4):
+            all_inputs.append(
+                _write_preference_plan(
+                    tmp_path, f'a-{i}',
+                    [{'title': 'Alpha', 'resolution': 'suppressed', 'module': 'python'}],
+                )
+            )
+        for i in range(3):
+            all_inputs.append(
+                _write_preference_plan(
+                    tmp_path, f'b-{i}',
+                    [{'title': 'Beta', 'resolution': 'accepted', 'module': 'python'}],
+                )
+            )
+
+        result = audit.cross_preference_pattern(all_inputs)
+
+        assert result['candidate_count'] == 2
+        assert result['rows'][0]['finding_class'] == 'alpha'
+        assert result['rows'][0]['occurrence_count'] == 4
+        assert result['rows'][1]['finding_class'] == 'beta'
+
+    def test_no_findings_dir_yields_no_candidate(self, tmp_path: Path):
+        all_inputs = []
+        for i in range(3):
+            plan_dir = tmp_path / '.plan' / 'temp' / 'pref-corpus' / f'bare-{i}'
+            plan_dir.mkdir(parents=True, exist_ok=True)
+            all_inputs.append(audit.collect_inputs(plan_dir))
+
+        result = audit.cross_preference_pattern(all_inputs)
+
+        assert result['candidate_count'] == 0
+        assert result['rows'] == []
+
+
+class TestPreferencePatternThresholdAlias:
+    """The threshold is the centralized THRESHOLDS constant, not a hard-coded
+    literal."""
+
+    def test_threshold_reads_from_table(self, tmp_path: Path):
+        result = audit.cross_preference_pattern([])
+        assert result['threshold'] == audit.THRESHOLDS['preference_disposition_occurrences']
+
+
+class TestPreferencePatternRegistry:
+    """``preference-pattern-detector`` is wired into both registries as a
+    cross-plan check."""
+
+    def test_registered_as_cross_plan(self):
+        assert 'preference-pattern-detector' in audit.CHECK_NAMES
+        assert 'preference-pattern-detector' in audit.CROSS_PLAN_CHECKS
+
+    def test_synthesis_still_runs_last(self):
+        # the new check is inserted BEFORE the synthesis sentinel
+        assert audit.CHECK_NAMES[-1] == 'cross-check-synthesis'
+        assert audit.CHECK_NAMES.index('preference-pattern-detector') < (
+            audit.CHECK_NAMES.index('cross-check-synthesis')
+        )
+
+    def test_check_is_a_valid_cli_choice(self):
+        # --check choices come from CHECK_NAMES, so membership = selectable
+        assert 'preference-pattern-detector' in audit.CHECK_NAMES
+
+
+class TestEmitPreferencePatternBlock:
+    """``emit_preference_pattern_block`` renders the documented TOON columns and
+    the severity column; every surfaced row is genuine."""
+
+    def test_block_header_and_columns(self):
+        result = {
+            'threshold': 3,
+            'candidate_count': 1,
+            'rows': [
+                {
+                    'module': 'python',
+                    'finding_class': 'unused import',
+                    'disposition': 'suppressed',
+                    'occurrence_count': 4,
+                    'plan_ids': ['p0', 'p1', 'p2', 'p3'],
+                }
+            ],
+        }
+
+        block = audit.emit_preference_pattern_block(result)
+
+        # exactly one check block with the documented header lines and columns
+        assert block.count('check: preference-pattern-detector') == 1
+        assert 'status: success' in block
+        assert 'threshold: 3' in block
+        assert 'candidate_count: 1' in block
+        assert 'genuine_signal_count: 1' in block
+        assert (
+            'rows[1]{module,finding_class,disposition,occurrence_count,plan_ids,severity}:'
+            in block
+        )
+
+    def test_surfaced_row_is_genuine(self):
+        result = {
+            'threshold': 3,
+            'candidate_count': 1,
+            'rows': [
+                {
+                    'module': 'python',
+                    'finding_class': 'magic number',
+                    'disposition': 'accepted',
+                    'occurrence_count': 3,
+                    'plan_ids': ['p0', 'p1', 'p2'],
+                }
+            ],
+        }
+
+        block = audit.emit_preference_pattern_block(result)
+        row_line = next(
+            ln.strip()
+            for ln in block.splitlines()
+            if ln.strip().startswith('python,magic number,accepted,')
+        )
+
+        # plan_ids are ;-joined and the row ends in the genuine severity cell
+        assert 'p0;p1;p2' in row_line
+        assert row_line.endswith(',genuine')
+
+    def test_empty_rows_yields_zero_genuine(self):
+        result = {'threshold': 3, 'candidate_count': 0, 'rows': []}
+
+        block = audit.emit_preference_pattern_block(result)
+
+        assert 'candidate_count: 0' in block
+        assert 'genuine_signal_count: 0' in block
+        assert 'rows[0]{module,finding_class,disposition,occurrence_count,plan_ids,severity}:' in block
 
 # =============================================================================
 # D9 — check_metrics / cross_token_trend POSITIVE-PATH backfill
