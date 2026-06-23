@@ -72,6 +72,17 @@ After running the selection flow, set the static recipe metadata for downstream 
 - `default_change_type` = `tech_debt`
 - `scope` = `codebase_wide`
 
+### Step 1b: Audit Recipe Selection Parameters
+
+The audit recipe family — `recipe-code-review` (key `code-review`) and `recipe-security-audit` (key `security-audit`) — are diff-aware on-demand entry points that run over a footprint and emit findings into the triage pipeline. Both are surfaced through the dynamic `list-recipes` listing in Step 1 alongside every other extension/project recipe; this section does NOT replace that dynamic discovery — it only documents the two optional selection parameters those recipes accept:
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `scope` | No | Optional path/file restriction. When supplied, the recipe's footprint is bounded to these paths. When omitted, the footprint is the full current-branch-vs-base diff. |
+| `base_branch` | No | Optional explicit base ref for the diff. When omitted, defaults to `references.base_branch` (falling back to `main`). |
+
+When either audit recipe is selected with one of these parameters, carry the value through to the recipe skill at runtime. Both parameters are optional; the default behavior (no parameter supplied) audits the full current-branch-vs-base diff. The recipes' finding types and cognitive procedures are owned by their own SKILL.md files (`plan-marshall:recipe-code-review`, `plan-marshall:recipe-security-audit`) and are not restated here.
+
 ### Step 2: Create Plan via Init Agent
 
 Use the selected recipe to create a plan. Compute the dispatch target via the role resolver:
