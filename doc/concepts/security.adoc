@@ -48,6 +48,20 @@ Plan Marshall reduces prompt frequency; it does not eliminate prompts. Expect pr
 
 Treat every prompt as a signal. A prompt for something plan-marshall should never have tried means a hard-rule violation made it through the skill-load layer. The right response is usually to deny, redirect, and — if it recurs — capture as a lesson.
 
+== On-demand security audit: recipe-security-audit
+
+The three layers above are *preventive* — they narrow what the LLM tries, funnel its actions, and contain untrusted input. They do not, on their own, proactively *look for* security defects in the code a plan produces. The link:../../marketplace/bundles/plan-marshall/skills/recipe-security-audit/SKILL.md[`recipe-security-audit`] recipe is the on-demand entry point for that: the operator invokes it (`/plan-marshall recipe=security-audit`) to run a security review over the current footprint, bounded to an optional path/file scope and an optional explicit base branch (defaulting to the current-branch-vs-base diff).
+
+The audit gathers *best-effort, action-general* security context — exactly three skills:
+
+* link:../../marketplace/bundles/plan-marshall/skills/persona-security-expert/SKILL.md[`persona-security-expert`] — the action-general security identity: OWASP Top Ten, STRIDE, trust-boundary and secure-coding principles.
+* link:../../marketplace/bundles/plan-marshall/skills/untrusted-ingestion/SKILL.md[`untrusted-ingestion`] — the untrusted-external-content ingestion contract (the same Layer-3 standard above).
+* link:../../marketplace/bundles/plan-marshall/skills/workflow-permission-web/SKILL.md[`workflow-permission-web`] — web-domain permission analysis.
+
+It runs the cognitive review across the footprint and emits each finding as a `bug` (a concrete defect) or `anti-pattern` (a risky-but-not-yet-exploitable structural pattern) into the same `manage-findings` store every producer writes to — there is no `security-issue` finding type; the taxonomy is closed and security maps onto existing types. Each finding dispatches to its domain `ext-triage-{domain}` extension, so a security audit flows through the identical triage envelope and four-outcome resolution model as every other producer (see xref:automatic-reviews.adoc[Concepts › Automatic Reviews]).
+
+This is the *best-effort* security pass, not the proactive pre-ship gate. The latter — a `finalize-step-security-audit` that runs automatically at finalize and resolves per-domain `skills_by_profile.security` skills through a dedicated `security` profile — is workstream 05's deliverable. It *reuses* the same shared five-stage engine this recipe runs (authored at link:../../marketplace/bundles/plan-marshall/skills/recipe-security-audit/standards/audit-engine.md[`recipe-security-audit/standards/audit-engine.md`]), plugging its per-domain skills in additively without reshaping the procedure.
+
 == Audit trail
 
 Because every action routes through the script-executor proxy, every script invocation is logged automatically. Combined with the structured `[STATUS]` / `[DISPATCH]` / `[SKILL]` / `[ARTIFACT]` tags emitted by `execution-context`, the per-plan findings JSONL, and the phase-handshake invariants, this produces a comprehensive, machine-readable record of every plan run. The full story — what's logged, where, how `plan-retrospective` evaluates it — is its own concept page: xref:audit-trail.adoc[Audit Trail].

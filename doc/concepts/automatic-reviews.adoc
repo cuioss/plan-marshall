@@ -24,6 +24,14 @@ Per-domain decision knowledge plugs in through the `ext-triage-{domain}` extensi
 Only `fixed` removes the problem. `suppressed` puts an inline annotation in the source and explains why the warning is being told to stop. `accepted` documents a decision in the finding record without touching the code. `taken_into_account` records that the feedback shaped a higher-order change — typically an outline restructure or a scope adjustment. The boundary gate counts `pending` resolutions and refuses to advance while any remain; it does not relitigate whether the resolutions were the right calls. That stays the reviewer's job.
 ====
 
+== On-demand review: recipe-code-review
+
+The seven producers above are *automatic* — they fire at a phase boundary, on a build, or on a CI/PR event without anyone asking. The link:../../marketplace/bundles/plan-marshall/skills/recipe-code-review/SKILL.md[`recipe-code-review`] recipe is the *on-demand* counterpart: a diff-aware structural/quality review the operator invokes (`/plan-marshall recipe=code-review`) over the current footprint, bounded to an optional path/file scope and an optional explicit base branch.
+
+It is an eighth producer, not a replacement. The recipe emits its observations as `lint-issue` findings into the *same* `manage-findings` store and dispatches each to its domain `ext-triage-{domain}` extension — so an on-demand review flows through the identical triage envelope, four-outcome resolution model, and blocking-count gate as every automatic producer. It complements the automated PR-comment review and the Sonar roundtrip rather than standing apart from them: the operator can ask for a focused structural pass at any point, and whatever it surfaces lands in the one store the next phase boundary reads.
+
+The security sibling, link:../../marketplace/bundles/plan-marshall/skills/recipe-security-audit/SKILL.md[`recipe-security-audit`], is the same shape for the security lens — an on-demand producer emitting `bug` / `anti-pattern` findings into the same pipeline (see xref:security.adoc[Concepts › Security]).
+
 == Related
 
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/findings-pipeline.md[`findings-pipeline.md`] — canonical end-to-end pipeline: producer → store → consumer → gate, the per-phase blocking partition, and the `pending_findings_blocking_count` invariant.
