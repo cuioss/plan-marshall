@@ -86,8 +86,7 @@ Read the live `preference_min_recurrence` knob value exactly as
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize step get --step-id default:finalize-step-preference-emitter \
-  --audit-plan-id {plan_id}
+  plan phase-6-finalize step get --step-id default:finalize-step-preference-emitter
 ```
 
 Read `params.preference_min_recurrence` from the returned TOON (default `2`).
