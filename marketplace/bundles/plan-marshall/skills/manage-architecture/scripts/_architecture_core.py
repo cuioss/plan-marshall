@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared utilities for architecture scripts.
 
 Project architecture data lives under ``.plan/project-architecture/`` and is

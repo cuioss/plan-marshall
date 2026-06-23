@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """6-axis canonical-identifier rejection tests for ``self_review.py``.
 
 Covers the ``--plan-id`` flag declared by the ``surface`` subcommand

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``step-params get`` / ``step-params set`` verbs of
 manage-execution-manifest.py.
 

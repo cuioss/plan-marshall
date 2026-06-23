@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared utilities for manage-references scripts.
 
 Provides path resolution, read/write operations, and TOON output formatting.

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """
 Platform router for plan-marshall — dispatches 18 operations to the correct
 target implementation based on ``runtime.target`` in ``.plan/marshal.json``.

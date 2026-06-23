@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for opencode_runtime.py — OpenCode implementation of all 18 operations.
 
 Asserts the no-op contract for session/display operations that OpenCode does not

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for _pyproject_execute.py.
 
 Tests the Python execution config and factory-generated functions.

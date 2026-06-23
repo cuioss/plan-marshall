@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for plan-marshall build-pyproject BuildExtension (the Python file-to-build map).
 
 Covers the build-system-owned ``BuildExtension(BuildExtensionBase)`` that ships

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Structural-compliance tests for the default:finalize-step-print-phase-breakdown
 built-in finalize step.
 

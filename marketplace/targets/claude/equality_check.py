@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Equality-check engine for the Claude target.
 
 Regenerates ``plugin.json`` for each bundle in-memory via

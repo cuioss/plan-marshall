@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression tests for the retired ``ceremony-policy`` manage-config verb (D9).
 
 The ``ceremony-policy`` noun was retired from ``manage-config.py`` argparse and the

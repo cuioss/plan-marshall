@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Cross-skill metadata field reference validity analyzer.
 
 This module implements the ``metadata-field-undefined`` rule, which detects

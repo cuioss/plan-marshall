@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared utilities for permission_doctor and permission_fix scripts.
 
 Thin delegators over the platform-runtime layer for Claude settings

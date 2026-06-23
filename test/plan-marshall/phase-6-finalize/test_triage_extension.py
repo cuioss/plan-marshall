@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for triage extension loading via manage-config API.
 
 Tests the resolve-workflow-skill-extension command for triage extensions.

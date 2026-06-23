@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """prune-local-and-remote-ref verb for git-workflow.py.
 
 Deletes the local feature branch and optionally the remote-tracking ref

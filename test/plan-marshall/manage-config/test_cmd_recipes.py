@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for list-recipes and resolve-recipe commands in manage-config.
 
 Project recipes are discovered at runtime from `.claude/skills/recipe-*`

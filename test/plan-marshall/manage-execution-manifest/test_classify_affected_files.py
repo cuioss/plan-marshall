@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the per-domain extension aggregator in manage-execution-manifest.
 
 The legacy ``_classify_affected_files`` helper has been replaced by

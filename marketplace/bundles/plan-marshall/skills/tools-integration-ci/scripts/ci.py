@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Provider-agnostic CI router.
 
 Resolves the CI provider by scanning providers[] in marshal.json for

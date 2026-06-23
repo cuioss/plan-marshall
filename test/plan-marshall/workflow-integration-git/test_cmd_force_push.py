@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for _cmd_force_push.py — force-push-with-lease verb.
 
 Tier 2 (direct import) tests covering:

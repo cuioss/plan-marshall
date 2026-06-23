@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """ClaudeTarget — verbatim source mirror + always-generate plugin.json.
 
 The Claude target operates in two modes selected by whether the caller

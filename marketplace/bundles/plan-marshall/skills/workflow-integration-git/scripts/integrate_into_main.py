@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Atomic finalize move-back: integrate the worktree-resident plan into main.
 
 Notation: ``plan-marshall:workflow-integration-git:integrate_into_main``

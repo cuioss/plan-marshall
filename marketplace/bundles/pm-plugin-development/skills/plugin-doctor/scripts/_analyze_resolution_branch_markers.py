@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Decision-log resolution-branch marker analyzer.
 
 This module implements the ``resolution-branch-side-effect-undocumented`` rule,

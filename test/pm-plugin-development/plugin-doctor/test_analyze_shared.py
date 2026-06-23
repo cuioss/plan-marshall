@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
 """Tests for ``parse_flat_yaml_config`` in ``_analyze_shared.py``.
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """
 Lifecycle command handlers for manage-status: create, transition, archive, delete-plan.
 """

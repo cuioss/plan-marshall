@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """plugin.json bidirectional manifest analyzer.
 
 This module houses the reverse-direction half of the plugin.json

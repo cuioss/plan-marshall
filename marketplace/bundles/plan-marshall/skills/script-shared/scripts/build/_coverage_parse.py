@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Format-agnostic coverage report parsing with pluggable format adapters.
 
 Provides a single entry point ``parse_coverage_report`` that delegates to

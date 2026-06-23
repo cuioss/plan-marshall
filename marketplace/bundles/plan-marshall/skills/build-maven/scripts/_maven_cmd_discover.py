@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Maven module discovery command.
 
 Discovers Maven modules with complete metadata. The default discovery path is

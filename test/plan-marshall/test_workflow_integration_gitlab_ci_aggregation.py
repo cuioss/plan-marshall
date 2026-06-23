@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for gitlab_ops.py CI conclusion-state aggregation.
 
 Mirror of test_workflow_integration_github_ci_aggregation.py for the GitLab

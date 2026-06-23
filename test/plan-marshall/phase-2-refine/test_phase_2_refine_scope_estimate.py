@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression tests for the phase-2-refine scope_estimate contract.
 
 phase-2-refine is a workflow-driven skill (no Python entry point of its own).

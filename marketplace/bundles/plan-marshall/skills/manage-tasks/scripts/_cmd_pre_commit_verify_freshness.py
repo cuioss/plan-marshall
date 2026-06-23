@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Pre-commit verify-freshness command handler for manage-tasks.py.
 
 Closes the necessary-vs-sufficient gap between ``loop-exit-guard``

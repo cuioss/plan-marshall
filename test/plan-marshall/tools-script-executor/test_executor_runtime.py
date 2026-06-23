@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """
 Runtime regression tests for the executor template's PM_MARKETPLACE_ROOT
 path-rewrite hook.

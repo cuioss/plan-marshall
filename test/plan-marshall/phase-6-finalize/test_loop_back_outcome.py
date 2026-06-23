@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """End-to-end contract tests for the ``loop_back`` outcome (TASK-2).
 
 These tests pin the four invariants documented in the lesson-2026-05-05-23-002

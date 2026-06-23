@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Skill-notation analyzer for the ``skill-notation-unresolved`` rule.
 
 This module scans marketplace markdown for ``Skill: {bundle}:{skill}``

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression tests for dynamic MYPYPATH resolution in build.py.
 
 Guards against drift in collect_script_dirs() and removal of build.py's

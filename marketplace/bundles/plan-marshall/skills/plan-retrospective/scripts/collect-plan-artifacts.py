@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Collect and classify artifacts present in a plan directory.
 
 Supports two modes:

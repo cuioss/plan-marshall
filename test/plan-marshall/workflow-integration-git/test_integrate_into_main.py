@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for integrate_into_main.py — the atomic finalize move-back script.
 
 Contract under test (solution_outline.md §5):

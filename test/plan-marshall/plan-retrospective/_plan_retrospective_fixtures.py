@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared fixture builders for plan-retrospective script tests.
 
 Module-level helpers (not pytest fixtures) so test files can call them

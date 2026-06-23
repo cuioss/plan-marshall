@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """
 Provider extension for GitHub CI provider integration.
 

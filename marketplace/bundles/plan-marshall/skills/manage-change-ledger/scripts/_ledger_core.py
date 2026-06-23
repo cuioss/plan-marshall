@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Deterministic core for the unified change-ledger primitive.
 
 Notation: imported as a module (PYTHONPATH) — ``from _ledger_core import

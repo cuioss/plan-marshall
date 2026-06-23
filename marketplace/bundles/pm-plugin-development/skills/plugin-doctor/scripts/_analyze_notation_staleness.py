@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Notation-staleness analyzer for the ``notation-staleness`` rule.
 
 This module implements a deterministic regex-based static analyzer that

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for Rule 1 (unique fixture-module basenames) of doctor-test-conventions.
 
 The rule flags helper modules under the test tree whose basename is a

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
 """Tests for ``parse_declared_tools`` in ``_analyze_coverage.py``.
 

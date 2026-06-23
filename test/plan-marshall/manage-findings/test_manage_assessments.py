@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-assessments commands in manage-findings.py script.
 
 Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.

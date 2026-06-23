@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """
 ClaudeRuntime — Claude Code implementation of all 15 platform-runtime operations.
 

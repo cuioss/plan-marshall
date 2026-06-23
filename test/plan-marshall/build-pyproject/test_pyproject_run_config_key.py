@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``run-config-key`` CLI subcommand on the build-pyproject skill.
 
 Verifies that ``pyproject_build.py run-config-key --command-args <args>``:

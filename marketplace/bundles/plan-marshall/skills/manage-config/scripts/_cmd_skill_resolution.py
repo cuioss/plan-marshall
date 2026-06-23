@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """
 Skill resolution and discovery command handlers for manage-config.
 

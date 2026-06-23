@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Schema validation for plan-marshall storage files.
 
 Provides lightweight, field-constrained validation for JSON structures used

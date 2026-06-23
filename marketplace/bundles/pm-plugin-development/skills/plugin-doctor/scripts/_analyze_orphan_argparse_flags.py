@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Orphan-argparse-flags analyzer for the ``orphan-argparse-flag`` rule.
 
 This module detects ``argparse`` flags that are declared in a ``manage-*``

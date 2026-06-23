@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the Claude target live content-drift check engine.
 
 The engine (``content_drift.run_content_drift_check``) is **regen-first**:

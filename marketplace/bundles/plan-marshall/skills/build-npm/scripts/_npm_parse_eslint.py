@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """ESLint output parser for npm lint output.
 
 Implements BuildParser protocol for ESLint results.

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the generic ``direct-gh-glab-usage.py`` aspect (Surfaces A+B) and
 the retrospective-aspect extension point that homes the former Surface C.
 

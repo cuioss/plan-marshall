@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for at-write-time lesson-ID reference validation in manage-tasks.
 
 Covers the validation surface added to ``cmd_commit_add`` and

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Extension API for plan-marshall bundle - build system discovery.
 
 Consolidates module discovery for Maven, Gradle, npm, and Python build systems.

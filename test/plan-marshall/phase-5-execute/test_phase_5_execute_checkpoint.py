@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression tests for the phase-5-execute deterministic-exit clause.
 
 phase-5-execute is workflow-driven (no Python entry point); the continue-vs-

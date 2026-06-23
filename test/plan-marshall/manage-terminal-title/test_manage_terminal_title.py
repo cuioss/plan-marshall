@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage_terminal_title.py — the pure, target-neutral composer.
 
 ``manage_terminal_title`` is a leaf library: ``compose(state_dict, process_state)``

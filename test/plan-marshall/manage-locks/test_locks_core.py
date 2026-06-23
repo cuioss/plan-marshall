@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-locks ``_locks_core.py`` shared coordination primitives.
 
 ``_locks_core`` is the single TOCTOU-safe coordination surface that both the

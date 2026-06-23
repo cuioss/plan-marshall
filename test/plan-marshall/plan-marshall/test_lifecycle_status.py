@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for lifecycle commands in manage-status.py script.
 
 Tests plan discovery, transitions, archiving, and routing (formerly manage-lifecycle).

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """TAP (Test Anything Protocol) output parser for npm test output.
 
 Implements BuildParser protocol for Node.js TAP test results.

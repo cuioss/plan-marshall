@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Detect direct ``gh``/``glab`` usage across the two generic retrospective surfaces.
 
 The CI integration abstraction (``plan-marshall:tools-integration-ci:ci``)

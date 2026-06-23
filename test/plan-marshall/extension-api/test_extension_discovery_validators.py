@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Sanity tests asserting extension_discovery.py exposes no in-scope identifier flags.
 
 TASK-3 of the canonical-identifier-validator migration audited

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Build vocabulary constants for canonical commands and profile patterns.
 
 These constants define the canonical build command names, their aliases,

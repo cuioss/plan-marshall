@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Assert that written pytest identifiers appear in a module-test log.
 
 This helper is the second half of the execute-task module_testing guardrail.

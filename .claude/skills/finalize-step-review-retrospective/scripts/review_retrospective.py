@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Deterministic per-reviewer review-quality aggregator over a plan's pr-comment findings.
 
 Reads the plan's `pr-comment` findings (each carrying the first-class `author` and

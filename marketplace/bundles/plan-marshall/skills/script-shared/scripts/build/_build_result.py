@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Result construction and log file management utilities.
 
 Shared infrastructure for build command result handling across build systems.

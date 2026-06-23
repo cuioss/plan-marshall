@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Analysis functions for doctor-marketplace.
 
 Every rule emitted from this module must have a corresponding row in

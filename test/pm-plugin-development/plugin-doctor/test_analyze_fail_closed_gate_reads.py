@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
 """Tests for the ``fail-closed-gate-read`` and
 ``redundant-contract-typed-isinstance`` rule analyzer.

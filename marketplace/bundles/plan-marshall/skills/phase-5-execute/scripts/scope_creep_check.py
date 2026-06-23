@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Pre-task scope-creep guard for phase-5-execute.
 
 Computes the residual file-set drift since plan creation - files modified that

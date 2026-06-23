@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Dependency-sweep verification for the planning-lanes light/deep refactor.
 
 A structural grep-sweep that asserts ZERO orphaned references to every piece of

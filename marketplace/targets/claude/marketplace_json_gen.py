@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Deterministic top-level ``marketplace.json`` generator for the Claude target.
 
 The Claude target emits each source bundle into ``target/claude/{bundle}/``

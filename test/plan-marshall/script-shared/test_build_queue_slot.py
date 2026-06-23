@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
 #!/usr/bin/env python3
 """Tests for ``script-shared/scripts/build/_build_queue_slot.py`` (D6).

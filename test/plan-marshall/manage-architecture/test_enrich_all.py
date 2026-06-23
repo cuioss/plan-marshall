@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
 """Tests for ``enrich_all()`` and ``cmd_enrich_all()`` in ``_cmd_enrich.py``.
 

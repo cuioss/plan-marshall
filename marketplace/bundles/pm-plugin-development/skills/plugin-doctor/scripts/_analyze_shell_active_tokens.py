@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shell-active token scanner for the ``shell-active-tokens`` rule.
 
 This module implements a deterministic regex-based static analyzer that

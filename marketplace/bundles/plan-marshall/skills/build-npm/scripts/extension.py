@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Build extension for plan-marshall:build-npm — the npm/JS file-to-build map.
 
 Owns Axis-B of the extension contract for the npm build system: the

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression test for the phase-4-plan Verification-Only Guard contract.
 
 The guard must NOT collapse a deliverable's profile set to ``[verification]``

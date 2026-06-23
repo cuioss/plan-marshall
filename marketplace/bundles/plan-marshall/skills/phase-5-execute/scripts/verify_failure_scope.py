@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Out-of-scope verify-failure classifier for phase-5-execute Step 11 triage.
 
 Cross-references the file paths that produced a verify failure against the

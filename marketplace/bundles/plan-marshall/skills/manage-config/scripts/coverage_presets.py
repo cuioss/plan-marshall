@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Static coverage expander for the ``manage-config coverage expand`` verb.
 
 Defines :class:`CoveragePresets` — a constant-class that transcribes the

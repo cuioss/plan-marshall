@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Compile the quality-verification markdown document from aspect fragments.
 
 The script is a pure assembler — it does NOT make judgement calls. It reads

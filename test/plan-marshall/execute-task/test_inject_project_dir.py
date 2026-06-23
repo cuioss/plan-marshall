@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Unit tests for inject_project_dir helper.
 
 Covers the library function `inject_project_dir(command, plan_id)` and the CLI

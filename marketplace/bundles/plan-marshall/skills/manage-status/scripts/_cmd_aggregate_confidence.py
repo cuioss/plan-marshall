@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Weighted-math confidence aggregator for phase-2-refine Step 10.
 
 Replaces the prior multi-step LLM aggregation with a pure weighted-math

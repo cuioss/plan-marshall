@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Factory for build-system-specific execute_direct and cmd_run functions.
 
 Eliminates duplication between Maven and Gradle execute modules by extracting

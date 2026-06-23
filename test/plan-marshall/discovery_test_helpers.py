@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared test helpers for plan-marshall build module discovery tests.
 
 Provides common assertion functions for validating module discovery output

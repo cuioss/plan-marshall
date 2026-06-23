@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Envelope bin-packing command handler for manage-tasks.py.
 
 Thin CLI wrapper over the pure packer in ``_tasks_envelope.py``. Implements the

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Reduce a Claude Code session JSONL transcript to its signal-bearing turns.
 
 Pure deterministic fact reducer for the ``plan-retrospective`` chat-history

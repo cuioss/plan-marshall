@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Unit tests for the unified ``manage-change-ledger`` CLI — the first-class
 ``worktree-sha`` + ``append`` + ``query`` API over the one append-only
 change-ledger.

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``restore-from-plan`` subcommand of manage-lessons.py.
 
 ``cmd_restore_from_plan`` is the inverse of ``cmd_convert_to_plan``: it

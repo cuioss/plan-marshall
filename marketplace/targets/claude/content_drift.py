@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Live content-drift check engine for the Claude target.
 
 Regenerates the entire Claude target tree into a throwaway temporary

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ci.py provider-agnostic router script.
 
 Tests that the router correctly parses arguments and delegates.

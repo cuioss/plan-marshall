@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for recipe-lesson-cleanup + phase-1-init lesson auto-suggest hook.
 
 The recipe and the auto-suggest hook are workflow-driven (markdown skills with

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared layout-simulation helpers for manage-config step-discovery tests.
 
 Several manage-config test modules build a fake ``plan-marshall`` bundle tree

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the architecture-refresh subcommand group of manage-run-config.
 
 Covers the architecture_refresh schema added in Phase D, Task 3:

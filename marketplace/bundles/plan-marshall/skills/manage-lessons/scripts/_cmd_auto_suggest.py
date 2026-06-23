@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Recipe-registry matcher for phase-1-init Step 5c.
 
 Scans the marketplace recipe registry (`manage-config list-recipes`) and

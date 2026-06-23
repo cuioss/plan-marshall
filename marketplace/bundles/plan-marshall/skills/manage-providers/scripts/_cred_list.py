@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """
 List configured credential skills by scanning CREDENTIALS_DIR.
 

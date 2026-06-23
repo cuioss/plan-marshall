@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Deterministic validator for untrusted-ingestion candidate structs.
 
 This script IS the containment boundary in the reader/orchestrator/writer

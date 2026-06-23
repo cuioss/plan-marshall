@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression tests for native coverage threshold enforcement in build.py::cmd_coverage.
 
 Guards the single-resolver coverage-check contract: cmd_coverage must invoke

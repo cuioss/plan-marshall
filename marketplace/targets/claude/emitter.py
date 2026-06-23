@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Bundle mirror for the Claude target.
 
 Walks ``marketplace/bundles/{bundle}/**`` and copies content byte-for-byte

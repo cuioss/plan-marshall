@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Build-queue concurrency limiter — the bounded-``k``-slot admitter with a FIFO
 waiting queue.
 

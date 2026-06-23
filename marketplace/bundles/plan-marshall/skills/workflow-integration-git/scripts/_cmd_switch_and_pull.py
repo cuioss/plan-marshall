@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """switch-and-pull verb for git-workflow.py.
 
 Checks out ``--base`` on the supplied project directory and then pulls

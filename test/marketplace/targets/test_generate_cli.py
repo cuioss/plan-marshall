@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """CLI smoke tests for marketplace/targets/generate.py."""
 
 import subprocess

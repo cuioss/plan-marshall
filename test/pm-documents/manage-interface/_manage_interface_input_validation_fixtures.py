@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Sibling fixtures helper for ``pm-documents/manage-interface`` tests.
 
 Mirrors the canonical 6-axis matrix exposed by

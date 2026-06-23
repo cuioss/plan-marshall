@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for workflow-integration-gitlab gitlab_pr.py — producer-side surface.
 
 Mirrors test_github_pr.py for the GitLab provider. The script's LLM-callable

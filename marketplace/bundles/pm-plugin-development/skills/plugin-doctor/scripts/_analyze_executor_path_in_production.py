@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Executor-path-in-production analyzer for the ``executor-path-in-production`` rule.
 
 This module detects occurrences of the literal string ``.plan/execute-script.py``

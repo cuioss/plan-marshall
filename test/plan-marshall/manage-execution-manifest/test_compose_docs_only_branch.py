@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression tests asserting the compose docs-only post-matrix branch is removed.
 
 The advisory docs-only post-matrix rule in ``cmd_compose`` — which inspected the

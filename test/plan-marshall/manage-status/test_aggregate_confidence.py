@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-status.py aggregate-confidence subcommand.
 
 The script implements phase-2-refine SKILL.md Step 10's weighted-math
