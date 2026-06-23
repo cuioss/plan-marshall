@@ -5,7 +5,7 @@
      role="img" aria-labelledby="title desc"
      font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
   <title id="title">Skill loading data flow — from architecture to loaded context</title>
-  <desc  id="desc">Vertical data-flow diagram showing how skills travel from the per-module architecture record into a subagent's loaded context. Each stage transforms or forwards the skills data; no stage chooses skills at runtime. Architecture's skills_by_profile becomes task.skills at plan time, travels through the execute dispatch verbatim, and is loaded by execution-context as Tier 2 on top of the implicit Tier 1 persona-plan-marshall-agent.</desc>
+  <desc  id="desc">Vertical data-flow diagram showing how skills travel from the per-module architecture record into a subagent's loaded context. Each stage transforms or forwards the skills data; no stage chooses skills at runtime. Architecture's skills_by_profile becomes task.skills at plan time, travels through the execute dispatch verbatim, and is loaded by execution-context as Tier 2 on top of the implicit Tier 1 persona-plan-marshall-agent. At plan time phase-4-plan also derives the persona from the task's primary profile and merges manage-personas resolve output into task.skills.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
@@ -49,6 +49,11 @@
   <text x="380" y="337" class="col-header">phase-4-plan</text>
   <text x="380" y="357" class="col-sub">resolve skills_by_profile[profile] → task.skills</text>
   <text x="380" y="382" class="item-c">TASK-N.json   (skills materialized per task)</text>
+
+  <!-- Callout — persona resolution merged in at plan time -->
+  <text x="100" y="351" class="col-sub" text-anchor="end">+ persona-from-</text>
+  <text x="100" y="367" class="col-sub" text-anchor="end">profile, merged</text>
+  <line class="arrow" x1="115" y1="363" x2="175" y2="363" marker-end="url(#arrow)"/>
 
   <!-- Arrow 3 → 4 -->
   <line class="arrow" x1="380" y1="405" x2="380" y2="443" marker-end="url(#arrow)"/>
