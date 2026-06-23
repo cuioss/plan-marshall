@@ -130,7 +130,7 @@ The same note fixes the granularity framing. The phase-5-execute dispatch unit i
 │  ├──────────────────────┼────────────────────────────────────────────────┤ │
 │  │                      │                                                │ │
 │  │ execution-context    │ Generic dispatcher                             │ │
-│  │                      │ • Loads dev-agent-behavior-rules implicitly    │ │
+│  │                      │ • Loads persona-plan-marshall-agent implicitly    │ │
 │  │                      │ • Loads caller-specified skills[] in order     │ │
 │  │                      │ • Reads + executes the prompt-body `workflow`  │ │
 │  │                      │   doc (or `instructions`) to completion        │ │

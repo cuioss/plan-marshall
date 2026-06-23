@@ -28,7 +28,7 @@ Each of the two fields (``thoroughness`` and ``scope``) walks this order
 independently, mirroring ``_resolve_level``'s polymorphic walk.
 
 Coupling constraint — the load-bearing config validation, stated verbatim in
-``dev-agent-behavior-rules/standards/thoroughness.md`` § Coupling Constraint::
+``persona-plan-marshall-agent/standards/thoroughness.md`` § Coupling Constraint::
 
     reject thoroughness >= T4 AND scope < component
 
@@ -46,11 +46,11 @@ from _config_core import (
 )
 
 # Allowed thoroughness rungs, kept in lock-step with the T1-T5 ladder in
-# dev-agent-behavior-rules/standards/thoroughness.md § Thoroughness Ladder.
+# persona-plan-marshall-agent/standards/thoroughness.md § Thoroughness Ladder.
 ALLOWED_THOROUGHNESS = ('T1', 'T2', 'T3', 'T4', 'T5', 'inherit')
 
 # Allowed scope rungs, kept in lock-step with the nested scope ladder in
-# dev-agent-behavior-rules/standards/thoroughness.md § Scope Ladder
+# persona-plan-marshall-agent/standards/thoroughness.md § Scope Ladder
 # (change-set ⊂ artifact ⊂ component ⊂ module ⊂ overall).
 ALLOWED_SCOPE = ('change-set', 'artifact', 'component', 'module', 'overall', 'inherit')
 
@@ -124,7 +124,7 @@ def _validate_coupling(thoroughness: object, scope: object) -> tuple[bool, str |
     """Enforce the scope <-> thoroughness coupling constraint.
 
     Rejects ``thoroughness >= T4 AND scope < component`` per
-    dev-agent-behavior-rules/standards/thoroughness.md § Coupling Constraint.
+    persona-plan-marshall-agent/standards/thoroughness.md § Coupling Constraint.
     A relation-tracing thoroughness (T4/T5) cannot be honoured below
     ``component`` scope because the siblings the relations point at are out of
     radius. ``inherit`` on either field is unconstrained — an unresolved dial
@@ -150,7 +150,7 @@ def _validate_coupling(thoroughness: object, scope: object) -> tuple[bool, str |
             f"coverage coupling violation: thoroughness '{thoroughness}' (>= T4) "
             f"requires scope >= 'component', but scope is '{scope}'. "
             f"Relation-tracing thoroughness lower-bounds scope (see "
-            f"dev-agent-behavior-rules/standards/thoroughness.md § Coupling Constraint: "
+            f"persona-plan-marshall-agent/standards/thoroughness.md § Coupling Constraint: "
             f"reject thoroughness >= T4 AND scope < component).",
         )
     return True, None
@@ -319,7 +319,7 @@ def cmd_coverage_expand(args) -> dict:
 
     Expands the requested ``(thoroughness, scope)`` identifier into the
     canonical operational instruction block defined by the coverage-gathering
-    contract (``dev-agent-behavior-rules/standards/coverage-gathering-contract.md``
+    contract (``persona-plan-marshall-agent/standards/coverage-gathering-contract.md``
     § "The Expansion Table"), emitted by :class:`CoveragePresets`. This is the
     static identifier->instruction expander that implementing components consume
     instead of re-interpreting the raw cell — mirroring how ``compatibility``

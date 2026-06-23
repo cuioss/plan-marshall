@@ -29,7 +29,7 @@ Every surface that ingests untrusted external content loads this skill via `Skil
 - Never grant the reader surface write/edit/execute/skill-loading tools. The reader tool surface is `WebSearch, WebFetch, Read, Grep` only (see `standards/reader-contract.md`).
 
 **Constraints:**
-- Strictly comply with all rules from `plan-marshall:dev-agent-behavior-rules`, especially tool usage and workflow step discipline.
+- Strictly comply with all rules from `plan-marshall:persona-plan-marshall-agent`, especially tool usage and workflow step discipline.
 - The deterministic enforcement boundary is the script, documented in `## Canonical invocations` below; surface prose references it rather than restating it.
 
 ## Standards (Load On-Demand)

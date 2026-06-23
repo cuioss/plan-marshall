@@ -2,7 +2,7 @@
 """Shared imports, helpers, and Namespace builders for manage-tasks tests.
 
 Sibling of the split test_manage_tasks_*.py files. Imported explicitly per
-the dev-general-module-testing _fixtures.py / _helpers.py convention.
+the persona-module-tester _fixtures.py / _helpers.py convention.
 """
 
 import re

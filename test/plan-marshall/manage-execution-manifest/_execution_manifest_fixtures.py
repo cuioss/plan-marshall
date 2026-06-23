@@ -12,7 +12,7 @@ per the plan-marshall sibling-conftest ban — a sibling ``conftest.py`` under
 and silently disable shared fixtures. The basename is bundle-unique (rather
 than a bare ``_fixtures.py``) to avoid a basename collision in the
 plan-marshall test-collection namespace. See
-``plan-marshall:dev-general-module-testing`` for the authoritative
+``plan-marshall:persona-module-tester`` for the authoritative
 ``_fixtures.py`` convention.
 
 Tests import the fixtures explicitly::

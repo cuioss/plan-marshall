@@ -17,7 +17,7 @@ The first five aspects are the structural-hygiene audit (default-surfacing, dead
 
 Like `recipe-simplify-codebase` it is an LLM-driven, SKILL.md-only deliverable-collection workflow (no scripts): the phase-3-outline recipe path loads it to produce a config-audit `solution_outline.md`.
 
-Unlike the interactive recipes, this recipe **hard-codes** its `(thoroughness, scope)` cell instead of gathering it from the user. It implements the [coverage-gathering contract](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/coverage-gathering-contract.md) — expand and consume — but **skips the gather step**, supplying a fixed identifier + expanded instruction per the contract's gather → expand → consume model.
+Unlike the interactive recipes, this recipe **hard-codes** its `(thoroughness, scope)` cell instead of gathering it from the user. It implements the [coverage-gathering contract](../../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/coverage-gathering-contract.md) — expand and consume — but **skips the gather step**, supplying a fixed identifier + expanded instruction per the contract's gather → expand → consume model.
 
 ## Input Parameters
 
@@ -47,7 +47,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id {plan_id} --set --field coverage_instruction --value {expanded_instruction}
 ```
 
-The ladders (T1–T5), the grade-to-the-floor rule, and the coupling constraint are defined once in [`dev-agent-behavior-rules/standards/thoroughness.md`](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/thoroughness.md), and the cell → instruction expansion table lives in [`dev-agent-behavior-rules/standards/coverage-gathering-contract.md`](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/coverage-gathering-contract.md); do NOT restate either here. `coverage expand` enforces the coupling constraint and emits `error_type: coverage_coupling_violation` for an incoherent cell — the fixed `T4 / module` pair satisfies the constraint by construction, so a violation here is a contract bug, not a re-gather case.
+The ladders (T1–T5), the grade-to-the-floor rule, and the coupling constraint are defined once in [`persona-plan-marshall-agent/standards/thoroughness.md`](../../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/thoroughness.md), and the cell → instruction expansion table lives in [`persona-plan-marshall-agent/standards/coverage-gathering-contract.md`](../../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/coverage-gathering-contract.md); do NOT restate either here. `coverage expand` enforces the coupling constraint and emits `error_type: coverage_coupling_violation` for an incoherent cell — the fixed `T4 / module` pair satisfies the constraint by construction, so a violation here is a contract bug, not a re-gather case.
 
 Consume the **expanded instruction** (NOT the raw cell) when collecting the audit deliverables in Step 3.
 
@@ -161,7 +161,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 **Prohibited actions:**
 - Never raise an `AskUserQuestion` for the coverage cell — the cell is hard-coded `T4 / module` (Step 1). The only `AskUserQuestion`s this recipe drives are the per-aspect confirmation gates (aspect-2 deletion, aspect-4 rename, aspect-5 value change, aspect-6 foreign-mirror removal, aspect-7 house-rule demotion, aspect-8 relocation, aspect-9 generalization collapse) in the running plan.
-- Never restate the thoroughness ladders, the grade-to-the-floor rule, the coupling constraint, or the cell → instruction expansion table — cross-reference `dev-agent-behavior-rules/standards/thoroughness.md` and `coverage-gathering-contract.md`.
+- Never restate the thoroughness ladders, the grade-to-the-floor rule, the coupling constraint, or the cell → instruction expansion table — cross-reference `persona-plan-marshall-agent/standards/thoroughness.md` and `coverage-gathering-contract.md`.
 - Never restate the config-design governance rule bodies (Rule 1 ownership, Rule 2 house-rules, Rule 5 placement, Rule 6 anti-speculation) — aspects 6–9 cross-reference `manage-config/standards/config-design-principles.md` and MUST NOT inline the rule text.
 - Never apply a confirmed-only change without explicit user confirmation: never delete an orphaned config key (aspect 2), apply a rename (aspect 4), apply a unit/value change (aspect 5), remove a foreign-mirror key (aspect 6), demote/remove a leaked house-rule default (aspect 7), relocate a misplaced key (aspect 8), or collapse/remove a speculative generalization (aspect 9) until the user confirms the proposed list via `AskUserQuestion`.
 - Never access `.plan/` files directly — all access goes through `python3 .plan/execute-script.py` manage-* scripts.
@@ -173,8 +173,8 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ## Related
 
-- `plan-marshall:dev-agent-behavior-rules` `standards/thoroughness.md` — the scope × thoroughness ladders, grade-to-the-floor rule, and coupling constraint (single source of truth).
-- `plan-marshall:dev-agent-behavior-rules` `standards/coverage-gathering-contract.md` — the coverage-gathering contract this recipe implements (expand → consume; persistence; cell → instruction table). This recipe skips the gather step.
+- `plan-marshall:persona-plan-marshall-agent` `standards/thoroughness.md` — the scope × thoroughness ladders, grade-to-the-floor rule, and coupling constraint (single source of truth).
+- `plan-marshall:persona-plan-marshall-agent` `standards/coverage-gathering-contract.md` — the coverage-gathering contract this recipe implements (expand → consume; persistence; cell → instruction table). This recipe skips the gather step.
 - `plan-marshall:manage-config` `coverage expand` — the static identifier → instruction expander that enforces the coupling constraint.
 - `plan-marshall:manage-config` [`standards/config-design-principles.md`](../../../marketplace/bundles/plan-marshall/skills/manage-config/standards/config-design-principles.md) — the config-design governance rules (ownership, house-rules, field migration, placement, anti-speculation) that audit aspects 6–9 enforce. Single source of truth for every governance rule body; this recipe xrefs it and never inlines the rules.
 - `plan-marshall:recipe-simplify-codebase` — the sibling SKILL.md-only recipe whose deliverable-collection shape this recipe mirrors.

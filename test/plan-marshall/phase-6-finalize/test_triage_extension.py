@@ -34,7 +34,7 @@ def test_resolve_triage_extension_java(plan_context):
         {
             'skill_domains': {
                 'system': {
-                    'defaults': ['plan-marshall:dev-agent-behavior-rules'],
+                    'defaults': ['plan-marshall:persona-plan-marshall-agent'],
                     'workflow_skills': {
                         '1-init': 'plan-marshall:phase-1-init',
                         '2-refine': 'plan-marshall:phase-2-refine',
@@ -71,7 +71,7 @@ def test_resolve_triage_extension_javascript(plan_context):
         {
             'skill_domains': {
                 'system': {
-                    'defaults': ['plan-marshall:dev-agent-behavior-rules'],
+                    'defaults': ['plan-marshall:persona-plan-marshall-agent'],
                     'workflow_skills': {
                         '1-init': 'plan-marshall:phase-1-init',
                         '2-refine': 'plan-marshall:phase-2-refine',
@@ -108,7 +108,7 @@ def test_resolve_triage_extension_plugin_dev(plan_context):
         {
             'skill_domains': {
                 'system': {
-                    'defaults': ['plan-marshall:dev-agent-behavior-rules'],
+                    'defaults': ['plan-marshall:persona-plan-marshall-agent'],
                     'workflow_skills': {
                         '1-init': 'plan-marshall:phase-1-init',
                         '2-refine': 'plan-marshall:phase-2-refine',
@@ -143,7 +143,7 @@ def test_resolve_triage_extension_null_for_missing(plan_context):
         {
             'skill_domains': {
                 'system': {
-                    'defaults': ['plan-marshall:dev-agent-behavior-rules'],
+                    'defaults': ['plan-marshall:persona-plan-marshall-agent'],
                     'workflow_skills': {
                         '1-init': 'plan-marshall:phase-1-init',
                         '2-refine': 'plan-marshall:phase-2-refine',
@@ -185,7 +185,7 @@ def test_resolve_triage_extension_null_for_unknown_domain(plan_context):
         {
             'skill_domains': {
                 'system': {
-                    'defaults': ['plan-marshall:dev-agent-behavior-rules'],
+                    'defaults': ['plan-marshall:persona-plan-marshall-agent'],
                     'workflow_skills': {
                         '1-init': 'plan-marshall:phase-1-init',
                         '2-refine': 'plan-marshall:phase-2-refine',

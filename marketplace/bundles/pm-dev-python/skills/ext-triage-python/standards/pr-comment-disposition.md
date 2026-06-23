@@ -1,6 +1,6 @@
 # Python PR Comment Disposition
 
-Decision criteria for disposing of automated PR review comments (gemini-code-assist, Copilot, Sonar, CodeRabbit, ruff-bot, etc.) on Python code. Comments reach this disposition step **after** the validity check from `dev-agent-behavior-rules` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
+Decision criteria for disposing of automated PR review comments (gemini-code-assist, Copilot, Sonar, CodeRabbit, ruff-bot, etc.) on Python code. Comments reach this disposition step **after** the validity check from `persona-plan-marshall-agent` (PR review hard rule): if a suggestion contradicts the plan's stated intent or driving lesson, reply-and-resolve immediately. Use this document when the suggestion is plan-compatible and you must decide between FIX, REPLY-AND-RESOLVE, or ESCALATE.
 
 ## Disposition Outcomes
 
@@ -62,7 +62,7 @@ Decline the suggestion with the corresponding template. Always reply before reso
 | Suggestion proposes refactoring a function untouched by this PR | `Out of scope: `{function}` is not modified in this PR. Refactor request belongs in a dedicated maintenance plan.` |
 | Bot requests new tests for unchanged production code | `Out of scope: line is unchanged by this PR. Coverage gap predates this change; tracked separately, not a merge blocker.` |
 | Bot proposes type-stub additions for a third-party dep without typing | `Out of scope: typing third-party dependency requires a separate stub-package decision; tracking as future work.` |
-| Bot proposes adopting a new dependency (pendulum, attrs, structlog) | `Out of scope: dependency additions go through `dev-agent-behavior-rules` dependency-management workflow, not inline in PR review.` |
+| Bot proposes adopting a new dependency (pendulum, attrs, structlog) | `Out of scope: dependency additions go through `persona-plan-marshall-agent` dependency-management workflow, not inline in PR review.` |
 
 ### Out of Domain
 
@@ -92,7 +92,7 @@ Use `AskUserQuestion` when the comment falls into any row below. Do NOT silently
 ```
 Bot comment received
   ↓
-Plan-intent check (dev-agent-behavior-rules PR review rule)
+Plan-intent check (persona-plan-marshall-agent PR review rule)
   Contradicts plan? → REPLY-AND-RESOLVE (Plan-Intent Contradiction)
   ↓
 Match FIX category from table above?
@@ -122,5 +122,5 @@ Default → ESCALATE (do not silently fix or resolve unknown categories)
 - [suppression.md](suppression.md) — `# noqa`, `# type: ignore`, pytest skip/xfail syntax
 - `pm-dev-python:python-core` — Core Python patterns referenced in FIX-eligible categories
 - `pm-dev-python:pytest-testing` — Pytest correctness baseline
-- `plan-marshall:dev-agent-behavior-rules` — PR review hard rule (validate bot suggestions against plan intent)
+- `plan-marshall:persona-plan-marshall-agent` — PR review hard rule (validate bot suggestions against plan intent)
 - [`../../../../plan-marshall/skills/plan-marshall/workflow/triage.md`](../../../../plan-marshall/skills/plan-marshall/workflow/triage.md) § "Design-decision reconciliation guard" — central guard that declines a review-bot or Sonar suggestion which would reverse a standing `decision.log` decision; enforcement-critical logic lives in the central standard only, not inlined here

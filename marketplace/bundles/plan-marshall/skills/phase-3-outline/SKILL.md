@@ -15,7 +15,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 ## Foundational Practices
 
 ```
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
 ## Enforcement
@@ -33,7 +33,7 @@ Skill: plan-marshall:dev-agent-behavior-rules
 - **Never invoke any `*-doctor` tool (e.g., `plugin-doctor`, `plan-doctor`) carrying `fix`, `apply`, `--apply`, or `--fix`** during outline. Doctor tools may only be invoked in their read-only modes (`verify`, `check`, no flags) to surface findings. The `apply`/`fix`/`--fix`/`--apply` surfaces mutate source files and bypass the per-plan workspace boundary above — they are reserved for phase-5-execute task bodies that the planner explicitly authorized via a deliverable. This applies equally to `Bash`, `Skill:`, and `SlashCommand:` invocation shapes.
 
 **Constraints:**
-- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
+- Strictly comply with all rules from persona-plan-marshall-agent, especially tool usage and workflow step discipline
 
 ## Dispatched workflows vs inline steps
 
@@ -303,7 +303,7 @@ The downstream [phase-4-plan value-change rule](../phase-4-plan/SKILL.md) carrie
 
 **Step 6 may also refine `scope_estimate`**: After deliverables crystalize and the concrete Affected files lists are known, phase-3-outline MAY downgrade `scope_estimate` (e.g., `single_module` → `surgical`) when the final deliverable composition narrows the actual scope. Persist any change via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 8 so the bypass rule sees the refined value.
 
-> **Coverage contract**: deliverable composition is where a per-deliverable *scope × thoroughness* cell would be declared — `scope_estimate` is the scope dial; *thoroughness* (coverage breadth + relation-tracing depth) is its orthogonal partner. The coupling constraint `reject thoroughness ≥ T4 ∧ scope < component` means a relation-tracing deliverable forces scope ≥ `component`. See the two-dial ladders, the grade-to-the-floor rule, and the coupling constraint in [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md).
+> **Coverage contract**: deliverable composition is where a per-deliverable *scope × thoroughness* cell would be declared — `scope_estimate` is the scope dial; *thoroughness* (coverage breadth + relation-tracing depth) is its orthogonal partner. The coupling constraint `reject thoroughness ≥ T4 ∧ scope < component` means a relation-tracing deliverable forces scope ≥ `component`. See the two-dial ladders, the grade-to-the-floor rule, and the coupling constraint in [`persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md).
 
 **Step 8 — Q-Gate surgical bypass rule** (evaluated BEFORE dispatching the lightweight Q-Gate checks):
 
@@ -364,9 +364,9 @@ When a deliverable being authored carries `change_type: verification`, the outli
 
 Five deliverable classes carry a recurring engineering hazard that the outline MUST recognize at authoring time and route to its canonical home. These rules fire on **both** tracks — Simple Track Step 7 and Complex Track Step 10 — when a deliverable being authored matches the trigger. They are recognition triggers ONLY: the substance (mitigation menu, enumeration procedure, decision checklist, field-declaration semantics, domain-specific classification predicate) lives once in its canonical home — a `dev-general-*` standard, this skill's detail standard for the clean-break and survey-scope rules, or the resolved domain outline implementor for the human-gated harness-config rule — and MUST NOT be restated here or in the deliverable.
 
-1. **Cooperative-lock deliverable class** — Trigger: the deliverable's narrative introduces or modifies a cooperative cross-process lock or shared-state coordination primitive (merge locks, worktree allocation, plan-id reservation, leader election, any "claim a shared resource" flow). Required authoring action: emit a `**Concurrency-correctness note:**` block on the deliverable that names the check-then-act / TOCTOU window and points to the chosen mitigation. The note MUST cross-reference the TOCTOU / check-then-act mitigation menu in [`dev-general-code-quality/standards/code-organization.md`](../dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards) — **do NOT duplicate the mitigation menu**.
+1. **Cooperative-lock deliverable class** — Trigger: the deliverable's narrative introduces or modifies a cooperative cross-process lock or shared-state coordination primitive (merge locks, worktree allocation, plan-id reservation, leader election, any "claim a shared resource" flow). Required authoring action: emit a `**Concurrency-correctness note:**` block on the deliverable that names the check-then-act / TOCTOU window and points to the chosen mitigation. The note MUST cross-reference the TOCTOU / check-then-act mitigation menu in [`ref-code-quality/standards/code-organization.md`](../ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards) — **do NOT duplicate the mitigation menu**.
 
-2. **Value-change deliverable class** — Trigger: the deliverable changes a default value, constant, or enum member that tests may assert against. Required authoring action: scope the old-value test assertions into the deliverable's `**Affected files:**` so the production change and its test-consumer updates form one atomic deliverable. The note MUST cross-reference the enumeration discipline in [`dev-general-module-testing/standards/testing-methodology.md`](../dev-general-module-testing/standards/testing-methodology.md#enumerate-existing-test-consumers-before-changing-a-default--constant--enum-value) — **do NOT duplicate the enumeration procedure**.
+2. **Value-change deliverable class** — Trigger: the deliverable changes a default value, constant, or enum member that tests may assert against. Required authoring action: scope the old-value test assertions into the deliverable's `**Affected files:**` so the production change and its test-consumer updates form one atomic deliverable. The note MUST cross-reference the enumeration discipline in [`persona-module-tester/standards/testing-methodology.md`](../persona-module-tester/standards/testing-methodology.md#enumerate-existing-test-consumers-before-changing-a-default--constant--enum-value) — **do NOT duplicate the enumeration procedure**.
 
 3. **Clean-break vs migration-shim deliverable class** — Trigger: the deliverable's narrative (`Change per file:` / `Refactoring:` / summary) removes an internal code path — a function, method, parameter, branch, or script notation that is NOT a published cross-bundle public surface. Required authoring action: apply the four-condition clean-break checklist — (1) are all callers of the removed path in-plan? (2) is there no external / cross-bundle consumer? (3) can the removal land atomically in a single PR? (4) are the old-path tests removed or rewritten in the same plan? — and choose the shape: prefer the **clean-break** shape (remove the path outright, no shim) when ALL four conditions hold; otherwise default to a **deprecation shim with a documented removal window**. Cross-reference the checklist body, per-condition rationale, and the clean-break-vs-shim decision table in [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md#clean-break-vs-migration-shim-decision-checklist) — **do NOT duplicate the checklist here or on the deliverable**.
 

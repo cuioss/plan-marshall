@@ -13,7 +13,7 @@ The audit consumes the standardized `[DISPATCH]` work-log lines specified in [`.
 
 The plan-marshall workflow forbids unconstrained generic subagents inside phase work because subagent enforcement rules propagate through the agent definition rather than through the caller's prompt. A `Task: general-purpose` spawn loses the plan-marshall hard rules — `.plan/`-via-scripts-only, one-command-per-Bash, no-direct-`gh`/`glab`, structured-queries-first, build-via-architecture-resolve — that the canonical `execution-context-{level}` envelope carries by construction.
 
-This rule has two authoritative anchors in [`../../dev-agent-behavior-rules/standards/agent-behavior-rules.md`](../../dev-agent-behavior-rules/standards/agent-behavior-rules.md), quoted verbatim here so report consumers see the rule provenance:
+This rule has two authoritative anchors in [`../../persona-plan-marshall-agent/standards/agent-behavior-rules.md`](../../persona-plan-marshall-agent/standards/agent-behavior-rules.md), quoted verbatim here so report consumers see the rule provenance:
 
 > § "Workflow Discipline → Hard Rules" (Unconstrained generic subagents):
 >
@@ -133,7 +133,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
 
 ## Cross-references
 
-- [`../../dev-agent-behavior-rules/standards/agent-behavior-rules.md`](../../dev-agent-behavior-rules/standards/agent-behavior-rules.md) § "Unconstrained generic subagents" and "Quick Reference decision-matrix" — the authoritative rule prohibiting unconstrained generic subagents inside plan-marshall phase work, and the Quick Reference decision-matrix row that directs callers to `plan-marshall:execution-context-{level}` instead.
+- [`../../persona-plan-marshall-agent/standards/agent-behavior-rules.md`](../../persona-plan-marshall-agent/standards/agent-behavior-rules.md) § "Unconstrained generic subagents" and "Quick Reference decision-matrix" — the authoritative rule prohibiting unconstrained generic subagents inside plan-marshall phase work, and the Quick Reference decision-matrix row that directs callers to `plan-marshall:execution-context-{level}` instead.
 - [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) — the standardized `[DISPATCH]` emission contract this audit consumes as evidence. See § "Emission contract" for the literal log-line shape (prefix marker, field order, field semantics, placement contract) — do NOT inline-copy the literal log shape here; enforcement-critical content lives in the central standard only.
 - [`../SKILL.md`](../SKILL.md) — the orchestrator that dispatches this aspect at position 11 in the aspect order table.
 - [`../references/lessons-proposal.md`](../references/lessons-proposal.md) — the lessons-proposal contract that consumes non-zero `counts.total` to seed bug-category lessons.

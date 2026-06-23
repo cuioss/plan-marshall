@@ -10,7 +10,7 @@ Rationale: Sibling ``conftest.py`` files shadow each other during pytest discove
 and silently leak fixtures across unrelated test modules. Renaming them to
 ``_fixtures.py`` (explicit import) keeps fixture scoping intentional.
 
-Guidance: ``plan-marshall:dev-general-module-testing`` and
+Guidance: ``plan-marshall:persona-module-tester`` and
 ``pm-dev-python:pytest-testing``.
 """
 
@@ -34,7 +34,7 @@ def test_no_unallowed_conftest_files() -> None:
     assert not offenders, (
         'Unallowed conftest.py files found:\n'
         + '\n'.join(f'  - {path}' for path in sorted(offenders))
-        + "\n\nRename to '_fixtures.py' per plan-marshall:dev-general-module-testing"
+        + "\n\nRename to '_fixtures.py' per plan-marshall:persona-module-tester"
         ' / pm-dev-python:pytest-testing guidance. Sibling conftest.py files leak'
         ' fixtures across unrelated modules; explicit imports from _fixtures.py'
         ' keep fixture scope intentional.\n\nAllowed conftest.py locations:\n'

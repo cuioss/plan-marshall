@@ -51,7 +51,7 @@ Two primitives live here:
 - Do not add a second main-anchored resolution path — route `build-queue.json` and `merge.lock` through `resolve_main_anchored_path` (the single ADR-002 sanctioned utility).
 
 **Constraints:**
-- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline.
+- Strictly comply with all rules from persona-plan-marshall-agent, especially tool usage and workflow step discipline.
 - All script output uses TOON format (see `plan-marshall:ref-toon-format` for the full specification).
 - Entry-point scripts (`merge_lock.py`, `build_queue.py`) are invoked only through `python3 .plan/execute-script.py` with the 3-part notation; `_locks_core.py` is an importable module (underscore-prefixed), consumed by the entry-point scripts via PYTHONPATH, never invoked directly.
 
@@ -103,7 +103,7 @@ consumer. It exposes:
   (`merge-queue.json`) build on; the merge lock's final `k=1` grant stays the
   atomic `O_EXCL` create on `merge.lock` (NOT `rmw_json`), with `rmw_json` serving
   only the FIFO enqueue/dequeue in FRONT of that grant. The TOCTOU / check-then-act
-  mitigation menu lives in `dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`
+  mitigation menu lives in `ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`
   and is not duplicated here.
 - `log_lock_event(lock, event, lock_id, **fields)` — the single best-effort
   `[LOCK]` emission point both lock primitives call at each lifecycle point
@@ -199,4 +199,4 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue release \
 
 - `plan-marshall:script-shared` — provides `marketplace_paths.resolve_main_anchored_path` (the main-anchored resolver) and `triage_helpers` (CLI/error helpers).
 - `plan-marshall:workflow-integration-git` — `integrate_into_main` consumer of the merge mutex.
-- `plan-marshall:dev-general-code-quality` — the TOCTOU / check-then-act mitigation menu the shared core implements.
+- `plan-marshall:ref-code-quality` — the TOCTOU / check-then-act mitigation menu the shared core implements.

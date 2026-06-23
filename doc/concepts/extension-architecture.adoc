@@ -19,6 +19,16 @@ The required hook is `get_skill_domains()` — every bundle declares its domain 
 
 At install time the executor's `extension_discovery.py` scans every bundle under `marketplace/bundles/` (or the equivalent plugin-cache path) for the hardcoded discovery file. If it exists, the scanner imports it, instantiates the `Extension` class, and calls `get_skill_domains()` to learn the bundle's domain identity. The returned key is registered in `marshal.json` under `skill_domains.{key}`, with a `bundle` field added by `skill-domains configure` that reverse-maps from domain key to source bundle. Every subsequent hook is invoked through the same `Extension` instance whenever its host workflow needs it. The discovery is automatic — no manifest lookup, no per-bundle configuration, no registry to keep in sync.
 
+== Identity, domain axis, compute: three orthogonal resolutions
+
+The seam resolves three independent questions at dispatch time, and keeping their vocabulary distinct is load-bearing because each uses an overloaded word:
+
+* **persona** — the *identity* a task is dispatched **as**. A persona (`implements: persona`) is a named, resolvable bundle of skills; xref:../../marketplace/bundles/plan-marshall/skills/manage-personas/SKILL.md[`manage-personas resolve`] flattens its composition DAG into the explicit `skills[]` the dispatcher carries. See xref:personas.adoc[Personas].
+* **profile** — the *domain-specific resolution axis* (`implementation`, `module_testing`, `documentation`, `quality`, …). A profile is not an identity; it is the key the persona's `profiles:` frontmatter uses to pull `profile × domain` skills into the context. `get_skill_domains()` organises each bundle's skills by exactly this set of profiles.
+* **role / level** — the *compute selection*: which model and effort level runs an LLM-judgement workflow. The xref:execution-context.adoc[execution-context] resolver maps a phase-scoped role to one of the level variants and dispatches it.
+
+These three are orthogonal: a single dispatch resolves an identity (persona → `skills[]`), a domain axis (profile → domain skills), and a compute tier (role/level → agent variant) independently. "Role" in the compute sense (role/level) is deliberately never used for the identity sense — that is what *persona* names.
+
 == Where this fits
 
 Extension Architecture is the *plumbing* answer to "what is Plan Marshall." The xref:planning-workflow.adoc[Planning Workflow] is the *user-visible* answer. The eight extension points are the contact points between the two: every domain decision a plan makes — which build skill to dispatch (xref:build-management.adoc[Build Management]), which triage skill loads for a Sonar issue (xref:automatic-reviews.adoc[Automatic Reviews]), which skills enter the subagent context for a Java testing task (xref:skill-handling.adoc[Skill Handling]) — flows through one of them.
@@ -30,6 +40,7 @@ Extension Architecture is the *plumbing* answer to "what is Plan Marshall." The 
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/marshal-json-reference.md[`marshal-json-reference.md`] — every `marshal.json` path each hook writes, with cross-refs to its ext-point.
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/profiles.md[`profiles.md`] — the profile-override mechanism per `skill_domains.{domain}.workflow_skills.{profile}`.
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/module-discovery.md[`module-discovery.md`] — the build-side discovery method contract.
+* xref:personas.adoc[Concepts › Personas] — the persona / ref / profile identity model: persona (identity) vs profile (domain-resolution axis) vs role/level (compute selection).
 * xref:build-management.adoc[Concepts › Build Management] — the `ext-point-build` implementation surface.
 * xref:recipes.adoc[Concepts › Recipes] — the `ext-point-recipe` implementation surface.
 * xref:automatic-reviews.adoc[Concepts › Automatic Reviews] — where `ext-point-triage` plugs in.

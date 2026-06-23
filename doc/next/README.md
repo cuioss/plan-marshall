@@ -25,35 +25,35 @@ machinery and from feeding more signal back into it** — not from new subsystem
 
 | # | Workstream | What it adds | Builds on | Document |
 |---|------------|--------------|-----------|----------|
-| 01 | Personas | The persona / ref / profile identity model: first-class `persona-*` skills (base, work-activity ↔ profiles, meta) + `ref-*` concerns, composed by flattening at dispatch; reframes the `dev-general-*` foundation family. Extensible to future personas (architect, planner, …) | profile system, `dev-general-*` family, build-target render | [01-personas.md](01-personas.md) |
 | 02 | Auditor (preference learning) | A cross-plan command (modeled on `audit-archived-plan-retrospectives`) detects recurring user gate-dispositions, routes them to `enriched.json` `best_practices`, and implicitly archives — the first real `persona-auditor` consumer | PR #744 architecture-hints, `audit-archived-plan-retrospectives`, `persona-auditor` | [02-auditor-preference-learning.md](02-auditor-preference-learning.md) |
 | 03 | Audit recipes | `recipe-code-review` + `recipe-security-audit` as standalone, single-envelope entry points emitting into findings | `ext-point-recipe`, `manage-findings`, `ext-triage-*` | [03-audit-recipes.md](03-audit-recipes.md) |
 | 04 | Routing v2 | A recipe-match routing tier ahead of light/deep, so known-shape requests skip the full pipeline (token + wall-time) | `manage-status planning-lane`, recipe registry, lesson auto-suggest | [04-routing-v2.md](04-routing-v2.md) |
-| 05 | Security audit finalize step | `default:finalize-step-security-audit` — two-layer focused context (`persona-security-expert` + per-domain `security` profile skills) | finalize-step discovery, `security` profile, `persona-security-expert` (01), `ext-triage-*` | [05-security-finalize-step.md](05-security-finalize-step.md) |
+| 05 | Security audit finalize step | `default:finalize-step-security-audit` — two-layer focused context (`persona-security-expert` + per-domain `security` profile skills) | finalize-step discovery, `security` profile, the landed `persona-security-expert`, `ext-triage-*` | [05-security-finalize-step.md](05-security-finalize-step.md) |
 | 06 | Surface encoded-test verification | Make the principle explicit (verify = encoded e2e tests; explore = user's own tools) via a concept note + optional e2e-testing standard — no browser/daemon integration | domain test skills, concept docs | [06-surface-encoded-verification.md](06-surface-encoded-verification.md) |
 
 ## Sequencing
 
-The numbering is the recommended order; the dependency arrows below show why:
+The numbering is the recommended order; the dependency arrows below show why. The
+persona / ref / profile identity model has **landed** (the `persona-*` and `ref-*`
+skills, the `manage-personas` resolver, and the `profiles:` binding now exist), so
+the workstreams that depended on it build directly on that surface:
 
 ```text
-01 personas ──┬──► 05 security-finalize-step (ships as persona-security-expert)
-              └──► 02 auditor             (uses persona-auditor)
 03 audit-recipes ──┬──► 04 routing-v2     (needs recipe targets to route to)
                    └──► 05 security-finalize-step (shares the audit engine)
+02 auditor                                (uses persona-auditor — now available)
+05 security-finalize-step                 (uses persona-security-expert — now available)
 06 surface-encoded-verification           (independent; lowest priority)
 ```
 
-- **01 personas is the foundation.** It establishes the identity model and reframes
-  the `dev-general-*` family that the others reference; it lands first.
 - **02 auditor** wires `persona-auditor` over the existing retrospective command and
-  adds preference detection — the first real multi-persona consumer, so it validates
-  the persona model early.
+  adds preference detection — the first real multi-persona consumer.
 - **03 audit-recipes is the keystone.** Recipes are the cheap single-envelope path;
   04 routes onto them and 05 shares the security audit engine with them.
 - **04 routing** depends on 03 (recipe targets to route to).
-- **05 security** depends on 01 (`persona-security-expert` + the `security` profile)
-  and 03 (the shared audit engine). It ships as the named Security Expert persona.
+- **05 security** depends on the landed persona model (`persona-security-expert` +
+  the `security` profile) and 03 (the shared audit engine). It ships as the named
+  Security Expert persona.
 - **06 verification** is independent guidance, lowest priority.
 
 ## Cross-cutting: the shared audit engine
@@ -91,5 +91,6 @@ This directory is self-consuming:
 - No `/careful`-style in-session destructive-command guard — worktree isolation
   and the existing Bash hard-rules already cover this; explicitly dropped.
 - No role-play persona prose — personas are structured, data-declared skills
-  (see [01](01-personas.md)), not "You are a seasoned…" preambles.
+  (see [`doc/concepts/personas.adoc`](../concepts/personas.adoc)), not "You are a
+  seasoned…" preambles.
 - No version numbers, changelogs, or dated update sections in any document.

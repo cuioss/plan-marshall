@@ -84,7 +84,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 The `simplicity` value (`lean` / `pragmatic` / `defensive`) tunes how aggressively the review deletes surplus structure: `lean` deletes everything not justified by a live caller, `pragmatic` keeps low-risk surplus, `defensive` only flags the clearest cases.
 
-Also resolve the per-invocation **coverage instruction** — this step is a runtime CONSUMER of the [coverage-gathering contract](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md). Read the contract runtime path: `coverage_instruction` (the expanded block) → re-expand the identifier via `coverage expand` → `coverage resolve --phase phase-6-finalize` (project default) → `inherit/inherit` (behavior-preserving):
+Also resolve the per-invocation **coverage instruction** — this step is a runtime CONSUMER of the [coverage-gathering contract](../../persona-plan-marshall-agent/standards/coverage-gathering-contract.md). Read the contract runtime path: `coverage_instruction` (the expanded block) → re-expand the identifier via `coverage expand` → `coverage resolve --phase phase-6-finalize` (project default) → `inherit/inherit` (behavior-preserving):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
@@ -111,8 +111,8 @@ Extract the `target` field from the TOON output and use it as `{target}` below.
 
 Dispatch the domain-agnostic simplification prompt. The dispatched agent loads ONLY the three foundation standards — no domain skills:
 
-- **D1** `plan-marshall:dev-general-code-quality` — the `## Minimum Viable Code` section enumerates the seven anti-patterns (see `dev-general-code-quality/standards/code-organization.md` § `#minimum-viable-code`).
-- **D2** `plan-marshall:dev-agent-behavior-rules` — Principle 7 "Implement the Minimum, Not the Maximum" (see `dev-agent-behavior-rules/standards/agent-behavior-rules.md`).
+- **D1** `plan-marshall:ref-code-quality` — the `## Minimum Viable Code` section enumerates the seven anti-patterns (see `ref-code-quality/standards/code-organization.md` § `#minimum-viable-code`).
+- **D2** `plan-marshall:persona-plan-marshall-agent` — Principle 7 "Implement the Minimum, Not the Maximum" (see `persona-plan-marshall-agent/standards/agent-behavior-rules.md`).
 - **D3** the resolved `simplicity` posture description string from Step 1.
 
 ```
@@ -121,14 +121,14 @@ Task: plan-marshall:{target}
     name: finalize-step-simplify
     plan_id: {plan_id}
     skills[2]:
-    - plan-marshall:dev-agent-behavior-rules
-    - plan-marshall:dev-general-code-quality
+    - plan-marshall:persona-plan-marshall-agent
+    - plan-marshall:ref-code-quality
     instructions: |
       Review the plan's change surface for surplus structure and delete it.
       Scope: {scope} ({changeset} = diff hunks vs base SHA; {artifact} = each
       modified file in full). The files to review are the footprint `files`
       list resolved in Step 1; never touch a file outside that list. Apply the
-      "minimum viable code" anti-patterns from dev-general-code-quality
+      "minimum viable code" anti-patterns from ref-code-quality
       standards/code-organization.md #minimum-viable-code under the resolved
       simplicity posture "{simplicity_description}": delete unused parameters,
       thin re-export shims, defensive catch-alls around already-handled
@@ -139,7 +139,7 @@ Task: plan-marshall:{target}
       on externally-sourced data, an envelope on a network/filesystem boundary):
       required real-boundary error handling is NOT speculative defensive
       complexity — see the required-vs-speculative carve-out in
-      dev-general-code-quality standards/code-organization.md #minimum-viable-code.
+      ref-code-quality standards/code-organization.md #minimum-viable-code.
       Apply edits directly to the worktree via Edit.
       Coverage depth (from the resolved coverage instruction "{cov_instruction}"):
       at T1/T2/inherit, review each anti-pattern at face value (today's behavior);
@@ -201,7 +201,7 @@ The `display_detail` string appears in the renderer's per-step `[OK]` row. The `
 
 ## Related
 
-- [../../dev-general-code-quality/standards/code-organization.md](../../dev-general-code-quality/standards/code-organization.md) — § `#minimum-viable-code` (D1): the seven anti-patterns the review deletes
-- [../../dev-agent-behavior-rules/standards/agent-behavior-rules.md](../../dev-agent-behavior-rules/standards/agent-behavior-rules.md) — Principle 7 (D2): "Implement the Minimum, Not the Maximum"
+- [../../ref-code-quality/standards/code-organization.md](../../ref-code-quality/standards/code-organization.md) — § `#minimum-viable-code` (D1): the seven anti-patterns the review deletes
+- [../../persona-plan-marshall-agent/standards/agent-behavior-rules.md](../../persona-plan-marshall-agent/standards/agent-behavior-rules.md) — Principle 7 (D2): "Implement the Minimum, Not the Maximum"
 - [../../manage-execution-manifest/standards/decision-rules.md](../../manage-execution-manifest/standards/decision-rules.md) — the composition rule that gates this step into `phase_6.steps`
 - [../../pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md](../../../pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md) — the static `SIMPLICITY_*` rules this step's cognitive pass complements

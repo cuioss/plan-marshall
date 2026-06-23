@@ -49,7 +49,7 @@ class Extension(ExtensionBase):
                 'core': {
                     'defaults': [
                         {
-                            'skill': 'plan-marshall:dev-agent-behavior-rules',
+                            'skill': 'plan-marshall:persona-plan-marshall-agent',
                             'description': 'Foundational agent behavior rules (user interaction, tool usage, research, dependency management)',
                         },
                     ],
@@ -58,7 +58,7 @@ class Extension(ExtensionBase):
                 'implementation': {
                     'defaults': [
                         {
-                            'skill': 'plan-marshall:dev-general-code-quality',
+                            'skill': 'plan-marshall:ref-code-quality',
                             'description': 'Language-agnostic code quality, refactoring, and documentation principles',
                         },
                     ],
@@ -67,11 +67,11 @@ class Extension(ExtensionBase):
                 'module_testing': {
                     'defaults': [
                         {
-                            'skill': 'plan-marshall:dev-general-code-quality',
+                            'skill': 'plan-marshall:ref-code-quality',
                             'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
                         },
                         {
-                            'skill': 'plan-marshall:dev-general-module-testing',
+                            'skill': 'plan-marshall:persona-module-tester',
                             'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
                         },
                     ],
@@ -80,7 +80,7 @@ class Extension(ExtensionBase):
                 'quality': {
                     'defaults': [
                         {
-                            'skill': 'plan-marshall:dev-general-code-quality',
+                            'skill': 'plan-marshall:ref-code-quality',
                             'description': 'Language-agnostic code quality, refactoring, and documentation principles',
                         },
                     ],

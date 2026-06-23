@@ -7,7 +7,7 @@ solution_outline.md). Named ``_arch_fixtures.py`` (NOT bare
 use ``__init__.py`` here, so identical bare module names would resolve
 to whichever helper is imported first. The helpers are loaded explicitly
 via import and never shadow ``test/conftest.py``. See
-``plan-marshall:dev-general-module-testing`` for the canonical
+``plan-marshall:persona-module-tester`` for the canonical
 sibling-fixtures convention.
 
 Two canonical helpers:

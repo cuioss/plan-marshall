@@ -4,7 +4,7 @@
 The analyzer detects compound Bash command sequences (``&&``, ``;``,
 trailing ``&``) inside fenced ``bash``/``sh`` blocks in plan-marshall
 skill/agent/command markdown files.  Such patterns violate the
-dev-agent-behavior-rules "Bash: one command per call" hard rule.
+persona-plan-marshall-agent "Bash: one command per call" hard rule.
 
 Detection scope: only fenced ``bash`` or ``sh`` blocks (prose, python fences,
 etc. are not scanned).

@@ -21,7 +21,7 @@ Every external system gets a dedicated skill under `marketplace/bundles/plan-mar
 
 The current integration roster:
 
-* `tools-integration-ci` — unified GitHub + GitLab abstraction. Every CI/PR operation routes here. **Direct `gh`/`glab` calls are forbidden by `dev-agent-behavior-rules`.**
+* `tools-integration-ci` — unified GitHub + GitLab abstraction. Every CI/PR operation routes here. **Direct `gh`/`glab` calls are forbidden by `persona-plan-marshall-agent`.**
 * `workflow-integration-github` and `workflow-integration-gitlab` — per-provider PR review-comment producers feeding the findings pipeline.
 * `workflow-integration-sonar` — Sonar issue producer feeding the findings pipeline.
 * `workflow-integration-git` — local git workflow (conventional commits, artifact cleanup, optional push, worktree management).

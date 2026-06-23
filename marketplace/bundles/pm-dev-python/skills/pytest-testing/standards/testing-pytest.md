@@ -416,7 +416,7 @@ The invariant: a nested `conftest.py` must not define or re-export symbols that 
 
 ### Cross-Reference
 
-This is the Python/pytest-specific realization of the language-agnostic rule. See [plan-marshall:dev-general-module-testing — Test Helper Module Organization](../../../plan-marshall/skills/dev-general-module-testing/standards/testing-methodology.md) for the general principle applied across languages.
+This is the Python/pytest-specific realization of the language-agnostic rule. See [plan-marshall:persona-module-tester — Test Helper Module Organization](../../../plan-marshall/skills/persona-module-tester/standards/testing-methodology.md) for the general principle applied across languages.
 
 ## Running Tests
 

@@ -472,7 +472,7 @@ Risky fixes require user confirmation because they involve judgment calls or may
 
 ### 15. Simplification rules (confirm-before-apply)
 
-The four `SIMPLICITY_*` rules below are detected (`fixable: false`) and surfaced for human review — they have no auto-apply handler because each resolution changes a signature or requires rewriting call sites, which is a judgement call, not a single-file mechanical edit. Each maps to a bullet in `plan-marshall:dev-general-code-quality` `standards/code-organization.md` § `#minimum-viable-code`. The fifth rule, `SIMPLICITY_SIGNATURE_DOCSTRING`, IS auto-applicable and is documented under Safe Fix Types § 12.
+The four `SIMPLICITY_*` rules below are detected (`fixable: false`) and surfaced for human review — they have no auto-apply handler because each resolution changes a signature or requires rewriting call sites, which is a judgement call, not a single-file mechanical edit. Each maps to a bullet in `plan-marshall:ref-code-quality` `standards/code-organization.md` § `#minimum-viable-code`. The fifth rule, `SIMPLICITY_SIGNATURE_DOCSTRING`, IS auto-applicable and is documented under Safe Fix Types § 12.
 
 - **SIMPLICITY_UNUSED_PARAMETER**: A parameter discarded via `del <param>` (preserved-for-future-use) or tagged `# unused`. **Resolution**: remove it from the signature; add it back against a real caller. **Why confirm**: changes a public signature.
 - **SIMPLICITY_BACKWARD_COMPAT_REEXPORT**: An import line tagged `# backward compat` / `# re-exported for`. **Resolution**: inline the import at its single call site and delete the shim. **Why confirm**: requires verifying the live-caller count first.

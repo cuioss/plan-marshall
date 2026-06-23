@@ -50,6 +50,6 @@ Use when: Mocking modules or APIs, working with fetch mocks, testing async/await
 
 ## Related Skills
 
-- `plan-marshall:dev-general-module-testing` — Language-agnostic testing methodology (AAA, coverage, reliability)
+- `plan-marshall:persona-module-tester` — Language-agnostic testing methodology (AAA, coverage, reliability)
 - `pm-dev-frontend:javascript` — Core JavaScript development standards
 - `pm-dev-frontend:lint-config` — ESLint configuration including Jest plugin

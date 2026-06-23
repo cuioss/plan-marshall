@@ -30,13 +30,13 @@ The recipe's discovery metadata (recipe_domain) is declared in this skill's YAML
 - Do NOT fall back to a backing script for the analytical request-vs-landed comparison — the recipe is LLM-driven by design (matching the sibling `recipe-plugin-compliance`).
 
 **Constraints:**
-- Strictly comply with all rules from `dev-agent-behavior-rules`, especially tool usage and workflow step discipline.
+- Strictly comply with all rules from `persona-plan-marshall-agent`, especially tool usage and workflow step discipline.
 
 ## Workflow
 
 ### Step 0: Pin and expand the coverage cell (no gather)
 
-This recipe implements the [coverage-gathering contract](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/coverage-gathering-contract.md)'s **consume** obligation but deliberately skips the **gather** (`AskUserQuestion`) step: the whole point of the recipe is thorough, high-coverage verification, so the cell is pinned rather than asked. Pin `thoroughness=T5, scope=overall` (exhaustive/adversarial depth + whole-corpus-of-aspects breadth). The coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) is satisfied because `overall ≥ component`.
+This recipe implements the [coverage-gathering contract](../../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/coverage-gathering-contract.md)'s **consume** obligation but deliberately skips the **gather** (`AskUserQuestion`) step: the whole point of the recipe is thorough, high-coverage verification, so the cell is pinned rather than asked. Pin `thoroughness=T5, scope=overall` (exhaustive/adversarial depth + whole-corpus-of-aspects breadth). The coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) is satisfied because `overall ≥ component`.
 
 Expand the pinned cell once and persist BOTH the identifier and the expanded instruction to `status.json` metadata (this recipe is plan-bound):
 
@@ -107,7 +107,7 @@ The recipe itself writes no source — the fix plan is the standard plan-marshal
 
 ## Related
 
-- [coverage-gathering-contract.md](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/coverage-gathering-contract.md) — the consume obligation, the pinned-cell expand/persist mechanism, and the cross-reference target this recipe consumes.
+- [coverage-gathering-contract.md](../../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/coverage-gathering-contract.md) — the consume obligation, the pinned-cell expand/persist mechanism, and the cross-reference target this recipe consumes.
 - [ext-point-recipe.md](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-recipe.md) — the recipe discovery/registration contract that governs project-local `recipe-*` auto-discovery.
 - `recipe-plugin-compliance` — sibling project-local, LLM-driven recipe; the convention template for frontmatter, the frontmatter recipe_domain discovery key, and the coverage-cell step.
 - `audit-archived-plan-retrospectives` — reads the same `.plan/local/archived-plans/` corpus for a complementary retrospective audit.

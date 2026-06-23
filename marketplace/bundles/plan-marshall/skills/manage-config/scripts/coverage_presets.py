@@ -2,7 +2,7 @@
 
 Defines :class:`CoveragePresets` — a constant-class that transcribes the
 expansion table authored in
-``dev-agent-behavior-rules/standards/coverage-gathering-contract.md``
+``persona-plan-marshall-agent/standards/coverage-gathering-contract.md``
 § "The Expansion Table". The contract standard is authoritative for the
 *operational instruction text*; this module is authoritative for *emitting*
 it. A lock-step test
@@ -56,7 +56,7 @@ class CoveragePresets:
     """Static expander for coverage ``(thoroughness, scope)`` cells.
 
     Transcribes the expansion table from
-    ``dev-agent-behavior-rules/standards/coverage-gathering-contract.md``.
+    ``persona-plan-marshall-agent/standards/coverage-gathering-contract.md``.
     The two per-rung tables (:data:`_SCOPE_BREADTH` and
     :data:`_THOROUGHNESS_DEPTH`) are composed by :meth:`expand` into the
     operational instruction block for a requested cell.

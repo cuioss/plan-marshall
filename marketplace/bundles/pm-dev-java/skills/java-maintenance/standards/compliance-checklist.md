@@ -20,7 +20,7 @@ Verification checklist for Java code after maintenance or refactoring work. Each
 - Constructor injection, no circular dependencies
 
 ## Method Design
-**Standard**: `plan-marshall:dev-general-code-quality`, `pm-dev-java:java-maintenance` → `refactoring-triggers.md`
+**Standard**: `plan-marshall:ref-code-quality`, `pm-dev-java:java-maintenance` → `refactoring-triggers.md`
 
 - Methods < 50 lines (refactor at 60+)
 - Parameters ≤ 3 (use parameter objects for 3+)

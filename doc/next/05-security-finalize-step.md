@@ -1,7 +1,7 @@
 # 05 — Security audit as a finalize step (uses a `security` profile)
 
 **Shares the audit engine with [03](03-audit-recipes.md)'s `recipe-security-audit`.
-Ships as `persona-security-expert` — depends on [01](01-personas.md) for the
+Ships as `persona-security-expert` — depends on [01](../concepts/personas.adoc) for the
 persona / ref / profile model and the `security` profile.**
 
 ## Problem
@@ -30,7 +30,7 @@ post-dispatch carve-out from PR #747). Only the terminal `done` / `loop_back` /
 1. Compute the live footprint (`manage-references compute-footprint`).
 2. Detect affected domains (java / python / js / oci / …).
 3. Gather **focused** security context via `persona-security-expert` resolution
-   ([01](01-personas.md)) — general domain skills are not security-focused enough; a
+   ([01](../concepts/personas.adoc)) — general domain skills are not security-focused enough; a
    security review must gather everything it can:
    - **Action-general layer:** `persona-security-expert` — OWASP Top Ten, STRIDE,
      trust-boundary and secure-coding principles (the action-general security
@@ -80,7 +80,7 @@ structures**:
 - **Domain-specific** extracted content → the dedicated per-domain security skill
   declared under that domain's `skills_by_profile.security`.
 - **Cross-cutting** extracted content (OWASP Top Ten, STRIDE, general secure-coding
-  principles) → `persona-security-expert` (the action-general security identity, [01](01-personas.md)).
+  principles) → `persona-security-expert` (the action-general security identity, [01](../concepts/personas.adoc)).
 - Leave a cross-reference in the source general skill rather than duplicating, per
   the no-duplication doc rule.
 
@@ -91,9 +91,9 @@ it guarantees nothing security-relevant stays buried in a general skill.
 
 - New `phase-6-finalize/standards/finalize-step-security-audit.md`.
 - `persona-security-expert` (the action-general security identity; defined in
-  [01](01-personas.md)) — OWASP Top Ten / STRIDE / secure-coding.
+  [01](../concepts/personas.adoc)) — OWASP Top Ten / STRIDE / secure-coding.
 - `security` added to `ExtensionBase.APPLICABLE_PROFILES` +
-  `extension-api/standards/profiles.md` (per [01](01-personas.md)).
+  `extension-api/standards/profiles.md` (per [01](../concepts/personas.adoc)).
 - Per-domain `skills_by_profile.security` declarations in each domain's
   `get_skill_domains()`, plus the dedicated per-domain security skills carved out of
   the general domain skills' security sections.

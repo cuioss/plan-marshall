@@ -15,7 +15,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 ## Foundational Practices
 
 ```
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
 ## Enforcement
@@ -40,7 +40,7 @@ When persisting the multi-task batch (Step 6 → 6a/6b), the following shell sho
 **Rule-compliant alternative**: Use the `--tasks-file` path-allocate flow documented in Step 6a/6b. Stage the batch JSON via `manage-files write --file work/tasks-batch.json` (so the payload is written through a structured tool, not a shell argument), then call `manage-tasks batch-add --tasks-file .plan/local/plans/{plan_id}/work/tasks-batch.json`. This is the only sanctioned path for multi-task creation in this phase.
 
 **Constraints:**
-- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
+- Strictly comply with all rules from persona-plan-marshall-agent, especially tool usage and workflow step discipline
 
 ## Exit-code convention for `manage-*` script calls
 
@@ -362,6 +362,21 @@ skills_by_profile:
 3. Include optional if description indicates relevance to the task
 4. Log reasoning for each optional skill decision
 5. Before finalizing optionals, apply the **Security-Skill Attachment Sub-pattern** (below): when the deliverable context matches an untrusted-inbound-input signal, deterministically force the mapped security skill(s) into `task.skills` regardless of the LLM optional-relevance verdict.
+6. After defaults + optionals + security skills are resolved, apply the **Persona-Skill Augmentation** (below): derive the task's persona from its primary profile and merge the persona resolver's flattened `skills[]` into `task.skills`.
+
+**Persona-Skill Augmentation** (deterministic; runs once per non-`verification` task):
+
+The persona / ref / profile identity model binds each work-activity profile to a persona shell whose `composes:` frontmatter declares the cross-cutting `ref-*` and `persona-*` concerns that profile carries. Phase-4-plan resolves that persona's flattened skill set and unions it into the task's resolved `skills[]` so every task carries its persona-declared concerns (e.g. an `implementation` task carries `ref-code-quality` via `persona-implementer`).
+
+1. **Derive the persona from the task's primary profile** via a reverse-lookup over persona frontmatter: scan the `profiles:` frontmatter of each `persona-*` skill and select the persona whose **first** `profiles:` entry (the primary identity profile) equals the task's profile `P`. The first-entry rule makes the binding unambiguous when a profile appears in multiple personas' lists. When no persona's primary profile matches `P`, skip augmentation for the task (the architecture-resolved defaults/optionals are the complete skill set).
+2. **Resolve the persona** and union its flattened skills into `task.skills`:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-personas:manage_personas resolve \
+     --persona-key {persona_key} --domains {D.domain}
+   ```
+
+   Parse the returned `skills[]` and add each entry to `task.skills` that is not already present (dedup is idempotent — the base `persona-plan-marshall-agent` and any already-resolved skill are not duplicated). On `status: error` (e.g. `composition_cycle`, `composed_persona_not_found`), log a WARNING and continue with the architecture-resolved skills only — persona augmentation is additive and never plan-blocking.
 
 **Example Reasoning** (for JSON→TOON migration task):
 ```
@@ -1016,7 +1031,7 @@ When all four conditions hold, **auto-decompose** the deliverable into the canon
 2. **Enumeration** — classify each match as an *old-default assertion* (update to the new value) versus an *intentional explicit override* (a test that deliberately supplies the old value as an input — leave untouched). Add the update set to the deliverable's task touch set / `**Affected files:**`.
 3. **Atomicity** — the production change and all forced test updates form a single atomic deliverable so verify passes on the first cut and every commit is independently buildable; never a production task followed by a separate "fix the tests" task.
 
-**Cross-reference**: the substance of the discovery → classification → atomicity procedure — the two-pronged grep, the old-default-vs-override classification rule, and the single-atomic-change discipline — lives once in [`../dev-general-module-testing/standards/testing-methodology.md`](../dev-general-module-testing/standards/testing-methodology.md#enumerate-existing-test-consumers-before-changing-a-default--constant--enum-value) § "Enumerate Existing Test Consumers Before Changing a Default / Constant / Enum Value". This sub-pattern carries only the recognition trigger and the touch-set shape — **do NOT duplicate the enumeration procedure detail here**.
+**Cross-reference**: the substance of the discovery → classification → atomicity procedure — the two-pronged grep, the old-default-vs-override classification rule, and the single-atomic-change discipline — lives once in [`../persona-module-tester/standards/testing-methodology.md`](../persona-module-tester/standards/testing-methodology.md#enumerate-existing-test-consumers-before-changing-a-default--constant--enum-value) § "Enumerate Existing Test Consumers Before Changing a Default / Constant / Enum Value". This sub-pattern carries only the recognition trigger and the touch-set shape — **do NOT duplicate the enumeration procedure detail here**.
 
 ## Knowledge-Skill Body Expansion Sub-pattern
 

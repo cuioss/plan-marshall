@@ -30,7 +30,7 @@ its actionable summary. The audit *deepened* these classes rather than adding ne
 permission **grammar** (not just paths) is Claude-specific (Gap 1); the metrics **`<usage>`/
 `message.usage`/cache-pricing format** (not just the path) is too (Gap 2); the shared
 `script-shared/marketplace_paths.py` foundation underlies the layout gaps (Gaps 4/5); and the
-tool-name vocabulary saturates `dev-agent-behavior-rules` — loaded by every agent (Gap 6). Two
+tool-name vocabulary saturates `persona-plan-marshall-agent` — loaded by every agent (Gap 6). Two
 small standalone build-target items also surfaced: `recipe-doc-verify` hardcodes `CLAUDE.md`
 (OpenCode → `AGENTS.md`) and the git commit trailer hardcodes `Co-Authored-By: Claude`.
 

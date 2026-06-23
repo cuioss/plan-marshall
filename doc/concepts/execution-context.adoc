@@ -9,7 +9,7 @@ Each subagent dispatch in a stock Claude Code session is a fresh ad-hoc inventio
 
 == One Generic Dispatcher
 
-`plan-marshall:execution-context` is the sole role-eligible canonical agent in the marketplace. It owns the dispatcher boilerplate (load `dev-agent-behavior-rules`, load caller-specified skills, locate the workflow doc, execute, emit return TOON) exactly once, and parameterises the workflow body at dispatch time. The caller passes five prompt-body fields:
+`plan-marshall:execution-context` is the sole role-eligible canonical agent in the marketplace. It owns the dispatcher boilerplate (load `persona-plan-marshall-agent`, load caller-specified skills, locate the workflow doc, execute, emit return TOON) exactly once, and parameterises the workflow body at dispatch time. The caller passes five prompt-body fields:
 
 * `name` — human label for logging and `mark-step-done`
 * `plan_id` — plan identifier (or the sentinel `none` for free-standing dispatches)
@@ -17,7 +17,7 @@ Each subagent dispatch in a stock Claude Code session is a fresh ad-hoc inventio
 * `workflow` — bundle-prefixed notation for the workflow doc to run (e.g. `plan-marshall:phase-1-init/SKILL.md`, `plan-marshall:plan-marshall/workflow/triage.md`)
 * `WORKTREE` — repo-relative working directory (`.` for main checkout)
 
-The dispatcher loads `dev-agent-behavior-rules` implicitly, then the caller-specified `skills[]`, then reads the resolved workflow path and follows it. Workflow-specific runtime inputs (`finding_type`, `track`, `scope`, etc.) flow through additional prompt-body fields the workflow doc declares.
+The dispatcher loads `persona-plan-marshall-agent` implicitly, then the caller-specified `skills[]`, then reads the resolved workflow path and follows it. Workflow-specific runtime inputs (`finding_type`, `track`, `scope`, etc.) flow through additional prompt-body fields the workflow doc declares.
 
 A new LLM-judgement workflow worth pinning its own model is added by writing a new workflow doc that declares `implements: ext-point-execution-context-workflow` and registering a new role key. No new agent file, no new emitted variants.
 

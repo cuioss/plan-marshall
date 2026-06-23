@@ -150,7 +150,7 @@ depend on `execution.toon`.
 
 ### Step 0: Gather + expand the coverage cell
 
-This skill implements the [coverage-gathering contract](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/coverage-gathering-contract.md). At invocation, gather the `(thoroughness, scope)` cell from the user via the contract's canonical `AskUserQuestion` shape — a `scope` question (`change-set`/`artifact`/`component`/`module`/`overall` + an explicit `inherit (default — behave exactly as today)`) and a `thoroughness` question (`T1`…`T5` + `inherit`). The coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) constrains the offered scope options when the user picks `T4`/`T5`.
+This skill implements the [coverage-gathering contract](../../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/coverage-gathering-contract.md). At invocation, gather the `(thoroughness, scope)` cell from the user via the contract's canonical `AskUserQuestion` shape — a `scope` question (`change-set`/`artifact`/`component`/`module`/`overall` + an explicit `inherit (default — behave exactly as today)`) and a `thoroughness` question (`T1`…`T5` + `inherit`). The coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) constrains the offered scope options when the user picks `T4`/`T5`.
 
 Validate + expand the gathered pair in one call — `coverage expand` validates the literal pair (re-prompt on `coverage_coupling_violation`; do NOT re-implement the coupling math) AND returns the operational instruction block:
 
@@ -160,7 +160,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config covera
 
 This is a **single-invocation** audit skill that runs outside a plan, so hold the gathered identifier + expanded instruction **in-context** for the invocation (the in-context path of the contract's persistence mechanism — no `status.json` write). Consume the **expanded instruction** (NOT the raw cell) in Steps 1 and 4b below. When the user selects `inherit/inherit` (the default), the expanded instruction is behavior-preserving and Steps 1–4b run exactly as before (all 16 checks, full corpus, today's Step-4b gate).
 
-See `dev-agent-behavior-rules/standards/thoroughness.md` for the ladders and `coverage-gathering-contract.md` for the gather shape and the cell→instruction table — restate neither here.
+See `persona-plan-marshall-agent/standards/thoroughness.md` for the ladders and `coverage-gathering-contract.md` for the gather shape and the cell→instruction table — restate neither here.
 
 ### Step 1: Select the checks to run, governed by the coverage cell
 

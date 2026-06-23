@@ -14,7 +14,7 @@ mode: workflow
 ## Step 1: Load Foundational Practices
 
 ```
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
 ## Scripts

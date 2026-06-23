@@ -15,7 +15,7 @@ Skip what other doctor workflows cover: frontmatter format, enforcement blocks, 
 ## Phase 1: Load Prerequisites
 
 ```
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 Skill: pm-plugin-development:plugin-architecture
 Read references/llm-optimization-guide.md
 ```

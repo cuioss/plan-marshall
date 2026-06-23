@@ -5,7 +5,7 @@ This module mirrors the canonical 6-axis matrix exposed by
 ``test/plan-marshall/_pm_input_validation_fixtures.py``. It is duplicated
 here (rather than imported via cross-bundle PYTHONPATH) because pytest only
 adds ``test/plan-marshall`` and ``test/pm-plugin-development`` to
-``sys.path`` (see ``test/conftest.py``). Per ``dev-general-module-testing``
+``sys.path`` (see ``test/conftest.py``). Per ``persona-module-tester``
 the canonical convention for bundle-scoped helpers is a sibling
 ``_fixtures.py``. The basename is skill-prefixed
 (``_maven_profile_input_validation_fixtures.py``) to avoid a basename

@@ -45,7 +45,7 @@ commit is an atomic ``os.replace`` of a temp file written in the same directory.
 The guard file is always removed in a ``finally`` so a crashed mutator does not
 wedge the file forever — a stale guard is reclaimed once its age exceeds a bounded
 threshold. The mitigation menu lives in
-``dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``
+``ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards``
 and is not duplicated here.
 """
 

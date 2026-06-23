@@ -221,7 +221,7 @@ At workflow start:
 
 **Required patterns:**
 ```
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
 **Orchestration compliance:**

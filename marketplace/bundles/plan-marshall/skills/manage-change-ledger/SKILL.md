@@ -53,7 +53,7 @@ working tree, index, or refs (no `git stash`, no `git write-tree`, no `git add`)
 - Do not self-compute or snapshot a `kind=change` entry's `changed_paths` from a deliverable's declared `affected_files` — the paths MUST be git-sourced by the caller (`git diff-tree --no-commit-id --name-only -r {commit_sha}`); the verb stores the supplied list verbatim.
 
 **Constraints:**
-- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline.
+- Strictly comply with all rules from persona-plan-marshall-agent, especially tool usage and workflow step discipline.
 - All script output uses TOON format (see `plan-marshall:ref-toon-format` for the full specification).
 - The entry-point script (`manage-change-ledger.py`) is invoked only through `python3 .plan/execute-script.py` with the 3-part notation; `_ledger_core.py` is an importable module (underscore-prefixed), consumed via PYTHONPATH, never invoked directly. `compute_worktree_sha` lives in `script-shared` and is imported, not duplicated.
 
@@ -154,4 +154,4 @@ from _ledger_core import (
 - `plan-marshall:script-shared` — home of `worktree_sha.compute_worktree_sha` (the single shared freshness primitive) and `triage_helpers` (CLI/error helpers).
 - `plan-marshall:manage-locks` — the sibling tracked-config-dir coordination primitive this skill's shape is modeled on.
 - `plan-marshall:manage-tasks` — owner of the `pre-commit-verify-freshness` gate that consumes the ledger.
-- `plan-marshall:dev-general-code-quality` — the TOCTOU / check-then-act mitigation menu the pure-append shape deliberately avoids.
+- `plan-marshall:ref-code-quality` — the TOCTOU / check-then-act mitigation menu the pure-append shape deliberately avoids.

@@ -98,7 +98,7 @@ The round-trip property holds: the key produced here exactly matches the key per
 
 ## Behavioural Contract
 
-LLMs that read this TOON MUST follow the rule documented in `dev-agent-behavior-rules`:
+LLMs that read this TOON MUST follow the rule documented in `persona-plan-marshall-agent`:
 
 - `execution_tier=per_task` → pass `timeout=<bash_timeout_seconds × 1000>` on the Bash call.
 - `execution_tier=orchestrator` → do NOT invoke the command via Bash from a sub-agent; return control to the orchestrator per the surrounding workflow.
@@ -139,8 +139,8 @@ The `unclaimed` array lists changed paths that no `build_map` glob matched (they
 
 ## Cross-References
 
-- The Bash-timeout-from-architecture-resolve failure mode that motivated this surface — see `dev-agent-behavior-rules` § "Bash: Timeout from architecture-resolved canonical command" for the behavioural rule.
+- The Bash-timeout-from-architecture-resolve failure mode that motivated this surface — see `persona-plan-marshall-agent` § "Bash: Timeout from architecture-resolved canonical command" for the behavioural rule.
 - [`manage-config`](../../manage-config/standards/data-model.md) § build_map — the file-to-build contract schema the deriver consumes.
 - [`client-api.md`](client-api.md) § `resolve` — base resolve invocation and options.
 - [`manage-execution-manifest`](../../manage-execution-manifest/standards/decision-rules.md) — manifest composer's `execution_tier` routing rule.
-- `dev-agent-behavior-rules` — the agent-side behavioural rule that consumes these fields.
+- `persona-plan-marshall-agent` — the agent-side behavioural rule that consumes these fields.

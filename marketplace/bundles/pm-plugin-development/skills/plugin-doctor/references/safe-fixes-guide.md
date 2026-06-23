@@ -106,7 +106,7 @@ Maintain tracking JSON:
 
 ## Simplification Safe Fix (SIMPLICITY_SIGNATURE_DOCSTRING)
 
-The `SIMPLICITY_*` rule cluster enforces the "minimum viable code" posture (`plan-marshall:dev-general-code-quality` `standards/code-organization.md` § `#minimum-viable-code`). Of the five rules, exactly **one** is a safe auto-apply fix:
+The `SIMPLICITY_*` rule cluster enforces the "minimum viable code" posture (`plan-marshall:ref-code-quality` `standards/code-organization.md` § `#minimum-viable-code`). Of the five rules, exactly **one** is a safe auto-apply fix:
 
 - **SIMPLICITY_SIGNATURE_DOCSTRING** — delete a function docstring whose first paragraph only restates `Args:`/`Returns:` with no intent content. The handler (`_cmd_apply.py::apply_signature_docstring_fix`) re-parses the file, finds every signature-restating docstring, and deletes its source lines bottom-up. Deleting a pure-structural docstring changes no behaviour and no signature, so it satisfies all four Safe Fix Principles above.
 

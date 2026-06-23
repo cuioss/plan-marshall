@@ -189,7 +189,7 @@ class TestPositiveDrift:
 
     def test_list_bullet_directive_is_detected(self, tmp_path: Path) -> None:
         """A list-bulleted ``- Skill:`` directive counts as an invocation."""
-        content = _fm('Read', '- Skill: plan-marshall:dev-agent-behavior-rules\n')
+        content = _fm('Read', '- Skill: plan-marshall:persona-plan-marshall-agent\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = analyze_allowed_tools_drift(marketplace_root)
         assert len(findings) == 1

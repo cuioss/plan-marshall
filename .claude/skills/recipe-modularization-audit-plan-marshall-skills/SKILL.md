@@ -17,7 +17,7 @@ Like `recipe-marshal-json-config-audit` it is an LLM-driven, SKILL.md-only deliv
 
 This recipe has **two orthogonal, independent dials** at its runtime:
 
-- A **hard-coded COVERAGE CELL** (`thoroughness=T5`, `scope=overall`) — the depth and breadth of the audit. It is NOT gathered from the user. The recipe implements the [coverage-gathering contract](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/coverage-gathering-contract.md) — expand and consume — but **skips the gather step** for the cell, supplying the fixed identifier + expanded instruction per the contract's gather → expand → consume model.
+- A **hard-coded COVERAGE CELL** (`thoroughness=T5`, `scope=overall`) — the depth and breadth of the audit. It is NOT gathered from the user. The recipe implements the [coverage-gathering contract](../../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/coverage-gathering-contract.md) — expand and consume — but **skips the gather step** for the cell, supplying the fixed identifier + expanded instruction per the contract's gather → expand → consume model.
 - A **gathered CORPUS ROOT** — the tree the audit is rooted at. It IS gathered, via `AskUserQuestion` (Step 1). The cell governs HOW DEEPLY/BROADLY the audit runs; the corpus root governs WHAT TREE it runs over. The two are distinct and never conflated: the no-gather prohibition applies to the CELL ONLY, never to the target.
 
 Both the resolved cell and the resolved target root are persisted to `status.json` metadata.
@@ -70,7 +70,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id {plan_id} --set --field coverage_instruction --value {expanded_instruction}
 ```
 
-The ladders (T1–T5), the grade-to-the-floor rule, and the coupling constraint are defined once in [`dev-agent-behavior-rules/standards/thoroughness.md`](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/thoroughness.md), and the cell → instruction expansion table lives in [`dev-agent-behavior-rules/standards/coverage-gathering-contract.md`](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/coverage-gathering-contract.md); do NOT restate either here. `coverage expand` enforces the coupling constraint and emits `error_type: coverage_coupling_violation` for an incoherent cell — the fixed `T5 / overall` pair satisfies the constraint by construction, so a violation here is a contract bug, not a re-gather case.
+The ladders (T1–T5), the grade-to-the-floor rule, and the coupling constraint are defined once in [`persona-plan-marshall-agent/standards/thoroughness.md`](../../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/thoroughness.md), and the cell → instruction expansion table lives in [`persona-plan-marshall-agent/standards/coverage-gathering-contract.md`](../../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/coverage-gathering-contract.md); do NOT restate either here. `coverage expand` enforces the coupling constraint and emits `error_type: coverage_coupling_violation` for an incoherent cell — the fixed `T5 / overall` pair satisfies the constraint by construction, so a violation here is a contract bug, not a re-gather case.
 
 Consume the **expanded instruction** (NOT the raw cell) when collecting the audit deliverables in Step 4.
 
@@ -171,7 +171,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 **Prohibited actions:**
 - Never gather the COVERAGE CELL via `AskUserQuestion` — the cell is hard-coded `T5 / overall` (Step 1, "Declare + expand + persist the hard-coded COVERAGE CELL"). The no-gather prohibition applies to the CELL ONLY, NOT the target — the target IS gathered (Step 1, "Gather the CORPUS ROOT"). The only `AskUserQuestion` this recipe drives is the corpus-root gather.
 - Never mutate any audited skill during the recipe — the recipe collects deliverables only.
-- Never restate the thoroughness ladders, the grade-to-the-floor rule, the coupling constraint, the cell → instruction expansion table, or the plugin-doctor bloat thresholds — cross-reference `dev-agent-behavior-rules/standards/thoroughness.md`, `coverage-gathering-contract.md`, and `plugin-doctor/standards/doctor-skills.md`.
+- Never restate the thoroughness ladders, the grade-to-the-floor rule, the coupling constraint, the cell → instruction expansion table, or the plugin-doctor bloat thresholds — cross-reference `persona-plan-marshall-agent/standards/thoroughness.md`, `coverage-gathering-contract.md`, and `plugin-doctor/standards/doctor-skills.md`.
 - Never access `.plan/` files directly — all access goes through `python3 .plan/execute-script.py` manage-* scripts.
 
 **Constraints:**
@@ -181,8 +181,8 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ## Related
 
-- `plan-marshall:dev-agent-behavior-rules` `standards/thoroughness.md` — the scope × thoroughness ladders, grade-to-the-floor rule, and coupling constraint (single source of truth).
-- `plan-marshall:dev-agent-behavior-rules` `standards/coverage-gathering-contract.md` — the coverage-gathering contract this recipe implements (expand → consume; persistence; cell → instruction table). This recipe skips the gather step for the cell.
+- `plan-marshall:persona-plan-marshall-agent` `standards/thoroughness.md` — the scope × thoroughness ladders, grade-to-the-floor rule, and coupling constraint (single source of truth).
+- `plan-marshall:persona-plan-marshall-agent` `standards/coverage-gathering-contract.md` — the coverage-gathering contract this recipe implements (expand → consume; persistence; cell → instruction table). This recipe skips the gather step for the cell.
 - `plan-marshall:manage-config` `coverage expand` — the static identifier → instruction expander that enforces the coupling constraint.
 - `recipe-marshal-json-config-audit` — the sibling project-local SKILL.md-only recipe whose deliverable-collection shape this recipe mirrors.
 - `pm-plugin-development:plugin-doctor` — the no-bloat gate the recipe delegates to (subdoc bloat thresholds).

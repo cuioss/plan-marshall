@@ -71,3 +71,14 @@ When `action=` is omitted, the effective action is resolved in this order — fi
 5. **No source/target parameters at all** → `list` (interactive menu).
 
 If two or more of `{task, issue, lesson, recipe, plan}` are supplied together without an explicit `action=`, the skill returns `status: error` naming the conflict. Pass an explicit `action=` or drop the conflicting parameter to resolve.
+
+=== Personas
+
+You never pass a persona on the command line — persona selection is automatic. Each task is dispatched **as** a named identity (a *persona*) resolved from the work it does: an implementation task runs as the Implementer, a module-testing task as the Module Tester, a security audit as the Security Expert. The persona determines which skills enter the subagent's context; the command surface stays the same regardless.
+
+Where the binding comes from depends on the dispatch:
+
+* **Plan tasks** derive their persona from the task's profile — no declaration needed.
+* **Entry points** (recipes, finalize steps, and the slash commands themselves) declare one persona explicitly, so `/plan-marshall recipe=…` and the finalize phase each run under the identity their definition names.
+
+Personas surface to you as the *names* in logs and status output ("the Auditor persona", "the Security Expert persona") rather than as a knob you set. For the full model — the persona / ref / profile archetypes, the composition resolver, and how a persona differs from the model-and-effort role/level — see xref:../concepts/personas.adoc[Concepts › Personas].

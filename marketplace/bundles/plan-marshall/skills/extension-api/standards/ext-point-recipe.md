@@ -168,7 +168,7 @@ Each recipe dict returned by `provides_recipes()`:
 | `scope` | str | Yes | Scope indicator (`codebase_wide`, `module`) |
 | `profile` | str | No | Target profile — omit if user selects at plan creation time |
 | `package_source` | str | No | Package source — omit if user selects at plan creation time |
-| `coverage_gathering` | str | No | Whether the recipe workflow gathers a coverage cell per the [coverage-gathering contract](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md): `required` (always gather), `optional` (offer with an `inherit` escape), `none` (never gather). Defaults to `none` when omitted. `recipe.md` keys its contract gather + expand + persist hook on this field. `recipe-lesson-cleanup` declares `none` (forced-surgical scope). |
+| `coverage_gathering` | str | No | Whether the recipe workflow gathers a coverage cell per the [coverage-gathering contract](../../persona-plan-marshall-agent/standards/coverage-gathering-contract.md): `required` (always gather), `optional` (offer with an `inherit` escape), `none` (never gather). Defaults to `none` when omitted. `recipe.md` keys its contract gather + expand + persist hook on this field. `recipe-lesson-cleanup` declares `none` (forced-surgical scope). |
 
 **Auto-assigned fields** (do NOT include in return value):
 

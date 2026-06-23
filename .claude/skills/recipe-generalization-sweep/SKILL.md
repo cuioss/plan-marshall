@@ -35,12 +35,12 @@ There is no `recipe_scope` / `recipe_thoroughness` input — the cell is pinned 
 - Never raise an `AskUserQuestion` for the coverage cell — the cell is pinned `T5 / overall` (Step 0). The only `AskUserQuestion` this recipe drives is the Step 6 confirmation gate (DELETE / MOVE-vs-AGGREGATE / new-ext-point).
 - Never use the deterministic candidate-surfacer (Grep of MOVE-signature markers) as the sole leak filter — the full-read of every skill is the floor; the grep is the net. A pure grep pass MISSES leaks with no literal marker (the adversarial lesson).
 - Never adjudicate a leak by its `name` / `description` — judge by the body against MOVE-signature criteria A–E.
-- Never restate the thoroughness ladders, the grade-to-the-floor rule, the coupling constraint, or the cell → instruction expansion table — cross-reference `dev-agent-behavior-rules/standards/thoroughness.md` and `coverage-gathering-contract.md`.
+- Never restate the thoroughness ladders, the grade-to-the-floor rule, the coupling constraint, or the cell → instruction expansion table — cross-reference `persona-plan-marshall-agent/standards/thoroughness.md` and `coverage-gathering-contract.md`.
 - Never emit a DELETE, a MOVE-vs-AGGREGATE fork, or a new-ext-point proposal as a deliverable without passing the Step 6 confirmation gate.
 - Never access `.plan/` files directly — all access goes through `python3 .plan/execute-script.py` manage-* scripts.
 
 **Constraints:**
-- Strictly comply with all rules from `dev-agent-behavior-rules`, especially tool usage and workflow step discipline.
+- Strictly comply with all rules from `persona-plan-marshall-agent`, especially tool usage and workflow step discipline.
 - The persisted cell is `coverage_thoroughness=T5`, `coverage_scope=overall`, plus the `coverage expand`-produced `coverage_instruction`, written to `status.json` metadata.
 - Each collected deliverable records its `T5 × overall` cell for the floor-graded self-report and enumerates every multi-site consumer the disposition touches (callers, q-gate validators, `plugin.json`, tests, cross-refs).
 
@@ -54,7 +54,7 @@ The generalization sweep is exhaustive and adversarial by design — every skill
 - `thoroughness=T5` — exhaustive/adversarial depth: full-read every skill, re-verify each candidate against disk, loop until no new leaks surface.
 - The coupling constraint (`reject thoroughness ≥ T4 ∧ scope < component`) is satisfied because `overall ≥ component`.
 
-This recipe implements the [coverage-gathering contract](../../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/coverage-gathering-contract.md)'s **consume** obligation but deliberately skips the **gather** (`AskUserQuestion`) step. Expand the pinned cell once and persist BOTH the identifier and the expanded instruction to `status.json` metadata:
+This recipe implements the [coverage-gathering contract](../../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/coverage-gathering-contract.md)'s **consume** obligation but deliberately skips the **gather** (`AskUserQuestion`) step. Expand the pinned cell once and persist BOTH the identifier and the expanded instruction to `status.json` metadata:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config coverage expand --thoroughness T5 --scope overall
@@ -169,8 +169,8 @@ A `solution_outline.md` whose `## Deliverables` are grouped by disposition (DELE
 
 ## Related
 
-- `plan-marshall:dev-agent-behavior-rules` `standards/thoroughness.md` — the scope × thoroughness ladders, grade-to-the-floor rule, and coupling constraint (single source of truth; this recipe pins `T5 / overall`).
-- `plan-marshall:dev-agent-behavior-rules` `standards/coverage-gathering-contract.md` — the coverage-gathering contract this recipe implements (consume obligation; pinned-cell expand/persist; cell → instruction table). This recipe skips the gather step.
+- `plan-marshall:persona-plan-marshall-agent` `standards/thoroughness.md` — the scope × thoroughness ladders, grade-to-the-floor rule, and coupling constraint (single source of truth; this recipe pins `T5 / overall`).
+- `plan-marshall:persona-plan-marshall-agent` `standards/coverage-gathering-contract.md` — the coverage-gathering contract this recipe implements (consume obligation; pinned-cell expand/persist; cell → instruction table). This recipe skips the gather step.
 - `plan-marshall:manage-config` `coverage expand` — the static identifier → instruction expander that enforces the coupling constraint.
 - `plan-marshall:extension-api` `standards/ext-point-recipe.md` — the recipe extension point this skill implements; project-local recipes are discovered from `.claude/skills/recipe-*` by `manage-config list-recipes`.
 - `recipe-marshal-json-config-audit` — sibling project-local, pinned-cell audit recipe; the convention template for frontmatter, the mandatory `recipe_domain` row, and the user-confirmation gate.

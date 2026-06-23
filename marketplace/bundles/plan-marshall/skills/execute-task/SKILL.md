@@ -16,7 +16,7 @@ mode: workflow
 ## Foundational Practices
 
 ```
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
 ## Enforcement
@@ -30,7 +30,7 @@ Skill: plan-marshall:dev-agent-behavior-rules
 - Never suppress errors in Bash tool calls (`2>/dev/null`, `|| true`, `|| :`, `-q` flags that hide exit codes). Every Bash tool call MUST surface its exit code cleanly so the verification loop can detect failures.
 
 **Constraints:**
-- Strictly comply with all rules from dev-agent-behavior-rules, especially tool usage and workflow step discipline
+- Strictly comply with all rules from persona-plan-marshall-agent, especially tool usage and workflow step discipline
 - Never bypass the manage-tasks next/finalize-step loop — if parallelization is needed, it must happen at the TASK level, not at the STEP level within a task
 - A task in `implementation` or `module_testing` profile MUST NOT be marked `done` until the resolved canonical command (`quality-gate` or `verify` respectively) exits cleanly. Module-tests passing alone is necessary but not sufficient — mypy and ruff must also pass.
 - Before every Bash tool call, emit an `[ATTEMPT]` work-log line that names the command being run. Use: `python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging work --plan-id {plan_id} --level INFO --message "[ATTEMPT] (plan-marshall:execute-task) {short description of command}"`. This provides an auditable trail when a Bash call hangs or produces unexpected output.
@@ -231,7 +231,7 @@ Apply throughout all subsequent steps:
 
 ### Workflow
 
-1. **Understand Context**: Read affected files (`step.target`) if they exist. Use `architecture files --module {module}` to enumerate the module's components and `architecture which-module --path P` / `architecture find --pattern P` for module-spanning lookups; fall back to `Grep` for content-level searches inside known files and `Glob` for sub-module path patterns or when the architecture verb returns elision. Apply domain knowledge from loaded skills. *How completely the in-radius items are read and how deeply their relations are traced is the task's declared* thoroughness *over its declared* scope *— see the two-dial coverage contract (thoroughness ladder T1–T5, scope ladder, grade-to-the-floor, coupling constraint `reject thoroughness ≥ T4 ∧ scope < component`) in [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md).*
+1. **Understand Context**: Read affected files (`step.target`) if they exist. Use `architecture files --module {module}` to enumerate the module's components and `architecture which-module --path P` / `architecture find --pattern P` for module-spanning lookups; fall back to `Grep` for content-level searches inside known files and `Glob` for sub-module path patterns or when the architecture verb returns elision. Apply domain knowledge from loaded skills. *How completely the in-radius items are read and how deeply their relations are traced is the task's declared* thoroughness *over its declared* scope *— see the two-dial coverage contract (thoroughness ladder T1–T5, scope ladder, grade-to-the-floor, coupling constraint `reject thoroughness ≥ T4 ∧ scope < component`) in [`persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md).*
 2. **Plan Implementation**: For each step, determine changes needed, domain skill patterns to apply, modification order, and integration considerations.
 3. **Implement Changes**: For each step — create new files with `Write`, modify existing files with `Edit`. Apply domain patterns and maintain existing code style.
 4. **Mark Step Complete** (common step)
@@ -341,7 +341,7 @@ Run verification commands without modifying files.
 
       Parse the `TOON` output. Use the `rewritten_command` value as the command to execute. When the worktree path resolved in Step 1 is empty (main-checkout flow), skip the helper and execute the raw `step.target`. Injecting `--plan-id` lets the Bucket B script auto-resolve the worktree via its two-state contract.
 
-   b. Execute the resulting command with a Bash timeout derived from the architecture-resolved canonical envelope. See `plan-marshall:dev-agent-behavior-rules` § "Bash: Timeout from architecture-resolved canonical command" for the authoritative rule: read `bash_timeout_seconds` and `execution_tier` from the resolved TOON, pass `timeout: bash_timeout_seconds * 1000` when `execution_tier=per_task`, and hand off to the orchestrator when `execution_tier=orchestrator`. The 600000ms floor still applies to ad-hoc invocations that do not flow through architecture resolve, and matches `CLAUDE.md` § Build Commands.
+   b. Execute the resulting command with a Bash timeout derived from the architecture-resolved canonical envelope. See `plan-marshall:persona-plan-marshall-agent` § "Bash: Timeout from architecture-resolved canonical command" for the authoritative rule: read `bash_timeout_seconds` and `execution_tier` from the resolved TOON, pass `timeout: bash_timeout_seconds * 1000` when `execution_tier=per_task`, and hand off to the orchestrator when `execution_tier=orchestrator`. The 600000ms floor still applies to ad-hoc invocations that do not flow through architecture resolve, and matches `CLAUDE.md` § Build Commands.
 
    c. On `injected: true`, emit the standard auto-injection work-log entry:
 

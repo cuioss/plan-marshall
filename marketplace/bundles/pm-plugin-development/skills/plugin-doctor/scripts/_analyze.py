@@ -28,6 +28,8 @@ from _analyze_markdown import analyze_markdown_file, cmd_markdown
 from _analyze_metadata_field_validity import analyze_metadata_field_validity
 from _analyze_notation_staleness import analyze_notation_staleness
 from _analyze_orphan_argparse_flags import analyze_orphan_argparse_flags
+from _analyze_persona_binding_resolves import analyze_persona_binding_resolves
+from _analyze_persona_profile_uniqueness import analyze_persona_profile_uniqueness
 from _analyze_plan_path_in_scripts import analyze_plan_path_in_scripts
 from _analyze_resolution_branch_markers import analyze_resolution_branch_markers
 from _analyze_role_field import analyze_role_field
@@ -62,6 +64,8 @@ __all__ = [
     'analyze_metadata_field_validity',
     'analyze_notation_staleness',
     'analyze_orphan_argparse_flags',
+    'analyze_persona_binding_resolves',
+    'analyze_persona_profile_uniqueness',
     'analyze_plan_path_in_scripts',
     'analyze_resolution_branch_markers',
     'analyze_role_field',

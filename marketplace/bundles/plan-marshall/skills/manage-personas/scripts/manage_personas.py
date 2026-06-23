@@ -110,7 +110,15 @@ def _read_persona_frontmatter(bundles_root: Path, persona_key: str) -> dict | No
     path = _resolve_persona_path(bundles_root, persona_key)
     if path is None:
         return None
-    content = path.read_text()
+    try:
+        content = path.read_text()
+    except OSError:
+        # TOCTOU file-removal between _resolve_persona_path's is_file() check
+        # and this read, a PermissionError, or a decode failure — treat as an
+        # unresolvable persona so the caller maps None to its
+        # persona_not_found / composed_persona_not_found discriminator and the
+        # script still emits a TOON error rather than a raw traceback.
+        return None
     frontmatter = _leading_frontmatter(content)
     implements = re.search(r'^implements:\s*(.+)$', frontmatter, re.MULTILINE)
     is_persona = implements is not None and implements.group(1).strip().strip('\'"') == 'persona'

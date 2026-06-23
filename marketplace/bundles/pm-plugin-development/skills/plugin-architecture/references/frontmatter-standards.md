@@ -229,7 +229,7 @@ Declares the skill's execution archetype — the single, authoritative signal fo
 
 - **Placement**: in the YAML frontmatter, after the `user-invocable:` line.
 - **Validation**: the plugin-doctor `skill-missing-mode` rule flags any skill whose frontmatter omits `mode` or carries a value outside the enum above.
-- **Compliance**: agents reading a loaded skill comply with its declared `mode` — see the "Skill mode: comply with the declared archetype" rule in `plan-marshall:dev-agent-behavior-rules` (`standards/agent-behavior-rules.md`).
+- **Compliance**: agents reading a loaded skill comply with its declared `mode` — see the "Skill mode: comply with the declared archetype" rule in `plan-marshall:persona-plan-marshall-agent` (`standards/agent-behavior-rules.md`).
 
 ```yaml
 ---

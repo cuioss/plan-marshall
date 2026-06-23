@@ -95,4 +95,4 @@ python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build ru
 ## Related Skills
 
 - `pm-dev-python:python-core` - Core Python development patterns
-- `plan-marshall:dev-general-module-testing` - Language-agnostic testing methodology
+- `plan-marshall:persona-module-tester` - Language-agnostic testing methodology

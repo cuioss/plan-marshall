@@ -9,7 +9,7 @@
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.

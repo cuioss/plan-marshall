@@ -38,7 +38,7 @@ The composer is a pure function imported and called by `platform-runtime`.
 - The icon palette, glyph vocabulary, and body-format are owned here exclusively;
   consumers (e.g. `platform-runtime`) MUST consume them via import rather than
   re-declaring them.
-- Strictly comply with all rules from `dev-agent-behavior-rules`.
+- Strictly comply with all rules from `persona-plan-marshall-agent`.
 
 ## Composition Contract
 

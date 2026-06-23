@@ -94,7 +94,7 @@ All scripts are stdlib-only with TOON output.
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.
@@ -165,7 +165,7 @@ Report results including:
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.
@@ -234,7 +234,7 @@ Add reference based on load_type:
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.
@@ -294,7 +294,7 @@ Report:
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.
@@ -354,7 +354,7 @@ Report any issues introduced.
 
 ```
 Skill: pm-plugin-development:plugin-architecture
-Skill: plan-marshall:dev-agent-behavior-rules
+Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
 These provide architecture principles and non-prompting tool usage patterns.

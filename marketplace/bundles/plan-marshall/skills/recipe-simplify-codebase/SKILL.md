@@ -20,7 +20,7 @@ The per-batch worker is `finalize-step-simplify`'s cognitive engine — **reused
 | `recipe_scope` | string | Yes | Campaign scope — one of `component`, `module`, `overall` |
 | `recipe_thoroughness` | string | Yes | Campaign thoroughness rung — one of `T1`, `T2`, `T3`, `T4`, `T5` |
 
-The two dials are the scope × thoroughness contract. Their ladders, the grade-to-the-floor rule, and the coupling constraint are defined once in [`dev-agent-behavior-rules/standards/thoroughness.md`](../dev-agent-behavior-rules/standards/thoroughness.md); this recipe implements the [coverage-gathering contract](../dev-agent-behavior-rules/standards/coverage-gathering-contract.md) — it gathers, expands, and consumes the cell per that contract and does NOT restate the ladders or re-derive the coupling check. `recipe_scope` / `recipe_thoroughness` are accepted as the pre-gathered values when the recipe workflow already supplied them; otherwise Step 0 gathers them.
+The two dials are the scope × thoroughness contract. Their ladders, the grade-to-the-floor rule, and the coupling constraint are defined once in [`persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md); this recipe implements the [coverage-gathering contract](../persona-plan-marshall-agent/standards/coverage-gathering-contract.md) — it gathers, expands, and consumes the cell per that contract and does NOT restate the ladders or re-derive the coupling check. `recipe_scope` / `recipe_thoroughness` are accepted as the pre-gathered values when the recipe workflow already supplied them; otherwise Step 0 gathers them.
 
 ---
 
@@ -132,8 +132,8 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ## Related
 
-- `plan-marshall:dev-agent-behavior-rules` `standards/thoroughness.md` — the scope × thoroughness ladders, grade-to-the-floor rule, and coupling constraint (single source of truth).
-- `plan-marshall:dev-agent-behavior-rules` `standards/coverage-gathering-contract.md` — the coverage-gathering contract this recipe implements (gather → expand → consume; persistence; cell→instruction table).
+- `plan-marshall:persona-plan-marshall-agent` `standards/thoroughness.md` — the scope × thoroughness ladders, grade-to-the-floor rule, and coupling constraint (single source of truth).
+- `plan-marshall:persona-plan-marshall-agent` `standards/coverage-gathering-contract.md` — the coverage-gathering contract this recipe implements (gather → expand → consume; persistence; cell→instruction table).
 - `plan-marshall:manage-config` `coverage expand` / `coverage resolve` — the static identifier→instruction expander and the project-default resolver that enforce the coupling constraint.
 - `plan-marshall:phase-6-finalize` `standards/finalize-step-simplify.md` — the cognitive simplification engine this recipe reuses (widened past the change-set cap).
 - `plan-marshall:recipe-refactor-to-profile-standards` — the sibling recipe whose module/package iteration scaffold this recipe mirrors.

@@ -119,8 +119,8 @@ JSON structure and field definitions for project configuration.
   },
   "skill_domains": {
     "system": {
-      "defaults": ["plan-marshall:dev-agent-behavior-rules"],
-      "optionals": ["plan-marshall:dev-agent-behavior-rules"]
+      "defaults": ["plan-marshall:persona-plan-marshall-agent"],
+      "optionals": ["plan-marshall:persona-plan-marshall-agent"]
     },
     "java": {
       "bundle": "pm-dev-java",
@@ -582,9 +582,9 @@ Coverage is a two-dial contract — `thoroughness` (T1–T5) × `scope` (change-
 | `thoroughness` | string | "inherit" | T1, T2, T3, T4, T5, inherit |
 | `scope` | string | "inherit" | change-set, artifact, component, module, overall, inherit |
 
-**Coupling constraint** — `reject thoroughness ≥ T4 ∧ scope < component`. A relation-tracing thoroughness (T4/T5) cannot be honoured below `component` scope because the siblings the relations point at are out of radius. The constraint is enforced at lookup time (from both `coverage read` and `coverage resolve`) with `error_type: coverage_coupling_violation`. An `inherit` on either field is unconstrained. The constraint is defined verbatim in [`dev-agent-behavior-rules/standards/thoroughness.md`](../../dev-agent-behavior-rules/standards/thoroughness.md) § Coupling Constraint.
+**Coupling constraint** — `reject thoroughness ≥ T4 ∧ scope < component`. A relation-tracing thoroughness (T4/T5) cannot be honoured below `component` scope because the siblings the relations point at are out of radius. The constraint is enforced at lookup time (from both `coverage read` and `coverage resolve`) with `error_type: coverage_coupling_violation`. An `inherit` on either field is unconstrained. The constraint is defined verbatim in [`persona-plan-marshall-agent/standards/thoroughness.md`](../../persona-plan-marshall-agent/standards/thoroughness.md) § Coupling Constraint.
 
-`plan.coverage` is the project-default knob (seeded `inherit/inherit`); the `read`/`resolve` verbs read `marshal.json` only (no per-plan tier). The per-invocation user-gathered identifier + expanded instruction live in `status.json` metadata per the [coverage-gathering contract](../../dev-agent-behavior-rules/standards/coverage-gathering-contract.md) — the components that implement that contract are coverage's consumers. `coverage resolve` is the project-default tier those components fall back to when no per-invocation cell was gathered.
+`plan.coverage` is the project-default knob (seeded `inherit/inherit`); the `read`/`resolve` verbs read `marshal.json` only (no per-plan tier). The per-invocation user-gathered identifier + expanded instruction live in `status.json` metadata per the [coverage-gathering contract](../../persona-plan-marshall-agent/standards/coverage-gathering-contract.md) — the components that implement that contract are coverage's consumers. `coverage resolve` is the project-default tier those components fall back to when no per-invocation cell was gathered.
 
 Resolved via:
 - `coverage read --phase phase-5-execute` (resolve a phase's cell, project default)

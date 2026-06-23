@@ -32,9 +32,9 @@ Every script in the marketplace returns link:../../marketplace/bundles/plan-mars
 
 === 4. Skill-driven guidance — no tool exploration
 
-A stock LLM faced with a new task will explore: `ls`, `find`, `grep`, `cat`, `head` to learn the codebase shape. Each step costs tokens *and* fills the context with noise. Plan Marshall pre-loads the skills that map to the task — `dev-agent-behavior-rules` first (always), then task-declared `skills[]` — so the LLM enters the workflow already knowing where things are and which API to call.
+A stock LLM faced with a new task will explore: `ls`, `find`, `grep`, `cat`, `head` to learn the codebase shape. Each step costs tokens *and* fills the context with noise. Plan Marshall pre-loads the skills that map to the task — `persona-plan-marshall-agent` first (always), then task-declared `skills[]` — so the LLM enters the workflow already knowing where things are and which API to call.
 
-The link:../../marketplace/bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/agent-behavior-rules.md[hard rules] explicitly forbid the exploratory pattern: "Structured queries first — consult `architecture files --module X` before `Glob` / `Grep`." Architecture queries return TOON; ad-hoc `find` calls return free-form text. The skill set is the *prior* that prevents the exploration loop from starting.
+The link:../../marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/agent-behavior-rules.md[hard rules] explicitly forbid the exploratory pattern: "Structured queries first — consult `architecture files --module X` before `Glob` / `Grep`." Architecture queries return TOON; ad-hoc `find` calls return free-form text. The skill set is the *prior* that prevents the exploration loop from starting.
 
 === 5. Persisted knowledge — enrich once, read many
 
@@ -54,7 +54,7 @@ The `phase-5-execute` task loop applies this isolation as a **budget-bounded** d
 
 == Bonus side-effect — process compliance survives long sessions
 
-Every `execution-context-{level}` dispatch is a fresh context that re-loads `dev-agent-behavior-rules` plus the caller-named skills. The hard rules — `.plan/` scripts-only, one Bash command per call, architecture-resolve for builds — are *present in the variant's context at every dispatch*, never "decayed out" by an accumulating chat. This is the link between context management and xref:process-enforcement.adoc[Process Enforcement]: per-dispatch isolation isn't just cheaper, it's *more compliant* over the lifetime of a long plan.
+Every `execution-context-{level}` dispatch is a fresh context that re-loads `persona-plan-marshall-agent` plus the caller-named skills. The hard rules — `.plan/` scripts-only, one Bash command per call, architecture-resolve for builds — are *present in the variant's context at every dispatch*, never "decayed out" by an accumulating chat. This is the link between context management and xref:process-enforcement.adoc[Process Enforcement]: per-dispatch isolation isn't just cheaper, it's *more compliant* over the lifetime of a long plan.
 
 == Where Plan Marshall deliberately spends more
 

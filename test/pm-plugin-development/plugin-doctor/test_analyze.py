@@ -1186,7 +1186,7 @@ def test_display_detail_subdoc_em_dash_surfaces_in_subdoc_analysis():
 #       marketplace/
 #         bundles/<bundle>/skills/<skill>/scripts/<script>.py  (fake argparse)
 #         bundles/<bundle>/skills/<skill>/SKILL.md             (prose to scan)
-#         bundles/plan-marshall/skills/dev-agent-behavior-rules/standards/argument-naming.md
+#         bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/argument-naming.md
 #
 # The cluster is unconditionally active (gate removed per lesson
 # 2026-04-29-23-002); tests below exercise the analyzer directly without
@@ -1270,7 +1270,7 @@ def _write_canonical_forms_md(marketplace_root: Path, table_rows: list[str]) -> 
     separator and the next ``##`` section. Each row is wrapped in pipes by
     the caller (kept verbatim so callers control the exact format).
     """
-    target_dir = marketplace_root / 'bundles' / 'plan-marshall' / 'skills' / 'dev-agent-behavior-rules' / 'standards'
+    target_dir = marketplace_root / 'bundles' / 'plan-marshall' / 'skills' / 'persona-plan-marshall-agent' / 'standards'
     target_dir.mkdir(parents=True, exist_ok=True)
     md_path = target_dir / 'argument-naming.md'
     body_lines = [

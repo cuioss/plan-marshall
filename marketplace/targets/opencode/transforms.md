@@ -117,7 +117,7 @@ that backtick span.
 |-------|-------------|-----------|
 | `AskUserQuestion` (313× across bodies) | `rewrite_inline_code` → `` `question` `` | OpenCode's escalation tool is `question`/`ask`. Only the backtick-wrapped tool reference is rewritten; bare prose mentions of the escalation *mechanism* stay as the concept name (a blanket rewrite would corrupt prose). |
 | `Task:` | `preserve` | **Leaf-aware** (doc 06 item 3). The dispatcher's leaf-constraint prose — "no `Task:` dispatch", "every plan-marshall `Task:` invocation" — is descriptive, and a blanket `Task:` → `task` rewrite corrupts it. The divergence is real terminology drift, dispositioned here as a deliberate non-rewrite rather than a naive substitution. |
-| `Skill: <entry>` | `source_fix` | The `<entry>` is a runtime placeholder, not an identifier (doc 06 item 2). The one true source change — the placeholder-loop prose in `dev-agent-behavior-rules` is reworded target-neutrally (deliverable 9), so no emit-time rewrite is needed. |
+| `Skill: <entry>` | `source_fix` | The `<entry>` is a runtime placeholder, not an identifier (doc 06 item 2). The one true source change — the placeholder-loop prose in `persona-plan-marshall-agent` is reworded target-neutrally (deliverable 9), so no emit-time rewrite is needed. |
 
 ## What is *not* transformed
 

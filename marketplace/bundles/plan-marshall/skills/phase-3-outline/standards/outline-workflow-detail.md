@@ -753,7 +753,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 **Permitted set**: The only `conftest.py` files permitted in this project are the two top-level files `test/conftest.py` and `test/adapters/conftest.py`. These are the only `conftest.py` paths that MAY appear in a deliverable's `**Affected files:**` list. Any other `conftest.py` in an `**Affected files:**` list is a defect. Replace with `_fixtures.py` (or a similarly scoped helper name) and update any `Change per file:` text to describe explicit imports from the tests that consume it. The generic rule is project-invariant: do not name a new test helper `conftest.py`.
 
 **Cross-references**:
-- `plan-marshall:dev-general-module-testing` — testing methodology (AAA pattern, coverage, test organization) this rule supports
+- `plan-marshall:persona-module-tester` — testing methodology (AAA pattern, coverage, test organization) this rule supports
 - `pm-dev-python:pytest-testing` — pytest framework standards including fixture discovery semantics that motivate the `conftest.py` restriction
 
 #### Log Completion
@@ -773,13 +773,13 @@ These two recognition triggers are track-agnostic siblings to the Step 9c (desig
 
 **Trigger predicate**: the deliverable's narrative (`Change per file:` / summary / success criteria) introduces or modifies a cooperative cross-process lock or a shared-state coordination primitive — merge locks, worktree allocation, plan-id reservation, leader election, or any "claim a shared resource" flow where two processes can race for the same slot.
 
-**Required authoring action**: emit a `**Concurrency-correctness note:**` block on the deliverable that (a) names the check-then-act / TOCTOU window the new coordination opens, and (b) points to the mitigation the deliverable will adopt. The note MUST cross-reference the TOCTOU / check-then-act mitigation menu in [`../../dev-general-code-quality/standards/code-organization.md`](../../dev-general-code-quality/standards/code-organization.md#toctou--check-then-act-hazards) for the mitigation substance — **do NOT duplicate the post-write-double-check / deterministic-tiebreaker / atomic-primitive menu here or on the deliverable**.
+**Required authoring action**: emit a `**Concurrency-correctness note:**` block on the deliverable that (a) names the check-then-act / TOCTOU window the new coordination opens, and (b) points to the mitigation the deliverable will adopt. The note MUST cross-reference the TOCTOU / check-then-act mitigation menu in [`../../ref-code-quality/standards/code-organization.md`](../../ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards) for the mitigation substance — **do NOT duplicate the post-write-double-check / deterministic-tiebreaker / atomic-primitive menu here or on the deliverable**.
 
 #### Value-change deliverable class
 
 **Trigger predicate**: the deliverable changes a default value, a named constant, an enum member, or a threshold literal that existing tests may assert against.
 
-**Required authoring action**: scope the old-value test assertions into the deliverable's `**Affected files:**` list so the production change and its test-consumer updates form one atomic deliverable that verifies on the first cut. Cross-reference the enumerate-existing-test-consumers discipline in [`../../dev-general-module-testing/standards/testing-methodology.md`](../../dev-general-module-testing/standards/testing-methodology.md#enumerate-existing-test-consumers-before-changing-a-default--constant--enum-value) for the discovery → classification → atomicity procedure — **do NOT restate the grep-symbol-and-literal / classify / atomic-update sequence here or on the deliverable**.
+**Required authoring action**: scope the old-value test assertions into the deliverable's `**Affected files:**` list so the production change and its test-consumer updates form one atomic deliverable that verifies on the first cut. Cross-reference the enumerate-existing-test-consumers discipline in [`../../persona-module-tester/standards/testing-methodology.md`](../../persona-module-tester/standards/testing-methodology.md#enumerate-existing-test-consumers-before-changing-a-default--constant--enum-value) for the discovery → classification → atomicity procedure — **do NOT restate the grep-symbol-and-literal / classify / atomic-update sequence here or on the deliverable**.
 
 ### Clean-break vs migration-shim decision checklist
 

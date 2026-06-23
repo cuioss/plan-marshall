@@ -13,7 +13,7 @@ Scope
 Every ``*.md`` file under ``marketplace/bundles/*/{skills,agents,commands}/``.
 The directive shape recognised is the two-segment bundle-prefixed form
 ``Skill: {bundle}:{skill}`` (optionally fenced, optionally indented). The
-bare single-segment form (``Skill: dev-agent-behavior-rules`` with no bundle
+bare single-segment form (``Skill: persona-plan-marshall-agent`` with no bundle
 prefix) and project-local ``.claude/skills`` references are NOT validated here
 — this rule targets the bundle-prefixed notation whose on-disk anchor is
 deterministic.

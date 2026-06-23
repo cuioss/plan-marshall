@@ -3,7 +3,7 @@
 
 These five detectors are the mechanical enforcement layer for the
 "minimum viable code" posture defined in
-``plan-marshall:dev-general-code-quality`` →
+``plan-marshall:ref-code-quality`` →
 ``standards/code-organization.md`` § ``#minimum-viable-code``. They detect the
 deterministically-recognisable subset of that section's anti-patterns in
 marketplace bundle scripts; the cognitive judgement calls are handled by the
