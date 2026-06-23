@@ -83,8 +83,8 @@ router already has.
 
 ## 5. Verification stays encoded; integrate only when unavoidable
 
-plan-marshall verifies through *encoded, reproducible* tests (module-tests,
-quality-gate, CI, e2e) and leaves interactive exploration to the tools the user
+plan-marshall verifies through *encoded, reproducible* tests (`module-tests`,
+`quality-gate`, CI, `e2e`) and leaves interactive exploration to the tools the user
 already has (Chrome, a browser MCP) — it does **not** build or integrate a
 live-run / browser surface (see
 [`doc/concepts/verification.adoc`](../concepts/verification.adoc) for the

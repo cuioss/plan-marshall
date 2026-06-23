@@ -5,7 +5,7 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
-Plan Marshall does not build a live-verification surface. Verification here is *encoded*: it lives in reproducible, committed tests — module-tests, quality-gate, CI, and e2e — that any session can re-run and that produce the same answer every time. An ephemeral live-browser run evaporates with the session, cannot be replayed, and nothing downstream can gate on it — a live-run surface works *against* the encoded model rather than with it.
+Plan Marshall does not build a live-verification surface. Verification here is *encoded*: it lives in reproducible, committed tests — `module-tests`, `quality-gate`, CI, and `e2e` — that any session can re-run and that produce the same answer every time. An ephemeral live-browser run evaporates with the session, cannot be replayed, and nothing downstream can gate on it — a live-run surface works *against* the encoded model rather than with it.
 
 == Verification is encoded
 
