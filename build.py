@@ -148,7 +148,12 @@ def check_spdx_headers(paths: list[str]) -> list[str]:
         else:
             continue
         for f in files:
-            lines = f.read_text(encoding='utf-8').splitlines()
+            try:
+                lines = f.read_text(encoding='utf-8').splitlines()
+            except (UnicodeDecodeError, OSError) as exc:
+                print(f'quality-gate: SPDX-header check could not read {f}: {exc}', file=sys.stderr)
+                offenders.append(str(f))
+                continue
             if _spdx_first_line(lines) != SPDX_HEADER:
                 offenders.append(str(f))
     return offenders
@@ -194,7 +199,7 @@ def cmd_quality_gate(module: str | None) -> int:
         print('quality-gate: SPDX-header check FAILED — missing/incorrect header:', file=sys.stderr)
         for offender in offenders:
             print(f'    {offender}', file=sys.stderr)
-        print(f'    Each file must carry "{SPDX_HEADER}" as its first non-shebang line.', file=sys.stderr)
+        print(f'    Each file must carry "{SPDX_HEADER}" as its first non-shebang, non-encoding-cookie line.', file=sys.stderr)
         return 1
     print('>>> quality-gate: SPDX-header check passed')
 
