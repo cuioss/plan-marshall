@@ -6,11 +6,13 @@ Thank you for your interest in Plan-Marshall! We welcome contributions from the 
 
 Before we can accept your contribution, you must sign our Contributor License Agreement (CLA) once. This happens automatically when you create your first Pull Request via the [CLA Assistant](https://cla-assistant.io/).
 
-### Why a CLA?
+### What the CLA grants
 
-The CLA ensures that:
+The CLA is a relicensing grant, not a copyright assignment. You keep ownership of your contribution. By signing, you grant the project a broad, perpetual, worldwide, royalty-free, irrevocable license to use, reproduce, modify, distribute, and prepare derivative works of your contribution, and — crucially — to sublicense and relicense it under any terms the project chooses, now or in the future.
+
+This grant ensures that:
 - You have the right to contribute the code
-- We have the necessary rights to distribute the code under the AGPL-3.0-only license
+- The project may distribute your contribution under its current license and may relicense or sublicense it (for example, to issue commercial licenses or to change the project's future license terms) without seeking your renewed permission
 
 ## How to Contribute
 
@@ -53,7 +55,7 @@ We expect all contributors to interact respectfully and constructively. Insults,
 
 ## License
 
-By contributing, you agree that your contribution will be published under the [AGPL-3.0-only](LICENSE.md) license.
+By contributing, you agree that your contribution will be published under the [FSL-1.1-ALv2](LICENSE.md) license.
 
 ## Questions?
 
