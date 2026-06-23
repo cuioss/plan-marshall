@@ -968,7 +968,20 @@ FOR each step_id in manifest.phase_6.steps:
             - push: false
             - create-pr: false
 
-      (c) IF the porcelain output is empty, the mutating step produced no net change — record nothing and proceed to item 6.
+          **Re-stamp `head_at_completion` (mandatory for `HEAD_DEPENDENT_STEPS` members)**: the instrumentation commit advances the feature-branch HEAD past the SHA the step recorded on its terminal `mark-step-done` call (the step captured `git rev-parse HEAD` BEFORE its edits were committed, because the dispatcher — not the step — owns the commit). For a `mutates_source: true` step that is ALSO a `HEAD_DEPENDENT_STEPS` member (currently `finalize-step-simplify`, `automated-review`, `sonar-roundtrip`), leaving the stale pre-commit SHA on the record makes the item-1 re-entry check observe `head_at_completion != live HEAD` and RE-FIRE the step on every resume — defeating the SKIP optimization. After the commit succeeds, resolve the new HEAD and re-stamp the step's record so a converged-tree re-entry SKIPs correctly:
+
+          git -C {worktree_path} rev-parse HEAD
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+            --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome done \
+            --head-at-completion {new_commit_sha} \
+            --display-detail "{the step's own display_detail, preserved}"
+          ```
+
+          This re-stamp is a no-op for `mutates_source: true` steps that are NOT in `HEAD_DEPENDENT_STEPS` (none today) — skip it when `step_id NOT IN HEAD_DEPENDENT_STEPS`.
+
+      (c) IF the porcelain output is empty, the mutating step produced no net change — record nothing and proceed to item 6. The step's pre-commit `head_at_completion` already equals the live HEAD (no commit was made), so no re-stamp is needed.
 
       **Post-PR re-push**: when a `mutates_source: true` step that runs AFTER `create-pr` (e.g. `automated-review`, `sonar-roundtrip`) commits a loop-back fix via this instrumentation, the dispatcher re-invokes the `push` step so the PR HEAD advances and re-review fires. The `push` step is a pure barrier (it carries no commit logic and is NOT in `HEAD_DEPENDENT_STEPS`); the dispatcher re-invokes it explicitly here rather than relying on a HEAD-comparison re-fire. Read-only (`mutates_source: false`) steps never reach item 5f's instrumentation and never trigger a re-push.
 

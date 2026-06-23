@@ -340,8 +340,9 @@ DEFAULT_PLAN_EXECUTE = {
     # When true (the default), the execute loop commits per-deliverable on the
     # feature branch and phase-6-finalize pushes + opens a PR. When false, the
     # run is local-only: per-deliverable commits are still made, but the
-    # phase-6 push/PR steps are stripped by the manage-execution-
-    # manifest commit_push_disabled pre-filter.
+    # phase-6 push, pre-push-quality-gate, and pre-submission-self-review steps
+    # are stripped by the manage-execution-manifest commit_push_disabled
+    # pre-filter.
     'commit_and_push': True,
     'max_iterations': 5,
     # Per-deliverable build gating phase-5-execute's chain-tail focused build

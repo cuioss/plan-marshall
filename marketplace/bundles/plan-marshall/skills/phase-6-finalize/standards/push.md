@@ -61,7 +61,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-6-finalize) Loading plan-marshall:workflow-integration-git"
 ```
 
-```
+```text
 Skill: plan-marshall:workflow-integration-git
 ```
 

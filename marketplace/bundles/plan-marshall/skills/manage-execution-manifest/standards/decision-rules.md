@@ -107,7 +107,7 @@ After the seven-row matrix runs, two post-matrix transforms inspect the matrix o
 
 **Decision log line** (in addition to the row's own log line):
 
-```
+```text
 (plan-marshall:manage-execution-manifest:compose) push omitted — commit_and_push=false
 ```
 

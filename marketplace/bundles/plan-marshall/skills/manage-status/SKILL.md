@@ -307,7 +307,7 @@ The `--loop-back-target` flag encodes the granularity invariant from the phase-6
 
 The flag is REQUIRED on every `loop_back` outcome (returns `error: missing_loop_back_target` when absent) and FORBIDDEN on every other outcome (returns `error: unexpected_loop_back_target`). The `argparse` `choices` enforce the two-value enumeration at parse time. There is no backwards-compat fallback — every loop-back-emitting call site MUST classify the disposition before persisting the outcome.
 
-**Storage shape** (breaking — replaces the old bare-string shape):
+**Storage shape**:
 
 ```json
 status.metadata.phase_steps[{phase}][{step}] = {
@@ -318,15 +318,15 @@ status.metadata.phase_steps[{phase}][{step}] = {
 }
 ```
 
-Both the `metadata` and `phase_steps` containers are created on demand. Bare-string entries from prior versions are treated as drift — see conflict semantics below. The `head_at_completion` and `loop_back_target` keys are only present when the corresponding flag was supplied (per the `_build_entry` helper); `loop_back_target` is structurally guaranteed to be present iff `outcome == "loop_back"`.
+Both the `metadata` and `phase_steps` containers are created on demand. A non-dict (bare-string) entry is rejected with `error: legacy_string_entry` — see conflict semantics below. The `head_at_completion` and `loop_back_target` keys are only present when the corresponding flag was supplied (per the `_build_entry` helper); `loop_back_target` is structurally guaranteed to be present iff `outcome == "loop_back"`.
 
 **Semantics**:
 - **Idempotent on identical outcome AND display_detail AND head_at_completion AND loop_back_target**: If the step already has the requested outcome and all four fields match, no file write occurs and `changed: false` is returned.
 - **Detail / head / loop_back_target update**: If the outcome matches but any of `display_detail`, `head_at_completion`, or `loop_back_target` differ, the command updates the entry in place and returns `changed: true`.
 - **Conflict on differing outcome**: If the step already has a different outcome and `--force` is not supplied, the command returns `error: conflict` with the existing outcome surfaced in the response. Supplying `--force` overwrites the existing value (and detail / head / loop_back_target).
-- **Legacy drift rejection**: If the existing entry is a bare string (pre-migration shape), the command returns `error: legacy_string_entry` and refuses to write. The caller must migrate `status.metadata.phase_steps` to the dict shape before retrying — there is no automatic migration.
+- **Bare-string entry rejection**: If the existing entry is a bare string rather than a dict, the command returns `error: legacy_string_entry` and refuses to write. Only the dict shape above is accepted.
 
-> **Forward reference — `phase_steps_complete` invariant**: Downstream phase skills and verification helpers treat `status.metadata.phase_steps[{phase}]` as the authoritative record of which intra-phase steps have been marked `done` or `skipped`. A phase is considered `phase_steps_complete` when every step in the phase's declared step list has a dict entry with `outcome == 'done'`. The invariant reader rejects bare-string entries as legacy drift. Consumers must not fabricate entries by other means — always go through `mark-step-done`.
+> **Forward reference — `phase_steps_complete` invariant**: Downstream phase skills and verification helpers treat `status.metadata.phase_steps[{phase}]` as the authoritative record of which intra-phase steps have been marked `done` or `skipped`. A phase is considered `phase_steps_complete` when every step in the phase's declared step list has a dict entry with `outcome == 'done'`. The invariant reader rejects bare-string entries. Consumers must not fabricate entries by other means — always go through `mark-step-done`.
 
 **Output — idempotent no-op** (TOON):
 ```toon

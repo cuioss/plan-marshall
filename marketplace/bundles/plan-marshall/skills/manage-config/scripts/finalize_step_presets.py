@@ -119,9 +119,10 @@ class FinalizeStepPresets:
         'default:archive-plan',
         'plan-marshall:plan-retrospective',
     ]
-    """The ``STANDARD`` set plus the Sonar roundtrip, the pre-push quality
-    gate, and the opt-in ``plan-marshall:plan-retrospective`` bundle step —
-    the maximal pipeline for projects running the full quality stack."""
+    """The ``STANDARD`` set plus the simplify sweep, the Sonar roundtrip, the
+    pre-push quality gate, and the opt-in ``plan-marshall:plan-retrospective``
+    bundle step — the maximal pipeline for projects running the full quality
+    stack."""
 
     # ---- canonical name table -------------------------------------------
 
@@ -143,8 +144,9 @@ class FinalizeStepPresets:
             'ci-verify, and automated-review. No Sonar roundtrip.'
         ),
         'full': (
-            'Full quality stack — the standard set plus sonar-roundtrip, '
-            'pre-push-quality-gate, and the opt-in plan-retrospective step.'
+            'Full quality stack — the standard set plus finalize-step-simplify, '
+            'sonar-roundtrip, pre-push-quality-gate, and the opt-in '
+            'plan-retrospective step.'
         ),
     }
 

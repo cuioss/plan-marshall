@@ -27,11 +27,7 @@ Per-step validation criteria below apply when the corresponding step appears in 
 
 ## Push Barrier (when `push` is in the manifest)
 
-- Assert the working tree is clean (every deliverable was committed during phase-5-execute; the dispatcher commits each `mutates_source: true` step's output before this barrier)
-- Run the freshness gate (`pre-commit-verify-freshness`) and proceed only on `status: fresh`
-- Push the converged feature branch to remote
-- Produce NO commit — this step carries no commit logic
-- Handle push failures (remote rejected, authentication)
+The pure-push-barrier contract (clean-tree assertion, freshness gate, push-without-commit, push-failure handling) is owned by [`push.md`](push.md) — see that document for the authoritative barrier semantics. This section enforces only that, when `push` is in the manifest, the barrier ran to completion against a clean converged tree.
 
 ## PR Creation (when `create-pr` is in the manifest)
 
