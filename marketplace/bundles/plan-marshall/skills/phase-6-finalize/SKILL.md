@@ -968,9 +968,11 @@ FOR each step_id in manifest.phase_6.steps:
             - push: false
             - create-pr: false
 
-          **Re-stamp `head_at_completion` (mandatory for `HEAD_DEPENDENT_STEPS` members)**: the instrumentation commit advances the feature-branch HEAD past the SHA the step recorded on its terminal `mark-step-done` call (the step captured `git rev-parse HEAD` BEFORE its edits were committed, because the dispatcher — not the step — owns the commit). For a `mutates_source: true` step that is ALSO a `HEAD_DEPENDENT_STEPS` member (currently `finalize-step-simplify`, `automated-review`, `sonar-roundtrip`), leaving the stale pre-commit SHA on the record makes the item-1 re-entry check observe `head_at_completion != live HEAD` and RE-FIRE the step on every resume — defeating the SKIP optimization. After the commit succeeds, resolve the new HEAD and re-stamp the step's record so a converged-tree re-entry SKIPs correctly:
+          **Re-stamp `head_at_completion` (mandatory for `HEAD_DEPENDENT_STEPS` members)**: the instrumentation commit advances the feature-branch HEAD past the SHA the step recorded on its terminal `mark-step-done` call (the step captured `git rev-parse HEAD` BEFORE its edits were committed, because the dispatcher — not the step — owns the commit). For a `mutates_source: true` step that is ALSO a `HEAD_DEPENDENT_STEPS` member (currently `finalize-step-simplify`, `automated-review`, `sonar-roundtrip`), leaving the stale pre-commit SHA on the record makes the item-1 re-entry check observe `head_at_completion != live HEAD` and RE-FIRE the step on every resume — defeating the SKIP optimization. After the commit succeeds, resolve the new HEAD (`{new_commit_sha}`) and re-stamp the step's record so a converged-tree re-entry SKIPs correctly:
 
+          ```bash
           git -C {worktree_path} rev-parse HEAD
+          ```
 
           ```bash
           python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \

@@ -75,7 +75,13 @@ Against the clean tree this barrier asserts, the Commit Changes workflow's Step 
 
 Record that this step ran on the live plan. The `push` step is NOT a member of `HEAD_DEPENDENT_STEPS` — it is a pure barrier the dispatcher re-invokes explicitly after a post-PR `mutates_source` step commits (see `phase-6-finalize/SKILL.md` Step 3 item 5f § "Post-PR re-push"), so it does NOT capture or forward `--head-at-completion`.
 
-Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the push outcome:
+Resolve `{branch}` — the feature branch just pushed — from the worktree HEAD:
+
+```bash
+git -C {worktree_path} rev-parse --abbrev-ref HEAD
+```
+
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the push outcome, substituting the resolved `{branch}`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
