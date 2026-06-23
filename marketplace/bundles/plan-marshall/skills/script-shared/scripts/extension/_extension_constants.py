@@ -175,6 +175,8 @@ def _build_profile_patterns() -> dict[str, str]:
 
 PROFILE_PATTERNS = _build_profile_patterns()
 
-APPLICABLE_PROFILES = ('implementation', 'module_testing', 'integration_testing', 'quality', 'documentation')
+APPLICABLE_PROFILES = ('implementation', 'module_testing', 'integration_testing', 'quality', 'documentation', 'security')
 """Profile names iterated during _build_applicable_result(). Does not include 'core'
-which is always merged into each profile."""
+which is always merged into each profile. The 'security' profile is resolution-only:
+a domain declaring skills_by_profile.security resolves them under the 'security' key,
+but the profile is NOT auto-included in phase-4 task creation."""
