@@ -29,6 +29,7 @@ from _cmd_effort import (
 from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_finalize_steps import cmd_finalize_steps_apply_preset
 from _cmd_init import cmd_init
+from _cmd_recipe_match import cmd_recipe_match
 from _cmd_skill_domains import (
     cmd_list_verify_steps,
     cmd_skill_domains,
@@ -624,6 +625,24 @@ def main() -> int:
     p_rr = subparsers.add_parser('resolve-recipe', help='Resolve a specific recipe by key', allow_abbrev=False)
     p_rr.add_argument('--recipe', required=True, help='Recipe key (e.g., refactor-to-standards)')
 
+    # --- recipe-match ---
+    # Tier 1 recipe-match: score free-form --request-text against the live
+    # recipe registry via the shared recipe_scoring core. Heuristic-first,
+    # zero LLM call inside the script (the bounded LLM fallback is the
+    # orchestrator's responsibility).
+    p_rm = subparsers.add_parser(
+        'recipe-match',
+        help='Score request text against the recipe registry (deterministic, heuristic-first)',
+        allow_abbrev=False,
+    )
+    p_rm.add_argument('--request-text', dest='request_text', required=True, help='Free-form request narrative to score')
+    p_rm.add_argument(
+        '--threshold',
+        type=float,
+        default=0.7,
+        help='Auto-route confidence threshold (default 0.7); top match >= threshold sets meets_auto_route_threshold',
+    )
+
     # --- resolve-outline-skill ---
     p_ros = subparsers.add_parser('resolve-outline-skill', help='Resolve outline skill for domain', allow_abbrev=False)
     add_domain_arg(p_ros)
@@ -747,6 +766,8 @@ def main() -> int:
         result = cmd_list_recipes(args)
     elif args.noun == 'resolve-recipe':
         result = cmd_resolve_recipe(args)
+    elif args.noun == 'recipe-match':
+        result = cmd_recipe_match(args)
     elif args.noun == 'resolve-outline-skill':
         result = cmd_resolve_outline_skill(args)
     elif args.noun == 'list-finalize-steps':
