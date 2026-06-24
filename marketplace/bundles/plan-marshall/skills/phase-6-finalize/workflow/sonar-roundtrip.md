@@ -138,7 +138,7 @@ When the subagent returns `status: loop_back` it has created fix tasks (FIX outc
 
 **On `loop_back` return from the triage dispatch** (one or more `sonar-issue` findings closed with `--resolution fixed` and a fix-task reference, an overflow envelope was filed, OR all findings were inline-fixable but the calling step needs replay), `loop_back_needed = true`. Read `loop_back_target` from the triage dispatch's return TOON (REQUIRED on every `status: loop_back` return per [`triage.md`](../../plan-marshall/workflow/triage.md) § Step 7):
 
-1. The triage dispatch already allocated the fix tasks (see [`triage.md`](triage.md) § Step 3c FIX action). No further task allocation here.
+1. The triage dispatch already allocated the fix tasks (see [`triage.md`](../../plan-marshall/workflow/triage.md) § Step 3c FIX action). No further task allocation here.
 
 2. **Conditional `set-phase`** — only call `manage-status set-phase --phase 5-execute` when `loop_back_target == "5-execute"` (full-phase rollback for fix-task-required dispositions). When `loop_back_target == "6-finalize"` (inline replay for inline-fixable dispositions), the persisted `current_phase` stays at `6-finalize` and NO `set-phase` call is issued.
 

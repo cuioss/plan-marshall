@@ -55,7 +55,7 @@ This step runs as inline orchestration (producer fetch + finding enumeration in 
 3. The dispatcher continues with the next manifest step. The pipeline does NOT abort; later steps still run.
 4. On the next Phase 6 entry, the resumable re-entry check sees `outcome=failed` and retries this step from scratch (one fresh attempt per invocation).
 
-There is no internal soft-timeout, polling cap, or partial-progress checkpoint inside this document — the wrapper is the only timeout authority. Standards-internal commands (`pr wait-for-comments`) carry their own short polling intervals but never their own outer ceiling. **Pre-emptive overflow handling** lives in [`triage.md`](triage.md) § Step 5: the dispatched triage subagent files a `pr-comment-overflow` finding and returns `status: loop_back` when its budget is nearly exhausted, so high comment volume produces a clean loop-back rather than a wrapper timeout.
+There is no internal soft-timeout, polling cap, or partial-progress checkpoint inside this document — the wrapper is the only timeout authority. Standards-internal commands (`pr wait-for-comments`) carry their own short polling intervals but never their own outer ceiling. **Pre-emptive overflow handling** lives in [`triage.md`](../../plan-marshall/workflow/triage.md) § Step 5: the dispatched triage subagent files a `pr-comment-overflow` finding and returns `status: loop_back` when its budget is nearly exhausted, so high comment volume produces a clean loop-back rather than a wrapper timeout.
 
 ## Inputs
 
@@ -245,7 +245,7 @@ This contract lets the orchestrator distinguish between an in-progress triage ru
 
 ### Handle findings (loop-back)
 
-The triage subagent above allocated fix tasks and posted reviewer-facing thread replies inline (see the FIX action body in [`triage.md`](triage.md)). This section only handles the loop-back bookkeeping.
+The triage subagent above allocated fix tasks and posted reviewer-facing thread replies inline (see the FIX action body in [`triage.md`](../../plan-marshall/workflow/triage.md)). This section only handles the loop-back bookkeeping.
 
 **If the triage subagent returned `status: loop_back`** (one or more `pr-comment` findings closed with `--resolution fixed` and a fix-task reference, an overflow envelope was filed, OR all findings were inline-fixable but the calling step needs replay), `loop_back_needed = true`. Read `loop_back_target` from the triage subagent's return TOON (REQUIRED on every `status: loop_back` return per [`triage.md`](../../plan-marshall/workflow/triage.md) § Step 7):
 
