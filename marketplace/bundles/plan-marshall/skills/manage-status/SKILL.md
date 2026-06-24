@@ -659,6 +659,8 @@ completed_phases: 2
 
 Deterministic planning-lane router with two sub-verbs (`route` / `escalate`). Resolves `planning_lane ∈ {light, deep}` from cheap field reads plus a `request.md` regex — **zero codebase discovery, zero LLM cognition**. The default is `light`; any deep-precondition signal forces `deep`. Escalation is **one-way** (light may ratchet to deep, never deep→light).
 
+**Routing-tier sequencing** — this `planning-lane` router is **Tier 2** of the routing model. Tier 1 recipe-match (`manage-config recipe-match`, phase-1-init Step 5c) runs **ahead** of this `planning-lane route` call (phase-1-init Step 8b): registry-wide recipe scoring precedes the light/deep lane decision. The router's own resolution logic is unaffected by Tier 1 — the sequencing note records ordering only. See `manage-config` Canonical invocations → `recipe-match` for the Tier 1 verb contract and `ref-workflow-architecture/standards/phase-lifecycle.md` for the routing-tier position in the lifecycle.
+
 **route** — evaluate the signal set, resolve the lane, and (with `--persist`) write `status.metadata.planning_lane`. Emits one decision-log line naming every signal value and the winning predicate.
 
 The signal set (`deep` IFF any deep-precondition fires; otherwise `light`):
