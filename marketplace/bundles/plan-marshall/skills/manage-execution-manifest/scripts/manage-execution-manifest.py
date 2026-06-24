@@ -1468,7 +1468,7 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 #
 # The transform NEVER touches `automated-review`: the bot-review invariant
 # (enforced by `_apply_bot_enforcement_guard`) is orthogonal and is preserved
-# verbatim — the three finalize gates are the only
+# verbatim — the four finalize gates are the only
 # finalize steps this transform may add or drop. Run-at-all values are validated
 # at set time by `manage-config`'s `validate_run_at_all`; the composer
 # defensively treats any non-`{always,never}` value (including `auto` and a
