@@ -102,6 +102,8 @@ _afst = _load('_analyze_finalize_step_token.py', '_afst_fixtures')
 _ascc = _load('_analyze_step_configurable_contract.py', '_ascc_fixtures')
 _aroe = _load('_analyze_role_field.py', '_aroe_fixtures')
 _advd = _load('_analyze_declared_vs_disk.py', '_advd_fixtures')
+_apmt = _load('_analyze_provides_method_table.py', '_apmt_fixtures')
+_alc = _load('_analyze_literal_count.py', '_alc_fixtures')
 _apj = _load('_analyze_plugin_json.py', '_apj_fixtures')
 _asn = _load('_analyze_skill_notation.py', '_asn_fixtures')
 _afm = _load('_analyze_frontmatter.py', '_afm_fixtures')
@@ -540,6 +542,59 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
             'b/.claude-plugin/plugin.json': (
                 '{"name": "b", "skills": ["./skills/ghost-skill"]}\n'
             ),
+        },
+    )
+    # An Extension subclass with no real overrides, paired with a SKILL.md whose
+    # Extension API table lists ``provides_triage()`` — a phantom mirror row.
+    corpus['provides-method-table-drift'] = FixtureSpec(
+        analyzer=_apmt.analyze_provides_method_table,
+        files={
+            'b/skills/plan-marshall-plugin/extension.py': (
+                'from plan_marshall.script_shared import ExtensionBase\n'
+                '\n\n'
+                'class Extension(ExtensionBase):\n'
+                '    pass\n'
+            ),
+            'b/skills/plan-marshall-plugin/SKILL.md': (
+                '# plan-marshall-plugin\n\n'
+                '## Extension API\n\n'
+                '| Hook | Description |\n'
+                '|------|-------------|\n'
+                '| `provides_triage()` | Triage skill reference |\n'
+            ),
+        },
+    )
+    # An extension-api SKILL.md whose Extension Points table claims 1
+    # implementation of ``provides_triage()`` while no bundle extension.py
+    # overrides it — a stale count mirror (stated 1, actual 0).
+    corpus['literal-count-drift'] = FixtureSpec(
+        analyzer=_alc.analyze_literal_count,
+        files={
+            'plan-marshall/skills/extension-api/SKILL.md': (
+                '# Extension API\n\n'
+                '## Extension Points\n\n'
+                '| Extension Point | Hook Method | Contract | Implementations |\n'
+                '|-----------------|-------------|----------|-----------------|\n'
+                '| Triage | `provides_triage()` | [doc](standards/x.md) | 1 |\n'
+            ),
+        },
+    )
+    # A component SKILL.md carrying a relative link to a file that does not
+    # exist under the scratch tree — a broken-relative-link.
+    corpus['broken-relative-link'] = FixtureSpec(
+        analyzer=_da.analyze_markdown_mirror_rules,
+        files={
+            'b/skills/fixture-skill/SKILL.md': (
+                '# Fixture\n\nSee [the standard](standards/missing.md) for details.\n'
+            ),
+        },
+    )
+    # A component SKILL.md whose fenced block opens without a language
+    # info-string — a fenced-code-no-language defect.
+    corpus['fenced-code-no-language'] = FixtureSpec(
+        analyzer=_da.analyze_markdown_mirror_rules,
+        files={
+            'b/skills/fixture-skill/SKILL.md': '# Fixture\n\n```\nbare code block\n```\n',
         },
     )
     corpus['plugin-json-orphan-component'] = FixtureSpec(
@@ -1164,12 +1219,10 @@ def _run_spec(spec: FixtureSpec) -> set[str]:
         _materialize(scratch_root, spec.files)
         if spec.analyzer is not None:
             findings = spec.analyzer(scratch_root)
-        elif spec.component is not None:
+        else:
             component = spec.component(scratch_root)
             result = analyze_component(component)
             findings = result.get('issues', [])
-        else:  # pragma: no cover — defensive
-            findings = []
     return _finding_rule_ids(findings)
 
 

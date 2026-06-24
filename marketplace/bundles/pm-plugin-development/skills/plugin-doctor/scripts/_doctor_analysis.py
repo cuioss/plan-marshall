@@ -23,8 +23,10 @@ from _analyze import (
 )
 from _analyze_manage_findings_invocation import scan_skill_for_manage_findings_invocation
 from _analyze_markdown import (
+    check_broken_relative_link,
     check_checklist_patterns,
     check_display_detail_violations,
+    check_fenced_code_no_language,
     check_forbidden_metadata,
     check_resolver_gap,
     get_bloat_classification,
@@ -616,6 +618,42 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
             }
         )
 
+    # broken-relative-link (error) — a relative markdown link whose target is
+    # missing on disk. Driven by the analyzer in _analyze_markdown.py.
+    for violation in rules.get('broken_relative_link_violations', []):
+        issues.append(
+            {
+                'type': 'broken-relative-link',
+                'rule_id': 'broken-relative-link',
+                'file': file_path,
+                'line': violation.get('line'),
+                'severity': 'error',
+                'fixable': False,
+                'description': violation.get(
+                    'message', 'relative link target does not resolve on disk (broken-relative-link)'
+                ),
+                'details': violation,
+            }
+        )
+
+    # fenced-code-no-language (warning) — a fenced code block opened without an
+    # info-string (MD040). Driven by the analyzer in _analyze_markdown.py.
+    for violation in rules.get('fenced_code_no_language_violations', []):
+        issues.append(
+            {
+                'type': 'fenced-code-no-language',
+                'rule_id': 'fenced-code-no-language',
+                'file': file_path,
+                'line': violation.get('line'),
+                'severity': 'warning',
+                'fixable': False,
+                'description': violation.get(
+                    'message', 'fenced code block opens with no language info-string (fenced-code-no-language)'
+                ),
+                'details': violation,
+            }
+        )
+
     # Check CI rule
     ci = analysis.get('continuous_improvement_rule', {})
     if ci.get('format', {}).get('agent_lessons_via_skill'):
@@ -830,6 +868,27 @@ def analyze_subdocuments(skill_dir: Path) -> list[dict]:
                     }
                 )
 
+            # broken-relative-link — relative markdown link with no on-disk target.
+            for violation in check_broken_relative_link(content, str(md_file)):
+                issues.append(
+                    {
+                        'type': 'broken-relative-link',
+                        'line': violation.get('line'),
+                        'target': violation.get('target'),
+                        'message': violation.get('message'),
+                    }
+                )
+
+            # fenced-code-no-language — fenced block opened without an info-string.
+            for violation in check_fenced_code_no_language(content):
+                issues.append(
+                    {
+                        'type': 'fenced-code-no-language',
+                        'line': violation.get('line'),
+                        'message': violation.get('message'),
+                    }
+                )
+
             if issues:
                 entry['issues'] = issues
 
@@ -919,8 +978,118 @@ def extract_issues_from_subdoc_analysis(subdoc_results: list[dict], skill_path: 
                         'description': f'display_detail violation ({code}) at line {issue.get("line")}: "{value}"',
                     }
                 )
+            elif issue['type'] == 'broken-relative-link':
+                issues.append(
+                    {
+                        'type': 'broken-relative-link',
+                        'rule_id': 'broken-relative-link',
+                        'file': file_path,
+                        'line': issue.get('line'),
+                        'severity': 'error',
+                        'fixable': False,
+                        'description': issue.get(
+                            'message', 'relative link target does not resolve on disk (broken-relative-link)'
+                        ),
+                        'details': issue,
+                    }
+                )
+            elif issue['type'] == 'fenced-code-no-language':
+                issues.append(
+                    {
+                        'type': 'fenced-code-no-language',
+                        'rule_id': 'fenced-code-no-language',
+                        'file': file_path,
+                        'line': issue.get('line'),
+                        'severity': 'warning',
+                        'fixable': False,
+                        'description': issue.get(
+                            'message',
+                            'fenced code block opens with no language info-string (fenced-code-no-language)',
+                        ),
+                        'details': issue,
+                    }
+                )
 
     return issues
+
+
+# =============================================================================
+# Markdown-mirror rules (marketplace-wide static check)
+# =============================================================================
+
+
+def analyze_markdown_mirror_rules(marketplace_root: Path) -> list[dict]:
+    """Scan every component markdown file for broken-relative-link / fenced-code-no-language.
+
+    Walks ``marketplace_root/*/{skills,agents,commands}/**/*.md`` and runs the
+    two markdown-mirror checks (``check_broken_relative_link`` and
+    ``check_fenced_code_no_language``) directly on each file. This is a
+    dedicated whole-tree helper for the two rules — distinct from the
+    per-component ``analyze_component`` path that surfaces the same rules during
+    ``analyze``. The two rules are currently **analyze-only**: this helper is
+    NOT imported or invoked by ``doctor-marketplace.py::cmd_quality_gate`` (the
+    gate explicitly excludes ``broken-relative-link`` and
+    ``fenced-code-no-language`` — see the NOTE in ``cmd_quality_gate``). It
+    remains available for a future activation step that promotes the two rules
+    to the build-failing gate once the tree is clean.
+
+    Each finding is a standard issue dict carrying ``rule_id`` so the gate's
+    ``_scoped`` path filter and rule summaries treat it like the other
+    marketplace-wide analyzers' findings.
+    """
+    findings: list[dict] = []
+    if not marketplace_root.is_dir():
+        return findings
+    try:
+        bundle_dirs = sorted(marketplace_root.iterdir())
+    except OSError:
+        return findings
+    for bundle_dir in bundle_dirs:
+        if not bundle_dir.is_dir():
+            continue
+        for sub in ('skills', 'agents', 'commands'):
+            sub_dir = bundle_dir / sub
+            if not sub_dir.is_dir():
+                continue
+            try:
+                md_files = sorted(sub_dir.rglob('*.md'))
+            except OSError:
+                continue
+            for md_file in md_files:
+                if not md_file.is_file():
+                    continue
+                try:
+                    content = md_file.read_text(encoding='utf-8', errors='replace')
+                except OSError:
+                    continue
+                file_path = str(md_file)
+                for violation in check_broken_relative_link(content, file_path, boundary_dir=marketplace_root):
+                    findings.append(
+                        {
+                            'type': 'broken-relative-link',
+                            'rule_id': 'broken-relative-link',
+                            'file': file_path,
+                            'line': violation.get('line'),
+                            'severity': 'error',
+                            'fixable': False,
+                            'description': violation.get('message'),
+                            'details': violation,
+                        }
+                    )
+                for violation in check_fenced_code_no_language(content):
+                    findings.append(
+                        {
+                            'type': 'fenced-code-no-language',
+                            'rule_id': 'fenced-code-no-language',
+                            'file': file_path,
+                            'line': violation.get('line'),
+                            'severity': 'warning',
+                            'fixable': False,
+                            'description': violation.get('message'),
+                            'details': violation,
+                        }
+                    )
+    return findings
 
 
 # =============================================================================

@@ -744,6 +744,169 @@ def check_display_detail_violations(content: str) -> list:
     return violations
 
 
+# Markdown inline link: ``[text](target)``. The target may carry an optional
+# ``#fragment`` and an optional title. Captured loosely; structural filtering
+# (scheme / anchor-only / absolute) happens in the check below.
+_MD_LINK_RE = re.compile(r'\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)')
+
+# A fenced-code opening line: three-or-more backticks (or tildes) optionally
+# followed by an info-string. Captures the info-string (may be empty).
+_FENCE_OPEN_RE = re.compile(r'^(\s*)(`{3,}|~{3,})\s*(\S*)\s*$')
+
+# An inline-code span: a run of one-or-more backticks, the shortest run of
+# content up to a matching backtick run, then a closing backtick run of the
+# same length (CommonMark inline-code delimiting). Content inside a span is
+# literal text — a ``[text](path)`` / ``![](path)`` literal there is an
+# illustrative example, not a real on-disk reference.
+_INLINE_CODE_RE = re.compile(r'(`+)(?:.+?)\1')
+
+
+def _strip_inline_code_spans(line: str) -> str:
+    """Blank out inline-code spans on a line so their contents are not scanned.
+
+    Replaces each ```...``` span (including the delimiting backticks)
+    with an equal-length run of spaces, preserving the line's length and the
+    column positions of any text outside the spans. A relative-link literal
+    that lives inside a span is therefore invisible to the link scanner.
+    """
+    return _INLINE_CODE_RE.sub(lambda m: ' ' * len(m.group(0)), line)
+
+
+def check_broken_relative_link(
+    content: str, file_path: str, boundary_dir: 'Path | None' = None
+) -> list:
+    """Check broken-relative-link: a relative markdown link with no on-disk target.
+
+    Resolves every ``[text](relative/path.md)`` link target against the linking
+    file's own directory and emits a finding when the resolved target does not
+    exist on disk. This catches the off-by-``../`` class of stale cross-reference.
+
+    ``boundary_dir`` sets the containment root for path traversal checks.  Pass
+    the marketplace root (or bundle root) so that valid cross-directory
+    references that resolve inside the tree (e.g. ``../../other-skill/file.md``)
+    are not rejected as out-of-bounds.  When ``None`` the linking file's parent
+    is used as the boundary, which is the conservative default for callers that
+    do not know the broader tree root.
+
+    Out of scope (never flagged):
+
+    - absolute URLs (``http://`` / ``https://`` / ``mailto:`` / any ``scheme:``);
+    - root-absolute paths (a leading ``/``);
+    - pure-anchor links (a leading ``#``);
+    - links inside fenced code blocks (illustrative, not real references);
+    - links inside inline-code spans (single/multi backticks — ``` `[text](p)` ```
+      and ``` `![](p)` ``` literals are illustrative, not real references).
+
+    A fragment (``path.md#section``) is stripped before resolution — only the
+    file part is checked for existence. Returns a list of ``{line, target,
+    message}`` dicts; the caller wraps these into the standard issue schema.
+    """
+    findings: list = []
+    base_dir = Path(file_path).parent
+    scan_boundary = (boundary_dir if boundary_dir is not None else base_dir).resolve()
+    fence_map = _fenced_line_indices(content)
+    lines = content.split('\n')
+    for idx, line in enumerate(lines):
+        if idx in fence_map:
+            continue
+        # Inline-code spans on this line hold literal example text — blank them
+        # out (length-preserving) before scanning so a link literal inside
+        # backticks is not mistaken for a real on-disk reference.
+        scan_line = _strip_inline_code_spans(line)
+        for match in _MD_LINK_RE.finditer(scan_line):
+            target = match.group(1)
+            # Scheme-bearing (URL/mailto), root-absolute, and pure-anchor links
+            # are not relative on-disk references.
+            if target.startswith(('#', '/')) or re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*:', target):
+                continue
+            file_part = target.split('#', 1)[0]
+            if not file_part:
+                continue
+            resolved = (base_dir / file_part).resolve()
+            if not resolved.is_relative_to(scan_boundary):
+                # Path escapes the scan tree — treat as non-existent so we
+                # never probe outside the boundary root.
+                pass
+            elif resolved.exists():
+                continue
+            findings.append(
+                {
+                    'line': idx + 1,
+                    'target': target,
+                    'message': (
+                        f'relative link target `{target}` does not resolve to a file on disk '
+                        f'(broken-relative-link)'
+                    ),
+                }
+            )
+    return findings
+
+
+def _fenced_line_indices(content: str) -> set:
+    """Return the 0-based line indices that lie inside a fenced code block.
+
+    Includes the opening and closing fence delimiter lines so a link or
+    info-string on a delimiter line is never mistaken for body content.
+    """
+    inside: set = set()
+    in_fence = False
+    fence_marker = ''
+    for idx, line in enumerate(content.split('\n')):
+        match = _FENCE_OPEN_RE.match(line)
+        if not in_fence:
+            if match:
+                in_fence = True
+                fence_marker = match.group(2)[0]  # ` or ~
+                inside.add(idx)
+        else:
+            inside.add(idx)
+            stripped = line.strip()
+            # A closing fence is a run of the same marker char with no info-string.
+            if stripped and set(stripped) == {fence_marker} and len(stripped) >= 3:
+                in_fence = False
+                fence_marker = ''
+    return inside
+
+
+def check_fenced_code_no_language(content: str) -> list:
+    """Check fenced-code-no-language: a fenced block whose opening line has no info-string.
+
+    Flags every ```` ``` ```` (or ``~~~``) opening fence that carries no
+    info-string (the MD040 "fenced code language" defect). The closing fence of
+    a block legitimately carries no info-string, so only *opening* fences are
+    inspected — the scanner tracks fence state to distinguish the two.
+
+    Returns a list of ``{line, message}`` dicts; the caller wraps these into the
+    standard issue schema.
+    """
+    findings: list = []
+    in_fence = False
+    fence_marker = ''
+    for idx, line in enumerate(content.split('\n')):
+        match = _FENCE_OPEN_RE.match(line)
+        if not in_fence:
+            if match:
+                in_fence = True
+                fence_marker = match.group(2)[0]
+                info_string = match.group(3)
+                if not info_string:
+                    findings.append(
+                        {
+                            'line': idx + 1,
+                            'message': (
+                                'fenced code block opens with no language info-string '
+                                '(fenced-code-no-language)'
+                            ),
+                        }
+                    )
+        else:
+            stripped = line.strip()
+            if stripped and set(stripped) == {fence_marker} and len(stripped) >= 3:
+                in_fence = False
+                fence_marker = ''
+    return findings
+
+
 def check_rule_violations(content: str, frontmatter: str, component_type: str, has_tools: bool, file_path: str) -> dict:
     """Check for rule violations."""
     agent_task_tool_prohibited = False
@@ -802,6 +965,11 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
     if component_type == 'agent':
         hardcoded_model_on_canonical_violations = check_hardcoded_model_on_canonical(frontmatter, file_path)
 
+    # broken-relative-link + fenced-code-no-language — markdown-mirror drift
+    # rules applied to every component markdown file.
+    broken_relative_link_violations = check_broken_relative_link(content, file_path)
+    fenced_code_no_language_violations = check_fenced_code_no_language(content)
+
     return {
         'agent_task_tool_prohibited': agent_task_tool_prohibited,
         'agent_maven_restricted': agent_maven_restricted,
@@ -814,6 +982,8 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
         'resolver_gap_violations': resolver_gap_violations,
         'display_detail_violations': display_detail_violations,
         'hardcoded_model_on_canonical_violations': hardcoded_model_on_canonical_violations,
+        'broken_relative_link_violations': broken_relative_link_violations,
+        'fenced_code_no_language_violations': fenced_code_no_language_violations,
     }
 
 
