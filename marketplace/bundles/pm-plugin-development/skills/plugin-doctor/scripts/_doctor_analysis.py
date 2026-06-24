@@ -1051,7 +1051,11 @@ def analyze_markdown_mirror_rules(marketplace_root: Path) -> list[dict]:
             sub_dir = bundle_dir / sub
             if not sub_dir.is_dir():
                 continue
-            for md_file in sorted(sub_dir.rglob('*.md')):
+            try:
+                md_files = sorted(sub_dir.rglob('*.md'))
+            except OSError:
+                continue
+            for md_file in md_files:
                 if not md_file.is_file():
                     continue
                 try:
@@ -1059,7 +1063,7 @@ def analyze_markdown_mirror_rules(marketplace_root: Path) -> list[dict]:
                 except OSError:
                     continue
                 file_path = str(md_file)
-                for violation in check_broken_relative_link(content, file_path):
+                for violation in check_broken_relative_link(content, file_path, boundary_dir=marketplace_root):
                     findings.append(
                         {
                             'type': 'broken-relative-link',

@@ -137,7 +137,16 @@ def _is_default_return(node: ast.FunctionDef, default: object) -> bool:
     matches a ``[]`` default. Any other single return — or branching logic —
     is a real override.
     """
-    returns = [stmt for stmt in ast.walk(node) if isinstance(stmt, ast.Return)]
+    returns = []
+    stack: list[ast.AST] = list(node.body)
+    while stack:
+        curr = stack.pop()
+        if isinstance(curr, ast.Return):
+            returns.append(curr)
+        elif isinstance(curr, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        else:
+            stack.extend(ast.iter_child_nodes(curr))
     if not returns:
         return default is None
     if len(returns) != 1:
@@ -272,11 +281,13 @@ def _scan_extension_points_table(
                 break
         if hook_token is None:
             continue
-        # The implementations cell is the bare-integer cell on the row.
-        int_cells = [c for c in cells if _BARE_INT_RE.match(_strip_cell(c))]
-        if not int_cells:
+        # The implementations cell is the 4th column (index 3).
+        if len(cells) < 4:
             continue
-        stated = int(_strip_cell(int_cells[-1]))
+        impl_cell = cells[3]
+        if not _BARE_INT_RE.match(_strip_cell(impl_cell)):
+            continue
+        stated = int(_strip_cell(impl_cell))
         actual = provider_count if hook_token == '*_provider.py' else ast_counts.get(hook_token, 0)
         if stated == actual:
             continue

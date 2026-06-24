@@ -772,12 +772,21 @@ def _strip_inline_code_spans(line: str) -> str:
     return _INLINE_CODE_RE.sub(lambda m: ' ' * len(m.group(0)), line)
 
 
-def check_broken_relative_link(content: str, file_path: str) -> list:
+def check_broken_relative_link(
+    content: str, file_path: str, boundary_dir: 'Path | None' = None
+) -> list:
     """Check broken-relative-link: a relative markdown link with no on-disk target.
 
     Resolves every ``[text](relative/path.md)`` link target against the linking
     file's own directory and emits a finding when the resolved target does not
     exist on disk. This catches the off-by-``../`` class of stale cross-reference.
+
+    ``boundary_dir`` sets the containment root for path traversal checks.  Pass
+    the marketplace root (or bundle root) so that valid cross-directory
+    references that resolve inside the tree (e.g. ``../../other-skill/file.md``)
+    are not rejected as out-of-bounds.  When ``None`` the linking file's parent
+    is used as the boundary, which is the conservative default for callers that
+    do not know the broader tree root.
 
     Out of scope (never flagged):
 
@@ -794,6 +803,7 @@ def check_broken_relative_link(content: str, file_path: str) -> list:
     """
     findings: list = []
     base_dir = Path(file_path).parent
+    scan_boundary = (boundary_dir if boundary_dir is not None else base_dir).resolve()
     fence_map = _fenced_line_indices(content)
     lines = content.split('\n')
     for idx, line in enumerate(lines):
@@ -813,9 +823,9 @@ def check_broken_relative_link(content: str, file_path: str) -> list:
             if not file_part:
                 continue
             resolved = (base_dir / file_part).resolve()
-            if not resolved.is_relative_to(base_dir.resolve()):
-                # Path escapes the scan tree (e.g. ../../ traversal) — treat as
-                # non-existent so we never probe outside the marketplace tree.
+            if not resolved.is_relative_to(scan_boundary):
+                # Path escapes the scan tree — treat as non-existent so we
+                # never probe outside the boundary root.
                 pass
             elif resolved.exists():
                 continue

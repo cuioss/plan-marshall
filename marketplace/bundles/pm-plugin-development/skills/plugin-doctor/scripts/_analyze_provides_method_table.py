@@ -137,7 +137,16 @@ def _is_default_return(node: ast.FunctionDef, default: object) -> bool:
     the default), so the rule never spuriously flags a genuine override as a
     phantom row.
     """
-    returns = [stmt for stmt in ast.walk(node) if isinstance(stmt, ast.Return)]
+    returns = []
+    stack: list[ast.AST] = list(node.body)
+    while stack:
+        curr = stack.pop()
+        if isinstance(curr, ast.Return):
+            returns.append(curr)
+        elif isinstance(curr, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        else:
+            stack.extend(ast.iter_child_nodes(curr))
     if not returns:
         # No explicit return — body is `pass` or only side effects → implicitly
         # returns None. Matches a None default; never matches a [] default.
@@ -221,9 +230,13 @@ def _table_methods(lines: list[str]) -> dict[str, int]:
         # A new heading closes the Extension API section.
         if _HEADING_RE.match(line):
             break
-        # Only markdown table rows are mirror rows.
+        # Only markdown table rows are mirror rows; only the hook-name cell
+        # (first cell) is parsed to avoid false matches from description text.
         if line.lstrip().startswith('|'):
-            for match in _PROVIDES_TOKEN_RE.finditer(line):
+            cells = [c.strip() for c in line.split('|')[1:-1]]
+            if not cells:
+                continue
+            for match in _PROVIDES_TOKEN_RE.finditer(cells[0]):
                 method = f'provides_{match.group(1)}'
                 if method in _HOOK_DEFAULTS and method not in methods:
                     methods[method] = idx + 1
