@@ -213,8 +213,13 @@ def evaluate_signals_pure(
 def _evaluate_signals(plan_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
     """Read S1–S6 signals from disk and delegate scoring to the pure helper.
 
-    Returns a dict carrying every signal's resolved value and its deep-bias
-    boolean, plus the aggregate ``lane`` and the list of fired deep signals.
+    Returns the dict produced by ``evaluate_signals_pure``:
+
+    - ``lane`` — the aggregate ``{light|deep}`` verdict.
+    - ``fired_signals`` — the list of deep-bias signals that fired.
+    - ``signals`` — the resolved S1–S6 input values (``plan_source``,
+      ``scope_estimate``, ``change_type``, ``compatibility``,
+      ``request_concrete``, ``planning_lane_override``).
     """
     plan_source = metadata.get('plan_source')
     change_type = metadata.get('change_type')
