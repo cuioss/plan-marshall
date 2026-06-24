@@ -804,7 +804,7 @@ def _scan_skills_roots_for_implementors(ext_point: str) -> list[dict[str, Any]]:
         One ``bundle-optional`` record per matching ``skills/*/SKILL.md``.
     """
     records: list[dict[str, Any]] = []
-    seen_paths: set[Path] = set()
+    seen_step_ids: set[str] = set()
 
     roots: list[Path] = []
     bundles_path = get_marketplace_bundles_path()
@@ -816,13 +816,21 @@ def _scan_skills_roots_for_implementors(ext_point: str) -> list[dict[str, Any]]:
             roots.append(cache_path)
 
     for root in roots:
-        for bundle_dir in sorted(root.iterdir()):
+        try:
+            bundle_dirs = sorted(root.iterdir())
+        except OSError:
+            continue
+        for bundle_dir in bundle_dirs:
             if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
                 continue
             skills_root = bundle_dir / 'skills'
             if not skills_root.is_dir():
                 continue
-            for skill_dir in sorted(skills_root.iterdir()):
+            try:
+                skill_dirs = sorted(skills_root.iterdir())
+            except OSError:
+                continue
+            for skill_dir in skill_dirs:
                 if not skill_dir.is_dir() or skill_dir.name.startswith('.'):
                     continue
                 if skill_dir.name == 'phase-6-finalize':
@@ -830,15 +838,18 @@ def _scan_skills_roots_for_implementors(ext_point: str) -> list[dict[str, Any]]:
                 skill_md = skill_dir / 'SKILL.md'
                 if not skill_md.is_file():
                     continue
-                resolved = skill_md.resolve()
-                if resolved in seen_paths:
-                    continue
-                if ext_point not in read_implements_field(skill_md):
-                    continue
-                seen_paths.add(resolved)
                 # Bundle-optional step ids are PATH-derived (``{bundle}:{skill}``),
                 # not the SKILL.md registration ``name`` (a plain skill name).
                 step_id = f'{bundle_dir.name}:{skill_dir.name}'
+                # Deduplicate by LOGICAL identity (step_id), not filesystem path:
+                # the same ``bundle:skill`` resolves through both the source tree
+                # and the plugin cache roots, so a path-keyed set would emit it
+                # twice. First occurrence (source tree, scanned first) wins.
+                if step_id in seen_step_ids:
+                    continue
+                if ext_point not in read_implements_field(skill_md):
+                    continue
+                seen_step_ids.add(step_id)
                 records.append(
                     _build_implementor_record(skill_md, 'bundle-optional', name_override=step_id)
                 )
@@ -869,7 +880,11 @@ def _scan_phase6_for_implementors(ext_point: str) -> list[dict[str, Any]]:
         docs_dir = skill_dir / subdir
         if not docs_dir.is_dir():
             continue
-        for doc_path in sorted(docs_dir.glob('*.md')):
+        try:
+            doc_paths = sorted(docs_dir.glob('*.md'))
+        except OSError:
+            continue
+        for doc_path in doc_paths:
             bare = doc_path.stem
             if bare in seen_bare:
                 # workflow/ scanned first wins on a name collision.
@@ -905,7 +920,11 @@ def _scan_project_for_implementors(ext_point: str) -> list[dict[str, Any]]:
         return []
 
     records: list[dict[str, Any]] = []
-    for skill_dir in sorted(skills_root.glob('finalize-step-*')):
+    try:
+        skill_dirs = sorted(skills_root.glob('finalize-step-*'))
+    except OSError:
+        return []
+    for skill_dir in skill_dirs:
         if not skill_dir.is_dir():
             continue
         skill_md = skill_dir / 'SKILL.md'

@@ -66,7 +66,11 @@ def _canonical_built_in_finalize_steps() -> list[str]:
     from extension_discovery import find_implementors  # type: ignore[import-not-found]
 
     default_on = sorted(
-        (rec for rec in find_implementors(FINALIZE_STEP_EXT_POINT) if rec.get('default_on')),
+        (
+            rec
+            for rec in find_implementors(FINALIZE_STEP_EXT_POINT)
+            if rec.get('default_on') and rec.get('source') == 'built-in'
+        ),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
     )
     return [rec['name'] for rec in default_on if rec.get('name')]

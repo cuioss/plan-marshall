@@ -299,7 +299,7 @@ On `Custom`, fall through to the per-step multi-select escape hatch — discover
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-finalize-steps
 ```
 
-The `list-finalize-steps` output includes three sources: built-in (`default:*`), project-local (`project:*`), and **bundle-optional** (`{bundle}:{skill}` step docs declaring `implements: plan-marshall:extension-api/standards/ext-point-finalize-step` with `default_on: false`, surfaced via `extension_discovery.find_implementors`). Bundle-optional entries — such as `plan-marshall:plan-retrospective` — surface in the multi-select but are intentionally absent from the default `plan.phase-6-finalize.steps` list, so operators must opt in explicitly by selecting them here. Example multi-select presentation (built-ins plus the opt-in retrospective):
+The `list-finalize-steps` output includes three sources: built-in (`default:*`), project-local (`project:*`), and **bundle-optional** (`{bundle}:{skill}` step docs declaring `implements: plan-marshall:extension-api/standards/ext-point-finalize-step` with `default_on: false`, surfaced via `extension_discovery.find_implementors`). Bundle-optional entries — such as `plan-marshall:plan-retrospective` — are intentionally absent from the default `plan.phase-6-finalize.steps` list, so operators must opt in explicitly: either by applying a preset whose `presets:` membership includes the step, or by selecting it in this custom multi-select. Example multi-select presentation (built-ins plus the opt-in retrospective):
 
 ```
 AskUserQuestion:

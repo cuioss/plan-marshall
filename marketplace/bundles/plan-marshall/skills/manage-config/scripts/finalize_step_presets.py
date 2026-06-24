@@ -74,9 +74,19 @@ def _discover_presets() -> dict[str, list[str]]:
     for rec in implementors:
         step_id = rec.get('name', '')
         presets = rec.get('presets', []) or []
+        if presets and not step_id:
+            raise ValueError(
+                'malformed finalize-step frontmatter: a step declares '
+                f'presets={presets!r} but has no resolvable step_id'
+            )
         for preset_name in presets:
-            if preset_name in name_to_preset and step_id:
-                name_to_preset[preset_name].append(step_id)
+            if preset_name not in name_to_preset:
+                raise ValueError(
+                    f'malformed finalize-step frontmatter: step {step_id!r} '
+                    f'declares unknown preset {preset_name!r} '
+                    f'(known presets: {sorted(name_to_preset)})'
+                )
+            name_to_preset[preset_name].append(step_id)
     return name_to_preset
 
 

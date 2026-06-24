@@ -119,6 +119,10 @@ def test_sync_plugin_cache_is_not_a_built_in_default():
         rec['name'] for rec in find_implementors(cd.FINALIZE_STEP_EXT_POINT) if rec.get('name')
     }
     assert 'default:sync-plugin-cache' not in discovered_names
+    # Positive contract: the project-local step IS discovered under its
+    # PATH-derived ``project:{dir}`` id — confirming the step is surfaced, not
+    # merely that the wrong built-in id is absent.
+    assert 'project:finalize-step-sync-plugin-cache' in discovered_names
     # DEFAULT_PLAN_FINALIZE['steps'] is a lazy None placeholder; the seeded map is
     # built by _seed_finalize_steps() (the discovered default-on built-in set).
     assert 'default:sync-plugin-cache' not in cd._seed_finalize_steps()

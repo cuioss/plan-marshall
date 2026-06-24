@@ -516,7 +516,11 @@ def _seed_finalize_steps() -> dict:
 
     implementors = find_implementors(FINALIZE_STEP_EXT_POINT)
     seed_records = sorted(
-        (rec for rec in implementors if rec.get('default_on')),
+        (
+            rec
+            for rec in implementors
+            if rec.get('default_on') and rec.get('source') == 'built-in'
+        ),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
     )
     return {

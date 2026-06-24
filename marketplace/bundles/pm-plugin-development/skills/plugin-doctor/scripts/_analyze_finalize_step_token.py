@@ -150,7 +150,7 @@ def _load_optional_bundle_finalize_steps(marketplace_root: Path) -> list[str]:
             for rec in find_implementors(_FINALIZE_STEP_EXT_POINT)
             if rec.get('source') == 'bundle-optional' and rec.get('name')
         ]
-    except Exception:
+    except ImportError:
         return []
     finally:
         if inserted:

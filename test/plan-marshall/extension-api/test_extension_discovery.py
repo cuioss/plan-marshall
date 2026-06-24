@@ -822,8 +822,19 @@ _FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-fina
 
 
 def _finalize_implementors() -> dict[str, dict]:
-    """Return the discovered finalize-step implementors keyed by step id."""
-    return {rec['name']: rec for rec in _discovery.find_implementors(_FINALIZE_STEP_EXT_POINT)}
+    """Return the discovered finalize-step implementors keyed by step id.
+
+    Asserts step-id uniqueness BEFORE collapsing the records into a name-keyed
+    dict: a dict comprehension silently drops a duplicate (last write wins), so
+    a regression that re-emits the same ``bundle:skill`` twice — e.g. the cache
+    + source dedup breaking — would be invisible if we keyed without checking.
+    """
+    records = _discovery.find_implementors(_FINALIZE_STEP_EXT_POINT)
+    names = [rec['name'] for rec in records]
+    assert len(names) == len(set(names)), (
+        f'duplicate implementor step ids must not occur: {sorted(names)}'
+    )
+    return {rec['name']: rec for rec in records}
 
 
 def test_find_implementors_returns_records_sorted_by_order():
@@ -831,8 +842,12 @@ def test_find_implementors_returns_records_sorted_by_order():
     records = _discovery.find_implementors(_FINALIZE_STEP_EXT_POINT)
 
     assert records, 'Expected at least one finalize-step implementor'
-    orders = [rec['order'] for rec in records]
-    assert orders == sorted(orders), f'records must be ascending by order: {orders}'
+    # Assert the FULL (order, name) sort contract, not just the primary key:
+    # records sharing an ``order`` must be tie-broken ascending by ``name``.
+    sort_keys = [(rec['order'], rec['name']) for rec in records]
+    assert sort_keys == sorted(sort_keys), (
+        f'records must be ascending by (order, name): {sort_keys}'
+    )
 
 
 def test_find_implementors_record_carries_all_contract_fields():
