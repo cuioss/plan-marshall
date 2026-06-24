@@ -44,6 +44,19 @@ At runtime the recipe skill is invoked under phase-3-outline Step 3 with `plan_i
 
 The recipe skill is the *single source of truth* for what its deliverables look like — phase-3-outline does not second-guess it.
 
+== Recipe-match routing — reaching a recipe without naming it
+
+The user entry point above (`/plan-marshall action=recipe`) is the *explicit* route: the user picks a recipe from the list. But a recurring transformation is often described informally — "clean up the logging across the module", "check the diagrams are current" — without the user knowing a matching recipe exists. *Recipe-match routing* (Tier 1 of the routing model) closes that gap: `phase-1-init` scores the request narrative against the live recipe registry and, when a recipe is a strong enough match, routes the informal request into that recipe's deterministic path instead of the standard discovery pipeline.
+
+The scoring is deterministic and heuristic-first — `manage-config recipe-match` tokenizes the request text and scores keyword overlap against each registered recipe, returning a ranked `matches[]` list with per-match confidence. The init phase then gates on two configurable knobs:
+
+* **Auto-route** — when `auto_route_recipe` is enabled and the top match's confidence clears `auto_route_recipe_threshold` (default `0.6`), the matched recipe is persisted (`status.metadata.recipe_key`) and the plan flows straight into the recipe path — no user prompt.
+* **Propose** — when auto-route is disabled or the top match falls below the floor, the ranked matches are surfaced via a prompt so the user can pick a recipe or decline and proceed with the standard pipeline.
+
+An explicit `recipe=` selection always wins — recipe-match never overrides a recipe the user named directly. The enforcement-critical process steps and the gate semantics live in link:../../marketplace/bundles/plan-marshall/skills/phase-1-init/SKILL.md[`phase-1-init/SKILL.md`] Step 5c; the configurable knobs are documented in xref:../user/configuration.adoc#recipe-routing[Configuration › Recipe-match routing].
+
+Recipe-match is paired with *request-aspect classification* (`manage-config aspect-classify`), which labels a request as analysis, planning, or implementation so the execution manifest can drop build / quality-gate / test verification steps for analysis- and planning-only requests that carry no production footprint. The aspect classifier uses its own independent confidence threshold (`0.7`) — not the recipe-match auto-route floor.
+
 == Current implementations
 
 [cols="1,1,3", options="header"]
