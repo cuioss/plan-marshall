@@ -28,7 +28,7 @@ All phase skills enforce these rules. Phase-specific enforcement blocks may add 
 
 ## Routing Tiers (phase-1-init entry)
 
-Before the phase sequence begins its light/deep lane work, phase-1-init runs a two-tier routing model over the request narrative. Both tiers are deterministic heuristic-first scoring with a bounded orchestrator-driven LLM fallback (zero LLM call inside the scripts):
+Before the phase sequence begins its light/deep lane work, phase-1-init runs a two-tier routing model over the request narrative. Both tiers are deterministic heuristic-first scoring (zero LLM call inside the scripts); Tier 1 additionally includes a bounded orchestrator-driven LLM fallback for ambiguous matches, while Tier 2 is fully deterministic with no LLM involvement:
 
 - **Tier 1 — recipe-match** (phase-1-init Step 5c): registry-wide recipe scoring via `manage-config recipe-match`, plus request-aspect classification via `manage-config aspect-classify`. When `auto_route_recipe == true` and the top match clears the auto-route confidence floor (`auto_route_recipe_threshold`), the request auto-routes to the matched recipe without prompting; otherwise the ranked matches are proposed via `AskUserQuestion`. Tier 1 runs for every source other than `recipe` (an explicit `--recipe` choice is never overridden).
 - **Tier 2 — planning-lane route** (phase-1-init Step 8b): the deterministic `manage-status planning-lane route` light/deep lane decision.
