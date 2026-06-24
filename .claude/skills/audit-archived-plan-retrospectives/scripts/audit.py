@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Audit archived plans across seventeen retrospective checks.
+"""Audit archived plans across eighteen retrospective checks.
 
 Walks `.plan/local/archived-plans/{plan_id}/` directories and, per plan, runs a
 suite of deterministic checks:
@@ -16,6 +16,12 @@ suite of deterministic checks:
   impossible values (worked > wall, negative idle), and optimization signals.
 - `scope-estimate-accuracy` — compares declared `references.json::scope_estimate`
   against the actual affected/modified file count.
+- `track-selection-accuracy` — reconstructs each plan's counterfactual "correct"
+  planning lane from its realized signals (via the imported `evaluate_signals_pure`
+  + S5 `_request_is_concrete` from the live planning-lane router — no threshold
+  duplicated) and compares it against the lane/track the plan actually ran
+  (`status.json::metadata.planning_lane`, `references.json::track`), emitting an
+  OVER-TRACKED / UNDER-TRACKED / correct verdict per plan.
 - `pr-merge-velocity` — computes PR open-to-merge duration and flags long
   review cycles.
 - `task-count-efficiency` — counts `tasks/TASK-*.json` and flags under- or
@@ -150,6 +156,7 @@ CHECK_NAMES = [
     "recurring-pattern-detector",
     "token-efficiency-trend",
     "scope-estimate-accuracy",
+    "track-selection-accuracy",
     "pr-merge-velocity",
     "task-count-efficiency",
     "global-log-analysis",
@@ -552,6 +559,13 @@ class PlanInputs:
     manifest_phase_6: list[str] = field(default_factory=list)
     decision_log_rule: str | None = None
     decision_log_present: bool = False
+    # track-selection-accuracy inputs: the ACTUAL planning track the plan ran.
+    # `planning_lane` (light|deep) is the lane the router resolved at phase-1-init
+    # (`status.json::metadata.planning_lane`); `track` (simple|complex) is the
+    # coarser track recorded in `references.json::track`. Both are None when the
+    # plan predates the field or never recorded it.
+    planning_lane: str | None = None
+    track: str | None = None
 
 
 def collect_inputs(plan_dir: Path) -> PlanInputs:
@@ -573,6 +587,16 @@ def collect_inputs(plan_dir: Path) -> PlanInputs:
     inputs.scope_estimate = refs.get("scope_estimate")
     inputs.affected_files_count = len(refs.get("affected_files") or [])
     inputs.modified_files_count = len(refs.get("modified_files") or [])
+
+    # track-selection-accuracy: the ACTUAL planning track the plan ran. The lane
+    # lives in status.json::metadata.planning_lane; the coarser track in
+    # references.json::track.
+    planning_lane = metadata.get("planning_lane")
+    if isinstance(planning_lane, str) and planning_lane.strip():
+        inputs.planning_lane = planning_lane.strip()
+    track = refs.get("track")
+    if isinstance(track, str) and track.strip():
+        inputs.track = track.strip()
 
     parsed = parse_execution_toon(plan_dir / "execution.toon")
     if parsed is not None:
@@ -1007,6 +1031,149 @@ def check_scope_estimate(inputs: PlanInputs) -> dict[str, Any]:
         "declared_scope": declared or "",
         "actual_file_count": actual,
         "mismatch": mismatch,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Check: track-selection-accuracy
+# ---------------------------------------------------------------------------
+#
+# Reconstructs the counterfactual "correct" planning lane for each archived plan
+# from its realized signals and compares it against the lane/track the plan
+# actually ran. The counterfactual reuses the LIVE routing logic via the
+# imported `evaluate_signals_pure` + `_request_is_concrete` from the planning-lane
+# router — no routing threshold is duplicated here. A plan that ran deep/complex
+# where the signals score light is OVER-TRACKED; one that ran light/simple where
+# the signals score deep is UNDER-TRACKED.
+
+# Lane (light|deep) → track (simple|complex). The router's coarse-grained track:
+# a deep lane corresponds to the complex track, a light lane to the simple track.
+_LANE_TO_TRACK = {"light": "simple", "deep": "complex"}
+
+
+def _load_routing_logic(repo_root: Path) -> Any:
+    """Import the live planning-lane router's pure scorer + S5 helper.
+
+    The routing logic is the single source of truth — the audit replays it rather
+    than re-deriving any threshold. `_cmd_planning_lane.py` imports several sibling
+    modules at module level (across the manage-status / tools-file-ops /
+    manage-solution-outline / manage-logging skills), so this helper adds every
+    marketplace `skills/*/scripts/` directory to ``sys.path`` (mirroring the test
+    conftest's path setup) before importing, then returns the module. Returns
+    ``None`` when the marketplace tree or the router module cannot be located —
+    the check then degrades to a `no_routing_logic` verdict rather than raising.
+    """
+    marketplace_root = repo_root / "marketplace" / "bundles"
+    if not marketplace_root.is_dir():
+        return None
+    for bundle_dir in sorted(marketplace_root.iterdir()):
+        skills_dir = bundle_dir / "skills"
+        if not skills_dir.is_dir():
+            continue
+        for skill_dir in sorted(skills_dir.iterdir()):
+            scripts_dir = skill_dir / "scripts"
+            if scripts_dir.is_dir():
+                path_str = str(scripts_dir)
+                if path_str not in sys.path:
+                    sys.path.insert(0, path_str)
+    try:
+        import _cmd_planning_lane  # noqa: PLC0415
+    except ImportError:
+        return None
+    return _cmd_planning_lane
+
+
+def _read_marshal_compatibility(repo_root: Path) -> str | None:
+    """Read `plan.phase-2-refine.compatibility` from the project marshal.json.
+
+    Project-level (same for every plan in a corpus scan). Returns None when the
+    file or the key is absent.
+    """
+    config = read_json(repo_root / ".plan" / "marshal.json")
+    if not isinstance(config, dict):
+        return None
+    plan_block = config.get("plan")
+    if not isinstance(plan_block, dict):
+        return None
+    refine = plan_block.get("phase-2-refine")
+    if not isinstance(refine, dict):
+        return None
+    value = refine.get("compatibility")
+    return value if isinstance(value, str) else None
+
+
+def check_track_selection_accuracy(
+    inputs: PlanInputs, routing: Any, compatibility: str | None
+) -> dict[str, Any]:
+    """Per-plan actual-vs-counterfactual planning-track verdict.
+
+    `routing` is the imported planning-lane module (or None when unavailable);
+    `compatibility` is the project-level marshal.json value, read once by the
+    caller. The counterfactual lane is `evaluate_signals_pure(realized signals)`;
+    `request_concrete` is re-derived from the plan's `request.md` via the imported
+    `_request_is_concrete`. Verdict: OVER-TRACKED (ran deep/complex, counterfactual
+    light), UNDER-TRACKED (ran light/simple, counterfactual deep), or correct.
+    """
+    actual_lane = inputs.planning_lane or ""
+    # Actual track: prefer the explicit references.json::track, else derive from
+    # the recorded lane.
+    actual_track = inputs.track or _LANE_TO_TRACK.get(actual_lane, "")
+
+    if routing is None:
+        return {
+            "plan_id": inputs.plan_id,
+            "actual_lane": actual_lane,
+            "actual_track": actual_track,
+            "counterfactual_lane": "",
+            "verdict": "no_routing_logic",
+        }
+    if not actual_lane and not actual_track:
+        # The plan never recorded a planning lane/track — nothing to compare.
+        return {
+            "plan_id": inputs.plan_id,
+            "actual_lane": "",
+            "actual_track": "",
+            "counterfactual_lane": "",
+            "verdict": "not_recorded",
+        }
+
+    # Re-derive S5 request concreteness from the archived request.md body.
+    request_md = inputs.plan_dir / "request.md"
+    request_concrete = False
+    if request_md.is_file():
+        try:
+            body = request_md.read_text(encoding="utf-8")
+        except OSError:
+            body = ""
+        request_concrete = bool(routing._request_is_concrete(body))
+
+    counterfactual = routing.evaluate_signals_pure(
+        scope_estimate=inputs.scope_estimate,
+        change_type=inputs.change_type,
+        compatibility=compatibility,
+        plan_source=inputs.recipe_key,
+        request_concrete=request_concrete,
+    )
+    counterfactual_lane = counterfactual["lane"]
+
+    # Compare on the lane axis (the router's native verdict). Map the actual track
+    # back to a lane when the lane itself was not recorded.
+    effective_actual_lane = actual_lane or {
+        v: k for k, v in _LANE_TO_TRACK.items()
+    }.get(actual_track, "")
+
+    verdict = "correct"
+    if effective_actual_lane == "deep" and counterfactual_lane == "light":
+        verdict = "OVER-TRACKED"
+    elif effective_actual_lane == "light" and counterfactual_lane == "deep":
+        verdict = "UNDER-TRACKED"
+
+    return {
+        "plan_id": inputs.plan_id,
+        "actual_lane": actual_lane,
+        "actual_track": actual_track,
+        "counterfactual_lane": counterfactual_lane,
+        "verdict": verdict,
     }
 
 
@@ -4918,6 +5085,25 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
                 )
             )
 
+    if "track-selection-accuracy" in selected:
+        routing = _load_routing_logic(repo_root)
+        compatibility = _read_marshal_compatibility(repo_root)
+        rows = [
+            check_track_selection_accuracy(i, routing, compatibility)
+            for i in all_inputs
+        ]
+        blocks.append(
+            emit_table_block(
+                "track-selection-accuracy",
+                ["plan_id", "actual_lane", "actual_track", "counterfactual_lane", "verdict"],
+                rows,
+                lambda r: r["verdict"] in {"OVER-TRACKED", "UNDER-TRACKED"},
+            )
+        )
+        summary_metrics["track-selection-accuracy_mistracked"] = sum(
+            1 for r in rows if r["verdict"] in {"OVER-TRACKED", "UNDER-TRACKED"}
+        )
+
     if "pr-merge-velocity" in selected:
         rows = [check_pr_merge_velocity(i) for i in all_inputs]
         blocks.append(
@@ -5076,7 +5262,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Audit archived plans across seventeen retrospective checks."
+        description="Audit archived plans across eighteen retrospective checks."
     )
     parser.add_argument(
         "--plan-dir",
