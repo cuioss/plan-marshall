@@ -812,8 +812,12 @@ def check_broken_relative_link(content: str, file_path: str) -> list:
             file_part = target.split('#', 1)[0]
             if not file_part:
                 continue
-            resolved = (base_dir / file_part)
-            if resolved.exists():
+            resolved = (base_dir / file_part).resolve()
+            if not resolved.is_relative_to(base_dir.resolve()):
+                # Path escapes the scan tree (e.g. ../../ traversal) — treat as
+                # non-existent so we never probe outside the marketplace tree.
+                pass
+            elif resolved.exists():
                 continue
             findings.append(
                 {
