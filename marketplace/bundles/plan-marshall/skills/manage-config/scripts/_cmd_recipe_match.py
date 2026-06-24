@@ -48,7 +48,7 @@ def cmd_recipe_match(args) -> dict[str, Any]:
     refine/outline flow.
     """
     request_text: str = args.request_text
-    threshold: float = float(getattr(args, 'threshold', _DEFAULT_THRESHOLD) or _DEFAULT_THRESHOLD)
+    threshold: float = getattr(args, 'threshold', _DEFAULT_THRESHOLD)
 
     narrative_tokens = tokenize(request_text)
     recipes = load_registry()

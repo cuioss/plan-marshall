@@ -85,7 +85,7 @@ def cmd_aspect_classify(args) -> dict[str, Any]:
     keeps every gate in place.
     """
     request_text: str = args.request_text
-    threshold: float = float(getattr(args, 'threshold', _DEFAULT_THRESHOLD) or _DEFAULT_THRESHOLD)
+    threshold: float = getattr(args, 'threshold', _DEFAULT_THRESHOLD)
 
     request_tokens = tokenize(request_text)
 
