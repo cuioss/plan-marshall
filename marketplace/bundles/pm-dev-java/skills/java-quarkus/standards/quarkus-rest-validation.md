@@ -69,6 +69,13 @@ public Response get(
 
 **Normative rule:** validate every inbound REST parameter at the resource boundary. Common constraints — `@NotNull`, `@NotBlank`, `@Size`, `@Pattern`, `@Min`, `@Max`, `@Email` — cover the typical cases; `@Valid` cascades into nested beans.
 
+## Related Security Surfaces
+
+This standard is the REST-resource leg of inbound validation. For the broader Java security surface and the conceptual foundations:
+
+- **Generic, framework-agnostic inbound validation** (deserialized payloads, file inputs, CLI arguments, message-queue bodies) is owned by `Skill: pm-dev-java:java-security` — see its [`standards/java-input-validation.md`](../../java-security/standards/java-input-validation.md).
+- **The conceptual trust-boundary architecture** — why a request value is untrusted, allow-list vs deny-list, canonicalization-before-validation, and fail-closed handling — lives in `Skill: plan-marshall:persona-security-expert`, [`standards/input-validation-trust-boundaries.md`](../../../../plan-marshall/skills/persona-security-expert/standards/input-validation-trust-boundaries.md). Validating REST parameters here is the Quarkus realization of that fail-closed rule.
+
 ## Constraint-Violation → HTTP 400 Mapping
 
 When a constraint fails, Bean Validation raises `jakarta.validation.ConstraintViolationException`. Quarkus maps it to an **HTTP 400 Bad Request** response by default (with a structured violation payload), so a resource method never needs to catch it for the standard rejection path. Add a custom `ExceptionMapper<ConstraintViolationException>` only when the default body shape must change.

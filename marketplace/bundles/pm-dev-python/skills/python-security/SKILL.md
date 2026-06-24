@@ -1,6 +1,6 @@
 ---
 name: python-security
-description: "Use when reviewing or hardening Python security — injection sinks (subprocess, eval/exec, unsafe deserialization, SQL), path-traversal prevention, and untrusted-input handling at stdlib boundaries. The focused Python security surface resolved via skills_by_profile.security."
+description: "Use when reviewing or hardening Python security — injection sinks (subprocess, eval/exec, unsafe deserialization, SQL), path-traversal prevention, and untrusted-input handling at stdlib boundaries. The focused Python security surface resolved via skills_by_profile.security; a thin pointer that delegates cross-cutting foundations upward to plan-marshall:persona-security-expert."
 user-invocable: false
 mode: knowledge
 ---
@@ -58,10 +58,22 @@ Load the **Security** (path traversal) and **Injection and Unsafe Deserializatio
 | Surface | Home |
 |---------|------|
 | Injection sinks + path-traversal prevention | `../python-core/standards/python-core.md` (Security / Injection sections) |
-| Cross-cutting OWASP / STRIDE / secure-coding principles | `Skill: plan-marshall:persona-security-expert` |
+| Cross-cutting OWASP / STRIDE / trust-boundary / secure-design foundations | `Skill: plan-marshall:persona-security-expert` |
+
+## Cross-Cutting Foundations (delegated upward)
+
+This skill is a **thin pointer**: the Python sink mechanics above are genuinely language-specific (how to apply the secure choice at each stdlib boundary), but the conceptual *why* lives in the centralized `plan-marshall:persona-security-expert` sub-documents. Load the matching foundation, then return here for the Python mechanics — there is no content duplication:
+
+| Python mechanic (here) | Centralized foundation (there) |
+|------------------------|-------------------------------|
+| Why every stdlib boundary value is untrusted; allow-list, canonicalize-before-validate, fail-closed (the general architecture behind every sink and path check) | [`input-validation-trust-boundaries.md`](../../../plan-marshall/skills/persona-security-expert/standards/input-validation-trust-boundaries.md) |
+| The subprocess / SQL / eval sinks mapped to a recognized risk category (A03 Injection) | [`owasp-top-ten.md`](../../../plan-marshall/skills/persona-security-expert/standards/owasp-top-ten.md) |
+| The principles behind secure-by-default sink choices (secure by default, fail securely, economy of mechanism) | [`secure-design-principles.md`](../../../plan-marshall/skills/persona-security-expert/standards/secure-design-principles.md) |
+
+Note the deserialization sinks (`pickle`/`yaml.load`) also map to OWASP A08 Software and Data Integrity Failures — see [`owasp-top-ten.md`](../../../plan-marshall/skills/persona-security-expert/standards/owasp-top-ten.md).
 
 ## Related Skills
 
-- `plan-marshall:persona-security-expert` — Cross-cutting security review identity (OWASP Top Ten, STRIDE, secure-coding principles)
+- `plan-marshall:persona-security-expert` — Cross-cutting security review identity and authoritative home for OWASP Top 10, STRIDE, secrets, secure logging, trust boundaries, authn/authz, and secure-design principles
 - `pm-dev-python:python-core` — Core Python development standards (the security/injection sections referenced above live under its `standards/` directory)
 - `pm-dev-python:pytest-testing` — Property-based / adversarial testing of security-relevant code

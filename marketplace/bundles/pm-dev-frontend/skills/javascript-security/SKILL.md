@@ -1,6 +1,6 @@
 ---
 name: javascript-security
-description: "Use when reviewing or hardening JavaScript security — DOM trust boundaries, XSS sinks (innerHTML/outerHTML/insertAdjacentHTML), safe text rendering, sanitization (DOMPurify), and Trusted Types. The focused JavaScript security surface resolved via skills_by_profile.security."
+description: "Use when reviewing or hardening JavaScript security — DOM trust boundaries, XSS sinks (innerHTML/outerHTML/insertAdjacentHTML), safe text rendering, sanitization (DOMPurify), and Trusted Types. The focused JavaScript security surface resolved via skills_by_profile.security; a thin pointer that delegates cross-cutting foundations upward to plan-marshall:persona-security-expert."
 user-invocable: false
 mode: knowledge
 ---
@@ -58,10 +58,20 @@ Trusted Types (`require-trusted-types-for 'script'` via Content-Security-Policy)
 | Surface | Home |
 |---------|------|
 | DOM trust boundaries, XSS sinks, sanitization, Trusted Types | `../javascript/standards/modern-patterns.md` (DOM Trust Boundaries / XSS section) |
-| Cross-cutting OWASP / STRIDE / secure-coding principles | `Skill: plan-marshall:persona-security-expert` |
+| Cross-cutting OWASP / STRIDE / trust-boundary / secure-design foundations | `Skill: plan-marshall:persona-security-expert` |
+
+## Cross-Cutting Foundations (delegated upward)
+
+This skill is a **thin pointer**: the DOM-sink taxonomy above is genuinely runtime-specific (which browser APIs parse their argument as HTML), but the conceptual *why* lives in the centralized `plan-marshall:persona-security-expert` sub-documents. Load the matching foundation, then return here for the DOM mechanics — there is no content duplication:
+
+| JS/DOM mechanic (here) | Centralized foundation (there) |
+|------------------------|-------------------------------|
+| The DOM as a trust boundary; the safe-default text sink; why allow-list sanitization beats deny-list filtering | [`input-validation-trust-boundaries.md`](../../../plan-marshall/skills/persona-security-expert/standards/input-validation-trust-boundaries.md) |
+| The XSS sinks mapped to a recognized risk category (A03 Injection / XSS) | [`owasp-top-ten.md`](../../../plan-marshall/skills/persona-security-expert/standards/owasp-top-ten.md) |
+| Why the text-treating sink is the secure default and Trusted Types/CSP harden by default | [`secure-design-principles.md`](../../../plan-marshall/skills/persona-security-expert/standards/secure-design-principles.md) |
 
 ## Related Skills
 
-- `plan-marshall:persona-security-expert` — Cross-cutting security review identity (OWASP Top Ten, STRIDE, secure-coding principles)
+- `plan-marshall:persona-security-expert` — Cross-cutting security review identity and authoritative home for OWASP Top 10, STRIDE, secrets, secure logging, trust boundaries, authn/authz, and secure-design principles
 - `pm-dev-frontend:javascript` — Core JavaScript development standards (the DOM-trust/XSS content referenced above lives under its `standards/` directory)
 - `pm-dev-frontend:jest-testing` — Testing security-relevant DOM rendering

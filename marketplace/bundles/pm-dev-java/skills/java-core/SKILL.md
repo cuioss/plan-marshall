@@ -1,6 +1,6 @@
 ---
 name: java-core
-description: Core Java development standards for patterns, modern features, performance optimization, and inbound input validation at trust boundaries
+description: Core Java development standards for patterns, modern features, and performance optimization. Inbound input validation at trust boundaries is owned by pm-dev-java:java-security
 user-invocable: false
 mode: knowledge
 ---
@@ -77,7 +77,7 @@ Use when: Organizing related constants hierarchically using nested static classe
 
 **Security** (input validation, secure logging, secrets, startup validation):
 
-The Java security surface — inbound input validation (`java-input-validation.md`) and outbound security patterns (`java-security-patterns.md`) — is owned by `Skill: pm-dev-java:java-security`. Load that skill for any security-sensitive review or hardening task; it resolves through the `security` profile and references the detailed standards under this skill's `standards/` directory.
+The Java security surface — inbound input validation (`java-input-validation.md`) and outbound security patterns (`java-security-patterns.md`) — is owned by `Skill: pm-dev-java:java-security`, and both standards files now live under THAT skill's `standards/` directory (not this one). Load `pm-dev-java:java-security` for any security-sensitive review or hardening task; it resolves through the `security` profile. The cross-cutting OWASP/STRIDE/secrets/secure-logging/trust-boundary foundations live in `Skill: plan-marshall:persona-security-expert`.
 
 ## Related Skills
 

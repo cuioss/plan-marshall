@@ -1,6 +1,6 @@
 ---
 name: oci-security
-description: "Use when hardening container runtime configuration, scanning for vulnerabilities, securing the image supply chain, or auditing against OWASP Docker Top 10. Covers capability dropping, read-only filesystems, image signing, SBOMs, and Trivy/Cosign/Syft workflows."
+description: "Use when hardening container runtime configuration, scanning for vulnerabilities, securing the image supply chain, or auditing against OWASP Docker Top 10. Covers capability dropping, read-only filesystems, image signing, SBOMs, and Trivy/Cosign/Syft workflows. Cross-references the cross-cutting foundations in plan-marshall:persona-security-expert."
 user-invocable: false
 mode: knowledge
 ---
@@ -89,6 +89,19 @@ Cross-references OWASP controls D02, D08.
 ```
 Read standards/supply-chain-security.md
 ```
+
+## Cross-Cutting Foundations (delegated upward)
+
+This skill retains the container-specific mechanics (capability dropping, read-only filesystems, image signing, SBOMs, Trivy/Cosign/Syft) in its `standards/`. The cross-cutting conceptual foundations behind those mechanics live in the centralized `plan-marshall:persona-security-expert` sub-documents — load the matching foundation, then return here for the container realization. No content duplication:
+
+| Container mechanic (here) | Centralized foundation (there) |
+|---------------------------|-------------------------------|
+| Container threat modeling (the Docker Top 10 lens applied per deployment) | [`threat-modeling-stride.md`](../../../plan-marshall/skills/persona-security-expert/standards/threat-modeling-stride.md) — the general STRIDE method behind it |
+| Capability dropping (`--cap-drop=ALL`), `no-new-privileges`, non-root user; minimal hardened base images | [`secure-design-principles.md`](../../../plan-marshall/skills/persona-security-expert/standards/secure-design-principles.md) — least privilege, secure by default, fail securely |
+| Container secret injection (avoid `ENV`/`ARG`, use mounted volumes / sidecars) | [`secrets-handling.md`](../../../plan-marshall/skills/persona-security-expert/standards/secrets-handling.md) — the environment-variable pitfall and secret-manager integration |
+| Image signing, SBOMs, provenance attestation | [`owasp-top-ten.md`](../../../plan-marshall/skills/persona-security-expert/standards/owasp-top-ten.md) — A08 / A03:2025 Software Supply Chain Failures |
+
+> **Docker Top 10 ≠ web Application Top 10.** The OWASP **Docker** Top 10 (D01–D10) covered by this skill's `standards/owasp-container-security.md` is container-specific and stays local. The general OWASP web **Application** Top 10 (A01–A10) lives in the centralized [`owasp-top-ten.md`](../../../plan-marshall/skills/persona-security-expert/standards/owasp-top-ten.md). Cross-reference them; do not merge them.
 
 ## Quick Reference
 
