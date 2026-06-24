@@ -40,6 +40,7 @@ def _load_module(name, filename):
 _extension_constants_mod = _load_module('_extension_constants', '_extension_constants.py')
 
 ALL_CANONICAL_COMMANDS = _extension_constants_mod.ALL_CANONICAL_COMMANDS
+APPLICABLE_PROFILES = _extension_constants_mod.APPLICABLE_PROFILES
 CANONICAL_COMMANDS = _extension_constants_mod.CANONICAL_COMMANDS
 CMD_BENCHMARK = _extension_constants_mod.CMD_BENCHMARK
 CMD_CLEAN = _extension_constants_mod.CMD_CLEAN
@@ -425,6 +426,61 @@ def test_applies_to_module_accepts_active_profiles():
     ext = ConcreteExtension()
     result = ext.applies_to_module({'build_systems': []}, active_profiles={'implementation'})
     assert result['applicable'] is False  # ConcreteExtension always returns not applicable
+
+
+def test_security_profile_in_applicable_profiles():
+    """The resolution-only 'security' profile is registered in APPLICABLE_PROFILES."""
+    assert 'security' in APPLICABLE_PROFILES
+
+
+class ExtensionWithSecurityProfile(ExtensionBase):
+    """Extension that declares a security profile alongside core/implementation."""
+
+    def get_skill_domains(self) -> list[dict]:
+        return [
+            {
+                'domain': {'key': 'test-security'},
+                'profiles': {
+                    'core': {
+                        'defaults': [{'skill': 'b:core', 'description': 'core'}],
+                        'optionals': [],
+                    },
+                    'implementation': {
+                        'defaults': [{'skill': 'b:impl', 'description': 'impl'}],
+                        'optionals': [],
+                    },
+                    'security': {
+                        'defaults': [{'skill': 'b:sec', 'description': 'security'}],
+                        'optionals': [],
+                    },
+                },
+            }
+        ]
+
+
+def test_security_profile_resolves_when_declared():
+    """A domain declaring a security profile resolves its skills under the 'security' key."""
+    ext = ExtensionWithSecurityProfile()
+    result = ext._build_applicable_result(
+        'high',
+        ['signal'],
+        active_profiles={'security'},
+    )
+
+    sbp = result['skills_by_profile']
+    assert 'security' in sbp
+    sec_default_skills = [e['skill'] if isinstance(e, dict) else e for e in sbp['security']['defaults']]
+    assert 'b:sec' in sec_default_skills
+    # core is always merged into each resolved profile
+    assert 'b:core' in sec_default_skills
+
+
+def test_security_profile_absent_when_domain_omits_it():
+    """A domain that omits the security profile yields no 'security' key."""
+    ext = ExtensionWithAllProfiles()
+    result = ext._build_applicable_result('high', ['signal'])
+
+    assert 'security' not in result['skills_by_profile']
 
 
 # derive_globs_from_tree retains a declared route only when at least one

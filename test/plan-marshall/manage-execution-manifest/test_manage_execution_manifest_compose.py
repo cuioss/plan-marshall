@@ -254,9 +254,11 @@ def test_tests_only_runs_module_tests_and_full_phase_6(plan_context):
     manifest = read_manifest('matrix-tests')
     assert manifest is not None
     assert manifest['phase_5']['verification_steps'] == ['verify:module-tests']
-    # finalize-step-simplify is dropped by the simplify_inactive pre-filter:
-    # change_type=verification is not in the gate's code-bearing change-type set.
-    expected_phase_6 = [s for s in DEFAULT_PHASE_6_STEPS if s != 'finalize-step-simplify']
+    # finalize-step-simplify AND finalize-step-security-audit are both dropped by
+    # their respective pre-filters (simplify_inactive / security_audit_inactive):
+    # change_type=verification is not in the shared code-bearing change-type set.
+    dropped = {'finalize-step-simplify', 'finalize-step-security-audit'}
+    expected_phase_6 = [s for s in DEFAULT_PHASE_6_STEPS if s not in dropped]
     assert manifest['phase_6']['steps'] == expected_phase_6
 
 
@@ -1076,10 +1078,12 @@ def test_surgical_enhancement_with_code_candidates_falls_to_default(plan_context
     assert result is not None and result['rule_fired'] == 'default'
     manifest = read_manifest('matrix-surgical-enh')
     assert manifest is not None
-    # Default keeps the full phase_6 candidate list — except finalize-step-simplify,
-    # which the simplify_inactive pre-filter drops for change_type=enhancement
+    # Default keeps the full phase_6 candidate list — except finalize-step-simplify
+    # AND finalize-step-security-audit, which the simplify_inactive /
+    # security_audit_inactive pre-filters both drop for change_type=enhancement
     # (not in {feature, bug_fix, tech_debt}).
-    expected_phase_6 = [s for s in DEFAULT_PHASE_6_STEPS if s != 'finalize-step-simplify']
+    dropped = {'finalize-step-simplify', 'finalize-step-security-audit'}
+    expected_phase_6 = [s for s in DEFAULT_PHASE_6_STEPS if s not in dropped]
     assert manifest['phase_6']['steps'] == expected_phase_6
 
 
@@ -2153,6 +2157,148 @@ def test_simplify_inactive_no_decision_log_on_kept_branch(plan_context):
         _mem._emit_decision_log = original_emit
 
     drop_entries = [(pid, msg) for pid, msg in captured if 'finalize-step-simplify omitted' in msg]
+    assert drop_entries == []
+
+
+# =============================================================================
+# Pre-Filter: security_audit_inactive (finalize-step-security-audit gate)
+#
+# finalize-step-security-audit is a candidate by default (it sits in
+# DEFAULT_PHASE_6_STEPS). The security_audit_inactive pre-filter is the symmetric
+# peer of simplify_inactive — it DROPS the step unless BOTH
+# change_type ∈ {feature, bug_fix, tech_debt} AND affected_files_count > 0. The
+# proactive security sweep has no change surface to audit on a pure-analysis /
+# verification plan or a zero-files plan. These tests enforce: a code-touching
+# plan composes the step into phase_6.steps; a docs-only / zero-affected-files
+# plan does NOT; and the drop-only decision-log line fires only on the dropped
+# branch.
+#
+# See standards/decision-rules.md § Pre-Filter: security_audit_inactive.
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    'change_type,affected_files_count,expect_present,expect_omitted',
+    [
+        # Gate passes: all three code-touching change types with files > 0.
+        ('feature', 5, True, False),
+        ('bug_fix', 1, True, False),
+        ('tech_debt', 3, True, False),
+        # Gate fails on change_type: not a code-touching type.
+        ('analysis', 5, False, True),
+        ('enhancement', 5, False, True),
+        ('verification', 5, False, True),
+        # Gate fails on affected_files_count == 0 (even for a code-touching type).
+        ('feature', 0, False, True),
+        ('bug_fix', 0, False, True),
+    ],
+)
+def test_security_audit_inactive_gate(
+    plan_context, change_type, affected_files_count, expect_present, expect_omitted
+):
+    """finalize-step-security-audit lands only when change_type ∈ {feature, bug_fix, tech_debt} AND files > 0."""
+    slug = f'{change_type}-{affected_files_count}'.replace('_', '-')
+    plan_id = f'matrix-secaudit-{slug}'
+    # Use a non-surgical, code-shaped scope so the surgical Row 5 / docs Row 3
+    # paths don't intersect-narrow phase_6.steps and confuse the assertion.
+    result = cmd_compose(
+        _compose_ns(
+            plan_id=plan_id,
+            change_type=change_type,
+            scope_estimate='multi_module',
+            affected_files_count=affected_files_count,
+        )
+    )
+    assert result is not None and result['status'] == 'success'
+    assert result['security_audit_omitted'] is expect_omitted
+    manifest = read_manifest(plan_id)
+    assert manifest is not None
+    if expect_present:
+        assert 'finalize-step-security-audit' in manifest['phase_6']['steps']
+    else:
+        assert 'finalize-step-security-audit' not in manifest['phase_6']['steps']
+
+
+def test_security_audit_inactive_noop_when_step_absent_from_candidates(plan_context):
+    """When finalize-step-security-audit is not a candidate, the pre-filter is a no-op even on a failing gate."""
+    candidates_without_secaudit = [
+        s for s in DEFAULT_PHASE_6_STEPS if s != 'finalize-step-security-audit'
+    ]
+    result = cmd_compose(
+        _compose_ns(
+            plan_id='matrix-secaudit-absent',
+            change_type='analysis',  # gate would fail
+            scope_estimate='multi_module',
+            affected_files_count=0,  # gate would fail
+            phase_6_steps=','.join(candidates_without_secaudit),
+        )
+    )
+    assert result is not None and result['status'] == 'success'
+    # No-op: the step was never present, so the pre-filter did not "fire".
+    assert result['security_audit_omitted'] is False
+    manifest = read_manifest('matrix-secaudit-absent')
+    assert manifest is not None
+    assert 'finalize-step-security-audit' not in manifest['phase_6']['steps']
+
+
+def test_security_audit_inactive_emits_decision_log_only_on_drop(plan_context):
+    """The drop-only decision-log line fires exactly once on the dropped branch."""
+    captured: list[tuple[str, str]] = []
+    original_emit = _mem._emit_decision_log
+
+    def _capture(plan_id, message):
+        captured.append((plan_id, message))
+
+    _mem._emit_decision_log = _capture
+    try:
+        # Dropped branch: analysis change_type fails the gate.
+        cmd_compose(
+            _compose_ns(
+                plan_id='matrix-secaudit-drop',
+                change_type='analysis',
+                scope_estimate='multi_module',
+                affected_files_count=3,
+            )
+        )
+    finally:
+        _mem._emit_decision_log = original_emit
+
+    drop_entries = [
+        (pid, msg) for pid, msg in captured if 'finalize-step-security-audit omitted' in msg
+    ]
+    assert len(drop_entries) == 1, f'expected one security-audit omission entry, got {captured!r}'
+    pid, msg = drop_entries[0]
+    assert pid == 'matrix-secaudit-drop'
+    assert msg == (
+        '(plan-marshall:manage-execution-manifest:compose) finalize-step-security-audit omitted — '
+        'change_type=analysis affected_files_count=3'
+    )
+
+
+def test_security_audit_inactive_no_decision_log_on_kept_branch(plan_context):
+    """No security-audit-omission log fires when the gate passes (step retained)."""
+    captured: list[tuple[str, str]] = []
+    original_emit = _mem._emit_decision_log
+
+    def _capture(plan_id, message):
+        captured.append((plan_id, message))
+
+    _mem._emit_decision_log = _capture
+    try:
+        cmd_compose(
+            _compose_ns(
+                plan_id='matrix-secaudit-kept',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=4,
+            )
+        )
+    finally:
+        _mem._emit_decision_log = original_emit
+
+    drop_entries = [
+        (pid, msg) for pid, msg in captured if 'finalize-step-security-audit omitted' in msg
+    ]
     assert drop_entries == []
 
 

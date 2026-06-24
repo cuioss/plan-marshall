@@ -111,6 +111,15 @@ class Extension(ExtensionBase):
                         ],
                         'optionals': [],
                     },
+                    'security': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-dev-java:java-security',
+                                'description': 'Java application security — inbound input validation, secure logging, secrets handling, and security anti-patterns',
+                            }
+                        ],
+                        'optionals': [],
+                    },
                 },
             }
         ]

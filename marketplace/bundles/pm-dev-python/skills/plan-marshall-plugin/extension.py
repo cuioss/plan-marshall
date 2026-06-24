@@ -77,6 +77,15 @@ class Extension(ExtensionBase):
                         ],
                         'optionals': [],
                     },
+                    'security': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-dev-python:python-security',
+                                'description': 'Python security — injection sinks (subprocess, eval, deserialization, SQL) and path-traversal prevention',
+                            },
+                        ],
+                        'optionals': [],
+                    },
                 },
             }
         ]

@@ -30,6 +30,7 @@ otherwise a manifest pruning would deadlock the phase transition.
 ## Steps
 
 - finalize-step-simplify
+- finalize-step-security-audit
 - push
 - finalize-step-preference-emitter
 - create-pr

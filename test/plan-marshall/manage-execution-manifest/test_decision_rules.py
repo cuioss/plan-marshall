@@ -498,3 +498,70 @@ class TestEarlyTerminateTaskQueueGuard:
             assert result is not None
             assert result['rule_fired'] == 'early_terminate_analysis'
             assert result['phase_5']['early_terminate'] is True
+
+
+# =============================================================================
+# Test: security_audit_inactive pre-filter (direct helper unit coverage)
+#
+# ``_apply_security_audit_inactive`` is the symmetric peer of
+# ``_apply_simplify_inactive``: it drops ``finalize-step-security-audit`` from
+# the phase-6 candidate list unless BOTH
+# ``change_type ∈ {feature, bug_fix, tech_debt}`` AND
+# ``affected_files_count > 0``. These tests exercise the helper directly (no
+# compose round-trip) so the gate's truth table and the no-op-when-absent
+# contract are pinned at the unit boundary. See standards/decision-rules.md
+# § Pre-Filter: security_audit_inactive.
+# =============================================================================
+
+
+_apply_security_audit_inactive = _mem._apply_security_audit_inactive
+
+
+class TestSecurityAuditInactivePreFilter:
+    """Direct unit coverage of the ``security_audit_inactive`` pre-filter helper."""
+
+    @pytest.mark.parametrize(
+        'change_type,affected_files_count,expect_present,expect_fired',
+        [
+            # Gate passes: code-touching change types with files > 0 → kept.
+            ('feature', 5, True, False),
+            ('bug_fix', 1, True, False),
+            ('tech_debt', 3, True, False),
+            # Gate fails on change_type → dropped.
+            ('analysis', 5, False, True),
+            ('enhancement', 5, False, True),
+            ('verification', 5, False, True),
+            # Gate fails on zero affected files (even for a code-touching type).
+            ('feature', 0, False, True),
+            ('tech_debt', 0, False, True),
+        ],
+    )
+    def test_gate_truth_table(
+        self, change_type, affected_files_count, expect_present, expect_fired
+    ):
+        candidates = ['finalize-step-security-audit', 'push', 'archive-plan']
+        filtered, fired = _apply_security_audit_inactive(
+            candidates, change_type, affected_files_count
+        )
+        assert fired is expect_fired
+        assert ('finalize-step-security-audit' in filtered) is expect_present
+        # Non-target candidates are never disturbed.
+        assert 'push' in filtered
+        assert 'archive-plan' in filtered
+
+    def test_no_op_when_step_absent_from_candidates(self):
+        # The step is not in the candidate set → the pre-filter is a no-op even
+        # when the gate would otherwise fail (returns the list unchanged, fired=False).
+        candidates = ['push', 'archive-plan']
+        filtered, fired = _apply_security_audit_inactive(candidates, 'analysis', 0)
+        assert fired is False
+        assert filtered == candidates
+
+    def test_returns_new_list_on_drop_not_mutating_input(self):
+        # The drop branch must not mutate the caller's candidate list in place.
+        candidates = ['finalize-step-security-audit', 'push']
+        filtered, fired = _apply_security_audit_inactive(candidates, 'analysis', 2)
+        assert fired is True
+        assert 'finalize-step-security-audit' not in filtered
+        # Input list is untouched.
+        assert candidates == ['finalize-step-security-audit', 'push']

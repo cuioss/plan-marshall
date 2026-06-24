@@ -45,7 +45,11 @@ Use when: Reviewing code complexity, applying refactoring patterns, or enforcing
 Read: standards/modern-patterns.md
 ```
 
-Use when: Writing new code using destructuring, template literals, spread/rest, array methods, or class patterns. Also covers DOM trust boundaries / XSS prevention — load when rendering untrusted data into the DOM.
+Use when: Writing new code using destructuring, template literals, spread/rest, array methods, or class patterns.
+
+**Security** (DOM trust boundaries / XSS prevention):
+
+The JavaScript security surface — DOM trust boundaries, XSS sinks, sanitization, and Trusted Types — is owned by `Skill: pm-dev-frontend:javascript-security`. Load that skill for any security-sensitive review or hardening task; it resolves through the `security` profile and references the DOM-trust/XSS content under this skill's `standards/modern-patterns.md`.
 
 **Async Programming** (load for async code):
 ```

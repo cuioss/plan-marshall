@@ -274,6 +274,8 @@ HttpResult<Config> configResult = jsonResult.map(json -> parseConfig(json));
 
 ## Inbound HTTP Security (input sanitization)
 
+> **Security surface.** This section is the CUI HTTP request-sanitization leg of the Java security surface. For security review and hardening tasks it is resolved through the `security` profile (`skills_by_profile.security`) alongside `Skill: pm-dev-java:java-security` (generic inbound validation) and `Skill: plan-marshall:persona-security-expert` (cross-cutting principles). The detailed `de.cuioss.http.security` API stays here as the HTTP client's own security companion.
+
 The `de.cuioss.http.security` package of the same `cui-http` library validates **inbound** HTTP components (URL path segments, query parameters, header names/values) against path traversal, injection, and malformed-encoding attacks. This is the server-side counterpart to the client-side `de.cuioss.http.client.*` surface above — apply it at every inbound HTTP boundary: servlets, JAX-RS resources, request filters, and any code that extracts a path segment, query parameter, or header from an untrusted request.
 
 **Normative rule:** every externally-sourced HTTP component MUST pass through a validator before it is used (logged, routed, persisted, or echoed). Do not validate ad hoc with hand-rolled string checks — use the library's pipelines so the failure taxonomy and monitoring stay consistent.

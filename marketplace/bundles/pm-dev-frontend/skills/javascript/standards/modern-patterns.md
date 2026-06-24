@@ -359,6 +359,8 @@ const handleScroll = throttle(() => { /* Update UI */ }, 100);
 
 ## DOM Trust Boundaries / XSS
 
+> **Security surface.** This section is the JavaScript security surface owned by `Skill: pm-dev-frontend:javascript-security`. Resolve it through the `security` profile (`skills_by_profile.security`) for security review and hardening tasks.
+
 Untrusted data rendered into the DOM is a script-injection (XSS) trust boundary. The hazard is API-specific: properties and methods that parse their argument as HTML execute embedded markup; properties that treat their argument as text do not.
 
 ### Prefer text-assigning APIs for untrusted data

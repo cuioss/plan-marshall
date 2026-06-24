@@ -23,6 +23,7 @@
     "./skills/css",
     "./skills/ext-triage-js",
     "./skills/javascript",
+    "./skills/javascript-security",
     "./skills/jest-testing",
     "./skills/lint-config",
     "./skills/plan-marshall-plugin"

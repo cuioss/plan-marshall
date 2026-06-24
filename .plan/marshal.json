@@ -70,6 +70,9 @@
         "default:finalize-step-simplify": {
           "simplify": "auto"
         },
+        "default:finalize-step-security-audit": {
+          "security_audit": "auto"
+        },
         "default:push": {},
         "default:create-pr": {},
         "default:ci-verify": {},

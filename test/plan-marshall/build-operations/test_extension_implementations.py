@@ -34,6 +34,7 @@ VALID_PROFILE_CATEGORIES = [
     'integration_testing',
     'quality',
     'documentation',
+    'security',
 ]
 
 

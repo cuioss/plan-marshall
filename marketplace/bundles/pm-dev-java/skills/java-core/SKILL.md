@@ -75,19 +75,9 @@ Read: standards/dsl-constants.md
 
 Use when: Organizing related constants hierarchically using nested static classes with `@UtilityClass`. Covers configuration keys, error codes, resource bundles, logging messages, and best practices.
 
-**Security Patterns** (load for security-sensitive code):
-```
-Read: standards/java-security-patterns.md
-```
+**Security** (input validation, secure logging, secrets, startup validation):
 
-Use when: Working with authentication, encryption, secrets, or sensitive data. Covers secure logging rules, startup config validation, anti-patterns (hardcoded secrets, insecure error messages), and security principles. This is the OUTBOUND security surface.
-
-**Input Validation** (load for validating externally-sourced inputs):
-```
-Read: standards/java-input-validation.md
-```
-
-Use when: Validating inbound data at the trust boundary — deserialized payloads, file inputs, CLI arguments, message-queue bodies — with programmatic `jakarta.validation` (`Validator`, constraint annotations, `@Valid` cascading). This is the INBOUND validation surface, distinct from the outbound Security Patterns above.
+The Java security surface — inbound input validation (`java-input-validation.md`) and outbound security patterns (`java-security-patterns.md`) — is owned by `Skill: pm-dev-java:java-security`. Load that skill for any security-sensitive review or hardening task; it resolves through the `security` profile and references the detailed standards under this skill's `standards/` directory.
 
 ## Related Skills
 

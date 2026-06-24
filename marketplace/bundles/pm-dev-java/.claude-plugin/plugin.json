@@ -28,6 +28,7 @@
     "./skills/java-maintenance",
     "./skills/java-null-safety",
     "./skills/java-quarkus",
+    "./skills/java-security",
     "./skills/javadoc",
     "./skills/junit-core",
     "./skills/junit-integration",

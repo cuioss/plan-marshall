@@ -136,6 +136,7 @@ EXECUTION_LOG_KEY = 'execution_log'
 DEFAULT_PHASE_5_STEPS = ('verify:quality-gate', 'verify:module-tests')
 DEFAULT_PHASE_6_STEPS = (
     'finalize-step-simplify',
+    'finalize-step-security-audit',
     'push',
     'create-pr',
     'ci-verify',
@@ -862,10 +863,12 @@ def _log_pre_submission_self_review_omitted(plan_id: str) -> None:
     _emit_decision_log(plan_id, message)
 
 
-def _log_simplify_omitted(plan_id: str, change_type: str, affected_files_count: int) -> None:
-    """Emit the decision-log entry for the ``simplify_inactive`` pre-filter."""
+def _log_prefilter_omitted(
+    plan_id: str, step_name: str, change_type: str, affected_files_count: int
+) -> None:
+    """Emit the decision-log entry for an ``*_inactive`` pre-filter (simplify or security_audit)."""
     message = (
-        '(plan-marshall:manage-execution-manifest:compose) finalize-step-simplify omitted — '
+        f'(plan-marshall:manage-execution-manifest:compose) {step_name} omitted — '
         f'change_type={change_type} affected_files_count={affected_files_count}'
     )
     _emit_decision_log(plan_id, message)
@@ -1251,6 +1254,40 @@ def _apply_simplify_inactive(
     return [s for s in phase_6_candidates if s != 'finalize-step-simplify'], True
 
 
+def _apply_security_audit_inactive(
+    phase_6_candidates: list[str],
+    change_type: str,
+    affected_files_count: int,
+) -> tuple[list[str], bool]:
+    """Pre-filter: drop ``finalize-step-security-audit`` when its activation gate fails.
+
+    The gate activates the step (keeps it) whenever BOTH:
+
+    1. ``change_type ∈ {feature, bug_fix, tech_debt}`` — the three code-touching
+       change types (the same set the ``simplify_inactive`` pre-filter uses); and
+    2. ``affected_files_count > 0``.
+
+    When either condition fails, ``finalize-step-security-audit`` is removed from
+    ``phase_6_candidates``. The proactive security sweep has no change surface to
+    audit on a pure-analysis / verification plan or a zero-files plan, so the gate
+    consults only ``change_type`` and ``affected_files_count`` — mirroring
+    ``simplify_inactive``.
+
+    The pre-filter is a no-op when ``finalize-step-security-audit`` is already
+    absent from the candidate set. Returns the filtered list plus a flag
+    indicating whether the pre-filter fired (i.e., the step was active in the
+    input but dropped after the check).
+    """
+    if 'finalize-step-security-audit' not in phase_6_candidates:
+        return phase_6_candidates, False
+
+    if change_type in _SIMPLIFY_CHANGE_TYPES and affected_files_count > 0:
+        # Gate passes — keep the step.
+        return phase_6_candidates, False
+
+    return [s for s in phase_6_candidates if s != 'finalize-step-security-audit'], True
+
+
 # Scope-gated phase-6 subtraction sets. Each entry lists the step references the
 # scope_gated_finalize pre-filter drops, expressed as match-sets that cover both
 # the bare and prefixed forms a candidate list may carry. The candidate list is
@@ -1290,6 +1327,7 @@ _SCOPE_GATED_OVERRIDE_DROP = frozenset({'automated-review', 'default:automated-r
 # keyed map (folded there from their former flat-sibling location). ``qgate`` is
 # the one finalize run-at-all gate that stays a flat phase-level sibling.
 _SIMPLIFY_OWNER_STEP = 'default:finalize-step-simplify'
+_SECURITY_AUDIT_OWNER_STEP = 'default:finalize-step-security-audit'
 _PRE_SUBMISSION_SELF_REVIEW_STEP = 'project:finalize-step-pre-submission-self-review'
 
 
@@ -1406,23 +1444,24 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # plan.phase-6-finalize run-at-all selection (post-matrix transform)
 # =============================================================================
 #
-# The three finalize run-at-all gates (`plan.phase-6-finalize.<gate>`) drive
+# The four finalize run-at-all gates (`plan.phase-6-finalize.<gate>`) drive
 # a post-matrix transform that forces each gate's finalize step in (`always`),
 # out (`never`), or defers to the existing decision machinery (`auto`, the
 # default no-op). Each gate maps to exactly one finalize step ID:
 #
-#   self_review   → default:pre-submission-self-review
-#   qgate         → pre-push-quality-gate (the finalize blocking-findings re-capture)
-#   simplify      → finalize-step-simplify (holistic post-implementation sweep)
+#   self_review    → default:pre-submission-self-review
+#   qgate          → pre-push-quality-gate (the finalize blocking-findings re-capture)
+#   simplify       → finalize-step-simplify (holistic post-implementation sweep)
+#   security_audit → finalize-step-security-audit (proactive security sweep)
 #
-# `simplify` is the symmetric peer of the other two gates: `auto` defers to
-# the `simplify_inactive` pre-filter that already decided the step at matrix
-# time, `always` re-adds it even when that pre-filter dropped it, and `never`
-# forces it out.
+# `simplify` and `security_audit` are symmetric peers of the other gates: `auto`
+# defers to the matching `*_inactive` pre-filter that already decided the step at
+# matrix time, `always` re-adds it even when that pre-filter dropped it, and
+# `never` forces it out.
 #
 # The transform NEVER touches `automated-review`: the bot-review invariant
 # (enforced by `_apply_bot_enforcement_guard`) is orthogonal and is preserved
-# verbatim — the three finalize gates are the only
+# verbatim — the four finalize gates are the only
 # finalize steps this transform may add or drop. Run-at-all values are validated
 # at set time by `manage-config`'s `validate_run_at_all`; the composer
 # defensively treats any non-`{always,never}` value (including `auto` and a
@@ -1460,17 +1499,21 @@ _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
         frozenset({'finalize-step-simplify'}),
         'finalize-step-simplify',
     ),
+    'security_audit': (
+        frozenset({'finalize-step-security-audit'}),
+        'finalize-step-security-audit',
+    ),
 }
 
 # The run-at-all gate fields for the finalize section, in canonical order.
-_CEREMONY_FINALIZE_GATES = ('self_review', 'qgate', 'simplify')
+_CEREMONY_FINALIZE_GATES = ('self_review', 'qgate', 'simplify', 'security_audit')
 
 # Canonical default for every finalize gate when marshal.json omits the block.
 _CEREMONY_FINALIZE_DEFAULT = 'auto'
 
 
 def _read_finalize_gates() -> dict[str, str]:
-    """Resolve the three ``plan.phase-6-finalize`` run-at-all gate values.
+    """Resolve the four ``plan.phase-6-finalize`` run-at-all gate values.
 
     Each gate reads from its canonical home and merges the ``auto`` default
     under an absent value:
@@ -1478,13 +1521,14 @@ def _read_finalize_gates() -> dict[str, str]:
     - ``qgate`` stays a flat phase-local knob, read from
       ``plan.phase-6-finalize.qgate`` directly (it is consumed as a phase-level
       run-at-all gate, not a param the owning step body reads).
-    - ``simplify`` and ``self_review`` are folded under their owning finalize
-      step's nested param object in ``phase-6-finalize.steps`` (``simplify`` →
-      ``default:finalize-step-simplify``; ``self_review`` →
-      ``project:finalize-step-pre-submission-self-review``). They are read via
+    - ``simplify``, ``self_review``, and ``security_audit`` are folded under their
+      owning finalize step's nested param object in ``phase-6-finalize.steps``
+      (``simplify`` → ``default:finalize-step-simplify``; ``self_review`` →
+      ``project:finalize-step-pre-submission-self-review``; ``security_audit`` →
+      ``default:finalize-step-security-audit``). They are read via
       :func:`_read_step_owned_knob`.
 
-    Returns a ``{gate: value}`` dict for the three finalize gates; values are
+    Returns a ``{gate: value}`` dict for the four finalize gates; values are
     always one of the configured values (or the ``auto`` default). The caller
     treats any value other than ``always`` / ``never`` as defer.
     """
@@ -1506,13 +1550,17 @@ def _read_finalize_gates() -> dict[str, str]:
                     if isinstance(qgate_value, str) and qgate_value:
                         resolved['qgate'] = qgate_value
 
-    # simplify / self_review are folded under their owning step's param object.
+    # simplify / self_review / security_audit are folded under their owning
+    # step's param object.
     simplify_value = _read_step_owned_knob(_SIMPLIFY_OWNER_STEP, 'simplify')
     if isinstance(simplify_value, str) and simplify_value:
         resolved['simplify'] = simplify_value
     self_review_value = _read_step_owned_knob(_PRE_SUBMISSION_SELF_REVIEW_STEP, 'self_review')
     if isinstance(self_review_value, str) and self_review_value:
         resolved['self_review'] = self_review_value
+    security_audit_value = _read_step_owned_knob(_SECURITY_AUDIT_OWNER_STEP, 'security_audit')
+    if isinstance(security_audit_value, str) and security_audit_value:
+        resolved['security_audit'] = security_audit_value
 
     return resolved
 
@@ -2176,6 +2224,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     #      when the live footprint is empty.
     #   4. simplify_inactive — drop finalize-step-simplify when
     #      change_type ∉ {feature, bug_fix, tech_debt} OR affected_files_count == 0.
+    #   4b. security_audit_inactive — drop finalize-step-security-audit on the
+    #      same change_type + affected_files_count gate as simplify_inactive.
     #   5. scope_gated_finalize — drop heavyweight phase-6 review/audit steps by
     #      scope_estimate; automated-review suppressed ONLY via the explicit
     #      drop_review_on_scope_gate opt-in.
@@ -2202,6 +2252,15 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # both resolved above; it runs after the three candidate-narrowing pre-filters
     # and before the seven-row matrix per standards/decision-rules.md.
     phase_6_candidates, simplify_omitted = _apply_simplify_inactive(
+        phase_6_candidates, args.change_type, affected_files_count
+    )
+
+    # Pre-filter 4b (security_audit_inactive) is the symmetric peer of
+    # simplify_inactive — same change_type + affected_files_count gate, dropping
+    # finalize-step-security-audit when the plan has no code-touching change
+    # surface to audit. See standards/decision-rules.md § Pre-Filter:
+    # security_audit_inactive.
+    phase_6_candidates, security_audit_omitted = _apply_security_audit_inactive(
         phase_6_candidates, args.change_type, affected_files_count
     )
 
@@ -2374,7 +2433,9 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     if pre_submission_self_review_omitted:
         _log_pre_submission_self_review_omitted(plan_id)
     if simplify_omitted:
-        _log_simplify_omitted(plan_id, args.change_type, affected_files_count)
+        _log_prefilter_omitted(plan_id, 'finalize-step-simplify', args.change_type, affected_files_count)
+    if security_audit_omitted:
+        _log_prefilter_omitted(plan_id, 'finalize-step-security-audit', args.change_type, affected_files_count)
     for dropped_step in scope_gated_dropped:
         _log_scope_gated_finalize_subtraction(plan_id, args.scope_estimate, dropped_step)
     for change in ceremony_forced_in:
@@ -2403,6 +2464,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'pre_push_quality_gate_omitted': pre_push_quality_gate_omitted,
         'pre_submission_self_review_omitted': pre_submission_self_review_omitted,
         'simplify_omitted': simplify_omitted,
+        'security_audit_omitted': security_audit_omitted,
         'scope_gated_finalize_dropped': scope_gated_dropped,
         'drop_review_on_scope_gate': drop_review_on_scope_gate,
         'ceremony_finalize_gates': ceremony_finalize_gates,

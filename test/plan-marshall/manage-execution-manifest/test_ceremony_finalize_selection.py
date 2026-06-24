@@ -72,7 +72,7 @@ _mem._log_bot_enforcement_guard_remediated = lambda *a, **kw: None  # type: igno
 _mem._log_scope_gated_finalize_subtraction = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_ceremony_finalize_selection = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_candidate_source = lambda *a, **kw: None  # type: ignore[attr-defined]
-_mem._log_simplify_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
+_mem._log_prefilter_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_execution_tier_routing = lambda *a, **kw: None  # type: ignore[attr-defined]
 
 
@@ -123,6 +123,7 @@ def _compose_ns(
 # because it stays a flat phase-level sibling (no owning step).
 _GATE_OWNER_STEP = {
     'simplify': 'default:finalize-step-simplify',
+    'security_audit': 'default:finalize-step-security-audit',
     'self_review': 'project:finalize-step-pre-submission-self-review',
     'drop_review_on_scope_gate': 'project:finalize-step-pre-submission-self-review',
 }
@@ -281,13 +282,19 @@ class TestCeremonyFinalizeAuto:
             'self_review': 'auto',
             'qgate': 'auto',
             'simplify': 'auto',
+            'security_audit': 'auto',
         }
         assert result['ceremony_finalize_forced_in'] == []
         assert result['ceremony_finalize_forced_out'] == []
 
     def test_explicit_auto_gates_are_no_op(self, plan_context):
         _seed_marshal(
-            finalize_gates={'self_review': 'auto', 'qgate': 'auto', 'simplify': 'auto'}
+            finalize_gates={
+                'self_review': 'auto',
+                'qgate': 'auto',
+                'simplify': 'auto',
+                'security_audit': 'auto',
+            }
         )
         _stub_footprint(_FOOTPRINT)
 
@@ -633,6 +640,137 @@ class TestCeremonyFinalizeSimplify:
         assert 'finalize-step-simplify' in bare_seq
         assert 'archive-plan' in bare_seq
         assert bare_seq.index('finalize-step-simplify') < bare_seq.index('archive-plan')
+
+
+# =============================================================================
+# Test: security_audit gate — symmetric peer of the other three finalize gates
+# =============================================================================
+
+
+class TestCeremonyFinalizeSecurityAudit:
+    """The ``security_audit`` gate forces ``finalize-step-security-audit`` in/out,
+    with ``auto`` deferring to the matrix-time ``security_audit_inactive``
+    pre-filter. It is the symmetric peer of the other three finalize gates
+    (self_review / qgate / simplify).
+
+    ``finalize-step-security-audit`` is a member of ``DEFAULT_PHASE_6_STEPS``; the
+    ``security_audit_inactive`` pre-filter keeps it only when
+    ``change_type ∈ {feature, bug_fix, tech_debt}`` AND ``affected_files > 0``
+    (the same gate as ``simplify_inactive``). The default ``_compose_ns``
+    (``change_type='feature'``, ``affected_files_count=5``) therefore keeps the
+    step in the ``auto`` baseline.
+    """
+
+    def test_auto_defers_to_prefilter_keep_branch(self, plan_context):
+        # change_type=feature, files>0 → security_audit_inactive keeps the step;
+        # auto is a no-op, so it survives.
+        _seed_marshal(finalize_gates={'security_audit': 'auto'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(_compose_ns(plan_id='ceremony-secaudit-auto-keep'))
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['ceremony_finalize_gates']['security_audit'] == 'auto'
+        assert result['ceremony_finalize_forced_in'] == []
+        assert result['ceremony_finalize_forced_out'] == []
+        assert 'finalize-step-security-audit' in _bare(_manifest_phase_6_steps(result))
+
+    def test_auto_defers_to_prefilter_drop_branch(self, plan_context):
+        # change_type=enhancement is outside the security_audit activation set
+        # ({feature, bug_fix, tech_debt}) → the security_audit_inactive pre-filter
+        # drops the step; auto does NOT re-add it.
+        _seed_marshal(finalize_gates={'security_audit': 'auto'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(
+            _compose_ns(plan_id='ceremony-secaudit-auto-drop', change_type='enhancement')
+        )
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['ceremony_finalize_gates']['security_audit'] == 'auto'
+        # auto never force-includes — the pre-filter's drop stands.
+        assert 'finalize-step-security-audit' not in result['ceremony_finalize_forced_in']
+        assert 'finalize-step-security-audit' not in _bare(_manifest_phase_6_steps(result))
+
+    def test_never_drops_security_audit_step(self, plan_context):
+        # Baseline keeps the step (feature + files>0); never must drop it.
+        _seed_marshal(finalize_gates={'security_audit': 'never'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(_compose_ns(plan_id='ceremony-secaudit-never'))
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert 'finalize-step-security-audit' not in _bare(_manifest_phase_6_steps(result))
+        assert 'finalize-step-security-audit' in result['ceremony_finalize_forced_out']
+
+    def test_never_is_no_op_when_already_dropped_by_prefilter(self, plan_context):
+        # enhancement change_type → security_audit_inactive already dropped the
+        # step; never security_audit is then a no-op (no double-drop, no
+        # forced_out entry).
+        _seed_marshal(finalize_gates={'security_audit': 'never'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='ceremony-secaudit-never-absent', change_type='enhancement'
+            )
+        )
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert 'finalize-step-security-audit' not in result['ceremony_finalize_forced_out']
+        assert 'finalize-step-security-audit' not in _bare(_manifest_phase_6_steps(result))
+
+    def test_always_readds_security_audit_dropped_by_prefilter(self, plan_context):
+        # enhancement change_type → security_audit_inactive drops the step; always
+        # must re-add it regardless, overriding the pre-filter.
+        _seed_marshal(finalize_gates={'security_audit': 'always'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='ceremony-secaudit-always-readd', change_type='enhancement'
+            )
+        )
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert 'finalize-step-security-audit' in _bare(_manifest_phase_6_steps(result))
+        assert 'finalize-step-security-audit' in result['ceremony_finalize_forced_in']
+
+    def test_always_is_no_op_when_step_already_present(self, plan_context):
+        # feature + files>0 → the step survives the matrix; always is a no-op.
+        _seed_marshal(finalize_gates={'security_audit': 'always'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(_compose_ns(plan_id='ceremony-secaudit-always-present'))
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert result['ceremony_finalize_forced_in'] == []
+        assert 'finalize-step-security-audit' in _bare(_manifest_phase_6_steps(result))
+
+    def test_always_inserts_before_plan_mutating_tail(self, plan_context):
+        # enhancement drops the step; always re-adds it before the
+        # plan-mutating tail.
+        _seed_marshal(finalize_gates={'security_audit': 'always'})
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='ceremony-secaudit-always-order', change_type='enhancement'
+            )
+        )
+
+        assert result is not None
+        steps = _manifest_phase_6_steps(result)
+        bare_seq = [next(iter(_bare([s]))) for s in steps]
+        assert 'finalize-step-security-audit' in bare_seq
+        assert 'archive-plan' in bare_seq
+        assert bare_seq.index('finalize-step-security-audit') < bare_seq.index('archive-plan')
 
 
 # =============================================================================

@@ -21,6 +21,7 @@
     "./skills/ext-triage-python",
     "./skills/plan-marshall-plugin",
     "./skills/pytest-testing",
-    "./skills/python-core"
+    "./skills/python-core",
+    "./skills/python-security"
   ]
 }

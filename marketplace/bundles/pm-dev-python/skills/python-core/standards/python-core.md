@@ -332,6 +332,8 @@ if not user_path.resolve().is_relative_to(safe_base):
 
 ### Injection and Unsafe Deserialization
 
+> **Security surface.** This section and the **Security** (path-traversal) section above are the Python security surface owned by `Skill: pm-dev-python:python-security`. Resolve them through the `security` profile (`skills_by_profile.security`) for security review and hardening tasks.
+
 Treat every externally-sourced value (request data, file contents, environment, CLI args) as untrusted at these stdlib boundaries.
 
 **Subprocess** — never `shell=True` with untrusted input; pass an argv list so the OS, not a shell, receives the arguments:
