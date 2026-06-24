@@ -9,10 +9,11 @@ skill's canonical manifest step_id. It walks two roots:
 
 1. **Bundle finalize-step skills** —
    ``marketplace_root/{bundle}/skills/{skill}/SKILL.md`` whose
-   ``{bundle}:{skill}`` reference is a member of the authoritative
-   ``OPTIONAL_BUNDLE_FINALIZE_STEPS`` registry in
-   ``manage-config/_config_defaults.py``. The expected step_id is that
-   registry reference (i.e. ``{bundle}:{skill}``).
+   ``{bundle}:{skill}`` reference is a bundle-optional finalize-step implementor
+   surfaced by ``extension_discovery.find_implementors`` (the SOLE finalize-step
+   discovery path; the ``OPTIONAL_BUNDLE_FINALIZE_STEPS`` registry constant was
+   removed). The expected step_id is that discovered reference
+   (i.e. ``{bundle}:{skill}``).
 
 2. **Project-local finalize-step skills** —
    ``<repo>/.claude/skills/finalize-step-*/SKILL.md`` discovered by glob,
@@ -66,36 +67,31 @@ FINDING_TYPE = _afst.FINDING_TYPE
 # ---------------------------------------------------------------------------
 
 
-# A bundle reference that the synthetic registry below treats as in-scope.
-# Mirrors the real ``OPTIONAL_BUNDLE_FINALIZE_STEPS`` shape (``bundle:skill``).
+# A bundle reference the discovery query surfaces as a bundle-optional step.
+# Mirrors the real ``{bundle}:{skill}`` step-id shape.
 _BUNDLE = 'plan-marshall'
 _SKILL = 'plan-retrospective'
 _BUNDLE_REF = f'{_BUNDLE}:{_SKILL}'
 
 
-def _bundle_marketplace(tmp_path: Path) -> Path:
-    """Build a synthetic marketplace root with the manage-config registry.
+def _bundle_marketplace(tmp_path: Path, monkeypatch) -> Path:
+    """Build a synthetic marketplace root and stub the discovery query.
 
-    The scanner imports ``OPTIONAL_BUNDLE_FINALIZE_STEPS`` from
-    ``{marketplace_root}/plan-marshall/skills/manage-config/scripts/
-    _config_defaults.py``. To make a synthetic ``tmp_path`` marketplace
-    in-scope for a given ``{bundle}:{skill}``, that registry module must
-    exist and list the reference.
+    Bundle-optional step discovery now routes through
+    ``extension_discovery.find_implementors`` (the removed
+    ``OPTIONAL_BUNDLE_FINALIZE_STEPS`` registry is gone), which resolves the
+    marketplace bundles root internally — it cannot be redirected to a synthetic
+    ``tmp_path`` tree. To exercise the scanner against a synthetic bundle skill,
+    stub ``_load_optional_bundle_finalize_steps`` to return the single in-scope
+    ``{bundle}:{skill}`` reference; ``_bundle_targets`` then reads the synthetic
+    ``marketplace_root/{bundle}/skills/{skill}/SKILL.md`` directly.
 
     Returns the marketplace bundles root to pass to the scanner.
     """
     bundles_root = tmp_path / 'marketplace' / 'bundles'
-    config_scripts = (
-        bundles_root
-        / 'plan-marshall'
-        / 'skills'
-        / 'manage-config'
-        / 'scripts'
-    )
-    config_scripts.mkdir(parents=True)
-    (config_scripts / '_config_defaults.py').write_text(
-        f'OPTIONAL_BUNDLE_FINALIZE_STEPS = [{_BUNDLE_REF!r}]\n',
-        encoding='utf-8',
+    bundles_root.mkdir(parents=True)
+    monkeypatch.setattr(
+        _afst, '_load_optional_bundle_finalize_steps', lambda _root: [_BUNDLE_REF]
     )
     return bundles_root
 
@@ -152,8 +148,8 @@ class TestBundleViolating:
     """A documented ``--step`` token that diverges from the registry step_id
     is flagged."""
 
-    def test_drifted_token_triggers_finding(self, tmp_path: Path) -> None:
-        bundles_root = _bundle_marketplace(tmp_path)
+    def test_drifted_token_triggers_finding(self, tmp_path: Path, monkeypatch) -> None:
+        bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         # Documented token uses a bare-skill name instead of the canonical
         # ``{bundle}:{skill}`` reference — the classic PR #629 drift.
         content = (
@@ -173,10 +169,10 @@ class TestBundleViolating:
         assert f['details']['expected_step_id'] == _BUNDLE_REF
 
     def test_project_prefixed_token_on_bundle_skill_is_flagged(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch
     ) -> None:
         """A ``project:`` token on a bundle skill drifts from its registry id."""
-        bundles_root = _bundle_marketplace(tmp_path)
+        bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         content = '# Skill\n\n' + _mark_step_done_block(f'project:{_SKILL}')
         _write_bundle_skill(bundles_root, content)
 
@@ -194,8 +190,8 @@ class TestBundleViolating:
 class TestBundleClean:
     """A documented token equal to the registry step_id is not flagged."""
 
-    def test_matching_token_produces_no_finding(self, tmp_path: Path) -> None:
-        bundles_root = _bundle_marketplace(tmp_path)
+    def test_matching_token_produces_no_finding(self, tmp_path: Path, monkeypatch) -> None:
+        bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         content = '# Skill\n\n' + _mark_step_done_block(_BUNDLE_REF)
         _write_bundle_skill(bundles_root, content)
 
@@ -204,10 +200,10 @@ class TestBundleClean:
         assert findings == []
 
     def test_out_of_registry_bundle_skill_is_not_scanned(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch
     ) -> None:
         """A finalize-step-looking skill NOT in the registry is out of scope."""
-        bundles_root = _bundle_marketplace(tmp_path)
+        bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         # Drift in a skill that is NOT a registry member — must not be flagged.
         content = '# Other\n\n' + _mark_step_done_block('wrong-token')
         _write_bundle_skill(
@@ -227,8 +223,8 @@ class TestBundleClean:
 class TestSkipContext:
     """Skills with no in-scope ``mark-step-done`` invocation are skipped."""
 
-    def test_no_mark_step_done_block_is_skipped(self, tmp_path: Path) -> None:
-        bundles_root = _bundle_marketplace(tmp_path)
+    def test_no_mark_step_done_block_is_skipped(self, tmp_path: Path, monkeypatch) -> None:
+        bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         content = (
             '# Skill\n\nThis skill documents no finalize handshake at all.\n'
         )
@@ -239,10 +235,10 @@ class TestSkipContext:
         assert findings == []
 
     def test_mark_step_done_wrong_phase_is_skipped(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch
     ) -> None:
         """A ``mark-step-done`` under a non-6-finalize phase is not in scope."""
-        bundles_root = _bundle_marketplace(tmp_path)
+        bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         # Token drifts, but the phase is not 6-finalize — silently skipped.
         content = '# Skill\n\n' + _mark_step_done_block(
             'drifted', phase='5-execute'
@@ -263,9 +259,9 @@ class TestEqualsForm:
     """Both ``--phase=6-finalize`` and ``--step=token`` (equals form) parse."""
 
     def test_equals_form_violating_token_is_flagged(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch
     ) -> None:
-        bundles_root = _bundle_marketplace(tmp_path)
+        bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         content = (
             '# Skill\n\n'
             '```bash\n'
@@ -281,8 +277,8 @@ class TestEqualsForm:
         assert len(findings) == 1
         assert findings[0]['details']['documented_token'] == _SKILL
 
-    def test_equals_form_matching_token_is_clean(self, tmp_path: Path) -> None:
-        bundles_root = _bundle_marketplace(tmp_path)
+    def test_equals_form_matching_token_is_clean(self, tmp_path: Path, monkeypatch) -> None:
+        bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         content = (
             '# Skill\n\n'
             '```bash\n'
@@ -308,7 +304,7 @@ class TestProjectLocal:
     with the ``project:{name}`` expected step_id."""
 
     def test_project_local_drifted_token_is_flagged(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch
     ) -> None:
         name = 'finalize-step-deploy-target'
         # Documented token drops the ``project:`` prefix — a drift.
@@ -324,7 +320,7 @@ class TestProjectLocal:
         assert f['details']['expected_step_id'] == f'project:{name}'
 
     def test_project_local_matching_token_is_clean(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch
     ) -> None:
         name = 'finalize-step-deploy-target'
         content = '# Deploy Target\n\n' + _mark_step_done_block(
@@ -337,7 +333,7 @@ class TestProjectLocal:
         assert findings == []
 
     def test_project_local_without_handshake_is_skipped(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch
     ) -> None:
         name = 'finalize-step-deploy-target'
         content = '# Deploy Target\n\nNo finalize handshake here.\n'
@@ -347,9 +343,9 @@ class TestProjectLocal:
 
         assert findings == []
 
-    def test_bundle_and_project_findings_combine(self, tmp_path: Path) -> None:
+    def test_bundle_and_project_findings_combine(self, tmp_path: Path, monkeypatch) -> None:
         """Findings from the bundle tree and ``.claude/skills`` combine."""
-        bundles_root = _bundle_marketplace(tmp_path)
+        bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         # Bundle-tree drift.
         _write_bundle_skill(
             bundles_root, '# Skill\n\n' + _mark_step_done_block(_SKILL)
@@ -379,8 +375,8 @@ class TestProjectLocal:
 class TestFindingShape:
     """The finding dict carries the documented contract fields."""
 
-    def test_finding_shape(self, tmp_path: Path) -> None:
-        bundles_root = _bundle_marketplace(tmp_path)
+    def test_finding_shape(self, tmp_path: Path, monkeypatch) -> None:
+        bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         content = '# Skill\n\n' + _mark_step_done_block(_SKILL)
         md = _write_bundle_skill(bundles_root, content)
 
@@ -398,9 +394,9 @@ class TestFindingShape:
         assert isinstance(f['message'], str) and f['message']
         assert set(f['details']) == {'documented_token', 'expected_step_id'}
 
-    def test_line_points_at_the_step_token(self, tmp_path: Path) -> None:
+    def test_line_points_at_the_step_token(self, tmp_path: Path, monkeypatch) -> None:
         """The reported line is the 1-based line of the ``--step`` token."""
-        bundles_root = _bundle_marketplace(tmp_path)
+        bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         # The --step token lands on line 6 (1: heading, 2: blank, 3: prose,
         # 4: blank, 5: fence-open, 6: mark-step-done command line).
         content = (

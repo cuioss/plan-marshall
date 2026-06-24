@@ -20,10 +20,7 @@ from _config_core import (
     save_config,
     success_exit,
 )
-from _config_defaults import (
-    BUILT_IN_FINALIZE_STEPS,
-    OPTIONAL_BUNDLE_FINALIZE_STEPS,
-)
+from _config_defaults import FINALIZE_STEP_EXT_POINT
 from finalize_step_presets import (  # type: ignore[import-not-found]
     FinalizeStepPresets,
 )
@@ -31,13 +28,22 @@ from finalize_step_presets import (  # type: ignore[import-not-found]
 # Phase key the preset writes into.
 _PHASE_SECTION = 'phase-6-finalize'
 
-# Defence-in-depth: the known finalize-step universe, recomputed here from
-# the authoritative _config_defaults registry. Mirrors KNOWN_FINALIZE_STEPS
-# in finalize_step_presets.py but kept local so the writer re-validates the
-# preset payload independently of the registry module's import-time check.
-_KNOWN_FINALIZE_STEPS: frozenset[str] = frozenset(BUILT_IN_FINALIZE_STEPS) | frozenset(
-    OPTIONAL_BUNDLE_FINALIZE_STEPS
-)
+
+def _known_finalize_steps() -> frozenset[str]:
+    """Return the known finalize-step universe via the discovery query.
+
+    Defence-in-depth: recomputed from the reusable
+    ``extension_discovery.find_implementors`` query (the same SOLE discovery path
+    the seed and preset builder consume) so the writer re-validates the preset
+    payload against the live discovered universe — built-in, bundle-optional, and
+    project step ids alike. Computed on demand (not at module import) so this
+    module stays a leaf and the universe always reflects the current step docs.
+    """
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+
+    return frozenset(
+        rec['name'] for rec in find_implementors(FINALIZE_STEP_EXT_POINT) if rec.get('name')
+    )
 
 
 def cmd_finalize_steps_apply_preset(args) -> dict:
@@ -69,9 +75,10 @@ def cmd_finalize_steps_apply_preset(args) -> dict:
     except ValueError as exc:
         return error_exit(str(exc))
 
-    # Defence-in-depth re-validation against the authoritative registry.
+    # Defence-in-depth re-validation against the discovered universe.
+    known_steps = _known_finalize_steps()
     for step in steps:
-        if step not in _KNOWN_FINALIZE_STEPS:
+        if step not in known_steps:
             return error_exit(
                 f"preset '{args.preset}' references unknown finalize step "
                 f"'{step}'"

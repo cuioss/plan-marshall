@@ -96,13 +96,15 @@ _DISTRIBUTED_GATES = (
 
 # The finalize run-at-all / escape-hatch knobs that fold under their owning
 # finalize step's nested param object (no longer flat phase-level siblings).
-# `default:finalize-step-simplify` is a BUILT-IN finalize step, so its `simplify`
-# default is materialized in get_default_config()['plan']['phase-6-finalize']
-# ['steps']. `project:finalize-step-pre-submission-self-review` is an OPT-IN
-# project step (not in BUILT_IN_FINALIZE_STEPS), so its `self_review` /
-# `drop_review_on_scope_gate` defaults are declared in that step's `configurable:`
-# frontmatter and resolved via the configurable_contract parser (the reader
-# supplies them via default-merge when the step is absent on disk).
+# `default:finalize-step-simplify` is a BUILT-IN finalize step (discovered with
+# `default_on: true`), so its `simplify` default is materialized in
+# get_default_config()['plan']['phase-6-finalize']['steps'].
+# `project:finalize-step-pre-submission-self-review` is an OPT-IN project step
+# (discovered with `default_on: false`, so absent from the default-on seed), so
+# its `self_review` / `drop_review_on_scope_gate` defaults are declared in that
+# step's `configurable:` frontmatter and resolved via the configurable_contract
+# parser (the reader supplies them via default-merge when the step is absent on
+# disk).
 _SEEDED_FOLDED_KNOBS = (
     ('default:finalize-step-simplify', 'simplify', 'auto'),
 )

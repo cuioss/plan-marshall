@@ -117,4 +117,5 @@ All 10 production bundles ship a domain-bundle manifest under `skills/plan-marsh
 - [extension-contract.md](extension-contract.md) — Complete `extension.py` implementation contract (ExtensionBase, methods, validation, examples)
 - [module-discovery.md](module-discovery.md) — Module discovery contract for build-bundle manifests
 - [ext-point-recipe.md](ext-point-recipe.md) — Recipe extension point (same `implements:` identification model)
+- [ext-point-finalize-step.md](ext-point-finalize-step.md) — Finalize-step extension point (same `implements:` identification model)
 - [marshal-json-reference.md](marshal-json-reference.md) — Central marshal.json path reference for domain registration

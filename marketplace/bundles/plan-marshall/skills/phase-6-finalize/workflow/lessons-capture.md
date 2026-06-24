@@ -1,8 +1,15 @@
 ---
 name: default:lessons-capture
-description: Record lessons learned
+description: Capture lessons from triage findings and PR-review escalations (skipped when qgate_findings=0, pr_comments_promoted=0, and script_failure_clusters=0)
 order: 60
-implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+default_on: true
+presets:
+  - local
+  - standard
+  - full
+implements:
+  - plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+  - plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
 # Lessons Capture

@@ -2,6 +2,12 @@
 name: default:record-metrics
 description: Record final plan metrics before archive
 order: 998
+default_on: true
+presets:
+  - local
+  - standard
+  - full
+implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
 # Record Metrics

@@ -3,7 +3,13 @@ name: default:create-pr
 description: Create pull request
 order: 20
 mutates_source: false
-implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+default_on: true
+presets:
+  - standard
+  - full
+implements:
+  - plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+  - plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
 # Create PR

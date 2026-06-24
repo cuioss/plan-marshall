@@ -531,41 +531,67 @@ def _write_manifest(skill_dir, *, implements, with_extension=True):
 
 
 def test_read_implements_field_returns_value(tmp_path):
-    """The reader returns the implements: scalar from a well-formed frontmatter."""
+    """The reader returns the implements: declaration as a one-element list.
+
+    ``read_implements_field`` now returns a ``list[str]`` (supporting multi-interface
+    block-sequence declarations); an inline scalar normalizes to a one-element list.
+    """
     skill = tmp_path / 'manifest'
     _write_manifest(skill, implements=_DOMAIN_BUNDLE_ARCHETYPE, with_extension=False)
-    assert _discovery.read_implements_field(skill / 'SKILL.md') == _DOMAIN_BUNDLE_ARCHETYPE
+    assert _discovery.read_implements_field(skill / 'SKILL.md') == [_DOMAIN_BUNDLE_ARCHETYPE]
 
 
 def test_read_implements_field_strips_surrounding_quotes(tmp_path):
-    """A double- or single-quoted implements: value resolves to the bare value."""
+    """A double- or single-quoted implements: value resolves to the bare value (list form)."""
     skill = tmp_path / 'manifest'
     skill.mkdir()
     (skill / 'SKILL.md').write_text(
         '---\nname: m\nimplements: "' + _DOMAIN_BUNDLE_ARCHETYPE + '"\n---\n\n# m\n',
         encoding='utf-8',
     )
-    assert _discovery.read_implements_field(skill / 'SKILL.md') == _DOMAIN_BUNDLE_ARCHETYPE
+    assert _discovery.read_implements_field(skill / 'SKILL.md') == [_DOMAIN_BUNDLE_ARCHETYPE]
 
 
-def test_read_implements_field_none_when_key_absent(tmp_path):
-    """A manifest with frontmatter but no implements: key yields None."""
+def test_read_implements_field_returns_block_sequence_values(tmp_path):
+    """A YAML block-sequence implements: returns every declared interface, in order.
+
+    A step doc may declare more than one interface (e.g. a phase-6 workflow step
+    that implements both ext-point-execution-context-workflow and
+    ext-point-finalize-step); the reader returns each declared value.
+    """
+    skill = tmp_path / 'manifest'
+    skill.mkdir()
+    (skill / 'SKILL.md').write_text(
+        '---\nname: m\nimplements:\n'
+        '  - plan-marshall:extension-api/standards/ext-point-execution-context-workflow\n'
+        '  - plan-marshall:extension-api/standards/ext-point-finalize-step\n'
+        '---\n\n# m\n',
+        encoding='utf-8',
+    )
+    assert _discovery.read_implements_field(skill / 'SKILL.md') == [
+        'plan-marshall:extension-api/standards/ext-point-execution-context-workflow',
+        'plan-marshall:extension-api/standards/ext-point-finalize-step',
+    ]
+
+
+def test_read_implements_field_empty_when_key_absent(tmp_path):
+    """A manifest with frontmatter but no implements: key yields an empty list."""
     skill = tmp_path / 'manifest'
     _write_manifest(skill, implements=None, with_extension=False)
-    assert _discovery.read_implements_field(skill / 'SKILL.md') is None
+    assert _discovery.read_implements_field(skill / 'SKILL.md') == []
 
 
-def test_read_implements_field_none_when_no_frontmatter(tmp_path):
-    """A SKILL.md with no leading --- frontmatter block yields None."""
+def test_read_implements_field_empty_when_no_frontmatter(tmp_path):
+    """A SKILL.md with no leading --- frontmatter block yields an empty list."""
     skill = tmp_path / 'manifest'
     skill.mkdir()
     (skill / 'SKILL.md').write_text('# manifest\n\nNo frontmatter here.\n', encoding='utf-8')
-    assert _discovery.read_implements_field(skill / 'SKILL.md') is None
+    assert _discovery.read_implements_field(skill / 'SKILL.md') == []
 
 
-def test_read_implements_field_none_when_file_missing(tmp_path):
-    """An unreadable / missing SKILL.md yields None rather than raising."""
-    assert _discovery.read_implements_field(tmp_path / 'missing' / 'SKILL.md') is None
+def test_read_implements_field_empty_when_file_missing(tmp_path):
+    """An unreadable / missing SKILL.md yields an empty list rather than raising."""
+    assert _discovery.read_implements_field(tmp_path / 'missing' / 'SKILL.md') == []
 
 
 # --- find_extension_path synthetic-tree coverage -----------------------------
@@ -681,7 +707,7 @@ def test_find_extension_path_resolved_manifests_declare_the_archetype():
         path = _discovery.find_extension_path(bundle_dir)
         assert path is not None, f'{bundle}: find_extension_path returned None'
         skill_md = path.parent / 'SKILL.md'
-        assert _discovery.read_implements_field(skill_md) == _DOMAIN_BUNDLE_ARCHETYPE, (
+        assert _DOMAIN_BUNDLE_ARCHETYPE in _discovery.read_implements_field(skill_md), (
             f'{bundle}: resolved manifest SKILL.md does not declare the domain-bundle archetype'
         )
 
@@ -780,3 +806,114 @@ def test_extension_discovery_plugin_cache_honours_env_override(
     """An explicit PLUGIN_CACHE_PATH env var outranks the layout op."""
     monkeypatch.setenv('PLUGIN_CACHE_PATH', '/explicit/override')
     assert _discovery.get_plugin_cache_path() == pathlib.Path('/explicit/override')
+
+
+# =============================================================================
+# find_implementors — the reusable ext-point implementor discovery query
+# =============================================================================
+#
+# find_implementors(ext_point) is the SOLE finalize-step discovery path. It scans
+# three real surfaces (phase-6-finalize/{workflow,standards}/*.md, every bundle's
+# skills/*/SKILL.md, and project-local .claude/skills/finalize-step-*/SKILL.md)
+# anchored on the marketplace tree, returning one record per implementor with
+# name / order / default_on / presets / description / source / path.
+
+_FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
+
+
+def _finalize_implementors() -> dict[str, dict]:
+    """Return the discovered finalize-step implementors keyed by step id.
+
+    Asserts step-id uniqueness BEFORE collapsing the records into a name-keyed
+    dict: a dict comprehension silently drops a duplicate (last write wins), so
+    a regression that re-emits the same ``bundle:skill`` twice — e.g. the cache
+    + source dedup breaking — would be invisible if we keyed without checking.
+    """
+    records = _discovery.find_implementors(_FINALIZE_STEP_EXT_POINT)
+    names = [rec['name'] for rec in records]
+    assert len(names) == len(set(names)), (
+        f'duplicate implementor step ids must not occur: {sorted(names)}'
+    )
+    return {rec['name']: rec for rec in records}
+
+
+def test_find_implementors_returns_records_sorted_by_order():
+    """find_implementors returns implementor records sorted ascending by (order, name)."""
+    records = _discovery.find_implementors(_FINALIZE_STEP_EXT_POINT)
+
+    assert records, 'Expected at least one finalize-step implementor'
+    # Assert the FULL (order, name) sort contract, not just the primary key:
+    # records sharing an ``order`` must be tie-broken ascending by ``name``.
+    sort_keys = [(rec['order'], rec['name']) for rec in records]
+    assert sort_keys == sorted(sort_keys), (
+        f'records must be ascending by (order, name): {sort_keys}'
+    )
+
+
+def test_find_implementors_record_carries_all_contract_fields():
+    """Each implementor record carries the five-field contract plus source / path."""
+    records = _discovery.find_implementors(_FINALIZE_STEP_EXT_POINT)
+
+    expected_keys = {'name', 'order', 'default_on', 'presets', 'description', 'source', 'path'}
+    for rec in records:
+        assert expected_keys <= set(rec.keys()), (
+            f'record {rec.get("name")!r} missing contract fields: '
+            f'{expected_keys - set(rec.keys())}'
+        )
+        assert isinstance(rec['order'], int)
+        assert isinstance(rec['default_on'], bool)
+        assert isinstance(rec['presets'], list)
+
+
+def test_find_implementors_surfaces_each_source_kind():
+    """Discovery surfaces built-in, bundle-optional, and project finalize steps."""
+    sources = {rec['source'] for rec in _discovery.find_implementors(_FINALIZE_STEP_EXT_POINT)}
+
+    assert 'built-in' in sources, 'phase-6-finalize built-in steps must be discovered'
+    assert 'bundle-optional' in sources, 'opt-in bundle steps must be discovered'
+    assert 'project' in sources, 'project-local finalize-step skills must be discovered'
+
+
+def test_find_implementors_built_in_push_record():
+    """The built-in default:push step is discovered with its declared frontmatter."""
+    by_name = _finalize_implementors()
+
+    assert 'default:push' in by_name, 'default:push must be a discovered built-in step'
+    push = by_name['default:push']
+    assert push['source'] == 'built-in'
+    assert push['order'] == 10
+    assert push['default_on'] is True
+    # push ships in every named preset (the local/standard/full ladder)
+    assert set(push['presets']) == {'local', 'standard', 'full'}
+
+
+def test_find_implementors_bundle_optional_retrospective_record():
+    """plan-marshall:plan-retrospective is discovered as a bundle-optional step."""
+    by_name = _finalize_implementors()
+
+    assert 'plan-marshall:plan-retrospective' in by_name
+    retro = by_name['plan-marshall:plan-retrospective']
+    assert retro['source'] == 'bundle-optional'
+    assert retro['default_on'] is False
+    assert retro['order'] == 995
+    # retrospective is a member of the full preset only
+    assert retro['presets'] == ['full']
+
+
+def test_find_implementors_project_step_record():
+    """A project-local finalize-step skill is discovered with source: project."""
+    by_name = _finalize_implementors()
+
+    assert 'project:finalize-step-plugin-doctor' in by_name
+    doctor = by_name['project:finalize-step-plugin-doctor']
+    assert doctor['source'] == 'project'
+    assert doctor['default_on'] is False
+    # project steps carry presets: [] (presets ship to consumers without them)
+    assert doctor['presets'] == []
+
+
+def test_find_implementors_empty_for_unknown_ext_point():
+    """find_implementors returns an empty list for an ext-point no doc declares."""
+    records = _discovery.find_implementors('plan-marshall:extension-api/standards/ext-point-nonexistent')
+
+    assert records == []

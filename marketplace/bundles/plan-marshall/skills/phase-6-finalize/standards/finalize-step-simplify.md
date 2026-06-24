@@ -3,6 +3,10 @@ name: default:finalize-step-simplify
 description: Domain-agnostic phase-6 cognitive simplification pass — reviews the plan's changeset against the minimum-viable-code anti-patterns and deletes surplus structure directly in the worktree
 order: 8
 mutates_source: true
+default_on: true
+presets:
+  - full
+implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 configurable:
   - key: simplify
     default: auto

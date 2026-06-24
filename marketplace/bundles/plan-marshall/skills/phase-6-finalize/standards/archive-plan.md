@@ -2,6 +2,12 @@
 name: default:archive-plan
 description: Archive the completed plan
 order: 1000
+default_on: true
+presets:
+  - local
+  - standard
+  - full
+implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
 # Archive Plan

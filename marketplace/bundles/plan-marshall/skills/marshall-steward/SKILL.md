@@ -236,35 +236,40 @@ Then execute the workflow described in that file. Each reference file is loaded 
 ## Phase 6 Finalize Step Seeding
 
 The wizard seeds `phase-6-finalize.steps` in `marshal.json` from the
-authoritative `BUILT_IN_FINALIZE_STEPS` list defined in
-`manage-config/scripts/_config_defaults.py`. The list intentionally
-covers only steps that are sensible defaults for **any** plan-marshall
-consumer (pre-push-quality-gate, push, create-pr, ci-verify,
-automated-review, sonar-roundtrip, lessons-capture, branch-cleanup,
-record-metrics, archive-plan). `pre-push-quality-gate` is a built-in
-default like the rest; its activation is derived from
-`build.map` — it activates whenever the live footprint
-touches a glob registered in the build_map. Those globs are
-tree-derived from each extension's `classify_globs()` vocabulary
-(complete-by-construction over the real tree), not author-shipped
+default-on built-in finalize-step set discovered via
+`extension_discovery.find_implementors` — the SOLE finalize-step
+discovery path. Membership, execution order, and default-seed inclusion
+are declared in each step doc's frontmatter (`implements: ...ext-point-finalize-step`,
+`order`, `default_on: true`), NOT a hand-maintained constant list; see
+[`extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md).
+The seed intentionally covers only steps that are sensible defaults for
+**any** plan-marshall consumer (pre-push-quality-gate, finalize-step-simplify,
+finalize-step-security-audit, push, create-pr, ci-verify, automated-review,
+sonar-roundtrip, lessons-capture, branch-cleanup, finalize-step-preference-emitter,
+record-metrics, finalize-step-print-phase-breakdown, archive-plan), ordered
+by their declared `order`. `pre-push-quality-gate` is a built-in default
+like the rest; its activation is derived from `build.map` — it activates
+whenever the live footprint touches a glob registered in the build_map.
+Those globs are tree-derived from each extension's `classify_globs()`
+vocabulary (complete-by-construction over the real tree), not author-shipped
 static literals.
 
 Steps that are **meta-project-only** — e.g. running the multi-target
-generator and pushing the host plugin cache — are NOT in
-`BUILT_IN_FINALIZE_STEPS`. They live as project-local skills under
+generator and pushing the host plugin cache — are NOT default-on built-ins.
+They live as project-local skills under
 `.claude/skills/finalize-step-{name}/SKILL.md` in the meta-project that
-needs them, and that meta-project's `marshal.json` registers them
-explicitly with `project:finalize-step-{name}` references. Consumer
+needs them (discovered as `project:finalize-step-{name}` with `default_on: false`),
+and that meta-project's `marshal.json` registers them explicitly. Consumer
 projects don't see them and don't have them seeded.
 
 **Missing-default detection.** When the wizard runs against an existing
 project, `determine_mode.py` compares the existing
 `marshal.json::plan["phase-6-finalize"]["steps"]` array against the
-current `BUILT_IN_FINALIZE_STEPS` list. Any built-in step missing from
-the project's array is surfaced as `missing_default_finalize_steps` so
-the wizard can prompt the user to add it. This protects existing
-projects from quietly missing newly-added consumer-applicable defaults
-when their `marshal.json` predates the additions.
+discovered default-on built-in set (via `extension_discovery.find_implementors`).
+Any built-in step missing from the project's array is surfaced as
+`missing_default_finalize_steps` so the wizard can prompt the user to add
+it. This protects existing projects from quietly missing newly-added
+consumer-applicable defaults when their `marshal.json` predates the additions.
 
 ## Blocking-Finding Classification (fixed rule — no wizard seed)
 

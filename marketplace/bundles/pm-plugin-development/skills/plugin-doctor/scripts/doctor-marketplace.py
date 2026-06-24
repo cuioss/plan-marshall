@@ -1134,8 +1134,9 @@ def cmd_quality_gate(args) -> dict:
 
     # finalize-step-token-mismatch — flags a finalize-step skill whose documented
     # mark-step-done --step token (under --phase 6-finalize) diverges from the
-    # skill's fully-qualified manifest step_id. Scans bundle SKILL.md files in
-    # OPTIONAL_BUNDLE_FINALIZE_STEPS plus the project-local
+    # skill's fully-qualified manifest step_id. Scans bundle SKILL.md files
+    # surfaced as bundle-optional finalize-step implementors by the reusable
+    # extension_discovery.find_implementors discovery query, plus the project-local
     # .claude/skills/finalize-step-*/SKILL.md tree (derived internally). Findings
     # carry absolute file paths, so _scoped's path filter applies uniformly under
     # --paths.

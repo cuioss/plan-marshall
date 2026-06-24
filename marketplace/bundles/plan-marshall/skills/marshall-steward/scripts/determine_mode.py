@@ -534,16 +534,51 @@ def cmd_check_worktree_plan_local(args: argparse.Namespace) -> dict:
     return result
 
 
+def _canonical_built_in_finalize_steps() -> list[str]:
+    """Return the canonical default-on built-in finalize-step ids, in order.
+
+    Sources the set from the reusable
+    ``extension_discovery.find_implementors`` discovery query — the SOLE
+    finalize-step discovery path (membership is DECLARED on each step doc via
+    ``implements: ...ext-point-finalize-step`` and DISCOVERED through the query;
+    there is no hand-maintained constant). The built-in seed is the subset of
+    discovered implementors carrying ``default_on: true``, sorted by ``order``
+    then ``name`` for a deterministic result. Degrades to an empty list when the
+    query cannot be imported (the caller treats that as "nothing to detect" so
+    the wizard never crashes on an unexpected import topology).
+    """
+    try:
+        from _config_defaults import FINALIZE_STEP_EXT_POINT  # type: ignore[import-not-found]
+        from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    except ImportError:
+        return []
+
+    default_on = sorted(
+        (
+            rec
+            for rec in find_implementors(FINALIZE_STEP_EXT_POINT)
+            if rec.get('default_on') and rec.get('source') == 'built-in'
+        ),
+        key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
+    )
+    return [rec['name'] for rec in default_on if rec.get('name')]
+
+
 def detect_missing_default_finalize_steps(plan_dir: Path) -> list[str]:
     """Compare ``marshal.json::plan["phase-6-finalize"]["steps"]`` against the
-    canonical ``BUILT_IN_FINALIZE_STEPS`` list and return any built-ins missing
-    from the project's array.
+    canonical built-in finalize-step set and return any built-ins missing from
+    the project's array.
+
+    The canonical built-in set is discovered via the reusable
+    ``extension_discovery.find_implementors`` query (the ``default_on: true``
+    finalize-step implementors), not a hand-maintained constant — see
+    :func:`_canonical_built_in_finalize_steps`.
 
     Returns an empty list when:
 
     - ``marshal.json`` is absent (nothing to compare against)
     - the project's ``phase-6-finalize.steps`` already includes every built-in
-    - the canonical list cannot be imported (the helper degrades gracefully
+    - the discovery query cannot be imported (the helper degrades gracefully
       so the wizard never crashes on an unexpected import topology)
     """
     marshal_path = plan_dir / 'marshal.json'
@@ -560,12 +595,7 @@ def detect_missing_default_finalize_steps(plan_dir: Path) -> list[str]:
     if not isinstance(existing, list):
         return []
 
-    try:
-        from _config_defaults import BUILT_IN_FINALIZE_STEPS  # type: ignore[import-not-found]
-    except ImportError:
-        return []
-
-    return [step for step in BUILT_IN_FINALIZE_STEPS if step not in existing]
+    return [step for step in _canonical_built_in_finalize_steps() if step not in existing]
 
 
 def _read_finalize_steps(plan_dir: Path) -> list[str] | None:
@@ -642,8 +672,9 @@ def cmd_check_missing_finalize_steps(args: argparse.Namespace) -> dict:
 
     Detects two classes of absence:
 
-    - built-in ``default:`` steps newly added to ``BUILT_IN_FINALIZE_STEPS``
-      that an existing project's marshal.json predates, and
+    - built-in ``default:`` steps newly added to the discovered default-on
+      finalize-step set (via ``extension_discovery.find_implementors``) that an
+      existing project's marshal.json predates, and
     - ``project:`` finalize steps the repo ships (under the target's
       project-local-skill roots) that are absent from
       ``phase-6-finalize.steps`` — the meta-project case

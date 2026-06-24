@@ -3,7 +3,11 @@ name: default:pre-submission-self-review
 description: Pre-submission structural self-review (symmetric pairs, regex over-fit, wording, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check, ordinal-reference re-check) before push
 order: 7
 mutates_source: false
-implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+default_on: false
+presets: []
+implements:
+  - plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+  - plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
 # Pre-Submission Self-Review

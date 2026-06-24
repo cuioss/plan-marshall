@@ -297,15 +297,26 @@ def test_cli_reports_ok_when_all_project_steps_present(tmp_path: Path):
     project_root = tmp_path / 'repo'
     plan_dir = project_root / '.plan'
     _ship_project_finalize_skills(project_root, _PROJECT_STEPS)
-    # Include every shipped project: step plus all built-in defaults so neither
-    # detection set fires.
+    # Include every shipped project: step plus all default-on built-in steps so
+    # neither detection set fires. The built-in set is discovered via the reusable
+    # find_implementors query (the hand-maintained BUILT_IN_FINALIZE_STEPS
+    # constant was removed).
     from conftest import MARKETPLACE_ROOT as _MR  # type: ignore[import-not-found]
     _config_scripts = _MR / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
     if str(_config_scripts) not in sys.path:
         sys.path.insert(0, str(_config_scripts))
-    from _config_defaults import BUILT_IN_FINALIZE_STEPS  # type: ignore[import-not-found]
+    from _config_defaults import FINALIZE_STEP_EXT_POINT  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
 
-    steps = list(BUILT_IN_FINALIZE_STEPS) + [
+    built_in_defaults = [
+        rec['name']
+        for rec in sorted(
+            (r for r in find_implementors(FINALIZE_STEP_EXT_POINT) if r.get('default_on')),
+            key=lambda r: (r.get('order', 0), r.get('name', '')),
+        )
+        if rec.get('name')
+    ]
+    steps = built_in_defaults + [
         f'project:finalize-step-{n}' for n in _PROJECT_STEPS
     ]
     _write_finalize_steps_marshal(plan_dir, steps)

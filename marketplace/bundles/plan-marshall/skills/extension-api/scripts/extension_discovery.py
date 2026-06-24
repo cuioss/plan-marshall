@@ -201,45 +201,80 @@ def discover_build_extensions() -> list[dict[str, Any]]:
 _DOMAIN_BUNDLE_ARCHETYPE = 'plan-marshall:extension-api/standards/ext-point-domain-bundle'
 
 
-def read_implements_field(skill_md_path: Path) -> str | None:
-    """Read the ``implements:`` scalar from a SKILL.md's YAML frontmatter.
+def _strip_scalar_quotes(value: str) -> str:
+    """Strip surrounding single/double quotes from a YAML scalar string."""
+    return value.strip().strip('"').strip("'")
 
-    The ``implements:`` field is the archetype-identification key. It is always
-    a single scalar value (never a YAML list), so this reader extracts only the
-    leading ``key: value`` frontmatter pair named ``implements`` and returns its
-    trimmed value. Surrounding quotes are stripped so a quoted declaration
-    resolves to the same value as an unquoted one.
+
+def read_implements_field(skill_md_path: Path) -> list[str]:
+    """Read the ``implements:`` declaration(s) from a doc's YAML frontmatter.
+
+    The ``implements:`` field is the archetype-identification key. A doc may
+    declare it in either of two YAML shapes, and this reader normalizes both to
+    a list of declared interface values:
+
+    - **Inline scalar** — ``implements: bundle:skill/standards/ext-point-x`` —
+      normalizes to a one-element list.
+    - **Block sequence** — ``implements:`` on its own line followed by ``- value``
+      item lines — returns each declared interface, in declaration order.
+
+    A doc may legitimately declare more than one interface (e.g. a phase-6
+    ``workflow/*.md`` step that implements both
+    ``ext-point-execution-context-workflow`` and ``ext-point-finalize-step``);
+    callers test membership against the returned list. Surrounding quotes are
+    stripped so a quoted declaration resolves to the same value as an unquoted
+    one.
 
     Args:
-        skill_md_path: Path to a candidate ``SKILL.md`` file.
+        skill_md_path: Path to a candidate doc with ``---``-fenced frontmatter.
 
     Returns:
-        The ``implements:`` value, or ``None`` when the file is unreadable, has
-        no leading ``---`` frontmatter block, or declares no ``implements:`` key.
+        The list of declared ``implements:`` values (empty when the file is
+        unreadable, has no leading ``---`` frontmatter block, declares no
+        ``implements:`` key, or declares an empty block sequence).
     """
     try:
         content = skill_md_path.read_text(encoding='utf-8')
     except OSError:
-        return None
+        return []
 
     if not content.startswith('---'):
-        return None
+        return []
     end = content.find('\n---', 3)
     if end == -1:
-        return None
-    fm_text = content[3:end]
+        return []
+    fm_lines = content[3:end].split('\n')
 
-    for raw_line in fm_text.split('\n'):
+    for index, raw_line in enumerate(fm_lines):
         line = raw_line.strip()
         if not line or line.startswith('#'):
             continue
         if ':' not in line:
             continue
         key, _, value = line.partition(':')
-        if key.strip() == 'implements':
-            return value.strip().strip('"').strip("'") or None
+        if key.strip() != 'implements':
+            continue
 
-    return None
+        inline = _strip_scalar_quotes(value)
+        if inline:
+            # Inline-scalar form: implements: <value>
+            return [inline]
+
+        # Block-sequence form: collect the following ``- value`` item lines.
+        values: list[str] = []
+        for seq_raw in fm_lines[index + 1:]:
+            seq = seq_raw.strip()
+            if not seq or seq.startswith('#'):
+                continue
+            if not seq.startswith('- '):
+                # The block sequence ended at the next non-item line.
+                break
+            item = _strip_scalar_quotes(seq[2:])
+            if item:
+                values.append(item)
+        return values
+
+    return []
 
 
 def _scan_skills_root_for_manifest(skills_root: Path) -> Path | None:
@@ -266,7 +301,7 @@ def _scan_skills_root_for_manifest(skills_root: Path) -> Path | None:
         skill_md = skill_dir / 'SKILL.md'
         if not skill_md.is_file():
             continue
-        if read_implements_field(skill_md) != _DOMAIN_BUNDLE_ARCHETYPE:
+        if _DOMAIN_BUNDLE_ARCHETYPE not in read_implements_field(skill_md):
             continue
         extension_path = skill_dir / 'extension.py'
         if extension_path.is_file():
@@ -626,6 +661,327 @@ def discover_project_modules(project_root: Path) -> dict[str, Any]:
 
 
 # =============================================================================
+# Reusable ext-point implementor discovery
+# =============================================================================
+
+# The frontmatter keys a finalize-step (and other ext-point) implementor doc
+# declares alongside ``implements:``. The contract for these fields lives in the
+# central standard — see marketplace/bundles/plan-marshall/skills/extension-api/
+# standards/ext-point-finalize-step.md. This list is the parse target, not the
+# contract definition.
+_IMPLEMENTOR_FRONTMATTER_KEYS: tuple[str, ...] = (
+    'name',
+    'order',
+    'default_on',
+    'presets',
+    'description',
+)
+
+
+def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str, Any]:
+    """Read the named top-level frontmatter scalars/lists from ``doc_path``.
+
+    Reuses the cache-aware ``configurable_contract`` primitives
+    (``_extract_frontmatter_lines`` + ``_coerce_scalar``) so the same parser
+    drives both the configurable block and the implementor-record fields. Each
+    requested key is read as either an inline scalar (``key: value``) or a YAML
+    block sequence (``key:`` followed by ``- item`` lines, used for ``presets``).
+    Keys absent from the frontmatter are simply omitted from the result.
+
+    Args:
+        doc_path: Path to the doc whose ``---``-fenced frontmatter is read.
+        keys: The top-level frontmatter keys to extract.
+
+    Returns:
+        A dict mapping each present key to its coerced scalar value, or to a
+        ``list`` when the key is declared as a block sequence.
+    """
+    from configurable_contract import _coerce_scalar, _extract_frontmatter_lines  # type: ignore[import-not-found]
+
+    try:
+        text = doc_path.read_text(encoding='utf-8')
+    except OSError:
+        return {}
+
+    fm_lines = _extract_frontmatter_lines(text)
+    if fm_lines is None:
+        return {}
+
+    fields: dict[str, Any] = {}
+    index = 0
+    while index < len(fm_lines):
+        raw_line = fm_lines[index]
+        line = raw_line.strip()
+        index += 1
+        # Only TOP-LEVEL keys (zero indentation) are implementor-record fields. A
+        # nested mapping such as the per-parameter ``configurable:`` block carries
+        # its own indented ``key:`` / ``default:`` / ``description:`` lines; those
+        # must NOT shadow the step's top-level ``description`` (or ``name`` etc.).
+        if raw_line[:1] in (' ', '\t'):
+            continue
+        if not line or line.startswith('#') or ':' not in line:
+            continue
+        key, _, value = line.partition(':')
+        key = key.strip()
+        if key not in keys:
+            continue
+
+        inline = value.strip()
+        if inline:
+            # Inline empty-list literal (``key: []``) is the empty block sequence,
+            # not the string ``'[]'`` — normalize it so list-valued keys such as
+            # ``presets: []`` resolve to ``[]`` rather than ``['[]']``.
+            if inline == '[]':
+                fields[key] = []
+            else:
+                fields[key] = _coerce_scalar(inline)
+            continue
+
+        # Block-sequence form: collect the following ``- item`` lines.
+        items: list[Any] = []
+        while index < len(fm_lines):
+            seq = fm_lines[index].strip()
+            if not seq or seq.startswith('#'):
+                index += 1
+                continue
+            if not seq.startswith('- '):
+                break
+            items.append(_coerce_scalar(seq[2:]))
+            index += 1
+        fields[key] = items
+
+    return fields
+
+
+def _build_implementor_record(doc_path: Path, source: str, name_override: str | None = None) -> dict[str, Any]:
+    """Build a per-implementor record from a matching doc's frontmatter.
+
+    Args:
+        doc_path: Path to the implementor doc (already confirmed to declare the
+            target ext-point via :func:`read_implements_field`).
+        source: The implementor's origin — ``built-in`` / ``bundle-optional`` /
+            ``project``.
+        name_override: When supplied, the step id used for the record's ``name``
+            instead of the frontmatter ``name``. Project steps derive their id
+            from the path (``project:{skill-dir}``) — not from the SKILL.md
+            registration ``name`` — so the registration ``name`` (a plain skill
+            name, no ``project:`` prefix) and the discovery step id stay distinct.
+
+    Returns:
+        A record carrying ``name`` / ``order`` / ``default_on`` / ``presets`` /
+        ``description`` / ``source`` / ``path``. Missing frontmatter fields
+        default to safe empty values (``name`` to the empty string, ``order`` to
+        ``0``, ``default_on`` to ``False``, ``presets`` to ``[]``,
+        ``description`` to the empty string).
+    """
+    fields = _read_frontmatter_fields(doc_path, _IMPLEMENTOR_FRONTMATTER_KEYS)
+    presets = fields.get('presets', [])
+    if not isinstance(presets, list):
+        presets = [presets]
+    return {
+        'name': name_override if name_override is not None else fields.get('name', ''),
+        'order': fields.get('order', 0),
+        'default_on': bool(fields.get('default_on', False)),
+        'presets': presets,
+        'description': fields.get('description', ''),
+        'source': source,
+        'path': str(doc_path),
+    }
+
+
+def _scan_skills_roots_for_implementors(ext_point: str) -> list[dict[str, Any]]:
+    """Scan every bundle's ``skills/*/SKILL.md`` for ``ext_point`` implementors.
+
+    Resolves the marketplace bundles root and the plugin cache roots so the scan
+    works both in the source checkout and in a consumer project that has only the
+    installed plugin cache. A SKILL.md that lives under the ``plan-marshall``
+    bundle's ``phase-6-finalize`` skill is NOT scanned here — phase-6 built-in
+    steps are body docs under ``workflow/`` / ``standards/``, surfaced by
+    :func:`_scan_phase6_for_implementors`. Bundle SKILL.md implementors are the
+    opt-in ``{bundle}:{skill}`` steps (e.g. ``plan-marshall:plan-retrospective``).
+
+    Returns:
+        One ``bundle-optional`` record per matching ``skills/*/SKILL.md``.
+    """
+    records: list[dict[str, Any]] = []
+    seen_step_ids: set[str] = set()
+
+    roots: list[Path] = []
+    bundles_path = get_marketplace_bundles_path()
+    if bundles_path.is_dir():
+        roots.append(bundles_path)
+    for cache_root in get_bundle_cache_roots():
+        cache_path = Path(cache_root).expanduser()
+        if cache_path.is_dir() and cache_path not in roots:
+            roots.append(cache_path)
+
+    for root in roots:
+        try:
+            bundle_dirs = sorted(root.iterdir())
+        except OSError:
+            continue
+        for bundle_dir in bundle_dirs:
+            if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
+                continue
+            skills_root = bundle_dir / 'skills'
+            if not skills_root.is_dir():
+                continue
+            try:
+                skill_dirs = sorted(skills_root.iterdir())
+            except OSError:
+                continue
+            for skill_dir in skill_dirs:
+                if not skill_dir.is_dir() or skill_dir.name.startswith('.'):
+                    continue
+                if skill_dir.name == 'phase-6-finalize':
+                    continue
+                skill_md = skill_dir / 'SKILL.md'
+                if not skill_md.is_file():
+                    continue
+                # Bundle-optional step ids are PATH-derived (``{bundle}:{skill}``),
+                # not the SKILL.md registration ``name`` (a plain skill name).
+                step_id = f'{bundle_dir.name}:{skill_dir.name}'
+                # Deduplicate by LOGICAL identity (step_id), not filesystem path:
+                # the same ``bundle:skill`` resolves through both the source tree
+                # and the plugin cache roots, so a path-keyed set would emit it
+                # twice. First occurrence (source tree, scanned first) wins.
+                if step_id in seen_step_ids:
+                    continue
+                if ext_point not in read_implements_field(skill_md):
+                    continue
+                seen_step_ids.add(step_id)
+                records.append(
+                    _build_implementor_record(skill_md, 'bundle-optional', name_override=step_id)
+                )
+
+    return records
+
+
+def _scan_phase6_for_implementors(ext_point: str) -> list[dict[str, Any]]:
+    """Scan the phase-6-finalize step docs for ``ext_point`` implementors.
+
+    Scans ``phase-6-finalize/workflow/*.md`` and ``phase-6-finalize/standards/*.md``
+    for the declaration, applying ``workflow/`` precedence on a bare-name
+    collision (a step that has both a ``workflow/{name}.md`` and a
+    ``standards/{name}.md`` is represented by the ``workflow/`` doc only — mirroring
+    ``configurable_contract.resolve_step_doc_path``).
+
+    Returns:
+        One ``built-in`` record per matching step doc, de-duplicated by bare name
+        with ``workflow/`` winning.
+    """
+    from configurable_contract import _phase_6_skill_dir  # type: ignore[import-not-found]
+
+    skill_dir = _phase_6_skill_dir()
+    records: list[dict[str, Any]] = []
+    seen_bare: set[str] = set()
+
+    for subdir in ('workflow', 'standards'):
+        docs_dir = skill_dir / subdir
+        if not docs_dir.is_dir():
+            continue
+        try:
+            doc_paths = sorted(docs_dir.glob('*.md'))
+        except OSError:
+            continue
+        for doc_path in doc_paths:
+            bare = doc_path.stem
+            if bare in seen_bare:
+                # workflow/ scanned first wins on a name collision.
+                continue
+            if ext_point not in read_implements_field(doc_path):
+                continue
+            seen_bare.add(bare)
+            records.append(_build_implementor_record(doc_path, 'built-in'))
+
+    return records
+
+
+def _scan_project_for_implementors(ext_point: str) -> list[dict[str, Any]]:
+    """Scan project-local ``.claude/skills/finalize-step-*/SKILL.md`` implementors.
+
+    Project-local finalize steps live under the repo root's ``.claude/skills/``.
+    Only directories matching ``finalize-step-*`` are scanned. Returns nothing
+    when there is no ``.claude/skills/`` root (a consumer project without the
+    meta-project's project-local steps).
+
+    Discovery is REPO-anchored (resolved from ``__file__`` via ``_repo_root``),
+    not CWD-relative: the finalize-step universe is a property of the marketplace
+    tree the running scripts ship from, so it stays stable regardless of the
+    process working directory.
+
+    Returns:
+        One ``project`` record per matching ``finalize-step-*/SKILL.md``.
+    """
+    from configurable_contract import _repo_root  # type: ignore[import-not-found]
+
+    skills_root = _repo_root() / '.claude' / 'skills'
+    if not skills_root.is_dir():
+        return []
+
+    records: list[dict[str, Any]] = []
+    try:
+        skill_dirs = sorted(skills_root.glob('finalize-step-*'))
+    except OSError:
+        return []
+    for skill_dir in skill_dirs:
+        if not skill_dir.is_dir():
+            continue
+        skill_md = skill_dir / 'SKILL.md'
+        if not skill_md.is_file():
+            continue
+        if ext_point not in read_implements_field(skill_md):
+            continue
+        # Project step ids are PATH-derived (``project:{skill-dir}``), matching
+        # the existing _discover_all_finalize_steps contract — not the SKILL.md
+        # registration ``name`` (a plain skill name with no ``project:`` prefix).
+        step_id = f'project:{skill_dir.name}'
+        records.append(_build_implementor_record(skill_md, 'project', name_override=step_id))
+
+    return records
+
+
+def find_implementors(ext_point: str) -> list[dict[str, Any]]:
+    """Enumerate every component that declares ``implements: {ext_point}``.
+
+    The reusable, first-class discovery query for "who implements ext-point X".
+    It is the SOLE discovery path for the finalize-step registry (the seed, the
+    discovery surface, and the preset builder all consume it); there is no
+    parallel glob. The contract — addressing surface, frontmatter fields, and the
+    supporting-doc exclusion list — lives in the central standard at
+    marketplace/bundles/plan-marshall/skills/extension-api/standards/
+    ext-point-finalize-step.md.
+
+    Scans three surfaces:
+
+    - every bundle's ``skills/*/SKILL.md`` (opt-in ``bundle-optional`` steps),
+      across both the source bundles root and the plugin cache roots, so a
+      consumer project with no ``marketplace/`` tree resolves through the cache;
+    - ``phase-6-finalize/workflow/*.md`` + ``standards/*.md`` (``built-in`` steps,
+      ``workflow/`` winning on a bare-name collision);
+    - project-local ``.claude/skills/finalize-step-*/SKILL.md`` (``project`` steps).
+
+    Each surface reuses the cache-aware ``configurable_contract`` primitives for
+    doc-root resolution and frontmatter parsing.
+
+    Args:
+        ext_point: The canonical ext-point value, e.g.
+            ``plan-marshall:extension-api/standards/ext-point-finalize-step``.
+
+    Returns:
+        A list of per-implementor records, sorted by ``order`` then ``name``.
+        Each record carries ``name`` / ``order`` / ``default_on`` / ``presets`` /
+        ``description`` / ``source`` / ``path``.
+    """
+    records: list[dict[str, Any]] = []
+    records.extend(_scan_phase6_for_implementors(ext_point))
+    records.extend(_scan_skills_roots_for_implementors(ext_point))
+    records.extend(_scan_project_for_implementors(ext_point))
+    records.sort(key=lambda rec: (rec.get('order', 0), rec.get('name', '')))
+    return records
+
+
+# =============================================================================
 # CLI Interface
 # =============================================================================
 
@@ -687,6 +1043,41 @@ def cmd_list_retrospective_aspects(args) -> int:
     return 0
 
 
+def cmd_implementors(args) -> int:
+    """CLI handler for the implementors command.
+
+    Emits one TOON row per component that declares
+    ``implements: {--ext-point}``. Global discovery across every bundle's
+    ``skills/*/SKILL.md``, the phase-6-finalize step docs, and the project-local
+    ``finalize-step-*`` skills — no project-dir / plan-id routing (mirrors
+    :func:`cmd_list_retrospective_aspects`).
+    """
+    records = find_implementors(args.ext_point)
+    rows: list[dict[str, Any]] = [
+        {
+            'name': rec.get('name', ''),
+            'order': rec.get('order', 0),
+            'default_on': rec.get('default_on', False),
+            'presets': rec.get('presets', []),
+            'description': rec.get('description', ''),
+            'source': rec.get('source', ''),
+            'path': rec.get('path', ''),
+        }
+        for rec in records
+    ]
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'ext_point': args.ext_point,
+                'count': len(rows),
+                'implementors': rows,
+            }
+        )
+    )
+    return 0
+
+
 def main() -> int:
     """CLI entry point for extension discovery operations."""
     import argparse
@@ -715,6 +1106,20 @@ def main() -> int:
         allow_abbrev=False,
     )
     aspects_parser.set_defaults(func=cmd_list_retrospective_aspects)
+
+    # implementors subcommand — reusable "who implements ext-point X" query.
+    implementors_parser = subparsers.add_parser(
+        'implementors',
+        help='Enumerate components implementing the given extension point',
+        allow_abbrev=False,
+    )
+    implementors_parser.add_argument(
+        '--ext-point',
+        required=True,
+        help='Canonical extension-point value (e.g. '
+        'plan-marshall:extension-api/standards/ext-point-finalize-step)',
+    )
+    implementors_parser.set_defaults(func=cmd_implementors)
 
     args = parser.parse_args()
 

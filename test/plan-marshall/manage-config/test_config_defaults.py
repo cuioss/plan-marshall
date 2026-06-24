@@ -116,6 +116,44 @@ def _params_for(steps_map: dict, step_id: str):
     return steps_map[step_id]
 
 
+def _discovered_seed_step_ids() -> list:
+    """Return the default-on built-in finalize-step ids, in seed order.
+
+    The hand-maintained ``BUILT_IN_FINALIZE_STEPS`` constant was removed; the seed
+    is now derived from the reusable ``extension_discovery.find_implementors``
+    query — the SOLE finalize-step discovery path. This mirrors
+    ``_seed_finalize_steps()``: filter the discovered implementors to the
+    default-on built-in set (``default_on == true``), sort by ``(order, name)``,
+    and project to the step ids. The result is the expected key insertion order of
+    the seeded ``plan.phase-6-finalize.steps`` keyed map.
+    """
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+
+    seed_records = sorted(
+        (
+            rec
+            for rec in find_implementors(_config_defaults_mod.FINALIZE_STEP_EXT_POINT)
+            if rec.get('default_on')
+        ),
+        key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
+    )
+    return [rec['name'] for rec in seed_records if rec.get('name')]
+
+
+def _discovered_step_description(step_id: str) -> str:
+    """Return the discovered ``description`` for a finalize-step id.
+
+    Replaces the removed ``BUILT_IN_FINALIZE_STEP_DESCRIPTIONS`` map: the per-step
+    description is now a frontmatter field surfaced by the discovery query.
+    """
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+
+    for rec in find_implementors(_config_defaults_mod.FINALIZE_STEP_EXT_POINT):
+        if rec.get('name') == step_id:
+            return rec.get('description', '')
+    return ''
+
+
 def test_finalize_step_params_constant_is_deleted():
     """The centralized _FINALIZE_STEP_PARAMS constant MUST no longer exist.
 
@@ -883,38 +921,39 @@ def test_plan_phase_2_refine_get_simplicity_returns_lean_default(plan_context):
 
 
 def test_built_in_finalize_steps_places_simplify_before_push():
-    """default:finalize-step-simplify sits BEFORE default:push in BUILT_IN_FINALIZE_STEPS.
+    """default:finalize-step-simplify sits BEFORE default:push in the discovered seed.
 
     simplify is a mutates_source step (order 8) and push is the pure barrier
     (order 10), so simplify precedes push. The canonical head order is
     default:pre-push-quality-gate (index 0), default:finalize-step-simplify
-    (index 1), then default:push (index 2) — matching the plain `order:` values
-    (no special placement invariant).
+    (index 1), default:finalize-step-security-audit (index 2), then default:push
+    (index 3) — matching the plain `order:` values (no special placement
+    invariant). The seed is discovered via find_implementors, not a constant.
     """
-    steps = _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
+    steps = _discovered_seed_step_ids()
 
-    # presence and ordinal placement
+    # presence and relative head order (security-audit, order 9, sits between
+    # simplify (8) and push (10))
     assert 'default:finalize-step-simplify' in steps, (
-        'default:finalize-step-simplify must be seeded into BUILT_IN_FINALIZE_STEPS'
+        'default:finalize-step-simplify must be discovered into the default-on seed'
     )
     assert steps[0] == 'default:pre-push-quality-gate'
     assert steps[1] == 'default:finalize-step-simplify'
-    assert steps[2] == 'default:push'
+    assert steps[2] == 'default:finalize-step-security-audit'
+    assert steps[3] == 'default:push'
 
 
 def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
-    """default:finalize-step-simplify must carry a non-empty description entry.
+    """default:finalize-step-simplify must carry a non-empty discovered description.
 
-    The descriptions dict must stay in sync with BUILT_IN_FINALIZE_STEPS so
-    list-finalize-steps can surface a human-readable description.
+    The per-step description is now a frontmatter field surfaced by the discovery
+    query (the BUILT_IN_FINALIZE_STEP_DESCRIPTIONS map was removed), so
+    list-finalize-steps can still surface a human-readable description.
     """
-    descriptions = _config_defaults_mod.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+    description = _discovered_step_description('default:finalize-step-simplify')
 
-    assert 'default:finalize-step-simplify' in descriptions, (
-        'default:finalize-step-simplify must have a BUILT_IN_FINALIZE_STEP_DESCRIPTIONS entry'
-    )
-    assert descriptions['default:finalize-step-simplify'], (
-        'default:finalize-step-simplify description must be non-empty'
+    assert description, (
+        'default:finalize-step-simplify discovered description must be non-empty'
     )
 
 
@@ -924,7 +963,7 @@ def test_built_in_finalize_steps_orders_simplify_then_push():
     simplify is a mutates_source step (order 8) and push is the pure barrier
     (order 10), so the canonical chain is simplify < push.
     """
-    steps = _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
+    steps = _discovered_seed_step_ids()
 
     simplify_index = steps.index('default:finalize-step-simplify')
     push_index = steps.index('default:push')
@@ -957,8 +996,8 @@ def test_default_plan_finalize_steps_is_keyed_map_form():
     steps = config['plan']['phase-6-finalize']['steps']
 
     assert isinstance(steps, dict), 'steps must be the keyed-map form, not a list'
-    # key insertion order preserves the BUILT_IN_FINALIZE_STEPS execution order
-    assert _step_ids(steps) == _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
+    # key insertion order preserves the discovered default-on seed execution order
+    assert _step_ids(steps) == _discovered_seed_step_ids()
 
 
 def test_default_plan_finalize_steps_nests_step_owned_params():
@@ -1014,6 +1053,10 @@ def test_default_plan_finalize_config_less_steps_map_to_empty_dict():
         'default:branch-cleanup',
         # default:finalize-step-simplify owns the folded `simplify` run-at-all gate
         'default:finalize-step-simplify',
+        # default:finalize-step-security-audit owns the folded `security_audit`
+        # run-at-all gate (auto|always|never), read via _read_step_owned_knob —
+        # the symmetric peer of `simplify`
+        'default:finalize-step-security-audit',
         # default:finalize-step-preference-emitter owns the per-plan
         # `preference_min_recurrence` promotion threshold knob
         'default:finalize-step-preference-emitter',
@@ -1077,7 +1120,7 @@ def test_get_default_config_finalize_steps_keyed_map_form_shape():
 
     steps = config['plan']['phase-6-finalize']['steps']
     assert isinstance(steps, dict)
-    assert _step_ids(steps) == _config_defaults_mod.BUILT_IN_FINALIZE_STEPS
+    assert _step_ids(steps) == _discovered_seed_step_ids()
     assert _params_for(steps, 'default:sonar-roundtrip')['touched_file_cleanup'] == 'new_code_only'
     assert _params_for(steps, 'default:branch-cleanup')['pr_merge_strategy'] == 'squash'
 

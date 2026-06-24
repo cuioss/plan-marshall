@@ -47,6 +47,42 @@ def _params_for(steps_map: dict, step_id: str):
     return steps_map[step_id]
 
 
+def _discovered_seed_step_ids() -> list:
+    """Return the default-on built-in finalize-step ids, in seed order.
+
+    The hand-maintained ``BUILT_IN_FINALIZE_STEPS`` constant was removed; the
+    default-on built-in seed is derived from the reusable
+    ``extension_discovery.find_implementors`` query (filter ``default_on == true``,
+    sort by ``(order, name)``), mirroring ``_seed_finalize_steps()``.
+    """
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+
+    seed_records = sorted(
+        (
+            rec
+            for rec in find_implementors(_config_defaults.FINALIZE_STEP_EXT_POINT)
+            if rec.get('default_on')
+        ),
+        key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
+    )
+    return [rec['name'] for rec in seed_records if rec.get('name')]
+
+
+def _discovered_descriptions() -> dict:
+    """Return the ``{step_id: description}`` map across all discovered finalize steps.
+
+    Replaces the removed ``BUILT_IN_FINALIZE_STEP_DESCRIPTIONS`` map: each step's
+    description is now a frontmatter field surfaced by the discovery query.
+    """
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+
+    return {
+        rec['name']: rec.get('description', '')
+        for rec in find_implementors(_config_defaults.FINALIZE_STEP_EXT_POINT)
+        if rec.get('name')
+    }
+
+
 class TestLoopBackWithoutAskingDefault:
     """``loop_back_without_asking`` is the reverse-direction symmetric
     counterpart of ``finalize_without_asking``. Both are flat knobs under
@@ -246,48 +282,51 @@ class TestCiVerifyRegistration:
     immediately before ``default:automated-review``."""
 
     def test_ci_verify_in_built_in_finalize_steps(self) -> None:
-        """``BUILT_IN_FINALIZE_STEPS`` MUST contain ``'default:ci-verify'``
-        at the index immediately after ``'default:create-pr'`` and
-        immediately before ``'default:automated-review'`` — the canonical
-        position declared by ``standards/ci-verify.md`` § Placement and
-        the originating plan's deliverable 6."""
-        steps = _config_defaults.BUILT_IN_FINALIZE_STEPS
+        """The default-on built-in seed MUST contain ``'default:ci-verify'``
+        immediately after ``'default:create-pr'`` and immediately before
+        ``'default:automated-review'`` — the canonical position declared by
+        ``standards/ci-verify.md`` § Placement (order 22, between create-pr at
+        20 and automated-review at 30). The seed is discovered via
+        find_implementors, not a constant; the order-25 architecture-refresh
+        step is default_on:false so it is excluded from the seed and the
+        adjacency holds."""
+        steps = _discovered_seed_step_ids()
         assert 'default:ci-verify' in steps, (
-            "BUILT_IN_FINALIZE_STEPS must contain 'default:ci-verify'"
+            "the default-on seed must contain 'default:ci-verify'"
         )
         create_pr_idx = steps.index('default:create-pr')
         ci_verify_idx = steps.index('default:ci-verify')
         automated_review_idx = steps.index('default:automated-review')
         assert ci_verify_idx == create_pr_idx + 1, (
             "'default:ci-verify' must sit immediately after "
-            "'default:create-pr' in BUILT_IN_FINALIZE_STEPS"
+            "'default:create-pr' in the default-on seed"
         )
         assert automated_review_idx == ci_verify_idx + 1, (
             "'default:automated-review' must sit immediately after "
-            "'default:ci-verify' in BUILT_IN_FINALIZE_STEPS"
+            "'default:ci-verify' in the default-on seed"
         )
 
     def test_ci_verify_has_description(self) -> None:
-        """``BUILT_IN_FINALIZE_STEP_DESCRIPTIONS`` MUST carry a
-        non-empty description for ``'default:ci-verify'`` so that
-        ``list-finalize-steps`` and the wizard can surface a meaningful
-        label. The text is copied verbatim from the workflow doc's
-        frontmatter ``description`` field — the two stay in lockstep."""
-        descriptions = _config_defaults.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+        """The discovered finalize-step descriptions MUST carry a non-empty
+        description for ``'default:ci-verify'`` so that ``list-finalize-steps``
+        and the wizard can surface a meaningful label. The text is the workflow
+        doc's frontmatter ``description`` field — the discovery query reads it
+        directly."""
+        descriptions = _discovered_descriptions()
         assert 'default:ci-verify' in descriptions, (
-            "BUILT_IN_FINALIZE_STEP_DESCRIPTIONS must register "
-            "'default:ci-verify'"
+            "the discovered descriptions must register 'default:ci-verify'"
         )
         assert descriptions['default:ci-verify'], (
-            "BUILT_IN_FINALIZE_STEP_DESCRIPTIONS['default:ci-verify'] "
+            "the discovered description for 'default:ci-verify' "
             'must be a non-empty string'
         )
 
 
 class TestFinalizeStepDescriptionDrift:
-    """``BUILT_IN_FINALIZE_STEP_DESCRIPTIONS`` is the user-facing source of
-    truth surfaced by ``list-finalize-steps`` and the wizard. Each entry
-    MUST stay in lockstep with its workflow doc. Q-Gate validation in
+    """The discovered finalize-step descriptions are the user-facing source of
+    truth surfaced by ``list-finalize-steps`` and the wizard. Each step doc's
+    frontmatter ``description`` MUST stay in lockstep with its workflow doc body
+    (the description IS the frontmatter field). Q-Gate validation in
     phase-2-refine of plan ``built-in-finalize-step-descriptions-must-stay-in``
     surfaced three drift defects this class regresses against:
 
@@ -310,10 +349,10 @@ class TestFinalizeStepDescriptionDrift:
         wizard / ``list-finalize-steps`` surface, mirroring the shape
         already used by ``default:ci-verify`` and
         ``default:automated-review``."""
-        descriptions = _config_defaults.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+        descriptions = _discovered_descriptions()
         text = descriptions['default:sonar-roundtrip']
         assert 'requires: [ci-complete]' in text, (
-            "BUILT_IN_FINALIZE_STEP_DESCRIPTIONS['default:sonar-roundtrip'] "
+            "the discovered description for 'default:sonar-roundtrip' "
             "must name the 'requires: [ci-complete]' precondition declared "
             'in sonar-roundtrip.md frontmatter — current text: ' + repr(text)
         )
@@ -323,10 +362,10 @@ class TestFinalizeStepDescriptionDrift:
         ``Merge PR (with --delete-branch) and pull latest`` phrasing —
         that text implies PR-merge is mandatory but the step adapts
         based on whether ``create-pr`` is present in the manifest."""
-        descriptions = _config_defaults.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+        descriptions = _discovered_descriptions()
         text = descriptions['default:branch-cleanup']
         assert 'Merge PR (with --delete-branch) and pull latest' not in text, (
-            "BUILT_IN_FINALIZE_STEP_DESCRIPTIONS['default:branch-cleanup'] "
+            "the discovered description for 'default:branch-cleanup' "
             "must not retain the legacy 'Merge PR (with --delete-branch) "
             "and pull latest' phrasing — current text: " + repr(text)
         )
@@ -335,11 +374,11 @@ class TestFinalizeStepDescriptionDrift:
         """``default:branch-cleanup`` MUST mention either ``create-pr``,
         ``conditionally``, or ``adapts`` so the conditional shape is
         visible in the description surface."""
-        descriptions = _config_defaults.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+        descriptions = _discovered_descriptions()
         text = descriptions['default:branch-cleanup']
         markers = ('create-pr', 'conditionally', 'adapts')
         assert any(marker in text for marker in markers), (
-            "BUILT_IN_FINALIZE_STEP_DESCRIPTIONS['default:branch-cleanup'] "
+            "the discovered description for 'default:branch-cleanup' "
             'must mention one of ' + repr(markers) + ' to capture the '
             'conditional adaptation based on create-pr presence — current '
             'text: ' + repr(text)
@@ -351,14 +390,14 @@ class TestFinalizeStepDescriptionDrift:
         contract and downstream consumers may grep for the substring
         ``skipped when qgate_findings=0`` to detect the Signal Gate
         behavior advertised here."""
-        descriptions = _config_defaults.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+        descriptions = _discovered_descriptions()
         expected = (
             'Capture lessons from triage findings and PR-review '
             'escalations (skipped when qgate_findings=0, '
             'pr_comments_promoted=0, and script_failure_clusters=0)'
         )
         assert descriptions['default:lessons-capture'] == expected, (
-            "BUILT_IN_FINALIZE_STEP_DESCRIPTIONS['default:lessons-capture'] "
+            "the discovered description for 'default:lessons-capture' "
             'must match the clarified-request string exactly — expected: '
             + repr(expected)
             + ', got: '
@@ -368,7 +407,7 @@ class TestFinalizeStepDescriptionDrift:
     def test_updated_descriptions_within_readability_bound(self) -> None:
         """All three updated descriptions MUST stay ≤200 chars to keep
         ``list-finalize-steps`` output readable."""
-        descriptions = _config_defaults.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+        descriptions = _discovered_descriptions()
         for key in (
             'default:sonar-roundtrip',
             'default:branch-cleanup',
@@ -376,7 +415,7 @@ class TestFinalizeStepDescriptionDrift:
         ):
             text = descriptions[key]
             assert len(text) <= self._READABILITY_BOUND, (
-                f"BUILT_IN_FINALIZE_STEP_DESCRIPTIONS[{key!r}] exceeds "
+                f"the discovered description for {key!r} exceeds "
                 f'{self._READABILITY_BOUND}-char readability bound — '
                 f'length={len(text)}, text={text!r}'
             )

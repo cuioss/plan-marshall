@@ -198,3 +198,9 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 | pm-documents | recipe-doc-verify | doc-verify |
 | pm-documents | recipe-verify-architecture-diagrams | verify-architecture-diagrams |
 | pm-dev-java-cui | recipe-cui-logging-enforce | cui-logging-enforce |
+
+## Related Specifications
+
+- [ext-point-domain-bundle.md](ext-point-domain-bundle.md) — Domain-bundle manifest extension point (same `implements:` identification model)
+- [ext-point-finalize-step.md](ext-point-finalize-step.md) — Finalize-step extension point (same `implements:` identification model)
+- [marshal-json-reference.md](marshal-json-reference.md) — Central marshal.json path reference

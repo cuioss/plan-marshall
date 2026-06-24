@@ -3,6 +3,9 @@ name: finalize-step-sync-plugin-cache
 description: Synchronize the Claude plugin cache from target/claude/ via the consolidated sync engine
 mode: script-executor
 order: 85
+default_on: false
+presets: []
+implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
 # Finalize Step — Sync Plugin Cache (project-local)
