@@ -217,7 +217,7 @@ def _evaluate_signals(plan_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
 
     - ``lane`` — the aggregate ``{light|deep}`` verdict.
     - ``fired_signals`` — the list of deep-bias signals that fired.
-    - ``signals`` — the resolved S1–S6 input values (``plan_source``,
+    - ``signals`` — the resolved S1-S6 input values (``plan_source``,
       ``scope_estimate``, ``change_type``, ``compatibility``,
       ``request_concrete``, ``planning_lane_override``).
     """
