@@ -46,17 +46,13 @@ import copy
 # fixed taxonomy; only the per-preset step MEMBERSHIP is discovery-driven.
 _PRESET_NAMES: tuple[str, ...] = ('local', 'standard', 'full')
 
-# Canonical ext-point value identifying a finalize-step doc. Imported lazily at
-# call time (not at module import) so this module stays a leaf — see
-# :func:`_discover_presets`.
-_FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
-
 
 def _discover_presets() -> dict[str, list[str]]:
     """Build the ``{preset_name: [step_id, ...]}`` map from the discovery query.
 
-    Calls ``extension_discovery.find_implementors`` (lazy import — the executor
-    sets PYTHONPATH for cross-skill imports), then for each canonical preset name
+    Lazy-imports ``FINALIZE_STEP_EXT_POINT`` from ``_config_defaults`` and
+    ``find_implementors`` from ``extension_discovery`` (the executor sets
+    PYTHONPATH for cross-skill imports), then for each canonical preset name
     collects every discovered step whose ``presets`` list contains that name,
     ordered by the discovered ``order``. A step in no preset contributes to no
     list; a preset with no members resolves to an empty list.
@@ -64,10 +60,11 @@ def _discover_presets() -> dict[str, list[str]]:
     Returns:
         A mapping from each canonical preset name to its ordered step-id list.
     """
+    from _config_defaults import FINALIZE_STEP_EXT_POINT  # type: ignore[import-not-found]
     from extension_discovery import find_implementors  # type: ignore[import-not-found]
 
     implementors = sorted(
-        find_implementors(_FINALIZE_STEP_EXT_POINT),
+        find_implementors(FINALIZE_STEP_EXT_POINT),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
     )
     name_to_preset: dict[str, list[str]] = {name: [] for name in _PRESET_NAMES}
