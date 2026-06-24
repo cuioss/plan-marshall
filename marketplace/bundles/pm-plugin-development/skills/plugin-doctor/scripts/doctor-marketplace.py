@@ -48,6 +48,7 @@ from _analyze_finalize_step_token import scan_finalize_step_token
 from _analyze_frontmatter import analyze_frontmatter
 from _analyze_historical_prose_in_skills import analyze_historical_prose_in_skills
 from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
+from _analyze_literal_count import analyze_literal_count
 from _analyze_manage_invocation import (
     _NOTATION_RE,
     _resolve_executor,
@@ -59,6 +60,7 @@ from _analyze_manage_invocation import (
 from _analyze_persona_binding_resolves import analyze_persona_binding_resolves
 from _analyze_persona_profile_uniqueness import analyze_persona_profile_uniqueness
 from _analyze_plugin_json import analyze_plugin_json_orphans
+from _analyze_provides_method_table import analyze_provides_method_table
 from _analyze_resolver_matrix_coverage import analyze_resolver_matrix_coverage
 from _analyze_role_field import analyze_role_field
 from _analyze_script_call_drift import analyze_script_call_drift
@@ -653,6 +655,29 @@ def cmd_analyze(args) -> dict:
     all_issues.extend(plugin_json_orphan_issues)
     total_issues += len(plugin_json_orphan_issues)
 
+    # Marketplace-wide provides-method-table-drift rule. Analyze-only —
+    # AST/regex pass over each bundle's plan-marshall-plugin extension.py +
+    # SKILL.md "Extension API" table, detecting drift between the extension's
+    # provides_*() overrides (machine-derivable source of truth) and the
+    # manually-maintained function-name column in the table mirror. Reported
+    # under ``analyze`` only; it does NOT gate quality-gate, pending a follow-up
+    # activation plan that flips it to build-failing once the tree is clean.
+    provides_method_table_issues = analyze_provides_method_table(marketplace_root)
+    all_issues.extend(provides_method_table_issues)
+    total_issues += len(provides_method_table_issues)
+
+    # Marketplace-wide literal-count-drift rule. Analyze-only —
+    # AST/regex/pathlib pass over the extension-api SKILL.md "Extension Points"
+    # table, detecting drift between each row's manually-maintained
+    # "Implementations" count token and the machine-derivable implementer count
+    # enumerated from the bundle tree (extension.py overrides per hook, plus the
+    # *_provider.py file count). Reported under ``analyze`` only; it does NOT
+    # gate quality-gate, pending a follow-up activation plan that flips it to
+    # build-failing once the tree is clean.
+    literal_count_issues = analyze_literal_count(marketplace_root)
+    all_issues.extend(literal_count_issues)
+    total_issues += len(literal_count_issues)
+
     skill_notation_issues = analyze_skill_notation(marketplace_root)
     all_issues.extend(skill_notation_issues)
     total_issues += len(skill_notation_issues)
@@ -1179,6 +1204,15 @@ def cmd_quality_gate(args) -> dict:
             'findings': len(persona_binding_findings),
         }
     )
+
+    # NOTE: provides-method-table-drift (analyze_provides_method_table),
+    # literal-count-drift (analyze_literal_count), and the markdown-mirror
+    # cluster (broken-relative-link + fenced-code-no-language) are intentionally
+    # NOT run here. They are analyze-only for now — they surface under
+    # ``cmd_analyze`` (the first two as marketplace-wide passes, the markdown
+    # pair via the per-component ``analyze_component`` path) as informational
+    # output, but they do NOT gate quality-gate. A follow-up activation plan
+    # will flip them back to build-failing once the tree is clean.
 
     # fail-closed-gate-read + redundant-contract-typed-isinstance — the whole-tree
     # Python-script pass that runs alongside analyze_plan_path_in_scripts /

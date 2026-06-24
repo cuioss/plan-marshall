@@ -887,6 +887,98 @@ The ack tag must match `^ack-[a-z0-9_-]+$`. The slug after `ack-` must be non-em
 
 ---
 
+## Rule Pack: Manually-maintained-mirror drift
+
+Four rules that make a hand-maintained documentation mirror of a machine-derivable fact machine-checkable. **Activation**: analyze-only for now — reported under `doctor-marketplace.py analyze` (pure AST/regex/pathlib passes over the marketplace bundle tree) but NOT gating `quality-gate`. A follow-up activation plan will flip them to build-failing once the tree is clean. `provides-method-table-drift` and `literal-count-drift` run as marketplace-wide passes wired into `cmd_analyze`; `broken-relative-link` and `fenced-code-no-language` surface through `cmd_analyze`'s per-component `analyze_component` pass.
+
+### provides-method-table-drift
+
+**Rule ID**: `provides-method-table-drift`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_provides_method_table.py`
+
+**Scope**: every `marketplace/bundles/*/skills/plan-marshall-plugin/SKILL.md` paired with its sibling `extension.py`.
+
+**Intent**: A bundle's `plan-marshall-plugin` "Extension API" table is a hand-maintained mirror of that bundle's `extension.py` workflow-hook overrides (`provides_triage` / `provides_outline_skill` / `provides_recipes` / `provides_retrospective_aspects`, whose `ExtensionBase` defaults are `None` / `None` / `[]` / `[]`). When an override is added or removed in `extension.py` without a matching table edit, the mirror silently rots — a SKILL.md reader sees a stale capability list. This rule makes the mirror machine-checkable.
+
+**Detection**: Pure static analysis — AST-load `extension.py`, find the concrete `*ExtensionBase` subclass, and classify each `provides_*` hook as a *real override* (a single non-default return value) or a *default override* (its body returns only `None` / `[]` / `pass`). Then extract the `provides_*()` function-name tokens from the markdown-TABLE rows (lines beginning with `|`) in the SKILL.md "Extension API" section. Two finding directions:
+
+- `override_missing_from_table` — a real override absent from the table (warning, line 1).
+- `phantom_table_row` — a table row naming a `provides_*()` method that is undefined on the class or returns only the base default (warning, at the offending row's line).
+
+**Structural discriminator**: only markdown-TABLE rows (`| `provides_x()` | ... |`) are mirror rows. Generic API prose in bullet-list form (`- `provides_x()` - Triage skill reference or None`) describes the hook contract abstractly rather than enumerating concrete overrides, so it is NOT a mirror and is deliberately out of scope — this is what keeps the rule free of false positives on bundles (`pm-dev-oci`, `pm-requirements`) that document the hooks generically.
+
+**Recommended fix**: Add the missing override's row to the "Extension API" table, or remove the phantom row whose method is no longer (or never was) overridden.
+
+**Suppression mechanism**: None — a stale mirror is a real drift.
+
+---
+
+### literal-count-drift
+
+**Rule ID**: `literal-count-drift`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_literal_count.py`
+
+**Scope**: the `extension-api` `SKILL.md` "Extension Points" table (`marketplace/bundles/plan-marshall/skills/extension-api/SKILL.md`).
+
+**Intent**: The "Extension Points" table's "Implementations" column states, per extension point, a numeric-literal count that is a hand-maintained mirror of the on-disk implementer set. When a bundle adds or drops an extension-point implementation without editing the table, the count silently rots — a reader sees a stale implementer tally. This rule makes the count machine-checkable.
+
+**Detection**: Pure static analysis — locate the "Extension Points" section table, and for each data row read the "Hook Method" cell (the structural discriminator) and the bare-integer "Implementations" cell. Compute the actual implementer count from the bundle tree and flag any mismatch:
+
+- For the four AST hooks (`discover_modules()` / `provides_triage()` / `provides_outline_skill()` / `provides_recipes()`), the count is the number of bundles whose `plan-marshall-plugin` `extension.py` carries a *real override* — the same `_is_default_return` classification `provides-method-table-drift` uses, so the two mirrors of the same overrides agree on what an override is.
+- For the `*_provider.py` provider hook, the count is the number of `*_provider.py` files under any bundle's `skills/*/scripts/` tree.
+
+A mismatch emits a warning-severity finding at the offending row's line.
+
+**Structural discriminator**: a row is checkable ONLY when its "Hook Method" cell carries a recognised hook token AND its "Implementations" cell is a bare integer. A row with an unrecognised hook token, and any count number appearing in prose or bullet lists elsewhere in the tree, is out of scope and never flagged — this is what keeps the rule free of false positives on incidental numbers.
+
+**Recommended fix**: Correct the stale "Implementations" count to the enumerated implementer count (or add/remove the implementation the count was meant to mirror).
+
+**Suppression mechanism**: None — a stale count is a real drift.
+
+---
+
+### broken-relative-link
+
+**Rule ID**: `broken-relative-link`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_markdown.py` (`check_broken_relative_link`), surfaced through `_doctor_analysis.py`'s per-component `analyze_component` pass under `cmd_analyze`.
+
+**Scope**: every `*.md` under `marketplace/bundles/*/{skills,agents,commands}/`.
+
+**Intent**: A relative markdown link is a hand-maintained mirror of the on-disk file layout. When a target file moves or is renamed without updating every `[text](relative/path.md)` that points at it, the link becomes a dead reference no structural check catches. This rule makes the layout mirror machine-checkable.
+
+**Detection**: Pure static analysis — for each non-fenced line, resolve every relative link target against the linking file's own directory and `exists()`-check it (after stripping any `#fragment`). A missing target emits an error-severity finding at the link's line.
+
+**Structural discriminator**: absolute URLs (any `scheme:`), root-absolute paths (leading `/`), pure-anchor links (leading `#`), links inside fenced code blocks, and links inside inline-code spans (single/multi backticks — a `[text](p)` or `![](p)` literal inside backticks is illustrative example text) are out of scope — only genuine relative on-disk references are checked, so external links and illustrative code never trip the rule.
+
+**Recommended fix**: Repair the link target to the file's current on-disk path, or remove the dead reference.
+
+**Suppression mechanism**: None — a broken relative link is a hard reference breakage.
+
+---
+
+### fenced-code-no-language
+
+**Rule ID**: `fenced-code-no-language`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_markdown.py` (`check_fenced_code_no_language`), surfaced through `_doctor_analysis.py`'s per-component `analyze_component` pass under `cmd_analyze`.
+
+**Scope**: every `*.md` under `marketplace/bundles/*/{skills,agents,commands}/`.
+
+**Intent**: A fenced code block's opening info-string mirrors the author's intended block language. An omitted info-string (MD040) degrades rendering and downstream language-aware tooling. This rule flags the missing-language defect at authoring time.
+
+**Detection**: Pure static analysis — track fence state and flag every *opening* fence (` ``` ` or `~~~`) whose line carries no info-string. Warning severity.
+
+**Structural discriminator**: only opening fences are inspected; the closing fence of a block legitimately carries no info-string and is never flagged because the scanner distinguishes open from close via fence-state tracking.
+
+**Recommended fix**: Add a language info-string to the opening fence (e.g. ` ```bash `, ` ```python `, ` ```toon `, or ` ```text ` for plain text).
+
+**Suppression mechanism**: None — a missing fence language is a real style defect.
+
+---
+
 ## Rule Pack: Reference-resolution
 
 Five rules that catch gaps between what the marketplace *declares* and what is *discoverable on disk*. Each gap resolves to a dead reference at runtime: a missing component, an unresolvable `Skill:` directive, a drifted notation segment, an undeclared component, or an undiscoverable recipe. **Activation**: unconditionally active under `doctor-marketplace.py analyze` (each analyzer is a cheap json / regex / filesystem pass over the bundle tree). NOT included in `quality-gate`. `notation-bundle-skill-drift` rides the existing per-skill `notation-staleness` integration in `_doctor_analysis.py`; the other four are marketplace-wide passes wired into `cmd_analyze`.

@@ -361,6 +361,7 @@ Representative rule ids by category:
 - **Skill**: `skill-enforcement-block-required`, `skill-naming-noun-suffix`
 - **Script**: `argparse_safety`, `notation-staleness`, `script-call-drift`
 - **Manage-invocation**: `manage-findings-invocation-invalid`, `manage-invocation-invalid`, `missing-canonical-block` (see [scripts/_analyze_manage_invocation.py](scripts/_analyze_manage_invocation.py) for the generalized analyzer)
+- **Mirror-drift**: `provides-method-table-drift`, `literal-count-drift`, `broken-relative-link`, `fenced-code-no-language` (analyze-only for now — reported under `analyze`, NOT gating `quality-gate`, pending a follow-up activation plan that flips them to build-failing once the tree is clean; `provides-method-table-drift` detects drift between a `plan-marshall-plugin` extension.py `provides_*()` overrides and the SKILL.md "Extension API" table mirror — see [scripts/_analyze_provides_method_table.py](scripts/_analyze_provides_method_table.py))
 - **Content**: `checklist-pattern`
 - **PM-Workflow**: `pm-implicit-script-call` through `pm-contract-non-compliance`
 - **Test-Conventions**: `unique-fixture-basenames`, `subprocess-pythonpath`, `identifier-validator-corpus` (see [standards/doctor-test-conventions.md](standards/doctor-test-conventions.md))
@@ -437,7 +438,7 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marke
   [--paths PATHS [PATHS ...]] [--marketplace-root MARKETPLACE_ROOT]
 ```
 
-`--paths` scopes the file-anchored findings to the supplied component paths (the same invariant rule set runs). No flag = marketplace-wide. `validate_extension_contracts` always runs whole-tree even under `--paths`.
+`--paths` scopes the file-anchored findings to the supplied component paths (the same invariant rule set runs). No flag = marketplace-wide. `validate_extension_contracts` always runs whole-tree even under `--paths`. The manually-maintained-mirror rules (`provides-method-table-drift`, `literal-count-drift`, `broken-relative-link`, `fenced-code-no-language`) are NOT part of this build-failing gate — they are analyze-only for now and surface under `analyze`, pending a follow-up activation plan that flips them to build-failing once the tree is clean.
 
 ### test-conventions
 
