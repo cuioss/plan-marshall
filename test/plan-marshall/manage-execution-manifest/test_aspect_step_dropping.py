@@ -2,20 +2,24 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the request-aspect step-dropping pre-filter.
 
-``_apply_aspect_step_dropping`` is the role-driven, canonical-agnostic pre-filter
-that drops build / quality-gate / test canonical-verify steps from the composed
-phase-5 verification list when the request aspect (resolved by the
-``manage-config aspect-classify`` verb and forwarded via ``--aspect``) is
-``analysis`` or ``planning``. The rationale is the inverse of the footprint
-pre-filter: an analysis / planning request carries no production / test footprint
-to gate, so running (and failing) build / quality-gate / test commands against a
-code-free change is pure waste.
+``_apply_aspect_step_dropping`` clears the ENTIRE composed phase-5 verification
+list when the request aspect (resolved by the ``manage-config aspect-classify``
+verb and forwarded via ``--aspect``) is ``analysis`` or ``planning``. The
+rationale is the inverse of the footprint pre-filter: an analysis / planning
+request carries no production / test footprint to gate, so running (and failing)
+build / quality-gate / test commands against a code-free change is pure waste.
 
-The drop is driven entirely by the ``_role_of`` derivation (the same one the
-footprint pre-filter uses) and the ``_BUILD_DROPPING_ROLES`` membership table
-(``quality-gate`` / ``module-tests`` / ``coverage``) — there is no per-canonical
-branch. An ``implementation`` aspect (the classifier's safe sub-threshold
-fallback) and an absent aspect are no-ops: every build/verify gate is retained.
+The full-clear (rather than a role-only drop of the build/verify canonicals) is
+load-bearing for the phase-5-execute Step 11b contract: Step 11b fires a
+``quality-gate`` sweep whenever ``phase_5.verification_steps`` is non-empty. A
+role-only filter that left any external (``project:`` / ``bundle:skill``)
+``None``-role step in the list would keep it non-empty and re-trigger
+``quality-gate`` via Step 11b for an analysis / planning request — exactly the
+build the aspect drop exists to prevent. Clearing the full list keeps the
+enforcement at the manifest layer where it belongs.
+
+An ``implementation`` aspect (the classifier's safe sub-threshold fallback) and
+an absent aspect are no-ops: every step is retained.
 
 These tests drive ``_apply_aspect_step_dropping`` directly via importlib (Tier 2),
 mirroring ``test_canonical_verify_inactive.py``. No live worktree, git history,
@@ -50,7 +54,6 @@ def _load_module(name: str, filename: str):
 _mem = _load_module('_mem_aspect_step_dropping', 'manage-execution-manifest.py')
 _apply_aspect_step_dropping = _mem._apply_aspect_step_dropping
 _BUILD_DROPPING_ASPECTS = _mem._BUILD_DROPPING_ASPECTS
-_BUILD_DROPPING_ROLES = _mem._BUILD_DROPPING_ROLES
 
 
 # The full build/verify step set an implementation request retains and an
@@ -71,12 +74,9 @@ class TestConstants:
     def test_implementation_is_not_a_build_dropping_aspect(self):
         assert 'implementation' not in _BUILD_DROPPING_ASPECTS
 
-    def test_build_dropping_roles_are_the_three_build_verify_roles(self):
-        assert _BUILD_DROPPING_ROLES == frozenset({'quality-gate', 'module-tests', 'coverage'})
 
-
-class TestAnalysisPlanningDropsBuildSteps:
-    """An analysis / planning aspect drops every build / quality-gate / test step."""
+class TestAnalysisPlanningClearsEntireList:
+    """An analysis / planning aspect clears the ENTIRE phase-5 verification list."""
 
     def test_analysis_drops_all_build_steps(self):
         kept, dropped = _apply_aspect_step_dropping(list(_BUILD_STEPS), 'analysis', {})
@@ -95,15 +95,34 @@ class TestAnalysisPlanningDropsBuildSteps:
         assert kept == []
         assert dropped == steps
 
-    def test_verify_canonical_maps_to_module_tests_role_and_drops(self):
-        """``default:verify:verify`` derives the ``module-tests`` role and is dropped."""
+    def test_verify_canonical_is_dropped(self):
+        """``default:verify:verify`` (the ``module-tests`` role) is dropped."""
         kept, dropped = _apply_aspect_step_dropping(['default:verify:verify'], 'planning', {})
         assert kept == []
         assert dropped == ['default:verify:verify']
 
-    def test_external_and_unknown_steps_survive_under_analysis(self):
-        """External (project:/bundle:skill) and unknown-role steps are passed through
-        untouched even under an analysis aspect — only build/verify roles drop."""
+    def test_external_none_role_step_does_not_survive_role_drop(self):
+        """REGRESSION (CodeRabbit 10709d): an external (project:/bundle:skill) step
+        whose derived role is ``None`` must ALSO drop under analysis/planning. A
+        role-only filter would leave it in place, keeping the list non-empty and
+        re-triggering quality-gate via phase-5 Step 11b. The full-clear path
+        ensures the list ends empty even when the only surviving candidate is an
+        external None-role step."""
+        # The list contains ONLY external/unknown None-role steps — no build/verify
+        # canonical to drop via the old role filter. The list must still end empty.
+        steps = [
+            'project:finalize-step-plugin-doctor',
+            'my-bundle:my-verify-step',
+            'default:verify:not-a-canonical',
+        ]
+        kept, dropped = _apply_aspect_step_dropping(steps, 'analysis', {})
+        assert kept == []
+        assert dropped == steps
+
+    def test_mixed_build_and_external_steps_all_drop_under_analysis(self):
+        """A mix of build/verify canonicals, footprint-gated whole-tree canonicals,
+        and external None-role steps ALL drop under an analysis aspect — the list
+        ends empty regardless of step kind."""
         steps = [
             'default:verify:quality-gate',
             'project:finalize-step-plugin-doctor',
@@ -113,22 +132,39 @@ class TestAnalysisPlanningDropsBuildSteps:
             'default:verify:e2e',
         ]
         kept, dropped = _apply_aspect_step_dropping(steps, 'analysis', {})
-        assert dropped == ['default:verify:quality-gate']
-        assert kept == [
+        assert kept == []
+        assert dropped == steps
+
+    def test_mixed_steps_all_drop_under_planning(self):
+        """Symmetric coverage for the ``planning`` aspect over a mixed list."""
+        steps = [
+            'default:verify:module-tests',
             'project:finalize-step-plugin-doctor',
-            'my-bundle:my-verify-step',
-            'default:verify:not-a-canonical',
-            'default:verify:integration-tests',
-            'default:verify:e2e',
+            'default:verify:coverage',
         ]
+        kept, dropped = _apply_aspect_step_dropping(steps, 'planning', {})
+        assert kept == []
+        assert dropped == steps
 
 
 class TestImplementationRetainsAllSteps:
-    """An implementation aspect (or absent aspect) retains every build/verify gate."""
+    """An implementation aspect (or absent aspect) retains every step."""
 
     def test_implementation_retains_all_build_steps(self):
         kept, dropped = _apply_aspect_step_dropping(list(_BUILD_STEPS), 'implementation', {})
         assert kept == _BUILD_STEPS
+        assert dropped == []
+
+    def test_implementation_retains_external_none_role_steps(self):
+        """An implementation aspect retains external None-role steps untouched —
+        the full-clear path is gated strictly on the build-dropping aspects."""
+        steps = [
+            'default:verify:quality-gate',
+            'project:finalize-step-plugin-doctor',
+            'my-bundle:my-verify-step',
+        ]
+        kept, dropped = _apply_aspect_step_dropping(steps, 'implementation', {})
+        assert kept == steps
         assert dropped == []
 
     def test_none_aspect_is_a_noop(self):

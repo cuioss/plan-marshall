@@ -1225,50 +1225,43 @@ def _apply_canonical_verify_inactive(
 # request-aspect classification deliverable.
 _BUILD_DROPPING_ASPECTS = frozenset({'analysis', 'planning'})
 
-# Matrix ``role:`` values that the build-dropping aspect filter removes from the
-# composed phase-5 verification list. These are exactly the build / quality-gate
-# / test roles: ``quality-gate`` (mypy + ruff static analysis), ``module-tests``
-# (the ``verify`` / ``module-tests`` canonical role running the test suite), and
-# ``coverage`` (the coverage gate). A canonical-verify step whose derived role is
-# in this set is dropped when the request aspect is analysis / planning. External
-# steps (``project:`` / ``bundle:skill``) and unrecognized roles resolve to
-# ``None`` via ``_role_of`` and are passed through untouched.
-_BUILD_DROPPING_ROLES = frozenset({'quality-gate', 'module-tests', 'coverage'})
-
-
 def _apply_aspect_step_dropping(
     phase_5_steps: list[str],
     aspect: str | None,
     role_cache: dict[str, str | None],
 ) -> tuple[list[str], list[str]]:
-    """Drop build / quality-gate / test steps when the request aspect is analysis / planning.
+    """Clear the phase-5 verification list when the request aspect is analysis / planning.
 
-    When ``aspect ∈ {analysis, planning}`` (the build-dropping aspects), every
-    composed phase-5 canonical-verify step whose derived matrix role is a
-    build/verify role (``quality-gate`` / ``module-tests`` / ``coverage``) is
-    removed from the phase-5 verification list — analysis / planning requests
-    carry no production / test footprint, so the build/verify gates have nothing
-    to gate. An ``implementation`` aspect (the classifier's safe sub-threshold
-    fallback) and an absent aspect are no-ops: every gate is retained.
+    When ``aspect ∈ {analysis, planning}`` (the build-dropping aspects), the
+    ENTIRE phase-5 verification list is dropped — not just the canonical
+    build/verify steps (``quality-gate`` / ``module-tests`` / ``coverage``) but
+    also every external (``project:`` / ``bundle:skill``) step whose derived
+    matrix role is ``None``. Analysis / planning requests carry no production /
+    test footprint, so the build/verify gates have nothing to gate.
 
-    The filter is role-driven (via ``_role_of`` / ``_BUILD_DROPPING_ROLES``),
-    canonical-agnostic, and adds no per-canonical branch. External steps
-    (``project:`` / ``bundle:skill``) and any step whose role is unrecognized
-    resolve to ``None`` and are passed through untouched.
+    Dropping the full list (rather than only the role-matched build steps) is
+    load-bearing for the phase-5-execute Step 11b contract: Step 11b fires a
+    ``quality-gate`` sweep whenever ``phase_5.verification_steps`` is non-empty.
+    A role-only filter that left any external ``None``-role step in the list
+    would keep it non-empty and re-trigger ``quality-gate`` via Step 11b for an
+    analysis / planning request — exactly the build the aspect drop exists to
+    prevent. Clearing the full list keeps the enforcement at the manifest layer
+    where it belongs, so Step 11b's non-empty check naturally short-circuits.
 
-    Returns ``(kept_steps, dropped_steps)``.
+    An ``implementation`` aspect (the classifier's safe sub-threshold fallback)
+    and an absent aspect are no-ops: every gate is retained.
+
+    Returns ``(kept_steps, dropped_steps)``. ``role_cache`` is retained in the
+    signature for call-site symmetry with the other role-driven filters; the
+    full-clear path does not consult it.
     """
     if aspect not in _BUILD_DROPPING_ASPECTS:
         return phase_5_steps, []
 
-    kept: list[str] = []
-    dropped: list[str] = []
-    for step in phase_5_steps:
-        if _role_of(step, role_cache) in _BUILD_DROPPING_ROLES:
-            dropped.append(step)
-            continue
-        kept.append(step)
-    return kept, dropped
+    # Build-dropping aspect: drop the FULL list (every step, build and external
+    # alike). See docstring — a partial role-only drop would leave external
+    # None-role steps in place and re-trigger Step 11b's quality-gate sweep.
+    return [], list(phase_5_steps)
 
 
 # Code-touching change types that gate ``finalize-step-simplify`` activation.
