@@ -49,7 +49,7 @@ The check compares the actual lane against the counterfactual lane
 
 ## Emitted columns
 
-```
+```text
 rows[N]{plan_id,actual_lane,actual_track,counterfactual_lane,verdict}
 ```
 
