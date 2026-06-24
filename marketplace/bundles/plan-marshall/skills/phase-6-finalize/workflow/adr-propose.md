@@ -2,7 +2,11 @@
 name: default:adr-propose
 description: Propose ADRs from plan decisions
 order: 62
-implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+default_on: false
+presets: []
+implements:
+  - plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+  - plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
 # ADR Propose

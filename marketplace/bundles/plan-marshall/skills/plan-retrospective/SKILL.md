@@ -5,7 +5,12 @@ user-invocable: true
 mode: workflow
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Skill
 order: 995
-implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+default_on: false
+presets:
+  - full
+implements:
+  - plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+  - plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
 # Plan Retrospective Skill

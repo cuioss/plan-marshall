@@ -2,6 +2,12 @@
 name: default:branch-cleanup
 description: Branch cleanup — adapts to PR mode or local-only based on create-pr step presence
 order: 70
+default_on: true
+presets:
+  - local
+  - standard
+  - full
+implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 configurable:
   - key: pr_merge_strategy
     default: squash

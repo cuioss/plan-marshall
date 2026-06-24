@@ -11,17 +11,14 @@ import re
 
 from _cmd_skill_domains import (
     _build_skill_dict_with_descriptions,
-    _read_frontmatter_order,
     load_profiles_from_bundle,
 )
 from _config_core import (
-    BUNDLES_DIR,
     MarshalNotInitializedError,
     error_exit,
     get_skill_description,
     load_config,
     require_initialized,
-    resolve_bundle_path,
     success_exit,
 )
 
@@ -352,101 +349,45 @@ def cmd_resolve_recipe(args) -> dict:
 # =============================================================================
 
 
+# Maps the discovery query's `source` field to the legacy `type` field surfaced
+# in `list-finalize-steps`. The discovery query is the single source of truth for
+# the source classification; `type` is the public output column derived from it.
+_SOURCE_TO_TYPE = {
+    'built-in': 'built-in',
+    'bundle-optional': 'skill',
+    'project': 'project',
+}
+
+
 def _discover_all_finalize_steps() -> list[dict]:
-    """Discover all finalize steps from built-in, project, and bundle-optional sources.
+    """Discover all finalize steps via the reusable extension-discovery query.
 
-    Each result dict includes an `order` field (int) or `None` when the source
-    authoritative file/return dict does not declare one. Sorting and collision
-    handling are the caller's responsibility (marshall-steward).
+    Built-in (``default:*``), bundle-optional (e.g. ``plan-marshall:plan-retrospective``),
+    and project (``project:finalize-step-*``) finalize steps ALL flow from the
+    single ``extension_discovery.find_implementors`` query — membership is declared
+    on each step doc via ``implements: ...ext-point-finalize-step`` and discovered
+    by the query; there is no parallel per-source glob. The contract lives in the
+    central standard (``ext-point-finalize-step.md``).
+
+    Each result dict carries `name` / `description` / `type` / `source` / `order`,
+    preserving the historical `list-finalize-steps` output columns. The `type`
+    column is derived from the query's `source` via :data:`_SOURCE_TO_TYPE`.
+    Sorting and collision handling beyond the query's own (`order`, `name`) sort
+    are the caller's responsibility (marshall-steward).
     """
-    from _config_defaults import (
-        BUILT_IN_FINALIZE_STEP_DESCRIPTIONS,
-        BUILT_IN_FINALIZE_STEPS,
-        OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS,
-        OPTIONAL_BUNDLE_FINALIZE_STEPS,
-    )
+    from _config_defaults import FINALIZE_STEP_EXT_POINT
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
 
-    all_steps: list[dict] = []
-
-    # Source 1: Built-in steps — read order from workflow/{name}.md or
-    # standards/{name}.md frontmatter (workflow/ takes precedence). Resolve the
-    # concrete doc path per step via resolve_bundle_path so the versioned
-    # plugin-cache layout is handled (directory-level probing is brittle there).
-    for step_name in BUILT_IN_FINALIZE_STEPS:
-        bare = step_name.split(':', 1)[1] if ':' in step_name else step_name
-        workflow_path = resolve_bundle_path(
-            BUNDLES_DIR, 'plan-marshall', f'skills/phase-6-finalize/workflow/{bare}.md'
-        )
-        doc_path = (
-            workflow_path
-            if workflow_path.is_file()
-            else resolve_bundle_path(BUNDLES_DIR, 'plan-marshall', f'skills/phase-6-finalize/standards/{bare}.md')
-        )
-        all_steps.append(
-            {
-                'name': step_name,
-                'description': BUILT_IN_FINALIZE_STEP_DESCRIPTIONS.get(step_name, step_name),
-                'type': 'built-in',
-                'source': 'built-in',
-                'order': _read_frontmatter_order(doc_path),
-            }
-        )
-
-    # Source 2: Project finalize-step-* skills (e.g. plugin-doctor,
-    # regenerate-executor) across the target's project-local-skill roots.
-    seen_finalize: set[str] = set()
-    for skill_dir in iter_project_skill_dirs():
-        if not skill_dir.name.startswith('finalize-step-') or skill_dir.name in seen_finalize:
-            continue
-        skill_md = skill_dir / 'SKILL.md'
-        if not skill_md.exists():
-            continue
-
-        seen_finalize.add(skill_dir.name)
-        step_ref = f'project:{skill_dir.name}'
-        all_steps.append(
-            {
-                'name': step_ref,
-                'description': get_skill_description(step_ref),
-                'type': 'project',
-                'source': 'project',
-                'order': _read_frontmatter_order(skill_md),
-            }
-        )
-
-    # Source 3: Bundle-optional finalize steps (opt-in via OPTIONAL_BUNDLE_FINALIZE_STEPS)
-    # These appear in list-finalize-steps but are absent from DEFAULT_PLAN_FINALIZE,
-    # so projects must explicitly add them to marshal.json to activate. Each entry
-    # is a fully-qualified `bundle:skill` reference; we resolve to the SKILL.md path
-    # under BUNDLES_DIR (marketplace layout) and parse frontmatter for order +
-    # description. De-duplication against earlier sources mirrors the project-skill
-    # filter above.
-    seen_names = {entry['name'] for entry in all_steps}
-    for step_ref in OPTIONAL_BUNDLE_FINALIZE_STEPS:
-        if step_ref in seen_names:
-            continue
-        if ':' not in step_ref:
-            continue
-        bundle, skill = step_ref.split(':', 1)
-        skill_md = resolve_bundle_path(BUNDLES_DIR, bundle, f'skills/{skill}/SKILL.md')
-        description = get_skill_description(step_ref)
-        # Fall back to the curated description map when SKILL.md is missing or
-        # has no description field (get_skill_description returns the bare
-        # notation in that case).
-        if description == step_ref:
-            description = OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS.get(step_ref, step_ref)
-        all_steps.append(
-            {
-                'name': step_ref,
-                'description': description,
-                'type': 'skill',
-                'source': 'bundle-optional',
-                'order': _read_frontmatter_order(skill_md),
-            }
-        )
-        seen_names.add(step_ref)
-
-    return all_steps
+    return [
+        {
+            'name': rec['name'],
+            'description': rec.get('description', ''),
+            'type': _SOURCE_TO_TYPE.get(rec.get('source', ''), rec.get('source', '')),
+            'source': rec.get('source', ''),
+            'order': rec.get('order', 0),
+        }
+        for rec in find_implementors(FINALIZE_STEP_EXT_POINT)
+    ]
 
 
 def cmd_list_finalize_steps(args) -> dict:

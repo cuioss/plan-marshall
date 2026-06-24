@@ -4,6 +4,9 @@ description: Proactive phase-6 security-audit pass — runs the shared five-stag
 persona: persona-security-expert
 order: 9
 mutates_source: true
+default_on: true
+presets: []
+implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 configurable:
   - key: security_audit
     default: auto

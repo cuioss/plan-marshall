@@ -90,16 +90,26 @@ def test_skill_body_documents_inline_only_and_no_skip_detector():
 
 
 # ---------------------------------------------------------------------------
-# 2) NOT in BUILT_IN_FINALIZE_STEPS — meta-project-only step
+# 2) NOT a built-in default — meta-project-only project step
 # ---------------------------------------------------------------------------
 
 
 def test_deploy_target_is_not_a_built_in_default():
-    """Per the relocation, deploy-target is a project-local step, not a default."""
-    assert 'default:deploy-target' not in cd.BUILT_IN_FINALIZE_STEPS
-    assert 'default:deploy-target' not in cd.BUILT_IN_FINALIZE_STEP_DESCRIPTIONS
+    """Per the relocation, deploy-target is a project-local step, not a default.
+
+    The hand-maintained BUILT_IN_FINALIZE_STEPS / *_DESCRIPTIONS constants were
+    removed; membership is discovered via extension_discovery.find_implementors.
+    A ``default:deploy-target`` built-in id must NOT appear among the discovered
+    finalize steps, and must NOT be in the default-on seed.
+    """
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+
+    discovered_names = {
+        rec['name'] for rec in find_implementors(cd.FINALIZE_STEP_EXT_POINT) if rec.get('name')
+    }
+    assert 'default:deploy-target' not in discovered_names
     # DEFAULT_PLAN_FINALIZE['steps'] is a lazy None placeholder; the seeded map is
-    # built by _seed_finalize_steps() (keyed by BUILT_IN_FINALIZE_STEPS).
+    # built by _seed_finalize_steps() (the discovered default-on built-in set).
     assert 'default:deploy-target' not in cd._seed_finalize_steps()
 
 

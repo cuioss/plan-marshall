@@ -3,6 +3,12 @@ name: default:push
 description: Push the converged branch
 order: 10
 mutates_source: false
+default_on: true
+presets:
+  - local
+  - standard
+  - full
+implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
 # Push

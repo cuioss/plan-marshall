@@ -3,6 +3,10 @@ name: default:pre-push-quality-gate
 description: Run quality-gate per affected bundle as the last gate before push
 order: 5
 mutates_source: false
+default_on: true
+presets:
+  - full
+implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
 # Pre-Push Quality Gate

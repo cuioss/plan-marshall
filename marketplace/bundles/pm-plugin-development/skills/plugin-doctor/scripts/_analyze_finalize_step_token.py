@@ -28,11 +28,13 @@ Two roots are walked:
 
 1. **Bundle finalize-step skills** —
    ``marketplace_root/{bundle}/skills/{skill}/SKILL.md`` whose
-   ``{bundle}:{skill}`` reference is a member of the authoritative
-   ``OPTIONAL_BUNDLE_FINALIZE_STEPS`` registry in
-   ``manage-config/_config_defaults.py`` (the same single-source-of-truth the
-   PR #629 regression anchors to). The expected step_id is that registry
-   reference, i.e. ``{bundle}:{skill}``.
+   ``{bundle}:{skill}`` reference is a bundle-optional (``default_on: false``)
+   finalize-step implementor surfaced by the reusable
+   ``extension_discovery.find_implementors`` discovery query — the SOLE source
+   of truth for finalize-step membership (membership is DECLARED on each step
+   doc via ``implements: ...ext-point-finalize-step`` and DISCOVERED through the
+   query; there is no hand-maintained constant). The expected step_id is that
+   ``{bundle}:{skill}`` reference.
 
 2. **Project-local finalize-step skills** —
    ``<repo>/.claude/skills/finalize-step-*/SKILL.md`` discovered by glob
@@ -99,37 +101,55 @@ _STEP_RE = re.compile(r'--step(?:\s+|=)(\S+)')
 
 
 # ---------------------------------------------------------------------------
-# Registry import (single source of truth for bundle finalize-step ids)
+# Bundle-optional finalize-step discovery (the reusable extension-discovery query)
 # ---------------------------------------------------------------------------
+
+# Canonical ``implements:`` value identifying a finalize-step doc. Membership is
+# declared on each step doc via this ext-point and discovered through the
+# reusable ``extension_discovery.find_implementors`` query. The contract lives in
+# the central standard — marketplace/bundles/plan-marshall/skills/extension-api/
+# standards/ext-point-finalize-step.md; this constant is the discovery key only.
+_FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
 
 
 def _load_optional_bundle_finalize_steps(marketplace_root: Path) -> list[str]:
-    """Import ``OPTIONAL_BUNDLE_FINALIZE_STEPS`` from ``manage-config``.
+    """Return the bundle-optional finalize-step ids via the discovery query.
 
-    ``_config_defaults`` imports its sibling ``constants`` module by bare name,
-    so the manage-config scripts directory must be on ``sys.path`` before the
-    import resolves. Returns an empty list when the registry cannot be located
-    (e.g. a synthetic ``tmp_path`` marketplace with no plan-marshall bundle).
+    Derives the opt-in (``default_on: false``, ``source: bundle-optional``)
+    ``{bundle}:{skill}`` step ids from
+    ``extension_discovery.find_implementors`` — the SOLE finalize-step discovery
+    path. The query scans every bundle's ``skills/*/SKILL.md`` (and the phase-6
+    step docs + project-local steps, which are not bundle-optional) for the
+    ``implements: ...ext-point-finalize-step`` declaration; this helper keeps
+    only the ``bundle-optional`` records, whose ``name`` is the ``{bundle}:{skill}``
+    step id.
+
+    ``extension_discovery`` resolves the marketplace bundles root and plugin
+    cache roots internally, so it imports by bare name once its scripts directory
+    is on ``sys.path``. The extension-api scripts directory is added relative to
+    ``marketplace_root`` for parity with how the executor seeds ``PYTHONPATH``.
+    Returns an empty list when the query cannot be loaded (e.g. a synthetic
+    ``tmp_path`` marketplace with no extension-api bundle).
     """
     scripts_dir = (
         marketplace_root
         / 'plan-marshall'
         / 'skills'
-        / 'manage-config'
+        / 'extension-api'
         / 'scripts'
     )
-    if not scripts_dir.is_dir():
-        return []
     inserted = False
-    if str(scripts_dir) not in sys.path:
+    if scripts_dir.is_dir() and str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
         inserted = True
-    sys.modules.pop('_config_defaults', None)
-    sys.modules.pop('constants', None)
     try:
-        import _config_defaults  # noqa: PLC0415
+        from extension_discovery import find_implementors  # noqa: PLC0415
 
-        return list(_config_defaults.OPTIONAL_BUNDLE_FINALIZE_STEPS)
+        return [
+            rec['name']
+            for rec in find_implementors(_FINALIZE_STEP_EXT_POINT)
+            if rec.get('source') == 'bundle-optional' and rec.get('name')
+        ]
     except Exception:
         return []
     finally:
@@ -223,9 +243,10 @@ def _bundle_targets(
     """Return ``(SKILL.md path, expected_step_id)`` for in-scope bundle skills.
 
     A bundle skill is in scope when its ``{bundle}:{skill}`` reference is a
-    member of ``OPTIONAL_BUNDLE_FINALIZE_STEPS``. The expected step_id is that
-    registry reference — the registry is the single source of truth, so the
-    reference and the expected step_id are the same value.
+    bundle-optional finalize-step implementor surfaced by
+    ``extension_discovery.find_implementors``. The expected step_id is that
+    discovered reference — the discovery query is the single source of truth, so
+    the reference and the expected step_id are the same value.
     """
     if not optional_steps or not marketplace_root.is_dir():
         return []
@@ -288,8 +309,9 @@ def scan_finalize_step_token(marketplace_root: Path) -> list[dict]:
     token that diverges from the skill's canonical manifest step_id:
 
     - ``marketplace_root/{bundle}/skills/{skill}/SKILL.md`` for each
-      ``{bundle}:{skill}`` in ``OPTIONAL_BUNDLE_FINALIZE_STEPS`` (expected
-      step_id = ``{bundle}:{skill}``).
+      bundle-optional ``{bundle}:{skill}`` finalize-step implementor surfaced by
+      ``extension_discovery.find_implementors`` (expected step_id =
+      ``{bundle}:{skill}``).
     - ``<repo>/.claude/skills/finalize-step-*/SKILL.md`` (expected step_id =
       ``project:{name}``).
 

@@ -2,6 +2,9 @@
 name: default:finalize-step-preference-emitter
 description: Per-plan preference-learning sweep — promotes recurring user gate-dispositions in the just-finished plan to durable architecture hints via the shared disposition-to-hint contract
 order: 80
+default_on: true
+presets: []
+implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 configurable:
   - key: preference_min_recurrence
     default: 2
@@ -124,9 +127,10 @@ The `display_detail` string appears in the renderer's per-step `[OK]` row.
 
 ## Activation note
 
-The step is **default-active** — it is seeded into `BUILT_IN_FINALIZE_STEPS` (like
-`finalize-step-simplify`), so a fresh consumer `marshal.json` picks it up via
-discovery without manual addition. It is cheap (one `manage-findings list` per
+The step is **default-active** — its frontmatter declares `default_on: true`
+(like `finalize-step-simplify`), so the discovery query
+(`extension_discovery.find_implementors`) includes it in the default-on seed and
+a fresh consumer `marshal.json` picks it up without manual addition. It is cheap (one `manage-findings list` per
 disposition plus a bounded generalization, gated by the threshold so it usually
 no-ops) and skip-clean when the plan has zero promotable dispositions.
 

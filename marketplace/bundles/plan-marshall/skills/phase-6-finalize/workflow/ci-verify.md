@@ -3,7 +3,13 @@ name: default:ci-verify
 description: "Classify CI run failures into the multi-failure-mode taxonomy and emit one structured triage finding per failing check (requires: [ci-complete] in consume-failures mode)"
 order: 22
 requires: [ci-complete]
-implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+default_on: true
+presets:
+  - standard
+  - full
+implements:
+  - plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+  - plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
 # ci-verify

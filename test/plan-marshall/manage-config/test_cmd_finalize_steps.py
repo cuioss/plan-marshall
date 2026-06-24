@@ -89,30 +89,17 @@ def _params_for(steps_map: dict, step_id: str):
 
 
 # ``apply-preset`` sorts the preset's step list ascending by resolved
-# frontmatter ``order`` before persisting (Deliverable 3). The FULL preset
-# is declared with ``record-metrics`` and ``archive-plan`` ahead of
-# ``plan-marshall:plan-retrospective`` in the literal constant, but the
-# resolved frontmatter orders put them in a different sequence:
-# ``plan-marshall:plan-retrospective`` (order=995), then
-# ``default:record-metrics`` (order=998 — it is the LAST token-accounting
-# step, so it runs after retrospective folds its token spend into the phase
-# row), then ``default:archive-plan`` (order=1000). The persisted order thus
-# differs from the literal ``FinalizeStepPresets.FULL`` constant. LOCAL and
-# STANDARD are already in ascending order, so the sort is a no-op for them.
-_FULL_SORTED: list[str] = [
-    'default:pre-push-quality-gate',
-    'default:finalize-step-simplify',
-    'default:push',
-    'default:create-pr',
-    'default:ci-verify',
-    'default:automated-review',
-    'default:sonar-roundtrip',
-    'default:lessons-capture',
-    'default:branch-cleanup',
-    'plan-marshall:plan-retrospective',
-    'default:record-metrics',
-    'default:archive-plan',
-]
+# frontmatter ``order`` before persisting. The discovery-driven
+# ``FinalizeStepPresets.get('full')`` already returns the ``full`` preset's
+# members sorted ascending by ``(order, name)`` — the same ordering apply-preset
+# produces — so the persisted keyed-map ids equal ``get('full')``. The members
+# (least ➜ most coverage) put ``plan-marshall:plan-retrospective`` (order=995)
+# before ``default:record-metrics`` (998 — the LAST token-accounting step, after
+# retrospective folds its token spend into the phase row) before
+# ``default:archive-plan`` (1000). Derived from the discovery query (no
+# hand-maintained literal) so a future ``order`` / ``presets`` frontmatter change
+# is reflected automatically.
+_FULL_SORTED: list[str] = FinalizeStepPresets.get('full')
 
 
 # =============================================================================
@@ -127,13 +114,13 @@ def test_apply_preset_local_writes_local_steps(plan_context):
 
     assert result['status'] == 'success'
     assert result['preset'] == 'local'
-    assert result['steps_count'] == len(FinalizeStepPresets.LOCAL)
+    assert result['steps_count'] == len(FinalizeStepPresets.get('local'))
 
     section = _read_finalize_section(plan_context.fixture_dir)
     # steps persists as the canonical keyed-map form; key insertion order is the
     # execution order.
     assert isinstance(section['steps'], dict)
-    assert _step_ids(section['steps']) == FinalizeStepPresets.LOCAL
+    assert _step_ids(section['steps']) == FinalizeStepPresets.get('local')
 
 
 def test_apply_preset_standard_writes_standard_steps(plan_context):
@@ -144,7 +131,7 @@ def test_apply_preset_standard_writes_standard_steps(plan_context):
     assert result['status'] == 'success'
     section = _read_finalize_section(plan_context.fixture_dir)
     assert isinstance(section['steps'], dict)
-    assert _step_ids(section['steps']) == FinalizeStepPresets.STANDARD
+    assert _step_ids(section['steps']) == FinalizeStepPresets.get('standard')
 
 
 def test_apply_preset_full_writes_full_steps_sorted(plan_context):
@@ -153,14 +140,14 @@ def test_apply_preset_full_writes_full_steps_sorted(plan_context):
     result = cmd_finalize_steps_apply_preset(Namespace(preset='full'))
 
     assert result['status'] == 'success'
-    assert result['steps_count'] == len(FinalizeStepPresets.FULL)
+    assert result['steps_count'] == len(FinalizeStepPresets.get('full'))
     section = _read_finalize_section(plan_context.fixture_dir)
     # The persisted keyed-map's ids are the FULL preset sorted ascending by
     # frontmatter order — same membership, ascending order (plan-retrospective
     # before archive-plan), not the literal constant order.
     assert isinstance(section['steps'], dict)
     assert _step_ids(section['steps']) == _FULL_SORTED
-    assert set(_step_ids(section['steps'])) == set(FinalizeStepPresets.FULL)
+    assert set(_step_ids(section['steps'])) == set(FinalizeStepPresets.get('full'))
 
 
 # =============================================================================
@@ -184,7 +171,7 @@ def test_apply_preset_preserves_sibling_phase6_knobs(plan_context):
 
     after = _read_finalize_section(plan_context.fixture_dir)
     assert isinstance(after['steps'], dict)
-    assert _step_ids(after['steps']) == FinalizeStepPresets.STANDARD
+    assert _step_ids(after['steps']) == FinalizeStepPresets.get('standard')
     # Flat phase-level knob untouched by the steps write.
     assert after['max_iterations'] == 3
     # The nested step param is preserved across the keyed-map rewrite (the
@@ -232,7 +219,7 @@ def test_apply_preset_writes_keyed_map_form_to_disk(plan_context):
     # Persisted as the canonical keyed map (a dict, not a list).
     assert isinstance(section['steps'], dict)
     # Same membership/order as LOCAL.
-    assert _step_ids(section['steps']) == FinalizeStepPresets.LOCAL
+    assert _step_ids(section['steps']) == FinalizeStepPresets.get('local')
     # The seed carries no params on push, so it maps to an empty {}.
     assert 'default:push' in section['steps']
     assert _params_for(section['steps'], 'default:push') == {}
@@ -278,7 +265,7 @@ def test_apply_preset_preserves_params_from_existing_keyed_map(plan_context):
     section = _read_finalize_section(plan_context.fixture_dir)
     assert isinstance(section['steps'], dict)
     # The preset's full step set is written, in keyed-map form.
-    assert _step_ids(section['steps']) == FinalizeStepPresets.LOCAL
+    assert _step_ids(section['steps']) == FinalizeStepPresets.get('local')
     # The existing params on the retained step survived the rewrite —
     # NOT dropped (the param-preservation contract this test guards).
     assert _params_for(section['steps'], 'default:branch-cleanup') == {
@@ -315,7 +302,7 @@ def test_apply_preset_overwrites_previous_preset(plan_context):
     section = _read_finalize_section(plan_context.fixture_dir)
     # No residue from FULL — the keyed map's ids are exactly LOCAL.
     assert isinstance(section['steps'], dict)
-    assert _step_ids(section['steps']) == FinalizeStepPresets.LOCAL
+    assert _step_ids(section['steps']) == FinalizeStepPresets.get('local')
 
 
 # =============================================================================
@@ -361,13 +348,12 @@ def test_apply_preset_uppercase_alias_succeeds(plan_context):
 def test_apply_preset_persists_steps_in_ascending_frontmatter_order(plan_context):
     """apply-preset sorts the preset's steps ascending by frontmatter order.
 
-    The FULL preset is declared with ``default:record-metrics`` and
-    ``default:archive-plan`` ahead of ``plan-marshall:plan-retrospective``
-    (order=995). Before the auto-sort, that out-of-order group would persist
-    verbatim into ``plan.phase-6-finalize.steps`` — exactly the durability
-    gap this deliverable closes. After the sort, the persisted list must be
-    ascending, which places ``plan-marshall:plan-retrospective`` (995) before
-    ``default:record-metrics`` (998) before ``default:archive-plan`` (1000).
+    The persisted ``plan.phase-6-finalize.steps`` must be ascending by resolved
+    frontmatter ``order``, which places ``plan-marshall:plan-retrospective``
+    (order=995) before ``default:record-metrics`` (998) before
+    ``default:archive-plan`` (1000). The discovery-driven preset membership is
+    already order-sorted, so the persisted ids equal ``get('full')`` — this test
+    independently re-resolves the persisted ids' orders to prove ascendance.
     """
     _resolve_step_orders = _cmd_mod._resolve_step_orders
 

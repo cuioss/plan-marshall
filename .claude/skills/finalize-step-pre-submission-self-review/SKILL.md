@@ -5,6 +5,9 @@ user-invocable: false
 mode: workflow
 allowed-tools: Bash, Read, Task
 order: 7
+default_on: false
+presets: []
+implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 configurable:
   - key: self_review
     default: auto

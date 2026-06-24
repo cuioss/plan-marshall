@@ -5,6 +5,9 @@ user-invocable: false
 mode: script-executor
 allowed-tools: Bash
 order: 6
+default_on: false
+presets: []
+implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
 # Finalize Step: plugin-doctor

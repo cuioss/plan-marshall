@@ -479,12 +479,17 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
             )
         },
     )
+    # finalize-step-token-mismatch: the scanner discovers bundle-optional steps
+    # via extension_discovery.find_implementors (the SOLE discovery path; the
+    # removed OPTIONAL_BUNDLE_FINALIZE_STEPS registry no longer gates scope).
+    # find_implementors surfaces the real bundle-optional step
+    # ``plan-marshall:plan-retrospective``; _bundle_targets then reads that ref's
+    # SKILL.md from the scratch bundles root. The scratch tree therefore only
+    # needs the drifting SKILL.md at the matching path — no synthetic registry
+    # file (it was dead weight once discovery moved to the query).
     corpus['finalize-step-token-mismatch'] = FixtureSpec(
         analyzer=lambda root: _afst.scan_finalize_step_token(root / 'marketplace' / 'bundles'),
         files={
-            'marketplace/bundles/plan-marshall/skills/manage-config/scripts/_config_defaults.py': (
-                "OPTIONAL_BUNDLE_FINALIZE_STEPS = ['plan-marshall:plan-retrospective']\n"
-            ),
             'marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md': (
                 '# F\n\n```bash\n'
                 'python3 .plan/execute-script.py '

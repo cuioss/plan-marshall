@@ -8,13 +8,15 @@ existing project's ``marshal.json`` predates them. ``determine_mode.py``
 exposes ``detect_missing_default_finalize_steps(plan_dir)`` and a
 ``check-missing-finalize-steps`` subcommand for that flow.
 
-Whenever ``BUILT_IN_FINALIZE_STEPS`` grows in
-``manage-config/scripts/_config_defaults.py``, projects whose
-``marshal.json`` was seeded before the new entries was added must have
-those entries surfaced so the wizard can prompt to add them. This test
-suite pins that contract — it is intentionally agnostic to which
-specific defaults are present, exercising the helper across "missing
-several", "complete", and "partially missing" fixtures.
+Whenever the discovered default-on built-in finalize-step set grows (a new
+phase-6-finalize step doc declares ``implements: ...ext-point-finalize-step``
+with ``default_on: true``), projects whose ``marshal.json`` was seeded before
+the new entries were added must have those entries surfaced so the wizard can
+prompt to add them. This test suite pins that contract — it is intentionally
+agnostic to which specific defaults are present, exercising the helper across
+"missing several", "complete", and "partially missing" fixtures. The canonical
+set is derived from the reusable ``extension_discovery.find_implementors`` query
+(the SOLE finalize-step discovery path), not a hand-maintained constant.
 """
 
 from __future__ import annotations
@@ -52,6 +54,24 @@ _dm = _load_module('_marshall_steward_determine_mode', _DETERMINE_MODE)
 detect_missing_default_finalize_steps = _dm.detect_missing_default_finalize_steps
 
 
+def _canonical_built_in_finalize_steps() -> list[str]:
+    """Return the discovered default-on built-in finalize-step ids, in seed order.
+
+    Mirrors ``determine_mode._canonical_built_in_finalize_steps`` (and
+    ``_seed_finalize_steps``): the default-on built-in set discovered via
+    ``extension_discovery.find_implementors``, sorted by ``(order, name)``. The
+    hand-maintained ``BUILT_IN_FINALIZE_STEPS`` constant was removed.
+    """
+    from _config_defaults import FINALIZE_STEP_EXT_POINT  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+
+    default_on = sorted(
+        (rec for rec in find_implementors(FINALIZE_STEP_EXT_POINT) if rec.get('default_on')),
+        key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
+    )
+    return [rec['name'] for rec in default_on if rec.get('name')]
+
+
 def _write_marshal(plan_dir: Path, steps: list[str]) -> None:
     plan_dir.mkdir(parents=True, exist_ok=True)
     marshal = {
@@ -72,7 +92,7 @@ def test_missing_marshal_returns_empty_list(tmp_path: Path):
 
 
 def test_missing_default_steps_are_surfaced(tmp_path: Path):
-    """Marshal.json missing one or more BUILT_IN_FINALIZE_STEPS entries → all
+    """Marshal.json missing one or more default-on built-in entries → all
     missing entries surface. Deliberately drops several built-ins to verify
     the helper finds the actual gaps regardless of which entries are absent.
     """
@@ -97,21 +117,20 @@ def test_missing_default_steps_are_surfaced(tmp_path: Path):
 
 
 def test_complete_marshal_has_no_missing_defaults(tmp_path: Path):
-    """Marshal.json that already contains every BUILT_IN_FINALIZE_STEPS entry → empty list."""
+    """Marshal.json that already contains every default-on built-in entry → empty list."""
     plan_dir = tmp_path / '.plan'
-    from _config_defaults import BUILT_IN_FINALIZE_STEPS  # type: ignore[import-not-found]
 
-    _write_marshal(plan_dir, list(BUILT_IN_FINALIZE_STEPS))
+    _write_marshal(plan_dir, _canonical_built_in_finalize_steps())
     assert detect_missing_default_finalize_steps(plan_dir) == []
 
 
 def test_partially_missing_only_lists_the_gaps(tmp_path: Path):
     """Marshal.json with one absent built-in → only that one surfaces."""
     plan_dir = tmp_path / '.plan'
-    from _config_defaults import BUILT_IN_FINALIZE_STEPS  # type: ignore[import-not-found]
 
     # Drop a single built-in from an otherwise-complete list.
-    incomplete = [s for s in BUILT_IN_FINALIZE_STEPS if s != 'default:lessons-capture']
+    canonical = _canonical_built_in_finalize_steps()
+    incomplete = [s for s in canonical if s != 'default:lessons-capture']
     _write_marshal(plan_dir, incomplete)
 
     missing = detect_missing_default_finalize_steps(plan_dir)

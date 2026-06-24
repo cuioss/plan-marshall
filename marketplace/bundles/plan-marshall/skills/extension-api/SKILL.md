@@ -456,6 +456,15 @@ python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery 
 
 `--project-dir` and `--plan-id` are mutually exclusive.
 
+### implementors
+
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery implementors \
+  --ext-point EXT_POINT
+```
+
+Enumerates every component declaring `implements: {EXT_POINT}` — scans every bundle's `skills/*/SKILL.md`, the phase-6-finalize `workflow/*.md` + `standards/*.md` step docs, and project-local `.claude/skills/finalize-step-*/SKILL.md`. Global discovery; takes no project-dir / plan-id routing.
+
 ### configurable_contract — parse
 
 ```bash

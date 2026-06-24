@@ -157,7 +157,7 @@ The companion `aspect-classify` step labels a request as analysis, planning, or 
 | Loaded from `.claude/skills/finalize-step-<step>/` — a project-specific finalize step (e.g. a custom deploy or notification).
 
 | **Bundle-optional**
-| Opt-in bundle finalize steps (phase-6) declared in `OPTIONAL_BUNDLE_FINALIZE_STEPS` (e.g. `plan-marshall:plan-retrospective`). They surface in `list-finalize-steps` but are absent from the default step list, so operators must select them explicitly in the wizard.
+| Opt-in bundle finalize steps (phase-6) — `{bundle}:{skill}` step docs declaring `implements: plan-marshall:extension-api/standards/ext-point-finalize-step` with `default_on: false`, surfaced via `extension_discovery.find_implementors` (e.g. `plan-marshall:plan-retrospective`). They surface in `list-finalize-steps` but are absent from the default step list, so operators must select them explicitly in the wizard.
 |===
 
 Order is significant — phase-5 runs verify steps in key order until one fails; phase-6 runs finalize steps in key order until the pipeline completes or a `loop_back` outcome resets it. Configure the step list via `/marshall-steward` → Configuration, or the step-list verbs `manage-config plan phase-N set-steps --steps …` / `add-step` / `remove-step` (these operate on the keyed map's keys, preserving insertion order and any existing per-step params, persisting under `verification_steps` for phase-5-execute and `steps` for phase-6-finalize).

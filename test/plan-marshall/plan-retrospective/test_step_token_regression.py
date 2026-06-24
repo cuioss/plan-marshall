@@ -8,9 +8,10 @@ The bug this guards against: ``plan-retrospective/SKILL.md`` Step 6
 (finalize-step termination) emits ``manage-status mark-step-done --step
 {token}``. That ``{token}`` is the key the dispatched retrospective step records
 its terminal outcome under. The phase-6-finalize manifest declares the SAME step
-under the canonical step_id ``plan-marshall:plan-retrospective`` (the member of
-``OPTIONAL_BUNDLE_FINALIZE_STEPS`` in ``manage-config/_config_defaults.py`` that
-``finalize_step_presets.FULL`` references). When the documented token drifts away
+under the canonical step_id ``plan-marshall:plan-retrospective`` (the
+bundle-optional finalize-step implementor surfaced by
+``extension_discovery.find_implementors`` that the ``full`` preset references).
+When the documented token drifts away
 from the manifest step_id, the recording side keys ``phase_steps`` under the
 wrong name: the ``phase_steps_complete`` handshake invariant then reports the
 canonical step as missing (``PhaseStepsIncomplete``) or the renderer emits
@@ -22,10 +23,10 @@ These tests pin the drift-prevention contract:
 1. The token documented in SKILL.md Step 6 (parsed from the ``mark-step-done
    --step ...`` invocation) is EXACTLY the canonical manifest step_id
    ``plan-marshall:plan-retrospective``.
-2. The canonical step_id is a member of the authoritative finalize-step registry
-   (``OPTIONAL_BUNDLE_FINALIZE_STEPS``) — so the manifest side and the
-   documented side share a single source of truth, not two literals that can
-   diverge silently.
+2. The canonical step_id is a discovered bundle-optional finalize-step
+   implementor (via ``extension_discovery.find_implementors``) — so the manifest
+   side and the documented side share a single source of truth, not two literals
+   that can diverge silently.
 
 Drifting the SKILL.md ``--step`` token (e.g. back to the bare
 ``plan-retrospective``) re-introduces the manifest-ID-vs-phase_steps-key
@@ -136,19 +137,28 @@ def test_documented_step_token_matches_manifest_step_id() -> None:
 
 
 def test_canonical_step_id_is_authoritative_registry_member() -> None:
-    """The canonical step_id the documented token is pinned to is itself a member
-    of the authoritative finalize-step registry ``OPTIONAL_BUNDLE_FINALIZE_STEPS``.
+    """The canonical step_id the documented token is pinned to is itself a
+    discovered bundle-optional finalize-step implementor.
 
-    Anchoring test 1's expected value in the registry (rather than a second
-    bare literal) guarantees the documented side and the manifest side share a
-    single source of truth: if the registry ever renames the step, this test
-    fails alongside test 1 and forces both sides to move together.
+    Anchoring test 1's expected value in the discovery query (rather than a
+    second bare literal) guarantees the documented side and the manifest side
+    share a single source of truth: if the step doc ever renames the step, this
+    test fails alongside test 1 and forces both sides to move together. The
+    bundle-optional set is derived from ``extension_discovery.find_implementors``
+    (the SOLE finalize-step discovery path; ``OPTIONAL_BUNDLE_FINALIZE_STEPS``
+    was removed).
     """
-    optional_steps = config_defaults.OPTIONAL_BUNDLE_FINALIZE_STEPS
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+
+    optional_steps = [
+        rec['name']
+        for rec in find_implementors(config_defaults.FINALIZE_STEP_EXT_POINT)
+        if rec.get('source') == 'bundle-optional' and rec.get('name')
+    ]
 
     assert _CANONICAL_STEP_ID in optional_steps, (
-        f'`{_CANONICAL_STEP_ID}` is not a member of '
-        f'OPTIONAL_BUNDLE_FINALIZE_STEPS ({optional_steps}); the manifest '
-        f'step_id this regression pins the documented token to no longer '
-        f'matches the authoritative finalize-step registry.'
+        f'`{_CANONICAL_STEP_ID}` is not a discovered bundle-optional finalize '
+        f'step ({optional_steps}); the manifest step_id this regression pins the '
+        f'documented token to no longer matches the discovered finalize-step '
+        f'universe.'
     )

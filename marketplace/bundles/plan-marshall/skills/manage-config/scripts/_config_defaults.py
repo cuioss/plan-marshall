@@ -413,53 +413,17 @@ DEFAULT_PLAN_EXECUTE = {
 
 # Built-in finalize step names (dispatch table in phase-6-finalize SKILL.md)
 # Prefixed with 'default:' to distinguish from project: and fully-qualified skill steps
-BUILT_IN_FINALIZE_STEPS = [
-    'default:pre-push-quality-gate',
-    'default:finalize-step-simplify',
-    'default:push',
-    'default:create-pr',
-    'default:ci-verify',
-    'default:automated-review',
-    'default:sonar-roundtrip',
-    'default:lessons-capture',
-    'default:branch-cleanup',
-    'default:finalize-step-preference-emitter',
-    'default:record-metrics',
-    'default:finalize-step-print-phase-breakdown',
-    'default:archive-plan',
-]
-
-# Optional bundle-provided finalize steps (opt-in)
-# These appear in `list-finalize-steps` output but are intentionally omitted from
-# DEFAULT_PLAN_FINALIZE['steps'], so projects must explicitly add them to
-# marshal.json to activate. Each entry is a fully-qualified `bundle:skill` reference.
-OPTIONAL_BUNDLE_FINALIZE_STEPS = [
-    'plan-marshall:plan-retrospective',
-]
-
-# Human-readable descriptions for built-in finalize steps
-BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
-    'default:pre-push-quality-gate': 'Run quality-gate per affected bundle as the last gate before push',
-    'default:finalize-step-simplify': 'Holistic post-implementation simplification sweep — collapse accidental complexity introduced across the plan diff',
-    'default:push': 'Push the converged branch (pure barrier; the dispatcher commits each mutating step upstream)',
-    'default:create-pr': 'Create pull request',
-    'default:ci-verify': 'Classify CI run failures into the multi-failure-mode taxonomy and emit one structured triage finding per failing check (requires: [ci-complete] in consume-failures mode)',
-    'default:automated-review': 'CI automated review (CI completion is a dispatcher-resolved precondition declared via requires: [ci-complete] on this step; triage-only 900 s budget)',
-    'default:sonar-roundtrip': 'Sonar analysis roundtrip (requires: [ci-complete] in consume-failures mode)',
-    'default:lessons-capture': 'Capture lessons from triage findings and PR-review escalations (skipped when qgate_findings=0, pr_comments_promoted=0, and script_failure_clusters=0)',
-    'default:branch-cleanup': 'Clean up post-merge branch state — merges the PR with --delete-branch when create-pr is in the manifest; otherwise prunes local + remote branches directly',
-    'default:finalize-step-preference-emitter': 'Per-plan preference-learning sweep — promotes recurring user gate-dispositions in the just-finished plan to durable architecture hints (skip-clean when nothing clears the threshold)',
-    'default:record-metrics': 'Record final plan metrics before archive',
-    'default:finalize-step-print-phase-breakdown': 'Optional finalize-summary supplement that captures the Phase Breakdown table from metrics.md and appends it after the per-step [OK] list',
-    'default:archive-plan': 'Archive the completed plan',
-}
-
-# Human-readable descriptions for optional bundle-provided finalize steps
-# Used as a fallback when the skill's SKILL.md frontmatter cannot be parsed for
-# a description; surfaced through `list-finalize-steps`.
-OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS = {
-    'plan-marshall:plan-retrospective': 'Capture a structured retrospective of the completed plan',
-}
+# Canonical ``implements:`` value that identifies a finalize-step doc. The
+# finalize-step registry is no longer a hand-maintained set of module constants:
+# membership is DECLARED on each step doc via this ext-point and DISCOVERED
+# through the reusable ``extension_discovery.find_implementors`` query (the seed,
+# the discovery surface, and the preset builder all consume that single query).
+# The contract — addressing surface, the per-step frontmatter fields
+# (``name`` / ``order`` / ``default_on`` / ``presets`` / ``description``), and the
+# supporting-doc exclusion list — lives in the central standard:
+#   marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md
+# This constant is the discovery key only.
+FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
 
 # Valid values for the `default:sonar-roundtrip` step's nested `touched_file_cleanup`
 # param — enum controlling which surface the Sonar roundtrip's success criterion
@@ -519,7 +483,10 @@ def validate_sonar_touched_file_cleanup(value: str) -> None:
 def _seed_finalize_steps() -> dict:
     """Build the finalize-step defaults seed in the canonical keyed-map form.
 
-    Iterates :data:`BUILT_IN_FINALIZE_STEPS` in order, delegating each step id to
+    Discovers every finalize-step implementor via the reusable
+    ``extension_discovery.find_implementors`` query (the SOLE discovery path —
+    there is no parallel constant list), filters to the default-on built-in seed
+    (``default_on == true``), sorts by ``order``, and delegates each step id to
     ``configurable_contract.resolve_step_defaults_optional``. A param-owning step
     resolves to its ``{param_key: default}`` object; an ownerless step resolves
     to ``None`` (no params), which is normalized to an empty ``{}`` object
@@ -527,7 +494,12 @@ def _seed_finalize_steps() -> dict:
     the sole on-disk shape both read and written — with key insertion order as
     the execution order.
 
-    The cross-bundle parser is imported lazily here (not at module top level) so
+    The discovered ``default_on: true`` set includes
+    ``default:finalize-step-security-audit`` via its own step-doc frontmatter,
+    closing the historical hand-maintained-constant gap where the step existed as
+    a doc but was invisible to the seed.
+
+    The cross-bundle modules are imported lazily here (not at module top level) so
     importing ``_config_defaults`` never pulls in the extension-api parser — the
     seed is only materialized when :func:`get_default_config` runs.
 
@@ -536,14 +508,20 @@ def _seed_finalize_steps() -> dict:
         ``{param_key: default}`` object (``{}`` for config-less steps), in
         execution order.
     """
-    # Lazy import — executor sets PYTHONPATH for cross-skill imports.
+    # Lazy imports — executor sets PYTHONPATH for cross-skill imports.
     from configurable_contract import (  # type: ignore[import-not-found]
         resolve_step_defaults_optional,
     )
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
 
+    implementors = find_implementors(FINALIZE_STEP_EXT_POINT)
+    seed_records = sorted(
+        (rec for rec in implementors if rec.get('default_on')),
+        key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
+    )
     return {
-        step_id: (resolve_step_defaults_optional(step_id) or {})
-        for step_id in BUILT_IN_FINALIZE_STEPS
+        rec['name']: (resolve_step_defaults_optional(rec['name']) or {})
+        for rec in seed_records
     }
 
 
@@ -598,7 +576,7 @@ DEFAULT_PLAN_FINALIZE = {
     # body-doc `configurable:` frontmatter and read by `configurable_contract.py`;
     # the `self_review` / `drop_review_on_scope_gate` knobs own the opt-in
     # `project:finalize-step-pre-submission-self-review` step, which is NOT a
-    # built-in candidate (not in BUILT_IN_FINALIZE_STEPS / DEFAULT_PHASE_6_STEPS),
+    # default-on built-in candidate (its step doc declares `default_on: false`),
     # so the default seed does NOT include it — a fresh project's candidate list is
     # unchanged. Their defaults (`auto` / `False`) are supplied by the reader's
     # default-merge when the project step is absent from marshal.json. The reader

@@ -15,7 +15,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from _layout_sim import build_phase_layout
 from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json
 
 _SCRIPTS_DIR = (
@@ -382,21 +381,18 @@ def test_list_finalize_steps_surfaces_finalize_step_simplify(plan_context, monke
 def test_list_finalize_steps_discovers_project_skills(plan_context):
     """Test list-finalize-steps discovers project-local finalize-step-* skills.
 
-    Scans .claude/skills/ relative to cwd, so keep as subprocess.
+    Discovery is REPO-anchored (``find_implementors`` resolves the project-local
+    ``.claude/skills/`` from ``__file__``, not the process cwd), so this asserts
+    against a real shipped project step — ``project:finalize-step-plugin-doctor``,
+    declared under the repo's ``.claude/skills/finalize-step-plugin-doctor/`` — and
+    confirms it surfaces regardless of the subprocess cwd.
     """
     create_marshal_json(plan_context.fixture_dir)
-
-    skill_dir = plan_context.fixture_dir / '.claude' / 'skills' / 'finalize-step-hello-world'
-    skill_dir.mkdir(parents=True)
-    (skill_dir / 'SKILL.md').write_text(
-        '---\nname: finalize-step-hello-world\ndescription: Hello World\n---\n\n# Hello World\n'
-    )
 
     result = run_script(SCRIPT_PATH, 'list-finalize-steps', cwd=plan_context.fixture_dir)
 
     assert result.success, f'Should succeed: {result.stderr}'
-    assert 'project:finalize-step-hello-world' in result.stdout
-    assert 'Hello World' in result.stdout
+    assert 'project:finalize-step-plugin-doctor' in result.stdout
 
 
 # =============================================================================
@@ -405,17 +401,14 @@ def test_list_finalize_steps_discovers_project_skills(plan_context):
 
 
 def _run_discovery_in_cwd(cwd: Path) -> list[dict]:
-    """Invoke _discover_all_finalize_steps() with cwd switched to the given path.
+    """Invoke _discover_all_finalize_steps() — discovery is repo-anchored.
 
-    The discovery scans ``.claude/skills/`` relative to the process cwd, so tests
-    that exercise project-level skill ordering must chdir into an isolated temp
-    directory that contains the desired skill layout. The real
-    ``cmd_list_finalize_steps`` wraps the discovery; we call the inner helper
-    directly to get the raw list without TOON serialization.
-
-    Uses an isolated ``tmp_path`` (rather than the shared PlanContext fixture
-    directory) so per-test ``.claude/skills/`` layouts cannot contaminate
-    neighboring tests.
+    Discovery now routes through ``extension_discovery.find_implementors``, which
+    anchors on the marketplace tree (and the project-local ``.claude/skills/``
+    under the repo root resolved from ``__file__``), NOT the process cwd. The
+    ``cwd`` argument is retained for call-site compatibility but no longer changes
+    which steps are discovered; the chdir is harmless. Tests therefore assert
+    against the real repo's discovered finalize-step universe.
     """
     import os
 
@@ -427,68 +420,56 @@ def _run_discovery_in_cwd(cwd: Path) -> list[dict]:
         os.chdir(original_cwd)
 
 
-def test_list_finalize_steps_without_sync_skill_starts_with_built_ins(tmp_path):
-    """Without a sync-plugin-cache project skill, output starts with built-in steps."""
-    # tmp_path has no .claude/skills directory -> built-ins come first.
+def test_list_finalize_steps_starts_with_built_ins(tmp_path):
+    """The discovered list is sorted by order; the lowest-order step is a built-in.
+
+    find_implementors sorts all implementors by ``(order, name)``. The repo's
+    lowest-order finalize steps are built-in ``default:`` steps (pre-push-quality-gate
+    at order 5 is the head), so the first entry is a built-in.
+    """
     steps = _run_discovery_in_cwd(tmp_path)
 
     assert len(steps) > 0
-    # First entry must be a built-in default: step (not a project:sync-plugin-cache)
     first = steps[0]
     assert first['source'] == 'built-in'
     assert first['name'].startswith('default:')
-    # And no project:finalize-step-sync-plugin-cache anywhere in the list
-    names = [s['name'] for s in steps]
-    assert 'project:finalize-step-sync-plugin-cache' not in names
 
 
-def test_list_finalize_steps_special_case_branch_retired(tmp_path):
-    """After cluster 02 the resolver no longer special-cases sync-plugin-cache.
+def test_list_finalize_steps_sync_and_deploy_are_project_steps(tmp_path):
+    """sync-plugin-cache and deploy-target are project-local steps, not built-in defaults.
 
-    Pre-cluster-02, ``_discover_all_finalize_steps`` had a hard-coded branch
-    that placed ``project:finalize-step-sync-plugin-cache`` at index 0 of the
-    candidate list whenever ``.claude/skills/finalize-step-sync-plugin-cache/``
-    existed. Cluster 02 retired that branch — sync-plugin-cache is now an
-    ordinary project-local finalize-step skill (Source 2), discovered the same
-    way as ``finalize-step-plugin-doctor`` and ``finalize-step-deploy-target``.
+    They are meta-project-only project-local finalize-step skills (Source: project),
+    discovered the same way as ``finalize-step-plugin-doctor`` — never built-in
+    ``default:`` steps.
     """
     steps = _run_discovery_in_cwd(tmp_path)
 
     names = [s['name'] for s in steps]
 
-    # Sync-plugin-cache is NOT a built-in default after relocation.
+    # Neither is a built-in default.
     assert 'default:sync-plugin-cache' not in names
-    # Deploy-target is also NOT a built-in default.
     assert 'default:deploy-target' not in names
 
-    # All entries before the first project: step (if any) must be built-ins —
-    # the special-case "sync skill first" branch is retired, so any project:
-    # skill (sync-plugin-cache included) flows through Source 2 and lands
-    # AFTER all built-ins.
-    project_indices = [i for i, s in enumerate(steps) if s['source'] == 'project']
-    if project_indices:
-        first_project_idx = min(project_indices)
-        for i in range(first_project_idx):
-            assert steps[i]['source'] == 'built-in'
+    # Both are discovered as project steps in the real repo.
+    by_name = {s['name']: s for s in steps}
+    assert by_name['project:finalize-step-sync-plugin-cache']['source'] == 'project'
+    assert by_name['project:finalize-step-deploy-target']['source'] == 'project'
 
 
-def test_list_finalize_steps_other_project_skills_remain_after_built_ins(tmp_path):
-    """All built-ins precede project skills (Source 2 ordering invariant)."""
-    other_dir = tmp_path / '.claude' / 'skills' / 'finalize-step-zzz-other'
-    other_dir.mkdir(parents=True)
-    (other_dir / 'SKILL.md').write_text(
-        '---\nname: finalize-step-zzz-other\ndescription: Another project finalize step\n---\n\n# Other\n'
-    )
+def test_list_finalize_steps_ordered_ascending_by_order(tmp_path):
+    """The discovered list is globally sorted ascending by resolved order.
 
+    find_implementors returns all implementors (built-in, bundle-optional, and
+    project) merged and sorted by ``(order, name)``. The ordering invariant is the
+    global ascending order, NOT a "built-ins before project steps" partition —
+    project steps interleave by their declared order (e.g. plugin-doctor at order
+    6 precedes default:push at order 10).
+    """
     steps = _run_discovery_in_cwd(tmp_path)
 
-    names = [s['name'] for s in steps]
-    other_idx = names.index('project:finalize-step-zzz-other')
-
-    built_in_indices = [i for i, s in enumerate(steps) if s['source'] == 'built-in']
-    assert built_in_indices, 'Expected built-in steps in output'
-    assert max(built_in_indices) < other_idx, (
-        'Built-ins must precede project skills'
+    orders = [s['order'] for s in steps if s['order'] is not None]
+    assert orders == sorted(orders), (
+        f'discovered finalize steps must be ascending by order: {orders}'
     )
 
 
@@ -557,45 +538,74 @@ def test_list_finalize_steps_builtins_have_order(tmp_path):
 
 
 def test_list_finalize_steps_project_skill_order_from_frontmatter(tmp_path):
-    """Project finalize-step-* skills expose the `order` declared in their SKILL.md."""
-    skill_dir = tmp_path / '.claude' / 'skills' / 'finalize-step-custom'
-    skill_dir.mkdir(parents=True)
-    (skill_dir / 'SKILL.md').write_text(
-        '---\nname: finalize-step-custom\ndescription: Custom\norder: 150\n---\n\n# Custom\n'
-    )
+    """Project finalize-step-* skills expose the `order` declared in their SKILL.md.
 
-    steps = _run_discovery_in_cwd(tmp_path)
-
-    custom = next(s for s in steps if s['name'] == 'project:finalize-step-custom')
-    assert custom['order'] == 150
-
-
-def test_list_finalize_steps_project_skill_without_order_returns_none(tmp_path):
-    """Project finalize-step-* skill without `order` frontmatter exposes order: None."""
-    skill_dir = tmp_path / '.claude' / 'skills' / 'finalize-step-bare'
-    skill_dir.mkdir(parents=True)
-    (skill_dir / 'SKILL.md').write_text('---\nname: finalize-step-bare\ndescription: Bare\n---\n\n# Bare\n')
-
-    steps = _run_discovery_in_cwd(tmp_path)
-
-    bare = next(s for s in steps if s['name'] == 'project:finalize-step-bare')
-    assert bare['order'] is None
-
-
-# =============================================================================
-# OPTIONAL_BUNDLE_FINALIZE_STEPS discovery tests (deliverable 2)
-# =============================================================================
-
-
-def test_list_finalize_steps_includes_optional_bundle_step(tmp_path):
-    """`plan-marshall:plan-retrospective` is surfaced by list-finalize-steps.
-
-    The step is declared in OPTIONAL_BUNDLE_FINALIZE_STEPS and must appear in
-    the discovered list with `source: bundle-optional` so it is visible to
-    marshall-steward's step picker even when the project has not yet added
-    it to marshal.json.
+    Discovery is repo-anchored, so this asserts against a real shipped project
+    step: ``project:finalize-step-plugin-doctor`` declares ``order: 6``.
     """
     steps = _run_discovery_in_cwd(tmp_path)
+
+    doctor = next(s for s in steps if s['name'] == 'project:finalize-step-plugin-doctor')
+    assert doctor['order'] == 6
+
+
+def test_list_finalize_steps_project_skill_order_defaults_to_zero_when_absent():
+    """A discovered implementor record defaults `order` to 0 when frontmatter omits it.
+
+    The discovery query's record builder defaults a missing ``order`` to ``0`` (no
+    longer ``None``). Verified directly against the implementor-record builder so
+    the contract is pinned without scaffolding a synthetic project skill (which is
+    not discovered under the repo-anchored scan).
+    """
+    from extension_discovery import _build_implementor_record  # type: ignore[import-not-found]
+
+    bare_doc = tmp_path_factory_doc()
+    record = _build_implementor_record(bare_doc, 'project', name_override='project:finalize-step-bare')
+
+    assert record['order'] == 0
+
+
+def tmp_path_factory_doc():
+    """Write a frontmatter doc with no `order` key and return its path.
+
+    Helper for test_list_finalize_steps_project_skill_order_defaults_to_zero_when_absent.
+    Uses a module-scoped temp file so the record builder has a real file to read.
+    """
+    import tempfile
+
+    handle = tempfile.NamedTemporaryFile(
+        mode='w', suffix='.md', delete=False, encoding='utf-8'
+    )
+    handle.write('---\nname: finalize-step-bare\ndescription: Bare\n---\n\n# Bare\n')
+    handle.close()
+    return Path(handle.name)
+
+
+# =============================================================================
+# Bundle-optional finalize-step discovery tests
+# =============================================================================
+#
+# Opt-in bundle finalize steps are no longer a hand-maintained
+# OPTIONAL_BUNDLE_FINALIZE_STEPS constant: they are bundle-optional implementors
+# (source == 'bundle-optional') surfaced by extension_discovery.find_implementors.
+# Discovery is anchored on the marketplace tree (not the process cwd), so these
+# tests assert against the real repo's discovered universe.
+
+
+def _discovered_steps() -> list[dict]:
+    """Return the discovered finalize-step list via _discover_all_finalize_steps()."""
+    return _cmd_skill_resolution._discover_all_finalize_steps()
+
+
+def test_list_finalize_steps_includes_optional_bundle_step():
+    """`plan-marshall:plan-retrospective` is surfaced by list-finalize-steps.
+
+    The step declares the finalize-step interface in its SKILL.md frontmatter and
+    must appear in the discovered list with `source: bundle-optional` so it is
+    visible to marshall-steward's step picker even when the project has not yet
+    added it to marshal.json.
+    """
+    steps = _discovered_steps()
 
     names = [s['name'] for s in steps]
     assert 'plan-marshall:plan-retrospective' in names, (
@@ -609,130 +619,89 @@ def test_list_finalize_steps_includes_optional_bundle_step(tmp_path):
 def test_default_config_excludes_optional_bundle_finalize_steps():
     """Opt-in bundle finalize steps are absent from the default phase-6-finalize steps list.
 
-    The whole point of OPTIONAL_BUNDLE_FINALIZE_STEPS is that they are
-    discoverable (list-finalize-steps) but not activated by default —
-    projects must add them to marshal.json explicitly.
+    Bundle-optional steps (default_on: false) are discoverable
+    (list-finalize-steps) but not activated by default — projects must add them
+    to marshal.json explicitly. Discovered via find_implementors filtered to the
+    bundle-optional source.
     """
     config = _config_defaults.get_default_config()
     finalize_steps = config['plan']['phase-6-finalize']['steps']
 
-    for optional_ref in _config_defaults.OPTIONAL_BUNDLE_FINALIZE_STEPS:
+    optional_refs = [s['name'] for s in _discovered_steps() if s['source'] == 'bundle-optional']
+    for optional_ref in optional_refs:
         assert optional_ref not in finalize_steps, (
             f'Optional bundle step {optional_ref!r} must not be in default finalize steps (found in {finalize_steps})'
         )
-    # Sanity check: retrospective must be one of the opt-in entries
-    assert 'plan-marshall:plan-retrospective' in _config_defaults.OPTIONAL_BUNDLE_FINALIZE_STEPS
+    # Sanity check: retrospective must be one of the opt-in (bundle-optional) entries
+    assert 'plan-marshall:plan-retrospective' in optional_refs
 
 
-def test_list_finalize_steps_optional_bundle_order_from_frontmatter(tmp_path):
+def test_list_finalize_steps_optional_bundle_order_from_frontmatter():
     """`order` for plan-retrospective is resolved from its SKILL.md frontmatter.
 
     The skill declares `order: 995` in frontmatter (placing it after
-    `default:record-metrics` and before `default:finalize-step-print-phase-breakdown`);
-    discovery must surface that exact value (not None) so marshall-steward can
-    slot it into the sorted execution order.
+    `default:record-metrics`); discovery must surface that exact value (not None)
+    so marshall-steward can slot it into the sorted execution order.
     """
-    steps = _run_discovery_in_cwd(tmp_path)
+    steps = _discovered_steps()
 
     retro = next(s for s in steps if s['name'] == 'plan-marshall:plan-retrospective')
     assert retro['order'] == 995, f'Expected order=995 from SKILL.md frontmatter, got {retro["order"]!r}'
 
 
-def test_list_finalize_steps_optional_bundle_description_populated(tmp_path):
-    """Description is populated for the opt-in step (from SKILL.md or fallback map).
+def test_list_finalize_steps_optional_bundle_description_populated():
+    """Description is populated for the opt-in step from its SKILL.md frontmatter.
 
-    When SKILL.md is present, `get_skill_description` returns the frontmatter
-    description. When it cannot parse one, discovery falls back to
-    OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS. Either way the final value
-    must never equal the bare notation (which is the sentinel the resolver
-    uses when nothing was found).
+    The per-step description is now a discovery-query frontmatter field (the
+    OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS fallback map was removed). The
+    discovered value must be a non-empty human-readable string, never the bare
+    notation sentinel.
     """
-    steps = _run_discovery_in_cwd(tmp_path)
+    steps = _discovered_steps()
 
     retro = next(s for s in steps if s['name'] == 'plan-marshall:plan-retrospective')
     description = retro['description']
     assert description, 'description must not be empty'
     assert description != 'plan-marshall:plan-retrospective', (
-        'description must not fall through to the bare notation — the fallback map '
-        'should have supplied a human-readable string'
+        'description must not fall through to the bare notation — the SKILL.md '
+        'frontmatter should have supplied a human-readable string'
     )
-    # Fallback map supplies a curated human-readable description for the
-    # retrospective step; the bundle-optional path also accepts the frontmatter
-    # description parsed from SKILL.md. Both are acceptable outcomes — the
-    # only regression we guard against is the bare-notation sentinel.
-    fallback = _config_defaults.OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS['plan-marshall:plan-retrospective']
-    assert description != 'plan-marshall:plan-retrospective'
     # Sanity check: description is meaningfully longer than the bare notation.
     assert len(description) > len('plan-marshall:plan-retrospective'), (
-        f'Description {description!r} is suspiciously short — expected either '
-        f'the frontmatter description or fallback {fallback!r}'
+        f'Description {description!r} is suspiciously short — expected the '
+        f'frontmatter description'
     )
 
 
 # =============================================================================
-# Layout-aware built-in finalize step order resolution (source + cache layouts)
+# Built-in finalize step order resolution
 # =============================================================================
+#
+# The synthetic source/cache layout tests (which patched ``BUNDLES_DIR`` and
+# scaffolded a fake ``phase-6-finalize`` tree) are retired: discovery now routes
+# through ``extension_discovery.find_implementors``, which resolves the
+# marketplace bundles root and the plugin-cache roots internally — patching
+# ``_cmd_skill_resolution.BUNDLES_DIR`` no longer redirects discovery. The
+# cache-aware doc-root resolution is exercised against the real tree by the
+# extension-api discovery suite. Here we pin the consumer-facing invariant: every
+# discovered built-in step carries a concrete integer order.
 
 
-def _build_source_layout_finalize(base: Path) -> Path:
-    """Build a source/marketplace layout: <base>/plan-marshall/skills/phase-6-finalize/..."""
-    return build_phase_layout(base, 'phase-6-finalize', _config_defaults.BUILT_IN_FINALIZE_STEPS, cache_layout=False)
+def test_discover_finalize_steps_builtins_resolve_concrete_order(tmp_path):
+    """Every discovered built-in finalize step carries a concrete integer order.
 
-
-def _build_cache_layout_finalize(base: Path, version: str = '0.1-BETA') -> Path:
-    """Build a versioned plugin-cache layout: <base>/plan-marshall/<version>/skills/phase-6-finalize/..."""
-    return build_phase_layout(
-        base, 'phase-6-finalize', _config_defaults.BUILT_IN_FINALIZE_STEPS, cache_layout=True, version=version
-    )
-
-
-def test_discover_finalize_steps_source_layout_resolves_order(tmp_path):
-    """Built-in finalize steps resolve non-None order in the source/marketplace layout."""
-    base = _build_source_layout_finalize(tmp_path / 'bundles')
-
-    with patch.object(_cmd_skill_resolution, 'BUNDLES_DIR', base):
-        steps = _run_discovery_in_cwd(tmp_path)
-
-    built_ins = {s['name']: s for s in steps if s['source'] == 'built-in'}
-    for step_name in _config_defaults.BUILT_IN_FINALIZE_STEPS:
-        assert built_ins[step_name]['order'] is not None, (
-            f'{step_name} must resolve a non-None order in source layout, got None'
-        )
-
-
-def test_discover_finalize_steps_cache_layout_resolves_order(tmp_path):
-    """Built-in finalize steps resolve non-None order in the versioned plugin-cache layout."""
-    base = _build_cache_layout_finalize(tmp_path / 'bundles')
-
-    with patch.object(_cmd_skill_resolution, 'BUNDLES_DIR', base):
-        steps = _run_discovery_in_cwd(tmp_path)
+    find_implementors reads each built-in step doc's ``order`` frontmatter; the
+    record builder defaults a missing order to 0 (never None). This asserts the
+    real tree resolves a concrete non-negative integer order for every built-in.
+    """
+    steps = _run_discovery_in_cwd(tmp_path)
 
     built_ins = {s['name']: s for s in steps if s['source'] == 'built-in'}
-    for step_name in _config_defaults.BUILT_IN_FINALIZE_STEPS:
-        assert built_ins[step_name]['order'] is not None, (
-            f'{step_name} must resolve a non-None order in cache layout, got None'
+    assert built_ins, 'Expected discovered built-in finalize steps'
+    for step_name, rec in built_ins.items():
+        assert isinstance(rec['order'], int), (
+            f'{step_name} must resolve a concrete integer order, got {rec["order"]!r}'
         )
-
-
-def test_discover_finalize_steps_order_matches_across_layouts(tmp_path):
-    """The same built-in finalize order values are resolved in both layouts (no missing_order)."""
-    source_base = _build_source_layout_finalize(tmp_path / 'source')
-    cache_base = _build_cache_layout_finalize(tmp_path / 'cache')
-
-    with patch.object(_cmd_skill_resolution, 'BUNDLES_DIR', source_base):
-        source_steps = {
-            s['name']: s['order'] for s in _run_discovery_in_cwd(tmp_path) if s['source'] == 'built-in'
-        }
-
-    with patch.object(_cmd_skill_resolution, 'BUNDLES_DIR', cache_base):
-        cache_steps = {
-            s['name']: s['order'] for s in _run_discovery_in_cwd(tmp_path) if s['source'] == 'built-in'
-        }
-
-    assert source_steps == cache_steps, (
-        f'Built-in finalize step orders must match across layouts: {source_steps} != {cache_steps}'
-    )
-    assert all(order is not None for order in cache_steps.values()), 'No built-in finalize step may have missing_order'
 
 
 # =============================================================================

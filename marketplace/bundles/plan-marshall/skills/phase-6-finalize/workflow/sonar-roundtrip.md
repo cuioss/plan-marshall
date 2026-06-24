@@ -1,10 +1,15 @@
 ---
 name: default:sonar-roundtrip
-description: Sonar analysis roundtrip
+description: Sonar analysis roundtrip — fetch new-code issues, triage, then fix or suppress (requires: [ci-complete], so CI must finish before this step runs)
 order: 40
 requires: [ci-complete]
 mutates_source: true
-implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+default_on: true
+presets:
+  - full
+implements:
+  - plan-marshall:extension-api/standards/ext-point-execution-context-workflow
+  - plan-marshall:extension-api/standards/ext-point-finalize-step
 configurable:
   - key: touched_file_cleanup
     default: new_code_only
