@@ -30,7 +30,7 @@ MFA is "by far the best defense" against brute-force, credential-stuffing, and p
 
 Factor hierarchy (strongest first):
 
-1. **FIDO2 / WebAuthn / Passkeys** — the gold standard; phishing-resistant via origin binding; the private key never leaves the device. [NIST SP 800-63B-4](https://pages.nist.gov/800-63-3/sp800-63b.html) (July 2025) integrates phishing-resistant authenticators into AAL2/AAL3.
+1. **FIDO2 / WebAuthn / Passkeys** — the gold standard; phishing-resistant via origin binding; the private key never leaves the device. [NIST SP 800-63B-4](https://pages.nist.gov/800-63-3/sp800-63b.html) integrates phishing-resistant authenticators into AAL2/AAL3.
 2. Push notifications, TOTP apps, hardware tokens (U2F).
 3. **SMS is restricted** (NIST SP 800-63B) — SIM-swap and SS7 risk; ASVS limits SMS/email to *secondary* verification only. Avoid SMS for high-assurance flows.
 
@@ -71,7 +71,7 @@ Insecure Direct Object Reference (web) / Broken Object-Level Authorization (API)
 
 ### Broken Access Control Is #1
 
-Broken Access Control is OWASP A01 (since 2021, confirmed A01:2025) and appears in 94% of tested apps. Root causes: authn/authz confusion (a valid JWT is not authorization to an object), ad-hoc evolution, decentralized checks, and privilege creep. Controls: centralize via a Policy Decision Point / Policy Enforcement Point (PDP/PEP); use Policy-as-Code (OPA, OpenFGA, Zanzibar); scope every DB query to the authenticated identity.
+Broken Access Control is OWASP A01 and appears in 94% of tested apps. Root causes: authn/authz confusion (a valid JWT is not authorization to an object), ad-hoc evolution, decentralized checks, and privilege creep. Controls: centralize via a Policy Decision Point / Policy Enforcement Point (PDP/PEP); use Policy-as-Code (OPA, OpenFGA, Zanzibar); scope every DB query to the authenticated identity.
 
 ### Least Privilege and the Access-Control Models
 

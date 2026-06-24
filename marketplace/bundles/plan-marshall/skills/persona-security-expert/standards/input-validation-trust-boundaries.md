@@ -29,7 +29,9 @@ Validate input against **known-good** rules — permitted character sets, ranges
 
 ## Canonicalization MUST Precede Validation
 
-Convert input to its canonical/normalized form (Unicode **NFKC** or **NFKD**) *before* applying validation. Validating first leaves the door open to encoding-based obfuscation: an attacker submits an alternate encoding that passes the check, then the system canonicalizes it into the dangerous form. (NIST also requires NFKC/NFKD normalization before password hashing.)
+Convert input to its canonical/normalized form (Unicode **NFKC** or **NFKD**) *before* applying validation. Validating first leaves the door open to encoding-based obfuscation: an attacker submits an alternate encoding that passes the check, then the system canonicalizes it into the dangerous form.
+
+For **password** normalization specifically, the applicable NIST form differs by revision: SP 800-63B (the -3 revision) specified the compatibility forms **NFKC** or **NFKD**, whereas the newer SP 800-63-4 specifies the canonical form **NFC** (or NFKC) — preferring NFC so normalization does not alter the visual content of the password. Apply NFC for password normalization under current NIST guidance; reserve the compatibility forms (NFKC/NFKD) for general canonicalize-before-validate of non-secret input.
 
 The canonicalize-then-validate order applies to every representation: percent-encoding, Unicode normalization forms, path normalization (`../` traversal — see the per-language path-traversal mechanics in [`pm-dev-python:python-security`](../../../../pm-dev-python/skills/python-security/SKILL.md)), and case folding.
 

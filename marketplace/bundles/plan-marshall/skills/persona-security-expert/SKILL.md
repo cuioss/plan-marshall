@@ -61,7 +61,7 @@ The persona resolver (`manage-personas resolve`) flattens this persona's composi
 
 | Standard | Purpose |
 |----------|---------|
-| owasp-top-ten.md | OWASP Top 10 (2021) per-category A01–A10 — definition, attack scenario, mitigations — plus the 2025 update changes |
+| owasp-top-ten.md | OWASP Top 10 per-category A01–A10 — definition, attack scenario, mitigations |
 | threat-modeling-stride.md | STRIDE per-threat definitions, the DFD + trust-boundary decomposition procedure, and per-threat control mapping |
 | secrets-handling.md | Externalizing secrets, secret-manager integration, rotation, dynamic secrets, hardcoded-credential detection |
 | secure-logging.md | What to log vs mask, sensitive-data categories, and log-injection (CRLF / log-forging) attack and prevention |

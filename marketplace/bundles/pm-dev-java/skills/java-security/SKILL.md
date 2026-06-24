@@ -41,7 +41,7 @@ Load progressively based on current task. **Never load all standards at once.** 
 
 ### Inbound Input Validation (INBOUND surface)
 
-```
+```text
 Read: standards/java-input-validation.md
 ```
 
@@ -49,7 +49,7 @@ Use when validating externally-sourced inputs at the trust boundary with program
 
 ### Security Patterns (OUTBOUND surface)
 
-```
+```text
 Read: standards/java-security-patterns.md
 ```
 

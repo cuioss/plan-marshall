@@ -8,7 +8,7 @@ Source of record: [OWASP Secrets Management Cheat Sheet](https://cheatsheetserie
 
 ## The Foundational Rule: Never Store Secrets in Source or Config
 
-Hardcoding a secret in source code or version-controlled configuration is a root-cause vulnerability from which all other failures derive. Once committed to git, a secret is exposed to anyone with repo access and **persists indefinitely in history even after deletion**. Attacker automation scans new public commits within minutes. The scale is severe: in 2025, 28.65 million new hardcoded secrets were added to public GitHub repositories (a 34% year-over-year increase), and private repos are 6× more likely than public ones to contain them.
+Hardcoding a secret in source code or version-controlled configuration is a root-cause vulnerability from which all other failures derive. Once committed to git, a secret is exposed to anyone with repo access and **persists indefinitely in history even after deletion**. Attacker automation scans new public commits within minutes. The scale is severe: tens of millions of hardcoded secrets are added to public GitHub repositories each year, and private repos are several times more likely than public ones to contain them.
 
 Corollary: resolve every secret from external configuration at runtime; never bake it into the artifact, the image, or the repo.
 
@@ -68,7 +68,7 @@ Secure alternatives: orchestrator-mounted volumes, in-memory sidecar injection (
 
 ## Encrypt Secrets at Rest and in Transit
 
-Never transmit a secret in plaintext — TLS is ubiquitous. At rest, use authenticated encryption (AES-256-GCM or ChaCha20-Poly1305). [NIST SP 800-57](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-57pt1r5.pdf) approved choices: AES-256 (indefinite), AES-128 (through 2030), RSA ≥ 3072 bits (RSA-2048 acceptable only through 2030), ECDSA P-256/P-384; SHA-1 is no longer approved for new signatures. In transit, TLS 1.2 minimum, 1.3 preferred. Note: Kubernetes Secrets are base64-**encoded**, not encrypted — enable etcd encryption at rest. Store encryption keys separately from the encrypted secrets. The NIST SP 800-57 Rev 6 draft (2025) incorporates quantum-resistant algorithms (FIPS 203/204/205: ML-KEM, ML-DSA, SLH-DSA).
+Never transmit a secret in plaintext — TLS is ubiquitous. At rest, use authenticated encryption (AES-256-GCM or ChaCha20-Poly1305). [NIST SP 800-57](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-57pt1r5.pdf) approved choices: AES-256 (indefinite), AES-128 (through 2030), RSA ≥ 3072 bits (RSA-2048 acceptable only through 2030), ECDSA P-256/P-384; SHA-1 is no longer approved for new signatures. In transit, TLS 1.2 minimum, 1.3 preferred. Note: Kubernetes Secrets are base64-**encoded**, not encrypted — enable etcd encryption at rest. Store encryption keys separately from the encrypted secrets. NIST SP 800-57 incorporates quantum-resistant algorithms (FIPS 203/204/205: ML-KEM, ML-DSA, SLH-DSA).
 
 ---
 
@@ -98,6 +98,6 @@ Record who requested each secret (system, role, identity) and why; log approval/
 ## Cross-References
 
 - [`secure-design-principles.md`](secure-design-principles.md) — least privilege, secure by default (secrets in a secret manager by default).
-- [`owasp-top-ten.md`](owasp-top-ten.md) — A02 Cryptographic Failures (hardcoded credentials), A08/A03:2025 (supply-chain/CI-CD secret handling).
+- [`owasp-top-ten.md`](owasp-top-ten.md) — A02 Cryptographic Failures (hardcoded credentials), A08 Software and Data Integrity Failures and Software Supply Chain Failures (supply-chain/CI-CD secret handling).
 - [`secure-logging.md`](secure-logging.md) — the never-log-secrets rule.
 - Per-domain memory handling and injection: [`pm-dev-java:java-security`](../../../../pm-dev-java/skills/java-security/SKILL.md) (Java `char[]`/`byte[]` over immutable `String`).

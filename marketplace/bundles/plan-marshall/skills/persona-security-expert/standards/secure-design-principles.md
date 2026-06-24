@@ -1,6 +1,6 @@
 # Secure Design Principles
 
-These are the timeless design-level principles that underpin every concrete control in the sibling sub-documents. Several trace directly to Saltzer & Schroeder (1975) and are reaffirmed by [OWASP Secure Product Design](https://cheatsheetseries.owasp.org/cheatsheets/Secure_Product_Design_Cheat_Sheet.html), the [OWASP Developer Guide security principles](https://devguide.owasp.org/en/02-foundations/03-security-principles/), the [OWASP Secure-by-Design framework](https://owasp.org/www-project-secure-by-design-framework/), and [NIST SP 800-160](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-160v1r1.pdf). Apply them at design time — design-phase flaws cost roughly 100× less to fix than production flaws (see [`threat-modeling-stride.md`](threat-modeling-stride.md)), and an insecure *design* cannot be remedied by perfect code (OWASP A04, see [`owasp-top-ten.md`](owasp-top-ten.md)).
+These are the timeless design-level principles that underpin every concrete control in the sibling sub-documents. Several trace directly to Saltzer & Schroeder and are reaffirmed by [OWASP Secure Product Design](https://cheatsheetseries.owasp.org/cheatsheets/Secure_Product_Design_Cheat_Sheet.html), the [OWASP Developer Guide security principles](https://devguide.owasp.org/en/02-foundations/03-security-principles/), the [OWASP Secure-by-Design framework](https://owasp.org/www-project-secure-by-design-framework/), and [NIST SP 800-160](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-160v1r1.pdf). Apply them at design time — design-phase flaws cost roughly 100× less to fix than production flaws (see [`threat-modeling-stride.md`](threat-modeling-stride.md)), and an insecure *design* cannot be remedied by perfect code (OWASP A04, see [`owasp-top-ten.md`](owasp-top-ten.md)).
 
 ---
 
@@ -24,7 +24,7 @@ Every user, service, process, and tool receives only the minimum access necessar
 
 Default to a secure (denying) state on any error, failure, or unexpected condition. Saltzer & Schroeder "fail-safe defaults": *begin with all access denied, then explicitly grant. A wrongly-denied access is reported and fixed quickly; a wrongly-granted one often goes unnoticed.*
 
-**Application.** Circuit breakers and bulkheads to isolate failures; explicit failover / partial-functionality strategies; standardized safe error messages (no stack traces, no internal paths); allow-lists over deny-lists; degraded modes (cached / read-only) rather than cascading failure. This is the design root of the input-validation fail-closed rule ([`input-validation-trust-boundaries.md`](input-validation-trust-boundaries.md)) and of OWASP A10:2025 "Mishandling of Exceptional Conditions" — roll back incomplete transactions entirely rather than attempting partial recovery.
+**Application.** Circuit breakers and bulkheads to isolate failures; explicit failover / partial-functionality strategies; standardized safe error messages (no stack traces, no internal paths); allow-lists over deny-lists; degraded modes (cached / read-only) rather than cascading failure. This is the design root of the input-validation fail-closed rule ([`input-validation-trust-boundaries.md`](input-validation-trust-boundaries.md)) and of the OWASP "Mishandling of Exceptional Conditions" category — roll back incomplete transactions entirely rather than attempting partial recovery.
 
 ---
 
@@ -40,7 +40,7 @@ The default configuration must be the most secure possible; a user works *delibe
 
 No single individual or component controls an entire process end-to-end; critical tasks depend on two or more independent conditions. Saltzer & Schroeder "separation of privilege."
 
-**Application.** Separate authentication from authorization; centralize authorization via policy-as-code; RBAC/ABAC; peer code review + security approval for production; dual authorization for sensitive operations; MFA + tamper-evident logging for admin operations; a DBA cannot approve their own access changes. This underpins the CI/CD separation-of-duties control in OWASP A03:2025 Software Supply Chain Failures.
+**Application.** Separate authentication from authorization; centralize authorization via policy-as-code; RBAC/ABAC; peer code review + security approval for production; dual authorization for sensitive operations; MFA + tamper-evident logging for admin operations; a DBA cannot approve their own access changes. This underpins the CI/CD separation-of-duties control in OWASP Software Supply Chain Failures.
 
 ---
 
@@ -71,7 +71,7 @@ Reduce the total area exposed to attack by intentional design.
 ## Cross-References
 
 - [`threat-modeling-stride.md`](threat-modeling-stride.md) — the method for surfacing where these principles must be applied.
-- [`owasp-top-ten.md`](owasp-top-ten.md) — A04 Insecure Design, A05 Security Misconfiguration, A10:2025 fail-closed.
+- [`owasp-top-ten.md`](owasp-top-ten.md) — A04 Insecure Design, A05 Security Misconfiguration, Mishandling of Exceptional Conditions (fail-closed).
 - [`authentication-authorization.md`](authentication-authorization.md) — least privilege, complete mediation, separation of duties in access control.
 - [`input-validation-trust-boundaries.md`](input-validation-trust-boundaries.md) — fail-closed at the boundary.
 - [`secrets-handling.md`](secrets-handling.md) — least privilege and secure-by-default applied to secrets.

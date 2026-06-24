@@ -53,7 +53,7 @@ Secondary attacks: **log-file poisoning** (malicious code in a log that executes
 
 1. **Structured logging (JSON) — the primary defense.** JSON-encoded entries automatically escape CRLF and special characters, so forged entries cannot be injected. This is preferred because it avoids mangling legitimate input (names with apostrophes, URLs, Unicode).
 2. **Sanitize event data as defense-in-depth.** Strip/encode the most dangerous control characters — CR (`\r`), LF (`\n`), tab (`\t`) and delimiter characters — on data from untrusted sources. Prefer **escaping (output encoding) over dropping**: dropping corrupts legitimate input like `O'Connor`; encoding preserves investigative value.
-3. **Parameterized logging.** Use `logger.info("User input: {}", userInput)` (SLF4J style), never string concatenation.
+3. **Parameterized logging.** Use `logger.info("User input: {}", userInput)` (SLF4J style), never string concatenation. Caveat: parameterization separates the message template from the data, but it does **not** by itself neutralize CRLF injection on a plain-text appender — the substituted value is still written verbatim, so embedded `\r`/`\n` can still forge log lines. Parameterized logging must be paired with structured (JSON) output or explicit CRLF sanitization (items 1–2) to actually prevent log forging.
 4. **Avoid logging full attack payloads.** Record the detection rule ID and parameter name instead of the raw payload.
 5. **Input validation.** Allow-list expected formats and reject non-conforming data (see [`input-validation-trust-boundaries.md`](input-validation-trust-boundaries.md)).
 
@@ -83,7 +83,7 @@ Do **not** log private usernames when used as authentication credentials, or con
 
 ## Forward to Centralized SIEM with Alerting
 
-Forward all logs to a centralized SIEM (Splunk, ELK, LogRhythm) in a machine-readable format (JSON), with real-time alerts for anomalous activity and documented response playbooks. Adopt an incident-response framework (NIST 800-61r2). The 2025 OWASP rename from "Monitoring" to "**Alerting**" Failures emphasizes that collecting logs is not enough — detection and timely response are the point.
+Forward all logs to a centralized SIEM (Splunk, ELK, LogRhythm) in a machine-readable format (JSON), with real-time alerts for anomalous activity and documented response playbooks. Adopt an incident-response framework (NIST 800-61r2). The OWASP category name emphasizes **alerting**, not just monitoring: collecting logs is not enough — detection and timely response are the point.
 
 ---
 
