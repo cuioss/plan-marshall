@@ -125,7 +125,7 @@ Of the 16 default + project finalize steps, **7 dispatch** and **9 run inline**.
 
 ## Step Types
 
-Three step types are supported, distinguished by prefix notation:
+Four step types are supported, distinguished by prefix notation:
 
 | Type | Notation | Resolution |
 |------|----------|------------|
