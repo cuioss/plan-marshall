@@ -1213,6 +1213,64 @@ def _apply_canonical_verify_inactive(
     return kept, dropped
 
 
+# Request aspects (from the ``manage-config aspect-classify`` verb) that drop
+# build / quality-gate / test steps from the composed phase-5 manifest. An
+# ``analysis`` or ``planning`` request produces no production / test footprint,
+# so the build/verify gates have nothing to gate; dropping them keeps phase-5
+# from running (and failing) build/quality-gate/test commands against a
+# code-free change. ``implementation`` (the safe classifier fallback below the
+# ``>= 0.7`` threshold) is NOT in this set — it retains every gate. See the
+# aspect-classify threshold contract in
+# ``manage-config/scripts/_cmd_aspect_classify.py`` and the outline's
+# request-aspect classification deliverable.
+_BUILD_DROPPING_ASPECTS = frozenset({'analysis', 'planning'})
+
+# Matrix ``role:`` values that the build-dropping aspect filter removes from the
+# composed phase-5 verification list. These are exactly the build / quality-gate
+# / test roles: ``quality-gate`` (mypy + ruff static analysis), ``module-tests``
+# (the ``verify`` / ``module-tests`` canonical role running the test suite), and
+# ``coverage`` (the coverage gate). A canonical-verify step whose derived role is
+# in this set is dropped when the request aspect is analysis / planning. External
+# steps (``project:`` / ``bundle:skill``) and unrecognized roles resolve to
+# ``None`` via ``_role_of`` and are passed through untouched.
+_BUILD_DROPPING_ROLES = frozenset({'quality-gate', 'module-tests', 'coverage'})
+
+
+def _apply_aspect_step_dropping(
+    phase_5_steps: list[str],
+    aspect: str | None,
+    role_cache: dict[str, str | None],
+) -> tuple[list[str], list[str]]:
+    """Drop build / quality-gate / test steps when the request aspect is analysis / planning.
+
+    When ``aspect ∈ {analysis, planning}`` (the build-dropping aspects), every
+    composed phase-5 canonical-verify step whose derived matrix role is a
+    build/verify role (``quality-gate`` / ``module-tests`` / ``coverage``) is
+    removed from the phase-5 verification list — analysis / planning requests
+    carry no production / test footprint, so the build/verify gates have nothing
+    to gate. An ``implementation`` aspect (the classifier's safe sub-threshold
+    fallback) and an absent aspect are no-ops: every gate is retained.
+
+    The filter is role-driven (via ``_role_of`` / ``_BUILD_DROPPING_ROLES``),
+    canonical-agnostic, and adds no per-canonical branch. External steps
+    (``project:`` / ``bundle:skill``) and any step whose role is unrecognized
+    resolve to ``None`` and are passed through untouched.
+
+    Returns ``(kept_steps, dropped_steps)``.
+    """
+    if aspect not in _BUILD_DROPPING_ASPECTS:
+        return phase_5_steps, []
+
+    kept: list[str] = []
+    dropped: list[str] = []
+    for step in phase_5_steps:
+        if _role_of(step, role_cache) in _BUILD_DROPPING_ROLES:
+            dropped.append(step)
+            continue
+        kept.append(step)
+    return kept, dropped
+
+
 # Code-touching change types that gate ``finalize-step-simplify`` activation.
 # Branch-prefix reconciliation: ``fix`` → ``bug_fix``, ``chore`` → ``tech_debt``,
 # ``feature`` → ``feature``. ``analysis`` / ``enhancement`` / ``verification`` are
@@ -2349,6 +2407,32 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             f'dropped {canonical_verify_dropped} from phase_5.verification_steps (no matching footprint role)',
         )
 
+    # Request-aspect step dropping. Runs AFTER the seven-row matrix,
+    # execution_tier routing, and the canonical-verify footprint pre-filter have
+    # produced the final phase-5 verification list. When the request was
+    # classified ``analysis`` / ``planning`` by the ``manage-config
+    # aspect-classify`` verb (forwarded here via ``--aspect``), the build /
+    # quality-gate / test (``module-tests``) / coverage canonical-verify steps
+    # are dropped — an analysis / planning request has no production / test
+    # footprint, so those gates have nothing to gate. An ``implementation``
+    # aspect (the classifier's safe sub-threshold fallback) or an absent
+    # ``--aspect`` is a no-op: every build/verify gate is retained. The drop is
+    # role-driven and canonical-agnostic, reusing the same per-compose role
+    # cache as the footprint pre-filter above.
+    aspect = getattr(args, 'aspect', None)
+    body['phase_5']['verification_steps'], aspect_dropped = _apply_aspect_step_dropping(
+        list(body['phase_5'].get('verification_steps', [])),
+        aspect,
+        canonical_verify_role_cache,
+    )
+    if aspect_dropped:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) aspect_step_dropping — '
+            f'aspect={aspect}, dropped {aspect_dropped} from phase_5.verification_steps '
+            '(analysis/planning request has no build/test footprint)',
+        )
+
     # plan.phase-6-finalize run-at-all selection runs AFTER the seven-row
     # matrix (and execution_tier routing) and BEFORE the bot-enforcement guard.
     # It forces each of the three finalize gates' steps in (`always`) or out
@@ -2470,6 +2554,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'ceremony_finalize_gates': ceremony_finalize_gates,
         'ceremony_finalize_forced_in': [c['step'] for c in ceremony_forced_in],
         'ceremony_finalize_forced_out': [c['step'] for c in ceremony_forced_out],
+        'aspect': aspect,
+        'aspect_step_dropping_dropped': aspect_dropped,
     }
 
 
@@ -3206,6 +3292,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help='Resolved commit_and_push from phase-5-execute config (true|false). '
         'When omitted defaults to true. When false, push (and pre-push-quality-gate '
         'and pre-submission-self-review) is omitted from phase_6.steps.',
+    )
+    compose_parser.add_argument(
+        '--aspect',
+        default=None,
+        help='Resolved request aspect from the aspect-classify verb (analysis|planning|implementation). '
+        'When analysis or planning, build / quality-gate / test (module-tests) steps are dropped from '
+        'the composed phase_5 verification list (analysis/planning requests carry no production/test '
+        'footprint to gate). When omitted or implementation, every build/verify gate is retained.',
     )
 
     read_parser = subparsers.add_parser('read', help='Read execution.toon as TOON', allow_abbrev=False)
