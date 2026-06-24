@@ -5912,6 +5912,58 @@ class TestTrackSelectionAccuracy:
         assert row['counterfactual_lane'] == 'deep'
         assert row['verdict'] == 'UNDER-TRACKED'
 
+    def test_not_recorded_when_request_md_absent(self, tmp_path: Path):
+        # A plan with a recorded lane but NO request.md must short-circuit to
+        # not_recorded (reason missing_request_md) rather than fabricating a vague
+        # S5 signal. Without the short-circuit this light/surgical plan would feed
+        # request_concrete=False, fire S5, score the counterfactual deep, and
+        # manufacture a false UNDER-TRACKED verdict.
+        inputs = _write_track_plan(
+            tmp_path, 'plan-no-request',
+            planning_lane='light', track='simple', scope_estimate='surgical',
+            write_request=False,
+        )
+        routing = audit._load_routing_logic(PROJECT_ROOT)
+        assert routing is not None, 'live routing module must import'
+
+        row = audit.check_track_selection_accuracy(inputs, routing, _NON_BREAKING_COMPAT)
+
+        assert row['verdict'] == 'not_recorded'
+        assert row['reason'] == 'missing_request_md'
+        assert row['counterfactual_lane'] == ''
+        # The recorded lane/track are still surfaced for context.
+        assert row['actual_lane'] == 'light'
+        assert row['actual_track'] == 'simple'
+
+    def test_unreadable_request_md_treated_as_unknown_not_vague(
+        self, tmp_path: Path, monkeypatch
+    ):
+        # An OSError reading an existing request.md must be treated as unknown (no
+        # S5 deep-bias), NOT as a vague request. A light/surgical plan therefore
+        # stays correct rather than being pushed to a false UNDER-TRACKED.
+        inputs = _write_track_plan(
+            tmp_path, 'plan-unreadable',
+            planning_lane='light', track='simple', scope_estimate='surgical',
+        )
+        routing = audit._load_routing_logic(PROJECT_ROOT)
+        assert routing is not None, 'live routing module must import'
+
+        original_read_text = Path.read_text
+
+        def _raise_on_request(self, *args, **kwargs):
+            if self.name == 'request.md':
+                raise OSError('simulated unreadable file')
+            return original_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, 'read_text', _raise_on_request)
+
+        row = audit.check_track_selection_accuracy(inputs, routing, _NON_BREAKING_COMPAT)
+
+        # request_concrete=True suppresses S5, so the counterfactual stays light and
+        # the verdict is correct — no fabricated UNDER-TRACKED.
+        assert row['counterfactual_lane'] == 'light'
+        assert row['verdict'] == 'correct'
+
     def test_track_selection_accuracy_registered_in_check_names(self):
         # The check is registered and runnable via --check, and is per-plan (NOT
         # a cross-plan check).

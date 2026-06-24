@@ -1060,8 +1060,10 @@ def _load_routing_logic(repo_root: Path) -> Any:
     manage-solution-outline / manage-logging skills), so this helper adds every
     marketplace `skills/*/scripts/` directory to ``sys.path`` (mirroring the test
     conftest's path setup) before importing, then returns the module. Returns
-    ``None`` when the marketplace tree or the router module cannot be located —
-    the check then degrades to a `no_routing_logic` verdict rather than raising.
+    ``None`` when the marketplace tree cannot be located or the router module
+    raises any exception at import time (ImportError, SyntaxError,
+    AttributeError, …) — the check then degrades to a `no_routing_logic`
+    verdict rather than aborting the audit.
     """
     marketplace_root = repo_root / "marketplace" / "bundles"
     if not marketplace_root.is_dir():
@@ -1078,7 +1080,7 @@ def _load_routing_logic(repo_root: Path) -> Any:
                     sys.path.insert(0, path_str)
     try:
         import _cmd_planning_lane  # noqa: PLC0415
-    except ImportError:
+    except Exception:  # noqa: BLE001 — any import-time failure degrades to no_routing_logic
         return None
     return _cmd_planning_lane
 
@@ -1111,8 +1113,12 @@ def check_track_selection_accuracy(
     `compatibility` is the project-level marshal.json value, read once by the
     caller. The counterfactual lane is `evaluate_signals_pure(realized signals)`;
     `request_concrete` is re-derived from the plan's `request.md` via the imported
-    `_request_is_concrete`. Verdict: OVER-TRACKED (ran deep/complex, counterfactual
-    light), UNDER-TRACKED (ran light/simple, counterfactual deep), or correct.
+    `_request_is_concrete`. When `request.md` is absent the check short-circuits to
+    `not_recorded` (reason `missing_request_md`) rather than feeding a fabricated
+    vague-request signal; an unreadable-but-present file is treated as unknown (no
+    S5 deep-bias). Verdict: OVER-TRACKED (ran deep/complex, counterfactual light),
+    UNDER-TRACKED (ran light/simple, counterfactual deep), correct, not_recorded,
+    or no_routing_logic.
     """
     actual_lane = inputs.planning_lane or ""
     # Actual track: prefer the explicit references.json::track, else derive from
@@ -1138,13 +1144,29 @@ def check_track_selection_accuracy(
         }
 
     # Re-derive S5 request concreteness from the archived request.md body.
+    # An absent request.md is insufficient data, NOT a vague request: feeding
+    # request_concrete=False here would fabricate the S5 deep-bias signal and can
+    # manufacture a false UNDER-TRACKED verdict for plans that simply never had a
+    # request.md. Short-circuit to not_recorded with a distinguishing reason so the
+    # operator reads the row as informational rather than a real routing miss.
     request_md = inputs.plan_dir / "request.md"
-    request_concrete = False
-    if request_md.is_file():
-        try:
-            body = request_md.read_text(encoding="utf-8")
-        except OSError:
-            body = ""
+    if not request_md.is_file():
+        return {
+            "plan_id": inputs.plan_id,
+            "actual_lane": actual_lane,
+            "actual_track": actual_track,
+            "counterfactual_lane": "",
+            "verdict": "not_recorded",
+            "reason": "missing_request_md",
+        }
+    try:
+        body = request_md.read_text(encoding="utf-8")
+    except OSError:
+        # The file exists but is unreadable — treat S5 as unknown, not vague.
+        # request_concrete=True suppresses the S5 deep-bias so an I/O error does not
+        # masquerade as a vague request and manufacture a false UNDER-TRACKED verdict.
+        request_concrete = True
+    else:
         request_concrete = bool(routing._request_is_concrete(body))
 
     counterfactual = routing.evaluate_signals_pure(
