@@ -27,7 +27,7 @@ from typing import Any
 # Confidence floor below which a recipe is dropped from the suggestion
 # list — keeps the LLM dispatch fallback as the responsible path for
 # weakly-matching plans.
-_MIN_CONFIDENCE = 0.35
+MIN_CONFIDENCE = 0.35
 
 # Stop-words removed from token sets before scoring. Keeps the score
 # meaningful on short descriptions where filler words dominate the
@@ -45,7 +45,7 @@ _STOP_WORDS: frozenset[str] = frozenset({
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z_-]+")
 
 
-def tokenize(text: str) -> set[str]:
+def tokenize(text: str | None) -> set[str]:
     """Return the lower-cased, stop-word-filtered token set of ``text``.
 
     Tokens shorter than three characters and stop-words are dropped so the

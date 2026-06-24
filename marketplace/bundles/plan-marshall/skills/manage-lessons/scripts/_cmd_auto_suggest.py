@@ -27,7 +27,7 @@ from _plan_parsing import parse_document_sections  # type: ignore[import-not-fou
 from _status_core import read_status  # type: ignore[import-not-found]
 from file_ops import get_plan_dir  # type: ignore[import-not-found]
 from recipe_scoring import (  # type: ignore[import-not-found]
-    _MIN_CONFIDENCE,
+    MIN_CONFIDENCE,
     load_registry,
     score_recipe,
     tokenize,
@@ -164,7 +164,7 @@ def cmd_auto_suggest(args) -> dict[str, Any]:
             plan_domain if isinstance(plan_domain, str) else None,
             plan_scope if isinstance(plan_scope, str) else None,
         )
-        if confidence < _MIN_CONFIDENCE:
+        if confidence < MIN_CONFIDENCE:
             continue
         scored.append((confidence, recipe, breakdown))
 

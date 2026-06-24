@@ -139,7 +139,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init set --field auto_route_recipe_threshold --value 0.7
 ----
 
-The companion `aspect-classify` step labels a request as analysis, planning, or implementation so the execution-manifest composer can drop build / quality-gate / test verification steps for analysis- and planning-only requests. Its classification uses an independent confidence threshold (`0.7`) that is *not* the recipe-match auto-route floor above — the two thresholds are unrelated and must not be conflated. The `recipe-match` and `aspect-classify` verbs are documented in link:../../marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md[`manage-config/SKILL.md`] Canonical invocations.
+The companion `aspect-classify` step labels a request as analysis, planning, or implementation so the execution-manifest composer can drop build / quality-gate / test verification steps for analysis- and planning-only requests. Its classification uses an independent confidence threshold (`0.7`) that is *not* the recipe-match auto-route floor above — the two thresholds are unrelated and must not be conflated. The `recipe-match` and `aspect-classify` verbs are documented in xref:../../marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md[`manage-config/SKILL.md`] Canonical invocations.
 
 [#step-configuration]
 === Step configuration (verify + finalize pipelines)

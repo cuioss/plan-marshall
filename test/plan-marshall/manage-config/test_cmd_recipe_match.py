@@ -227,6 +227,58 @@ def test_custom_threshold_below_top_confidence_meets(plan_context, tmp_path, mon
 
 
 # =============================================================================
+# Tie-breaker determinism — equal-confidence recipes resolve to a stable top_match
+# =============================================================================
+
+
+def test_tie_breaker_produces_stable_top_match(plan_context, tmp_path, monkeypatch):
+    """Equal-confidence recipes always resolve to the same top_match via secondary sort keys.
+
+    Without a stable tie-breaker the sort order depends on load_registry insertion
+    order (filesystem/discovery), so equal-confidence recipes would produce
+    nondeterministic auto-routing.  The fix adds secondary keys (recipe 'key', then
+    'skill') so the winner is always the lexicographically earlier recipe key.
+    """
+    skills_dir = _make_skills_root(tmp_path)
+
+    # Seed two recipes that share identical distinctive tokens — both will score
+    # the same keyword confidence against the request text below.
+    _write_recipe(
+        skills_dir,
+        'recipe-alpha',
+        frontmatter={
+            'name': 'recipe-alpha',
+            'description': 'wombat xylitol',
+            'recipe_domain': 'plan-marshall-plugin-dev',
+        },
+    )
+    _write_recipe(
+        skills_dir,
+        'recipe-beta',
+        frontmatter={
+            'name': 'recipe-beta',
+            'description': 'wombat xylitol',
+            'recipe_domain': 'plan-marshall-plugin-dev',
+        },
+    )
+    monkeypatch.chdir(tmp_path)
+
+    # Request echoing the shared tokens — both recipes score equally.
+    result = cmd_recipe_match(_ns('wombat xylitol'))
+
+    assert result['status'] == 'success'
+    assert result['count'] == 2
+    # Both share the same confidence; the tie-breaker must resolve 'alpha' first.
+    confidences = {m['key']: m['confidence'] for m in result['matches']}
+    assert confidences['alpha'] == confidences['beta'], 'pre-condition: equal confidence'
+    top = result['top_match']
+    assert top is not None
+    assert top['key'] == 'alpha', f'expected alpha to win tie-break; got {top["key"]}'
+    # Verify ranking is stable: alpha must be first in matches[] too.
+    assert result['matches'][0]['key'] == 'alpha'
+
+
+# =============================================================================
 # CLI plumbing — constructed-argv assertion at the argparse boundary (Tier 3)
 # =============================================================================
 

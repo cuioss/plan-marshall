@@ -34,7 +34,7 @@ import builtins
 import pytest
 
 from recipe_scoring import (  # type: ignore[import-not-found]
-    _MIN_CONFIDENCE,
+    MIN_CONFIDENCE,
     load_registry,
     score_recipe,
     tokenize,
@@ -89,7 +89,7 @@ def test_tokenize_drops_plan_marshall_vocabulary_stopwords():
 def test_tokenize_empty_and_none_yield_empty_set():
     """Empty and ``None`` input return an empty set, never raise."""
     assert tokenize('') == set()
-    assert tokenize(None) == set()  # type: ignore[arg-type]
+    assert tokenize(None) == set()
 
 
 def test_tokenize_handles_hyphen_and_underscore_tokens():
@@ -244,8 +244,8 @@ def test_score_breakdown_structure_is_complete():
 
 def test_min_confidence_floor_is_a_float_in_unit_interval():
     """The exported confidence floor is a sensible probability."""
-    assert isinstance(_MIN_CONFIDENCE, float)
-    assert 0.0 < _MIN_CONFIDENCE < 1.0
+    assert isinstance(MIN_CONFIDENCE, float)
+    assert 0.0 < MIN_CONFIDENCE < 1.0
 
 
 # =============================================================================

@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 from recipe_scoring import (  # type: ignore[import-not-found]
-    _MIN_CONFIDENCE,
+    MIN_CONFIDENCE,
     load_registry,
     score_recipe,
     tokenize,
@@ -58,11 +58,17 @@ def cmd_recipe_match(args) -> dict[str, Any]:
         # Free-form request text — no plan domain/scope available, so keyword
         # overlap is the sole signal (pass None for both).
         confidence, breakdown = score_recipe(recipe, narrative_tokens, None, None)
-        if confidence < _MIN_CONFIDENCE:
+        if confidence < MIN_CONFIDENCE:
             continue
         scored.append((confidence, recipe, breakdown))
 
-    scored.sort(key=lambda item: item[0], reverse=True)
+    scored.sort(
+        key=lambda item: (
+            -item[0],
+            item[1].get('key') or '',
+            item[1].get('skill') or '',
+        ),
+    )
 
     matches: list[dict[str, Any]] = []
     for confidence, recipe, breakdown in scored:
