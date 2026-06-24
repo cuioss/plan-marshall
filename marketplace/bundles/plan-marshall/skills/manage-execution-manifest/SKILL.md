@@ -97,7 +97,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   [--phase-5-steps {step1,step2,...}] \
   [--phase-6-steps {step1,step2,...}] \
   [--commit-and-push {true|false}] \
-  [--envelope-count {N}]
+  [--envelope-count {N}] \
+  [--aspect {analysis|planning|implementation}]
 ```
 
 **Parameters**:
@@ -111,6 +112,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs from `marshal.json` (e.g., `push,create-pr,automated-review,sonar-roundtrip,lessons-capture,adr-propose,branch-cleanup,archive-plan`). The decision matrix selects a subset. If omitted, defaults to the full canonical set.
 - `--commit-and-push` (optional, default `true`): `true|false` — the resolved `commit_and_push` boolean from phase-5-execute config. When `false`, `push`, `pre-push-quality-gate`, and `pre-submission-self-review` are all removed from the candidate set by the `commit_push_disabled` pre-filter before the matrix runs (a local-only run).
 - `--envelope-count` (optional, default `1`): Number of phase-5 `execution-context` envelopes the orchestrator should plan for. Persisted into the manifest's `phase_5.envelope_count`. When omitted, defaults to `1` (a single budget-bounded envelope greedily drives the task loop until the queue is empty or a TASK-boundary re-dispatch point fires). A non-positive value is clamped to `1`. The field is written under every decision-matrix rule (including `early_terminate`), so the `phase_5` block always carries it.
+- `--aspect` (optional): `analysis|planning|implementation` — the resolved request aspect from the `manage-config aspect-classify` verb (phase-1-init). When `analysis` or `planning`, the **request-aspect step-dropping** pass (§ "Request-aspect step dropping") removes every build / quality-gate / test canonical-verify step (derived roles `quality-gate` / `module-tests` / `coverage`) from the final `phase_5.verification_steps` — an analysis / planning request carries no production / test footprint, so those gates have nothing to gate. When omitted, or `implementation` (the classifier's safe sub-threshold fallback), every build/verify gate is retained. The drop is role-driven and canonical-agnostic; external (`project:` / `bundle:skill`) steps are passed through untouched.
 
 **Output** (TOON):
 ```toon
@@ -330,7 +332,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count]` | Compose and write execution.toon |
+| `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count] [--aspect]` | Compose and write execution.toon |
 | `read` | `--plan-id` | Read manifest as TOON |
 | `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome {executed\|skipped\|error} [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon |
 | `step-params get` | `--plan-id --phase {5-execute\|6-finalize} --step-id` | Return a step's snapshotted param object from the manifest (plan-local read) |
@@ -377,7 +379,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   --scope-estimate {none|surgical|single_module|multi_module|broad} \
   [--recipe-key KEY] [--affected-files-count N] \
   [--phase-5-steps LIST] [--phase-6-steps LIST] \
-  [--commit-and-push {true|false}] [--envelope-count N]
+  [--commit-and-push {true|false}] [--envelope-count N] \
+  [--aspect {analysis|planning|implementation}]
 ```
 
 ### read
@@ -459,6 +462,12 @@ The composer emits one `decision.log` line per scope-gated subtraction (canonica
 ### Generic footprint pre-filter for canonical-verify steps (`canonical_verify_inactive`)
 
 After the seven-row matrix and `execution_tier` routing produce the final `phase_5.verification_steps` list, the composer applies a canonical-agnostic footprint pre-filter: a `default:verify:{canonical}` step whose derived role is a footprint-gated whole-tree role (`integration` / `e2e`) is dropped when the live footprint is non-empty AND carries no path of that role. The core roles (`quality-gate` / `module-tests` / `coverage`) are never footprint-gated. The pre-filter is a no-op when the footprint is empty (early compose, before the worktree is materialized), so every canonical survives until a re-compose can observe the real footprint. The composer emits one `decision.log` line when at least one step is dropped (canonical prefix `(plan-marshall:manage-execution-manifest:compose) canonical_verify_inactive`). The full rule and the safety-against-compose-time-emptiness rationale are documented in [standards/decision-rules.md](standards/decision-rules.md) § "Generic footprint pre-filter".
+
+### Request-aspect step dropping (`aspect_step_dropping`)
+
+After the canonical-verify footprint pre-filter produces the final `phase_5.verification_steps` list, the composer applies the **request-aspect step-dropping** pass driven by the optional `--aspect` input (the resolved aspect from the `manage-config aspect-classify` verb). When `aspect ∈ {analysis, planning}`, every canonical-verify step whose derived matrix role is a build / quality-gate / test role (`quality-gate` / `module-tests` / `coverage`) is dropped from the phase-5 list. The rationale is the inverse of the footprint pre-filter: an `analysis` or `planning` request carries no production / test footprint to gate, so running (and failing) build / quality-gate / test commands against a code-free change is pure waste — the aspect signal lets the composer drop those gates up front rather than relying on a footprint that may not yet exist at compose time.
+
+An `implementation` aspect (the classifier's safe sub-threshold fallback — any request below the `>= 0.7` aspect-classify threshold defaults to `implementation`) and an absent `--aspect` are no-ops: every build/verify gate is retained. The drop is role-driven (via the same `_role_of` derivation the footprint pre-filter uses) and canonical-agnostic — it adds no per-canonical branch. External (`project:` / `bundle:skill`) steps and any step whose role is unrecognized are passed through untouched. The composer emits one `decision.log` line when at least one step is dropped (canonical prefix `(plan-marshall:manage-execution-manifest:compose) aspect_step_dropping`) and surfaces `aspect` and `aspect_step_dropping_dropped` in the `compose` result for observability.
 
 ### phase-6-finalize run-at-all selection (`ceremony_finalize_selection`)
 

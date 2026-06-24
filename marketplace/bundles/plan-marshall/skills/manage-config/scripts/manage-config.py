@@ -17,6 +17,7 @@ Usage:
 
 import argparse
 
+from _cmd_aspect_classify import cmd_aspect_classify
 from _cmd_build_map import cmd_build_decision, cmd_build_map
 from _cmd_coverage import cmd_coverage_expand, cmd_coverage_read, cmd_coverage_resolve
 from _cmd_domain_detect import cmd_domain_detect
@@ -29,6 +30,7 @@ from _cmd_effort import (
 from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_finalize_steps import cmd_finalize_steps_apply_preset
 from _cmd_init import cmd_init
+from _cmd_recipe_match import cmd_recipe_match
 from _cmd_skill_domains import (
     cmd_list_verify_steps,
     cmd_skill_domains,
@@ -624,6 +626,43 @@ def main() -> int:
     p_rr = subparsers.add_parser('resolve-recipe', help='Resolve a specific recipe by key', allow_abbrev=False)
     p_rr.add_argument('--recipe', required=True, help='Recipe key (e.g., refactor-to-standards)')
 
+    # --- recipe-match ---
+    # Tier 1 recipe-match: score free-form --request-text against the live
+    # recipe registry via the shared recipe_scoring core. Heuristic-first,
+    # zero LLM call inside the script (the bounded LLM fallback is the
+    # orchestrator's responsibility).
+    p_rm = subparsers.add_parser(
+        'recipe-match',
+        help='Score request text against the recipe registry (deterministic, heuristic-first)',
+        allow_abbrev=False,
+    )
+    p_rm.add_argument('--request-text', dest='request_text', required=True, help='Free-form request narrative to score')
+    p_rm.add_argument(
+        '--threshold',
+        type=float,
+        default=0.6,
+        help='Auto-route confidence threshold (default 0.6); top match >= threshold sets meets_auto_route_threshold',
+    )
+
+    # --- aspect-classify ---
+    # Deterministic request-aspect classifier: score free-form --request-text
+    # against fixed analysis/planning/implementation keyword tables (reusing
+    # recipe_scoring.tokenize). A winning aspect is accepted only when it
+    # clears the >= 0.7 threshold; below it the safe implementation fallback
+    # keeps build/quality-gate/test gates. Heuristic-first, zero LLM call.
+    p_ac = subparsers.add_parser(
+        'aspect-classify',
+        help='Classify request text as analysis/planning/implementation (deterministic, heuristic-first)',
+        allow_abbrev=False,
+    )
+    p_ac.add_argument('--request-text', dest='request_text', required=True, help='Free-form request narrative to classify')
+    p_ac.add_argument(
+        '--threshold',
+        type=float,
+        default=0.7,
+        help='Acceptance threshold (default 0.7); a winning aspect score below this falls back to implementation',
+    )
+
     # --- resolve-outline-skill ---
     p_ros = subparsers.add_parser('resolve-outline-skill', help='Resolve outline skill for domain', allow_abbrev=False)
     add_domain_arg(p_ros)
@@ -747,6 +786,10 @@ def main() -> int:
         result = cmd_list_recipes(args)
     elif args.noun == 'resolve-recipe':
         result = cmd_resolve_recipe(args)
+    elif args.noun == 'recipe-match':
+        result = cmd_recipe_match(args)
+    elif args.noun == 'aspect-classify':
+        result = cmd_aspect_classify(args)
     elif args.noun == 'resolve-outline-skill':
         result = cmd_resolve_outline_skill(args)
     elif args.noun == 'list-finalize-steps':

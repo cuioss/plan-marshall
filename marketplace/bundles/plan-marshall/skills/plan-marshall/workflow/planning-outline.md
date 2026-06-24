@@ -12,6 +12,19 @@ Workflow for the `outline` action (3-Outline + 4-Plan phases).
 
 **CRITICAL**: This action has 4 steps. Step 3 is a user review gate controlled by `plan_without_asking` config. If false (default): MANDATORY user review — do NOT skip. If true: Auto-proceed to Step 4.
 
+### Inline early-phase path (Tier 1 recipe-match-routed shortcut)
+
+When the Tier 1 recipe-match path short-circuited the plan onto a known recipe transformation (see [`planning.md`](planning.md) § Action: init → **Inline early-phase path (Tier 1 recipe-match-routed shortcut)** for the routed-shortcut detection — `auto_route_recipe == true` AND a non-empty `status.metadata.recipe_key`), this outline action honors the routed shortcut: the orchestrator runs the outline **inline in its own context** rather than dispatching a separate phase-3-outline execution-context envelope, and reserves an execution-context dispatch for phase-5-execute only. There is NO separate outline dispatch (and no q-gate-validation sibling dispatch) when the recipe path short-circuits — the recipe's own outline shape is already determined by the matched transformation.
+
+To honor the shortcut, read whether a routed recipe was persisted at init:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --get --field recipe_key
+```
+
+When `recipe_key` is non-empty AND `auto_route_recipe == true` (the same gate read in `planning.md`), follow the recipe outline path inline (no Step-2 phase-3-outline dispatch); otherwise run the standard Step-2 dispatch chain below. The routed shortcut changes only the dispatch topology (inline vs per-phase execution-context dispatch); the Q-Gate auto-loop, user review gate, and phase transitions still apply to the inline outline.
+
 ---
 
 **Step 1**: Read domains from references:

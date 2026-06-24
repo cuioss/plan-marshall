@@ -1213,6 +1213,57 @@ def _apply_canonical_verify_inactive(
     return kept, dropped
 
 
+# Request aspects (from the ``manage-config aspect-classify`` verb) that drop
+# build / quality-gate / test steps from the composed phase-5 manifest. An
+# ``analysis`` or ``planning`` request produces no production / test footprint,
+# so the build/verify gates have nothing to gate; dropping them keeps phase-5
+# from running (and failing) build/quality-gate/test commands against a
+# code-free change. ``implementation`` (the safe classifier fallback below the
+# ``>= 0.7`` threshold) is NOT in this set — it retains every gate. See the
+# aspect-classify threshold contract in
+# ``manage-config/scripts/_cmd_aspect_classify.py`` and the outline's
+# request-aspect classification deliverable.
+_BUILD_DROPPING_ASPECTS = frozenset({'analysis', 'planning'})
+
+def _apply_aspect_step_dropping(
+    phase_5_steps: list[str],
+    aspect: str | None,
+    role_cache: dict[str, str | None],
+) -> tuple[list[str], list[str]]:
+    """Clear the phase-5 verification list when the request aspect is analysis / planning.
+
+    When ``aspect ∈ {analysis, planning}`` (the build-dropping aspects), the
+    ENTIRE phase-5 verification list is dropped — not just the canonical
+    build/verify steps (``quality-gate`` / ``module-tests`` / ``coverage``) but
+    also every external (``project:`` / ``bundle:skill``) step whose derived
+    matrix role is ``None``. Analysis / planning requests carry no production /
+    test footprint, so the build/verify gates have nothing to gate.
+
+    Dropping the full list (rather than only the role-matched build steps) is
+    load-bearing for the phase-5-execute Step 11b contract: Step 11b fires a
+    ``quality-gate`` sweep whenever ``phase_5.verification_steps`` is non-empty.
+    A role-only filter that left any external ``None``-role step in the list
+    would keep it non-empty and re-trigger ``quality-gate`` via Step 11b for an
+    analysis / planning request — exactly the build the aspect drop exists to
+    prevent. Clearing the full list keeps the enforcement at the manifest layer
+    where it belongs, so Step 11b's non-empty check naturally short-circuits.
+
+    An ``implementation`` aspect (the classifier's safe sub-threshold fallback)
+    and an absent aspect are no-ops: every gate is retained.
+
+    Returns ``(kept_steps, dropped_steps)``. ``role_cache`` is retained in the
+    signature for call-site symmetry with the other role-driven filters; the
+    full-clear path does not consult it.
+    """
+    if aspect not in _BUILD_DROPPING_ASPECTS:
+        return phase_5_steps, []
+
+    # Build-dropping aspect: drop the FULL list (every step, build and external
+    # alike). See docstring — a partial role-only drop would leave external
+    # None-role steps in place and re-trigger Step 11b's quality-gate sweep.
+    return [], list(phase_5_steps)
+
+
 # Code-touching change types that gate ``finalize-step-simplify`` activation.
 # Branch-prefix reconciliation: ``fix`` → ``bug_fix``, ``chore`` → ``tech_debt``,
 # ``feature`` → ``feature``. ``analysis`` / ``enhancement`` / ``verification`` are
@@ -1220,38 +1271,44 @@ def _apply_canonical_verify_inactive(
 _SIMPLIFY_CHANGE_TYPES = frozenset({'feature', 'bug_fix', 'tech_debt'})
 
 
-def _apply_simplify_inactive(
+def _apply_code_step_inactive(
     phase_6_candidates: list[str],
+    step_name: str,
     change_type: str,
     affected_files_count: int,
 ) -> tuple[list[str], bool]:
-    """Pre-filter: drop ``finalize-step-simplify`` when its activation gate fails.
+    """Pre-filter: drop a code-gated phase-6 step when its activation gate fails.
 
-    The gate activates the step (keeps it) whenever BOTH:
+    Shared gate for ``finalize-step-simplify`` and ``finalize-step-security-audit``.
+    Both steps activate when BOTH:
 
     1. ``change_type ∈ {feature, bug_fix, tech_debt}`` — the three code-touching
        change types; and
     2. ``affected_files_count > 0``.
 
-    When either condition fails, ``finalize-step-simplify`` is removed from
-    ``phase_6_candidates``. The cognitive simplification pass uses no language
-    detection — it is domain-agnostic by construction (it applies to any code
-    or doc change in scope), so the gate consults only ``change_type`` and
-    ``affected_files_count``.
-
-    The pre-filter is a no-op when ``finalize-step-simplify`` is already absent
-    from the candidate set (e.g., a project marshal.json that never lists it).
-    Returns the filtered list plus a flag indicating whether the pre-filter
-    fired (i.e., the step was active in the input but dropped after the check).
+    When either condition fails, ``step_name`` is removed from
+    ``phase_6_candidates``. The pre-filter is a no-op when ``step_name`` is
+    already absent from the candidate set. Returns the filtered list plus a flag
+    indicating whether the pre-filter fired (i.e., the step was active in the
+    input but dropped after the check).
     """
-    if 'finalize-step-simplify' not in phase_6_candidates:
+    if step_name not in phase_6_candidates:
         return phase_6_candidates, False
 
     if change_type in _SIMPLIFY_CHANGE_TYPES and affected_files_count > 0:
         # Gate passes — keep the step.
         return phase_6_candidates, False
 
-    return [s for s in phase_6_candidates if s != 'finalize-step-simplify'], True
+    return [s for s in phase_6_candidates if s != step_name], True
+
+
+def _apply_simplify_inactive(
+    phase_6_candidates: list[str],
+    change_type: str,
+    affected_files_count: int,
+) -> tuple[list[str], bool]:
+    """Pre-filter: drop ``finalize-step-simplify`` when its activation gate fails."""
+    return _apply_code_step_inactive(phase_6_candidates, 'finalize-step-simplify', change_type, affected_files_count)
 
 
 def _apply_security_audit_inactive(
@@ -1259,33 +1316,8 @@ def _apply_security_audit_inactive(
     change_type: str,
     affected_files_count: int,
 ) -> tuple[list[str], bool]:
-    """Pre-filter: drop ``finalize-step-security-audit`` when its activation gate fails.
-
-    The gate activates the step (keeps it) whenever BOTH:
-
-    1. ``change_type ∈ {feature, bug_fix, tech_debt}`` — the three code-touching
-       change types (the same set the ``simplify_inactive`` pre-filter uses); and
-    2. ``affected_files_count > 0``.
-
-    When either condition fails, ``finalize-step-security-audit`` is removed from
-    ``phase_6_candidates``. The proactive security sweep has no change surface to
-    audit on a pure-analysis / verification plan or a zero-files plan, so the gate
-    consults only ``change_type`` and ``affected_files_count`` — mirroring
-    ``simplify_inactive``.
-
-    The pre-filter is a no-op when ``finalize-step-security-audit`` is already
-    absent from the candidate set. Returns the filtered list plus a flag
-    indicating whether the pre-filter fired (i.e., the step was active in the
-    input but dropped after the check).
-    """
-    if 'finalize-step-security-audit' not in phase_6_candidates:
-        return phase_6_candidates, False
-
-    if change_type in _SIMPLIFY_CHANGE_TYPES and affected_files_count > 0:
-        # Gate passes — keep the step.
-        return phase_6_candidates, False
-
-    return [s for s in phase_6_candidates if s != 'finalize-step-security-audit'], True
+    """Pre-filter: drop ``finalize-step-security-audit`` when its activation gate fails."""
+    return _apply_code_step_inactive(phase_6_candidates, 'finalize-step-security-audit', change_type, affected_files_count)
 
 
 # Scope-gated phase-6 subtraction sets. Each entry lists the step references the
@@ -2349,6 +2381,32 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             f'dropped {canonical_verify_dropped} from phase_5.verification_steps (no matching footprint role)',
         )
 
+    # Request-aspect step dropping. Runs AFTER the seven-row matrix,
+    # execution_tier routing, and the canonical-verify footprint pre-filter have
+    # produced the final phase-5 verification list. When the request was
+    # classified ``analysis`` / ``planning`` by the ``manage-config
+    # aspect-classify`` verb (forwarded here via ``--aspect``), the build /
+    # quality-gate / test (``module-tests``) / coverage canonical-verify steps
+    # are dropped — an analysis / planning request has no production / test
+    # footprint, so those gates have nothing to gate. An ``implementation``
+    # aspect (the classifier's safe sub-threshold fallback) or an absent
+    # ``--aspect`` is a no-op: every build/verify gate is retained. The drop is
+    # role-driven and canonical-agnostic, reusing the same per-compose role
+    # cache as the footprint pre-filter above.
+    aspect = getattr(args, 'aspect', None)
+    body['phase_5']['verification_steps'], aspect_dropped = _apply_aspect_step_dropping(
+        list(body['phase_5'].get('verification_steps', [])),
+        aspect,
+        canonical_verify_role_cache,
+    )
+    if aspect_dropped:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) aspect_step_dropping — '
+            f'aspect={aspect}, dropped {aspect_dropped} from phase_5.verification_steps '
+            '(analysis/planning request has no build/test footprint)',
+        )
+
     # plan.phase-6-finalize run-at-all selection runs AFTER the seven-row
     # matrix (and execution_tier routing) and BEFORE the bot-enforcement guard.
     # It forces each of the three finalize gates' steps in (`always`) or out
@@ -2470,6 +2528,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'ceremony_finalize_gates': ceremony_finalize_gates,
         'ceremony_finalize_forced_in': [c['step'] for c in ceremony_forced_in],
         'ceremony_finalize_forced_out': [c['step'] for c in ceremony_forced_out],
+        'aspect': aspect,
+        'aspect_step_dropping_dropped': aspect_dropped,
     }
 
 
@@ -3206,6 +3266,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help='Resolved commit_and_push from phase-5-execute config (true|false). '
         'When omitted defaults to true. When false, push (and pre-push-quality-gate '
         'and pre-submission-self-review) is omitted from phase_6.steps.',
+    )
+    compose_parser.add_argument(
+        '--aspect',
+        default=None,
+        help='Resolved request aspect from the aspect-classify verb (analysis|planning|implementation). '
+        'When analysis or planning, build / quality-gate / test (module-tests) steps are dropped from '
+        'the composed phase_5 verification list (analysis/planning requests carry no production/test '
+        'footprint to gate). When omitted or implementation, every build/verify gate is retained.',
     )
 
     read_parser = subparsers.add_parser('read', help='Read execution.toon as TOON', allow_abbrev=False)

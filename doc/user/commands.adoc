@@ -74,6 +74,17 @@ When `action=` is omitted, the effective action is resolved in this order — fi
 
 If two or more of `{task, issue, lesson, recipe, plan}` are supplied together without an explicit `action=`, the skill returns `status: error` naming the conflict. Pass an explicit `action=` or drop the conflicting parameter to resolve.
 
+=== Recipe-match auto-routing of informal requests
+
+You do not have to name a recipe to use one. When you create a plan from an informal description — `task="…"` or `issue=…` — `phase-1-init` scores the request against the registered recipe set and may *auto-route* it into a matching recipe's known-shape path, skipping the standard refine/outline discovery. This is the same Tier 1 recipe-match routing described in xref:../concepts/recipes.adoc[Concepts › Recipes].
+
+Two configurable knobs govern the behaviour (full reference in xref:configuration.adoc#recipe-routing[Configuration › Recipe-match routing]):
+
+* `plan.phase-1-init.auto_route_recipe` (default `true`) — when a request's top recipe match clears the confidence floor, route into it without prompting. Set to `false` to always be shown the ranked matches and choose.
+* `plan.phase-1-init.auto_route_recipe_threshold` (default `0.6`) — the confidence floor a top match must clear to auto-route.
+
+A request labelled analysis- or planning-only by the companion `aspect-classify` step has its build / quality-gate / test verification steps dropped from the execution manifest. An explicit `recipe=` selection always overrides recipe-match — naming a recipe is never second-guessed.
+
 === Audit recipe parameters
 
 The audit recipes — `recipe=code-review` and `recipe=security-audit` — run a diff-aware review over the current footprint and emit findings into the triage pipeline (see xref:../concepts/recipes.adoc[Concepts › Recipes]). Both accept two optional parameters that bound the footprint:

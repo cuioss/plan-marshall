@@ -62,6 +62,12 @@ Every phase boundary is a `Task: plan-marshall:execution-context-{level}` dispat
 
 The full call graph (every conditional, every shared workflow, every inline-script step) is canonical in link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/call-graph.md[`call-graph.md`]. The 8-step anatomy of one dispatch (pick role → resolve level → construct prompt → dispatch → load skills + read workflow → execute → return TOON → record outcome) is in xref:execution-context.adoc[Execution Context].
 
+== Recipe-match routing (Tier 1)
+
+Before the planning-lane decision runs, `phase-1-init` scores the request narrative against the live recipe registry and classifies its aspect — a *Tier 1* routing tier sequenced ahead of the Tier 2 light/deep lane decision. For any source other than an explicit `recipe`, the init phase calls `manage-config recipe-match` (registry-wide deterministic scoring) and `manage-config aspect-classify` (analysis / planning / implementation classification), both heuristic-first with no LLM call inside the scripts. When the top recipe match clears the configurable auto-route floor, the matched recipe is persisted and the standard refine/outline discovery is shortcut into the recipe path; below the floor the ranked matches are surfaced to the user for selection. The auto-route gate (`auto_route_recipe`) and its confidence floor (`auto_route_recipe_threshold`) are configurable — see xref:../user/configuration.adoc#recipe-routing[Configuration › Recipe-match routing].
+
+The enforcement-critical recipe-match process steps and the auto-route gate semantics live in xref:../../marketplace/bundles/plan-marshall/skills/phase-1-init/SKILL.md[`phase-1-init/SKILL.md`] Step 5c. The recipe shortcut itself is described in xref:recipes.adoc[Concepts › Recipes].
+
 == Phase Boundaries
 
 Two boundaries that catch most violations:

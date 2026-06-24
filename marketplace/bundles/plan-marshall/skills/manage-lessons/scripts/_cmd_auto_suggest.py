@@ -20,41 +20,21 @@ user selection.
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from _findings_core import add_finding  # type: ignore[import-not-found]
 from _plan_parsing import parse_document_sections  # type: ignore[import-not-found]
 from _status_core import read_status  # type: ignore[import-not-found]
 from file_ops import get_plan_dir  # type: ignore[import-not-found]
-
-# Confidence floor below which a recipe is dropped from the suggestion
-# list — keeps the LLM dispatch fallback as the responsible path for
-# weakly-matching plans.
-_MIN_CONFIDENCE = 0.35
+from recipe_scoring import (  # type: ignore[import-not-found]
+    MIN_CONFIDENCE,
+    load_registry,
+    score_recipe,
+    tokenize,
+)
 
 # Maximum suggestions returned. The todo caps this at 3.
 _DEFAULT_MAX_SUGGESTIONS = 3
-
-# Stop-words removed from token sets before scoring. Keeps the score
-# meaningful on short descriptions where filler words dominate the
-# overlap.
-_STOP_WORDS: frozenset[str] = frozenset({
-    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from',
-    'has', 'have', 'in', 'is', 'it', 'its', 'of', 'on', 'or', 'that',
-    'the', 'this', 'to', 'was', 'were', 'will', 'with',
-    # plan-marshall vocabulary that adds noise without distinguishing
-    # one recipe from another
-    'plan', 'plans', 'recipe', 'recipes', 'workflow', 'workflows',
-    'standards', 'standard',
-})
-
-_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z_-]+")
-
-
-def _tokenize(text: str) -> set[str]:
-    tokens = {m.group(0).lower() for m in _TOKEN_RE.finditer(text or '')}
-    return {t for t in tokens if t not in _STOP_WORDS and len(t) > 2}
 
 
 def _load_narrative(plan_id: str) -> tuple[str, str | None]:
@@ -103,73 +83,6 @@ def _load_plan_metadata(plan_id: str) -> dict[str, Any]:
         return {}
     metadata = status.get('metadata', {}) if isinstance(status, dict) else {}
     return metadata if isinstance(metadata, dict) else {}
-
-
-def _load_registry() -> list[dict[str, Any]]:
-    """Return the live recipe registry via manage-config's discovery path."""
-    try:
-        from _cmd_skill_resolution import _discover_all_recipes  # type: ignore[import-not-found]
-    except ImportError:
-        return []
-    try:
-        recipes = _discover_all_recipes()
-    except (FileNotFoundError, ValueError, OSError):
-        return []
-    return recipes if isinstance(recipes, list) else []
-
-
-def _score_recipe(
-    recipe: dict[str, Any],
-    narrative_tokens: set[str],
-    plan_domain: str | None,
-    plan_scope: str | None,
-) -> tuple[float, dict[str, Any]]:
-    """Return ``(confidence, breakdown)`` for one recipe.
-
-    Confidence is a blend in ``[0.0, 1.0]``:
-      - ``keyword`` (weight 0.6): Jaccard-like overlap between narrative
-        tokens and the recipe's description+name token set.
-      - ``domain`` (weight 0.25): 1.0 when ``plan.metadata.domain``
-        matches the recipe's domain (exact), 0.0 otherwise.
-      - ``scope`` (weight 0.15): 1.0 when ``plan.metadata.scope_estimate``
-        aligns with the recipe's scope (e.g., ``surgical`` plan ↔
-        ``module`` recipe; ``broad`` plan ↔ ``codebase_wide`` recipe);
-        0.0 otherwise.
-
-    The breakdown dict records the matched tokens so the caller can
-    surface them in findings / logs.
-    """
-    description = str(recipe.get('description', '')) + ' ' + str(recipe.get('name', ''))
-    recipe_tokens = _tokenize(description)
-
-    matched = narrative_tokens & recipe_tokens
-    if recipe_tokens:
-        keyword_score = len(matched) / max(len(recipe_tokens), 1)
-    else:
-        keyword_score = 0.0
-
-    domain_score = 0.0
-    recipe_domain = str(recipe.get('domain', '')).strip()
-    if plan_domain and recipe_domain and plan_domain.strip().lower() == recipe_domain.lower():
-        domain_score = 1.0
-
-    scope_score = 0.0
-    recipe_scope = str(recipe.get('scope', '')).strip().lower()
-    if plan_scope:
-        ps = plan_scope.strip().lower()
-        if (ps in ('surgical', 'narrow', 'module', 'small')) and recipe_scope == 'module':
-            scope_score = 1.0
-        elif (ps in ('broad', 'wide', 'codebase', 'codebase_wide', 'large')) and recipe_scope == 'codebase_wide':
-            scope_score = 1.0
-
-    confidence = round(0.6 * keyword_score + 0.25 * domain_score + 0.15 * scope_score, 3)
-    breakdown = {
-        'keyword_score': round(keyword_score, 3),
-        'domain_score': domain_score,
-        'scope_score': scope_score,
-        'matched_keywords': sorted(matched),
-    }
-    return confidence, breakdown
 
 
 def _emit_finding(
@@ -240,18 +153,18 @@ def cmd_auto_suggest(args) -> dict[str, Any]:
     plan_domain = metadata.get('domain') or metadata.get('plan_domain')
     plan_scope = metadata.get('scope_estimate')
 
-    recipes = _load_registry()
-    narrative_tokens = _tokenize(narrative)
+    recipes = load_registry()
+    narrative_tokens = tokenize(narrative)
 
     scored: list[tuple[float, dict[str, Any], dict[str, Any]]] = []
     for recipe in recipes:
-        confidence, breakdown = _score_recipe(
+        confidence, breakdown = score_recipe(
             recipe,
             narrative_tokens,
             plan_domain if isinstance(plan_domain, str) else None,
             plan_scope if isinstance(plan_scope, str) else None,
         )
-        if confidence < _MIN_CONFIDENCE:
+        if confidence < MIN_CONFIDENCE:
             continue
         scored.append((confidence, recipe, breakdown))
 

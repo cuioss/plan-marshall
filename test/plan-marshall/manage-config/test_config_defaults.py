@@ -1728,3 +1728,75 @@ def test_effort_resolve_target_default_resolves_plan_wide_level_on_fresh_config(
     assert result['level'] == 'level-3'
     assert result['target'] == 'execution-context-level-3'
     assert result['source'] == 'plan.effort'
+
+
+def test_default_plan_init_includes_auto_route_recipe():
+    """DEFAULT_PLAN_INIT must declare auto_route_recipe with default True.
+
+    The Tier 1 recipe-match auto-route gate mirrors the sibling
+    init_without_asking boolean-knob pattern: true ⇒ a high-confidence recipe
+    match auto-routes without prompting.
+    """
+    init_defaults = _config_defaults_mod.DEFAULT_PLAN_INIT
+
+    assert 'auto_route_recipe' in init_defaults, (
+        'auto_route_recipe must be schema-registered in DEFAULT_PLAN_INIT'
+    )
+    assert init_defaults['auto_route_recipe'] is True, (
+        'auto_route_recipe default must be True (auto-route high-confidence matches)'
+    )
+
+
+def test_default_plan_init_includes_auto_route_recipe_threshold_0_6():
+    """DEFAULT_PLAN_INIT must declare auto_route_recipe_threshold with default 0.6.
+
+    Free-form requests carry no plan domain/scope, so keyword-overlap-only
+    confidence caps at 0.6 — the threshold the recipe-match verb's `--threshold`
+    default and the aspect classifier share. The default is 0.6, NOT 0.7.
+    """
+    init_defaults = _config_defaults_mod.DEFAULT_PLAN_INIT
+
+    assert 'auto_route_recipe_threshold' in init_defaults, (
+        'auto_route_recipe_threshold must be schema-registered in DEFAULT_PLAN_INIT'
+    )
+    assert init_defaults['auto_route_recipe_threshold'] == 0.6, (
+        'auto_route_recipe_threshold default must be 0.6 — keyword-only confidence '
+        'for a domain/scope-less free-form request caps at 0.6'
+    )
+
+
+def test_get_default_config_phase_1_init_includes_auto_route_recipe_knobs():
+    """get_default_config() must surface both recipe-match knobs under plan.phase-1-init."""
+    config = _config_defaults_mod.get_default_config()
+
+    init_block = config['plan']['phase-1-init']
+    assert init_block.get('auto_route_recipe') is True
+    assert init_block.get('auto_route_recipe_threshold') == 0.6
+
+
+def test_plan_phase_1_init_get_auto_route_recipe_returns_true_default(plan_context):
+    """`plan phase-1-init get --field auto_route_recipe` returns True from the merged default.
+
+    Exercises the actual cmd_phase get path against a fresh marshal.json, proving
+    the default surfaces even when the persisted config omits the key.
+    """
+    # fresh marshal.json
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    args = Namespace(verb='get', field='auto_route_recipe')
+    result = _cmd_quality_phases_mod.cmd_phase(args, 'phase-1-init')
+
+    assert result['status'] == 'success'
+    assert result['value'] is True
+
+
+def test_plan_phase_1_init_get_auto_route_recipe_threshold_returns_0_6_default(plan_context):
+    """`plan phase-1-init get --field auto_route_recipe_threshold` returns 0.6 from the merged default."""
+    # fresh marshal.json
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    args = Namespace(verb='get', field='auto_route_recipe_threshold')
+    result = _cmd_quality_phases_mod.cmd_phase(args, 'phase-1-init')
+
+    assert result['status'] == 'success'
+    assert result['value'] == 0.6

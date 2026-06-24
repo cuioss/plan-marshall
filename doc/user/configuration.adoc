@@ -115,6 +115,32 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 See the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] for the full per-phase gate catalogue.
 
+[#recipe-routing]
+=== Recipe-match routing
+
+Tier 1 routing scores an informal request against the registered recipe set and may auto-route it into a matching recipe's known-shape path (see xref:../concepts/recipes.adoc[Concepts › Recipes]). Two flat `phase-1-init` knobs govern the auto-route gate:
+
+[cols="1,1,3", options="header"]
+|===
+| Config key | Default | What it controls
+
+| `plan.phase-1-init.auto_route_recipe` | `true` | Whether a strong recipe match auto-routes without prompting. `true` persists the matched recipe and shortcuts into its path when the top match clears the floor; `false` always surfaces the ranked matches for the user to pick from (or decline).
+| `plan.phase-1-init.auto_route_recipe_threshold` | `0.6` | The confidence floor a top recipe match must clear to auto-route. Below the floor the matches are proposed rather than auto-selected.
+|===
+
+Set either knob via the standard phase `set` verb:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init set --field auto_route_recipe --value false
+
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init set --field auto_route_recipe_threshold --value 0.7
+----
+
+The companion `aspect-classify` step labels a request as analysis, planning, or implementation so the execution-manifest composer can drop build / quality-gate / test verification steps for analysis- and planning-only requests. Its classification uses an independent confidence threshold (`0.7`) that is *not* the recipe-match auto-route floor above — the two thresholds are unrelated and must not be conflated. The `recipe-match` and `aspect-classify` verbs are documented in xref:../../marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md[`manage-config/SKILL.md`] Canonical invocations.
+
 [#step-configuration]
 === Step configuration (verify + finalize pipelines)
 

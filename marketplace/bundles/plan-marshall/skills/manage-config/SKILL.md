@@ -262,6 +262,8 @@ The lifecycle run-at-all gates and automation knobs are flat knobs under their o
 |------|----------|----------|
 | `deep_lane` | `plan.phase-1-init` | `plan phase-1-init get --field deep_lane` |
 | `escalation` | `plan.phase-1-init` | `plan phase-1-init get --field escalation` |
+| `auto_route_recipe` | `plan.phase-1-init` | `plan phase-1-init get --field auto_route_recipe` |
+| `auto_route_recipe_threshold` | `plan.phase-1-init` | `plan phase-1-init get --field auto_route_recipe_threshold` |
 | `revalidation` | `plan.phase-2-refine` | `plan phase-2-refine get --field revalidation` |
 | `qgate` (planning) | `plan.phase-3-outline` | `plan phase-3-outline get --field qgate` |
 | `finalize_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field finalize_without_asking` |
@@ -461,6 +463,8 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `init` | Initialize marshal.json (with optional `--force`) |
 | `normalize-keys` | Re-write `marshal.json` with the canonical top-level key order (silent, idempotent; reuses the `save_config` key-order writer) |
 | `domain-detect` | `--plan-id [--domain-override]` (deterministic detector for phase-1-init Step 7; walks `request.md` clarified narrative for explicit mentions of configured `skill_domains` and their bundle aliases; returns `domain` + `ambiguous` boolean. Single-domain projects auto-select; multi-match or zero-match returns `ambiguous=true` so the caller raises `AskUserQuestion` — no LLM dispatch fallback applies.) |
+| `recipe-match` | `--request-text [--threshold 0.6]` (Tier 1 recipe-match for phase-1-init; scores free-form request text against the live recipe registry via the shared `recipe_scoring` core; returns ranked `matches[]` + `top_match` + `meets_auto_route_threshold`. Heuristic-first, zero LLM call inside the script — the bounded LLM fallback is orchestrator-driven.) |
+| `aspect-classify` | `--request-text [--threshold 0.7]` (request-aspect classifier for phase-1-init; scores free-form request text against fixed analysis/planning/implementation keyword tables via `recipe_scoring.tokenize`; returns `aspect` + `confidence` + `drops_build_steps` + per-aspect `breakdown`. A winning analysis/planning aspect is accepted only when its `_overlap_score` confidence clears `>= --threshold` (default `0.7`, NO `0.6` cap) AND beats the implementation overlap; below threshold the safe `implementation` fallback keeps build/quality-gate/test gates. Heuristic-first, zero LLM call inside the script — the bounded LLM fallback is orchestrator-driven.) |
 
 ---
 
@@ -507,7 +511,9 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     "phase-1-init": {
       "branch_strategy": "feature",
       "deep_lane": "auto",
-      "escalation": "auto"
+      "escalation": "auto",
+      "auto_route_recipe": true,
+      "auto_route_recipe_threshold": 0.6
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
@@ -570,6 +576,13 @@ The lifecycle run-at-all gates and finalize automation knobs are flat phase-loca
 | `self_review` | `phase-6-finalize` | Whether the pre-submission structural + cognitive self-review runs (manifest finalize step-selection). |
 | `qgate` | `phase-6-finalize` | Whether finalize re-captures blocking findings. **Highest-risk gate** — `never` can mask real build/test failures. |
 | `simplify` | `phase-6-finalize` | Whether the holistic post-implementation simplification sweep (`finalize-step-simplify`) runs. `always` forces it in even when the composer's `simplify_inactive` pre-filter would drop it; `never` skips it; `auto` defers to that pre-filter. |
+
+**Flat phase-1-init recipe-match knobs (under `phase-1-init`):**
+
+| Field | Type | Default | Meaning |
+|-------|------|---------|---------|
+| `auto_route_recipe` | bool | `true` | Whether a high-confidence Tier 1 recipe match (top confidence `>= auto_route_recipe_threshold`) auto-routes to the matched recipe without prompting. `false` proposes the ranked matches via `AskUserQuestion` first. |
+| `auto_route_recipe_threshold` | float | `0.6` | Auto-route confidence threshold for the Tier 1 recipe match. Default `0.6` because free-form requests carry no plan domain/scope, so keyword-overlap-only confidence caps at `0.6` — the same threshold the `recipe-match` verb's `--threshold` default uses. The `aspect-classify` verb is unrelated: it scores via `_overlap_score` (request-token / keyword-table overlap fraction, 0.0–1.0) with NO `0.6` cap, so it carries its own `0.7` default threshold — do not conflate the two. |
 
 **Flat finalize automation knobs (boolean, under `phase-6-finalize`):**
 
@@ -1041,6 +1054,71 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-r
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config resolve-recipe \
   --recipe RECIPE_KEY
+```
+
+### recipe-match
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config recipe-match \
+  --request-text REQUEST_TEXT [--threshold 0.6]
+```
+
+Tier 1 recipe-match: scores free-form `--request-text` against the live recipe registry using the shared `recipe_scoring` core (the same keyword/intent-overlap matcher the lesson auto-suggest path consumes). Returns the ranked `matches[]` (each with `key`, `name`, `skill`, `domain`, `scope`, `source`, `confidence`, `breakdown`), a `top_match`, and a `meets_auto_route_threshold` boolean (`true` only when the top match's confidence is `>= --threshold`, default `0.6` — the keyword-only scoring ceiling for free-form requests, so a perfect keyword match exactly meets the bar). Returns `status: success` with empty `matches` when nothing clears the minimum-confidence floor.
+
+The verb is **heuristic-first**: it performs no LLM call and no plan-scoped read — only the free-form request text drives scoring (no plan domain/scope is available, so keyword overlap is the sole signal). The bounded LLM fallback for ambiguous matches is **orchestrator-driven** (phase-1-init), not part of this script — mirroring how `change-type-heuristic` and `planning-lane route` keep the LLM out of the script body.
+
+Output TOON shape:
+
+```toon
+status: success
+request_tokens[N]: [token, ...]
+recipes_evaluated: N
+threshold: 0.6
+matches[N]{key,name,skill,domain,scope,source,confidence,breakdown}:
+  ...
+count: N
+top_match:
+  key: ...
+  confidence: ...
+meets_auto_route_threshold: true | false
+```
+
+### aspect-classify
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config aspect-classify \
+  --request-text REQUEST_TEXT [--threshold 0.7]
+```
+
+Request-aspect classifier: tokenizes free-form `--request-text` via the shared `recipe_scoring.tokenize` and scores the token overlap against three fixed keyword tables — `analysis`, `planning`, and `implementation`. The higher of analysis/planning is the candidate aspect; it is accepted only when its `_overlap_score` confidence clears `>= --threshold` (default `0.7`) AND beats the implementation overlap. Otherwise the verb returns the safe `implementation` fallback, which keeps every build / quality-gate / test gate in the composed manifest. The caller (phase-1-init) persists the resolved `aspect`; the execution-manifest composer drops build / quality-gate / test steps when the aspect is `analysis` or `planning` (`drops_build_steps: true`).
+
+The `--threshold` here is **independent of** the `recipe-match` verb's `--threshold` and of the `auto_route_recipe_threshold` config knob. Those caps at `0.6` because plan-domain/scope blending is unavailable; `aspect-classify` uses a pure request-token overlap fraction (`_overlap_score`, range `0.0–1.0`) with NO `0.6` ceiling, so its `0.7` default is reachable and intentional. Do not conflate the two thresholds.
+
+The verb is **heuristic-first**: it performs no LLM call and no plan-scoped read — only the free-form request text drives scoring. The bounded LLM fallback for genuinely ambiguous requests is **orchestrator-driven** (phase-1-init), not part of this script — mirroring `change-type-heuristic`'s heuristic-first / conservative-default contract.
+
+Output TOON shape:
+
+```toon
+status: success
+request_tokens[N]: [token, ...]
+threshold: 0.7
+aspect: analysis | planning | implementation
+confidence: 0.0-1.0
+drops_build_steps: true | false
+scores:
+  analysis: 0.0-1.0
+  planning: 0.0-1.0
+  implementation: 0.0-1.0
+breakdown:
+  analysis:
+    score: 0.0-1.0
+    matched_keywords[N]: [keyword, ...]
+  planning:
+    score: 0.0-1.0
+    matched_keywords[N]: [keyword, ...]
+  implementation:
+    score: 0.0-1.0
+    matched_keywords[N]: [keyword, ...]
 ```
 
 ### resolve-outline-skill

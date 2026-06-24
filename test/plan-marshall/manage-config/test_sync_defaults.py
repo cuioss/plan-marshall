@@ -348,3 +348,32 @@ def test_sync_defaults_is_idempotent_against_keyed_map_steps(plan_context):
     verification_steps = config['plan']['phase-5-execute']['verification_steps']
     assert isinstance(verification_steps, dict)
     assert all(params == {} for params in verification_steps.values())
+
+
+def test_sync_defaults_seeds_auto_route_recipe_knobs_into_legacy_config(plan_context):
+    """A legacy phase-1-init block lacking the recipe-match knobs gains them non-destructively.
+
+    The deep-merge back-fills `auto_route_recipe` (True) and
+    `auto_route_recipe_threshold` (0.6) into a phase-1-init block that predates the
+    knobs, while preserving the user's existing siblings. This pins the
+    sync-defaults seeding contract for the recipe-match auto-route gate.
+    """
+    # legacy phase-1-init block present but missing the recipe-match knobs
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-1-init': {'branch_strategy': 'feature', 'deep_lane': 'auto'}}},
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    init_block = config['plan']['phase-1-init']
+    # the user's existing siblings survive
+    assert init_block['branch_strategy'] == 'feature'
+    assert init_block['deep_lane'] == 'auto'
+    # the missing recipe-match knobs are back-filled with their defaults
+    assert init_block['auto_route_recipe'] is True
+    assert init_block['auto_route_recipe_threshold'] == 0.6
+    assert 'plan.phase-1-init.auto_route_recipe' in result['added']
+    assert 'plan.phase-1-init.auto_route_recipe_threshold' in result['added']

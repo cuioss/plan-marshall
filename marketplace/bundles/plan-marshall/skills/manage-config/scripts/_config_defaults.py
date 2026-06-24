@@ -159,6 +159,21 @@ DEFAULT_PLAN_INIT = {
     # the explicit full-speed-full-risk opt-in. Read via
     # `manage-config plan phase-1-init get --field escalation`.
     'escalation': 'auto',
+    # Tier 1 recipe-match auto-route gate. true (the default) ⇒ a high-confidence
+    # recipe match (top confidence >= auto_route_recipe_threshold) auto-routes to
+    # the matched recipe without prompting; false ⇒ the orchestrator proposes the
+    # ranked matches via AskUserQuestion first. Mirrors the sibling
+    # init_without_asking boolean-knob pattern. Read via
+    # `manage-config plan phase-1-init get --field auto_route_recipe`.
+    'auto_route_recipe': True,
+    # Tier 1 recipe-match auto-route confidence threshold. A top match at or above
+    # this confidence is a high-confidence match the orchestrator may auto-route
+    # (when auto_route_recipe is true). Default 0.6: free-form requests carry no
+    # plan domain/scope, so keyword-overlap-only confidence caps at 0.6 — the
+    # threshold the recipe-match verb's `--threshold` default and the aspect
+    # classifier share. Read via
+    # `manage-config plan phase-1-init get --field auto_route_recipe_threshold`.
+    'auto_route_recipe_threshold': 0.6,
 }
 
 # Valid values for phase-2-refine.simplicity — enum controlling how aggressively

@@ -26,7 +26,6 @@ machinery and from feeding more signal back into it** — not from new subsystem
 | # | Workstream | What it adds | Builds on | Document |
 |---|------------|--------------|-----------|----------|
 | 03 | Audit recipes | `recipe-code-review` + `recipe-security-audit` as standalone, single-envelope entry points emitting into findings | `ext-point-recipe`, `manage-findings`, `ext-triage-*` | [03-audit-recipes.md](03-audit-recipes.md) |
-| 04 | Routing v2 | A recipe-match routing tier ahead of light/deep, so known-shape requests skip the full pipeline (token + wall-time) | `manage-status planning-lane`, recipe registry, lesson auto-suggest | [04-routing-v2.md](04-routing-v2.md) |
 
 ## Sequencing
 
@@ -35,19 +34,19 @@ persona / ref / profile identity model has **landed** (the `persona-*` and `ref-
 skills, the `manage-personas` resolver, and the `profiles:` binding now exist), so
 the workstreams that depended on it build directly on that surface.
 
-The auditor (preference learning), the security-audit finalize step, and the
-encoded-verification surfacing workstreams have all **landed** (the
-`preference-pattern-detector` check, the `default:finalize-step-security-audit`
-step and resolution-only `security` profile, and the encoded-verification concept
-doc now exist), so they no longer appear below:
+The auditor (preference learning), the security-audit finalize step, the
+encoded-verification surfacing, and the recipe-match routing tier workstreams have
+all **landed** (the `preference-pattern-detector` check, the
+`default:finalize-step-security-audit` step and resolution-only `security` profile,
+the encoded-verification concept doc, and the phase-1-init recipe-match routing
+tier now exist), so they no longer appear below:
 
 ```text
-03 audit-recipes ──► 04 routing-v2        (needs recipe targets to route to)
+03 audit-recipes        (standalone keystone — the cheap single-envelope path)
 ```
 
-- **03 audit-recipes is the keystone.** Recipes are the cheap single-envelope path;
-  04 routes onto them.
-- **04 routing** depends on 03 (recipe targets to route to).
+- **03 audit-recipes is the keystone.** Recipes are the cheap single-envelope path
+  onto the deep machinery.
 
 ## Cross-cutting: the shared audit engine
 
@@ -75,7 +74,8 @@ This directory is self-consuming:
 ## What we are NOT doing
 
 - No always-on LLM request classifier — routing stays heuristic-first with at most
-  one bounded LLM fallback pass (see [04](04-routing-v2.md)).
+  one bounded LLM fallback pass (the landed recipe-match tier; see
+  [`doc/concepts/recipes.adoc`](../concepts/recipes.adoc)).
 - No new preference/learning store — preference signal reuses the existing
   `enriched.json` hints surface.
 - No live browser verification or exploration surface — see
