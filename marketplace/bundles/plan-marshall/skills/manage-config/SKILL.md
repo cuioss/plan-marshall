@@ -463,7 +463,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `init` | Initialize marshal.json (with optional `--force`) |
 | `normalize-keys` | Re-write `marshal.json` with the canonical top-level key order (silent, idempotent; reuses the `save_config` key-order writer) |
 | `domain-detect` | `--plan-id [--domain-override]` (deterministic detector for phase-1-init Step 7; walks `request.md` clarified narrative for explicit mentions of configured `skill_domains` and their bundle aliases; returns `domain` + `ambiguous` boolean. Single-domain projects auto-select; multi-match or zero-match returns `ambiguous=true` so the caller raises `AskUserQuestion` — no LLM dispatch fallback applies.) |
-| `recipe-match` | `--request-text [--threshold 0.7]` (Tier 1 recipe-match for phase-1-init; scores free-form request text against the live recipe registry via the shared `recipe_scoring` core; returns ranked `matches[]` + `top_match` + `meets_auto_route_threshold`. Heuristic-first, zero LLM call inside the script — the bounded LLM fallback is orchestrator-driven.) |
+| `recipe-match` | `--request-text [--threshold 0.6]` (Tier 1 recipe-match for phase-1-init; scores free-form request text against the live recipe registry via the shared `recipe_scoring` core; returns ranked `matches[]` + `top_match` + `meets_auto_route_threshold`. Heuristic-first, zero LLM call inside the script — the bounded LLM fallback is orchestrator-driven.) |
 | `aspect-classify` | `--request-text [--threshold 0.7]` (request-aspect classifier for phase-1-init; scores free-form request text against fixed analysis/planning/implementation keyword tables via `recipe_scoring.tokenize`; returns `aspect` + `confidence` + `drops_build_steps` + per-aspect `breakdown`. A winning analysis/planning aspect is accepted only when its `_overlap_score` confidence clears `>= --threshold` (default `0.7`, NO `0.6` cap) AND beats the implementation overlap; below threshold the safe `implementation` fallback keeps build/quality-gate/test gates. Heuristic-first, zero LLM call inside the script — the bounded LLM fallback is orchestrator-driven.) |
 
 ---
@@ -1060,10 +1060,10 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config resolv
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config recipe-match \
-  --request-text REQUEST_TEXT [--threshold 0.7]
+  --request-text REQUEST_TEXT [--threshold 0.6]
 ```
 
-Tier 1 recipe-match: scores free-form `--request-text` against the live recipe registry using the shared `recipe_scoring` core (the same keyword/intent-overlap matcher the lesson auto-suggest path consumes). Returns the ranked `matches[]` (each with `key`, `name`, `skill`, `domain`, `scope`, `source`, `confidence`, `breakdown`), a `top_match`, and a `meets_auto_route_threshold` boolean (`true` only when the top match's confidence is `>= --threshold`, default `0.7`). Returns `status: success` with empty `matches` when nothing clears the minimum-confidence floor.
+Tier 1 recipe-match: scores free-form `--request-text` against the live recipe registry using the shared `recipe_scoring` core (the same keyword/intent-overlap matcher the lesson auto-suggest path consumes). Returns the ranked `matches[]` (each with `key`, `name`, `skill`, `domain`, `scope`, `source`, `confidence`, `breakdown`), a `top_match`, and a `meets_auto_route_threshold` boolean (`true` only when the top match's confidence is `>= --threshold`, default `0.6` — the keyword-only scoring ceiling for free-form requests, so a perfect keyword match exactly meets the bar). Returns `status: success` with empty `matches` when nothing clears the minimum-confidence floor.
 
 The verb is **heuristic-first**: it performs no LLM call and no plan-scoped read — only the free-form request text drives scoring (no plan domain/scope is available, so keyword overlap is the sole signal). The bounded LLM fallback for ambiguous matches is **orchestrator-driven** (phase-1-init), not part of this script — mirroring how `change-type-heuristic` and `planning-lane route` keep the LLM out of the script body.
 
@@ -1073,7 +1073,7 @@ Output TOON shape:
 status: success
 request_tokens[N]: [token, ...]
 recipes_evaluated: N
-threshold: 0.7
+threshold: 0.6
 matches[N]{key,name,skill,domain,scope,source,confidence,breakdown}:
   ...
 count: N

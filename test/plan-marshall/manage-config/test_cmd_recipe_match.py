@@ -8,15 +8,15 @@ heuristic-first: no LLM call, no plan-scoped read — keyword overlap against th
 recipe descriptions is the sole signal (request text carries no plan
 domain/scope). It returns the ranked ``matches[]``, a ``top_match``, and a
 ``meets_auto_route_threshold`` boolean (top confidence ``>= --threshold``,
-default ``0.7``).
+default ``0.6``).
 
 Scoring note (load-bearing for the assertions below): ``score_recipe`` blends
 ``0.6 * keyword + 0.25 * domain + 0.15 * scope``. A free-form request carries
 no plan domain/scope, so ``domain_score == scope_score == 0`` and the blended
 confidence is exactly ``0.6 * keyword_score`` — capped at ``0.6`` even on a
-perfect keyword match. The tests therefore exercise the ``--threshold``
-boundary against that ``[0, 0.6]`` band rather than asserting the default
-``0.7`` is reachable from request text alone.
+perfect keyword match. The default ``--threshold`` is therefore set to ``0.6``
+so a perfect keyword match exactly meets the auto-route bar (``>=`` comparison);
+the tests exercise the ``--threshold`` boundary across that ``[0, 0.6]`` band.
 
 Because ``recipe_scoring.load_registry`` resolves project recipes relative to
 the process cwd, every test seeds an isolated temp ``.claude/skills/`` tree and
@@ -92,7 +92,7 @@ def _seed_full_overlap_recipe(skills_dir: Path) -> None:
     )
 
 
-def _ns(request_text: str, threshold: float = 0.7) -> Namespace:
+def _ns(request_text: str, threshold: float = 0.6) -> Namespace:
     return Namespace(request_text=request_text, threshold=threshold)
 
 
@@ -160,13 +160,13 @@ def test_below_floor_request_returns_empty_matches(plan_context, tmp_path, monke
 # =============================================================================
 
 
-def test_default_threshold_unreachable_from_request_text(plan_context, tmp_path, monkeypatch):
-    """The default 0.7 threshold is unreachable from request text alone.
+def test_default_threshold_met_by_perfect_keyword_match(plan_context, tmp_path, monkeypatch):
+    """A perfect keyword match meets the default 0.6 auto-route threshold.
 
-    With no plan domain/scope, confidence is capped at 0.6 (the keyword weight),
-    so even a perfect keyword match does not clear the default 0.7 auto-route
-    bar — the orchestrator's bounded LLM fallback owns the auto-route decision
-    in that regime.
+    With no plan domain/scope, confidence is capped at 0.6 (the keyword weight).
+    The default ``--threshold`` is 0.6, so a perfect keyword match scoring exactly
+    0.6 clears the auto-route bar via the ``>=`` comparison — auto-route is
+    reachable from request text alone for an unambiguous match.
     """
     skills_dir = _make_skills_root(tmp_path)
     _seed_full_overlap_recipe(skills_dir)
@@ -176,9 +176,9 @@ def test_default_threshold_unreachable_from_request_text(plan_context, tmp_path,
 
     top = result['top_match']
     assert top is not None
-    assert top['confidence'] <= 0.6
-    assert result['threshold'] == 0.7
-    assert result['meets_auto_route_threshold'] is False
+    assert top['confidence'] == 0.6
+    assert result['threshold'] == 0.6
+    assert result['meets_auto_route_threshold'] is True
 
 
 def test_custom_threshold_at_top_confidence_meets(plan_context, tmp_path, monkeypatch):
@@ -247,8 +247,9 @@ def test_cli_recipe_match_argv_boundary(plan_context, tmp_path):
     assert result.success, f'Should succeed: {result.stderr}'
     data = result.toon()
     assert data['status'] == 'success'
-    # Default 0.7 threshold is unreachable from request text alone.
-    assert data['meets_auto_route_threshold'] is False
+    # Default 0.6 threshold is met by a perfect keyword match (0.6 >= 0.6).
+    assert data['threshold'] == 0.6
+    assert data['meets_auto_route_threshold'] is True
 
 
 def test_cli_recipe_match_custom_threshold_argv(plan_context, tmp_path):

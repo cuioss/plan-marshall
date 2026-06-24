@@ -7,7 +7,7 @@ recipe scorer. Given free-form ``--request-text``, it tokenizes the text,
 scores every recipe in the live registry via the shared ``recipe_scoring``
 core, filters by the minimum-confidence floor, and returns the ranked
 ``matches[]`` plus a ``top_match`` and a ``meets_auto_route_threshold``
-boolean (top confidence ``>=`` the auto-route threshold, default ``0.7``).
+boolean (top confidence ``>=`` the auto-route threshold, default ``0.6``).
 
 Heuristic-first contract: this verb performs NO LLM call and NO plan-scoped
 read. The bounded LLM fallback for ambiguous matches is the orchestrator's
@@ -31,7 +31,10 @@ from recipe_scoring import (  # type: ignore[import-not-found]
 
 # Default auto-route threshold: a top match at or above this confidence is
 # a high-confidence match the orchestrator may auto-route without prompting.
-_DEFAULT_THRESHOLD = 0.7
+# Set to 0.6 to match the keyword-only scoring ceiling for free-form requests
+# (plan_domain=plan_scope=None, keyword weight 0.6): a perfect keyword match
+# scores 0.6, so the floor must be 0.6 for auto-route to be reachable.
+_DEFAULT_THRESHOLD = 0.6
 
 
 def cmd_recipe_match(args) -> dict[str, Any]:

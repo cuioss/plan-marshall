@@ -640,8 +640,8 @@ def main() -> int:
     p_rm.add_argument(
         '--threshold',
         type=float,
-        default=0.7,
-        help='Auto-route confidence threshold (default 0.7); top match >= threshold sets meets_auto_route_threshold',
+        default=0.6,
+        help='Auto-route confidence threshold (default 0.6); top match >= threshold sets meets_auto_route_threshold',
     )
 
     # --- aspect-classify ---
