@@ -1219,12 +1219,10 @@ def _run_spec(spec: FixtureSpec) -> set[str]:
         _materialize(scratch_root, spec.files)
         if spec.analyzer is not None:
             findings = spec.analyzer(scratch_root)
-        elif spec.component is not None:
+        else:
             component = spec.component(scratch_root)
             result = analyze_component(component)
             findings = result.get('issues', [])
-        else:  # pragma: no cover — defensive
-            findings = []
     return _finding_rule_ids(findings)
 
 
