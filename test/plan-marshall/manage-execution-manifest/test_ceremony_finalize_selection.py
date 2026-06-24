@@ -72,8 +72,7 @@ _mem._log_bot_enforcement_guard_remediated = lambda *a, **kw: None  # type: igno
 _mem._log_scope_gated_finalize_subtraction = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_ceremony_finalize_selection = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_candidate_source = lambda *a, **kw: None  # type: ignore[attr-defined]
-_mem._log_simplify_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
-_mem._log_security_audit_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
+_mem._log_prefilter_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_execution_tier_routing = lambda *a, **kw: None  # type: ignore[attr-defined]
 
 

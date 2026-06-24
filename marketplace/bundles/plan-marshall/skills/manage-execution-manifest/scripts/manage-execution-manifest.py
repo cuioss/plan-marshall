@@ -863,19 +863,12 @@ def _log_pre_submission_self_review_omitted(plan_id: str) -> None:
     _emit_decision_log(plan_id, message)
 
 
-def _log_simplify_omitted(plan_id: str, change_type: str, affected_files_count: int) -> None:
-    """Emit the decision-log entry for the ``simplify_inactive`` pre-filter."""
+def _log_prefilter_omitted(
+    plan_id: str, step_name: str, change_type: str, affected_files_count: int
+) -> None:
+    """Emit the decision-log entry for an ``*_inactive`` pre-filter (simplify or security_audit)."""
     message = (
-        '(plan-marshall:manage-execution-manifest:compose) finalize-step-simplify omitted — '
-        f'change_type={change_type} affected_files_count={affected_files_count}'
-    )
-    _emit_decision_log(plan_id, message)
-
-
-def _log_security_audit_omitted(plan_id: str, change_type: str, affected_files_count: int) -> None:
-    """Emit the decision-log entry for the ``security_audit_inactive`` pre-filter."""
-    message = (
-        '(plan-marshall:manage-execution-manifest:compose) finalize-step-security-audit omitted — '
+        f'(plan-marshall:manage-execution-manifest:compose) {step_name} omitted — '
         f'change_type={change_type} affected_files_count={affected_files_count}'
     )
     _emit_decision_log(plan_id, message)
@@ -2440,9 +2433,9 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     if pre_submission_self_review_omitted:
         _log_pre_submission_self_review_omitted(plan_id)
     if simplify_omitted:
-        _log_simplify_omitted(plan_id, args.change_type, affected_files_count)
+        _log_prefilter_omitted(plan_id, 'finalize-step-simplify', args.change_type, affected_files_count)
     if security_audit_omitted:
-        _log_security_audit_omitted(plan_id, args.change_type, affected_files_count)
+        _log_prefilter_omitted(plan_id, 'finalize-step-security-audit', args.change_type, affected_files_count)
     for dropped_step in scope_gated_dropped:
         _log_scope_gated_finalize_subtraction(plan_id, args.scope_estimate, dropped_step)
     for change in ceremony_forced_in:
