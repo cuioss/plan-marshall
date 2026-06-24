@@ -17,6 +17,7 @@ Usage:
 
 import argparse
 
+from _cmd_aspect_classify import cmd_aspect_classify
 from _cmd_build_map import cmd_build_decision, cmd_build_map
 from _cmd_coverage import cmd_coverage_expand, cmd_coverage_read, cmd_coverage_resolve
 from _cmd_domain_detect import cmd_domain_detect
@@ -28,7 +29,6 @@ from _cmd_effort import (
 )
 from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_finalize_steps import cmd_finalize_steps_apply_preset
-from _cmd_aspect_classify import cmd_aspect_classify
 from _cmd_init import cmd_init
 from _cmd_recipe_match import cmd_recipe_match
 from _cmd_skill_domains import (
