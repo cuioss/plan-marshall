@@ -72,7 +72,7 @@ Capture the resolved per-domain `security`-profile skill set as `{extra_security
 
 Load the action-general security identity in-context:
 
-```
+```text
 Skill: plan-marshall:persona-security-expert
 ```
 

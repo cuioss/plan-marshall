@@ -184,7 +184,7 @@ When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt}` AND `affec
 
 **Decision log line** (in addition to the row's own log line and any other pre-filter log line):
 
-```
+```text
 (plan-marshall:manage-execution-manifest:compose) finalize-step-security-audit omitted — change_type={value} affected_files_count={N}
 ```
 
@@ -279,9 +279,9 @@ The never-silently-drop policy is load-bearing: an unclassified path indicates e
 (plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection — finalize.{gate}={value}, {added|dropped} {step} {to|from} phase_6.steps
 ```
 
-When all three gates resolve to `auto` (the default), the transform is a no-op and emits no log entry.
+When all four gates resolve to `auto` (the default), the transform is a no-op and emits no log entry.
 
-**Cross-reference**: the gate schema (run-at-all enum, defaults) is owned by [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) § phase-6-finalize — this section documents only how the composer consumes the three finalize gates. Do not restate the schema here.
+**Cross-reference**: the gate schema (run-at-all enum, defaults) is owned by [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) § phase-6-finalize — this section documents only how the composer consumes the four finalize gates. Do not restate the schema here.
 
 ## Bot-Enforcement Guard
 

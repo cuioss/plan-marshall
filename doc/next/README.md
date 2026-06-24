@@ -52,7 +52,7 @@ doc now exist), so they no longer appear below:
 ## Cross-cutting: the shared audit engine
 
 The on-demand `recipe-security-audit` (workstream 03) and the automatic
-`finalize-step-security-audit` (now landed) share one audit implementation with two
+`finalize-step-security-audit` share one audit implementation with two
 entry points. The per-domain skill-selection + audit-run logic is authored once;
 both surfaces call it.
 

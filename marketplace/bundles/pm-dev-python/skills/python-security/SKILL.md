@@ -39,7 +39,7 @@ Load progressively based on current task. **Never load all standards at once.**
 
 ### Injection Sinks and Path Security
 
-```
+```text
 Read: ../python-core/standards/python-core.md
 ```
 

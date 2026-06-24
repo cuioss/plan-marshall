@@ -24,14 +24,11 @@ def _load_extension():
 
 
 def _security_defaults():
-    """Return the java-cui domain's security-profile default skill identifiers.
-
-    Entries may be plain strings or ``{'skill': ...}`` dicts; normalize both.
-    """
+    """Return the java-cui domain's security-profile default skill identifiers."""
     domains = _load_extension().get_skill_domains()
     java_cui_domain = next(d for d in domains if d['domain']['key'] == 'java-cui')
     security = java_cui_domain['profiles']['security']
-    return [e['skill'] if isinstance(e, dict) else e for e in security['defaults']]
+    return [e['skill'] for e in security['defaults']]
 
 
 def test_security_profile_declared():
