@@ -557,28 +557,19 @@ def test_list_finalize_steps_project_skill_order_defaults_to_zero_when_absent():
     the contract is pinned without scaffolding a synthetic project skill (which is
     not discovered under the repo-anchored scan).
     """
-    from extension_discovery import _build_implementor_record  # type: ignore[import-not-found]
-
-    bare_doc = tmp_path_factory_doc()
-    record = _build_implementor_record(bare_doc, 'project', name_override='project:finalize-step-bare')
-
-    assert record['order'] == 0
-
-
-def tmp_path_factory_doc():
-    """Write a frontmatter doc with no `order` key and return its path.
-
-    Helper for test_list_finalize_steps_project_skill_order_defaults_to_zero_when_absent.
-    Uses a module-scoped temp file so the record builder has a real file to read.
-    """
     import tempfile
+
+    from extension_discovery import _build_implementor_record  # type: ignore[import-not-found]
 
     handle = tempfile.NamedTemporaryFile(
         mode='w', suffix='.md', delete=False, encoding='utf-8'
     )
     handle.write('---\nname: finalize-step-bare\ndescription: Bare\n---\n\n# Bare\n')
     handle.close()
-    return Path(handle.name)
+    bare_doc = Path(handle.name)
+    record = _build_implementor_record(bare_doc, 'project', name_override='project:finalize-step-bare')
+
+    assert record['order'] == 0
 
 
 # =============================================================================

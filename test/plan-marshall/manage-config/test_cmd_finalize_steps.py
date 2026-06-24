@@ -80,11 +80,7 @@ def _step_ids(steps_map: dict) -> list:
 
 
 def _params_for(steps_map: dict, step_id: str):
-    """Return a step's params from a keyed-map steps object.
-
-    Returns the step's nested param object (``{}`` for a config-less step).
-    Raises ``KeyError`` when the step id is absent.
-    """
+    """Return the param object for ``step_id`` (``{}`` for config-less steps)."""
     return steps_map[step_id]
 
 

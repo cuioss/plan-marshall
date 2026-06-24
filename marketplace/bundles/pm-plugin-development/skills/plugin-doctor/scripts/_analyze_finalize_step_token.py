@@ -262,16 +262,6 @@ def _bundle_targets(
     return results
 
 
-def _claude_skills_root(marketplace_root: Path) -> Path:
-    """Resolve the project-local ``.claude/skills`` tree from ``marketplace_root``.
-
-    ``marketplace_root`` is ``<repo>/marketplace/bundles``; the project-local
-    skills tree is ``<repo>/.claude/skills`` — two levels up, then
-    ``.claude/skills``.
-    """
-    return marketplace_root.parent.parent / '.claude' / 'skills'
-
-
 def _project_local_targets(marketplace_root: Path) -> list[tuple[Path, str]]:
     """Return ``(SKILL.md path, expected_step_id)`` for project-local steps.
 
@@ -279,7 +269,7 @@ def _project_local_targets(marketplace_root: Path) -> list[tuple[Path, str]]:
     step_id is ``project:{name}`` where ``{name}`` is the skill directory
     basename.
     """
-    skills_root = _claude_skills_root(marketplace_root)
+    skills_root = marketplace_root.parent.parent / '.claude' / 'skills'
     if not skills_root.is_dir():
         return []
     results: list[tuple[Path, str]] = []
