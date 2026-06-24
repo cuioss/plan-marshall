@@ -1,6 +1,6 @@
 # 03 — Audit capabilities as recipes
 
-**Keystone workstream. [04](04-routing-v2.md) routes onto these; `finalize-step-security-audit` shares the security audit engine.**
+**Keystone workstream. The landed recipe-match routing tier routes onto these; the landed `finalize-step-security-audit` shares the security audit engine.**
 
 ## Problem
 
@@ -81,4 +81,4 @@ Delete this document and remove the `03` row from
 
 ## Scope
 
-Medium. Unblocks [04](04-routing-v2.md); shares the security engine with `finalize-step-security-audit`.
+Medium. Unblocked the landed recipe-match routing tier; shares the security engine with the landed `finalize-step-security-audit`.
