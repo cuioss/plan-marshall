@@ -1,6 +1,6 @@
 ---
 name: audit-archived-plan-retrospectives
-description: Audit archived plans across seventeen retrospective checks — execution-manifest correctness, quality-verification findings, metrics anomalies, cross-plan recurring patterns, token-efficiency trend, scope-estimate accuracy, PR-merge velocity, task-count efficiency, global-log analysis, token-economics, quality-chain, sequence-and-build-minimality, input-integrity corpus completeness, task-graph redundancy, architecture-lookup-ratio (information-lookup vs build-lookup), preference-pattern-detector (recurring user gate-dispositions → architecture hints), and cross-check-synthesis facet-completeness — file lessons through the three-gate policy, and dormate reviewed plans
+description: Audit archived plans across eighteen retrospective checks — execution-manifest correctness, quality-verification findings, metrics anomalies, cross-plan recurring patterns, token-efficiency trend, scope-estimate accuracy, track-selection-accuracy (actual planning track vs counterfactual correct track), PR-merge velocity, task-count efficiency, global-log analysis, token-economics, quality-chain, sequence-and-build-minimality, input-integrity corpus completeness, task-graph redundancy, architecture-lookup-ratio (information-lookup vs build-lookup), preference-pattern-detector (recurring user gate-dispositions → architecture hints), and cross-check-synthesis facet-completeness — file lessons through the three-gate policy, and dormate reviewed plans
 user-invocable: true
 mode: workflow
 allowed-tools: Bash, Read, Grep, Write, AskUserQuestion
@@ -8,7 +8,7 @@ allowed-tools: Bash, Read, Grep, Write, AskUserQuestion
 
 # Audit Archived Plan Retrospectives (project-local)
 
-Seventeen-check retrospective auditor over the archived-plan corpus. The skill is
+Eighteen-check retrospective auditor over the archived-plan corpus. The skill is
 the LLM-driven orchestration narrative; `scripts/audit.py` is the deterministic
 computation core. The orchestrator selects which checks to run, surfaces each
 check's script-computed TOON verbatim, drives lesson filing through the
@@ -101,7 +101,7 @@ workstream 05 lands.
 | `--plan-dir PATH` | optional | Override the default `.plan/local/archived-plans` root. Useful when auditing a vendored snapshot. |
 | `--plan-id ID` | optional | Restrict the scan to one archived plan (its directory basename). |
 | `--include-active` | optional | Additionally scan `.plan/local/plans/` so in-flight plans are reported alongside archived ones. Active plans without a manifest are reported as `incomplete`, not `drift`. |
-| `--check NAME` | optional | Run a single check instead of all. Valid names: `execution-context-manifest`, `quality-verification-report`, `metrics`, `recurring-pattern-detector`, `token-efficiency-trend`, `scope-estimate-accuracy`, `pr-merge-velocity`, `task-count-efficiency`, `global-log-analysis`, `token-economics`, `quality-chain`, `sequence-and-build-minimality`, `input-integrity`, `task-graph-redundancy`, `architecture-lookup-ratio`, `preference-pattern-detector`, `cross-check-synthesis`. Default: run every check. When `--check cross-check-synthesis` is selected, the script still computes the upstream checks it consumes (without emitting their blocks) so the synthesis can fire. |
+| `--check NAME` | optional | Run a single check instead of all. Valid names: `execution-context-manifest`, `quality-verification-report`, `metrics`, `recurring-pattern-detector`, `token-efficiency-trend`, `scope-estimate-accuracy`, `track-selection-accuracy`, `pr-merge-velocity`, `task-count-efficiency`, `global-log-analysis`, `token-economics`, `quality-chain`, `sequence-and-build-minimality`, `input-integrity`, `task-graph-redundancy`, `architecture-lookup-ratio`, `preference-pattern-detector`, `cross-check-synthesis`. Default: run every check. When `--check cross-check-synthesis` is selected, the script still computes the upstream checks it consumes (without emitting their blocks) so the synthesis can fire. |
 | `--dormate ID [ID ...] --confirmed` | optional | Relocate one or more archived plans to `.plan/temp/dormated-plans/{plan_id}/`. Accepts an explicit list of plan IDs; duplicate IDs are deduplicated silently. The whole batch is all-or-nothing — a single grammar violation, missing source, or pre-existing destination refuses the entire batch with nothing moved. Inert (refused, exit 0) without `--confirmed`. The interactive confirmation is owned by the LLM body (Step 5), never delegated to the script. |
 | `--dormate-all --confirmed` | optional | Relocate EVERY archived plan under `.plan/local/archived-plans/` to `.plan/temp/dormated-plans/` in one call. Same all-or-nothing posture as `--dormate`. Inert (refused, exit 0) without `--confirmed`. The body MUST surface the full would-move plan list before confirming (Step 5). |
 | `--dormate-global-logs --confirmed` | optional | Relocate COMPLETE past-date global logs (`{prefix}-YYYY-MM-DD.log`) from `.plan/local/logs/` to `.plan/temp/dormated-plans/global-logs/`. Today's still-active log is never moved. Inert (refused, exit 0) without `--confirmed`; on a destination-name clash the whole move refuses (`status: error`) rather than overwriting. The interactive confirmation is owned by the LLM body (Step 5), never delegated to the script. |
@@ -121,6 +121,7 @@ the rows.
 | Recurring-pattern detector | [`checks/recurring-pattern-detector.md`](checks/recurring-pattern-detector.md) | Cross-plan finding signatures appearing in N≥3 plans as systemic signals. |
 | Token-efficiency trend | [`checks/token-efficiency-trend.md`](checks/token-efficiency-trend.md) | Chronological tokens-per-phase regression across the corpus. |
 | Scope-estimate accuracy | [`checks/scope-estimate-accuracy.md`](checks/scope-estimate-accuracy.md) | Declared `scope_estimate` vs actual affected/modified file count. |
+| Track-selection accuracy | [`checks/track-selection-accuracy.md`](checks/track-selection-accuracy.md) | Actual planning track (`planning_lane`/`track`) vs the counterfactual track reconstructed from realized signals via the imported `evaluate_signals_pure`; `OVER-TRACKED` / `UNDER-TRACKED` / `correct` verdict. |
 | PR-merge velocity | [`checks/pr-merge-velocity.md`](checks/pr-merge-velocity.md) | PR open-to-merge duration; long-review-cycle flagging. |
 | Task-count efficiency | [`checks/task-count-efficiency.md`](checks/task-count-efficiency.md) | Under-decomposed / over-decomposed task-count outliers. |
 | Global-log analysis | [`checks/global-log-analysis.md`](checks/global-log-analysis.md) | Cross-plan `.plan/local/logs/` parse: error/warning lines, slow calls, high-frequency callers, impossible/hang durations, and test-fixture leaks — correlated to plan execution windows. |
@@ -174,13 +175,13 @@ Validate + expand the gathered pair in one call — `coverage expand` validates 
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config coverage expand --thoroughness {T} --scope {S}
 ```
 
-This is a **single-invocation** audit skill that runs outside a plan, so hold the gathered identifier + expanded instruction **in-context** for the invocation (the in-context path of the contract's persistence mechanism — no `status.json` write). Consume the **expanded instruction** (NOT the raw cell) in Steps 1 and 4b below. When the user selects `inherit/inherit` (the default), the expanded instruction is behavior-preserving and Steps 1–4b run exactly as before (all 17 checks, full corpus, today's Step-4b gate).
+This is a **single-invocation** audit skill that runs outside a plan, so hold the gathered identifier + expanded instruction **in-context** for the invocation (the in-context path of the contract's persistence mechanism — no `status.json` write). Consume the **expanded instruction** (NOT the raw cell) in Steps 1 and 4b below. When the user selects `inherit/inherit` (the default), the expanded instruction is behavior-preserving and Steps 1–4b run exactly as before (all 18 checks, full corpus, today's Step-4b gate).
 
 See `persona-plan-marshall-agent/standards/thoroughness.md` for the ladders and `coverage-gathering-contract.md` for the gather shape and the cell→instruction table — restate neither here.
 
 ### Step 1: Select the checks to run, governed by the coverage cell
 
-The expanded instruction's **scope rung** sets the corpus radius: `change-set`/`artifact` → a single plan (`--plan-id`); `component`/`module` → a domain/scope-filtered subset of the corpus; `overall` → the full archived-plan corpus (today's default). Its **thoroughness rung** gates check breadth: `T1` → cheap deterministic checks across a representative sample; `T2` → all 17 checks once; `T3` → all 17 plus the `cross-check-synthesis` coupling join; `T4`/`T5` → all 17 plus the Step-4b loop-until-dry / what-did-I-miss adversarial completeness pass.
+The expanded instruction's **scope rung** sets the corpus radius: `change-set`/`artifact` → a single plan (`--plan-id`); `component`/`module` → a domain/scope-filtered subset of the corpus; `overall` → the full archived-plan corpus (today's default). Its **thoroughness rung** gates check breadth: `T1` → cheap deterministic checks across a representative sample; `T2` → all 18 checks once; `T3` → all 18 plus the `cross-check-synthesis` coupling join; `T4`/`T5` → all 18 plus the Step-4b loop-until-dry / what-did-I-miss adversarial completeness pass.
 
 When the user supplies an explicit `--check {name}`, that narrows to one check regardless of the thoroughness rung. The check names are listed in the **Available checks** table above; each maps to a `checks/{name}.md` sub-document and a `--check {name}` value the script accepts. The `inherit/inherit` expanded instruction reproduces today's behavior: all checks, the full corpus.
 
