@@ -92,6 +92,40 @@ AskUserQuestion:
 
 Create a new plan and automatically continue to 2-refine/3-outline/4-plan phases.
 
+### Inline early-phase path (Tier 1 recipe-match-routed shortcut)
+
+phase-1-init runs the Tier 1 recipe-match routing tier as part of init (registry-wide recipe scoring gated on `auto_route_recipe`, plus request-aspect classification) — see [`plan-marshall:phase-1-init`](../../phase-1-init/SKILL.md) § Step 5c (Tier 1 Recipe-Match Routing) for the recipe-match step logic and the `auto_route_recipe` branching. Do NOT inline-copy that step logic or the auto-route branch here; this section consumes its result.
+
+When the `auto_route_recipe` config key is `true` AND the init agent's return signals that a high-confidence recipe match auto-routed the request (the agent persisted `status.metadata.recipe_key` during Step 5c-recipe-match), the orchestrator takes the **inline early-phase path**: it runs the init / refine / outline phases inline in its own context (no per-phase execution-context dispatch) and reserves an `execution-context` envelope dispatch for **phase-5-execute only**. This is the single-envelope token / wall-time win of a routed shortcut — the orchestrator skips the per-phase dispatch overhead for the planning phases when the recipe path short-circuits onto a known transformation.
+
+To detect the routed shortcut after the init dispatch returns:
+
+1. Read the `auto_route_recipe` gate:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+     plan phase-1-init get --field auto_route_recipe --audit-plan-id {plan_id}
+   ```
+
+2. Read whether init persisted a routed recipe:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+     --plan-id {plan_id} --get --field recipe_key
+   ```
+
+   When `auto_route_recipe == true` AND `recipe_key` is non-empty, log the routed-shortcut decision and follow the inline early-phase path (run refine / outline inline; reserve execution-context dispatch for phase-5-execute):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level INFO \
+     --message "(plan-marshall:planning) Tier 1 recipe-match routed shortcut: recipe_key={recipe_key} — running init/refine/outline inline, reserving execution-context dispatch for phase-5-execute"
+   ```
+
+   When `auto_route_recipe == false` OR `recipe_key` is empty, fall through to the standard per-phase dispatch chain documented below (no shortcut).
+
+The routed shortcut does NOT bypass the contract assertions below — the post-init / post-refine contract assertions still run on the inline phases. It changes only the dispatch topology (inline vs per-phase execution-context dispatch), not the phase semantics.
+
 **1-Init Phase** uses a single agent.
 
 Compute the dispatch target via the role resolver:

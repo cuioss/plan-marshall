@@ -1,6 +1,6 @@
 ---
 name: phase-1-init
-description: Init phase skill. Creates plan directory, request.md, references, and status. Complete initialization in a single agent call.
+description: Init phase skill. Creates plan directory, request.md, references, and status, runs the Tier 1 recipe-match routing tier (registry-wide recipe scoring + request-aspect classification) ahead of planning-lane routing. Complete initialization in a single agent call.
 user-invocable: false
 mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
@@ -37,7 +37,7 @@ Skill: plan-marshall:persona-plan-marshall-agent
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-1-init`** (flat — single workflow). Step 4b reference verification bundles into the `phase-1-init` envelope (it shares the same `manage-architecture` / `manage-references` context the rest of the phase needs). Mechanical sub-procedures stay inline as scripts: Step 5c lesson auto-suggest uses `manage-lessons:lesson-auto-suggest` (heuristic-first, dispatches the existing lesson-cleanup workflow only when ambiguous); Step 6 references initialisation and Step 7 domain detection (`manage-config:domain-detect`) are pure scripts. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2 (Heuristic 1 — script over dispatch).
+This phase dispatches under one role key: **`phase-1-init`** (flat — single workflow). Step 4b reference verification bundles into the `phase-1-init` envelope (it shares the same `manage-architecture` / `manage-references` context the rest of the phase needs). Mechanical sub-procedures stay inline as scripts: Step 5c recipe-match (Tier 1) is registry-wide for every source — it calls `manage-config recipe-match` and `manage-config aspect-classify` (heuristic-first, zero LLM call inside the scripts; the bounded LLM fallback for ambiguous matches is orchestrator-driven and fires only when the heuristic is ambiguous, preserving the zero-token property), and retains the lesson-only doc-shaped predicate path; Step 6 references initialisation and Step 7 domain detection (`manage-config:domain-detect`) are pure scripts. Tier 1 recipe-match (Step 5c) is sequenced ahead of Tier 2 planning-lane routing (Step 8b). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2 (Heuristic 1 — script over dispatch).
 
 ## When to Activate This Skill
 
@@ -473,22 +473,101 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:phase-1-init) Seeded status.metadata.plan_source = {lesson_id} (lesson-derived plan)"
 ```
 
-**Interaction with Step 5c (auto-suggest)**: When Step 5c's doc-shaped predicate fires, it overwrites `plan_source` to the literal string `"recipe"` (and sets `recipe_key=lesson_cleanup`). That overwrite is intentional — doc-shaped lessons are routed through `recipe-lesson-cleanup` and must skip phase-2-refine Step 13.5. Code-shaped lessons retain the `lesson_id` value seeded here, which triggers Step 13.5's narrative-vs-code-validator on the next refine entry.
+**Interaction with Step 5c-lesson (doc-shaped predicate)**: When Step 5c-lesson's doc-shaped predicate fires, it overwrites `plan_source` to the literal string `"recipe"` (and sets `recipe_key=lesson_cleanup`). That overwrite is intentional — doc-shaped lessons are routed through `recipe-lesson-cleanup` and must skip phase-2-refine Step 13.5. Code-shaped lessons retain the `lesson_id` value seeded here, which triggers Step 13.5's narrative-vs-code-validator on the next refine entry.
 
-### Step 5c: Lesson Auto-Suggest Recipe
+### Step 5c: Tier 1 Recipe-Match Routing
 
-**Applicability**: This step runs **only when `source == lesson`**. Skip entirely for `description`, `issue`, or `recipe` sources. (When `source == recipe`, the user has already chosen a recipe explicitly — auto-suggest never overrides an explicit choice.)
+**Applicability**: The recipe-match scoring (Step 5c-recipe-match) and request-aspect classification (Step 5c-aspect) run for **every source other than `recipe`** (`description`, `lesson`, `issue`) — Tier 1 generalizes the former lesson-only matcher to the full recipe registry. When `source == recipe` the user has already chosen a recipe explicitly, so Tier 1 never overrides an explicit choice — skip Step 5c-recipe-match and Step 5c-aspect entirely. The lesson-only doc-shaped predicate (Step 5c-lesson) runs **only when `source == lesson`**.
 
-**Step 5c-pre — registry-wide auto-suggest (deterministic, no envelope)**:
+This step is **Tier 1** of the routing model and is sequenced ahead of **Tier 2** planning-lane routing (Step 8b): recipe-match precedes the light/deep lane decision.
 
-For any source other than `recipe`, optionally run the registry matcher to surface candidate recipes:
+**Step 5c-recipe-match — registry-wide recipe scoring (deterministic, heuristic-first)**:
+
+For any source other than `recipe`, score the request narrative against the live recipe registry. The request narrative is the body content resolved in Step 4 ("Get Task Content") — the description text, the lesson body, or the issue body — passed verbatim as `--request-text`. Do NOT inline-copy the recipe-match argument contract or the scoring threshold here; the enforcement-critical content lives in the central verb contract only — see [`../manage-config/SKILL.md`](../manage-config/SKILL.md) Canonical invocations → `recipe-match`.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons \
-  auto-suggest --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config recipe-match \
+  --request-text "{request_narrative}"
 ```
 
-The script scans the live recipe registry, blends keyword overlap with domain/scope alignment, and returns the top 3 recipes ordered by confidence. Each suggestion is also written as an info-severity Q-Gate finding so the orchestrator can surface the list in the audit log. When `suggestions[0].confidence` clears the auto-accept floor (caller-side, typically 0.7) the orchestrator MAY persist `status.metadata.recipe_key = suggestions[0].key` without prompting; below that floor the list is surfaced for user selection (no auto-persist).
+Parse the returned TOON. The relevant fields are `matches[]` (ranked, each with `key`, `name`, `skill`, `confidence`), `top_match` (`key` + `confidence`), and `meets_auto_route_threshold`. An empty `matches` list means nothing cleared the minimum-confidence floor — log the no-match decision and continue to Step 5c-aspect (no routing).
+
+The verb is **heuristic-first**: it performs no LLM call. The bounded LLM fallback for genuinely ambiguous matches is **orchestrator-driven** — it fires only when the heuristic result is ambiguous (e.g. two top matches with near-identical confidence below the auto-route threshold), preserving the zero-token property of the deterministic path. An always-on LLM router is explicitly NOT introduced.
+
+**Read the auto-route gate** — `auto_route_recipe` (bool, default `true`) decides auto-route vs prompt, and `auto_route_recipe_threshold` (float, default `0.6`) is the confidence floor for auto-routing. Both are flat phase-1-init config knobs; their declaration and semantics live in the central config contract — see [`../manage-config/SKILL.md`](../manage-config/SKILL.md) Canonical invocations → `recipe-match` and the phase-1-init recipe-match knob table.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init get --field auto_route_recipe --audit-plan-id {plan_id}
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init get --field auto_route_recipe_threshold --audit-plan-id {plan_id}
+```
+
+**Routing decision** (only when `matches[]` is non-empty):
+
+- **Auto-route** — when `auto_route_recipe == true` AND `top_match.confidence >= auto_route_recipe_threshold` (the `meets_auto_route_threshold` boolean already reflects the verb's own `--threshold`; gate on `auto_route_recipe_threshold` here for the config-driven floor): persist the matched recipe without prompting. Write `status.metadata.recipe_key = top_match.key`:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+    --set --plan-id {plan_id} \
+    --field recipe_key \
+    --value {top_match_key}
+  ```
+
+  Emit the auto-route decision-log entry:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-1-init) Tier 1 recipe-match auto-routed: recipe_key={top_match_key} (confidence={top_match_confidence} >= auto_route_recipe_threshold)"
+  ```
+
+- **Propose** — when `auto_route_recipe == false`, OR `top_match.confidence < auto_route_recipe_threshold` (a match exists but does not clear the auto-route floor): surface the ranked `matches[]` to the user via `AskUserQuestion`. Offer each match (`name` + `confidence`) as a selectable option plus a "No recipe — proceed with the standard refine/outline pipeline" option. On a recipe selection, persist `status.metadata.recipe_key = {selected_key}` via the same `manage-status metadata` call above; on the no-recipe option, persist nothing. Emit a decision-log entry recording the user's choice:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-1-init) Tier 1 recipe-match proposed {match_count} matches; user selected: {selection}"
+  ```
+
+When `matches[]` is empty, log the no-match decision and skip routing:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-1-init) Tier 1 recipe-match found no recipe above the confidence floor — proceeding with the standard refine/outline pipeline"
+```
+
+**Step 5c-aspect — request-aspect classification (deterministic, heuristic-first)**:
+
+For any source other than `recipe`, classify the request aspect so the execution-manifest composer can drop build / quality-gate / test steps for analysis/planning requests. Pass the same request narrative verbatim. Do NOT inline-copy the aspect-classify threshold contract; it lives in the central verb contract — see [`../manage-config/SKILL.md`](../manage-config/SKILL.md) Canonical invocations → `aspect-classify` (its `0.7` threshold is independent of the recipe-match / auto-route thresholds — do not conflate them).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config aspect-classify \
+  --request-text "{request_narrative}"
+```
+
+Parse `aspect` (`analysis` | `planning` | `implementation`) and `drops_build_steps` from the returned TOON. Persist the resolved aspect into status metadata so the manifest composer (phase-4-plan) reads it when composing the phase-5 verification steps:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --set --plan-id {plan_id} \
+  --field request_aspect \
+  --value {aspect}
+```
+
+Emit the aspect decision-log entry:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-1-init) Request aspect classified: {aspect} (drops_build_steps={drops_build_steps})"
+```
+
+The classifier defaults to `implementation` below its threshold — the safe fallback that keeps build/verify gates. No prompt is shown for the aspect; it is silent metadata.
 
 **Step 5c-lesson — doc-shaped predicate (lesson-source only)**:
 
