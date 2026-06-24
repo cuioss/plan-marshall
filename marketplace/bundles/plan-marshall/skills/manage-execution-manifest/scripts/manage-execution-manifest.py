@@ -1271,38 +1271,44 @@ def _apply_aspect_step_dropping(
 _SIMPLIFY_CHANGE_TYPES = frozenset({'feature', 'bug_fix', 'tech_debt'})
 
 
-def _apply_simplify_inactive(
+def _apply_code_step_inactive(
     phase_6_candidates: list[str],
+    step_name: str,
     change_type: str,
     affected_files_count: int,
 ) -> tuple[list[str], bool]:
-    """Pre-filter: drop ``finalize-step-simplify`` when its activation gate fails.
+    """Pre-filter: drop a code-gated phase-6 step when its activation gate fails.
 
-    The gate activates the step (keeps it) whenever BOTH:
+    Shared gate for ``finalize-step-simplify`` and ``finalize-step-security-audit``.
+    Both steps activate when BOTH:
 
     1. ``change_type ∈ {feature, bug_fix, tech_debt}`` — the three code-touching
        change types; and
     2. ``affected_files_count > 0``.
 
-    When either condition fails, ``finalize-step-simplify`` is removed from
-    ``phase_6_candidates``. The cognitive simplification pass uses no language
-    detection — it is domain-agnostic by construction (it applies to any code
-    or doc change in scope), so the gate consults only ``change_type`` and
-    ``affected_files_count``.
-
-    The pre-filter is a no-op when ``finalize-step-simplify`` is already absent
-    from the candidate set (e.g., a project marshal.json that never lists it).
-    Returns the filtered list plus a flag indicating whether the pre-filter
-    fired (i.e., the step was active in the input but dropped after the check).
+    When either condition fails, ``step_name`` is removed from
+    ``phase_6_candidates``. The pre-filter is a no-op when ``step_name`` is
+    already absent from the candidate set. Returns the filtered list plus a flag
+    indicating whether the pre-filter fired (i.e., the step was active in the
+    input but dropped after the check).
     """
-    if 'finalize-step-simplify' not in phase_6_candidates:
+    if step_name not in phase_6_candidates:
         return phase_6_candidates, False
 
     if change_type in _SIMPLIFY_CHANGE_TYPES and affected_files_count > 0:
         # Gate passes — keep the step.
         return phase_6_candidates, False
 
-    return [s for s in phase_6_candidates if s != 'finalize-step-simplify'], True
+    return [s for s in phase_6_candidates if s != step_name], True
+
+
+def _apply_simplify_inactive(
+    phase_6_candidates: list[str],
+    change_type: str,
+    affected_files_count: int,
+) -> tuple[list[str], bool]:
+    """Pre-filter: drop ``finalize-step-simplify`` when its activation gate fails."""
+    return _apply_code_step_inactive(phase_6_candidates, 'finalize-step-simplify', change_type, affected_files_count)
 
 
 def _apply_security_audit_inactive(
@@ -1310,33 +1316,8 @@ def _apply_security_audit_inactive(
     change_type: str,
     affected_files_count: int,
 ) -> tuple[list[str], bool]:
-    """Pre-filter: drop ``finalize-step-security-audit`` when its activation gate fails.
-
-    The gate activates the step (keeps it) whenever BOTH:
-
-    1. ``change_type ∈ {feature, bug_fix, tech_debt}`` — the three code-touching
-       change types (the same set the ``simplify_inactive`` pre-filter uses); and
-    2. ``affected_files_count > 0``.
-
-    When either condition fails, ``finalize-step-security-audit`` is removed from
-    ``phase_6_candidates``. The proactive security sweep has no change surface to
-    audit on a pure-analysis / verification plan or a zero-files plan, so the gate
-    consults only ``change_type`` and ``affected_files_count`` — mirroring
-    ``simplify_inactive``.
-
-    The pre-filter is a no-op when ``finalize-step-security-audit`` is already
-    absent from the candidate set. Returns the filtered list plus a flag
-    indicating whether the pre-filter fired (i.e., the step was active in the
-    input but dropped after the check).
-    """
-    if 'finalize-step-security-audit' not in phase_6_candidates:
-        return phase_6_candidates, False
-
-    if change_type in _SIMPLIFY_CHANGE_TYPES and affected_files_count > 0:
-        # Gate passes — keep the step.
-        return phase_6_candidates, False
-
-    return [s for s in phase_6_candidates if s != 'finalize-step-security-audit'], True
+    """Pre-filter: drop ``finalize-step-security-audit`` when its activation gate fails."""
+    return _apply_code_step_inactive(phase_6_candidates, 'finalize-step-security-audit', change_type, affected_files_count)
 
 
 # Scope-gated phase-6 subtraction sets. Each entry lists the step references the
