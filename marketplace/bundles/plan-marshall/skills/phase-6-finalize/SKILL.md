@@ -154,8 +154,8 @@ Each step declares an `order: <int>` value in its authoritative source — front
 | `default:create-pr` | `standards/create-pr.md` | Create pull request |
 | `default:ci-verify` | `workflow/ci-verify.md` | Classify CI run failures into the multi-failure-mode taxonomy and emit one structured triage finding per failing check (`requires: [ci-complete]` in consume-failures mode) |
 | `default:architecture-refresh` | `standards/architecture-refresh.md` | Refresh architecture descriptors (tier-0 deterministic discover + diff, tier-1 LLM re-enrichment) |
-| `default:automated-review` | `standards/automated-review.md` | CI automated review — orchestration prose; the per-finding LLM core dispatches [`workflow/triage.md`](workflow/triage.md) with `finding_type=pr-comment` (see [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) for the architectural flow) |
-| `default:sonar-roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip — orchestration prose; the per-finding LLM core dispatches [`workflow/triage.md`](workflow/triage.md) with `finding_type=sonar-issue` |
+| `default:automated-review` | `standards/automated-review.md` | CI automated review — orchestration prose; the per-finding LLM core dispatches [`workflow/triage.md`](../plan-marshall/workflow/triage.md) with `finding_type=pr-comment` (see [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) for the architectural flow) |
+| `default:sonar-roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip — orchestration prose; the per-finding LLM core dispatches [`workflow/triage.md`](../plan-marshall/workflow/triage.md) with `finding_type=sonar-issue` |
 | `default:lessons-capture` | `standards/lessons-capture.md` | Record lessons learned |
 | `default:adr-propose` | `workflow/adr-propose.md` | Propose ADRs from the plan's architectural decisions — advisory, dispatcher-gated on a decision-shape Signal Gate (see Step 3 § "Adr-propose Signal Gate") |
 | `default:branch-cleanup` | `standards/branch-cleanup.md` | Branch cleanup — adapts to PR mode or local-only based on create-pr step presence |

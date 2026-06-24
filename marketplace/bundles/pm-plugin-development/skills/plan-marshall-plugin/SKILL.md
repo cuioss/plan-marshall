@@ -87,6 +87,7 @@ Configuration in `extension.py` implements the Extension API contract:
 | `discover_modules()` | Module discovery whose results feed each bundle's per-module `derived.json` under `.plan/project-architecture/{module}/` |
 | `provides_triage()` | Returns `pm-plugin-development:ext-triage-plugin` |
 | `provides_outline_skill()` | Returns `pm-plugin-development:ext-outline-workflow` |
+| `provides_retrospective_aspects()` | Returns the `wrapper-tangle` retrospective aspect (scans plan-marshall CI-wrapper sources for tangled gh/glab + local-git mutations) |
 
 ## Integration
 

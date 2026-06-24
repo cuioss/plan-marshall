@@ -114,10 +114,10 @@ Each extension point has a dedicated contract document with formal parameters, p
 
 | Extension Point | Hook Method | Contract | Implementations |
 |-----------------|-------------|----------|-----------------|
-| Build System | `discover_modules()` + `ExecuteConfig` | [ext-point-build.md](standards/ext-point-build.md) | 4 |
+| Build System | `discover_modules()` + `ExecuteConfig` | [ext-point-build.md](standards/ext-point-build.md) | 3 |
 | Triage (PR comments + Sonar issues) | `provides_triage()` | [ext-point-triage.md](standards/ext-point-triage.md) | 7 |
 | Outline | `provides_outline_skill()` | [ext-point-outline.md](standards/ext-point-outline.md) | 1 |
-| Recipe | `provides_recipes()` | [ext-point-recipe.md](standards/ext-point-recipe.md) | 4 |
+| Recipe | `provides_recipes()` | [ext-point-recipe.md](standards/ext-point-recipe.md) | 3 |
 | Provider | `*_provider.py` | [ext-point-provider.md](standards/ext-point-provider.md) | 4 |
 
 For all extension-related configuration paths, see [marshal-json-reference.md](standards/marshal-json-reference.md).

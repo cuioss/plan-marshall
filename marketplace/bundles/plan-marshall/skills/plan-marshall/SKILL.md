@@ -103,7 +103,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
   --plan-id {plan_id}
 ```
 
-(See [`workflow-integration-git` SKILL.md](../../workflow-integration-git/SKILL.md) Canonical invocations → `locate-plan-checkout` for the verb's argparse surface and the three-state output contract.) Branch on the returned `location`:
+(See [`workflow-integration-git` SKILL.md](../workflow-integration-git/SKILL.md) Canonical invocations → `locate-plan-checkout` for the verb's argparse surface and the three-state output contract.) Branch on the returned `location`:
 
 - **`location == worktree`** — the plan dir was moved into the worktree carried in `worktree_path`. Log a `[STATUS]` re-anchor decision, then issue a STANDALONE `cd {worktree_path}` Bash call (exactly one command — no `&&`, no chaining), and re-run `get-routing-context` from inside the worktree. After the `cd`, cwd is pinned to the worktree and the single uniform cwd-relative rule resolves every subsequent `.plan/` lookup to the worktree-resident copy.
 - **`location == current`** — the plan dir is on the current checkout (a main-checkout plan, or an already-cwd-pinned worktree). Proceed unchanged to the routing call below; do NOT `cd`.

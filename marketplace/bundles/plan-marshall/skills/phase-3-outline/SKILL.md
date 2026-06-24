@@ -623,9 +623,9 @@ All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgat
 
 - [architecture-diagram.md](references/architecture-diagram.md) - Change-type routing architecture (normal plans)
 - [recipe-flow.md](references/recipe-flow.md) - Recipe flow architecture (built-in and custom recipes)
-- [change-types.md](../../ref-workflow-architecture/standards/change-types.md) - Change type vocabulary and agent routing
-- [solution-outline-standard.md](../../manage-solution-outline/standards/solution-outline-standard.md) - Deliverable structure
-- [workflow-architecture](../../ref-workflow-architecture) - Workflow architecture overview
+- [change-types.md](../ref-workflow-architecture/standards/change-types.md) - Change type vocabulary and agent routing
+- [solution-outline-standard.md](../manage-solution-outline/standards/solution-outline-standard.md) - Deliverable structure
+- [workflow-architecture](../ref-workflow-architecture) - Workflow architecture overview
 - [outline-workflow-detail.md](standards/outline-workflow-detail.md) - Detailed track procedures (Q-Gate re-entry, recipe detection, change-type detection, Simple/Complex track steps)
 - [consumer-sweep.md](standards/consumer-sweep.md) - Outline-time procedure that enumerates cross-bundle consumers of deleted/renamed public symbols before deliverable finalization (mandatory when delete/rename language applies to a public symbol) — the *consume-side* sibling of [contract-surface-enumeration.md](standards/contract-surface-enumeration.md)
 - [contract-surface-enumeration.md](standards/contract-surface-enumeration.md) - Outline-time procedure that enumerates the *describe-side* surface (docstrings, help strings, SKILL.md command tables/Output examples, cross-referencing standards docs) asserting a script's old contract before deliverable finalization (mandatory when a deliverable changes a contract/semantic surface — output keys, seeding semantics, default-config behavior, verb side-effects, returned schema)
