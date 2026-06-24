@@ -17,6 +17,10 @@ Coverage:
 - ``--persist`` writes status.metadata.planning_lane.
 - The one-way escalate invariant (deep + lane_escalated, no downgrade).
 - Dispatch wiring (both verbs registered in manage-status.py argparse).
+- ``evaluate_signals_pure`` — direct, I/O-free unit coverage of the extracted
+  pure scorer: each of the five signal arguments firing deep in isolation, the
+  all-light default, the S6 override, and the importability of the S5 regex
+  constants and ``_request_is_concrete`` for downstream consumers.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ _mod = load_script_module(
 )
 cmd_planning_lane_route = _mod.cmd_planning_lane_route
 cmd_planning_lane_escalate = _mod.cmd_planning_lane_escalate
+evaluate_signals_pure = _mod.evaluate_signals_pure
 
 
 # =============================================================================
@@ -445,3 +450,212 @@ def test_planning_lane_escalate_registered_in_manage_status_dispatch():
     esc.set_defaults(func=manage_status.cmd_planning_lane_escalate)
     ns = p.parse_args(['planning-lane', 'escalate'])
     assert ns.func is manage_status.cmd_planning_lane_escalate
+
+
+# =============================================================================
+# evaluate_signals_pure — direct, I/O-free unit coverage
+# =============================================================================
+#
+# The pure scorer takes the five realized signals (plus the S6 override) as plain
+# arguments and performs zero file I/O. These cases lock its scoring against the
+# integrated _evaluate_signals path covered above. The all-light baseline below
+# biases EVERY signal light; each isolation case flips exactly one argument and
+# asserts the resulting lane + fired_signals entry.
+
+# All-light keyword baseline: surgical scope, bug_fix change_type, deprecation
+# compatibility, pre-specified source, concrete request, no override.
+_LIGHT_PURE_KWARGS = {
+    'scope_estimate': 'surgical',
+    'change_type': 'bug_fix',
+    'compatibility': 'deprecation',
+    'plan_source': 'lesson',
+    'request_concrete': True,
+    'override': None,
+}
+
+
+def _pure(**overrides):
+    """Score evaluate_signals_pure from the all-light baseline with overrides applied."""
+    kwargs = {**_LIGHT_PURE_KWARGS, **overrides}
+    return evaluate_signals_pure(**kwargs)
+
+
+def test_pure_all_light_signals_resolve_light():
+    """No signal fires → the pure scorer resolves the light default."""
+    result = _pure()
+
+    assert result['lane'] == 'light'
+    assert result['fired_signals'] == []
+
+
+@pytest.mark.parametrize('scope_estimate', ['multi_module', 'broad', 'none'])
+def test_pure_s2_deep_scope_estimate_fires_deep(scope_estimate):
+    """S2 — each deep scope band fires S2 in isolation."""
+    result = _pure(scope_estimate=scope_estimate)
+
+    assert result['lane'] == 'deep'
+    assert result['fired_signals'] == ['S2:scope_estimate']
+
+
+def test_pure_s2_absent_scope_estimate_fires_deep():
+    """S2 — an absent (None) scope_estimate biases deep."""
+    result = _pure(scope_estimate=None)
+
+    assert result['lane'] == 'deep'
+    assert result['fired_signals'] == ['S2:scope_estimate']
+
+
+@pytest.mark.parametrize('change_type', ['feature', 'feature_breaking'])
+def test_pure_s3_generative_change_type_fires_deep(change_type):
+    """S3 — each generative change_type fires S3 in isolation."""
+    result = _pure(change_type=change_type)
+
+    assert result['lane'] == 'deep'
+    assert result['fired_signals'] == ['S3:change_type']
+
+
+def test_pure_s4_breaking_compatibility_fires_deep():
+    """S4 — breaking compatibility fires S4 in isolation."""
+    result = _pure(compatibility='breaking')
+
+    assert result['lane'] == 'deep'
+    assert result['fired_signals'] == ['S4:compatibility']
+
+
+def test_pure_s5_non_concrete_request_fires_deep():
+    """S5 — a non-concrete request fires S5 in isolation."""
+    result = _pure(request_concrete=False)
+
+    assert result['lane'] == 'deep'
+    assert result['fired_signals'] == ['S5:concreteness']
+
+
+@pytest.mark.parametrize('plan_source', [None, '', 'free_form', 'cli'])
+def test_pure_s1_free_form_source_with_non_concrete_request_fires_deep(plan_source):
+    """S1 — free-form source AND failed concreteness conjunction fires S1 (and S5)."""
+    result = _pure(plan_source=plan_source, request_concrete=False)
+
+    assert result['lane'] == 'deep'
+    # The S1 conjunction keys off the failed S5 concreteness, so both fire.
+    assert 'S1:plan_source' in result['fired_signals']
+    assert 'S5:concreteness' in result['fired_signals']
+
+
+@pytest.mark.parametrize('plan_source', [None, '', 'free_form', 'cli'])
+def test_pure_s1_free_form_source_with_concrete_request_stays_light(plan_source):
+    """S1 — free-form source ALONE does not fire when the request is concrete."""
+    result = _pure(plan_source=plan_source, request_concrete=True)
+
+    assert result['lane'] == 'light'
+    assert 'S1:plan_source' not in result['fired_signals']
+
+
+def test_pure_s6_override_deep_fires_deep():
+    """S6 — an explicit deep override fires S6 in isolation."""
+    result = _pure(override='deep')
+
+    assert result['lane'] == 'deep'
+    assert result['fired_signals'] == ['S6:override']
+
+
+def test_pure_s6_override_light_does_not_force_deep():
+    """S6 — a light override does not fire (the override is one-way to deep)."""
+    result = _pure(override='light')
+
+    assert result['lane'] == 'light'
+    assert 'S6:override' not in result['fired_signals']
+
+
+def test_pure_signals_echoes_all_realized_values():
+    """The returned ``signals`` dict echoes every realized signal value verbatim."""
+    result = _pure(
+        scope_estimate='multi_module',
+        change_type='feature',
+        compatibility='breaking',
+        plan_source='lesson',
+        request_concrete=False,
+        override='deep',
+    )
+
+    assert result['signals'] == {
+        'plan_source': 'lesson',
+        'scope_estimate': 'multi_module',
+        'change_type': 'feature',
+        'compatibility': 'breaking',
+        'request_concrete': False,
+        'planning_lane_override': 'deep',
+    }
+
+
+def test_pure_multiple_deep_signals_accumulate_in_fired_order():
+    """Multiple deep signals all appear in fired_signals in canonical S1..S6 order."""
+    result = _pure(
+        scope_estimate='multi_module',  # S2
+        change_type='feature',           # S3
+        compatibility='breaking',        # S4
+    )
+
+    assert result['lane'] == 'deep'
+    assert result['fired_signals'] == [
+        'S2:scope_estimate',
+        'S3:change_type',
+        'S4:compatibility',
+    ]
+
+
+def test_pure_override_defaults_to_none_when_omitted():
+    """The override argument is optional and defaults to None (no S6)."""
+    result = evaluate_signals_pure(
+        scope_estimate='surgical',
+        change_type='bug_fix',
+        compatibility='deprecation',
+        plan_source='lesson',
+        request_concrete=True,
+    )
+
+    assert result['lane'] == 'light'
+    assert result['signals']['planning_lane_override'] is None
+
+
+# =============================================================================
+# S5 regex constants + _request_is_concrete importability (downstream consumers)
+# =============================================================================
+#
+# The audit retrospective check (deliverable 2) re-derives request_concrete from
+# each archived request.md by importing these symbols. These tests lock that they
+# remain module-level and importable, and that _request_is_concrete matches the
+# documented S5 anchors.
+
+
+def test_s5_regex_constants_are_module_level_importable():
+    """The four S5 regexes are importable module-level compiled patterns."""
+    import re  # noqa: PLC0415
+
+    for name in ('_PATH_RE', '_FENCE_RE', '_CLI_RE', '_NOTATION_RE'):
+        pattern = getattr(_mod, name)
+        assert isinstance(pattern, re.Pattern), f'{name} must be a compiled regex'
+
+
+def test_request_is_concrete_is_module_level_importable():
+    """_request_is_concrete is importable for downstream re-derivation of S5."""
+    assert callable(_mod._request_is_concrete)
+
+
+@pytest.mark.parametrize(
+    'body',
+    [
+        'Update `marketplace/bundles/plan-marshall/skills/x/scripts/x.py` to fix it.',
+        'Run python3 .plan/execute-script.py plan-marshall:foo:foo bar.',
+        'Use the manage-status verb to read the plan.',
+        'Here is a fenced block:\n```\ncode\n```\n',
+    ],
+)
+def test_request_is_concrete_true_for_each_anchor(body):
+    """Each S5 anchor (path / CLI / notation / fence) marks the body concrete."""
+    assert _mod._request_is_concrete(body) is True
+
+
+@pytest.mark.parametrize('body', ['', 'The thing should do the thing, somehow.'])
+def test_request_is_concrete_false_for_anchorless_body(body):
+    """An empty or anchorless body is not concrete (→ S5 deep)."""
+    assert _mod._request_is_concrete(body) is False

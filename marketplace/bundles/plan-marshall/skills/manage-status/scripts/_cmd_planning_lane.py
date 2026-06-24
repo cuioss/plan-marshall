@@ -151,23 +151,23 @@ def _read_deep_lane_gate() -> str:
     return 'auto'
 
 
-def _evaluate_signals(plan_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
-    """Evaluate S1–S6 and return the per-signal verdict + winning lane.
+def evaluate_signals_pure(
+    scope_estimate: str | None,
+    change_type: str | None,
+    compatibility: str | None,
+    plan_source: str | None,
+    request_concrete: bool,
+    override: str | None = None,
+) -> dict[str, Any]:
+    """Score the S1–S6 signal set into a lane verdict — pure, I/O-free.
 
-    Returns a dict carrying every signal's resolved value and its deep-bias
-    boolean, plus the aggregate ``lane`` and the list of fired deep signals.
+    Takes the realized signal values directly (the reads happen in the caller)
+    and returns the same ``{lane, fired_signals, signals}`` dict that drives the
+    route dispatch. Importable by downstream consumers (e.g. the audit
+    retrospective check) so the routing thresholds are never duplicated.
     """
-    plan_source = metadata.get('plan_source')
-    change_type = metadata.get('change_type')
-    override = metadata.get('planning_lane_override')
-
-    scope_estimate = _read_scope_estimate(plan_id)
-    compatibility = _read_compatibility()
-    body = _read_request_body(plan_id)
-    concrete = _request_is_concrete(body)
-
     # S5 — vague ask, no anchors → deep.
-    s5_deep = not concrete
+    s5_deep = not request_concrete
     # S1 — free-form source (absent/unset) AND S5 concreteness fails → deep.
     # lesson-id / recipe sources are pre-specified by construction → bias light.
     free_form_source = plan_source in (None, '', 'free_form', 'cli')
@@ -204,10 +204,40 @@ def _evaluate_signals(plan_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
             'scope_estimate': scope_estimate,
             'change_type': change_type,
             'compatibility': compatibility,
-            'request_concrete': concrete,
+            'request_concrete': request_concrete,
             'planning_lane_override': override,
         },
     }
+
+
+def _evaluate_signals(plan_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
+    """Read S1–S6 signals from disk and delegate scoring to the pure helper.
+
+    Returns the dict produced by ``evaluate_signals_pure``:
+
+    - ``lane`` — the aggregate ``{light|deep}`` verdict.
+    - ``fired_signals`` — the list of deep-bias signals that fired.
+    - ``signals`` — the resolved S1-S6 input values (``plan_source``,
+      ``scope_estimate``, ``change_type``, ``compatibility``,
+      ``request_concrete``, ``planning_lane_override``).
+    """
+    plan_source = metadata.get('plan_source')
+    change_type = metadata.get('change_type')
+    override = metadata.get('planning_lane_override')
+
+    scope_estimate = _read_scope_estimate(plan_id)
+    compatibility = _read_compatibility()
+    body = _read_request_body(plan_id)
+    concrete = _request_is_concrete(body)
+
+    return evaluate_signals_pure(
+        scope_estimate=scope_estimate,
+        change_type=change_type,
+        compatibility=compatibility,
+        plan_source=plan_source,
+        request_concrete=concrete,
+        override=override,
+    )
 
 
 def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
