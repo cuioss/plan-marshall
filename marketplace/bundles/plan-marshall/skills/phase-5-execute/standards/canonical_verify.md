@@ -1,7 +1,12 @@
 ---
+implements: plan-marshall:extension-api/standards/ext-point-verify-step
 name: default:verify
 description: Parameterized canonical-verify step — resolves a canonical command and runs it
 order: 10
+canonicals:
+  - quality-gate
+  - module-tests
+  - coverage
 ---
 
 # Canonical Verify

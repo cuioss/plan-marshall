@@ -917,3 +917,100 @@ def test_find_implementors_empty_for_unknown_ext_point():
     records = _discovery.find_implementors('plan-marshall:extension-api/standards/ext-point-nonexistent')
 
     assert records == []
+
+
+def test_find_implementors_finalize_records_carry_empty_canonicals():
+    """Finalize-step records carry the verify-step ``canonicals`` key, defaulting to [].
+
+    ``canonicals`` was added to the shared implementor record so verify-step
+    discovery can expose it. A finalize-step doc declares no ``canonicals``, so
+    every finalize record must carry the key with an empty-list default — proving
+    the cross-ext-point record union does not break the finalize archetype.
+    """
+    records = _discovery.find_implementors(_FINALIZE_STEP_EXT_POINT)
+
+    assert records, 'Expected at least one finalize-step implementor'
+    for rec in records:
+        assert 'canonicals' in rec, f'{rec.get("name")!r} missing canonicals key'
+        assert rec['canonicals'] == [], (
+            f'{rec.get("name")!r} finalize record must default canonicals to []'
+        )
+
+
+# =============================================================================
+# find_implementors — verify-step discovery (phase-5-execute standards surface)
+# =============================================================================
+#
+# The verify-step ext-point adds a fourth scan surface
+# (phase-5-execute/standards/*.md) and a ``canonicals`` list field. The sole
+# built-in implementor is canonical_verify.md, whose canonicals list the
+# discovery consumer expands into default:verify:{canonical} step ids. The
+# contract lives in ext-point-verify-step.md.
+
+_VERIFY_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-verify-step'
+
+
+def test_find_implementors_discovers_canonical_verify():
+    """find_implementors(VERIFY_STEP_EXT_POINT) discovers the canonical_verify.md doc.
+
+    The central regression for this deliverable: the phase-5-execute standards
+    scan surface surfaces the verify-step implementor over the live tree.
+    """
+    records = _discovery.find_implementors(_VERIFY_STEP_EXT_POINT)
+
+    assert records, 'Expected the canonical_verify verify-step implementor'
+    paths = [rec['path'] for rec in records]
+    assert any(p.endswith('phase-5-execute/standards/canonical_verify.md') for p in paths), (
+        f'canonical_verify.md must be discovered; got paths {paths}'
+    )
+
+
+def test_find_implementors_verify_record_carries_canonicals_list():
+    """The discovered verify-step record exposes a ``canonicals`` list field.
+
+    The canonicals list enumerates the canonical command names the parameterized
+    step backs (quality-gate / module-tests / coverage), which the discovery
+    consumer expands into default:verify:{canonical} step ids.
+    """
+    records = _discovery.find_implementors(_VERIFY_STEP_EXT_POINT)
+    by_name = {rec['name']: rec for rec in records}
+
+    assert 'default:verify' in by_name, (
+        f'the parameterized verify step must be discovered; got {sorted(by_name)}'
+    )
+    verify = by_name['default:verify']
+    assert verify['source'] == 'built-in'
+    assert isinstance(verify['canonicals'], list)
+    # The list enumerates exactly the built-in canonical set, in execution order.
+    assert verify['canonicals'] == ['quality-gate', 'module-tests', 'coverage']
+
+
+def test_find_implementors_verify_surface_does_not_leak_finalize_steps():
+    """A verify-step query surfaces ONLY verify steps — no finalize-step records.
+
+    The per-ext-point implements: match must keep the phase-5 and phase-6 surfaces
+    disjoint: querying the verify ext-point must not return any phase-6 finalize
+    step, and vice versa.
+    """
+    verify_records = _discovery.find_implementors(_VERIFY_STEP_EXT_POINT)
+    verify_paths = [rec['path'] for rec in verify_records]
+    assert not any('phase-6-finalize' in p for p in verify_paths), (
+        f'verify-step query must not surface phase-6 docs; got {verify_paths}'
+    )
+
+
+def test_find_implementors_finalize_unaffected_by_phase5_surface():
+    """Adding the phase-5 scan surface leaves finalize-step discovery unchanged.
+
+    A finalize-step query must surface no phase-5-execute doc — the new scan
+    surface only contributes records when the queried ext-point matches the
+    phase-5 doc's implements: declaration.
+    """
+    finalize_records = _discovery.find_implementors(_FINALIZE_STEP_EXT_POINT)
+    finalize_paths = [rec['path'] for rec in finalize_records]
+    assert not any('phase-5-execute' in p for p in finalize_paths), (
+        f'finalize-step query must not surface phase-5 docs; got {finalize_paths}'
+    )
+    # The finalize surfaces (built-in / bundle-optional / project) are all still present.
+    sources = {rec['source'] for rec in finalize_records}
+    assert {'built-in', 'bundle-optional', 'project'} <= sources

@@ -154,6 +154,35 @@ def _discovered_step_description(step_id: str) -> str:
     return ''
 
 
+def _discovered_verify_step_ids() -> list:
+    """Return the built-in verify-step ids, in seed order.
+
+    The hand-maintained ``BUILT_IN_VERIFY_STEPS`` constant was removed; the seed is
+    now derived from the reusable ``extension_discovery.find_implementors`` query —
+    the SOLE verify-step discovery path. This mirrors ``_seed_verify_steps()``:
+    filter the discovered implementors to the built-in source, sort by
+    ``(order, name)``, and expand each implementor's ``canonicals`` list into
+    ``default:verify:{canonical}`` ids in list order. The result is the expected
+    key insertion order of the seeded ``plan.phase-5-execute.verification_steps``
+    keyed map.
+    """
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+
+    built_in = sorted(
+        (
+            rec
+            for rec in find_implementors(_config_defaults_mod.VERIFY_STEP_EXT_POINT)
+            if rec.get('source') == 'built-in'
+        ),
+        key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
+    )
+    return [
+        f'default:verify:{canonical}'
+        for rec in built_in
+        for canonical in rec.get('canonicals', [])
+    ]
+
+
 def test_finalize_step_params_constant_is_deleted():
     """The centralized _FINALIZE_STEP_PARAMS constant MUST no longer exist.
 
@@ -1101,17 +1130,43 @@ def test_default_plan_finalize_drops_flat_step_owned_knobs():
     assert finalize['qgate'] == 'auto'
 
 
-def test_default_plan_execute_verification_steps_is_keyed_map_form():
-    """DEFAULT_PLAN_EXECUTE['verification_steps'] must be the keyed map of config-less steps."""
-    verification_steps = _config_defaults_mod.DEFAULT_PLAN_EXECUTE['verification_steps']
+def test_default_plan_execute_verification_steps_is_lazy_placeholder():
+    """DEFAULT_PLAN_EXECUTE['verification_steps'] must be the lazy `None` placeholder.
 
-    assert isinstance(verification_steps, dict), (
-        'verification_steps must be the keyed-map form, not a list'
-    )
-    # key insertion order preserves the BUILT_IN_VERIFY_STEPS execution order
-    assert _step_ids(verification_steps) == _config_defaults_mod.BUILT_IN_VERIFY_STEPS
+    The verify-step seed is materialized lazily by ``_seed_verify_steps()`` inside
+    ``get_default_config()`` (the discovery query cannot run at module import
+    without a hard cross-bundle dependency on the extension-api parser), so the
+    module-level constant carries the ``None`` placeholder — mirroring the
+    ``DEFAULT_PLAN_FINALIZE['steps']`` lazy-seed shape.
+    """
+    assert _config_defaults_mod.DEFAULT_PLAN_EXECUTE['verification_steps'] is None
+
+
+def test_seed_verify_steps_returns_discovered_keyed_map():
+    """``_seed_verify_steps()`` must return the discovered built-in steps as a keyed map."""
+    seeded = _config_defaults_mod._seed_verify_steps()
+
+    assert isinstance(seeded, dict)
+    # key insertion order preserves the discovered (order, canonicals-list) order
+    assert _step_ids(seeded) == _discovered_verify_step_ids()
     # verification steps own no params — every value is an empty {} param object.
-    assert all(params == {} for params in verification_steps.values())
+    assert all(params == {} for params in seeded.values())
+
+
+def test_verify_step_ext_point_constant_is_the_discovery_key():
+    """VERIFY_STEP_EXT_POINT must be the canonical ext-point notation, not a constant list."""
+    assert (
+        _config_defaults_mod.VERIFY_STEP_EXT_POINT
+        == 'plan-marshall:extension-api/standards/ext-point-verify-step'
+    )
+    # The hand-maintained constants were removed outright — no parallel registry.
+    assert not hasattr(_config_defaults_mod, 'BUILT_IN_VERIFY_STEPS'), (
+        'BUILT_IN_VERIFY_STEPS must be removed — discovery is the sole source'
+    )
+    assert not hasattr(_config_defaults_mod, 'BUILT_IN_VERIFY_STEP_DESCRIPTIONS'), (
+        'BUILT_IN_VERIFY_STEP_DESCRIPTIONS must be removed — per-step description '
+        'is now a frontmatter field surfaced by the discovery query'
+    )
 
 
 def test_get_default_config_finalize_steps_keyed_map_form_shape():
@@ -1131,7 +1186,8 @@ def test_get_default_config_verification_steps_keyed_map_form_shape():
 
     verification_steps = config['plan']['phase-5-execute']['verification_steps']
     assert isinstance(verification_steps, dict)
-    assert _step_ids(verification_steps) == _config_defaults_mod.BUILT_IN_VERIFY_STEPS
+    # the materialized seed matches the discovered built-in step ids, in seed order
+    assert _step_ids(verification_steps) == _discovered_verify_step_ids()
     # config-less verify steps surface with empty {} param objects.
     assert all(params == {} for params in verification_steps.values())
 

@@ -16,7 +16,6 @@ from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
 
-from _layout_sim import build_phase_layout
 from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json
 
 _SCRIPTS_DIR = (
@@ -45,6 +44,32 @@ cmd_skill_domains = _cmd_skill_domains.cmd_skill_domains
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import run_script  # noqa: E402
+
+_VERIFY_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-verify-step'
+
+
+def _expected_verify_step_ids() -> list[str]:
+    """Return the built-in verify-step ids the rerouted discovery must produce.
+
+    Mirrors ``_config_defaults._verify_step_ids`` — the SOLE discovery path:
+    filter the ``ext-point-verify-step`` implementors to the built-in source,
+    sort by ``(order, name)``, and expand each implementor's ``canonicals`` list
+    into ``default:verify:{canonical}`` ids in list order. The removed
+    ``BUILT_IN_VERIFY_STEPS`` constant is gone; this is its discovery-derived
+    replacement.
+    """
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+
+    built_in = sorted(
+        (rec for rec in find_implementors(_VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),
+        key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
+    )
+    return [
+        f'default:verify:{canonical}'
+        for rec in built_in
+        for canonical in rec.get('canonicals', [])
+    ]
+
 
 # =============================================================================
 # skill-domains Basic Tests (Flat Structure) - Tier 2
@@ -582,8 +607,10 @@ def test_configure_seeds_verification_steps_as_keyed_map(plan_context, monkeypat
     param objects — NOT a flat list. Key insertion order is the execution order,
     and each verify step owns no params so every value is the empty object. This
     is the keyed-map shape the manifest composer's keyed-map-only reader consumes.
+    The built-in set is sourced from the single _seed_verify_steps() discovery
+    query (the removed BUILT_IN_VERIFY_STEPS constant is gone).
     """
-    from _config_defaults import BUILT_IN_VERIFY_STEPS
+    expected_built_in = list(_expected_verify_step_ids())
 
     config = {
         'skill_domains': {},
@@ -613,8 +640,8 @@ def test_configure_seeds_verification_steps_as_keyed_map(plan_context, monkeypat
     # keyed map (dict), not a flat list
     assert isinstance(verification_steps, dict)
     # built-in verify steps lead the insertion order; each maps to empty params
-    built_in_keys = list(verification_steps.keys())[: len(BUILT_IN_VERIFY_STEPS)]
-    assert built_in_keys == list(BUILT_IN_VERIFY_STEPS)
+    built_in_keys = list(verification_steps.keys())[: len(expected_built_in)]
+    assert built_in_keys == expected_built_in
     assert all(params == {} for params in verification_steps.values())
 
 
@@ -1379,71 +1406,76 @@ def test_list_verify_steps_project_skill_without_order_returns_none(tmp_path):
 
 
 # =============================================================================
-# Layout-aware built-in verify step order resolution (source + cache layouts)
+# Rerouted built-in verify-step discovery (find_implementors is the sole path)
 # =============================================================================
-
-_config_defaults = _load_module('_config_defaults', '_config_defaults.py')
-
-
-def _build_source_layout_verify(base: Path) -> Path:
-    """Build a source/marketplace layout: <base>/plan-marshall/skills/phase-5-execute/..."""
-    return build_phase_layout(base, 'phase-5-execute', _config_defaults.BUILT_IN_VERIFY_STEPS, cache_layout=False)
-
-
-def _build_cache_layout_verify(base: Path, version: str = '0.1-BETA') -> Path:
-    """Build a versioned plugin-cache layout: <base>/plan-marshall/<version>/skills/phase-5-execute/..."""
-    return build_phase_layout(
-        base, 'phase-5-execute', _config_defaults.BUILT_IN_VERIFY_STEPS, cache_layout=True, version=version
-    )
+#
+# Built-in verify-step order/layout resolution is now owned by
+# ``extension_discovery.find_implementors`` (the cache-aware doc-root primitives
+# in ``configurable_contract.py``), NOT by ``_cmd_skill_domains.BUNDLES_DIR`` +
+# ``resolve_bundle_path``. The source/cache layout-resolution coverage therefore
+# belongs to the extension-api ``find_implementors`` test suite; the tests below
+# assert that ``_discover_all_verify_steps`` delegates to that query and expands
+# each implementor's ``canonicals`` list correctly.
 
 
-def test_discover_verify_steps_source_layout_resolves_order(tmp_path):
-    """Built-in verify steps resolve non-None order in the source/marketplace layout."""
-    base = _build_source_layout_verify(tmp_path / 'bundles')
+def test_discover_all_verify_steps_built_in_matches_discovery(tmp_path):
+    """Built-in source-1 steps equal the discovery-derived expected ids, in order."""
+    steps = _run_verify_discovery_in_cwd(tmp_path)
 
-    with patch.object(_cmd_skill_domains, 'BUNDLES_DIR', base):
+    built_in_names = [s['name'] for s in steps if s['source'] == 'built-in']
+    assert built_in_names == _expected_verify_step_ids()
+
+
+def test_discover_all_verify_steps_delegates_to_find_implementors(tmp_path):
+    """_discover_all_verify_steps expands a mocked implementor's canonicals list.
+
+    Patching ``find_implementors`` proves the rerouted discovery sources the
+    built-in set from the single extension-discovery query — there is no parallel
+    constant list — and expands ``canonicals`` into ``default:verify:{canonical}``
+    ids in list order, carrying the implementor's ``order`` and ``description``.
+    """
+    fake = [
+        {
+            'name': 'default:verify',
+            'order': 10,
+            'canonicals': ['quality-gate', 'module-tests', 'coverage'],
+            'description': 'Parameterized canonical-verify step',
+            'source': 'built-in',
+        }
+    ]
+    with patch('extension_discovery.find_implementors', return_value=fake):
         steps = _run_verify_discovery_in_cwd(tmp_path)
 
-    built_ins = {s['name']: s for s in steps if s['source'] == 'built-in'}
-    for step_name in _config_defaults.BUILT_IN_VERIFY_STEPS:
-        assert built_ins[step_name]['order'] is not None, (
-            f'{step_name} must resolve a non-None order in source layout, got None'
-        )
+    built_ins = [s for s in steps if s['source'] == 'built-in']
+    assert [s['name'] for s in built_ins] == [
+        'default:verify:quality-gate',
+        'default:verify:module-tests',
+        'default:verify:coverage',
+    ]
+    assert all(s['order'] == 10 for s in built_ins)
+    assert all(s['description'] == 'Parameterized canonical-verify step' for s in built_ins)
 
 
-def test_discover_verify_steps_cache_layout_resolves_order(tmp_path):
-    """Built-in verify steps resolve non-None order in the versioned plugin-cache layout."""
-    base = _build_cache_layout_verify(tmp_path / 'bundles')
+def test_discover_all_verify_steps_empty_implementors_yields_no_built_ins(tmp_path):
+    """No ext-point-verify-step implementors → empty built-in set (fallback path).
 
-    with patch.object(_cmd_skill_domains, 'BUNDLES_DIR', base):
+    The discovery query is the SOLE source of the built-in universe, so an empty
+    implementor list yields zero built-in steps — there is no constant-list
+    fallback that would re-introduce the removed BUILT_IN_VERIFY_STEPS ids.
+    """
+    with patch('extension_discovery.find_implementors', return_value=[]):
         steps = _run_verify_discovery_in_cwd(tmp_path)
 
-    built_ins = {s['name']: s for s in steps if s['source'] == 'built-in'}
-    for step_name in _config_defaults.BUILT_IN_VERIFY_STEPS:
-        assert built_ins[step_name]['order'] is not None, (
-            f'{step_name} must resolve a non-None order in cache layout, got None'
-        )
+    assert [s for s in steps if s['source'] == 'built-in'] == []
 
 
-def test_discover_verify_steps_order_matches_across_layouts(tmp_path):
-    """The same built-in verify order values are resolved in both layouts (no missing_order)."""
-    source_base = _build_source_layout_verify(tmp_path / 'source')
-    cache_base = _build_cache_layout_verify(tmp_path / 'cache')
+def test_seed_verify_steps_empty_implementors_yields_empty_map(tmp_path):
+    """_seed_verify_steps with no implementors yields an empty keyed map (fallback path)."""
+    config_defaults = _load_module('_config_defaults', '_config_defaults.py')
+    with patch('extension_discovery.find_implementors', return_value=[]):
+        seeded = config_defaults._seed_verify_steps()
 
-    with patch.object(_cmd_skill_domains, 'BUNDLES_DIR', source_base):
-        source_steps = {
-            s['name']: s['order'] for s in _run_verify_discovery_in_cwd(tmp_path) if s['source'] == 'built-in'
-        }
-
-    with patch.object(_cmd_skill_domains, 'BUNDLES_DIR', cache_base):
-        cache_steps = {
-            s['name']: s['order'] for s in _run_verify_discovery_in_cwd(tmp_path) if s['source'] == 'built-in'
-        }
-
-    assert source_steps == cache_steps, (
-        f'Built-in verify step orders must match across layouts: {source_steps} != {cache_steps}'
-    )
-    assert all(order is not None for order in cache_steps.values()), 'No built-in verify step may have missing_order'
+    assert seeded == {}
 
 
 # =============================================================================
