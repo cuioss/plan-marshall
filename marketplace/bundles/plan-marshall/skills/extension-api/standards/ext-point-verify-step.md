@@ -6,13 +6,13 @@
 
 A verify step is one canonical verification command in the phase-5-execute pipeline — `quality-gate`, `module-tests` (`verify`), `coverage`, and the whole-tree-only gates `integration-tests` and `e2e`. Every built-in verify step is backed by a single **parameterized** step body doc (`phase-5-execute/standards/canonical_verify.md`): the doc reads the canonical from the trailing segment of a `default:verify:{canonical}` step ID, resolves it via `architecture resolve --command {canonical}`, and runs the resolved executable. The canonical is a parameter, never a hardcoded branch, so one doc backs the whole set.
 
-This extension point names that step-doc archetype so verify steps are identified by an `implements:` frontmatter declaration — the same identification model every other archetype already uses (domain-bundle, build, triage, recipe, outline, self-review, finalize-step) — rather than by hand-maintained registry constants. The declaration IS the membership marker: a step doc that carries `implements: plan-marshall:extension-api/standards/ext-point-verify-step` is a verify-step implementor; one that does not is not. There is no `verify_step: true` marker, no second discovery structure, and no per-source glob.
+This extension point names that step-doc archetype so verify steps are identified by an `implements:` frontmatter declaration — the same identification model every other archetype already uses (domain-bundle, build, triage, recipe, outline, self-review, finalize-step) — rather than by hand-maintained registry constants. The declaration IS the membership marker: a step doc that carries `implements: plan-marshall:extension-api/standards/ext-point-verify-step` is a verify-step implementor; one that does not is not. There is no `verify_step: true` marker and no per-source glob within the built-in discovery surface.
+
+> **Scope of this ext-point**: This extension point governs **built-in** verify steps only — those declared in `phase-5-execute/standards/` and discovered via `implements:` frontmatter. The full verify-step universe surfaced by `_discover_all_verify_steps()` and `cmd_list_verify_steps` also includes **project** `verify-step-*` skills installed under `.claude/skills/`. Project verify steps are not governed by this ext-point and do not declare an `implements:` marker — they are discovered by a directory-name scan in `_discover_all_verify_steps()` as a separate source. The `verification_steps` seed (built-in defaults) and `cmd_list_verify_steps` (full listing) consume different subsets of the total universe; callers that need the full listing use `_discover_all_verify_steps()`, not just `find_implementors()`.
 
 This extension point mirrors [ext-point-finalize-step.md](ext-point-finalize-step.md), which established the `implements:`-frontmatter discovery pattern for the phase-6-finalize step pipeline. The structural difference is the per-step membership shape: a finalize-step doc enumerates exactly one step (it declares a single `name`), whereas a verify-step doc enumerates a **set** of canonicals via a `canonicals:` list that the discovery query expands into one `default:verify:{canonical}` step ID per list entry. The single parameterized `canonical_verify.md` therefore declares the whole built-in canonical set in one frontmatter block.
 
-Discovery routes exclusively through the canonical extension-discovery machinery. The reusable `extension_discovery.find_implementors(...)` query (see [Resolution](#resolution)) enumerates every step doc that declares this interface and returns each step's frontmatter as a structured record carrying the `canonicals` list. The `verification_steps` seed and the `_discover_all_verify_steps()` consumer both CONSUME that one query and expand its `canonicals` lists; neither carries a parallel list.
-
-**Breaking-change context.** This extension point replaces the hand-maintained `BUILT_IN_VERIFY_STEPS` (id-list) and `BUILT_IN_VERIFY_STEP_DESCRIPTIONS` (id→description map) constants that formerly lived in `manage-config/scripts/_config_defaults.py`. Those constants are removed outright — there is no parallel registry, no deprecation shim, and no transitional duplicate. The discovery query is the sole source of the built-in verify-step universe.
+Built-in verify-step discovery routes exclusively through the canonical extension-discovery machinery. The reusable `extension_discovery.find_implementors(...)` query (see [Resolution](#resolution)) enumerates every step doc that declares this interface and returns each step's frontmatter as a structured record carrying the `canonicals` list. The `verification_steps` seed consumes that query and expands its `canonicals` lists into `default:verify:{canonical}` step IDs; it carries no parallel list. The `_discover_all_verify_steps()` consumer also starts from that query for the built-in set, then appends a second source — project `verify-step-*` skills from `.claude/skills/` — so its output is a superset of `find_implementors()` alone.
 
 ## Implementor Requirements
 
@@ -34,14 +34,14 @@ implements:
 
 **Frontmatter is the sole source of truth for verify-step discovery.** The `find_implementors()` scanner reads the `implements:` declaration from each candidate step doc and selects every doc whose declaration includes the canonical value above. The scanner does **not** read the markdown body for a discovery signal, and it does **not** identify a step by a directory-name or filename heuristic. A step doc whose frontmatter omits the declaration is not discovered.
 
-Beyond the `implements:` declaration, each verify-step doc carries the following four-field frontmatter contract. These fields replace the removed `BUILT_IN_VERIFY_STEPS` list and the `BUILT_IN_VERIFY_STEP_DESCRIPTIONS` map as the per-step source of truth:
+Beyond the `implements:` declaration, each verify-step doc carries the following four-field frontmatter contract:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | str | Yes | The parameterized step-doc identity (e.g. `default:verify`). This is the doc's name in the built-in dispatch table; the runnable step IDs are derived per-canonical from `canonicals` (see below), not from `name`. |
 | `order` | int | Yes | Integer position of the parameterized step within the built-in dispatch table. It positions the doc, not the canonicals relative to one another — inter-canonical ordering comes from the `canonicals` list order. |
 | `canonicals` | list[str] | Yes | The verify-step-specific list of canonical command names this doc backs (e.g. `[quality-gate, module-tests, coverage]`). The discovery query expands each entry `C` into a `default:verify:{C}` step ID, in list order. This list IS the built-in verify-step set; an empty list means the doc declares no runnable canonical. |
-| `description` | str | Yes | The human-readable discovery description (shown by the verify-step discovery surface and the wizard). This is the single source of the per-step description, replacing the removed `BUILT_IN_VERIFY_STEP_DESCRIPTIONS` map. |
+| `description` | str | Yes | The human-readable discovery description (shown by the verify-step discovery surface and the wizard). |
 
 **Canonicals expansion.** The discovery consumer expands `canonicals: [quality-gate, module-tests, coverage]` into the ordered step-ID set `[default:verify:quality-gate, default:verify:module-tests, default:verify:coverage]`. List order is execution order: the seed and the discovery surface both preserve it. Each expanded step ID seeds as a config-less keyed-map entry (`{step_id: {}}`) in `verification_steps`.
 
@@ -96,9 +96,11 @@ python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery 
   implementors --ext-point plan-marshall:extension-api/standards/ext-point-verify-step
 ```
 
-The `verification_steps` seed (`_config_defaults.py`) and the `_discover_all_verify_steps()` consumer (`_cmd_skill_domains.py`) both consume the query internally: each reads `find_implementors(VERIFY_STEP_EXT_POINT)`, expands every record's `canonicals` list into `default:verify:{canonical}` step IDs in list order, and seeds each as a config-less keyed-map entry. The per-step `description` is sourced from the implementor record, not from a removed `*_DESCRIPTIONS` map.
+The `verification_steps` seed (`_config_defaults.py`) consumes the query internally: it reads `find_implementors(VERIFY_STEP_EXT_POINT)`, expands every record's `canonicals` list into `default:verify:{canonical}` step IDs in list order, and seeds each as a config-less keyed-map entry. The per-step `description` is sourced from the implementor record.
 
-There is **no parallel glob and no second discovery structure**. The `find_implementors(...)` query is the sole discovery path; the seed and the discovery surface both read its records.
+The `_discover_all_verify_steps()` consumer (`_cmd_skill_domains.py`) starts from the same `find_implementors(VERIFY_STEP_EXT_POINT)` query for the built-in set, then appends project `verify-step-*` skills discovered from `.claude/skills/`. The CLI verb (`implementors --ext-point ...`) returns only the built-in set from `find_implementors()`; it does not include project verify steps.
+
+There is no parallel glob or second discovery structure **within the built-in ext-point surface**. Project verify steps are a distinct source covered by `_discover_all_verify_steps()` and not by this ext-point.
 
 ## Current Implementations
 

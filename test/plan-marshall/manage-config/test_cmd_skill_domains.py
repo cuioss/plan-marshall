@@ -639,10 +639,10 @@ def test_configure_seeds_verification_steps_as_keyed_map(plan_context, monkeypat
     verification_steps = updated['plan']['phase-5-execute']['verification_steps']
     # keyed map (dict), not a flat list
     assert isinstance(verification_steps, dict)
-    # built-in verify steps lead the insertion order; each maps to empty params
-    built_in_keys = list(verification_steps.keys())[: len(expected_built_in)]
-    assert built_in_keys == expected_built_in
-    assert all(params == {} for params in verification_steps.values())
+    # configure fully rewrites the map from _seed_verify_steps(); assert the
+    # complete key set and every entry maps to empty params
+    assert list(verification_steps.keys()) == expected_built_in
+    assert verification_steps == {step_id: {} for step_id in expected_built_in}
 
 
 def test_configure_always_adds_system(plan_context, monkeypatch):
