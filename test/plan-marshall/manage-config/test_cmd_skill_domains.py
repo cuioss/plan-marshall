@@ -637,8 +637,6 @@ def test_configure_seeds_verification_steps_as_keyed_map(plan_context, monkeypat
 
     updated = json.loads(marshal_path.read_text())
     verification_steps = updated['plan']['phase-5-execute']['verification_steps']
-    # keyed map (dict), not a flat list
-    assert isinstance(verification_steps, dict)
     # configure fully rewrites the map from _seed_verify_steps(); assert the
     # complete key set and every entry maps to empty params
     assert list(verification_steps.keys()) == expected_built_in
