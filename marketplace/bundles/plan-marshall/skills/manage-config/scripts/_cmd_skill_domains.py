@@ -422,8 +422,7 @@ def _discover_all_verify_steps() -> list[dict]:
     # implementor declares a ``canonicals`` list, which expands into one
     # ``default:verify:{canonical}`` step ID per entry, in list order. The
     # implementor's ``order`` positions the parameterized doc; the per-step
-    # ``description`` is sourced from the implementor record (replacing the removed
-    # ``BUILT_IN_VERIFY_STEP_DESCRIPTIONS`` map).
+    # ``description`` is sourced from the implementor record.
     built_in = sorted(
         (rec for rec in find_implementors(VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),

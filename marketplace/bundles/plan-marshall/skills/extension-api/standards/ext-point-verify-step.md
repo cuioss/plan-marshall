@@ -110,7 +110,7 @@ The single built-in verify-step implementor lives under `phase-5-execute/standar
 |------|--------|-------|------------|
 | `default:verify` | built-in | 10 | `[quality-gate, module-tests, coverage]` |
 
-The three canonicals expand, in list order, into the built-in step IDs `default:verify:quality-gate`, `default:verify:module-tests`, and `default:verify:coverage` — exactly the set the removed `BUILT_IN_VERIFY_STEPS` constant enumerated, in the same execution order.
+The three canonicals expand, in list order, into the built-in step IDs `default:verify:quality-gate`, `default:verify:module-tests`, and `default:verify:coverage`, in execution order.
 
 ## Related Specifications
 
