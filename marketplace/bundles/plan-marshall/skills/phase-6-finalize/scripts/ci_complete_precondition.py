@@ -185,17 +185,36 @@ def _run_ci_wait(
         '--timeout',
         str(timeout_seconds),
     ]
-    completed = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        # The wait primitive's own --timeout enforces the inner ceiling.
-        # Give the host platform a small buffer beyond it so the inner
-        # ceiling is the binding one.
-        timeout=timeout_seconds + 30,
-        cwd=worktree_path,
-    )
+    try:
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            # The wait primitive's own --timeout enforces the inner ceiling.
+            # Give the host platform a small buffer beyond it so the inner
+            # ceiling is the binding one.
+            timeout=timeout_seconds + 30,
+            cwd=worktree_path,
+        )
+    except subprocess.TimeoutExpired:
+        # The wait subprocess blew past even the outer buffer ceiling
+        # (timeout_seconds + 30) without returning. The inner ``ci wait``
+        # poll loop should have self-bounded at ``timeout_seconds``, so
+        # reaching here means the subprocess wedged. Surface a synthetic
+        # timeout-like envelope instead of letting subprocess.TimeoutExpired
+        # propagate uncaught — resolve() routes any non-success envelope to
+        # the ``wait_failed`` / ``ci_final_status: timeout`` path, and the
+        # ``wait_outcome: deadline_exceeded`` marker lets downstream
+        # consumers classify the precondition decision correctly.
+        return {
+            'status': 'timeout',
+            'wait_outcome': 'deadline_exceeded',
+            'error': (
+                f"ci wait subprocess exceeded the {timeout_seconds + 30}s "
+                f"host ceiling without returning"
+            ),
+        }
     stdout = completed.stdout or ''
     # The executor wraps every script call in TOON output even on error.
     # An empty stdout means the executor itself crashed; surface that as
