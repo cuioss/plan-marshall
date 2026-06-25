@@ -248,8 +248,7 @@ def _verify_step_ids() -> list[str]:
     there is no parallel constant list), filters to the built-in source, sorts
     by ``order``, and expands each implementor's ``canonicals`` list into the
     ordered step-ID set ``default:verify:{canonical}`` (list order is execution
-    order). This is the single source of the built-in verify-step universe that
-    formerly lived in the removed ``BUILT_IN_VERIFY_STEPS`` constant.
+    order). This is the single source of the built-in verify-step universe.
 
     The cross-bundle ``extension_discovery`` module is imported lazily (not at
     module top level) so importing ``_config_defaults`` never pulls in the
