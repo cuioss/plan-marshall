@@ -714,6 +714,90 @@ def test_run_ci_wait_success_envelope_yields_wait_succeeded(plan_context, monkey
 
 
 # ---------------------------------------------------------------------------
+# subprocess.TimeoutExpired except-branch — the ci wait subprocess can blow
+# past even the outer host ceiling (timeout_seconds + 30) and wedge. Before
+# the fix, subprocess.run raised subprocess.TimeoutExpired, which propagated
+# uncaught through _run_ci_wait → resolve → cmd_resolve (cmd_resolve only
+# catches RuntimeError), crashing the precondition resolver with a traceback
+# instead of a TOON-shaped result. The fix catches TimeoutExpired in
+# _run_ci_wait and returns a synthetic timeout-like envelope so resolve()
+# routes it through the wait_failed / ci_final_status: timeout path the same
+# way an inner ci-wait deadline does.
+# ---------------------------------------------------------------------------
+
+
+def _raise_timeout_expired(cmd, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+    """subprocess.run stand-in that always raises TimeoutExpired.
+
+    Mirrors the real signature: subprocess.run forwards its ``timeout``
+    kwarg into the exception so the message can name the breached ceiling.
+    """
+    raise subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs.get('timeout'))
+
+
+def test_run_ci_wait_returns_timeout_envelope_on_subprocess_timeout(monkeypatch):
+    """``_run_ci_wait`` MUST catch ``subprocess.TimeoutExpired`` and return a
+    timeout-like envelope instead of propagating the exception.
+    """
+    monkeypatch.setattr(
+        _resolver_mod.subprocess, 'run', _raise_timeout_expired
+    )
+
+    result = _resolver_mod._run_ci_wait(
+        plan_id='ci-precond-subprocess-timeout',
+        pr_number=_PR,
+        timeout_seconds=DEFAULT_CI_WAIT_TIMEOUT_SECONDS,
+        worktree_path=str(_REPO_ROOT),
+    )
+
+    # The envelope is a dict (no exception escaped) with the timeout markers.
+    assert isinstance(result, dict)
+    assert result['status'] == 'timeout', (
+        'A wedged ci wait subprocess must surface a timeout-like envelope, '
+        f'not {result.get("status")!r}'
+    )
+    assert result['wait_outcome'] == 'deadline_exceeded', (
+        'The deadline_exceeded marker lets downstream consumers classify '
+        'the precondition decision into the timeout triage producer'
+    )
+    # The error message names the breached host ceiling (timeout_seconds + 30).
+    assert 'error' in result
+    assert str(DEFAULT_CI_WAIT_TIMEOUT_SECONDS + 30) in result['error']
+
+
+def test_resolve_routes_subprocess_timeout_to_wait_failed_timeout(
+    plan_context, monkeypatch
+):
+    """End-to-end: a ``subprocess.TimeoutExpired`` from the real
+    ``_run_ci_wait`` (driven through ``resolve`` without the ci_wait_runner
+    seam) MUST resolve to ``wait_failed`` / ``ci_final_status: timeout`` and
+    write no cache entry — the same terminal shape as an inner ci-wait
+    deadline. This pins that the new except-branch envelope threads cleanly
+    through resolve()'s non-success classification.
+    """
+    monkeypatch.setattr(
+        _resolver_mod.subprocess, 'run', _raise_timeout_expired
+    )
+
+    plan_id = 'ci-precond-subprocess-timeout-end-to-end'
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=str(_REPO_ROOT),
+        pr_number=_PR,
+        git_head_resolver=_StubGitHead(_SHA_A),
+    )
+
+    assert result['status'] == 'wait_failed'
+    assert result['head_sha'] == _SHA_A
+    assert result['ci_final_status'] == 'timeout'
+    assert result['wait_outcome'] == 'deadline_exceeded'
+    # Timeout outcomes are never cached — re-entry must re-poll.
+    assert not _cache_path(plan_id).exists(), (
+        'A subprocess-timeout outcome must not be cached'
+    )
+
+
+# ---------------------------------------------------------------------------
 # Run-config-backed CI-wait timeout — deliverable 2. The resolver sources the
 # ``ci wait --timeout`` ceiling from run-configuration.json (command key
 # ``ci:wait``) instead of the hard-coded constant, and records the observed
