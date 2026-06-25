@@ -114,3 +114,5 @@ Type-safe result handling with exhaustive pattern matching:
 
 - `pm-dev-java:java-core` — General Java patterns
 - `pm-dev-java-cui:cui-http-testing` — HTTP testing with CUI MockWebServer
+- `pm-dev-java:java-security` — Generic Java security surface (inbound `jakarta.validation`, secure logging, secrets, startup validation). The `de.cuioss.http.security` pipelines above are the CUI-specific HTTP realization; load java-security for the framework-agnostic Java mechanics — see `java-security/SKILL.md`.
+- `plan-marshall:persona-security-expert` — Cross-cutting security foundations. cui-http documents an inbound HTTP **trust boundary**; the conceptual architecture behind it (allow-list vs deny-list, canonicalize-before-validate, fail-closed) lives in `plan-marshall:persona-security-expert`'s [`standards/input-validation-trust-boundaries.md`](../../../plan-marshall/skills/persona-security-expert/standards/input-validation-trust-boundaries.md).

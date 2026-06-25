@@ -1,10 +1,12 @@
 # Java Application Security Patterns
 
-> **Security surface.** This standard is the OUTBOUND leg (secure logging, secrets, startup validation) of the Java security surface owned by `Skill: pm-dev-java:java-security`. Resolve it through the `security` profile (`skills_by_profile.security`) for security review and hardening tasks.
+> **Security surface.** This standard is the OUTBOUND leg (secure logging, secrets, startup validation) of the Java security surface owned by `Skill: pm-dev-java:java-security`, and lives under this skill's own `standards/` directory. Resolve it through the `security` profile (`skills_by_profile.security`) for security review and hardening tasks. The conceptual foundations — what must never be logged, the secrets lifecycle, secure-design principles — live in [`plan-marshall:persona-security-expert`](../../../../plan-marshall/skills/persona-security-expert/SKILL.md); this standard is the Java *mechanics*.
 
-Security patterns for Java applications. These are language/framework-agnostic practices — applicable to any Java project.
+Security patterns for Java applications. These are language/framework-agnostic practices — applicable to any Java project. For the cross-cutting *why* behind each rule, see the centralized sub-documents referenced inline.
 
 ## Secure Logging
+
+> Conceptual foundation: [`persona-security-expert/standards/secure-logging.md`](../../../../plan-marshall/skills/persona-security-expert/standards/secure-logging.md) (what to log vs mask, log-injection/CRLF defense). This section is the Java realization.
 
 ### Never Log
 
@@ -62,6 +64,8 @@ private boolean isValidAlgorithm(String algorithm) {
 
 ## Anti-Patterns
 
+> Conceptual foundation for secrets handling: [`persona-security-expert/standards/secrets-handling.md`](../../../../plan-marshall/skills/persona-security-expert/standards/secrets-handling.md) (externalization, rotation, hardcoded-credential detection).
+
 ### Hardcoded Secrets
 
 ```java
@@ -112,6 +116,8 @@ void init() {
 ```
 
 ## Security Principles
+
+These are the Java application of the centralized [`persona-security-expert/standards/secure-design-principles.md`](../../../../plan-marshall/skills/persona-security-expert/standards/secure-design-principles.md):
 
 1. **Fail-Fast**: Validate all security configuration at startup
 2. **Defense in Depth**: Multiple layers of security controls
