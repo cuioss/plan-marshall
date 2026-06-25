@@ -13,9 +13,7 @@ import json
 import sys
 from argparse import Namespace
 from pathlib import Path
-from unittest.mock import patch
 
-from _layout_sim import build_phase_layout
 from test_helpers import SCRIPT_PATH, create_marshal_json
 
 _SCRIPTS_DIR = (
@@ -45,7 +43,6 @@ def _load_module(name, filename):
 # does `from _cmd_quality_phases import cmd_phase` — preserving that ordering.
 _cmd_skill_domains = _load_module('_cmd_skill_domains', '_cmd_skill_domains.py')
 _cmd_skill_resolution = _load_module('_cmd_skill_resolution', '_cmd_skill_resolution.py')
-_config_defaults = _load_module('_config_defaults', '_config_defaults.py')
 _cmd_quality_phases = _load_module('_cmd_quality_phases', '_cmd_quality_phases.py')
 _cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
 
@@ -589,73 +586,37 @@ def test_execute_add_step_order_collision_returns_error(plan_context, monkeypatc
 
 
 # =============================================================================
-# Layout-aware set-steps round-trip (cache + source layouts)
+# set-steps round-trip via the rerouted discovery (find_implementors)
 # =============================================================================
+#
+# Built-in verify-step order resolution is now owned by
+# ``extension_discovery.find_implementors`` (the cache-aware doc-root primitives),
+# NOT by ``_cmd_skill_domains.BUNDLES_DIR`` + a synthetic layout sim. The
+# source/cache layout-resolution coverage belongs to the extension-api
+# ``find_implementors`` suite; the round-trip below proves a canonical-verify
+# step resolves its order from the real ``canonical_verify.md`` frontmatter (order
+# 10, no missing_order) when ``set-steps`` runs through the rerouted discovery.
 
 
-def test_execute_set_steps_round_trip_cache_layout(plan_context):
-    """A single canonical-verify step resolves its order from the versioned cache layout.
+def test_execute_set_steps_round_trip_resolves_order(plan_context):
+    """A single canonical-verify step resolves its order via the rerouted discovery.
 
-    The canonical-verify steps all resolve their order from the single
-    `canonical_verify.md` doc; the layout sim writes that one doc for every
-    `default:verify:{canonical}` step. This proves the order resolves (no
-    missing_order) when discovery runs against the versioned plugin-cache shape.
+    ``_discover_all_verify_steps`` sources the built-in set from
+    ``find_implementors``; the real ``canonical_verify.md`` declares ``order: 10``,
+    so ``set-steps`` resolves the step (no missing_order) and persists it as the
+    config-less ``{step_id: {}}`` keyed-map entry.
     """
     create_marshal_json(plan_context.fixture_dir)
-    cache_base = build_phase_layout(
-        plan_context.fixture_dir / 'cache_bundles',
-        'phase-5-execute',
-        _config_defaults.BUILT_IN_VERIFY_STEPS,
-        cache_layout=True,
+
+    result = cmd_plan(
+        Namespace(
+            sub_noun='phase-5-execute',
+            verb='set-steps',
+            steps='default:verify:quality-gate',
+        )
     )
 
-    with (
-        patch.object(_cmd_skill_domains, 'BUNDLES_DIR', cache_base),
-        patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]),
-    ):
-        result = cmd_plan(
-            Namespace(
-                sub_noun='phase-5-execute',
-                verb='set-steps',
-                steps='default:verify:quality-gate',
-            )
-        )
-
-    assert result['status'] == 'success', f'Expected success (no missing_order) in cache layout, got {result}'
-    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    # config-less step persists as a {step_id: {}} entry in the keyed map
-    assert config['plan']['phase-5-execute']['verification_steps'] == {
-        'default:verify:quality-gate': {}
-    }
-
-
-def test_execute_set_steps_round_trip_source_layout(plan_context):
-    """A single canonical-verify step resolves its order from the source layout.
-
-    Mirrors the cache-layout round-trip against the marketplace-source shape;
-    proves `canonical_verify.md`'s order resolves there too (no missing_order).
-    """
-    create_marshal_json(plan_context.fixture_dir)
-    source_base = build_phase_layout(
-        plan_context.fixture_dir / 'source_bundles',
-        'phase-5-execute',
-        _config_defaults.BUILT_IN_VERIFY_STEPS,
-        cache_layout=False,
-    )
-
-    with (
-        patch.object(_cmd_skill_domains, 'BUNDLES_DIR', source_base),
-        patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]),
-    ):
-        result = cmd_plan(
-            Namespace(
-                sub_noun='phase-5-execute',
-                verb='set-steps',
-                steps='default:verify:quality-gate',
-            )
-        )
-
-    assert result['status'] == 'success', f'Expected success (no missing_order) in source layout, got {result}'
+    assert result['status'] == 'success', f'Expected success (no missing_order), got {result}'
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     # config-less step persists as a {step_id: {}} entry in the keyed map
     assert config['plan']['phase-5-execute']['verification_steps'] == {

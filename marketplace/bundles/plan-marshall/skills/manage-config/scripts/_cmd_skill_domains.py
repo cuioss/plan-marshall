@@ -18,14 +18,12 @@ import sys
 from pathlib import Path
 
 from _config_core import (
-    BUNDLES_DIR,
     MarshalNotInitializedError,
     error_exit,
     get_skill_description,
     is_nested_domain,
     load_config,
     require_initialized,
-    resolve_bundle_path,
     save_config,
     success_exit,
 )
@@ -400,7 +398,10 @@ def _discover_all_verify_steps() -> list[dict]:
     """Discover all verify steps from built-in and project sources.
 
     Sources (in order):
-    1. Built-in steps from _config_defaults.BUILT_IN_VERIFY_STEPS
+    1. Built-in steps discovered via ``extension_discovery.find_implementors``
+       on the ``ext-point-verify-step`` interface — each implementor's
+       ``canonicals`` list is expanded into ``default:verify:{canonical}`` step
+       IDs in list order, carrying the implementor's ``order`` and ``description``.
     2. Project verify-step-* skills in .claude/skills/
 
     Each result dict includes an `order` field (int) or `None` when the source
@@ -410,31 +411,35 @@ def _discover_all_verify_steps() -> list[dict]:
     Returns:
         List of step dicts with name, description, type, source, order.
     """
-    from _config_defaults import BUILT_IN_VERIFY_STEP_DESCRIPTIONS, BUILT_IN_VERIFY_STEPS
+    # Lazy import — executor sets PYTHONPATH for cross-skill imports.
+    from _config_defaults import _VERIFY_STEP_PREFIX, VERIFY_STEP_EXT_POINT
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
 
     all_steps: list[dict] = []
 
-    # Source 1: Built-in steps — read order from standards/{name}.md frontmatter.
-    # Every built-in verify step is now the parameterized canonical-verify form
-    # ``default:verify:{canonical}``; all such IDs share the single backing
-    # standards doc ``canonical_verify.md`` (frontmatter ``name: default:verify``,
-    # ``order: 10``). A non-canonical ``default:{name}`` ID (none ship today) falls
-    # back to ``standards/{name}.md`` by its bare segment.
-    for step_name in BUILT_IN_VERIFY_STEPS:
-        bare = step_name.split(':', 1)[1] if ':' in step_name else step_name
-        standards_file = 'canonical_verify' if bare.startswith('verify:') else bare
-        standards_path = resolve_bundle_path(
-            BUNDLES_DIR, 'plan-marshall', f'skills/phase-5-execute/standards/{standards_file}.md'
-        )
-        all_steps.append(
-            {
-                'name': step_name,
-                'description': BUILT_IN_VERIFY_STEP_DESCRIPTIONS.get(step_name, step_name),
-                'type': 'built-in',
-                'source': 'built-in',
-                'order': _read_frontmatter_order(standards_path),
-            }
-        )
+    # Source 1: Built-in steps — discovered via the single find_implementors query
+    # (the SOLE discovery path; there is no parallel constant list). Each
+    # implementor declares a ``canonicals`` list, which expands into one
+    # ``default:verify:{canonical}`` step ID per entry, in list order. The
+    # implementor's ``order`` positions the parameterized doc; the per-step
+    # ``description`` is sourced from the implementor record (replacing the removed
+    # ``BUILT_IN_VERIFY_STEP_DESCRIPTIONS`` map).
+    built_in = sorted(
+        (rec for rec in find_implementors(VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),
+        key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
+    )
+    for rec in built_in:
+        for canonical in rec.get('canonicals', []):
+            step_name = f'{_VERIFY_STEP_PREFIX}{canonical}'
+            all_steps.append(
+                {
+                    'name': step_name,
+                    'description': rec.get('description') or step_name,
+                    'type': 'built-in',
+                    'source': 'built-in',
+                    'order': rec.get('order'),
+                }
+            )
 
     # Source 2: Project verify-step-* skills (across the target's layout roots)
     seen_verify: set[str] = set()
@@ -784,14 +789,16 @@ def cmd_skill_domains(args) -> dict:
         # Verification steps own no params, so every value is the empty object
         # `{}`. Key insertion order is the execution order — this seeds the
         # keyed-map shape that the manifest composer's keyed-map-only reader
-        # (`_read_marshal_phase_steps`, no list fallback) consumes.
-        from _config_defaults import BUILT_IN_VERIFY_STEPS
+        # (`_read_marshal_phase_steps`, no list fallback) consumes. The built-in
+        # step set is sourced from the single `_seed_verify_steps()` discovery
+        # query (expanding each ext-point-verify-step implementor's `canonicals`
+        # list into `default:verify:{canonical}` IDs) — there is no parallel
+        # constant list.
+        from _config_defaults import _seed_verify_steps
 
         plan_config = config.get('plan', {})
         execute_section = plan_config.get('phase-5-execute', {})
-        execute_section['verification_steps'] = {
-            step_id: {} for step_id in BUILT_IN_VERIFY_STEPS
-        }
+        execute_section['verification_steps'] = _seed_verify_steps()
         plan_config['phase-5-execute'] = execute_section
         config['plan'] = plan_config
 

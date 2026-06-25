@@ -225,27 +225,67 @@ DEFAULT_PLAN_PLAN = {
     'effort': 'level-3',
 }
 
-# Built-in verify step names (dispatch table in phase-5-execute SKILL.md).
-# Each step is a parameterized canonical-verify ID of the shape
-# ``default:verify:{canonical}`` — the trailing canonical segment is the
-# parameter phase-5-execute feeds to ``architecture resolve --command
-# {canonical}``, and the composer derives the matrix role from it via
-# ``manage-execution-manifest._CANONICAL_TO_ROLE``. There is one parameterized
-# step backing every canonical; the legacy fixed-name IDs
-# (``default:quality_check`` / ``default:build_verify`` / ``default:coverage_check``)
-# are gone. See ``phase-5-execute/standards/canonical_verify.md``.
-BUILT_IN_VERIFY_STEPS = [
-    'default:verify:quality-gate',
-    'default:verify:module-tests',
-    'default:verify:coverage',
-]
+# Canonical ``implements:`` value that identifies a built-in verify-step doc. The
+# built-in verify-step universe is no longer a hand-maintained list of module
+# constants: membership is DECLARED on the parameterized canonical-verify doc via
+# this ext-point and DISCOVERED through the reusable
+# ``extension_discovery.find_implementors`` query (the seed and the discovery
+# surface both consume that single query and expand each implementor's
+# ``canonicals`` list into ``default:verify:{canonical}`` step IDs in list order).
+# The contract — addressing surface, the per-step frontmatter fields
+# (``name`` / ``order`` / ``canonicals`` / ``description``), the canonicals→step-ID
+# expansion, and the supporting-doc exclusion list — lives in the central standard:
+#   marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-verify-step.md
+# This constant is the discovery key only.
+VERIFY_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-verify-step'
 
-# Human-readable descriptions for built-in verify steps
-BUILT_IN_VERIFY_STEP_DESCRIPTIONS = {
-    'default:verify:quality-gate': 'Run quality-gate build command',
-    'default:verify:module-tests': 'Run full test suite',
-    'default:verify:coverage': 'Run coverage build and verify threshold',
-}
+
+def _verify_step_ids() -> list[str]:
+    """Enumerate the built-in verify-step IDs via extension discovery.
+
+    Discovers every ``ext-point-verify-step`` implementor via the reusable
+    ``extension_discovery.find_implementors`` query (the SOLE discovery path —
+    there is no parallel constant list), filters to the built-in source, sorts
+    by ``order``, and expands each implementor's ``canonicals`` list into the
+    ordered step-ID set ``default:verify:{canonical}`` (list order is execution
+    order). This is the single source of the built-in verify-step universe that
+    formerly lived in the removed ``BUILT_IN_VERIFY_STEPS`` constant.
+
+    The cross-bundle ``extension_discovery`` module is imported lazily (not at
+    module top level) so importing ``_config_defaults`` never pulls in the
+    extension-api parser — the IDs are only materialized when a seed runs.
+
+    Returns:
+        The ordered list of ``default:verify:{canonical}`` step IDs.
+    """
+    # Lazy import — executor sets PYTHONPATH for cross-skill imports.
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+
+    implementors = sorted(
+        (rec for rec in find_implementors(VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),
+        key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
+    )
+    return [
+        f'{_VERIFY_STEP_PREFIX}{canonical}'
+        for rec in implementors
+        for canonical in rec.get('canonicals', [])
+    ]
+
+
+def _seed_verify_steps() -> dict:
+    """Build the verify-step defaults seed in the canonical keyed-map form.
+
+    Expands the discovered built-in verify-step IDs (see :func:`_verify_step_ids`)
+    into the id-keyed map ``{step_id: {}}`` — the sole on-disk shape both read and
+    written. Verification steps own no params, so every value is the empty object
+    ``{}`` (config-less); key insertion order is the execution order.
+
+    Returns:
+        The keyed-map serial form: an id-keyed dict mapping each built-in
+        verify-step ID to an empty param object, in execution order.
+    """
+    return {step_id: {} for step_id in _verify_step_ids()}
+
 
 # Canonical-verify step prefix. A ``per_deliverable_build`` list entry MUST be a
 # ``default:verify:{canonical}`` ID; the prefix-strict validator rejects any
@@ -397,7 +437,12 @@ DEFAULT_PLAN_EXECUTE = {
     # an empty `{}` param object (config-less). The reader
     # (`_steps_map` / `_read_marshal_phase_step_map`) consumes this keyed map
     # directly — it is the sole on-disk shape both read and written.
-    'verification_steps': {step_id: {} for step_id in BUILT_IN_VERIFY_STEPS},
+    #
+    # Seeded lazily by `_seed_verify_steps()` inside `get_default_config()` (the
+    # discovery query cannot run at module import without a hard cross-bundle
+    # dependency on the extension-api parser); this literal `None` placeholder is
+    # replaced there. Mirrors the `DEFAULT_PLAN_FINALIZE['steps']` lazy-seed shape.
+    'verification_steps': None,
     # Per-phase effort default (seeded at init; balanced-preset baseline). The
     # phase-5-execute role group has the `default` (per-task implementation) and
     # `verification-feedback` (build-runner triage) subkeys, so the on-disk shape
@@ -411,8 +456,6 @@ DEFAULT_PLAN_EXECUTE = {
     },
 }
 
-# Built-in finalize step names (dispatch table in phase-6-finalize SKILL.md)
-# Prefixed with 'default:' to distinguish from project: and fully-qualified skill steps
 # Canonical ``implements:`` value that identifies a finalize-step doc. The
 # finalize-step registry is no longer a hand-maintained set of module constants:
 # membership is DECLARED on each step doc via this ext-point and DISCOVERED
@@ -681,6 +724,12 @@ def get_default_config() -> dict:
     # stays free of the cross-bundle parser dependency at import time.
     finalize_section = copy.deepcopy(DEFAULT_PLAN_FINALIZE)
     finalize_section['steps'] = _seed_finalize_steps()
+    # Materialize the verify-step defaults seed lazily via the extension-discovery
+    # query (the `'verification_steps': None` placeholder in DEFAULT_PLAN_EXECUTE is
+    # replaced here). Done after the deepcopy below so the module-level constant
+    # stays free of the cross-bundle parser dependency at import time.
+    execute_section = copy.deepcopy(DEFAULT_PLAN_EXECUTE)
+    execute_section['verification_steps'] = _seed_verify_steps()
     config = {
         'providers': [],
         'project': copy.deepcopy(DEFAULT_PROJECT),
@@ -702,7 +751,7 @@ def get_default_config() -> dict:
             'phase-2-refine': copy.deepcopy(DEFAULT_PLAN_REFINE),
             'phase-3-outline': copy.deepcopy(DEFAULT_PLAN_OUTLINE),
             'phase-4-plan': copy.deepcopy(DEFAULT_PLAN_PLAN),
-            'phase-5-execute': copy.deepcopy(DEFAULT_PLAN_EXECUTE),
+            'phase-5-execute': execute_section,
             'phase-6-finalize': finalize_section,
         },
     }

@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-Extension discovery library.
+Extension discovery library with CLI for configuration operations.
 
 Single source of truth for discovering and loading extension.py files
-from domain bundles. Used by project-structure and manage-config.
-
-Extension discovery library with CLI for configuration operations.
+from domain bundles. Used by manage-config and project-structure.
 """
 
 import importlib.util
@@ -666,15 +664,20 @@ def discover_project_modules(project_root: Path) -> dict[str, Any]:
 
 # The frontmatter keys a finalize-step (and other ext-point) implementor doc
 # declares alongside ``implements:``. The contract for these fields lives in the
-# central standard — see marketplace/bundles/plan-marshall/skills/extension-api/
-# standards/ext-point-finalize-step.md. This list is the parse target, not the
-# contract definition.
+# central standards — see marketplace/bundles/plan-marshall/skills/extension-api/
+# standards/ext-point-finalize-step.md (``name`` / ``order`` / ``default_on`` /
+# ``presets`` / ``description``) and ext-point-verify-step.md (the verify-step
+# ``canonicals`` list). This list is the union parse target across ext-points,
+# not the per-ext-point contract definition: a finalize-step doc declares no
+# ``canonicals`` (defaults to ``[]``), a verify-step doc declares no
+# ``default_on`` / ``presets`` (default to ``False`` / ``[]``).
 _IMPLEMENTOR_FRONTMATTER_KEYS: tuple[str, ...] = (
     'name',
     'order',
     'default_on',
     'presets',
     'description',
+    'canonicals',
 )
 
 
@@ -769,20 +772,28 @@ def _build_implementor_record(doc_path: Path, source: str, name_override: str | 
 
     Returns:
         A record carrying ``name`` / ``order`` / ``default_on`` / ``presets`` /
-        ``description`` / ``source`` / ``path``. Missing frontmatter fields
-        default to safe empty values (``name`` to the empty string, ``order`` to
-        ``0``, ``default_on`` to ``False``, ``presets`` to ``[]``,
-        ``description`` to the empty string).
+        ``canonicals`` / ``description`` / ``source`` / ``path``. Missing
+        frontmatter fields default to safe empty values (``name`` to the empty
+        string, ``order`` to ``0``, ``default_on`` to ``False``, ``presets`` to
+        ``[]``, ``canonicals`` to ``[]``, ``description`` to the empty string).
+        ``presets`` is the finalize-step membership list; ``canonicals`` is the
+        verify-step list the discovery consumer expands into
+        ``default:verify:{canonical}`` step ids. A doc that declares one archetype
+        leaves the other archetype's list at its empty default.
     """
     fields = _read_frontmatter_fields(doc_path, _IMPLEMENTOR_FRONTMATTER_KEYS)
     presets = fields.get('presets', [])
     if not isinstance(presets, list):
         presets = [presets]
+    canonicals = fields.get('canonicals', [])
+    if not isinstance(canonicals, list):
+        canonicals = [canonicals]
     return {
         'name': name_override if name_override is not None else fields.get('name', ''),
         'order': fields.get('order', 0),
         'default_on': bool(fields.get('default_on', False)),
         'presets': presets,
+        'canonicals': canonicals,
         'description': fields.get('description', ''),
         'source': source,
         'path': str(doc_path),
@@ -897,6 +908,44 @@ def _scan_phase6_for_implementors(ext_point: str) -> list[dict[str, Any]]:
     return records
 
 
+def _scan_phase5_for_implementors(ext_point: str) -> list[dict[str, Any]]:
+    """Scan the phase-5-execute standards docs for ``ext_point`` implementors.
+
+    The verify-step counterpart to :func:`_scan_phase6_for_implementors`. Verify
+    steps are built-in body docs under ``phase-5-execute/standards/*.md`` (there
+    is no ``workflow/`` surface for verify steps, so no precedence rule applies).
+    The sole built-in verify-step implementor is ``canonical_verify.md``, whose
+    ``canonicals:`` list the discovery consumer expands into
+    ``default:verify:{canonical}`` step ids. The contract lives in the central
+    standard — see marketplace/bundles/plan-marshall/skills/extension-api/
+    standards/ext-point-verify-step.md.
+
+    The phase-5-execute skill dir is resolved from ``__file__`` via the same
+    ``resolve_skills_root`` identity walk the phase-6 scan and the build-skill
+    discovery use, so the surface stays stable regardless of the process working
+    directory. Returns nothing when the standards dir is absent (a consumer
+    project resolving through a cache layout without the phase-5 standards docs).
+
+    Returns:
+        One ``built-in`` record per matching ``phase-5-execute/standards/*.md``.
+    """
+    docs_dir = resolve_skills_root(Path(__file__)) / 'phase-5-execute' / 'standards'
+    if not docs_dir.is_dir():
+        return []
+
+    records: list[dict[str, Any]] = []
+    try:
+        doc_paths = sorted(docs_dir.glob('*.md'))
+    except OSError:
+        return []
+    for doc_path in doc_paths:
+        if ext_point not in read_implements_field(doc_path):
+            continue
+        records.append(_build_implementor_record(doc_path, 'built-in'))
+
+    return records
+
+
 def _scan_project_for_implementors(ext_point: str) -> list[dict[str, Any]]:
     """Scan project-local ``.claude/skills/finalize-step-*/SKILL.md`` implementors.
 
@@ -945,20 +994,25 @@ def find_implementors(ext_point: str) -> list[dict[str, Any]]:
     """Enumerate every component that declares ``implements: {ext_point}``.
 
     The reusable, first-class discovery query for "who implements ext-point X".
-    It is the SOLE discovery path for the finalize-step registry (the seed, the
-    discovery surface, and the preset builder all consume it); there is no
-    parallel glob. The contract — addressing surface, frontmatter fields, and the
-    supporting-doc exclusion list — lives in the central standard at
+    It is the SOLE discovery path for both the finalize-step registry and the
+    verify-step registry (each registry's seed and discovery surface consume it);
+    there is no parallel glob. The per-ext-point ``implements:`` match keeps the
+    surfaces disjoint — a finalize-step ext-point query never matches the phase-5
+    verify-step doc, and a verify-step query never matches the phase-6 docs — so
+    the union of scan surfaces below does not cross-contaminate results. The
+    contracts — addressing surface, frontmatter fields, and the supporting-doc
+    exclusion list — live in the central standards at
     marketplace/bundles/plan-marshall/skills/extension-api/standards/
-    ext-point-finalize-step.md.
+    ext-point-finalize-step.md and ext-point-verify-step.md.
 
-    Scans three surfaces:
+    Scans four surfaces:
 
     - every bundle's ``skills/*/SKILL.md`` (opt-in ``bundle-optional`` steps),
       across both the source bundles root and the plugin cache roots, so a
       consumer project with no ``marketplace/`` tree resolves through the cache;
-    - ``phase-6-finalize/workflow/*.md`` + ``standards/*.md`` (``built-in`` steps,
-      ``workflow/`` winning on a bare-name collision);
+    - ``phase-6-finalize/workflow/*.md`` + ``standards/*.md`` (finalize ``built-in``
+      steps, ``workflow/`` winning on a bare-name collision);
+    - ``phase-5-execute/standards/*.md`` (verify ``built-in`` steps);
     - project-local ``.claude/skills/finalize-step-*/SKILL.md`` (``project`` steps).
 
     Each surface reuses the cache-aware ``configurable_contract`` primitives for
@@ -966,15 +1020,17 @@ def find_implementors(ext_point: str) -> list[dict[str, Any]]:
 
     Args:
         ext_point: The canonical ext-point value, e.g.
-            ``plan-marshall:extension-api/standards/ext-point-finalize-step``.
+            ``plan-marshall:extension-api/standards/ext-point-finalize-step`` or
+            ``plan-marshall:extension-api/standards/ext-point-verify-step``.
 
     Returns:
         A list of per-implementor records, sorted by ``order`` then ``name``.
         Each record carries ``name`` / ``order`` / ``default_on`` / ``presets`` /
-        ``description`` / ``source`` / ``path``.
+        ``canonicals`` / ``description`` / ``source`` / ``path``.
     """
     records: list[dict[str, Any]] = []
     records.extend(_scan_phase6_for_implementors(ext_point))
+    records.extend(_scan_phase5_for_implementors(ext_point))
     records.extend(_scan_skills_roots_for_implementors(ext_point))
     records.extend(_scan_project_for_implementors(ext_point))
     records.sort(key=lambda rec: (rec.get('order', 0), rec.get('name', '')))
@@ -1059,6 +1115,7 @@ def cmd_implementors(args) -> int:
             'order': rec.get('order', 0),
             'default_on': rec.get('default_on', False),
             'presets': rec.get('presets', []),
+            'canonicals': rec.get('canonicals', []),
             'description': rec.get('description', ''),
             'source': rec.get('source', ''),
             'path': rec.get('path', ''),

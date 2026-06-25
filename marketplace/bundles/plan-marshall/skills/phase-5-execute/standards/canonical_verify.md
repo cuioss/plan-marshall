@@ -1,14 +1,19 @@
 ---
+implements: plan-marshall:extension-api/standards/ext-point-verify-step
 name: default:verify
 description: Parameterized canonical-verify step — resolves a canonical command and runs it
 order: 10
+canonicals:
+  - quality-gate
+  - module-tests
+  - coverage
 ---
 
 # Canonical Verify
 
-Single **parameterized** built-in verification step that backs every canonical command. The step ID encodes the canonical as its trailing segment — `default:verify:{canonical}` — e.g. `default:verify:quality-gate`, `default:verify:module-tests`, `default:verify:coverage`, `default:verify:integration-tests`, `default:verify:e2e`. The step reads the canonical from the ID, resolves it via `architecture resolve --command {canonical}`, honours the returned `execution_tier` / `bash_timeout_seconds`, runs the resolved executable, and reports pass/fail.
+Single **parameterized** built-in verification step that backs every canonical command. The step ID encodes the canonical as its trailing segment — `default:verify:{canonical}` — e.g. `default:verify:quality-gate`, `default:verify:module-tests`, `default:verify:coverage`. The step reads the canonical from the ID, resolves it via `architecture resolve --command {canonical}`, honours the returned `execution_tier` / `bash_timeout_seconds`, runs the resolved executable, and reports pass/fail.
 
-This one doc backs **every** canonical (`compile`, `quality-gate`, `module-tests` / `verify`, `coverage`, `integration-tests`, `e2e`, …). The canonical is a **parameter**, never a hardcoded branch — there is no per-canonical doc and no per-canonical `role:` frontmatter file. The step has **no `role:` frontmatter line**: the matrix role is derived from the trailing canonical segment by the composer (`manage-execution-manifest._role_of` — see [`../../manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md)), keyed on this table:
+The `canonicals:` frontmatter (`quality-gate`, `module-tests`, `coverage`) is the machine-readable source for discovery-backed seeding — `find_implementors()` expands this list into the built-in `default:verify:{canonical}` step IDs that `verification_steps` seeds. The canonical is a **parameter**, never a hardcoded branch — there is no per-canonical doc and no per-canonical `role:` frontmatter file. The step has **no `role:` frontmatter line**: the matrix role is derived from the trailing canonical segment by the composer (`manage-execution-manifest._role_of` — see [`../../manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md)), keyed on this table:
 
 | canonical segment | derived `role:` |
 |-------------------|-----------------|
