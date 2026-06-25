@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-Extension discovery library.
+Extension discovery library with CLI for configuration operations.
 
 Single source of truth for discovering and loading extension.py files
-from domain bundles. Used by project-structure and manage-config.
-
-Extension discovery library with CLI for configuration operations.
+from domain bundles. Used by manage-config and project-structure.
 """
 
 import importlib.util

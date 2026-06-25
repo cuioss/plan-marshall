@@ -456,8 +456,6 @@ DEFAULT_PLAN_EXECUTE = {
     },
 }
 
-# Built-in finalize step names (dispatch table in phase-6-finalize SKILL.md)
-# Prefixed with 'default:' to distinguish from project: and fully-qualified skill steps
 # Canonical ``implements:`` value that identifies a finalize-step doc. The
 # finalize-step registry is no longer a hand-maintained set of module constants:
 # membership is DECLARED on each step doc via this ext-point and DISCOVERED
