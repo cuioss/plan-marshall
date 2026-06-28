@@ -9,7 +9,7 @@ FSL's competing-use restriction during the licensed period (e.g., proprietary or
 closed-source deployments that compete with the software), commercial licenses
 are available.
 
-Inquire: https://github.com/cuioss/plan-marshall/issues/new?template=commercial-licensing.yml
+Inquire: https://github.com/cuioss/plan-marshall/issues/new/choose
 
 ---
 
