@@ -80,10 +80,44 @@ On a failed boundary check, **reject** — deny by default; never silently coerc
 
 ---
 
+## Specific Boundary-Crossing Attack Classes
+
+The three classes below are each a distinct failure at a particular trust boundary — a *URL* the server fetches, a *byte stream* the server deserializes, a *file* the server stores. They share this document's discipline (canonicalize, allow-list, fail closed) but each has a sink-specific control that the generic rules above do not supply, so each gets its own treatment here.
+
+### Server-Side Request Forgery (SSRF)
+
+**Maps to:** CWE-918 · OWASP A01 · ASVS V2
+
+**Threat.** An application fetches a remote resource using a URL it took from a request (an image-fetcher, a webhook callback, a document importer) without constraining the destination. The server — which sits *inside* the network perimeter — becomes a proxy the attacker steers at internal targets a remote client could never reach. The flagship abuse is cloud-credential theft: a request for `http://169.254.169.254/` reaches the instance metadata service and returns the host's IAM credentials, escalating to full account compromise. Attackers also use SSRF for internal port-scanning and to hit unauthenticated internal services (Redis, Elasticsearch) bound to localhost.
+
+**Mitigation.** Validate the **host** of the user-supplied URL against a strict **allow-list** of trusted destinations — never accept and follow an arbitrary attacker-supplied URL. Restrict the scheme to `http`/`https`, and **disable HTTP redirect following** so an allow-listed host cannot 302-bounce the request into the internal range. Block the cloud metadata endpoint and migrate to a hardened metadata service (e.g. AWS IMDSv2 with IMDSv1 disabled). Enforce **network egress controls** — outbound firewall rules that permit only the legitimate downstream services — as the defense-in-depth layer behind the application check. Mitigate **DNS rebinding** by re-resolving allow-listed domains and rejecting any that resolve into private/link-local ranges. Deny-lists of private CIDR ranges (`127/8`, `10/8`, `172.16/12`, `192.168/16`, link-local) are a **last resort only** — they are bypassed via hex/octal/decimal IP encodings and DNS rebinding, so they never substitute for the host allow-list.
+
+**Detection.** Log every outbound fetch with its resolved destination; alert on requests to private/link-local addresses or the metadata IP. A fetch whose resolved host fell outside the allow-list is a high-signal indicator of an active probe.
+
+### Unsafe Deserialization of Untrusted Data
+
+**Maps to:** CWE-502 · OWASP A08 · ASVS V2
+
+**Threat.** Deserializing an attacker-controlled byte stream with a *native* object format reconstructs whatever object graph the bytes describe — which lets an attacker instantiate unexpected types and trigger "gadget chains" already on the classpath, escalating to denial of service, access-control bypass, or remote code execution. The danger is that the vulnerability lives in the *act of deserializing*, before any application code inspects the result, so input validation "after" deserialization is too late.
+
+**Mitigation.** **Never deserialize untrusted data with a native serialization format.** Prefer pure-data interchange (JSON, XML) parsed with a restricted, type-constrained parser, and **cryptographically sign or authenticate** any serialized payload before deserializing it so a tampered stream is rejected up front. Per-language sink mechanics: Java — install an `ObjectInputFilter` allow-list (JEP-290 / `-Djdk.serialFilter`), mark sensitive fields `private transient`, and avoid `XMLDecoder` and vulnerable XStream versions; Python — avoid `pickle` entirely for untrusted input and use `yaml.safe_load()` rather than `yaml.load()` (see [`pm-dev-python:python-security`](../../../../pm-dev-python/skills/python-security/SKILL.md)); .NET — avoid `BinaryFormatter` (it cannot be secured), set `TypeNameHandling.None`, and use a `SerializationBinder` allow-list. Java sink detail lives in [`pm-dev-java:java-security`](../../../../pm-dev-java/skills/java-security/SKILL.md).
+
+**Detection.** Flag any call that deserializes a request-sourced stream with a native deserializer (`ObjectInputStream.readObject`, `pickle.load`, `BinaryFormatter.Deserialize`). A base64 blob beginning with a known native-serialization magic prefix (Java `rO0`, Python pickle opcodes) crossing the boundary is a strong tampering signal.
+
+### Unrestricted File Upload
+
+**Maps to:** CWE-434 · OWASP A02 · ASVS V5
+
+**Threat.** An upload endpoint that trusts the client-declared type or filename lets an attacker store executable content in a web-accessible location and run it — `shell.jpg.php`, a double-extension or null-byte trick (`shell.php%00.jpg`), or a polyglot file that is both a valid image and a valid script. Execution of the uploaded file yields server takeover. Decompression bombs (a tiny archive expanding to gigabytes) are the denial-of-service variant.
+
+**Mitigation.** Validate the file **type by content / magic bytes, not by the `Content-Type` header or the extension**, and rewrite images to strip embedded payloads. Apply an extension **allow-list evaluated *after* the filename is fully decoded** (defeating double-extension and `%00` tricks) — never a deny-list. Enforce **size limits measured post-decompression** plus rate limits to stop zip bombs. **Store uploads outside the web root** and serve them through an application handler that maps opaque IDs to files, with **randomized filenames** (UUIDs, no caller-supplied extension). Run malware / content-disarm-and-reconstruction scanning before the file is stored, **never permit script execution in upload directories** (web-server configuration plus least-privilege filesystem permissions), and enforce authorization before any stored file is served.
+
+**Detection.** Reject-and-log every upload whose magic-byte type disagrees with its declared type or fails the extension allow-list; these mismatches are rarely benign. Alert on attempts to retrieve an uploaded path with an executable extension.
+
 ## Cross-References
 
 - [`threat-modeling-stride.md`](threat-modeling-stride.md) — finding every trust boundary; Tampering control mapping.
-- [`owasp-top-ten.md`](owasp-top-ten.md) — A03 Injection, A01 Broken Access Control (semantic ownership checks).
+- [`owasp-top-ten.md`](owasp-top-ten.md) — Injection, Broken Access Control (semantic ownership checks; SSRF as an access-control concern), and Software and Data Integrity Failures (deserialization).
 - [`authentication-authorization.md`](authentication-authorization.md) — IDOR/BOLA, the access-control side of semantic validation.
 - [`secure-design-principles.md`](secure-design-principles.md) — fail securely, complete mediation.
 - [`secure-logging.md`](secure-logging.md) — sanitizing untrusted data at the log sink.

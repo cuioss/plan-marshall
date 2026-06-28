@@ -69,6 +69,7 @@ This skill is a **thin pointer**: the DOM-sink taxonomy above is genuinely runti
 | The DOM as a trust boundary; the safe-default text sink; why allow-list sanitization beats deny-list filtering | [`input-validation-trust-boundaries.md`](../../../plan-marshall/skills/persona-security-expert/standards/input-validation-trust-boundaries.md) |
 | The XSS sinks mapped to a recognized risk category (A03 Injection / XSS) | [`owasp-top-ten.md`](../../../plan-marshall/skills/persona-security-expert/standards/owasp-top-ten.md) |
 | Why the text-treating sink is the secure default and Trusted Types/CSP harden by default | [`secure-design-principles.md`](../../../plan-marshall/skills/persona-security-expert/standards/secure-design-principles.md) |
+| The Content-Security-Policy directives and `require-trusted-types-for 'script'` header that back the DOM Trusted Types mechanic | [`owasp-top-ten.md`](../../../plan-marshall/skills/persona-security-expert/standards/owasp-top-ten.md) — Security Headers and Content Security Policy |
 
 ## Related Skills
 

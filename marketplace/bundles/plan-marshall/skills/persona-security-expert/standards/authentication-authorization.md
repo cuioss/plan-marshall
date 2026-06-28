@@ -14,7 +14,7 @@ Source of record: OWASP Cheat Sheets ([Authentication](https://cheatsheetseries.
 - Fallbacks: scrypt (N = 2^17, r = 8, p = 1); bcrypt (work factor ≥ 10, but note the 72-byte input limit); PBKDF2-HMAC-SHA-256 ≥ 600,000 iterations *only* where FIPS compliance is required.
 - Use a unique CSPRNG salt (≥ 32 bits) per password. **Peppering** (a separate secret added before hashing) is valid defense-in-depth.
 
-Memory-handling caveats (e.g. Java `String` is immutable and cannot be zeroed — use `char[]`/`byte[]`) are per-language and live in [`pm-dev-java:java-security`](../../../../pm-dev-java/skills/java-security/SKILL.md); the secret-storage angle is in [`secrets-handling.md`](secrets-handling.md).
+Password hashing is deliberately a *separate discipline* from general-purpose integrity hashing — a slow, memory-hard, salted KDF, never a fast SHA-family hash. The reasoning, and the integrity-hash side of the distinction, are in [`cryptography-key-management.md`](cryptography-key-management.md) ("Hashing Is Not One Thing"); the password-storage parameters above are the authoritative source for the slow-hash side. Memory-handling caveats (e.g. Java `String` is immutable and cannot be zeroed — use `char[]`/`byte[]`) are per-language and live in [`pm-dev-java:java-security`](../../../../pm-dev-java/skills/java-security/SKILL.md); the secret-storage angle is in [`secrets-handling.md`](secrets-handling.md).
 
 ### Password Policy (NIST 800-63B + ASVS)
 
@@ -38,7 +38,7 @@ Factor hierarchy (strongest first):
 
 - Session tokens ≥ 64 bits entropy via CSPRNG; opaque and unpredictable; metadata held server-side.
 - Cookies: `Secure`, `HttpOnly`, `SameSite=Strict` (or `Lax`; never `None` without `Secure`). Use the `__Host-` prefix. Avoid descriptive names (e.g. `PHPSESSID`).
-- **Never store tokens in `localStorage`/`sessionStorage`** (XSS-readable).
+- **Never store tokens in `localStorage`/`sessionStorage`** (XSS-readable). The browser-enforced header layer that complements secure cookies (CSP, HSTS, `frame-ancestors`) is catalogued in [`owasp-top-ten.md`](owasp-top-ten.md) (Security Headers and Content Security Policy).
 - **Regenerate the session ID after login and any privilege/role change** — the core session-fixation defense. Invalidate server-side on logout.
 - Enforce **both** idle and absolute timeouts server-side: OWASP idle 2–5 min (high-value) / 15–30 min (lower-risk), absolute 4–8 h. NIST reauth: AAL1 ≤ 30 days; AAL2 every 12 h or after 30 min idle; AAL3 every 12 h or after 15 min idle.
 
@@ -90,9 +90,37 @@ Broken Access Control is OWASP A01 and appears in 94% of tested apps. Root cause
 
 ---
 
+## API Security
+
+**Maps to:** CWE-285 · CWE-639 · CWE-799 · OWASP A01 · ASVS V4
+
+APIs expose object identifiers and operations directly to clients, with no server-rendered UI to mask them — so **authorization dominates** API risk (three of the OWASP API Security Top 10's top five are authorization failures). The web access-control rules above apply in full; this section covers the API-specific shape they take plus the token and rate-limit controls particular to API surfaces.
+
+### Authorization at the API Surface
+
+- **Broken Object-Level Authorization (BOLA)** — the API equivalent of IDOR: a caller manipulates an object ID in the path or body (`/users/123/profile`) to reach another user's data. **Validate the caller's permission for *every* object accessed via a user-supplied ID** (the user-scoped-query rule above), and prefer non-sequential / indirect references. A valid token is not authorization to a specific object.
+- **Broken Function-Level Authorization (BFLA)** — a regular user invokes an unprotected privileged endpoint (`/api/admin/delete-user`). Separate admin from regular functions and apply **default-deny role checks on every endpoint** (the missing-function-level-access-control rule above, applied to API routes).
+- **Broken Object Property-Level Authorization (BOPLA)** — authorize at the **property** level, not just the object level: allow-list which properties each role may read and which it may write, and reject any attempt to modify a restricted field (the mass-assignment defense). Returning or accepting a whole object without per-property filtering leaks or lets a caller set fields they should never control.
+
+### Token Validation (OAuth 2.0 / OIDC)
+
+- **Validate the access token on every request** — verify the signature against the issuer's published keys, and check the `iss`, `aud`, and `exp` claims; reject a token whose audience is not this API. Pin the expected signing algorithm (never let the token header select it, and never accept `alg: none`) — the signature-verification discipline is in [`cryptography-key-management.md`](cryptography-key-management.md).
+- Use **short-lived access tokens** with refresh-token rotation; support OAuth revocation so a compromised token can be cut off before its natural expiry (the short-lived-JWT control in [A01](owasp-top-ten.md)).
+- Re-derive the caller's effective permissions server-side from the validated token's identity; never trust a client-supplied scope or role parameter.
+
+### API Key Hygiene and Rate Limiting
+
+- **Treat API keys as secrets** — issue them per-consumer, scope them to the minimum operations, store them in a secret manager, and rotate them (the storage and rotation operations are owned by [`secrets-handling.md`](secrets-handling.md)). An API key authenticates a *client*, not a *user*, and is not a substitute for per-request object-level authorization.
+- **Unrestricted Resource Consumption** — enforce rate limiting and throttling per consumer, set quotas on resource-intensive operations, and cap calls to paid third-party services (SMS, email) so an attacker cannot drive cost or denial of service through the API. Rate limiting also slows the brute-force / enumeration attacks the anti-automation rules above defend against.
+
+Cheat sheets: [REST Security](https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html), [OAuth 2.0 Protocol](https://cheatsheetseries.owasp.org/cheatsheets/OAuth2_Cheat_Sheet.html). See also the [OWASP API Security Top 10](https://owasp.org/API-Security/).
+
+---
+
 ## Cross-References
 
-- [`owasp-top-ten.md`](owasp-top-ten.md) — A01 Broken Access Control, A07 Authentication Failures, A02 Cryptographic Failures (password hashing).
+- [`owasp-top-ten.md`](owasp-top-ten.md) — A01 Broken Access Control, A07 Authentication Failures, A04 Cryptographic Failures (password hashing), and the Security Headers / CSP catalogue.
+- [`cryptography-key-management.md`](cryptography-key-management.md) — the password-hashing-vs-integrity-hashing distinction, CSPRNG for tokens/salts, token signature verification, and key storage.
 - [`threat-modeling-stride.md`](threat-modeling-stride.md) — Spoofing (authentication) and Elevation of Privilege (authorization) control mappings.
 - [`input-validation-trust-boundaries.md`](input-validation-trust-boundaries.md) — semantic validation (ownership) as the access-control complement to syntactic checks.
 - [`secrets-handling.md`](secrets-handling.md) — credential and key storage.

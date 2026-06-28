@@ -1,7 +1,10 @@
 = Design Influences
 :nofooter:
 :toc: left
-:toclevels: 2
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
@@ -40,3 +43,104 @@ findings taxonomy rather than printing prose reports; shortcuts run inline yet
 still create a plan-directory; verification stays encoded (committed e2e tests, not
 a live browser daemon), and interactive exploration is left to the user's own
 tools.
+
+== Security-methodology skillset
+
+The cross-cutting security knowledge in `persona-security-expert` (the
+authoritative index of standards lives in
+xref:../../marketplace/bundles/plan-marshall/skills/persona-security-expert/SKILL.md[the persona-security-expert SKILL.md])
+was informed by several published security frameworks and code-analysis skillsets.
+The debt is conceptual and structural — recognised taxonomies, a threat-modeling
+method, a cross-mapping convention, and a knowledge-skill organisation pattern —
+never copied prose. Every standards document was authored fresh in plan-marshall's
+own vocabulary; the sources below shaped *what categories exist* and *how the
+documents are structured*, not the wording.
+
+Nature of the influence, by area:
+
+* *Risk taxonomy.* The OWASP Top 10 (2025 numbering) supplies the recognised
+  category baseline that every standards document maps findings to (the `Maps to:`
+  lines). This is a *learned-from* influence: the category names and IDs are factual
+  references, and the explanatory prose under each is original.
+
+* *Threat-modeling method.* STRIDE supplies the per-threat decomposition method
+  behind `threat-modeling-stride.md`. *Learned-from* — the method is applied, the
+  worked examples are original.
+
+* *Supply-chain frameworks.* SLSA (build-provenance levels), the OWASP SCVS control
+  families, and the NIST SSDF / SP 800-57/800-52 guidance shaped the structure of
+  `dependency-supply-chain.md` and `cryptography-key-management.md`. *Learned-from* —
+  the level definitions and control-family names are factual references; the
+  mitigations are paraphrased and re-expressed.
+
+* *Cross-mapping convention.* The inline `Maps to: CWE-NNN · OWASP AXX · ASVS Vn`
+  convention adopts the *structure* of the Semgrep rule-metadata cross-map and the
+  CodeQL `external/cwe/cwe-NNN` tag pattern, plus the agentskills.io frontmatter
+  `metadata` map. *Structure-adopted* — the convention's shape is reused; no rule
+  text is copied.
+
+* *Knowledge-skill organisation.* The cheatsheet-first progressive-disclosure shape
+  (a concise index up front, full per-topic depth loaded on demand) and the
+  definition → attack-scenario → mitigation → detection unit structure echo the
+  Trail of Bits `skills-curated` / `scv-scan` template and the Anthropic
+  claude-code-security-review methodology. *Structure-adopted* — these are knowledge
+  skills, not scanners, so the organisation is adopted, not the scanner pipeline.
+
+== Security-source licenses and attribution
+
+The sources below were *learned from and attributed*, never copied verbatim. Several
+are share-alike (CC-BY-SA) — their *prose* must not be copied into this
+differently-licensed project, so all authored content is paraphrased and original.
+One source, the Semgrep Rules License v1.0, is the single non-OSI,
+commercial-use-restricted entry; only its rule-metadata *structure* was learned
+from, and no rule text was reused.
+
+[cols="3,2,1,3", options="header"]
+|===
+| Source | License | Copyleft | Nature of influence
+
+| OWASP Top 10 / ASVS / Proactive Controls / Code Review Guide
+| CC-BY-SA-4.0
+| Yes
+| Learned-from — risk taxonomy and requirement IDs; paraphrase only, attributed to OWASP
+
+| Trail of Bits `skills-curated` (repo)
+| CC-BY-SA-4.0
+| Yes
+| Structure-adopted — cheatsheet-first / per-class reference shape; paraphrase only, attributed to Trail of Bits
+
+| Trail of Bits Testing Handbook (appsec.guide)
+| CC-BY-4.0
+| No
+| Learned-from — code-analysis methodology framing; attributed to Trail of Bits
+
+| Semgrep rules (semgrep/semgrep-rules)
+| Semgrep Rules License v1.0 (non-OSI, commercial-use restricted)
+| No
+| Structure-adopted — CWE/OWASP rule-metadata cross-map convention only; no rule text reused
+
+| CodeQL query library / suites (github/codeql)
+| MIT
+| No
+| Structure-adopted — `external/cwe/cwe-NNN` cross-map tag pattern; attributed to GitHub
+
+| Anthropic claude-code-security-review
+| MIT
+| No
+| Structure-adopted — LLM security-review output shape and exclusion-list pattern; attributed to Anthropic
+
+| SLSA (slsa.dev)
+| CC-BY-4.0
+| No
+| Learned-from — build-provenance level definitions; attributed to the OpenSSF SLSA project
+
+| NIST SP 800-57 / 800-52 / 800-131A, FIPS 186-5, NIST SSDF
+| Public domain (U.S. Government work)
+| No
+| Learned-from — key-management, TLS, and signature guidance; cited as factual reference
+
+| agentskills.io SKILL.md open standard
+| Open standard (Anthropic-originated)
+| No
+| Structure-adopted — progressive-disclosure skill format and `metadata` cross-map hook; conformance, attributed as "conforms to the SKILL.md open standard"
+|===
