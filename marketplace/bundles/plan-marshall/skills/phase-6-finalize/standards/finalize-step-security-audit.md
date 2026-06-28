@@ -65,7 +65,7 @@ The step derives the plan's live footprint on demand from the worktree (engine s
 The engine's stage 1 (footprint) and stage 2 (affected domains) run as documented in the engine contract. From the stage-2 affected-domain set, resolve each domain's `skills_by_profile.security` skills via the Extension API to assemble the `extra_security_skills` input:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:extension-api:extension-api resolve-skills \
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_api resolve-skills \
   --profile security --plan-id {plan_id}
 ```
 
