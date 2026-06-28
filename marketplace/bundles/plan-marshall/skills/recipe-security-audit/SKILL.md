@@ -4,6 +4,8 @@ description: On-demand security-audit recipe that runs the shared five-stage aud
 user-invocable: false
 mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-recipe
+metadata:
+  verification_profile: security
 ---
 
 # Recipe: Security Audit
@@ -80,9 +82,9 @@ Walk the engine's five stages in order, passing this recipe's inputs (`plan_id`,
 2. **Stage 2 — Detect affected domains** via `manage-architecture which-module` per footprint path; collect the distinct module set.
 3. **Stage 3 — Gather best-effort security context** — load exactly the three action-general skills the engine names (`plan-marshall:persona-security-expert`, `plan-marshall:untrusted-ingestion`, `plan-marshall:workflow-permission-web`). This is the complete on-demand context set — NOT the `security` profile.
 4. **Stage 4 — Run the cognitive audit** — the LLM security review across the full footprint, applying the stage-3 context (OWASP Top Ten, STRIDE, trust boundaries, injection sinks, untrusted-input handling, secrets, supply chain).
-5. **Stage 5 — Emit findings and dispatch to triage** — one `manage-findings add` per issue (`type` = `bug` for a concrete defect, `anti-pattern` for a risky structural pattern), then dispatch each finding to its domain `ext-triage-*` extension keyed on the stage-2 module.
+5. **Stage 5 — Emit findings, verify, and dispatch to triage** — one `manage-findings add` per issue (`type` = `bug` for a concrete defect, `anti-pattern` for a risky structural pattern). This recipe declares `verification_profile: security` (see the frontmatter `metadata:` block above), so each emitted finding passes through the [verify stage](../extension-api/standards/ext-point-verify.md) adversarial-refute pass FIRST: refuted false positives close `rejected` and never reach triage, while confirmed (surviving) findings dispatch to their domain `ext-triage-*` extension keyed on the stage-2 module.
 
-The stage bodies — exact commands, flag rules, and the no-`security-issue` taxonomy constraint — are the engine standard's, not this skill's. Follow them as written there.
+The stage bodies — exact commands, flag rules, the verify-then-triage routing, and the no-`security-issue` taxonomy constraint — are the engine standard's, not this skill's. Follow them as written there.
 
 ---
 

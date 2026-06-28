@@ -39,6 +39,8 @@ This is the unified read surface — see `manage-findings` Canonical invocations
 
 This is **by-reference** — the store is the single source of truth. Loop-back re-entry sees only findings still `pending`; the orchestrator's earlier query is just a gate-keeping count.
 
+> **Verify pre-stage may have already closed refuted findings.** This loop sees only the confirmed survivors of any verify pre-stage — refuted false positives are already non-pending and never appear in the `--resolution pending` query above. See [`ext-point-verify.md`](../../extension-api/standards/ext-point-verify.md) for the full verify-stage contract.
+
 **If empty** → return immediately with `status: success`, `display_detail: "0 finding(s) — nothing to triage"`, `loop_back_needed: false`.
 
 ## Step 2: Pre-group by `(domain, rule_id)`

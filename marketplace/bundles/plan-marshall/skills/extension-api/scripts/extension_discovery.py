@@ -666,11 +666,15 @@ def discover_project_modules(project_root: Path) -> dict[str, Any]:
 # declares alongside ``implements:``. The contract for these fields lives in the
 # central standards — see marketplace/bundles/plan-marshall/skills/extension-api/
 # standards/ext-point-finalize-step.md (``name`` / ``order`` / ``default_on`` /
-# ``presets`` / ``description``) and ext-point-verify-step.md (the verify-step
-# ``canonicals`` list). This list is the union parse target across ext-points,
-# not the per-ext-point contract definition: a finalize-step doc declares no
-# ``canonicals`` (defaults to ``[]``), a verify-step doc declares no
-# ``default_on`` / ``presets`` (default to ``False`` / ``[]``).
+# ``presets`` / ``description``), ext-point-build-verify-step.md (the verify-step
+# ``canonicals`` list), and ext-point-verify.md (the producer-declared
+# ``verification_profile``). This list is the union parse target across
+# ext-points, not the per-ext-point contract definition: a finalize-step doc
+# declares no ``canonicals`` (defaults to ``[]``), a verify-step doc declares no
+# ``default_on`` / ``presets`` (default to ``False`` / ``[]``), and most docs
+# declare no ``verification_profile`` (its ABSENCE is the signal that the
+# producer does not participate in the verify stage — see
+# :func:`_build_implementor_record` for why it is the one field NOT defaulted).
 _IMPLEMENTOR_FRONTMATTER_KEYS: tuple[str, ...] = (
     'name',
     'order',
@@ -678,6 +682,7 @@ _IMPLEMENTOR_FRONTMATTER_KEYS: tuple[str, ...] = (
     'presets',
     'description',
     'canonicals',
+    'verification_profile',
 )
 
 
@@ -691,9 +696,19 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
     block sequence (``key:`` followed by ``- item`` lines, used for ``presets``).
     Keys absent from the frontmatter are simply omitted from the result.
 
+    A requested key may also be declared one level deep under the ``metadata:``
+    mapping (``metadata:`` followed by indented ``key: value`` lines, as
+    ``recipe-security-audit`` declares ``metadata.verification_profile``). Such a
+    nested declaration is surfaced under the bare key name, so the implementor
+    record sees ``verification_profile`` whether the producer declared it at the
+    top level or inside the ``metadata:`` block. A top-level declaration always
+    wins over a ``metadata:``-nested one of the same name; other indented blocks
+    (e.g. a per-parameter ``configurable:`` mapping) are still skipped.
+
     Args:
         doc_path: Path to the doc whose ``---``-fenced frontmatter is read.
-        keys: The top-level frontmatter keys to extract.
+        keys: The frontmatter keys to extract (each read at the top level or from
+            the ``metadata:`` block).
 
     Returns:
         A dict mapping each present key to its coerced scalar value, or to a
@@ -711,6 +726,7 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
         return {}
 
     fields: dict[str, Any] = {}
+    metadata_fields: dict[str, Any] = {}
     index = 0
     while index < len(fm_lines):
         raw_line = fm_lines[index]
@@ -726,6 +742,45 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
             continue
         key, _, value = line.partition(':')
         key = key.strip()
+
+        # The ``metadata:`` mapping carries one-level-deep declarations such as
+        # ``metadata.verification_profile``. Descend into its indented ``key:
+        # value`` lines and record any REQUESTED key found there. The block ends
+        # at the next non-indented line (or end of frontmatter). Nested values are
+        # surfaced under the bare key, but only as a fallback — a top-level
+        # declaration of the same key wins (applied after the scan completes).
+        if key == 'metadata' and not value.strip():
+            # ``metadata:`` keys are one level deep ONLY. Track the indentation of
+            # the first child line; any subsequent line indented MORE deeply belongs
+            # to a nested block (e.g. ``metadata.some_block.verification_profile``)
+            # and must NOT be surfaced as a top-level metadata opt-in. Such deeper
+            # lines are skipped while the block continues.
+            child_indent: int | None = None
+            while index < len(fm_lines):
+                meta_raw = fm_lines[index]
+                if meta_raw[:1] not in (' ', '\t'):
+                    break
+                index += 1
+                meta_line = meta_raw.strip()
+                if not meta_line or meta_line.startswith('#') or ':' not in meta_line:
+                    continue
+                meta_indent = len(meta_raw) - len(meta_raw.lstrip(' \t'))
+                if child_indent is None:
+                    child_indent = meta_indent
+                elif meta_indent > child_indent:
+                    # Deeper than the first child → nested sub-block; skip it.
+                    continue
+                meta_key, _, meta_value = meta_line.partition(':')
+                meta_key = meta_key.strip()
+                if meta_key not in keys:
+                    continue
+                meta_inline = meta_value.strip()
+                if meta_inline:
+                    metadata_fields[meta_key] = (
+                        [] if meta_inline == '[]' else _coerce_scalar(meta_inline)
+                    )
+            continue
+
         if key not in keys:
             continue
 
@@ -752,6 +807,11 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
             items.append(_coerce_scalar(seq[2:]))
             index += 1
         fields[key] = items
+
+    # Surface ``metadata:``-nested declarations under the bare key, but never let
+    # them shadow a top-level declaration of the same name.
+    for meta_key, meta_val in metadata_fields.items():
+        fields.setdefault(meta_key, meta_val)
 
     return fields
 
@@ -780,6 +840,14 @@ def _build_implementor_record(doc_path: Path, source: str, name_override: str | 
         verify-step list the discovery consumer expands into
         ``default:verify:{canonical}`` step ids. A doc that declares one archetype
         leaves the other archetype's list at its empty default.
+
+        ``verification_profile`` (the ext-point-verify producer declaration) is
+        the one field NOT defaulted: it is present in the record ONLY when the
+        doc declares it. Its ABSENCE is the contract signal that the producer
+        does not participate in the verify stage — see ext-point-verify.md
+        § "Hook API". A consumer enumerates participating producers by testing
+        ``'verification_profile' in record`` rather than checking a sentinel
+        value.
     """
     fields = _read_frontmatter_fields(doc_path, _IMPLEMENTOR_FRONTMATTER_KEYS)
     presets = fields.get('presets', [])
@@ -788,7 +856,7 @@ def _build_implementor_record(doc_path: Path, source: str, name_override: str | 
     canonicals = fields.get('canonicals', [])
     if not isinstance(canonicals, list):
         canonicals = [canonicals]
-    return {
+    record: dict[str, Any] = {
         'name': name_override if name_override is not None else fields.get('name', ''),
         'order': fields.get('order', 0),
         'default_on': bool(fields.get('default_on', False)),
@@ -798,6 +866,17 @@ def _build_implementor_record(doc_path: Path, source: str, name_override: str | 
         'source': source,
         'path': str(doc_path),
     }
+    # ``verification_profile`` is surfaced ONLY when declared with a non-null,
+    # non-empty value — its absence (or a null/empty declaration) is the
+    # ext-point-verify signal that the producer does not participate in the verify
+    # stage (ext-point-verify.md § "Hook API"). A bare ``verification_profile:``
+    # with no value coerces to ``None`` and MUST NOT register the producer, so the
+    # membership test guards on the coerced value rather than mere key presence.
+    vp = fields.get('verification_profile')
+    vp_nonempty = vp.strip() != '' if isinstance(vp, str) else bool(vp)
+    if vp_nonempty:
+        record['verification_profile'] = vp
+    return record
 
 
 def _scan_skills_roots_for_implementors(ext_point: str) -> list[dict[str, Any]]:
@@ -918,7 +997,7 @@ def _scan_phase5_for_implementors(ext_point: str) -> list[dict[str, Any]]:
     ``canonicals:`` list the discovery consumer expands into
     ``default:verify:{canonical}`` step ids. The contract lives in the central
     standard — see marketplace/bundles/plan-marshall/skills/extension-api/
-    standards/ext-point-verify-step.md.
+    standards/ext-point-build-verify-step.md.
 
     The phase-5-execute skill dir is resolved from ``__file__`` via the same
     ``resolve_skills_root`` identity walk the phase-6 scan and the build-skill
@@ -1003,7 +1082,7 @@ def find_implementors(ext_point: str) -> list[dict[str, Any]]:
     contracts — addressing surface, frontmatter fields, and the supporting-doc
     exclusion list — live in the central standards at
     marketplace/bundles/plan-marshall/skills/extension-api/standards/
-    ext-point-finalize-step.md and ext-point-verify-step.md.
+    ext-point-finalize-step.md and ext-point-build-verify-step.md.
 
     Scans four surfaces:
 
@@ -1021,7 +1100,7 @@ def find_implementors(ext_point: str) -> list[dict[str, Any]]:
     Args:
         ext_point: The canonical ext-point value, e.g.
             ``plan-marshall:extension-api/standards/ext-point-finalize-step`` or
-            ``plan-marshall:extension-api/standards/ext-point-verify-step``.
+            ``plan-marshall:extension-api/standards/ext-point-build-verify-step``.
 
     Returns:
         A list of per-implementor records, sorted by ``order`` then ``name``.
@@ -1109,8 +1188,9 @@ def cmd_implementors(args) -> int:
     :func:`cmd_list_retrospective_aspects`).
     """
     records = find_implementors(args.ext_point)
-    rows: list[dict[str, Any]] = [
-        {
+    rows: list[dict[str, Any]] = []
+    for rec in records:
+        row: dict[str, Any] = {
             'name': rec.get('name', ''),
             'order': rec.get('order', 0),
             'default_on': rec.get('default_on', False),
@@ -1120,8 +1200,12 @@ def cmd_implementors(args) -> int:
             'source': rec.get('source', ''),
             'path': rec.get('path', ''),
         }
-        for rec in records
-    ]
+        # Surfaced only when the producer declared it (absence is the
+        # ext-point-verify non-participation signal) — keep the record's
+        # present/absent semantics in the emitted row.
+        if 'verification_profile' in rec:
+            row['verification_profile'] = rec['verification_profile']
+        rows.append(row)
     print(
         serialize_toon(
             {

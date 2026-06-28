@@ -480,7 +480,7 @@ def test_finding_resolve(plan_context):
 
 def test_finding_resolve_all_statuses(plan_context):
     """Test all resolution statuses."""
-    resolutions = ['pending', 'fixed', 'suppressed', 'accepted']
+    resolutions = ['pending', 'fixed', 'suppressed', 'accepted', 'taken_into_account', 'rejected']
     for res in resolutions:
         add_result = cmd_add(_add_ns(type='bug', title=f'Bug for {res}', detail='d'))
         hash_id = str(add_result['hash_id'])
@@ -816,7 +816,7 @@ def test_qgate_resolve_taken_into_account(plan_context):
 
 def test_qgate_resolve_all_statuses(plan_context):
     """Test all resolution statuses for Q-Gate findings."""
-    resolutions = ['pending', 'fixed', 'suppressed', 'accepted', 'taken_into_account']
+    resolutions = ['pending', 'fixed', 'suppressed', 'accepted', 'taken_into_account', 'rejected']
     for res in resolutions:
         add_result = cmd_qgate_add(
             _qgate_add_ns(
@@ -1151,6 +1151,40 @@ def test_unified_query_excludes_resolved_qgate(plan_context):
             plan_id=pid,
             hash_id=str(resolved['hash_id']),
             resolution='taken_into_account',
+            phase='5-execute',
+        )
+    )
+
+    unified = cmd_query(_query_ns(plan_id=pid, include_qgate=True))
+    assert unified['qgate_count'] == 1
+    titles = {f['title'] for f in unified['findings']}
+    assert titles == {'Stays pending'}
+
+
+def test_unified_query_excludes_rejected_qgate(plan_context):
+    """A `rejected` q-gate finding is non-pending: dropped from the unified gate read.
+
+    The ext-point-verify findings pipeline adds `rejected` as a terminal,
+    non-blocking resolution. Through the CLI command layer, a q-gate finding
+    resolved to `rejected` must be excluded from `list --include-qgate` exactly
+    like a `taken_into_account` finding.
+    """
+    pid = 'unified-rejected-nonpending'
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id=pid, phase='5-execute', source='qgate', type='triage', title='Stays pending', detail='d'
+        )
+    )
+    rejected = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id=pid, phase='5-execute', source='qgate', type='triage', title='Gets rejected', detail='d'
+        )
+    )
+    cmd_qgate_resolve(
+        _qgate_resolve_ns(
+            plan_id=pid,
+            hash_id=str(rejected['hash_id']),
+            resolution='rejected',
             phase='5-execute',
         )
     )

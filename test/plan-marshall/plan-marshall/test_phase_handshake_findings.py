@@ -19,6 +19,8 @@ the fixed rule.
 
 from __future__ import annotations
 
+import types
+
 import pytest
 
 from _handshake_fixtures import (
@@ -293,6 +295,145 @@ def test_capture_blocking_count_excludes_resolved_findings(
     assert result['invariants']['pending_findings_blocking_count'] in (0, '0')
     row = store.get_row('pf-accepted', '6-finalize')
     assert row is not None
+
+
+# --- (d2) rejected resolution is non-pending → never blocks --------------
+#
+# rejected is the validity-verification (ext-point-verify) refuted-finding
+# state. Like accepted / taken_into_account it is non-pending: the pending
+# query filters --resolution pending, so a rejected finding is never returned
+# and contributes zero to the blocking count. These tests prove it through the
+# REAL findings store and the full cmd_capture handshake.
+
+
+def _make_findings_run_script_stub():
+    """Return a _run_script stub dispatching manage-findings queries in-process.
+
+    Drives ``manage-findings list`` / ``qgate list`` through the real
+    ``_findings_core`` engine so the handshake gate reads the genuine store
+    written by ``add_finding`` / ``resolve_finding``.
+    """
+    from _findings_core import query_findings, query_qgate_findings  # type: ignore[import-not-found]
+    from file_ops import serialize_toon  # type: ignore[import-not-found]
+
+    def _flag(args: list[str], name: str) -> str | None:
+        if name in args:
+            i = args.index(name)
+            if i + 1 < len(args):
+                return args[i + 1]
+        return None
+
+    def _stub(args: list[str]) -> str | None:
+        if len(args) < 4 or args[0] != 'plan-marshall:manage-findings:manage-findings':
+            return None
+        plan_id = _flag(args, '--plan-id')
+        if plan_id is None:
+            return None
+        resolution = _flag(args, '--resolution')
+        if args[1] == 'qgate' and len(args) > 2 and args[2] == 'list':
+            phase = _flag(args, '--phase')
+            if phase is None:
+                return None
+            return serialize_toon(query_qgate_findings(plan_id, phase, resolution=resolution))
+        if args[1] == 'list':
+            return serialize_toon(
+                query_findings(plan_id, finding_type=_flag(args, '--type'), resolution=resolution)
+            )
+        return None
+
+    return _stub
+
+
+@pytest.fixture
+def real_findings_store(monkeypatch: pytest.MonkeyPatch):
+    """Redirect ``inv._run_script`` to the real-store stub and expose helpers."""
+    from _findings_core import (  # type: ignore[import-not-found]
+        add_finding,
+        add_qgate_finding,
+        resolve_finding,
+        resolve_qgate_finding,
+    )
+
+    monkeypatch.setattr(inv, '_run_script', _make_findings_run_script_stub())
+    return types.SimpleNamespace(
+        add_finding=add_finding,
+        add_qgate_finding=add_qgate_finding,
+        resolve_finding=resolve_finding,
+        resolve_qgate_finding=resolve_qgate_finding,
+    )
+
+
+def test_query_pending_count_filters_rejected_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_query_pending_count_for_type`` queries ``--resolution pending`` so a
+    rejected finding (any non-pending resolution) is filtered out by the store."""
+    captured: list[list[str]] = []
+
+    def _fake_run(args: list[str]) -> str:
+        captured.append(args)
+        return 'filtered_count: 0\n'
+
+    monkeypatch.setattr(inv, '_run_script', _fake_run)
+
+    inv._query_pending_count_for_type('any-plan', 'sonar-issue')
+
+    args = captured[0]
+    assert args[args.index('--resolution') + 1] == 'pending'
+
+
+def test_capture_at_finalize_succeeds_when_only_rejected_finding_present(
+    plan_context, only_pending_findings_invariants, stub_metadata, real_findings_store
+) -> None:
+    """End-to-end: a 6-finalize capture clears when the sole actionable finding
+    has been resolved ``rejected`` (the central non-blocking proof)."""
+    pid = 'pf-rejected-only'
+    r = real_findings_store.add_finding(pid, 'sonar-issue', 'Refuted sonar', 'Detail')
+    real_findings_store.resolve_finding(pid, r['hash_id'], 'rejected')
+
+    result = cmds.cmd_capture(_ns(plan_id=pid, phase='6-finalize'))
+
+    assert result['status'] == 'success'
+    assert result['invariants']['pending_findings_blocking_count'] in (0, '0')
+    row = store.get_row(pid, '6-finalize')
+    assert row is not None
+    assert row['pending_findings_blocking_count'] in (0, '0')
+
+
+def test_capture_at_finalize_succeeds_when_qgate_finding_rejected(
+    plan_context, only_pending_findings_invariants, stub_metadata, real_findings_store
+) -> None:
+    """A Q-Gate finding resolved ``rejected`` drops out of the aggregated pending
+    count; the 6-finalize boundary clears."""
+    pid = 'pf-qgate-rejected'
+    r = real_findings_store.add_qgate_finding(
+        pid, '5-execute', 'qgate', 'test-failure', 'Refuted QG', 'Detail'
+    )
+    real_findings_store.resolve_qgate_finding(pid, '5-execute', r['hash_id'], 'rejected')
+
+    result = cmds.cmd_capture(_ns(plan_id=pid, phase='6-finalize'))
+
+    assert result['status'] == 'success'
+    assert result['invariants']['pending_findings_blocking_count'] in (0, '0')
+
+
+def test_capture_blocks_at_finalize_when_genuine_pending_alongside_rejected(
+    plan_context, only_pending_findings_invariants, stub_metadata, real_findings_store
+) -> None:
+    """Regression: a rejected finding does NOT mask a genuinely pending one —
+    the 6-finalize boundary still blocks on the real pending finding."""
+    pid = 'pf-rejected-plus-pending'
+    refuted = real_findings_store.add_finding(pid, 'sonar-issue', 'Refuted', 'Detail')
+    real_findings_store.resolve_finding(pid, refuted['hash_id'], 'rejected')
+    real_findings_store.add_finding(pid, 'sonar-issue', 'Genuine defect', 'Detail')
+
+    result = cmds.cmd_capture(_ns(plan_id=pid, phase='6-finalize'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'blocking_findings_present'
+    assert result['blocking_count'] == 1
+    assert result['per_type']['sonar-issue'] == 1
+    assert store.get_row(pid, '6-finalize') is None
 
 
 # --- (e) qgate aggregation across all phase files ------------------------

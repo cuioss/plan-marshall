@@ -71,6 +71,19 @@ cmd_list = _query.cmd_list
 cmd_read = _query.cmd_read
 cmd_finalize_step = _step.cmd_finalize_step
 
+# Real findings store engine — drives the rejected-resolution non-blocking tests
+# end-to-end (real add + real resolve-to-rejected + real pending query) rather
+# than mocking the pending count.
+_findings_core = load_script_module(
+    'plan-marshall', 'manage-findings', '_findings_core.py', '_invariants_test_findings_core'
+)
+add_finding = _findings_core.add_finding
+add_qgate_finding = _findings_core.add_qgate_finding
+resolve_finding = _findings_core.resolve_finding
+resolve_qgate_finding = _findings_core.resolve_qgate_finding
+query_findings = _findings_core.query_findings
+query_qgate_findings = _findings_core.query_qgate_findings
+
 
 # =============================================================================
 # Helpers: create tasks via the manage-tasks path-allocate flow.
@@ -1261,6 +1274,142 @@ def test_blocking_count_returns_none_on_qgate_query_failure(monkeypatch) -> None
     result = inv._capture_pending_findings_blocking_count('plan-qgate-fail', {}, '5-execute')
 
     assert result is None
+
+
+# =============================================================================
+# rejected resolution: provably non-blocking in the findings gate
+#
+# These tests drive the REAL findings store (_findings_core add + resolve) and
+# the REAL _capture_pending_findings_blocking_count path, with _run_script
+# stubbed to dispatch manage-findings list / qgate list in-process. They prove
+# that a finding closed with resolution=rejected contributes zero to the
+# blocking count and never raises BlockingFindingsPresent — and that a genuinely
+# pending finding still blocks (the regression guard).
+# =============================================================================
+
+
+def _make_findings_stub_run_script():
+    """Return a _run_script stub dispatching manage-findings queries in-process.
+
+    Routes ``manage-findings list --type T --resolution pending`` to the real
+    ``query_findings`` and ``manage-findings qgate list --phase P --resolution
+    pending`` to the real ``query_qgate_findings`` so the blocking-count capture
+    reads the genuine store written by add_finding / resolve_finding.
+    """
+    from file_ops import serialize_toon  # type: ignore[import-not-found]
+
+    def _flag(args: list[str], name: str) -> str | None:
+        if name in args:
+            i = args.index(name)
+            if i + 1 < len(args):
+                return args[i + 1]
+        return None
+
+    def _stub(args: list[str]) -> str | None:
+        if len(args) < 4:
+            return None
+        if args[0] != 'plan-marshall:manage-findings:manage-findings':
+            return None
+        plan_id = _flag(args, '--plan-id')
+        if plan_id is None:
+            return None
+        resolution = _flag(args, '--resolution')
+        # qgate list path: ['...', 'qgate', 'list', '--plan-id', ..., '--phase', P, ...]
+        if args[1] == 'qgate' and len(args) > 2 and args[2] == 'list':
+            phase = _flag(args, '--phase')
+            if phase is None:
+                return None
+            return serialize_toon(query_qgate_findings(plan_id, phase, resolution=resolution))
+        # plan list path: ['...', 'list', '--plan-id', ..., '--type', T, '--resolution', R]
+        if args[1] == 'list':
+            finding_type = _flag(args, '--type')
+            return serialize_toon(
+                query_findings(plan_id, finding_type=finding_type, resolution=resolution)
+            )
+        return None
+
+    return _stub
+
+
+@pytest.fixture
+def stub_findings_run_script(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Redirect ``inv._run_script`` to the in-process findings-store stub."""
+    monkeypatch.setattr(inv, '_run_script', _make_findings_stub_run_script())
+
+
+def test_rejected_plan_finding_contributes_zero_to_blocking_count(
+    plan_context, stub_findings_run_script
+) -> None:
+    """A plan finding resolved to ``rejected`` is non-pending → not counted."""
+    pid = 'inv-rejected-plan-zero'
+    r = add_finding(pid, 'sonar-issue', 'Refuted sonar', 'Detail')
+    resolve_finding(pid, r['hash_id'], 'rejected')
+
+    count = inv._query_pending_count_for_type(pid, 'sonar-issue')
+
+    assert count == 0, 'a rejected finding must not be returned by the pending query'
+
+
+def test_rejected_only_finding_does_not_raise_at_guarded_boundary(
+    plan_context, stub_findings_run_script
+) -> None:
+    """A rejected finding is the only entry; the gate passes at 6-finalize.
+
+    The refuted finding must NOT raise BlockingFindingsPresent — the central
+    proof that ``rejected`` is non-blocking end-to-end.
+    """
+    pid = 'inv-rejected-only-passes'
+    r = add_finding(pid, 'lint-issue', 'False-positive lint', 'Detail')
+    resolve_finding(pid, r['hash_id'], 'rejected')
+
+    # Must NOT raise even at the guarded 6-finalize boundary.
+    result = inv._capture_pending_findings_blocking_count(pid, {}, '6-finalize')
+
+    assert result == 0
+
+
+def test_rejected_qgate_finding_does_not_raise_at_guarded_boundary(
+    plan_context, stub_findings_run_script
+) -> None:
+    """A Q-Gate finding resolved to ``rejected`` is excluded from the gate."""
+    pid = 'inv-rejected-qgate-passes'
+    r = add_qgate_finding(pid, '5-execute', 'qgate', 'test-failure', 'Refuted QG', 'Detail')
+    resolve_qgate_finding(pid, '5-execute', r['hash_id'], 'rejected')
+
+    result = inv._capture_pending_findings_blocking_count(pid, {}, '6-finalize')
+
+    assert result == 0
+
+
+def test_genuinely_pending_finding_still_blocks_at_guarded_boundary(
+    plan_context, stub_findings_run_script
+) -> None:
+    """Regression guard: a real pending actionable finding STILL blocks.
+
+    Confirms the rejected carve-out did not weaken the gate for genuine
+    pending findings.
+    """
+    pid = 'inv-pending-still-blocks'
+    add_finding(pid, 'sonar-issue', 'Genuine sonar defect', 'Detail')
+
+    with pytest.raises(inv.BlockingFindingsPresent) as excinfo:
+        inv._capture_pending_findings_blocking_count(pid, {}, '6-finalize')
+
+    assert excinfo.value.blocking_count == 1
+
+
+def test_rejected_alongside_pending_counts_only_the_pending(
+    plan_context, stub_findings_run_script
+) -> None:
+    """A rejected finding sitting next to a pending one does not inflate the count."""
+    pid = 'inv-rejected-plus-pending'
+    refuted = add_finding(pid, 'sonar-issue', 'Refuted', 'Detail')
+    resolve_finding(pid, refuted['hash_id'], 'rejected')
+    add_finding(pid, 'sonar-issue', 'Real defect', 'Detail')
+
+    count = inv._query_pending_count_for_type(pid, 'sonar-issue')
+
+    assert count == 1, 'only the genuinely pending finding is counted'
 
 
 # =============================================================================

@@ -76,7 +76,7 @@ Each line in a `findings/{type}.jsonl` file is a JSON object:
 | `title` | string | Short description of the finding |
 | `detail` | string | Full description with context |
 | `severity` | string | `error`, `warning`, or `info` (default: `warning`) |
-| `resolution` | string | `pending`, `fixed`, `suppressed`, `accepted`, or `taken_into_account` |
+| `resolution` | string | `pending`, `fixed`, `suppressed`, `accepted`, `taken_into_account`, or `rejected` |
 
 ### Optional Fields
 
@@ -96,7 +96,7 @@ For `pr-comment` findings, the queryable `author`, `kind`, `reviewed_commit_sha`
 
 ### Resolution semantics
 
-The `resolution` field carries five values. `pending` is the initial state; the other four represent ways a finding has been *addressed*. Only `pending` contributes to the `pending_findings_blocking_count` invariant that gates phase boundaries (see [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) § Per-phase blocking partition).
+The `resolution` field carries six values. `pending` is the initial state; the other five represent ways a finding has been *addressed*. Only `pending` contributes to the `pending_findings_blocking_count` invariant that gates phase boundaries (see [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) § Per-phase blocking partition) — every non-`pending` value, including `rejected`, is excluded from the blocking count.
 
 | Resolution | Meaning | Effect on source tree | Recorded detail |
 |------------|---------|------------------------|------------------|
@@ -105,8 +105,9 @@ The `resolution` field carries five values. `pending` is the initial state; the 
 | `suppressed` | An inline annotation has been added at the finding's location with a documented rationale. The underlying behaviour stays; the linter/Sonar/reviewer is told to stop flagging it for the stated reason. | Inline annotation (`// NOSONAR …`, `# noqa: …`, language-specific) plus rationale comment | `resolution_detail` carries the rationale text. |
 | `accepted` | The finding is acknowledged and the disposition is to leave the code as-is. No annotation; no source change. The rationale lives only in the finding record. | None | `resolution_detail` carries the rationale text. |
 | `taken_into_account` | The finding informed a higher-order change rather than producing a direct fix or suppression — typically a Q-Gate finding that drove an outline restructure, a phasing-rationale block, or a scope adjustment. Closest in spirit to "noted and absorbed." | Indirect — the higher-order change is the response | `resolution_detail` names the higher-order change (e.g. the section added to `solution_outline.md`). |
+| `rejected` | The validity-verification ([ext-point-verify](../../extension-api/standards/ext-point-verify.md)) stage refuted the finding as invalid / a false positive. No source change; the finding is terminal and non-blocking (does not contribute to `pending_findings_blocking_count`) and never reaches triage. | None | `resolution_detail` carries the refutation rationale. |
 
-The four addressed values are not interchangeable. `fixed` removes the problem; `suppressed` and `accepted` document a decision to keep it; `taken_into_account` records that the feedback shaped something other than a direct fix. The triage workflow ([`plan-marshall/workflow/triage.md`](../../plan-marshall/workflow/triage.md)) and the per-domain `ext-triage-{domain}` standards (under each domain bundle) decide which value applies in each case.
+The five addressed values are not interchangeable. `fixed` removes the problem; `suppressed` and `accepted` document a decision to keep it; `taken_into_account` records that the feedback shaped something other than a direct fix; `rejected` records that the finding was never a real defect (set by the verify stage, distinct from `accepted`, which keeps a real finding as-is). The triage workflow ([`plan-marshall/workflow/triage.md`](../../plan-marshall/workflow/triage.md)) and the per-domain `ext-triage-{domain}` standards (under each domain bundle) decide which value applies in each case; `rejected` is set earlier, by the verify pre-stage, before triage runs.
 
 ### Promotion Fields
 

@@ -945,18 +945,18 @@ def test_find_implementors_finalize_records_carry_empty_canonicals():
 # (phase-5-execute/standards/*.md) and a ``canonicals`` list field. The sole
 # built-in implementor is canonical_verify.md, whose canonicals list the
 # discovery consumer expands into default:verify:{canonical} step ids. The
-# contract lives in ext-point-verify-step.md.
+# contract lives in ext-point-build-verify-step.md.
 
-_VERIFY_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-verify-step'
+_BUILD_VERIFY_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-build-verify-step'
 
 
 def test_find_implementors_discovers_canonical_verify():
-    """find_implementors(VERIFY_STEP_EXT_POINT) discovers the canonical_verify.md doc.
+    """find_implementors(BUILD_VERIFY_STEP_EXT_POINT) discovers the canonical_verify.md doc.
 
     The central regression for this deliverable: the phase-5-execute standards
     scan surface surfaces the verify-step implementor over the live tree.
     """
-    records = _discovery.find_implementors(_VERIFY_STEP_EXT_POINT)
+    records = _discovery.find_implementors(_BUILD_VERIFY_STEP_EXT_POINT)
 
     assert records, 'Expected the canonical_verify verify-step implementor'
     paths = [rec['path'] for rec in records]
@@ -972,7 +972,7 @@ def test_find_implementors_verify_record_carries_canonicals_list():
     step backs (quality-gate / module-tests / coverage), which the discovery
     consumer expands into default:verify:{canonical} step ids.
     """
-    records = _discovery.find_implementors(_VERIFY_STEP_EXT_POINT)
+    records = _discovery.find_implementors(_BUILD_VERIFY_STEP_EXT_POINT)
     by_name = {rec['name']: rec for rec in records}
 
     assert 'default:verify' in by_name, (
@@ -992,7 +992,7 @@ def test_find_implementors_verify_surface_does_not_leak_finalize_steps():
     disjoint: querying the verify ext-point must not return any phase-6 finalize
     step, and vice versa.
     """
-    verify_records = _discovery.find_implementors(_VERIFY_STEP_EXT_POINT)
+    verify_records = _discovery.find_implementors(_BUILD_VERIFY_STEP_EXT_POINT)
     verify_paths = [rec['path'] for rec in verify_records]
     assert not any('phase-6-finalize' in p for p in verify_paths), (
         f'verify-step query must not surface phase-6 docs; got {verify_paths}'
@@ -1014,3 +1014,194 @@ def test_find_implementors_finalize_unaffected_by_phase5_surface():
     # The finalize surfaces (built-in / bundle-optional / project) are all still present.
     sources = {rec['source'] for rec in finalize_records}
     assert {'built-in', 'bundle-optional', 'project'} <= sources
+
+
+# =============================================================================
+# Implementor record — verification_profile (ext-point-verify producer field)
+# =============================================================================
+#
+# The ext-point-verify producer opts into the validity-verification stage by
+# declaring a ``verification_profile``. The implementor-record parse surfaces the
+# field WHEN DECLARED; its ABSENCE is the contract signal that the producer does
+# not participate (ext-point-verify.md § "Hook API"). Unlike the other record
+# fields, ``verification_profile`` is NOT defaulted — a record without the key is
+# the "does not participate" state. These tests drive ``_build_implementor_record``
+# directly over synthetic docs so coverage does not depend on a live producer
+# having declared the field.
+
+
+def _write_implementor_doc(doc_path, *, lines):
+    """Write a ``---``-fenced frontmatter doc with the given frontmatter lines."""
+    body = ['---', 'name: synthetic-step', *lines, '---', '', '# synthetic-step', '']
+    doc_path.write_text('\n'.join(body), encoding='utf-8')
+
+
+def test_build_implementor_record_surfaces_verification_profile_when_declared(tmp_path):
+    """A doc declaring ``verification_profile`` exposes it in the implementor record.
+
+    The producer-participation case: the parsed record carries
+    ``verification_profile`` with the declared value so a consumer can enumerate
+    which producers participate and with which profile.
+    """
+    doc = tmp_path / 'SKILL.md'
+    _write_implementor_doc(doc, lines=['verification_profile: security'])
+
+    record = _discovery._build_implementor_record(doc, 'bundle-optional')
+
+    assert 'verification_profile' in record, (
+        'a doc declaring verification_profile must surface it in the record'
+    )
+    assert record['verification_profile'] == 'security'
+
+
+def test_build_implementor_record_omits_verification_profile_when_absent(tmp_path):
+    """A doc that omits ``verification_profile`` yields a record WITHOUT the key.
+
+    The non-participation case: absence of the key is the ext-point-verify signal
+    that the producer does not participate in the verify stage. The field must NOT
+    be defaulted to an empty value (unlike ``canonicals`` / ``presets``), because
+    a defaulted-but-empty value would be indistinguishable from a declared empty
+    profile.
+    """
+    doc = tmp_path / 'SKILL.md'
+    _write_implementor_doc(doc, lines=['order: 10'])
+
+    record = _discovery._build_implementor_record(doc, 'bundle-optional')
+
+    assert 'verification_profile' not in record, (
+        'a doc omitting verification_profile must NOT carry the key — absence is '
+        'the non-participation signal'
+    )
+    # The contract fields the record always carries are unaffected by the absence.
+    assert {'name', 'order', 'default_on', 'presets', 'canonicals', 'description'} <= set(record)
+
+
+def test_find_implementors_finalize_records_omit_verification_profile():
+    """Live finalize-step records (which declare no verification_profile) lack the key.
+
+    Cross-ext-point guard: adding ``verification_profile`` to the union parse
+    target must not inject the key into records whose docs do not declare it. Every
+    live finalize-step doc omits the field, so no finalize record may carry it.
+    """
+    records = _discovery.find_implementors(_FINALIZE_STEP_EXT_POINT)
+
+    assert records, 'Expected at least one finalize-step implementor'
+    for rec in records:
+        assert 'verification_profile' not in rec, (
+            f'{rec.get("name")!r} finalize record must not carry verification_profile '
+            '(its doc declares none)'
+        )
+
+
+# =============================================================================
+# Implementor record — verification_profile declared under the metadata: block
+# =============================================================================
+#
+# Recipe SKILL.md files declare ``verification_profile`` one level deep under the
+# frontmatter ``metadata:`` mapping (e.g. recipe-security-audit). The
+# implementor-record parser must descend into the ``metadata:`` block to surface
+# the field — reading only zero-indentation top-level keys silently drops it, so
+# the producer's verify-stage opt-in is declared but never activated. These tests
+# drive ``_build_implementor_record`` / ``_read_frontmatter_fields`` over synthetic
+# docs that mirror the real ``metadata:``-nested declaration.
+
+
+def test_build_implementor_record_surfaces_metadata_verification_profile(tmp_path):
+    """A doc declaring ``metadata.verification_profile`` surfaces it in the record.
+
+    Mirrors recipe-security-audit's frontmatter shape: ``verification_profile`` is
+    nested under ``metadata:``, not declared at the top level. The parser must
+    descend into the ``metadata:`` block so the producer's verify-stage opt-in is
+    activated.
+    """
+    doc = tmp_path / 'SKILL.md'
+    _write_implementor_doc(doc, lines=['metadata:', '  verification_profile: security'])
+
+    record = _discovery._build_implementor_record(doc, 'bundle-optional')
+
+    assert 'verification_profile' in record, (
+        'a doc declaring metadata.verification_profile must surface it in the record'
+    )
+    assert record['verification_profile'] == 'security'
+
+
+def test_read_frontmatter_fields_reads_metadata_nested_key(tmp_path):
+    """``_read_frontmatter_fields`` reads a requested key from the ``metadata:`` block.
+
+    The metadata block carries one-level-deep declarations; a requested key found
+    there is surfaced under its bare name.
+    """
+    doc = tmp_path / 'SKILL.md'
+    _write_implementor_doc(doc, lines=['metadata:', '  verification_profile: docs'])
+
+    fields = _discovery._read_frontmatter_fields(doc, ('verification_profile',))
+
+    assert fields == {'verification_profile': 'docs'}
+
+
+def test_read_frontmatter_fields_top_level_wins_over_metadata(tmp_path):
+    """A top-level declaration wins over a ``metadata:``-nested one of the same name.
+
+    When both a top-level ``verification_profile`` and a ``metadata.verification_profile``
+    are present, the top-level value is authoritative — the metadata value is a
+    fallback only.
+    """
+    doc = tmp_path / 'SKILL.md'
+    _write_implementor_doc(
+        doc,
+        lines=[
+            'verification_profile: top-level',
+            'metadata:',
+            '  verification_profile: nested',
+        ],
+    )
+
+    fields = _discovery._read_frontmatter_fields(doc, ('verification_profile',))
+
+    assert fields['verification_profile'] == 'top-level'
+
+
+def test_read_frontmatter_fields_metadata_does_not_leak_unrequested_keys(tmp_path):
+    """A non-requested key inside the ``metadata:`` block is not surfaced.
+
+    Only keys named in the requested-keys tuple are read from the metadata block;
+    incidental metadata sub-keys (e.g. a recipe's own bookkeeping) must not appear
+    in the returned fields.
+    """
+    doc = tmp_path / 'SKILL.md'
+    _write_implementor_doc(
+        doc,
+        lines=[
+            'metadata:',
+            '  verification_profile: security',
+            '  unrelated_metadata: ignore-me',
+        ],
+    )
+
+    fields = _discovery._read_frontmatter_fields(doc, ('verification_profile',))
+
+    assert fields == {'verification_profile': 'security'}
+
+
+def test_recipe_security_audit_declares_metadata_verification_profile():
+    """The real recipe-security-audit SKILL.md surfaces metadata.verification_profile.
+
+    Live-tree regression: the central case the metadata-block parse exists to fix.
+    recipe-security-audit declares ``verification_profile: security`` under its
+    frontmatter ``metadata:`` block, and the implementor record must carry it.
+    """
+    skill_md = (
+        MARKETPLACE_ROOT
+        / 'plan-marshall'
+        / 'skills'
+        / 'recipe-security-audit'
+        / 'SKILL.md'
+    )
+    assert skill_md.is_file(), f'recipe-security-audit SKILL.md not found: {skill_md}'
+
+    record = _discovery._build_implementor_record(skill_md, 'bundle-optional')
+
+    assert record.get('verification_profile') == 'security', (
+        'recipe-security-audit declares metadata.verification_profile: security; '
+        'the implementor record must surface it'
+    )

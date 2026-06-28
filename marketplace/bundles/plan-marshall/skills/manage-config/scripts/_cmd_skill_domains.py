@@ -399,7 +399,7 @@ def _discover_all_verify_steps() -> list[dict]:
 
     Sources (in order):
     1. Built-in steps discovered via ``extension_discovery.find_implementors``
-       on the ``ext-point-verify-step`` interface — each implementor's
+       on the ``ext-point-build-verify-step`` interface — each implementor's
        ``canonicals`` list is expanded into ``default:verify:{canonical}`` step
        IDs in list order, carrying the implementor's ``order`` and ``description``.
     2. Project verify-step-* skills in .claude/skills/
@@ -412,7 +412,7 @@ def _discover_all_verify_steps() -> list[dict]:
         List of step dicts with name, description, type, source, order.
     """
     # Lazy import — executor sets PYTHONPATH for cross-skill imports.
-    from _config_defaults import _VERIFY_STEP_PREFIX, VERIFY_STEP_EXT_POINT
+    from _config_defaults import _VERIFY_STEP_PREFIX, BUILD_VERIFY_STEP_EXT_POINT
     from extension_discovery import find_implementors  # type: ignore[import-not-found]
 
     all_steps: list[dict] = []
@@ -424,7 +424,7 @@ def _discover_all_verify_steps() -> list[dict]:
     # implementor's ``order`` positions the parameterized doc; the per-step
     # ``description`` is sourced from the implementor record.
     built_in = sorted(
-        (rec for rec in find_implementors(VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),
+        (rec for rec in find_implementors(BUILD_VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
     )
     for rec in built_in:
@@ -790,7 +790,7 @@ def cmd_skill_domains(args) -> dict:
         # keyed-map shape that the manifest composer's keyed-map-only reader
         # (`_read_marshal_phase_steps`, no list fallback) consumes. The built-in
         # step set is sourced from the single `_seed_verify_steps()` discovery
-        # query (expanding each ext-point-verify-step implementor's `canonicals`
+        # query (expanding each ext-point-build-verify-step implementor's `canonicals`
         # list into `default:verify:{canonical}` IDs) — there is no parallel
         # constant list.
         from _config_defaults import _seed_verify_steps
