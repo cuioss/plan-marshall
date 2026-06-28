@@ -82,7 +82,6 @@ def resolve_security_skills(plan_id: str, profile: str) -> dict[str, Any]:
 
 
 def cmd_resolve_skills(args) -> dict[str, Any]:
-    """CLI handler for the ``resolve-skills`` subcommand."""
     return resolve_security_skills(args.plan_id, args.profile)
 
 
@@ -108,16 +107,9 @@ def main() -> int:
 
     args = parse_args_with_toon_errors(parser)
 
-    handlers = {
-        'resolve-skills': cmd_resolve_skills,
-    }
-    handler = handlers.get(args.command)
-    if handler:
-        result = handler(args)
-        if result is not None:
-            output_toon(result)
-        return 0
-    parser.print_help()
+    result = cmd_resolve_skills(args)
+    if result is not None:
+        output_toon(result)
     return 0
 
 
