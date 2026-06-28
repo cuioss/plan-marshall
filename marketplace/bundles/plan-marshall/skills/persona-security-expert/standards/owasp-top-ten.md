@@ -106,7 +106,7 @@ Container-specific hardening lives in [`pm-dev-oci:oci-security`](../../../../pm
 
 ### Security Headers and Content Security Policy
 
-**Maps to:** CWE-693 · OWASP A02 · ASVS V3
+**Maps to:** CWE-693 · OWASP A05 (2021) / A02 (2025) Security Misconfiguration · ASVS V3
 
 HTTP security headers are a browser-enforced defense layer — a hardening default that turns the user's browser into an additional enforcement point. Missing headers are a security misconfiguration: the application "works" without them, so the omission is invisible until exploited. The header set:
 

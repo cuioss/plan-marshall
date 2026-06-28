@@ -170,7 +170,7 @@ Mitigations:
 
 - [`secrets-handling.md`](secrets-handling.md) — secret storage, rotation automation, dynamic secrets, and leak detection (defers algorithm and key-lifecycle authority to this document).
 - [`authentication-authorization.md`](authentication-authorization.md) — password hashing (Argon2id and fallbacks) as the distinct slow-hash discipline.
-- [`owasp-top-ten.md`](owasp-top-ten.md) — A04 Cryptographic Failures (this document's risk category) and A02 Security Misconfiguration (security headers, HSTS).
+- [`owasp-top-ten.md`](owasp-top-ten.md) — A02 Cryptographic Failures (the OWASP Top 10 risk this document addresses) and A05 Security Misconfiguration (security headers, HSTS).
 - [`input-validation-trust-boundaries.md`](input-validation-trust-boundaries.md) — the in-transit trust boundary that TLS protects.
 - [`secure-design-principles.md`](secure-design-principles.md) — defense in depth, fail securely, economy of mechanism (vetted-library reuse).
 - Per-domain mechanics: [`pm-dev-java:java-security`](../../../../pm-dev-java/skills/java-security/SKILL.md) (`SecureRandom`, `char[]`/`byte[]` key handling) and [`pm-dev-oci:oci-security`](../../../../pm-dev-oci/skills/oci-security/SKILL.md) (KMS / secret injection at the container boundary).
