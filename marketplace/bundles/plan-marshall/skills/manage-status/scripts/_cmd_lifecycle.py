@@ -258,11 +258,11 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
         phases[active_idx]['status'] = PHASE_STATUS_DONE
     if all(p.get('status') == PHASE_STATUS_DONE for p in phases):
         status['current_phase'] = 'complete'
-    # Drop any in-flight terminal-title token (lock-waiting/lock-owned) before
-    # archiving. An archived plan has no live session driving its terminal
-    # title, so a token left behind would persist a stale lock glyph in the
-    # archived snapshot. Token-agnostic: a single pop covers every
-    # TITLE_TOKEN_STATES value.
+    # Drop any in-flight terminal-title token (any TITLE_TOKEN_STATES value —
+    # lock-waiting/lock-owned/build-busy) before archiving. An archived plan has
+    # no live session driving its terminal title, so a token left behind would
+    # persist a stale glyph in the archived snapshot. Token-agnostic: a single
+    # pop covers every TITLE_TOKEN_STATES value.
     status.pop('title_token', None)
     # Persist optional --reason into status.metadata.archived_reason before
     # write_status so the archived status.json carries the structured reason.

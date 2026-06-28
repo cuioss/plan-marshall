@@ -46,12 +46,16 @@ class StatusData(TypedDict):
 
 
 # Valid title-token states — the two lock-coordination states (lock-waiting /
-# lock-owned). The token is a field-only marker written into status.json by the
-# ``title-token set`` verb; manage-status performs NO rendering. The composition
-# (glyph vocabulary + ``{icon} {body}`` assembly) lives in
-# ``manage-terminal-title`` — manage-status only persists the bare state string
-# so the per-target renderer can read it.
-TITLE_TOKEN_STATES = frozenset({'lock-waiting', 'lock-owned'})
+# lock-owned) plus the orchestration-busy state (build-busy). The token is a
+# field-only marker written into status.json by the ``title-token set`` verb;
+# manage-status performs NO rendering. The composition (glyph vocabulary +
+# ``{icon} {body}`` assembly) lives in ``manage-terminal-title`` — manage-status
+# only persists the bare state string so the per-target renderer can read it.
+# build-busy is written/cleared by the orchestration layer (not the lock
+# machinery) to surface a 🔨 build symbol for the duration of a long-running
+# orchestration Bash call; manage-terminal-title renders it as a token-keyed
+# icon-slot override, not a glyph.
+TITLE_TOKEN_STATES = frozenset({'lock-waiting', 'lock-owned', 'build-busy'})
 
 
 # =============================================================================

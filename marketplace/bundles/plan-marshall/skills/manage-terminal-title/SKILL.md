@@ -82,6 +82,13 @@ this map is the single owner of the state→glyph rendering. The glyph is omitte
   `TITLE_TOKEN_GLYPHS` states (⏳/🔒) are uniformly suppressed for a terminal
   plan.
 
+The `build-busy` title-token is **deliberately absent** from `TITLE_TOKEN_GLYPHS`:
+it is rendered as a 🔨 icon-slot override (see Icon below), NOT as a prepended
+glyph. Its absence from the map makes glyph suppression automatic —
+`TITLE_TOKEN_GLYPHS.get('build-busy')` is `None`, so the glyph-prepend block emits
+no glyph segment for it, and an active `build-busy` plan renders `🔨 pm:{phase}`
+(icon-slot override, no glyph).
+
 ### Icon (`resolve_icon` + terminal override)
 
 `resolve_icon(event, tool_name=None)` maps the hook event to the process icon:
@@ -106,8 +113,22 @@ check-mark, distinct from the thin ✓ `_ICON_DONE`) regardless of the hook even
 or `icon_override`. The process icons ➤ (active) and ? (waiting) MUST NOT appear
 for a finished plan.
 
-For non-terminal phases, `icon_override` (push-mode) supersedes the event-resolved
-icon when provided.
+**`build-busy` icon-slot override:** when `state_dict['title_token']` is
+`build-busy` on an **active** (non-terminal) phase, `compose` forces the icon to
+🔨 (`_ICON_BUILD`, U+1F528) — a token-keyed **icon-slot override** (NOT a glyph)
+that supersedes both `icon_override` and the resolved process icon for the
+duration of the orchestration call, rendering `🔨 pm:{phase}`. The 🔨 build symbol
+is deliberately distinct from the ⚙ busy icon: ⚙ is the momentary per-tool busy
+state, whereas 🔨 is the persistent orchestration-busy state held for the whole
+blocking window. The full icon precedence is **terminal ✅ > build-busy 🔨 >
+`icon_override` > process icon** — the terminal ✅ override still wins, so 🔨 never
+appears for a finished plan. `build-busy` is set/cleared by the orchestration
+layer; see [`persona-plan-marshall-agent`](../persona-plan-marshall-agent/SKILL.md)
+for the normative orchestration requirement (when the state is set/cleared and the
+live-push mechanics).
+
+For non-terminal phases without a `build-busy` token, `icon_override` (push-mode)
+supersedes the event-resolved icon when provided.
 
 ## Library Consumption
 
