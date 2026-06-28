@@ -62,7 +62,7 @@ This is the most-misunderstood point and OWASP calls it out explicitly. Input va
 - **XSS** → context-aware output encoding at the sink.
 - **OS command injection** → argument-vector APIs, never a shell string.
 
-Over-relying on validation-as-injection-defense is an anti-pattern. Validate at the boundary for data quality and depth-of-defense, but secure the sink with the sink-appropriate control. The per-language sink mechanics live in [`pm-dev-python:python-security`](../../../../pm-dev-python/skills/python-security/SKILL.md), [`pm-dev-frontend:javascript-security`](../../../../pm-dev-frontend/skills/javascript-security/SKILL.md), and [`pm-dev-java:java-security`](../../../../pm-dev-java/skills/java-security/SKILL.md); the injection risk maps to [`owasp-top-ten.md`](owasp-top-ten.md) A03.
+Over-relying on validation-as-injection-defense is an anti-pattern. Validate at the boundary for data quality and depth-of-defense, but secure the sink with the sink-appropriate control. The per-language sink mechanics live in [`pm-dev-python:python-security`](../../../../pm-dev-python/skills/python-security/SKILL.md), [`pm-dev-frontend:javascript-security`](../../../../pm-dev-frontend/skills/javascript-security/SKILL.md), and [`pm-dev-java:java-security`](../../../../pm-dev-java/skills/java-security/SKILL.md); the injection risk maps to [`owasp-top-ten.md`](owasp-top-ten.md) A05.
 
 ---
 
