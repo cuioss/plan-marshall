@@ -1,6 +1,6 @@
 # Secure Design Principles
 
-These are the timeless design-level principles that underpin every concrete control in the sibling sub-documents. Several trace directly to Saltzer & Schroeder and are reaffirmed by [OWASP Secure Product Design](https://cheatsheetseries.owasp.org/cheatsheets/Secure_Product_Design_Cheat_Sheet.html), the [OWASP Developer Guide security principles](https://devguide.owasp.org/en/02-foundations/03-security-principles/), the [OWASP Secure-by-Design framework](https://owasp.org/www-project-secure-by-design-framework/), and [NIST SP 800-160](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-160v1r1.pdf). Apply them at design time — design-phase flaws cost roughly 100× less to fix than production flaws (see [`threat-modeling-stride.md`](threat-modeling-stride.md)), and an insecure *design* cannot be remedied by perfect code (OWASP A04, see [`owasp-top-ten.md`](owasp-top-ten.md)).
+These are the timeless design-level principles that underpin every concrete control in the sibling sub-documents. Several trace directly to Saltzer & Schroeder and are reaffirmed by [OWASP Secure Product Design](https://cheatsheetseries.owasp.org/cheatsheets/Secure_Product_Design_Cheat_Sheet.html), the [OWASP Developer Guide security principles](https://devguide.owasp.org/en/02-foundations/03-security-principles/), the [OWASP Secure-by-Design framework](https://owasp.org/www-project-secure-by-design-framework/), and [NIST SP 800-160](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-160v1r1.pdf). Apply them at design time — design-phase flaws cost roughly 100× less to fix than production flaws (see [`threat-modeling-stride.md`](threat-modeling-stride.md)), and an insecure *design* cannot be remedied by perfect code (OWASP A06, see [`owasp-top-ten.md`](owasp-top-ten.md)).
 
 ---
 
@@ -32,7 +32,7 @@ Default to a secure (denying) state on any error, failure, or unexpected conditi
 
 The default configuration must be the most secure possible; a user works *deliberately* to reduce security, never to enable it.
 
-**Application.** TLS/mTLS by default; private networking / isolated subnets as the baseline; strict security headers and secure cipher suites; hardened minimal base images; secrets in a secret manager by default ([`secrets-handling.md`](secrets-handling.md)); explicit justification required for any public exposure. This is the design principle behind OWASP A05 Security Misconfiguration ([`owasp-top-ten.md`](owasp-top-ten.md)).
+**Application.** TLS/mTLS by default; private networking / isolated subnets as the baseline; strict security headers and secure cipher suites; hardened minimal base images; secrets in a secret manager by default ([`secrets-handling.md`](secrets-handling.md)); explicit justification required for any public exposure. This is the design principle behind OWASP A02 Security Misconfiguration ([`owasp-top-ten.md`](owasp-top-ten.md)).
 
 ---
 

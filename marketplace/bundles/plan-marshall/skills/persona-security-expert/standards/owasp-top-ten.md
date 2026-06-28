@@ -23,70 +23,28 @@ Source of record: [OWASP Top 10](https://owasp.org/Top10/) and the [OWASP Cheat 
 - Use short-lived JWTs and OAuth revocation; prefer ABAC/ReBAC over pure RBAC for fine-grained control.
 - Include functional access-control unit and integration tests in the pipeline.
 
-See also: [`authentication-authorization.md`](authentication-authorization.md) for the IDOR/BOLA and least-privilege detail. Cheat sheets: [Authorization](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html), [IDOR Prevention](https://cheatsheetseries.owasp.org/cheatsheets/Insecure_Direct_Object_Reference_Prevention_Cheat_Sheet.html). Source: [Broken Access Control](https://owasp.org/Top10/2021/A01_2021-Broken_Access_Control/).
+See also: [`authentication-authorization.md`](authentication-authorization.md) for the IDOR/BOLA and least-privilege detail. Cheat sheets: [Authorization](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html), [IDOR Prevention](https://cheatsheetseries.owasp.org/cheatsheets/Insecure_Direct_Object_Reference_Prevention_Cheat_Sheet.html). Source: [Broken Access Control](https://owasp.org/Top10/2025/A01_2025-Broken_Access_Control/).
 
----
+### Server-Side Request Forgery (SSRF)
 
-## A02 — Cryptographic Failures
-
-**Definition.** Failures in cryptographic implementation or strategy that expose sensitive data. Covers hardcoded passwords, broken/weak algorithms, and insufficient entropy in random-number generation. High-risk systems should plan to be post-quantum-cryptography-safe.
+**Definition.** SSRF occurs whenever a web application fetches a remote resource without validating the user-supplied URL, letting an attacker make the server send requests to unintended destinations — bypassing firewalls, VPNs, and network ACLs. Particularly severe in cloud architectures where metadata services sit at predictable addresses. SSRF is treated as a Broken Access Control concern, which is why it is documented here under A01.
 
 **Attack scenarios.**
-- *Decryption bypass via SQL injection* — an app stores encrypted card numbers but auto-decrypts on retrieval. SQL injection returns the decrypted plaintext to the attacker's query.
-- *Protocol downgrade (HTTPS → HTTP)* — an attacker on an unsecured network downgrades the connection, captures the session cookie, and hijacks the session.
-- *Weak password hashing / rainbow tables* — an unsalted or fast-hash password store is cracked at scale with rainbow tables or GPU acceleration.
+- *Internal network reconnaissance* — mapping internal hosts/ports via timing and response analysis.
+- *Cloud metadata credential theft* — fetching `http://169.254.169.254/` to extract cloud credentials, enabling full account compromise.
+- *Sensitive file retrieval / internal RCE* — crafting payloads to read `/etc/passwd` or reach internal services (Redis, Elasticsearch) on localhost.
 
 **Mitigations.**
-- Classify sensitive data per applicable law/standard (GDPR, PCI DSS); do not store it unnecessarily — discard as soon as possible.
-- Encrypt sensitive data at rest with current strong algorithms; always prefer authenticated encryption (AES-256-GCM, ChaCha20-Poly1305) over bare encryption.
-- Enforce TLS with forward-secrecy ciphers and HSTS for data in transit; disable deprecated protocols (TLS 1.0/1.1, SSL) and weak ciphers.
-- Store passwords with adaptive, salted functions: Argon2id, scrypt, or bcrypt (see [`authentication-authorization.md`](authentication-authorization.md)).
-- Use a cryptographically secure RNG for IVs and salts.
+- Validate and sanitize all user-supplied URLs server-side; maintain a positive allow-list for URL schemas (http/https only), ports, and destinations.
+- Segment networks and enforce deny-by-default firewall policies for non-essential intranet traffic.
+- Disable HTTP redirections (to prevent redirect-chain bypass); do not return raw server responses to clients.
+- Do **not** rely on deny-lists or regex — attackers have sophisticated bypass tooling. Block access to cloud metadata endpoints from application servers.
 
-Cheat sheets: [Cryptographic Storage](https://cheatsheetseries.owasp.org/cheatsheets/Cryptographic_Storage_Cheat_Sheet.html), [Transport Layer Security](https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Security_Cheat_Sheet.html), [Secrets Management](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html). Source: [Cryptographic Failures](https://owasp.org/Top10/2021/A02_2021-Cryptographic_Failures/).
-
----
-
-## A03 — Injection
-
-**Definition.** An application is vulnerable to injection when user-supplied data is not validated, filtered, or sanitized; dynamic queries or non-parameterized calls run without context-aware escaping; or hostile data exploits ORM search parameters. Spans SQL, NoSQL, OS command, ORM, LDAP, and Expression-Language injection — and XSS (untrusted data injected into the DOM). 94% of tested applications had some form of injection; API parameters remain largely untested.
-
-**Attack scenarios.**
-- *Direct SQL string concatenation* — `"SELECT * FROM accounts WHERE custID='" + request.getParameter("id") + "'"`. The attacker injects `' UNION SELECT SLEEP(10);--` to dump records or run stored procedures.
-- *ORM injection (Hibernate)* — even an ORM is vulnerable when queries concatenate untrusted data: `FROM accounts WHERE custID='" + request.getParameter("id") + "'`.
-
-**Mitigations (in priority order).**
-- Use a safe API with a parameterized interface or a well-used ORM — avoid the interpreter entirely.
-- Use prepared statements with `?` placeholders, never string concatenation.
-- Apply positive (allow-list) server-side input validation as defense-in-depth (NOT as the primary injection defense — see [`input-validation-trust-boundaries.md`](input-validation-trust-boundaries.md)).
-- For XSS specifically, use context-aware output encoding at the sink; the domain mechanics live in [`pm-dev-frontend:javascript-security`](../../../../pm-dev-frontend/skills/javascript-security/SKILL.md).
-- Enforce least-privilege database accounts; integrate SAST/DAST/IAST into CI/CD.
-- Note: SQL table/column names cannot be escaped — they require allow-list mapping.
-
-Per-language sink mechanics: [`pm-dev-python:python-security`](../../../../pm-dev-python/skills/python-security/SKILL.md), [`pm-dev-java:java-security`](../../../../pm-dev-java/skills/java-security/SKILL.md). Cheat sheets: [SQL Injection Prevention](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html), [Query Parameterization](https://cheatsheetseries.owasp.org/cheatsheets/Query_Parameterization_Cheat_Sheet.html), [OS Command Injection Defense](https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html), [XSS Prevention](https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html). Source: [Injection](https://owasp.org/Top10/2021/A03_2021-Injection/).
+Cheat sheet: [SSRF Prevention](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html).
 
 ---
 
-## A04 — Insecure Design
-
-**Definition.** Missing or ineffective **control design** — distinct from insecure implementation. A secure design with implementation defects can be fixed in code; an insecure design cannot be remedied by perfect code because the necessary controls were never designed in. Focuses on design flaws, missing threat modeling, and absent security requirements.
-
-**Attack scenarios.**
-- *Weak credential recovery via security questions* — security questions for account recovery (which multiple people may know) fail to authenticate identity, violating NIST guidance.
-- *Business-logic abuse (cinema group booking)* — a system allows group discounts up to 15 attendees before requiring a deposit; attackers book hundreds of seats across theaters at once, causing revenue loss.
-- *E-commerce scalper bots* — no anti-bot protection during limited launches lets attackers bulk-buy scarce inventory and resell at profit.
-
-**Mitigations.**
-- Establish a secure development lifecycle with AppSec review at design gates.
-- Use **threat modeling** for all critical flows (authentication, access control, business logic) — see [`threat-modeling-stride.md`](threat-modeling-stride.md).
-- Integrate testable security requirements into user stories; write tests that prove critical flows resist the defined threat model.
-- Implement plausibility checks across tiers; segregate layers and isolate tenants by design; limit per-user/per-service resource consumption.
-
-Cheat sheets: [Threat Modeling](https://cheatsheetseries.owasp.org/cheatsheets/Threat_Modeling_Cheat_Sheet.html), [Abuse Case](https://cheatsheetseries.owasp.org/cheatsheets/Abuse_Case_Cheat_Sheet.html), [Attack Surface Analysis](https://cheatsheetseries.owasp.org/cheatsheets/Attack_Surface_Analysis_Cheat_Sheet.html). See also [`secure-design-principles.md`](secure-design-principles.md). Source: [Insecure Design](https://owasp.org/Top10/2021/A04_2021-Insecure_Design/).
-
----
-
-## A05 — Security Misconfiguration
+## A02 — Security Misconfiguration
 
 **Definition.** The application stack lacks appropriate hardening anywhere, or cloud-service permissions are misconfigured. Affects nearly all tested applications; continuous deployment without continuous scanning drives its prevalence. Covers enabled unnecessary features, unchanged default credentials, exposed stack traces, disabled security features, open cloud storage, and missing security headers.
 
@@ -102,11 +60,11 @@ Cheat sheets: [Threat Modeling](https://cheatsheetseries.owasp.org/cheatsheets/T
 - Deploy security headers (Content-Security-Policy, X-Frame-Options, HSTS, etc.); automate configuration verification across all environments.
 - Use Infrastructure-as-Code for consistent, auditable configuration (this is the **secure-by-default** principle in [`secure-design-principles.md`](secure-design-principles.md)).
 
-Container-specific hardening lives in [`pm-dev-oci:oci-security`](../../../../pm-dev-oci/skills/oci-security/SKILL.md). Cheat sheets: [Infrastructure as Code Security](https://cheatsheetseries.owasp.org/cheatsheets/Infrastructure_as_Code_Security_Cheat_Sheet.html), [Docker Security](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html). Source: [Security Misconfiguration](https://owasp.org/Top10/2021/A05_2021-Security_Misconfiguration/).
+Container-specific hardening lives in [`pm-dev-oci:oci-security`](../../../../pm-dev-oci/skills/oci-security/SKILL.md). Cheat sheets: [Infrastructure as Code Security](https://cheatsheetseries.owasp.org/cheatsheets/Infrastructure_as_Code_Security_Cheat_Sheet.html), [Docker Security](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html). Source: [Security Misconfiguration](https://owasp.org/Top10/2025/A02_2025-Security_Misconfiguration/).
 
 ### Security Headers and Content Security Policy
 
-**Maps to:** CWE-693 · OWASP A05 (2021) / A02 (2025) Security Misconfiguration · ASVS V3
+**Maps to:** CWE-693 · OWASP A02 Security Misconfiguration · ASVS V3
 
 HTTP security headers are a browser-enforced defense layer — a hardening default that turns the user's browser into an additional enforcement point. Missing headers are a security misconfiguration: the application "works" without them, so the omission is invisible until exploited. The header set:
 
@@ -120,7 +78,20 @@ These headers complement the secure-cookie flags (`Secure`, `HttpOnly`, `SameSit
 
 ---
 
-## A06 — Vulnerable and Outdated Components
+## A03 — Software Supply Chain Failures
+
+**Definition.** Breakdowns or compromises in building, distributing, or updating software — compromised third-party code, tools, dependencies, build systems, and distribution infrastructure. This expands the vulnerable-components concern in [Vulnerable and Outdated Components](#vulnerable-and-outdated-components) to the entire supply chain, and carries among the highest average exploit and impact scores despite low CVE coverage. Real-world examples include the SolarWinds compromise and npm worms harvesting credentials across hundreds of package versions.
+
+**Mitigations.**
+- Generate and centrally manage an SBOM covering direct and transitive dependencies.
+- Continuously monitor CVE/NVD/OSV for known vulnerabilities.
+- Obtain components only from trusted, signed sources.
+- Use staged/canary rollouts for updates.
+- Enforce change management and separation of duties across CI/CD; patch on risk-based timelines.
+
+Cheat sheet: [Vulnerable Dependency Management](https://cheatsheetseries.owasp.org/cheatsheets/Vulnerable_Dependency_Management_Cheat_Sheet.html). Container supply-chain controls live in [`pm-dev-oci:oci-security`](../../../../pm-dev-oci/skills/oci-security/SKILL.md). Source: [Software Supply Chain Failures](https://owasp.org/Top10/2025/A03_2025-Software_Supply_Chain_Failures/).
+
+### Vulnerable and Outdated Components
 
 **Definition.** Using libraries, frameworks, or dependencies with known flaws or no current maintenance. Third-party components run with the application's privileges, so a flaw in any one can have serious impact. Hard to test because vulnerabilities are catalogued per-component, not per-practice.
 
@@ -133,9 +104,68 @@ These headers complement the secure-cookie flags (`Secure`, `HttpOnly`, `SameSit
 - Subscribe to security bulletins; monitor CVE/NVD/OSV for known vulnerabilities.
 - Obtain components only from official sources over secure links; prefer signed packages.
 - Patch promptly on a risk-based schedule rather than fixed monthly/quarterly cycles.
-- Remove unused dependencies and features; generate and maintain an SBOM for all dependencies. The broader concern — compromises across the entire supply chain (dependencies, build systems, CI/CD, distribution, update mechanisms) — is covered under [Software Supply Chain Failures](#software-supply-chain-failures).
+- Remove unused dependencies and features; generate and maintain an SBOM for all dependencies. The broader concern — compromises across the entire supply chain (dependencies, build systems, CI/CD, distribution, update mechanisms) — is covered by the parent [A03 — Software Supply Chain Failures](#a03--software-supply-chain-failures) category above.
 
-Cheat sheet: [Vulnerable Dependency Management](https://cheatsheetseries.owasp.org/cheatsheets/Vulnerable_Dependency_Management_Cheat_Sheet.html). Container supply-chain controls (SBOM, signing) live in [`pm-dev-oci:oci-security`](../../../../pm-dev-oci/skills/oci-security/SKILL.md). Source: [Vulnerable and Outdated Components](https://owasp.org/Top10/2021/A06_2021-Vulnerable_and_Outdated_Components/).
+Cheat sheet: [Vulnerable Dependency Management](https://cheatsheetseries.owasp.org/cheatsheets/Vulnerable_Dependency_Management_Cheat_Sheet.html). Container supply-chain controls (SBOM, signing) live in [`pm-dev-oci:oci-security`](../../../../pm-dev-oci/skills/oci-security/SKILL.md).
+
+---
+
+## A04 — Cryptographic Failures
+
+**Definition.** Failures in cryptographic implementation or strategy that expose sensitive data. Covers hardcoded passwords, broken/weak algorithms, and insufficient entropy in random-number generation. High-risk systems should plan to be post-quantum-cryptography-safe.
+
+**Attack scenarios.**
+- *Decryption bypass via SQL injection* — an app stores encrypted card numbers but auto-decrypts on retrieval. SQL injection returns the decrypted plaintext to the attacker's query.
+- *Protocol downgrade (HTTPS → HTTP)* — an attacker on an unsecured network downgrades the connection, captures the session cookie, and hijacks the session.
+- *Weak password hashing / rainbow tables* — an unsalted or fast-hash password store is cracked at scale with rainbow tables or GPU acceleration.
+
+**Mitigations.**
+- Classify sensitive data per applicable law/standard (GDPR, PCI DSS); do not store it unnecessarily — discard as soon as possible.
+- Encrypt sensitive data at rest with current strong algorithms; always prefer authenticated encryption (AES-256-GCM, ChaCha20-Poly1305) over bare encryption.
+- Enforce TLS with forward-secrecy ciphers and HSTS for data in transit; disable deprecated protocols (TLS 1.0/1.1, SSL) and weak ciphers.
+- Store passwords with adaptive, salted functions: Argon2id, scrypt, or bcrypt (see [`authentication-authorization.md`](authentication-authorization.md)).
+- Use a cryptographically secure RNG for IVs and salts.
+
+Cheat sheets: [Cryptographic Storage](https://cheatsheetseries.owasp.org/cheatsheets/Cryptographic_Storage_Cheat_Sheet.html), [Transport Layer Security](https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Security_Cheat_Sheet.html), [Secrets Management](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html). Source: [Cryptographic Failures](https://owasp.org/Top10/2025/A04_2025-Cryptographic_Failures/).
+
+---
+
+## A05 — Injection
+
+**Definition.** An application is vulnerable to injection when user-supplied data is not validated, filtered, or sanitized; dynamic queries or non-parameterized calls run without context-aware escaping; or hostile data exploits ORM search parameters. Spans SQL, NoSQL, OS command, ORM, LDAP, and Expression-Language injection — and XSS (untrusted data injected into the DOM). 94% of tested applications had some form of injection; API parameters remain largely untested.
+
+**Attack scenarios.**
+- *Direct SQL string concatenation* — `"SELECT * FROM accounts WHERE custID='" + request.getParameter("id") + "'"`. The attacker injects `' UNION SELECT SLEEP(10);--` to dump records or run stored procedures.
+- *ORM injection (Hibernate)* — even an ORM is vulnerable when queries concatenate untrusted data: `FROM accounts WHERE custID='" + request.getParameter("id") + "'`.
+
+**Mitigations (in priority order).**
+- Use a safe API with a parameterized interface or a well-used ORM — avoid the interpreter entirely.
+- Use prepared statements with `?` placeholders, never string concatenation.
+- Apply positive (allow-list) server-side input validation as defense-in-depth (NOT as the primary injection defense — see [`input-validation-trust-boundaries.md`](input-validation-trust-boundaries.md)).
+- For XSS specifically, use context-aware output encoding at the sink; the domain mechanics live in [`pm-dev-frontend:javascript-security`](../../../../pm-dev-frontend/skills/javascript-security/SKILL.md).
+- Enforce least-privilege database accounts; integrate SAST/DAST/IAST into CI/CD.
+- Note: SQL table/column names cannot be escaped — they require allow-list mapping.
+
+Per-language sink mechanics: [`pm-dev-python:python-security`](../../../../pm-dev-python/skills/python-security/SKILL.md), [`pm-dev-java:java-security`](../../../../pm-dev-java/skills/java-security/SKILL.md). Cheat sheets: [SQL Injection Prevention](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html), [Query Parameterization](https://cheatsheetseries.owasp.org/cheatsheets/Query_Parameterization_Cheat_Sheet.html), [OS Command Injection Defense](https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html), [XSS Prevention](https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html). Source: [Injection](https://owasp.org/Top10/2025/A05_2025-Injection/).
+
+---
+
+## A06 — Insecure Design
+
+**Definition.** Missing or ineffective **control design** — distinct from insecure implementation. A secure design with implementation defects can be fixed in code; an insecure design cannot be remedied by perfect code because the necessary controls were never designed in. Focuses on design flaws, missing threat modeling, and absent security requirements.
+
+**Attack scenarios.**
+- *Weak credential recovery via security questions* — security questions for account recovery (which multiple people may know) fail to authenticate identity, violating NIST guidance.
+- *Business-logic abuse (cinema group booking)* — a system allows group discounts up to 15 attendees before requiring a deposit; attackers book hundreds of seats across theaters at once, causing revenue loss.
+- *E-commerce scalper bots* — no anti-bot protection during limited launches lets attackers bulk-buy scarce inventory and resell at profit.
+
+**Mitigations.**
+- Establish a secure development lifecycle with AppSec review at design gates.
+- Use **threat modeling** for all critical flows (authentication, access control, business logic) — see [`threat-modeling-stride.md`](threat-modeling-stride.md).
+- Integrate testable security requirements into user stories; write tests that prove critical flows resist the defined threat model.
+- Implement plausibility checks across tiers; segregate layers and isolate tenants by design; limit per-user/per-service resource consumption.
+
+Cheat sheets: [Threat Modeling](https://cheatsheetseries.owasp.org/cheatsheets/Threat_Modeling_Cheat_Sheet.html), [Abuse Case](https://cheatsheetseries.owasp.org/cheatsheets/Abuse_Case_Cheat_Sheet.html), [Attack Surface Analysis](https://cheatsheetseries.owasp.org/cheatsheets/Attack_Surface_Analysis_Cheat_Sheet.html). See also [`secure-design-principles.md`](secure-design-principles.md). Source: [Insecure Design](https://owasp.org/Top10/2025/A06_2025-Insecure_Design/).
 
 ---
 
@@ -154,7 +184,7 @@ Cheat sheet: [Vulnerable Dependency Management](https://cheatsheetseries.owasp.o
 - Use identical responses for all login/registration/recovery outcomes to prevent enumeration; rate-limit or progressively delay failed logins.
 - Generate high-entropy session IDs server-side post-login; exclude them from URLs; invalidate on logout and timeout; store passwords with Argon2id/bcrypt/scrypt.
 
-Full detail (password hashing parameters, session-cookie flags, MFA hierarchy) lives in [`authentication-authorization.md`](authentication-authorization.md). Cheat sheets: [Authentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html), [Session Management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html), [Credential Stuffing Prevention](https://cheatsheetseries.owasp.org/cheatsheets/Credential_Stuffing_Prevention_Cheat_Sheet.html). Source: [Identification and Authentication Failures](https://owasp.org/Top10/2021/A07_2021-Identification_and_Authentication_Failures/).
+Full detail (password hashing parameters, session-cookie flags, MFA hierarchy) lives in [`authentication-authorization.md`](authentication-authorization.md). Cheat sheets: [Authentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html), [Session Management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html), [Credential Stuffing Prevention](https://cheatsheetseries.owasp.org/cheatsheets/Credential_Stuffing_Prevention_Cheat_Sheet.html). Source: [Authentication Failures](https://owasp.org/Top10/2025/A07_2025-Authentication_Failures/).
 
 ---
 
@@ -173,7 +203,7 @@ Full detail (password hashing parameters, session-cookie flags, MFA hierarchy) l
 - Ensure CI/CD pipelines have proper segregation, configuration, and access control.
 - Never deserialize untrusted data without integrity/signature verification; do not send serialized objects to untrusted clients.
 
-Per-language deserialization sinks: [`pm-dev-python:python-security`](../../../../pm-dev-python/skills/python-security/SKILL.md) (pickle/yaml), [`pm-dev-java:java-security`](../../../../pm-dev-java/skills/java-security/SKILL.md). Cheat sheet: [Deserialization](https://cheatsheetseries.owasp.org/cheatsheets/Deserialization_Cheat_Sheet.html). Source: [Software and Data Integrity Failures](https://owasp.org/Top10/2021/A08_2021-Software_and_Data_Integrity_Failures/).
+Per-language deserialization sinks: [`pm-dev-python:python-security`](../../../../pm-dev-python/skills/python-security/SKILL.md) (pickle/yaml), [`pm-dev-java:java-security`](../../../../pm-dev-java/skills/java-security/SKILL.md). Cheat sheet: [Deserialization](https://cheatsheetseries.owasp.org/cheatsheets/Deserialization_Cheat_Sheet.html). Source: [Software and Data Integrity Failures](https://owasp.org/Top10/2025/A08_2025-Software_and_Data_Integrity_Failures/).
 
 ---
 
@@ -192,45 +222,11 @@ Per-language deserialization sinks: [`pm-dev-python:python-security`](../../../.
 - Implement append-only audit trails with integrity controls; forward logs to a centralized, secure service; set alerting thresholds for suspicious patterns.
 - Adopt an incident-response framework (NIST 800-61r2); deploy log-correlation tooling (ELK, Splunk).
 
-Full detail (sensitive-data categories, CRLF/log-forging defense, OWASP Logging Vocabulary fields) lives in [`secure-logging.md`](secure-logging.md). Cheat sheets: [Logging](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html), [Logging Vocabulary](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Vocabulary_Cheat_Sheet.html). Source: [Security Logging and Monitoring Failures](https://owasp.org/Top10/2021/A09_2021-Security_Logging_and_Monitoring_Failures/).
+Full detail (sensitive-data categories, CRLF/log-forging defense, OWASP Logging Vocabulary fields) lives in [`secure-logging.md`](secure-logging.md). Cheat sheets: [Logging](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html), [Logging Vocabulary](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Vocabulary_Cheat_Sheet.html). Source: [Security Logging and Alerting Failures](https://owasp.org/Top10/2025/A09_2025-Logging_and_Alerting_Failures/).
 
 ---
 
-## Server-Side Request Forgery (SSRF)
-
-**Definition.** SSRF occurs whenever a web application fetches a remote resource without validating the user-supplied URL, letting an attacker make the server send requests to unintended destinations — bypassing firewalls, VPNs, and network ACLs. Particularly severe in cloud architectures where metadata services sit at predictable addresses. SSRF is treated as a Broken Access Control concern (see [A01](#a01--broken-access-control)).
-
-**Attack scenarios.**
-- *Internal network reconnaissance* — mapping internal hosts/ports via timing and response analysis.
-- *Cloud metadata credential theft* — fetching `http://169.254.169.254/` to extract cloud credentials, enabling full account compromise.
-- *Sensitive file retrieval / internal RCE* — crafting payloads to read `/etc/passwd` or reach internal services (Redis, Elasticsearch) on localhost.
-
-**Mitigations.**
-- Validate and sanitize all user-supplied URLs server-side; maintain a positive allow-list for URL schemas (http/https only), ports, and destinations.
-- Segment networks and enforce deny-by-default firewall policies for non-essential intranet traffic.
-- Disable HTTP redirections (to prevent redirect-chain bypass); do not return raw server responses to clients.
-- Do **not** rely on deny-lists or regex — attackers have sophisticated bypass tooling. Block access to cloud metadata endpoints from application servers.
-
-Cheat sheet: [SSRF Prevention](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html). Source: [Server-Side Request Forgery (SSRF)](https://owasp.org/Top10/2021/A10_2021-Server-Side_Request_Forgery_(SSRF)/).
-
----
-
-## Software Supply Chain Failures
-
-**Definition.** Breakdowns or compromises in building, distributing, or updating software — compromised third-party code, tools, dependencies, build systems, and distribution infrastructure. This expands the vulnerable-components concern in [A06](#a06--vulnerable-and-outdated-components) to the entire supply chain, and carries among the highest average exploit and impact scores despite low CVE coverage. Real-world examples include the SolarWinds compromise and npm worms harvesting credentials across hundreds of package versions.
-
-**Mitigations.**
-- Generate and centrally manage an SBOM covering direct and transitive dependencies.
-- Continuously monitor CVE/NVD/OSV for known vulnerabilities.
-- Obtain components only from trusted, signed sources.
-- Use staged/canary rollouts for updates.
-- Enforce change management and separation of duties across CI/CD; patch on risk-based timelines.
-
-Cheat sheet: [Vulnerable Dependency Management](https://cheatsheetseries.owasp.org/cheatsheets/Vulnerable_Dependency_Management_Cheat_Sheet.html). Container supply-chain controls live in [`pm-dev-oci:oci-security`](../../../../pm-dev-oci/skills/oci-security/SKILL.md).
-
----
-
-## Mishandling of Exceptional Conditions
+## A10 — Mishandling of Exceptional Conditions
 
 **Definition.** Failure to prevent, detect, and respond to unusual situations — leading to crashes, resource exhaustion, sensitive-data exposure via error messages, and corrupted transaction state.
 
@@ -240,3 +236,5 @@ Cheat sheet: [Vulnerable Dependency Management](https://cheatsheetseries.owasp.o
 - Apply rate limiting, quotas, and throttling.
 - Unify error handling, logging, monitoring, and alerting.
 - Never expose database errors or stack traces to end users (this connects directly to the **fail-securely** principle in [`secure-design-principles.md`](secure-design-principles.md)).
+
+Source: [Mishandling of Exceptional Conditions](https://owasp.org/Top10/2025/A10_2025-Mishandling_of_Exceptional_Conditions/).

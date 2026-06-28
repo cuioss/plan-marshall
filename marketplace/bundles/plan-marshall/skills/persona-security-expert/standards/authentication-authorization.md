@@ -119,7 +119,7 @@ Cheat sheets: [REST Security](https://cheatsheetseries.owasp.org/cheatsheets/RES
 
 ## Cross-References
 
-- [`owasp-top-ten.md`](owasp-top-ten.md) — A01 Broken Access Control, A07 Authentication Failures, A02 Cryptographic Failures (password hashing), and the Security Headers / CSP catalogue.
+- [`owasp-top-ten.md`](owasp-top-ten.md) — A01 Broken Access Control, A07 Authentication Failures, A04 Cryptographic Failures (password hashing), and the Security Headers / CSP catalogue.
 - [`cryptography-key-management.md`](cryptography-key-management.md) — the password-hashing-vs-integrity-hashing distinction, CSPRNG for tokens/salts, token signature verification, and key storage.
 - [`threat-modeling-stride.md`](threat-modeling-stride.md) — Spoofing (authentication) and Elevation of Privilege (authorization) control mappings.
 - [`input-validation-trust-boundaries.md`](input-validation-trust-boundaries.md) — semantic validation (ownership) as the access-control complement to syntactic checks.

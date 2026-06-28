@@ -102,6 +102,6 @@ Record who requested each secret (system, role, identity) and why; log approval/
 
 - [`cryptography-key-management.md`](cryptography-key-management.md) — algorithm authority for encrypting secrets at rest/in transit, key storage, and the key-lifecycle rules secret rotation implements.
 - [`secure-design-principles.md`](secure-design-principles.md) — least privilege, secure by default (secrets in a secret manager by default).
-- [`owasp-top-ten.md`](owasp-top-ten.md) — A02 Cryptographic Failures (hardcoded credentials), A08 Software and Data Integrity Failures (supply-chain/CI-CD secret handling).
+- [`owasp-top-ten.md`](owasp-top-ten.md) — A04 Cryptographic Failures (hardcoded credentials), A08 Software and Data Integrity Failures (supply-chain/CI-CD secret handling).
 - [`secure-logging.md`](secure-logging.md) — the never-log-secrets rule.
 - Per-domain memory handling and injection: [`pm-dev-java:java-security`](../../../../pm-dev-java/skills/java-security/SKILL.md) (Java `char[]`/`byte[]` over immutable `String`).
