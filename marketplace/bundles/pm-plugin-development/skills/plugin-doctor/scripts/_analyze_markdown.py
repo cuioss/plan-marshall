@@ -772,6 +772,26 @@ def _strip_inline_code_spans(line: str) -> str:
     return _INLINE_CODE_RE.sub(lambda m: ' ' * len(m.group(0)), line)
 
 
+def derive_link_boundary(file_path: str) -> 'Path':
+    """Derive the path-independent containment boundary for a linking file.
+
+    Walks up from the linking file's directory to the nearest ``marketplace/bundles``
+    ancestor; failing that, to the ``.git`` repository root; failing that, falls
+    back to the linking file's own parent directory. Every per-component and
+    whole-tree call site resolves the same effective boundary for a given file,
+    so the broken-relative-link rule produces identical findings regardless of
+    which call site invoked it.
+    """
+    base_dir = Path(file_path).parent.resolve()
+    for ancestor in (base_dir, *base_dir.parents):
+        if ancestor.name == 'bundles' and ancestor.parent.name == 'marketplace':
+            return ancestor.parent
+    for ancestor in (base_dir, *base_dir.parents):
+        if (ancestor / '.git').exists():
+            return ancestor
+    return base_dir
+
+
 def check_broken_relative_link(
     content: str, file_path: str, boundary_dir: 'Path | None' = None
 ) -> list:
@@ -784,9 +804,11 @@ def check_broken_relative_link(
     ``boundary_dir`` sets the containment root for path traversal checks.  Pass
     the marketplace root (or bundle root) so that valid cross-directory
     references that resolve inside the tree (e.g. ``../../other-skill/file.md``)
-    are not rejected as out-of-bounds.  When ``None`` the linking file's parent
-    is used as the boundary, which is the conservative default for callers that
-    do not know the broader tree root.
+    are not rejected as out-of-bounds.  When ``None`` the boundary is derived via
+    :func:`derive_link_boundary` (nearest ``marketplace/bundles`` ancestor, else
+    the ``.git`` repo root, else the linking file's parent), so a caller that
+    omits the boundary still agrees with the whole-tree call site rather than
+    using the narrow linking-file directory.
 
     Out of scope (never flagged):
 
@@ -803,7 +825,11 @@ def check_broken_relative_link(
     """
     findings: list = []
     base_dir = Path(file_path).parent
-    scan_boundary = (boundary_dir if boundary_dir is not None else base_dir).resolve()
+    scan_boundary = (
+        boundary_dir.resolve()
+        if boundary_dir is not None
+        else derive_link_boundary(file_path)
+    )
     fence_map = _fenced_line_indices(content)
     lines = content.split('\n')
     for idx, line in enumerate(lines):
@@ -823,12 +849,15 @@ def check_broken_relative_link(
             if not file_part:
                 continue
             resolved = (base_dir / file_part).resolve()
-            if not resolved.is_relative_to(scan_boundary):
-                # Path escapes the scan tree — treat as non-existent so we
-                # never probe outside the boundary root.
-                pass
-            elif resolved.exists():
+            # Existence before containment: a target that exists on disk is never
+            # broken, regardless of which boundary the caller passed.
+            if resolved.exists():
                 continue
+            # Missing AND escaping the containment root: cannot be probed safely,
+            # so SKIP rather than report broken (avoids the cross-dir false positive).
+            if not resolved.is_relative_to(scan_boundary):
+                continue
+            # Only a missing, in-boundary target is a genuine broken link.
             findings.append(
                 {
                     'line': idx + 1,
