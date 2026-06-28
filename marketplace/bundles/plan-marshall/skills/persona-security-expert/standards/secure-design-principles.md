@@ -113,5 +113,5 @@ An AI-agent surface should hold **at most two** of the three high-risk corners: 
 - [`secrets-handling.md`](secrets-handling.md) — least privilege and secure-by-default applied to secrets.
 - [`dependency-supply-chain.md`](dependency-supply-chain.md) — the supply-chain application of separation of duties (CI/CD) and minimize-attack-surface (dependency vetting and minimization).
 - Container application of least privilege (capability dropping) and secure-by-default (minimal base images): [`pm-dev-oci:oci-security`](../../../../pm-dev-oci/skills/oci-security/SKILL.md).
-- Agents Rule of Two — the concrete implementation: [`plan-marshall:untrusted-ingestion/threat-model.md`](../../untrusted-ingestion/standards/threat-model.md), the reader/orchestrator/writer isolation boundary and its deterministic `validate_struct` containment script.
-- Agents Rule of Two — outbound-corner mediation: the reader's `WebFetch`/`WebSearch` channel is bounded by the plan-marshall-enforced WebFetch domain allowlist, re-checked at the validator via [`plan-marshall:workflow-permission-web`](../../workflow-permission-web/SKILL.md).
+- Agents Rule of Two — concrete implementation: [`plan-marshall:untrusted-ingestion/threat-model.md`](../../untrusted-ingestion/standards/threat-model.md).
+- Agents Rule of Two — outbound-corner mediation: [`plan-marshall:workflow-permission-web`](../../workflow-permission-web/SKILL.md) (WebFetch domain allowlist re-checked at the validator).
