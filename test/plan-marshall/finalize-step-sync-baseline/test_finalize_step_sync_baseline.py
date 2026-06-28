@@ -16,7 +16,7 @@ import re
 from pathlib import Path
 
 # Repo root resolved from this test file:
-# test/plan-marshall/finalize-step-sync-baseline/test_*.py -> repo root is 3 parents up.
+# test/plan-marshall/finalize-step-sync-baseline/test_*.py -> repo root is 4 parents up (index 3).
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _PHASE6_STANDARDS = (
     _REPO_ROOT

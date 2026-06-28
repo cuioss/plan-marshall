@@ -56,7 +56,14 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ### Classify the rebase
 
-Dispatch the existing `baseline-reconcile` probe to classify the upcoming rebase against `origin/{base_branch}`. `--no-emit` suppresses Q-Gate finding emission (those are a phase-2-refine concern; this step consumes the classification directly). The probe performs only `fetch + diff + merge-tree` and never mutates the working tree:
+**Threshold bypass (`{threshold} == never`)**: when the threshold is `never`, skip the classifier dispatch entirely and force `{decision} = needs_user`. Log the bypass and proceed directly to the **Pre-rebase gate**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Sync baseline: classifier bypassed (threshold=never), pre-rebase gate will fire"
+```
+
+Otherwise, dispatch the existing `baseline-reconcile` probe to classify the upcoming rebase against `origin/{base_branch}`. `--no-emit` suppresses Q-Gate finding emission (those are a phase-2-refine concern; this step consumes the classification directly). The probe performs only `fetch + diff + merge-tree` and never mutates the working tree:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
@@ -66,13 +73,6 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 Parse the returned TOON for `classification`, `auto_reconciled`, `conflict_count`, `conflicts[]`, and `upstream_commit_count`.
 
 If the script exits non-zero (per the **Exit-code convention** above) → STOP and return an error TOON to the dispatcher carrying the stderr verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict and must surface as an error.
-
-**Threshold bypass (`{threshold} == never`)**: when the threshold is `never`, skip the classifier dispatch entirely and force `{decision} = needs_user`. Log the bypass and proceed to the **Pre-rebase gate**:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Sync baseline: classifier bypassed (threshold=never), pre-rebase gate will fire"
-```
 
 ### Compute the gate decision
 
@@ -107,7 +107,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Fire an `AskUserQuestion` before any destructive rebase. The rebase is local-only — there is no force-push or merge at this order, so the prompt covers only the rebase itself:
 
-```
+```yaml
 AskUserQuestion:
   questions:
     - question: "Rebase the feature branch onto origin/{base_branch} before the finalize quality gates run?"
