@@ -750,6 +750,12 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
         # surfaced under the bare key, but only as a fallback — a top-level
         # declaration of the same key wins (applied after the scan completes).
         if key == 'metadata' and not value.strip():
+            # ``metadata:`` keys are one level deep ONLY. Track the indentation of
+            # the first child line; any subsequent line indented MORE deeply belongs
+            # to a nested block (e.g. ``metadata.some_block.verification_profile``)
+            # and must NOT be surfaced as a top-level metadata opt-in. Such deeper
+            # lines are skipped while the block continues.
+            child_indent: int | None = None
             while index < len(fm_lines):
                 meta_raw = fm_lines[index]
                 if meta_raw[:1] not in (' ', '\t'):
@@ -757,6 +763,12 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
                 index += 1
                 meta_line = meta_raw.strip()
                 if not meta_line or meta_line.startswith('#') or ':' not in meta_line:
+                    continue
+                meta_indent = len(meta_raw) - len(meta_raw.lstrip(' \t'))
+                if child_indent is None:
+                    child_indent = meta_indent
+                elif meta_indent > child_indent:
+                    # Deeper than the first child → nested sub-block; skip it.
                     continue
                 meta_key, _, meta_value = meta_line.partition(':')
                 meta_key = meta_key.strip()
@@ -860,8 +872,10 @@ def _build_implementor_record(doc_path: Path, source: str, name_override: str | 
     # stage (ext-point-verify.md § "Hook API"). A bare ``verification_profile:``
     # with no value coerces to ``None`` and MUST NOT register the producer, so the
     # membership test guards on the coerced value rather than mere key presence.
-    if fields.get('verification_profile') is not None:
-        record['verification_profile'] = fields['verification_profile']
+    vp = fields.get('verification_profile')
+    vp_nonempty = vp.strip() != '' if isinstance(vp, str) else bool(vp)
+    if vp_nonempty:
+        record['verification_profile'] = vp
     return record
 
 
