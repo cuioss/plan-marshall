@@ -149,6 +149,79 @@ class TestBrokenRelativeLink:
         assert len(findings) == 1
         assert findings[0]['target'] == 'standards/missing.md'
 
+    @staticmethod
+    def _make_bundle_layout(tmp_path: Path) -> tuple[Path, Path]:
+        """Build a ``marketplace/bundles/<bundle>/skills/{a,b}/`` layout.
+
+        Returns ``(tree_root, skill_a_dir)`` where ``tree_root`` is the
+        ``marketplace`` parent that ``derive_link_boundary`` resolves to and
+        ``skill_a_dir`` is the directory that holds the linking file.
+        """
+        bundle = tmp_path / 'marketplace' / 'bundles' / 'my-bundle'
+        skill_a = bundle / 'skills' / 'skill-a'
+        skill_b = bundle / 'skills' / 'skill-b'
+        skill_a.mkdir(parents=True)
+        skill_b.mkdir(parents=True)
+        tree_root = tmp_path / 'marketplace'
+        return tree_root, skill_a
+
+    def test_cross_directory_link_to_existing_file_is_silent(self, tmp_path: Path) -> None:
+        # A cross-directory ``../skill-b/target.md`` link whose target EXISTS
+        # must produce zero findings on the per-component (no-boundary) path —
+        # this is the regressing case that produced ~234 false positives.
+        _tree_root, skill_a = self._make_bundle_layout(tmp_path)
+        target = skill_a.parent / 'skill-b' / 'target.md'
+        target.write_text('# target\n', encoding='utf-8')
+        skill_md = skill_a / 'SKILL.md'
+        skill_md.write_text(
+            '# Doc\n\nSee [sibling](../skill-b/target.md).\n', encoding='utf-8'
+        )
+
+        findings = check_broken_relative_link(skill_md.read_text(), str(skill_md))
+
+        assert findings == []
+
+    def test_cross_directory_link_to_missing_file_is_flagged(self, tmp_path: Path) -> None:
+        # A cross-directory ``../skill-b/missing.md`` link whose target does NOT
+        # exist, but resolves INSIDE the derived boundary, still fires exactly
+        # one finding (the genuine broken-link case is preserved).
+        _tree_root, skill_a = self._make_bundle_layout(tmp_path)
+        skill_md = skill_a / 'SKILL.md'
+        skill_md.write_text(
+            '# Doc\n\nSee [sibling](../skill-b/missing.md).\n', encoding='utf-8'
+        )
+
+        findings = check_broken_relative_link(skill_md.read_text(), str(skill_md))
+
+        assert len(findings) == 1
+        assert findings[0]['target'] == '../skill-b/missing.md'
+
+    def test_no_boundary_and_root_boundary_agree(self, tmp_path: Path) -> None:
+        # The same fixture file, called once with no ``boundary_dir`` and once
+        # with an explicit ``boundary_dir`` at the tree root, yields identical
+        # findings — proving the unified boundary derivation makes the
+        # per-component and whole-tree call sites agree.
+        tree_root, skill_a = self._make_bundle_layout(tmp_path)
+        target = skill_a.parent / 'skill-b' / 'present.md'
+        target.write_text('# present\n', encoding='utf-8')
+        skill_md = skill_a / 'SKILL.md'
+        skill_md.write_text(
+            '# Doc\n\n'
+            'See [present](../skill-b/present.md) '
+            'and [gone](../skill-b/gone.md).\n',
+            encoding='utf-8',
+        )
+        content = skill_md.read_text()
+
+        no_boundary = check_broken_relative_link(content, str(skill_md))
+        root_boundary = check_broken_relative_link(
+            content, str(skill_md), boundary_dir=tree_root
+        )
+
+        assert no_boundary == root_boundary
+        assert len(no_boundary) == 1
+        assert no_boundary[0]['target'] == '../skill-b/gone.md'
+
 
 # ===========================================================================
 # fenced-code-no-language
