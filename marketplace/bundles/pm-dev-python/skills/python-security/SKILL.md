@@ -68,6 +68,7 @@ This skill is a **thin pointer**: the Python sink mechanics above are genuinely 
 |------------------------|-------------------------------|
 | Why every stdlib boundary value is untrusted; allow-list, canonicalize-before-validate, fail-closed (the general architecture behind every sink and path check) | [`input-validation-trust-boundaries.md`](../../../plan-marshall/skills/persona-security-expert/standards/input-validation-trust-boundaries.md) |
 | The subprocess / SQL / eval sinks mapped to a recognized risk category (A03 Injection) | [`owasp-top-ten.md`](../../../plan-marshall/skills/persona-security-expert/standards/owasp-top-ten.md) |
+| Why deserializing untrusted bytes is dangerous before any value inspection (the `pickle`/`yaml.load` avoidance is the Python mechanic) | [`input-validation-trust-boundaries.md`](../../../plan-marshall/skills/persona-security-expert/standards/input-validation-trust-boundaries.md) — Unsafe Deserialization sub-section |
 | The principles behind secure-by-default sink choices (secure by default, fail securely, economy of mechanism) | [`secure-design-principles.md`](../../../plan-marshall/skills/persona-security-expert/standards/secure-design-principles.md) |
 
 Note the deserialization sinks (`pickle`/`yaml.load`) also map to OWASP A08 Software and Data Integrity Failures — see [`owasp-top-ten.md`](../../../plan-marshall/skills/persona-security-expert/standards/owasp-top-ten.md).

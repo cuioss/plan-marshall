@@ -104,6 +104,20 @@ Cheat sheets: [Threat Modeling](https://cheatsheetseries.owasp.org/cheatsheets/T
 
 Container-specific hardening lives in [`pm-dev-oci:oci-security`](../../../../pm-dev-oci/skills/oci-security/SKILL.md). Cheat sheets: [Infrastructure as Code Security](https://cheatsheetseries.owasp.org/cheatsheets/Infrastructure_as_Code_Security_Cheat_Sheet.html), [Docker Security](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html). Source: [Security Misconfiguration](https://owasp.org/Top10/2021/A05_2021-Security_Misconfiguration/).
 
+### Security Headers and Content Security Policy
+
+**Maps to:** CWE-693 · OWASP A05 (2021) / A02 (2025) Security Misconfiguration · ASVS V3
+
+HTTP security headers are a browser-enforced defense layer — a hardening default that turns the user's browser into an additional enforcement point. Missing headers are a security misconfiguration: the application "works" without them, so the omission is invisible until exploited. The header set:
+
+- **Content-Security-Policy (CSP)** — an application-specific allow-list of the origins a page may load scripts, styles, frames, and other resources from. It is a **second layer** behind output encoding against XSS and injection, not a replacement for it. `require-trusted-types-for 'script'` enables [Trusted Types](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy/require-trusted-types-for), which eliminates DOM-XSS by permitting only vetted, typed values into dangerous DOM sinks (the JS-domain mechanics are in [`pm-dev-frontend:javascript-security`](../../../../pm-dev-frontend/skills/javascript-security/SKILL.md)).
+- **Strict-Transport-Security (HSTS)** — `max-age=63072000; includeSubDomains; preload` forces HTTPS for the lifetime of `max-age`. Plan the rollout carefully: a certificate problem locks users out for the whole `max-age` window. The transport/TLS side of HSTS is in [`cryptography-key-management.md`](cryptography-key-management.md).
+- **X-Content-Type-Options: `nosniff`** — stops the browser MIME-sniffing a response into a different, dangerous content type.
+- **Clickjacking defense** — prefer `Content-Security-Policy: frame-ancestors 'none'` (which obsoletes the older header) or `X-Frame-Options: DENY` to prevent the page being framed by an attacker.
+- **Referrer-Policy: `strict-origin-when-cross-origin`** — limits how much of the URL leaks in the `Referer` header on cross-origin navigations.
+
+These headers complement the secure-cookie flags (`Secure`, `HttpOnly`, `SameSite`) and the API token-validation controls in [`authentication-authorization.md`](authentication-authorization.md). Cheat sheet: [HTTP Headers](https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html). The secure-by-default configuration discipline that makes these headers a baseline is in [`secure-design-principles.md`](secure-design-principles.md) (Configuration Hardening).
+
 ---
 
 ## A06 — Vulnerable and Outdated Components

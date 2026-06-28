@@ -68,7 +68,10 @@ Secure alternatives: orchestrator-mounted volumes, in-memory sidecar injection (
 
 ## Encrypt Secrets at Rest and in Transit
 
-Never transmit a secret in plaintext — TLS is ubiquitous. At rest, use authenticated encryption (AES-256-GCM or ChaCha20-Poly1305). [NIST SP 800-57](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-57pt1r5.pdf) approved choices: AES-256 (indefinite), AES-128 (through 2030), RSA ≥ 3072 bits (RSA-2048 acceptable only through 2030), ECDSA P-256/P-384; SHA-1 is no longer approved for new signatures. In transit, TLS 1.2 minimum, 1.3 preferred. Note: Kubernetes Secrets are base64-**encoded**, not encrypted — enable etcd encryption at rest. Store encryption keys separately from the encrypted secrets. NIST SP 800-57 incorporates quantum-resistant algorithms (FIPS 203/204/205: ML-KEM, ML-DSA, SLH-DSA).
+Never store or transmit a secret in plaintext: encrypt it at rest and rely on TLS in transit. The *algorithm choice* for both — which AEAD cipher, which approved key lengths, which TLS version and cipher suites — is owned by [`cryptography-key-management.md`](cryptography-key-management.md); apply its rules here rather than restating them. The secrets-management-specific points are operational:
+
+- **Kubernetes Secrets are base64-encoded, not encrypted** — a base64 string is not a security control. Enable etcd encryption-at-rest so the stored object is actually protected.
+- **Store the encryption keys separately from the encrypted secrets** so one disclosure does not yield both (the key-separation rule, detailed in [`cryptography-key-management.md`](cryptography-key-management.md)).
 
 ---
 
@@ -97,7 +100,8 @@ Record who requested each secret (system, role, identity) and why; log approval/
 
 ## Cross-References
 
+- [`cryptography-key-management.md`](cryptography-key-management.md) — algorithm authority for encrypting secrets at rest/in transit, key storage, and the key-lifecycle rules secret rotation implements.
 - [`secure-design-principles.md`](secure-design-principles.md) — least privilege, secure by default (secrets in a secret manager by default).
-- [`owasp-top-ten.md`](owasp-top-ten.md) — A02 Cryptographic Failures (hardcoded credentials), A08 Software and Data Integrity Failures and Software Supply Chain Failures (supply-chain/CI-CD secret handling).
+- [`owasp-top-ten.md`](owasp-top-ten.md) — A02 Cryptographic Failures (hardcoded credentials), A08 Software and Data Integrity Failures (supply-chain/CI-CD secret handling).
 - [`secure-logging.md`](secure-logging.md) — the never-log-secrets rule.
 - Per-domain memory handling and injection: [`pm-dev-java:java-security`](../../../../pm-dev-java/skills/java-security/SKILL.md) (Java `char[]`/`byte[]` over immutable `String`).

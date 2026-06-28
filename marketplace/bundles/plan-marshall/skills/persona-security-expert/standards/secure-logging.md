@@ -76,7 +76,7 @@ Do **not** log private usernames when used as authentication credentials, or con
 ## Log Integrity, Access Control, and Availability
 
 - **Integrity** — build in tamper detection so a modified/deleted record is detectable. Use append-only storage (append-only tables, write-once filesystems); move logs to read-only media as soon as possible; forward to a centralized, secure service so evidence survives a production compromise. (Corrupted logs are how attackers cover their tracks.) Honeytokens embedded in logs give high-fidelity, low-false-positive tamper detection.
-- **Access control** — restrict log access by job function; only those needing debugging should see unmasked logs. Apply file permissions, audit all access, and encrypt logs containing PII or secrets.
+- **Access control** — restrict log access by job function; only those needing debugging should see unmasked logs. Apply file permissions, audit all access, and encrypt logs containing PII or secrets. Disabling verbose/debug log levels in production is itself a configuration-hardening control — debug logging routinely widens the sensitive-data exposure surface — so the production log level is governed by the configuration-hardening discipline in [`secure-design-principles.md`](secure-design-principles.md).
 - **Availability** — ensure logging cannot exhaust resources (an attacker-controlled logging rate is a DoS vector): monitor disk usage, rotate logs, set size limits, and separate log storage from application data.
 
 ---
@@ -90,6 +90,7 @@ Forward all logs to a centralized SIEM (Splunk, ELK, LogRhythm) in a machine-rea
 ## Cross-References
 
 - [`owasp-top-ten.md`](owasp-top-ten.md) — A09 Security Logging and Alerting Failures (the risk this document mitigates).
+- [`secure-design-principles.md`](secure-design-principles.md) — configuration hardening (production log-level discipline) and mishandling-of-exceptional-conditions (log-the-unexpected-state, sanitized).
 - [`secrets-handling.md`](secrets-handling.md) — the never-log-secrets rule and secret audit logging.
 - [`input-validation-trust-boundaries.md`](input-validation-trust-boundaries.md) — sanitizing untrusted input (the same boundary discipline applied to log sinks).
 - Per-language secure-logging mechanics: [`pm-dev-java:java-security`](../../../../pm-dev-java/skills/java-security/SKILL.md) (Java/SLF4J/Logback masking and parameterized logging).

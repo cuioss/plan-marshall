@@ -74,6 +74,7 @@ The conceptual *why* behind every rule in this skill's standards lives in the ce
 | Java mechanic (here) | Centralized foundation (there) |
 |----------------------|-------------------------------|
 | `jakarta.validation` at the trust boundary | [`input-validation-trust-boundaries.md`](../../../plan-marshall/skills/persona-security-expert/standards/input-validation-trust-boundaries.md) |
+| Unsafe deserialization of inbound payloads (`ObjectInputFilter`/JEP-290 allow-listing is the Java mechanic) | [`input-validation-trust-boundaries.md`](../../../plan-marshall/skills/persona-security-expert/standards/input-validation-trust-boundaries.md) — Unsafe Deserialization sub-section |
 | Secure-logging masking, never-log list | [`secure-logging.md`](../../../plan-marshall/skills/persona-security-expert/standards/secure-logging.md) |
 | Externalizing secrets, no hardcoded credentials | [`secrets-handling.md`](../../../plan-marshall/skills/persona-security-expert/standards/secrets-handling.md) |
 | Fail-fast startup validation, secure-by-default | [`secure-design-principles.md`](../../../plan-marshall/skills/persona-security-expert/standards/secure-design-principles.md) |
