@@ -21,7 +21,7 @@ Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., 
 
 ## Decision Flow
 
-```
+```text
 1. Does task need IT?
    - Explicit request mentions "integration test", "IT", "E2E"
    - Change is external-facing (API, UI, public library API, config)

@@ -6,7 +6,7 @@ Standards for establishing requirements documentation directory structure.
 
 ## Required Directory Layout
 
-```
+```text
 project-root/
 ├── doc/
 │   ├── Requirements.adoc
@@ -59,7 +59,7 @@ For rapid prototyping or small projects:
 - Expected development time < 2 weeks (short timeline favors consolidated documentation)
 - Proof-of-concept work (exploratory projects where requirements may change significantly)
 
-```
+```text
 doc/
 ├── Requirements.adoc (basic structure, key requirements)
 └── Specification.adoc (overview only)
@@ -76,7 +76,7 @@ For production projects:
 - Multi-component architecture (complexity requires detailed technical specifications)
 - Intended for production deployment (production systems require comprehensive documentation)
 
-```
+```text
 doc/
 ├── Requirements.adoc (comprehensive)
 ├── Specification.adoc (full index)

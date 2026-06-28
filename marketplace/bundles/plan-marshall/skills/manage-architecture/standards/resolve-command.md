@@ -85,7 +85,7 @@ Any other shape — Bucket A `manage-*` notations, raw `./pw` calls, `grep` invo
 
 For a classified executable, the recommended Bash timeout is derived through the same primitives `cmd_run` uses at execute time:
 
-```
+```text
 command_key   = compute_command_key(build_skill_CONFIG, command_args)
                 # e.g. "python:verify_plan_marshall"
 inner_timeout = timeout_get(command_key, DEFAULT_BUILD_TIMEOUT, project_dir)

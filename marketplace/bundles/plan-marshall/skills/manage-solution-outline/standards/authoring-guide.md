@@ -6,7 +6,7 @@ Step-by-step workflow for creating a solution outline document. This guide is us
 
 Load project architecture knowledge via the `plan-marshall:manage-architecture` skill:
 
-```
+```text
 Skill: plan-marshall:manage-architecture
 ```
 

@@ -129,7 +129,7 @@ One deliverable for project-wide drift detection:
 
 **4a. Read the deliverable template** to understand the required structure:
 
-```
+```text
 Read: marketplace/bundles/plan-marshall/skills/manage-solution-outline/templates/deliverable-template.md
 ```
 

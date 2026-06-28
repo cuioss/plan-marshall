@@ -15,7 +15,7 @@ The flow has three steps:
 - **Step B — DYNAMIC single-select profile + data-driven package_source**: one profile per run, chosen from the union of profiles the detected domains actually expose; the package source is derived data-driven from the selected profile's declared `package_source`.
 - **Step C — per-domain paginated skill multi-select**: per detected domain that exposes the chosen profile, a paginated (≤4 options/page) multi-select over that domain's standards skills, defaults pre-checked.
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │              Built-in "Refactor to Profile Standards" selection flow           │
 ├──────────────────────────────────────────────────────────────────────────────┤
@@ -88,7 +88,7 @@ Take the **union** of those profile keys across all detected domains as the sing
 
 Present the union as a single-select `AskUserQuestion`:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "Which profile should be refactored?"
@@ -129,7 +129,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 
 Because the profile is single-select, running the recipe once per profile must produce DISTINCT, non-colliding plans. Carry the selected profile as a NAME SUFFIX on the recipe-generated `plan_id`:
 
-```
+```text
 plan_id = refactor-to-profile-standards-{profile}
 ```
 
@@ -162,7 +162,7 @@ Read `defaults` (pre-checked) and `optionals` (unchecked) from the output.
 
 Build a multi-select option list: `defaults` pre-checked, `optionals` unchecked. Each `AskUserQuestion` page carries at most **4 options** (the hard limit), so a domain with more than 4 skills paginates across successive ≤4-option screens, carrying the pre-checked state on every page:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "Which {profile} standards skills should be enforced for the {domain} domain? (page {n} of {total})"

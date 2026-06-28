@@ -106,7 +106,7 @@ Read the created file and inform user to fill in content sections.
 
 **Step 4: Validate Format**
 
-```
+```text
 Skill: pm-documents:ref-asciidoc
 Execute workflow: validate-format
 Parameters:
@@ -115,7 +115,7 @@ Parameters:
 
 ### Output
 
-```
+```text
 ADR Created: doc/adr/004-{title}.adoc
 Number: ADR-004
 Status: Proposed
@@ -239,7 +239,7 @@ Use list-adrs workflow to get ADR path by number.
 
 **Step 2: Validate Format**
 
-```
+```text
 Skill: pm-documents:ref-asciidoc
 Execute workflow: validate-format
 Parameters:
@@ -260,7 +260,7 @@ This skill integrates with `ref-asciidoc` for:
 
 ## ADR Lifecycle
 
-```
+```text
 Proposed → Accepted → [Deprecated | Superseded]
 ```
 
@@ -286,7 +286,7 @@ Each ADR opens with a progressive-disclosure metadata block, then these sections
 
 Immediately after the `= ADR-NNN: Title` line, every ADR carries a machine-readable metadata block delimited by `// adr-metadata` … `// end-adr-metadata`. The block is authored as AsciiDoc line comments so it never renders, and is read by `manage-adr.py scan` to surface ADR relevance cheaply during the planning lifecycle.
 
-```
+```text
 // adr-metadata
 // summary: One-line statement of the decision
 // tags: comma, separated, topic, tags
@@ -351,7 +351,7 @@ Lessons capture **the recurrence pattern the ADR's principle defends against** �
 
 ADRs follow this naming pattern:
 
-```
+```text
 doc/adr/{NNN}-{Title_With_Underscores}.adoc
 ```
 

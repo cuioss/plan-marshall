@@ -164,7 +164,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Built-in recipe** (`recipe_key == "refactor-to-profile-standards"`): pass the multi-domain field set read above — `recipe_domains` (comma-separated), `recipe_profile`, `recipe_package_source`, and one `recipe_selected_skills__{domain}` input per detected domain:
 
-```
+```text
 Skill: {recipe_skill}
   Input:
     plan_id: {plan_id}
@@ -177,7 +177,7 @@ Skill: {recipe_skill}
 
 **Custom recipe** (any other `recipe_key`): pass the single-domain field set as before — these recipes carry no multi-domain field set:
 
-```
+```text
 Skill: {recipe_skill}
   Input:
     plan_id: {plan_id}
@@ -219,7 +219,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Dispatch:
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: detect-change-type
@@ -587,7 +587,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 1. **Read the target skill's SKILL.md**.
 
-   ```
+   ```text
    Read: marketplace/bundles/{bundle}/skills/{skill}/SKILL.md
    ```
 

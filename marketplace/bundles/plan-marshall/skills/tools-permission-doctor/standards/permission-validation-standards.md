@@ -229,14 +229,14 @@ Or bundle wildcard:
 - `WebFetch`: Must match `^domain:[a-zA-Z0-9.-]+\.[a-z]{2,}$`
 
 ### Rule 2: Duplication Detection
-```
+```text
 For tool T and patterns P1, P2:
   If P1 == P2: Duplicate (remove P2)
   If P1 is glob and P2 matches P1: Redundant (remove P2)
 ```
 
 ### Rule 3: Security Requirements
-```
+```text
 For WebFetch permissions:
   - Domain must pass security assessment
   - Domain must have legitimate use case
@@ -244,7 +244,7 @@ For WebFetch permissions:
 ```
 
 ### Rule 4: Path Validation
-```
+```text
 For file access permissions:
   - Path must exist or be valid glob pattern
   - No circular or symbolic link issues

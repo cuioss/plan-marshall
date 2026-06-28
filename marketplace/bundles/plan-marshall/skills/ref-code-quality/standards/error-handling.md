@@ -8,7 +8,7 @@ Language-agnostic error handling principles covering exception philosophy, propa
 
 Never catch or throw generic errors. Always use the most specific error/exception type available.
 
-```
+```text
 // GOOD — specific error types
 try {
     config = parser.parse(readFile(configPath))
@@ -34,7 +34,7 @@ Error messages must provide context for diagnosis:
 * **Why** it failed (if known)
 * **Where** it happened (relevant identifiers, file paths, values)
 
-```
+```text
 // GOOD — actionable error message
 "Failed to validate token for user 'admin': signature expired at 2024-01-15T10:30:00Z"
 
@@ -48,7 +48,7 @@ Error messages must provide context for diagnosis:
 
 When wrapping exceptions, always preserve the original cause:
 
-```
+```text
 // GOOD — preserves original cause
 catch (IOException original) {
     throw new ConfigError("Failed to read " + path, original)
@@ -100,7 +100,7 @@ Errors from the runtime environment:
 
 Do not catch errors you cannot handle meaningfully:
 
-```
+```text
 // BAD — catch and ignore
 try {
     result = service.process(data)
@@ -131,7 +131,7 @@ result = service.process(data)  // caller handles the error
 
 Validate preconditions early and fail fast:
 
-```
+```text
 function processOrder(order) {
     if (!order) throw new ArgumentError("order must not be null")
     if (order.items.isEmpty()) throw new ArgumentError("order must have items")
@@ -174,7 +174,7 @@ function processOrder(order) {
 
 For transient failures (network, resource contention):
 
-```
+```text
 maxRetries = 3
 for attempt in range(maxRetries):
     try {
@@ -189,7 +189,7 @@ for attempt in range(maxRetries):
 
 For non-critical features:
 
-```
+```text
 function getConfig(key) {
     try {
         return configService.get(key)
@@ -216,7 +216,7 @@ Validate input at system boundaries:
 * **Internal boundaries** (between modules) — validate with assertions/preconditions
 * **Within a module** — trust your own code, no redundant validation
 
-```
+```text
 // System boundary — full validation
 function handleApiRequest(request) {
     validate(request.body)  // thorough validation

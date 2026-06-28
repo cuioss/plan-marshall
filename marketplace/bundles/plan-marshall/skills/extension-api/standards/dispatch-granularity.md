@@ -6,7 +6,7 @@ Single source of truth for the granularity heuristics that govern when a step ea
 
 Spawning a subagent is not free. From `manage-metrics/standards/data-format.md`, real plan runs anchor the picture:
 
-```
+```text
 phase.1-init.total_tokens: ~25–55 K
 phase.2-refine.total_tokens: ~40 K
 phase.3-outline.total_tokens: ~110–200 K

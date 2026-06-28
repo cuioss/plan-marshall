@@ -179,7 +179,7 @@ Adaptive timeout management for **synchronous command execution** (Maven, npm, G
 1. **Outer timeout**: Bash tool's `timeout` parameter (prevents the host platform from canceling the operation)
 2. **Inner timeout**: Shell `timeout` command (controls actual execution)
 
-```
+```text
                 TWO-LAYER TIMEOUT ARCHITECTURE
 
     +-------------------------------------------------------------+
@@ -262,7 +262,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeo
 3. If found: compute weighted average favoring the higher value for reliability
 
 **Output** (TOON format):
-```
+```text
 status	success
 command	build:maven_verify
 timeout_seconds	228

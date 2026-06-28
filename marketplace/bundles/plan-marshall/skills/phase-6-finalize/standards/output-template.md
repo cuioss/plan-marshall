@@ -15,7 +15,7 @@ Every `manage-*` script call in this document carries the following exit-code co
 
 ## Template Skeleton
 
-```
+```text
 [TOKEN] PR #{n} -- {N} deliverable(s) shipped, {state summary}
 
 Goal
@@ -42,7 +42,7 @@ Repository: main up-to-date | worktree removed | working tree clean
 
 When the supplement is active (see `## Phase Breakdown Supplement` below), the verbatim Phase Breakdown table content captured from `metrics.md` is appended as an additional section AFTER the Finalize-steps block. Every step row in the Finalize-steps block — including the `record-metrics` row — emits unchanged.
 
-```
+```text
 [TOKEN] PR #{n} -- {N} deliverable(s) shipped, {state summary}
 
 Goal
@@ -226,7 +226,7 @@ Walk the precedence chain:
 
 ### 2. Build headline
 
-```
+```text
 {TOKEN} PR #{n} -- {N} deliverable(s) shipped, {state summary}
 ```
 
@@ -244,7 +244,7 @@ Wrap implementation guidance: use Python's `textwrap.fill(summary, width=78, ini
 
 Defensive fallback: when the snapshot captured `None` or an empty string for Summary (sentinel emitted by the Snapshot Procedure when `section_not_found` or empty content is returned), emit the literal placeholder so the block remains valid:
 
-```
+```text
 Goal
   (no summary recorded)
 ```
@@ -257,7 +257,7 @@ Header: `Deliverables ({N_done}/{N_total})`
 
 One row per deliverable in outline order:
 
-```
+```text
   {icon}  {n}. {deliverable title}
 ```
 
@@ -284,7 +284,7 @@ The strip-prefix retry is a **transitional defense** against legacy `mark-step-d
 
 Then emit:
 
-```
+```text
   {icon}  {step_name_padded}  {display_detail}
 ```
 
@@ -305,7 +305,7 @@ Every step row — including `record-metrics` — emits unchanged. The renderer 
 
 One line, joined by ` | ` (space pipe space):
 
-```
+```text
 Repository: {main state} | {worktree token?} | {working tree state}
 ```
 
@@ -315,7 +315,7 @@ See "Repository Trailer Rules" below.
 
 Print the five blocks separated by blank lines:
 
-```
+```text
 {headline}
 
 {goal block}

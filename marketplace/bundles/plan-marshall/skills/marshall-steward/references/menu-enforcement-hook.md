@@ -53,7 +53,7 @@ every required surface on its own line; scan for the dedicated
   Print an "already configured" message and return to the Configuration menu
   WITHOUT prompting:
 
-  ```
+  ```text
   The PreToolUse enforcement hook is already configured.
 
   The enforcement entry is present in ./.claude/settings.local.json. A fresh
@@ -72,7 +72,7 @@ enforcement line does not by itself make it healthy. Read the
 
 Prompt the user before writing anything:
 
-```
+```text
 AskUserQuestion:
   question: "Enable the conditional PreToolUse enforcement hook? It deterministically blocks four hard-rule violation families (shell-construct compounds, Bash file-ops, generated-executor edits, hard-coded builds) inside a plan-marshall plan context, and fails open everywhere else. This installs ONLY the enforcement entry into ./.claude/settings.local.json — it does not touch the terminal-title wiring."
   header: "Enforcement Hook"
@@ -107,7 +107,7 @@ Inspect the TOON response:
 
 #### Final report
 
-```
+```text
 PreToolUse enforcement hook enabled.
 
 Enforcement entry: <enforcement_status>

@@ -8,7 +8,7 @@
 
 ## Step 1: Load Foundation Skills
 
-```
+```text
 Skill: pm-plugin-development:plugin-architecture
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
@@ -17,7 +17,7 @@ These provide architecture principles and non-prompting tool usage patterns.
 
 ## Step 2: Load Command Standards
 
-```
+```text
 Read references/command-guide.md
 ```
 
@@ -37,7 +37,7 @@ Ask user for:
 
 **D. Command type** — Present using `AskUserQuestion`:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "What type of command is this?"
@@ -80,7 +80,7 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-create:component ge
 ```
 
 **Load template:**
-```
+```text
 Read assets/templates/command-template.md
 ```
 
@@ -108,7 +108,7 @@ If you discover issues or improvements during execution, record them:
 ```
 
 **Write file:**
-```
+```text
 Write: {bundle}/commands/{command-name}.md
 ```
 
@@ -131,6 +131,6 @@ Same format as agent workflow.
 
 ## Step 8: Run Command Diagnosis
 
-```
+```text
 SlashCommand: /pm-plugin-development:plugin-doctor commands command-name={command-name}
 ```

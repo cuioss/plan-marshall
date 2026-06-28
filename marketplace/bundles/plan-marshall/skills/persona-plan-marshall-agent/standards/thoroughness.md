@@ -25,7 +25,7 @@ Thoroughness is a **single scalar** ladder. Relation-depth is the upper rungs of
 
 Scope is the boundary radius, a nested ladder from narrowest to widest:
 
-```
+```text
 change-set ⊂ artifact ⊂ component ⊂ module ⊂ overall
 ```
 
@@ -49,7 +49,7 @@ Relation-tracing thoroughness lower-bounds scope. You cannot trace a relationshi
 
 The constraint, stated precisely so config validation can cite it verbatim:
 
-```
+```text
 reject thoroughness ≥ T4 ∧ scope < component
 ```
 

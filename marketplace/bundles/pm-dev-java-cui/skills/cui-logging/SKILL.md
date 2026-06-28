@@ -37,7 +37,7 @@ This skill requires CUI library dependencies:
 
 **CRITICAL**: Load these standards for any logging-related work.
 
-```
+```text
 Read: standards/logging-standards.md
 ```
 
@@ -49,21 +49,21 @@ This provides the foundational rules:
 ### Step 2: Load Additional Standards (As Needed)
 
 **DSL Constants Pattern** (load when creating LogMessages classes):
-```
+```text
 Read: standards/dsl-constants.md
 ```
 
 Use when: Implementing DSL-style LogMessages classes with nested static classes and @UtilityClass pattern.
 
 **LogMessages Documentation** (load when documenting):
-```
+```text
 Read: standards/logmessages-documentation.md
 ```
 
 Use when: Writing AsciiDoc documentation for LogMessages classes.
 
 **Logging Maintenance** (load for migration/refactoring):
-```
+```text
 Read: standards/logging-maintenance-reference.md
 ```
 

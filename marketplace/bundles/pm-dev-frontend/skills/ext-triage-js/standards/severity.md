@@ -105,7 +105,7 @@ Decision criteria for handling JavaScript findings based on severity, type, and 
 
 ## Quick Decision Flowchart
 
-```
+```text
 Is it ESLint error level?
   → Yes → FIX (blocks CI)
 

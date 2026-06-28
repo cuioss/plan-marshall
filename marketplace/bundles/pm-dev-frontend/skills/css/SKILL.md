@@ -26,7 +26,7 @@ Modern CSS development standards covering fundamentals, responsive design, perfo
 
 Load this standard for any CSS implementation work.
 
-```
+```text
 Read: standards/css-essentials.md
 ```
 
@@ -35,14 +35,14 @@ Covers core principles, BEM naming, custom properties, selectors, and file struc
 ### Step 2: Load Additional Standards (As Needed)
 
 **Responsive Design** (load for layout work):
-```
+```text
 Read: standards/css-responsive.md
 ```
 
 Use when: Building responsive layouts, working with Grid/Flexbox, Container Queries, or fluid typography.
 
 **Quality and Tooling** (load for performance or accessibility work):
-```
+```text
 Read: standards/css-quality-tooling.md
 ```
 

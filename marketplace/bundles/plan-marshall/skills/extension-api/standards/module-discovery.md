@@ -17,7 +17,7 @@ Provides the extension hook for discovering project modules with complete metada
 
 The method is invoked during project analysis:
 
-```
+```text
 1. Extension discovery and loading
 2. discover_project_modules() aggregates across all extensions
 3. ➤ discover_modules(project_root) → modules per extension

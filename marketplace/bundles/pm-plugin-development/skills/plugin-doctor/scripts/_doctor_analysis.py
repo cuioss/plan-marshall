@@ -646,7 +646,7 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
                 'file': file_path,
                 'line': violation.get('line'),
                 'severity': 'warning',
-                'fixable': False,
+                'fixable': True,
                 'description': violation.get(
                     'message', 'fenced code block opens with no language info-string (fenced-code-no-language)'
                 ),
@@ -1001,7 +1001,7 @@ def extract_issues_from_subdoc_analysis(subdoc_results: list[dict], skill_path: 
                         'file': file_path,
                         'line': issue.get('line'),
                         'severity': 'warning',
-                        'fixable': False,
+                        'fixable': True,
                         'description': issue.get(
                             'message',
                             'fenced code block opens with no language info-string (fenced-code-no-language)',
@@ -1026,12 +1026,9 @@ def analyze_markdown_mirror_rules(marketplace_root: Path) -> list[dict]:
     ``check_fenced_code_no_language``) directly on each file. This is a
     dedicated whole-tree helper for the two rules — distinct from the
     per-component ``analyze_component`` path that surfaces the same rules during
-    ``analyze``. The two rules are currently **analyze-only**: this helper is
-    NOT imported or invoked by ``doctor-marketplace.py::cmd_quality_gate`` (the
-    gate explicitly excludes ``broken-relative-link`` and
-    ``fenced-code-no-language`` — see the NOTE in ``cmd_quality_gate``). It
-    remains available for a future activation step that promotes the two rules
-    to the build-failing gate once the tree is clean.
+    ``analyze``. Both rules are **build-failing**: this helper is invoked by
+    ``doctor-marketplace.py::cmd_quality_gate`` so ``broken-relative-link`` and
+    ``fenced-code-no-language`` gate every build.
 
     Each finding is a standard issue dict carrying ``rule_id`` so the gate's
     ``_scoped`` path filter and rule summaries treat it like the other
@@ -1063,7 +1060,15 @@ def analyze_markdown_mirror_rules(marketplace_root: Path) -> list[dict]:
                 except OSError:
                     continue
                 file_path = str(md_file)
-                for violation in check_broken_relative_link(content, file_path, boundary_dir=marketplace_root):
+                # Pass the repo root (``marketplace_root.parent``, the .git-bearing
+                # directory) as the containment boundary so the gate's whole-tree
+                # pass agrees with the widened per-file boundary in
+                # derive_link_boundary. Without this, the explicit marketplace_root
+                # argument would override the widening and in-repo cross-tree links
+                # (e.g. into doc/) would never be existence-checked.
+                for violation in check_broken_relative_link(
+                    content, file_path, boundary_dir=marketplace_root.parent
+                ):
                     findings.append(
                         {
                             'type': 'broken-relative-link',
@@ -1084,7 +1089,7 @@ def analyze_markdown_mirror_rules(marketplace_root: Path) -> list[dict]:
                             'file': file_path,
                             'line': violation.get('line'),
                             'severity': 'warning',
-                            'fixable': False,
+                            'fixable': True,
                             'description': violation.get('message'),
                             'details': violation,
                         }

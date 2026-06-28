@@ -71,7 +71,7 @@ Select the SINGLE change type that best matches the request intent.
 
 **Decision logic** (apply in order; the first matching rule wins):
 
-```
+```text
 IF request asks to understand/investigate something:
   # Compound intent guard: if the request ALSO asks to fix/implement/improve,
   # then analysis is the discovery method, not the goal.

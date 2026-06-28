@@ -9,7 +9,7 @@ module containing `derived.json` (deterministic discovery output) and
 
 **Location**: `.plan/project-architecture/`
 
-```
+```text
 .plan/project-architecture/
 ├── _project.json                   # Top-level project metadata + module index
 ├── {module-1}/
@@ -419,7 +419,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config get-sk
 `architecture discover --force` writes the entire layout to a sibling
 staging directory before atomically replacing the live tree:
 
-```
+```text
 Step 1. Stage:    Build .plan/project-architecture.tmp/
                     ├── _project.json
                     ├── {module-1}/{derived,enriched}.json
@@ -518,7 +518,7 @@ appropriate purpose.
 
 **Single Module**:
 
-```
+```text
 status: success
 
 module: my-module
@@ -526,7 +526,7 @@ module: my-module
 
 **Multi-Module (Dependency Tree)**:
 
-```
+```text
 status: success
 
 oauth-sheriff-quarkus-deployment
@@ -556,7 +556,7 @@ parallel.
 
 **Detecting Circular Dependencies**:
 
-```
+```text
 status: success
 
 module-a

@@ -36,13 +36,13 @@ Catch the recurring failure mode where a long-running execute phase is interrupt
 
 2. **Fetch base** (read-only network round-trip):
 
-   ```
+   ```text
    git -C {worktree_path} fetch origin {base_branch}
    ```
 
 3. **Fast-path check** — verify the current branch tip already contains `origin/{base_branch}`:
 
-   ```
+   ```text
    git -C {worktree_path} merge-base --is-ancestor origin/{base_branch} HEAD
    ```
 
@@ -50,7 +50,7 @@ Catch the recurring failure mode where a long-running execute phase is interrupt
 
 4. **Drift detected** — exit code non-zero means upstream has new commits the worktree does not contain. Capture divergent commits via `git -C {worktree_path} log --oneline HEAD..origin/{base_branch}`, then invoke `baseline-reconcile` with `--no-emit` to obtain a deterministic overlap predicate:
 
-   ```
+   ```text
    python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
      baseline-reconcile --plan-id {plan_id} --no-emit
    ```
@@ -87,13 +87,13 @@ No footprint reconciliation is needed: the plan footprint is derived on demand f
 
 **Decision-log entry** — exactly one `decision` log line, naming the absorbed commits:
 
-```
+```text
 (plan-marshall:phase-5-execute:self-absorb) Absorbed {upstream_commit_count} upstream commits with zero overlap: {divergent_commits}
 ```
 
 **Work-log status line** — one `[STATUS]` work-log line for grep-ability:
 
-```
+```text
 [STATUS] (plan-marshall:phase-5-execute) Self-absorbed zero-overlap drift: {upstream_commit_count} commits, new main_sha={main_sha}
 ```
 

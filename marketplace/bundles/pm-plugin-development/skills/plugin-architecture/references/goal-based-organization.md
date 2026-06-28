@@ -80,7 +80,7 @@ Organizing by component type (e.g., separate `diagnose-agent.md`, `diagnose-comm
 
 ## Target Goal-Based Structure
 
-```
+```text
 marketplace/bundles/pm-plugin-development/
 ├── .claude-plugin/
 │   └── plugin.json
@@ -143,7 +143,7 @@ marketplace/bundles/pm-plugin-development/
 
 ## Goal-Based Commands
 
-```
+```text
 plugin-create       Create new components (agent, command, skill, bundle)
 plugin-doctor       Diagnose and fix quality issues
 plugin-maintain     Update, refactor, and manage components
@@ -169,24 +169,24 @@ Interactive command to analyze marketplace components and fix issues.
 /plugin-doctor agent=my-agent
 /plugin-doctor command=my-command
 /plugin-doctor skill=my-skill
-```
+```text
 
 **Diagnose all components of a type**:
 ```
 /plugin-doctor agents
 /plugin-doctor commands
 /plugin-doctor skills
-```
+```text
 
 **Diagnose entire marketplace**:
 ```
 /plugin-doctor marketplace
-```
+```text
 
 **Diagnose with auto-fix**:
 ```
 /plugin-doctor marketplace --fix
-```
+```text
 
 ## Workflow
 
@@ -198,7 +198,7 @@ Parse parameters to determine what to analyze.
 Skill: pm-plugin-development:plugin-doctor
 Workflow: {appropriate workflow based on scope}
 Parameters: {parsed from command}
-```
+```text
 
 ### Step 3: Display Results
 Show analysis results with severity categorization.
@@ -211,7 +211,7 @@ Ask user if they want to apply fixes.
 Skill: pm-plugin-development:plugin-doctor
 Workflow: apply-fixes
 Parameters: {issues from diagnosis}
-```
+```text
 ```
 
 ## Skill Design Pattern: Goal-Based with Workflows
@@ -254,29 +254,29 @@ Analyzes a single component (agent/command/skill) for quality issues.
    ```
    Read references/quality-standards.md
    Read references/analysis-patterns.md
-   ```
+   ```text
 
 2. Analyze structure
    ```
    bash scripts/analyze-structure.sh {component_path} {component_type}
-   ```
+   ```text
 
 3. Analyze tool coverage (for agents/commands)
    ```
    bash scripts/analyze-tools.sh {component_path}
-   ```
+   ```text
 
 4. Validate references
    ```
    bash scripts/validate-references.sh {component_path}
-   ```
+   ```text
 
 5. Apply quality standards checks
 
 6. Generate report
    ```
    Read assets/report-templates.json
-   ```
+   ```text
 
 **Output**: Structured quality report with issues categorized by severity
 
@@ -295,7 +295,7 @@ Analyzes all components of a specific type.
    ```
 
 2. Pre-load standards once (token optimization)
-   ```
+   ```text
    Read references/quality-standards.md
    ```
 
@@ -408,7 +408,7 @@ All scripts return JSON for structured parsing.
 * Quality standards: references/quality-standards.md
 * Analysis patterns: references/analysis-patterns.md
 * Issue catalog: references/issue-catalog.md
-```
+```text
 
 ## Benefits of Goal-Based Structure
 
@@ -440,12 +440,12 @@ User goals (create/doctor/maintain/learn) as primary organization, not component
 **Step 1: Command invocation** (minimal context)
 ```
 /plugin-doctor agent=my-agent
-```
+```text
 
 **Step 2: Command loads** (~100 lines)
 ```
 Command parses parameters, determines scope
-```
+```text
 
 **Step 3: Skill frontmatter loaded** (~5 lines)
 ```yaml
@@ -455,12 +455,12 @@ allowed-tools: [Read, Bash, Glob, Grep, Skill]
 ```
 
 **Step 4: Skill content loaded** (~800 lines)
-```
+```text
 Workflow descriptions and instructions
 ```
 
 **Step 5: Reference loaded on-demand** (~2000 lines)
-```
+```text
 Read references/quality-standards.md
 (Only when workflow needs it)
 ```
@@ -504,7 +504,7 @@ For implementing goal-based agents and commands as thin orchestrators, see:
 **Integration**: Goal-based organization defines WHAT to build (user goals); minimal wrapper pattern defines HOW to build it (thin orchestration with skill delegation).
 
 **Example**:
-```
+```text
 Goal: CREATE (from goal-based organization)
   ↓
 Agent: java-create-agent (< 150 lines, minimal wrapper pattern)

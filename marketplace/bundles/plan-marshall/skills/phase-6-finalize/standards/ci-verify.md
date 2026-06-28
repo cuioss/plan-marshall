@@ -19,7 +19,7 @@ loop-back signal unnecessarily.
 
 The canonical default order:
 
-```
+```text
 pre-submission-self-review
 push
 create-pr

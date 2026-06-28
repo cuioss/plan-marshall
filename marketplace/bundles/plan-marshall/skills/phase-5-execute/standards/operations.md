@@ -17,7 +17,7 @@ Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., 
 
 When the plan runs in an isolated worktree, every `Task:` dispatch (and every other subagent dispatch that accepts a free-form prompt) below MUST have its `prompt:` block BEGIN with the following header, with `{worktree_path}` substituted by the active worktree absolute path surfaced by phase-5-execute's `[STATUS] Active worktree` work-log line:
 
-```
+```text
 WORKTREE: {worktree_path}
 All Edit/Write/Read tool calls MUST target paths under this worktree. Raw tool invocations (git, mvn, npm, uv, pytest, ruff, …) MUST use the tool's native cwd flag against this path — `git -C`, `mvn -f`, `npm --prefix`, `uv --directory`, `pytest --rootdir`, `ruff <path>` (positional). The compound `cd <path> && <tool>` form is forbidden for every tool, not just git — it violates Bash one-command-per-call. File contents MUST be written via the Write/Edit tools, never via Bash redirects (`echo >>`, `cat <<EOF >`, `python3 -c "open(...).write(...)"`, `printf >`). See `persona-plan-marshall-agent/standards/tool-usage-patterns.md` for the full rule and the native-cwd-flag table. NEVER edit the main checkout.
 ```
@@ -29,7 +29,7 @@ Omit the header only when no worktree is active (plan runs against the main chec
 ### Maven Build
 **Trigger**: "Run build", "maven", "mvn verify"
 
-```
+```text
 Task:
   subagent_type: pm-dev-builder:maven-builder
   prompt: |
@@ -42,7 +42,7 @@ Task:
 ### npm Build
 **Trigger**: "npm build", "npm test"
 
-```
+```text
 Task:
   subagent_type: pm-dev-builder:npm-builder
   prompt: |
@@ -64,7 +64,7 @@ npm run lint
 ### Sonar Check
 **Trigger**: "sonar", "quality gate"
 
-```
+```text
 mcp__sonarqube__search_sonar_issues_in_projects
 ```
 
@@ -73,7 +73,7 @@ mcp__sonarqube__search_sonar_issues_in_projects
 ### JavaScript Implementation
 **Trigger**: "implement" (JavaScript context)
 
-```
+```text
 Task:
   subagent_type: pm-dev-builder:npm-builder
   prompt: |
@@ -102,7 +102,7 @@ This call is documented as **Step 8b** in `phase-5-execute/SKILL.md`. The accumu
 ### Commit
 **Trigger**: "commit", "create commit"
 
-```
+```text
 Skill: plan-marshall:workflow-integration-git
 operation: commit
 message: {from task title}
@@ -124,7 +124,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create 
 ### Plugin Doctor
 **Trigger**: "/plugin-doctor", "verify component"
 
-```
+```text
 SlashCommand: /plugin-doctor {type}={name}
 ```
 

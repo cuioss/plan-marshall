@@ -8,7 +8,7 @@ Profile skills handle the actual implementation and testing work during phase-5-
 
 Profile skill resolution checks for a domain-specific override first, then falls back to the system default.
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                 PROFILE SKILL RESOLUTION                     │
 ├─────────────────────────────────────────────────────────────┤

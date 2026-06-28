@@ -13,7 +13,7 @@ This skill has no user-facing workflow. It provides build utilities, extension f
 
 ## Directory Layout
 
-```
+```text
 scripts/
   build/        # Build system utilities (_build_*.py, _coverage_parse.py, _markers_search.py)
   extension/    # Extension framework (extension_base.py, extension_discovery.py, ...)

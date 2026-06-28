@@ -58,7 +58,7 @@ The `health-check --checks display` surface inspects each terminal-title render 
 
 **Static Routing Pattern**: `marshal.json` stores `runtime.target`; router dispatches to target class.
 
-```
+```text
 marshal.json                                Scripts
 runtime.target: claude  ──────────────────► claude_runtime.py
 runtime.target: opencode ─────────────────► opencode_runtime.py

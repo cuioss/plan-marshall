@@ -15,7 +15,7 @@ Standards for maintaining documentation integrity, preventing hallucinations, el
 - Follow established naming conventions
 
 **Example**:
-```
+```text
 PASS CORRECT - Consistent terminology
 Requirement REQ-001: The system shall authenticate users via OAuth2
 Specification SPEC-001: OAuth2 authentication implementation
@@ -55,7 +55,7 @@ Test TEST-001: Verify authentication
 - Provide concrete examples where helpful
 
 **Example**:
-```
+```text
 FAIL WRONG - Ambiguous
 REQ-001: The system shall provide fast authentication
 
@@ -94,7 +94,7 @@ for 95% of requests under normal load conditions (≤1000 concurrent users)
 4. Flag any documentation without verification source
 
 **Example Violations**:
-```
+```text
 FAIL HALLUCINATION - Feature doesn't exist
 REQ-042: The system shall support automatic backup to cloud storage
 (When no such feature is implemented or planned)
@@ -213,7 +213,7 @@ OAuth2 Specification: https://oauth.net/2/
 - Traceability matrix is current
 
 **Traceability Chain**:
-```
+```text
 Requirement REQ-001
     ↓ (specified by)
 Specification SPEC-001

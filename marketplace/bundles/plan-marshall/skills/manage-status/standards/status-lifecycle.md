@@ -4,7 +4,7 @@ Phase and plan lifecycle model for manage-status.
 
 ## Phase State Machine
 
-```
+```text
 pending ──→ in_progress ──→ done
 ```
 
@@ -23,7 +23,7 @@ pending ──→ in_progress ──→ done
 
 ## Plan Lifecycle
 
-```
+```text
 create ──→ [phases 1-6] ──→ archive
                               │
                               └──→ delete-plan (alternative)

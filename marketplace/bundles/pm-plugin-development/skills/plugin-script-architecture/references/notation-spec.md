@@ -4,7 +4,7 @@ Portable notation format for referencing skill scripts across different installa
 
 ## Format
 
-```
+```text
 bundle:skill/scripts/name.ext
 ```
 
@@ -28,14 +28,14 @@ bundle:skill/scripts/name.ext
 
 ### Bash Scripts
 
-```
+```text
 pm-documents:ref-asciidoc/scripts/asciidoc.py
 pm-plugin-development:plugin-doctor/scripts/analyze-markdown-file.sh
 ```
 
 ### Python Scripts
 
-```
+```text
 pm-plugin-development:tools-marketplace-inventory/scripts/scan-marketplace-inventory.py
 plan-marshall:tools-permission-doctor/scripts/permission_doctor.py
 pm-dev-java:java-core/scripts/analyze-logging-violations.py
@@ -51,17 +51,17 @@ Where `{install_path}` comes from `~/.claude/plugins/installed_plugins.json`.
 ### Example Resolution
 
 Notation:
-```
+```text
 pm-plugin-development:tools-marketplace-inventory/scripts/scan-marketplace-inventory.py
 ```
 
 Install path (from installed_plugins.json):
-```
+```text
 /Users/oliver/git/plan-marshall/marketplace/bundles/plan-marshall-core
 ```
 
 Resolved absolute path:
-```
+```text
 /Users/oliver/git/plan-marshall/marketplace/bundles/plan-marshall-core/skills/tools-marketplace-inventory/scripts/scan-marketplace-inventory.py
 ```
 
@@ -85,7 +85,7 @@ Resolved absolute path:
 
 Each skill with scripts generates ONE permission wildcard per script type:
 
-```
+```text
 Bash(bash <install_path>/skills/<skill>/scr*ts/*.sh:*)
 Bash(python3 <install_path>/skills/<skill>/scr*ts/*.py:*)
 ```

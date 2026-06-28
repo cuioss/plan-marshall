@@ -10,7 +10,7 @@ The Maintenance submenu has 6 options, which exceeds the `AskUserQuestion` 4-opt
 
 **Page 1** — first 3 operations plus the "More..." continuation:
 
-```
+```text
 AskUserQuestion:
   question: "Which maintenance operation?"
   header: "Maintenance"
@@ -28,7 +28,7 @@ AskUserQuestion:
 
 **Page 2** — shown only when the user selects "More..." on Page 1 — the remaining operations plus the "Back" element:
 
-```
+```text
 AskUserQuestion:
   question: "Which maintenance operation?"
   header: "Maintenance (continued)"
@@ -141,7 +141,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture i
 
 Invoke the analysis skill to auto-populate enrichment with semantic descriptions:
 
-```
+```text
 Skill: plan-marshall:manage-architecture
 ```
 
@@ -236,7 +236,7 @@ Categorize:
 
 For each archived candidate, ask the user:
 
-```
+```text
 AskUserQuestion:
   question: "Remove worktree for archived plan '{plan_id}' at {path}?"
   options:
@@ -258,7 +258,7 @@ If the removal fails with `worktree_remove_failed` (non-clean worktree), surface
 
 Emit a summary of orphaned worktrees without removing them:
 
-```
+```text
 Orphaned worktrees (plan not found in active or archived dirs):
   - {plan_id} at {path}
   ...

@@ -82,7 +82,7 @@ Use `AskUserQuestion` when the comment falls into any row below. Do NOT silently
 
 ## Disposition Flow
 
-```
+```text
 Bot comment received
   ↓
 Plan-intent check (persona-plan-marshall-agent PR review rule)

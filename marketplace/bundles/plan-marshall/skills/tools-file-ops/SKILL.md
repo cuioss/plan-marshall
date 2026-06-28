@@ -203,7 +203,7 @@ from file_ops import atomic_write_file, base_path, output_success, output_error
 
 Files are stored in `.plan/` directory:
 
-```
+```text
 .plan/                         # Workflow artifacts
 ├── run-configuration.json     # Command execution tracking
 ├── lessons-learned/           # Knowledge capture

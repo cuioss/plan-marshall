@@ -6,7 +6,7 @@ How recipe-sourced plans flow through the phase system, complementing the change
 
 Normal plans discover WHAT to do from a free-form request. Recipes already know WHAT and HOW — they only discover WHERE to apply.
 
-```
+```text
 Normal Plan                              Recipe Plan
 ───────────                              ───────────
 User request (free-form)                 User selects recipe + parameters
@@ -37,7 +37,7 @@ User request (free-form)                 User selects recipe + parameters
 
 ## Three Recipe Categories
 
-```
+```text
                     ┌─────────────────────────┐
                     │   Recipe Selection       │
                     │   (recipe.md Step 1)     │
@@ -88,7 +88,7 @@ derive pkg_source        skill, change_type,     skill, change_type,
 
 When phase-3-outline detects `plan_source == recipe`, it bypasses the normal change-type detection and skill routing entirely:
 
-```
+```text
 phase-3-outline
      │
      ├─ Step 1: Check Q-Gate findings (re-entry, n/a for recipes)
@@ -147,7 +147,7 @@ phase-3-outline
 
 Both built-in and custom recipe skills are loaded by phase-3-outline through the same call. The contract (load skill → write `solution_outline.md` → return) is identical; only the input field set differs by recipe kind — the built-in recipe spans every auto-detected domain, so it carries a multi-domain field set, whereas a custom recipe carries the single-domain set.
 
-```
+```text
 phase-3-outline Step 2.5
      │
      │  Built-in recipe (multi-domain — spans ALL detected domains):
@@ -190,7 +190,7 @@ Full interface contract: see `plan-marshall:extension-api` [extension-contract.m
 
 The built-in recipe is domain-invariant. It uses the input parameters to resolve skills and iterate packages — no domain-specific logic.
 
-```
+```text
 recipe-refactor-to-profile-standards
      │
      │  Inputs: plan_id, recipe_domains (comma-separated), recipe_profile,
@@ -237,7 +237,7 @@ recipe-refactor-to-profile-standards
 
 Custom recipes are registered via `provides_recipes()` in the domain's `extension.py`, stored in marshal.json, and resolved at plan-time. They implement their own skill with domain-specific logic.
 
-```
+```text
 Custom recipe skill (e.g., pm-dev-java:recipe-null-safety)
      │
      │  Inputs: plan_id, recipe_domain, recipe_profile, recipe_package_source
@@ -257,7 +257,7 @@ Custom recipe skill (e.g., pm-dev-java:recipe-null-safety)
 
 Custom recipe registration:
 
-```
+```text
 extension.py                    marshal.json                     recipe.md
 ────────────                    ────────────                     ─────────
 
@@ -276,7 +276,7 @@ provides_recipes() ──────►  skill_domains.{domain}.recipes  ──
 
 Concrete example: user wants to refactor production code to standards across a multi-domain repo (java + javascript).
 
-```
+```text
 User: /plan-marshall action=recipe
          │
          ▼
@@ -360,7 +360,7 @@ User: /plan-marshall action=recipe
 
 ## Data Flow: Status Metadata
 
-```
+```text
 recipe.md                    phase-3-outline              recipe skill
 ─────────                    ───────────────              ────────────
 

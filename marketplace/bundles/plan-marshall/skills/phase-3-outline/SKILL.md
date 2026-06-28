@@ -14,7 +14,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 ## Foundational Practices
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
@@ -101,7 +101,7 @@ The Phase Entry Protocol's `phase_handshake verify --phase 2-refine --strict` ca
 
 ## Workflow Overview
 
-```
+```text
 Step 2: Load Inputs → Step 3: Recipe Detection → Step 4: Detect Change Type → Step 4c: Route by Planning Lane → Step 5: Select Authoring Procedure → {light/Simple: Steps 6-8 | deep/Complex: Steps 9-11} → Step 12: Return
 ```
 

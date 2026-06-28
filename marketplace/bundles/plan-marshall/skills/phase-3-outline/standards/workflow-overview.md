@@ -2,7 +2,7 @@
 
 Visual summary of the phase-3-outline two-track workflow for human reference.
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────┐
 │                    TWO-TRACK OUTLINE WORKFLOW                     │
 ├──────────────────────────────────────────────────────────────────┤
@@ -27,7 +27,7 @@ Visual summary of the phase-3-outline two-track workflow for human reference.
 
 For localized changes where targets are already known from module_mapping.
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                      SIMPLE TRACK                                │
 ├─────────────────────────────────────────────────────────────────┤
@@ -54,7 +54,7 @@ For localized changes where targets are already known from module_mapping.
 
 For codebase-wide changes requiring discovery and analysis via domain skills.
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                      COMPLEX TRACK                               │
 ├─────────────────────────────────────────────────────────────────┤
@@ -83,7 +83,7 @@ For codebase-wide changes requiring discovery and analysis via domain skills.
 
 ## Domain Skill Interaction (Complex Track)
 
-```
+```text
 phase-3-outline                           ext-outline-{domain}
 ═══════════════                           ════════════════════
 
@@ -115,7 +115,7 @@ Step 10: Return results
 
 Both tracks converge at Step 10:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                    STEP 10: FINALIZE                             │
 ├─────────────────────────────────────────────────────────────────┤

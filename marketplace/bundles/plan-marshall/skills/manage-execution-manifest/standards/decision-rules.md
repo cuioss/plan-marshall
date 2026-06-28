@@ -72,7 +72,7 @@ execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timest
 - Invalid `--phase` (not in `{5-execute, 6-finalize}`) returns `invalid_phase`; invalid `--outcome` (not in `{executed, skipped, error}`) returns `invalid_outcome` — both before any manifest read or write.
 - One `decision.log` line is emitted per record via the in-process `_emit_decision_log` helper (the same helper the composer uses), so the line lands in the plan's own `logs/decision.log` alongside `execution.toon`:
 
-```
+```text
 (plan-marshall:manage-execution-manifest:record-step) Recorded {step_id} phase={phase} outcome={outcome} — total_tokens={N}, tool_uses={N}, duration_ms={N}
 ```
 
@@ -128,7 +128,7 @@ When `commit_and_push == true` (or absent — the default is `true`), the pre-fi
 
 **Decision log line** (in addition to the row's own log line and any other pre-filter log line):
 
-```
+```text
 (plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — no build_map globs or no footprint match
 ```
 
@@ -146,7 +146,7 @@ When all three activation conditions are satisfied (non-empty build_map globs, n
 
 **Decision log line** (in addition to the row's own log line and any other pre-filter log line):
 
-```
+```text
 (plan-marshall:manage-execution-manifest:compose) pre-submission-self-review omitted — empty footprint
 ```
 
@@ -166,7 +166,7 @@ When the footprint is non-empty, the pre-filter is a no-op and emits no log entr
 
 **Decision log line** (in addition to the row's own log line and any other pre-filter log line):
 
-```
+```text
 (plan-marshall:manage-execution-manifest:compose) finalize-step-simplify omitted — change_type={value} affected_files_count={N}
 ```
 
@@ -208,7 +208,7 @@ When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt}` AND `affec
 
 **Decision log line** (one per subtraction, in addition to the row's own log line and any other pre-filter log line):
 
-```
+```text
 (plan-marshall:manage-execution-manifest:compose) scope_gated_finalize subtraction — scope_estimate={value}, dropped {step} from phase_6.steps
 ```
 
@@ -242,7 +242,7 @@ A **non-documentation** path no build extension claims is tagged `unknown` by th
 
 **Decision log line** (emitted at most once per compose call when at least one path is unclaimed):
 
-```
+```text
 (plan-marshall:manage-execution-manifest:classify) [STATUS] Unclaimed paths tagged unknown: [<list of paths>]
 ```
 
@@ -275,7 +275,7 @@ The never-silently-drop policy is load-bearing: an unclassified path indicates e
 
 **Decision log line** (one per forced change, in addition to the row's own log line and any pre-filter log lines):
 
-```
+```text
 (plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection — finalize.{gate}={value}, {added|dropped} {step} {to|from} phase_6.steps
 ```
 
@@ -297,7 +297,7 @@ When all four gates resolve to `auto` (the default), the transform is a no-op an
 
 **Decision log line** (emitted whenever the guard remediates; one entry per remediation):
 
-```
+```text
 (plan-marshall:manage-execution-manifest:compose) bot-enforcement guard remediated — ci_provider=github, automated-review re-added to phase_6.steps
 ```
 
@@ -326,7 +326,7 @@ When `ci_provider` is neither `github` nor `gitlab`, OR `default:automated-revie
 
 **Decision log line** (emitted on every compose, regardless of mutation count):
 
-```
+```text
 (plan-marshall:manage-execution-manifest:compose) execution_tier routing — mutated_tasks={N}, phase_5.verification_steps={list}
 ```
 
@@ -366,7 +366,7 @@ A `default:verify:{canonical}` (or its bare `verify:{canonical}`) ID is recogniz
 
 **Decision log line** (emitted only when at least one step is dropped):
 
-```
+```text
 (plan-marshall:manage-execution-manifest:compose) canonical_verify_inactive — dropped {steps} from phase_5.verification_steps (no matching footprint role)
 ```
 
@@ -455,7 +455,7 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 
 For each rule fired, the composer emits one line via `manage-logging decision`:
 
-```
+```text
 (plan-marshall:manage-execution-manifest:compose) Rule {rule_key} fired — early_terminate={bool}, phase_5.verification_steps={list}, phase_6.steps={list}
 ```
 

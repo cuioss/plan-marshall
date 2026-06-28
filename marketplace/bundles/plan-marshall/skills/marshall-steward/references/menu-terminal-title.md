@@ -49,7 +49,7 @@ gated behind first-run setup.
 
 Before either action runs, ask the user which one to take:
 
-```
+```text
 AskUserQuestion:
   question: "Terminal Title — what would you like to do?"
   header: "Terminal Title"
@@ -118,7 +118,7 @@ When `display` reports `healthy: true` (no line contains `MISSING`), everything
 is wired up. Print an "already configured" message and return to the
 Configuration menu WITHOUT prompting:
 
-```
+```text
 Terminal title is already configured.
 
 All seven render-trigger hook entries, the statusLine command, and the
@@ -133,7 +133,7 @@ Otherwise proceed to Step 2.
 
 Prompt the user before writing anything:
 
-```
+```text
 AskUserQuestion:
   question: "Enable the dynamic terminal title and statusLine? This installs seven render-trigger hook entries, a statusLine command, and an env entry into ./.claude/settings.local.json."
   header: "Terminal Title"
@@ -181,7 +181,7 @@ The union of the two lists is always `["SessionStart", "UserPromptSubmit",
 "PostToolUse:AskUserQuestion", "PostToolUse:Bash"]`. Report the breakdown so the
 user can see exactly which entries were added:
 
-```
+```text
 Installed render entries: <installed_events>
 Already present:          <already_present_events>
 ```
@@ -196,7 +196,7 @@ Already present:          <already_present_events>
   `statusLine` whose command differs from the renderer. The install operation
   preserved that value. Prompt the user before overwriting:
 
-  ```
+  ```text
   AskUserQuestion:
     question: "An existing statusLine command was found in ./.claude/settings.local.json. Overwrite it with the plan-marshall renderer?"
     header: "Existing statusLine"
@@ -229,7 +229,7 @@ Already present:          <already_present_events>
 - `already_present_other` — the env entry is already set to a value other than
   `"1"`. Prompt the user before overwriting:
 
-  ```
+  ```text
   AskUserQuestion:
     question: "env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE is already set in ./.claude/settings.local.json to a value other than \"1\". Overwrite it?"
     header: "Existing env"
@@ -262,7 +262,7 @@ user consented to both overwrites.
 
 Once all conflicts (if any) are resolved, report the outcome:
 
-```
+```text
 Terminal title enabled.
 
 Render hooks: <installed_events ∪ already_present_events>
@@ -296,7 +296,7 @@ in the new session will repopulate it via the executor write-through).
 
 Read `$CLAUDE_CODE_SESSION_ID`. When unset, print:
 
-```
+```text
 Cannot override active plan: $CLAUDE_CODE_SESSION_ID is not set. The override
 sub-action must be invoked from inside a Claude Code session.
 ```
@@ -319,7 +319,7 @@ client-side to retain only non-terminal plans. For each surviving plan, capture
   to the Configuration menu.
 - **One active plan** → confirm via `AskUserQuestion`:
 
-  ```
+  ```text
   AskUserQuestion:
     question: "Set active plan for this session to `<plan_id>`?"
     header: "Override active plan"
@@ -343,7 +343,7 @@ client-side to retain only non-terminal plans. For each surviving plan, capture
 
 Resolve the cache path with `XDG_CACHE_HOME` honored:
 
-```
+```text
 ${XDG_CACHE_HOME:-$HOME/.cache}/plan-marshall/sessions/$CLAUDE_CODE_SESSION_ID/active-plan
 ```
 
@@ -354,7 +354,7 @@ cannot corrupt the cache. Create the session directory with parents as needed.
 
 On success, print:
 
-```
+```text
 Active plan for session $CLAUDE_CODE_SESSION_ID set to <plan_id>.
 The next render-trigger event (next prompt, notification, or stop) will
 update the tab title.
@@ -363,7 +363,7 @@ update the tab title.
 On any I/O failure, surface the OS error and advise the user to check write
 permissions on the cache directory:
 
-```
+```text
 Failed to write active-plan cache mapping: <os_error>.
 Check write permissions on ${XDG_CACHE_HOME:-$HOME/.cache}/plan-marshall/sessions/.
 ```

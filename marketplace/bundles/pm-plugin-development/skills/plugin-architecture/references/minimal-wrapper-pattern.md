@@ -41,7 +41,7 @@ Reintroduce agents and commands as **thin orchestration wrappers** that:
 
 ## Architecture Diagram
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                          USER GOAL                          │
 │              (e.g., "Implement feature X")                  │
@@ -117,7 +117,7 @@ Reintroduce agents and commands as **thin orchestration wrappers** that:
 
 ### Communication Pattern PASS
 
-```
+```text
 User → Agent (thin wrapper) → Skill (business logic) → Result
 ```
 
@@ -129,7 +129,7 @@ This pattern works because:
 
 ### What We Avoid FAIL
 
-```
+```text
 User → Agent A → Agent B → Agent C  (doesn't work - no agent-to-agent calls)
 User → Skill → Skill → Skill        (context pollution - no isolation)
 User → Fat Agent (500+ lines)       (maintenance nightmare)
@@ -168,7 +168,7 @@ Workflow: implement-feature
 Parameters:
   description: {description}
   module: {module}
-```
+```text
 
 ### Step 3: Delegate to Testing Skill (< 50 lines)
 ```
@@ -177,7 +177,7 @@ Workflow: create-tests
 Parameters:
   types: {implemented_types}
   module: {module}
-```
+```text
 
 ### Step 4: Verify and Return Results (< 20 lines)
 1. Format implementation summary
@@ -230,7 +230,7 @@ Workflow: analyze-coverage-gaps
 Parameters:
   report_path: {jacoco_xml}
   priority_filter: high
-```
+```text
 
 For quality analysis:
 ```
@@ -239,7 +239,7 @@ Workflow: analyze-quality
 Parameters:
   files: {java_files}
   module: {module}
-```
+```text
 
 ### Step 3: Synthesize and Report (< 50 lines)
 1. Combine results from multiple skills
@@ -305,7 +305,7 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
     --command-args "clean test" \
     --mode structured
 ```
-```
+```text
 
 **Characteristics:**
 - Skills compose other skills
@@ -418,7 +418,7 @@ User Goal → Goal-Based Agent (< 150 lines, context isolated)
           Specialized Skill (600 lines, loaded on-demand)
               ↓
           Result (context released)
-```
+```text
 
 ### Example: CREATE Goal
 
@@ -430,7 +430,7 @@ CREATE Goal Structure:
 └─ /java-create-class (80 lines) → cui-java-core
 
 All delegate to same skills, all maintain context isolation.
-```
+```text
 
 ## Migration Guide
 
@@ -523,7 +523,7 @@ Use this checklist to verify minimal wrapper compliance:
 **Minimal Wrapper Pattern** = Thin Orchestration (< 150 lines) + Skill Delegation + Context Isolation
 
 **Key Formula:**
-```
+```text
 User Goal → Minimal Wrapper (< 150 lines) → Specialized Skill (standards + logic) → Result
 ```
 

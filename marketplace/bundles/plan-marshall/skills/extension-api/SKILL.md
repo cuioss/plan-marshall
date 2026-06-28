@@ -41,7 +41,7 @@ Reference when:
 
 ## Skill Structure
 
-```
+```text
 extension-api/
 ├── SKILL.md                        # This file
 ├── scripts/
@@ -128,7 +128,7 @@ For all extension-related configuration paths, see [marshal-json-reference.md](s
 
 ## 4-Layer Workflow Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                    WORKFLOW ARCHITECTURE                         │
 ├─────────────────────────────────────────────────────────────────┤

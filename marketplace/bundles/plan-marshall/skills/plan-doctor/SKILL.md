@@ -193,6 +193,6 @@ python3 .plan/execute-script.py plan-marshall:plan-doctor:plan_doctor scan-task-
 
 ## Standards (Load On-Demand)
 
-```
+```text
 Read standards/check-lesson-id-references.md
 ```

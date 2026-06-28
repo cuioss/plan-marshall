@@ -71,7 +71,7 @@ This standard defines the orchestration workflow for comprehensive AsciiDoc docu
 
 ## Orchestration Flow
 
-```
+```text
 ┌─────────────────────────────────────┐
 │  Start: Comprehensive Review        │
 │  Input: file_path or directory_path │
@@ -164,7 +164,7 @@ comprehensive-review:
 
 **Message:**
 
-```
+```text
 Format validation FAILED with {count} errors.
 
 Critical format issues must be fixed before link/content review.

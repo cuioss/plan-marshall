@@ -264,7 +264,7 @@ Components must be organized by user goals, not technical component types.
 **Examples**:
 
 PASS CORRECT (goal-based):
-```
+```text
 plugin-create/           # CREATE goal
   ├── SKILL.md
   └── workflows:
@@ -287,7 +287,7 @@ commands/
 ```
 
 FAIL INCORRECT (component-centric):
-```
+```text
 commands/
   ├── plugin-create-agent.md        # Component-specific
   ├── plugin-create-command.md      # Component-specific

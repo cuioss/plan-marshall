@@ -59,7 +59,7 @@ Non-pom modules also receive:
 - `package` - Create deployable artifact
 
 **Profile enhancement**: If a profile maps to a canonical command, enhance that command:
-```
+```text
 quality-gate + pre-commit profile → "verify -Ppre-commit"
 ```
 
@@ -99,7 +99,7 @@ They do **not** receive: `compile`, `test-compile`, `module-tests`, `verify`, `i
 
 This pseudocode illustrates the resolution logic. Each extension implements it concretely in `discover_modules()`.
 
-```
+```text
 discover_modules():
     for each module:
         commands = {}

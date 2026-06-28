@@ -66,7 +66,7 @@ ADD archive.tar.gz /app/
 
 Exclude build artifacts, secrets, and unnecessary files from the build context.
 
-```
+```text
 .git
 .env
 *.secret

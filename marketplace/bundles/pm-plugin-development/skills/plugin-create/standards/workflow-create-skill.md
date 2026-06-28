@@ -8,7 +8,7 @@
 
 ## Step 1: Load Foundation Skills
 
-```
+```text
 Skill: pm-plugin-development:plugin-architecture
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
@@ -17,7 +17,7 @@ These provide architecture principles and non-prompting tool usage patterns.
 
 ## Step 2: Load Skill Standards
 
-```
+```text
 Read references/skill-guide.md
 ```
 
@@ -41,7 +41,7 @@ Ask user for:
 
 **E. Skill type** — Present using `AskUserQuestion`:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "What type of skill is this?"
@@ -75,7 +75,7 @@ Same pattern: prefer `architecture files --module {bundle}` for module-scoped en
 ## Step 5: Create Skill Structure
 
 **Create directories:**
-```
+```text
 bash mkdir -p {bundle}/skills/{skill-name}/standards
 ```
 
@@ -87,7 +87,7 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-create:component ge
 ```
 
 Load template:
-```
+```text
 Read assets/templates/skill-template.md
 ```
 
@@ -101,7 +101,7 @@ Fill template with:
 - Tool Access requirements
 
 Write SKILL.md:
-```
+```text
 Write: {bundle}/skills/{skill-name}/SKILL.md
 ```
 
@@ -114,14 +114,14 @@ Create skill overview README with:
 - Integration notes
 
 Write README:
-```
+```text
 Write: {bundle}/skills/{skill-name}/README.md
 ```
 
 **Create placeholder standards files:**
 
 For each standards file user specified:
-```
+```text
 Write: {bundle}/skills/{skill-name}/standards/{file-name}.md
 ```
 
@@ -153,7 +153,7 @@ Validation checks:
 
 ## Step 7: Display Summary
 
-```
+```text
 ╔════════════════════════════════════════════════════════════╗
 ║          Skill Created Successfully                        ║
 ╚════════════════════════════════════════════════════════════╝
@@ -179,6 +179,6 @@ Next steps:
 
 ## Step 8: Run Skill Diagnosis
 
-```
+```text
 SlashCommand: /pm-plugin-development:plugin-doctor skills skill-name={skill-name}
 ```

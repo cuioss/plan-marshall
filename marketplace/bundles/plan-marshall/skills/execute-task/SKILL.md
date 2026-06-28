@@ -15,7 +15,7 @@ mode: workflow
 
 ## Foundational Practices
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 

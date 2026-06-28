@@ -25,7 +25,7 @@ A task's cost size is derived from four signals already present on its task reco
 
 The score is a weighted sum:
 
-```
+```text
 score = (W_step          * step_count)
       + (W_profile        * profile_weight(profile))
       + (W_skills         * skills_count)

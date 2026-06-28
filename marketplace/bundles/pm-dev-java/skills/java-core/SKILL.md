@@ -21,7 +21,7 @@ This skill applies to Java 21+ projects. For projects using CuiLogger, LogRecord
 
 Load this standard for any Java implementation work.
 
-```
+```text
 Read: standards/java-core-patterns.md
 ```
 
@@ -34,42 +34,42 @@ This provides foundational rules for:
 ### Step 2: Load Additional Standards (As Needed)
 
 **Java 17 Features** (load for new code):
-```
+```text
 Read: standards/java-17-features.md
 ```
 
 Use when: Writing new code or modernizing existing code. Covers records, switch expressions, pattern matching for instanceof, sealed classes, text blocks, streams, and Optional usage.
 
 **Java 21 Features** (load for Java 21+ code):
-```
+```text
 Read: standards/java-21-features.md
 ```
 
 Use when: Using Java 21 features — pattern matching in switch, record patterns, sequenced collections, and virtual threads.
 
 **Java 25 Features** (load for Java 25+ code):
-```
+```text
 Read: standards/java-25-features.md
 ```
 
 Use when: Using Java 25 features — scoped values, flexible constructor bodies, module imports, compact source files, KDF API, and JVM performance flags (AOT cache, compact headers).
 
 **Concurrency Patterns** (load for multi-threaded code):
-```
+```text
 Read: standards/java-concurrency.md
 ```
 
 Use when: Writing concurrent or multi-threaded code. Covers why to avoid volatile/double-checked locking, lock selection (ReentrantLock, StampedLock, atomics), virtual thread rules, ScopedValue vs ThreadLocal, concurrent collections, and common pitfalls.
 
 **Performance Patterns** (load for optimization work):
-```
+```text
 Read: standards/java-performance-patterns.md
 ```
 
 Use when: Optimizing code or designing high-performance components. Covers string handling, autoboxing, collection sizing, thread safety, exception handling, and logging performance.
 
 **DSL-Style Nested Constants** (load for constant organization):
-```
+```text
 Read: standards/dsl-constants.md
 ```
 

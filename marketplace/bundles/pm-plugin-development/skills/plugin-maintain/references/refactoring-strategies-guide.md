@@ -65,7 +65,7 @@ Refactoring should:
 4. Update all affected components
 
 **Example**:
-```
+```text
 Before: Logging patterns duplicated in 4 commands
 After: cui-logging skill referenced by all commands
 ```
@@ -169,7 +169,7 @@ After refactoring:
    - Fix any broken imports or paths
 
 2. **Run Diagnosis**: Check for issues
-   ```
+   ```text
    /plugin-doctor
    ```
 
@@ -183,7 +183,7 @@ After refactoring:
 
 **Pattern**: Multiple related commands → One skill with workflows
 
-```
+```text
 # Instead of separate commands per type:
 #   create-agent.md, create-command.md, create-skill.md
 # Use one skill with workflows:
@@ -197,7 +197,7 @@ skills/plugin-create/
 
 **Pattern**: Related agents → Skill with shared patterns
 
-```
+```text
 # Instead of separate agents per type:
 #   diagnose-agent-a.md, diagnose-agent-b.md
 # Use one skill with component-type parameter:
@@ -209,7 +209,7 @@ skills/plugin-doctor/
 
 ### Bundle Structure
 
-```
+```text
 bundle-name/
 ├── plugin.json
 ├── README.md
@@ -258,7 +258,7 @@ bundle-name/
 
 ### Dry Run Report
 
-```
+```text
 Refactoring Plan (DRY RUN)
 ==========================
 Strategy: consolidate
@@ -278,7 +278,7 @@ Proceed? [Y/n]
 
 ### Completion Report
 
-```
+```text
 Refactoring Complete
 ====================
 Strategy: consolidate

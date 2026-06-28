@@ -24,30 +24,30 @@ When an agent's frontmatter lists required tools, those tools MUST be available.
 ## File Operations
 
 **Single file existence** — use Read with error handling (also gives you the content):
-```
+```text
 Read(file_path="/path/to/file")
 # Handle error gracefully if file doesn't exist
 ```
 
 **Quick existence check** — use Glob (no content loaded):
-```
+```text
 Glob(pattern="filename", path="/parent/directory")
 # Empty result means file doesn't exist
 ```
 
 **Directory existence** — use Glob to check if a directory has contents:
-```
+```text
 Glob(pattern="*", path="/path/to/directory")
 # Empty result = directory empty or doesn't exist
 ```
 
 **File discovery by extension:**
-```
+```text
 Glob(pattern="**/*.md", path="/bundle/path")
 ```
 
 **Content validation** — read and check frontmatter, required fields, etc.:
-```
+```text
 content = Read(file_path="/path/to/file")
 # Check starts with "---", find closing "---"
 # Extract and validate required fields
@@ -56,34 +56,34 @@ content = Read(file_path="/path/to/file")
 ## Content Search
 
 **Find files containing a pattern:**
-```
+```text
 Grep(pattern="search_term", path="/directory", output_mode="files_with_matches")
 ```
 
 **Show matching lines with line numbers:**
-```
+```text
 Grep(pattern="pattern", path="/path", output_mode="content", -n=true)
 ```
 
 **Count occurrences:**
-```
+```text
 Grep(pattern="pattern", path="/path", output_mode="count")
 ```
 
 **Case-insensitive with context:**
-```
+```text
 Grep(pattern="todo", path="/path", output_mode="content", -i=true, -C=3)
 ```
 
 **Filter by file type:**
-```
+```text
 Grep(pattern="pattern", path="/path", glob="*.md", output_mode="content")
 ```
 
 ## When Bash IS Appropriate
 
 **Git operations** — plain `git` in a phase-5+ cwd-pinned context, `git -C {path}` cross-tree, never `cd {path} && git ...`:
-```
+```text
 # Phase-5+ cwd-pinned context (ADR-002): cwd is the worktree (or main when use_worktree=false) —
 # plain git acts on the correct tree. Do NOT route through git -C {worktree_path}.
 Bash(command="git status")
@@ -99,7 +99,7 @@ In the move-based, cwd-pinned model (ADR-002), cwd is pinned to the plan's workt
 
 All CI/Git provider operations MUST go through the CI integration abstraction layer. Direct `gh` or `glab` calls bypass provider abstraction, execution logging, and audit trail.
 
-```
+```text
 # BAD - Direct gh calls
 Bash(command="gh pr create --title ...")
 
@@ -111,7 +111,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wai
 If a needed operation is missing from the CI abstraction, extend the scripts — do not bypass them.
 
 **Build commands** (MUST resolve via architecture API first):
-```
+```text
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   resolve --command compile --module {module} --audit-plan-id {plan_id}
 # Then execute the returned 'executable' value
@@ -147,7 +147,7 @@ The rule applies to chain shape, not chain content. `git diff > /tmp/x.diff && w
 
 The structural rule covers every form of chaining (`&&`, `;`, `&`, newline) regardless of what flows through it. Split into two separate Bash calls, or replace the entire pattern with a single non-Bash tool call (Read/Grep/Glob).
 
-```
+```text
 # BAD — two commands joined by && in one Bash call
 Bash(command="git diff > /tmp/foo.diff && head -200 /tmp/foo.diff")
 Bash(command="some-script --emit-json > /tmp/out.json && jq .field /tmp/out.json")
@@ -184,7 +184,7 @@ Use the tool's native cwd flag instead:
 | pytest | `pytest --rootdir <path>` |
 | ruff | `ruff check <path>` (positional) |
 
-```
+```text
 # BAD — every one of these violates one-command-per-call (cd && X shape)
 Bash(command="cd /path/to/worktree && git log --oneline -5")
 Bash(command="cd /path/to/worktree && uv run ruff check src/")
@@ -210,7 +210,7 @@ Use the dedicated tools:
 - `Write(file_path, content)` for creating new files or completely rewriting existing ones.
 - `Edit(file_path, old_string, new_string)` for surgical modifications.
 
-```
+```text
 # BAD — every shape of Bash file authoring is forbidden
 Bash(command='python3 -c "import sys; open(sys.argv[1], \"a\").write(sys.argv[2])" /path/to/file.md "## body..."')
 Bash(command='echo "## body..." >> /path/to/file.md')
@@ -230,7 +230,7 @@ Heredocs containing `#`-prefixed lines trigger security prompts. Use the
 path-allocate pattern — the script owns the scratch path, so callers never
 invent one and no multi-line content crosses the shell boundary:
 
-```
+```text
 # Step 1: script allocates a scratch path bound to --plan-id
 Bash(command="python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body --plan-id EXAMPLE-PLAN")
 # → returns {path: /abs/.../work/ci-bodies/pr-create-default.md}
@@ -272,7 +272,7 @@ provider implementations, and document it in
 `tools-integration-ci/standards/leaf-command-reference.md`. Do not paper over
 the gap with a `sleep`.
 
-```
+```text
 # BAD — blocks the turn, no timeout semantics, no structured result
 Bash(command="sleep 180")
 

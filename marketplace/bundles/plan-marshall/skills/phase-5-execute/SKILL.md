@@ -16,7 +16,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 ## Foundational Practices
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
@@ -63,7 +63,7 @@ Under the move-based, cwd-pinned model (ADR-002), the worktree binding is carrie
 
 When the plan runs in an isolated worktree (see the `[STATUS] Active worktree` work-log line from Step 4), a short reminder header MAY be embedded as the first lines of the dispatch prompt to keep the never-edit-main-checkout invariant salient through free-form delegation:
 
-```
+```text
 WORKTREE: cwd is pinned to this plan's worktree (ADR-002 cwd-pinned model).
 Resolution is cwd-relative — do NOT forward a worktree path; do NOT pass --project-dir.
 All Edit/Write/Read tool calls and tool invocations (git, mvn, npm) operate against the pinned cwd.
@@ -101,25 +101,25 @@ See [`persona-plan-marshall-agent` Hard Rules](../persona-plan-marshall-agent/SK
 ## Standards (Load On-Demand)
 
 ### Workflow
-```
+```text
 Read standards/workflow.md
 ```
 Contains: Task execution pattern, phase transition, auto-continue behavior
 
 ### Operations
-```
+```text
 Read standards/operations.md
 ```
 Contains: Delegation patterns for builds, quality checks, PR creation
 
 ### Recovery Patterns
-```
+```text
 Read standards/recovery.md
 ```
 Contains: First-line response to mid-plan `origin/main` advances — stash + merge + pop, with works/does-not-work conditions and rationale vs rebase.
 
 ### Coverage Contract (per-task scope × thoroughness)
-```
+```text
 Read ../persona-plan-marshall-agent/standards/thoroughness.md
 ```
 Contains: the *scope × thoroughness* coverage contract each task body honors at its execution coverage point — the thoroughness ladder (T1–T5), the scope ladder, the grade-to-the-floor rule, and the coupling constraint `reject thoroughness ≥ T4 ∧ scope < component`. Per-task work covers its declared cell; the floor-graded self-report states asked-for vs achieved.
@@ -205,7 +205,7 @@ Each verify step declares an `order: <int>` value in its authoritative source �
 
 Project and skill steps receive these parameters:
 
-```
+```text
 Skill: {step_reference}
   Arguments: --plan-id {plan_id}
 ```
@@ -671,7 +671,7 @@ Step 10 fires at the **per-deliverable chain-tail point** — the moment all tas
 The per-deliverable commit fires UNCONDITIONALLY at every chain tail:
 
 1. **Commit**:
-   ```
+   ```text
    Skill: plan-marshall:workflow-integration-git
    Parameters:
      - message: conventional commit derived from task title

@@ -14,7 +14,7 @@ This recipe is the **remediation procedure** invoked *after* a rejection has occ
 
 ## Foundational Practices
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
@@ -76,7 +76,7 @@ Apply the correction to the **calling** skill's workflow document (or the inline
 1. **Replace the rejected call** with the verbatim canonical call resolved in Step 2 — exact subcommand, exact flag names, exact flag scope. Fix every occurrence of the identical invented shape in the same document, not just the one that was caught.
 2. **Add the owning-skill import when missing.** If the calling skill does not already load the owning `manage-*` skill via a `Skill:` directive, add that import (typically under the calling skill's `## Foundational Practices` or an equivalent skill-load block) so future agents have the canonical API loaded in context *before* reaching the call site:
 
-   ```
+   ```text
    Skill: {bundle}:{owning-skill}
    ```
 

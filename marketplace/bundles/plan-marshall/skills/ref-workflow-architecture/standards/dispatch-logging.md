@@ -14,7 +14,7 @@ This standard fixes that by mandating one canonical line emitted AFTER the resol
 
 The line uses the `[DISPATCH]` prefix marker, distinct from the generic `[STATUS]` prefix used by phase-progress lines. The distinct marker lets log readers and the retrospective audit grep deterministically for the dispatch evidence:
 
-```
+```text
 [DISPATCH] (caller) target=<value> level=<value> role=<value> workflow=<value> plan_id=<value>
 ```
 
@@ -70,7 +70,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[DISPATCH] (plan-marshall:plan-marshall) target=execution-context-level-3 level=level-3 role=phase-2-refine workflow=plan-marshall:phase-2-refine/SKILL.md plan_id={plan_id}"
 ```
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: phase-2-refine

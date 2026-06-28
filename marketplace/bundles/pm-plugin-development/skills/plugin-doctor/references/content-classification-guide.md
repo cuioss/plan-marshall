@@ -77,7 +77,7 @@ Evaluate each file with these questions in order:
 
 For each file, produce:
 
-```
+```text
 File: {relative_path}
 Classification: {reference|workflow|template|mixed}
 Confidence: {high|medium|low}
@@ -139,7 +139,7 @@ When moving files to correct directories:
 ## Examples
 
 ### Example 1: Reference File
-```
+```text
 File: standards/tone-and-style.md
 Classification: reference
 Confidence: high
@@ -153,7 +153,7 @@ Needs Splitting: no
 ```
 
 ### Example 2: Workflow File
-```
+```text
 File: standards/link-verification-protocol.md
 Classification: workflow
 Confidence: high
@@ -167,7 +167,7 @@ Needs Splitting: no
 ```
 
 ### Example 3: Mixed File
-```
+```text
 File: standards/asciidoc-formatting.md
 Classification: mixed
 Confidence: medium
@@ -181,7 +181,7 @@ Split Recommendation: Remove lines 341-535 (script docs), keep formatting rules
 ```
 
 ### Example 4: Template File
-```
+```text
 File: assets/templates/readme-template.adoc
 Classification: template
 Confidence: high

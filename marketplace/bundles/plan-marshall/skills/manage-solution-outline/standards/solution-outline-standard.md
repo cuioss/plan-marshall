@@ -6,7 +6,7 @@ This document defines the complete specification for `solution_outline.md` docum
 
 ### File Location
 
-```
+```text
 .plan/plans/{plan_id}/solution_outline.md
 ```
 
@@ -94,7 +94,7 @@ Classifies the change footprint. Required field; the validator rejects the docum
 
 ```
 {ASCII diagram}
-```
+```text
 ```
 
 **Requirements**:
@@ -284,7 +284,7 @@ For the exact fill-in-the-blank structure, see:
 
 **Example** (for deliverable title `check-coverage`):
 
-```
+```text
 **Intent gloss:** Check module test coverage produced by this plan against the configured threshold.
 ```
 
@@ -292,7 +292,7 @@ For the exact fill-in-the-blank structure, see:
 
 Every `Affected files` entry MUST carry a trailing parenthesized **intent** marker declaring the step's existence expectation. The canonical form is a backticked path, a single space, then the intent in parentheses:
 
-```
+```text
 **Affected files:**
 - `src/main/java/NewService.java` (write-new)
 - `src/main/java/ExistingService.java` (write-replace)
@@ -374,7 +374,7 @@ Verification commands are resolved during the **outline phase** (phase-3-outline
 
 Task-plan creates one task per profile in the deliverable:
 
-```
+```text
 solution_outline.md                        TASK-*.toon (created by task-plan)
 ┌────────────────────────────┐             ┌────────────────────────┐
 │ **Metadata:**              │             │ TASK-001          │
@@ -394,7 +394,7 @@ solution_outline.md                        TASK-*.toon (created by task-plan)
 
 Task-plan resolves skills from architecture for each profile:
 
-```
+```text
 For each profile in deliverable.profiles:
   1. Query architecture: module --name {module}
   2. Extract: skills_by_profile.{profile}

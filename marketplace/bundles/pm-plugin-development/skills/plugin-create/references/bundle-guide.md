@@ -6,7 +6,7 @@ Guide for creating marketplace bundles with proper structure and plugin.json con
 
 A **bundle** is a collection of related marketplace components (agents, commands, skills) packaged together with metadata.
 
-```
+```text
 bundle-name/
 ├── plugin.json           (Metadata and component registry)
 ├── README.md             (Bundle documentation)

@@ -35,7 +35,7 @@ CUI-specific HTTP testing standards using `cui-test-mockwebserver-junit5`. Cover
 
 **CRITICAL**: Load these standards for any HTTP testing work.
 
-```
+```text
 Read: standards/testing-mockwebserver.md
 ```
 

@@ -105,7 +105,7 @@ Read the created file and inform user to fill in content sections.
 
 **Step 4: Validate Format**
 
-```
+```text
 Skill: pm-documents:ref-asciidoc
 Execute workflow: validate-format
 Parameters:
@@ -114,7 +114,7 @@ Parameters:
 
 ### Output
 
-```
+```text
 Interface Created: doc/interfaces/003-{title}.adoc
 Number: INTER-003
 Type: REST_API
@@ -207,7 +207,7 @@ Use list-interfaces workflow to get interface path by number.
 
 **Step 2: Validate Format**
 
-```
+```text
 Skill: pm-documents:ref-asciidoc
 Execute workflow: validate-format
 Parameters:
@@ -255,7 +255,7 @@ Each interface specification contains these sections:
 
 Interfaces follow this naming pattern:
 
-```
+```text
 doc/interfaces/{NNN}-{Title_With_Underscores}.adoc
 ```
 

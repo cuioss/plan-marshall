@@ -6,7 +6,7 @@ Storage format specifications for plan-level findings, phase-scoped Q-Gate findi
 
 All finding-related JSONL files live under a single subdirectory:
 
-```
+```text
 .plan/plans/{plan_id}/artifacts/findings/
 ├── {type}.jsonl             # one file per finding type (bug, improvement, sonar-issue, …)
 ├── qgate-{phase}.jsonl      # per-phase Q-Gate findings

@@ -27,7 +27,7 @@ This reference provides guidance for fixing Javadoc errors that appear during Ma
 ### Missing Parameter Documentation
 
 **Error Pattern:**
-```
+```text
 warning: @param argument "<param-name>" is not a parameter name
 warning: no @param for <param-name>
 ```
@@ -59,7 +59,7 @@ public User getUser(String userId) { ... }
 ### Invalid References
 
 **Error Pattern:**
-```
+```text
 warning: reference not found: ClassName
 warning: invalid @link reference
 error: unknown tag: link
@@ -93,7 +93,7 @@ error: unknown tag: link
 ### HTML Formatting Issues
 
 **Error Pattern:**
-```
+```text
 warning: unclosed tag: <p>
 warning: malformed HTML
 error: bad HTML entity
@@ -133,7 +133,7 @@ error: bad HTML entity
 ### Missing Return Documentation
 
 **Error Pattern:**
-```
+```text
 warning: no @return
 warning: @return tag has no description
 ```
@@ -165,7 +165,7 @@ public BigDecimal calculateTotal(List<Item> items) { ... }
 ### Missing Exception Documentation
 
 **Error Pattern:**
-```
+```text
 warning: no @throws for <ExceptionType>
 warning: exception not thrown: <ExceptionType>
 ```
@@ -198,7 +198,7 @@ public void validate(String input) throws IllegalArgumentException { ... }
 ### Malformed Tags
 
 **Error Pattern:**
-```
+```text
 warning: no description for @param
 warning: malformed @tag
 error: unknown tag: @customtag
@@ -229,7 +229,7 @@ public void process(String userId) { ... }
 ### Incorrect Tag Order
 
 **Error Pattern:**
-```
+```text
 warning: tag out of order: @return before @param
 ```
 
@@ -263,7 +263,7 @@ warning: tag out of order: @return before @param
 ### Code Block Formatting Issues
 
 **Error Pattern:**
-```
+```text
 warning: malformed <pre> tag
 error: unclosed <code> tag
 ```
@@ -304,7 +304,7 @@ error: unclosed <code> tag
 ### Empty Documentation
 
 **Error Pattern:**
-```
+```text
 warning: no description
 warning: no main description
 ```

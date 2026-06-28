@@ -96,7 +96,7 @@ Extract statistics:
 
 **Step 5: Report Results**
 
-```
+```text
 Format Fixes Applied to {target}
 Files modified: {count}
 Issues fixed: {count}
@@ -177,7 +177,7 @@ Re-run validator and compare:
 
 **Step 7: Generate Report**
 
-```
+```text
 ## AsciiDoc Format Validation Complete
 
 **Status**: PASS | WARNINGS | FAILURES
@@ -280,7 +280,7 @@ For missing anchors:
 
 **Step 8: Generate Report**
 
-```
+```text
 ## AsciiDoc Link Verification Complete
 
 **Status**: PASS | WARNINGS | FAILURES
@@ -321,7 +321,7 @@ Create new AsciiDoc documents from predefined templates.
 
 **Step 1: Validate Parameters**
 
-```
+```text
 If type not in [standard, readme, guide]:
   Error: "Invalid type. Use: standard, readme, guide"
 
@@ -331,7 +331,7 @@ If name is empty:
 
 **Step 2: Determine Output Path**
 
-```
+```text
 If path not specified:
   standard → standards/{name}.adoc
   readme   → {name}/README.adoc or README.adoc
@@ -365,7 +365,7 @@ Execute validate-format workflow on new file.
 
 **Step 7: Report Result**
 
-```
+```text
 Document Created: {output_path}
 Type: {type}
 Status: Valid format
@@ -414,7 +414,7 @@ For each file:
 
 **Step 3: Analyze Cross-References**
 
-```
+```text
 Execute verify-links workflow
 Collect: broken internal references
 ```
@@ -434,7 +434,7 @@ Using Edit tool:
 
 **Step 6: Generate Report**
 
-```
+```text
 Metadata Refresh Complete
 
 Files processed: {count}

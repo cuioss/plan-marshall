@@ -18,7 +18,7 @@ A plan opts into worktree mode at `phase-1-init` via `branch_strategy: feature` 
 
 Worktrees live at the platform-neutral location:
 
-```
+```text
 <project_root>/.plan/local/worktrees/{plan-id}/
 ```
 
@@ -98,7 +98,7 @@ The consequence for dispatch: subagents do NOT forward `--plan-id` or `--project
 
 A short header MAY be embedded as a reinforcement reminder so the never-edit-main-checkout invariant stays salient through free-form delegation:
 
-```
+```text
 WORKTREE: cwd is pinned to this plan's worktree (ADR-002 cwd-pinned model).
 Resolution is cwd-relative — do NOT forward a worktree path; do NOT pass --project-dir.
 All Edit/Write/Read tool calls and raw git/mvn/npm commands operate against the pinned cwd.
@@ -177,7 +177,7 @@ The **`main_dirty_drift`** check (invoked at verify time, not via the registry) 
 
 On detection, `phase_handshake verify --phase {N} --strict` exits non-zero with the structured payload:
 
-```
+```text
 status: error
 error: main_checkout_dirtied_during_plan
 plan_id: ...
@@ -385,7 +385,7 @@ The first six states are detected by inspection before any rebase runs; `conflic
 
 ### Output Contract
 
-```
+```text
 status: success | error | conflict
 plan_id: {echo}
 worktree_path: {resolved}

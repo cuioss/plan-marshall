@@ -18,7 +18,7 @@ The engine is a **cognitive workflow**, not a deterministic script: each stage n
 
 ## Foundational Practices
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
@@ -66,7 +66,7 @@ Capture the returned `worktree_path`. When `metadata.use_worktree == false` the 
 
 Load the single source of truth for the procedure this recipe runs:
 
-```
+```text
 Read: marketplace/bundles/plan-marshall/skills/recipe-security-audit/standards/audit-engine.md
 ```
 

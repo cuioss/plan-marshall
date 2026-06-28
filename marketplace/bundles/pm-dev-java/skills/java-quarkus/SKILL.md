@@ -23,7 +23,7 @@ This skill applies to Quarkus projects:
 
 Load this standard for any Quarkus testing work.
 
-```
+```text
 Read: standards/quarkus-testing.md
 ```
 
@@ -39,28 +39,28 @@ This provides foundational rules for:
 See `pm-dev-java:junit-integration` → `standards/external-integration-testing.md`. For Quarkus-specific paths, use `/q/health` and `/q/metrics` on the management interface.
 
 **Native Image** (load for GraalVM work):
-```
+```text
 Read: standards/quarkus-native.md
 ```
 
 Use when: Building native images or troubleshooting native compilation.
 
 **Reflection Registration** (load for native issues):
-```
+```text
 Read: standards/quarkus-reflection.md
 ```
 
 Use when: Resolving reflection issues in native builds.
 
 **Container Standards** (load for Docker deployment):
-```
+```text
 Read: standards/container.md
 ```
 
 Use when: Configuring container images, Docker Compose, health checks, or certificate management.
 
 **Inbound REST Validation** (load for validating REST resource inputs):
-```
+```text
 Read: standards/quarkus-rest-validation.md
 ```
 

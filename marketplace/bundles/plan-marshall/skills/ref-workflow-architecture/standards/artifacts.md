@@ -4,7 +4,7 @@ File formats and structures for plan data storage.
 
 ## Plan Directory Structure
 
-```
+```text
 .plan/plans/{plan_id}/
 │
 ├── status.json              Phase: init
@@ -32,7 +32,7 @@ File formats and structures for plan data storage.
 
 ## Artifact Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        INIT PHASE                                    │
 ├─────────────────────────────────────────────────────────────────────┤
@@ -98,7 +98,7 @@ Plan lifecycle status with phase tracking.
 
 ### Location
 
-```
+```text
 .plan/plans/{plan_id}/status.json
 ```
 
@@ -122,7 +122,7 @@ updated: 2025-12-02T14:30:00Z
 
 ### Phase Table Visualization
 
-```
+```text
 ┌───────────┬─────────────┐
 │   Phase   │   Status    │
 ├───────────┼─────────────┤
@@ -163,7 +163,7 @@ User request document in markdown format.
 
 ### Location
 
-```
+```text
 .plan/plans/{plan_id}/request.md
 ```
 
@@ -205,13 +205,13 @@ Solution design document with deliverables.
 
 ### Location
 
-```
+```text
 .plan/plans/{plan_id}/solution_outline.md
 ```
 
 ### Structure Diagram
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    solution_outline.md                       │
 ├─────────────────────────────────────────────────────────────┤
@@ -292,7 +292,7 @@ Working files directory for intermediate data during outline and later phases.
 
 ### Location
 
-```
+```text
 .plan/plans/{plan_id}/work/
 ```
 
@@ -330,13 +330,13 @@ Individual task files in the tasks directory.
 
 ### Location
 
-```
+```text
 .plan/plans/{plan_id}/tasks/TASK-{NNN}.json
 ```
 
 ### Filename Format
 
-```
+```text
 TASK-001.json
      │
      └── Sequential number (001, 002, ...)
@@ -385,7 +385,7 @@ current_step: 1
 
 ### Task Structure Diagram
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                      TASK-001.json                            │
 ├─────────────────────────────────────────────────────────────┤
@@ -431,7 +431,7 @@ current_step: 1
 
 ### Status Flow
 
-```
+```text
 TASK Status:
   pending ──▶ in_progress ──▶ done
                     │
@@ -460,7 +460,7 @@ Plan references and domain configuration.
 
 ### Location
 
-```
+```text
 .plan/plans/{plan_id}/references.json
 ```
 
@@ -499,13 +499,13 @@ Semantic work progress tracking across all phases.
 
 ### Location
 
-```
+```text
 .plan/plans/{plan_id}/logs/work.log
 ```
 
 ### Format
 
-```
+```text
 [{timestamp}] [{level}] [{category}] {message}
   phase: {phase}
   [detail: {additional context}]
@@ -513,7 +513,7 @@ Semantic work progress tracking across all phases.
 
 ### Example
 
-```
+```text
 [2025-12-11T11:14:30Z] [INFO] [PROGRESS] Starting init phase
   phase: 1-init
 

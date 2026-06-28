@@ -95,22 +95,22 @@ If you discover issues or improvements during execution, record them:
 ## Workflow Patterns
 
 ### Direct Skill Routing
-```
+```text
 Command → Load Skill → Execute Workflow → Display Results
 ```
 
 ### Conditional Routing
-```
+```text
 Command → Parse Parameters → Route to Different Workflows → Display
 ```
 
 ### Sequential Orchestration
-```
+```text
 Command → Workflow 1 → Workflow 2 → Verify → Display
 ```
 
 ### Agent Delegation
-```
+```text
 Command → Launch Agent(s) via Task → Aggregate Results → Display
 ```
 

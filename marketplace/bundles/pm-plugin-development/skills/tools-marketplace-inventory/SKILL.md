@@ -154,7 +154,7 @@ The `resolve-dependencies.py` script tracks and resolves all dependency relation
 
 ### Component Notation
 
-```
+```text
 bundle:skill                    # Skill (e.g., plan-marshall:phase-1-init)
 bundle:skill:script             # Script (e.g., plan-marshall:manage-files:manage-files)
 bundle:agents:name              # Agent (e.g., plan-marshall:agents:execution-context)
@@ -211,7 +211,7 @@ python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventor
 ```
 
 **Output**:
-```
+```text
 plan-marshall:manage-files
 ├── plan-marshall:ref-toon-format:toon_parser (import)
 │   └── plan-marshall:ref-toon-format (skill)

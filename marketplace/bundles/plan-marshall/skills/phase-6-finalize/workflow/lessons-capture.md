@@ -65,7 +65,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-6-finalize) Loading plan-marshall:manage-lessons"
 ```
 
-```
+```text
 Skill: plan-marshall:manage-lessons
 ```
 
@@ -125,7 +125,7 @@ Required flags: `--component`, `--category`, `--title`. The call creates a file 
 
 Parse `id` from Step 1's TOON output. Use the Write tool to write the lesson body markdown to a plan-scoped staging file:
 
-```
+```text
 Write {plan_dir}/work/lesson-body-{id}.md
 ```
 

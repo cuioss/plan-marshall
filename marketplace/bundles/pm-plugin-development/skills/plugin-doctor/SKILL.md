@@ -102,7 +102,7 @@ All 9 workflows follow the same pattern:
 1. **Load Prerequisites**
 
    Load these skills before proceeding:
-   ```
+   ```text
    Skill: plan-marshall:persona-plan-marshall-agent
    Skill: pm-plugin-development:plugin-architecture
    Skill: pm-plugin-development:tools-marketplace-inventory
@@ -143,7 +143,7 @@ Categorize each issue as safe or risky per `references/fix-catalog.md`. Safe fix
 1. **Auto-Apply Safe Fixes** — Apply immediately using Edit tool without AskUserQuestion. Track success/failure.
 
 2. **Prompt for Risky Fixes ONLY**
-   ```
+   ```text
    AskUserQuestion:
      question: "Apply fix for {issue}?"
      options:
@@ -361,7 +361,7 @@ Representative rule ids by category:
 - **Skill**: `skill-enforcement-block-required`, `skill-naming-noun-suffix`
 - **Script**: `argparse_safety`, `notation-staleness`, `script-call-drift`
 - **Manage-invocation**: `manage-findings-invocation-invalid`, `manage-invocation-invalid`, `missing-canonical-block` (see [scripts/_analyze_manage_invocation.py](scripts/_analyze_manage_invocation.py) for the generalized analyzer)
-- **Mirror-drift**: `provides-method-table-drift`, `literal-count-drift`, `broken-relative-link`, `fenced-code-no-language` (analyze-only for now — reported under `analyze`, NOT gating `quality-gate`, pending a follow-up activation plan that flips them to build-failing once the tree is clean; `provides-method-table-drift` detects drift between a `plan-marshall-plugin` extension.py `provides_*()` overrides and the SKILL.md "Extension API" table mirror — see [scripts/_analyze_provides_method_table.py](scripts/_analyze_provides_method_table.py))
+- **Mirror-drift**: `provides-method-table-drift`, `literal-count-drift`, `broken-relative-link`, `fenced-code-no-language` (**build-failing** — registered in `cmd_quality_gate` so a drifted mirror fails the build, and also reported under `analyze`; `fenced-code-no-language` is auto-fixable; `provides-method-table-drift` detects drift between a `plan-marshall-plugin` extension.py `provides_*()` overrides and the SKILL.md "Extension API" table mirror — see [scripts/_analyze_provides_method_table.py](scripts/_analyze_provides_method_table.py))
 - **Content**: `checklist-pattern`
 - **PM-Workflow**: `pm-implicit-script-call` through `pm-contract-non-compliance`
 - **Test-Conventions**: `unique-fixture-basenames`, `subprocess-pythonpath`, `identifier-validator-corpus` (see [standards/doctor-test-conventions.md](standards/doctor-test-conventions.md))
@@ -438,7 +438,7 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marke
   [--paths PATHS [PATHS ...]] [--marketplace-root MARKETPLACE_ROOT]
 ```
 
-`--paths` scopes the file-anchored findings to the supplied component paths (the same invariant rule set runs). No flag = marketplace-wide. `validate_extension_contracts` always runs whole-tree even under `--paths`. The manually-maintained-mirror rules (`provides-method-table-drift`, `literal-count-drift`, `broken-relative-link`, `fenced-code-no-language`) are NOT part of this build-failing gate — they are analyze-only for now and surface under `analyze`, pending a follow-up activation plan that flips them to build-failing once the tree is clean.
+`--paths` scopes the file-anchored findings to the supplied component paths (the same invariant rule set runs). No flag = marketplace-wide. `validate_extension_contracts` always runs whole-tree even under `--paths`. The manually-maintained-mirror rules (`provides-method-table-drift`, `literal-count-drift`, `broken-relative-link`, `fenced-code-no-language`) are part of this build-failing gate — they are registered in `cmd_quality_gate` (the markdown-mirror pair via the marketplace-wide `analyze_markdown_mirror_rules` pass) and also surface under `analyze`. Their findings carry absolute file paths, so `--paths` scoping applies to them uniformly.
 
 ### test-conventions
 

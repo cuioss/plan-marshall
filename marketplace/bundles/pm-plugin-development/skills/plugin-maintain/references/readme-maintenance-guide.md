@@ -119,7 +119,7 @@ Overwrite README entirely with generated content.
 
 When processing all bundles:
 
-```
+```text
 For each bundle in marketplace/bundles/:
   1. Generate README content
   2. Compare with existing
@@ -129,7 +129,7 @@ For each bundle in marketplace/bundles/:
 
 ### Progress Reporting
 
-```
+```text
 [UPDATE] bundle-name/README.md
   PASS Added 2 missing components
   PASS Removed 1 obsolete component
@@ -165,7 +165,7 @@ When bundles added/removed:
 
 ### Missing plugin.json
 
-```
+```text
 Error: Missing plugin.json in bundle: {path}
 Resolution: Bundle must have plugin.json
 ```
@@ -223,7 +223,7 @@ Run README maintenance:
 
 ### Success Report
 
-```
+```text
 README Maintenance Summary
 ==========================
 Bundles processed: 5
@@ -236,7 +236,7 @@ Documentation Status: UP-TO-DATE
 
 ### With Failures
 
-```
+```text
 README Maintenance Summary
 ==========================
 ...

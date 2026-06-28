@@ -56,7 +56,7 @@ All workflow scripts share `triage_helpers` from `shared-workflow-helpers` (`mar
 
 Script-bearing workflow skills follow this canonical section order (sections marked optional may be omitted when not applicable):
 
-```
+```text
 ---
 name: workflow-<name>
 description: <one-line description>

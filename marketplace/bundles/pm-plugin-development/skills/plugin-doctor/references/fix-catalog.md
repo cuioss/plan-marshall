@@ -180,6 +180,20 @@ description: [Description needed]
 
 **Why Safe**: Checkbox markers are a human UI element (GitHub rendering). Removing them preserves the list item text. LLMs gain no value from `[ ]` prefixes.
 
+### 11b. fenced-code-no-language
+
+**Description**: A fenced code block opened without a language info-string (MD040).
+
+**Detection**: An opening fence (```` ``` ```` or `~~~`) whose line carries no info-string. The detector (`_analyze_markdown.py::check_fenced_code_no_language`) tracks fence open/close state so only *opening* fences are flagged — a closing fence legitimately carries no info-string.
+
+**Fix Strategy**:
+- Re-walk the file with the same fence state machine (`_analyze_markdown._FENCE_OPEN_RE` + open/close tracking)
+- Append the default `text` info-string to every bare opening fence, preserving the original indent and fence-marker run length
+- Leave closing fences, already-tagged opening fences, and fenced content untouched
+- Handler: `_cmd_apply.py::apply_fenced_code_language_fix`
+
+**Why Safe**: `text` is the neutral default language tag — appending it never changes how the block renders for a reader and never alters the fenced content. Closing fences are skipped by the state machine, so block boundaries are preserved.
+
 ### 12. SIMPLICITY_SIGNATURE_DOCSTRING
 
 **Description**: A function docstring whose first paragraph only restates `Args:`/`Returns:` structural headers with no intent ("WHY") content.
@@ -513,6 +527,7 @@ def categorize(issue_type):
         "improper-indentation", "missing-blank-line-before-list",
         "agent-skill-tool-visibility",  # additive Skill append
         "checklist-pattern",            # remove checkbox markers
+        "fenced-code-no-language",      # append default `text` info-string
         "wrong-plan-parameter",         # PM-003: mechanical swap
         "missing-plan-parameter",       # PM-004: add required param
         "positional-argument",          # SCR-009: convert to named flag

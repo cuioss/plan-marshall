@@ -175,7 +175,7 @@ For the complete extraction rules, probe construction, and worked example, see [
 
 **Finding format**:
 
-```
+```text
 CORRECTNESS: ISSUE — Proposed fix incomplete
   Fix: "{fix_description}"
   Mechanism: {fix_mechanism}
@@ -412,7 +412,7 @@ From the `architecture info` output, extract and store:
 **Store as** `arch_context` for use in Steps 8-9.
 
 **Example extraction**:
-```
+```text
 arch_context:
   project_name: oauth-sheriff
   project_description: JWT validation library for Quarkus
@@ -558,7 +558,7 @@ If confidence >= threshold → go to Step 13. Otherwise continue.
 
 The loop-exit check is governed solely by `confidence_threshold` — the deep refine lane runs the full clarification loop until confidence reaches threshold. (Light-lane plans never enter refine's clarification loop at all: the phase-1-init lane router routes them to the collapsed light-lane envelope, which authors deliverables in a single bounded-discovery dispatch.)
 
-```
+```text
 IF confidence >= confidence_threshold:
   Log: "[REFINE:8] Request refinement complete. Confidence: {confidence}%"
   CONTINUE to Step 13 (Persist and Return Results)
@@ -618,7 +618,7 @@ Use the Edit/Write tools to append a `## Clarifications` section and, if
 significant, a `## Clarified Request` section to the file returned by
 `request path`. Format:
 
-```
+```text
 ## Clarifications
 
 Q: {question asked}
@@ -662,7 +662,7 @@ persisted. The workflow MUST NOT loop back to Step 8 and MUST NOT advance to Ste
 returns `status: success`. Only a successful `mark-clarified` clears the round.
 
 **Synthesis pattern** (for the Clarified Request section you write in 12b):
-```
+```text
 {Original intent restated clearly}
 
 **Scope:**
@@ -713,7 +713,7 @@ no-op — do not re-write or duplicate it.
 
 1. Stage the rendered TOON payload via the `Write` tool to `.plan/temp/module_mapping.toon`. The payload is the multi-line block:
 
-   ```
+   ```text
    # Module Mapping
 
    {module_mapping_toon_content}

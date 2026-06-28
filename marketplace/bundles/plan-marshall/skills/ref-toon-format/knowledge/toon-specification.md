@@ -152,7 +152,7 @@ instructions[2]:
 
 ### Receiving TOON Handoff (Agent Prompt Pattern)
 
-```
+```text
 You are receiving a handoff from {previous_agent}.
 
 The data uses TOON format:

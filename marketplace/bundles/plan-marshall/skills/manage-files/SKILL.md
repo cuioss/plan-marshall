@@ -24,7 +24,7 @@ Generic file operations for plan directories. Provides basic CRUD operations for
 
 Files are stored in plan directories:
 
-```
+```text
 .plan/plans/{plan_id}/
 ```
 

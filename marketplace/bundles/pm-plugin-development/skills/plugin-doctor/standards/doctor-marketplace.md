@@ -32,7 +32,7 @@ Parse the JSON output to get:
 ## Phase 2: LLM Analysis
 
 1. **Read the JSON report**:
-   ```
+   ```text
    Read: {report_file}
    ```
 
@@ -47,7 +47,7 @@ Parse the JSON output to get:
 
    Dispatch `plan-marshall:{target}` for each component in parallel (one Task call per file in a single message):
 
-   ```
+   ```text
    Task: plan-marshall:{target}
      prompt: |
        name: tool-coverage
@@ -99,14 +99,14 @@ Parse the JSON output to get:
    Validate that all `Skill:` directives across components resolve to existing skills:
 
    a. `Skill:` directives are content tokens inside files, not first-class entries in the architecture inventory — Grep is the right tool here. Use it as the documented fallback for content-level cross-bundle scanning:
-      ```
+      ```text
       Grep: pattern="Skill:\\s+[\\w-]+:[\\w-]+" path="marketplace/bundles" output_mode="content"
       ```
 
    b. Extract each referenced skill notation (e.g., `plan-marshall:manage-lessons`)
 
    c. For each reference, verify the target skill directory exists:
-      ```
+      ```text
       Glob: pattern="marketplace/bundles/{bundle}/skills/{skill}/SKILL.md"
       ```
 
@@ -126,7 +126,7 @@ Parse the JSON output to get:
    - Recommendations for manual review
 
 5. **Write findings.md**:
-   ```
+   ```text
    Write: {findings_file}
    ```
 
@@ -136,7 +136,7 @@ For each item in `llm_review_items` from the JSON report:
 
 1. **Evaluate context** - Is this a real issue or false positive?
 2. **If real issue, prompt for risky fix**:
-   ```
+   ```text
    AskUserQuestion:
      question: "Fix {issue_type} in {file}?"
      options:
@@ -149,7 +149,7 @@ For each item in `llm_review_items` from the JSON report:
 ## Phase 4: Report Summary
 
 Display final summary:
-```
+```text
 ## Marketplace Health Report
 
 **Report Location**: {report_dir}

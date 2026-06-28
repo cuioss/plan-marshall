@@ -108,7 +108,7 @@ During finalize phase:
 
 ## Quick Decision Flowchart
 
-```
+```text
 Is it a broken link or invalid xref?
   -> Yes -> FIX (no exceptions)
 

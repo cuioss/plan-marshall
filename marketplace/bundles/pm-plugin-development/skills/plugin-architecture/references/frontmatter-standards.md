@@ -511,12 +511,12 @@ Tool names are case-sensitive. Use exactly: `Read`, `Write`, `Edit`, `Bash`, `Gr
 **CRITICAL CONCEPT**: Skills are mounted at runtime from their physical location to `./.claude/skills/`.
 
 **Physical Location**:
-```
+```text
 marketplace/bundles/pm-plugin-development/skills/cui-marketplace-architecture/scripts/analyze-skill-structure.sh
 ```
 
 **Runtime Mount Point**:
-```
+```text
 ./.claude/skills/cui-marketplace-architecture/scripts/analyze-skill-structure.sh
 ```
 

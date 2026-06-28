@@ -4,7 +4,7 @@ Visual overview of the task creation workflow for human readers.
 
 ## 1:N Task Creation Flow
 
-```
+```text
 solution_outline.md                        TASK-*.toon (created by task-plan)
 ┌────────────────────────────┐             ┌────────────────────────────┐
 │ **Metadata:**              │             │ TASK-001              │
@@ -29,7 +29,7 @@ that drives Phase 5's verification step selection and Phase 6's finalize-step
 dispatch — phases 5 and 6 read it and obey, no per-doc skip logic remains in
 their standards.
 
-```
+```text
 phase-4-plan
    │
    ├── Step 5..7: Create tasks (per-deliverable + holistic)

@@ -18,7 +18,7 @@ Foundational development practices applicable across all technology stacks and d
 
 **Important**: Load this standard at the start of any development work.
 
-```
+```text
 Read: standards/agent-behavior-rules.md
 ```
 
@@ -27,7 +27,7 @@ Covers Boy Scout Rule, decision tree for when to ask users, research patterns, t
 ### Step 2: Load Tool Usage Standards (As Needed)
 
 **Tool usage patterns** (load for file operations, content search, or automation work):
-```
+```text
 Read: standards/tool-usage-patterns.md
 ```
 
@@ -36,7 +36,7 @@ Covers tool selection guide, file operations (discovery, existence checks, valid
 ### Step 3: Load Script Argument Naming Conventions (As Needed)
 
 **Script argument naming** (load when authoring or invoking `plan-marshall` `manage-*` scripts):
-```
+```text
 Read: standards/argument-naming.md
 ```
 
@@ -45,7 +45,7 @@ Covers typed-ID flags (`--lesson-id`, `--plan-id`, `--task-number`, `--module`, 
 ### Step 4: Load the Coverage Contract (As Needed)
 
 **Scope × thoroughness** (load for any coverage-class work — sweeps, audits, refactors, refines, and any task whose value comes from how completely it covered a surface):
-```
+```text
 Read: standards/thoroughness.md
 ```
 
@@ -54,7 +54,7 @@ Covers the orthogonality of effort and thoroughness, the thoroughness ladder (T1
 ### Step 5: Load the Coverage-Gathering Contract (As Needed)
 
 **Coverage-gathering contract** (load when building or modifying a broad-pass component — a wide audit, compliance sweep, simplification/refactor campaign, or pre-submission review — that gathers a coverage cell from the user and consumes it to govern its breadth/depth):
-```
+```text
 Read: standards/coverage-gathering-contract.md
 ```
 

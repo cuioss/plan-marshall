@@ -10,7 +10,7 @@ Create comprehensive documentation for the API authentication flow, including se
 
 ## Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                    Documentation Structure                                   │
 ├─────────────────────────────────────────────────────────────────────────────┤

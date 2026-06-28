@@ -36,7 +36,7 @@ implements:
 
 ## Foundational Practices
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
@@ -282,7 +282,7 @@ When the audited plan is itself a **stalled lesson-sourced plan**, its relocated
 
 When BOTH conditions hold, surface the stranded-lesson signal in the report and prompt the user (live modes only — skip the prompt in archived mode, which is read-only):
 
-```
+```text
 AskUserQuestion:
   question: "This plan is a stalled lesson-sourced plan ({plan_id}) — its lesson(s) are trapped out of the active corpus. Resume the plan or restore the lesson(s)?"
   header: "Stalled lesson"

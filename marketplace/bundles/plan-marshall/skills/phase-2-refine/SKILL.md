@@ -14,7 +14,7 @@ For detailed step-by-step procedures, see `standards/refine-workflow-detail.md`.
 
 ## Foundational Practices
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 

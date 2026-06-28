@@ -71,7 +71,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission
 
 Aggregate gaps from both checks into a single prompt. If either `added` (wildcards) or `missing` (project-step rules) is non-empty, ask user once:
 
-```
+```text
 AskUserQuestion:
   question: "Found {N_wildcards} missing plugin wildcards and {N_project_steps} missing project-step rules. Add them?"
   options:
@@ -118,7 +118,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
 
 Then prompt the user once:
 
-```
+```text
 AskUserQuestion:
   question: "Found {redundant_count} redundant permissions and {marketplace_count} marketplace permissions in project-local settings. Remove redundant entries and move marketplace permissions to global settings?"
   options:
@@ -154,7 +154,7 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode ch
 - `status: missing` → No project structure (placement context unavailable)
 
 If missing, show info message (not blocking):
-```
+```text
 [INFO] Project structure not configured. Solution outline will use standard codebase analysis.
        To enable: /marshall-steward → Configuration → Project Structure → Regenerate
 ```
@@ -175,7 +175,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health sta
 - `overall: unknown` → Could not detect CI provider
 
 If tool not authenticated, show:
-```
+```text
 AskUserQuestion:
   question: "CI tool '{tool}' is not authenticated. Run '{tool} auth login' to authenticate."
   options:
@@ -201,7 +201,7 @@ Inspect the `hook` entry in the `results` array:
 
 When `hook.healthy` is false, prompt the user:
 
-```
+```text
 AskUserQuestion:
   question: "The terminal title SessionStart hook is not installed. Enable it now? (Shows active plan, phase, and status in the terminal tab.)"
   options:
@@ -249,7 +249,7 @@ The check discovers shipped `project:` steps from `<project-root>/.claude/skills
 
 When `missing_project_finalize_steps` is non-empty, show:
 
-```
+```text
 [WARN] Project-local finalize steps shipped under .claude/skills/ are missing from
        phase-6-finalize.steps: {missing_project_finalize_steps}. These are hand-maintained
        on the meta-project (presets are consumer-scoped and never seed project: steps).

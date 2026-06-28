@@ -41,7 +41,7 @@ A candidate is `already_closed` only when the caller has **positive evidence** t
 
 ## Output shape (per candidate)
 
-```
+```text
 {candidate_title}:
   status: new | merge_into | already_closed
   target_id: YYYY-MM-DD-HH-NNN     # omit when status=new

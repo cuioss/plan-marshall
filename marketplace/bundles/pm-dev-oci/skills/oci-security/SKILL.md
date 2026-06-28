@@ -55,7 +55,7 @@ Load references progressively based on current task. **Never load all references
 - Pre-deployment verification checklist
 
 **Load Command**:
-```
+```text
 Read standards/owasp-container-security.md
 ```
 
@@ -71,7 +71,7 @@ Read standards/owasp-container-security.md
 Cross-references OWASP controls D01, D03, D04, D05, D07, D09, D10.
 
 **Load Command**:
-```
+```text
 Read standards/runtime-security.md
 ```
 
@@ -86,7 +86,7 @@ Read standards/runtime-security.md
 Cross-references OWASP controls D02, D08.
 
 **Load Command**:
-```
+```text
 Read standards/supply-chain-security.md
 ```
 

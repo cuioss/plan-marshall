@@ -688,5 +688,112 @@ def test_categorize_simplicity_signature_docstring_safe():
 
 
 # =============================================================================
+# fenced-code-no-language auto-fixer (deliverable D2)
+# =============================================================================
+#
+# The fixer appends a default ``text`` info-string to every bare *opening* code
+# fence, mirroring check_fenced_code_no_language's fence state machine. Closing
+# fences and already-tagged opening fences must be left byte-identical. These
+# tests pin the safe-classification, the FIX_HANDLERS registration, and the
+# handler's open/close discrimination.
+
+
+def test_fenced_code_no_language_in_fix_handlers():
+    """fenced-code-no-language is registered in FIX_HANDLERS."""
+    handlers = _cmd_apply_mod.FIX_HANDLERS
+    assert 'fenced-code-no-language' in handlers, (
+        'fenced-code-no-language must have an auto-apply fix handler'
+    )
+
+
+def test_fenced_code_no_language_is_safe():
+    """fenced-code-no-language categorizes as a safe fix."""
+    extracted = {'fixable_issues': [{'type': 'fenced-code-no-language', 'file': 'x.md'}]}
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        json.dump(extracted, f)
+        f.flush()
+        args = Namespace(input=f.name)
+        data = cmd_categorize(args)
+        Path(f.name).unlink()
+    safe_types = {issue['type'] for issue in data.get('safe', [])}
+    assert 'fenced-code-no-language' in safe_types, f'Should be categorized safe, got {data}'
+
+
+def test_apply_fenced_code_language_fix_tags_bare_opening_fence():
+    """A bare opening fence gets ``text`` appended; its content and close are kept."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        md_file = Path(tmp_dir) / 'SKILL.md'
+        md_file.write_text('# Doc\n\n```\nbare code\n```\n')
+
+        result = _cmd_apply_mod.apply_fenced_code_language_fix(md_file, {}, {})
+
+        assert result['success'] is True, f'Fix should succeed: {result}'
+        assert result['fences_fixed'] == 1, f'Exactly one fence should be tagged: {result}'
+        content = md_file.read_text()
+        assert '```text\nbare code\n```\n' in content, f'Opening fence should be tagged text: {content!r}'
+
+
+def test_apply_fenced_code_language_fix_leaves_tagged_opening_fence_untouched():
+    """An already-tagged opening fence is not re-tagged."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        md_file = Path(tmp_dir) / 'SKILL.md'
+        original = '# Doc\n\n```python\nprint("hi")\n```\n'
+        md_file.write_text(original)
+
+        result = _cmd_apply_mod.apply_fenced_code_language_fix(md_file, {}, {})
+
+        assert result['fences_fixed'] == 0, f'No fence should be tagged: {result}'
+        assert md_file.read_text() == original, 'Already-tagged fence must be byte-identical'
+
+
+def test_apply_fenced_code_language_fix_leaves_closing_fence_untouched():
+    """The bare closing fence of a tagged block is never tagged as an opener."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        md_file = Path(tmp_dir) / 'SKILL.md'
+        # Opening fence is tagged ``bash``; the closing ``` is bare but must
+        # stay bare — the state machine treats it as a closer, not an opener.
+        original = '# Doc\n\n```bash\nls -la\n```\n'
+        md_file.write_text(original)
+
+        result = _cmd_apply_mod.apply_fenced_code_language_fix(md_file, {}, {})
+
+        assert result['fences_fixed'] == 0, f'Closing fence must not be tagged: {result}'
+        assert md_file.read_text() == original, 'Closing fence must be byte-identical'
+
+
+def test_apply_fenced_code_language_fix_is_idempotent():
+    """Re-applying the fixer after it tagged a fence makes no further change."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        md_file = Path(tmp_dir) / 'SKILL.md'
+        md_file.write_text('# Doc\n\n```\ncode\n```\n')
+
+        first = _cmd_apply_mod.apply_fenced_code_language_fix(md_file, {}, {})
+        after_first = md_file.read_text()
+        second = _cmd_apply_mod.apply_fenced_code_language_fix(md_file, {}, {})
+
+        assert first['fences_fixed'] == 1, f'First pass should tag one fence: {first}'
+        assert second['fences_fixed'] == 0, f'Second pass should be a no-op: {second}'
+        assert md_file.read_text() == after_first, 'Idempotent: second pass changes nothing'
+
+
+def test_apply_fenced_code_language_fix_via_cmd_apply():
+    """The fixer is reachable end-to-end through cmd_apply by issue type."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        md_file = Path(tmp_dir) / 'SKILL.md'
+        md_file.write_text('# Doc\n\n```\ncode\n```\n')
+
+        fix_json = json.dumps({'type': 'fenced-code-no-language', 'file': 'SKILL.md'})
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(fix_json)
+            f.flush()
+            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            data = cmd_apply(args)
+            Path(f.name).unlink()
+
+        assert data['success'] is True, f'Fix should succeed: {data}'
+        assert '```text\n' in md_file.read_text(), 'Opening fence should be tagged via cmd_apply'
+
+
+# =============================================================================
 # Main
 # =============================================================================

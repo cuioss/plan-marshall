@@ -95,7 +95,7 @@ Extract: `pr_number`, `pr_url`, `state` (open/merged/closed), `head_branch`, `ba
 
 If no PR found (status: error) → there is nothing to clean up on the remote side. Record the no-op outcome and return via **Mark Step Complete** with:
 
-```
+```text
 --outcome done --display-detail "no PR, nothing to clean up"
 ```
 
@@ -211,7 +211,7 @@ Determine planned actions based on PR state. Local cleanup (switch to base branc
 - **If `state == open`**: Actions = rebase onto base, force-push with lease, wait for CI; the post-CI merge is confirmed separately at the pre-merge gate. Local cleanup runs after the merge gate resolves.
 - **If `state == merged`**: Actions = switch to base branch, pull latest, delete local feature branch. No rebase or merge is planned; the pre-merge gate is skipped on this path.
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "Rebase the feature branch onto {base_branch} and run CI? (Merge will be confirmed separately after CI passes.)"
@@ -410,7 +410,7 @@ This sub-block is evaluated ONLY when the `github_re_review re-review` call abov
 
 - **`ask`** (default — fire an inline `AskUserQuestion`): present the three operator choices, mirroring the budget-exhaustion merge-queue prompt style in this document:
 
-  ```
+  ```text
   AskUserQuestion:
     questions:
       - question: "The re-review of the rebased HEAD timed out with no fresh bot review. How should branch cleanup proceed?"
@@ -576,7 +576,7 @@ Once `admission: admitted` is reached, proceed directly to **Merge PR (if not ye
 
 Present the merge context and ask the operator to confirm. The prompt is anchored to the current (post-rebase, post-CI) head SHA via the freshly-re-run classifier above:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "CI passed on the rebased branch. Merge PR #{pr_number} now?"
@@ -762,7 +762,7 @@ Get branch information from references context (already available from Step 2 co
 
 **MANDATORY**: Present context and ask user before any action.
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "PR creation and merge are handled outside this workflow. Ready to switch back to base branch and clean up?"

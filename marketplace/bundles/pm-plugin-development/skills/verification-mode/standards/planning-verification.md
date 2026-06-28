@@ -15,7 +15,7 @@ Applies when `scope: planning` is specified. These checks supplement the base ve
 
 Load and follow the protocol from `standards/planning-compliance.md`:
 
-```
+```text
 Read standards/planning-compliance.md
 ```
 
@@ -126,7 +126,7 @@ This is the ONLY allowed way to interact with `.plan` files. All other access is
 
 ## Example Planning Violation
 
-```
+```text
 User: Continue executing the current plan
 
 Claude: Verification Mode Active
@@ -170,7 +170,7 @@ Use `python3 .plan/execute-script.py plan-marshall:manage-status:manage-status r
 
 ## Example Post-Operation Audit
 
-```
+```text
 User: (approved using plan-marshall:manage-status:manage-status)
 
 Claude: Task TASK-001 completed successfully.

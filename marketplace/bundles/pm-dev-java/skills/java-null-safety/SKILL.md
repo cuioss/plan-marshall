@@ -31,7 +31,7 @@ This skill requires JSpecify annotations:
 
 **Important**: Load this standard for any null safety work — package configuration, annotations, API return types.
 
-```
+```text
 Read: standards/null-safety-core.md
 ```
 
@@ -45,7 +45,7 @@ This provides rules for:
 
 **Load for implementation work** — writing null-safe code, collections, testing, migration:
 
-```
+```text
 Read: standards/null-safety-patterns.md
 ```
 
@@ -69,7 +69,7 @@ This provides rules for:
 ## Templates
 
 **package-info.java** — starting point for new packages with `@NullMarked`:
-```
+```text
 Read: templates/package-info.java.tmpl
 ```
 

@@ -104,7 +104,7 @@ For each factual claim, verify:
 
 **Format:**
 
-```
+```text
 Line {N}: "{claim text}"
 Issue: Unverified {performance/compatibility/usage} claim
 Required: {specific source needed}
@@ -113,7 +113,7 @@ Suggestion: {add citation | remove claim | rephrase as capability}
 
 **Example:**
 
-```
+```text
 Line 42: "Our validator is 10x faster than competitors"
 Issue: Unverified performance claim without benchmark data
 Required: Benchmark comparison with methodology
@@ -164,7 +164,7 @@ Suggestion: Remove comparison or add link to benchmark results
 
 **Format:**
 
-```
+```text
 Line {N}: "{text}"
 Issue: {verbose | complex | unclear | unexplained}
 Suggestion: "{improved version}"
@@ -300,7 +300,7 @@ For each descriptive phrase, ask:
 
 **Format:**
 
-```
+```text
 Line {N}: "{original text}"
 Issue: {marketing | self-praise | promotional | unverified | subjective}
 Reasoning: {careful analysis}
@@ -309,7 +309,7 @@ Suggestion: "{factual alternative}"
 
 **Example:**
 
-```
+```text
 Line 15: "Our powerful validation engine provides blazing-fast performance"
 Issue: marketing + subjective
 Reasoning: "Powerful" is unmeasurable subjective praise. "Blazing-fast" is vague.
@@ -328,7 +328,7 @@ Suggestion: "Validation engine processes 50K validations/second (benchmarked on 
 
 **Example issue:**
 
-```
+```text
 Inconsistency detected:
 - Line 10: "JSON Web Token (JWT)"
 - Line 45: "JWT token" (redundant - JWT already means token)
@@ -366,7 +366,7 @@ Recommendation: Use "JWT" consistently, define once at first use
 
 **Flag:**
 
-```
+```text
 Line {N}: TODO section marker found
 Content: "{TODO text}"
 Action: Complete section or remove marker

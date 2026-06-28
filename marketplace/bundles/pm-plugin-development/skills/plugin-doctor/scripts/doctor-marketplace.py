@@ -85,7 +85,11 @@ from _analyze_tmp_redirect_in_skills import analyze_tmp_redirect_in_skills
 from _analyze_workflow_doc_toon_error_field import analyze_workflow_doc_toon_error_field
 from _cmd_apply import apply_single_fix, load_templates
 from _cmd_extension import validate_extension_contracts
-from _doctor_analysis import analyze_component, scan_argparse_safety
+from _doctor_analysis import (
+    analyze_component,
+    analyze_markdown_mirror_rules,
+    scan_argparse_safety,
+)
 from _doctor_report import generate_report
 from _doctor_shared import (
     categorize_all_issues,
@@ -1206,14 +1210,52 @@ def cmd_quality_gate(args) -> dict:
         }
     )
 
-    # NOTE: provides-method-table-drift (analyze_provides_method_table),
-    # literal-count-drift (analyze_literal_count), and the markdown-mirror
-    # cluster (broken-relative-link + fenced-code-no-language) are intentionally
-    # NOT run here. They are analyze-only for now — they surface under
-    # ``cmd_analyze`` (the first two as marketplace-wide passes, the markdown
-    # pair via the per-component ``analyze_component`` path) as informational
-    # output, but they do NOT gate quality-gate. A follow-up activation plan
-    # will flip them back to build-failing once the tree is clean.
+    # provides-method-table-drift — build-failing. AST/regex pass detecting drift
+    # between each bundle's extension.py provides_*() overrides and the
+    # manually-maintained function-name column in its SKILL.md "Extension API"
+    # table mirror. Findings carry absolute file paths, so _scoped's path filter
+    # applies uniformly under --paths.
+    provides_method_table_findings = _scoped(analyze_provides_method_table(marketplace_root))
+    all_issues.extend(provides_method_table_findings)
+    rule_summaries.append(
+        {'rule': 'provides-method-table-drift', 'findings': len(provides_method_table_findings)}
+    )
+
+    # literal-count-drift — build-failing. AST/regex/pathlib pass detecting drift
+    # between each extension-api "Extension Points" row's manually-maintained
+    # "Implementations" count token and the machine-derivable implementer count.
+    # Findings carry absolute file paths, so _scoped's path filter applies under
+    # --paths.
+    literal_count_findings = _scoped(analyze_literal_count(marketplace_root))
+    all_issues.extend(literal_count_findings)
+    rule_summaries.append(
+        {'rule': 'literal-count-drift', 'findings': len(literal_count_findings)}
+    )
+
+    # markdown-mirror cluster — build-failing. A single marketplace-wide pass
+    # emits two rule IDs: broken-relative-link (relative cross-references whose
+    # on-disk target is missing) and fenced-code-no-language (bare opening code
+    # fences). Partition its findings so each rule ID gets its own rules_run
+    # summary entry — a de-registration of either regresses the build. Findings
+    # carry absolute file paths, so _scoped's path filter applies under --paths.
+    markdown_mirror_findings = _scoped(analyze_markdown_mirror_rules(marketplace_root))
+    all_issues.extend(markdown_mirror_findings)
+    rule_summaries.append(
+        {
+            'rule': 'broken-relative-link',
+            'findings': sum(
+                1 for f in markdown_mirror_findings if f.get('rule_id') == 'broken-relative-link'
+            ),
+        }
+    )
+    rule_summaries.append(
+        {
+            'rule': 'fenced-code-no-language',
+            'findings': sum(
+                1 for f in markdown_mirror_findings if f.get('rule_id') == 'fenced-code-no-language'
+            ),
+        }
+    )
 
     # fail-closed-gate-read + redundant-contract-typed-isinstance — the whole-tree
     # Python-script pass that runs alongside analyze_plan_path_in_scripts /

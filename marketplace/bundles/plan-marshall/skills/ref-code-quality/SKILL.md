@@ -18,7 +18,7 @@ Language-agnostic code quality and documentation principles applicable across al
 
 **Important**: Load this standard for any implementation or refactoring work.
 
-```
+```text
 Read: standards/code-organization.md
 ```
 
@@ -27,14 +27,14 @@ Covers SRP, CQS, parameter objects, package structure, immutability, refactoring
 ### Step 2: Load Additional Standards (As Needed)
 
 **Error Handling** (load for error/exception work):
-```
+```text
 Read: standards/error-handling.md
 ```
 
 Use when: Designing error handling, exception hierarchies, or recovery patterns.
 
 **Documentation Principles** (load for API documentation work):
-```
+```text
 Read: standards/documentation-principles.md
 ```
 

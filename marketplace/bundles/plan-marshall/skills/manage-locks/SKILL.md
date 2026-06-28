@@ -61,7 +61,7 @@ Both coordination files live under the MAIN checkout's `.plan/local`, resolved v
 the single sanctioned `resolve_main_anchored_path` utility (ADR-002), so every
 session contends for the same file regardless of its pinned cwd:
 
-```
+```text
 <main>/.plan/local/merge.lock          # the unified merge mutex (one-line holder plan_id)
 <main>/.plan/local/merge-queue.json    # the merge-lock FIFO admission queue (waiting state)
 <main>/.plan/local/build-queue.json    # the build-queue active + waiting + run-log state

@@ -4,7 +4,7 @@ Visual overview of the refine workflow for human readers.
 
 ## Request Refine Loop
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                    REQUEST REFINE LOOP                          │
 ├─────────────────────────────────────────────────────────────────┤

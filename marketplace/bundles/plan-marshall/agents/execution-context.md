@@ -60,7 +60,7 @@ missing_field: "<field>"
 
 ## Step 2: Load Foundational Practices (IMPLICIT)
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
@@ -72,7 +72,7 @@ Skill: plan-marshall:persona-plan-marshall-agent
 
 For each entry in `skills[]`, in order:
 
-```
+```text
 Skill: <entry>
 ```
 

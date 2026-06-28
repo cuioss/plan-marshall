@@ -29,7 +29,7 @@ Plans, tasks, outlines, status files — these are all **outputs** of the proces
 
 Before proposing ANY fix, you MUST pass this gate:
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │  DOES MY PROPOSED FIX MODIFY FILES UNDER:       │
 │                                                  │
@@ -100,7 +100,7 @@ The skill supports different verification scopes via the `scope` parameter:
 
 ### Base Verification (default)
 
-```
+```text
 Skill: pm-plugin-development:verification-mode
 ```
 
@@ -108,7 +108,7 @@ Applies: Script failures, resolution failures, workaround detection
 
 ### Planning Verification
 
-```
+```text
 Skill: pm-plugin-development:verification-mode
 scope: planning
 ```
@@ -160,7 +160,7 @@ When you would use an alternative approach instead of the documented method:
 
 All analyses MUST use this structured format:
 
-```
+```text
 ## [TYPE] Analysis Required
 
 ### Issue Detected
@@ -226,7 +226,7 @@ Clear all existing plans by enumerating them through the manage-status API and d
 **Verification**: Re-run `manage-status list` and confirm the `plans[]` table is empty.
 
 **Output**:
-```
+```text
 Environment prepared - all plans cleared (each plan directory and its plan-scoped logs removed) for clean slate verification.
 ```
 
@@ -236,14 +236,14 @@ Environment prepared - all plans cleared (each plan directory and its plan-scope
 
 After Step 1 completes, acknowledge:
 
-```
+```text
 Environment prepared - all plans cleared (each plan directory and its plan-scoped logs removed).
 Verification Mode Active - All operations will stop on failures, resolution issues, or workarounds for analysis.
 ```
 
 If `scope: planning` was specified, add:
 
-```
+```text
 Planning Scope Active - Additional checks: .plan access patterns, work-log population, status consistency.
 ```
 
@@ -297,7 +297,7 @@ Review the output for `[ERROR]` entries. This uses the manage-log API (the desig
 
 ## Standards Organization
 
-```
+```text
 standards/
 ├── failure-analysis.md      (Script and tool failure analysis - real-time)
 ├── resolution-analysis.md   (Path and reference resolution issues)
@@ -375,7 +375,7 @@ No other tools required - this skill modifies behavioral patterns.
 
 This skill is designed to be loaded alongside other skills:
 
-```
+```text
 Skill: pm-plugin-development:verification-mode
 Skill: plan-marshall:phase-3-outline
 ```
@@ -393,7 +393,7 @@ Verification mode is working correctly when:
 
 ## Example Session
 
-```
+```text
 User: Run the init phase for EXAMPLE-PLAN
 
 Claude: Verification Mode Active - All operations will stop on failures, resolution issues, or workarounds for analysis.
@@ -438,7 +438,7 @@ Fix option 1 - Update calling code to use valid domain "java"
 
 When `scope: planning` is specified, load the planning verification protocol:
 
-```
+```text
 Read standards/planning-verification.md
 ```
 
@@ -463,7 +463,7 @@ To run without verification:
 
 For post-hoc analysis of script failures with origin tracing and fix proposals, use the plan-retrospective skill (aspect: `script-failure-analysis`):
 
-```
+```text
 Skill: plan-marshall:plan-retrospective
 ```
 

@@ -75,7 +75,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 The executor standardizes error output:
 
-```
+```text
 SCRIPT_ERROR    {notation}    {exit_code}    {summary}
 ```
 
@@ -86,7 +86,7 @@ The executor provides two-tier logging:
 ### Plan-Scoped Logging
 
 When a plan ID is provided, logs to:
-```
+```text
 .plan/plans/{plan-id}/script-execution.log
 ```
 
@@ -118,7 +118,7 @@ The `--audit-plan-id` parameter is audit-only — it is removed before the scrip
 ### Global Logging
 
 Fallback when no plan context:
-```
+```text
 .plan/logs/script-execution-YYYY-MM-DD.log
 ```
 
@@ -129,12 +129,12 @@ Fallback when no plan context:
 ### Log Entry Formats
 
 **Success entries** (single-line):
-```
+```text
 [2025-12-08T10:30:00Z] [INFO] [SCRIPT] plan-marshall:manage-files:manage-files add (0.15s)
 ```
 
 **Error entries** (multi-line with fields):
-```
+```text
 [2025-12-08T10:31:00Z] [ERROR] [SCRIPT] plan-marshall:manage-files:manage-files add (0.23s)
   exit_code: 1
   args: --plan-id EXAMPLE-PLAN --file missing.md
@@ -229,7 +229,7 @@ script-relative walk → cwd discovery).
 
 ## Architecture
 
-```
+```text
 .plan/
 ├── execute-script.py            # Generated executor with embedded mappings
 └── local/                       # Runtime state (managed by plan-marshall)
@@ -258,7 +258,7 @@ python3 "{BOOTSTRAP_PLUGIN}" get-root
 ```
 
 Output:
-```
+```text
 plugin_root	/Users/.../.claude/plugins/cache/plan-marshall
 source	detected|cached
 ```
@@ -276,7 +276,7 @@ python3 "{SCRIPT_FILE}" <args>
 ### State File Format
 
 `.plan/local/marshall-state.toon`:
-```
+```text
 plugin_root	/Users/oliver/.claude/plugins/cache/plan-marshall
 detected_at	2025-12-12T10:30:00+00:00
 ```
@@ -318,7 +318,7 @@ The script executor includes a synchronous polling utility for blocking until as
 - Any async operation requiring polling
 
 **Load Reference**:
-```
+```text
 Read standards/wait-pattern.md
 ```
 
@@ -345,7 +345,7 @@ timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor
 **Note**: When using Bash tool, set `timeout` parameter to `600000` (ms) to match shell timeout.
 
 **Output** (TOON format):
-```
+```text
 status          success|timeout|failure
 duration_sec    Actual wait duration in seconds
 polls           Number of condition checks

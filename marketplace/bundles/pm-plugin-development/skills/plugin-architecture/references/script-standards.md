@@ -4,7 +4,7 @@ Supplementary script standards covering SKILL.md documentation requirements, she
 
 For Python implementation patterns, testing, output contracts, and cross-skill integration, load the dedicated skill:
 
-```
+```text
 Skill: pm-plugin-development:plugin-script-architecture
 ```
 
@@ -42,7 +42,7 @@ All scripts MUST be documented in SKILL.md.
   field1: value
   field2: 123
   ```
-```
+```text
 
 ## Shell Script Standards
 

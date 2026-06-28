@@ -4,7 +4,7 @@
 
 The init phase uses a single agent for complete initialization:
 
-```
+```text
 User Request (description, lesson_id, or issue)
         │
         ▼
@@ -44,7 +44,7 @@ User Request (description, lesson_id, or issue)
 Plan-init accepts exactly ONE of these inputs:
 
 ### Description (Free-form text)
-```
+```text
 description: "Add dark mode toggle to application settings"
 ```
 
@@ -53,7 +53,7 @@ description: "Add dark mode toggle to application settings"
 - Simplest input type
 
 ### Lesson ID
-```
+```text
 lesson_id: "2025-12-02-001"
 ```
 
@@ -65,7 +65,7 @@ lesson_id: "2025-12-02-001"
 - A doc-shaped lesson body triggers the **lesson auto-suggest hook** (Step 5c) which sets `plan_source=recipe` + `recipe_key=lesson_cleanup` in status metadata. See § "Lesson auto-suggest hook" below.
 
 ### Issue URL
-```
+```text
 issue: "https://github.com/org/repo/issues/123"
 ```
 
@@ -119,7 +119,7 @@ Rules:
 
 When plan directory already exists:
 
-```
+```text
 AskUserQuestion:
   "Plan 'my-feature' already exists. What would you like to do?"
 

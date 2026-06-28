@@ -12,7 +12,7 @@ The marketplace ships two implementors — `plan-marshall:execution-context`, th
 
 The end-to-end trace:
 
-```
+```text
 .plan/marshal.json              models.roles.<role> = "level-5"
         │
         ▼
@@ -140,7 +140,7 @@ tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
 
 The build target produces:
 
-```
+```text
 target/claude/plan-marshall/agents/
 ├── execution-context.md           # canonical, implements/levels stripped
 ├── execution-context-level-1.md   # model: haiku
@@ -166,7 +166,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below.
 
-```
+```text
 # Dispatch
 Task: plan-marshall:{target}
   prompt: |

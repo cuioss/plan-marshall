@@ -91,7 +91,7 @@ realpath {relative_target_path}
 
 #### Verify with Read Tool
 
-```
+```text
 Read(file_path="/project/requirements/spec.adoc")
 ```
 
@@ -108,7 +108,7 @@ Read(file_path="/project/requirements/spec.adoc")
 
 If file not found, search for similar names using Glob:
 
-```
+```text
 Glob(pattern="project/requirements/**/*spec*")
 ```
 
@@ -120,7 +120,7 @@ Suggest alternatives to user before removal.
 
 **Confirmation Template:**
 
-```
+```text
 WARNING: About to remove cross-reference link
 
 File: standards/logging/guide.adoc
@@ -227,7 +227,7 @@ If section found, add anchor immediately before header:
 
 If no matching section:
 
-```
+```text
 WARNING: Anchor reference found but no matching section
 
 Anchor: <<owasp-top-10-2021>>
@@ -270,7 +270,7 @@ AskUserQuestion:
 
 **Example:**
 
-```
+```text
 Current file:  /project/standards/java/logging.adoc
 Link target:   ../../requirements/spec.adoc
 
@@ -348,7 +348,7 @@ Link may be removed ONLY if ALL conditions met:
 
 Record in report:
 
-```
+```text
 Removed broken link:
 - File: standards/security/guide.adoc
 - Line: 125
@@ -361,7 +361,7 @@ Removed broken link:
 
 #### Use Edit Tool
 
-```
+```text
 Edit(
   file_path="standards/security/guide.adoc",
   old_string="See xref:../../archive/old-spec.adoc[Old Specification] for details.",
@@ -383,7 +383,7 @@ Edit(
 
 ### Comparison Report
 
-```
+```text
 ## Link Verification - Before/After
 
 **Before Fixes:**

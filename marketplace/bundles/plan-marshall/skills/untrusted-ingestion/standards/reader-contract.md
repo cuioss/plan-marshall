@@ -6,7 +6,7 @@ The reader is a dedicated read-only `execution-context-reader-{level}` variant. 
 
 The reader's tool surface is exactly:
 
-```
+```text
 WebSearch, WebFetch, Read, Grep
 ```
 

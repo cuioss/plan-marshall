@@ -61,7 +61,7 @@ class Extension(ExtensionBase):
 
 ### Lifecycle
 
-```
+```text
 1. Producer stage: fetch upstream items, pre-filter, store as pr-comment / sonar-issue
    findings via manage-findings add (workflow-integration-{github,gitlab,sonar})
 2. Consumer dispatch: manage-findings list --type {pr-comment|sonar-issue} --resolution pending

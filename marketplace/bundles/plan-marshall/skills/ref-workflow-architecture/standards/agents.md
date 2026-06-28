@@ -6,7 +6,7 @@ The plan-marshall bundle uses thin agents that delegate to skills for actual wor
 
 ## Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │                         THIN AGENT PATTERN                                  │
@@ -53,7 +53,7 @@ The plan-marshall bundle uses thin agents that delegate to skills for actual wor
 
 Understanding when to use `Skill:` vs `Task:` is critical for proper context management.
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │                    INVOCATION PATTERNS                                      │
@@ -120,7 +120,7 @@ The same note fixes the granularity framing. The phase-5-execute dispatch unit i
 
 ## Agent Inventory
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │                      1 AGENT (plan-marshall bundle)                         │
@@ -164,7 +164,7 @@ The pm-plugin-development bundle defines zero agents — its workflows are dispa
 
 Each agent follows the same pattern:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │                      AGENT STRUCTURE TEMPLATE                               │

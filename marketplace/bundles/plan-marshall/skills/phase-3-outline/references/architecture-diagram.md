@@ -4,7 +4,7 @@ Visual overview of the change-type routing architecture for human readers.
 
 ## Skill-Based Routing Flow
 
-```
+```text
                           ┌─────────────────────────────────┐
                           │       phase-3-outline           │
                           │  (Central change-type routing)  │
@@ -40,7 +40,7 @@ Visual overview of the change-type routing architecture for human readers.
 
 ## Two-Track Workflow
 
-```
+```text
                     ┌─────────────────┐
                     │  phase-2-refine │
                     │  (track select) │

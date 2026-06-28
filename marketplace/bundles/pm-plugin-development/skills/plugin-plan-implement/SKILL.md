@@ -13,7 +13,7 @@ mode: workflow
 
 ## Step 1: Load Foundational Practices
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
@@ -28,7 +28,7 @@ Skill: plan-marshall:persona-plan-marshall-agent
 ## Standards (Load On-Demand)
 
 ### Step Execution
-```
+```text
 Read standards/step-execution.md
 ```
 Contains: How to execute each step type (modify, create, etc.)
@@ -72,7 +72,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 #### 2b. Load Default Skills
 
-```
+```text
 Skill: {default_skill_1}
 Skill: {default_skill_2}
 ```
@@ -81,7 +81,7 @@ Skill: {default_skill_2}
 
 From task delegation block:
 
-```
+```text
 Skill: {delegation.context_skills[0]}
 Skill: {delegation.context_skills[1]}
 ```
@@ -113,7 +113,7 @@ The step `title` is a file path. Apply changes based on:
 **Infeasible step — report, never silently substitute**: when a step's declared deliverable turns out to be infeasible during execution — the target cannot be cleanly built as the task specifies (the required surface does not exist, a precondition the deliverable assumed is false, or building the named artifact is structurally impossible as scoped) — report the infeasibility as a recoverable error in the **Step 7 return** (`status: error`, `next_action: requires_attention`) naming the infeasibility reason. Do NOT mark the step done, and do NOT narrow the deliverable into a buildable-but-valueless substitute under the original name so the step "passes" while delivering none of the declared value. The infeasibility is a real failure that belongs in the structured return, not hidden behind a substituted deliverable.
 
 Load step execution patterns if needed:
-```
+```text
 Read standards/step-execution.md
 ```
 

@@ -61,7 +61,7 @@ Every feature should have tests for these corner case categories:
 
 For any value with a valid range, test:
 
-```
+```text
 Given: Valid range is [min, max]
 
 Test: min - 1  (just below minimum — expect rejection)

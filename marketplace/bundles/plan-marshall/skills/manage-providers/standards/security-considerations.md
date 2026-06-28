@@ -49,7 +49,7 @@ These constraints apply to all scripts in this skill:
 
 ### Covered Patterns
 
-```
+```text
 Read(~/.plan-marshall-credentials/**)
 Read({abs_path}/**)
 Bash(cat ~/.plan-marshall-credentials/*)

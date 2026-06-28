@@ -53,7 +53,7 @@ globalThis.waitForComponentUpdate = async (component) => {
 
 Place tests in `src/test/js/` mirroring source structure:
 
-```
+```text
 src/
 ├── main/webapp/js/
 │   ├── api.js

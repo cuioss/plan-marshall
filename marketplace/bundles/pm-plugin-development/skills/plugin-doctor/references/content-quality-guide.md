@@ -55,7 +55,7 @@ Provides criteria for cross-file content analysis using a hybrid approach:
 
 ### Output Format
 
-```
+```text
 Completeness Issues:
   File: {path}
   - Section "{section_name}": {issue_description}
@@ -150,7 +150,7 @@ Script calculates similarity using `difflib.SequenceMatcher` (40-95% threshold).
 ### Output Format
 
 **Exact (from script)**:
-```
+```text
 Exact Duplicate:
   Hash: {hash}
   Locations: {file1}:{lines}, {file2}:{lines}
@@ -159,7 +159,7 @@ Exact Duplicate:
 ```
 
 **Similarity (LLM classified)**:
-```
+```text
 Similarity Candidate:
   Source: {file1}:{section}:{lines}
   Target: {file2}:{section}:{lines}
@@ -236,7 +236,7 @@ The `analyze-cross-file-content.py` script extracts terminology and detects vari
 ### Output Format
 
 **Terminology (from script + LLM)**:
-```
+```text
 Terminology Variant:
   Concept: {concept}
   Variants found:
@@ -283,7 +283,7 @@ Terminology Variant:
 
 ### Output Format
 
-```
+```text
 Contradiction Found:
   File 1: {path1}
     Line {N}: "{statement1}"
@@ -307,7 +307,7 @@ Contradiction Found:
 
 Combine dimension scores:
 
-```
+```text
 Quality Score = (Completeness + (100 - Duplication) + Consistency + (100 - Contradictions)) / 4
 ```
 
@@ -419,7 +419,7 @@ The `analyze-cross-file-content.py` script detects extraction candidates:
 
 ### Output Format
 
-```
+```text
 Extraction Candidate:
   File: {file}
   Section: {section}

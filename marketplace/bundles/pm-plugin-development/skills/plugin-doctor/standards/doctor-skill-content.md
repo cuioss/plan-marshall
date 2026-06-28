@@ -23,7 +23,7 @@ This workflow analyzes all markdown files within a skill's subdirectories for pr
 
 ## Phase 1: Load Prerequisites
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 Skill: pm-plugin-development:plugin-architecture
 Read references/content-classification-guide.md
@@ -54,7 +54,7 @@ For each `.md` file discovered in subdirectories:
 4. **Record confidence level**: high | medium | low
 
 **Classification Output** (for each file):
-```
+```text
 File: {relative_path}
 Classification: {category}
 Confidence: {level}
@@ -147,7 +147,7 @@ mv {old_path} {new_path}
 - Delete duplicate file
 - Merge similar files
 
-```
+```text
 AskUserQuestion:
   question: "Split {file} into reference and workflow components?"
   options:

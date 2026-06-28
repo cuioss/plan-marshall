@@ -82,7 +82,7 @@ Load only when explicitly requested:
 
 ```
 Read: references/{knowledge-name}.md
-```
+```text
 
 Use when: {Brief description}
 ```
@@ -97,7 +97,7 @@ Load when specific condition met:
 **If** {condition}:
 ```
 Read: references/{knowledge-name}.md
-```
+```text
 ```
 
 ### always
@@ -109,7 +109,7 @@ Load as part of standard workflow:
 
 ```
 Read: references/{knowledge-name}.md
-```
+```text
 ```
 
 ## Content Transformation
@@ -152,7 +152,7 @@ Load when: {condition or "on-demand"}
 
 ```
 Read: references/{knowledge-name}.md
-```
+```text
 ```
 
 ### Updating Workflow
@@ -231,14 +231,14 @@ Use descriptive kebab-case:
 
 ### Content Not Found
 
-```
+```text
 Error: Content file not found: {path}
 Resolution: Verify file path is correct
 ```
 
 ### Skill Not Found
 
-```
+```text
 Error: Skill directory not found: {path}
 Resolution: Verify skill path exists
 ```

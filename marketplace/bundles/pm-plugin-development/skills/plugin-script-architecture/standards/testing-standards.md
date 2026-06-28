@@ -12,7 +12,7 @@ python3 test/run-tests.py test/planning/plan-files/test_parse_plan.py  # single 
 
 ## Directory Structure
 
-```
+```text
 test/
   conftest.py                    # Shared infrastructure (import this)
 
@@ -286,7 +286,7 @@ class TestContextWithMarshal(PlanTestContext):
 
 **Purpose**: Test input files and expected outputs
 
-```
+```text
 test/pm-plugin-development/plugin-doctor/fixtures/
 └── analyze-markdown-file/
     ├── valid-agent.md
@@ -459,7 +459,7 @@ Split large test files into focused modules:
 
 ### Example Structure
 
-```
+```text
 test/{bundle}/{skill}/
   test_helpers.py              # Shared fixtures
   test_cmd_init.py             # init command variants/corners

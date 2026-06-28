@@ -114,7 +114,7 @@ Test files (`test_*.py`, `conftest.py`) have these patterns:
 
 For migration requests (change_type: `tech_debt` with migration pattern), load the migration analysis framework before processing files:
 
-```
+```text
 Read: marketplace/bundles/pm-plugin-development/skills/ext-outline-workflow/references/migration-analysis-framework.md
 ```
 

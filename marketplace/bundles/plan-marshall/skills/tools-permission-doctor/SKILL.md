@@ -69,7 +69,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission
 ```
 
 **Output (TOON)**:
-```
+```text
 redundant[1]{permission,reason,type}:
 Bash(git:*)	Exact duplicate	exact_duplicate
 marketplace_in_local[1]{permission,reason,type}:
@@ -97,7 +97,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission
 ```
 
 **Output (TOON)**:
-```
+```text
 suspicious[1]{permission,reason,severity}:
 Write(/tmp/**)	System temp access	medium
 already_approved[1]:
@@ -130,7 +130,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission
 **Scan scope**: `plan.phase-5-execute.steps` and `plan.phase-6-finalize.steps`. Entries starting with `project:` are enumerated; the substring after `project:` is matched against `permissions.allow` as either exact `Skill({skill})` or covering wildcard `Skill({skill}:*)`.
 
 **Output (TOON)**:
-```
+```text
 missing[1]{skill,step,phase}:
 finalize-step-plugin-doctor	project:finalize-step-plugin-doctor	phase-6-finalize
 present[1]{skill,step,phase,covered_by}:
@@ -160,7 +160,7 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 (`--marshal` is required only when the `missing-steps` check is included.)
 
 **Output (TOON)**:
-```
+```text
 status: success
 scope: both
 checks_run[3]:

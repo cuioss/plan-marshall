@@ -26,7 +26,7 @@ Unit testing standards for JavaScript projects using Jest, covering test structu
 
 Load this standard for any JavaScript test work.
 
-```
+```text
 Read: standards/test-fundamentals.md
 ```
 
@@ -35,14 +35,14 @@ Covers framework setup, test structure, naming, AAA pattern, parameterized tests
 ### Step 2: Load Additional Standards (As Needed)
 
 **DOM and Component Testing** (load for UI/component tests):
-```
+```text
 Read: standards/dom-component-testing.md
 ```
 
 Use when: Testing DOM manipulation, web components (Lit/custom elements), Testing Library queries, container-based component testing, or accessibility assertions.
 
 **Mocking and Async Patterns** (load for mocking or async code):
-```
+```text
 Read: standards/mocking-async.md
 ```
 

@@ -39,13 +39,13 @@ Two independent composition-time surfaces decide whether `finalize-step-simplify
 
 - Pre-filter skip (`auto` deferred to a failing `simplify_inactive`):
 
-  ```
+  ```text
   (plan-marshall:manage-execution-manifest:compose) finalize-step-simplify omitted — change_type={value} affected_files_count={N}
   ```
 
 - Ceremony `never` skip (operator forced the step out):
 
-  ```
+  ```text
   (plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection — finalize.simplify=never, dropped finalize-step-simplify from phase_6.steps
   ```
 
@@ -120,7 +120,7 @@ Dispatch the domain-agnostic simplification prompt. The dispatched agent loads O
 - **D2** `plan-marshall:persona-plan-marshall-agent` — Principle 7 "Implement the Minimum, Not the Maximum" (see `persona-plan-marshall-agent/standards/agent-behavior-rules.md`).
 - **D3** the resolved `simplicity` posture description string from Step 1.
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: finalize-step-simplify

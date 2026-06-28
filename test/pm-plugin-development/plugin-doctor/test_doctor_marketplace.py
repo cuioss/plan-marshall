@@ -1678,6 +1678,59 @@ def test_quality_gate_registers_scan_finalize_step_token(tmp_path):
 
 
 # =============================================================================
+# Quality-gate mirror-rule registration (deliverable D1)
+# =============================================================================
+#
+# cmd_quality_gate must register the four manually-maintained-mirror rules so
+# they gate every build: provides-method-table-drift, literal-count-drift,
+# broken-relative-link, and fenced-code-no-language. Before this activation the
+# four ran only under ``analyze`` (informational) and an explicit NOTE block in
+# cmd_quality_gate declared them excluded. The observable registration signal is
+# one rules_run entry per rule ID — a de-registration of any of them (or a
+# regression of the markdown-mirror partition into a single combined summary)
+# regresses the build. Each rule's own detection behaviour is pinned in its
+# dedicated analyzer test module; this test is about registration, so it runs
+# over a clean fixture where all four emit zero findings.
+
+
+def test_quality_gate_registers_four_mirror_rules(tmp_path):
+    """quality-gate enumerates all four mirror rule IDs in rules_run.
+
+    Runs the gate over a clean fixture (no drift, no broken links, no bare
+    fences → zero findings for every mirror rule) and asserts each of the four
+    rule IDs is registered. The clean fixture keeps the test about registration,
+    not detection. The markdown-mirror cluster is a single analyzer pass whose
+    findings are partitioned into two summary entries (broken-relative-link and
+    fenced-code-no-language); asserting both IDs guards that partition.
+    """
+    temp_root = _build_clean_fixture(tmp_path)
+    result = run_script(
+        SCRIPT_PATH,
+        'quality-gate',
+        env_overrides={
+            'PM_MARKETPLACE_ROOT': str(temp_root / 'marketplace'),
+            'PLAN_BASE_DIR': str(temp_root / '.plan'),
+            'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_root / 'credentials'),
+        },
+    )
+    assert result.returncode == 0, (
+        f'Expected exit 0 on clean fixture, got {result.returncode}: {result.stderr}'
+    )
+
+    data = parse_output(result)
+    rules = {entry['rule'] for entry in data['rules_run']}
+    for rule_id in (
+        'provides-method-table-drift',
+        'literal-count-drift',
+        'broken-relative-link',
+        'fenced-code-no-language',
+    ):
+        assert rule_id in rules, (
+            f'{rule_id} must appear in rules_run for the build gate, got: {data["rules_run"]}'
+        )
+
+
+# =============================================================================
 # --rules opt-in flag tests (replaces PM_ARGUMENT_NAMING_ENABLED env-var gate)
 # =============================================================================
 #

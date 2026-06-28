@@ -10,7 +10,7 @@ The unified `plan-marshall:execute-task` skill handles the actual implementation
 
 **Key Design**: Profile determines execution behavior; domain determines knowledge skills.
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                     TASK EXECUTION FLOW                          │
 ├─────────────────────────────────────────────────────────────────┤

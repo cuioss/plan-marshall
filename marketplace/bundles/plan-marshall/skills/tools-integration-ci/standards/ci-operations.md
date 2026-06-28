@@ -48,7 +48,7 @@ No separate subcommand is involved; the behavior is built into `checks status`.
 
 For each failing check, two files are written under `artifacts/ci-runs/{run_id}/`:
 
-```
+```text
 artifacts/ci-runs/{run_id}/{slug}.log           # raw downloaded failing-job log
 artifacts/ci-runs/{run_id}/{slug}.filtered.log  # error-extraction filtered variant
 ```
@@ -131,7 +131,7 @@ and filters the failing-job log for **every** failing check before returning —
 `checks wait`, not a separate subcommand. Per failing check, two files are written under
 `artifacts/ci-runs/{run_id}/`:
 
-```
+```text
 artifacts/ci-runs/{run_id}/{slug}.log           # raw downloaded failing-job log
 artifacts/ci-runs/{run_id}/{slug}.filtered.log  # error-extraction filtered variant
 ```

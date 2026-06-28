@@ -26,7 +26,7 @@ location for the issue body, bound to this plan and slot.
 
 ### Step 2: Write the Issue Body
 
-```
+```text
 Write({path from prepare-body}) with issue body markdown content
 ```
 
@@ -74,7 +74,7 @@ location for the comment body, bound to this plan and slot.
 
 ### Step 2: Write the Comment Body
 
-```
+```text
 Write({path from prepare-comment}) with comment markdown content
 ```
 

@@ -35,7 +35,7 @@ Linear layouts are the default. Pick a non-linear topology only when the state g
 
 In a linear N-state layout:
 
-```
+```text
 node-x[i] = (viewBox_width / (N + 1)) * (i + 1)
 ```
 

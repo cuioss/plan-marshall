@@ -114,7 +114,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Dispatch:
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: phase-3-outline
@@ -146,7 +146,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Dispatch:
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: q-gate-validation
@@ -176,7 +176,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Check if the phase returned Q-Gate findings. If so, auto-loop without user intervention.
 
-```
+```text
 qgate_iteration = 0
 MAX_QGATE_ITERATIONS = 3
 
@@ -289,7 +289,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 ```
 
 Then display:
-```
+```text
 ## Solution Outline Created
 
 **Review your solution outline**: .plan/plans/{plan_id}/solution_outline.md
@@ -298,7 +298,7 @@ Please review the deliverables and architecture before proceeding.
 ```
 
 ### 3b. Ask the user to confirm or request changes:
-```
+```text
 AskUserQuestion:
   questions:
     - question: "Have you reviewed the solution outline? How would you like to proceed?"
@@ -366,7 +366,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Dispatch:
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: phase-4-plan
@@ -419,7 +419,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Dispatch:
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: q-gate-validation

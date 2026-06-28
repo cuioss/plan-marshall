@@ -226,7 +226,7 @@ Only do this after confirming fixes work correctly.
 
 Verification is the final step:
 
-```
+```text
 1. diagnose → identify issues
 2. analyze-and-categorize → categorize fixes
 3. apply-safe-fixes → auto-apply safe

@@ -73,7 +73,7 @@ new: "## New Section Title\n\nNew content"
 
 ### 1. Read Current Content
 
-```
+```text
 Read: {step.target}
 ```
 
@@ -93,7 +93,7 @@ Based on task description, identify:
 
 Use Edit tool for surgical changes:
 
-```
+```text
 Edit:
   file_path: {step.target}
   old_string: {exact text to replace}

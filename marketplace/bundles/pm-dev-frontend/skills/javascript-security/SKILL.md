@@ -37,7 +37,7 @@ Load progressively based on current task. **Never load all standards at once.**
 
 ### DOM Trust Boundaries / XSS
 
-```
+```text
 Read: ../javascript/standards/modern-patterns.md
 ```
 

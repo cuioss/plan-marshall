@@ -28,7 +28,7 @@ Domain-specific document management for request documents. Provides logical docu
 
 ## API: Noun-Verb Pattern
 
-```
+```text
 manage-plan-documents {document-type} {verb} [options]
 ```
 

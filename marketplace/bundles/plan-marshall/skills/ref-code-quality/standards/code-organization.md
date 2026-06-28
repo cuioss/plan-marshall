@@ -22,7 +22,7 @@ Each class, module, or function should have exactly one reason to change.
 
 Methods should either modify state (command) or return data (query), not both.
 
-```
+```text
 // Query -- returns value, no side effects
 function isValid(token): boolean
 
@@ -46,7 +46,7 @@ function validateAndGetResult(token): Result
 
 Organize code by feature (domain), not by technical layer:
 
-```
+```text
 // GOOD -- feature-based
 authentication/
   TokenValidator
@@ -104,7 +104,7 @@ Use the most restrictive access level possible:
 
 Use early returns to reduce nesting:
 
-```
+```text
 // GOOD -- guard clauses, low nesting
 function validate(token) {
     if (!token) return Result.invalid("Token required")
@@ -142,7 +142,7 @@ When a function has too many parameters for comfortable readability, group relat
 * **JavaScript**: prefer config objects at 5+ parameters. Destructuring in the signature keeps it readable.
 * **Python** (keyword arguments): named args handle many parameters well. Use dataclasses or TypedDicts when parameter groups are reused across multiple functions.
 
-```
+```text
 // BAD -- too many loose parameters
 function validate(tokenId, expectedScopes, maxAge, issuer, strict)
 
@@ -176,7 +176,7 @@ Prefer immutable data structures:
 * Use documentation comments for public APIs (see `documentation-principles.md`)
 * Remove commented-out code -- use version control instead
 
-```
+```text
 // GOOD -- explains why
 // 30-second clock skew handles time differences between distributed servers
 CLOCK_SKEW = Duration.ofSeconds(30)
@@ -192,7 +192,7 @@ CLOCK_SKEW = Duration.ofSeconds(30)
 
 **Trigger**: Conditions with 3+ boolean operators that are hard to parse.
 
-```
+```text
 // TRIGGER: Complex inline boolean
 if (user != null && user.isActive && !user.isSuspended && user.hasPermission("admin"))
 

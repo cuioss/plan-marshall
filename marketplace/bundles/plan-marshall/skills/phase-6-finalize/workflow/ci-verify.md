@@ -72,7 +72,7 @@ Write the `checks[]` array from step 1 to a JSON file under
 `name`, `workflow_name`, `job_name`, `conclusion`, `started_at`,
 `completed_at`, `run_url` keys and tolerates absent ones):
 
-```
+```text
 Write(file_path=".plan/temp/{plan_id}-ci-jobs-{run_id}.json", content="{json_array_of_checks}")
 ```
 

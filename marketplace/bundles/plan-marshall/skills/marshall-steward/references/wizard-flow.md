@@ -35,7 +35,7 @@ entries_added	4
 
 The generated block looks like:
 
-```
+```text
 # Planning system (managed by /marshall-steward)
 # Runtime state (plans, run-configuration, lessons-learned, memory, logs — managed by plan-marshall)
 .plan/*
@@ -271,7 +271,7 @@ Treat a non-zero exit as the unset case — silently fall through to `main`.
 
 **Prompt the operator** via `AskUserQuestion`:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "What is this project's default base branch?"
@@ -371,7 +371,7 @@ The `verification_steps` list feeds the whole-tree end-of-phase-5 sweep; the mod
 
 Optionally detect the current preset first — deep-equality of `plan.phase-6-finalize.steps` against `FinalizeStepPresets.get(name)` for each name in `FinalizeStepPresets.all_names()` — and surface it as `Current: {name} preset` / `Current: custom (manually edited)`, mirroring effort-menu Step 1.
 
-```
+```text
 AskUserQuestion:
   question: "Finalize-step pipeline — pick a preset"
   header: "Finalize Steps"
@@ -469,7 +469,7 @@ See [provider-setup.md](provider-setup.md#ci-provider-detection-step-13) for CI 
 
 ## Step 14: Permission Setup (Optional)
 
-```
+```text
 AskUserQuestion:
   question: "Configure permissions now?"
   options:

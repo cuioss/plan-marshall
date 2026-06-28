@@ -163,7 +163,7 @@ Tasks use sequential numbering with zero-padded format:
 
 ### Task State Machine
 
-```
+```text
 pending ──► in_progress ──► done
    │             │
    ├──────► blocked
@@ -187,7 +187,7 @@ terminal: there is no edge back to `pending`/`in_progress`.
 
 ### Step State Machine
 
-```
+```text
 pending ──► in_progress ──► done
    │
    └──────► skipped
@@ -315,7 +315,7 @@ The `domain` field is inherited from the deliverable. Domains are arbitrary stri
 
 Skills are resolved by task-plan from architecture based on deliverable's module and profile:
 
-```
+```text
 solution-outline phase               task-plan phase                     execute phase
 ┌────────────────────────┐           ┌─────────────────────────────┐     ┌────────────────────────┐
 │ Deliverable:           │           │ For each profile:           │     │ Read task.skills       │

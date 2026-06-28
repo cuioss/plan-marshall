@@ -431,7 +431,7 @@ row (`total_tokens`), which is filled from the accumulator at `end-phase` time.
 
 ## Storage
 
-```
+```text
 .plan/plans/{plan_id}/
   work/metrics.toon                        # Intermediate timing/token data per phase
   work/metrics-accumulator-{phase}.toon    # Per-phase subagent <usage> running totals (one per phase that dispatches agents)

@@ -129,14 +129,14 @@ context: Additional context if helpful
 ### Error Message Guidelines
 
 **Good Examples**:
-```
+```text
 error: Plan not found: EXAMPLE-PLAN
 error: Invalid key format. Expected: lowercase with underscores, got: MyKey
 error: Config file parsing failed at line 42: unexpected character
 ```
 
 **Bad Examples**:
-```
+```text
 error: Error
 error: Failed
 error: 1

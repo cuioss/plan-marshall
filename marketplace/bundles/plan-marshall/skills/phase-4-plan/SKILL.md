@@ -14,7 +14,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 ## Foundational Practices
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
@@ -110,7 +110,7 @@ Substitute `{candidate_basename}` with the basename minus the `test_` prefix and
 
 **Glob fallback** — when the architecture verb returns elision (`status: elided`) or no result, fall back to the structured-Glob query:
 
-```
+```text
 Glob: test/**/test_{candidate_basename}.py
 ```
 
@@ -300,7 +300,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-4-plan) Deliverable {N} is verification-only but had profiles [{original_profiles}] — overriding to [verification]"
 ```
 
-```
+```text
 # Pre-fetch: resolve architecture data for every distinct module referenced across deliverables.
 # Do this ONCE before the per-deliverable loop — use cached values inside the loop body.
 For each unique D.module in deliverables:
@@ -379,7 +379,7 @@ The persona / ref / profile identity model binds each work-activity profile to a
    Parse the returned `skills[]` and add each entry to `task.skills` that is not already present (dedup is idempotent — the base `persona-plan-marshall-agent` and any already-resolved skill are not duplicated). On `status: error` (e.g. `composition_cycle`, `composed_persona_not_found`), log a WARNING and continue with the architecture-resolved skills only — persona augmentation is additive and never plan-blocking.
 
 **Example Reasoning** (for JSON→TOON migration task):
-```
+```text
 Optional: plan-marshall:ref-toon-format
 Description: "TOON format knowledge for output specifications - use when migrating to/from TOON"
 Deliverable: "Migrate JSON outputs to TOON format"
@@ -524,7 +524,7 @@ This validation pushes the check into the write paths of `manage-tasks` so any l
 
 Compose every task record for this phase invocation into one JSON array, then persist them atomically via the path-allocate flow. Each entry mirrors the TOON task schema:
 
-```
+```text
 {
   "title": "{task title}",
   "deliverable": {deliverable_number},

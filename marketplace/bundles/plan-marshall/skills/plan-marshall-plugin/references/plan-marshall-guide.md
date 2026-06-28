@@ -13,7 +13,7 @@ Load this guide when validating:
 **Requirement**: All bash script calls must be explicit with all parameters shown.
 
 **Check**:
-```
+```text
 FOR each ```bash block:
   IF contains python3 .plan/execute-script.py:
     VERIFY all parameters are explicit (no "see API" references)
@@ -40,7 +40,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read ...
 **Requirement**: Never reference "API documentation" or "see X for details" for script calls.
 
 **Check**:
-```
+```text
 SCAN document for:
   - "see * API"
   - "refer to * documentation"
@@ -57,7 +57,7 @@ SCAN document for:
 - `--audit-plan-id`: For config lookups and logging context
 
 **Check**:
-```
+```text
 FOR each script call:
   IF script is manage-config:
     REQUIRE --audit-plan-id (not --plan-id)
@@ -87,7 +87,7 @@ FOR each script call:
 2. Follow contract requirements
 
 **Check**:
-```
+```text
 IF frontmatter contains implements:
   EXTRACT contract_path
   VERIFY file exists at contract_path
@@ -117,7 +117,7 @@ IF frontmatter contains implements:
 ### PM-001 (pm-implicit-script-call)
 
 **Regex patterns**:
-```
+```text
 execute-script\.py.*\.\.\.$
 execute-script\.py.*\{see.*\}
 execute-script\.py[^`]*#\s*See
@@ -128,7 +128,7 @@ execute-script\.py[^`]*#\s*See
 ### PM-002 (pm-generic-api-reference)
 
 **Regex patterns**:
-```
+```text
 [Ss]ee\s+\w+\s+API
 [Rr]efer\s+to\s+\w+\s+documentation
 [Pp]arameters\s+documented\s+in

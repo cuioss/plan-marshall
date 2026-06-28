@@ -40,7 +40,7 @@ Sonar provider for the findings-pipeline `sonar-issue` producer. Fetches gate-bl
 
 ## Architecture
 
-```
+```text
 workflow-integration-sonar (Sonar issue workflow)
   ├─> sonar_rest.py (issue fetching, status changes via REST API)
   ├─> _credentials_core.get_authenticated_client() (credential loading)

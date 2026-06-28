@@ -61,7 +61,7 @@ Documentation evolves through implementation phases (PLANNED → IN PROGRESS →
 **CRITICAL**: Load traceability standards based on task context.
 
 1. **Always load information distribution standards**:
-   ```
+   ```text
    Read: standards/information-distribution.md
    ```
    Defines what belongs in specifications vs API documentation.
@@ -69,29 +69,29 @@ Documentation evolves through implementation phases (PLANNED → IN PROGRESS →
 2. **Load standards based on task context**:
 
    - If linking from specifications to code:
-     ```
+     ```text
      Read: standards/specification-to-code-linking.md
      ```
 
    - If linking from code to specifications (API documentation):
-     ```
+     ```text
      Read: standards/code-to-specification-linking.md
      ```
 
    - If updating documentation through implementation phases, use the phase guidance below.
 
    - If documenting test coverage and validation:
-     ```
+     ```text
      Read: standards/verification-and-validation-linking.md
      ```
 
    - If maintaining existing traceability links:
-     ```
+     ```text
      Read: standards/cross-reference-maintenance.md
      ```
 
    - If verifying traceability quality:
-     ```
+     ```text
      Read: standards/quality-standards.md
      ```
 

@@ -4,7 +4,7 @@ This document defines the standard log entry format used by the unified logging 
 
 ## Standard Entry Format
 
-```
+```text
 [{timestamp}] [{level}] [{hash}] {message}
   {field}: {value}
   ...
@@ -34,7 +34,7 @@ The hash provides deterministic traceability — the same message always produce
 
 Additional data is provided as indented key-value pairs:
 
-```
+```text
 [2025-12-11T12:14:26Z] [ERROR] [b7e4d9] plan-marshall:manage-logging:manage-logging add (0.16s)
   exit_code: 2
   args: add --plan-id test --phase 3-outline
@@ -56,18 +56,18 @@ Additional data is provided as indented key-value pairs:
 
 ### Success Entry
 
-```
+```text
 [2025-12-11T12:14:26Z] [INFO] [{hash}] {notation} {subcommand} ({duration}s)
 ```
 
 **Example**:
-```
+```text
 [2025-12-11T12:14:26Z] [INFO] [a3f2c1] plan-marshall:manage-files:manage-files create-or-reference (0.19s)
 ```
 
 ### Error Entry
 
-```
+```text
 [2025-12-11T12:17:50Z] [ERROR] [{hash}] {notation} {subcommand} ({duration}s)
   exit_code: {code}
   args: {full_args}
@@ -75,7 +75,7 @@ Additional data is provided as indented key-value pairs:
 ```
 
 **Example**:
-```
+```text
 [2025-12-11T12:17:50Z] [ERROR] [b7e4d9] plan-marshall:manage-logging:manage-logging add (0.16s)
   exit_code: 2
   args: add --plan-id test --phase 3-outline --type milestone
@@ -102,7 +102,7 @@ Additional data is provided as indented key-value pairs:
 
 ### Standard Entry
 
-```
+```text
 [{timestamp}] [{level}] [{hash}] {message}
 ```
 
@@ -112,13 +112,13 @@ Work log messages embed the category in the message text as `[CATEGORY] (caller)
 
 #### PROGRESS
 
-```
+```text
 [2025-12-11T11:14:30Z] [INFO] [c8d3e2] [PROGRESS] (plan-marshall:phase-1-init) Starting 1-init phase
 ```
 
 #### ARTIFACT
 
-```
+```text
 [2025-12-11T11:15:24Z] [INFO] [f1a9b3] [ARTIFACT] (plan-marshall:phase-1-init) Created plan: Migrate agent outputs to TOON
 ```
 
@@ -126,7 +126,7 @@ Work log messages embed the category in the message text as `[CATEGORY] (caller)
 
 The ARTIFACT category supports a single sanctioned **three-segment caller form** used exclusively by `plan-marshall:phase-5-execute` when logging file-system artifacts produced while executing a specific task:
 
-```
+```text
 (plan-marshall:phase-5-execute:{task_number})
 ```
 
@@ -134,15 +134,15 @@ The ARTIFACT category supports a single sanctioned **three-segment caller form**
 
 **Message shapes**: Only three shapes are sanctioned under this extended caller — all follow the pattern `{Verb} {path}` (or `{Verb} {old} -> {new}` for renames):
 
-```
+```text
 [2025-12-11T11:20:01Z] [INFO] [a1b2c3] [ARTIFACT] (plan-marshall:phase-5-execute:4) Wrote marketplace/bundles/plan-marshall/skills/manage-logging/standards/log-format.md
 ```
 
-```
+```text
 [2025-12-11T11:20:02Z] [INFO] [d4e5f6] [ARTIFACT] (plan-marshall:phase-5-execute:4) Deleted marketplace/bundles/plan-marshall/skills/legacy-skill/SKILL.md
 ```
 
-```
+```text
 [2025-12-11T11:20:03Z] [INFO] [g7h8i9] [ARTIFACT] (plan-marshall:phase-5-execute:4) Renamed marketplace/bundles/plan-marshall/skills/old-name -> marketplace/bundles/plan-marshall/skills/new-name
 ```
 
@@ -150,19 +150,19 @@ The ARTIFACT category supports a single sanctioned **three-segment caller form**
 
 #### ERROR
 
-```
+```text
 [2025-12-11T11:17:50Z] [ERROR] [d4a1c7] [ERROR] (plan-marshall:phase-3-outline) Skill load failed
 ```
 
 #### OUTCOME
 
-```
+```text
 [2025-12-11T11:17:55Z] [INFO] [e5c7d4] [OUTCOME] (plan-marshall:phase-3-outline) Impact analysis complete: 19 agents identified
 ```
 
 #### FINDING
 
-```
+```text
 [2025-12-11T11:17:48Z] [INFO] [b2f8a3] [FINDING] (plan-marshall:phase-3-outline) Affected: gradle-builder.md
 ```
 
@@ -183,17 +183,17 @@ Decision entries are written to a dedicated log file. They do NOT include a `[DE
 
 ### Standard Entry
 
-```
+```text
 [{timestamp}] [{level}] [{hash}] (caller) {message}
 ```
 
 ### Examples
 
-```
+```text
 [2025-12-11T11:14:48Z] [INFO] [d2e8f1] (plan-marshall:phase-1-init) Detected domain: java - pom.xml found
 ```
 
-```
+```text
 [2025-12-11T11:20:15Z] [INFO] [a4b6c8] (pm-plugin-development:ext-outline-workflow) Scope: bundles=all
 ```
 

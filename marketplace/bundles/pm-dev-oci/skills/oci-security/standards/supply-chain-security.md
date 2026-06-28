@@ -4,7 +4,7 @@ Concise supply chain security checklist. For detailed threat descriptions, imple
 
 ## Pipeline Workflow
 
-```
+```text
 Build image → Scan (fail on CRITICAL/HIGH) → Sign → Generate SBOM → Push to registry
 ```
 

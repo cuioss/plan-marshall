@@ -12,7 +12,7 @@ See `workflow-integration-git/standards/worktree-handling.md` for the worktree-s
 
 Every script resolves `.plan/` and project content by **one rule, not a per-phase branch**:
 
-```
+```text
 set_base_dir() override  →  PLAN_BASE_DIR env override  →  walk up from cwd to the nearest ancestor containing .plan/local
 ```
 

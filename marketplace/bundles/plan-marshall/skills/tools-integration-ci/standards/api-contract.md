@@ -281,7 +281,7 @@ The line-selection strategy is governed by the `--error-style` selector:
 
 Naming scheme, per failing check, under the run's artifact directory:
 
-```
+```text
 artifacts/ci-runs/{run_id}/{slug}.log           # raw downloaded log         → log_file
 artifacts/ci-runs/{run_id}/{slug}.filtered.log  # filtered error extraction  → filtered_log_file
 ```

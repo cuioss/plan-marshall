@@ -6,7 +6,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 
 ## Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │                      TWO-TIER SKILL LOADING                                 │
@@ -38,7 +38,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 
 ## Skill Origin Flow
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │                      SKILL ORIGIN FLOW                                      │
@@ -136,7 +136,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 
 ## Execute Phase Skill Loading
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │                  EXECUTE PHASE SKILL LOADING                                │
@@ -210,7 +210,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 
 ## Skill Type Summary
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │                       SKILL TYPE SUMMARY                                    │
@@ -250,7 +250,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 
 ## Extensions
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │                          EXTENSIONS                                         │

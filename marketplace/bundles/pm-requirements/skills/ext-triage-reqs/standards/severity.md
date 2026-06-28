@@ -99,7 +99,7 @@ During finalize phase:
 
 ## Quick Decision Flowchart
 
-```
+```text
 Is it a structure error?
   -> Yes -> FIX (no exceptions)
 

@@ -67,7 +67,7 @@ As of 2025-10-27:
 - Common documentation domains
 
 Examples of global permissions:
-```
+```text
 Read(//~/git/**)
 Bash(git:*)
 Bash(mvn:*)
@@ -84,7 +84,7 @@ Skill(cui-frontend-skills:*)
 - Project-specific tool configurations
 
 Examples of local permissions:
-```
+```text
 Edit(//~/git/my-project/**)
 Write(//~/git/my-project/**)
 Bash(~/git/my-project/scripts/*)
@@ -150,7 +150,7 @@ If project has custom scripts:
 ### Pattern 3: Multiple Projects in Same Workspace
 
 For multiple related projects, use separate local settings per project:
-```
+```text
 ~/git/project-a/.claude/settings.local.json
 ~/git/project-b/.claude/settings.local.json
 ```

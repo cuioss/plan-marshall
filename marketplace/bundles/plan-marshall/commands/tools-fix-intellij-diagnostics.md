@@ -69,7 +69,7 @@ Display a final report with: files analyzed, issues found / fixed / suppressed /
 
 ## Usage
 
-```
+```text
 /plan-marshall:tools-fix-intellij-diagnostics
 /plan-marshall:tools-fix-intellij-diagnostics file=src/main/java/Foo.java
 /plan-marshall:tools-fix-intellij-diagnostics file=Foo.java push

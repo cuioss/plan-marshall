@@ -229,7 +229,7 @@ Share Node.js installation across builds by using a persistent directory:
 ```
 
 Structure:
-```
+```text
 parent-project/
 ├── pom.xml
 ├── backend-module/

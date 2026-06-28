@@ -16,7 +16,7 @@ See [build-execution.md](build-execution.md) § R3 for the complete timeout lear
 
 ### Log File Pattern
 
-```
+```text
 .plan/temp/build-output/{scope}/{tool}-{YYYY-MM-DD-HHmmss}.log
 ```
 
@@ -82,7 +82,7 @@ Patterns support:
 
 ### Access
 
-```
+```text
 Skill: plan-marshall:manage-run-config
 Workflow: Read Configuration
 Field: <build_system>.acceptable_warnings

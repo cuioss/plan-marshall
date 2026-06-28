@@ -10,7 +10,7 @@ This document defines standards for organizing JavaScript projects including dir
 
 For typical Maven-based JavaScript projects:
 
-```
+```text
 project-root/
 ├── package.json
 ├── package-lock.json
@@ -44,7 +44,7 @@ project-root/
 
 For Quarkus development UI extensions:
 
-```
+```text
 project-root/
 ├── package.json
 ├── package-lock.json
@@ -74,7 +74,7 @@ project-root/
 
 For Apache NiFi custom processor UI extensions:
 
-```
+```text
 project-root/
 ├── package.json
 ├── webpack.config.js
@@ -102,7 +102,7 @@ project-root/
 
 For JavaScript libraries or standalone applications:
 
-```
+```text
 project-root/
 ├── package.json
 ├── package-lock.json
@@ -139,7 +139,7 @@ project-root/
 
 **General files**: Use kebab-case for all JavaScript files
 
-```
+```text
 user-service.js
 api-client.js
 data-transformer.js
@@ -148,7 +148,7 @@ utility-functions.js
 
 **Test files**: Append `.test.js` suffix
 
-```
+```text
 user-service.test.js
 api-client.test.js
 data-transformer.test.js
@@ -156,7 +156,7 @@ data-transformer.test.js
 
 **Mock files**: Use descriptive names indicating mock purpose
 
-```
+```text
 api-client-mock.js
 database-connection-mock.js
 user-service-stub.js
@@ -164,7 +164,7 @@ user-service-stub.js
 
 **Setup/Configuration files**: Use descriptive names
 
-```
+```text
 jest.setup-dom.js
 jest.setup-globals.js
 webpack.config.js
@@ -175,7 +175,7 @@ babel.config.js
 
 **Quarkus DevUI Components**: Prefix with `qwc-` (Quarkus Web Component)
 
-```
+```text
 qwc-jwt-config.js
 qwc-security-settings.js
 qwc-dashboard.js
@@ -183,7 +183,7 @@ qwc-dashboard.js
 
 **NiFi Components**: Prefix with `nf-` (NiFi)
 
-```
+```text
 nf-processor-config.js
 nf-relationship-settings.js
 nf-property-editor.js
@@ -191,7 +191,7 @@ nf-property-editor.js
 
 **Lit Web Components**: Use kebab-case element name matching
 
-```
+```text
 user-profile-card.js       // <user-profile-card>
 navigation-menu.js         // <navigation-menu>
 data-table.js              // <data-table>
@@ -201,7 +201,7 @@ data-table.js              // <data-table>
 
 **Standard locations and names**:
 
-```
+```text
 .prettierrc.js             # Prettier configuration (ES module)
 eslint.config.js           # ESLint v10 flat configuration
 .stylelintrc.js            # StyleLint configuration (if using CSS-in-JS)

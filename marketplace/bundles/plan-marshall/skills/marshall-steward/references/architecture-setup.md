@@ -60,7 +60,7 @@ This produces:
 Derived module data (paths, packages, dependencies, file inventories) is *not* written here — it is computed on demand by `crawl_module_derived` whenever a downstream caller asks for it.
 
 **Verification** - Display discovered modules:
-```
+```text
 Modules discovered: 10
   - bom (pom, maven)
   - oauth-sheriff-core (jar, maven)
@@ -131,7 +131,7 @@ Alternatively, inspect each module's `metadata.profiles` and group by canonical 
 
 Ask the user which profile to use for each conflicting canonical command:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "Multiple profiles map to '{canonical}'. Which should be used?"
@@ -163,7 +163,7 @@ Generate project structure knowledge for solution outline support.
 
 Invoke the analysis skill to read raw data and generate meaningful structure:
 
-```
+```text
 Skill: plan-marshall:manage-architecture
 ```
 
@@ -201,7 +201,7 @@ This sub-operation is also the entry point reached when a returning user selects
 
 **Question 1 — Tier 0 (deterministic refresh)**:
 
-```
+```text
 AskUserQuestion:
   question: "Refresh architecture data on every plan finalize?"
   header: "Architecture Refresh — Tier 0"
@@ -222,7 +222,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config \
 
 **Question 2 — Tier 1 (LLM re-enrichment)**:
 
-```
+```text
 AskUserQuestion:
   question: "When affected modules need LLM re-enrichment, what should the finalize step do?"
   header: "Architecture Refresh — Tier 1"

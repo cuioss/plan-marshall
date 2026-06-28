@@ -25,7 +25,7 @@ Quick-reference guide for creating marketplace skills. This document provides co
 ## Skill Types and Directory Patterns
 
 ### Standards Skill
-```
+```text
 skill-name/
 ├── SKILL.md
 └── standards/
@@ -34,7 +34,7 @@ skill-name/
 ```
 
 ### Reference Skill
-```
+```text
 skill-name/
 ├── SKILL.md
 └── references/
@@ -43,7 +43,7 @@ skill-name/
 ```
 
 ### Diagnostic Skill
-```
+```text
 skill-name/
 ├── SKILL.md
 ├── scripts/

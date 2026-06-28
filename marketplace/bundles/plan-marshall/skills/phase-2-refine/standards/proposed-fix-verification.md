@@ -59,7 +59,7 @@ Each probe resolves to one of:
 
 When a probe exposes a gap, emit a `CORRECTNESS: ISSUE` finding with:
 
-```
+```text
 CORRECTNESS: ISSUE — Proposed fix incomplete
   Fix: "{fix_description}"
   Mechanism: {fix_mechanism}
@@ -96,7 +96,7 @@ The motivating case for this step:
 4. Evaluation: **insufficient**. The fix covers the tracked-edit case but misses the untracked-new-file case, which is exactly what phase-5-execute `Write` operations generate.
 
 **Finding emitted**:
-```
+```text
 CORRECTNESS: ISSUE — Proposed fix incomplete
   Fix: "change `{base}...HEAD` to `{base}` (no dots) to capture working-tree state"
   Mechanism: git diff --name-only {base_branch}

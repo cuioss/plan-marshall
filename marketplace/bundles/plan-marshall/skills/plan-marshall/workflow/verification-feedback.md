@@ -69,7 +69,7 @@ If the store is empty (the pre-flight gate produced a count but findings have si
 
 Load the plugin-doctor rule catalog and references:
 
-```
+```text
 Skill: pm-plugin-development:plugin-doctor
 Skill: pm-plugin-development:tools-marketplace-inventory
 ```
@@ -184,7 +184,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-workflow-skill-extension --domain {domain} --type triage
 ```
 
-```
+```text
 Skill: {returned_extension_skill}
 ```
 

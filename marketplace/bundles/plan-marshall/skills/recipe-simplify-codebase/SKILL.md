@@ -104,7 +104,7 @@ The unit's achieved thoroughness grades to the FLOOR across its batches (a campa
 
 **5a. Read the deliverable template**:
 
-```
+```text
 Read: marketplace/bundles/plan-marshall/skills/manage-solution-outline/templates/deliverable-template.md
 ```
 

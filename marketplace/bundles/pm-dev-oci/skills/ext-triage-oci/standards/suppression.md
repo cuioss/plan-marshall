@@ -60,7 +60,7 @@ RUN apt-get update && apt-get install -y curl
 
 Place in the repository root or specify with `--ignorefile`.
 
-```
+```text
 # CVE with no available fix, tracked in JIRA-789
 CVE-2024-12345
 

@@ -356,7 +356,7 @@ When analyzing deliverables, extract these parameters:
 Some deliverables require multiple tasks in sequence:
 
 ### Skill with Scripts
-```
+```text
 TASK-1: Create skill structure
   - Delegate to: plugin-create → create-skill
 
@@ -367,7 +367,7 @@ TASK-2: Create script(s)
 ```
 
 ### Command with New Skill
-```
+```text
 TASK-1: Create supporting skill
   - Delegate to: plugin-create → create-skill
 

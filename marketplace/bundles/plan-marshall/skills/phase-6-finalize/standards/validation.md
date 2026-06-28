@@ -145,13 +145,13 @@ When a source lesson identifies a *missing pattern* in one finalize-standards fi
 
    Glob fallback for sub-module lookup or when the architecture verb returns elision:
 
-   ```
+   ```text
    Glob: marketplace/bundles/{bundle}/skills/{skill}/standards/*.md
    ```
 
 2. **Grep each peer for the pattern claim** — for every peer-pattern claim in the lesson (any sentence of the form "all standards must declare X", "every step terminates with Y", "each standards doc carries frontmatter Z"), grep every sibling for the pattern:
 
-   ```
+   ```text
    Grep: pattern={pattern} path=marketplace/bundles/{bundle}/skills/{skill}/standards/ glob=*.md output_mode=files_with_matches
    ```
 
