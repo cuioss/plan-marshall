@@ -111,7 +111,7 @@ Mitigations:
 
 ## Staged Rollout to Bound Blast Radius
 
-**Maps to:** OWASP A03 · ASVS V10
+**Maps to:** CWE-1357 · OWASP A03 · ASVS V10
 
 Even a fully-vetted vendor update can be the compromised one (SolarWinds was signed and trusted). The residual control is to limit how far a bad update propagates before it is caught.
 

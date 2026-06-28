@@ -102,7 +102,7 @@ Mitigations:
 
 - **Generate** keys inside a FIPS 140-2/140-3 validated module (HSM or vetted library), seeded by a CSPRNG.
 - **One key, one purpose.** A key used for encryption is not reused for signing; a data-encryption key (DEK) and the key-encryption key (KEK) that wraps it are fully independent.
-- **Rotate** on any of: confirmed or suspected compromise; the end of the key's cryptoperiod ([NIST SP 800-57](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-57pt1r5.pdf)); a data-volume threshold (e.g. the birthday bound for 64-bit-block ciphers, ~64 GB under one key); or the algorithm being deprecated. Prefer decrypt-and-re-encrypt over leaving stale ciphertext under a retired key.
+- **Rotate** on any of: confirmed or suspected compromise; the end of the key's cryptoperiod ([NIST SP 800-57](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-57pt1r5.pdf)); a data-volume threshold (e.g. rotate well before the birthday bound for 64-bit-block ciphers — the birthday bound is 2^32 blocks ≈ 32 GiB, but rotate at 1 GB or 2^20 blocks to prevent Sweet32 collision attacks); or the algorithm being deprecated. Prefer decrypt-and-re-encrypt over leaving stale ciphertext under a retired key.
 - **Never store a key in plaintext**, and **never store a key alongside the data it protects** — filesystem-resident keys for database-resident data, so one flaw (SQL injection, directory traversal) cannot disclose both the lock and the contents.
 - **Destroy** retired key material; do not let decommissioned keys accumulate as a latent breach surface.
 
@@ -132,7 +132,7 @@ Mitigations:
 
 - Store the wrapped DEK with the ciphertext; store the KEK separately in hardware-backed storage.
 - The KEK's strength must be **≥** the strength of every key it protects.
-- When the KEK is derived from a user passphrase, derive it through a KDF (HKDF for high-entropy inputs; a password-hashing KDF for passphrases) so the passphrase can change by re-wrapping the DEK — no bulk data re-encryption required.
+- When the KEK is derived from a **user passphrase** (setup phase / user interaction), derive it through a **slow, memory-hard password-hashing KDF** (Argon2id or PBKDF2) to resist brute-force attacks — HKDF is not suitable here, as it is designed for high-entropy keying material, not low-entropy passphrases. When the KEK is derived from **high-entropy input keying material** (runtime phase — a master key or Diffie-Hellman shared secret), HKDF is appropriate. Either way, re-wrapping the DEK is sufficient to rotate the passphrase without requiring bulk data re-encryption.
 - Rotate the KEK by re-wrapping DEKs (cheap) rather than re-encrypting data (expensive).
 
 ---
