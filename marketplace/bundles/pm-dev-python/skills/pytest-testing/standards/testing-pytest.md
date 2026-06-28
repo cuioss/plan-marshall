@@ -357,7 +357,7 @@ def run_script(script_path, *args):
 
 ### Test File Structure
 
-```
+```text
 test/
 ├── conftest.py              # Shared fixtures (single top-level conftest)
 ├── _fixtures.py             # Shared plain-Python helpers (no pytest magic)
@@ -377,7 +377,7 @@ Pytest resolves `conftest` imports by Python module name, not by path. When a te
 
 If `test/conftest.py` exports shared helpers (e.g., `get_script_path`, `run_script`), and a skill-level test directory introduces its own sibling `conftest.py`, that sibling **shadows** the root `conftest.py` by module name. Any sibling test module that imports via `from conftest import ...` will bind to the skill-local `conftest.py` and break when the helpers it expects are absent.
 
-```
+```text
 test/
 ├── conftest.py                    # exports get_script_path, run_script
 ├── skill_a/
@@ -394,7 +394,7 @@ Use `_fixtures.py` — or `{feature}_fixtures.py` for multi-feature suites — a
 1. **Signals "private helper, not a test target"** — readers immediately recognize the module as support code rather than a test module.
 2. **Avoids pytest's automatic test collection** — pytest's default `test_*.py` / `*_test.py` collection patterns do not match `_fixtures.py`, so the helper module is never mistaken for a test file.
 
-```
+```text
 test/
 ├── conftest.py                    # pytest fixtures only (no re-exported helpers)
 ├── _fixtures.py                   # shared plain-Python helpers

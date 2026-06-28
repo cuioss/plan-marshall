@@ -20,7 +20,7 @@ mode: workflow
 **Execution mode**: Follow workflow steps sequentially, respecting config gates. Each config-gated step dispatches to a standards/ document.
 
 **Required skill load** (before any operation):
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 Skill: plan-marshall:workflow-integration-git
 Skill: plan-marshall:tools-integration-ci
@@ -173,7 +173,7 @@ External steps split by the dispatched-vs-inline classification in the
 `project:finalize-step-sync-plugin-cache`) load in the main context and receive
 these parameters:
 
-```
+```text
 Skill: {step_reference}
   Arguments: --plan-id {plan_id} --iteration {iteration} [--session-id {session_id}]
 ```
@@ -572,7 +572,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Dispatch:
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: <step-name>
@@ -592,7 +592,7 @@ Per-step agent `<usage>` totals are persisted on disk by `manage-metrics accumul
 
 **Initialise the `loop_back_iteration` counter to 0 BEFORE entering the FOR loop** (i.e., here, at the start of Step 3 — outside the loop body). The counter persists across FOR-loop re-entries triggered by the loop-back continuation hook (step 7b below), so that the `max_iterations` ceiling is enforced across the entire dispatch. Initialising the counter inside the FOR loop body (e.g., on each entry into the loop) would reset it on every loop-back BREAK + RE-ENTER, defeating the ceiling. The counter is held in model context for the duration of the dispatch — it is NOT persisted to status.json; a fresh phase-6-finalize entry (e.g., after a session restart) starts the counter back at 0.
 
-```
+```text
 loop_back_iteration = 0   # initialised once, before the FOR loop; persists across FOR-loop re-entries from the loop-back hook (step 7b)
 
 FOR each step_id in manifest.phase_6.steps:
@@ -775,7 +775,7 @@ FOR each step_id in manifest.phase_6.steps:
            ```
            target = python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
              effort resolve-target --phase phase-6-finalize [--role <subkey>]
-           ```
+           ```text
            Returns `execution-context-{level}` (variant), or canonical `execution-context` for `inherit`/empty.
        (2) Dispatch via `Task(subagent_type: plan-marshall:<target>, …)` with prompt body `name`, `plan_id`, `skills[]`, `workflow: plan-marshall:phase-6-finalize/workflow/{name}.md`, `WORKTREE`.
 
@@ -817,7 +817,7 @@ FOR each step_id in manifest.phase_6.steps:
            ```
            target = python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
              effort resolve-target --phase phase-6-finalize [--role <subkey>]
-           ```
+           ```text
            Use the step's resolved role from the "Dispatched workflows vs inline steps"
            section (`project:finalize-step-pre-submission-self-review` → `phase-6-finalize`,
            no `--role`; `project:finalize-step-plugin-doctor` → `phase-6-finalize --role
@@ -834,7 +834,7 @@ FOR each step_id in manifest.phase_6.steps:
        (3) Dispatch via the Task tool. The workflow doc for a dispatched project/skill
            step is the project skill's own SKILL.md (e.g.
            `project:finalize-step-plugin-doctor/SKILL.md`):
-           ```
+           ```text
            Task: plan-marshall:{target}
              prompt: |
                name: {step_name}
@@ -1097,7 +1097,7 @@ FOR each step_id in manifest.phase_6.steps:
 
       The `loop_back_iteration` counter is held in model context for the duration of the dispatch — it is NOT persisted to status.json. A fresh phase-6-finalize entry (e.g., after a session restart) starts the counter back at 0; the manifest's resumable re-entry check still skips already-`done` steps, so re-entering after a restart re-runs only the steps that recorded `loop_back` or `failed` on the previous invocation.
 END FOR
-```
+```text
 
 **Critical invariant**: This loop iterates **only** the manifest list. A step that is NOT in `manifest.phase_6.steps` MUST NOT fire under any circumstance — there is no fallback to a "default" step set, no inference from config booleans, no per-step skip logic. The manifest is the contract. If a deployment requires a different step set, recompose the manifest at outline time.
 
@@ -1182,7 +1182,7 @@ Do NOT add any further `manage-metrics` invocations after `default:archive-plan`
 
 Load the renderer specification:
 
-```
+```text
 Skill: plan-marshall:phase-6-finalize
   Standards: standards/output-template.md
 ```
@@ -1232,7 +1232,7 @@ The primary output is the five-block template rendered by Step 4. It is a plain-
 
 Example:
 
-```
+```text
 [MERGED] PR #212 -- 5 deliverable(s) shipped, all green
 
 Goal

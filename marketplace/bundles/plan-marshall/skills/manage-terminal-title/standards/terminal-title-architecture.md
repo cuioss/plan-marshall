@@ -24,7 +24,7 @@ inline in `status.json` and is composed on demand by the reader.
 
 ## Component Map
 
-```
+```text
 STATE (manage-status)            COMPOSER (manage-terminal-title)   RESOLVE+EMIT (platform-runtime)
 ┌──────────────────────────┐     ┌──────────────────────────────┐  ┌────────────────────────────────────┐
 │ title-token set {state}  │     │ compose(state, event, …)     │  │ session render-title                 │
@@ -198,7 +198,7 @@ background, no controlling terminal), and it never raises.
 The session identifier is bound to a plan through a filesystem cache rooted at
 `_SESSION_CACHE_BASE` (`~/.cache/plan-marshall/sessions`):
 
-```
+```text
 ~/.cache/plan-marshall/sessions/{session_id}/active-plan   →   plan_id
 ```
 

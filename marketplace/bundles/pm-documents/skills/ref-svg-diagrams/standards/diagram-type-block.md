@@ -23,7 +23,7 @@ Use a different diagram type when:
 
 Block diagrams divide the canvas into vertical **columns** separated by **gutters**. Each column has a header at the top and content beneath. Arrows live in the gutters, never inside columns.
 
-```
+```text
 ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
 │  COL HEADER  │  │  COL HEADER  │  │  COL HEADER  │
 ├──────────────┤  ├──────────────┤  ├──────────────┤

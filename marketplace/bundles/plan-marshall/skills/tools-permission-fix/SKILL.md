@@ -47,7 +47,7 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 ```
 
 **Output (TOON)**:
-```
+```text
 status: success
 scope: project
 fix_operation: normalize
@@ -75,7 +75,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
 `{settings_path}` is the active platform's settings file; resolve it from the platform layer rather than hardcoding a `.claude/` path. Pair with `tools-permission-doctor:detect-missing-project-step-permissions` — run doctor to detect, then fix to apply.
 
 **Output (TOON)**:
-```
+```text
 added[1]:
 - Skill(finalize-step-plugin-doctor)
 summary:
@@ -171,7 +171,7 @@ This replaces individual script path permissions because the executor invokes sc
 
 All operations return TOON with error details:
 
-```
+```text
 error: invalid_scope
 status: error
 ```

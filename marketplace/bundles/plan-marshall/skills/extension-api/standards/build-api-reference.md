@@ -72,7 +72,7 @@ python3 .plan/execute-script.py {notation} run \
 **Output Format (TOON)**:
 
 Success:
-```
+```text
 status	success
 exit_code	0
 duration_seconds	45
@@ -81,7 +81,7 @@ command	{wrapper} {args}
 ```
 
 Build Failure:
-```
+```text
 status	error
 exit_code	1
 duration_seconds	23
@@ -146,7 +146,7 @@ python3 .plan/execute-script.py {notation} coverage-report \
 - Python: coverage.py Cobertura XML (`coverage.xml`)
 
 **Output Format (TOON)**:
-```
+```text
 status	success
 passed	true
 threshold	80
@@ -201,7 +201,7 @@ python3 .plan/execute-script.py {notation} discover \
 - `--format` — Output format: `toon` (default), `json`
 
 **Output Format (TOON)**:
-```
+```text
 status	success
 count	3
 

@@ -56,7 +56,7 @@ Parse `total` from output. If `total > 0`, lessons are available.
 
 Build options dynamically from Step 1 and Step 2 results:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "Which plan would you like to work on?"
@@ -153,7 +153,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Dispatch:
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: phase-1-init
@@ -295,7 +295,7 @@ Extract `value` (`light` or `deep`). When the field is absent or unresolved, tre
      effort resolve-target --role phase-3-outline
    ```
 
-   ```
+   ```text
    Task: plan-marshall:{target}
      name: phase-3-outline-light-lane
      plan_id: {plan_id}
@@ -350,7 +350,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Dispatch:
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: phase-2-refine
@@ -388,7 +388,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Dispatch:
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: q-gate-validation
@@ -449,7 +449,7 @@ Do NOT call `manage-status transition` to 3-outline. Do NOT proceed with the met
 
 **Named recovery case — `.plan/marshal.json`**: When `dirty_files` contains `.plan/marshal.json`, output an additional recovery line alongside the generic instruction:
 
-```
+```text
 Recovery: git checkout -- .plan/marshal.json
 ```
 
@@ -568,7 +568,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **2b — Confirm and prune:** When `removed[]` is non-empty, display the count and the list of candidate ids, then ask:
 
-```
+```text
 AskUserQuestion:
   question: "Prune {count} superseded lesson stub(s)? (Tombstones will be preserved.)"
   header: "Cleanup"
@@ -644,7 +644,7 @@ For each orphan entry:
 
 - **Non-empty**: Defer the deletion decision to the user. Collect all non-empty orphans, then present a single multi-select `AskUserQuestion` so the user can pick which directories to delete in one pass:
 
-  ```
+  ```text
   AskUserQuestion:
     question: "Select orphan plan directories to delete. Each lists the top-level entries it contains so you can decide whether the contents are recoverable."
     header: "Orphans"
@@ -700,7 +700,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **4b — Confirm and restore:** When `stalled_plans[]` is non-empty, present the entries via `AskUserQuestion` (multiSelect) so the user can pick which stalled plans to restore in one pass:
 
-```
+```text
 AskUserQuestion:
   question: "Select stalled lesson-sourced plans whose lesson(s) should be restored to the active corpus."
   header: "Restore"
@@ -749,7 +749,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list
 
 **Step 2**: Present options using `AskUserQuestion`:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "What would you like to do with lessons?"
@@ -795,7 +795,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-1-init workflow=plan-marshall:phase-1-init/SKILL.md plan_id=none"
 ```
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: phase-1-init
@@ -887,7 +887,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list
 
 **Step 3**: Present a single batch summary via `AskUserQuestion` (cleanup-side caller contract from `dedup-analysis.md` — one confirmation per batch, not per candidate):
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: |
@@ -960,13 +960,13 @@ Script: `plan-marshall:manage-status:manage-status`
 
 Status is stored in the plan directory:
 
-```
+```text
 .plan/plans/{plan_id}/status.json
 ```
 
 Archived plans:
 
-```
+```text
 .plan/archived-plans/{yyyy-mm-dd}-{plan-name}/
 ```
 

@@ -61,7 +61,7 @@ Activate when:
 **Principle**: All resource paths use relative paths from the skill directory for portability across installations.
 
 **Examples**:
-```
+```text
 Read references/core-principles.md
 bash scripts/analyzer.py
 Load template: assets/template.html

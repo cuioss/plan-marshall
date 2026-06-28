@@ -10,7 +10,7 @@ Add a build caching skill to the builder bundle that caches build outputs and re
 
 ## Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          Build Cache Integration                             │
 ├─────────────────────────────────────────────────────────────────────────────┤

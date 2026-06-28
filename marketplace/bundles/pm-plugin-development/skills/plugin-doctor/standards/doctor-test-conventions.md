@@ -26,7 +26,7 @@ Reject helper modules under the test tree whose basename collides across sibling
 
 **Violation message format**:
 
-```
+```text
 {file_path}: helper module basename '{basename}' is generic — rename to '_<domain>_{basename}' to avoid pytest sys.modules collisions.
 ```
 
@@ -56,7 +56,7 @@ Flag `subprocess.run([sys.executable, ...])` invocations under the test tree tha
 
 **Violation message format**:
 
-```
+```text
 {file_path}:{lineno}: subprocess.run([sys.executable, ...]) without PYTHONPATH propagation — wrap via conftest.run_script(...) or add env={"PYTHONPATH": os.pathsep.join(sys.path), ...}.
 ```
 
@@ -88,7 +88,7 @@ Validate that every registered identifier validator's regex round-trips every ou
 
 **Violation message format**:
 
-```
+```text
 {validator_path}: regex r'{pattern}' rejects ID '{id}' returned by `{list_command}` — anchor the regex against repository data.
 ```
 

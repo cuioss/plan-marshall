@@ -23,7 +23,7 @@ Every phase transition is guarded by the `phase_handshake` script, which capture
 
 Shows executable plans for selection:
 
-```
+```text
 Executable Plans:
 
 1. jwt-authentication [execute] - Task 3/12: "Add token validation"
@@ -39,7 +39,7 @@ Select plan to execute:
 Execute specific plan from its current phase:
 
 If plan is in 1-init, 3-outline, or 4-plan phase:
-```
+```text
 Plan 'jwt-auth' is in '3-outline' phase.
 
 This workflow handles 5-execute/6-finalize phases only.
@@ -153,7 +153,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Dispatch:
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: phase-5-execute
@@ -305,7 +305,7 @@ guard in `manage-tasks finalize-step`.
 
 3. **Dispatch `verification-feedback`** as a top-level `Task:` in the main context (the dispatch is by-reference — the subagent queries the per-plan findings store as its first workflow step; the findings are NOT embedded in the prompt):
 
-   ```
+   ```text
    Task: plan-marshall:{target}
      prompt: |
        name: verification-feedback
@@ -525,7 +525,7 @@ The retry runs at most once — never loop the capture call.
 
 **Dispatch the skill:**
 
-```
+```text
 Skill: plan-marshall:phase-6-finalize
 operation: finalize
 plan_id: {plan_id}
@@ -604,7 +604,7 @@ The conservative default (`loop_back_without_asking == false`) preserves the con
 ### Finalize Validation
 
 If finalize requested but tasks incomplete:
-```
+```text
 Cannot finalize: 5 tasks remaining.
 
 Complete all tasks first, then run:

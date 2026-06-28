@@ -26,7 +26,7 @@ The load-bearing visual element is the **horizontal slab**. Each layer is a slab
 
 ### Canonical layered stack
 
-```
+```text
   ┌─────────────────────────────────────────────────┐
   │ LAYER 1   │ contents — what the layer holds      │
   └─────────────────────────────────────────────────┘

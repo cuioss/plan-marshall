@@ -22,7 +22,7 @@ This skill applies to Java projects using JUnit 5:
 
 **Important**: Load this standard for any testing work.
 
-```
+```text
 Read: standards/testing-junit-core.md
 ```
 
@@ -37,21 +37,21 @@ This provides foundational rules for:
 ### Step 2: Load Additional Standards (As Needed)
 
 **Integration Testing** (load for IT work):
-```
+```text
 Read: standards/testing-integration.md
 ```
 
 Use when: Writing or reviewing integration tests (`*IT.java`). Covers naming, separation, and lifecycle.
 
 **Async Testing** (load for async/concurrent code):
-```
+```text
 Read: standards/testing-async-patterns.md
 ```
 
 Use when: Testing asynchronous behavior. Covers Awaitility patterns (never Thread.sleep).
 
 **Coverage Analysis** (load for coverage work):
-```
+```text
 Read: standards/coverage-analysis-pattern.md
 ```
 
@@ -114,7 +114,7 @@ void shouldParseAllTokenClaims() {
 ## Templates
 
 **Unit test class** — starting point for new test classes:
-```
+```text
 Read: templates/unit-test-class.java.tmpl
 ```
 

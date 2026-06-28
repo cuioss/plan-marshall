@@ -33,7 +33,7 @@ GitHub provider for the findings-pipeline `pr-comment` producer. Fetches PR revi
 
 ## Architecture
 
-```
+```text
 workflow-integration-github (GitHub PR comment workflow)
   ├─> github_ops.py (GitHub operations via gh CLI — PR, CI, issue)
   ├─> github_pr.py (PR comment triage — delegates to github_ops for fetch)

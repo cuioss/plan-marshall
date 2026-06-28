@@ -153,7 +153,7 @@ Does the deliverable directly address a request requirement?
 
 Are all affected files in the deliverable backed by assessments?
 
-```
+```text
 FOR each file in deliverable.affected_files:
   IF file NOT IN assessed_files (CERTAIN_INCLUDE):
     FLAG: Missing assessment for file
@@ -204,7 +204,7 @@ ls {file_path}
 
 Check for redundant test coverage across deliverables. A separate test deliverable is redundant when other deliverables already have `module_testing` profile covering the same test files.
 
-```
+```text
 FOR each deliverable D with profile=module_testing AND change_type != verification:
   FOR each file F in D.affected_files:
     FOR each OTHER deliverable D2 where D2.profiles contains module_testing:
@@ -318,7 +318,7 @@ Each grep is a separate Bash invocation (one command per call). Collect every `{
 
 **(a) Trigger language present AND `Affected files` is empty**:
 
-```
+```text
 FAIL with finding:
   title: "Q-Gate: consumer_sweep_completeness — empty affected_files for delete/rename deliverable {N}"
   detail: "Deliverable {N} deletes/renames public symbol {symbol} but lists no Affected files. The consumer sweep documented in consumer-sweep.md is mandatory for delete/rename deliverables. Re-run the sweep and enumerate every consumer."
@@ -326,7 +326,7 @@ FAIL with finding:
 
 **(b) Trigger language present AND every entry in `Affected files` is under the same bundle as the symbol's owning module (no cross-bundle entries) AND the worktree grep would return cross-bundle hits**:
 
-```
+```text
 FAIL with finding (one per unenumerated consumer):
   title: "Q-Gate: consumer_sweep_completeness — unenumerated cross-bundle consumer of {symbol} in deliverable {N}"
   detail: "Deliverable {N} deletes/renames {symbol} but Affected files only references the owning bundle. Cross-bundle consumer at {consumer_path}:{line} would break when {symbol} is removed. Add {consumer_path} to Affected files (with explicit migration text in Change per file) or add a follow-up deliverable that updates it."
@@ -717,7 +717,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 Compare assessed files (CERTAIN_INCLUDE) against deliverable affected files:
 
-```
+```text
 FOR each file IN assessed_files:
   IF file NOT IN any deliverable.affected_files:
     FLAG: Assessed file not covered in deliverables

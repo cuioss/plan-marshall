@@ -127,7 +127,7 @@ If apply_fixes=true:
 
 **Step 8: Generate Report**
 
-```
+```text
 ## Content Review Complete
 
 **Status**: PASS | WARNINGS | FAILURES
@@ -208,7 +208,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover
 **Step 3: Phase 1 - Format Validation**
 
 Delegate to ref-asciidoc validate-format workflow:
-```
+```text
 Skill: pm-documents:ref-asciidoc
 Execute workflow: validate-format
 Parameters:
@@ -286,7 +286,7 @@ Then extract from each file:
 
 **Step 2: Analyze Documentation**
 
-```
+```text
 Read target documentation files
 Extract:
 - Documented classes/methods
@@ -303,7 +303,7 @@ Compare code vs documentation:
 
 **Step 4: Generate Sync Report**
 
-```
+```text
 Documentation Sync Analysis
 
 Code analyzed: {file_count} files
@@ -380,7 +380,7 @@ For each file:
 
 **Step 4: Generate Cleanup Report**
 
-```
+```text
 Documentation Cleanup Analysis
 
 Files analyzed: {count}

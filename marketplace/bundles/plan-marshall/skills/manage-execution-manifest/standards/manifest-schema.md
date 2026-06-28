@@ -61,7 +61,7 @@ A step with no marshal-side params (e.g. a verify step) snapshots as the empty o
 Composed from `DEFAULT_PHASE_6_STEPS` in
 `scripts/manage-execution-manifest.py`. The canonical default order:
 
-```
+```text
 push
 create-pr
 ci-verify

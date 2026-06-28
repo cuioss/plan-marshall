@@ -74,7 +74,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-workflow-skill-extension --domain {group.domain} --type triage
 ```
 
-```
+```text
 Skill: {returned_extension_skill}
 ```
 

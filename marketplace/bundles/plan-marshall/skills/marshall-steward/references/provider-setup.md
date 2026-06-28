@@ -66,7 +66,7 @@ Capture `provider` and `confidence` from the output. Map the detected provider t
 
 Present CI-category providers with a "Skip" option for projects that do not use CI:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "Which CI provider should be activated?"
@@ -90,7 +90,7 @@ Only present this step if the `other` category contains at least one provider.
 
 This is a binary activation gate: it MUST always present **≥2 options** — the dynamic `other`-category providers plus a fixed, canonical `Skip` entry. Mirror Step 7-4c, which already pairs dynamic options with a `Skip`. Never emit a single-option array: when `other` contains exactly one provider, the rendered question is that one `{provider}` entry **plus** the canonical `Skip` entry (two options), never the lone provider on its own. `AskUserQuestion` rejects a single-option array, so the LLM MUST NOT assemble its own option list that omits `Skip`.
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "Which additional providers should be activated?"
@@ -203,7 +203,7 @@ Parse the `providers` array from output. If `count == 0`, skip to Step 15 (Summa
 
 ### Step 13f: Ask user
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "Configure credentials for external tools?"
@@ -226,7 +226,7 @@ If user selects "Configure now", collect non-secret values step by step.
 
 1. Credential scope:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "Credential scope?"
@@ -243,7 +243,7 @@ Map selection to `--scope global` or `--scope project` for Step 13i.
 
 2. Provider selection (only if multiple providers, otherwise use the single one):
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "Which credential provider?"
@@ -257,7 +257,7 @@ AskUserQuestion:
 
 3. URL and auth type (use provider defaults as recommended options):
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "Base URL for {display_name}?"
@@ -292,7 +292,7 @@ Parse the output and locate the entry with `category == "version-control"`; its 
 3. Derive project key as `{org}_{repo}` (e.g., `cuioss_plan-marshall`)
 4. Confirm with user:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "SonarCloud organization?"

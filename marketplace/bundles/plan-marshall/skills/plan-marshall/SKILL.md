@@ -36,7 +36,7 @@ This skill implements its **OWN** plan system. You must:
 
 ## 6-Phase Model
 
-```
+```text
 1-init -> 2-refine -> 3-outline -> 4-plan -> 5-execute -> 6-finalize
 ```
 
@@ -59,7 +59,7 @@ This skill implements its **OWN** plan system. You must:
 
 Load foundational development practices before any phase work:
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 

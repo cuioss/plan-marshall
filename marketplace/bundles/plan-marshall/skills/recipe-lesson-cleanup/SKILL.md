@@ -14,7 +14,7 @@ Generic, domain-invariant recipe for turning a single lesson-learned into a dete
 
 ## Foundational Practices
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
@@ -163,7 +163,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 
 Use `Edit` (or `Write`, when no file exists yet) against the resolved path to append a Clarifications entry per divergent directive in this shape:
 
-```
+```text
 - Directive: {directive_title}
   Hypothesis: {hypothesis_summary}
   Verified fix: {verified_change_summary}
@@ -229,7 +229,7 @@ For each lesson directive, emit one deliverable. The outline is purely structura
 
 **3a. Read the deliverable template:**
 
-```
+```text
 Read: marketplace/bundles/plan-marshall/skills/manage-solution-outline/templates/deliverable-template.md
 ```
 

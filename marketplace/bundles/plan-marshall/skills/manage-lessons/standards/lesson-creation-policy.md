@@ -16,7 +16,7 @@ This standard is the single source of truth for the "should this observation bec
 
 A caller running this sequence must execute the gates **in order** and stop at the first gate that resolves the observation without allocating a new lesson. Gate 2 runs only when Gate 1 returns `new`; Gate 3 runs only when Gates 1 and 2 both clear.
 
-```
+```text
 observation to record
         │
         ▼

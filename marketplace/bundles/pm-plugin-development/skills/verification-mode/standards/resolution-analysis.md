@@ -89,7 +89,7 @@ Input: [Original reference]
 Step 1: [First transformation] → [Result/Status]
 Step 2: [Second transformation] → [Result/Status]
 Step N: [Final transformation] → FAILED
-```
+```text
 
 ### Failed Component
 - **Type**: [Path/Script/Skill/Dependency]
@@ -100,7 +100,7 @@ Step N: [Final transformation] → FAILED
 ### Directory Investigation
 ```
 [ls -la output or Glob results showing actual contents]
-```
+```text
 
 ### Root Cause
 [Why resolution failed]

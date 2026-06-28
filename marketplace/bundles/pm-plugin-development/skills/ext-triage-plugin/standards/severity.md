@@ -100,7 +100,7 @@ Decision criteria for handling marketplace plugin development findings.
 
 ## Quick Decision Flowchart
 
-```
+```text
 Is it a test failure?
   → Yes, can be fixed → FIX
   → Yes, environment-specific → SKIP with reason

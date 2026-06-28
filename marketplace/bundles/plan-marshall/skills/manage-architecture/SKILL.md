@@ -308,7 +308,7 @@ If any module is incomplete → return to Steps 5-8 for that module.
 
 Display completion summary:
 
-```
+```text
 Architecture analysis complete.
 
 Project: {project name}

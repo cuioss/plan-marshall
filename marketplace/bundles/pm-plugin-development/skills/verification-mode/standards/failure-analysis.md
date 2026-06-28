@@ -46,7 +46,7 @@ When a script or tool fails during verification mode, perform systematic analysi
 4. Compare with working examples
 
 **Common Patterns**:
-```
+```text
 status: error
 error: invalid_domain
 message: Must be valid domain identifier (java, javascript, plan-marshall-plugin-dev, generic)
@@ -103,7 +103,7 @@ Use this template for all failure analyses:
 ### Error Output
 ```
 [Actual error message or stack trace]
-```
+```text
 
 ### Input Analysis
 | Parameter | Value | Expected |
@@ -168,7 +168,7 @@ When verification mode detects a failure:
 
 For complex failures requiring origin tracing and fix proposals, recommend the plan-retrospective skill (aspect: `script-failure-analysis`):
 
-```
+```text
 Skill: plan-marshall:plan-retrospective
 ```
 

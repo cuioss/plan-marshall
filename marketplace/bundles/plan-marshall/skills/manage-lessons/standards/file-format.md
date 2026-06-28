@@ -4,7 +4,7 @@ Storage format specification for global lessons learned.
 
 ## Storage Location
 
-```
+```text
 .plan/lessons-learned/
   2025-12-02-001.md
   2025-12-02-002.md
@@ -53,7 +53,7 @@ Add the dependency explicitly to pom.xml:
 ## Impact
 
 This affects all projects using jakarta.json without explicit dependency.
-```
+```text
 
 ## Metadata Fields
 

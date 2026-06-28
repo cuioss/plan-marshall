@@ -55,7 +55,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci {domain} {
 
 ## Router Architecture
 
-```
+```text
                     CI ROUTER PATTERN
 
     ┌─────────────────────────────────────────────────────────────┐

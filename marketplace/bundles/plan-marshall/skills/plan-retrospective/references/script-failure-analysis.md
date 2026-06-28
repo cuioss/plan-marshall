@@ -75,7 +75,7 @@ message: "{one-line}"
 
 In user-invocable mode, for each failure use `AskUserQuestion`:
 
-```
+```text
 question: "How would you like to handle {notation} failure?"
 options:
   - "Apply fix"      — Edit the source component to add/correct the instruction

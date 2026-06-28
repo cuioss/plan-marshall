@@ -42,7 +42,7 @@ Read the output_file path from the summary to get the complete inventory:
 Read: {output_file from step 1}
 
 # For small/filtered results, use --direct-result to get TOON directly to stdout
-```
+```text
 
 ## Step 2: Interpret Inventory
 
@@ -342,7 +342,7 @@ Replace placeholders:
 ## Step 5: Write Test Suite
 
 Write to test/{script_name}-test.sh
-```
+```text
 
 **Key Benefit**: Automated test creation with consistent structure.
 
@@ -416,7 +416,7 @@ Aggregate:
 - Deep analysis details (10 components)
 - Top issues across marketplace
 - Recommended action priority
-```
+```text
 
 **Key Benefit**: Comprehensive analysis within context limits through two-phase approach.
 
@@ -498,7 +498,7 @@ Generate consolidation plan:
 - Proposed skill structure
 - Migration steps
 - Impact assessment
-```
+```text
 
 **Key Benefit**: Cross-bundle analysis enables systematic duplication elimination.
 
@@ -638,7 +638,7 @@ This skill provides reference material only. No execution logic.
 Load specific reference when needed:
 ```
 Read references/core-principles.md
-```
+```text
 
 ## Progressive Disclosure
 

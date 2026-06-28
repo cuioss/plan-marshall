@@ -110,7 +110,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role=verification-feedback workflow=plan-marshall:plan-marshall/workflow/verification-feedback.md plan_id={plan_id}"
 ```
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: verification-feedback

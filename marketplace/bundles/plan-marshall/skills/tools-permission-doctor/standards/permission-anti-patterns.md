@@ -270,7 +270,7 @@ Based on severity score:
 
 **For CRITICAL and HIGH severity violations:**
 
-```
+```text
 BEFORE:
 Bash(sudo:*)
 
@@ -282,7 +282,7 @@ AFTER:
 
 **Replace broad patterns with specific paths:**
 
-```
+```text
 BEFORE:
 Read(//Users/**)
 
@@ -294,7 +294,7 @@ Read(//~/git/project-name/**)
 
 **Use user-relative paths:**
 
-```
+```text
 BEFORE:
 Read(///Users/oliver/git/project/**)
 
@@ -306,7 +306,7 @@ Read(//~/git/project/**)
 
 **Eliminate permissions covered by broader patterns:**
 
-```
+```text
 BEFORE:
 Read(//~/git/project/**)
 Read(//~/git/project/src/**)
@@ -321,7 +321,7 @@ Read(//~/git/project/**)
 
 **Use project-specific directories:**
 
-```
+```text
 BEFORE:
 Write(//tmp/**)
 
@@ -333,7 +333,7 @@ Write(//~/git/project/target/temp/**)
 
 **Narrow dangerous commands to specific paths:**
 
-```
+```text
 BEFORE:
 Bash(rm:*)
 
@@ -414,7 +414,7 @@ def validate_permissions(permissions):
 
 ### Example 1: System Directory Violation
 
-```
+```text
 Permission: Read(//etc/**)
 Violation: SYSTEM_DIRECTORY_ACCESS
 Severity: CRITICAL (100)
@@ -424,7 +424,7 @@ Fix: [REMOVE PERMISSION]
 
 ### Example 2: Overly Broad Wildcard
 
-```
+```text
 Permission: Read(//Users/**)
 Violation: OVERLY_BROAD_WILDCARD
 Severity: HIGH (80)
@@ -435,7 +435,7 @@ Fix: Read(//~/git/specific-project/**)
 
 ### Example 3: Dangerous Command
 
-```
+```text
 Permission: Bash(rm:*)
 Violation: DANGEROUS_COMMAND
 Severity: HIGH (90)
@@ -445,7 +445,7 @@ Fix: Bash(rm:target/*)
 
 ### Example 4: Redundancy
 
-```
+```text
 Permissions:
   - Read(//~/git/project/**)
   - Read(//~/git/project/src/**)

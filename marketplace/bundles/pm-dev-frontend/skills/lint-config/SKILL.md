@@ -25,7 +25,7 @@ ESLint, Prettier, and Stylelint configuration standards for JavaScript projects.
 
 Load this standard when setting up or modifying ESLint configuration.
 
-```
+```text
 Read: standards/eslint-configuration.md
 ```
 
@@ -34,28 +34,28 @@ Covers ESLint flat config, dependencies, and plugin setup.
 ### Step 2: Load Additional Standards (As Needed)
 
 **ESLint Rules** (load for rule customization):
-```
+```text
 Read: standards/eslint-rules.md
 ```
 
 Use when: Adding or modifying ESLint rules, configuring JSDoc rules, security rules, SonarJS, or framework-specific overrides.
 
 **ESLint Integration** (load for build pipeline work):
-```
+```text
 Read: standards/eslint-integration.md
 ```
 
 Use when: Configuring npm scripts, Maven phases, CI/CD integration, or performance optimization for linting.
 
 **Prettier Configuration** (load for formatting setup):
-```
+```text
 Read: standards/prettier-configuration.md
 ```
 
 Use when: Setting up Prettier, editor integration, or resolving ESLint/Prettier conflicts.
 
 **Stylelint Setup** (load for CSS-in-JS linting):
-```
+```text
 Read: standards/stylelint-setup.md
 ```
 

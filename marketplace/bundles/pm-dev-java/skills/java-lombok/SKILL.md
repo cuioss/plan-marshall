@@ -21,7 +21,7 @@ This skill applies to Java projects using [Project Lombok](https://projectlombok
 
 **Important**: Load this standard for any Lombok work involving `@Delegate`, `@Builder`, `@Value`, `@Data`, or `@UtilityClass`.
 
-```
+```text
 Read: standards/lombok-core-annotations.md
 ```
 
@@ -36,7 +36,7 @@ This provides rules for:
 
 **Load for entity/bean work** involving `@EqualsAndHashCode`, `@ToString`, `@Getter`, `@Setter`:
 
-```
+```text
 Read: standards/lombok-canonical-methods.md
 ```
 

@@ -103,7 +103,7 @@ location for the PR body, bound to this plan and kind.
 
 ### Step 2: Write the PR Body
 
-```
+```text
 Write({path from prepare-body}) with PR body markdown content
 ```
 
@@ -276,7 +276,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare
 
 ### Step 2 (optional): Write the new body
 
-```
+```text
 Write({path from prepare-body}) with new PR body markdown content
 ```
 

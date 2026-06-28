@@ -57,7 +57,7 @@ For multi-module tasks, decompose BEFORE selecting modules.
 
 ### Decomposition Pattern
 
-```
+```text
 **Task**: {multi-module task description}
 
 **Decomposition**:
@@ -102,7 +102,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture w
 ```
 
 Example output for a hybrid directory:
-```
+```text
 physical_path: nifi-cuioss-ui
 
 modules[2]:

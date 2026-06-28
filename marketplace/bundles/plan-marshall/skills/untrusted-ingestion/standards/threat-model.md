@@ -19,7 +19,7 @@ The script-deterministic fetchers (`github_ops.py`, `sonar.py`) are **not** the 
 
 ## The reader/orchestrator/writer isolation boundary
 
-```
+```text
    UNTRUSTED EXTERNAL BYTES
         │
         ▼

@@ -26,7 +26,7 @@ A graph diagram is a **single dominant visual idea**, not a grid of equally-weig
 
 ### Hub-and-spoke layout (canonical)
 
-```
+```text
                   ┌──────────┐
                   │   spoke  │
                   └────┬─────┘

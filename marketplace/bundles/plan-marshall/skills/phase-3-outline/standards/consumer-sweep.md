@@ -119,7 +119,7 @@ The deliverable's `Change per file` contained "remove `load_derived_data`" and "
 
 `architecture find --pattern "load_derived_data"` would have returned the manage-architecture core file (already in scope) and elided the pm-dev-java sub-module reference. The grep fallback `grep -rn "load_derived_data" marketplace/bundles/` would have surfaced:
 
-```
+```text
 marketplace/bundles/pm-dev-java/skills/manage-maven-profiles/scripts/profiles.py:14:from _architecture_core import load_derived_data
 test/pm-dev-java/manage-maven-profiles/test_profiles.py:8:from _architecture_core import load_derived_data, save_derived_data
 ```

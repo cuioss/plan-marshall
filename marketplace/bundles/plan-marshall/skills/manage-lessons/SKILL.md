@@ -27,7 +27,7 @@ Manage lessons learned with global scope. Stores lessons as markdown files with 
 
 Lessons are stored globally:
 
-```
+```text
 .plan/lessons-learned/
   2025-12-02-001.md
   2025-12-02-002.md
@@ -65,7 +65,7 @@ Add the dependency explicitly to pom.xml:
 ## Impact
 
 This affects all projects using jakarta.json without explicit dependency.
-```
+```text
 
 ### Metadata Fields
 
@@ -172,7 +172,7 @@ The standard sequence for creating a lesson with a non-trivial body is:
 
 Worked example:
 
-```
+```text
 # Step 1: allocate
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component maven-build --category bug \

@@ -8,6 +8,7 @@ import re
 import shutil
 from pathlib import Path
 
+from _analyze_markdown import _FENCE_OPEN_RE
 from _analyze_simplicity import _restates_signature_only
 from _doctor_shared import read_json_input, resolve_runtime_target
 
@@ -398,6 +399,53 @@ def apply_signature_docstring_fix(file_path: Path, fix: dict, templates: dict) -
     }
 
 
+def apply_fenced_code_language_fix(file_path: Path, fix: dict, templates: dict) -> dict:
+    """Append a default ``text`` info-string to every bare opening code fence.
+
+    Mirrors the ``check_fenced_code_no_language`` detector's fence state machine
+    (``_analyze_markdown._FENCE_OPEN_RE`` plus open/close tracking) so the fix
+    targets exactly the opening fences the rule flags. A bare opening fence
+    (```` ``` ```` or ``~~~`` with no info-string) gets ``text`` appended;
+    closing fences, already-tagged opening fences, and fenced content are left
+    untouched. Tracking fence state line-by-line is what distinguishes an
+    opening fence (fixable) from a closing fence (legitimately bare).
+    """
+    with open(file_path, encoding='utf-8') as f:
+        content = f.read()
+
+    lines = content.split('\n')
+    in_fence = False
+    fence_marker = ''
+    fixed_count = 0
+    for idx, line in enumerate(lines):
+        if not in_fence:
+            match = _FENCE_OPEN_RE.match(line)
+            if not match:
+                continue
+            in_fence = True
+            fence_marker = match.group(2)[0]
+            if not match.group(3):
+                # Bare opening fence — append the default ``text`` info-string,
+                # preserving the original indent and fence-marker run length.
+                lines[idx] = f'{match.group(1)}{match.group(2)}text'
+                fixed_count += 1
+        else:
+            stripped = line.strip()
+            if stripped and set(stripped) == {fence_marker} and len(stripped) >= 3:
+                in_fence = False
+                fence_marker = ''
+
+    if fixed_count:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(lines))
+
+    return {
+        'success': True,
+        'changes': [f'Tagged {fixed_count} bare opening fence(s) with `text`'],
+        'fences_fixed': fixed_count,
+    }
+
+
 FIX_HANDLERS = {
     'missing-frontmatter': apply_missing_frontmatter,
     'array-syntax-tools': apply_array_syntax_fix,
@@ -415,6 +463,7 @@ FIX_HANDLERS = {
     'checklist-pattern': apply_checklist_pattern_fix,
     'subdoc-checklist-pattern': apply_checklist_pattern_fix,
     'SIMPLICITY_SIGNATURE_DOCSTRING': apply_signature_docstring_fix,
+    'fenced-code-no-language': apply_fenced_code_language_fix,
 }
 
 

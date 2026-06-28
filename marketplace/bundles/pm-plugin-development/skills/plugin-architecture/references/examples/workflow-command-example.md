@@ -20,7 +20,7 @@ This example demonstrates a goal-based command that acts as a thin orchestrator,
 
 ### File Location
 
-```
+```text
 marketplace/bundles/pm-plugin-development/commands/plugin-doctor.md
 ```
 
@@ -43,24 +43,24 @@ Interactive command to analyze marketplace components and identify issues.
 /plugin-doctor agent=my-agent
 /plugin-doctor command=my-command
 /plugin-doctor skill=my-skill
-```
+```text
 
 **Diagnose all components of a type**:
 ```
 /plugin-doctor agents
 /plugin-doctor commands
 /plugin-doctor skills
-```
+```text
 
 **Diagnose entire marketplace**:
 ```
 /plugin-doctor marketplace
-```
+```text
 
 **Diagnose with auto-fix**:
 ```
 /plugin-doctor marketplace --fix
-```
+```text
 
 ## Workflow
 
@@ -74,7 +74,7 @@ agent=<name>    → Specific component analysis
 agents          → All agents
 marketplace     → Complete marketplace
 --fix           → Auto-fix flag
-```
+```text
 
 **Logic**:
 ```
@@ -96,13 +96,13 @@ Else:
     - Specific component
     - All of a type
     - Entire marketplace
-```
+```text
 
 **Check for flags**:
 ```
 If "--fix" in parameters:
   auto_fix = true
-```
+```text
 
 ### Step 2: Invoke Diagnostic Skill
 
@@ -116,7 +116,7 @@ Parameters: {
   component_path: "marketplace/bundles/.../my-agent.md",
   component_type: "agent"
 }
-```
+```text
 
 **All of Type** (scope = "all-of-type"):
 ```
@@ -126,14 +126,14 @@ Parameters: {
   component_type: "agents",
   scope: "marketplace"
 }
-```
+```text
 
 **Marketplace** (scope = "marketplace"):
 ```
 Skill: plugin-doctor
 Workflow: validate-marketplace
 Parameters: {}
-```
+```text
 
 ### Step 3: Display Results
 
@@ -169,7 +169,7 @@ FAIL Tool Coverage: Missing Skill tool in frontmatter
 3. Add Skill to allowed-tools for standards loading
 
 Quality Score: 65/100
-```
+```text
 
 **For all of type**:
 ```
@@ -196,7 +196,7 @@ ANALYSIS: All Agents (15 total)
 3. Missing skill invocations (3 occurrences)
 
 Overall Type Health: 75/100
-```
+```text
 
 **For marketplace**:
 ```
@@ -235,7 +235,7 @@ MARKETPLACE HEALTH REPORT
 1. Fix critical issues first (3 components affected)
 2. Update path usage across 12 components
 3. Replace prohibited patterns in 8 components
-```
+```text
 
 ### Step 4: Offer Fix Option
 
@@ -251,7 +251,7 @@ Ask user:
 
 If user confirms OR --fix flag was provided:
   Proceed to Step 5
-```
+```text
 
 ### Step 5: Apply Fixes (if confirmed)
 
@@ -265,7 +265,7 @@ Parameters: {
   auto_confirm_safe: true,  # If --fix flag
   prompt_for_risky: true   # Always ask for risky fixes
 }
-```
+```text
 
 Display fix results:
 
@@ -283,7 +283,7 @@ WARN  Logic modification in other-command.md - Review needed
 WARN  Deletion of deprecated section - Review needed
 
 Would you like to review and apply risky fixes?
-```
+```text
 
 ### Step 6: Verify Fixes (optional)
 
@@ -300,7 +300,7 @@ If confirmed:
   Skill: plugin-doctor
   Workflow: validate-marketplace
   # Re-run diagnosis to verify fixes
-```
+```text
 
 ## Key Patterns Demonstrated
 
@@ -373,7 +373,7 @@ Results formatted for readability:
 # Each command duplicates logic
 # Each routes to separate agent
 # User must know which command to use
-```
+```text
 
 ### NEW (Goal-Based)
 
@@ -384,7 +384,7 @@ Results formatted for readability:
 # Parses scope, routes to appropriate workflow
 # All diagnostic logic in plugin-doctor skill
 # User thinks about goal (diagnose), not component type
-```
+```text
 
 **Benefits**:
 - Simpler discovery (1 vs 5 commands)
@@ -400,35 +400,35 @@ Results formatted for readability:
 Input: /plugin-doctor agent=my-agent
 Expected: Detailed analysis of my-agent.md
 Verify: Report shows component-specific issues
-```
+```text
 
 **Test 2: All of Type**
 ```
 Input: /plugin-doctor agents
 Expected: Aggregated report for all agents
 Verify: Statistics and top issues shown
-```
+```text
 
 **Test 3: Marketplace**
 ```
 Input: /plugin-doctor marketplace
 Expected: Complete marketplace health report
 Verify: Bundle scores and overall health shown
-```
+```text
 
 **Test 4: Auto-Fix**
 ```
 Input: /plugin-doctor marketplace --fix
 Expected: Diagnosis + automatic safe fixes
 Verify: Fix report shows what was applied
-```
+```text
 
 **Test 5: Ambiguous Input**
 ```
 Input: /plugin-doctor
 Expected: User prompted for scope
 Verify: Options presented clearly
-```
+```text
 
 ## Summary
 

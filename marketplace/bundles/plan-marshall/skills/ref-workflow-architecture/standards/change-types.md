@@ -46,7 +46,7 @@ Each change type has:
 
 ## Priority Ordering Rationale
 
-```
+```text
 analysis (1)     →  Understand first before acting
 feature (2)      →  Build new things after understanding
 enhancement (3)  →  Improve existing after building

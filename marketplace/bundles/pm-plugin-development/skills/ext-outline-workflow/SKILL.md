@@ -12,7 +12,7 @@ Shared workflow steps for plugin development outline, loaded by the `phase-3-out
 
 ## Step 1: Load Foundational Practices
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
@@ -270,14 +270,14 @@ The 1:N profile mapping (solution-outline-standard.md) means each deliverable wi
 | A final verification-only deliverable (no file changes) | Use `change_type: verification` with `Profiles: verification` — this is NOT redundant |
 
 **Anti-pattern**:
-```
+```text
 D1: Migrate component A (Profiles: implementation, module_testing)
 D2: Migrate component B (Profiles: implementation, module_testing)
 D3: Update tests for A and B  ← REDUNDANT — D1 and D2 already cover testing
 ```
 
 **Correct pattern**:
-```
+```text
 D1: Migrate component A (Profiles: implementation, module_testing)
 D2: Migrate component B (Profiles: implementation, module_testing)
 D3: Verify bundle integrity (Profiles: verification)  ← OK — verification only, no file overlap

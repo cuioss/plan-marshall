@@ -51,7 +51,7 @@ Each provider module exports `get_provider_declarations()` returning a list of d
 
 ## Script Notation
 
-```
+```text
 plan-marshall:manage-providers:credentials
 ```
 

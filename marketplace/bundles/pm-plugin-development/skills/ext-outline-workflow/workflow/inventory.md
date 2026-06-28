@@ -136,7 +136,7 @@ Group all paths by component type across all bundles.
 
 1. Stage the rendered TOON payload via the `Write` tool to `.plan/temp/inventory_filtered.toon`. The payload is the multi-line block:
 
-   ```
+   ```text
    # Filtered Inventory
 
    scope:

@@ -58,7 +58,7 @@ bash scripts/analyze-markdown-file.sh <file>
 ```
 
 Do not continue to Step 2 until this completes successfully.
-```
+```text
 
 **CRITICAL** - Important constraint or rule:
 ```markdown
@@ -159,7 +159,7 @@ Commands delegate to skills via the Skill tool. Well-structured skills with clea
 2. **Load and execute skill**:
    ```
    Skill: bundle-name:skill-name
-   ```
+   ```text
    The skill's workflow steps execute immediately.
 ```
 
@@ -204,7 +204,7 @@ bash scripts/analyze-markdown-file.sh /path/to/component.md
 ```
 
 This script outputs JSON with structural analysis including frontmatter validation, section counts, and rule violations.
-```
+```text
 
 ### Anti-Pattern
 
@@ -217,7 +217,7 @@ To run it:
 ```bash
 bash scripts/analyze-markdown-file.sh /path/to/component.md
 ```
-```
+```text
 
 ## Validation Pattern
 
@@ -298,7 +298,7 @@ python3 .plan/execute-script.py {bundle}:{skill}:apply-changes --input results.j
 - All MANDATORY steps completed
 - Script outputs validated
 - Changes verified
-```
+```text
 
 ## Explicit Item Sections Pattern
 
@@ -354,7 +354,7 @@ python3 script.py log decision "File 1 decision with reasoning"
 ```bash
 python3 script.py log decision "File 2 decision with reasoning"
 ```
-```
+```text
 
 ### Why This Works
 

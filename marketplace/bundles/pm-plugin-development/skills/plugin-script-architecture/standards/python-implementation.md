@@ -469,7 +469,7 @@ from run-config import timeout_get
 
 For consistency and future-proofing, prefer underscores for all Python files:
 
-```
+```text
 scripts/
   run_config.py       # PASS Can be imported
   config_core.py      # PASS Can be imported
@@ -478,7 +478,7 @@ scripts/
 
 ### Anti-pattern
 
-```
+```text
 scripts/
   run-config.py       # ✗ Cannot be imported
   manage-files.py     # ✗ Cannot be imported

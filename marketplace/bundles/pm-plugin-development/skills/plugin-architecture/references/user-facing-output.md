@@ -12,7 +12,7 @@ This reference defines standards for what users see during skill and command exe
 
 Display progress as structured summaries with clear fields:
 
-```
+```text
 plan_status:
   current_phase: 5-execute
   current_task: task-1
@@ -50,7 +50,7 @@ When transitioning between phases, output must include:
 
 ### Example
 
-```
+```text
 Plan created successfully:
 
 domain: generic
@@ -70,7 +70,7 @@ next_action: Complete init phase, then start execute phase
 
 Show configuration summaries for user confirmation before proceeding:
 
-```
+```text
 ## Detected Configuration
 
 **Domain**: generic (3-phase: init->execute->finalize)
@@ -107,7 +107,7 @@ Use markdown tables for phase/task overview:
 
 When problems occur, structure output clearly with problem/fix pairing:
 
-```
+```text
 ISSUES DETECTED:
 
 1. Type mismatch in UserService
@@ -126,7 +126,7 @@ ISSUES DETECTED:
 
 On completion, show measurable outcomes:
 
-```
+```text
 Completed successfully:
 
 metrics:
@@ -148,7 +148,7 @@ artifacts:
 ### 1. Internal Step Numbers
 
 **Bad:**
-```
+```text
 Step 1-2: Determine Domain
 Step 3: Load Simple Init Standards
 Step 6: Present Configuration
@@ -156,7 +156,7 @@ Steps 7-10: Create Plan Structure
 ```
 
 **Good:**
-```
+```text
 Analyzing task requirements...
 Configuration ready for review.
 ```
@@ -164,7 +164,7 @@ Configuration ready for review.
 ### 2. Skill Loading Messages
 
 **Bad:**
-```
+```text
 > The "plan-init" skill is loading
   Allowed 5 tools for this command
 > The "plan-files" skill is loading
@@ -177,7 +177,7 @@ Configuration ready for review.
 ### 3. Tool Execution Details
 
 **Bad:**
-```
+```text
 Bash(test -d <plan-storage>/analyze-task/ && echo "exists" || echo "not-exists")
   not-exists
 Bash(mkdir -p <plan-storage>/analyze-task/)
@@ -187,14 +187,14 @@ Write(<plan-storage>/analyze-task/config.md)
 ```
 
 **Good:**
-```
+```text
 Created plan directory: <plan-storage>/analyze-task/
 ```
 
 ### 4. Line-by-Line Edit Diffs
 
 **Bad:**
-```
+```text
 Update(<plan-storage>/analyze-task/plan.md)
   Updated with 2 additions and 2 removals
     33    **Checklist**:
@@ -205,19 +205,19 @@ Update(<plan-storage>/analyze-task/plan.md)
 ```
 
 **Good:**
-```
+```text
 Updated plan: marked "Identify files to analyze" complete
 ```
 
 Or simply:
-```
+```text
 Phase transition: init -> execute
 ```
 
 ### 5. Operation Labels
 
 **Bad:**
-```
+```text
 Operation: create-directory
 Operation: write-config
 Operation: write-plan
@@ -225,19 +225,19 @@ Operation: write-references
 ```
 
 **Good:**
-```
+```text
 Plan files created.
 ```
 
 ### 6. Internal Script Paths
 
 **Bad:**
-```
+```text
 Bash(python3 {discover-plans.py} <plan-storage>/)
 ```
 
 **Good:**
-```
+```text
 Scanning for existing plans...
 ```
 
@@ -277,7 +277,7 @@ Scanning for existing plans...
 
 Commands are thin orchestrators - minimal output:
 
-```
+```text
 Routing to quality workflow...
 
 [skill output appears here]
@@ -301,7 +301,7 @@ Skills produce structured output per workflow:
 
 Agents coordinate skills - output is aggregated status:
 
-```
+```text
 Analysis complete:
 - Files scanned: 47
 - Issues found: 3
@@ -339,7 +339,7 @@ The mechanism for user-facing output is **structured status blocks** - YAML-like
 
 ### Status Block Format
 
-```
+```text
 <status_type>:
   <key>: <value>
   <key>: <value>
@@ -353,7 +353,7 @@ The mechanism for user-facing output is **structured status blocks** - YAML-like
 
 Used after plan operations (create, transition, complete):
 
-```
+```text
 plan_status:
   current_phase: 5-execute
   current_task: task-1
@@ -366,7 +366,7 @@ next_action: Execute analysis tasks (Task 1: Analyze component)
 
 Used when a phase or task completes:
 
-```
+```text
 Phase completed: init
 
 artifacts:
@@ -385,7 +385,7 @@ next_action: Begin execute phase
 
 Used when artifacts are created:
 
-```
+```text
 Plan created successfully:
 
 domain: generic
@@ -405,7 +405,7 @@ next_action: Complete init phase, then start execute phase
 
 Used for verification/completion results:
 
-```
+```text
 Verification complete:
 
 metrics:
@@ -422,7 +422,7 @@ next_action: Ready for finalize phase
 
 Used when errors require user action:
 
-```
+```text
 ERROR: Build failed
 
 details:

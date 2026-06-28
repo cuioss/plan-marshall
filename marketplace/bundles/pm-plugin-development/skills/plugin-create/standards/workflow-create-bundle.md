@@ -7,7 +7,7 @@
 
 ## Step 1: Load Foundation Skills
 
-```
+```text
 Skill: pm-plugin-development:plugin-architecture
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
@@ -16,7 +16,7 @@ These provide architecture principles and non-prompting tool usage patterns.
 
 ## Step 2: Load Bundle Standards
 
-```
+```text
 Read references/bundle-guide.md
 ```
 
@@ -41,7 +41,7 @@ Ask user for:
 
 **F. Bundle type** — Present using `AskUserQuestion`:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "What type of bundle is this?"
@@ -66,14 +66,14 @@ Track `questions_answered` counter.
 ## Step 4: Create Bundle Structure
 
 **Load bundle structure template:**
-```
+```text
 Read assets/templates/bundle-structure.json
 ```
 
 Use this template for directories and plugin.json structure.
 
 **Create directories:**
-```
+```text
 bash mkdir -p {scope}/bundles/{bundle-name}/{skills,commands,agents}
 ```
 
@@ -92,7 +92,7 @@ Create plugin.json using template from bundle-structure.json:
 ```
 
 Write:
-```
+```text
 Write: {scope}/bundles/{bundle-name}/plugin.json
 ```
 
@@ -107,12 +107,12 @@ Create bundle README with:
 - Integration notes
 
 Write:
-```
+```text
 Write: {scope}/bundles/{bundle-name}/README.md
 ```
 
 **Create component READMEs** (if requested):
-```
+```text
 Write: {scope}/bundles/{bundle-name}/skills/README.md
 Write: {scope}/bundles/{bundle-name}/commands/README.md
 Write: {scope}/bundles/{bundle-name}/agents/README.md
@@ -125,19 +125,19 @@ Track `files_created` counter.
 For each component type user requested:
 
 **Skills**: For each skill count:
-```
+```text
 # Recursively invoke workflow 3 (create-skill)
 # Pass scope and bundle-name parameters
 ```
 
 **Commands**: For each command count:
-```
+```text
 # Recursively invoke workflow 2 (create-command)
 # Pass scope and bundle-name parameters
 ```
 
 **Agents**: For each agent count:
-```
+```text
 # Recursively invoke workflow 1 (create-agent)
 # Pass scope and bundle-name parameters
 ```
@@ -150,7 +150,7 @@ Track `components_created` counter.
 
 ## Step 7: Display Summary
 
-```
+```text
 ╔════════════════════════════════════════════════════════════╗
 ║          Bundle Created Successfully                       ║
 ╚════════════════════════════════════════════════════════════╝
@@ -177,7 +177,7 @@ Next steps:
 
 ## Step 8: Run Metadata Validation
 
-```
+```text
 SlashCommand: /pm-plugin-development:plugin-doctor metadata
 ```
 

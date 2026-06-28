@@ -37,7 +37,7 @@ Plan findings are working data during plan execution. Notable findings are promo
 
 All finding-related JSONL files live under a single `findings/` subdirectory. Plan findings are split per type — each value of the `type` field gets its own file, and queries merge across files transparently:
 
-```
+```text
 .plan/plans/{plan_id}/
 └── artifacts/
     └── findings/

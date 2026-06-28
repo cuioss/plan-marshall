@@ -35,7 +35,7 @@ CUI-specific HTTP client standards for projects using `de.cuioss:cui-http`. Cove
 
 **CRITICAL**: Load these standards for any HTTP client implementation work.
 
-```
+```text
 Read: standards/cui-http.md
 ```
 

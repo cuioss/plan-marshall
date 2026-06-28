@@ -68,7 +68,7 @@ Each proposal's body follows this template (written to the lesson file via the W
 
 For each proposal at `confidence: medium` or `high`, use `AskUserQuestion`:
 
-```
+```text
 question: "Record proposed lesson: {title}?"
 options:
   - "Record"

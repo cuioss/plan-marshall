@@ -178,7 +178,7 @@ public class TokenKeycloakIT {
 ## Step 2: Load Additional Standards (As Needed)
 
 **External Integration Testing** (load for Docker-based IT):
-```
+```text
 Read: standards/external-integration-testing.md
 ```
 

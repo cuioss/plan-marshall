@@ -4,7 +4,7 @@ Domain-specific instructions for each change type in the plugin development doma
 
 All change types require loading the plugin architecture skill:
 
-```
+```text
 Skill: pm-plugin-development:plugin-architecture
 ```
 
@@ -141,7 +141,7 @@ Analyze request to identify what component types to create:
 2. If module_mapping provides bundle -> use mapped bundle
 3. Otherwise -> ask user:
 
-```
+```text
 AskUserQuestion:
   question: "Which bundle should the new {component_type} be created in?"
   options: [{bundle1}, {bundle2}, ...]

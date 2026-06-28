@@ -439,7 +439,7 @@ The keyed-map serial form in `marshal.json` is the **compose-time default + wiza
 
 Example — drop the retired `steps` key from a migrated config:
 
-```
+```text
 plan phase-5-execute remove-field --field steps
 ```
 
@@ -600,7 +600,7 @@ There is no top-level `ci` block. The CI provider is resolved from the `provider
 
 Default values are defined in:
 
-```
+```text
 plan-marshall/skills/manage-config/scripts/_config_defaults.py
 ```
 

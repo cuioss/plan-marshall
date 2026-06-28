@@ -105,7 +105,7 @@ Bash(./.claude/skills/cui-marketplace-architecture/scripts/scan-marketplace-inve
 
 ### Token Budget Analysis
 
-```
+```text
 Total budget: 415K tokens
 Agent cost: ~12K tokens per agent
 Batch of 5: 10 agents (5 diagnosis + 5 validation)
@@ -120,7 +120,7 @@ Reason: Maximizes progress visibility while staying well within limits
 
 **Pattern**: Adjust batch size based on component complexity
 
-```
+```text
 Simple commands (<200 lines): Batch size 10
 Standard commands (200-400 lines): Batch size 5
 Complex commands (>400 lines): Batch size 3
@@ -161,7 +161,7 @@ Collecting 45 individual results requires 45 parsing operations and storage.
 
 ### Solution: Streaming Aggregation
 
-```
+```text
 Initialize counters:
   clean_count = 0
   bloated_count = 0

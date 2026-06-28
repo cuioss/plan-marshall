@@ -33,7 +33,7 @@ This skill applies to Java projects using Weld Testing with JUnit 5:
 
 **Important**: Load this standard for any CDI unit testing work with Weld.
 
-```
+```text
 Read: standards/weld-testing-autowired.md
 ```
 
@@ -71,7 +71,7 @@ This provides rules for:
 ## Templates
 
 **CDI test class** — starting point for new Weld-based test classes:
-```
+```text
 Read: templates/cdi-test-class.java.tmpl
 ```
 

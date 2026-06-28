@@ -75,7 +75,7 @@ If CONTINUOUS IMPROVEMENT RULE section contains `/plugin-update-command`, `/plug
 
 No auto-fix — requires manual refactoring:
 
-```
+```text
 Refactoring steps:
 1. Create/identify skill to contain workflow logic
 2. Move all ### Step sections to skill's workflow

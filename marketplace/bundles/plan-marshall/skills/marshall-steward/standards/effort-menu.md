@@ -14,7 +14,7 @@ This document is the contract. The wizard implementation in `SKILL.md` (Main Men
 
 The Effort submenu is reached from the Main Menu (Option 4 — see `SKILL.md` § Main Menu). When the user selects it:
 
-```
+```text
 Read standards/effort-menu.md
 ```
 
@@ -38,7 +38,7 @@ The display walks `EffortPresets.all_names()` to produce the deep-equality compa
 
 Single `AskUserQuestion` with four options. Each preset's description is sourced verbatim from `EffortPresets.describe(name)` so the wizard never duplicates the preset's per-role rationale.
 
-```
+```text
 AskUserQuestion:
   question: "Effort submenu — pick a preset"
   header: "Effort"

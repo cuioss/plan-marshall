@@ -14,7 +14,7 @@ Skip what other doctor workflows cover: frontmatter format, enforcement blocks, 
 
 ## Phase 1: Load Prerequisites
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 Skill: pm-plugin-development:plugin-architecture
 Read references/llm-optimization-guide.md
@@ -76,7 +76,7 @@ Apply criteria from `llm-optimization-guide.md`:
 
 Report format:
 
-```
+```text
 Skill: {name}
 Documents: {count} ({total_lines} lines)
 Assessment: {STRONG | ADEQUATE | NEEDS WORK}

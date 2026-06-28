@@ -10,7 +10,7 @@ Create a reusable form validation web component that provides declarative valida
 
 ## Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                      Form Validation Components                              │
 ├─────────────────────────────────────────────────────────────────────────────┤

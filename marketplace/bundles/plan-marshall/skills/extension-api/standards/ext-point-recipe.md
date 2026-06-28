@@ -125,7 +125,7 @@ package source, the recipe falls back to the conventional `packages` / `test_pac
 
 ### Lifecycle
 
-```
+```text
 1. /plan-marshall action=recipe
 2. list-recipes discovers all recipes (extension + project)
 3. User selects recipe

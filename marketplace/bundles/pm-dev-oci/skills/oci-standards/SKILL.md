@@ -59,7 +59,7 @@ Load references progressively based on current task. **Never load all references
 - Containerfile naming convention
 
 **Load Command**:
-```
+```text
 Read standards/image-building.md
 ```
 
@@ -84,7 +84,7 @@ Read standards/image-building.md
 - Decision matrix for health strategy by image type
 
 **Load Command**:
-```
+```text
 Read standards/quarkus-distroless-health-probes.md
 ```
 
@@ -106,7 +106,7 @@ Read standards/quarkus-distroless-health-probes.md
 - File permission and security requirements
 
 **Load Command**:
-```
+```text
 Read standards/certificate-management.md
 ```
 

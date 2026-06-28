@@ -26,7 +26,7 @@ This skill is **script-only**: it has no user-invocable command and is not loade
 
 The manifest is stored in the plan directory:
 
-```
+```text
 .plan/local/plans/{plan_id}/execution.toon
 ```
 

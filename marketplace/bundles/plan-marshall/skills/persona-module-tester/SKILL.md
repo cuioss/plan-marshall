@@ -19,7 +19,7 @@ Language-agnostic testing principles applicable across all technology stacks. Co
 
 **Important**: Load this standard for any testing work.
 
-```
+```text
 Read: standards/testing-methodology.md
 ```
 
@@ -27,7 +27,7 @@ Covers AAA pattern, test categories (happy path, parameter variants, corner case
 
 ### Step 2: Load Coverage Standards (As Needed)
 
-```
+```text
 Read: standards/testing-coverage.md
 ```
 

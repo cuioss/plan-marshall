@@ -6,7 +6,7 @@ Skills are knowledge repositories providing standards, workflows, and reusable l
 
 ## Skill Directory Structure
 
-```
+```text
 skill-name/
 ├── SKILL.md              (required: frontmatter + workflows)
 ├── scripts/              (optional: deterministic logic, stdlib-only)

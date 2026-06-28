@@ -10,7 +10,7 @@ Outline extensions declare domain-specific outline skills with change-type routi
 
 ### Skill Structure Convention
 
-```
+```text
 {bundle}/skills/{skill}/
 ├── SKILL.md                       # Shared workflow steps
 └── standards/
@@ -68,7 +68,7 @@ class Extension(ExtensionBase):
 
 ### Lifecycle
 
-```
+```text
 1. phase-3-outline detects change type
 2. resolve-outline-skill --domain {domain}
 3. If domain_specific: load domain skill, read change-type instructions

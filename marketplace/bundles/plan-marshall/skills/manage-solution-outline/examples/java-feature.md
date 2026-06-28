@@ -10,7 +10,7 @@ Implement a JWT token validation service for the authentication module. The serv
 
 ## Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         JWT Validation Service                               │
 ├─────────────────────────────────────────────────────────────────────────────┤

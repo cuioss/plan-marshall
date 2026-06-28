@@ -8,7 +8,7 @@ All manage-* skills follow these rules:
 
 **Execution mode**: Run scripts via the executor; parse TOON output for status and route accordingly.
 
-```
+```text
 python3 .plan/execute-script.py plan-marshall:{skill}:{script} {command} {args}
 ```
 
@@ -104,7 +104,7 @@ Canonical format definitions used across all manage-* skills. Individual skill s
 
 All timestamps use ISO 8601 format in UTC timezone:
 
-```
+```text
 YYYY-MM-DDTHH:MM:SSZ
 ```
 
@@ -157,7 +157,7 @@ All profiles map to the unified `plan-marshall:execute-task` skill, which handle
 
 All manage-* scripts follow the noun-verb CLI pattern:
 
-```
+```text
 python3 .plan/execute-script.py plan-marshall:{skill}:{script} {noun} {verb} [options]
 ```
 

@@ -4,7 +4,7 @@ This example demonstrates a complete goal-based skill following Pattern 3 (Searc
 
 ## Skill Structure
 
-```
+```text
 plugin-doctor/
 ├── SKILL.md                (~800 lines, 5 workflows)
 ├── scripts/
@@ -244,7 +244,7 @@ Check for:
 
 #### Step 5: Generate Comprehensive Health Report
 
-```
+```text
 MARKETPLACE HEALTH REPORT
 
 ## Overall Status: 85/100
@@ -429,7 +429,7 @@ All scripts return JSON for structured parsing:
 
 ## Usage Example
 
-```
+```text
 # Command invokes skill
 /plugin-doctor agent=my-agent
 

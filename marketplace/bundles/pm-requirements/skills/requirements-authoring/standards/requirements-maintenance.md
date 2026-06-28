@@ -124,7 +124,7 @@ OIDC identity providers.
 Released projects may have users depending on documented behavior. Changes require explicit approval.
 
 **Decision Process**:
-```
+```text
 When encountering removed/changed functionality:
 1. STOP maintenance process
 2. Document the change details
@@ -265,7 +265,7 @@ For detailed cross-reference maintenance workflows (handling document moves, cla
 
 Follow conventional commits with `docs(requirements):` prefix:
 
-```
+```text
 docs(requirements): update authentication requirements after OAuth2 migration
 
 - Update REQ-001 through REQ-005 for OAuth2 authentication

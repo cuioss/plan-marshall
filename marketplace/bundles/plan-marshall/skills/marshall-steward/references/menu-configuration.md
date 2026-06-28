@@ -23,7 +23,7 @@ The Configuration submenu has 10 options, which exceeds the `AskUserQuestion` 4-
 
 **Page 1** — first 3 options plus the "More..." continuation:
 
-```
+```text
 AskUserQuestion:
   question: "What would you like to configure?"
   header: "Configuration"
@@ -44,7 +44,7 @@ AskUserQuestion:
 
 **Page 2** — shown only when the user selects "More..." on Page 1 — the next 3 options plus the "More..." continuation:
 
-```
+```text
 AskUserQuestion:
   question: "What would you like to configure?"
   header: "Configuration (continued)"
@@ -65,7 +65,7 @@ AskUserQuestion:
 
 **Page 3** — shown only when the user selects "More..." on Page 2 — the next 3 options plus the "More..." continuation:
 
-```
+```text
 AskUserQuestion:
   question: "What would you like to configure?"
   header: "Configuration (continued)"
@@ -86,7 +86,7 @@ AskUserQuestion:
 
 **Page 4** — shown only when the user selects "More..." on Page 3 — the final 2 options plus the "Back" element:
 
-```
+```text
 AskUserQuestion:
   question: "What would you like to configure?"
   header: "Configuration (continued)"
@@ -250,7 +250,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission
 ```
 
 If `missing` is non-empty, ask user:
-```
+```text
 AskUserQuestion:
   question: "{N} project-step(s) in your phase-5-execute selection lack matching Skill() allow rules. Add them?"
   options:
@@ -271,7 +271,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
 
 Optionally detect the current preset first — deep-equality of `plan.phase-6-finalize.steps` against `FinalizeStepPresets.get(name)` for each name in `FinalizeStepPresets.all_names()` — and surface it as `Current: {name} preset` / `Current: custom (manually edited)`, mirroring effort-menu Step 1.
 
-```
+```text
 AskUserQuestion:
   question: "Finalize-step pipeline — pick a preset"
   header: "Finalize Steps"
@@ -301,7 +301,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-f
 
 The `list-finalize-steps` output includes three sources: built-in (`default:*`), project-local (`project:*`), and **bundle-optional** (`{bundle}:{skill}` step docs declaring `implements: plan-marshall:extension-api/standards/ext-point-finalize-step` with `default_on: false`, surfaced via `extension_discovery.find_implementors`). Bundle-optional entries — such as `plan-marshall:plan-retrospective` — are intentionally absent from the default `plan.phase-6-finalize.steps` list, so operators must opt in explicitly: either by applying a preset whose `presets:` membership includes the step, or by selecting it in this custom multi-select. Example multi-select presentation (built-ins plus the opt-in retrospective):
 
-```
+```text
 AskUserQuestion:
   question: "Which finalize steps to include?"
   header: "Finalize Steps"
@@ -329,7 +329,7 @@ After `set-steps` completes for phase-6-finalize, repeat the same project-step v
 
 **PR merge strategy**: Ask user for the merge strategy used when merging PRs during branch cleanup (default: squash):
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "Which merge strategy should be used when merging PRs?"
@@ -602,7 +602,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture i
 
 Invoke the analysis skill to auto-populate enrichment with semantic descriptions:
 
-```
+```text
 Skill: plan-marshall:manage-architecture
 ```
 
@@ -647,7 +647,7 @@ Manage credentials for external tool authentication (SonarCloud, etc.). System-a
 
 ### Credentials Submenu
 
-```
+```text
 AskUserQuestion:
   question: "What would you like to do with credentials?"
   options:
@@ -743,7 +743,7 @@ Configure the dynamic terminal-title integration so each terminal tab shows the 
 
 Load and execute the dedicated reference:
 
-```
+```text
 Read references/menu-terminal-title.md
 ```
 
@@ -757,7 +757,7 @@ Configure the conditional PreToolUse enforcement hook. When enabled, the hook de
 
 Load and execute the dedicated reference:
 
-```
+```text
 Read references/menu-enforcement-hook.md
 ```
 
@@ -775,7 +775,7 @@ Browse and inspect the recipes available in this project. Recipes are determinis
 
 The full catalog and the contract for adding new recipes lives in [`references/menu-recipes.md`](menu-recipes.md). Load that reference and execute its workflow:
 
-```
+```text
 Read references/menu-recipes.md
 ```
 

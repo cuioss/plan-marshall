@@ -16,7 +16,7 @@ This document catalogs common skill patterns to guide implementation. Reference 
 - Report generation
 
 **Structure**:
-```
+```text
 skill-name/
 ├── SKILL.md
 ├── scripts/
@@ -66,7 +66,7 @@ Apply the following interpretation rules:
 - Documentation updates
 
 **Structure**:
-```
+```text
 skill-name/
 ├── SKILL.md
 ├── scripts/
@@ -115,7 +115,7 @@ Write to {output_file}
 - Compliance checking
 
 **Structure**:
-```
+```text
 skill-name/
 ├── SKILL.md
 ├── scripts/
@@ -165,7 +165,7 @@ Format report using: Read assets/report-template.json
 - Complex automation tasks
 
 **Structure**:
-```
+```text
 skill-name/
 ├── SKILL.md
 ├── scripts/
@@ -214,7 +214,7 @@ If verification fails: Read references/failure-recovery.md
 - High-risk operations
 
 **Structure**:
-```
+```text
 skill-name/
 ├── SKILL.md
 ├── scripts/
@@ -271,7 +271,7 @@ If confirmed: Create output
 - Configuration files
 
 **Structure**:
-```
+```text
 skill-name/
 ├── SKILL.md
 ├── scripts/
@@ -325,7 +325,7 @@ Write filled template to {output_path}
 - Context-limited operations
 
 **Structure**:
-```
+```text
 skill-name/
 ├── SKILL.md
 ├── scripts/
@@ -377,7 +377,7 @@ Continue until context limit or all analyzed
 - Knowledge synthesis
 
 **Structure**:
-```
+```text
 skill-name/
 ├── SKILL.md
 ├── scripts/
@@ -427,7 +427,7 @@ Generate comprehensive report
 - Release validation
 
 **Structure**:
-```
+```text
 skill-name/
 ├── SKILL.md
 ├── scripts/
@@ -483,7 +483,7 @@ Determine overall pass/fail
 - Example collections
 
 **Structure**:
-```
+```text
 skill-name/
 ├── SKILL.md              (minimal, just loading guidance)
 └── references/
@@ -556,7 +556,7 @@ Skills can combine multiple patterns:
 - Iterative Refinement (Pattern 7) + Context Aggregation (Pattern 8)
 
 **Example**: Component creator skill
-```
+```text
 Combines:
 - Pattern 5 (Wizard-Style): Gather requirements
 - Pattern 6 (Template-Based): Generate code

@@ -144,7 +144,7 @@ Verify relative paths resolve correctly in each context.
 
 ### Standard Directory Structure
 
-```
+```text
 my-skill/
 ├── SKILL.md                    (Required: entrypoint)
 ├── scripts/                    (Optional: executable automation)
@@ -395,7 +395,7 @@ Skills inject two user messages into conversation:
 - Brief notification of skill activation
 
 **User sees**:
-```
+```text
 🎯 Skill loaded: code-analyzer
 Purpose: Analyzes code for quality issues
 ```

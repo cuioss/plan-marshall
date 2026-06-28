@@ -84,7 +84,7 @@ For complex multi-component projects:
 **Pattern**: `[SYSTEM]-[COMPONENT]-NUM`
 
 **Examples**:
-```
+```text
 [#PLAT-AUTH-1]     # Platform Authentication requirement 1
 [#PLAT-DB-1]       # Platform Database requirement 1
 [#PLAT-API-1]      # Platform API requirement 1

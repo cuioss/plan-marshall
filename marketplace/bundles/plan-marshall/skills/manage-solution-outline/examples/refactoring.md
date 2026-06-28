@@ -10,7 +10,7 @@ Refactor the monolithic AuthenticationService into smaller, focused components f
 
 ## Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     Authentication Module Refactoring                        │
 ├─────────────────────────────────────────────────────────────────────────────┤

@@ -6,7 +6,7 @@ How SVG diagrams are embedded in AsciiDoc pages, where they live on disk, and ho
 
 Every diagram lives under `doc/resources/diagrams/`. The filename is the same `kebab-case` slug as the diagram's `<title>` (per [`visual-language.md`](visual-language.md) § Naming conventions). Examples:
 
-```
+```text
 doc/resources/diagrams/findings-pipeline.svg
 doc/resources/diagrams/dispatch-resolution.svg
 doc/resources/diagrams/phase-lifecycle.svg

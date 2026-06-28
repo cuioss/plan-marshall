@@ -4,7 +4,7 @@ Visual overview of the finalization workflow for human readers.
 
 ## 6-Phase Model
 
-```
+```text
 1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-finalize
                                               ↑              │
                                               └──────────────┘
@@ -17,7 +17,7 @@ Visual overview of the finalization workflow for human readers.
 
 Phase 6 is a pure executor of the per-plan execution manifest. The manifest is composed at outline time by `manage-execution-manifest:compose` and stored at `.plan/local/plans/{plan_id}/execution.toon`. Phase 6 reads `manifest.phase_6.steps` and dispatches each step in order — it never invents steps, never reorders them, and never applies its own skip logic.
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────┐
 │                     FINALIZE PIPELINE (manifest-driven)              │
 │                                                                      │
@@ -72,7 +72,7 @@ On timeout, the dispatcher logs an `[ERROR]` entry, records the step as `outcome
 
 ## Loop-Back on Findings
 
-```
+```text
 ┌────────────────────────────────────────────┐
 │            AUTOMATED REVIEW / SONAR        │
 │                                            │

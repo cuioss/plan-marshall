@@ -276,7 +276,7 @@ For comprehensive quality criteria (completeness, clarity, maintainability, trac
 
 SMART requirements enable clear test case derivation:
 
-```
+```text
 Requirement JWT-1: Token validation must verify signature
 → Test Case: Valid signature → Accept token
 → Test Case: Invalid signature → Reject token

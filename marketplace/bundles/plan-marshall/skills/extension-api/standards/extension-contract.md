@@ -5,12 +5,12 @@ Complete specification for `extension.py` files that domain bundles implement. A
 ## File Location
 
 Extensions are located at:
-```
+```text
 marketplace/bundles/{bundle}/skills/plan-marshall-plugin/extension.py
 ```
 
 At runtime, they're discovered from the plugin cache:
-```
+```text
 ~/.claude/plugins/cache/plan-marshall/{bundle}/1.0.0/skills/plan-marshall-plugin/extension.py
 ```
 
@@ -28,7 +28,7 @@ implements: plan-marshall:extension-api/standards/ext-point-domain-bundle
 
 The manifest skill conventionally lives at `skills/plan-marshall-plugin/`, with the bundle's `extension.py` as its sibling:
 
-```
+```text
 {bundle}/skills/plan-marshall-plugin/extension.py
 ```
 
@@ -100,7 +100,7 @@ Defines the extension's domain identity and organizes skills into profiles for c
 
 **Lifecycle**: Called during `/marshall-steward` domain configuration (`skill-domains configure`). The returned structure defines the domain's identity and skill organization for the entire planning lifecycle.
 
-```
+```text
 1. Extension discovery and loading
 2. -> get_skill_domains() -> domain metadata + skill profiles
 3. Domain registered in marshal.json under skill_domains.{domain_key}
@@ -209,7 +209,7 @@ Sets project-specific configuration defaults in `marshal.json` before other comp
 
 **Lifecycle**: Called after extensions are loaded but before any workflow logic accesses configuration.
 
-```
+```text
 Extension discovery -> load -> -> config_defaults() -> plugin access / workflow execution
 ```
 

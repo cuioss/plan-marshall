@@ -889,7 +889,7 @@ The ack tag must match `^ack-[a-z0-9_-]+$`. The slug after `ack-` must be non-em
 
 ## Rule Pack: Manually-maintained-mirror drift
 
-Four rules that make a hand-maintained documentation mirror of a machine-derivable fact machine-checkable. **Activation**: analyze-only for now — reported under `doctor-marketplace.py analyze` (pure AST/regex/pathlib passes over the marketplace bundle tree) but NOT gating `quality-gate`. A follow-up activation plan will flip them to build-failing once the tree is clean. `provides-method-table-drift` and `literal-count-drift` run as marketplace-wide passes wired into `cmd_analyze`; `broken-relative-link` and `fenced-code-no-language` surface through `cmd_analyze`'s per-component `analyze_component` pass.
+Four rules that make a hand-maintained documentation mirror of a machine-derivable fact machine-checkable. **Activation**: build-failing — all four are registered in `doctor-marketplace.py::cmd_quality_gate`, so a drifted mirror fails the build, and they are also reported under `doctor-marketplace.py analyze`. `provides-method-table-drift` and `literal-count-drift` run as marketplace-wide passes (wired into both `cmd_quality_gate` and `cmd_analyze`); `broken-relative-link` and `fenced-code-no-language` run as the marketplace-wide `analyze_markdown_mirror_rules` pass inside `cmd_quality_gate` and also surface per-component through `cmd_analyze`'s `analyze_component` pass.
 
 ### provides-method-table-drift
 
@@ -943,15 +943,15 @@ A mismatch emits a warning-severity finding at the offending row's line.
 
 **Rule ID**: `broken-relative-link`
 
-**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_markdown.py` (`check_broken_relative_link`), surfaced through `_doctor_analysis.py`'s per-component `analyze_component` pass under `cmd_analyze`.
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_markdown.py` (`check_broken_relative_link`), run as the marketplace-wide `analyze_markdown_mirror_rules` pass under `cmd_quality_gate` and surfaced per-component through `_doctor_analysis.py`'s `analyze_component` pass under `cmd_analyze`.
 
 **Scope**: every `*.md` under `marketplace/bundles/*/{skills,agents,commands}/`.
 
 **Intent**: A relative markdown link is a hand-maintained mirror of the on-disk file layout. When a target file moves or is renamed without updating every `[text](relative/path.md)` that points at it, the link becomes a dead reference no structural check catches. This rule makes the layout mirror machine-checkable.
 
-**Detection**: Pure static analysis — for each non-fenced line, resolve every relative link target against the linking file's own directory and `exists()`-check it (after stripping any `#fragment`). A missing target emits an error-severity finding at the link's line.
+**Detection**: Pure static analysis — for each non-fenced line, resolve every relative link target against the linking file's own directory and `exists()`-check it (after stripping any `#fragment`). A missing target that resolves inside the containment boundary emits an error-severity finding at the link's line. The containment boundary is the repo root (the `.git`-bearing directory, via `derive_link_boundary`), so in-repo cross-tree references (e.g. a bundle file linking into `doc/`) are existence-checked while a link resolving outside the repo root is skipped without a disk probe.
 
-**Structural discriminator**: absolute URLs (any `scheme:`), root-absolute paths (leading `/`), pure-anchor links (leading `#`), links inside fenced code blocks, and links inside inline-code spans (single/multi backticks — a `[text](p)` or `![](p)` literal inside backticks is illustrative example text) are out of scope — only genuine relative on-disk references are checked, so external links and illustrative code never trip the rule.
+**Structural discriminator**: absolute URLs (any `scheme:`), root-absolute paths (leading `/`), pure-anchor links (leading `#`), links inside fenced code blocks, and links inside inline-code spans (single/multi backticks — a `[text](p)` or `![](p)` literal inside backticks is illustrative example text) are out of scope. `*-template.md` scaffolds and files under `/templates/` are also exempt — their relative links are written for the location the template is instantiated into, not where the scaffold is stored. Only genuine in-boundary relative references are checked, so external links, illustrative code, and template placeholders never trip the rule.
 
 **Recommended fix**: Repair the link target to the file's current on-disk path, or remove the dead reference.
 
@@ -963,17 +963,17 @@ A mismatch emits a warning-severity finding at the offending row's line.
 
 **Rule ID**: `fenced-code-no-language`
 
-**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_markdown.py` (`check_fenced_code_no_language`), surfaced through `_doctor_analysis.py`'s per-component `analyze_component` pass under `cmd_analyze`.
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_markdown.py` (`check_fenced_code_no_language`), run as the marketplace-wide `analyze_markdown_mirror_rules` pass under `cmd_quality_gate` and surfaced per-component through `_doctor_analysis.py`'s `analyze_component` pass under `cmd_analyze`.
 
 **Scope**: every `*.md` under `marketplace/bundles/*/{skills,agents,commands}/`.
 
 **Intent**: A fenced code block's opening info-string mirrors the author's intended block language. An omitted info-string (MD040) degrades rendering and downstream language-aware tooling. This rule flags the missing-language defect at authoring time.
 
-**Detection**: Pure static analysis — track fence state and flag every *opening* fence (` ``` ` or `~~~`) whose line carries no info-string. Warning severity.
+**Detection**: Pure static analysis — track fence state and flag every *opening* fence (` ``` ` or `~~~`) whose line carries no info-string. Warning severity, **fixable**.
 
 **Structural discriminator**: only opening fences are inspected; the closing fence of a block legitimately carries no info-string and is never flagged because the scanner distinguishes open from close via fence-state tracking.
 
-**Recommended fix**: Add a language info-string to the opening fence (e.g. ` ```bash `, ` ```python `, ` ```toon `, or ` ```text ` for plain text).
+**Recommended fix**: Auto-fixable — the `apply_fenced_code_language_fix` handler (`_cmd_apply.py`, registered in `FIX_HANDLERS`, classified safe in `SAFE_FIX_TYPES`) appends a default `text` info-string to every bare opening fence, leaving closing fences and already-tagged fences untouched. See [fix-catalog.md](fix-catalog.md) § fenced-code-no-language. For a more specific language, set the info-string by hand (e.g. ` ```bash `, ` ```python `, ` ```toon `).
 
 **Suppression mechanism**: None — a missing fence language is a real style defect.
 
@@ -1083,7 +1083,7 @@ The zero-match invariant is enforced at the **test layer**, not by a runtime ana
 
 **Invariant**: every audit-tracked rule ID the analyzers emit must fire at least once during the plugin-doctor analyzer test suite:
 
-```
+```text
 registered_rule_ids(real_tree) − fired_in_suite − EXEMPT_RULE_IDS == ∅
 ```
 

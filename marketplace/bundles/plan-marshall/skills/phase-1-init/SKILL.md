@@ -16,7 +16,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 ## Foundational Practices
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
@@ -401,7 +401,7 @@ Use the `Write` tool to write the original input content directly to `{path}` fr
 - **issue**: The issue body
 - **recipe**: The recipe description
 
-```
+```text
 Write({path}, {verbatim_body_content})
 ```
 

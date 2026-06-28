@@ -21,7 +21,7 @@ This skill applies to all Java projects using standard JavaDoc.
 
 Load this standard for any JavaDoc work.
 
-```
+```text
 Read: standards/javadoc-core.md
 ```
 
@@ -33,28 +33,28 @@ This provides foundational rules for:
 ### Step 2: Load Specific Standards (As Needed)
 
 **Class Documentation** (load for class-level docs):
-```
+```text
 Read: standards/javadoc-class-documentation.md
 ```
 
 Use when: Documenting classes, interfaces, enums, or annotations.
 
 **Method Documentation** (load for method-level docs):
-```
+```text
 Read: standards/javadoc-method-documentation.md
 ```
 
 Use when: Documenting methods, including parameters, returns, and exceptions.
 
 **Code Examples** (load for example snippets):
-```
+```text
 Read: standards/javadoc-code-examples.md
 ```
 
 Use when: Adding code examples to documentation using @snippet or @code.
 
 **Error Reference** (load for troubleshooting):
-```
+```text
 Read: standards/javadoc-error-reference.md
 ```
 
@@ -126,7 +126,7 @@ public Config parse(String filename) { }
 ## Templates
 
 **JavaDoc class and method** — reference templates for documentation structure:
-```
+```text
 Read: templates/javadoc-class.java.tmpl
 ```
 

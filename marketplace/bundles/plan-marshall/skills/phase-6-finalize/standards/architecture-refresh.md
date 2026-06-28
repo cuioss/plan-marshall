@@ -230,7 +230,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
 
 Write the combined content — the existing body followed by the re-enrichment note — into the returned `body_path` via the Write tool:
 
-```
+```text
 Write(file_path="{body_path}", content="{existing_body}\n\nArchitecture re-enrichment recommended for: {affected_modules_csv}. Run /marshall-steward Step 13 to refresh.")
 ```
 
@@ -255,7 +255,7 @@ Continue to Step 5.
 
 Re-run the LLM enrichment pass against the affected modules. There is no batch verb — the LLM MUST iterate `affected_modules_csv` (the sorted, comma-separated module-name list captured from the diff buckets in 3c) and follow `manage-architecture/SKILL.md` Steps 5–8 for each module. Each iteration calls three per-verb subcommands; every call carries `--project-dir {worktree_path}`:
 
-```
+```text
 for each module M in affected_modules_csv:
     # Step 6 — write responsibility + purpose
     python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
@@ -311,7 +311,7 @@ Continue to Step 5.
 
 Ask the user whether to re-enrich now or defer. Use the AskUserQuestion shape below verbatim — the option labels are part of the documented UX and are referenced by `marshall-steward/references/wizard-flow.md` (Deliverable 4) so the configuration prompt and the runtime prompt stay aligned:
 
-```
+```text
 Question: "Architecture re-enrichment recommended for: {affected_modules_csv}. Re-enrich now?"
 Options:
   - "Re-enrich now"
@@ -421,7 +421,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The decision flow as a single procedural block (authoritative — implementations follow this order):
 
-```
+```text
 read tier_0     := manage-run-config architecture-refresh get-tier-0
 read tier_1     := manage-run-config architecture-refresh get-tier-1
 read change_type := manage-status metadata get change_type

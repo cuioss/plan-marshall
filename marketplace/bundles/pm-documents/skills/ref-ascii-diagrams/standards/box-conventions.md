@@ -26,7 +26,7 @@ A box is a run of lines, all at the same indent:
 - one or more **interior lines** `│ … │`,
 - a **bottom rule** `└─…─┘`.
 
-```
+```text
 ┌─────────────┐
 │ producer    │
 │ store       │
@@ -47,7 +47,7 @@ same inner width.
 Misaligned — the right borders are ragged because the interior was hand-padded
 inconsistently and the rules are too short:
 
-```
+```text
 ┌────┐
 │ short │
 │ a longer line │
@@ -57,7 +57,7 @@ inconsistently and the rules are too short:
 Aligned — every right border lands in the same column and the rules match the
 widest interior line:
 
-```
+```text
 ┌───────────────┐
 │ short         │
 │ a longer line │
@@ -78,7 +78,7 @@ misaligned boxes.
 A bare `│` connector that is NOT `│`-bounded on both sides is a flow-line, not a
 box interior line. It is left verbatim:
 
-```
+```text
 ┌──────────┐
 │ phase 1  │
 └──────────┘
@@ -98,7 +98,7 @@ A box drawn inside another box (at a deeper indent) is interior content of the
 enclosing box, not a separately re-ruled box. The enclosing box's borders are
 aligned to its own widest line; the nested box's lines are preserved verbatim:
 
-```
+```text
 ┌────────────────────┐
 │ outer               │
 │   ┌────────────┐    │

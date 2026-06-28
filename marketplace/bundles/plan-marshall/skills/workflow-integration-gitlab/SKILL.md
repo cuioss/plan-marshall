@@ -33,7 +33,7 @@ GitLab provider for the findings-pipeline `pr-comment` producer. Mirror of the G
 
 ## Architecture
 
-```
+```text
 workflow-integration-gitlab (GitLab MR comment workflow)
   ├─> gitlab_ops.py (GitLab operations via glab CLI)
   ├─> gitlab_pr.py (producer-side fetch + pre-filter + per-finding store)

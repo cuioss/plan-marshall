@@ -28,7 +28,7 @@ that is unique for each concurrent reply so their bodies do not collide.
 
 ### Step 2: Write the Reply Body
 
-```
+```text
 Write({path from prepare-comment}) with reply body markdown content
 ```
 
@@ -101,7 +101,7 @@ do not collide.
 
 ### Step 2: Write the Thread-Reply Body
 
-```
+```text
 Write({path from prepare-comment}) with thread-reply body markdown content
 ```
 

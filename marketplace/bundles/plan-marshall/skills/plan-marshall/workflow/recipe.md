@@ -32,7 +32,7 @@ This returns both extension-provided and project-level recipes. Project recipes 
 
 Present the combined list using `AskUserQuestion`:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "Which recipe would you like to use?"
@@ -104,7 +104,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Dispatch. **For the built-in "Refactor to Profile Standards" recipe**, pass the profile-suffixed `plan_id` override (`refactor-to-profile-standards-{profile}`, derived in the selection flow's Step B3) as the `plan_id` prompt-body field — phase-1-init Step 2 already accepts an explicit `plan_id` override, so two parallel recipe runs for distinct profiles yield distinct, non-colliding plans (and distinct `feature/{plan_id}` branches). **For all other recipes**, pass `plan_id: none` (phase-1-init auto-generates the id):
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: phase-1-init

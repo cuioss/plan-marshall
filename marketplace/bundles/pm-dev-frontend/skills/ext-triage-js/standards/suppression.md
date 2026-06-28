@@ -80,7 +80,7 @@ Prettier formatting cannot be suppressed inline. Options:
 2. **Configure `.prettierrc`** to allow the pattern
 3. **Add to `.prettierignore`** for files that shouldn't be formatted
 
-```
+```text
 # .prettierignore
 **/generated/**
 **/vendor/**

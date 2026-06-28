@@ -144,7 +144,7 @@ Enable ESLint caching for faster subsequent runs:
 
 Add cache file to .gitignore:
 
-```
+```text
 # .gitignore
 .eslintcache
 ```

@@ -36,7 +36,7 @@ Scan for `[ERROR]` entries, retry patterns (an `[ERROR]` followed by `[INFO]` fo
 
 Load the contract skill and verify artifacts for the phase that just completed:
 
-```
+```text
 Skill: plan-marshall:extension-api
 ```
 

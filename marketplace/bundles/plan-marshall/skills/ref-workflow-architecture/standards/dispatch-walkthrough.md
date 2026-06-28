@@ -57,7 +57,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Step 4 (orchestrator constructs prompt body):**
 
-```
+```text
 name: phase-2-refine
 plan_id: lesson-2026-05-11-foo
 skills[3]:
@@ -70,7 +70,7 @@ WORKTREE: --plan-id lesson-2026-05-11-foo
 
 **Step 5 (dispatch):**
 
-```
+```text
 Task: plan-marshall:execution-context-level-3
   prompt: <the block above, verbatim>
 ```
@@ -159,7 +159,7 @@ Returns `target: execution-context-level-3`.
 
 **Step 4 (prompt body — no findings list inline):**
 
-```
+```text
 name: verification-feedback
 plan_id: feature-jwt-auth
 skills[1]:
@@ -258,7 +258,7 @@ Returns `target: execution-context-level-2`.
 
 For module `auth-core`:
 
-```
+```text
 name: enrich-module-auth-core
 plan_id: feature-jwt-auth
 skills[1]:

@@ -94,7 +94,7 @@ Extract the `target` field from the TOON output. Use that value as `{target}` in
 
 Dispatch:
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: {caller_phase}-research              # or research-best-practices when standalone
@@ -216,7 +216,7 @@ For complete patterns including file operations, content search, Bash safety rul
 1. **Identify need for dependency**
 2. **Research alternatives** using the phase-scoped research dispatch if needed
 3. **Ask user** with specific recommendation:
-   ```
+   ```text
    I need to add {functionality}. I recommend adding {dependency-name} because:
    - {reason 1}
    - {reason 2}

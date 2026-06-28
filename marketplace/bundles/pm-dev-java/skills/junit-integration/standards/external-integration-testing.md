@@ -31,7 +31,7 @@ External integration tests **MUST** use production-equivalent configurations:
 
 ### Directory Organization
 
-```
+```text
 integration-tests/
 ├── pom.xml
 ├── docker-compose.yml
@@ -302,7 +302,7 @@ echo "Service logs saved to ${TARGET_DIR}"
 
 ### Maven Lifecycle Integration
 
-```
+```text
 1. compile               → Compile integration test code
 2. test                  → SKIP (unit tests disabled in IT module)
 3. pre-integration-test  → Start containers, wait for readiness

@@ -277,7 +277,7 @@ description: Create new marketplace component (agent, command, skill, or bundle)
 /plugin-create command
 /plugin-create skill
 /plugin-create bundle
-```
+```text
 
 ## Workflow
 
@@ -313,7 +313,7 @@ description: Diagnose and fix quality issues in marketplace components
 /plugin-doctor agents
 /plugin-doctor marketplace
 /plugin-doctor marketplace --fix
-```
+```text
 
 ## Workflow
 

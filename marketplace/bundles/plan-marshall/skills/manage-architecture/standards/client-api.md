@@ -8,7 +8,7 @@ Script API for consumers querying architectural data. Output in TOON format.
 
 Following `{noun}.py {verb}` convention:
 
-```
+```text
 architecture.py {verb} [options]
 ```
 
@@ -95,14 +95,14 @@ architecture.py graph [--full]
 **Output**: See the "Module Graph Format" section in [architecture-persistence.md](architecture-persistence.md) for complete format specification.
 
 **Single module output**:
-```
+```text
 status: success
 
 module: my-module
 ```
 
 **Multi-module output** (dependency tree):
-```
+```text
 status: success
 
 oauth-sheriff-quarkus-integration-tests
@@ -357,7 +357,7 @@ commands[3]:
 
 When `--full --budget N` is supplied, the command renders a **markdown** deep-dive (not TOON) bounded to roughly `N` lines. Sections in priority order: header (name, purpose, responsibility) > internal dependencies > key packages > skills_by_profile > tips/insights/best practices. When the rendered output exceeds `N` lines, trailing sections are dropped first and a marker is appended:
 
-```
+```text
 ... (truncated to fit budget=N; full output requires --budget {required})
 ```
 
@@ -393,7 +393,7 @@ architecture.py overview [--budget N]
 
 **Truncation rule**: when the rendered output would exceed `--budget` lines, trailing sections are dropped one at a time (Skills first, then Adjacency, etc.) until the output fits, leaving room for a single marker line:
 
-```
+```text
 ... (truncated to fit budget=N; full output requires --budget {required})
 ```
 
@@ -811,7 +811,7 @@ The primary consumer is **solution-outline** during task planning.
 
 **Location**: `.plan/project-architecture/`
 
-```
+```text
 .plan/project-architecture/
 ├── _project.json                   # Top-level project metadata + module index
 ├── {module}/

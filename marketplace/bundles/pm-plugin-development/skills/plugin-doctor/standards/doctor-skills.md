@@ -15,7 +15,7 @@ Follows the common workflow pattern (see SKILL.md). Reference guide: `skills-gui
 Skills with workflows load foundation skills.
 
 **Required foundation skills**:
-```
+```text
 Skill: pm-plugin-development:plugin-architecture
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
@@ -146,7 +146,7 @@ All `.md` files in `references/`, `standards/`, `workflow/`, and `templates/` ar
 ```
 Skill: pm-plugin-development:plugin-architecture
 Skill: plan-marshall:persona-plan-marshall-agent
-```
+```text
 
 These provide architecture principles and non-prompting tool usage patterns.
 ```

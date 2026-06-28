@@ -775,17 +775,16 @@ def _strip_inline_code_spans(line: str) -> str:
 def derive_link_boundary(file_path: str) -> 'Path':
     """Derive the path-independent containment boundary for a linking file.
 
-    Walks up from the linking file's directory to the nearest ``marketplace/bundles``
-    ancestor; failing that, to the ``.git`` repository root; failing that, falls
-    back to the linking file's own parent directory. Every per-component and
-    whole-tree call site resolves the same effective boundary for a given file,
-    so the broken-relative-link rule produces identical findings regardless of
-    which call site invoked it.
+    Walks up from the linking file's directory to the ``.git`` repository root;
+    failing that, falls back to the linking file's own parent directory. The
+    repo root is the containment boundary, so an in-repo cross-tree reference
+    (e.g. a ``marketplace/bundles/**`` file linking into ``doc/``) is
+    existence-checked while a link escaping the repo root stays silently
+    skipped. Every per-component and whole-tree call site resolves the same
+    effective boundary for a given file, so the broken-relative-link rule
+    produces identical findings regardless of which call site invoked it.
     """
     base_dir = Path(file_path).parent.resolve()
-    for ancestor in (base_dir, *base_dir.parents):
-        if ancestor.name == 'bundles' and ancestor.parent.name == 'marketplace':
-            return ancestor.parent
     for ancestor in (base_dir, *base_dir.parents):
         if (ancestor / '.git').exists():
             return ancestor
@@ -802,13 +801,12 @@ def check_broken_relative_link(
     exist on disk. This catches the off-by-``../`` class of stale cross-reference.
 
     ``boundary_dir`` sets the containment root for path traversal checks.  Pass
-    the marketplace root (or bundle root) so that valid cross-directory
+    the marketplace root (or repo root) so that valid cross-directory
     references that resolve inside the tree (e.g. ``../../other-skill/file.md``)
     are not rejected as out-of-bounds.  When ``None`` the boundary is derived via
-    :func:`derive_link_boundary` (nearest ``marketplace/bundles`` ancestor, else
-    the ``.git`` repo root, else the linking file's parent), so a caller that
-    omits the boundary still agrees with the whole-tree call site rather than
-    using the narrow linking-file directory.
+    :func:`derive_link_boundary` (the ``.git`` repo root, else the linking file's
+    parent), so a caller that omits the boundary still agrees with the whole-tree
+    call site rather than using the narrow linking-file directory.
 
     Out of scope (never flagged):
 
@@ -824,6 +822,15 @@ def check_broken_relative_link(
     message}`` dicts; the caller wraps these into the standard issue schema.
     """
     findings: list = []
+    # Template scaffolds carry relative links written for the location the
+    # template is instantiated INTO, not where the scaffold is stored (e.g.
+    # readme-template.md links ``../../README.md`` relative to the bundle root it
+    # is copied into, not relative to its own assets/ directory). Their links are
+    # never genuine on-disk references from the scaffold's own location, so the
+    # rule skips template files — consistent with the /templates/ exemption in
+    # check_checklist_patterns.
+    if '/templates/' in file_path or Path(file_path).name.endswith('-template.md'):
+        return findings
     base_dir = Path(file_path).parent
     scan_boundary = (
         boundary_dir.resolve()

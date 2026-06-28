@@ -17,7 +17,7 @@ Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., 
 
 ## Invocation Context
 
-```
+```text
 phase-3-outline (Complex Track)
   → Step 9: Resolve domain or generic change-type instructions
     → domain outline skill (e.g., ext-outline-workflow)
@@ -39,7 +39,7 @@ The dispatch runs as a Task (subagent) under the generic `execution-context-{lev
 
 The parent workflow provides explicit numbered file sections:
 
-```
+```text
 ## Files to Analyze
 
 Component Type: {component_type}

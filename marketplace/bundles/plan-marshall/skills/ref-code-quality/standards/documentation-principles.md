@@ -32,7 +32,7 @@ Language-agnostic principles for code documentation across all technology stacks
 * Focus on behavior and contract, not implementation details
 
 **Good -- specific and purposeful:**
-```
+```text
 Validates the JWT token signature and expiration time against the configured
 issuer and clock skew tolerance.
 
@@ -45,7 +45,7 @@ Throws:
 ```
 
 **Bad -- stating the obvious:**
-```
+```text
 Validates a token.
 
 Parameters:
@@ -90,7 +90,7 @@ Returns:
 
 ### 1. Stating the Obvious
 
-```
+```text
 // BAD
 Sets the name.
   parameter: name -- the name to set
@@ -104,7 +104,7 @@ to ensure it meets minimum length requirements.
 
 ### 2. Documenting Implementation Instead of Contract
 
-```
+```text
 // BAD -- exposes implementation details
 Uses a HashMap to store the users and iterates through the entrySet
 to find the matching user by email.

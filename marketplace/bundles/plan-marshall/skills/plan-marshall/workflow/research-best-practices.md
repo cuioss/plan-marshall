@@ -193,7 +193,7 @@ Purpose: allow users to manually improve this workflow based on real execution e
 
 ## Response format
 
-```
+```text
 ## Research Best Practices — {topic}
 
 **Status**: SUCCESS | FAILURE | PARTIAL

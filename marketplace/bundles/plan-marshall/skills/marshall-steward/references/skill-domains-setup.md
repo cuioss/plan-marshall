@@ -116,7 +116,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-r
 
 **Recipe-registration flow** (showing how a new recipe surfaces):
 
-```
+```text
        ┌──────────────────────────────────────────────┐
        │ Source 1: extension.provides_recipes()       │
        │   plan-marshall-plugin → refactor-to-...     │

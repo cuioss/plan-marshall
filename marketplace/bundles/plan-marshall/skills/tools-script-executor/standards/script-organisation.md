@@ -11,7 +11,7 @@ Scripts in marketplace bundles follow a two-tier visibility model:
 1. **CLI Entry Points**: Public scripts exposed via the executor
 2. **Internal Modules**: Private implementation modules not exposed externally
 
-```
+```text
                     SCRIPT VISIBILITY MODEL
 
     ┌─────────────────────────────────────────────────────────┐
@@ -94,7 +94,7 @@ The single underscore prefix follows Python community conventions (PEP 8):
 3. **Simple**: No directory restructuring needed
 4. **Widely understood**: Matches pip, setuptools, and stdlib patterns
 
-```
+```text
                     UNDERSCORE PREFIX SEMANTICS
 
     ┌─────────────────────────────────────────────────────────┐
@@ -121,7 +121,7 @@ The single underscore prefix follows Python community conventions (PEP 8):
 
 ## Directory Structure
 
-```
+```text
 skills/<skill-name>/scripts/
 ├── __init__.py              # Package marker (optional docstring)
 ├── maven.py                 # CLI entry point (public)

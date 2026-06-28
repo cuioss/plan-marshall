@@ -92,7 +92,7 @@ All scripts are stdlib-only with TOON output.
 
 #### Step 1: Load Foundation Skills
 
-```
+```text
 Skill: pm-plugin-development:plugin-architecture
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
@@ -101,7 +101,7 @@ These provide architecture principles and non-prompting tool usage patterns.
 
 #### Step 2: Load Reference Guide
 
-```
+```text
 Read: references/component-update-guide.md
 ```
 
@@ -163,7 +163,7 @@ Report results including:
 
 #### Step 1: Load Foundation Skills
 
-```
+```text
 Skill: pm-plugin-development:plugin-architecture
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
@@ -172,7 +172,7 @@ These provide architecture principles and non-prompting tool usage patterns.
 
 #### Step 2: Load Reference Guide
 
-```
+```text
 Read: references/knowledge-management-guide.md
 ```
 
@@ -232,7 +232,7 @@ Add reference based on load_type:
 
 #### Step 1: Load Foundation Skills
 
-```
+```text
 Skill: pm-plugin-development:plugin-architecture
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
@@ -241,7 +241,7 @@ These provide architecture principles and non-prompting tool usage patterns.
 
 #### Step 2: Load Reference Guide
 
-```
+```text
 Read: references/readme-maintenance-guide.md
 ```
 
@@ -292,7 +292,7 @@ Report:
 
 #### Step 1: Load Foundation Skills
 
-```
+```text
 Skill: pm-plugin-development:plugin-architecture
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
@@ -301,7 +301,7 @@ These provide architecture principles and non-prompting tool usage patterns.
 
 #### Step 2: Load Reference Guide
 
-```
+```text
 Read: references/refactoring-strategies-guide.md
 ```
 
@@ -352,7 +352,7 @@ Report any issues introduced.
 
 #### Step 1: Load Foundation Skills
 
-```
+```text
 Skill: pm-plugin-development:plugin-architecture
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
@@ -361,7 +361,7 @@ These provide architecture principles and non-prompting tool usage patterns.
 
 #### Step 2: Load Reference Guide
 
-```
+```text
 Read: references/orchestration-compliance.md
 ```
 

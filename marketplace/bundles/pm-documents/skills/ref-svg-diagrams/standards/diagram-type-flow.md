@@ -27,7 +27,7 @@ The load-bearing visual element is the **track line** — a thin horizontal line
 
 ### Canonical multi-track layout
 
-```
+```text
   feature-branch track  ─────[A]──[B]──[loop↻]──[C]──┐
                                                       ├──[merge]──
   main-branch track     ──────────────────────────────┘             ────[D]────►

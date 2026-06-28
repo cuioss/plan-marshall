@@ -6,7 +6,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 
 ## Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │                         6-PHASE EXECUTION MODEL                             │
@@ -45,7 +45,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 
 ### Phase 1: 1-INIT
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │  PHASE: 1-INIT                                                              │
@@ -86,7 +86,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 
 ### Phase 2: 2-REFINE
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │  PHASE: 2-REFINE                                                            │
@@ -132,7 +132,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 
 ### Phase 3: 3-OUTLINE
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │  PHASE: 3-OUTLINE                                                           │
@@ -187,7 +187,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 
 ### Phase 4: 4-PLAN
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │  PHASE: 4-PLAN                                                              │
@@ -234,7 +234,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 
 ### Phase 5: 5-EXECUTE
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │  PHASE: 5-EXECUTE                                                           │
@@ -288,7 +288,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 
 ### Phase 6: 6-FINALIZE
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │  PHASE: 6-FINALIZE                                                          │

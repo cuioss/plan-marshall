@@ -59,7 +59,7 @@ Activate when:
 - Test organization (conftest, file structure)
 
 **Load Command**:
-```
+```text
 Read standards/testing-pytest.md
 ```
 

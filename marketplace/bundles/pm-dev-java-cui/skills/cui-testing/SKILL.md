@@ -39,7 +39,7 @@ This skill requires CUI test library dependencies:
 
 **CRITICAL**: Load this standard for any test implementation work.
 
-```
+```text
 Read: standards/test-generator-framework.md
 ```
 
@@ -51,14 +51,14 @@ This provides the foundational rules:
 ### Step 2: Load Additional Standards (As Needed)
 
 **Value Object Testing** (load for domain object tests):
-```
+```text
 Read: standards/testing-value-objects.md
 ```
 
 Use when: Testing value objects, implementing equals/hashCode contracts, or using `ShouldHandleObjectContracts<T>`.
 
 **JUL Log Testing** (load for log verification tests):
-```
+```text
 Read: standards/testing-juli-logger.md
 ```
 

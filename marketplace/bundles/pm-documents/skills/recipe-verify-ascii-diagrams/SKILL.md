@@ -117,7 +117,7 @@ One deliverable per offending file:
 
 **4a. Read the deliverable template**:
 
-```
+```text
 Read: marketplace/bundles/plan-marshall/skills/manage-solution-outline/templates/deliverable-template.md
 ```
 

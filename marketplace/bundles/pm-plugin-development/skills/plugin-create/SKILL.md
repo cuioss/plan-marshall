@@ -66,7 +66,7 @@ Load the relevant workflow on-demand based on the component type being created.
 
 ### Workflow 1: create-agent
 
-```
+```text
 Read standards/workflow-create-agent.md
 ```
 
@@ -74,7 +74,7 @@ Creates a new agent with proper frontmatter, tool selection, Rule 6/7 enforcemen
 
 ### Workflow 2: create-command
 
-```
+```text
 Read standards/workflow-create-command.md
 ```
 
@@ -82,7 +82,7 @@ Creates a new command with thin orchestrator pattern, parameter design, and CONT
 
 ### Workflow 3: create-skill
 
-```
+```text
 Read standards/workflow-create-skill.md
 ```
 
@@ -90,7 +90,7 @@ Creates a new skill with directory structure, SKILL.md, README, and placeholder 
 
 ### Workflow 4: create-bundle
 
-```
+```text
 Read standards/workflow-create-bundle.md
 ```
 

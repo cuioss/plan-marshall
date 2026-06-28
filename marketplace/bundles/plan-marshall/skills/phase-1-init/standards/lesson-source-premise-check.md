@@ -14,7 +14,7 @@ Apply the following passes to the lesson body in order. Each pass yields zero or
 
 Match relative or absolute paths anywhere in the body:
 
-```
+```text
 (?:(?<=\s)|(?<=`)|^)((?:[a-zA-Z0-9_.-]+/)*[a-zA-Z0-9_.-]+\.(?:py|md|json|toon|java|js|ts|sh|adoc))\b
 ```
 
@@ -26,7 +26,7 @@ Both backtick-fenced (`` `marketplace/bundles/.../SKILL.md` ``) and bare paths q
 
 Match identifiers rendered in single backticks:
 
-```
+```text
 `([a-zA-Z_][a-zA-Z0-9_:.-]{2,})`
 ```
 
@@ -57,7 +57,7 @@ Record each verification as a `(reference, kind, status, evidence)` tuple. `stat
 
 Triggered only when at least one reference is stale. Show the obsolescence report inline as the question's `details` field, then offer exactly three options:
 
-```
+```text
 question: "The lesson cites references that no longer match the current tree. How should we proceed?"
 details: |
   Obsolescence report:
@@ -94,7 +94,7 @@ All branches (including the all-clean fast path) MUST emit exactly one decision-
 
 Compose a markdown section and append it to the body content Step 5.2 writes into `request.md`:
 
-```
+```text
 ## Pre-flight Reference Verification
 
 The following references cited in the source lesson no longer match the current tree. Treat the lesson as a starting pointer and re-derive scope from observed behavior.

@@ -12,7 +12,7 @@ The wait pattern provides a **synchronous blocking** mechanism that:
 - Uses generous outer timeouts with configurable poll intervals
 - Supports adaptive timeout learning from execution history
 
-```
+```text
                     WAIT PATTERN FLOW
 
     ┌─────────────────────────────────────────────────────┐
@@ -59,7 +59,7 @@ The wait pattern provides a **synchronous blocking** mechanism that:
 1. **Outer timeout**: Bash tool's `timeout` parameter (prevents the host platform from canceling the operation)
 2. **Inner timeout**: await_until's adaptive timeout (controls actual polling duration)
 
-```
+```text
                 TWO-LAYER TIMEOUT ARCHITECTURE
 
     ┌─────────────────────────────────────────────────────────────┐
@@ -102,7 +102,7 @@ This is intentional - the caller wants to wait for the operation to complete bef
 
 If the condition is satisfied on the first poll (or any subsequent poll), return immediately. Don't wait for the full timeout.
 
-```
+```text
     Time ──────────────────────────────────────────────▶
 
     Timeout: 300s
@@ -138,7 +138,7 @@ The condition is a **callable** that returns:
 
 ## State Machine
 
-```
+```text
                         WAIT STATE MACHINE
 
     ┌──────────────────────────────────────────────────────────┐
@@ -279,7 +279,7 @@ The key is used to store/retrieve execution history in `run-configuration.json` 
 
 ## Timeout Strategy
 
-```
+```text
                     TIMEOUT HIERARCHY
 
     ┌─────────────────────────────────────────────────────────┐
@@ -326,7 +326,7 @@ The key is used to store/retrieve execution history in `run-configuration.json` 
 
 The wait utility delegates all timeout management to `run-config timeout get/set`. See [run-config-standard.md](../../manage-run-config/standards/run-config-standard.md) for the algorithm specification.
 
-```
+```text
                 ADAPTIVE TIMEOUT LEARNING
 
     ┌────────────────────────────────────────────────────────┐
@@ -393,7 +393,7 @@ When `--command-key` is provided, await_until delegates timeout management to `r
 1. **Before polling**: Calls `run-config timeout get` (returns timeout with safety margin)
 2. **After completion**: Calls `run-config timeout set` (applies weighted update)
 
-```
+```text
                 CONFIG INTEGRATION
 
     ┌─────────────────────────────────────────────────────────┐
@@ -434,7 +434,7 @@ When `--command-key` is provided, await_until delegates timeout management to `r
 
 Output uses TOON format (Tab-delimited Object Notation):
 
-```
+```text
 status	success
 duration_sec	95
 polls	4
@@ -470,7 +470,7 @@ final_result.conclusion	success
 
 ## Example: CI Wait Flow
 
-```
+```text
                     CI WAIT EXAMPLE
 
     ┌─────────────────────────────────────────────────────────┐

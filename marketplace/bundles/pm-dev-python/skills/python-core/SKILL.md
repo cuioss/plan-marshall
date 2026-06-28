@@ -59,7 +59,7 @@ Load progressively by section based on current task. **Never load the entire fil
 | String Handling | F-strings, multi-line strings, string building |
 
 **Load Command**:
-```
+```text
 Read standards/python-core.md
 ```
 

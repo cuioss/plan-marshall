@@ -35,7 +35,7 @@ For each file, extract evidence BEFORE making classification decision:
 
 Apply this decision matrix based on extracted evidence:
 
-```
+```text
 IF NOT scope_relevance:
     → CERTAIN_EXCLUDE (no relevant content)
     Reasoning: "No {scope_indicator} sections found"

@@ -14,7 +14,7 @@ Risky fixes require confirmation because they:
 
 ### Standard Prompt Structure
 
-```
+```text
 AskUserQuestion:
   question: "Apply fix for {issue_type}?"
   header: "Fix"

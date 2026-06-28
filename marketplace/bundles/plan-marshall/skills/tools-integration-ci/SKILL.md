@@ -48,14 +48,14 @@ This skill is a script-only library (not registered in plugin.json). It is consu
 
 **Static Routing Pattern**: Config stores full commands, wizard generates provider-specific paths.
 
-```
+```text
 marshal.json                          Scripts
 ci.commands.pr-create ─────────────► github.py pr create
 ci.commands.ci-status ─────────────► github.py ci status
 ```
 
 **Load Reference**: For full architecture details:
-```
+```text
 Read standards/architecture.md
 ```
 
@@ -63,7 +63,7 @@ Read standards/architecture.md
 
 ## Skill Structure
 
-```
+```text
 tools-integration-ci/
 ├── SKILL.md                     # This file (API index)
 ├── standards/
@@ -167,7 +167,7 @@ behavior is built into the existing `checks wait` and `checks status` verbs.
 For each failing check, two files are written under the plan-scoped artifact tree
 `artifacts/ci-runs/{run_id}/`:
 
-```
+```text
 artifacts/ci-runs/{run_id}/{slug}.log           # raw downloaded failing-job log
 artifacts/ci-runs/{run_id}/{slug}.filtered.log  # error-extraction filtered variant
 ```

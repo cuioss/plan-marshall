@@ -78,18 +78,18 @@ When a build fails, implementations **should** parse the log file and include st
 | `tests` | object | Test execution summary |
 
 **Error entry structure**:
-```
+```text
 {file, line, message, category}
 ```
 
 **Warning entry structure** (mode-dependent):
-```
+```text
 {file, line, message}           # actionable mode
 {file, line, message, accepted} # structured mode
 ```
 
 **Test summary structure**:
-```
+```text
 {passed, failed, skipped}
 ```
 
@@ -418,7 +418,7 @@ def execute_direct(...) -> DirectCommandResult:
 
 ### TOON Format (Default)
 
-```
+```text
 status	success
 exit_code	0
 duration_seconds	45
@@ -427,7 +427,7 @@ command	./mvnw -l .plan/temp/build-output/... clean verify
 ```
 
 Error case with parsed issues (`--mode actionable`):
-```
+```text
 status	error
 exit_code	1
 duration_seconds	23
@@ -449,7 +449,7 @@ tests:
 ```
 
 Error case with `--mode structured` (shows accepted flag):
-```
+```text
 status	error
 ...
 warnings[3]{file,line,message,accepted}:
@@ -535,7 +535,7 @@ if result['status'] == 'error':
 
 ## Execution Lifecycle Diagram
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         BUILD EXECUTION LIFECYCLE                            │
 ├─────────────────────────────────────────────────────────────────────────────┤

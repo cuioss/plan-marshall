@@ -36,7 +36,7 @@ No external `Skill:` dependencies. Script imports `triage_helpers` from `ref-too
 
 ## Architecture
 
-```
+```text
 workflow-permission-web (WebFetch permission analysis)
   ├─> standards/domain-lists.json (domain categorization rules)
   ├─> standards/domain-security-assessment.md (research methodology)
@@ -45,7 +45,7 @@ workflow-permission-web (WebFetch permission analysis)
 
 ## Usage Examples
 
-```
+```text
 /workflow-permission-web           # Analyze all settings
 /workflow-permission-web scope=global
 /workflow-permission-web scope=local
@@ -102,14 +102,14 @@ python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission
 ### Step 5: Generate Consolidation Recommendations
 
 **A. If domain:* exists globally**:
-```
+```text
 Recommendation: Remove all specific domains (redundant)
 - Remove {count} specific domains from global
 - Remove {count} specific domains from local
 ```
 
 **B. If no domain:***:
-```
+```text
 Recommendations by Category:
 
 MAJOR_DOMAINS ({count}):
@@ -129,7 +129,7 @@ SUSPICIOUS ({count}):
 
 Present the script's TOON output to the user in this format:
 
-```
+```text
 WebFetch Permission Analysis
 ────────────────────────────────────────
 
@@ -160,7 +160,7 @@ Recommendations:
 
 Ask the user via `AskUserQuestion`:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "How would you like to apply the recommendations?"
@@ -192,7 +192,7 @@ Repeat with `--scope project` for project-local domains if needed. Track counts 
 
 Display summary of changes made and final state:
 
-```
+```text
 WebFetch Permission Update Complete
 ────────────────────────────────────────
 

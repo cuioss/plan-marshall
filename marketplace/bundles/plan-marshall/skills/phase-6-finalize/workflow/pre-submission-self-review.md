@@ -150,7 +150,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Dispatch the LLM workflow with the candidate envelope:
 
-```
+```text
 Task: plan-marshall:{target}
   prompt: |
     name: pre-submission-self-review

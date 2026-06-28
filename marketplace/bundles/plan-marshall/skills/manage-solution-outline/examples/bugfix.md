@@ -10,7 +10,7 @@ Fix a race condition where concurrent requests can access a session after timeou
 
 ## Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                        Race Condition Analysis                               │
 ├─────────────────────────────────────────────────────────────────────────────┤

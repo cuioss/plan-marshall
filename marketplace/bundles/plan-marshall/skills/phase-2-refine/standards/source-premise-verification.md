@@ -76,7 +76,7 @@ Each claim resolves to one of:
 
 When a claim is stale or invalid, emit a `CORRECTNESS: ISSUE` finding with:
 
-```
+```text
 CORRECTNESS: ISSUE — Source premise invalid
   Claim: "{original claim from narrative}"
   Expected: {what the narrative states}

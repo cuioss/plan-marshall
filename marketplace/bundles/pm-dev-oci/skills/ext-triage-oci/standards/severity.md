@@ -122,7 +122,7 @@ During finalize phase:
 
 ## Quick Decision Flowchart
 
-```
+```text
 Is it a CRITICAL CVE with a fix?
   -> Yes -> FIX (update base image or dependency)
 

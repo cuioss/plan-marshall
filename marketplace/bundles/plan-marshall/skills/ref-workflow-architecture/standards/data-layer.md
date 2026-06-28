@@ -6,7 +6,7 @@ The plan-marshall bundle uses manage-* skills as the data access layer for all p
 
 ## Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │                          DATA LAYER ARCHITECTURE                            │
@@ -48,7 +48,7 @@ The plan-marshall bundle uses manage-* skills as the data access layer for all p
 
 ## manage-* Skill Inventory
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │                       MANAGE-* SKILL INVENTORY                              │
@@ -122,7 +122,7 @@ The plan-marshall bundle uses manage-* skills as the data access layer for all p
 
 ## Script Invocation Pattern
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
 │                      SCRIPT INVOCATION PATTERN                              │
@@ -188,7 +188,7 @@ See [artifacts.md — Plan Directory Structure](artifacts.md#plan-directory-stru
 
 ## Dependency Graph
 
-```
+```text
 manage-config (configuration authority)
 ├── manage-architecture (reads skill_domains for module resolution)
 │   └── manage-solution-outline (primary consumer of architecture data)
@@ -212,7 +212,7 @@ manage-plan-documents (independent request storage)
 
 ## Data Flow Through Phases
 
-```
+```text
 Phase 1 (init):
   manage-status create → manage-references create → manage-plan-documents request create
 

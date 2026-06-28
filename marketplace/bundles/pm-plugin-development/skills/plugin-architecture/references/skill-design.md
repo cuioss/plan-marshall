@@ -12,7 +12,7 @@ Workflow-focused design principles for building goal-based skills.
 
 Skill directory names use verb phrases:
 
-```
+```text
 # PASS — Verb-first names
 execute-task
 build-maven
@@ -33,7 +33,7 @@ The following noun suffixes are **reserved for spawnable marketplace agents** an
 | `-handler`      | `-handlers` |
 | `-orchestrator` | `-orchestrators` |
 
-```
+```text
 # FAIL — Noun-suffix skill names (reserved for agents)
 task-executor          → use execute-task
 test-runner            → use run-tests
@@ -372,7 +372,7 @@ Workflow 3: generate-docs (documentation only, separate skill)
 1. Step 1 description
    ```
    Commands or pseudo-code
-   ```
+   ```text
 2. Step 2 description
 3. Step 3 description
 
@@ -383,7 +383,7 @@ Workflow 3: generate-docs (documentation only, separate skill)
 Skill: skill-name
 Workflow: workflow-name
 Parameters: {param1: "value", param2: "value"}
-```
+```text
 ```
 
 ## Skill Composition

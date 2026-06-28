@@ -39,7 +39,7 @@ The first question is a `multiSelect: true` group picker with one option per gro
 
 The second question is a single-select prune control.
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: |
@@ -83,7 +83,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 2. Stage the merged body to a plan-temp file (avoids shell-quoting concerns for arbitrary markdown):
 
-   ```
+   ```text
    Write(".plan/temp/aggregate-merged-bodies/{primary_id}.md", merged_body)
    ```
 
@@ -146,7 +146,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Step 5**: Display the priority-ordered top-N command list captured from Step 1's `top_n_commands[]`. Surface it as a numbered list so the user can pick the next plan to work on:
 
-```
+```text
 Next-up plans (priority-ordered):
 
 1. /plan-marshall:plan-marshall lesson={primary_id_1}

@@ -23,7 +23,7 @@ Manage references.json files with field-level access and list management. Tracks
 
 References are stored in the plan directory:
 
-```
+```text
 .plan/plans/{plan_id}/references.json
 ```
 

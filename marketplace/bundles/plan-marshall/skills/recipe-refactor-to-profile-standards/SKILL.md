@@ -127,13 +127,13 @@ Collect one deliverable per package (in-memory, for use in Step 4):
 
 **4a. Read the deliverable template** to understand the required structure:
 
-```
+```text
 Read: marketplace/bundles/plan-marshall/skills/manage-solution-outline/templates/deliverable-template.md
 ```
 
 **4b. Read an example** to see the full document skeleton:
 
-```
+```text
 Read: marketplace/bundles/plan-marshall/skills/manage-solution-outline/examples/refactoring.md
 ```
 

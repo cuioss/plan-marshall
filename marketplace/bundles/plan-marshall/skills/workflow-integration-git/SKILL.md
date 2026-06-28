@@ -37,7 +37,7 @@ No external `Skill:` dependencies. Script imports `triage_helpers` from `ref-too
 
 ## Architecture
 
-```
+```text
 workflow-integration-git (git commit workflow)
   └─> triage_helpers (ref-toon-format) — error handling, TOON serialization
 ```
@@ -130,7 +130,7 @@ git -C {worktree_path} add <specific-files>
 
 Author the commit message via the `Write` tool to a `.plan/temp/` file (the path is permission-pre-approved via `Write(.plan/**)` and lives inside the workspace — never `/tmp/`). The message MUST end with the `Co-Authored-By` trailer for the **active assistant** — the trailer identity is target-aware, not hardcoded: on Claude it is `Co-Authored-By: Claude <noreply@anthropic.com>`; on another target it is that target's assistant co-author identity. BOTH the `Write` and the `git commit -F` MUST use the worktree-absolute `{worktree_path}/.plan/temp/...` path: the harness `Write` tool resolves a relative path against the main checkout while `git -C {worktree_path}` resolves it against the worktree, so a relative-path round-trip would reference two different files and the commit could read a stale message. `{worktree_path}` is already resolved in Step 0, so no new resolution step is required.
 
-```
+```text
 Write(file_path="{worktree_path}/.plan/temp/{plan_id}-commit-msg.txt", content="{commit_message}\n\n{coauthor_trailer}\n")
 ```
 

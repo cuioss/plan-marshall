@@ -14,7 +14,7 @@ Phase skills occasionally drift between what they *report* they did and what the
 
 Executor notation: `plan-marshall:plan-marshall:phase_handshake`
 
-```
+```text
 phase_handshake capture        --plan-id X --phase P [--override --reason "text"]
 phase_handshake verify         --plan-id X --phase P [--strict]
 phase_handshake findings-check --plan-id X --phase P

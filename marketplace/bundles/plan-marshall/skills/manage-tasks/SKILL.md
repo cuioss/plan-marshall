@@ -24,7 +24,7 @@ Manage implementation tasks with sequential sub-steps within a plan. Each task r
 
 Tasks are stored in the plan directory:
 
-```
+```text
 {plan_dir}/tasks/
   TASK-001.json
   TASK-002.json
@@ -275,7 +275,7 @@ When a `finalize-step --outcome done` call closes the targeted task (i.e. all
 steps are `done` AND no step is `failed`), the script emits exactly one
 canonical work-log entry **before returning**:
 
-```
+```text
 [OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-NNN: {task_title} ({M} steps)
 ```
 
@@ -606,7 +606,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
 ### With plan-execute
 
 Plan-execute iterates through tasks:
-```
+```text
 LOOP:
   1. manage-tasks next --plan-id {plan_id}
   2. IF no next: DONE
@@ -617,7 +617,7 @@ LOOP:
 ### With implement-agent
 
 Implement agents execute steps:
-```
+```text
 1. manage-tasks read --plan-id {plan_id} --task-number {N}
 2. FOR EACH step: execute → finalize-step --outcome done|failed
 3. RUN verification

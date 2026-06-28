@@ -7,7 +7,7 @@ Every LogMessages class MUST have corresponding documentation in AsciiDoc format
 ## File Location
 
 The documentation file must be located at:
-```
+```text
 doc/LogMessages.adoc
 ```
 
@@ -191,7 +191,7 @@ The LogMessages.adoc file should be:
    ```
 
 2. **Listed in project structure**:
-   ```
+   ```text
    project-root/
    ├── doc/
    │   ├── Requirements.adoc

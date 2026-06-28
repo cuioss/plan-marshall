@@ -9,7 +9,7 @@ step.
 
 Per-plan, under the plan directory:
 
-```
+```text
 .plan/plans/{plan_id}/
   artifacts/
     ci-runs/

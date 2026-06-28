@@ -15,7 +15,7 @@ This guide ensures diagnose commands follow proper orchestration:
 ### Sequential Processing
 
 Process bundles one at a time:
-```
+```text
 For each bundle:
   Complete ALL steps before moving to next bundle
 ```
@@ -60,7 +60,7 @@ Before proceeding to next bundle:
 ### Warning Format
 
 When tempted to skip, display:
-```
+```text
 WARN ANTI-SKIP WARNING
 Step {X} is mandatory for bundle integrity.
 Skipping will result in incomplete/invalid results.
@@ -111,7 +111,7 @@ git status
 Run git status:
 ```
 Bash: git status
-```
+```text
 
 Parse output:
 - Count modified files
@@ -133,7 +133,7 @@ Add to Step 1:
 **Load orchestration compliance:**
 ```
 Read: references/orchestration-compliance.md
-```
+```text
 ```
 
 ### At Step 5 Start
@@ -173,7 +173,7 @@ Verify each item (from orchestration-compliance):
 ### Explicit Warnings
 
 Display before potentially skippable steps:
-```
+```text
 This step is protected by orchestration compliance.
 Skipping is not permitted.
 ```
@@ -181,7 +181,7 @@ Skipping is not permitted.
 ### Stop Points
 
 Clear indicators:
-```
+```text
 [STOP POINT] Do not proceed until:
 - X is verified
 - Y is completed
@@ -191,7 +191,7 @@ Clear indicators:
 ### Verification Gates
 
 Must verify before proceeding:
-```
+```text
 Verification required: {check_name}
 Status: {PASSED/FAILED}
 {if FAILED: Block progression, report issue}
@@ -200,7 +200,7 @@ Status: {PASSED/FAILED}
 ### Checklists
 
 Mandatory checklist completion:
-```
+```text
 Completion Checklist for {bundle_name}:
 [x] Component discovery
 [x] Analysis complete
@@ -222,12 +222,12 @@ At workflow start:
 **Required patterns:**
 ```
 Skill: plan-marshall:persona-plan-marshall-agent
-```
+```text
 
 **Orchestration compliance:**
 ```
 Read: references/orchestration-compliance.md
-```
+```text
 ```
 
 ### Referencing Throughout

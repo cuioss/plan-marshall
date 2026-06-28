@@ -11,7 +11,7 @@ Project configuration wizard for the planning system.
 
 ## Usage
 
-```
+```text
 /marshall-steward           # Interactive menu or first-run wizard
 /marshall-steward --wizard  # Force first-run wizard
 ```
@@ -20,7 +20,7 @@ Project configuration wizard for the planning system.
 
 At command start, emit the following banner verbatim to the user:
 
-```
+```text
 [ MARSHALL STEWARD ]
 configure · verify · maintain
 ```
@@ -133,7 +133,7 @@ reason	executor_missing
 ### Check for `--wizard` Flag
 
 If `--wizard` flag provided, force wizard regardless of determine_mode result:
-```
+```text
 Read references/wizard-flow.md
 ```
 Execute the wizard flow from that file.
@@ -150,7 +150,7 @@ The Main Menu has 5 options, which exceeds the `AskUserQuestion` 4-option cap. I
 
 **Page 1** — first 3 options plus the "More..." continuation:
 
-```
+```text
 AskUserQuestion:
   question: "What would you like to do?"
   header: "Main Menu"
@@ -168,7 +168,7 @@ AskUserQuestion:
 
 **Page 2** — shown only when the user selects "More..." on Page 1 — the remaining options:
 
-```
+```text
 AskUserQuestion:
   question: "What would you like to do?"
   header: "Main Menu (continued)"
@@ -206,7 +206,7 @@ This skill uses **progressive disclosure** to minimize context usage:
 ### How to Load a Reference
 
 When routing indicates to load a reference:
-```
+```text
 Read references/{file}.md
 ```
 Then execute the workflow described in that file. Each reference file is loaded in full when its menu path is chosen — only one reference is active at a time.
@@ -398,7 +398,7 @@ shape. The verb is read-only — it never mutates `marshal.json`. It returns
 - **`in_sync: false`** → display the added/removed-glob diff to the user, then
   prompt:
 
-  ```
+  ```text
   AskUserQuestion:
     question: "The persisted build.map differs from the live-tree derivation. Re-seed it?"
     header: "build.map drift"
@@ -492,7 +492,7 @@ The `lesson_cleanup` recipe is auto-suggested by `phase-1-init` Step 5c when `so
 ## Error Handling
 
 If an error occurs during execution:
-```
+```text
 Read references/error-handling.md
 ```
 Apply the recovery guidance for the specific error type.

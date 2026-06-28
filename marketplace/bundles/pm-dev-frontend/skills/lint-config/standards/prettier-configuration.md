@@ -152,7 +152,7 @@ Settings -> Languages & Frameworks -> JavaScript -> Prettier:
 
 ### .prettierignore
 
-```
+```text
 # Build artifacts
 target/
 dist/

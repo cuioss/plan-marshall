@@ -81,7 +81,7 @@ Omitting `--plan-id` is a first-class call, not an error — the entry lands in 
 
 `marshall-steward` writes its audit trail through the global/no-plan path with a stable message prefix:
 
-```
+```text
 [STEWARD] (plan-marshall:marshall-steward) {what happened}
 ```
 
@@ -244,7 +244,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read
 
 ### Standard Entry Structure
 
-```
+```text
 [{timestamp}] [{level}] [{hash}] {message}
 ```
 
@@ -256,20 +256,20 @@ Every log entry automatically includes a 6-character hash computed from the mess
 ### Example Output
 
 **script-execution.log**:
-```
+```text
 [2025-12-11T12:14:26Z] [INFO] [a3f2c1] plan-marshall:manage-files:manage-files create (0.19s)
 [2025-12-11T12:17:50Z] [ERROR] [b7e4d9] plan-marshall:manage-task:manage-task add failed (exit 1)
 ```
 
 **work.log**:
-```
+```text
 [2025-12-11T11:14:30Z] [INFO] [c8d3e2] [STATUS] (plan-marshall:phase-1-init) Starting init phase
 [2025-12-11T11:15:20Z] [INFO] [f1a9b3] [ARTIFACT] (plan-marshall:phase-1-init) Created deliverable: auth module
 [2025-12-11T11:17:30Z] [INFO] [e5c7d4] [PROGRESS] (plan-marshall:phase-5-execute) Task 1 completed
 ```
 
 **decision.log**:
-```
+```text
 [2025-12-11T11:14:48Z] [INFO] [d2e8f1] (plan-marshall:phase-1-init) Detected domain: java - pom.xml found
 [2025-12-11T11:20:15Z] [INFO] [a4b6c8] (pm-plugin-development:ext-outline-workflow) Scope: bundles=all
 ```
@@ -317,7 +317,7 @@ log_entry('work', 'EXAMPLE-PLAN', 'INFO', '[ARTIFACT] Created deliverable')
 
 ### Plan-Scoped Logs
 
-```
+```text
 .plan/plans/{plan-id}/
 └── logs/
     ├── script-execution.log    # Script execution tracking
@@ -327,7 +327,7 @@ log_entry('work', 'EXAMPLE-PLAN', 'INFO', '[ARTIFACT] Created deliverable')
 
 ### Global Logs
 
-```
+```text
 .plan/logs/
 ├── script-execution-YYYY-MM-DD.log    # Daily global script logs
 ├── work-YYYY-MM-DD.log                # Daily global work logs (when no plan)

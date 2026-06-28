@@ -11,7 +11,7 @@ Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., 
 
 ## Execution Pattern
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                      DUMB TASK RUNNER                                    │
 │                                                                          │
@@ -45,7 +45,7 @@ Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., 
 
 ### Reading Tasks
 
-```
+```text
 Skill: plan-marshall:manage-tasks
 operation: next
 plan_id: {plan_id}

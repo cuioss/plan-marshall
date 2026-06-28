@@ -365,6 +365,7 @@ FIXABLE_ISSUE_TYPES = {
     'missing-user-invocable',
     'checklist-pattern',
     'subdoc-checklist-pattern',
+    'fenced-code-no-language',
     # Risky fixes (require confirmation)
     'unused-tool-declared',
     'tool-not-declared',
@@ -400,6 +401,7 @@ SAFE_FIX_TYPES = {
     'missing-user-invocable',
     'checklist-pattern',
     'subdoc-checklist-pattern',
+    'fenced-code-no-language',
     'SIMPLICITY_SIGNATURE_DOCSTRING',
 }
 

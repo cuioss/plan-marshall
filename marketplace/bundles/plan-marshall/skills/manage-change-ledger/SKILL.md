@@ -62,7 +62,7 @@ working tree, index, or refs (no `git stash`, no `git write-tree`, no `git add`)
 One ledger file, resolved via `get_tracked_config_dir()` (NOT plan-scoped), so
 every writer (including a plan-less orchestrator build) appends to the same file:
 
-```
+```text
 <tracked-config-dir>/work/change-ledger.jsonl
 ```
 

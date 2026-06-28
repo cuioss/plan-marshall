@@ -282,7 +282,7 @@ Scripts can be split into entry points and internal modules.
 
 ### Directory Structure Example
 
-```
+```text
 skills/my-skill/scripts/
 ├── manage_tasks.py      # Entry point - registered in executor
 ├── _manage_tasks_shared.py  # Internal - shared utilities

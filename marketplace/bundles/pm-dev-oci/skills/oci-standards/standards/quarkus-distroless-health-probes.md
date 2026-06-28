@@ -46,7 +46,7 @@ The native image must be built with the full Maven lifecycle to ensure build-tim
 
 When management is properly enabled, the startup log shows the management port:
 
-```
+```text
 INFO  api-sheriff started in 0.147s. Listening on: http://0.0.0.0:8080 and https://0.0.0.0:8443. Management interface listening on http://0.0.0.0:9000.
 ```
 

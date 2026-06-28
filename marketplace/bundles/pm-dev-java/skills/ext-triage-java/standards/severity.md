@@ -130,7 +130,7 @@ During finalize phase:
 
 ## Quick Decision Flowchart
 
-```
+```text
 Is it BLOCKER?
   → Yes → FIX (no exceptions)
 

@@ -8,7 +8,7 @@
 
 ## Step 1: Load Foundation Skills
 
-```
+```text
 Skill: pm-plugin-development:plugin-architecture
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
@@ -17,7 +17,7 @@ These provide architecture principles and non-prompting tool usage patterns.
 
 ## Step 2: Load Architecture Standards
 
-```
+```text
 Read references/agent-guide.md
 ```
 
@@ -42,7 +42,7 @@ Ask user for:
 
 **D. Agent type** — Present using `AskUserQuestion`:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "What type of agent is this?"
@@ -94,7 +94,7 @@ Track `questions_answered` counter.
 3. If duplicates found:
    - Display: "Similar agents found: {list with descriptions}"
    - Present using `AskUserQuestion`:
-     ```
+     ```text
      AskUserQuestion:
        questions:
          - question: "Similar agents already exist. How would you like to proceed?"
@@ -137,7 +137,7 @@ Where answers_json contains:
 ```
 
 **Load template:**
-```
+```text
 Read assets/templates/agent-template.md
 ```
 
@@ -165,7 +165,7 @@ If you discover issues or improvements during execution, record them:
 ```
 
 **Write file:**
-```
+```text
 Write: {bundle}/agents/{agent-name}.md
 ```
 
@@ -185,7 +185,7 @@ Validation checks:
 
 If validation fails: Display errors and present using `AskUserQuestion`:
 
-```
+```text
 AskUserQuestion:
   questions:
     - question: "Validation failed. How would you like to proceed?"
@@ -202,7 +202,7 @@ Track `validations_performed` counter.
 
 ## Step 7: Display Summary
 
-```
+```text
 ╔════════════════════════════════════════════════════════════╗
 ║          Agent Created Successfully                        ║
 ╚════════════════════════════════════════════════════════════╝
@@ -226,7 +226,7 @@ Next steps:
 
 ## Step 8: Run Agent Diagnosis
 
-```
+```text
 SlashCommand: /pm-plugin-development:plugin-doctor agents agent-name={agent-name}
 ```
 

@@ -16,7 +16,7 @@ This separation enables adding new document types without code changes.
 
 ## Component Layers
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │ CLI Layer                                                   │
 │   - Parses: {doc-type} {verb} [options]                     │
@@ -93,7 +93,7 @@ sections[N]{name,heading,order}:
 
 ### Create Operation
 
-```
+```text
 Input: doc_type, plan_id, field values
          │
          ▼
@@ -122,7 +122,7 @@ Output: TOON status response
 
 ### Read Operation
 
-```
+```text
 Input: doc_type, plan_id
          │
          ▼
@@ -146,7 +146,7 @@ Output: TOON with content sections
 
 ### Update Operation
 
-```
+```text
 Input: doc_type, plan_id, section, content
          │
          ▼

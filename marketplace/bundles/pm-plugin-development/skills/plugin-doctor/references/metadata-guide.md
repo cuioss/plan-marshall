@@ -108,7 +108,7 @@ Glob: pattern="skills/*/", path="{bundle_dir}"
 ### Validation Checks
 
 **1. Missing Entries** (files exist but not in plugin.json):
-```
+```text
 # Files found:
 agents/agent-a.md PASS (in plugin.json)
 agents/agent-b.md FAIL (NOT in plugin.json)
@@ -117,7 +117,7 @@ agents/agent-b.md FAIL (NOT in plugin.json)
 ```
 
 **2. Extra Entries** (in plugin.json but files don't exist):
-```
+```text
 # plugin.json lists:
 agents/agent-a.md PASS (file exists)
 agents/agent-c.md FAIL (file NOT found)
@@ -126,7 +126,7 @@ agents/agent-c.md FAIL (file NOT found)
 ```
 
 **3. Path Mismatches** (path in plugin.json doesn't match actual):
-```
+```text
 # plugin.json:
 "path": "agents/my-agent.md"
 
@@ -138,7 +138,7 @@ agents/my_agent.md  FAIL (name mismatch: hyphen vs underscore)
 
 ### Inventory Report Format
 
-```
+```text
 Component Inventory Validation
 
 Bundle: {bundle-name}
@@ -166,7 +166,7 @@ Issues:
 
 ### Standard Directory Layout
 
-```
+```text
 bundle-name/
 ├── plugin.json           (Required: bundle metadata)
 ├── README.md             (Optional: bundle documentation)
@@ -198,7 +198,7 @@ bundle-name/
 - Skills: directory name matches plugin.json name
 
 **Examples**:
-```
+```text
 # PASS Correct
 Directory: marketplace/bundles/pm-dev-java/
 plugin.json: {"name": "pm-dev-java"}

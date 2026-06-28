@@ -13,7 +13,7 @@ This doc is the **graph** view; the others are the **contract**, **examples**, a
 
 Legend (used in every diagram below):
 
-```
+```text
 ┌───────────────────────────────────────────────────────┐
 │ BOX  │  LLM dispatch envelope (Task: execution-context)
 └───────────────────────────────────────────────────────┘
@@ -34,7 +34,7 @@ Legend (used in every diagram below):
 
 ## 1. Top-level entry
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                                                                                        │
 │                       TOP-LEVEL DISPATCH ENTRY                                         │
@@ -86,7 +86,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 ### 2.1 phase-1-init
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────────────────┐
 │  PHASE-1 ENVELOPE          execution-context    role=phase-1-init                  │
 │  ════════════════                                                                  │
@@ -115,7 +115,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 ### 2.2 phase-2-refine
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │  PHASE-2 ENVELOPE          execution-context    role=phase-2-refine                  │
 │  ════════════════                                                                    │
@@ -144,7 +144,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 ### 2.3 phase-3-outline
 
-```
+```text
 ┌───────────────────────────────────────────────────────────────────────────────────────┐
 │  PHASE-3 ENTRY + ENVELOPE                                                             │
 │  ═════════════════════════                                                            │
@@ -184,7 +184,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 ### 2.4 phase-4-plan
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────────────────┐
 │  PHASE-4 ENVELOPE          execution-context    role=phase-4-plan                  │
 │  ════════════════                                                                  │
@@ -217,7 +217,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 ### 2.5 phase-5-execute
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │  PHASE-5-EXECUTE ORCHESTRATOR    (main context)                                        │
 │  ════════════════════════════                                                          │
@@ -267,7 +267,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 ### 2.6 phase-6-finalize
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │  PHASE-6-FINALIZE  ORCHESTRATOR    (main context)                                                              │
 │  ══════════════════════════════                                                                                │
@@ -336,7 +336,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 
 The phase-scoped resolver bubbles every dispatch up from the caller phase's sub-key (or default) to `effort`. Workflows that fire from multiple phases sit as **sub-keys under every phase that invokes them** — the same workflow doc runs, the level just resolves under whichever phase fires the dispatch. Every arrow below is a `Task: execution-context` dispatch crossing an envelope boundary.
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │  PHASE-SCOPED INVOCATION MAP                                                           │
 │  ══════════════════════════════                                                        │
@@ -392,7 +392,7 @@ The phase-scoped resolver bubbles every dispatch up from the caller phase's sub-
 
 The hierarchical role registry (`marshal.json` `models.roles`) groups every dispatch site under one of 6 phase groups. Every group is polymorphic — its value may be a string (single-level shorthand for the entire phase) or an object whose recognised sub-keys are listed below. The resolver bubbles up from the deepest match, then the variant emitter pins the `(model, effort)` primitive that ends up baked into the dispatched `execution-context-{level}` variant frontmatter.
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │  models.roles  (in marshal.json)                                                       │
 │  ═══════════════════════════════                                                       │

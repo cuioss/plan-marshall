@@ -16,7 +16,7 @@ The reviewer reads the footprint through the `plan-marshall:persona-code-reviewe
 
 ## Foundational Practices
 
-```
+```text
 Skill: plan-marshall:persona-plan-marshall-agent
 ```
 
@@ -80,7 +80,7 @@ Collect the distinct module values into the affected-domain set — this set key
 
 Load the code-reviewer lens — the meta/evaluator persona whose composition supplies the evaluation standards the review reads through:
 
-```
+```text
 Skill: plan-marshall:persona-code-reviewer
 ```
 

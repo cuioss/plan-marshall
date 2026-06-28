@@ -349,7 +349,7 @@ For each identified issue:
 * Verify factual accuracy
 
 **Example:**
-```
+```text
 Original: "Our revolutionary caching system dramatically improves performance."
 
 Analysis:

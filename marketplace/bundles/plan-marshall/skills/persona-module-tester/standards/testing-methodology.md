@@ -40,7 +40,7 @@ Each category should be grouped in its own test class or nested group (see Test 
 
 All tests follow three phases separated by blank lines:
 
-```
+```text
 test "Should validate input with correct format" {
     // Phase 1: Arrange — set up test data and preconditions
     input = generateValidInput()
@@ -133,7 +133,7 @@ Tests should use generated/random data to prove behavior works for any valid inp
 
 For complex objects, create factory methods or builders:
 
-```
+```text
 // Factory method for test objects
 function createValidUser(overrides = {}) {
     return {
@@ -263,7 +263,7 @@ Property-based testing complements example-based tests by generating many random
 
 A good property is a universal statement about the function's behavior:
 
-```
+```text
 // Property: parsing a valid token always succeeds
 for all validToken in generateValidTokens():
     assert parse(validToken).isSuccess()
@@ -354,7 +354,7 @@ A stub placed **above** argv assembly is blind to a malformed argv: it receives 
 * **Every required flag is present.** Assert presence of each mandatory flag, not merely that the argv is non-empty.
 * **No undeclared flag is present.** An extra flag the callee does not accept is rejected at parse time in production; assert the argv carries nothing outside the declared surface.
 
-```
+```text
 # Stub ONLY the launcher; capture and assert the argv it received.
 captured = []
 stub(process_launcher) returns success, recording its argv into `captured`

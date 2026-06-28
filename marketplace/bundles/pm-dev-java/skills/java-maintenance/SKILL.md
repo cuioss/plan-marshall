@@ -21,7 +21,7 @@ This skill applies to all Java projects requiring maintenance or refactoring.
 
 **Important**: Load this standard for any maintenance work.
 
-```
+```text
 Read: standards/maintenance-prioritization.md
 ```
 
@@ -33,14 +33,14 @@ This provides foundational rules for:
 ### Step 2: Load Additional Standards (As Needed)
 
 **Refactoring Triggers** (load for code analysis):
-```
+```text
 Read: standards/refactoring-triggers.md
 ```
 
 Use when: Identifying when code needs refactoring based on metrics and patterns.
 
 **Compliance Checklist** (load for verification):
-```
+```text
 Read: standards/compliance-checklist.md
 ```
 

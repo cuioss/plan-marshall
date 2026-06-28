@@ -40,7 +40,7 @@ The transition from **3-outline** to **4-plan** requires mandatory user approval
 
 ### Protocol Flow
 
-```
+```text
 [Solution Outline Agent] → [Command displays outline] → [User Review] → [Task Plan Agent]
                                                               ↓
                                                     [Request changes] → [Re-invoke Solution Outline Agent]
@@ -73,7 +73,7 @@ Present options to the user:
 
 This halt is **NOT OPTIONAL**. Task creation MUST NOT proceed without user confirmation.
 
-```
+```text
 while not approved:
     response = AskUserQuestion("Review and approve or request changes")
     if response == "Proceed":
@@ -100,7 +100,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 ### Example Interaction
 
-```
+```text
 Command: "Solution outline created with 5 deliverables. Review .plan/plans/auth-feature/solution_outline.md"
 User: "Deliverable 3 should use CDI instead of Spring - please update"
 
@@ -189,7 +189,7 @@ Extensions add domain-specific knowledge without replacing workflow skills.
 
 ### Extension Loading
 
-```
+```text
 Workflow skill reads references.json.domains
        │
        └─ For each domain:
