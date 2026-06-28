@@ -666,11 +666,15 @@ def discover_project_modules(project_root: Path) -> dict[str, Any]:
 # declares alongside ``implements:``. The contract for these fields lives in the
 # central standards — see marketplace/bundles/plan-marshall/skills/extension-api/
 # standards/ext-point-finalize-step.md (``name`` / ``order`` / ``default_on`` /
-# ``presets`` / ``description``) and ext-point-verify-step.md (the verify-step
-# ``canonicals`` list). This list is the union parse target across ext-points,
-# not the per-ext-point contract definition: a finalize-step doc declares no
-# ``canonicals`` (defaults to ``[]``), a verify-step doc declares no
-# ``default_on`` / ``presets`` (default to ``False`` / ``[]``).
+# ``presets`` / ``description``), ext-point-build-verify-step.md (the verify-step
+# ``canonicals`` list), and ext-point-verify.md (the producer-declared
+# ``verification_profile``). This list is the union parse target across
+# ext-points, not the per-ext-point contract definition: a finalize-step doc
+# declares no ``canonicals`` (defaults to ``[]``), a verify-step doc declares no
+# ``default_on`` / ``presets`` (default to ``False`` / ``[]``), and most docs
+# declare no ``verification_profile`` (its ABSENCE is the signal that the
+# producer does not participate in the verify stage — see
+# :func:`_build_implementor_record` for why it is the one field NOT defaulted).
 _IMPLEMENTOR_FRONTMATTER_KEYS: tuple[str, ...] = (
     'name',
     'order',
@@ -678,6 +682,7 @@ _IMPLEMENTOR_FRONTMATTER_KEYS: tuple[str, ...] = (
     'presets',
     'description',
     'canonicals',
+    'verification_profile',
 )
 
 
@@ -780,6 +785,14 @@ def _build_implementor_record(doc_path: Path, source: str, name_override: str | 
         verify-step list the discovery consumer expands into
         ``default:verify:{canonical}`` step ids. A doc that declares one archetype
         leaves the other archetype's list at its empty default.
+
+        ``verification_profile`` (the ext-point-verify producer declaration) is
+        the one field NOT defaulted: it is present in the record ONLY when the
+        doc declares it. Its ABSENCE is the contract signal that the producer
+        does not participate in the verify stage — see ext-point-verify.md
+        § "Hook API". A consumer enumerates participating producers by testing
+        ``'verification_profile' in record`` rather than checking a sentinel
+        value.
     """
     fields = _read_frontmatter_fields(doc_path, _IMPLEMENTOR_FRONTMATTER_KEYS)
     presets = fields.get('presets', [])
@@ -788,7 +801,7 @@ def _build_implementor_record(doc_path: Path, source: str, name_override: str | 
     canonicals = fields.get('canonicals', [])
     if not isinstance(canonicals, list):
         canonicals = [canonicals]
-    return {
+    record: dict[str, Any] = {
         'name': name_override if name_override is not None else fields.get('name', ''),
         'order': fields.get('order', 0),
         'default_on': bool(fields.get('default_on', False)),
@@ -798,6 +811,12 @@ def _build_implementor_record(doc_path: Path, source: str, name_override: str | 
         'source': source,
         'path': str(doc_path),
     }
+    # ``verification_profile`` is surfaced ONLY when declared — its absence is the
+    # ext-point-verify signal that the producer does not participate in the verify
+    # stage (ext-point-verify.md § "Hook API"). Do NOT default it.
+    if 'verification_profile' in fields:
+        record['verification_profile'] = fields['verification_profile']
+    return record
 
 
 def _scan_skills_roots_for_implementors(ext_point: str) -> list[dict[str, Any]]:
@@ -918,7 +937,7 @@ def _scan_phase5_for_implementors(ext_point: str) -> list[dict[str, Any]]:
     ``canonicals:`` list the discovery consumer expands into
     ``default:verify:{canonical}`` step ids. The contract lives in the central
     standard — see marketplace/bundles/plan-marshall/skills/extension-api/
-    standards/ext-point-verify-step.md.
+    standards/ext-point-build-verify-step.md.
 
     The phase-5-execute skill dir is resolved from ``__file__`` via the same
     ``resolve_skills_root`` identity walk the phase-6 scan and the build-skill
@@ -1003,7 +1022,7 @@ def find_implementors(ext_point: str) -> list[dict[str, Any]]:
     contracts — addressing surface, frontmatter fields, and the supporting-doc
     exclusion list — live in the central standards at
     marketplace/bundles/plan-marshall/skills/extension-api/standards/
-    ext-point-finalize-step.md and ext-point-verify-step.md.
+    ext-point-finalize-step.md and ext-point-build-verify-step.md.
 
     Scans four surfaces:
 
@@ -1021,7 +1040,7 @@ def find_implementors(ext_point: str) -> list[dict[str, Any]]:
     Args:
         ext_point: The canonical ext-point value, e.g.
             ``plan-marshall:extension-api/standards/ext-point-finalize-step`` or
-            ``plan-marshall:extension-api/standards/ext-point-verify-step``.
+            ``plan-marshall:extension-api/standards/ext-point-build-verify-step``.
 
     Returns:
         A list of per-implementor records, sorted by ``order`` then ``name``.
@@ -1109,8 +1128,9 @@ def cmd_implementors(args) -> int:
     :func:`cmd_list_retrospective_aspects`).
     """
     records = find_implementors(args.ext_point)
-    rows: list[dict[str, Any]] = [
-        {
+    rows: list[dict[str, Any]] = []
+    for rec in records:
+        row: dict[str, Any] = {
             'name': rec.get('name', ''),
             'order': rec.get('order', 0),
             'default_on': rec.get('default_on', False),
@@ -1120,8 +1140,12 @@ def cmd_implementors(args) -> int:
             'source': rec.get('source', ''),
             'path': rec.get('path', ''),
         }
-        for rec in records
-    ]
+        # Surfaced only when the producer declared it (absence is the
+        # ext-point-verify non-participation signal) — keep the record's
+        # present/absent semantics in the emitted row.
+        if 'verification_profile' in rec:
+            row['verification_profile'] = rec['verification_profile']
+        rows.append(row)
     print(
         serialize_toon(
             {

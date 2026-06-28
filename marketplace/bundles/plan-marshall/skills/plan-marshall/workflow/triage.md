@@ -39,6 +39,8 @@ This is the unified read surface — see `manage-findings` Canonical invocations
 
 This is **by-reference** — the store is the single source of truth. Loop-back re-entry sees only findings still `pending`; the orchestrator's earlier query is just a gate-keeping count.
 
+> **Verify pre-stage may have already closed refuted findings.** When the finding's producer declared a `verification_profile`, `verification-feedback.md` Step 1.5 runs an adversarial-refute pass BEFORE this loop and resolves false positives with `--resolution rejected` (a non-pending, terminal state). Those findings never appear in the `--resolution pending` query above, so this loop sees only the confirmed survivors — there is no behavioural change to the FIX / SUPPRESS / ACCEPT decision below. See [`ext-point-verify.md`](../../extension-api/standards/ext-point-verify.md) for the verify-stage contract and the `verification_profile` declaration.
+
 **If empty** → return immediately with `status: success`, `display_detail: "0 finding(s) — nothing to triage"`, `loop_back_needed: false`.
 
 ## Step 2: Pre-group by `(domain, rule_id)`

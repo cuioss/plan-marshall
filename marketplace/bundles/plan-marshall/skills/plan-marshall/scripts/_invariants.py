@@ -76,8 +76,13 @@ class BlockingFindingsPresent(Exception):
     ``improvement``) are NEVER counted. This is NOT naive
     "any pending finding blocks": knowledge types are excluded by the fixed
     rule. Resolutions counting as "resolved" are ``fixed``, ``suppressed``,
-    ``accepted``, ``taken_into_account``; only ``pending`` counts toward the
-    block.
+    ``accepted``, ``taken_into_account``, and ``rejected`` (the
+    validity-verification / ext-point-verify refuted-finding state); only
+    ``pending`` counts toward the block. The blocking count is computed by
+    querying ``--resolution pending`` exclusively, so any non-``pending``
+    resolution — ``rejected`` included — is structurally non-blocking: a
+    ``rejected`` finding is never returned by the pending query and therefore
+    cannot raise the gate.
 
     The ``blocking_types`` attribute carries the hardcoded actionable set so
     the structured TOON error payload (``error: blocking_findings_present``)
@@ -1208,6 +1213,12 @@ def _capture_pending_findings_blocking_count(
     ``findings/qgate-{phase}.jsonl`` files and is summed via
     :func:`_query_pending_qgate_count_aggregated` (the qgate aggregation
     path is preserved verbatim).
+
+    Both query paths filter on ``--resolution pending``, so a finding closed
+    with any non-``pending`` resolution — including ``rejected`` (the
+    ext-point-verify refuted-finding state) — is never returned and contributes
+    zero to the blocking count. A ``rejected`` finding is therefore provably
+    non-blocking: it cannot raise :class:`BlockingFindingsPresent`.
 
     At a *guarded boundary* (``phase`` in :data:`_BLOCKING_BOUNDARIES`),
     a non-zero count raises :class:`BlockingFindingsPresent` so

@@ -17,7 +17,7 @@ Unified storage for plan-level findings, phase-scoped Q-Gate findings, and compo
 > **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
 **Skill-specific constraints:**
-- Only valid resolution values: `pending`, `fixed`, `suppressed`, `accepted`, `taken_into_account`
+- Only valid resolution values: `pending`, `fixed`, `suppressed`, `accepted`, `taken_into_account`, `rejected`
 - Plan findings and Q-Gate findings use different command prefixes (direct vs `qgate`)
 - Assessment commands use the `assessment` prefix
 - Q-Gate deduplication is automatic; do not add duplicate findings manually
@@ -69,7 +69,9 @@ See [standards/jsonl-format.md](standards/jsonl-format.md) for the complete stor
 
 Types: `bug`, `improvement`, `anti-pattern`, `triage`, `tip`, `insight`, `best-practice`, `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `pr-comment`
 
-Resolutions: `pending`, `fixed`, `suppressed`, `accepted`, `taken_into_account`
+Resolutions: `pending`, `fixed`, `suppressed`, `accepted`, `taken_into_account`, `rejected`
+
+The `rejected` resolution is set by the validity-verification ([ext-point-verify](../extension-api/standards/ext-point-verify.md)) stage when it refutes a finding as a false positive; like `fixed` / `accepted`, it is non-pending and never blocks the findings gate.
 
 Severities: `error`, `warning`, `info` (default: `warning`)
 
@@ -98,6 +100,9 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   get --plan-id {plan_id} --hash-id {hash_id}
 
 # Resolve finding
+# {resolution} ∈ {pending, fixed, suppressed, accepted, taken_into_account, rejected}.
+# Use --resolution rejected when the validity-verification (ext-point-verify) stage
+# refutes the finding as a false positive (non-pending; never reaches triage).
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   resolve --plan-id {plan_id} --hash-id {hash_id} --resolution {resolution} [--detail DETAIL]
 
@@ -129,6 +134,8 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   [--resolution R] [--source S] [--iteration N]
 
 # Resolve Q-Gate finding
+# {resolution} accepts rejected too — a refuted Q-Gate finding closes non-pending
+# and is excluded from the unified (--include-qgate) gate read.
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate resolve --plan-id {plan_id} --hash-id {hash_id} --resolution {resolution} --phase {phase} \
   [--detail DETAIL]

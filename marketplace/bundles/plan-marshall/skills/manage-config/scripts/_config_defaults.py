@@ -235,15 +235,15 @@ DEFAULT_PLAN_PLAN = {
 # The contract — addressing surface, the per-step frontmatter fields
 # (``name`` / ``order`` / ``canonicals`` / ``description``), the canonicals→step-ID
 # expansion, and the supporting-doc exclusion list — lives in the central standard:
-#   marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-verify-step.md
+#   marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-build-verify-step.md
 # This constant is the discovery key only.
-VERIFY_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-verify-step'
+BUILD_VERIFY_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-build-verify-step'
 
 
 def _verify_step_ids() -> list[str]:
     """Enumerate the built-in verify-step IDs via extension discovery.
 
-    Discovers every ``ext-point-verify-step`` implementor via the reusable
+    Discovers every ``ext-point-build-verify-step`` implementor via the reusable
     ``extension_discovery.find_implementors`` query (the SOLE discovery path —
     there is no parallel constant list), filters to the built-in source, sorts
     by ``order``, and expands each implementor's ``canonicals`` list into the
@@ -261,7 +261,7 @@ def _verify_step_ids() -> list[str]:
     from extension_discovery import find_implementors  # type: ignore[import-not-found]
 
     implementors = sorted(
-        (rec for rec in find_implementors(VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),
+        (rec for rec in find_implementors(BUILD_VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
     )
     return [

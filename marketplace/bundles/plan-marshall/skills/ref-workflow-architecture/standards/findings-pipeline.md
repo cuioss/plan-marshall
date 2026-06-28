@@ -1,6 +1,6 @@
 # Findings Pipeline Architecture
 
-The plan-marshall findings pipeline routes every quality signal — PR review comments, Sonar issues, build / test / lint failures, and per-phase Q-Gate findings — through a single producer → store → consumer → invariant-gate flow. This document is the canonical architectural source of truth. Per-skill SKILL.md files and standards documents document their own slice of the contract (CLI surface, step list, plumbing) and cross-reference here for the architecture-level synthesis.
+The plan-marshall findings pipeline routes every quality signal — PR review comments, Sonar issues, build / test / lint failures, and per-phase Q-Gate findings — through a single producer → store → consumer → invariant-gate flow. An optional [verify stage](#validity-verification-ext-point-verify) inserts between store and consumer for producers that declare a `verification_profile` — `producer → store → VERIFY → consumer → invariant-gate` — adversarially refuting candidate findings so false positives close `rejected` before triage ever sees them. This document is the canonical architectural source of truth. Per-skill SKILL.md files and standards documents document their own slice of the contract (CLI surface, step list, plumbing) and cross-reference here for the architecture-level synthesis.
 
 ## Overview
 
@@ -128,6 +128,23 @@ For the per-type file list, schema details, dedup semantics, and resolution mode
 - [`data-layer.md`](data-layer.md) — manage-findings's place in the broader data layer.
 - [`skill-inventory.md`](skill-inventory.md) — one-line skill inventory entry.
 
+## Validity Verification (ext-point-verify)
+
+The verify stage is an **optional, producer-declared, adversarial-refute pass** that runs in the pipeline AFTER the store and BEFORE the consumer-side triage. It is opt-in per producer: it runs only when a producer declares a `verification_profile`. A producer that declares none keeps the legacy `producer → store → consumer (triage) → gate` flow with no verify hop; a producer that declares one inserts the verify stage:
+
+```
+  producer ──▶ store ──▶ VERIFY (ext-point-verify) ──▶ consumer (triage) ──▶ invariant gate
+                              │
+                              └─▶ refuted finding ──▶ resolve --resolution rejected
+                                  (non-pending; never reaches triage)
+```
+
+Each candidate finding a participating producer emits is **challenged** before triage sees it: the verify stage resolves the verify skill from the producer's `verification_profile` (e.g. `security` → the `persona-security-expert` adversarial-refute standard), loads it in-context, and runs its refute procedure over each pending finding. Findings that **survive** refutation are left `pending` and flow on to the consumer-side triage unchanged. Findings the stage **refutes** as false positives close with the terminal resolution `rejected` — a non-pending state that never reaches triage and never contributes to the invariant gate's blocking count.
+
+The verify stage is inserted by the orchestrator's [`verification-feedback.md`](../../plan-marshall/workflow/verification-feedback.md) workflow as an optional pre-stage between the producer query and the `ext-triage-{domain}` handoff; [`triage.md`](../../plan-marshall/workflow/triage.md) carries only a cross-reference noting that refuted findings may already be closed `rejected` before its FIX / SUPPRESS / ACCEPT loop runs. The full contract — producer declaration, runtime invocation parameters, lifecycle, and resolution semantics — lives in [`extension-api/standards/ext-point-verify.md`](../../extension-api/standards/ext-point-verify.md); the per-profile refute methodology lives in the verify skill the `verification_profile` resolves to (the pilot being [`persona-security-expert/standards/adversarial-refute.md`](../../persona-security-expert/standards/adversarial-refute.md)).
+
+> The verify stage (validity-verification of *findings* before triage) is distinct from `ext-point-build-verify-step` (the phase-5 build/verify *command* step — `quality-gate`, `module-tests`, `coverage`). They are unrelated concerns.
+
 ## Consumer Dispatch
 
 Wherever a triage decision needs to be made, the consumer:
@@ -176,6 +193,8 @@ The smart-grouping algorithm the triage workflow uses (pre-group by `(domain, ru
 ## Invariant Gate
 
 The `pending_findings_blocking_count` invariant in [`plan-marshall/scripts/_invariants.py`](../../plan-marshall/scripts/_invariants.py) raises `BlockingFindingsPresent` at guarded boundaries when any **actionable** finding is in `pending` resolution.
+
+The gate counts only `pending` findings — every terminal resolution is non-blocking. The terminal (non-pending) resolutions are `fixed`, `suppressed`, `accepted`, `taken_into_account`, and `rejected`. The last, `rejected`, is the [verify stage](#validity-verification-ext-point-verify)'s false-positive outcome: a finding the adversarial-refute pass invalidates closes `rejected` and therefore never contributes to the blocking count, exactly like the other terminal states. A `rejected` finding is closed by the verify stage before it ever reaches triage; the gate simply never sees it as `pending`.
 
 ### Actionable vs knowledge finding types (fixed rule)
 
@@ -238,6 +257,7 @@ For the formal extension contract, the resolver path, and the implementation pat
 | Per-consumer step list | [`phase-6-finalize/workflow/automated-review.md`](../../phase-6-finalize/workflow/automated-review.md), [`phase-6-finalize/workflow/sonar-roundtrip.md`](../../phase-6-finalize/workflow/sonar-roundtrip.md), [`workflow-pr-doctor/standards/automated-review-lifecycle.md`](../../workflow-pr-doctor/standards/automated-review-lifecycle.md) |
 | Invariant capture / verify plumbing, row schema, structured error envelope | [`plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md) |
 | Extension contract, implementor list, resolver | [`extension-api/standards/ext-point-triage.md`](../../extension-api/standards/ext-point-triage.md) |
+| Verify-stage contract (producer `verification_profile`, `rejected` resolution, lifecycle) | [`extension-api/standards/ext-point-verify.md`](../../extension-api/standards/ext-point-verify.md) |
 | Glossary entries (finding, Q-Gate, assessment) | [`glossary.md`](glossary.md) |
 | Data-layer overview | [`data-layer.md`](data-layer.md) |
 | Manage-* contract (TOON / errors / etc.) | [`manage-contract.md`](manage-contract.md) |

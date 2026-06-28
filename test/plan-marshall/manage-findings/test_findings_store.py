@@ -392,6 +392,39 @@ def test_resolve_finding_not_found(plan_context):
     assert 'not found' in result['message']
 
 
+def test_resolve_finding_rejected_is_valid(plan_context):
+    """`rejected` is a valid resolution accepted by the validator.
+
+    Added by the ext-point-verify findings pipeline: `rejected` joins the
+    terminal resolution set and is accepted by `resolve_finding` without the
+    `Invalid resolution` error path firing.
+    """
+    r = add_finding('store-resolve-rejected', 'sonar-issue', 'Refuted finding', 'Detail')
+
+    result = resolve_finding(
+        'store-resolve-rejected', r['hash_id'], 'rejected', detail='Adversarially refuted'
+    )
+
+    assert result['status'] == 'success'
+    assert result['resolution'] == 'rejected'
+
+
+def test_resolve_findings_by_type_accepts_rejected(plan_context):
+    """Bulk resolve accepts `rejected` as a valid target resolution."""
+    add_finding('store-bulk-rejected', 'lint-issue', 'Lint 1', 'Detail')
+    add_finding('store-bulk-rejected', 'lint-issue', 'Lint 2', 'Detail')
+
+    result = resolve_findings_by_type('store-bulk-rejected', ('lint-issue',), 'rejected')
+
+    assert result['status'] == 'success'
+    assert result['resolved_count'] == 2
+
+    rejected = query_findings('store-bulk-rejected', finding_type='lint-issue', resolution='rejected')
+    assert rejected['filtered_count'] == 2
+    pending = query_findings('store-bulk-rejected', finding_type='lint-issue', resolution='pending')
+    assert pending['filtered_count'] == 0
+
+
 # =============================================================================
 # Test: resolve_findings_by_type (bulk resolve)
 # =============================================================================
@@ -655,6 +688,53 @@ def test_resolve_qgate_finding(plan_context):
     )
     assert result['status'] == 'success'
     assert result['resolution'] == 'fixed'
+
+
+def test_resolve_qgate_finding_rejected_is_valid(plan_context):
+    """`rejected` is accepted as a valid Q-Gate resolution by the validator."""
+    r = add_qgate_finding(
+        'store-qgate-resolve-rejected',
+        '5-execute',
+        'qgate',
+        'test-failure',
+        'Refuted Q-Gate finding',
+        'Detail',
+    )
+
+    result = resolve_qgate_finding(
+        'store-qgate-resolve-rejected',
+        '5-execute',
+        r['hash_id'],
+        'rejected',
+        detail='Adversarially refuted at the verify stage',
+    )
+    assert result['status'] == 'success'
+    assert result['resolution'] == 'rejected'
+
+
+def test_rejected_qgate_finding_is_non_pending_in_unified_read(plan_context):
+    """A `rejected` Q-Gate finding is non-blocking: excluded from the unified read.
+
+    The findings-gate invariant in `query_findings_unified` merges ONLY pending
+    Q-Gate records. A finding resolved to `rejected` is therefore treated as
+    non-pending exactly like `fixed` / `accepted` — it never surfaces through the
+    unified gate read and so does not block the gate.
+    """
+    pid = 'store-qgate-rejected-nonpending'
+    pending = add_qgate_finding(
+        pid, '5-execute', 'qgate', 'test-failure', 'Stays pending', 'Detail'
+    )
+    refuted = add_qgate_finding(
+        pid, '5-execute', 'qgate', 'test-failure', 'Gets rejected', 'Detail'
+    )
+    resolve_qgate_finding(pid, '5-execute', refuted['hash_id'], 'rejected')
+
+    unified = query_findings_unified(pid)
+
+    assert unified['qgate_count'] == 1
+    titles = {f['title'] for f in unified['findings']}
+    assert titles == {'Stays pending'}
+    assert pending['hash_id'] in {f['hash_id'] for f in unified['findings']}
 
 
 def test_clear_qgate_findings(plan_context):

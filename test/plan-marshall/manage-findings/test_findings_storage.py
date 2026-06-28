@@ -360,6 +360,30 @@ def test_resolve_finding_writes_back_to_owning_per_type_file(plan_context):
     assert '"resolution_detail": "Fix me"' in sonar_lines[0]
 
 
+def test_resolve_finding_rejected_writes_back_to_owning_per_type_file(plan_context):
+    """`resolve_finding(..., 'rejected')` is a valid resolution and is persisted.
+
+    The `rejected` resolution (added by the ext-point-verify findings pipeline)
+    must round-trip through the per-type storage exactly like the other terminal
+    resolutions: the owning per-type file records `"resolution": "rejected"`.
+    """
+    sonar_path = get_findings_path('storage-reject-locate', 'sonar-issue')
+
+    target = add_finding('storage-reject-locate', 'sonar-issue', 'Rejected sonar', 'Detail')
+
+    outcome = resolve_finding(
+        'storage-reject-locate', target['hash_id'], 'rejected', detail='Out of scope'
+    )
+
+    assert outcome['status'] == 'success'
+    assert outcome['resolution'] == 'rejected'
+
+    sonar_lines = sonar_path.read_text(encoding='utf-8').splitlines()
+    assert len(sonar_lines) == 1
+    assert '"resolution": "rejected"' in sonar_lines[0]
+    assert '"resolution_detail": "Out of scope"' in sonar_lines[0]
+
+
 def test_promote_finding_writes_back_to_owning_per_type_file(plan_context):
     """`promote_finding` updates only the per-type file containing the hash."""
     bug_path = get_findings_path('storage-promote-locate', 'bug')

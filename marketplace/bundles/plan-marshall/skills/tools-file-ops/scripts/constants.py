@@ -137,6 +137,7 @@ RESOLUTION_FIXED = 'fixed'
 RESOLUTION_SUPPRESSED = 'suppressed'
 RESOLUTION_ACCEPTED = 'accepted'
 RESOLUTION_TAKEN_INTO_ACCOUNT = 'taken_into_account'
+RESOLUTION_REJECTED = 'rejected'
 
 VALID_RESOLUTIONS = (
     RESOLUTION_PENDING,
@@ -144,6 +145,7 @@ VALID_RESOLUTIONS = (
     RESOLUTION_SUPPRESSED,
     RESOLUTION_ACCEPTED,
     RESOLUTION_TAKEN_INTO_ACCOUNT,
+    RESOLUTION_REJECTED,
 )
 
 # ---------------------------------------------------------------------------

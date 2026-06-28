@@ -171,7 +171,7 @@ def _discovered_verify_step_ids() -> list:
     built_in = sorted(
         (
             rec
-            for rec in find_implementors(_config_defaults_mod.VERIFY_STEP_EXT_POINT)
+            for rec in find_implementors(_config_defaults_mod.BUILD_VERIFY_STEP_EXT_POINT)
             if rec.get('source') == 'built-in'
         ),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
@@ -1160,10 +1160,10 @@ def test_seed_verify_steps_returns_discovered_keyed_map():
 
 
 def test_verify_step_ext_point_constant_is_the_discovery_key():
-    """VERIFY_STEP_EXT_POINT must be the canonical ext-point notation, not a constant list."""
+    """BUILD_VERIFY_STEP_EXT_POINT must be the canonical ext-point notation, not a constant list."""
     assert (
-        _config_defaults_mod.VERIFY_STEP_EXT_POINT
-        == 'plan-marshall:extension-api/standards/ext-point-verify-step'
+        _config_defaults_mod.BUILD_VERIFY_STEP_EXT_POINT
+        == 'plan-marshall:extension-api/standards/ext-point-build-verify-step'
     )
     # The hand-maintained constants were removed outright — no parallel registry.
     assert not hasattr(_config_defaults_mod, 'BUILT_IN_VERIFY_STEPS'), (

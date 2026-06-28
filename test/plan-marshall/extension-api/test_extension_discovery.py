@@ -945,18 +945,18 @@ def test_find_implementors_finalize_records_carry_empty_canonicals():
 # (phase-5-execute/standards/*.md) and a ``canonicals`` list field. The sole
 # built-in implementor is canonical_verify.md, whose canonicals list the
 # discovery consumer expands into default:verify:{canonical} step ids. The
-# contract lives in ext-point-verify-step.md.
+# contract lives in ext-point-build-verify-step.md.
 
-_VERIFY_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-verify-step'
+_BUILD_VERIFY_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-build-verify-step'
 
 
 def test_find_implementors_discovers_canonical_verify():
-    """find_implementors(VERIFY_STEP_EXT_POINT) discovers the canonical_verify.md doc.
+    """find_implementors(BUILD_VERIFY_STEP_EXT_POINT) discovers the canonical_verify.md doc.
 
     The central regression for this deliverable: the phase-5-execute standards
     scan surface surfaces the verify-step implementor over the live tree.
     """
-    records = _discovery.find_implementors(_VERIFY_STEP_EXT_POINT)
+    records = _discovery.find_implementors(_BUILD_VERIFY_STEP_EXT_POINT)
 
     assert records, 'Expected the canonical_verify verify-step implementor'
     paths = [rec['path'] for rec in records]
@@ -972,7 +972,7 @@ def test_find_implementors_verify_record_carries_canonicals_list():
     step backs (quality-gate / module-tests / coverage), which the discovery
     consumer expands into default:verify:{canonical} step ids.
     """
-    records = _discovery.find_implementors(_VERIFY_STEP_EXT_POINT)
+    records = _discovery.find_implementors(_BUILD_VERIFY_STEP_EXT_POINT)
     by_name = {rec['name']: rec for rec in records}
 
     assert 'default:verify' in by_name, (
@@ -992,7 +992,7 @@ def test_find_implementors_verify_surface_does_not_leak_finalize_steps():
     disjoint: querying the verify ext-point must not return any phase-6 finalize
     step, and vice versa.
     """
-    verify_records = _discovery.find_implementors(_VERIFY_STEP_EXT_POINT)
+    verify_records = _discovery.find_implementors(_BUILD_VERIFY_STEP_EXT_POINT)
     verify_paths = [rec['path'] for rec in verify_records]
     assert not any('phase-6-finalize' in p for p in verify_paths), (
         f'verify-step query must not surface phase-6 docs; got {verify_paths}'
@@ -1014,3 +1014,80 @@ def test_find_implementors_finalize_unaffected_by_phase5_surface():
     # The finalize surfaces (built-in / bundle-optional / project) are all still present.
     sources = {rec['source'] for rec in finalize_records}
     assert {'built-in', 'bundle-optional', 'project'} <= sources
+
+
+# =============================================================================
+# Implementor record — verification_profile (ext-point-verify producer field)
+# =============================================================================
+#
+# The ext-point-verify producer opts into the validity-verification stage by
+# declaring a ``verification_profile``. The implementor-record parse surfaces the
+# field WHEN DECLARED; its ABSENCE is the contract signal that the producer does
+# not participate (ext-point-verify.md § "Hook API"). Unlike the other record
+# fields, ``verification_profile`` is NOT defaulted — a record without the key is
+# the "does not participate" state. These tests drive ``_build_implementor_record``
+# directly over synthetic docs so coverage does not depend on a live producer
+# having declared the field.
+
+
+def _write_implementor_doc(doc_path, *, lines):
+    """Write a ``---``-fenced frontmatter doc with the given frontmatter lines."""
+    body = ['---', 'name: synthetic-step', *lines, '---', '', '# synthetic-step', '']
+    doc_path.write_text('\n'.join(body), encoding='utf-8')
+
+
+def test_build_implementor_record_surfaces_verification_profile_when_declared(tmp_path):
+    """A doc declaring ``verification_profile`` exposes it in the implementor record.
+
+    The producer-participation case: the parsed record carries
+    ``verification_profile`` with the declared value so a consumer can enumerate
+    which producers participate and with which profile.
+    """
+    doc = tmp_path / 'SKILL.md'
+    _write_implementor_doc(doc, lines=['verification_profile: security'])
+
+    record = _discovery._build_implementor_record(doc, 'bundle-optional')
+
+    assert 'verification_profile' in record, (
+        'a doc declaring verification_profile must surface it in the record'
+    )
+    assert record['verification_profile'] == 'security'
+
+
+def test_build_implementor_record_omits_verification_profile_when_absent(tmp_path):
+    """A doc that omits ``verification_profile`` yields a record WITHOUT the key.
+
+    The non-participation case: absence of the key is the ext-point-verify signal
+    that the producer does not participate in the verify stage. The field must NOT
+    be defaulted to an empty value (unlike ``canonicals`` / ``presets``), because
+    a defaulted-but-empty value would be indistinguishable from a declared empty
+    profile.
+    """
+    doc = tmp_path / 'SKILL.md'
+    _write_implementor_doc(doc, lines=['order: 10'])
+
+    record = _discovery._build_implementor_record(doc, 'bundle-optional')
+
+    assert 'verification_profile' not in record, (
+        'a doc omitting verification_profile must NOT carry the key — absence is '
+        'the non-participation signal'
+    )
+    # The contract fields the record always carries are unaffected by the absence.
+    assert {'name', 'order', 'default_on', 'presets', 'canonicals', 'description'} <= set(record)
+
+
+def test_find_implementors_finalize_records_omit_verification_profile():
+    """Live finalize-step records (which declare no verification_profile) lack the key.
+
+    Cross-ext-point guard: adding ``verification_profile`` to the union parse
+    target must not inject the key into records whose docs do not declare it. Every
+    live finalize-step doc omits the field, so no finalize record may carry it.
+    """
+    records = _discovery.find_implementors(_FINALIZE_STEP_EXT_POINT)
+
+    assert records, 'Expected at least one finalize-step implementor'
+    for rec in records:
+        assert 'verification_profile' not in rec, (
+            f'{rec.get("name")!r} finalize record must not carry verification_profile '
+            '(its doc declares none)'
+        )

@@ -86,7 +86,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings ad
   --detail "{rule prose + per-violation context}"
 ```
 
-Then fall through to Step 2 (extension load) and Steps 3-6 (per-finding triage). The decision-and-action loop will FIX / SUPPRESS / ACCEPT each emitted finding using the standards in the pm-plugin-development triage extension.
+Then fall through to Step 1.5 (optional verify pre-stage), Step 2 (extension load), and Steps 3-6 (per-finding triage). The decision-and-action loop will FIX / SUPPRESS / ACCEPT each emitted finding using the standards in the pm-plugin-development triage extension.
 
 ### Branch: `producer=pr-state` (multi-source PR sweep)
 
@@ -146,7 +146,34 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
   --plan-id {plan_id} --resolution pending --include-qgate
 ```
 
-If empty, return `status: success`, `display_detail: "PR #{pr_number} clean — nothing to triage"`. Otherwise continue to Step 2.
+If empty, return `status: success`, `display_detail: "PR #{pr_number} clean — nothing to triage"`. Otherwise continue to Step 1.5.
+
+## Step 1.5: Verify pre-stage (optional, gated on producer `verification_profile`)
+
+Before the findings reach triage, an OPTIONAL validity-verification pass runs — but ONLY when the producer of the queried findings declared a `verification_profile`. The full contract (the `verification_profile` producer declaration, the implementor-record shape, the resolved verify skill, and the producer→store→verify→triage lifecycle) lives in [`ext-point-verify.md`](../../extension-api/standards/ext-point-verify.md); do NOT inline-copy it here — this step is the orchestrator-side consumer.
+
+1. **Gate check** — determine whether the producer declared a `verification_profile`. A producer that declares none skips this step entirely: continue directly to Step 2 with the pending set unchanged. (Of the current producers, only the security-audit pilot declares one; see the Current Implementations table in `ext-point-verify.md`.)
+
+2. **Resolve and load the verify skill** — the `verification_profile` value names the verify skill that documents the adversarial-refute methodology for that profile (e.g. `security` → `persona-security-expert` adversarial-refute). Load it in-context:
+
+   ```
+   Skill: {resolved verify skill}
+   ```
+
+3. **Run the adversarial-refute pass** — for each pending finding, apply the loaded verify skill's refute procedure to decide **confirmed** (a genuine defect) or **refuted** (a false positive).
+
+4. **Close refuted findings as `rejected`** — a refuted finding is resolved with the terminal, non-pending `rejected` resolution so it never reaches triage and never blocks the gate:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
+     --plan-id {plan_id} --hash-id {hash_id} --resolution rejected --detail "{refutation rationale}"
+   ```
+
+   For a Q-Gate finding, use the `qgate resolve` verb with `--resolution rejected --phase {phase}` (see `manage-findings` Canonical invocations → `resolve` / `qgate resolve`).
+
+5. **Confirmed findings fall through unchanged** — leave every confirmed finding `pending` so Steps 2-6 triage them as today. Then continue to Step 2.
+
+The verify pre-stage is purely subtractive on the pending set: it can only move a finding from `pending` to `rejected`, never the reverse, so a producer without a `verification_profile` and the post-verify confirmed set both reach Step 2 with the legacy behaviour intact.
 
 ## Step 2: Pre-load `ext-triage-{domain}` skills
 

@@ -45,14 +45,14 @@ cmd_skill_domains = _cmd_skill_domains.cmd_skill_domains
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import run_script  # noqa: E402
 
-_VERIFY_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-verify-step'
+_BUILD_VERIFY_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-build-verify-step'
 
 
 def _expected_verify_step_ids() -> list[str]:
     """Return the built-in verify-step ids the rerouted discovery must produce.
 
     Mirrors ``_config_defaults._verify_step_ids`` — the SOLE discovery path:
-    filter the ``ext-point-verify-step`` implementors to the built-in source,
+    filter the ``ext-point-build-verify-step`` implementors to the built-in source,
     sort by ``(order, name)``, and expand each implementor's ``canonicals`` list
     into ``default:verify:{canonical}`` ids in list order. The removed
     ``BUILT_IN_VERIFY_STEPS`` constant is gone; this is its discovery-derived
@@ -61,7 +61,7 @@ def _expected_verify_step_ids() -> list[str]:
     from extension_discovery import find_implementors  # type: ignore[import-not-found]
 
     built_in = sorted(
-        (rec for rec in find_implementors(_VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),
+        (rec for rec in find_implementors(_BUILD_VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
     )
     return [
@@ -1455,7 +1455,7 @@ def test_discover_all_verify_steps_delegates_to_find_implementors(tmp_path):
 
 
 def test_discover_all_verify_steps_empty_implementors_yields_no_built_ins(tmp_path):
-    """No ext-point-verify-step implementors → empty built-in set (fallback path).
+    """No ext-point-build-verify-step implementors → empty built-in set (fallback path).
 
     The discovery query is the SOLE source of the built-in universe, so an empty
     implementor list yields zero built-in steps — there is no constant-list

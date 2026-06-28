@@ -61,7 +61,7 @@ Load the action-general security context — exactly these three skills, no more
 
 Run the LLM security review across the stage-1 footprint, applying the stage-3 context. This is the cognitive core: read the in-footprint files, reason about each against the loaded security knowledge (OWASP Top Ten, STRIDE, trust boundaries, injection sinks, untrusted-input handling, secrets, supply chain), and identify concrete security defects and risky patterns. The review covers the footprint completely — every file in radius is examined, not sampled.
 
-### Stage 5 — Emit findings and dispatch to triage
+### Stage 5 — Emit findings, verify, and dispatch to triage
 
 Emit each identified issue as a finding via `manage-findings add`. Security findings map onto the **closed `FINDING_TYPES` taxonomy**: a concrete defect is a `bug`; a risky-but-not-yet-exploitable structural pattern is an `anti-pattern`. **There is no `security-issue` type** — the taxonomy is closed and a new discovery surface maps onto an existing type, it never adds one.
 
@@ -72,7 +72,17 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings ad
   --file-path {file} --line {line} --module {module}
 ```
 
-One `add` call per finding. Then dispatch each finding to its domain `ext-triage-*` extension (keyed on the finding's module/domain from stage 2) for the FIX / SUPPRESS / ACCEPT decision — the same resolution model every findings producer uses. The engine adds a producer; it does not add a new resolution model.
+One `add` call per finding.
+
+This engine is a **participating producer** in the [verify stage](../../extension-api/standards/ext-point-verify.md): it declares the `security` `verification_profile` (see `recipe-security-audit/SKILL.md`), so every finding it emits passes through the adversarial-refute pass BEFORE it reaches domain triage. The pipeline for security-audit findings is therefore `produce → store → VERIFY → triage`:
+
+1. **Verify (validity-verification).** Each pending finding the engine emitted is routed through the `security` verify profile, which resolves to the [`persona-security-expert/standards/adversarial-refute.md`](../../persona-security-expert/standards/adversarial-refute.md) methodology. The verify stage challenges each candidate (is the sink reachable with untrusted input? is the input already validated upstream? is the pattern a genuine exploit or a false positive?) and produces one of two verdicts:
+   - **Confirmed** — the finding survives refutation. It is left `pending` and falls through to triage unchanged.
+   - **Refuted** — the finding is a false positive. It closes with the terminal resolution `rejected` (`manage-findings resolve --resolution rejected`) per the [`ext-point-verify`](../../extension-api/standards/ext-point-verify.md) contract: non-pending, never reaches triage, never blocks an invariant gate.
+
+2. **Triage.** Each **confirmed** (surviving) finding is then dispatched to its domain `ext-triage-*` extension (keyed on the finding's module/domain from stage 2) for the FIX / SUPPRESS / ACCEPT decision — the same resolution model every findings producer uses.
+
+The verify pre-stage is inserted by the orchestrator's [`verification-feedback.md`](../../plan-marshall/workflow/verification-feedback.md) workflow between the producer query and the `ext-triage-*` handoff; this engine does not run the refute pass inline — it produces findings and declares the profile, and the pipeline applies the verify stage. The engine adds a participating producer; it does not add a new resolution model and does not re-author the verify or triage stages.
 
 ## Why findings, not a prose report
 
@@ -87,4 +97,7 @@ Emitting into `manage-findings` (rather than printing a report and stopping) is 
 - `plan-marshall:manage-references` `compute-footprint` — the stage-1 footprint resolver.
 - `plan-marshall:manage-architecture` `which-module` — the stage-2 domain detector.
 - `plan-marshall:manage-findings` `add` — the stage-5 findings sink (closed `FINDING_TYPES` taxonomy; `bug` / `anti-pattern`, no `security-issue` type).
-- `plan-marshall:extension-api` `standards/ext-point-triage.md` — the domain `ext-triage-*` resolution model the stage-5 findings flow into.
+- `plan-marshall:extension-api` `standards/ext-point-verify.md` — the verify extension point this engine participates in (producer `verification_profile: security`, `rejected` resolution for refuted findings) ahead of triage.
+- `plan-marshall:persona-security-expert` `standards/adversarial-refute.md` — the `security` verify profile's adversarial-refute methodology applied to each stage-5 finding before triage.
+- `plan-marshall:plan-marshall` `workflow/verification-feedback.md` — the orchestrator workflow that inserts the verify pre-stage between the producer query and the `ext-triage-*` handoff.
+- `plan-marshall:extension-api` `standards/ext-point-triage.md` — the domain `ext-triage-*` resolution model the surviving (confirmed) stage-5 findings flow into.
