@@ -29,10 +29,10 @@ def _load_build_module():
     return module
 
 
-def test_coverage_threshold_constant_is_80() -> None:
-    """The COVERAGE_THRESHOLD module-level constant defaults to 80."""
+def test_coverage_threshold_constant_is_70() -> None:
+    """The COVERAGE_THRESHOLD module-level constant defaults to 70."""
     build_module = _load_build_module()
-    assert build_module.COVERAGE_THRESHOLD == 80
+    assert build_module.COVERAGE_THRESHOLD == 70
 
 
 def test_cmd_coverage_emits_cov_fail_under_flag() -> None:
