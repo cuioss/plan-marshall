@@ -101,7 +101,7 @@ The canonical source of truth for every skill, standard, and extension point is 
 
 This project is licensed under the [Functional Source License, Version 1.1, ALv2 Future License (FSL-1.1-ALv2)](LICENSE.md). For the plain-English rationale — what you can and can't do, and why — see [Why this license](doc/developer/why-this-license.adoc).
 
-For organizations that cannot comply with the FSL's competing-use restriction during the licensed period (e.g., proprietary or closed-source deployments that compete with the software), commercial licenses are available. [Request a commercial license](https://github.com/cuioss/plan-marshall/issues/new?template=commercial-licensing.yml).
+For organizations that cannot comply with the FSL's competing-use restriction during the licensed period (e.g., proprietary or closed-source deployments that compete with the software), commercial licenses are available. [Request a commercial license](https://github.com/cuioss/plan-marshall/issues/new/choose).
 
 ## Support
 
