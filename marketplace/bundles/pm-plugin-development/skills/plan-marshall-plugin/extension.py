@@ -70,6 +70,15 @@ class Extension(ExtensionBase):
                         ],
                     },
                     'quality': {'defaults': [], 'optionals': []},
+                    'security': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-plugin-development:plugin-security',
+                                'description': 'Marketplace meta-project security — the Python script surface (subprocess, path traversal, env trust, config-key handling) and the markdown trust surface (untrusted-ingestion boundary, prompt-injection)',
+                            },
+                        ],
+                        'optionals': [],
+                    },
                 },
             }
         ]
