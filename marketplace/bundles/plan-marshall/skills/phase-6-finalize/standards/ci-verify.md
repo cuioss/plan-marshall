@@ -171,10 +171,10 @@ per `run_id`, not per plan), so the audit trail accumulates.
 
 ## Cross-references
 
-- [`automated-review.md`](automated-review.md) — sibling consumer
+- [`automated-review.md`](../workflow/automated-review.md) — sibling consumer
   that uses the precondition in `strict` mode; ci-verify's
   `consume-failures` mode is the only divergence.
-- [`sonar-roundtrip.md`](sonar-roundtrip.md) — owns row (a). If a
+- [`sonar-roundtrip.md`](../workflow/sonar-roundtrip.md) — owns row (a). If a
   project wires Sonar as a GitHub check, the row-(c) finding here
   and the row-(a) finding there both reference the same upstream
   defect; the operator triages the row-(c) finding as "duplicate of

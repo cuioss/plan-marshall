@@ -130,7 +130,7 @@ The cross-cutting `--plan-id` and `--audit-plan-id` flags are accepted by virtua
 | `manage-tasks` | Update a task | `manage-tasks update --plan-id {id} --task-number {n}` |
 | `manage-tasks` | Finalize a step | `manage-tasks finalize-step --plan-id {id} --task-number {n} --step {s} --outcome {done|failed|skipped}` |
 
-The script notation third segment for `manage-status` rows is `manage-status` — every `manage-*` entrypoint filename is kebab-case, matching the skill directory and the executor's 3-part notation. See [`tools-script-executor/standards/notation.md`](../../../tools-script-executor/standards/notation.md) for the notation-to-path resolution rule.
+The script notation third segment for `manage-status` rows is `manage-status` — every `manage-*` entrypoint filename is kebab-case, matching the skill directory and the executor's 3-part notation. See [`tools-script-executor/SKILL.md`](../../tools-script-executor/SKILL.md) § "Notation Format" for the notation-to-path resolution rule.
 
 ### `workflow-integration-git:git-workflow`
 

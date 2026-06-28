@@ -176,7 +176,6 @@ Or bundle wildcard:
 - Format validation examples in sections above
 - **[permission-architecture.md](permission-architecture.md#permission-scope-examples)** for comprehensive scoping examples and global/local separation guidance
 - [permission-anti-patterns.md](permission-anti-patterns.md) for common issues to check
-- [best-practices/lessons-learned.md](best-practices/lessons-learned.md) for validation workflow
 
 ## Permission Scoping Best Practices
 

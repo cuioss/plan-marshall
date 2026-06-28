@@ -73,7 +73,7 @@ The preflight is **idempotent**: a session already cwd-pinned inside the worktre
 
 ### Orchestrator cwd-pinning (phase-5+)
 
-Per [ADR-002](../../../../../doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc), phases 5 and 6 operate from the plan's own worktree with the orchestrator's working directory pinned to the worktree root. At phase-5 entry the orchestrator performs the atomic move-in by calling the dedicated lifecycle script (deliverable 4), then pins ITS OWN working directory to the path the script returns:
+Per [ADR-002](../../../../../../doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc), phases 5 and 6 operate from the plan's own worktree with the orchestrator's working directory pinned to the worktree root. At phase-5 entry the orchestrator performs the atomic move-in by calling the dedicated lifecycle script (deliverable 4), then pins ITS OWN working directory to the path the script returns:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:prepare_execute prepare \

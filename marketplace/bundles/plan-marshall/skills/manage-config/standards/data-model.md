@@ -140,7 +140,7 @@ JSON structure and field definitions for project configuration.
 }
 ```
 
-> **`effort` keys** — every phase block may additionally carry an `effort` key (a string level such as `level-3`, or a polymorphic `{default, <role>}` object) that selects the model tier per phase and role. The `effort` resolver and its valid levels are documented separately — see [`../../plan-marshall/standards/effort-variants.md`](../../plan-marshall/standards/effort-variants.md) and the user-facing [efforts page](../../../../../doc/user/efforts.adoc). The `effort` dial is orthogonal to every behavioural field tabled below.
+> **`effort` keys** — every phase block may additionally carry an `effort` key (a string level such as `level-3`, or a polymorphic `{default, <role>}` object) that selects the model tier per phase and role. The `effort` resolver and its valid levels are documented separately — see [`../../plan-marshall/standards/effort-variants.md`](../../plan-marshall/standards/effort-variants.md) and the user-facing [efforts page](../../../../../../doc/user/efforts.adoc). The `effort` dial is orthogonal to every behavioural field tabled below.
 
 ## Section: providers
 
