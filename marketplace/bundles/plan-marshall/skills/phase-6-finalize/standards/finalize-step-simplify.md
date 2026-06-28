@@ -202,4 +202,4 @@ commit_message: "chore(simplify): collapse accidental complexity in {plan_id}"
 - [../../ref-code-quality/standards/code-organization.md](../../ref-code-quality/standards/code-organization.md) — § `#minimum-viable-code` (D1): the seven anti-patterns the review deletes
 - [../../persona-plan-marshall-agent/standards/agent-behavior-rules.md](../../persona-plan-marshall-agent/standards/agent-behavior-rules.md) — Principle 7 (D2): "Implement the Minimum, Not the Maximum"
 - [../../manage-execution-manifest/standards/decision-rules.md](../../manage-execution-manifest/standards/decision-rules.md) — the composition rule that gates this step into `phase_6.steps`
-- [../../pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md](../../../pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md) — the static `SIMPLICITY_*` rules this step's cognitive pass complements
+- [../../pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md](../../../../pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md) — the static `SIMPLICITY_*` rules this step's cognitive pass complements

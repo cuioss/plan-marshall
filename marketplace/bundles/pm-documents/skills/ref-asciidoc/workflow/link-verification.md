@@ -487,7 +487,7 @@ steps:
 
 ## References
 
-- [Documentation Standards Overview](../../ref-documentation/README.adoc)
+- [Documentation Standards Overview](../../ref-documentation/SKILL.md)
 - [AsciiDoc Cross-Reference Syntax](https://docs.asciidoctor.org/asciidoc/latest/macros/xref/)
 
 ## Output

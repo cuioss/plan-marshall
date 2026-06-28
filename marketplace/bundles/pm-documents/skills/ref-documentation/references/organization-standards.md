@@ -396,6 +396,6 @@ This directory contains standards for token validation:
 ## References
 
 * [Documentation Core Standards](documentation-core.md) - Core documentation principles
-* [AsciiDoc Formatting Standards](asciidoc-formatting.md) - AsciiDoc-specific formatting
-* [README Structure Standards](readme-structure.md) - README file patterns
+* [AsciiDoc Formatting Standards](../../ref-asciidoc/references/asciidoc-formatting.md) - AsciiDoc-specific formatting
+* [README Structure Standards](../../ref-asciidoc/references/readme-structure.md) - README file patterns
 * [Tone and Style Standards](tone-and-style.md) - Professional tone requirements

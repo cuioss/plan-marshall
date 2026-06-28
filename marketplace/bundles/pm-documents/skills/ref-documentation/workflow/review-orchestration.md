@@ -465,7 +465,7 @@ The comprehensive-review workflow can be invoked from any skill or agent that lo
 
 - [Link Verification Protocol](../../ref-asciidoc/workflow/link-verification.md)
 - [Content Review Framework](content-review.md)
-- [Documentation Standards Overview](../README.adoc)
+- [Documentation Standards Overview](../SKILL.md)
 
 ## Output
 

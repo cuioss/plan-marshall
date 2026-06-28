@@ -11,16 +11,16 @@ The documentation standards are organized into focused documents covering specif
 * **[documentation-core.md](documentation-core.md)** (this document) - Core principles, terminology, and code examples
 * **[tone-and-style.md](tone-and-style.md)** - Professional tone, neutral language, prohibited patterns, and writing style
 * **[organization-standards.md](organization-standards.md)** - File organization, naming conventions, size guidelines, and review processes
-* **[asciidoc-formatting.md](asciidoc-formatting.md)** - AsciiDoc formatting, grammar, cross-references, and validation
-* **[readme-structure.md](readme-structure.md)** - Standard structure for README files
+* **[asciidoc-formatting.md](../../ref-asciidoc/references/asciidoc-formatting.md)** - AsciiDoc formatting, grammar, cross-references, and validation
+* **[readme-structure.md](../../ref-asciidoc/references/readme-structure.md)** - Standard structure for README files
 
 **When to Use Which Document:**
 
 * **Creating/editing any documentation** → Start with this document (documentation-core.md)
 * **Reviewing tone and language** → Use [tone-and-style.md](tone-and-style.md)
 * **Organizing/restructuring documents** → Use [organization-standards.md](organization-standards.md)
-* **Formatting AsciiDoc files** → Use [asciidoc-formatting.md](asciidoc-formatting.md)
-* **Creating README files** → Use [readme-structure.md](readme-structure.md)
+* **Formatting AsciiDoc files** → Use [asciidoc-formatting.md](../../ref-asciidoc/references/asciidoc-formatting.md)
+* **Creating README files** → Use [readme-structure.md](../../ref-asciidoc/references/readme-structure.md)
 
 ## Key Principles
 
