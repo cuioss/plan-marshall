@@ -8,7 +8,7 @@ A verify extension declares a **finding-validity-verification** stage that runs 
 
 The stage is **opt-in per producer**: it runs only when a producer declares a `verification_profile`. A producer that declares no `verification_profile` keeps the legacy `producer → store → triage → gate` flow with no verify hop. When a producer declares one, the pipeline becomes `producer → store → VERIFY (ext-point-verify) → triage → gate`.
 
-```
+```text
                             BEFORE
   producer ──▶ store ──▶ triage (ext-triage-{domain}) ──▶ invariant gate
 
@@ -79,7 +79,7 @@ The verify skill is loaded in-context by the orchestrator's verify pre-stage; it
 
 ### Lifecycle
 
-```
+```text
 1. Producer stage: producer emits findings via manage-findings add; producer
    declares verification_profile (under metadata:) when it participates.
 2. Verify pre-stage (gated on verification_profile being present on the producer):
@@ -116,7 +116,7 @@ A producer that omits `verification_profile` yields a record without the key —
 
 The `verification_profile` value resolves to the verify skill applied to the producer's findings. Resolution is performed by the orchestrator's verify pre-stage when it loads the verify skill: the profile key names the methodology to apply (e.g. `security` → the `persona-security-expert` adversarial-refute standard).
 
-```
+```text
 verification_profile: security
         │
         ▼

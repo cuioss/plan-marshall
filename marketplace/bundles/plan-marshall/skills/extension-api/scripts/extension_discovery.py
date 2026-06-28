@@ -696,9 +696,19 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
     block sequence (``key:`` followed by ``- item`` lines, used for ``presets``).
     Keys absent from the frontmatter are simply omitted from the result.
 
+    A requested key may also be declared one level deep under the ``metadata:``
+    mapping (``metadata:`` followed by indented ``key: value`` lines, as
+    ``recipe-security-audit`` declares ``metadata.verification_profile``). Such a
+    nested declaration is surfaced under the bare key name, so the implementor
+    record sees ``verification_profile`` whether the producer declared it at the
+    top level or inside the ``metadata:`` block. A top-level declaration always
+    wins over a ``metadata:``-nested one of the same name; other indented blocks
+    (e.g. a per-parameter ``configurable:`` mapping) are still skipped.
+
     Args:
         doc_path: Path to the doc whose ``---``-fenced frontmatter is read.
-        keys: The top-level frontmatter keys to extract.
+        keys: The frontmatter keys to extract (each read at the top level or from
+            the ``metadata:`` block).
 
     Returns:
         A dict mapping each present key to its coerced scalar value, or to a
@@ -716,6 +726,7 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
         return {}
 
     fields: dict[str, Any] = {}
+    metadata_fields: dict[str, Any] = {}
     index = 0
     while index < len(fm_lines):
         raw_line = fm_lines[index]
@@ -731,6 +742,33 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
             continue
         key, _, value = line.partition(':')
         key = key.strip()
+
+        # The ``metadata:`` mapping carries one-level-deep declarations such as
+        # ``metadata.verification_profile``. Descend into its indented ``key:
+        # value`` lines and record any REQUESTED key found there. The block ends
+        # at the next non-indented line (or end of frontmatter). Nested values are
+        # surfaced under the bare key, but only as a fallback — a top-level
+        # declaration of the same key wins (applied after the scan completes).
+        if key == 'metadata' and not value.strip():
+            while index < len(fm_lines):
+                meta_raw = fm_lines[index]
+                if meta_raw[:1] not in (' ', '\t'):
+                    break
+                index += 1
+                meta_line = meta_raw.strip()
+                if not meta_line or meta_line.startswith('#') or ':' not in meta_line:
+                    continue
+                meta_key, _, meta_value = meta_line.partition(':')
+                meta_key = meta_key.strip()
+                if meta_key not in keys:
+                    continue
+                meta_inline = meta_value.strip()
+                if meta_inline:
+                    metadata_fields[meta_key] = (
+                        [] if meta_inline == '[]' else _coerce_scalar(meta_inline)
+                    )
+            continue
+
         if key not in keys:
             continue
 
@@ -757,6 +795,11 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
             items.append(_coerce_scalar(seq[2:]))
             index += 1
         fields[key] = items
+
+    # Surface ``metadata:``-nested declarations under the bare key, but never let
+    # them shadow a top-level declaration of the same name.
+    for meta_key, meta_val in metadata_fields.items():
+        fields.setdefault(meta_key, meta_val)
 
     return fields
 
@@ -811,10 +854,13 @@ def _build_implementor_record(doc_path: Path, source: str, name_override: str | 
         'source': source,
         'path': str(doc_path),
     }
-    # ``verification_profile`` is surfaced ONLY when declared — its absence is the
+    # ``verification_profile`` is surfaced ONLY when declared with a non-null,
+    # non-empty value — its absence (or a null/empty declaration) is the
     # ext-point-verify signal that the producer does not participate in the verify
-    # stage (ext-point-verify.md § "Hook API"). Do NOT default it.
-    if 'verification_profile' in fields:
+    # stage (ext-point-verify.md § "Hook API"). A bare ``verification_profile:``
+    # with no value coerces to ``None`` and MUST NOT register the producer, so the
+    # membership test guards on the coerced value rather than mere key presence.
+    if fields.get('verification_profile') is not None:
         record['verification_profile'] = fields['verification_profile']
     return record
 

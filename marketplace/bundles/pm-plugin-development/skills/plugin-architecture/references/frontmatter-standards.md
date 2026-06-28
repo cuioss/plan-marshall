@@ -323,7 +323,7 @@ A nested mapping that is the supported **escape hatch** for declaring well-known
 
   | Sub-key | Type | Meaning |
   |---------|------|---------|
-  | `verification_profile` | str | The producer's [`ext-point-verify`](../../../plan-marshall/skills/extension-api/standards/ext-point-verify.md) declaration. A producer SKILL.md opts into the findings-pipeline verify stage by declaring this key; its value is a verify-profile key (e.g. `security`) that resolves to the verify skill applied to that producer's findings before triage. Absent → the producer does not participate in the verify stage. The canonical field definition and the implementor-record contract live in `ext-point-verify.md` — this entry only registers the key as recognized so plugin-doctor does not flag it as unknown. |
+  | `verification_profile` | str | The producer's [`ext-point-verify`](../../../../plan-marshall/skills/extension-api/standards/ext-point-verify.md) declaration. A producer SKILL.md opts into the findings-pipeline verify stage by declaring this key; its value is a verify-profile key (e.g. `security`) that resolves to the verify skill applied to that producer's findings before triage. Absent → the producer does not participate in the verify stage. The canonical field definition and the implementor-record contract live in `ext-point-verify.md` — this entry only registers the key as recognized so plugin-doctor does not flag it as unknown. |
 
 ```yaml
 ---

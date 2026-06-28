@@ -156,7 +156,7 @@ Before the findings reach triage, an OPTIONAL validity-verification pass runs �
 
 2. **Resolve and load the verify skill** — the `verification_profile` value names the verify skill that documents the adversarial-refute methodology for that profile (e.g. `security` → `persona-security-expert` adversarial-refute). Load it in-context:
 
-   ```
+   ```text
    Skill: {resolved verify skill}
    ```
 

@@ -132,7 +132,7 @@ For the per-type file list, schema details, dedup semantics, and resolution mode
 
 The verify stage is an **optional, producer-declared, adversarial-refute pass** that runs in the pipeline AFTER the store and BEFORE the consumer-side triage. It is opt-in per producer: it runs only when a producer declares a `verification_profile`. A producer that declares none keeps the legacy `producer → store → consumer (triage) → gate` flow with no verify hop; a producer that declares one inserts the verify stage:
 
-```
+```text
   producer ──▶ store ──▶ VERIFY (ext-point-verify) ──▶ consumer (triage) ──▶ invariant gate
                               │
                               └─▶ refuted finding ──▶ resolve --resolution rejected
