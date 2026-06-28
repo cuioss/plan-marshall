@@ -1,6 +1,6 @@
 # Extension Point: Finalize Step
 
-> **Type**: Phase-6 Step Doc Extension | **Hook Method**: `implements:` frontmatter on each step doc | **Implementations**: 24 | **Status**: Active
+> **Type**: Phase-6 Step Doc Extension | **Hook Method**: `implements:` frontmatter on each step doc | **Implementations**: 25 | **Status**: Active
 
 ## Overview
 
@@ -122,6 +122,7 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 
 | Name | Source | Order | default_on | presets |
 |------|--------|-------|:----------:|---------|
+| `default:finalize-step-sync-baseline` | built-in | 3 | true | `[full]` |
 | `default:pre-push-quality-gate` | built-in | 5 | true | `[full]` |
 | `default:finalize-step-simplify` | built-in | 8 | true | `[full]` |
 | `default:finalize-step-security-audit` | built-in | 9 | true | `[]` |

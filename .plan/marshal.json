@@ -61,6 +61,7 @@
       "qgate": "auto",
       "checks_wait_timeout_seconds": 600,
       "steps": {
+        "default:finalize-step-sync-baseline": {},
         "default:pre-push-quality-gate": {},
         "project:finalize-step-plugin-doctor": {},
         "project:finalize-step-pre-submission-self-review": {

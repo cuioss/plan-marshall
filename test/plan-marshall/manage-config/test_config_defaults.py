@@ -954,9 +954,11 @@ def test_built_in_finalize_steps_places_simplify_before_push():
 
     simplify is a mutates_source step (order 8) and push is the pure barrier
     (order 10), so simplify precedes push. The canonical head order is
-    default:pre-push-quality-gate (index 0), default:finalize-step-simplify
-    (index 1), default:finalize-step-security-audit (index 2), then default:push
-    (index 3) — matching the plain `order:` values (no special placement
+    default:finalize-step-sync-baseline (index 0, order 3 — the early baseline
+    rebase that runs before the local quality gates),
+    default:pre-push-quality-gate (index 1), default:finalize-step-simplify
+    (index 2), default:finalize-step-security-audit (index 3), then default:push
+    (index 4) — matching the plain `order:` values (no special placement
     invariant). The seed is discovered via find_implementors, not a constant.
     """
     steps = _discovered_seed_step_ids()
@@ -966,10 +968,11 @@ def test_built_in_finalize_steps_places_simplify_before_push():
     assert 'default:finalize-step-simplify' in steps, (
         'default:finalize-step-simplify must be discovered into the default-on seed'
     )
-    assert steps[0] == 'default:pre-push-quality-gate'
-    assert steps[1] == 'default:finalize-step-simplify'
-    assert steps[2] == 'default:finalize-step-security-audit'
-    assert steps[3] == 'default:push'
+    assert steps[0] == 'default:finalize-step-sync-baseline'
+    assert steps[1] == 'default:pre-push-quality-gate'
+    assert steps[2] == 'default:finalize-step-simplify'
+    assert steps[3] == 'default:finalize-step-security-audit'
+    assert steps[4] == 'default:push'
 
 
 def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
@@ -1080,6 +1083,9 @@ def test_default_plan_finalize_config_less_steps_map_to_empty_dict():
         'default:sonar-roundtrip',
         'default:automated-review',
         'default:branch-cleanup',
+        # default:finalize-step-sync-baseline owns the `auto_rebase_threshold`
+        # conflict-gate knob (default no_overlap_only), shared with branch-cleanup
+        'default:finalize-step-sync-baseline',
         # default:finalize-step-simplify owns the folded `simplify` run-at-all gate
         'default:finalize-step-simplify',
         # default:finalize-step-security-audit owns the folded `security_audit`
