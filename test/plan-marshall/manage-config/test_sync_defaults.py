@@ -268,9 +268,9 @@ def test_sync_defaults_backfills_finalize_steps_as_keyed_map_form(plan_context):
     """Syncing an empty marshal.json back-fills finalize steps as the keyed-map form.
 
     Param-owning steps (sonar-roundtrip / automated-review / branch-cleanup /
-    finalize-step-simplify / finalize-step-security-audit /
-    finalize-step-preference-emitter) land with a non-empty nested param object;
-    the remaining config-less steps map to {}.
+    finalize-step-sync-baseline / finalize-step-simplify /
+    finalize-step-security-audit / finalize-step-preference-emitter) land with a
+    non-empty nested param object; the remaining config-less steps map to {}.
     """
     _write_marshal(plan_context.fixture_dir, {})
 
@@ -285,6 +285,9 @@ def test_sync_defaults_backfills_finalize_steps_as_keyed_map_form(plan_context):
         'default:sonar-roundtrip',
         'default:automated-review',
         'default:branch-cleanup',
+        # default:finalize-step-sync-baseline owns the `auto_rebase_threshold`
+        # conflict-gate knob (default no_overlap_only)
+        'default:finalize-step-sync-baseline',
         # default:finalize-step-simplify owns the folded `simplify` run-at-all gate
         'default:finalize-step-simplify',
         # default:finalize-step-security-audit owns the folded `security_audit`

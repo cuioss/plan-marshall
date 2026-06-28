@@ -1,6 +1,8 @@
 {
   "best_practices": [],
-  "insights": [],
+  "insights": [
+    "phase-3-outline assessment_coverage Q-Gate: a downstream-propagation deliverable that lists external consumer-repo paths (e.g. /other-repo/.plan/marshal.json) as affected files cannot carry CERTAIN_INCLUDE assessments \u2014 the assessment flow is architecture-bound to the plan-marshall worktree and only assesses in-worktree files. Those external paths are legitimate propagation targets per .plan/downstream_propagation.md, so the resulting assessment_coverage gap is a known false positive to resolve as taken_into_account, not a missing assessment requiring re-outline."
+  ],
   "internal_dependencies": [],
   "key_dependencies": [
     "pytest",

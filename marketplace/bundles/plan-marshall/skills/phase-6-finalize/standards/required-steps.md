@@ -29,6 +29,7 @@ otherwise a manifest pruning would deadlock the phase transition.
 
 ## Steps
 
+- finalize-step-sync-baseline
 - finalize-step-simplify
 - finalize-step-security-audit
 - push
