@@ -95,6 +95,14 @@ The *fail-securely* principle above states the rule; this section is its concret
 
 ---
 
+## Agents Rule of Two
+
+An AI-agent surface should hold **at most two** of the three high-risk corners: (A) it processes untrusted or adversarial input, (B) it has access to sensitive systems or secrets, and (C) it can change state or communicate externally. An agent that holds all three is a single hijack away from an attacker reading secrets it can exfiltrate or acting on the project under injected instructions. Any surface that is structurally forced to hold all three corners MUST interpose a **deterministic, non-LLM containment boundary** that downgrades one corner — the LLM's good behaviour is never the control.
+
+**Application.** plan-marshall's reader/orchestrator/writer isolation model is the worked example. The `execution-context-reader` agent is forced toward all three corners — it processes untrusted external bytes (A), holds unrestricted `Read` (B), and carries an outbound `WebFetch`/`WebSearch` channel (C). The split downgrades the state-change/exfiltration corner deterministically: the read-only reader emits only a *candidate struct* (no `Write`/`Edit`/`Bash`/`Skill`), and the deterministic `untrusted-ingestion:validate_struct` script — not reader prose — schema-enforces, length-clamps, and host-checks that struct before any write-capable context consumes it. The outbound corner (C) is further mediated by the plan-marshall-enforced WebFetch domain allowlist, which the validator re-checks via `workflow-permission-web`. The principle generalises: when corners cannot be removed (a capability list cannot path-scope `Read`), interpose a deterministic boundary rather than trusting the agent to behave.
+
+---
+
 ## Cross-References
 
 - [`threat-modeling-stride.md`](threat-modeling-stride.md) — the method for surfacing where these principles must be applied.
@@ -105,3 +113,5 @@ The *fail-securely* principle above states the rule; this section is its concret
 - [`secrets-handling.md`](secrets-handling.md) — least privilege and secure-by-default applied to secrets.
 - [`dependency-supply-chain.md`](dependency-supply-chain.md) — the supply-chain application of separation of duties (CI/CD) and minimize-attack-surface (dependency vetting and minimization).
 - Container application of least privilege (capability dropping) and secure-by-default (minimal base images): [`pm-dev-oci:oci-security`](../../../../pm-dev-oci/skills/oci-security/SKILL.md).
+- Agents Rule of Two — concrete implementation: [`plan-marshall:untrusted-ingestion/standards/threat-model.md`](../../untrusted-ingestion/standards/threat-model.md).
+- Agents Rule of Two — outbound-corner mediation: [`plan-marshall:workflow-permission-web`](../../workflow-permission-web/SKILL.md) (WebFetch domain allowlist re-checked at the validator).

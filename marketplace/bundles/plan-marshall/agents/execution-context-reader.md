@@ -18,6 +18,15 @@ The read-only ingestion dispatcher for untrusted external content. It is the fir
 
 This agent declares exactly `WebSearch, WebFetch, Read, Grep`. It has **no** `Write`, `Edit`, `Bash`, `Skill`, or `AskUserQuestion`. This is the containment-relevant property: an injection payload embedded in the untrusted bytes the reader fetches cannot make the reader write, edit, execute, or load a skill, because the reader has no such tool. The blast radius of a reader-side hijack is bounded to producing a (possibly malformed) candidate struct — which the downstream deterministic validator script then rejects or clamps.
 
+### Outbound corner — mediated by the WebFetch domain allowlist, not by tool absence
+
+The reader is **not tool-free**. It retains `WebFetch`/`WebSearch` because research ingestion needs them, and `Read` is **unrestricted at the capability layer** — it can read any file the host process can reach (the `WORKTREE` prompt-body field is a never-edit-main-checkout salience reminder, NOT a path-scoping mechanism; `Read` is not confined to the worktree and can reach host state such as `/proc`, `$HOME` dotfiles, and process-environment files). That leaves the reader holding all three Agents-Rule-of-Two corners at once (it processes untrusted input, has unrestricted `Read` access to sensitive host state, and carries an outbound `WebFetch`/`WebSearch` channel), so the outbound corner is bounded **structurally rather than by tool absence**:
+
+- **The outbound channel is allowlist-mediated.** The reader may only fetch hosts on the plan-marshall-enforced WebFetch domain allowlist; the downstream `plan-marshall:untrusted-ingestion:validate_struct` script re-checks every candidate URL host against that *same* allowlist (it reuses the `workflow-permission-web` domain logic). A hijacked reader therefore cannot fetch an attacker-controlled host to exfiltrate secret bytes it read via `Read` — the allowlist gates outbound fetches and URL-bearing fields.
+- **`Read`'s blast radius is bounded by candidate-struct-only emission.** The reader emits only a candidate struct and has no `Write`/`Edit`/`Bash`/`Skill`, so any sensitive bytes a hijacked reader reads have no exit path except the allowlist-mediated fetch corner above. There is no channel by which read content can be written, executed, or smuggled past the validator.
+
+This is the agent-side statement of the corrected threat-model property — see [`plan-marshall:untrusted-ingestion/standards/threat-model.md`](../skills/untrusted-ingestion/standards/threat-model.md) ("The reader cannot act on the project" property and "Why the script, not the reader, is the boundary"). The principle it instantiates is the [`plan-marshall:persona-security-expert/standards/secure-design-principles.md`](../skills/persona-security-expert/standards/secure-design-principles.md) § "Agents Rule of Two" lens: a surface forced to hold all three corners interposes a deterministic, non-LLM containment boundary (here, `validate_struct`) to downgrade one of them.
+
 ## Input — Prompt-Body Contract
 
 | Field | Required | Description |
