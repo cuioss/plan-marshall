@@ -53,3 +53,7 @@ Three properties make this an actual containment boundary rather than a hopeful 
 ## Why the script, not the reader, is the boundary
 
 Restricting the reader's tool surface bounds the blast radius of a hijack, but it does not by itself guarantee the struct the writer consumes is well-formed and in-policy. A reader that has been injection-hijacked could emit a candidate struct with oversized fields, extra keys, or URLs pointing at attacker-controlled hosts. The deterministic validator script is what rejects or clamps such a struct — it reads the declared schema (`additionalProperties:false` + `maxLength` + `maxItems` + `pattern`), truncates over-long strings and over-large arrays, and checks every URL host against the WebFetch allowlist by reusing `workflow-permission-web` domain logic. The security property is: **the write-capable context consumes only a struct that a deterministic script certified, so safety does not depend on the reader behaving.**
+
+## Cross-References
+
+- `plan-marshall:persona-security-expert/standards/secure-design-principles.md` § "Agents Rule of Two" — the general design principle this threat model instantiates. The reader holds all three high-risk corners (processes untrusted input, can reach sensitive state via `Read`, can communicate outward via `WebFetch`/`WebSearch`); the deterministic `validate_struct` boundary plus the read-only reader tool surface are how this surface downgrades the state-change/exfiltration corner rather than holding all three unmediated.
