@@ -17,7 +17,7 @@ only** — no production code, telemetry lens, `workflow-integration-git`, or
 ## Methodology
 
 **Primary data source.** Claude Code session transcripts
-(`~/.claude/projects/-Users-oliver-git-plan-marshall/{uuid}.jsonl`). Each line
+(`~/.claude/projects/<project>/{uuid}.jsonl`). Each line
 is one message record. Assistant messages carry `tool_use` blocks
 (`name: "Bash"`, `input.command`); the following user message carries the
 matching `tool_result` block (`tool_use_id`, `content`). The `tool_result`
@@ -60,10 +60,10 @@ appear as a Bash `tool_use` in the transcript.
 `main` (orchestrator work, phases 1–4 before worktree materialization, ad-hoc
 work) bucket as `@main`.
 
-**Scope.** All 123 transcripts with mtime ≥ 2026-06-14 (the recent ~2-week
-window), spanning 122 distinct plan branches. Reproduce via
-`.plan/temp/measure_output.py` (the analysis script; not committed as product
-code — read-only measurement tooling).
+**Scope.** All 123 transcripts in the recent 2-week analysis window, spanning
+122 distinct plan branches. Reproduce via
+`.plan/temp/{plan_id}/measure_output.py` (the analysis script; not committed as
+product code — read-only measurement tooling).
 
 ## Workstream A — raw Bash output reaching context
 
