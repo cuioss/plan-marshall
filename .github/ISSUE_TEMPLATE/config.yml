@@ -5,8 +5,3 @@ contact_links:
     about: >-
       Plan Marshall is licensed under FSL-1.1-ALv2. For commercial / competing-use
       licensing, contact us privately through this form. No public issue is created.
-  - name: 🔒 Report a Security Vulnerability (private)
-    url: https://github.com/cuioss/plan-marshall/security/advisories/new
-    about: >-
-      Please report security vulnerabilities privately via GitHub's private
-      vulnerability reporting. Do NOT open a public issue for security problems.
