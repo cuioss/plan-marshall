@@ -56,9 +56,15 @@ ICON_WAITING = "?"
 ICON_DONE = "✓"  # ✓
 ICON_TERMINAL = "✅"  # ✅
 ICON_BUSY = "⚙"  # ⚙
+ICON_BUILD = "\U0001f528"  # 🔨
 
 GLYPH_LOCK_WAITING = "⏳"  # ⏳
 GLYPH_LOCK_OWNED = "\U0001f512"  # 🔒
+
+# The orchestration-busy title-token. Rendered as an icon-slot override (🔨),
+# NOT a prepended glyph — kept local so a silent rename in the module is caught
+# as a test failure rather than masked by importing the same constant.
+TOKEN_BUILD_BUSY = "build-busy"
 
 
 # =============================================================================
@@ -100,6 +106,16 @@ class TestTitleTokenGlyphMap:
             "lock-owned",
         }
 
+    def test_build_busy_token_absent_from_glyph_map(self):
+        # The build-busy token is rendered as a 🔨 icon-slot override, NOT a
+        # prepended glyph. Its deliberate ABSENCE from TITLE_TOKEN_GLYPHS is what
+        # makes glyph suppression automatic: TITLE_TOKEN_GLYPHS.get("build-busy")
+        # is None, so the glyph-prepend block emits no glyph segment for it.
+        # Adding build-busy to the glyph map would silently regress that design,
+        # so guard it explicitly — the two-state glyph vocabulary must remain a
+        # strict superset-of-nothing relative to the build-busy token.
+        assert TOKEN_BUILD_BUSY not in TITLE_TOKEN_GLYPHS
+
 
 # =============================================================================
 # resolve_icon — process state → process icon
@@ -134,12 +150,28 @@ class TestResolveIcon:
 
     def test_busy_icon_distinct_from_every_other_palette_literal(self):
         # ⚙ must be unambiguous against every other palette icon, including the
-        # lock-state glyphs surfaced inline in the same title.
+        # lock-state glyphs surfaced inline in the same title and the 🔨 build
+        # icon-slot override.
         assert ICON_BUSY not in {
             ICON_ACTIVE,
             ICON_WAITING,
             ICON_DONE,
             ICON_TERMINAL,
+            ICON_BUILD,
+            GLYPH_LOCK_WAITING,
+            GLYPH_LOCK_OWNED,
+        }
+
+    def test_build_icon_distinct_from_every_other_palette_literal(self):
+        # 🔨 is a persistent, token-keyed icon-slot override and MUST be
+        # unambiguous against every other palette icon — in particular the ⚙
+        # momentary-busy icon, with which it is conceptually adjacent.
+        assert ICON_BUILD not in {
+            ICON_ACTIVE,
+            ICON_WAITING,
+            ICON_DONE,
+            ICON_TERMINAL,
+            ICON_BUSY,
             GLYPH_LOCK_WAITING,
             GLYPH_LOCK_OWNED,
         }
@@ -401,6 +433,113 @@ class TestComposeActiveGlyphStillRenders:
             )
             assert result == f"{ICON_ACTIVE} {glyph} pm:5-execute", token
             assert glyph in result, token
+
+
+# =============================================================================
+# compose — build-busy icon-slot override (🔨), glyph suppressed
+# =============================================================================
+
+
+class TestComposeBuildBusyIconOverride:
+    """``build-busy`` forces 🔨 into the icon slot for an active phase.
+
+    Unlike the lock-state title_tokens (which prepend a glyph), ``build-busy`` is
+    a token-keyed **icon-slot override**: it replaces the process icon with 🔨 and
+    carries NO glyph. The override sits at precedence ``terminal ✅ > build-busy 🔨
+    > icon_override > process icon`` — it beats both an explicit ``icon_override``
+    and the process-state icon, but a terminal phase still forces ✅.
+    """
+
+    def test_build_busy_active_phase_forces_build_icon(self):
+        # Active phase + build-busy token → 🔨 in the icon slot, plain body.
+        result = compose(
+            {"current_phase": "5-execute", "title_token": TOKEN_BUILD_BUSY},
+            STATE_ACTIVE,
+        )
+        assert result == f"{ICON_BUILD} pm:5-execute"
+
+    def test_build_busy_emits_no_glyph_segment(self):
+        # The override adds NO prepended glyph: exactly icon + body, one space.
+        result = compose(
+            {"current_phase": "5-execute", "title_token": TOKEN_BUILD_BUSY},
+            STATE_ACTIVE,
+        )
+        assert result == f"{ICON_BUILD} pm:5-execute"
+        assert result.count(" ") == 1
+        # Neither lock glyph leaks into a build-busy title.
+        assert GLYPH_LOCK_WAITING not in result
+        assert GLYPH_LOCK_OWNED not in result
+
+    def test_build_busy_combines_with_short_description(self):
+        result = compose(
+            {
+                "current_phase": "5-execute",
+                "short_description": "run verify",
+                "title_token": TOKEN_BUILD_BUSY,
+            },
+            STATE_ACTIVE,
+        )
+        assert result == f"{ICON_BUILD} pm:5-execute:run verify"
+
+    def test_build_busy_supersedes_process_state_icon(self):
+        # 🔨 wins over the process-state icon for every process state — the
+        # build override is state-agnostic on an active phase.
+        for state in (STATE_ACTIVE, STATE_WAITING, STATE_BUSY, STATE_DONE, None):
+            result = compose(
+                {"current_phase": "2-refine", "title_token": TOKEN_BUILD_BUSY},
+                state,
+            )
+            assert result == f"{ICON_BUILD} pm:2-refine", state
+            # The process icons never lead a build-busy title.
+            leading_icon = result.split(" ", 1)[0]
+            assert leading_icon == ICON_BUILD, state
+            assert leading_icon not in (
+                ICON_ACTIVE,
+                ICON_WAITING,
+                ICON_BUSY,
+                ICON_DONE,
+            ), state
+
+    def test_build_busy_supersedes_icon_override(self):
+        # Precedence build-busy 🔨 > icon_override: the explicit push-mode icon
+        # is overridden by the build-busy token on an active phase.
+        result = compose(
+            {"current_phase": "2-refine", "title_token": TOKEN_BUILD_BUSY},
+            None,
+            icon_override="⚑",
+        )
+        assert result == f"{ICON_BUILD} pm:2-refine"
+
+    def test_terminal_phase_suppresses_build_busy_override(self):
+        # Precedence terminal ✅ > build-busy 🔨: a finished plan forces ✅ even
+        # when the persisted token is build-busy — the 🔨 override is suppressed
+        # and the Completed body renders.
+        for phase in ("complete", "archived"):
+            result = compose(
+                {"current_phase": phase, "title_token": TOKEN_BUILD_BUSY},
+                STATE_ACTIVE,
+            )
+            assert result == f"{ICON_TERMINAL} pm:Completed", phase
+            assert ICON_BUILD not in result, phase
+
+    def test_terminal_phase_suppresses_build_busy_with_short_description(self):
+        result = compose(
+            {
+                "current_phase": "complete",
+                "short_description": "wrap up",
+                "title_token": TOKEN_BUILD_BUSY,
+            },
+            STATE_BUSY,
+        )
+        assert result == f"{ICON_TERMINAL} pm:Completed:wrap up"
+        assert ICON_BUILD not in result
+
+    def test_build_busy_noop_when_phase_missing(self):
+        # No body → None even when build-busy is set (true no-op dominates).
+        assert (
+            compose({"current_phase": "", "title_token": TOKEN_BUILD_BUSY}, STATE_ACTIVE)
+            is None
+        )
 
 
 # =============================================================================

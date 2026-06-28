@@ -68,7 +68,7 @@ JSON format for storage:
 |-------|------|-------------|
 | `title` | string | Plan title |
 | `current_phase` | string | Current active phase |
-| `title_token` | string (optional) | Transient title-token state marker. Values: `lock-waiting`, `lock-owned`. Written by `title-token set`; cleared by `title-token clear`. Absent when no token is active. Consumed by the `manage-terminal-title` composer for glyph selection; not a persisted plan field — it is ephemeral session state. |
+| `title_token` | string (optional) | Transient title-token state marker. Values: `lock-waiting`, `lock-owned` (lock-coordination states surfaced as ⏳/🔒 glyphs), and `build-busy` (the orchestration-busy state surfaced as a 🔨 icon-slot override, NOT a glyph). Written by `title-token set`; cleared by `title-token clear`. Absent when no token is active. Consumed by the `manage-terminal-title` composer for glyph/icon selection; not a persisted plan field — it is ephemeral session state. `build-busy` is set/cleared by the orchestration layer to bracket a long-running call — see [`persona-plan-marshall-agent`](../persona-plan-marshall-agent/SKILL.md) for the normative orchestration requirement. |
 | `phases` | list | Phase objects with name and status |
 | `metadata` | table | Key-value metadata (common fields: `change_type`, `confidence`, `domain`, `use_worktree`, `worktree_path`, `worktree_branch`) |
 | `created` | string | ISO timestamp of creation |
@@ -783,7 +783,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `update-phase` | `--plan-id --phase --status` | Update specific phase status |
 | `progress` | `--plan-id` | Calculate progress percentage |
 | `metadata` | `--plan-id --get/--set --field [--value]` | Get/set metadata fields |
-| `title-token set` | `--plan-id --state {lock-waiting\|lock-owned}` | Write the field-only `status.title_token` state marker. No rendering — `manage-terminal-title` owns title composition + glyph vocabulary. |
+| `title-token set` | `--plan-id --state {lock-waiting\|lock-owned\|build-busy}` | Write the field-only `status.title_token` state marker. No rendering — `manage-terminal-title` owns title composition + glyph/icon vocabulary. `build-busy` is the orchestration-busy state (🔨 icon-slot override). |
 | `title-token clear` | `--plan-id` | Remove the `status.title_token` field (idempotent — no-op when already absent). |
 | `mark-step-done` | `--plan-id --phase --step --outcome [--display-detail] [--head-at-completion] [--loop-back-target] [--force]` | Record phase step outcome (+ optional display detail / HEAD SHA / loop-back target) in `metadata.phase_steps` |
 | `assert-step-recorded` | `--plan-id --phase --step [--require-terminal]` | Read-only verdict: reports `recorded: true` iff a terminal `metadata.phase_steps[phase][step]` outcome exists. The phase-6-finalize post-dispatch guard. With `--require-terminal`, a near-miss orphan record under a different key returns `error: step_record_mismatched_key` (carrying `orphan_key`); a truly-absent record returns `error: step_record_missing`. Zero writes. |
@@ -982,7 +982,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-t
 | `file_not_found` | 1 | status.json doesn't exist |
 | `file_exists` | 1 | status.json already exists (use `--force`) |
 | `invalid_phase` | 1 | Phase name not in the phases list (set-phase, update-phase, transition) |
-| `invalid_title_token_state` | 1 | `title-token set`: `--state` value not in `lock-waiting`/`lock-owned`. (Argparse `choices` normally catches this at parse time; this error fires only when the validation is bypassed at the API layer.) |
+| `invalid_title_token_state` | 1 | `title-token set`: `--state` value not in `lock-waiting`/`lock-owned`/`build-busy`. (Argparse `choices` normally catches this at parse time; this error fires only when the validation is bypassed at the API layer.) |
 | `phase_not_found` | 1 | Phase doesn't exist in this plan's status.json phases array |
 | `unknown_phase` | 1 | Phase name not in the static valid phases set (`1-init` through `6-finalize`); only used by `route` command |
 | `plan_not_found` | 1 | Plan directory does not exist (delete-plan command) |

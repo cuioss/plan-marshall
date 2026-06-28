@@ -21,9 +21,12 @@ Composition has three independent inputs:
   persisted token state — a finished plan holds no live lock state. See
   :data:`TITLE_TOKEN_GLYPHS`.
 * **Icon** — the process icon resolved from a target-neutral process state (➤
-  active / ? waiting / ⚙ busy / ✓ done), with a terminal-state override to ✅
-  (:data:`_ICON_TERMINAL`) for a finished plan regardless of the process state.
-  See :func:`resolve_icon` and :func:`compose`.
+  active / ? waiting / ⚙ busy / ✓ done), with two token/phase-keyed overrides
+  layered on top by :func:`compose`: a terminal-state override to ✅
+  (:data:`_ICON_TERMINAL`) for a finished plan, and a ``build-busy``
+  orchestration override to 🔨 (:data:`_ICON_BUILD`) for an active phase. The
+  full icon precedence is ``terminal ✅ > build-busy 🔨 > icon_override > process
+  icon``. See :func:`resolve_icon` and :func:`compose`.
 
 The composer is target-neutral by construction: it knows nothing about Claude
 hook events. The caller (e.g. ``platform-runtime``'s ``claude_runtime``) maps its
@@ -57,11 +60,16 @@ PROCESS_STATES: frozenset[str] = frozenset(
 #       deliberately distinct from the thin ✓ ``_ICON_DONE`` used per turn.
 #   ⚙  busy / executing a long-running tool, deliberately distinct from ➤
 #       ``_ICON_ACTIVE`` and the ? ``_ICON_WAITING`` icon.
+#   🔨  orchestration-busy build symbol, forced into the icon slot for the
+#       ``build-busy`` title-token on an active phase. Deliberately distinct from
+#       the ⚙ ``_ICON_BUSY`` momentary-busy icon — ``build-busy`` is a persistent,
+#       token-keyed icon override (see :func:`compose`), not the per-tool ⚙ state.
 _ICON_ACTIVE = "➤"  # ➤
 _ICON_WAITING = "?"
 _ICON_DONE = "✓"  # ✓
 _ICON_TERMINAL = "✅"  # ✅
 _ICON_BUSY = "⚙"  # ⚙
+_ICON_BUILD = "\U0001f528"  # 🔨
 
 # Process-state → icon map. The terminal-phase ✅ override is applied by
 # :func:`compose`, NOT here.
@@ -82,6 +90,14 @@ TITLE_TOKEN_GLYPHS: dict[str, str] = {
     "lock-waiting": "⏳",  # ⏳
     "lock-owned": "\U0001f512",  # 🔒
 }
+
+# The orchestration-busy title-token. Deliberately ABSENT from
+# ``TITLE_TOKEN_GLYPHS``: ``build-busy`` is rendered as a token-keyed **icon-slot
+# override** (🔨 forced into the icon slot by :func:`compose`), NOT as a prepended
+# glyph. Its absence from the glyph map makes glyph suppression for ``build-busy``
+# automatic — ``TITLE_TOKEN_GLYPHS.get("build-busy")`` is ``None``, so the
+# glyph-prepend block emits no glyph segment for it.
+_TITLE_TOKEN_BUILD_BUSY = "build-busy"
 
 
 # --- Terminal phases --------------------------------------------------------
@@ -164,15 +180,18 @@ def compose(
     Args:
         state_dict: The plan state — ``current_phase`` (str), optional
             ``short_description`` (str), and optional ``title_token`` (one of
-            the :data:`TITLE_TOKEN_GLYPHS` keys).
+            the :data:`TITLE_TOKEN_GLYPHS` keys for a glyph state, or
+            :data:`_TITLE_TOKEN_BUILD_BUSY` for the 🔨 icon-slot override).
         process_state: The target-neutral process state driving the process icon
             — one of the :data:`PROCESS_STATES` values (``"active"``,
             ``"waiting"``, ``"busy"``, ``"done"``). ``None`` for push-mode /
             statusLine, where ``icon_override`` supplies the icon instead. The
             caller maps its own target-specific events to this neutral state.
         icon_override: Push-mode icon. When provided it supersedes the
-            state-resolved icon for non-terminal phases. The terminal-phase ✅
-            override still wins over ``icon_override`` for a finished plan.
+            state-resolved icon for non-terminal phases. Both the terminal-phase
+            ✅ override and the active-phase ``build-busy`` 🔨 override still win
+            over ``icon_override`` (precedence ``terminal ✅ > build-busy 🔨 >
+            icon_override > process icon``).
 
     Returns:
         The composed ``'{icon} {glyph} {body}'`` string (glyph omitted when no
@@ -180,12 +199,18 @@ def compose(
         ``None`` when the body is ``None`` (true no-op — empty/missing
         ``current_phase``).
 
-    Icon selection:
+    Icon selection (precedence ``terminal ✅ > build-busy 🔨 > icon_override >
+    process icon``):
 
     - When ``current_phase`` is terminal (``complete`` / ``archived``), the icon
-      is forced to ✅ (:data:`_ICON_TERMINAL`) regardless of ``process_state`` /
-      ``icon_override`` — the process icons ➤ (active) and ? (waiting) MUST NOT
-      appear for a finished plan.
+      is forced to ✅ (:data:`_ICON_TERMINAL`) regardless of ``title_token`` /
+      ``process_state`` / ``icon_override`` — the process icons ➤ (active) and ?
+      (waiting), and the 🔨 build override, MUST NOT appear for a finished plan.
+    - Otherwise, when ``title_token`` is ``build-busy``
+      (:data:`_TITLE_TOKEN_BUILD_BUSY`) on an active phase, the icon is forced to
+      🔨 (:data:`_ICON_BUILD`) — a token-keyed **icon-slot override** (NOT a
+      glyph) that supersedes both ``icon_override`` and the process-state icon for
+      the duration of the orchestration call, rendering ``🔨 pm:{phase}``.
     - Otherwise the icon is ``icon_override`` when given, else
       :func:`resolve_icon`\\(``process_state``).
 
@@ -197,7 +222,10 @@ def compose(
       glyph for either of the two :data:`TITLE_TOKEN_GLYPHS` states (⏳/🔒).
       The suppression is token-agnostic by construction.
     - Otherwise (active phase) the glyph for the persisted ``title_token`` is
-      prepended when set.
+      prepended when set. ``build-busy`` carries NO glyph (it is absent from
+      :data:`TITLE_TOKEN_GLYPHS` by design — it is an icon-slot override), so it
+      adds no glyph segment: an active ``build-busy`` plan renders ``🔨 pm:{phase}``
+      with the icon-slot override and no prepended glyph.
     """
     body = _compose_body(state_dict)
     if body is None:
@@ -205,8 +233,12 @@ def compose(
 
     phase = state_dict.get("current_phase")
     is_terminal = isinstance(phase, str) and phase in _TERMINAL_PHASES
+    token = state_dict.get("title_token")
+    is_build_busy = token == _TITLE_TOKEN_BUILD_BUSY
     if is_terminal:
         icon = _ICON_TERMINAL
+    elif is_build_busy:
+        icon = _ICON_BUILD
     elif icon_override is not None:
         icon = icon_override
     else:
@@ -218,7 +250,6 @@ def compose(
     # uniformly suppressed for a terminal plan. The glyph only renders for
     # active phases.
     if not is_terminal:
-        token = state_dict.get("title_token")
         glyph = TITLE_TOKEN_GLYPHS.get(token) if isinstance(token, str) else None
         if glyph:
             return f"{icon} {glyph} {body}"

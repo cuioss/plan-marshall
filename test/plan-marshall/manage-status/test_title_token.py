@@ -7,7 +7,7 @@ The ``title-token`` verb persists a bare state string into
 vocabulary + ``{icon} {body}`` assembly) lives in ``manage-terminal-title``.
 These tests cover:
 
-- ``set`` writes each of the two ``TITLE_TOKEN_STATES`` into status.json.
+- ``set`` writes each of the three ``TITLE_TOKEN_STATES`` into status.json.
 - ``clear`` removes the ``title_token`` field, and is idempotent when the
   field is already absent.
 - An invalid ``--state`` is rejected by argparse (exit code 2) before the
@@ -34,10 +34,11 @@ cmd_archive = _lifecycle.cmd_archive
 cmd_title_token = _query.cmd_title_token
 TITLE_TOKEN_STATES = _core.TITLE_TOKEN_STATES
 
-# The two canonical title-token states (lock-coordination phases). Asserted
-# explicitly here so a silent change to TITLE_TOKEN_STATES surfaces as a
-# test failure rather than passing vacuously.
-EXPECTED_STATES = frozenset({'lock-waiting', 'lock-owned'})
+# The three canonical title-token states: the two lock-coordination phases
+# (lock-waiting / lock-owned) plus the orchestration-busy state (build-busy).
+# Asserted explicitly here so a silent change to TITLE_TOKEN_STATES surfaces
+# as a test failure rather than passing vacuously.
+EXPECTED_STATES = frozenset({'lock-waiting', 'lock-owned', 'build-busy'})
 
 
 def _read_status(plan_context, plan_id):
@@ -51,8 +52,9 @@ def _read_status(plan_context, plan_id):
 # =============================================================================
 
 
-def test_title_token_states_are_the_two_documented_states():
-    """``TITLE_TOKEN_STATES`` is exactly the two lock-coordination phase states."""
+def test_title_token_states_are_the_three_documented_states():
+    """``TITLE_TOKEN_STATES`` is exactly the two lock-coordination phase states
+    plus the orchestration-busy ``build-busy`` state."""
     assert TITLE_TOKEN_STATES == EXPECTED_STATES
 
 
@@ -83,6 +85,25 @@ def test_set_lock_owned_writes_title_token(plan_context):
 
     stored = _read_status(plan_context, 'tt-lock-owned')
     assert stored['title_token'] == 'lock-owned'
+
+
+def test_set_build_busy_writes_title_token(plan_context):
+    """``title-token set --state build-busy`` persists the bare state string.
+
+    build-busy is the orchestration-busy state — written by the orchestration
+    layer (not the lock machinery) for the duration of a long-running build
+    Bash call. manage-status persists it field-only, identically to the lock
+    states; the 🔨 icon-slot override is applied downstream by
+    ``manage-terminal-title``.
+    """
+    cmd_create(Namespace(plan_id='tt-build-busy', title='Test', phases='1-init', force=False))
+    result = cmd_title_token(Namespace(plan_id='tt-build-busy', token_verb='set', state='build-busy'))
+
+    assert result['status'] == 'success'
+    assert result['title_token'] == 'build-busy'
+
+    stored = _read_status(plan_context, 'tt-build-busy')
+    assert stored['title_token'] == 'build-busy'
 
 
 def test_set_overwrites_existing_token(plan_context):
@@ -164,6 +185,31 @@ def test_set_invalid_state_rejected_by_argparse():
     assert result.returncode == 2
 
 
+def test_set_build_busy_accepted_by_argparse(plan_context):
+    """``title-token set --state build-busy`` is accepted by argparse.
+
+    The ``--state`` choices are derived from ``sorted(TITLE_TOKEN_STATES)``, so
+    this end-to-end CLI run proves build-busy reaches the choices list — the
+    positive counterpart to the invalid-state rejection above. A created plan
+    is required so the command body runs to a clean (exit 0) success rather
+    than aborting on a missing status.json.
+    """
+    cmd_create(Namespace(plan_id='tt-argparse-build-busy', title='Test', phases='1-init', force=False))
+    result = run_script(
+        SCRIPT_PATH,
+        'title-token',
+        'set',
+        '--plan-id',
+        'tt-argparse-build-busy',
+        '--state',
+        'build-busy',
+    )
+    assert result.returncode == 0
+
+    stored = _read_status(plan_context, 'tt-argparse-build-busy')
+    assert stored['title_token'] == 'build-busy'
+
+
 # =============================================================================
 # no rendering: the verb writes no title-body.txt artifact
 # =============================================================================
@@ -225,6 +271,33 @@ def test_archive_pops_merge_lock_title_token(plan_context):
     assert 'title_token' not in archived_status, (
         f"Expected title_token absent from archived status.json after archiving "
         f"with a pre-set merge token, but found "
+        f"{archived_status.get('title_token')!r}. cmd_archive must pop "
+        f"title_token before write_status/shutil.move."
+    )
+
+
+def test_archive_pops_build_busy_title_token(plan_context):
+    """cmd_archive must pop a pre-set build-busy title_token before archiving.
+
+    A build-busy token left behind on an archived plan would persist a stale
+    🔨 build glyph in the archived snapshot — the same stale-glyph hazard the
+    lock-token variant guards against. cmd_archive pops the field
+    token-agnostically, so a single pop covers every TITLE_TOKEN_STATES value
+    including the orchestration-busy state.
+    """
+    plan_id = 'tt-archive-build-busy-token'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
+    # An in-flight build-busy token represents an orchestration build state held
+    # by the now-gone live session.
+    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='build-busy'))
+
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
+
+    assert result['status'] == 'success', f'archive failed: {result}'
+    archived_status = _read_archived_status(result)
+    assert 'title_token' not in archived_status, (
+        f"Expected title_token absent from archived status.json after archiving "
+        f"with a pre-set build-busy token, but found "
         f"{archived_status.get('title_token')!r}. cmd_archive must pop "
         f"title_token before write_status/shutil.move."
     )

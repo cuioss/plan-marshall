@@ -36,7 +36,9 @@ import pytest
 # conftest.py sets up PYTHONPATH so cross-skill imports resolve without manual
 # sys.path manipulation.
 from claude_runtime import (  # type: ignore[import-not-found]
+    _BUILD_WRAPPER_NOTATIONS,
     ClaudeRuntime,
+    _command_is_build,
     _ENFORCEMENT_HOOK_COMMAND,
     _HOOK_COMMAND,
     _RENDER_HOOK_COMMAND,
@@ -1777,6 +1779,286 @@ class TestSessionRenderTitleSessionTitleEmit:
 
         assert returned == ""
         assert captured == ""
+
+
+# =============================================================================
+# 3c3. _command_is_build detection predicate (D5)
+# =============================================================================
+
+
+class TestCommandIsBuild:
+    """Unit tests for the ``_command_is_build`` detection predicate.
+
+    Detection anchors on the four build-wrapper executor notation substrings in
+    ``_BUILD_WRAPPER_NOTATIONS``. A match means the Bash call routes a
+    long-running build / orchestration command through the executor; an empty /
+    ``None`` command, a bare canonical verb word, or any command naming none of
+    the wrapper notations returns False.
+    """
+
+    @pytest.mark.parametrize("notation", list(_BUILD_WRAPPER_NOTATIONS))
+    def test_each_wrapper_notation_matches(self, notation):
+        """Every build-wrapper notation, embedded in an executor invocation, matches."""
+        command = (
+            f"python3 .plan/execute-script.py {notation}:run_build run "
+            '--command-args "verify plan-marshall"'
+        )
+        assert _command_is_build(command) is True
+
+    @pytest.mark.parametrize("notation", list(_BUILD_WRAPPER_NOTATIONS))
+    def test_notation_substring_anywhere_matches(self, notation):
+        """The notation substring matches anywhere in the command string."""
+        assert _command_is_build(f"some prefix {notation} trailing args") is True
+
+    @pytest.mark.parametrize("command", [None, ""])
+    def test_empty_or_none_command_is_false(self, command):
+        """An empty or None command is never a build command."""
+        assert _command_is_build(command) is False
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "verify",
+            "coverage",
+            "quality-gate",
+            "module-tests",
+            "echo verify",
+            "ls -la",
+            "git commit -m 'verify the build'",
+            "python3 some_other_script.py run",
+            "cat plan-marshall/README.md",
+        ],
+    )
+    def test_non_build_commands_are_false(self, command):
+        """A bare canonical verb word, or any non-wrapper command, never matches.
+
+        The canonical ``verify`` / ``coverage`` / ``quality-gate`` / ``module-tests``
+        verbs are only build invocations when passed AS ``--command-args`` to a
+        wrapper notation — the bare verb word alone (or a verb appearing in an
+        unrelated command like ``git commit -m 'verify ...'``) must NOT match.
+        """
+        assert _command_is_build(command) is False
+
+    def test_canonical_verb_via_wrapper_matches(self):
+        """A canonical verb passed as --command-args to a wrapper matches via the notation."""
+        command = (
+            "python3 .plan/execute-script.py "
+            "plan-marshall:build-pyproject:pyproject_build run "
+            '--command-args "quality-gate plan-marshall"'
+        )
+        assert _command_is_build(command) is True
+
+
+# =============================================================================
+# 3c4. session_render_title build-busy hook assist (D5)
+# =============================================================================
+
+
+class TestSessionRenderTitleBuildBusy:
+    """Tests for the D5 build-busy hook assist in ``session_render_title``.
+
+    When a ``PreToolUse:Bash`` hook event carries a build-wrapper command (one of
+    ``_BUILD_WRAPPER_NOTATIONS`` as a substring of ``tool_input.command``), the
+    renderer forces the persistent ``build-busy`` title-token for this render: the
+    composed title paints the 🔨 icon-slot override (beating the ⚙ momentary-busy
+    icon the bare ``PreToolUse:Bash`` event would otherwise resolve), AND the
+    token is persisted best-effort via ``_manage_status_set_title_token`` so it
+    survives to subsequent renders and the agent's D3 clear. A non-build Bash
+    command, a missing ``tool_input``, a non-``PreToolUse`` event, or statusLine
+    mode is a silent no-op — the existing ⚙ busy mapping remains.
+    """
+
+    _ICON_BUILD = "\U0001f528"  # 🔨 build-busy icon-slot override
+    _ICON_BUSY = "⚙"  # momentary-busy icon (bare PreToolUse:Bash)
+    _ICON_ACTIVE = "➤"  # active icon (PostToolUse / statusLine)
+
+    @staticmethod
+    def _arrange(
+        tmp_path,
+        monkeypatch,
+        *,
+        session_id="sess-build",
+        plan_id="build-plan",
+        current_phase="5-execute",
+        short_description="build-task",
+    ):
+        _write_status_json(
+            tmp_path,
+            session_id=session_id,
+            plan_id=plan_id,
+            current_phase=current_phase,
+            short_description=short_description,
+        )
+        _redirect_render_env(tmp_path, monkeypatch, session_id)
+        return f"pm:{current_phase}:{short_description}"
+
+    @staticmethod
+    def _bash_payload(command):
+        """Build a PreToolUse:Bash hook payload carrying *command*."""
+        return {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+        }
+
+    @pytest.mark.parametrize("notation", list(_BUILD_WRAPPER_NOTATIONS))
+    def test_build_command_renders_build_busy_icon(
+        self, notation, rt, tmp_path, monkeypatch, capsys
+    ):
+        """Each build-wrapper notation flips the OSC envelope to the 🔨 build-busy override."""
+        from io import StringIO
+
+        body = self._arrange(tmp_path, monkeypatch)
+        command = (
+            f"python3 .plan/execute-script.py {notation}:run_build run "
+            '--command-args "verify plan-marshall"'
+        )
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(self._bash_payload(command))))
+
+        capsys.readouterr()
+        with patch("claude_runtime._manage_status_set_title_token", return_value=True):
+            returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        assert envelope["terminalSequence"] == f"\x1b]0;{self._ICON_BUILD} {body}\x07"
+
+    def test_build_command_persists_build_busy_token(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """A build command persists the token via _manage_status_set_title_token(plan_id, 'build-busy')."""
+        from io import StringIO
+
+        self._arrange(tmp_path, monkeypatch, plan_id="persist-plan")
+        command = (
+            "python3 .plan/execute-script.py "
+            "plan-marshall:build-pyproject:pyproject_build run "
+            '--command-args "verify plan-marshall"'
+        )
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(self._bash_payload(command))))
+
+        capsys.readouterr()
+        with patch(
+            "claude_runtime._manage_status_set_title_token", return_value=True
+        ) as mock_set:
+            rt.session_render_title(statusline=False)
+
+        mock_set.assert_called_once_with("persist-plan", "build-busy")
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "echo verify",
+            "ls -la",
+            "git status",
+            "git commit -m 'verify the build'",
+            "python3 some_other_script.py run",
+        ],
+    )
+    def test_non_build_command_keeps_busy_icon_and_does_not_persist(
+        self, command, rt, tmp_path, monkeypatch, capsys
+    ):
+        """A non-build Bash command keeps the existing ⚙ busy icon and never persists build-busy."""
+        from io import StringIO
+
+        body = self._arrange(tmp_path, monkeypatch)
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(self._bash_payload(command))))
+
+        capsys.readouterr()
+        with patch(
+            "claude_runtime._manage_status_set_title_token", return_value=True
+        ) as mock_set:
+            returned = rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        envelope = json.loads(captured)
+        assert envelope["terminalSequence"] == f"\x1b]0;{self._ICON_BUSY} {body}\x07"
+        mock_set.assert_not_called()
+
+    def test_bash_without_tool_input_keeps_busy_icon(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """A PreToolUse:Bash event with no tool_input is a silent no-op → ⚙ busy, no persist."""
+        from io import StringIO
+
+        body = self._arrange(tmp_path, monkeypatch)
+        monkeypatch.setattr(
+            "sys.stdin",
+            StringIO(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash"})),
+        )
+
+        capsys.readouterr()
+        with patch(
+            "claude_runtime._manage_status_set_title_token", return_value=True
+        ) as mock_set:
+            rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        envelope = json.loads(captured)
+        assert envelope["terminalSequence"] == f"\x1b]0;{self._ICON_BUSY} {body}\x07"
+        mock_set.assert_not_called()
+
+    def test_build_command_on_post_tool_use_does_not_trigger_build_busy(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """A build command on PostToolUse:Bash does NOT trigger build-busy (only PreToolUse:Bash does)."""
+        from io import StringIO
+
+        body = self._arrange(tmp_path, monkeypatch)
+        command = (
+            "python3 .plan/execute-script.py "
+            "plan-marshall:build-maven:maven run --targets verify"
+        )
+        monkeypatch.setattr(
+            "sys.stdin",
+            StringIO(
+                json.dumps(
+                    {
+                        "hook_event_name": "PostToolUse",
+                        "tool_name": "Bash",
+                        "tool_input": {"command": command},
+                    }
+                )
+            ),
+        )
+
+        capsys.readouterr()
+        with patch(
+            "claude_runtime._manage_status_set_title_token", return_value=True
+        ) as mock_set:
+            rt.session_render_title(statusline=False)
+        captured = capsys.readouterr().out
+
+        envelope = json.loads(captured)
+        # PostToolUse:Bash → ➤ active (existing mapping), never build-busy.
+        assert envelope["terminalSequence"] == f"\x1b]0;{self._ICON_ACTIVE} {body}\x07"
+        mock_set.assert_not_called()
+
+    def test_statusline_mode_never_triggers_build_busy(
+        self, rt, tmp_path, monkeypatch, capsys
+    ):
+        """statusLine mode never reads stdin, so a build command never flips to 🔨 — active icon stays."""
+        from io import StringIO
+
+        body = self._arrange(tmp_path, monkeypatch)
+        command = (
+            "python3 .plan/execute-script.py "
+            "plan-marshall:build-gradle:gradle run --targets verify"
+        )
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(self._bash_payload(command))))
+
+        capsys.readouterr()
+        with patch(
+            "claude_runtime._manage_status_set_title_token", return_value=True
+        ) as mock_set:
+            returned = rt.session_render_title(statusline=True)
+        captured = capsys.readouterr().out
+
+        assert returned == ""
+        assert captured == f"{self._ICON_ACTIVE} {body}"
+        mock_set.assert_not_called()
 
 
 # =============================================================================

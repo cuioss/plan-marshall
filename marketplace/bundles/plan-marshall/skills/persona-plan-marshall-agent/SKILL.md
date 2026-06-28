@@ -79,6 +79,17 @@ The floor for ad-hoc build/verify invocations outside the architecture-resolved 
 
 The recurrence signature and orchestrator-tier rationale are documented in the adaptive-timeout infrastructure design.
 
+**build-busy bracketing of long-running orchestration calls (live `/dev/tty` push).** The same long-running orchestration Bash call the timeout rule governs — a resolved build / verify / coverage canonical command, a `git push`, a CI-wait, or any long git/shell op — MUST ALSO be bracketed with a `build-busy` title-token state pushed live to the terminal, so the title surfaces the 🔨 build symbol for the whole blocking window (overriding any momentary hook-event icon). A bare `manage-status title-token set` only writes `status.json` and is invisible during a blocking call; the ONLY mechanism that repaints the terminal during the blocking window is the live `/dev/tty` OSC write performed by `session push-title-token`, exactly as `manage-locks/merge_lock.py` surfaces its ⏳/🔒 lock glyphs (`_surface_lock_waiting` / `_surface_lock_owned`).
+
+- **BEFORE** issuing the long-running call: (a) persist the state —
+  `python3 .plan/execute-script.py plan-marshall:manage-status:manage-status title-token set --state build-busy --plan-id {plan_id}` — AND (b) live-push the glyph —
+  `python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token --plan-id {plan_id} --icon 🔨` (the OSC write to `/dev/tty` that actually repaints the terminal during the blocking window).
+- **AFTER** the call returns on EITHER success OR failure: (a) clear the state —
+  `python3 .plan/execute-script.py plan-marshall:manage-status:manage-status title-token clear --plan-id {plan_id}` — AND (b) push the restored state —
+  `python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token --plan-id {plan_id} --icon {live-process-icon}` — so the terminal repaints to the current process icon (e.g. ➤ active once a foreground build's `PostToolUse:Bash` has fired).
+- For **backgrounded** builds the clear is necessarily **agent-driven** — only the agent receives the background-completion notification, so the agent MUST issue the clear-and-push when the backgrounded call actually completes. A backgrounded call's `PostToolUse:Bash` fires immediately (not at job end), so the `PreToolUse:Bash` render-hook assist that auto-sets `build-busy` cannot clear it: the SET may come from the hook, but the CLEAR is always the agent's obligation.
+- All four operations are **best-effort** — a set / clear / push failure NEVER aborts the wrapped operation (mirroring `merge_lock`). The build-wrapper scripts (`build-pyproject` / `build-maven` / `build-gradle` / `build-npm`) are NOT the call sites: the bracketing happens at the orchestration layer that invokes the wrapper, not inside the wrapper. The 🔨 icon-slot override repaints over the momentary hook-event icon (⚙ busy / ? waiting) for the call's duration.
+
 ### Bash: No file operations
 
 Never use Bash for file discovery or reading. Use the structured architecture inventory first (`architecture files --module X`, `architecture which-module --path P`, `architecture find --pattern P`); fall back to Glob, Grep, Read when narrowing to sub-module components, scanning content inside an already-known file, or when the architecture verb returns elision. See "Structured queries first" below for the full rule.

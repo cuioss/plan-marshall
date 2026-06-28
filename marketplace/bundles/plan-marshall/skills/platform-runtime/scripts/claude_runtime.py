@@ -218,6 +218,41 @@ def _claude_event_to_process_state(
     return "active"
 
 
+# The four build-wrapper executor notations that route a long-running
+# build/orchestration command through the executor. The ``PreToolUse:Bash``
+# render hook anchors its build-command detection on these substrings: the
+# canonical ``verify`` / ``coverage`` / ``quality-gate`` / ``module-tests`` verbs
+# are passed AS ``--command-args`` to these same wrappers, so a wrapper-notation
+# match already covers them without matching a bare verb word.
+_BUILD_WRAPPER_NOTATIONS: tuple[str, ...] = (
+    "plan-marshall:build-pyproject",
+    "plan-marshall:build-maven",
+    "plan-marshall:build-gradle",
+    "plan-marshall:build-npm",
+)
+
+
+def _command_is_build(command: str | None) -> bool:
+    """Return True when *command* routes a long-running build through the executor.
+
+    Detection anchors on the four build-wrapper executor notation substrings in
+    :data:`_BUILD_WRAPPER_NOTATIONS`. A match means the Bash call is a build /
+    orchestration invocation that should surface the persistent 🔨 ``build-busy``
+    terminal-title state for its duration. An empty / ``None`` command, or any
+    command that names none of the wrapper notations, returns False (the existing
+    ``PreToolUse:Bash`` → ⚙ busy mapping remains the fallback).
+
+    Never matches on a bare verb word alone (e.g. ``echo verify``): the canonical
+    ``verify`` / ``coverage`` / ``quality-gate`` / ``module-tests`` verbs are
+    passed as ``--command-args`` to the wrappers, so a wrapper-notation match
+    already covers them — anchoring on the notation keeps the predicate precise
+    and low-false-positive.
+    """
+    if not command:
+        return False
+    return any(notation in command for notation in _BUILD_WRAPPER_NOTATIONS)
+
+
 # Required render-trigger entries inspected by the ``display`` health check, in
 # report order. Each tuple is (label, hooks_block_key, matcher). The label is the
 # token the menu doc tells the user to read; it matches the ``installed_events``
@@ -867,6 +902,38 @@ def _manage_status_read_session(plan_id: str) -> str | None:
         return str(value) if value else None
     except (OSError, subprocess.SubprocessError):
         return None
+
+
+def _manage_status_set_title_token(plan_id: str, state: str) -> bool:
+    """Best-effort ``manage-status title-token set --state {state}``.
+
+    Persists *state* into the plan's ``status.json`` so the ``build-busy``
+    title-token set by the ``PreToolUse:Bash`` render hook survives to subsequent
+    renders and is available for the agent's D3 clear. Best-effort: returns False
+    on any failure and never raises — a persist failure must never break the
+    render hook. The bare STATE NAME is passed; the render path never hard-codes a
+    glyph. The timeout stays inside the render hook's own budget.
+    """
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                ".plan/execute-script.py",
+                "plan-marshall:manage-status:manage-status",
+                "title-token",
+                "set",
+                "--plan-id",
+                plan_id,
+                "--state",
+                state,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def _manage_metrics_end_phase(plan_id: str, phase: str, total_tokens: int) -> bool:
@@ -1894,6 +1961,7 @@ class ClaudeRuntime(Runtime):
         hook_event_name: str | None = None
         source: str | None = None
         tool_name: str | None = None
+        tool_command: str | None = None
         if not statusline:
             try:
                 raw_payload = sys.stdin.read() if not sys.stdin.isatty() else ""
@@ -1902,10 +1970,36 @@ class ClaudeRuntime(Runtime):
                     hook_event_name = payload.get("hook_event_name")
                     source = payload.get("source")
                     tool_name = payload.get("tool_name")
+                    tool_input = payload.get("tool_input")
+                    if isinstance(tool_input, dict):
+                        raw_command = tool_input.get("command")
+                        if isinstance(raw_command, str):
+                            tool_command = raw_command
             except (OSError, ValueError):
                 hook_event_name = None
                 source = None
                 tool_name = None
+                tool_command = None
+
+        # Build-busy hook assist (D5): when a PreToolUse:Bash event carries a
+        # build-wrapper command, force the persistent 🔨 build-busy title-token
+        # for this render — set it in the in-memory state dict BEFORE compose so
+        # this render paints ``🔨 pm:{phase}`` via the composer's icon-slot
+        # override, AND persist it best-effort so the state survives to subsequent
+        # renders and for the agent's D3 clear. The hook only SETs — it never
+        # CLEARs, because a backgrounded build's PostToolUse:Bash fires
+        # immediately (not at job end), so the clear is necessarily the agent's
+        # D3 obligation. A non-build command / missing tool_input is a silent
+        # no-op (the existing PreToolUse:Bash → ⚙ busy mapping remains the
+        # fallback).
+        if (
+            not statusline
+            and hook_event_name == "PreToolUse"
+            and tool_name == "Bash"
+            and _command_is_build(tool_command)
+        ):
+            state["title_token"] = "build-busy"
+            _manage_status_set_title_token(plan_id, "build-busy")
 
         # Map the Claude hook event → the composer's target-neutral process
         # state, then compose. The composer no longer knows any Claude event

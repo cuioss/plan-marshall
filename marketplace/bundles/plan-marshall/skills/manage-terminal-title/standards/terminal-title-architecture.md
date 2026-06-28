@@ -1,10 +1,10 @@
 # Terminal-Title Architecture
 
 Single canonical reference for the terminal-title feature: how a plan's phase,
-short description, and lock coordination state reach the terminal title
-bar. The architecture is a **three-way split** across `status.json` (the single
-source of persisted title state) and three skills, each owning exactly one
-concern:
+short description, lock-coordination state, and orchestration-busy state reach
+the terminal title bar. The architecture is a **three-way split** across
+`status.json` (the single source of persisted title state) and three skills, each
+owning exactly one concern:
 
 - **`manage-status` (state)** — persists the title state into `status.json`:
   `current_phase`, `short_description`, and the bare `title_token` field. It
@@ -56,7 +56,7 @@ belongs entirely to the composer.
 |-------|------------|------|
 | `current_phase` | the plan lifecycle commands (`transition`, etc.) | The active phase name (`5-execute`, `complete`, `archived`, …) |
 | `short_description` | plan metadata setters | The optional short title-body name token |
-| `title_token` | `manage-status title-token set\|clear` | The bare lock coordination state string (no glyph) |
+| `title_token` | `manage-status title-token set\|clear` | The bare lock-coordination (`lock-waiting`/`lock-owned`) or orchestration-busy (`build-busy`) state string (no glyph/icon) |
 
 ### The `title-token` verb
 
@@ -64,14 +64,20 @@ The `title-token` subcommand is the single writer of the `title_token` field:
 
 - `title-token set --plan-id {id} --state {state}` writes `status.title_token`
   to the bare state string. `{state}` is validated against `TITLE_TOKEN_STATES`
-  = `{lock-waiting, lock-owned}`.
+  = `{lock-waiting, lock-owned, build-busy}`.
 - `title-token clear --plan-id {id}` removes the `title_token` field
   (idempotent).
 
 `manage-status` persists **only the bare state string** — it never renders the
-glyph. The state → glyph rendering is owned exclusively by the composer's
-`TITLE_TOKEN_GLYPHS` map (see below). This keeps `manage-status` free of any
-display vocabulary.
+glyph or icon. The state → display rendering is owned exclusively by the composer:
+`lock-waiting`/`lock-owned` map to ⏳/🔒 glyphs via the `TITLE_TOKEN_GLYPHS` map,
+and `build-busy` maps to the 🔨 icon-slot override (see Composer below).
+`build-busy` is deliberately absent from `TITLE_TOKEN_GLYPHS` — it is an
+icon-slot override, not a glyph. This keeps `manage-status` free of any display
+vocabulary. `build-busy` is set/cleared by the orchestration layer to bracket a
+long-running call — see
+[`persona-plan-marshall-agent`](../../persona-plan-marshall-agent/SKILL.md) for
+the normative orchestration requirement.
 
 ### Archive interaction
 
@@ -82,9 +88,10 @@ before moving the plan directory:
 2. Sets `current_phase = 'complete'` when every phase is done.
 3. Pops the `title_token` field (`status.pop('title_token', None)`) — an
    archived plan has no live session driving its terminal title, so any
-   in-flight token (`lock-waiting` / `lock-owned`) left behind would persist a
-   stale lock glyph in the archived snapshot. The pop is token-agnostic: it
-   covers every `TITLE_TOKEN_STATES` value with a single operation.
+   in-flight token (`lock-waiting` / `lock-owned` / `build-busy`) left behind
+   would persist a stale glyph or icon-slot override in the archived snapshot.
+   The pop is token-agnostic: it covers every `TITLE_TOKEN_STATES` value with a
+   single operation.
 
 After writing the mutated `status.json` back to the live plan directory,
 `cmd_archive` moves the **entire plan directory** to
@@ -124,16 +131,26 @@ composes `'{icon} {glyph} {body}'` from three independent inputs:
   🔒 `lock-owned`), prepended when the field is set for an active phase; omitted
   when no `title_token` is present, and also omitted for terminal phases
   (`complete` / `archived`) regardless of the persisted token — a finished plan
-  holds no live lock state.
+  holds no live lock state. The `build-busy` token carries NO glyph (it is an
+  icon-slot override, see below).
 - **Icon** — the process icon from the hook event (➤ active / ? waiting /
-  ⚙ busy / ✓ done), with a **terminal-state override to ✅** (`_ICON_TERMINAL`,
-  U+2705) for `complete` / `archived` phases regardless of the event or
-  `icon_override`. The thick ✅ is deliberately distinct from the thin ✓
-  `_ICON_DONE` used per turn. The ⚙ busy icon (`_ICON_BUSY`, U+2699) is surfaced
-  on the `PreToolUse:Bash` render trigger while a long-running Bash tool call
-  executes; `PreToolUse:Bash` and `PostToolUse:Bash` bracket the busy window
-  (busy on enter, back to ➤ active on exit). The process icons ➤ and ? MUST NOT
-  appear for a finished plan.
+  ⚙ busy / ✓ done), with two token/phase-keyed overrides layered on top by
+  `compose`. (1) A **terminal-state override to ✅** (`_ICON_TERMINAL`, U+2705)
+  for `complete` / `archived` phases regardless of the event or `icon_override`;
+  the thick ✅ is deliberately distinct from the thin ✓ `_ICON_DONE` used per
+  turn. (2) A **`build-busy` icon-slot override to 🔨** (`_ICON_BUILD`, U+1F528)
+  for an active phase whose `title_token` is `build-busy` — forced into the icon
+  slot for the whole orchestration call, rendering `🔨 pm:{phase}`, and
+  deliberately distinct from the ⚙ momentary-busy icon. The full icon precedence
+  is **terminal ✅ > build-busy 🔨 > `icon_override` > process icon** — the
+  terminal ✅ override still wins, so 🔨 never appears for a finished plan. The ⚙
+  busy icon (`_ICON_BUSY`, U+2699) is surfaced on the `PreToolUse:Bash` render
+  trigger while a long-running Bash tool call executes; `PreToolUse:Bash` and
+  `PostToolUse:Bash` bracket the busy window (busy on enter, back to ➤ active on
+  exit). The process icons ➤ and ? MUST NOT appear for a finished plan. The
+  `build-busy` state is set/cleared by the orchestration layer — see
+  [`persona-plan-marshall-agent`](../../persona-plan-marshall-agent/SKILL.md) for
+  the normative orchestration requirement.
 
 ## Resolve + Emit — `platform-runtime`
 
