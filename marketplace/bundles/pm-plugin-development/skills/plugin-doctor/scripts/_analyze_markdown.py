@@ -849,13 +849,14 @@ def check_broken_relative_link(
             if not file_part:
                 continue
             resolved = (base_dir / file_part).resolve()
-            # Existence before containment: a target that exists on disk is never
-            # broken, regardless of which boundary the caller passed.
-            if resolved.exists():
-                continue
-            # Missing AND escaping the containment root: cannot be probed safely,
-            # so SKIP rather than report broken (avoids the cross-dir false positive).
+            # Containment before existence: a target that escapes the containment
+            # root cannot be probed safely, so SKIP it without touching the disk
+            # (avoids both the cross-dir false positive and an out-of-bounds stat).
             if not resolved.is_relative_to(scan_boundary):
+                continue
+            # In-boundary and exists on disk: never broken, regardless of which
+            # boundary the caller passed.
+            if resolved.exists():
                 continue
             # Only a missing, in-boundary target is a genuine broken link.
             findings.append(
