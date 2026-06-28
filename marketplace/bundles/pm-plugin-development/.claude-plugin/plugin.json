@@ -30,6 +30,7 @@
     "./skills/plugin-maintain",
     "./skills/plugin-plan-implement",
     "./skills/plugin-script-architecture",
+    "./skills/plugin-security",
     "./skills/plugin-task-plan",
     "./skills/recipe-fix-argparse-rejection",
     "./skills/tools-marketplace-inventory",
