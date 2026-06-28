@@ -34,7 +34,7 @@ _CODING_RE = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)')
 # Native coverage threshold enforced by cmd_coverage via pytest's --cov-fail-under.
 # Sourcing this from marshal.json (rather than a static constant) is deliberately
 # deferred per the originating request constraint.
-COVERAGE_THRESHOLD = 70
+COVERAGE_THRESHOLD = 80
 
 
 # Single source of truth: delegate to collect_script_dirs so mypy_path matches runtime PYTHONPATH.
