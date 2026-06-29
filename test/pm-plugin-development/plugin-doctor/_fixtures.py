@@ -1267,3 +1267,17 @@ def fired_rule_ids() -> set[str]:
     # crafted-claim builder so the meta-test never depends on test ordering.
     fired |= _finding_rule_ids(crossfile_verified_findings())
     return fired
+
+
+# ---------------------------------------------------------------------------
+# Shared source-inspection utilities (used by registration tests)
+# ---------------------------------------------------------------------------
+
+
+def _function_body(source: str, func_name: str) -> str:
+    """Return the source slice of a top-level ``def func_name(`` block."""
+    marker = f'\ndef {func_name}('
+    start = source.index(marker)
+    rest = source[start + len(marker):]
+    next_def = rest.find('\ndef ')
+    return rest if next_def == -1 else rest[:next_def]

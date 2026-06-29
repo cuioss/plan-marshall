@@ -17,6 +17,7 @@ writes agentfiles under ``{repo}`` (and its subdirectories).
 from pathlib import Path
 
 from conftest import get_scripts_dir, load_script_module
+from _fixtures import _function_body
 
 _alb = load_script_module(
     'pm-plugin-development', 'plugin-doctor', '_analyze_agentfile_line_budget.py', '_analyze_agentfile_line_budget'
@@ -218,15 +219,6 @@ class TestConfigurableBudget:
 # Registration — analyze-surfaced only (present in cmd_analyze, absent from
 # cmd_quality_gate).
 # ===========================================================================
-
-
-def _function_body(source: str, func_name: str) -> str:
-    """Return the source slice of a top-level ``def func_name(`` block."""
-    marker = f'\ndef {func_name}('
-    start = source.index(marker)
-    rest = source[start + len(marker):]
-    next_def = rest.find('\ndef ')
-    return rest if next_def == -1 else rest[:next_def]
 
 
 class TestAnalyzeOnlyRegistration:
