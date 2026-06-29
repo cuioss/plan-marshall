@@ -315,7 +315,7 @@ A new producer-declared frontmatter opt-in field must inherit the sibling field-
 
 ```python
 # Sibling opt-in field is read from metadata as a direct child, empty == absent
-meta = frontmatter.get("metadata", {})
+meta = frontmatter.get("metadata") or {}
 def opted_in(field):
     val = meta.get(field)
     return isinstance(val, str) and val.strip() != ""
