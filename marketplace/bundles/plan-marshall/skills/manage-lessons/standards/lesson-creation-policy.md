@@ -54,6 +54,10 @@ Act on the classifier's result:
   - Stop here — no Gate 2, no Gate 3.
 - **`already_closed`** — an existing lesson filed the finding and the fix has since landed (positive evidence required; silence is not evidence). Follow the classifier's closed-lesson contract: skip the add and delete the stale lesson file at `.plan/local/lessons-learned/{target_id}.md`, subject to the caller-contract rules below. Stop here.
 
+### `arch-constraint` exception — dedup by rule identity, retire on quiet
+
+`arch-constraint` lessons (recurring `arch-gate` structural-boundary violations) do **not** use the component/root-cause heuristic above. Their dedup key is **rule identity**: `manage-lessons add --category arch-constraint --rule {id}` looks up an active lesson carrying that `rule` and, when one exists, REINFORCES it (recurrence_count bump + a `## Recurrence —` section) rather than allocating a new lesson — the same recurrence-merge outcome as Gate 1's `merge_into`, but keyed on the rule, not on a corpus similarity classifier. The reinforce is performed automatically by the `add` verb, so an `arch-constraint` producer does NOT run the dedup classifier; it passes the rule and lets the verb dedup. Closure is **retire-on-quiet** (`manage-lessons retire-quiet`), not the promote-to-skill / `already_closed` deletion path: a rule that stays quiet past the configured window retires its lesson. See [`file-format.md`](file-format.md) § "arch-constraint lifecycle".
+
 ## Gate 2 — Active-Plan Gate
 
 Runs **only** when Gate 1 returned `new`. The purpose is to avoid filing a standalone lesson for a problem an in-flight plan already exists to solve.

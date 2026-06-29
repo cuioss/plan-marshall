@@ -15,7 +15,8 @@ Manage lessons learned with global scope. Stores lessons as markdown files with 
 > **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
 **Skill-specific constraints:**
-- Only valid category values: `bug`, `improvement`, `anti-pattern`
+- Only valid category values: `bug`, `improvement`, `anti-pattern`, `arch-constraint`
+- `arch-constraint` lessons require `--rule` on `add` (the dedup key) and follow a rule-identity dedup + retire-on-quiet lifecycle (see [Categories](#categories) and `standards/file-format.md`)
 - Lessons are global-scoped (not plan-specific); no `--plan-id` parameter
 - The `from-error` command expects JSON context as `--context` argument
 
@@ -73,9 +74,12 @@ This affects all projects using jakarta.json without explicit dependency.
 |-------|-------------|
 | `id` | Unique identifier (date-sequence). Appears as a metadata header key and in command output; the input flag that selects a lesson by this value is **`--lesson-id`**, not `--id`. |
 | `component` | Component that lesson applies to |
-| `category` | bug, improvement, anti-pattern |
+| `category` | bug, improvement, anti-pattern, arch-constraint |
 | `created` | Creation date |
 | `bundle` | Optional: bundle that the lesson relates to (e.g., `pm-dev-java`). Used for filtering when applying lessons to specific bundles. |
+| `rule` | Conditional (arch-constraint only): the rule identity that is the dedup key |
+| `recurrence_count` | Conditional (arch-constraint only): observation count, bumped on each reinforce |
+| `last_seen` | Conditional (arch-constraint only): `YYYY-MM-DD` of the latest observation; anchors retire-on-quiet |
 
 ---
 
@@ -97,9 +101,10 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add 
 
 **Parameters**:
 - `--component` (required): Component that lesson applies to
-- `--category` (required): `bug`, `improvement`, or `anti-pattern`
+- `--category` (required): `bug`, `improvement`, `anti-pattern`, or `arch-constraint`
 - `--title` (required): Lesson title
 - `--bundle`: Optional bundle reference
+- `--rule`: Rule identity — required for `--category arch-constraint` (the dedup key). When an active `arch-constraint` lesson already covers the rule, `add` reinforces it (recurrence_count bump + `## Recurrence` section) and returns the existing id with `action: reinforced` instead of allocating a new lesson.
 
 **Output** (TOON):
 ```toon
@@ -357,6 +362,41 @@ skipped_no_tombstone[0]{lesson_id}:
 Each successful unlink emits an INFO line to `script-execution.log`:
 `(plan-marshall:manage-lessons) Pruned superseded stub {id}`.
 
+### retire-quiet
+
+Retire-on-quiet sibling of `cleanup-superseded` for the `arch-constraint` lifecycle. Walks active `arch-constraint` lessons and retires (tombstone + unlink) every one whose `last_seen` is at least the quiet window old — i.e. the rule has stayed quiet (no recurrence) for that long. Tombstones are preserved exactly as `cleanup-superseded` does. A reinforced lesson's refreshed `last_seen` resets the quiet clock.
+
+```bash
+# Default window (marshal.json system.retention.arch_constraint_quiet_days, else hard fallback)
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons retire-quiet
+
+# Explicit window
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons retire-quiet \
+  --quiet-days 90
+
+# Dry-run (report only)
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons retire-quiet \
+  --quiet-days 90 --dry-run
+```
+
+**Parameters**:
+- `--quiet-days`: Quiet window in days. Falls back to `system.retention.arch_constraint_quiet_days` from marshal.json, then a hard fallback, when omitted.
+- `--dry-run`: Report what would be retired without unlinking anything
+
+**Output** (TOON):
+```toon
+status: success
+dry_run: false
+quiet_days: 90
+retired[1]{lesson_id,rule,quiet_days_elapsed}:
+  2025-12-02-001,java:no-web-in-service,120
+retained[0]{lesson_id,rule,quiet_days_elapsed}:
+skipped_unparseable_date[0]{lesson_id,last_seen}:
+```
+
+Each retirement emits an INFO line to `script-execution.log`:
+`(plan-marshall:manage-lessons) Retired quiet arch-constraint lesson {id} (rule {rule}, quiet {N}d >= {window}d)`.
+
 ### from-error
 
 Create lesson from error context (JSON).
@@ -462,7 +502,7 @@ The classification logic for the read-side corpus operations lives under `refere
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `add` | `--component --category --title [--bundle]` | Allocate a new lesson file and return its absolute `path`. Caller populates body via `set-body`. |
+| `add` | `--component --category --title [--bundle] [--rule]` | Allocate a new lesson file and return its absolute `path`. Caller populates body via `set-body`. For `--category arch-constraint`, `--rule` is required and a recurring rule reinforces the existing lesson instead. |
 | `set-body` | `--lesson-id (--file PATH \| --content STRING)` | Populate or replace lesson body. `--file` is the canonical form (shell-safe for arbitrary markdown); `--content` is the secondary form for tiny single-line payloads only. |
 | `set-title` | `--lesson-id --title` | Rewrite the H1 title in place. Preserves frontmatter and body; idempotent; works on `active` and `superseded` lessons. Fenced-code-block aware. |
 | `update` | `--lesson-id [--component] [--category]` | Update lesson metadata |
@@ -473,6 +513,7 @@ The classification logic for the read-side corpus operations lives under `refere
 | `convert-to-plan` | `--lesson-id --plan-id` | Move lesson into a plan directory as `lesson-{id}.md`. This is the move-semantics replacement for marking a lesson "applied". |
 | `restore-from-plan` | `--plan-id` | Inverse of `convert-to-plan`: move the relocated `lesson-*.md` back from a plan directory to the active corpus (`.plan/local/lessons-learned/`). Run on stall/abandon so a stranded lesson resurfaces. |
 | `cleanup-superseded` | `[--lesson-id ID ...] \| [--retention-days N] [--dry-run]` | Prune superseded `.md` stubs while preserving tombstones. Age-filtered when `--retention-days` (falls back to `system.retention.lessons_superseded_days`, hard fallback 7); explicit when `--lesson-id` is repeated. |
+| `retire-quiet` | `[--quiet-days N] [--dry-run]` | Retire-on-quiet for `arch-constraint` lessons: tombstone + unlink every active arch-constraint lesson whose `last_seen` is at least the quiet window old. Window falls back to `system.retention.arch_constraint_quiet_days`, then a hard fallback. |
 | `list-stalled` | (none) | Read-only scanner: report lesson-sourced plans whose relocated lesson is stranded in a non-terminal `5-execute`/`6-finalize` state. Returns `stalled_count` and per-plan `restore_command`. Never mutates lesson files or plan dirs. |
 | `auto-suggest` | `--plan-id [--max-suggestions N] [--no-emit]` | Recipe-registry matcher for phase-1-init Step 5c. Scans the live recipe registry (`manage-config list-recipes`) and returns up to `--max-suggestions` recipes (default 3) ordered by deterministic confidence — keyword overlap (request narrative ∩ recipe description) + domain alignment + scope alignment. Each suggestion is also written as a plan-scoped `tip` finding (`artifacts/findings/tip.jsonl`) so the orchestrator can surface them in the audit log; pass `--no-emit` to inspect without writing findings. No LLM dispatch — the matcher is pure regex + set algebra. Falls through to the existing Step 5c LLM path when no recipe clears the 0.35 confidence floor. |
 
@@ -485,6 +526,7 @@ The classification logic for the read-side corpus operations lives under `refere
 | `bug` | Script is broken or produces wrong results |
 | `improvement` | Script works but could be better |
 | `anti-pattern` | Script was misused or documentation unclear |
+| `arch-constraint` | Recurring architectural-boundary violation from `arch-gate`. Deduped by `rule` identity (reinforce-on-recurrence); retired on quiet via `retire-quiet`. NOT promote-to-skill. See `standards/file-format.md`. |
 
 ---
 
@@ -496,7 +538,8 @@ The classification logic for the read-side corpus operations lives under `refere
 |------------|-------|
 | `not_found` | Lesson ID doesn't exist (get, update, set-body, convert-to-plan) |
 | `copy_failed` | `convert-to-plan` failed to copy the lesson to the plan directory (I/O error or read-back content mismatch); source lesson is left intact, no partial artifact survives |
-| `invalid_category` | Category not in: bug, improvement, anti-pattern |
+| `invalid_category` | Category not in: bug, improvement, anti-pattern, arch-constraint |
+| `missing_rule` | `add --category arch-constraint` invoked without the required `--rule` dedup key |
 | `invalid_context` | JSON context parsing failed (from-error) |
 | `invalid_input` | `set-body` invoked without exactly one of `--file` / `--content`, or both supplied |
 | `file_not_found` | `set-body --file PATH` points at a non-existent path or a non-regular file (directory, broken symlink, special file) |
@@ -518,16 +561,18 @@ restating the command inline.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
-  --component COMPONENT --category {bug|improvement|anti-pattern} --title TEXT \
-  [--bundle BUNDLE]
+  --component COMPONENT --category {bug|improvement|anti-pattern|arch-constraint} --title TEXT \
+  [--bundle BUNDLE] [--rule RULE]
 ```
+
+`--rule` is required when `--category arch-constraint` (the dedup key); ignored for other categories.
 
 ### update
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons update \
   --lesson-id LESSON_ID \
-  [--component COMPONENT] [--category {bug|improvement|anti-pattern}]
+  [--component COMPONENT] [--category {bug|improvement|anti-pattern|arch-constraint}]
 ```
 
 ### get
@@ -541,7 +586,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons get 
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list \
-  [--component COMPONENT] [--category {bug|improvement|anti-pattern}] \
+  [--component COMPONENT] [--category {bug|improvement|anti-pattern|arch-constraint}] \
   [--status {active|superseded|removed|all}] [--full]
 ```
 
@@ -605,6 +650,13 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons clea
 ```
 
 `--lesson-id` (repeatable) and `--retention-days` are mutually exclusive.
+
+### retire-quiet
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons retire-quiet \
+  [--quiet-days N] [--dry-run]
+```
 
 ### auto-suggest
 

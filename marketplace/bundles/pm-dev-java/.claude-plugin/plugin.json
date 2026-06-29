@@ -21,6 +21,7 @@
   "agents": [],
   "commands": [],
   "skills": [
+    "./skills/arch-gate-java",
     "./skills/ext-triage-java",
     "./skills/java-cdi",
     "./skills/java-core",

@@ -104,3 +104,18 @@ class Extension(ExtensionBase):
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
         return 'pm-dev-frontend:ext-triage-js'
+
+    def provides_arch_gate(self) -> dict | None:
+        """Declare the JavaScript domain's arch-gate tool (dependency-cruiser).
+
+        Returns the single-field descriptor naming dependency-cruiser as the
+        native architectural-constraint tool. There is one execution model — a
+        per-deliverable read-only verify-step that resolves through
+        ``architecture resolve --command arch-gate`` and runs dependency-cruiser's
+        module-boundary / forbidden-dependency rules, emitting
+        ``arch-constraint``-typed findings. The descriptor carries only the tool
+        name (no ``execution_mode`` key). The structural model is owned by
+        ``plan-marshall:manage-architecture`` arch-gate-fitness-functions.md;
+        the JavaScript binding is documented in ``pm-dev-frontend:arch-gate-js``.
+        """
+        return {'tool': 'dependency-cruiser'}

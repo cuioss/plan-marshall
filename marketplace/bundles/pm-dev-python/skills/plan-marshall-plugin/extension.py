@@ -122,3 +122,18 @@ class Extension(ExtensionBase):
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
         return 'pm-dev-python:ext-triage-python'
+
+    def provides_arch_gate(self) -> dict | None:
+        """Declare the Python domain's arch-gate tool (import-linter).
+
+        Returns the single-field descriptor naming import-linter as the native
+        architectural-constraint tool. There is one execution model — a
+        per-deliverable read-only verify-step that resolves through
+        ``architecture resolve --command arch-gate`` and runs import-linter's
+        whole-graph directional / layered import contracts, emitting
+        ``arch-constraint``-typed findings. The descriptor carries only the
+        tool name (no ``execution_mode`` key). The structural model is owned by
+        ``plan-marshall:manage-architecture`` arch-gate-fitness-functions.md;
+        the Python binding is documented in ``pm-dev-python:arch-gate-python``.
+        """
+        return {'tool': 'import-linter'}

@@ -21,6 +21,7 @@ Canonical commands provide a **build-system-agnostic vocabulary** for common dev
 | `coverage` | test | No | Test execution with coverage measurement |
 | `benchmark` | test | No | Benchmark/performance tests |
 | `quality-gate` | quality | **Yes** | Static analysis, linting, formatting checks |
+| `arch-gate` | quality | No | Read-only architectural-boundary gate (per-domain native fitness-function tool) |
 | `verify` | verify | **Yes** | Full verification (compile + test + quality) |
 | `install` | deploy | No | Install artifact to local repository |
 | `clean-install` | deploy | No | Clean and install artifact to local repository |
@@ -207,6 +208,12 @@ The orchestrator validates that required commands exist in the `commands` field 
 Extensions may define additional commands beyond the canonical set. These are valid within their build system scope but are not part of the canonical vocabulary.
 
 Extensions document their additional commands in their own skill documentation.
+
+### `arch-gate` (per-domain, populated by extensions)
+
+`arch-gate` is part of the canonical vocabulary (it resolves through `architecture resolve --command arch-gate`) but is **not a required command** — it is absent from every required-command category (always / non-pom / source-conditional / test-conditional). A module receives an `arch-gate` command only when its domain populates one; domains that do not provide an architectural-fitness-function tool register nothing and `architecture resolve --command arch-gate` no-ops for that module.
+
+The command runs the domain's native architectural-constraint tool (ArchUnit / import-linter / dependency-cruiser) as a deterministic, **read-only structural-boundary gate** — it emits findings and never mutates source. Domains declare availability via the optional `ExtensionBase.provides_arch_gate()` hook; the structural model is owned by the `arch-gate-fitness-functions.md` concept document in `manage-architecture`.
 
 ## Related Specifications
 

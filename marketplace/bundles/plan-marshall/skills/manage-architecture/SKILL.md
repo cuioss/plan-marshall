@@ -602,7 +602,8 @@ Load standards documents in the order listed — each builds on the previous:
 | 1 | [manage-api.md](standards/manage-api.md) | First — covers setup, raw data, enrich commands (Steps 1-8), and orchestration flow |
 | 2 | [architecture-persistence.md](standards/architecture-persistence.md) | When you need field schemas, purpose values, skills_by_profile structure, module graph format, or documentation source priorities |
 | 3 | [client-api.md](standards/client-api.md) | When consuming enriched data (Step 9 verification, or downstream skills) |
-| 4 | `pm-dev-java:manage-maven-profiles` | Only during Step 2, only for Maven projects with unmatched profiles |
+| 4 | [arch-gate-fitness-functions.md](standards/arch-gate-fitness-functions.md) | When working with `arch-gate` — the architectural-fitness-function canonical command, its per-domain tool binding, and the arch-constraint findings/lesson lifecycle |
+| 5 | `pm-dev-java:manage-maven-profiles` | Only during Step 2, only for Maven projects with unmatched profiles |
 
 ---
 

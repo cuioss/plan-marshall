@@ -356,6 +356,51 @@ def convert_extension_to_domain_config(module, domain_info: dict, bundle_name: s
     return config
 
 
+def _configured_domains_provide_arch_gate(domain_keys: list[str]) -> bool:
+    """Return True when any extension owning one of ``domain_keys`` declares an arch-gate tool.
+
+    Iterates the discovered extensions once, mapping each to the domain keys it
+    owns via ``get_skill_domains()``. For an extension owning a configured domain,
+    calls the optional ``provides_arch_gate()`` hook (``ExtensionBase`` default
+    ``None``). Returns True as soon as one such extension returns a non-None
+    descriptor; False when none do — the silent-skip default that appends no
+    arch-gate verify-step. The single arch-gate verify-step (``default:verify:arch-gate``)
+    is appended once for the project regardless of how many configured domains
+    declare a tool, so the caller needs only this boolean.
+
+    Args:
+        domain_keys: The configured domain keys to check (the ``domains_configured``
+            set from ``configure``).
+
+    Returns:
+        True when at least one configured domain's extension declares an arch-gate
+        tool via ``provides_arch_gate()``; False otherwise.
+    """
+    wanted = set(domain_keys)
+    if not wanted:
+        return False
+    for ext in discover_all_extensions():
+        module = ext.get('module')
+        if not module or not hasattr(module, 'get_skill_domains') or not hasattr(module, 'provides_arch_gate'):
+            continue
+        try:
+            owned = {
+                d['domain']['key']
+                for d in module.get_skill_domains()
+                if d and isinstance(d.get('domain'), dict) and d['domain'].get('key')
+            }
+        except Exception:
+            continue
+        if not (owned & wanted):
+            continue
+        try:
+            if module.provides_arch_gate() is not None:
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def load_profiles_from_bundle(bundle_name: str, domain_key: str | None = None) -> dict:
     """Load profiles directly from bundle's extension.py.
 
@@ -797,7 +842,17 @@ def cmd_skill_domains(args) -> dict:
 
         plan_config = config.get('plan', {})
         execute_section = plan_config.get('phase-5-execute', {})
-        execute_section['verification_steps'] = _seed_verify_steps()
+        verification_steps = _seed_verify_steps()
+        # Append the domain-conditional arch-gate verify-step for the project when
+        # any configured domain's extension declares an arch-gate tool via the
+        # optional provides_arch_gate() hook. Domains returning None append nothing
+        # (the silent-skip default). The keyed map de-dups by key, so the append is
+        # idempotent across re-configures. `default:verify:arch-gate` is resolved
+        # through the same parameterized canonical_verify.md doc via
+        # `architecture resolve --command arch-gate`.
+        if _configured_domains_provide_arch_gate(domains_configured):
+            verification_steps['default:verify:arch-gate'] = {}
+        execute_section['verification_steps'] = verification_steps
         plan_config['phase-5-execute'] = execute_section
         config['plan'] = plan_config
 

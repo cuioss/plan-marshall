@@ -22,6 +22,7 @@ CMD_E2E = 'e2e'
 CMD_COVERAGE = 'coverage'
 CMD_BENCHMARK = 'benchmark'
 CMD_QUALITY_GATE = 'quality-gate'
+CMD_ARCH_GATE = 'arch-gate'
 CMD_VERIFY = 'verify'
 CMD_INSTALL = 'install'
 CMD_CLEAN_INSTALL = 'clean-install'
@@ -37,6 +38,7 @@ ALL_CANONICAL_COMMANDS = [
     CMD_COVERAGE,
     CMD_BENCHMARK,
     CMD_QUALITY_GATE,
+    CMD_ARCH_GATE,
     CMD_VERIFY,
     CMD_INSTALL,
     CMD_CLEAN_INSTALL,
