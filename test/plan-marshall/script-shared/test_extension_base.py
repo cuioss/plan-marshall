@@ -42,6 +42,7 @@ _extension_constants_mod = _load_module('_extension_constants', '_extension_cons
 ALL_CANONICAL_COMMANDS = _extension_constants_mod.ALL_CANONICAL_COMMANDS
 APPLICABLE_PROFILES = _extension_constants_mod.APPLICABLE_PROFILES
 CANONICAL_COMMANDS = _extension_constants_mod.CANONICAL_COMMANDS
+CMD_ARCH_GATE = _extension_constants_mod.CMD_ARCH_GATE
 CMD_BENCHMARK = _extension_constants_mod.CMD_BENCHMARK
 CMD_CLEAN = _extension_constants_mod.CMD_CLEAN
 CMD_CLEAN_INSTALL = _extension_constants_mod.CMD_CLEAN_INSTALL
@@ -69,6 +70,7 @@ def test_cmd_constants_values():
     assert CMD_COVERAGE == 'coverage'
     assert CMD_BENCHMARK == 'benchmark'
     assert CMD_QUALITY_GATE == 'quality-gate'
+    assert CMD_ARCH_GATE == 'arch-gate'
     assert CMD_VERIFY == 'verify'
     assert CMD_INSTALL == 'install'
     assert CMD_CLEAN_INSTALL == 'clean-install'
@@ -87,6 +89,7 @@ def test_all_canonical_commands_contains_all():
         CMD_COVERAGE,
         CMD_BENCHMARK,
         CMD_QUALITY_GATE,
+        CMD_ARCH_GATE,
         CMD_VERIFY,
         CMD_INSTALL,
         CMD_CLEAN_INSTALL,
