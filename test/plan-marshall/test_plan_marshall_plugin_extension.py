@@ -73,6 +73,17 @@ def test_security_audit_recipe_registered():
     assert {'key', 'name', 'description', 'skill', 'default_change_type', 'scope'} <= recipe.keys()
 
 
+def test_agentfile_hygiene_recipe_registered():
+    """recipe-agentfile-hygiene is registered with the expected ext-point-recipe fields."""
+    recipes = _load_extension().provides_recipes()
+    recipe = _recipe_by_key(recipes, 'agentfile-hygiene')
+    assert recipe is not None, 'agentfile-hygiene recipe must be registered'
+    assert recipe['skill'] == 'plan-marshall:recipe-agentfile-hygiene'
+    assert recipe['default_change_type'] == 'tech_debt'
+    assert recipe['scope'] == 'codebase_wide'
+    assert {'key', 'name', 'description', 'skill', 'default_change_type', 'scope'} <= recipe.keys()
+
+
 def test_discoverable_via_list_recipes(plan_context):
     """The recipe surfaces through list-recipes as a project-local recipe.
 

@@ -117,6 +117,14 @@ class Extension(ExtensionBase):
                 'default_change_type': 'feature',
                 'scope': 'module',
             },
+            {
+                'key': 'agentfile-hygiene',
+                'name': 'Agentfile Hygiene',
+                'description': 'Cognitive sweep classifying every CLAUDE.md/AGENTS.md section against the hygiene rubric and emitting one remediation deliverable per offending section',
+                'skill': 'plan-marshall:recipe-agentfile-hygiene',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+            },
         ]
 
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
