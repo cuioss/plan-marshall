@@ -1,9 +1,10 @@
 # Check: token-economics (cross-plan)
 
-Operationalizes the one-off token deep-dive captured in the canonical
-token-economics lesson as a repeatable check. Joins each plan's per-phase token
-spend (`work/metrics.toon`) to its footprint (`references.json::scope_estimate`,
-affected/modified file count) and its `status.json::metadata` change_type, then
+Operationalizes the one-off token deep-dive — whose analysis residue was
+absorbed into this check itself — as a repeatable check. Joins each plan's
+per-phase token spend (`work/metrics.toon`) to its footprint
+(`references.json::scope_estimate`, affected/modified file count) and its
+`status.json::metadata` change_type, then
 computes per-plan token shares and efficiency ratios and a **corpus-relative**
 anti-pattern flag set. This is a cross-plan check: it emits one aggregate block
 (per-plan rows + corpus aggregates + derived thresholds) rather than one row per
@@ -81,30 +82,30 @@ Beyond the per-plan rows the script computes:
 
 - **Aggregates by `change_type` and by `scope_estimate`** — count, average
   tokens, average files, and corpus-amortized `tokens_per_file` per bucket. This
-  is the "smaller changes are *less* efficient" inversion table from the lesson:
-  big sweeps amortize the fixed overhead, small work cannot.
+  is the "smaller changes are *less* efficient" inversion table the original
+  deep-dive surfaced: big sweeps amortize the fixed overhead, small work cannot.
 - **Corpus per-phase distribution** — each phase's tokens as a fraction of the
   whole-corpus token spend (`corpus_refine_share`, `corpus_outline_share`,
-  `corpus_execute_share`, `corpus_finalize_share`). This is the lesson's
-  "only X% of corpus tokens reach implementation" read-out.
+  `corpus_execute_share`, `corpus_finalize_share`). This is the original
+  deep-dive's "only X% of corpus tokens reach implementation" read-out.
 
 ## Dynamic-threshold rationale: computed from the live corpus each run
 
 **This is the defining property of the check.** Every anti-pattern cut-point is
 derived from the LIVE corpus distribution on each run via the `median` /
 `percentile` helpers — NONE are read from the `THRESHOLDS` table and NONE are
-hard-coded. The lesson's literal numbers (~450K floor, 2× planning, 30% outline
-share, 600 messages) describe the *shape* of each anti-pattern, but the actual
-comparison value floats with the corpus so the check stays honest as the corpus
-evolves: a future corpus with a lower overhead floor flags relative to *that*
-lower floor, not against a frozen constant that would silently stop firing (or
-fire on everything).
+hard-coded. The original deep-dive's literal numbers (~450K floor, 2× planning,
+30% outline share, 600 messages) describe the *shape* of each anti-pattern, but
+the actual comparison value floats with the corpus so the check stays honest as
+the corpus evolves: a future corpus with a lower overhead floor flags relative
+to *that* lower floor, not against a frozen constant that would silently stop
+firing (or fire on everything).
 
 The derived thresholds, each echoed in the emitted block so a flagged row is
 self-describing:
 
-| Threshold | Derivation | Anti-pattern (lesson §) |
-|-----------|-----------|-------------------------|
+| Threshold | Derivation | Anti-pattern |
+|-----------|-----------|--------------|
 | `floor_band_p10_tokens` | 10th-percentile of plan totals | A — fixed overhead floor |
 | `median_total_tokens` | median plan total | big-spend-tiny-footprint |
 | `small_footprint_p25_files` | 25th-percentile of non-zero file counts | A and big-spend (the "tiny footprint" side) |
@@ -209,23 +210,24 @@ each flagged row is self-describing.
 
 ## How the orchestrator interprets the rows
 
-This check is the repeatable form of the analysis adjudicated in the canonical
-token-economics lesson. That lesson is already filed and `status=active`, so a
-running audit's job is to track whether the corpus is moving toward or away from
-its findings, NOT to re-file it:
+This check is the repeatable form of a one-off token deep-dive whose analysis
+residue was absorbed into the check itself. There is no standing token-economics
+lesson to re-file against, so a running audit's job is to track whether the
+corpus is moving toward or away from the absorbed findings, and to file a fresh
+lesson only when a genuine corpus drift recurs:
 
 - **`fixed_overhead_floor` / `big_spend_tiny_footprint`** — the largest lever
   (anti-pattern A). A plan flagged here paid the non-amortizing 6-phase tax on a
   tiny change. Surface it; the remediation (a lightweight track for surgical
-  plans) is already named in the lesson's remediation directions — a *new*
-  recurrence on a plan created AFTER a lightweight-track plan ships is the signal
-  worth a Gate-1 dedup/extend against the canonical token-economics lesson.
+  plans) is the check's own named direction — a *new* recurrence on a plan
+  created AFTER a lightweight-track plan ships is the signal worth filing a fresh
+  lesson through the three-gate policy.
 - **`planning_gt_exec` / `outline_heavy` / `refine_heavy`** — planning outspent
   execution (anti-pattern B). Cross-read with `scope-estimate-accuracy`: a
   surgical-scope plan that is planning-heavy is the prime lightweight-track
   candidate.
-- **`finalize_heavy`** — anti-pattern C. Caveat per the lesson: gross finalize
-  here INCLUDES retrospective spend that the `metrics` check excludes, so a high
+- **`finalize_heavy`** — anti-pattern C. Caveat: gross finalize here INCLUDES
+  retrospective spend that the `metrics` check excludes, so a high
   finalize share may be the retrospective itself, not pipeline bloat —
   cross-read the `metrics` check's (retrospective-excluded) finalize share before
   concluding.
@@ -238,29 +240,30 @@ its findings, NOT to re-file it:
   corpus totals under-count the heaviest phase.
 - **corpus distribution / aggregate tables** — informational context. The
   "X% of corpus tokens reach `5-execute`" line and the tokens/file inversion
-  table are the lesson's headline numbers recomputed live; a meaningful drift in
-  either (execute share rising, tokens/file inversion flattening) is the
-  process-improvement signal the check exists to surface over time.
+  table are the original deep-dive's headline numbers recomputed live; a
+  meaningful drift in either (execute share rising, tokens/file inversion
+  flattening) is the process-improvement signal the check exists to surface over
+  time.
 
-## Adjudication against the canonical token-economics lesson
+## Adjudication against the shipped token-economics check
 
-The canonical token-economics lesson is the already-filed source of this
-check's anti-pattern taxonomy (its remediation direction #5 explicitly proposes
-"so this analysis becomes a repeatable check rather than a one-off" — this check
-IS that). Consequences for Step 4 lesson filing:
+The shipped token-economics check is itself the source of its anti-pattern
+taxonomy — it operationalizes a one-off token deep-dive (whose fifth remediation
+direction proposed "so this analysis becomes a repeatable check rather than a
+one-off" — this check IS that). Consequences for Step 4 lesson filing:
 
-1. **Do NOT re-file the lesson.** A flagged row here is COVERED by
-   that lesson on a Gate-1 dedup basis — name its lesson ID as the
-   covering reference and stop. Re-filing the same token-economics finding is the
-   prohibited "assumption is not verification" anti-pattern in reverse: the
-   coverage IS verified (this check's flag set is literally derived from the
-   lesson's anti-patterns).
+1. **Do NOT re-file an existing lesson.** A flagged row here is COVERED by this
+   check's own anti-pattern taxonomy on a Gate-1 dedup basis — the check IS the
+   coverage, so name the check as the covering reference and stop. Re-filing the
+   same token-economics finding is the prohibited "assumption is not
+   verification" anti-pattern in reverse: the coverage IS verified (this check's
+   flag set is literally the absorbed deep-dive's anti-patterns).
 2. **A genuinely NEW signal is a corpus *drift*, not a repeat flag.** The
    file-worthy signal is movement: the corpus execute-share falling further, a
    new fixed-overhead recurrence on a plan created after a remediation shipped, or
    a previously-unflagged anti-pattern (e.g. `1-init` bloat, anti-pattern F)
-   becoming systemic. Such a drift extends the canonical token-economics lesson
-   via Gate-1 `merge_into`, it does not open a parallel lesson.
+   becoming systemic. Such a drift warrants filing a fresh lesson through the
+   three-gate policy, not folding silently into the taxonomy.
 3. **Blind-plan floors are caveated, not findings.** An `exec_metrics_blind` plan
    contributes a FLOOR; do not adjudicate its `tokens_per_file` as a precise
    finding. The blindness itself is covered by the exec-metrics-attribution lesson.
