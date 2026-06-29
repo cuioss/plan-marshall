@@ -329,6 +329,45 @@ def _diagnose_display_entries(settings_data: dict[str, Any]) -> tuple[list[str],
     return lines, healthy
 
 
+def _merge_display_settings(*sources: dict[str, Any]) -> dict[str, Any]:
+    """Merge the display-relevant slices of several Claude settings dicts.
+
+    The ``display`` health-check must reflect entries wherever they legitimately
+    live — ``.claude/settings.json`` OR ``.claude/settings.local.json``. The
+    install resolver prefers a pre-existing shared ``settings.json``, while the
+    enforcement install pins ``settings.local.json``, so a hook entry can sit in
+    either file. This mirrors the ``hook`` check, which already treats either
+    file as authoritative. Per-event ``hooks`` entry lists are concatenated; the
+    first present ``statusLine`` and each first-seen ``env`` key win.
+    """
+    merged_hooks: dict[str, list[Any]] = {}
+    merged_env: dict[str, Any] = {}
+    merged_statusline: dict[str, Any] | None = None
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        hooks = source.get("hooks", {})
+        if isinstance(hooks, dict):
+            for event, entries in hooks.items():
+                if isinstance(entries, list):
+                    merged_hooks.setdefault(event, []).extend(entries)
+        statusline = source.get("statusLine")
+        if (
+            merged_statusline is None
+            and isinstance(statusline, dict)
+            and statusline.get("command")
+        ):
+            merged_statusline = statusline
+        env_block = source.get("env", {})
+        if isinstance(env_block, dict):
+            for key, value in env_block.items():
+                merged_env.setdefault(key, value)
+    merged: dict[str, Any] = {"hooks": merged_hooks, "env": merged_env}
+    if merged_statusline is not None:
+        merged["statusLine"] = merged_statusline
+    return merged
+
+
 def _has_render_entry(entries: list[Any], matcher: str | None = None) -> bool:
     """Return True when *entries* already contains a render-hook entry.
 
@@ -1417,6 +1456,21 @@ def _claude_project_settings_path(project_dir: str | None = None) -> Path:
     return base / ".claude" / "settings.local.json"
 
 
+def _claude_local_settings_path(project_dir: str | None = None) -> Path:
+    """Return the operator-local Claude settings file path (always settings.local.json).
+
+    The PreToolUse enforcement hook is an operator-local opt-in, so its
+    registration pins here rather than delegating to
+    ``_claude_project_settings_path()`` — which prefers a pre-existing shared
+    ``settings.json`` and would therefore scatter the enforcement entry into the
+    shared file. Pinning keeps the enforcement entry in the single file the
+    documented install contract (``pretooluse-enforcement.md``) names, regardless
+    of whether a shared ``settings.json`` already exists.
+    """
+    base = Path(project_dir) if project_dir else Path.cwd()
+    return base / ".claude" / "settings.local.json"
+
+
 def _claude_global_settings_path() -> Path:
     return Path.home() / ".claude" / "settings.json"
 
@@ -1734,9 +1788,14 @@ class ClaudeRuntime(Runtime):
 
         The ``target`` argument is one of two shapes:
 
-        - ``"claude"`` — the platform identifier. Resolves to the project's
-          Claude Code settings file via ``_claude_project_settings_path()``
-          (``.claude/settings.json`` when present, else ``.claude/settings.local.json``).
+        - ``"claude"`` — the platform identifier. For the terminal-title install
+          this resolves to the project's Claude Code settings file via
+          ``_claude_project_settings_path()`` (``.claude/settings.json`` when
+          present, else ``.claude/settings.local.json``). For the
+          ``enforcement`` install it pins ``.claude/settings.local.json`` via
+          ``_claude_local_settings_path()`` — the operator-local opt-in belongs
+          there and that is the file the ``display`` health-check enforcement
+          label and the install contract both reference.
           This is the canonical invocation from the marshall-steward menu.
         - An absolute path ending in ``.json`` — explicit settings file path.
           Used by tests and recovery flows that need to target a specific file.
@@ -1756,7 +1815,11 @@ class ClaudeRuntime(Runtime):
         ``overwrite_env_disable`` carries identical semantics for the env entry.
         """
         if target == "claude":
-            settings_path = _claude_project_settings_path()
+            settings_path = (
+                _claude_local_settings_path()
+                if enforcement
+                else _claude_project_settings_path()
+            )
         else:
             candidate = Path(target)
             if candidate.is_absolute() and candidate.suffix == ".json":
@@ -2853,9 +2916,16 @@ class ClaudeRuntime(Runtime):
                 all_healthy = False
 
         if "display" in checks_to_run:
-            settings_local = Path(".claude") / "settings.local.json"
-            sd = _read_json(settings_local) or {}
-            lines, healthy = _diagnose_display_entries(sd)
+            # Read BOTH settings files — a hook entry can legitimately sit in
+            # either (the install resolver prefers a pre-existing shared
+            # settings.json; the enforcement install pins settings.local.json).
+            # The sibling ``hook`` check already treats either file as
+            # authoritative; the display check must too, or an install that
+            # lands in the other file reports a false MISSING.
+            display_main = _read_json(Path(".claude") / "settings.json") or {}
+            display_local = _read_json(Path(".claude") / "settings.local.json") or {}
+            merged = _merge_display_settings(display_main, display_local)
+            lines, healthy = _diagnose_display_entries(merged)
             if healthy:
                 detail = "; ".join(lines)
             else:
