@@ -85,6 +85,7 @@
           "re_review_on_loopback": false,
           "re_review_on_branch_cleanup": true
         },
+        "default:sonar-roundtrip": {},
         "project:finalize-step-review-retrospective": {},
         "default:lessons-capture": {},
         "default:branch-cleanup": {
@@ -146,6 +147,12 @@
           "build_class": "module-tests"
         }
       ]
+    }
+  },
+  "credentials_config": {
+    "plan-marshall:workflow-integration-sonar": {
+      "organization": "cuioss",
+      "project_key": "cuioss_plan-marshall"
     }
   },
   "project": {

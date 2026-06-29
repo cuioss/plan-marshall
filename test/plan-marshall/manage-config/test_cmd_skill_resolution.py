@@ -46,7 +46,9 @@ cmd_resolve_domain_skills = _cmd_skill_resolution.cmd_resolve_domain_skills
 cmd_resolve_workflow_skill_extension = _cmd_skill_resolution.cmd_resolve_workflow_skill_extension
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import get_script_path, run_script  # noqa: E402
+import file_ops  # noqa: E402
+
+from conftest import PROJECT_ROOT, get_script_path, run_script  # noqa: E402
 
 # =============================================================================
 # resolve-domain-skills Tests (Tier 2)
@@ -381,15 +383,18 @@ def test_list_finalize_steps_surfaces_finalize_step_simplify(plan_context, monke
 def test_list_finalize_steps_discovers_project_skills(plan_context):
     """Test list-finalize-steps discovers project-local finalize-step-* skills.
 
-    Discovery is REPO-anchored (``find_implementors`` resolves the project-local
-    ``.claude/skills/`` from ``__file__``, not the process cwd), so this asserts
-    against a real shipped project step — ``project:finalize-step-plugin-doctor``,
-    declared under the repo's ``.claude/skills/finalize-step-plugin-doctor/`` — and
-    confirms it surfaces regardless of the subprocess cwd.
+    Project-local discovery is PROJECT-ROOT-anchored: ``_scan_project_for_implementors``
+    resolves the project-local ``.claude/skills/`` via ``file_ops._resolve_plan_root``
+    (the uniform cwd rule with a git-toplevel fallback — ADR-002), NOT from the
+    scanning script's ``__file__``. Running the subprocess with cwd at the repo
+    root makes that resolver land on the real tree, so ``project:finalize-step-plugin-doctor``
+    — declared under the repo's ``.claude/skills/finalize-step-plugin-doctor/`` — is
+    surfaced. (Runtime writes still resolve via the inherited ``PLAN_BASE_DIR``
+    sandbox, so the read-only project scan does not pollute the real tree.)
     """
     create_marshal_json(plan_context.fixture_dir)
 
-    result = run_script(SCRIPT_PATH, 'list-finalize-steps', cwd=plan_context.fixture_dir)
+    result = run_script(SCRIPT_PATH, 'list-finalize-steps', cwd=PROJECT_ROOT)
 
     assert result.success, f'Should succeed: {result.stderr}'
     assert 'project:finalize-step-plugin-doctor' in result.stdout
@@ -401,21 +406,28 @@ def test_list_finalize_steps_discovers_project_skills(plan_context):
 
 
 def _run_discovery_in_cwd(cwd: Path) -> list[dict]:
-    """Invoke _discover_all_finalize_steps() — discovery is repo-anchored.
+    """Invoke _discover_all_finalize_steps() with the project root pinned to the repo.
 
-    Discovery now routes through ``extension_discovery.find_implementors``, which
-    anchors on the marketplace tree (and the project-local ``.claude/skills/``
-    under the repo root resolved from ``__file__``), NOT the process cwd. The
-    ``cwd`` argument is retained for call-site compatibility but no longer changes
-    which steps are discovered; the chdir is harmless. Tests therefore assert
-    against the real repo's discovered finalize-step universe.
+    Project-local finalize-step discovery routes through
+    ``extension_discovery._scan_project_for_implementors``, which anchors on the
+    PROJECT root resolved cwd-relatively via ``file_ops._resolve_plan_root`` (the
+    uniform cwd rule with a git-toplevel fallback — ADR-002), NOT on the scanning
+    script's ``__file__``. Under a pytest ``tmp_path`` cwd that resolver finds no
+    ``.plan/local`` ancestor and no enclosing git repo, so the project steps would
+    be missed. This helper pins ``_resolve_plan_root`` to the real repo root
+    (``PROJECT_ROOT``) for the duration of discovery — mirroring the monkeypatch
+    used by ``test_extension_discovery_behavior.py`` — so tests assert against the
+    repo's real shipped project finalize steps. The ``cwd`` argument is retained
+    for call-site compatibility; the chdir is harmless because discovery no longer
+    reads the cwd to locate project steps.
     """
     import os
 
     original_cwd = os.getcwd()
     try:
         os.chdir(cwd)
-        return _cmd_skill_resolution._discover_all_finalize_steps()
+        with patch.object(file_ops, '_resolve_plan_root', lambda: PROJECT_ROOT):
+            return _cmd_skill_resolution._discover_all_finalize_steps()
     finally:
         os.chdir(original_cwd)
 

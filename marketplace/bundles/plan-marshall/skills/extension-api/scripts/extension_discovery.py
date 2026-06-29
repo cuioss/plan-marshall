@@ -1028,22 +1028,34 @@ def _scan_phase5_for_implementors(ext_point: str) -> list[dict[str, Any]]:
 def _scan_project_for_implementors(ext_point: str) -> list[dict[str, Any]]:
     """Scan project-local ``.claude/skills/finalize-step-*/SKILL.md`` implementors.
 
-    Project-local finalize steps live under the repo root's ``.claude/skills/``.
+    Project-local finalize steps live under the PROJECT root's ``.claude/skills/``.
     Only directories matching ``finalize-step-*`` are scanned. Returns nothing
-    when there is no ``.claude/skills/`` root (a consumer project without the
-    meta-project's project-local steps).
+    when there is no resolvable project root, or no ``.claude/skills/`` root (a
+    consumer project without the meta-project's project-local steps).
 
-    Discovery is REPO-anchored (resolved from ``__file__`` via ``_repo_root``),
-    not CWD-relative: the finalize-step universe is a property of the marketplace
-    tree the running scripts ship from, so it stays stable regardless of the
-    process working directory.
+    Discovery is PROJECT-ROOT-anchored, resolved cwd-relatively by the uniform
+    cwd rule (ADR-002): the project root is the nearest ancestor of the current
+    working directory containing ``.plan/local`` (with a git-toplevel fallback for
+    clean checkouts), via ``file_ops._resolve_plan_root`` — the same resolver
+    ``file_ops.get_executor_path`` is built on. It is deliberately NOT anchored on
+    the running script's ``__file__``: project-local steps are a property of the
+    PROJECT, not of the marketplace tree the scripts ship from. When the scanning
+    code ships from the plugin cache tree, a ``__file__``-derived anchor (the
+    former ``configurable_contract._repo_root()``) resolves into the cache tree
+    where ``.claude/skills/`` does not exist, so every ``project:finalize-step-*``
+    implementor is silently missed. Anchoring on the project root makes discovery
+    correct from BOTH a source-tree and a cache-tree execution context.
 
     Returns:
         One ``project`` record per matching ``finalize-step-*/SKILL.md``.
     """
-    from configurable_contract import _repo_root  # type: ignore[import-not-found]
+    from file_ops import _resolve_plan_root  # type: ignore[import-not-found]
 
-    skills_root = _repo_root() / '.claude' / 'skills'
+    project_root = _resolve_plan_root()
+    if project_root is None:
+        return []
+
+    skills_root = project_root / '.claude' / 'skills'
     if not skills_root.is_dir():
         return []
 

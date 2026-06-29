@@ -68,36 +68,52 @@ def load_config() -> dict:
     return config
 
 
-def save_config(config: dict) -> None:
-    """Save config to marshal.json with ordered keys."""
-    MARSHAL_PATH.parent.mkdir(parents=True, exist_ok=True)
+# Canonical top-level key order for marshal.json. Several legacy top-level
+# blocks were dissolved or relocated: their config was distributed back into the
+# owning phase blocks, and the build map now lives at the top-level build.map.
+# The order leads with ``plan`` (the primary user-facing config) followed by
+# ``build`` (build infrastructure), then lists the remaining top-level keys
+# alphabetically. ``extension_defaults`` precedes both as the extension-seeded
+# defaults block. ``credentials_config`` (the non-secret per-provider config
+# block written by manage-providers) takes its alphabetical slot among the
+# trailing keys — between ``build`` and ``project``.
+CANONICAL_TOP_LEVEL_KEY_ORDER = [
+    'extension_defaults',
+    'plan',
+    'build',
+    'credentials_config',
+    'project',
+    'providers',
+    'skill_domains',
+    'system',
+]
 
-    # Canonical key order for marshal.json. Several legacy top-level blocks were
-    # dissolved or relocated: their config was distributed back into the owning
-    # phase blocks, and the build map now lives at the top-level build.map. The
-    # order leads with ``plan`` (the primary user-facing config) followed by
-    # ``build`` (build infrastructure), then lists the remaining top-level keys
-    # alphabetically. ``extension_defaults`` precedes both as the
-    # extension-seeded defaults block.
-    key_order = [
-        'extension_defaults',
-        'plan',
-        'build',
-        'project',
-        'providers',
-        'skill_domains',
-        'system',
-    ]
 
-    # Build ordered dict: known keys first in order, then any remaining keys
-    ordered = {}
-    for key in key_order:
+def order_config_keys(config: dict) -> dict:
+    """Return ``config`` re-keyed into the canonical top-level order.
+
+    Known keys are emitted first in :data:`CANONICAL_TOP_LEVEL_KEY_ORDER`; any
+    remaining (unrecognized) keys are appended afterwards in their existing
+    insertion order, so a stray block is preserved rather than dropped. This is
+    the single authority for top-level marshal.json key ordering: both
+    :func:`save_config` and the ``manage-providers`` ``write_provider_config``
+    write path route through it, so no write appends a block (e.g. a freshly
+    created ``credentials_config``) out of canonical order.
+    """
+    ordered: dict = {}
+    for key in CANONICAL_TOP_LEVEL_KEY_ORDER:
         if key in config:
             ordered[key] = config[key]
     for key in config:
         if key not in ordered:
             ordered[key] = config[key]
+    return ordered
 
+
+def save_config(config: dict) -> None:
+    """Save config to marshal.json with ordered keys."""
+    MARSHAL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ordered = order_config_keys(config)
     MARSHAL_PATH.write_text(json.dumps(ordered, indent=2, ensure_ascii=False), encoding='utf-8')
 
 
