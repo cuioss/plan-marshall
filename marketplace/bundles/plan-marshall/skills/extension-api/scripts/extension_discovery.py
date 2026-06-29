@@ -29,10 +29,43 @@ def get_plugin_cache_path() -> Path:
     ``marketplace_paths.get_bundle_cache_roots``) and returns the highest-priority
     root. On Claude this is ``~/.claude/plugins/cache/plan-marshall``; on OpenCode
     it is the highest-priority user-global skill root.
+
+    Security: the env override is validated against known-safe bases before use.
+    An unrecognized path is rejected with a warning and falls back to the
+    platform-resolved cache, per the plugin-security Python Script Surface
+    standard (env vars are an untrusted boundary; a filesystem Path must not be
+    constructed from env input without a safe-base check — otherwise a CI/CD
+    environment that sets PLUGIN_CACHE_PATH to an attacker-controlled directory
+    could redirect dynamic module loading to arbitrary code).
     """
     env_path = os.environ.get('PLUGIN_CACHE_PATH')
     if env_path:
-        return Path(env_path)
+        candidate = Path(env_path).expanduser()
+        # Resolve to an absolute path for the safe-base comparison. Use the
+        # candidate as-is when it does not exist yet (a pre-creation path still
+        # deserves the same validation).
+        resolved = candidate.resolve() if candidate.exists() else candidate.expanduser().resolve()
+        # Safe bases: the user's home directory (covers ~/.claude/...,
+        # ~/.opencode/...) and the marketplace source tree (covers development
+        # and CI runs that point at the source checkout).
+        home = Path.home().resolve()
+        try:
+            marketplace_root = resolve_bundles_root(Path(__file__)).parent.resolve()
+        except RuntimeError:
+            marketplace_root = None
+        is_under_home = str(resolved).startswith(str(home) + os.sep) or resolved == home
+        is_under_marketplace = marketplace_root is not None and (
+            str(resolved).startswith(str(marketplace_root) + os.sep) or resolved == marketplace_root
+        )
+        if is_under_home or is_under_marketplace:
+            return resolved
+        log_entry(
+            'script',
+            None,
+            'WARNING',
+            f'[EXTENSION] PLUGIN_CACHE_PATH={env_path!r} rejected: not under home '
+            f'({home}) or marketplace source tree; falling back to platform-resolved cache path',
+        )
     return Path(get_bundle_cache_roots()[0]).expanduser()
 
 
