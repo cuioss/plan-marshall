@@ -824,6 +824,7 @@ class TestInstallEnforcementHook:
         # would otherwise target this file.
         settings_json = claude_dir / "settings.json"
         settings_json.write_text(json.dumps({"permissions": {"allow": []}}))
+        shared_before = settings_json.read_text()
 
         result = _parsed(rt.project_install_hook("claude", enforcement=True))
 
@@ -833,8 +834,10 @@ class TestInstallEnforcementHook:
         assert Path(result["settings_path"]).name == "settings.local.json"
         local = json.loads((claude_dir / "settings.local.json").read_text())
         assert _count_command(local["hooks"]["PreToolUse"], _ENFORCEMENT_HOOK_COMMAND) == 1
-        # The shared settings.json was NOT touched (no hooks block added).
-        shared = json.loads(settings_json.read_text())
+        # The shared settings.json was NOT touched — byte-identical, not merely
+        # "no hooks block" (an in-place rewrite without hooks would be a bug too).
+        assert settings_json.read_text() == shared_before
+        shared = json.loads(shared_before)
         assert "hooks" not in shared
 
 
