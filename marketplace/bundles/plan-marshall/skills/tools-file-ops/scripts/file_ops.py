@@ -947,19 +947,18 @@ def safe_main(main_fn: Any) -> Any:
 def copy_tree(src: Path, dst: Path) -> None:
     """Recursively copy ``src`` directory tree into ``dst``.
 
-    Used by ``phase-1-init`` to snapshot ``.plan/project-architecture/`` into
-    ``.plan/local/plans/{plan_id}/architecture-pre/`` so ``phase-6-finalize``
-    can compute the architectural delta produced by the plan via
-    ``manage-architecture diff-modules --pre``.
+    Generic recursive directory-copy helper exposed via the ``copy-tree`` CLI
+    subcommand. It copies a directory tree verbatim, skipping symlinks and
+    failing loudly when the destination already exists.
 
     Behaviour:
         - Recursive copy of every regular file in ``src`` into ``dst``.
-        - Symlinks are skipped (not followed) — the snapshot is a static
-          copy of the on-disk descriptor, never indirected through symlinks.
+        - Symlinks are skipped (not followed) — the copy is a static copy of
+          the on-disk tree, never indirected through symlinks.
         - Parent directories of ``dst`` are created on demand (``mkdir -p``).
         - Raises ``FileExistsError`` when ``dst`` already exists. Callers MUST
           either choose a fresh destination path or remove ``dst`` before
-          calling — this skill never silently merges over a previous snapshot.
+          calling — this helper never silently merges over an existing tree.
         - Implementation delegates to ``shutil.copytree`` with
           ``symlinks=False`` (skip symlinks) and ``dirs_exist_ok=False``
           (raise on existing destination).

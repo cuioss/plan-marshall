@@ -1,27 +1,24 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``tools-file-ops`` ``copy_tree`` helper and its
-``copy-tree`` CLI subcommand consumed by ``phase-1-init`` Step 5b.
+``copy-tree`` CLI subcommand.
 
-The ``copy_tree`` helper is the workhorse behind the architecture snapshot
-written into ``.plan/local/plans/{plan_id}/architecture-pre/`` so
-``phase-6-finalize`` can compute the architectural delta via
-``manage-architecture diff-modules --pre``. These tests pin the contract the
-phase-1-init SKILL relies on:
+``copy_tree`` is a generic recursive directory-copy helper: it copies a
+directory tree verbatim, skips symlinks, and fails loudly when the destination
+already exists. These tests pin that contract:
 
 - Recursive copy semantics (nested files, multiple levels).
-- Symlinks are skipped (not followed) — the snapshot is a static descriptor.
-- ``FileExistsError`` is raised when destination already exists. The skill
-  documents this as the abort signal that prevents silent overwrites of a
-  previous snapshot. Idempotency is therefore "fail loudly", not "merge".
+- Symlinks are skipped (not followed) — neither file nor directory symlinks
+  are materialised.
+- ``FileExistsError`` is raised when the destination already exists — the
+  helper aborts before touching ``dst`` rather than merging over it.
+  Idempotency is "fail loudly", not "merge".
 - Parent directories of the destination are created on demand.
 - Source-not-found and source-not-directory raise the documented exceptions.
 - The ``copy-tree`` CLI subcommand surfaces success and the three error
   conditions through the standard manage-* TOON contract.
-- A simulated ``phase-1-init`` snapshot of a representative
-  ``project-architecture/`` tree (with ``_project.json`` and per-module
-  ``derived.json`` / ``enriched.json``) materialises the expected
-  ``architecture-pre/`` layout byte-for-byte.
+- A representative nested tree (a top-level index file plus per-entry
+  sub-directories) materialises at the destination byte-for-byte.
 """
 
 from __future__ import annotations
@@ -217,31 +214,29 @@ class TestCopyTreeParentCreation:
         src = tmp_path / 'src'
         src.mkdir()
         (src / 'leaf.txt').write_text('leaf')
-        # Two missing parent levels — mirrors the
-        # ``.plan/local/plans/{plan_id}/architecture-pre`` shape phase-1-init
-        # writes into a fresh plan dir.
-        dst = tmp_path / 'a' / 'b' / 'architecture-pre'
+        # Two missing parent levels — copy_tree must mkdir-p the parents.
+        dst = tmp_path / 'a' / 'b' / 'dst-tree'
 
         copy_tree(src, dst)
 
         assert (dst / 'leaf.txt').read_text() == 'leaf'
 
     def test_existing_parent_is_reused(self, tmp_path):
-        parent = tmp_path / 'plans' / 'my-plan'
+        parent = tmp_path / 'out' / 'nested'
         parent.mkdir(parents=True)
-        # Pre-existing sibling content that must survive the snapshot.
-        (parent / 'request.md').write_text('request')
+        # Pre-existing sibling content that must survive the copy.
+        (parent / 'keep.md').write_text('keep')
 
         src = tmp_path / 'src'
         src.mkdir()
         (src / 'leaf.txt').write_text('leaf')
-        dst = parent / 'architecture-pre'
+        dst = parent / 'dst-tree'
 
         copy_tree(src, dst)
 
         assert (dst / 'leaf.txt').read_text() == 'leaf'
         # Sibling stays put.
-        assert (parent / 'request.md').read_text() == 'request'
+        assert (parent / 'keep.md').read_text() == 'keep'
 
 
 class TestCopyTreeSourceValidation:
@@ -269,7 +264,7 @@ class TestCopyTreeSourceValidation:
 
 
 class TestCopyTreeCLI:
-    """The ``copy-tree`` CLI is the surface phase-1-init invokes."""
+    """The ``copy-tree`` CLI is the executor-facing surface of ``copy_tree``."""
 
     def test_cli_success_emits_toon_with_paths(self, tmp_path):
         src = tmp_path / 'src'
@@ -324,66 +319,56 @@ class TestCopyTreeCLI:
 
 
 # =============================================================================
-# phase-1-init integration: architecture-pre snapshot
+# Representative-tree materialisation
 # =============================================================================
 
 
-def _build_project_architecture_fixture(root: Path) -> None:
-    """Build a representative ``project-architecture/`` tree.
+def _build_representative_tree(root: Path) -> None:
+    """Build a representative nested directory tree.
 
-    Mirrors the per-module layout phase-1-init snapshots: a top-level
-    ``_project.json`` plus one directory per module containing
-    ``derived.json`` and ``enriched.json``.
+    A top-level ``index.json`` plus one sub-directory per entry, each holding
+    two files — exercises recursive copy across multiple levels and multiple
+    files per directory.
     """
     root.mkdir(parents=True, exist_ok=True)
-    (root / '_project.json').write_text(json.dumps({'modules': ['plan-marshall', 'pm-dev-java']}, indent=2))
-    for module in ('plan-marshall', 'pm-dev-java'):
-        mod_dir = root / module
-        mod_dir.mkdir()
-        (mod_dir / 'derived.json').write_text(json.dumps({'module': module, 'paths': []}, indent=2))
-        (mod_dir / 'enriched.json').write_text(
-            json.dumps({'module': module, 'responsibility': f'{module} responsibility'}, indent=2)
-        )
+    (root / 'index.json').write_text(json.dumps({'entries': ['alpha', 'beta']}, indent=2))
+    for entry in ('alpha', 'beta'):
+        sub = root / entry
+        sub.mkdir()
+        (sub / 'data.json').write_text(json.dumps({'entry': entry, 'items': []}, indent=2))
+        (sub / 'meta.json').write_text(json.dumps({'entry': entry, 'label': f'{entry} label'}, indent=2))
 
 
-class TestPhase1InitSnapshotIntegration:
-    """Pin the phase-1-init Step 5b architecture-snapshot contract.
+class TestCopyTreeRepresentativeTree:
+    """Materialise a representative nested tree and verify byte-for-byte fidelity.
 
-    The SKILL invokes::
-
-        file_ops copy-tree \
-          --src .plan/project-architecture \
-          --dst .plan/local/plans/{plan_id}/architecture-pre
-
-    These tests simulate that invocation against a representative source
-    tree and verify the materialised destination matches the source
-    byte-for-byte. Failure modes that the SKILL documents (FileExistsError,
-    missing source) are pinned in the CLI tests above; here we focus on the
-    happy-path materialisation contract.
+    Drives ``copy_tree`` (and the ``copy-tree`` CLI) against a representative
+    nested source tree and verifies the destination matches the source
+    byte-for-byte. The fail-loud and missing-source modes are pinned by the
+    CLI tests above; here we focus on the happy-path materialisation contract.
     """
 
-    def test_snapshot_materialises_project_json_and_per_module_dirs(self, tmp_path):
-        src = tmp_path / 'project-architecture'
-        _build_project_architecture_fixture(src)
-        # Mirror the phase-1-init destination shape — parent directories don't
-        # pre-exist on a fresh plan.
-        dst = tmp_path / 'local' / 'plans' / 'phase-d-auto-refresh' / 'architecture-pre'
+    def test_materialises_index_and_per_entry_dirs(self, tmp_path):
+        src = tmp_path / 'src-tree'
+        _build_representative_tree(src)
+        # Destination parents do not pre-exist — copy_tree mkdir-ps them.
+        dst = tmp_path / 'out' / 'nested' / 'dst-tree'
 
         copy_tree(src, dst)
 
-        # Top-level _project.json.
-        assert json.loads((dst / '_project.json').read_text()) == {'modules': ['plan-marshall', 'pm-dev-java']}
-        # Per-module derived.json + enriched.json.
-        for module in ('plan-marshall', 'pm-dev-java'):
-            derived = json.loads((dst / module / 'derived.json').read_text())
-            enriched = json.loads((dst / module / 'enriched.json').read_text())
-            assert derived == {'module': module, 'paths': []}
-            assert enriched == {'module': module, 'responsibility': f'{module} responsibility'}
+        # Top-level index.json.
+        assert json.loads((dst / 'index.json').read_text()) == {'entries': ['alpha', 'beta']}
+        # Per-entry data.json + meta.json.
+        for entry in ('alpha', 'beta'):
+            data = json.loads((dst / entry / 'data.json').read_text())
+            meta = json.loads((dst / entry / 'meta.json').read_text())
+            assert data == {'entry': entry, 'items': []}
+            assert meta == {'entry': entry, 'label': f'{entry} label'}
 
-    def test_snapshot_via_cli_matches_source_byte_for_byte(self, tmp_path):
-        src = tmp_path / 'project-architecture'
-        _build_project_architecture_fixture(src)
-        dst = tmp_path / 'local' / 'plans' / 'phase-d-auto-refresh' / 'architecture-pre'
+    def test_cli_copy_matches_source_byte_for_byte(self, tmp_path):
+        src = tmp_path / 'src-tree'
+        _build_representative_tree(src)
+        dst = tmp_path / 'out' / 'nested' / 'dst-tree'
 
         result = run_script(FILE_OPS_SCRIPT, 'copy-tree', '--src', str(src), '--dst', str(dst))
 
@@ -396,20 +381,19 @@ class TestPhase1InitSnapshotIntegration:
         for rel in src_files:
             assert (src / rel).read_bytes() == (dst / rel).read_bytes(), f'mismatch at {rel}'
 
-    def test_snapshot_aborts_on_pre_existing_destination(self, tmp_path):
-        """Re-running phase-1-init against an already-snapshotted plan
-        directory MUST fail loudly so the SKILL can surface the error
-        rather than silently merge over the previous snapshot.
+    def test_aborts_on_pre_existing_destination(self, tmp_path):
+        """Copying onto an already-populated destination MUST fail loudly so the
+        caller can surface the error rather than silently merge over it.
         """
-        src = tmp_path / 'project-architecture'
-        _build_project_architecture_fixture(src)
-        dst = tmp_path / 'local' / 'plans' / 'phase-d-auto-refresh' / 'architecture-pre'
+        src = tmp_path / 'src-tree'
+        _build_representative_tree(src)
+        dst = tmp_path / 'out' / 'nested' / 'dst-tree'
         dst.mkdir(parents=True)
-        (dst / 'stale.json').write_text('previous-snapshot')
+        (dst / 'stale.json').write_text('previous-copy')
 
         with pytest.raises(FileExistsError):
             copy_tree(src, dst)
 
         # Stale sentinel preserved, no merge happened.
-        assert (dst / 'stale.json').read_text() == 'previous-snapshot'
-        assert not (dst / '_project.json').exists()
+        assert (dst / 'stale.json').read_text() == 'previous-copy'
+        assert not (dst / 'index.json').exists()

@@ -11,15 +11,15 @@ playbook, not a Python module. These tests pin its decision flow contract by:
    exercised across the full matrix:
 
       * Tier-0 ``enabled`` vs ``disabled``
-      * Architecture-pre snapshot present vs absent (greenfield)
-      * Diff detected vs empty (drift vs none)
+      * ``origin/main`` baseline present vs absent (no committed baseline)
+      * Drift detected vs none (``added union removed`` non-empty vs empty)
       * Tier-1 dispatch knob (``prompt`` / ``auto`` / ``disabled``)
       * ``change_type`` shortcut for ``bug_fix`` / ``verification``
 
 2. **Asserting the standard's narrative** documents every observable branch
-   (greenfield, tier-0 disabled, empty diff, non-empty diff with each tier-1
-   value, change_type shortcut) and emits the matching ``--display-detail``
-   template per branch.
+   (absent baseline, tier-0 disabled, empty diff, non-empty diff with each
+   tier-1 value, change_type shortcut) and emits the matching
+   ``--display-detail`` template per branch.
 
 3. **Asserting registration** of ``architecture-refresh`` in
    ``standards/required-steps.md`` so the ``phase_steps_complete`` handshake
@@ -27,9 +27,9 @@ playbook, not a Python module. These tests pin its decision flow contract by:
 
 4. **Asserting cross-references** are correct: the SKILL.md dispatch table
    resolves ``default:architecture-refresh`` to this standard, the standard
-   declares its inline-dispatch contract, the phase-1-init Step 5d snapshot
-   surface is named, and the manage-run-config tier-0/tier-1 knobs are
-   referenced.
+   declares its inline-dispatch contract, phase-1-init is cited as NOT
+   snapshotting the architecture descriptor, and the manage-run-config
+   tier-0/tier-1 knobs are referenced.
 
 The functional behaviour of the underlying scripts (``architecture discover
 --force``, ``diff-modules --pre``, ``manage-run-config architecture-refresh
@@ -86,7 +86,7 @@ _AFFECTED_UNKNOWN = object()
 
 def _decide_architecture_refresh(
     *,
-    snapshot_present: bool,
+    baseline_present: bool,
     tier_0: str,
     tier_1: str,
     change_type: str,
@@ -100,53 +100,50 @@ def _decide_architecture_refresh(
     Returns a dict with keys:
 
       * ``branch``: the ``A``-``F`` branch identifier from "Step 5: Mark Step
-        Complete" (greenfield / tier-0+tier-1 skipped / no diff / refresh only /
+        Complete" (no baseline / tier-0+tier-1 skipped / no diff / refresh only /
         refresh + enrich / refresh + PR note).
       * ``tier_0_committed``: True if the Tier-0 ``chore(architecture):
         refresh`` commit fires.
       * ``tier_1_action``: ``enrich`` / ``pr_note`` / ``skipped``.
-      * ``affected_modules``: sorted union of diff buckets, or
+      * ``affected_modules``: sorted union ``added union removed``, or
         ``_AFFECTED_UNKNOWN`` when Tier 0 is disabled.
       * ``display_detail``: the ``--display-detail`` payload that the
         ``mark-step-done`` call MUST carry on this branch.
-    """
-    # -- Step 2: Ephemeral-derived no-op (every plan) ------------------------
-    # Under the on-demand crawl model, phase-1-init never captures an
-    # architecture-pre/ snapshot, so `snapshot_present` is False for every
-    # plan. The historical "greenfield" branch label is preserved as Branch A
-    # but the display detail now reflects the ephemeral-derived contract.
-    if not snapshot_present:
-        return {
-            'branch': 'A',
-            'tier_0_committed': False,
-            'tier_1_action': 'skipped',
-            'affected_modules': (),
-            'display_detail': 'skipped — derived.json is ephemeral, no pre-snapshot exists',
-        }
 
-    # -- Step 3: Tier 0 -----------------------------------------------------
-    if tier_0 == 'enabled':
-        affected_set = set(diff_added) | set(diff_removed) | set(diff_changed)
-        affected: tuple[Any, ...] = tuple(sorted(affected_set))
-        tier_0_committed = len(affected) > 0
-    elif tier_0 == 'disabled':
-        affected = _AFFECTED_UNKNOWN  # type: ignore[assignment]
+    Note: ``diff_changed`` is accepted but DELIBERATELY ignored. Against a
+    derived-less ``origin/main`` git baseline every common module classifies as
+    ``changed`` (no committed per-module ``derived.json`` sha), so the changed
+    bucket is noise; the reliable drift signal is the index-derived
+    ``added union removed`` buckets only. Because ``_project.json`` only shifts when
+    a module is added or removed, the on-disk ``git status --porcelain
+    .plan/project-architecture`` commit gate fires exactly when
+    ``added union removed`` is non-empty.
+    """
+    # -- Step 2a: Tier-0 disabled — no extraction, affected never computed --
+    if tier_0 == 'disabled':
+        affected: tuple[Any, ...] = _AFFECTED_UNKNOWN  # type: ignore[assignment]
         tier_0_committed = False
+    elif tier_0 == 'enabled':
+        # -- Step 2b/2c: extract origin/main baseline -----------------------
+        if not baseline_present:
+            return {
+                'branch': 'A',
+                'tier_0_committed': False,
+                'tier_1_action': 'skipped',
+                'affected_modules': (),
+                'display_detail': 'skipped — no committed origin/main architecture baseline',
+            }
+        # -- Step 3b: affected = added union removed (changed bucket is noise) ---
+        affected = tuple(sorted(set(diff_added) | set(diff_removed)))
+        # -- Step 3c/3d: commit gated on dirty .plan/project-architecture ---
+        # (porcelain-dirty ⟺ module add/remove ⟺ affected non-empty).
+        tier_0_committed = len(affected) > 0
     else:
         raise ValueError(f'tier_0 must be enabled|disabled, got {tier_0!r}')
 
     # -- Step 4: Tier 1 -----------------------------------------------------
     # 4a. change_type shortcut
     if change_type in {'bug_fix', 'verification'}:
-        if tier_0_committed:
-            return {
-                'branch': 'D',
-                'tier_0_committed': True,
-                'tier_1_action': 'skipped',
-                'affected_modules': affected,
-                'display_detail': (f'refreshed derived data ({len(affected)} modules)'),
-            }
-        # No tier-0 commit: empty diff or tier-0 disabled.
         if affected is _AFFECTED_UNKNOWN:
             return {
                 'branch': 'B',
@@ -155,21 +152,19 @@ def _decide_architecture_refresh(
                 'affected_modules': _AFFECTED_UNKNOWN,
                 'display_detail': 'tier-0 disabled; tier-1 skipped',
             }
+        if tier_0_committed:
+            return {
+                'branch': 'D',
+                'tier_0_committed': True,
+                'tier_1_action': 'skipped',
+                'affected_modules': affected,
+                'display_detail': (f'refreshed derived data ({len(affected)} modules)'),
+            }
         return {
             'branch': 'C',
             'tier_0_committed': False,
             'tier_1_action': 'skipped',
             'affected_modules': affected,
-            'display_detail': 'no module structure changed',
-        }
-
-    # 4b. affected empty (Tier-0 enabled, empty diff)
-    if affected is not _AFFECTED_UNKNOWN and len(affected) == 0:
-        return {
-            'branch': 'C',
-            'tier_0_committed': False,
-            'tier_1_action': 'skipped',
-            'affected_modules': (),
             'display_detail': 'no module structure changed',
         }
 
@@ -183,8 +178,18 @@ def _decide_architecture_refresh(
             'display_detail': 'tier-0 disabled; tier-1 skipped',
         }
 
+    # 4b. affected empty (Tier-0 enabled, no added/removed -> no commit)
+    if len(affected) == 0:
+        return {
+            'branch': 'C',
+            'tier_0_committed': False,
+            'tier_1_action': 'skipped',
+            'affected_modules': (),
+            'display_detail': 'no module structure changed',
+        }
+
     # 4d. tier_1 dispatch — affected is non-empty, tier-0 enabled, change_type
-    # is not in the shortcut list.
+    # is not in the shortcut list (so a Tier-0 commit has fired).
     n = len(affected)
     if tier_1 == 'disabled':
         return {
@@ -227,40 +232,52 @@ def _decide_architecture_refresh(
 
 
 # ===========================================================================
-# Greenfield handling — snapshot absent.
+# Absent-baseline handling — origin/main carries no committed descriptor.
 # ===========================================================================
 
 
-class TestGreenfieldHandling:
-    """Step 2 — greenfield short-circuit."""
+class TestAbsentBaselineHandling:
+    """Step 2 — absent-baseline short-circuit (Branch A)."""
 
-    def test_no_snapshot_yields_branch_a_regardless_of_tier_settings(self):
-        """A missing architecture-pre snapshot exits before reading tiers."""
-        for tier_0 in ('enabled', 'disabled'):
-            for tier_1 in ('prompt', 'auto', 'disabled'):
-                result = _decide_architecture_refresh(
-                    snapshot_present=False,
-                    tier_0=tier_0,
-                    tier_1=tier_1,
-                    change_type='feature',
-                )
-                assert result['branch'] == 'A', (
-                    f'Greenfield must yield Branch A even with tier_0={tier_0} tier_1={tier_1}, got {result}'
-                )
-                assert result['tier_0_committed'] is False
-                assert result['tier_1_action'] == 'skipped'
-                assert 'ephemeral' in result['display_detail']
+    def test_no_baseline_yields_branch_a_when_tier_0_enabled(self):
+        """A missing origin/main baseline short-circuits Tier 0 to Branch A."""
+        for tier_1 in ('prompt', 'auto', 'disabled'):
+            result = _decide_architecture_refresh(
+                baseline_present=False,
+                tier_0='enabled',
+                tier_1=tier_1,
+                change_type='feature',
+            )
+            assert result['branch'] == 'A', (
+                f'Absent baseline must yield Branch A with tier_0=enabled tier_1={tier_1}, got {result}'
+            )
+            assert result['tier_0_committed'] is False
+            assert result['tier_1_action'] == 'skipped'
+            assert 'no committed origin/main architecture baseline' in result['display_detail']
 
-    def test_no_snapshot_short_circuits_for_change_type_shortcut(self):
-        """Greenfield wins over the change_type shortcut — Step 2 runs first."""
+    def test_no_baseline_with_tier_0_disabled_yields_branch_b(self):
+        """Tier-0 disabled skips extraction entirely — baseline presence is moot."""
         result = _decide_architecture_refresh(
-            snapshot_present=False,
+            baseline_present=False,
+            tier_0='disabled',
+            tier_1='auto',
+            change_type='feature',
+        )
+        assert result['branch'] == 'B', (
+            'Tier-0 disabled never extracts a baseline; absent baseline cannot reach Branch A.'
+        )
+        assert result['display_detail'] == 'tier-0 disabled; tier-1 skipped'
+
+    def test_no_baseline_short_circuits_change_type_shortcut(self):
+        """Absent baseline (tier-0 enabled) wins over the change_type shortcut."""
+        result = _decide_architecture_refresh(
+            baseline_present=False,
             tier_0='enabled',
             tier_1='auto',
             change_type='bug_fix',
         )
         assert result['branch'] == 'A'
-        assert 'ephemeral' in result['display_detail']
+        assert 'no committed origin/main architecture baseline' in result['display_detail']
 
 
 # ===========================================================================
@@ -269,12 +286,12 @@ class TestGreenfieldHandling:
 
 
 class TestTier0EnabledMatrix:
-    """Step 3 — deterministic discover + diff."""
+    """Step 3 — deterministic discover + diff against the extracted baseline."""
 
     def test_empty_diff_yields_branch_c_no_commit(self):
         """No drift detected -> no commit, Tier 1 skipped, Branch C."""
         result = _decide_architecture_refresh(
-            snapshot_present=True,
+            baseline_present=True,
             tier_0='enabled',
             tier_1='prompt',
             change_type='feature',
@@ -287,7 +304,7 @@ class TestTier0EnabledMatrix:
     def test_drift_detected_in_added_bucket_triggers_commit(self):
         """Modules in `added` move to the union -> commit fires."""
         result = _decide_architecture_refresh(
-            snapshot_present=True,
+            baseline_present=True,
             tier_0='enabled',
             tier_1='auto',
             change_type='feature',
@@ -298,7 +315,7 @@ class TestTier0EnabledMatrix:
 
     def test_drift_detected_in_removed_bucket_triggers_commit(self):
         result = _decide_architecture_refresh(
-            snapshot_present=True,
+            baseline_present=True,
             tier_0='enabled',
             tier_1='auto',
             change_type='feature',
@@ -307,40 +324,47 @@ class TestTier0EnabledMatrix:
         assert result['tier_0_committed'] is True
         assert 'mod-r' in result['affected_modules']
 
-    def test_drift_detected_in_changed_bucket_triggers_commit(self):
+    def test_changed_bucket_is_ignored_against_git_baseline(self):
+        """Pseudo-code §3b: the `changed` bucket is noise against a git baseline.
+
+        Against a derived-less origin/main baseline EVERY common module reports
+        as `changed` (no committed per-module derived.json sha), so the changed
+        bucket carries no signal. A diff that populates ONLY `changed` (no
+        added/removed) is treated as no drift -> Branch C, no commit.
+        """
         result = _decide_architecture_refresh(
-            snapshot_present=True,
+            baseline_present=True,
             tier_0='enabled',
             tier_1='auto',
             change_type='feature',
             diff_changed=('mod-c',),
         )
-        assert result['tier_0_committed'] is True
-        assert 'mod-c' in result['affected_modules']
+        assert result['branch'] == 'C'
+        assert result['tier_0_committed'] is False
+        assert result['affected_modules'] == ()
 
-    def test_affected_modules_is_sorted_union_of_three_buckets(self):
-        """Pseudo-code §3c: affected = added ∪ removed ∪ changed (sorted)."""
+    def test_affected_modules_is_sorted_union_of_added_and_removed(self):
+        """Pseudo-code §3b: affected = added union removed (sorted); changed ignored."""
         result = _decide_architecture_refresh(
-            snapshot_present=True,
+            baseline_present=True,
             tier_0='enabled',
             tier_1='auto',
             change_type='feature',
             diff_added=('zeta',),
             diff_removed=('alpha',),
-            diff_changed=('mu',),
+            diff_changed=('mu',),  # noise — must NOT appear in the union
         )
-        # Sorted alphabetically across all three buckets.
-        assert result['affected_modules'] == ('alpha', 'mu', 'zeta')
+        assert result['affected_modules'] == ('alpha', 'zeta')
 
     def test_overlap_between_buckets_dedupes_in_union(self):
-        """A module appearing in two buckets should count once in the union."""
+        """A module appearing in both added and removed counts once in the union."""
         result = _decide_architecture_refresh(
-            snapshot_present=True,
+            baseline_present=True,
             tier_0='enabled',
             tier_1='auto',
             change_type='feature',
             diff_added=('shared',),
-            diff_changed=('shared',),
+            diff_removed=('shared',),
         )
         assert result['affected_modules'] == ('shared',)
 
@@ -351,12 +375,12 @@ class TestTier0EnabledMatrix:
 
 
 class TestTier0DisabledMatrix:
-    """Step 3a — Tier-0 disabled paths."""
+    """Step 2a — Tier-0 disabled paths."""
 
     def test_tier_0_disabled_skips_commit_and_enters_tier_1_with_unknown(self):
         """Tier-0 disabled never commits; affected is sentinel UNKNOWN."""
         result = _decide_architecture_refresh(
-            snapshot_present=True,
+            baseline_present=True,
             tier_0='disabled',
             tier_1='prompt',
             change_type='feature',
@@ -368,7 +392,7 @@ class TestTier0DisabledMatrix:
         """Tier 1 cannot proceed without a diff -> Branch B short-circuits."""
         for tier_1 in ('prompt', 'auto', 'disabled'):
             result = _decide_architecture_refresh(
-                snapshot_present=True,
+                baseline_present=True,
                 tier_0='disabled',
                 tier_1=tier_1,
                 change_type='feature',
@@ -387,7 +411,7 @@ class TestTier1KnobDispatch:
 
     def test_tier_1_disabled_yields_branch_f_pr_note(self):
         result = _decide_architecture_refresh(
-            snapshot_present=True,
+            baseline_present=True,
             tier_0='enabled',
             tier_1='disabled',
             change_type='feature',
@@ -399,12 +423,12 @@ class TestTier1KnobDispatch:
 
     def test_tier_1_auto_yields_branch_e_enrich(self):
         result = _decide_architecture_refresh(
-            snapshot_present=True,
+            baseline_present=True,
             tier_0='enabled',
             tier_1='auto',
             change_type='feature',
             diff_added=('m1',),
-            diff_changed=('m2',),
+            diff_removed=('m2',),
         )
         assert result['branch'] == 'E'
         assert result['tier_1_action'] == 'enrich'
@@ -413,7 +437,7 @@ class TestTier1KnobDispatch:
     def test_tier_1_prompt_accepted_routes_through_auto_branch(self):
         """`Re-enrich now` follows the auto branch verbatim."""
         result = _decide_architecture_refresh(
-            snapshot_present=True,
+            baseline_present=True,
             tier_0='enabled',
             tier_1='prompt',
             change_type='feature',
@@ -427,7 +451,7 @@ class TestTier1KnobDispatch:
     def test_tier_1_prompt_declined_routes_through_disabled_branch(self):
         """`Skip — note in PR` follows the disabled branch verbatim."""
         result = _decide_architecture_refresh(
-            snapshot_present=True,
+            baseline_present=True,
             tier_0='enabled',
             tier_1='prompt',
             change_type='feature',
@@ -440,7 +464,7 @@ class TestTier1KnobDispatch:
     def test_tier_1_prompt_aborted_treated_as_decline(self):
         """`AskUserQuestion aborted` is informationally equivalent to Skip."""
         result = _decide_architecture_refresh(
-            snapshot_present=True,
+            baseline_present=True,
             tier_0='enabled',
             tier_1='prompt',
             change_type='feature',
@@ -454,7 +478,7 @@ class TestTier1KnobDispatch:
         """The standard documents `prompt` as default — caller must supply UX answer."""
         with pytest.raises(ValueError, match='user_response'):
             _decide_architecture_refresh(
-                snapshot_present=True,
+                baseline_present=True,
                 tier_0='enabled',
                 tier_1='prompt',
                 change_type='feature',
@@ -474,12 +498,12 @@ class TestChangeTypeShortcut:
     def test_shortcut_with_drift_runs_tier_0_only(self, change_type: str):
         """Drift -> tier-0 commit, but tier-1 is skipped per shortcut."""
         result = _decide_architecture_refresh(
-            snapshot_present=True,
+            baseline_present=True,
             tier_0='enabled',
             tier_1='auto',  # would otherwise enrich
             change_type=change_type,
             diff_added=('mod-a',),
-            diff_changed=('mod-b',),
+            diff_removed=('mod-b',),
         )
         assert result['branch'] == 'D'
         assert result['tier_0_committed'] is True
@@ -490,7 +514,7 @@ class TestChangeTypeShortcut:
     def test_shortcut_without_drift_yields_branch_c(self, change_type: str):
         """No drift + shortcut -> Branch C (no commit, tier-1 skipped)."""
         result = _decide_architecture_refresh(
-            snapshot_present=True,
+            baseline_present=True,
             tier_0='enabled',
             tier_1='auto',
             change_type=change_type,
@@ -506,7 +530,7 @@ class TestChangeTypeShortcut:
     ):
         """Shortcut + tier-0 disabled still yields tier-0-disabled branch."""
         result = _decide_architecture_refresh(
-            snapshot_present=True,
+            baseline_present=True,
             tier_0='disabled',
             tier_1='auto',
             change_type=change_type,
@@ -518,7 +542,7 @@ class TestChangeTypeShortcut:
         """`feature`, `refactor`, etc. do NOT trigger the shortcut."""
         for change_type in ('feature', 'refactor', 'tech_debt', 'unknown'):
             result = _decide_architecture_refresh(
-                snapshot_present=True,
+                baseline_present=True,
                 tier_0='enabled',
                 tier_1='auto',
                 change_type=change_type,
@@ -582,21 +606,24 @@ class TestNarrativeContract:
     def test_documents_change_type_input(self, standard_text: str):
         assert 'change_type' in standard_text
 
-    def test_documents_architecture_pre_snapshot_dependency(
-        self,
-        standard_text: str,
-    ):
-        # Under the on-demand crawl model phase-1-init no longer produces an
-        # architecture-pre/ snapshot — the standard still cites the historical
-        # context for unreachable Steps 3c-3e, so checking for 'architecture-pre'
-        # is informational only.
+    def test_documents_phase_1_init_context(self, standard_text: str):
+        """The standard cites phase-1-init as NOT snapshotting the descriptor."""
         assert 'phase-1-init' in standard_text, 'Standard must cite phase-1-init context'
 
-    # ----- Step 2: ephemeral-derived no-op ---------------------------------
+    # ----- Step 2: origin/main baseline extraction -------------------------
 
-    def test_documents_ephemeral_derived_branch(self, standard_text: str):
-        assert 'ephemeral' in standard_text.lower()
-        assert 'skipped — derived.json is ephemeral' in standard_text
+    def test_documents_origin_main_baseline_extraction(self, standard_text: str):
+        """The pre-baseline is the committed origin/main tree, extracted via git archive."""
+        assert 'origin/main' in standard_text
+        assert 'git archive' in standard_text or 'archive --format=tar' in standard_text
+
+    def test_documents_absent_baseline_branch(self, standard_text: str):
+        assert 'no committed origin/main architecture baseline' in standard_text
+
+    def test_documents_changed_bucket_is_noise(self, standard_text: str):
+        """The standard must document that the changed bucket is noise; consume added union removed."""
+        assert 'added ∪ removed' in standard_text  # noqa: RUF001
+        assert 'changed' in standard_text
 
     # ----- Step 3: Tier 0 ---------------------------------------------------
 
@@ -609,6 +636,10 @@ class TestNarrativeContract:
     def test_documents_diff_modules_pre_call(self, standard_text: str):
         assert 'diff-modules' in standard_text
         assert '--pre' in standard_text
+
+    def test_documents_porcelain_commit_gate(self, standard_text: str):
+        """The Tier-0 commit is gated on a dirty .plan/project-architecture."""
+        assert 'status --porcelain .plan/project-architecture' in standard_text
 
     def test_documents_empty_diff_no_commit_branch(self, standard_text: str):
         assert 'no module structure changed' in standard_text
@@ -646,14 +677,14 @@ class TestNarrativeContract:
     def test_documents_enrich_call_in_auto_branch(self, standard_text: str):
         """The `auto` branch enriches per-module, not via a batch invocation.
 
-        After Phase F the standard explicitly forbids the (never-registered)
-        `architecture enrich --modules {csv}` batch shape and instead
-        documents a per-module loop that calls the three registered enrich
-        subcommands. Pin every observable token of that contract so the
-        narrative cannot silently drift back to the batch form.
+        The standard explicitly forbids the (never-registered) `architecture
+        enrich --modules {csv}` batch shape and instead documents a per-module
+        loop that calls the three registered enrich subcommands. Pin every
+        observable token of that contract so the narrative cannot silently
+        drift back to the batch form.
         """
         assert 'architecture' in standard_text
-        # The rewritten auto branch carries an explicit per-module loop.
+        # The auto branch carries an explicit per-module loop.
         assert 'for each module' in standard_text, (
             'Standard must spell out the per-module iteration in the auto '
             'branch — the batch `enrich --modules {csv}` shape is gone.'
@@ -684,7 +715,7 @@ class TestNarrativeContract:
     @pytest.mark.parametrize(
         'template',
         [
-            'skipped — derived.json is ephemeral, no pre-snapshot exists',
+            'skipped — no committed origin/main architecture baseline',
             'tier-0 disabled; tier-1 skipped',
             'no module structure changed',
             'refreshed derived data ({affected_module_count} modules)',
@@ -804,14 +835,22 @@ class TestCrossReferences:
         # The doc carries `order: 25` — pin it to detect accidental edits.
         assert 'order: 25' in standard_text
 
+    def test_standard_frontmatter_declares_default_on_true(
+        self,
+        standard_text: str,
+    ):
+        """The step is reactivated — frontmatter `default_on: true` enables it by default."""
+        assert 'default_on: true' in standard_text
+        assert 'default_on: false' not in standard_text
+
     def test_phase_1_init_does_not_produce_architecture_pre_snapshot(
         self,
         phase_1_text: str,
     ):
         """Under the on-demand crawl model phase-1-init MUST NOT snapshot architecture-pre/.
 
-        The legacy Step 5d snapshot is removed; architecture-refresh's Step 2
-        short-circuits on the absent snapshot for every plan.
+        The legacy snapshot is removed; architecture-refresh derives its
+        pre-baseline from the committed origin/main tree instead.
         """
         # No 'architecture-pre' copy-tree step should remain in phase-1-init.
         assert 'architecture-pre' not in phase_1_text or 'copy-tree' not in phase_1_text
@@ -836,13 +875,15 @@ class TestCrossReferences:
 # ===========================================================================
 
 
-# (snapshot_present, tier_0, tier_1, change_type, drift, expected_branch,
+# (baseline_present, tier_0, tier_1, change_type, drift, expected_branch,
 #  expected_display_detail_substring, user_response)
 _MATRIX_CASES = [
-    # snapshot absent — ephemeral-derived no-op short-circuit (every plan).
-    (False, 'enabled', 'prompt', 'feature', False, 'A', 'ephemeral', None),
-    (False, 'disabled', 'auto', 'bug_fix', True, 'A', 'ephemeral', None),
-    # tier-0 disabled — Branch B for any tier-1 setting.
+    # baseline absent, tier-0 enabled — Branch A short-circuit.
+    (False, 'enabled', 'prompt', 'feature', False, 'A', 'no committed origin/main', None),
+    (False, 'enabled', 'auto', 'bug_fix', True, 'A', 'no committed origin/main', None),
+    # baseline absent, tier-0 disabled — extraction skipped, Branch B.
+    (False, 'disabled', 'auto', 'feature', True, 'B', 'tier-0 disabled', None),
+    # tier-0 disabled (baseline present) — Branch B for any tier-1 setting.
     (True, 'disabled', 'prompt', 'feature', True, 'B', 'tier-0 disabled', None),
     (True, 'disabled', 'auto', 'feature', False, 'B', 'tier-0 disabled', None),
     (True, 'disabled', 'disabled', 'refactor', True, 'B', 'tier-0 disabled', None),
@@ -864,11 +905,11 @@ _MATRIX_CASES = [
 
 
 @pytest.mark.parametrize(
-    ('snapshot_present, tier_0, tier_1, change_type, drift, expected_branch, expected_detail_substring, user_response'),
+    ('baseline_present, tier_0, tier_1, change_type, drift, expected_branch, expected_detail_substring, user_response'),
     _MATRIX_CASES,
 )
 def test_full_decision_matrix(
-    snapshot_present: bool,
+    baseline_present: bool,
     tier_0: str,
     tier_1: str,
     change_type: str,
@@ -879,7 +920,7 @@ def test_full_decision_matrix(
 ) -> None:
     """End-to-end matrix sweep across every documented branch."""
     result = _decide_architecture_refresh(
-        snapshot_present=snapshot_present,
+        baseline_present=baseline_present,
         tier_0=tier_0,
         tier_1=tier_1,
         change_type=change_type,
@@ -888,7 +929,7 @@ def test_full_decision_matrix(
     )
     assert result['branch'] == expected_branch, (
         f'Matrix row produced {result["branch"]} but expected {expected_branch}: '
-        f'snapshot={snapshot_present} tier_0={tier_0} tier_1={tier_1} '
+        f'baseline={baseline_present} tier_0={tier_0} tier_1={tier_1} '
         f'change_type={change_type} drift={drift} -> {result}'
     )
     assert expected_detail_substring in result['display_detail'], (
