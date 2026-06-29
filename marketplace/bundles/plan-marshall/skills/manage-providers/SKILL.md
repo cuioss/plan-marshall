@@ -133,14 +133,15 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list 
 
 ### Edit Existing Credentials
 
-Updates non-secret fields (URL, auth type) via CLI args. For secret changes, the user edits the credential file directly.
+Updates non-secret fields (URL, auth type) via CLI args, and idempotently upserts extra provider-config fields (e.g. `organization`, `project_key`) via `--extra KEY=VALUE ...` without dropping the stored token. For secret changes, the user edits the credential file directly.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials edit \
-  --skill <name> [--url <url>] [--auth-type none|token|basic] [--scope global|project]
+  --skill <name> [--url <url>] [--auth-type none|token|basic] [--scope global|project] \
+  [--extra KEY=VALUE ...]
 ```
 
-Returns `path` and `needs_editing` status. If secrets need updating, tell the user to edit the file at the returned path.
+Returns `path` and `needs_editing` status, plus `extras_upserted` (the list of extra-field keys written) when `--extra` was supplied. If secrets need updating, tell the user to edit the file at the returned path.
 
 ### Verify Connectivity
 
@@ -184,7 +185,8 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials confi
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials edit \
-  [--skill SKILL] [--scope {global,project}] [--url URL] [--auth-type {none,token,basic}]
+  [--skill SKILL] [--scope {global,project}] [--url URL] [--auth-type {none,token,basic}] \
+  [--extra KEY=VALUE ...]
 ```
 
 ### check
