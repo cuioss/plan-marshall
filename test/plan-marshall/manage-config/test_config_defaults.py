@@ -1410,15 +1410,19 @@ def test_build_map_round_trips_at_top_level_build_path(tmp_path, monkeypatch):
 # (ci/ceremony_policy/build_map_overrides removed) lead with ``extension_defaults``
 # (the extension-seeded defaults block), then ``plan`` (the primary user-facing
 # config), then ``build`` (build infrastructure), and finally the remaining
-# top-level keys alphabetically: extension_defaults, plan, build, project,
-# providers, skill_domains, system. These tests pin that contract and prove the
-# committed marshal.json already round-trips through save_config with its key
-# order unchanged.
+# top-level keys alphabetically: extension_defaults, plan, build,
+# credentials_config, project, providers, skill_domains, system.
+# ``credentials_config`` (the non-secret per-provider config block written by
+# manage-providers) takes its alphabetical slot between ``build`` and
+# ``project``. These tests pin that contract and prove the committed
+# marshal.json already round-trips through save_config with its key order
+# unchanged.
 
 _EXPECTED_CANONICAL_KEY_ORDER = [
     'extension_defaults',
     'plan',
     'build',
+    'credentials_config',
     'project',
     'providers',
     'skill_domains',
@@ -1459,6 +1463,7 @@ def test_save_config_emits_canonical_top_level_key_order(tmp_path, monkeypatch):
         'skill_domains': {},
         'providers': {},
         'project': {},
+        'credentials_config': {},
         'plan': {},
         'extension_defaults': {},
         'build': {},

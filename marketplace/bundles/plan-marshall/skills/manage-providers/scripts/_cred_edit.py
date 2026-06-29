@@ -2,20 +2,70 @@
 """
 Edit existing credentials.
 
-Updates non-secret fields (URL, auth_type) via CLI args.
+Updates non-secret fields (URL, auth_type) via CLI args, and idempotently
+upserts extra non-secret fields (KEY=VALUE) into the provider config.
 For secret changes, the user edits the credential file directly.
 """
 
 import argparse
 
 from _providers_core import (
+    SECRET_PLACEHOLDERS,
     VALID_AUTH_TYPES,
     check_credential_completeness,
     get_project_name,
     load_credential,
+    read_provider_config,
     save_credential,
+    write_provider_config,
 )
 from file_ops import output_toon  # type: ignore[import-not-found]
+
+
+def _upsert_extra_fields(skill: str, extra_pairs: list[str]) -> list[str]:
+    """Idempotently upsert non-secret KEY=VALUE extras into the provider config.
+
+    Extra fields live in marshal.json under ``credentials_config.{skill}`` —
+    separate from the credential file that holds the token — so this upsert
+    never touches or drops the stored token. Each supplied key is added when
+    absent and replaced in place when present; all other existing extras are
+    preserved. Running with the same pairs twice yields the same end state.
+
+    Because ``credentials_config`` is git-tracked and non-secret by intent,
+    each key is validated before it is written: the key is whitespace-stripped,
+    an empty key is skipped, and a key naming a secret field (any key in
+    ``SECRET_PLACEHOLDERS`` — ``token``, ``username``, ``password``) is rejected
+    so a secret can never be persisted into marshal.json via ``--extra``. The
+    returned key list is deduplicated.
+
+    Args:
+        skill: Skill name keying the provider config.
+        extra_pairs: Repeatable ``KEY=VALUE`` strings; entries without ``=``,
+            with an empty (or whitespace-only) key, or naming a secret field
+            are ignored.
+
+    Returns:
+        The deduplicated list of keys that were upserted (in supplied order).
+    """
+    provider_config = dict(read_provider_config(skill))
+    upserted_keys: list[str] = []
+    for pair in extra_pairs:
+        if '=' not in pair:
+            continue
+        key, value = pair.split('=', 1)
+        key = key.strip()
+        if not key:
+            continue
+        if key in SECRET_PLACEHOLDERS:
+            continue
+        provider_config[key] = value
+        if key not in upserted_keys:
+            upserted_keys.append(key)
+
+    if upserted_keys:
+        write_provider_config(skill, provider_config)
+
+    return upserted_keys
 
 
 def run_edit(args: argparse.Namespace) -> int:
@@ -45,23 +95,31 @@ def run_edit(args: argparse.Namespace) -> int:
         output_toon({'status': 'error', 'message': f'Invalid auth type: {auth_type}'})
         return 0
 
+    # Copy the existing credential so the stored token (and any other secret
+    # fields) carry through untouched — only the non-secret URL/auth_type change.
     data = dict(existing)
     data['url'] = url
     data['auth_type'] = auth_type
 
     path = save_credential(skill, data, scope, project_name)
 
+    # Idempotently upsert any --extra KEY=VALUE pairs into the provider config.
+    extra_pairs = getattr(args, 'extra', None) or []
+    extras_upserted = _upsert_extra_fields(skill, extra_pairs)
+
     completeness = check_credential_completeness(skill, scope, project_name)
 
-    output_toon(
-        {
-            'status': 'success',
-            'skill': skill,
-            'scope': scope,
-            'action': 'edited',
-            'path': str(path),
-            'needs_editing': not completeness['complete'],
-            'placeholders': completeness.get('placeholders', []),
-        }
-    )
+    result: dict = {
+        'status': 'success',
+        'skill': skill,
+        'scope': scope,
+        'action': 'edited',
+        'path': str(path),
+        'needs_editing': not completeness['complete'],
+        'placeholders': completeness.get('placeholders', []),
+    }
+    if extras_upserted:
+        result['extras_upserted'] = extras_upserted
+
+    output_toon(result)
     return 0

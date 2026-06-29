@@ -87,6 +87,17 @@ def write_provider_config(skill_name: str, provider_config: dict[str, Any]) -> N
         config['credentials_config'] = {}
     config['credentials_config'][skill_name] = provider_config
 
+    # Route the top-level key order through the single authority in _config_core
+    # so a freshly created ``credentials_config`` block lands in its canonical
+    # slot rather than appended at end-of-object — otherwise the committed
+    # marshal.json drifts out of the order ``save_config`` enforces and the next
+    # save produces a spurious reorder diff. Imported lazily (executor sets the
+    # cross-skill PYTHONPATH); no import cycle — _config_core never imports this
+    # module.
+    from _config_core import order_config_keys  # type: ignore[import-not-found]
+
+    config = order_config_keys(config)
+
     marshal_path.parent.mkdir(parents=True, exist_ok=True)
     marshal_path.write_text(
         json.dumps(config, indent=2, ensure_ascii=False) + '\n',

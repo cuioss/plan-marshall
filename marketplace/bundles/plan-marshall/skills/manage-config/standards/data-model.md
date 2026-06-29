@@ -117,6 +117,12 @@ JSON structure and field definitions for project configuration.
     },
     "queue": { "max_slots": 5, "max_retries": 10 }
   },
+  "credentials_config": {
+    "plan-marshall:workflow-integration-sonar": {
+      "organization": "cuioss",
+      "project_key": "cuioss_plan-marshall"
+    }
+  },
   "skill_domains": {
     "system": {
       "defaults": ["plan-marshall:persona-plan-marshall-agent"],
@@ -177,6 +183,29 @@ Project-level settings (committed, shared via git). Seeded on `init` and back-fi
 |-------|------|---------|-------------|
 | `default_base_branch` | string | "main" | The project's canonical base branch. `phase-1-init` seeds `references.base_branch` from it; the wizard derives the suggestion from `origin/HEAD`, falling back to `main`. Per-plan overrides via `manage-references set --field base_branch`. |
 | `working_prefixes` | list[string] | `["feature/", "fix/", "chore/"]` | The closed set of allowed working-branch prefixes. `manage-status create` validates `--worktree-branch` against this set. The literals live in `constants.py` (`DEFAULT_BRANCH_PREFIX_WORKING`) as the fail-closed fallback. A structural test (`test_branch_prefix_allowlist.py`) asserts every prefix is covered by a `.github/workflows/python-verify.yml` push trigger, so a dropped prefix that would make a PR unmergeable fails CI. |
+
+## Section: credentials_config
+
+Non-secret per-provider configuration (committed, shared via git), written by `manage-providers credentials edit --extra` / `configure --extra`. Holds the non-secret extra fields a provider integration needs (e.g. SonarCloud `organization` / `project_key`); the secret token is stored separately in the out-of-tree credential file under `~/.plan-marshall-credentials/`, never here. The block is keyed by the fully-qualified `bundle:skill` provider name. It is absent until the first `--extra` upsert; `save_config` orders it canonically between `build` and `project` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`).
+
+### Structure
+
+```json
+{
+  "credentials_config": {
+    "plan-marshall:workflow-integration-sonar": {
+      "organization": "cuioss",
+      "project_key": "cuioss_plan-marshall"
+    }
+  }
+}
+```
+
+### Fields (per provider entry)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `<key>` | string | No | A non-secret provider-config field (e.g. `organization`, `project_key` for SonarCloud). Keys are provider-defined; `manage-providers` upserts them idempotently via `--extra KEY=VALUE`. |
 
 ## Section: skill_domains
 

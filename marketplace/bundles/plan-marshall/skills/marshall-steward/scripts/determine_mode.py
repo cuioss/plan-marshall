@@ -564,6 +564,26 @@ def _canonical_built_in_finalize_steps() -> list[str]:
     return [rec['name'] for rec in default_on if rec.get('name')]
 
 
+def _extract_step_ids(steps: object) -> list[str] | None:
+    """Extract finalize-step ids from a ``phase-6-finalize.steps`` value.
+
+    The canonical serial form is a KEYED-MAP — a dict mapping each step id to
+    its (possibly empty) config object, with ``{}`` for a config-less step. A
+    legacy list-of-id-strings is also accepted for backward compatibility.
+    Returns the list of step ids (the dict keys, or the list verbatim), or
+    ``None`` when the value is neither a dict nor a list, signalling
+    "cannot compare" to callers. Without this normalization the detection
+    helpers were blind to the keyed-map form: an ``isinstance(..., list)``
+    guard treated every keyed-map ``steps`` block as "cannot compare" and
+    silently reported no missing steps.
+    """
+    if isinstance(steps, dict):
+        return list(steps.keys())
+    if isinstance(steps, list):
+        return steps
+    return None
+
+
 def detect_missing_default_finalize_steps(plan_dir: Path) -> list[str]:
     """Compare ``marshal.json::plan["phase-6-finalize"]["steps"]`` against the
     canonical built-in finalize-step set and return any built-ins missing from
@@ -591,18 +611,21 @@ def detect_missing_default_finalize_steps(plan_dir: Path) -> list[str]:
 
     plan_section = data.get('plan', {}) if isinstance(data, dict) else {}
     finalize = plan_section.get('phase-6-finalize', {}) if isinstance(plan_section, dict) else {}
-    existing = finalize.get('steps', []) if isinstance(finalize, dict) else []
-    if not isinstance(existing, list):
+    existing = _extract_step_ids(finalize.get('steps')) if isinstance(finalize, dict) else None
+    if existing is None:
         return []
 
     return [step for step in _canonical_built_in_finalize_steps() if step not in existing]
 
 
 def _read_finalize_steps(plan_dir: Path) -> list[str] | None:
-    """Return ``marshal.json::plan["phase-6-finalize"]["steps"]`` or ``None``.
+    """Return the finalize-step ids from ``marshal.json`` or ``None``.
 
-    ``None`` signals "cannot compare" — marshal.json is absent, unparseable,
-    or the steps value is not a list. Callers treat ``None`` as "nothing to
+    Reads ``plan["phase-6-finalize"]["steps"]`` and normalizes it to a list of
+    step ids via :func:`_extract_step_ids` — the canonical keyed-map form
+    yields its keys; a legacy list yields itself. ``None`` signals "cannot
+    compare" — marshal.json is absent, unparseable, or the steps value is
+    neither a keyed-map nor a list. Callers treat ``None`` as "nothing to
     detect" so the wizard never crashes on an unexpected topology.
     """
     marshal_path = plan_dir / 'marshal.json'
@@ -614,10 +637,7 @@ def _read_finalize_steps(plan_dir: Path) -> list[str] | None:
         return None
     plan_section = data.get('plan', {}) if isinstance(data, dict) else {}
     finalize = plan_section.get('phase-6-finalize', {}) if isinstance(plan_section, dict) else {}
-    existing = finalize.get('steps', []) if isinstance(finalize, dict) else []
-    if not isinstance(existing, list):
-        return None
-    return existing
+    return _extract_step_ids(finalize.get('steps')) if isinstance(finalize, dict) else None
 
 
 def discover_shipped_project_finalize_steps(project_root: Path) -> list[str]:
@@ -657,8 +677,8 @@ def detect_missing_project_finalize_steps(plan_dir: Path, project_root: Path) ->
     project-local finalize steps.
 
     Returns an empty list when marshal.json is absent/unparseable, the steps
-    value is not a list, or the project ships no ``project:`` finalize steps
-    (the consumer-project case).
+    value is neither a keyed-map nor a list, or the project ships no
+    ``project:`` finalize steps (the consumer-project case).
     """
     existing = _read_finalize_steps(plan_dir)
     if existing is None:

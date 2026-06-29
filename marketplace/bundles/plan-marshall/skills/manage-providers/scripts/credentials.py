@@ -60,6 +60,13 @@ def main() -> int:
     edit_parser.add_argument(
         '--auth-type', choices=['none', 'token', 'basic'], help='New auth type (skips auth type prompt)'
     )
+    edit_parser.add_argument(
+        '--extra',
+        nargs='*',
+        metavar='KEY=VALUE',
+        help='Extra fields as key=value pairs, upserted idempotently without dropping the token '
+        '(e.g., --extra organization=cuioss project_key=cuioss_plan-marshall)',
+    )
 
     # check
     check_parser = subparsers.add_parser('check', help='Check credential completeness', allow_abbrev=False)
