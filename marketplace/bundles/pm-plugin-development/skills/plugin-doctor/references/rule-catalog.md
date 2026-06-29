@@ -1077,6 +1077,55 @@ Five rules that catch gaps between what the marketplace *declares* and what is *
 
 ---
 
+## Rule Pack: Agentfile-hygiene backstop
+
+Two deterministic rules that are the fast backstop for the cognitive `plan-marshall:recipe-agentfile-hygiene` sweep. Both embody the single normative rubric in `plan-marshall:ref-agentfile-hygiene` `standards/rubric.md`; shared detection helpers (agentfile discovery, fenced-block spans, tree-glyph detection) live in `_analyze_agentfile_shared.py`. **Activation**: analyze-surfaced only — unconditionally active in `doctor-marketplace.py analyze` and intentionally absent from `quality-gate`. The repository's own agentfiles legitimately exceed the heuristic line budget and draw directory trees, so these rules are advisory backstops for the recipe, not build gates. Discovery anchors at the **repo root** (every `CLAUDE.md` at any nesting level plus `AGENTS.md`), pruning `.plan/`, `.git/`, `node_modules/`, and `target/`.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `agentfile-line-count-over-budget` | Flag an always-on agentfile whose total line count exceeds the always-on line budget (`DEFAULT_LINE_BUDGET`, 200) — a proxy signal for accumulated bloat that prompts a section re-classification pass | Only files named `CLAUDE.md`/`AGENTS.md` outside the pruned dirs are scanned; the budget is the single configurable default the rubric mandates across all agentfile types | None — re-classify and demote/delete sections (via the cognitive recipe) until the file is back within budget; raise the budget only with rubric justification |
+| `agentfile-directory-tree-present` | Flag a fenced code block drawing the repo structure with box-drawing glyphs (`├──`, `│`, `└──`) inside an always-on agentfile — inert content the assistant reads more reliably from the filesystem | Only fenced blocks are scanned; a glyph in ordinary prose or a markdown table (ASCII `|`) does not match; one finding per offending fenced block | None — delete the tree (or demote a genuinely-wanted overview to a doc) |
+
+### agentfile-line-count-over-budget
+
+**Rule ID**: `agentfile-line-count-over-budget`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_agentfile_line_budget.py` (shared helpers: `_analyze_agentfile_shared.py`)
+
+**Scope**: every always-on agentfile under the repo root — `CLAUDE.md` at any nesting level plus `AGENTS.md` — excluding `.plan/`, `.git/`, `node_modules/`, and `target/`.
+
+**Intent**: An always-on agentfile is loaded into context on every session before any task work, so its cost is paid unconditionally. Total length is a cheap proxy for accumulated bloat; the rubric (`plan-marshall:ref-agentfile-hygiene` `standards/rubric.md` § "Always-on line budget") sets a single configurable default (200 lines) applied across all agentfile types. An agentfile over budget is a prompt to re-classify its sections and demote or delete until it is back within budget.
+
+**Detection logic**: Discover every agentfile under the repo root, count its lines, and emit one finding (anchored at line 1) for each file whose line count strictly exceeds `budget` (default `DEFAULT_LINE_BUDGET = 200`; callers may pass a different threshold). The snippet records `{line_count} lines (budget {budget})`.
+
+**Recommended fix**: Run the cognitive `recipe-agentfile-hygiene` sweep to re-classify each section against the rubric and demote (`demotable-to-skill`) or delete (`inert/deletable`) until the file is within budget. A project that genuinely needs a different budget tunes the single configurable threshold rather than hard-coding per-type values.
+
+**Suppression mechanism**: None — this is an advisory analyze-only backstop; resolve by trimming the agentfile (or adjusting the configured budget with rubric justification).
+
+---
+
+### agentfile-directory-tree-present
+
+**Rule ID**: `agentfile-directory-tree-present`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_agentfile_directory_tree.py` (shared helpers: `_analyze_agentfile_shared.py`)
+
+**Scope**: every always-on agentfile under the repo root — `CLAUDE.md` at any nesting level plus `AGENTS.md` — excluding `.plan/`, `.git/`, `node_modules/`, and `target/`.
+
+**Intent**: A fenced code block that draws the repository's directory structure with box-drawing characters (`├──`, `│`, `└──`) is a specific, high-frequency instance of inert content (rubric § "The directory-tree anti-pattern"). An assistant enumerates the project tree far more reliably by reading the filesystem than by trusting a hand-maintained drawing that goes stale the instant a file moves. A directory tree belongs in a deliberately-loaded doc, never in an always-on agentfile.
+
+**Detection logic**: For each agentfile, compute its fenced-block spans (` ``` ` and `~~~` fences, same-marker close, unterminated fence extends to EOF), then scan each block's inner lines for any of the three directory-tree glyphs. Emit one finding per offending fenced block, anchored at the block's first glyph line, with the glyph line as the snippet.
+
+**Permitted contexts**:
+1. **Outside fenced blocks** — glyphs in ordinary prose are not scanned; only fenced-block content counts.
+2. **Markdown tables** — markdown tables use the ASCII pipe `|`, not the box-drawing `│` (U+2502), so a table never matches.
+
+**Recommended fix**: Delete the directory-tree drawing (classification `inert/deletable`). If a structural overview is genuinely wanted, demote it to a human-facing doc loaded deliberately, rather than keeping it always-on.
+
+**Suppression mechanism**: None — this is an advisory analyze-only backstop; resolve by deleting the tree.
+
+---
+
 ## Zero-match coverage (test-layer, not a runtime rule)
 
 The zero-match invariant is enforced at the **test layer**, not by a runtime analyzer. There is no `zero-match-rule` finding emitted by any `_analyze_*.py` module, and the invariant is not part of the `analyze` / `quality-gate` registered rule set. The check is the meta-test `test_zero_match_suite_coverage.py`.
