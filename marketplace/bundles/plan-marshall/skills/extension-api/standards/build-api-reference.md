@@ -356,7 +356,7 @@ See [build-execution.md](build-execution.md) § R2 for wrapper preference requir
 |-------------|----------------|----------|
 | Maven | `./mvnw` → `mvn` | system `mvn` when no project wrapper is present |
 | Gradle | `./gradlew` → `gradle` | system `gradle` when no project wrapper is present |
-| npm | System `npm` | Always available; `npx` for direct tool invocations (no wrapper concept) |
+| npm | System `npm` | No wrapper concept; `npx` for direct tool invocations |
 | Python | `./pw` → `pw.bat` | system `pwx` when no project wrapper is present |
 
 Wrapper resolution is performed once in the shared factory's `_resolve_wrapper` (`script-shared/scripts/build/_build_execute_factory.py`): the project wrapper is preferred when present, and the system binary is used as the fallback when no checked-in wrapper exists.
