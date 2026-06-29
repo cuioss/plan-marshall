@@ -2359,9 +2359,13 @@ class TestQualityChainResolution:
             == 'direct_fix'
         )
 
-    def test_accepted_suppressed_pass_through(self):
+    def test_accepted_suppressed_rejected_pass_through(self):
         assert audit._qc_resolution({'resolution': 'accepted'}) == 'accepted'
         assert audit._qc_resolution({'resolution': 'suppressed'}) == 'suppressed'
+        # `rejected` is the ext-point-verify validity-stage disposition (#788); it
+        # is a first-class resolution bucket, not a KeyError into the matrix.
+        assert audit._qc_resolution({'resolution': 'rejected'}) == 'rejected'
+        assert 'rejected' in audit._QC_RESOLUTIONS
 
     def test_pending_none_empty_bucket_to_pending(self):
         assert audit._qc_resolution({'resolution': 'pending'}) == 'pending'

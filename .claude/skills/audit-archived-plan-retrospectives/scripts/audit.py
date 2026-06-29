@@ -2261,6 +2261,7 @@ _QC_RESOLUTIONS = [
     "rerun_flake",
     "accepted",
     "suppressed",
+    "rejected",
     "pending",
     "lesson",
 ]
@@ -2330,7 +2331,7 @@ def _qc_resolution(obj: dict[str, Any]) -> str:
         return "rerun_flake" if _QC_RERUN_RE.search(detail) else "direct_fix"
     if res == "taken_into_account":
         return "loop_back" if _QC_LOOPBACK_RE.search(detail) else "direct_fix"
-    if res in {"accepted", "suppressed"}:
+    if res in {"accepted", "suppressed", "rejected"}:
         return res
     if res in {"pending", "none", ""}:
         return "pending"
