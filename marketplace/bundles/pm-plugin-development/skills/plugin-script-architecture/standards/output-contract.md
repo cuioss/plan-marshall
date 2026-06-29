@@ -153,6 +153,8 @@ status: success|error
 {optional_tables}
 ```
 
+> **Success-payload field symmetry.** When you add a new `status: success` return path beside existing sibling success branches, the new branch MUST carry the same documented `{operation_specific_fields}` its siblings return, so a caller handling multiple outcomes uniformly does not break. This is the success-payload-field-contract facet of [`python-implementation.md`](python-implementation.md) § "Sibling-Element Invariant Inheritance" — see that section for the full rule.
+
 ### Example: List Operation
 
 ```toon
