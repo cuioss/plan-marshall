@@ -1588,7 +1588,7 @@ _ELEVATED_LOG_LEVELS = frozenset({"WARNING", "WARN", "ERROR", "CRITICAL", "FATAL
 # query verb omitted here merely re-earns a benign error-flag (noise), whereas a
 # non-query verb wrongly included would hide a real failure.
 _LOG_BENIGN_PROBE_SUBCOMMANDS = frozenset(
-    {"exists", "read", "get", "list", "find", "search"}
+    {"exists", "read", "get", "list", "find", "search", "resolve"}
 )
 
 # Impossible / hang-shaped duration ceiling (seconds). A single deterministic
@@ -1755,7 +1755,7 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
                 has_marker = bool(_LOG_FAIL_MARKERS_RE.search(rest))
                 # A completed script call is a benign non-zero-exit probe ONLY when its
                 # subcommand is a known read-only QUERY (`exists`/`read`/`get`/`list`/
-                # `find`/`search`) answering "not found" — not a real failure. A
+                # `find`/`search`/`resolve`) answering "not found" — not a real failure. A
                 # non-query command (e.g. `run`) at an elevated level with no failure
                 # marker is NOT benign and stays flagged. Flag genuine failures: any
                 # failure-marker body (at any level), OR an elevated-level line that is
