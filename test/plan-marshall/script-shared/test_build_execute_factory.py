@@ -420,14 +420,7 @@ def _no_sleep(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(bqs.time, 'sleep', lambda _s: None)
 
 
-def _make_config(
-    *,
-    with_resolve_fn: bool = True,
-    tool_name: str = 'python',
-    unix_wrapper: str = 'pw',
-    windows_wrapper: str = 'pw.bat',
-    system_fallback: str = 'pwx',
-) -> factory.ExecuteConfig:
+def _make_config(*, with_resolve_fn: bool = True) -> factory.ExecuteConfig:
     """A minimal config for factory tests.
 
     By default ``with_resolve_fn=True`` installs an npm-style bypass
@@ -436,10 +429,10 @@ def _make_config(
     exercise the default detect-wrapper-then-fall-back-to-system path.
     """
     return factory.ExecuteConfig(
-        tool_name=tool_name,
-        unix_wrapper=unix_wrapper,
-        windows_wrapper=windows_wrapper,
-        system_fallback=system_fallback,
+        tool_name='python',
+        unix_wrapper='pw',
+        windows_wrapper='pw.bat',
+        system_fallback='pwx',
         capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
         build_command_fn=factory.default_build_command_fn,
         scope_fn=lambda _a: 'default',
