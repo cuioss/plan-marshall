@@ -186,6 +186,159 @@ def cmd_get(args):
 {"error": "1"}  # Not descriptive
 ```
 
+## Sibling-Element Invariant Inheritance
+
+**Rule**: When you graft a new code element beside one or more established **sibling elements** that already do the right thing, the new element MUST inherit every invariant its siblings already enforce. Before writing the new element, enumerate its siblings and audit each invariant they apply; then apply the same invariant in the new element. Prefer extracting a shared helper that both the new element and its siblings call, so a future third element inherits the invariant automatically rather than re-deriving it.
+
+A "new element beside established siblings" is any of: a new branch in a multi-branch handler, an alternate return path beside existing return paths, a parallel or CLI-override entry point beside a primary path, a new argparse subcommand alias beside registered subcommands, a new frontmatter-field parser beside existing field parsers, or a new security/control-flow matcher beside existing matchers.
+
+**Why this is the author's responsibility — the in-house gates cannot see it.** Cross-element contract symmetry is invisible to every local gate by construction:
+
+- **module-tests** exercise the happy path of each element independently; they do not assert that two sibling branches return the same field set or apply the same guard.
+- **ruff + mypy and plugin-doctor** certify structure and types — that the code parses, is typed, and is structurally well-formed — not that one branch's contract matches its sibling's.
+- **the pre-submission self-review surfacer** surfaces deterministic candidates within an element; an asymmetry that is individually well-formed on both sides raises no candidate.
+
+So a divergence between a new element and its sibling passes every local gate clean and surfaces only under adversarial diff review (the PR review bot, or a careful human reviewer reading the diff against the established sibling). The defensive move is twofold: (1) perform the sibling-inheritance audit before you write the element, and (2) add a **cross-element contract test** — one that asserts the new element and its sibling agree on the shared invariant — not merely a happy-path test of the new element in isolation.
+
+### The six invariant facets
+
+Audit each facet that applies to the element you are adding. Each carries a worked before/after.
+
+#### (a) Guard clauses
+
+A new branch must apply the same precondition rejections a sibling already applies before it mutates shared state. A sibling that rejects malformed input before a file rewrite encodes a real invariant; a new branch that rewrites the same file without that check corrupts the file on the input the sibling would have rejected.
+
+```python
+# Sibling branch (established): rejects a file lacking an H1 title before rewriting
+def cmd_update_title(args):
+    text = path.read_text()
+    if not text.lstrip().startswith("# "):
+        return {"status": "error", "error": "No H1 title to update"}
+    # ... safe rewrite
+
+# WRONG — new branch rewrites without inheriting the H1-title guard
+def cmd_prepend_section(args):
+    text = path.read_text()
+    new_text = insert_after_title(text, section)   # corrupts a file with no H1
+    path.write_text(new_text)
+
+# RIGHT — new branch inherits the sibling's precondition guard
+def cmd_prepend_section(args):
+    text = path.read_text()
+    if not text.lstrip().startswith("# "):
+        return {"status": "error", "error": "No H1 title to anchor the section"}
+    path.write_text(insert_after_title(text, section))
+```
+
+#### (b) Success-payload field contracts
+
+A new `status: success` return must carry the same documented fields its sibling success branches return, so a caller that handles multiple outcomes uniformly does not break when it hits the new branch. (See [`output-contract.md`](output-contract.md) § "Standard Output Contract" for the success-payload obligation this facet enforces.)
+
+```python
+# Sibling success branch returns {status, plan_id, path}
+return {"status": "success", "plan_id": pid, "path": str(p)}
+
+# WRONG — new success branch drops fields the sibling guarantees
+return {"status": "success", "path": str(p)}   # caller reading plan_id breaks
+
+# RIGHT — new branch returns the full sibling field set
+return {"status": "success", "plan_id": pid, "path": str(p)}
+```
+
+#### (c) Input-validation range clamps
+
+A parallel or CLI-override entry point must apply the same range/format validation the primary path (e.g. the config-read path) applies, so an override cannot bypass a clamp the primary path enforces.
+
+```python
+# Primary (config-read) path clamps retention to a non-negative floor
+retention = max(0, config.get("retention_days", 30))
+
+# WRONG — CLI override skips the clamp; a negative value slips through
+retention = args.retention_days   # -1 bypasses the floor the config path enforces
+
+# RIGHT — the override inherits the same clamp
+retention = max(0, args.retention_days if args.retention_days is not None
+                else config.get("retention_days", 30))
+```
+
+#### (d) Routing / dispatch-registration
+
+A new subcommand alias must inherit the sibling dispatch contract. Determine the script's dispatch style first:
+
+- If the script dispatches via a **string-keyed `COMMANDS`/dict map** (`handler = COMMANDS.get(args.command)`), the alias needs its OWN map key pointing at the same handler. `aliases=` on `add_parser` alone is necessary but **not** sufficient: argparse sets the `dest` to the exact alias the user typed, so an alias absent from the map falls through to the unknown-command branch.
+- If the script dispatches via `set_defaults(func=...)` on each subparser, the subparser-level alias is sufficient (the bound `func` travels with whichever spelling matched).
+
+Pin the alias with a **subprocess-level CLI test** — an in-process handler test invokes the handler directly and never exercises the routing layer, so it cannot catch the gap. See [`argument-naming.md`](../../../../plan-marshall/skills/persona-plan-marshall-agent/standards/argument-naming.md) Rule 2 for the accepted-secondary-spellings contract.
+
+```python
+COMMANDS = {"read": cmd_read, "get": cmd_read}   # alias gets its OWN key
+
+# argparse side
+p = subparsers.add_parser("read", aliases=["get"])
+
+# WRONG — alias only on add_parser, missing from the map
+COMMANDS = {"read": cmd_read}                     # `get` → COMMANDS.get("get") → None → unknown-command
+subparsers.add_parser("read", aliases=["get"])
+
+# RIGHT — alias present in BOTH the map and the subparser
+COMMANDS = {"read": cmd_read, "get": cmd_read}
+subparsers.add_parser("read", aliases=["get"])
+```
+
+#### (e) Normalization-before-decision
+
+A new security/control-flow matcher over a trust-boundary input must canonicalize the input the same way sibling handlers do **before** comparing it against a deny/allow set. A raw-token or raw-substring match is bypassable by a near-miss spelling of the same input.
+
+```python
+# WRONG — raw-token program ban: bypassed by an absolute path
+if program == "gh":            # "/usr/bin/gh" slips past
+    reject()
+
+# RIGHT — basename-strip before the program ban (sibling normalization)
+if os.path.basename(program) == "gh":
+    reject()
+
+# WRONG — bare substring path-containment: "/safe-evil" matches "/safe"
+if "/safe" in target_path:
+    allow()
+
+# RIGHT — segment/separator-anchored containment
+if target_path == "/safe" or target_path.startswith("/safe/"):
+    allow()
+```
+
+Apply the cheap self-review heuristic before shipping the matcher: *"what near-miss spelling of the input slips past this exact comparison?"*
+
+#### (f) Input-parsing contract
+
+A new producer-declared frontmatter opt-in field must inherit the sibling field-parsing contracts: read it from the `metadata:` block as a **direct child** (not a top-level key, and not a deeper `metadata.some_block.{key}`), and treat null/empty as **absent**. The membership test must require a non-empty string value after `.strip()` — not mere key-presence and not merely not-`None`. A bare `key:`, a `key: []`, or a quoted empty string is equivalent to absence.
+
+```python
+# Sibling opt-in field is read from metadata as a direct child, empty == absent
+meta = frontmatter.get("metadata") or {}
+def opted_in(field):
+    val = meta.get(field)
+    return isinstance(val, str) and val.strip() != ""
+
+# WRONG — new field read at top level, presence-only test
+enabled = "new_flag" in frontmatter          # wrong nesting AND treats `new_flag:` as present
+
+# RIGHT — new field inherits the sibling parsing contract
+enabled = opted_in("new_flag")               # metadata-nested, non-empty-string required
+```
+
+### Author / reviewer checklist
+
+Before shipping an element grafted beside established siblings, confirm each applicable facet:
+
+- [ ] **(a) Guard clauses** — the new branch applies every precondition rejection its siblings apply before mutating shared state.
+- [ ] **(b) Success-payload field contracts** — the new success return carries the full field set its sibling success branches return.
+- [ ] **(c) Input-validation range clamps** — the parallel/override entry point applies the same range/format clamp as the primary path.
+- [ ] **(d) Routing / dispatch-registration** — the alias is registered in the actual dispatch surface (map key AND/OR subparser), pinned by a subprocess-level CLI test.
+- [ ] **(e) Normalization-before-decision** — the matcher canonicalizes the trust-boundary input the same way its siblings do before the deny/allow comparison.
+- [ ] **(f) Input-parsing contract** — the new frontmatter field is read as a direct `metadata:` child with empty-as-absent semantics.
+- [ ] A **cross-element contract test** (not just a happy-path test) asserts the new element and its sibling agree on the shared invariant.
+
 ## Simple YAML Parsing
 
 **DO NOT** use PyYAML. Use custom parsing for simple frontmatter:
