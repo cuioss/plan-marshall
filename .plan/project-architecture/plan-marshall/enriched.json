@@ -2,7 +2,9 @@
   "best_practices": [
     "manage-tasks qgate-mechanical-checks keyword_drift findings are a standing consideration: when the mechanical-checks q-gate flags keyword drift between a description and its body, fold the correction into the work (taken_into_account) rather than suppressing it."
   ],
-  "insights": [],
+  "insights": [
+    "Coverage instrumentation roughly triples runtime versus module-tests for this module, pushing past the host background-kill threshold. The command 'coverage plan-marshall' was killed twice with no output while module-tests of the same suite completed. Run coverage synchronously in the foreground with an extended Bash timeout of at least 600000ms rather than backgrounded. When coverage keeps getting killed, module-tests is the fallback verification signal."
+  ],
   "internal_dependencies": [],
   "key_dependencies": [],
   "key_dependencies_reasoning": "Marketplace bundle - no compile-scope code dependencies; pure markdown skills + Python scripts using only stdlib",
