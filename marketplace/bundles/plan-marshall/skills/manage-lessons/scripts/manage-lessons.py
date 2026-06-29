@@ -460,6 +460,7 @@ def cmd_add(args: argparse.Namespace) -> dict:
         if existing_id is not None:
             reinforced = reinforce_arch_constraint(get_lessons_dir(), existing_id, today)
             if reinforced['status'] == 'success':
+                reinforced['path'] = str((get_lessons_dir() / f'{existing_id}.md').resolve())
                 reinforced['component'] = args.component
                 reinforced['category'] = args.category
                 reinforced['rule'] = rule
@@ -1626,7 +1627,7 @@ def _resolve_retention_setting(cli_value: int | None, config_key: str, fallback:
     checkouts.
     """
     if cli_value is not None:
-        return cli_value
+        return cli_value if cli_value >= 0 else fallback
 
     marshal_path = get_marshal_path()
     if not marshal_path.exists():

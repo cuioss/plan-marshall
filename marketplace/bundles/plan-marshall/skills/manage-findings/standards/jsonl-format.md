@@ -73,7 +73,7 @@ Each line in a `findings/{type}.jsonl` file is a JSON object:
 |-------|------|-------------|
 | `hash_id` | string | 6-character hex hash (auto-generated, see Hash ID Generation) |
 | `timestamp` | string | ISO 8601 UTC (auto-generated on add) |
-| `type` | string | One of: `bug`, `improvement`, `anti-pattern`, `triage`, `tip`, `insight`, `best-practice`, `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `arch-constraint`, `pr-comment`, `pr-comment-overflow`. The first three (`bug`, `improvement`, `anti-pattern`) map to lesson categories — see `manage-lessons/standards/file-format.md` |
+| `type` | string | One of: `bug`, `improvement`, `anti-pattern`, `triage`, `tip`, `insight`, `best-practice`, `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `arch-constraint`, `pr-comment`, `pr-comment-overflow`. Types mapping to lesson categories: `bug`, `improvement`, `anti-pattern` (direct promotion); `arch-constraint` (reinforce-on-recurrence lifecycle, not direct promotion) — see `manage-lessons/standards/file-format.md` |
 | `title` | string | Short description of the finding |
 | `detail` | string | Full description with context |
 | `severity` | string | `error`, `warning`, or `info` (default: `warning`) |

@@ -247,6 +247,13 @@ def reinforce_arch_constraint(
             title = line[2:].strip()
             body_start = i + 1
             break
+    if not title:
+        return {
+            'status': 'error',
+            'id': lesson_id,
+            'error': 'malformed_lesson',
+            'message': f'Lesson {lesson_id} is missing its H1 title; cannot safely reinforce',
+        }
     body = '\n'.join(raw_lines[body_start:]).strip()
 
     try:
