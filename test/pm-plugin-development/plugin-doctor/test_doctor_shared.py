@@ -51,7 +51,7 @@ def test_extract_frontmatter_absent_when_no_leading_marker():
 
 
 def test_extract_frontmatter_absent_when_unterminated():
-    present, body = _shared.extract_frontmatter('---\nname: a\nno closing marker\n')
+    present, _body = _shared.extract_frontmatter('---\nname: a\nno closing marker\n')
 
     assert present is False
 
