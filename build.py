@@ -213,7 +213,19 @@ def cmd_quality_gate(module: str | None) -> int:
 
 
 def cmd_coverage(module: str | None) -> int:
-    """Run pytest with coverage."""
+    """Run pytest with coverage.
+
+    Parallel by default, mirroring ``cmd_module_tests``: the coverage run
+    executes the identical full suite, so it must ride pytest-xdist (``-n auto``)
+    too — a serial coverage run is the same ~10k tests on a single core and
+    walls in at several times the parallel test runtime, which pushed it past
+    the background-duration ceiling and got it killed mid-suite. pytest-cov
+    supports xdist natively: each worker writes its own coverage data file and
+    pytest-cov combines them at session end before applying ``--cov-fail-under``.
+    ``--dist=loadgroup`` is mandatory whenever ``-n`` is active so ``xdist_group``
+    markers (e.g. the ``real_marshal_json`` group that touches shared real
+    ``.plan/`` state) keep their tests pinned to a single worker.
+    """
     test_path = get_test_path(module)
     bundle_path = get_bundle_path(module)
 
@@ -222,6 +234,7 @@ def cmd_coverage(module: str | None) -> int:
 
     cmd = [
         'uv', 'run', 'pytest', test_path,
+        '-n', 'auto', '--dist=loadgroup',
         f'--cov={bundle_path}',
         '--cov-report=html:.plan/temp/htmlcov',
         '--cov-report=xml:.plan/temp/coverage.xml',

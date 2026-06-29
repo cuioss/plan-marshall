@@ -85,6 +85,40 @@ def test_cmd_coverage_emits_xml_report_flag() -> None:
     )
 
 
+def test_cmd_coverage_emits_xdist_parallel_flags() -> None:
+    """cmd_coverage's pytest invocation includes ``-n auto --dist=loadgroup``.
+
+    Coverage runs the identical full suite as module-tests; without xdist it
+    runs serially on a single core and walls past the background-duration
+    ceiling (it gets killed mid-suite). ``--dist=loadgroup`` must accompany
+    ``-n`` so ``xdist_group`` markers stay pinned to one worker. This guards
+    against a silent regression back to a serial coverage run.
+    """
+    build_module = _load_build_module()
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(cmd: list[str], description: str, env: dict[str, str] | None = None) -> int:
+        captured['cmd'] = cmd
+        return 0
+
+    with patch.object(build_module, 'run', side_effect=fake_run):
+        with patch.object(build_module.Path, 'mkdir', return_value=None):
+            with patch.object(build_module, 'get_test_path', return_value='test/plan-marshall'):
+                with patch.object(
+                    build_module, 'get_bundle_path',
+                    return_value='marketplace/bundles/plan-marshall',
+                ):
+                    build_module.cmd_coverage('plan-marshall')
+
+    cmd = captured['cmd']
+    assert '-n' in cmd and 'auto' in cmd[cmd.index('-n') + 1:cmd.index('-n') + 2], (
+        f'cmd_coverage must emit "-n auto" for parallel coverage; got cmd={cmd!r}'
+    )
+    assert '--dist=loadgroup' in cmd, (
+        f'cmd_coverage must emit --dist=loadgroup alongside -n; got cmd={cmd!r}'
+    )
+
+
 def test_cmd_coverage_retains_existing_cov_and_html_report_flags() -> None:
     """cmd_coverage keeps the pre-existing --cov={bundle} and --cov-report=html flags."""
     build_module = _load_build_module()
