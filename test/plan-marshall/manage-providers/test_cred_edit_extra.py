@@ -144,6 +144,123 @@ class TestUpsertExtraFieldsIdempotent:
         assert upserted == ['project_key', 'organization']
 
 
+class TestUpsertExtraFieldsValidation:
+    """Non-secret key validation guarding ``credentials_config`` writes."""
+
+    def test_empty_key_is_skipped(self):
+        """A pair whose key is empty (``=value``) is skipped, triggering no write."""
+        # Arrange
+        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+
+        # Act
+        upserted = _upsert_extra_fields(_SKILL, ['=orphan-value'])
+
+        # Assert — nothing upserted, config stays empty (no "" key persisted).
+        assert upserted == []
+        assert read_provider_config(_SKILL) == {}
+
+    def test_whitespace_only_key_is_skipped(self):
+        """A pair whose key is only whitespace is skipped after stripping."""
+        # Arrange
+        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+
+        # Act
+        upserted = _upsert_extra_fields(_SKILL, ['   =value'])
+
+        # Assert
+        assert upserted == []
+        assert read_provider_config(_SKILL) == {}
+
+    def test_key_whitespace_is_stripped(self):
+        """Surrounding whitespace is stripped from the key before it is stored."""
+        # Arrange
+        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+
+        # Act
+        upserted = _upsert_extra_fields(_SKILL, ['  organization  =my-org'])
+
+        # Assert — the stored key is the stripped form, not the padded one.
+        assert upserted == ['organization']
+        config = read_provider_config(_SKILL)
+        assert config.get('organization') == 'my-org'
+        assert '  organization  ' not in config
+
+    def test_secret_key_token_is_rejected(self):
+        """A key named ``token`` is rejected so no secret lands in marshal.json."""
+        # Arrange
+        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+
+        # Act
+        upserted = _upsert_extra_fields(_SKILL, ['token=should-not-persist'])
+
+        # Assert
+        assert upserted == []
+        assert 'token' not in read_provider_config(_SKILL)
+
+    def test_secret_keys_username_and_password_are_rejected(self):
+        """Keys named ``username`` and ``password`` are both rejected."""
+        # Arrange
+        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+
+        # Act
+        upserted = _upsert_extra_fields(_SKILL, ['username=alice', 'password=hunter2'])
+
+        # Assert
+        assert upserted == []
+        config = read_provider_config(_SKILL)
+        assert 'username' not in config
+        assert 'password' not in config
+
+    def test_stripped_secret_key_is_rejected(self):
+        """A padded secret key (``  token  ``) is rejected after stripping."""
+        # Arrange
+        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+
+        # Act
+        upserted = _upsert_extra_fields(_SKILL, ['  token  =should-not-persist'])
+
+        # Assert
+        assert upserted == []
+        assert read_provider_config(_SKILL) == {}
+
+    def test_secret_keys_rejected_alongside_valid_keys(self):
+        """Secret keys are dropped while valid keys in the same call still upsert."""
+        # Arrange
+        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+
+        # Act
+        upserted = _upsert_extra_fields(
+            _SKILL, ['organization=my-org', 'token=secret', 'project_key=pk']
+        )
+
+        # Assert — only the non-secret keys survive, in supplied order.
+        assert upserted == ['organization', 'project_key']
+        config = read_provider_config(_SKILL)
+        assert config.get('organization') == 'my-org'
+        assert config.get('project_key') == 'pk'
+        assert 'token' not in config
+
+    def test_duplicate_keys_are_deduplicated(self):
+        """A key supplied twice is reported once; the last value wins."""
+        # Arrange
+        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+
+        # Act
+        upserted = _upsert_extra_fields(_SKILL, ['organization=first', 'organization=second'])
+
+        # Assert — one entry in the returned list, last value persisted.
+        assert upserted == ['organization']
+        assert read_provider_config(_SKILL).get('organization') == 'second'
+
+
 class TestRunEditPreservesToken:
     """Direct-import tests for ``run_edit`` token preservation across extra upserts."""
 

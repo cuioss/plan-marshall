@@ -10,6 +10,7 @@ For secret changes, the user edits the credential file directly.
 import argparse
 
 from _providers_core import (
+    SECRET_PLACEHOLDERS,
     VALID_AUTH_TYPES,
     check_credential_completeness,
     get_project_name,
@@ -22,7 +23,7 @@ from file_ops import output_toon  # type: ignore[import-not-found]
 
 
 def _upsert_extra_fields(skill: str, extra_pairs: list[str]) -> list[str]:
-    """Idempotently upsert KEY=VALUE extras into the provider config.
+    """Idempotently upsert non-secret KEY=VALUE extras into the provider config.
 
     Extra fields live in marshal.json under ``credentials_config.{skill}`` —
     separate from the credential file that holds the token — so this upsert
@@ -30,20 +31,35 @@ def _upsert_extra_fields(skill: str, extra_pairs: list[str]) -> list[str]:
     absent and replaced in place when present; all other existing extras are
     preserved. Running with the same pairs twice yields the same end state.
 
+    Because ``credentials_config`` is git-tracked and non-secret by intent,
+    each key is validated before it is written: the key is whitespace-stripped,
+    an empty key is skipped, and a key naming a secret field (any key in
+    ``SECRET_PLACEHOLDERS`` — ``token``, ``username``, ``password``) is rejected
+    so a secret can never be persisted into marshal.json via ``--extra``. The
+    returned key list is deduplicated.
+
     Args:
         skill: Skill name keying the provider config.
-        extra_pairs: Repeatable ``KEY=VALUE`` strings; entries without ``=``
+        extra_pairs: Repeatable ``KEY=VALUE`` strings; entries without ``=``,
+            with an empty (or whitespace-only) key, or naming a secret field
             are ignored.
 
     Returns:
-        The list of keys that were upserted (in supplied order).
+        The deduplicated list of keys that were upserted (in supplied order).
     """
     provider_config = dict(read_provider_config(skill))
     upserted_keys: list[str] = []
     for pair in extra_pairs:
-        if '=' in pair:
-            key, value = pair.split('=', 1)
-            provider_config[key] = value
+        if '=' not in pair:
+            continue
+        key, value = pair.split('=', 1)
+        key = key.strip()
+        if not key:
+            continue
+        if key in SECRET_PLACEHOLDERS:
+            continue
+        provider_config[key] = value
+        if key not in upserted_keys:
             upserted_keys.append(key)
 
     if upserted_keys:

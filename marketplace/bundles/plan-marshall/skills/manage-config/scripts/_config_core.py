@@ -114,7 +114,7 @@ def save_config(config: dict) -> None:
     """Save config to marshal.json with ordered keys."""
     MARSHAL_PATH.parent.mkdir(parents=True, exist_ok=True)
     ordered = order_config_keys(config)
-    MARSHAL_PATH.write_text(json.dumps(ordered, indent=2, ensure_ascii=False), encoding='utf-8')
+    MARSHAL_PATH.write_text(json.dumps(ordered, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
 
 
 def load_run_config() -> dict:
