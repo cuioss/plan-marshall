@@ -37,6 +37,9 @@ _CONFIG = _pyproject_execute_mod._CONFIG
 execute_direct = _pyproject_execute_mod.execute_direct
 cmd_run = _pyproject_execute_mod.cmd_run
 
+import _build_execute as build_execute  # noqa: E402
+import _build_execute_factory as _factory  # noqa: E402
+
 
 def test_config_tool_name():
     """Config has correct tool name."""
@@ -102,25 +105,50 @@ def test_build_command_fn_with_module():
     assert cmd_parts == ['./pw', 'module-tests', 'core']
 
 
-def test_config_require_wrapper_default_on():
-    """pyproject migrated to the factory gate: require_wrapper=True and the old
-    per-resolver wrapper_resolve_fn is removed."""
-    assert _CONFIG.require_wrapper is True
+def test_config_has_no_require_wrapper_knob():
+    """The require_wrapper gate is removed — ExecuteConfig no longer carries it.
+    pyproject keeps no per-resolver wrapper_resolve_fn, so it auto-detects the pw
+    wrapper and falls back to the system binary."""
+    assert not hasattr(_CONFIG, 'require_wrapper')
     assert _CONFIG.wrapper_resolve_fn is None
 
 
-def test_execute_direct_error_on_missing_wrapper(tmp_path):
-    """execute_direct returns error result when wrapper not found, anchored on
-    the canonical factory-gate message."""
-    with patch('_build_execute.shutil.which', return_value=None):
-        result = execute_direct(
-            args='verify',
-            command_key='python:verify',
-            project_dir=str(tmp_path),
-        )
-        assert result['status'] == 'error'
-        assert result['exit_code'] == -1
-        assert 'No python wrapper found' in result['error']
+def test_execute_direct_absent_wrapper_resolves_system_binary(tmp_path, monkeypatch):
+    """With no pw wrapper and pwx absent from PATH, the wrapper auto-resolves to
+    the system 'pwx' binary — no wrapper-not-found error and no FileNotFoundError
+    during resolution."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setattr(build_execute.shutil, 'which', lambda _cmd: None)
+
+    calls = []
+
+    def _recorder(**kwargs):
+        calls.append(kwargs)
+        return {'status': 'success', 'exit_code': 0, 'duration_seconds': 0, 'log_file': '', 'command': 'pwx verify'}
+
+    monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
+
+    result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+    assert result['status'] == 'success'
+    assert calls[0]['wrapper'] == 'pwx'
+
+
+def test_execute_direct_resolves_present_wrapper(tmp_path, monkeypatch):
+    """With a present pw, resolution prefers the project wrapper ./pw."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    (tmp_path / 'pw').write_text('#!/bin/sh\n')
+
+    calls = []
+
+    def _recorder(**kwargs):
+        calls.append(kwargs)
+        return {'status': 'success', 'exit_code': 0, 'duration_seconds': 0, 'log_file': '', 'command': './pw verify'}
+
+    monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
+
+    result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+    assert result['status'] == 'success'
+    assert calls[0]['wrapper'] == './pw'
 
 
 def _make_log(tmp_path: Path, text: str) -> str:

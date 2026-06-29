@@ -354,12 +354,12 @@ See [build-execution.md](build-execution.md) § R2 for wrapper preference requir
 
 | Build System | Detection Order | Fallback |
 |-------------|----------------|----------|
-| Maven | `./mvnw` → `mvn` | `FileNotFoundError` when `build.maven.require_wrapper=true` (default); system `mvn` when `false` |
-| Gradle | `./gradlew` → `gradle` | `FileNotFoundError` when `build.gradle.require_wrapper=true` (default); system `gradle` when `false` |
-| npm | System `npm` | Always available; `npx` for direct tool invocations (no wrapper concept; `require_wrapper` N-A) |
-| Python | `./pw` → `pw.bat` | `FileNotFoundError` when `build.pyproject.require_wrapper=true` (default); system `pwx` when `false` |
+| Maven | `./mvnw` → `mvn` | system `mvn` when no project wrapper is present |
+| Gradle | `./gradlew` → `gradle` | system `gradle` when no project wrapper is present |
+| npm | System `npm` | No wrapper concept; `npx` for direct tool invocations |
+| Python | `./pw` → `pw.bat` | system `pwx` when no project wrapper is present |
 
-The `require_wrapper` gate is enforced once in the shared factory's `_resolve_wrapper` (`script-shared/scripts/build/_build_execute_factory.py`). It is read per build at the invocation boundary from `build.{tool}.require_wrapper` in marshal.json (see [`manage-config` SKILL.md](../../manage-config/SKILL.md) § Build Wrapper-Policy Settings) — `true` makes a missing wrapper a hard error so local runs cannot diverge from CI; `false` is the escape valve for a repo that genuinely lacks a checked-in wrapper.
+Wrapper resolution is performed once in the shared factory's `_resolve_wrapper` (`script-shared/scripts/build/_build_execute_factory.py`): the project wrapper is preferred when present, and the system binary is used as the fallback when no checked-in wrapper exists.
 
 **npm/npx routing**: Script invocations (`run test`, `run build`) use `npm`; direct tool invocations (eslint, jest, tsc, prettier, etc.) use `npx`.
 

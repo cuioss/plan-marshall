@@ -59,7 +59,6 @@ _CONFIG = ExecuteConfig(
     scope_fn=_python_scope_fn,
     command_key_fn=default_command_key_fn,
     default_timeout=DEFAULT_BUILD_TIMEOUT,
-    require_wrapper=True,
     extra_result_fn=_python_extra_result_fn,
 )
 

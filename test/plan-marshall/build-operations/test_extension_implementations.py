@@ -1307,8 +1307,7 @@ def test_plan_marshall_nested_gradle_discovered_at_non_maven_path(monkeypatch):
     Gradle metadata discovery (``discover_gradle_modules``) is stubbed to return a
     fully-formed module — the binary-present path — so the test asserts the
     nested-arm ADD branch deterministically without depending on a real gradle
-    binary (and without coupling to the require_wrapper gate, which would make a
-    wrapper-less temp dir produce a paths-less error structure).
+    binary.
     """
     ext = load_extension('plan-marshall')
     # The nested arm does a function-local `from _gradle_cmd_discover import

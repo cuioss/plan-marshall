@@ -89,34 +89,48 @@ def test_build_command_fn_with_module():
     assert cmd_parts == ['./gradlew', ':core:build', '--console=plain']
 
 
-def test_config_require_wrapper_default_on():
-    """Gradle defaults to require_wrapper=True — no silent system-gradle fallback."""
-    assert _CONFIG.require_wrapper is True
+def test_config_has_no_require_wrapper_knob():
+    """The require_wrapper gate is removed — ExecuteConfig no longer carries it,
+    so Gradle auto-detects the wrapper and falls back to the system binary."""
+    assert not hasattr(_CONFIG, 'require_wrapper')
 
 
-def test_execute_direct_error_on_nonexistent_project(tmp_path, monkeypatch):
-    """execute_direct returns the wrapper-not-found error when running in an
-    empty directory: with require_wrapper=True the factory gate raises rather
-    than falling through to a system gradle."""
+def test_execute_direct_absent_wrapper_resolves_system_binary(tmp_path, monkeypatch):
+    """execute_direct auto-resolves to the system 'gradle' binary when running in
+    an empty directory: with the gate removed, an absent gradlew falls back to the
+    system binary with no wrapper-not-found error and no FileNotFoundError during
+    resolution."""
     # Pin PLAN_BASE_DIR so the shared learned-timeout machinery
     # (run_config.timeout_set) writes into tmp_path, not the real repo-local
     # run-configuration.json.
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
-    # Empty tmp_path has no gradlew — the require_wrapper=True gate raises and
-    # the except-arm converts it to a structured error. NO system gradle runs.
+    calls = []
+
+    def _recorder(**kwargs):
+        calls.append(kwargs)
+        return {
+            'status': 'success',
+            'exit_code': 0,
+            'duration_seconds': 0,
+            'log_file': '',
+            'command': 'gradle build',
+        }
+
+    monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
+
+    # Empty tmp_path has no gradlew — resolution falls back to the system 'gradle'.
     result = execute_direct(
         args='build',
         command_key='gradle:build',
         project_dir=str(tmp_path),
     )
-    assert result['status'] == 'error'
-    assert result['exit_code'] == -1
-    assert 'No gradle wrapper found' in result['error']
+    assert result['status'] == 'success'
+    assert calls[0]['wrapper'] == 'gradle'
 
 
 def test_execute_direct_resolves_present_wrapper(tmp_path, monkeypatch):
-    """With a present gradlew, the gate passes and the build attempts ./gradlew."""
+    """With a present gradlew, resolution prefers the project wrapper ./gradlew."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     (tmp_path / 'gradlew').write_text('#!/bin/sh\n')
 

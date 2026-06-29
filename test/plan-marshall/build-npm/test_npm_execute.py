@@ -53,10 +53,11 @@ def test_config_parser_needs_command():
     assert _CONFIG.parser_needs_command is True
 
 
-def test_config_require_wrapper_off():
-    """npm has no wrapper concept, so the factory gate is N-A: require_wrapper is
-    False and the npm-style wrapper_resolve_fn is retained (the gate bypass)."""
-    assert _CONFIG.require_wrapper is False
+def test_config_has_no_require_wrapper_knob():
+    """The require_wrapper gate is removed — ExecuteConfig no longer carries it.
+    npm has no wrapper concept, so it retains its npm-style wrapper_resolve_fn,
+    which short-circuits detection and always resolves to 'npm'."""
+    assert not hasattr(_CONFIG, 'require_wrapper')
     assert _CONFIG.wrapper_resolve_fn is _npm_execute_mod._npm_wrapper_resolve_fn
 
 
