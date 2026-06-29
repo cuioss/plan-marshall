@@ -244,69 +244,49 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 
 If `affected_modules` is empty → Tier-1 is skipped; the step marks done with `display_detail: "no modules affected"`.
 
-### Orchestrator: Tier-1 dispatches — N parallel envelopes
+### Orchestrator: Tier-1 inline loop (auto mode)
 
-**Steps 2–3 (resolve once; same level for every module):**
+`architecture-refresh` is an **inline step** — Tier-1 `auto` mode runs the re-enrichment loop directly inside the current finalize envelope, with no `Task:` sub-dispatches. There is no batch verb; the orchestrator iterates `affected_modules` and calls three per-verb subcommands per module:
+
+**For each module M in `affected_modules` (`auth-core`, `auth-jwt`, `auth-tests`):**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-6-finalize
+# Step 6 — write responsibility + purpose
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  enrich module --name M \
+  --responsibility "{1-3 sentence description}" \
+  --responsibility-reasoning "{source}" \
+  --purpose {purpose-value} \
+  --purpose-reasoning "{signal}" \
+  --project-dir {worktree_path}
 ```
 
-Returns `target: execution-context-level-2`.
-
-**Step 4 (prompt body, parameterised per module):**
-
-For module `auth-core`:
-
-```text
-name: enrich-module-auth-core
-plan_id: feature-jwt-auth
-skills[1]:
-- plan-marshall:manage-architecture
-workflow: plan-marshall:plan-marshall/workflow/enrich-module.md
-module: auth-core
-WORKTREE: --plan-id feature-jwt-auth
+```bash
+# Step 7 — write 2-4 key packages (one call per architecturally significant package P)
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  enrich package --module M --package P \
+  --description "{1-2 sentence description}" \
+  --project-dir {worktree_path}
 ```
 
-Two more identical prompts for `auth-jwt` and `auth-tests`, only the `module` field changes.
-
-**Step 5 (dispatch — three concurrent `Task:` calls):**
-
-The orchestrator issues all three `Task: plan-marshall:execution-context-level-2` calls in a single batch (parallel fan-out). Each subagent runs in its own envelope, isolated from the others. The host platform may rate-limit parallel `Task:` calls; the dispatcher falls back to sequential if rate-limited.
-
-**Step 6 (per subagent — same workflow, different `module` input):**
-
-1. `Skill: plan-marshall:persona-plan-marshall-agent` (implicit)
-2. `Skill: plan-marshall:manage-architecture`
-3. `Read plan-marshall:plan-marshall/workflow/enrich-module.md`
-4. Execute the enrichment workflow for the named module — the original `manage-architecture` Steps 5–8 (responsibility / key_packages / summary) run *inside* this subagent, in order, against the single module the prompt named. Intra-module ordering is preserved because the workflow doc declares it.
-
-**Step 7 (each subagent returns):**
-
-```toon
-status: success
-display_detail: enriched auth-core (responsibility + 4 key_packages)
-module: auth-core
-responsibility: <...>
-key_packages[4]:
-- ...
-summary: <...>
+```bash
+# Step 8 — refresh skills-by-profile
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  enrich skills-by-profile --module M \
+  --skills-json '{"<profile>": ["<bundle:skill>", ...]}' \
+  --reasoning "{why these profiles/skills apply}" \
+  --project-dir {worktree_path}
 ```
 
-Plus a `<usage>` tag per envelope — three envelopes total for three modules.
+Each `enrich` call rewrites `enriched.json` for the named module only; there is no merge step. After the full loop, the orchestrator stages and commits the updated `enriched.json` files.
 
-**Step 8 (orchestrator gathers + persists):**
+### Why this shape
 
-The orchestrator collects all three returns, persists the enriched metadata via `manage-architecture enrich-merge`, and marks the step done.
+`architecture-refresh` is inline rather than dispatched because:
+- The `prompt` mode of Tier 1 requires an `AskUserQuestion` interaction, which only works in the inline orchestrator context (a leaf subagent cannot fire `AskUserQuestion`).
+- The `auto` mode iterates the affected-module loop inside the same envelope for the same reason — the step is declared inline once and both modes share the execution surface.
 
-### Why this shape — and why it is the ONLY one
-
-Per-iteration parallel earns its envelope cost only because:
-- Modules are independent (no cross-module data flow during enrichment).
-- Wall-time savings (3 parallel × ~60 s ≈ 60 s total, vs. sequential 3 × 60 s = 180 s).
-
-Every other per-X loop in the system runs *inside* a single envelope (one envelope iterates internally). Sequential per-iteration dispatch is the worst shape — linear envelope cost × N with no parallelism payoff. See [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md) § 4 (Heuristic 3).
+See [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md) § 4 (Heuristic 3) for the general per-X loop rule (prefer internal iteration over sequential per-iteration dispatch).
 
 ---
 

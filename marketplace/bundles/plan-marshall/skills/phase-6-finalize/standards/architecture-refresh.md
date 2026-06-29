@@ -84,7 +84,11 @@ When Tier 0 is disabled, Tier 1 still runs against the *unchanged* `.plan/projec
 
 ### 2b. Extract the committed baseline tree
 
-Extract `origin/main`'s `.plan/project-architecture/` subtree into a temp directory under the worktree. Create the extraction root, archive the subtree, then unpack it — three single commands:
+Extract `origin/main`'s `.plan/project-architecture/` subtree into a temp directory under the worktree. Clear any previous extraction, create a fresh extraction root, archive the subtree, then unpack it — four single commands:
+
+```bash
+rm -rf {worktree_path}/.plan/temp/architecture-baseline {worktree_path}/.plan/temp/architecture-baseline.tar
+```
 
 ```bash
 mkdir -p {worktree_path}/.plan/temp/architecture-baseline

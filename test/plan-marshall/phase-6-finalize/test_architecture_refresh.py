@@ -12,7 +12,7 @@ playbook, not a Python module. These tests pin its decision flow contract by:
 
       * Tier-0 ``enabled`` vs ``disabled``
       * ``origin/main`` baseline present vs absent (no committed baseline)
-      * Drift detected vs none (``added ∪ removed`` non-empty vs empty)
+      * Drift detected vs none (``added union removed`` non-empty vs empty)
       * Tier-1 dispatch knob (``prompt`` / ``auto`` / ``disabled``)
       * ``change_type`` shortcut for ``bug_fix`` / ``verification``
 
@@ -105,7 +105,7 @@ def _decide_architecture_refresh(
       * ``tier_0_committed``: True if the Tier-0 ``chore(architecture):
         refresh`` commit fires.
       * ``tier_1_action``: ``enrich`` / ``pr_note`` / ``skipped``.
-      * ``affected_modules``: sorted union ``added ∪ removed``, or
+      * ``affected_modules``: sorted union ``added union removed``, or
         ``_AFFECTED_UNKNOWN`` when Tier 0 is disabled.
       * ``display_detail``: the ``--display-detail`` payload that the
         ``mark-step-done`` call MUST carry on this branch.
@@ -114,10 +114,10 @@ def _decide_architecture_refresh(
     derived-less ``origin/main`` git baseline every common module classifies as
     ``changed`` (no committed per-module ``derived.json`` sha), so the changed
     bucket is noise; the reliable drift signal is the index-derived
-    ``added ∪ removed`` buckets only. Because ``_project.json`` only shifts when
+    ``added union removed`` buckets only. Because ``_project.json`` only shifts when
     a module is added or removed, the on-disk ``git status --porcelain
     .plan/project-architecture`` commit gate fires exactly when
-    ``added ∪ removed`` is non-empty.
+    ``added union removed`` is non-empty.
     """
     # -- Step 2a: Tier-0 disabled — no extraction, affected never computed --
     if tier_0 == 'disabled':
@@ -133,7 +133,7 @@ def _decide_architecture_refresh(
                 'affected_modules': (),
                 'display_detail': 'skipped — no committed origin/main architecture baseline',
             }
-        # -- Step 3b: affected = added ∪ removed (changed bucket is noise) ---
+        # -- Step 3b: affected = added union removed (changed bucket is noise) ---
         affected = tuple(sorted(set(diff_added) | set(diff_removed)))
         # -- Step 3c/3d: commit gated on dirty .plan/project-architecture ---
         # (porcelain-dirty ⟺ module add/remove ⟺ affected non-empty).
@@ -344,7 +344,7 @@ class TestTier0EnabledMatrix:
         assert result['affected_modules'] == ()
 
     def test_affected_modules_is_sorted_union_of_added_and_removed(self):
-        """Pseudo-code §3b: affected = added ∪ removed (sorted); changed ignored."""
+        """Pseudo-code §3b: affected = added union removed (sorted); changed ignored."""
         result = _decide_architecture_refresh(
             baseline_present=True,
             tier_0='enabled',
@@ -621,8 +621,8 @@ class TestNarrativeContract:
         assert 'no committed origin/main architecture baseline' in standard_text
 
     def test_documents_changed_bucket_is_noise(self, standard_text: str):
-        """The standard must document that the changed bucket is noise; consume added ∪ removed."""
-        assert 'added ∪ removed' in standard_text
+        """The standard must document that the changed bucket is noise; consume added union removed."""
+        assert 'added ∪ removed' in standard_text  # noqa: RUF001
         assert 'changed' in standard_text
 
     # ----- Step 3: Tier 0 ---------------------------------------------------
