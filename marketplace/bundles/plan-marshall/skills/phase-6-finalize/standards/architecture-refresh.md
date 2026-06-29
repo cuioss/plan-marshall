@@ -2,14 +2,14 @@
 name: default:architecture-refresh
 description: Refresh architecture descriptors after a plan ships — tier-0 deterministic discover + diff-driven commit, tier-1 LLM re-enrichment
 order: 25
-default_on: false
+default_on: true
 presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
 # Architecture Refresh
 
-Pure executor for the `architecture-refresh` finalize step. Under the on-demand crawl model, `derived.json` is ephemeral — there is no pre-snapshot to diff against — so this step reduces to a deterministic no-op for every plan, optionally followed by an LLM re-enrichment pass when the user invokes it manually.
+Pure executor for the `architecture-refresh` finalize step. The pre-baseline is the committed `origin/main` tree: `_project.json` and the per-module `enriched.json` files are git-tracked, so `origin/main`'s `.plan/project-architecture/` is a zero-cost snapshot of the architecture surface as it stood before this plan. Tier 0 extracts that baseline, re-runs `discover --force`, and commits the regenerated descriptor when the working tree actually shifted; Tier 1 optionally re-enriches the affected modules via an LLM pass.
 
 ## Exit-code convention for `manage-*` script calls
 
@@ -18,7 +18,7 @@ Every `manage-*` script call in this document carries the following exit-code co
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
-This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `architecture-refresh` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer beyond the documented Tier-0 / Tier-1 knob reads.
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `architecture-refresh` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer beyond the documented Tier-0 / Tier-1 knob reads and the absent-baseline short-circuit.
 
 This step is **inline** (executed directly inside the finalize main context, not via a separate Task agent) because the Tier-1 `prompt` mode requires an `AskUserQuestion` interaction. Inline steps are not timeout-wrapped — they execute under the host platform's standard per-call ceiling.
 
@@ -38,10 +38,10 @@ This step is **inline** (executed directly inside the finalize main context, not
 The step flow is:
 
 1. Read inputs (run-config knobs + change_type).
-2. Ephemeral-derived no-op — under the on-demand crawl model no `architecture-pre/` snapshot exists, so this step short-circuits with the documented skip detail.
-3. Tier 0 — `discover --force` is an idempotent refresh of `_project.json` and `enriched.json` stubs; the diff/commit branches (3c–3e) apply only to the out-of-band pre-snapshot case (Step 2 short-circuits before them on the default path).
-4. Tier 1 — LLM re-enrichment remains available, but the auto-consumption of a diff is gone; invocation is manual via `/marshall-steward` Step 13.
-5. Mark step complete with `--display-detail` summarising the outcome (Branch A: "skipped — derived.json is ephemeral, no pre-snapshot exists" applies to every plan).
+2. Extract the `origin/main` architecture baseline (Tier-0-enabled only); short-circuit when `origin/main` carries no committed baseline.
+3. Tier 0 — `discover --force`, diff against the extracted baseline, commit when `.plan/project-architecture` is dirty on disk.
+4. Tier 1 — LLM re-enrichment of the affected modules (`added ∪ removed`).
+5. Mark step complete with `--display-detail` summarising the outcome.
 
 ## Step 1: Read Inputs
 
@@ -66,32 +66,13 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
 
 When `change_type` is absent, treat it as `unknown` and proceed (no Tier-1 short-circuit applies; the Tier-1 knob alone governs).
 
-## Step 2: Ephemeral-derived No-Op Branch (Default Path For Every Plan)
+## Step 2: Extract the origin/main Architecture Baseline
 
-Under the on-demand crawl model `derived.json` is ephemeral — phase-1-init never captures an `architecture-pre/` snapshot, so `.plan/local/plans/{plan_id}/architecture-pre/_project.json` will not exist for any plan. This step's diff/commit machinery has nothing to compare against; mark the step done with the ephemeral-skip outcome and exit:
+The pre-baseline is `origin/main`'s committed `.plan/project-architecture/` tree. Because `_project.json` and the per-module `enriched.json` files are git-tracked, the committed tree is the snapshot to diff the freshly-regenerated descriptors against — no separate capture is needed at plan start.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[STATUS] (plan-marshall:phase-6-finalize:architecture-refresh) Skipped — derived.json is ephemeral, no pre-snapshot exists"
-```
+### 2a. Tier-0 disabled short-circuit
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
-  mark-step-done --plan-id {plan_id} --phase 6-finalize \
-  --step architecture-refresh --outcome done \
-  --display-detail "skipped — derived.json is ephemeral, no pre-snapshot exists"
-```
-
-Return — do not execute Tier-0 or Tier-1. Steps 3c–3e (diff and commit) below are unreachable from this branch and remain documented only for the manual / future-tooling case where a pre-snapshot is supplied out-of-band. Tier-1 LLM re-enrichment remains available via `/marshall-steward` Step 13 for callers who want to refresh `enriched.json` on demand; it no longer auto-consumes a diff.
-
-## Step 3: Tier 0 — Deterministic Refresh
-
-Tier 0 is the free, deterministic half of architecture refresh: it re-runs `architecture discover --force` and uses `diff-modules --pre` to decide whether anything actually shifted. When something did, it commits the regenerated descriptor; when nothing did, it exits early.
-
-### 3a. Tier-0 disabled short-circuit
-
-If the run-config returned `tier_0: disabled`, skip Tier 0 entirely and proceed to Step 4 (Tier 1). Document the decision in the work log:
+If the run-config returned `tier_0: disabled`, skip extraction and the entire Tier-0 deterministic pass. `affected_modules` is never computed (treated as UNKNOWN in Tier 1). Log the decision and proceed to Step 4:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -99,9 +80,48 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 0 skipped — architecture_refresh.tier_0 = disabled"
 ```
 
-When Tier 0 is disabled, Tier 1 still runs against the *unchanged* `.plan/project-architecture/` descriptor. The two tiers are independently switchable; the only coupling is that Tier-1 `auto` consumes the `diff-modules --pre` result, which Tier-0-disabled paths do not produce. Tier-1 documents how it handles a missing diff (see Step 4 below).
+When Tier 0 is disabled, Tier 1 still runs against the *unchanged* `.plan/project-architecture/` descriptor. The two tiers are independently switchable; the only coupling is that Tier-1 `auto`/`prompt` consumes the `diff-modules --pre` result, which a Tier-0-disabled path does not produce. Tier-1 documents how it handles a missing diff (see Step 4 below).
 
-### 3b. Run discover --force
+### 2b. Extract the committed baseline tree
+
+Extract `origin/main`'s `.plan/project-architecture/` subtree into a temp directory under the worktree. Create the extraction root, archive the subtree, then unpack it — three single commands:
+
+```bash
+mkdir -p {worktree_path}/.plan/temp/architecture-baseline
+```
+
+```bash
+git -C {worktree_path} archive --format=tar --output=.plan/temp/architecture-baseline.tar origin/main .plan/project-architecture
+```
+
+```bash
+tar -xf {worktree_path}/.plan/temp/architecture-baseline.tar -C {worktree_path}/.plan/temp/architecture-baseline
+```
+
+The `git archive` pathspec `.plan/project-architecture` produces tar entries rooted at that path, so after extraction the baseline descriptor lives at `{baseline_dir} = {worktree_path}/.plan/temp/architecture-baseline/.plan/project-architecture` — the directory that directly contains `_project.json`. Step 3b feeds `{baseline_dir}` to `diff-modules --pre`.
+
+### 2c. Absent-baseline short-circuit (Branch A)
+
+When `origin/main` carries no committed `.plan/project-architecture/_project.json`, there is no baseline to diff against. Two equivalent signals reach this branch: the `git archive` call in 2b exits non-zero (the pathspec matched nothing in `origin/main`), or — when a partial tree extracts without `_project.json` — `diff-modules` in Step 3b returns `error: snapshot_not_found`. On either signal, mark the step done with the no-baseline outcome and return without running discover / diff / commit or Tier 1:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[STATUS] (plan-marshall:phase-6-finalize:architecture-refresh) Skipped — no committed origin/main architecture baseline"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  mark-step-done --plan-id {plan_id} --phase 6-finalize \
+  --step architecture-refresh --outcome done \
+  --display-detail "skipped — no committed origin/main architecture baseline"
+```
+
+## Step 3: Tier 0 — Deterministic Refresh
+
+Tier 0 regenerates the descriptor with `architecture discover --force`, diffs it against the extracted baseline to surface the affected module set, and commits only when the regenerated descriptor actually changed on disk.
+
+### 3a. Run discover --force
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
@@ -110,33 +130,40 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 
 The `--force` flag instructs `manage-architecture` to bypass any freshness checks and rewrite `_project.json` plus the per-module `enriched.json` stubs. `derived.json` is not persisted, so `--force` does not rewrite per-module derived files; the call is an idempotent refresh of the module index and a re-seed of empty enrichment stubs for newly-discovered modules.
 
-Steps 3c–3e document the diff/commit machinery for the out-of-band pre-snapshot case (Step 2 short-circuits before them on the default path — see Step 2).
-
-### 3c. Diff against the pre-snapshot
+### 3b. Diff against the extracted baseline
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  diff-modules --pre .plan/local/plans/{plan_id}/architecture-pre \
-  --project-dir {worktree_path}
+  diff-modules --pre {baseline_dir} --project-dir {worktree_path}
 ```
 
-Capture the four buckets from the TOON output: `added`, `removed`, `changed`, `unchanged`. The first three are the *affected modules* surface — the union `added ∪ removed ∪ changed` is what Tier 1 (when active) re-enriches.
+Capture the four buckets from the TOON output: `added`, `removed`, `changed`, `unchanged`. **Against a derived-less git baseline the `changed` bucket is noise.** `origin/main` commits `_project.json` + `enriched.json` only — `derived.json` is ephemeral and never committed — so the snapshot side has no per-module `derived.json` sha and EVERY common module classifies as `changed`. The reliable drift signal is therefore the index-derived buckets only:
 
-### 3d. Empty-diff branch
+```text
+affected_modules = added ∪ removed     # sorted; intra-module structural drift (the changed bucket) is out-of-scope
+```
 
-If `len(added) + len(removed) + len(changed) == 0`, the plan changed no module's structural surface. Log the decision and proceed to Tier 1 with an empty affected-modules set:
+If `diff-modules` returns `error: snapshot_not_found`, the extracted baseline lacked `_project.json` → treat as the absent-baseline case (Step 2c Branch A): mark the step done with the no-baseline detail and return.
+
+### 3c. Commit gate — porcelain status
+
+Decide whether to commit on the REAL on-disk delta after `discover --force`, not on the diff buckets (which always report every common module as `changed` against this baseline). Check the architecture path only:
+
+```bash
+git -C {worktree_path} status --porcelain .plan/project-architecture
+```
+
+Empty output → the regenerated descriptor is byte-identical to the committed tree; there is nothing to commit. Log Branch C and proceed to Tier 1 with `affected_modules` as computed in 3b:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 0 — no module structure changed, no commit needed"
+  --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 0 — .plan/project-architecture clean after discover, no commit needed"
 ```
 
-There is no commit when the diff is empty: the regenerated descriptor (from 3b) is byte-identical to the pre-snapshot's structural surface, so `git status --porcelain` against `.plan/project-architecture/` is empty and there is nothing to commit. Proceed to Step 4 (Tier 1) with `affected_modules = []`.
+### 3d. Non-empty status — commit the refresh
 
-### 3e. Non-empty diff branch — commit the refresh
-
-When at least one module is `added`, `removed`, or `changed`, regenerated descriptors are dirty in the worktree. Stage and commit the architecture path only:
+When `git status --porcelain .plan/project-architecture` is non-empty, the regenerated descriptors are dirty in the worktree. Stage and commit the architecture path only:
 
 ```bash
 git -C {worktree_path} add .plan/project-architecture
@@ -161,14 +188,14 @@ Log the artifact:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[ARTIFACT] (plan-marshall:phase-6-finalize:architecture-refresh) Tier 0 commit — {added_count} added / {removed_count} removed / {changed_count} changed"
+  --message "[ARTIFACT] (plan-marshall:phase-6-finalize:architecture-refresh) Tier 0 commit — {added_count} added / {removed_count} removed"
 ```
 
-`affected_modules = added ∪ removed ∪ changed` (the bucket union, sorted) — pass forward to Step 4.
+`affected_modules = added ∪ removed` (the bucket union, sorted) — pass forward to Step 4.
 
 ## Step 4: Tier 1 — LLM Re-enrichment
 
-Tier 1 re-runs the LLM-curated enrichment pass on the modules whose derived structure changed. It is the expensive half of architecture refresh and is gated by both a change-type shortcut and a tier knob.
+Tier 1 re-runs the LLM-curated enrichment pass on the modules whose structure was added or removed. It is the expensive half of architecture refresh and is gated by both a change-type shortcut and a tier knob.
 
 ### 4a. change_type shortcut
 
@@ -180,9 +207,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 1 skipped — change_type = {change_type}"
 ```
 
-### 4b. Affected-modules empty (Tier-0-enabled empty-diff path)
+### 4b. Affected-modules empty (Tier-0-enabled, no added/removed)
 
-When Tier 0 ran and the diff was empty, `affected_modules = []`. There is no enrichment to do — log and exit Tier 1 cleanly:
+When Tier 0 ran and `added ∪ removed` is empty, `affected_modules = []`. There is no enrichment to do — log and exit Tier 1 cleanly:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -194,7 +221,7 @@ Continue to Step 5.
 
 ### 4c. Affected-modules unknown (Tier-0-disabled path)
 
-When Tier 0 was disabled in 3a, `affected_modules` was never computed — the diff-modules call did not run. In that case, treat Tier 1 as if the user wants the deterministic input first; emit a work-log warning and skip Tier 1 to avoid running LLM enrichment over an arbitrary surface:
+When Tier 0 was disabled in 2a, `affected_modules` was never computed — the diff-modules call did not run. In that case, treat Tier 1 as if the user wants the deterministic input first; emit a work-log warning and skip Tier 1 to avoid running LLM enrichment over an arbitrary surface:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -253,7 +280,7 @@ Continue to Step 5.
 
 #### `auto` — run re-enrichment without prompting
 
-Re-run the LLM enrichment pass against the affected modules. There is no batch verb — the LLM MUST iterate `affected_modules_csv` (the sorted, comma-separated module-name list captured from the diff buckets in 3c) and follow `manage-architecture/SKILL.md` Steps 5–8 for each module. Each iteration calls three per-verb subcommands; every call carries `--project-dir {worktree_path}`:
+Re-run the LLM enrichment pass against the affected modules. There is no batch verb — the LLM MUST iterate `affected_modules_csv` (the sorted, comma-separated module-name list captured from the `added ∪ removed` buckets in 3b) and follow `manage-architecture/SKILL.md` Steps 5–8 for each module. Each iteration calls three per-verb subcommands; every call carries `--project-dir {worktree_path}`:
 
 ```text
 for each module M in affected_modules_csv:
@@ -340,15 +367,15 @@ Continue to Step 5.
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.
 
-Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the refresh outcome. The payload differs by branch — pick the matching template below.
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the refresh outcome. The payload differs by branch — pick the matching template below. (Branch A's mark-step-done is emitted inline in Step 2c.)
 
-**Branch A — greenfield (Step 2 path)**:
+**Branch A — no committed origin/main baseline (Step 2c path)**:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
   mark-step-done --plan-id {plan_id} --phase 6-finalize \
   --step architecture-refresh --outcome done \
-  --display-detail "skipped (greenfield — no pre-snapshot)"
+  --display-detail "skipped — no committed origin/main architecture baseline"
 ```
 
 **Branch B — Tier 0 disabled, Tier 1 also skipped**:
@@ -402,9 +429,9 @@ The `--display-detail` strings are subject to the output-template contract (≤8
 
 | Failure | Action |
 |---------|--------|
+| `git archive origin/main .plan/project-architecture` exits non-zero | `origin/main` carries no committed architecture baseline (the pathspec matched nothing). This is NOT a failure — treat as Branch A: mark the step done with `--display-detail "skipped — no committed origin/main architecture baseline"`, return without running discover / diff / commit. |
 | `discover --force` returns `status: error` | Log ERROR, mark the step `outcome failed` with `--display-detail "discover failed — see work.log"`, return — do NOT abort the finalize pipeline. The next plan will retry from a clean state. |
-| `diff-modules --pre` returns `error: snapshot_not_found` | Log ERROR, mark the step `outcome failed` with `--display-detail "snapshot lost — see work.log"`. The pre-snapshot directory should always exist at this point (Step 2's greenfield branch handles its absence) — if it disappeared mid-flight, surface the error rather than silently skipping. |
-| `git -C {worktree_path} commit` fails with "nothing to commit" | This indicates `discover --force` was a no-op despite a non-empty diff (e.g., diff classified `unchanged` modules as `changed` due to a stale sha). Treat as Branch C (no diff) — log a WARNING, mark the step done with `--display-detail "no module structure changed (commit skipped)"`. |
+| `diff-modules --pre` returns `error: snapshot_not_found` | The extracted baseline lacked `_project.json` — equivalent to no committed baseline. Treat as Branch A (NOT a failure): mark the step done with `--display-detail "skipped — no committed origin/main architecture baseline"`. |
 | `git push` fails | Log ERROR, mark the step `outcome failed` with `--display-detail "push failed — see work.log"`. The `automated-review` step will not see the architecture commit; the user can push manually before merging. |
 | `architecture enrich` fails | Log ERROR, fall back to Branch F (PR note) — do NOT mark the whole step failed. The deterministic refresh has already shipped; the user can re-enrich manually via `/marshall-steward` Step 13. Mark the step done with `--display-detail "refreshed; enrich failed — see work.log"`. |
 | `AskUserQuestion` aborted | Treat the same as `Skip — note in PR` (Branch F). The user actively backing out is informationally equivalent to declining the prompt. |
@@ -422,31 +449,42 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 The decision flow as a single procedural block (authoritative — implementations follow this order):
 
 ```text
-read tier_0     := manage-run-config architecture-refresh get-tier-0
-read tier_1     := manage-run-config architecture-refresh get-tier-1
+read tier_0      := manage-run-config architecture-refresh get-tier-0
+read tier_1      := manage-run-config architecture-refresh get-tier-1
 read change_type := manage-status metadata get change_type
 
-if not exists(.plan/local/plans/{plan_id}/architecture-pre/_project.json):
-    log: "skipped (greenfield)"
-    mark-step-done outcome=done detail="skipped (greenfield — no pre-snapshot)"
-    return
-
 # --- Tier 0 ---
-if tier_0 == "enabled":
+if tier_0 != "enabled":
+    log: "Tier 0 skipped — disabled"
+    affected := UNKNOWN  # never computed
+else:
+    # extract origin/main's committed baseline tree
+    mkdir -p {baseline_root}
+    git -C {worktree_path} archive --format=tar --output={baseline_tar} origin/main .plan/project-architecture
+        → on non-zero (no committed baseline):
+            log: "skipped — no committed origin/main architecture baseline"
+            mark-step-done outcome=done detail="skipped — no committed origin/main architecture baseline"
+            return
+    tar -xf {baseline_tar} -C {baseline_root}     # baseline_dir := {baseline_root}/.plan/project-architecture
+
     architecture discover --force --project-dir {worktree_path}
-    diff := architecture diff-modules --pre {snapshot_dir} --project-dir {worktree_path}
-    affected := diff.added ∪ diff.removed ∪ diff.changed
-    if len(affected) == 0:
-        log: "Tier 0 — no module structure changed"
-        # fall through to Tier 1 with empty affected
+    diff := architecture diff-modules --pre {baseline_dir} --project-dir {worktree_path}
+        → on error snapshot_not_found:
+            log: "skipped — no committed origin/main architecture baseline"
+            mark-step-done outcome=done detail="skipped — no committed origin/main architecture baseline"
+            return
+    # the changed bucket is noise against a derived-less git baseline
+    # (snap_sha == None ⇒ every common module classifies as "changed")
+    affected := diff.added ∪ diff.removed         # sorted; intra-module drift out-of-scope
+
+    if git -C {worktree_path} status --porcelain .plan/project-architecture is empty:
+        log: "Tier 0 — clean after discover, no commit needed"
+        # fall through to Tier 1 with affected as computed
     else:
         git -C {worktree_path} add .plan/project-architecture
         git -C {worktree_path} commit -m "chore(architecture): refresh derived data after {plan-title}"
         git -C {worktree_path} push
         log artifact
-else:
-    log: "Tier 0 skipped — disabled"
-    affected := UNKNOWN  # never computed
 
 # --- Tier 1 ---
 if change_type in {"bug_fix", "verification"}:
@@ -459,7 +497,7 @@ if affected == UNKNOWN:           # tier_0 disabled
     mark-step-done with "tier-0 disabled; tier-1 skipped"
     return
 
-if len(affected) == 0:            # tier_0 enabled but empty diff
+if len(affected) == 0:            # tier_0 enabled but no added/removed
     log: "Tier 1 skipped — no affected modules"
     mark-step-done with "no module structure changed"
     return
@@ -498,9 +536,9 @@ switch tier_1:
 
 ## Cross-References
 
-- `phase-1-init/SKILL.md` — phase-1-init does not capture an `architecture-pre/` snapshot; Step 2 of this document short-circuits accordingly.
+- `phase-1-init/SKILL.md` — phase-1-init does not snapshot the architecture descriptor; this step derives its pre-baseline from the committed `origin/main` tree instead.
 - `manage-run-config/SKILL.md` `architecture-refresh` subcommand group — the source of truth for tier-0 / tier-1 knob semantics.
-- `manage-architecture/standards/client-api.md` `discover` and `diff-modules` — the deterministic backbone of Tier 0.
+- `manage-architecture/standards/client-api.md` `discover` and `diff-modules` — the deterministic backbone of Tier 0, including the derived-less-baseline classification note (every common module reports `changed` against a git baseline; consume `added` / `removed` only).
 - `manage-architecture` `enrich` verb — the LLM re-enrichment surface used by Tier 1 `auto` and `prompt`-accepted paths.
 - `phase-6-finalize/standards/output-template.md` — the renderer that consumes `--display-detail` from the Branch A–F templates above.
 - `phase-6-finalize/standards/required-steps.md` — declares `architecture-refresh` as a required step for the `phase_steps_complete` handshake.

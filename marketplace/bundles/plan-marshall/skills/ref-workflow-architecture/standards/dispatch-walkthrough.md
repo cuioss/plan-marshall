@@ -231,14 +231,15 @@ The only per-iteration parallel dispatch in the contract. Phase-6 `architecture-
 ### Orchestrator: Tier-0 inline (scripts only)
 
 ```bash
-# Discover affected modules from the worktree diff against the pre-snapshot
-# captured at Tier-0 entry. cwd is pinned to the plan's worktree (the cwd-pinned
-# model), so the diff resolves against the pinned worktree without a path arg.
-# The affected set is the bucket union added ∪ removed ∪ changed read from this
-# call's TOON output — it is held in memory for the dispatch fan-out, not
-# persisted via a separate command.
+# Discover affected modules from the worktree diff against the baseline Tier-0
+# extracted from origin/main's committed .plan/project-architecture/ tree. cwd is
+# pinned to the plan's worktree (the cwd-pinned model), so the diff resolves
+# against the pinned worktree without a path arg. The affected set is the
+# index-derived union added ∪ removed read from this call's TOON output (the
+# changed bucket is noise against a derived-less git baseline) — it is held in
+# memory for the dispatch fan-out, not persisted via a separate command.
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  diff-modules --pre .plan/local/plans/feature-jwt-auth/architecture-pre
+  diff-modules --pre .plan/temp/architecture-baseline/.plan/project-architecture
 ```
 
 If `affected_modules` is empty → Tier-1 is skipped; the step marks done with `display_detail: "no modules affected"`.

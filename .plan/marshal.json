@@ -77,6 +77,7 @@
         "default:push": {},
         "default:create-pr": {},
         "default:ci-verify": {},
+        "default:architecture-refresh": {},
         "default:automated-review": {
           "review_bot_buffer_seconds": 180,
           "re_review_await_timeout_seconds": 600,
