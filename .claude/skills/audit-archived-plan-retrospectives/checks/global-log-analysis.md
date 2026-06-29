@@ -59,7 +59,7 @@ For each parsed line the script:
    failure — flagging every non-INFO level previously swept thousands of DEBUG
    lines into the error count); and (b) a completed script-execution call whose
    subcommand is a known read-only **query** (`exists`/`read`/`get`/`list`/`find`/
-   `search`) stamped at an elevated level with no failure marker — a benign
+   `search`/`resolve`) stamped at an elevated level with no failure marker — a benign
    non-zero-exit probe answering "not found", which is a normal query result, not a
    runtime failure. The exclusion is restricted to that query allowlist: a
    NON-query command (e.g. `run`) at an elevated level with no marker is NOT treated

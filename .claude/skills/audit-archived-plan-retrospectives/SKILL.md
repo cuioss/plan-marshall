@@ -315,17 +315,18 @@ lesson already covering that notation satisfies Gate 1 for every later plan that
 trips the same rejection — so the dedup check MUST search the corpus by the source
 notation, not by the consuming plan ID.
 
-**Token-economics flags are already covered by the canonical token-economics
-lesson**: the `token-economics` check's anti-pattern taxonomy is derived directly
-from that filed, `active` lesson (its remediation direction #5 proposed this very
-check). A flagged token-economics row is therefore COVERED on a Gate-1 dedup
-basis — name that covering lesson as the reference and do NOT re-file. The
+**Token-economics flags are already covered by the shipped token-economics
+check**: the `token-economics` check's corpus-derived anti-pattern taxonomy IS
+the operationalized form of the original one-off token deep-dive — the check is
+its own coverage source. A flagged token-economics row is therefore COVERED on a
+Gate-1 dedup basis against the check's taxonomy and MUST NOT be re-filed. The
 file-worthy signal from this check is a corpus *drift* (e.g. the execute-share
 falling further, a fresh fixed-overhead recurrence on a plan created after a
-remediation shipped, or a previously-unflagged anti-pattern becoming systemic),
-which extends the covering lesson via Gate-1 `merge_into` rather than opening a
-parallel lesson. See `checks/token-economics.md` § "Adjudication against the
-canonical token-economics lesson".
+remediation shipped, or a previously-unflagged anti-pattern becoming systemic);
+a genuine drift warrants filing a fresh lesson through the three-gate policy
+rather than being folded silently into the taxonomy. See
+`checks/token-economics.md` § "Adjudication against the shipped token-economics
+check".
 
 ### Step 4c: Route preference-pattern-detector rows to architecture hints
 
