@@ -78,6 +78,7 @@ phase-6-finalize ``push`` — is documented in
 "Pre-Commit Verify Freshness".
 """
 
+from functools import lru_cache
 from pathlib import Path
 
 from _ledger_core import (  # type: ignore[import-not-found]
@@ -165,8 +166,16 @@ def _is_documentation_only(plan_id: str) -> bool:
     return verification_steps is not None and len(verification_steps) == 0
 
 
+@lru_cache(maxsize=1)
 def _read_verification_steps(plan_id: str) -> list | None:
     """Return the plan's ``phase_5.verification_steps`` list, or ``None``.
+
+    Memoized with ``@lru_cache(maxsize=1)``: the freshness check calls this twice
+    with the same ``plan_id`` within one short-lived CLI process (once from
+    ``_is_documentation_only`` and once from ``_is_lint_only``), so the second
+    call is a cache hit that skips the redundant ``execution.toon`` read+parse.
+    Each CLI invocation is a fresh process, so the cache never spans plans in
+    production; tests clear it between cases via ``cache_clear()``.
 
     Reads ``execution.toon`` directly via the same plan-dir resolution
     ``_is_documentation_only`` uses, parsing TOON to stay inside the

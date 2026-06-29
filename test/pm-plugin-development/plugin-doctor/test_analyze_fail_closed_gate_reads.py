@@ -12,7 +12,11 @@ The analyzer detects two forward-enforcement anti-patterns via AST analysis:
   type.
 
 Test layers:
-  * Form A positive: unguarded read inside a gate-verb function.
+  * Form A positive: unguarded read inside a gate-verb function, including a
+    keyword-passed wrapped read (``json.loads(s=<read>)``).
+  * Form A scope-locality: a nested non-gate helper's read is not attributed to
+    the enclosing gate verb, and a nested gate verb's read is flagged exactly
+    once (no over-traversal duplicate).
   * Form A negatives: OSError-wrapped read, non-gate-verb function, canonical
     ``file_ops.py`` (whitelist), the analyzer's own file (whitelist), and a
     bare ``json.loads`` over an in-memory string (not a file read).
@@ -112,6 +116,21 @@ class TestFormAPositives:
         findings = analyze_fail_closed_gate_reads(mp)
         assert RULE_FAIL_CLOSED_GATE_READ in _rules(findings)
 
+    def test_kwarg_form_wrapped_read_flagged(self, tmp_path: Path) -> None:
+        mp = _make_marketplace(tmp_path)
+        # The read is passed as a KEYWORD argument to json.loads; the pre-fix
+        # analyzer only inspected node.args[0] and missed the keyword form.
+        _write_py(
+            _script(mp, 'gate.py'),
+            'import json\n'
+            'from pathlib import Path\n'
+            '\n'
+            'def cmd_run(args):\n'
+            '    return json.loads(s=Path(args.path).read_text())\n',
+        )
+        findings = analyze_fail_closed_gate_reads(mp)
+        assert RULE_FAIL_CLOSED_GATE_READ in _rules(findings)
+
 
 class TestFormANegatives:
     def test_oserror_wrapped_read_not_flagged(self, tmp_path: Path) -> None:
@@ -201,6 +220,49 @@ class TestFormANegatives:
         )
         findings = analyze_fail_closed_gate_reads(mp)
         assert findings == []
+
+
+class TestFormAScopeLocality:
+    def test_nested_non_gate_helper_read_not_attributed_to_outer(self, tmp_path: Path) -> None:
+        mp = _make_marketplace(tmp_path)
+        # cmd_outer reads nothing itself; its nested NON-gate helper does an
+        # unguarded read. That read belongs to the inner scope (a non-gate verb,
+        # never flagged), so the outer gate verb must NOT be flagged for it.
+        _write_py(
+            _script(mp, 'gate.py'),
+            'from pathlib import Path\n'
+            '\n'
+            'def cmd_outer(args):\n'
+            '    def render(path):\n'
+            '        return Path(path).read_text()\n'
+            '    return render(args.path)\n',
+        )
+        findings = analyze_fail_closed_gate_reads(mp)
+        assert RULE_FAIL_CLOSED_GATE_READ not in _rules(findings)
+
+    def test_nested_gate_verb_read_flagged_once_not_duplicated(self, tmp_path: Path) -> None:
+        mp = _make_marketplace(tmp_path)
+        # The outer gate verb reads fail-closed; a NESTED gate verb has its own
+        # unguarded read. Pre-fix the outer scan over-traversed into the nested
+        # verb and double-counted the read — it must be flagged exactly once, by
+        # its own scope.
+        _write_py(
+            _script(mp, 'gate.py'),
+            'from pathlib import Path\n'
+            '\n'
+            'def cmd_outer(args):\n'
+            '    def check_inner(path):\n'
+            '        return Path(path).read_text()\n'
+            '    try:\n'
+            '        own = Path(args.path).read_text()\n'
+            '    except OSError:\n'
+            '        own = ""\n'
+            '    return own, check_inner(args.path)\n',
+        )
+        findings = analyze_fail_closed_gate_reads(mp)
+        fail_closed = [f for f in findings if f['rule_id'] == RULE_FAIL_CLOSED_GATE_READ]
+        assert len(fail_closed) == 1
+        assert 'read_text' in fail_closed[0]['snippet']
 
 
 # ===========================================================================

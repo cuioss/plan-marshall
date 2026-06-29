@@ -63,6 +63,7 @@ from __future__ import annotations
 
 import ast
 import re
+from collections.abc import Iterator
 from pathlib import Path
 
 RULE_FAIL_CLOSED_GATE_READ = 'fail-closed-gate-read'
@@ -155,6 +156,26 @@ def _functions(tree: ast.Module) -> list[ast.FunctionDef | ast.AsyncFunctionDef]
     return [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
 
 
+def _walk_local(node: ast.AST) -> Iterator[ast.AST]:
+    """Yield ``node`` and its descendants WITHOUT descending into nested scopes.
+
+    Like ``ast.walk`` but it stops at nested ``FunctionDef`` / ``AsyncFunctionDef``
+    / ``ClassDef`` boundaries: a nested helper's reads, ``OSError`` handlers, and
+    ``isinstance`` guards belong to that inner scope (scanned independently via
+    ``_functions``), not to the enclosing gate verb. ``node`` itself is always
+    descended into; a nested scope node below it is yielded but not entered.
+    """
+    stack: list[ast.AST] = [node]
+    while stack:
+        current = stack.pop()
+        yield current
+        if current is not node and isinstance(
+            current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+        ):
+            continue
+        stack.extend(ast.iter_child_nodes(current))
+
+
 # ---------------------------------------------------------------------------
 # Form A — fail-closed-gate-read detection
 # ---------------------------------------------------------------------------
@@ -197,15 +218,18 @@ def _is_file_read_call(node: ast.AST) -> bool:
     ):
         return True
 
-    # json.loads(<read>) / parse_toon(<read>) — only when the argument is a read
+    # json.loads(<read>) / parse_toon(<read>) — only when an argument is a read.
+    # Inspect BOTH positional args and keyword-argument values, so a keyword-passed
+    # read (e.g. ``json.loads(s=<read>)``) is detected, not just ``node.args[0]``.
     wraps_read = (
         isinstance(func, ast.Attribute)
         and func.attr == 'loads'
         and isinstance(func.value, ast.Name)
         and func.value.id == 'json'
     ) or (isinstance(func, ast.Name) and func.id == 'parse_toon')
-    if wraps_read and node.args:
-        return _contains_file_read(node.args[0])
+    if wraps_read:
+        arg_exprs = [*node.args, *(kw.value for kw in node.keywords)]
+        return any(_contains_file_read(arg) for arg in arg_exprs)
 
     return False
 
@@ -226,7 +250,7 @@ def _try_blocks_catching_oserror(func: ast.FunctionDef | ast.AsyncFunctionDef) -
     bare are treated as fail-closed).
     """
     catching: list[ast.Try] = []
-    for node in ast.walk(func):
+    for node in _walk_local(func):
         if not isinstance(node, ast.Try):
             continue
         if any(_handler_catches_oserror(h) for h in node.handlers):
@@ -273,7 +297,7 @@ def _scan_form_a(
 
     findings: list[dict] = []
     seen: set[int] = set()
-    for node in ast.walk(func):
+    for node in _walk_local(func):
         if not _is_file_read_call(node):
             continue
         line_no = getattr(node, 'lineno', 0)
@@ -346,7 +370,7 @@ def _scan_form_b(
 
     findings: list[dict] = []
     seen: set[int] = set()
-    for node in ast.walk(func):
+    for node in _walk_local(func):
         if not isinstance(node, ast.Call):
             continue
         if not (isinstance(node.func, ast.Name) and node.func.id == 'isinstance'):
