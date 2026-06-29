@@ -104,3 +104,7 @@ class Extension(ExtensionBase):
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
         return 'pm-dev-frontend:ext-triage-js'
+
+    def provides_arch_gate(self) -> dict | None:
+        """dependency-cruiser: JS arch-gate tool. Binding: pm-dev-frontend:arch-gate-js."""
+        return {'tool': 'dependency-cruiser'}

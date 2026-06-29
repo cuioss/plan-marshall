@@ -35,6 +35,7 @@ from _extension_constants import (  # noqa: F401 — re-exported for backward co
     BUILD_CLASSES,
     BUILD_MAP_ROLES,
     CANONICAL_COMMANDS,
+    CMD_ARCH_GATE,
     CMD_BENCHMARK,
     CMD_CLEAN,
     CMD_CLEAN_INSTALL,
@@ -824,6 +825,31 @@ class ExtensionBase(ABC):
         retrospective aspects).
         """
         return []
+
+    def provides_arch_gate(self) -> dict | None:
+        """Return this domain's arch-gate tool descriptor, or None.
+
+        Optional additive hook mirroring provides_triage() / provides_outline_skill():
+        a domain bundle overrides it to declare the native architectural-constraint
+        tool that backs the ``arch-gate`` canonical command (e.g. ArchUnit for Java,
+        import-linter for Python, dependency-cruiser for JavaScript). When the hook
+        returns a non-None descriptor, ``skill-domains configure`` appends the
+        ``default:verify:arch-gate`` per-deliverable read-only verify-step to
+        ``phase-5-execute.verification_steps`` for the project. A domain that returns
+        None appends nothing — the silent-skip default.
+
+        There is a SINGLE execution model: a per-deliverable read-only verify-step
+        that resolves through ``architecture resolve --command arch-gate`` and runs
+        the domain's native tool as a structural-boundary gate, parsing its output
+        into ``arch-constraint``-typed findings. There is NO execution-mode variant —
+        the descriptor carries only the tool name (no ``execution_mode`` key).
+
+        Returns:
+            A descriptor dict ``{'tool': str}`` naming the native architectural-
+            constraint tool, or None (the default) when the domain provides no
+            arch-gate.
+        """
+        return None
 
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if this domain applies to a specific module and return resolved skills.

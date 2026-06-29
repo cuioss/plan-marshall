@@ -204,3 +204,7 @@ class Extension(ExtensionBase):
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
         return 'pm-dev-java:ext-triage-java'
+
+    def provides_arch_gate(self) -> dict | None:
+        """ArchUnit: Java arch-gate tool. Binding: pm-dev-java:arch-gate-java."""
+        return {'tool': 'archunit'}

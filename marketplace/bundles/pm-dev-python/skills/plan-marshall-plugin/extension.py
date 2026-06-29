@@ -122,3 +122,7 @@ class Extension(ExtensionBase):
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
         return 'pm-dev-python:ext-triage-python'
+
+    def provides_arch_gate(self) -> dict | None:
+        """import-linter: Python arch-gate tool. Binding: pm-dev-python:arch-gate-python."""
+        return {'tool': 'import-linter'}

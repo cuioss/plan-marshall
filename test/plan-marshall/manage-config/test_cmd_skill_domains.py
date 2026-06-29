@@ -637,10 +637,12 @@ def test_configure_seeds_verification_steps_as_keyed_map(plan_context, monkeypat
 
     updated = json.loads(marshal_path.read_text())
     verification_steps = updated['plan']['phase-5-execute']['verification_steps']
-    # configure fully rewrites the map from _seed_verify_steps(); assert the
-    # complete key set and every entry maps to empty params
-    assert list(verification_steps.keys()) == expected_built_in
-    assert verification_steps == {step_id: {} for step_id in expected_built_in}
+    # configure fully rewrites the map from _seed_verify_steps(); pm-dev-java
+    # declares an arch-gate tool (archunit), so configure appends the
+    # domain-conditional default:verify:arch-gate after the built-in seed.
+    expected = expected_built_in + ['default:verify:arch-gate']
+    assert list(verification_steps.keys()) == expected
+    assert verification_steps == {step_id: {} for step_id in expected}
 
 
 def test_configure_always_adds_system(plan_context, monkeypatch):

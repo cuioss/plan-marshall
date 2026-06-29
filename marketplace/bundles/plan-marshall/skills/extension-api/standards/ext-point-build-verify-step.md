@@ -102,6 +102,12 @@ The `_discover_all_verify_steps()` consumer (`_cmd_skill_domains.py`) starts fro
 
 There is no parallel glob or second discovery structure **within the built-in ext-point surface**. Project verify steps are a distinct source covered by `_discover_all_verify_steps()` and not by this ext-point.
 
+## Domain-Appended Verify Steps
+
+`default:verify:arch-gate` is a **domain-appended** verify-step — a third category distinct from both the built-in canonicals declared in the `canonicals:` list and the project `verify-step-*` skills. It is NOT discovered by `find_implementors()` and is NOT a member of any implementor's `canonicals:` list; instead, `skill-domains configure` appends it to `phase-5-execute.verification_steps` for every project whose configured domains include one whose extension declares a non-None `provides_arch_gate()` (see [extension-contract.md](extension-contract.md) § provides_arch_gate). A project whose domains declare no arch-gate tool never receives the step — the silent-skip default.
+
+Despite the distinct discovery path, the appended step is resolved and executed through the **same** parameterized `canonical_verify.md` doc as the built-in canonicals: the trailing `arch-gate` segment of the `default:verify:arch-gate` step ID feeds `architecture resolve --command arch-gate`, which runs the resolved executable. `arch-gate` is an extension-specific canonical (not a required command), so the resolve no-ops on any module whose domain populates no arch-gate command — the step is a read-only structural-boundary gate that runs only where a tool is wired and emits `arch-constraint`-typed findings (see [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md)). The structural concept the gate enforces is owned by [`manage-architecture/standards/arch-gate-fitness-functions.md`](../../manage-architecture/standards/arch-gate-fitness-functions.md).
+
 ## Current Implementations
 
 The single built-in build-verify-step implementor lives under `phase-5-execute/standards/`. Its `canonicals` list declares the built-in canonical set, which the discovery query expands into the `default:verify:{canonical}` step IDs.

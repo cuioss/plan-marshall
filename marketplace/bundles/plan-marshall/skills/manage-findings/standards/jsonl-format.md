@@ -36,6 +36,7 @@ Plan-scoped findings are stored split per type rather than in a single combined 
 - `findings/test-failure.jsonl`
 - `findings/lint-issue.jsonl`
 - `findings/sonar-issue.jsonl`
+- `findings/arch-constraint.jsonl`
 - `findings/pr-comment.jsonl`
 - `findings/pr-comment-overflow.jsonl`
 
@@ -72,7 +73,7 @@ Each line in a `findings/{type}.jsonl` file is a JSON object:
 |-------|------|-------------|
 | `hash_id` | string | 6-character hex hash (auto-generated, see Hash ID Generation) |
 | `timestamp` | string | ISO 8601 UTC (auto-generated on add) |
-| `type` | string | One of: `bug`, `improvement`, `anti-pattern`, `triage`, `tip`, `insight`, `best-practice`, `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `pr-comment`, `pr-comment-overflow`. The first three (`bug`, `improvement`, `anti-pattern`) map to lesson categories — see `manage-lessons/standards/file-format.md` |
+| `type` | string | One of: `bug`, `improvement`, `anti-pattern`, `triage`, `tip`, `insight`, `best-practice`, `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `arch-constraint`, `pr-comment`, `pr-comment-overflow`. Types mapping to lesson categories: `bug`, `improvement`, `anti-pattern` (direct promotion); `arch-constraint` (reinforce-on-recurrence lifecycle, not direct promotion) — see `manage-lessons/standards/file-format.md` |
 | `title` | string | Short description of the finding |
 | `detail` | string | Full description with context |
 | `severity` | string | `error`, `warning`, or `info` (default: `warning`) |
@@ -133,6 +134,7 @@ Finding types promote to specific targets:
 | `test-failure` | Not promotable | N/A |
 | `lint-issue` | Not promotable | N/A |
 | `sonar-issue` | Not promotable | N/A |
+| `arch-constraint` | Not promotable (recurring violations feed lessons; see below) | N/A |
 | `pr-comment` | Not promotable | N/A |
 | `pr-comment-overflow` | Not promotable | N/A |
 
@@ -150,6 +152,19 @@ Finding types promote to specific targets:
 **Resolution semantics**: an overflow finding resolves once the next `automated-review` iteration has processed every comment listed in its `detail` (each individual comment goes through the standard FIX / SUPPRESS / ACCEPT path; the overflow finding itself is the umbrella). If a subsequent iteration cannot finish the deferred queue either, a fresh `pr-comment-overflow` finding is filed for the still-unprocessed remainder — the original overflow finding is `resolved` with `--resolution fixed` once its specific comments are processed; the new overflow is a separate record.
 
 The type is non-promotable: it is operational bookkeeping, not a long-lived knowledge artefact. The blocking partition (see [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) § Per-phase blocking partition) does NOT include `pr-comment-overflow` — the overflow finding deliberately does not block the `6-finalize` boundary because the deferred work is handled by the dispatcher's `loop_back` re-entry rather than by gating the phase boundary.
+
+### `arch-constraint`
+
+`arch-constraint` is the finding type emitted by the `default:verify:arch-gate` verify-step (see [`extension-api/standards/ext-point-build-verify-step.md`](../../extension-api/standards/ext-point-build-verify-step.md) § Domain-Appended Verify Steps). The arch-gate producer runs a domain's native architectural-constraint tool (ArchUnit / import-linter / dependency-cruiser) as a read-only structural-boundary gate and parses each structural-boundary violation into an `arch-constraint` finding, which flows to the domain's `ext-triage-{domain}` skill through the same producer → store → triage pattern as `lint-issue` / `sonar-issue`.
+
+| Field | Expected shape |
+|-------|----------------|
+| `title` | The violated rule's human-readable summary (e.g. `Layer 'service' must not depend on 'web'`). |
+| `severity` | `error` for a hard boundary violation; `warning` for an advisory contract. |
+| `file_path` / `line` | The offending source location reported by the native tool, when available. |
+| `rule` | The rule identity (the tool's rule name / contract id). This is the dedup key the lessons machinery uses to reinforce one recurring-violation lesson rather than allocate one per instance. |
+
+The type is **not promotable** through the finding-promotion path. Recurring arch-constraint violations feed the `arch-constraint` lesson type (rule-identity dedup, retire-on-quiet / reinforce-on-recurrence lifecycle) via the lessons housekeeping machinery — see `manage-lessons/standards/file-format.md` — which is a separate channel from finding promotion. The per-finding triage disposition (FIX / SUPPRESS / ACCEPT) is decided by the owning `ext-triage-{domain}` skill.
 
 ## Q-Gate Finding Record
 

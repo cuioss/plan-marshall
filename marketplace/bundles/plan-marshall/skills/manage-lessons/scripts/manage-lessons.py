@@ -36,7 +36,13 @@ from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
 from _cmd_auto_suggest import cmd_auto_suggest
-from _lessons_crud import set_body  # type: ignore[import-not-found]
+from _lessons_crud import (  # type: ignore[import-not-found]
+    DEFAULT_ARCH_CONSTRAINT_QUIET_DAYS,
+    find_active_arch_constraint_by_rule,
+    reinforce_arch_constraint,
+    retire_quiet_arch_constraints,
+    set_body,
+)
 from constants import DIR_LESSONS, LESSON_CATEGORIES  # type: ignore[import-not-found]
 from file_ops import (  # type: ignore[import-not-found]
     atomic_write_file,
@@ -436,6 +442,29 @@ def cmd_add(args: argparse.Namespace) -> dict:
         }
 
     today = datetime.now(UTC).strftime('%Y-%m-%d')
+    rule = getattr(args, 'rule', None)
+
+    # arch-constraint lessons dedup by RULE identity: a recurring violation of a
+    # rule already captured by an active arch-constraint lesson REINFORCES that
+    # lesson (recurrence_count bump + ## Recurrence section) instead of allocating
+    # a new one. A --rule is mandatory for this category — the rule is the dedup
+    # key and the retire-on-quiet anchor.
+    if args.category == 'arch-constraint':
+        if not rule:
+            return {
+                'status': 'error',
+                'error': 'missing_rule',
+                'message': '--rule is required for category arch-constraint (it is the dedup key)',
+            }
+        existing_id = find_active_arch_constraint_by_rule(get_lessons_dir(), rule)
+        if existing_id is not None:
+            reinforced = reinforce_arch_constraint(get_lessons_dir(), existing_id, today)
+            if reinforced['status'] == 'success':
+                reinforced['path'] = str((get_lessons_dir() / f'{existing_id}.md').resolve())
+                reinforced['component'] = args.component
+                reinforced['category'] = args.category
+                reinforced['rule'] = rule
+            return reinforced
 
     def _metadata(lesson_id: str) -> dict:
         metadata = {
@@ -445,6 +474,10 @@ def cmd_add(args: argparse.Namespace) -> dict:
             'status': 'active',
             'created': today,
         }
+        if args.category == 'arch-constraint':
+            metadata['rule'] = rule
+            metadata['recurrence_count'] = '1'
+            metadata['last_seen'] = today
         if args.bundle:
             metadata['bundle'] = args.bundle
         return metadata
@@ -453,13 +486,17 @@ def cmd_add(args: argparse.Namespace) -> dict:
     if allocation['status'] != 'success':
         return allocation
 
-    return {
+    result = {
         'status': 'success',
         'id': allocation['id'],
         'path': str(allocation['path'].resolve()),
         'component': args.component,
         'category': args.category,
     }
+    if args.category == 'arch-constraint':
+        result['action'] = 'created'
+        result['rule'] = rule
+    return result
 
 
 def cmd_update(args: argparse.Namespace) -> dict:
@@ -1581,35 +1618,36 @@ def cmd_supersede(args: argparse.Namespace) -> dict:
     }
 
 
-def _resolve_retention_days(cli_value: int | None) -> int:
-    """Resolve effective ``retention_days`` for ``cleanup-superseded``.
+def _resolve_retention_setting(cli_value: int | None, config_key: str, fallback: int) -> int:
+    """Resolve a ``system.retention`` integer setting.
 
-    Precedence:
-        1. ``cli_value`` (from ``--retention-days``) when not None.
-        2. ``system.retention.lessons_superseded_days`` from marshal.json.
-        3. :data:`DEFAULT_LESSONS_SUPERSEDED_DAYS` (hard fallback).
-
-    A missing or unreadable marshal.json silently falls through to the hard
-    fallback — this command must remain usable on pre-init checkouts where
-    marshal.json has not yet been written.
+    Precedence: ``cli_value`` (when not None) → ``system.retention.{config_key}``
+    from marshal.json → ``fallback``. A missing or unreadable marshal.json silently
+    falls through to the hard fallback so these commands remain usable on pre-init
+    checkouts.
     """
     if cli_value is not None:
-        return cli_value
+        return cli_value if cli_value >= 0 else fallback
 
     marshal_path = get_marshal_path()
     if not marshal_path.exists():
-        return DEFAULT_LESSONS_SUPERSEDED_DAYS
+        return fallback
 
     try:
         config = json.loads(marshal_path.read_text(encoding='utf-8'))
     except (json.JSONDecodeError, OSError):
-        return DEFAULT_LESSONS_SUPERSEDED_DAYS
+        return fallback
 
     retention = config.get('system', {}).get('retention', {})
-    value = retention.get('lessons_superseded_days')
+    value = retention.get(config_key)
     if isinstance(value, int) and value >= 0:
         return value
-    return DEFAULT_LESSONS_SUPERSEDED_DAYS
+    return fallback
+
+
+def _resolve_retention_days(cli_value: int | None) -> int:
+    """Resolve effective ``retention_days`` for ``cleanup-superseded``."""
+    return _resolve_retention_setting(cli_value, 'lessons_superseded_days', DEFAULT_LESSONS_SUPERSEDED_DAYS)
 
 
 def cmd_cleanup_superseded(args: argparse.Namespace) -> dict:
@@ -1715,6 +1753,44 @@ def cmd_cleanup_superseded(args: argparse.Namespace) -> dict:
     }
 
 
+def _resolve_quiet_days(cli_value: int | None) -> int:
+    """Resolve the effective retire-on-quiet window (days) for ``retire-quiet``."""
+    return _resolve_retention_setting(cli_value, 'arch_constraint_quiet_days', DEFAULT_ARCH_CONSTRAINT_QUIET_DAYS)
+
+
+def cmd_retire_quiet(args: argparse.Namespace) -> dict:
+    """Retire active arch-constraint lessons whose rule has stayed quiet.
+
+    The retire-on-quiet sibling of ``cleanup-superseded``: walks active
+    arch-constraint lessons and retires (tombstone + unlink) every one whose
+    ``last_seen`` is older than the resolved quiet window. The window resolves via
+    :func:`_resolve_quiet_days` (CLI ``--quiet-days`` → marshal
+    ``system.retention.arch_constraint_quiet_days`` → hard fallback). ``--dry-run``
+    reports the would-be retirements without mutating the corpus.
+    """
+    quiet_days = _resolve_quiet_days(args.quiet_days)
+    result = retire_quiet_arch_constraints(
+        get_lessons_dir(),
+        quiet_days,
+        datetime.now(UTC).date(),
+        _write_tombstone,
+        dry_run=bool(args.dry_run),
+    )
+    if not args.dry_run:
+        for entry in result.get('retired', []):
+            log_entry(
+                'script',
+                'global',
+                'INFO',
+                (
+                    f'(plan-marshall:manage-lessons) Retired quiet arch-constraint lesson '
+                    f'{entry["lesson_id"]} (rule {entry["rule"]!r}, quiet {entry["quiet_days_elapsed"]}d '
+                    f'>= {quiet_days}d)'
+                ),
+            )
+    return result
+
+
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Manage lessons learned', allow_abbrev=False)
@@ -1728,17 +1804,25 @@ def main() -> int:
     )
     add_component_arg(add_parser)
     add_parser.add_argument(
-        '--category', required=True, choices=['bug', 'improvement', 'anti-pattern'], help='Lesson category'
+        '--category', required=True, choices=list(VALID_CATEGORIES), help='Lesson category'
     )
     add_parser.add_argument('--title', required=True, help='Lesson title')
     add_parser.add_argument('--bundle', help='Optional bundle reference')
+    add_parser.add_argument(
+        '--rule',
+        help=(
+            'Rule identity for category arch-constraint (required for that category). '
+            'The dedup key: a recurring violation of the same rule reinforces the '
+            'existing lesson instead of allocating a new one.'
+        ),
+    )
     add_parser.set_defaults(func=cmd_add)
 
     # update
     update_parser = subparsers.add_parser('update', help='Update lesson metadata', allow_abbrev=False)
     add_lesson_id_arg(update_parser)
     add_component_arg(update_parser, required=False)
-    update_parser.add_argument('--category', choices=['bug', 'improvement', 'anti-pattern'], help='Update category')
+    update_parser.add_argument('--category', choices=list(VALID_CATEGORIES), help='Update category')
     update_parser.set_defaults(func=cmd_update)
 
     # get (read is an accepted alias for the same operation)
@@ -1749,7 +1833,7 @@ def main() -> int:
     # list
     list_parser = subparsers.add_parser('list', help='List lessons', allow_abbrev=False)
     add_component_arg(list_parser, required=False)
-    list_parser.add_argument('--category', choices=['bug', 'improvement', 'anti-pattern'], help='Filter by category')
+    list_parser.add_argument('--category', choices=list(VALID_CATEGORIES), help='Filter by category')
     list_parser.add_argument(
         '--status',
         choices=list(LIST_STATUS_CHOICES),
@@ -1895,6 +1979,34 @@ def main() -> int:
         help='Report what would be removed without unlinking anything.',
     )
     cleanup_parser.set_defaults(func=cmd_cleanup_superseded)
+
+    # retire-quiet — retire-on-quiet sibling of cleanup-superseded for the
+    # arch-constraint lifecycle.
+    retire_quiet_parser = subparsers.add_parser(
+        'retire-quiet',
+        help=(
+            'Retire active arch-constraint lessons whose rule has stayed quiet '
+            '(no recurrence) past the quiet window. Tombstones are preserved, '
+            'mirroring cleanup-superseded.'
+        ),
+        allow_abbrev=False,
+    )
+    retire_quiet_parser.add_argument(
+        '--quiet-days',
+        type=int,
+        help=(
+            'Quiet window in days. A lesson whose last_seen is at least this many '
+            'days old is retired. Falls back to '
+            'system.retention.arch_constraint_quiet_days from marshal.json '
+            f'(hard fallback {DEFAULT_ARCH_CONSTRAINT_QUIET_DAYS}) when omitted.'
+        ),
+    )
+    retire_quiet_parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Report what would be retired without unlinking anything.',
+    )
+    retire_quiet_parser.set_defaults(func=cmd_retire_quiet)
 
     # auto-suggest — recipe-registry matcher for phase-1-init Step 5c.
     auto_suggest_parser = subparsers.add_parser(

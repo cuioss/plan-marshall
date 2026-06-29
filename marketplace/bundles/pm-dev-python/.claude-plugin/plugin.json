@@ -18,6 +18,7 @@
   "agents": [],
   "commands": [],
   "skills": [
+    "./skills/arch-gate-python",
     "./skills/ext-triage-python",
     "./skills/plan-marshall-plugin",
     "./skills/pytest-testing",

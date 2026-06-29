@@ -91,7 +91,7 @@ CERTAINTY_UNCERTAIN = 'UNCERTAIN'
 VALID_CERTAINTIES = (CERTAINTY_INCLUDE, CERTAINTY_EXCLUDE, CERTAINTY_UNCERTAIN)
 
 # ---------------------------------------------------------------------------
-# Finding types (12-type taxonomy used by manage-findings)
+# Finding types (14-type taxonomy used by manage-findings)
 # ---------------------------------------------------------------------------
 FINDING_TYPES = (
     # Lesson-like (knowledge)
@@ -107,7 +107,17 @@ FINDING_TYPES = (
     'test-failure',
     'lint-issue',
     'sonar-issue',
+    # arch-constraint: structural-boundary violations emitted by the
+    # default:verify:arch-gate verify-step (ArchUnit / import-linter /
+    # dependency-cruiser), routed to ext-triage-{domain} via the existing
+    # producer → store → triage pattern. Non-promotable; recurring violations
+    # feed the arch-constraint lesson type. See manage-findings/standards/jsonl-format.md.
+    'arch-constraint',
     'pr-comment',
+    # pr-comment-overflow: filed by the triage workflow when the per-finding
+    # budget is exhausted mid-review; signals a loop-back for the remaining
+    # unreviewed comments. See triage.md § Step 5 overflow handling.
+    'pr-comment-overflow',
 )
 
 # ---------------------------------------------------------------------------
@@ -151,7 +161,12 @@ VALID_RESOLUTIONS = (
 # ---------------------------------------------------------------------------
 # Lesson categories
 # ---------------------------------------------------------------------------
-LESSON_CATEGORIES = ('bug', 'improvement', 'anti-pattern')
+# arch-constraint is the structural-boundary lesson type fed by recurring
+# arch-gate (architectural fitness function) violations. Unlike the other three,
+# it deduplicates by RULE identity (the `rule=` metadata header) and follows a
+# retire-on-quiet / reinforce-on-recurrence lifecycle rather than the
+# promote-to-skill path. See manage-lessons/standards/file-format.md.
+LESSON_CATEGORIES = ('bug', 'improvement', 'anti-pattern', 'arch-constraint')
 
 # ---------------------------------------------------------------------------
 # Log levels

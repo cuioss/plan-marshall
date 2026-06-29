@@ -291,6 +291,31 @@ See [module-discovery.md](module-discovery.md) for the method contract and compl
 
 ---
 
+### provides_arch_gate
+
+Declares this domain's native architectural-constraint tool for the `arch-gate` canonical command. Optional additive hook mirroring `provides_triage()` / `provides_outline_skill()`: returns a descriptor naming the tool, or `None` (the default) when the domain provides no arch-gate.
+
+**Lifecycle**: Called by `skill-domains configure` for each configured domain. When any configured domain's extension returns a non-None descriptor, `configure` appends the `default:verify:arch-gate` per-deliverable read-only verify-step to `phase-5-execute.verification_steps`. Domains returning `None` append nothing — the silent-skip default.
+
+```python
+def provides_arch_gate(self) -> dict | None:
+    """Return this domain's arch-gate tool descriptor, or None.
+
+    Returns:
+        A descriptor dict ``{'tool': str}`` naming the native architectural-
+        constraint tool (e.g. ``{'tool': 'archunit'}`` for Java,
+        ``{'tool': 'import-linter'}`` for Python,
+        ``{'tool': 'dependency-cruiser'}`` for JavaScript), or None when the
+        domain provides no arch-gate.
+
+    Default: None
+    """
+```
+
+**Single execution model**: There is exactly one arch-gate execution mode — a per-deliverable read-only verify-step that resolves through `architecture resolve --command arch-gate` and runs the domain's native tool as a structural-boundary gate, parsing its output into `arch-constraint`-typed findings (see [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md)). The descriptor carries only the tool name — there is no `execution_mode` key and no piggyback-on-module-tests variant. The single authoritative model for the structural concept lives in [`manage-architecture/standards/arch-gate-fitness-functions.md`](../../manage-architecture/standards/arch-gate-fitness-functions.md); `default:verify:arch-gate` is the domain-appended verify-step described in [`ext-point-build-verify-step.md`](ext-point-build-verify-step.md) § Domain-Appended Verify Steps.
+
+---
+
 ## Extension Points
 
 Each extension point has its own contract document with formal parameters, pre-conditions, and post-conditions:
@@ -767,9 +792,9 @@ This is the only abstract method because every domain must:
 1. **Declare identity** — the domain key is used throughout marshal.json
 2. **Provide skills** — skills are the primary value a domain extension contributes
 
-### Why Five Optional Hooks?
+### Why Six Optional Hooks?
 
-All five hooks (config_defaults, provides_triage, provides_outline_skill, provides_recipes, provides_retrospective_aspects) follow the same extension model:
+All six hooks (config_defaults, provides_triage, provides_outline_skill, provides_recipes, provides_retrospective_aspects, provides_arch_gate) follow the same extension model:
 
 1. **Domain ownership** — each domain declares its own capabilities rather than core code hardcoding domain-specific behavior
 2. **Safe defaults** — all hooks return None or empty, so bundles only implement what they need
