@@ -807,6 +807,39 @@ class TestInstallEnforcementHook:
         # And the render entries were added.
         assert _count_command(pre, _RENDER_HOOK_COMMAND) == 2
 
+    def test_target_claude_enforcement_pins_settings_local_even_when_settings_json_exists(
+        self, rt, tmp_path, monkeypatch
+    ):
+        """``--target claude --enforcement`` pins settings.local.json even when a
+        shared settings.json already exists.
+
+        Regression: the enforcement install used to ride the prefer-settings.json
+        resolver, scattering the operator-local opt-in into the shared
+        settings.json where the display health-check could not see it.
+        """
+        monkeypatch.chdir(tmp_path)
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        # A pre-existing shared settings.json — the prefer-settings.json resolver
+        # would otherwise target this file.
+        settings_json = claude_dir / "settings.json"
+        settings_json.write_text(json.dumps({"permissions": {"allow": []}}))
+        shared_before = settings_json.read_text()
+
+        result = _parsed(rt.project_install_hook("claude", enforcement=True))
+
+        assert result["status"] == "success"
+        assert result["enforcement_installed"] is True
+        # The entry landed in settings.local.json, NOT the shared settings.json.
+        assert Path(result["settings_path"]).name == "settings.local.json"
+        local = json.loads((claude_dir / "settings.local.json").read_text())
+        assert _count_command(local["hooks"]["PreToolUse"], _ENFORCEMENT_HOOK_COMMAND) == 1
+        # The shared settings.json was NOT touched — byte-identical, not merely
+        # "no hooks block" (an in-place rewrite without hooks would be a bug too).
+        assert settings_json.read_text() == shared_before
+        shared = json.loads(shared_before)
+        assert "hooks" not in shared
+
 
 class TestDisplayEnforcementLabel:
     """Tests for the dedicated ``PreToolUse:enforcement`` display present/MISSING label."""
@@ -847,6 +880,25 @@ class TestDisplayEnforcementLabel:
         detail = display_result["detail"]
         assert "PreToolUse:enforcement: present" in detail
         assert "SessionStart:matcher-less: MISSING" in detail
+
+    def test_display_reports_enforcement_present_when_entry_in_settings_json(
+        self, rt, tmp_path, monkeypatch
+    ):
+        """The display check detects the enforcement entry in settings.json too.
+
+        Regression: the display check used to read ONLY settings.local.json, so an
+        enforcement entry living in the shared settings.json (where the
+        prefer-settings.json resolver could place it) was reported MISSING even
+        though it was registered. The check now reads both files, like the
+        sibling ``hook`` check.
+        """
+        target = tmp_path / ".claude" / "settings.json"
+        rt.project_install_hook(str(target), enforcement=True)
+        monkeypatch.chdir(tmp_path)
+
+        result = _parsed(rt.health_check("display"))
+        display_result = next(r for r in result["results"] if r["check"] == "display")
+        assert "PreToolUse:enforcement: present" in display_result["detail"]
 
 
 # =============================================================================

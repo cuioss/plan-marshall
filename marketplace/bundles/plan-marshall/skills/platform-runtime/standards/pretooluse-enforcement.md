@@ -88,7 +88,10 @@ without the other).
   dedicated `PreToolUse:enforcement: present` / `MISSING` label, keyed on the
   enforcement command (not the render command), so a partial or absent
   enforcement install is diagnosable independently of the terminal-title wiring.
-  The enforcement label does not gate the terminal-title `healthy` flag.
+  The enforcement label does not gate the terminal-title `healthy` flag. The
+  check inspects BOTH `.claude/settings.json` and `.claude/settings.local.json`
+  (an entry in either file counts as present), matching the `hook` check and the
+  fact that a hook entry can legitimately live in either file.
 - **Menu surface.** The marshall-steward Configuration → Enforcement Hook action
   drives the detect→confirm→install flow; see
   [`../../marshall-steward/references/menu-enforcement-hook.md`](../../marshall-steward/references/menu-enforcement-hook.md).
