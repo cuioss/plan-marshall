@@ -34,7 +34,7 @@ See [extension-contract.md](../extension-api/standards/extension-contract.md) fo
 |----------|---------|
 | `get_skill_domains()` | Returns `build` domain (empty profiles) + `general-dev` domain (cross-cutting dev skills) |
 | `discover_modules(project_root)` | Discover modules across Maven, Gradle, npm, and Python |
-| `provides_recipes()` | Returns the `code-review`, `refactor-to-profile-standards`, and `security-audit` recipes |
+| `provides_recipes()` | Returns the `code-review`, `refactor-to-profile-standards`, `security-audit`, and `agentfile-hygiene` recipes |
 | `applies_to_module(module_data)` | Applies general-dev skills to modules with code build systems |
 
 ## Discovery Flow

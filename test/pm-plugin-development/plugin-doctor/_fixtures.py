@@ -131,6 +131,8 @@ _abfic = _load('_analyze_bash_fence_inline_code_exemption.py', '_abfic_fixtures'
 _asm = _load('_analyze_skill_mode.py', '_asm_fixtures')
 _appu = _load('_analyze_persona_profile_uniqueness.py', '_appu_fixtures')
 _apbr = _load('_analyze_persona_binding_resolves.py', '_apbr_fixtures')
+_aalb = _load('_analyze_agentfile_line_budget.py', '_aalb_fixtures')
+_aadt = _load('_analyze_agentfile_directory_tree.py', '_aadt_fixtures')
 
 # ---------------------------------------------------------------------------
 # Registered-rule-ID extraction (relocated verbatim from the deleted
@@ -537,6 +539,23 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
                 'Bash: run the command here\n'
             )
         },
+    )
+
+    # --- Agentfile-hygiene cluster (repo-root agentfile corpus) -------------
+    # Both rules anchor at the repo root derived as marketplace_root.parent.parent,
+    # so the lambda passes ``root / 'marketplace' / 'bundles'`` to make the
+    # scratch root itself the repo root the agentfiles are materialized under.
+    corpus['agentfile-line-count-over-budget'] = FixtureSpec(
+        analyzer=lambda root: _aalb.analyze_agentfile_line_budget(
+            root / 'marketplace' / 'bundles'
+        ),
+        files={'CLAUDE.md': '# F\n' + ('line\n' * 205)},
+    )
+    corpus['agentfile-directory-tree-present'] = FixtureSpec(
+        analyzer=lambda root: _aadt.analyze_agentfile_directory_tree(
+            root / 'marketplace' / 'bundles'
+        ),
+        files={'CLAUDE.md': '# F\n\n```\nrepo/\n├── src/\n└── main.py\n```\n'},
     )
 
     # --- Reference-resolution cluster (plugin.json / Skill: / recipe) -------
@@ -1248,3 +1267,17 @@ def fired_rule_ids() -> set[str]:
     # crafted-claim builder so the meta-test never depends on test ordering.
     fired |= _finding_rule_ids(crossfile_verified_findings())
     return fired
+
+
+# ---------------------------------------------------------------------------
+# Shared source-inspection utilities (used by registration tests)
+# ---------------------------------------------------------------------------
+
+
+def _function_body(source: str, func_name: str) -> str:
+    """Return the source slice of a top-level ``def func_name(`` block."""
+    marker = f'\ndef {func_name}('
+    start = source.index(marker)
+    rest = source[start + len(marker):]
+    next_def = rest.find('\ndef ')
+    return rest if next_def == -1 else rest[:next_def]

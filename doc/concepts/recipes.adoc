@@ -86,6 +86,10 @@ Recipe-match is paired with *request-aspect classification* (`manage-config aspe
 | link:../../marketplace/bundles/plan-marshall/skills/recipe-security-audit/SKILL.md[`plan-marshall`]
 | `security-audit`
 | On-demand security audit over the current footprint using best-effort security context. Emits `bug` / `anti-pattern` findings into the triage pipeline.
+
+| link:../../marketplace/bundles/plan-marshall/skills/recipe-agentfile-hygiene/SKILL.md[`plan-marshall`]
+| `agentfile-hygiene`
+| Cognitive sweep classifying every `CLAUDE.md` / `AGENTS.md` section against the shared agentfile context-hygiene rubric and emitting one remediation deliverable (trim / demote / delete) per offending section. A *plan-shape* recipe — its fast deterministic backstop is the pair of `pm-plugin-development:plugin-doctor` analyze rules `agentfile-line-count-over-budget` and `agentfile-directory-tree-present`. See link:../../marketplace/bundles/plan-marshall/skills/recipe-agentfile-hygiene/SKILL.md[`recipe-agentfile-hygiene/SKILL.md`] for the recipe workflow steps and link:../../marketplace/bundles/plan-marshall/skills/ref-agentfile-hygiene/standards/rubric.md[`ref-agentfile-hygiene/standards/rubric.md`] for the rubric.
 |===
 
 == The audit recipe family

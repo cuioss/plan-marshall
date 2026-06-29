@@ -85,5 +85,7 @@
     }
   },
   "skills_by_profile_reasoning": "general-dev: cross-cutting baseline; default module covers infra-level tests + adapter without language-specific bundle binding; Batch: marshall-plugin build_system detected; all marketplace bundles host skills/scripts authored under plugin-architecture standards",
-  "tips": []
+  "tips": [
+    "Whole-tree coverage is an orchestrator-tier build (~37min instrumented) that the harness kills, and the build-pyproject per-module coverage wrapper timeout (~123s) is too short for instrumented whole-tree runs. Defer whole-tree coverage to CI verify rather than running it locally. Scope local coverage to a single module when a local run is needed."
+  ]
 }

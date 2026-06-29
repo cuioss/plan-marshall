@@ -36,6 +36,8 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from _analyze_agentfile_directory_tree import analyze_agentfile_directory_tree
+from _analyze_agentfile_line_budget import analyze_agentfile_line_budget
 from _analyze_allowed_tools_drift import analyze_allowed_tools_drift
 from _analyze_argument_naming import analyze_argument_naming
 from _analyze_bash_chain_shapes_in_skills import analyze_bash_chain_shapes_in_skills
@@ -617,6 +619,27 @@ def cmd_analyze(args) -> dict:
     historical_prose_issues = analyze_historical_prose_in_skills(marketplace_root)
     all_issues.extend(historical_prose_issues)
     total_issues += len(historical_prose_issues)
+
+    # Agentfile-hygiene backstop rules (analyze-surfaced only — intentionally
+    # NOT in quality-gate). Two deterministic rules embody the shared rubric in
+    # plan-marshall:ref-agentfile-hygiene and back the cognitive
+    # recipe-agentfile-hygiene sweep:
+    #   - agentfile-line-count-over-budget: an always-on agentfile (CLAUDE.md at
+    #     any nesting level, AGENTS.md) over the line budget is a bloat proxy.
+    #   - agentfile-directory-tree-present: a fenced directory-tree drawing
+    #     (├──/│/└── glyphs) in an agentfile is inert content.
+    # Discovery anchors at the repo root (not the bundle tree), so each rule
+    # translates marketplace_root to the repo root internally. They are absent
+    # from quality-gate because the repository's own agentfiles legitimately
+    # exceed the heuristic budget / draw trees; the rules are advisory backstops
+    # for the recipe, not build gates.
+    agentfile_line_budget_issues = analyze_agentfile_line_budget(marketplace_root)
+    all_issues.extend(agentfile_line_budget_issues)
+    total_issues += len(agentfile_line_budget_issues)
+
+    agentfile_directory_tree_issues = analyze_agentfile_directory_tree(marketplace_root)
+    all_issues.extend(agentfile_directory_tree_issues)
+    total_issues += len(agentfile_directory_tree_issues)
 
     # The manage-invocation rule cluster (manage-invocation-invalid +
     # missing-canonical-block) is intentionally NOT run here. It derives each
