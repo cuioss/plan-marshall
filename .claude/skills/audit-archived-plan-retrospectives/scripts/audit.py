@@ -2333,9 +2333,13 @@ def _qc_resolution(obj: dict[str, Any]) -> str:
         return "loop_back" if _QC_LOOPBACK_RE.search(detail) else "direct_fix"
     if res in {"accepted", "suppressed", "rejected"}:
         return res
-    if res in {"pending", "none", ""}:
-        return "pending"
-    return res
+    # Everything else — pending/none/empty AND any unrecognized resolution —
+    # buckets to `pending` rather than returning an unbucketed value. Returning
+    # an unknown resolution directly KeyError-crashed the matrix when the
+    # ext-point-verify `rejected` disposition was introduced (#788); coercing an
+    # unknown disposition to the genuine-severity `pending` bucket surfaces it as
+    # unresolved instead of crashing, until it earns its own explicit bucket.
+    return "pending"
 
 
 def _qc_shift_left_tier(obj: dict[str, Any]) -> int:

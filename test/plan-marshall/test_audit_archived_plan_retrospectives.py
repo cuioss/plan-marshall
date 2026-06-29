@@ -2370,7 +2370,12 @@ class TestQualityChainResolution:
     def test_pending_none_empty_bucket_to_pending(self):
         assert audit._qc_resolution({'resolution': 'pending'}) == 'pending'
         assert audit._qc_resolution({'resolution': 'none'}) == 'pending'
+        assert audit._qc_resolution({'resolution': ''}) == 'pending'
         assert audit._qc_resolution({}) == 'pending'
+        # An unrecognized resolution coerces to `pending` rather than returning
+        # an unbucketed value that would KeyError the matrix (the next #788-style
+        # disposition addition is crash-safe, surfaced as unresolved).
+        assert audit._qc_resolution({'resolution': 'unrecognized_disposition'}) == 'pending'
 
 class TestQualityChainShiftLeftTier:
     """``_qc_shift_left_tier`` grades how deterministically the surfacer could
