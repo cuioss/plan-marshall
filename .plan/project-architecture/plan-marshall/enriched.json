@@ -1,5 +1,7 @@
 {
-  "best_practices": [],
+  "best_practices": [
+    "manage-tasks qgate-mechanical-checks keyword_drift findings are a standing consideration: when the mechanical-checks q-gate flags keyword drift between a description and its body, fold the correction into the work (taken_into_account) rather than suppressing it."
+  ],
   "insights": [],
   "internal_dependencies": [],
   "key_dependencies": [],
