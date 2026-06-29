@@ -89,31 +89,47 @@ def count_lines(text: str) -> int:
     return len(text.splitlines())
 
 
+def _fence_run(stripped: str) -> tuple[str, int]:
+    """Return ``(fence_char, run_length)`` for a line's leading fence run.
+
+    A fence run is at least three identical ```` ` ```` or ``~`` characters at
+    the start of the (left-stripped) line. Returns ``('', 0)`` when the line is
+    not a fence line.
+    """
+    for ch in ('`', '~'):
+        if stripped.startswith(ch * 3):
+            return ch, len(stripped) - len(stripped.lstrip(ch))
+    return '', 0
+
+
 def fenced_block_spans(lines: list[str]) -> list[tuple[int, int]]:
     """Return ``(open_idx, close_idx)`` 0-based inclusive ranges of fenced blocks.
 
-    Tracks ```` ``` ```` and ``~~~`` fences. ``open_idx`` is the opening-fence
-    line index and ``close_idx`` is the closing-fence line index. An
-    unterminated fence extends to the final line. Only the same fence character
-    that opened a block closes it, so a ``~~~`` line inside a ```` ``` ```` block
-    does not prematurely close it.
+    Tracks ```` ``` ```` and ``~~~`` fences per CommonMark closing-fence rules.
+    ``open_idx`` is the opening-fence line index and ``close_idx`` is the
+    closing-fence line index. An unterminated fence extends to the final line.
+
+    A closing fence must use the same fence character as the opening fence, be at
+    least as long as it, and carry no info string (only fence characters plus
+    optional trailing whitespace). This means an info-string-bearing fence line
+    such as ```` ```python ```` nested inside a block is content, not a close, and
+    a ``~~~`` line inside a ```` ``` ```` block likewise does not close it.
     """
     spans: list[tuple[int, int]] = []
     open_idx: int | None = None
     fence_char = ''
+    fence_len = 0
     for idx, line in enumerate(lines):
         stripped = line.lstrip()
+        ch, run = _fence_run(stripped)
         if open_idx is None:
-            if stripped.startswith('```'):
-                open_idx, fence_char = idx, '`'
-            elif stripped.startswith('~~~'):
-                open_idx, fence_char = idx, '~'
-        else:
-            marker = '```' if fence_char == '`' else '~~~'
-            if stripped.startswith(marker):
-                spans.append((open_idx, idx))
-                open_idx = None
-                fence_char = ''
+            if ch:
+                open_idx, fence_char, fence_len = idx, ch, run
+        elif ch == fence_char and run >= fence_len and stripped.rstrip() == ch * run:
+            spans.append((open_idx, idx))
+            open_idx = None
+            fence_char = ''
+            fence_len = 0
     if open_idx is not None:
         spans.append((open_idx, len(lines) - 1))
     return spans

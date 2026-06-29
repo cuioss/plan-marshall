@@ -119,6 +119,24 @@ class TestFencedTreeFlagged:
 
         assert len(findings) == 1
 
+    def test_nested_language_tagged_fence_does_not_split_block(self, tmp_path: Path) -> None:
+        """A language-tagged inner fence is content, not a premature close.
+
+        The outer block opens with four backticks and embeds a ``` ```python ```
+        line (three backticks, with an info string) before a tree glyph. A naive
+        ``startswith('```')`` close check would mis-pair the fences, close the
+        block at the inner line, and leave the glyph outside any block (a false
+        negative). Tracking the opening fence length and rejecting info-string
+        closes keeps the block open so the glyph is flagged.
+        """
+        repo, bundles = _make_repo(tmp_path)
+        content = '````\n```python\n├── tree\n````\n'
+        _write_agentfile(repo, 'CLAUDE.md', content)
+
+        findings = analyze_agentfile_directory_tree(bundles)
+
+        assert len(findings) == 1
+
     def test_finding_shape(self, tmp_path: Path) -> None:
         repo, bundles = _make_repo(tmp_path)
         _write_agentfile(repo, 'CLAUDE.md', _TREE_FENCE)
