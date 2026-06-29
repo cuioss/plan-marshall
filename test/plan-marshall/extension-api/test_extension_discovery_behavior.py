@@ -404,8 +404,8 @@ _VERIFY_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-build-
 def _write_finalize_step(skills_root, dir_name, *, implements, name=None, order=0):
     """Create a project-local ``{dir_name}/SKILL.md`` declaring ``implements``.
 
-    Returns the created step directory. ``skills_root`` and parents are created
-    on demand so callers pass a not-yet-existing ``.claude/skills`` path.
+    ``skills_root`` and parents are created on demand so callers pass a
+    not-yet-existing ``.claude/skills`` path.
     """
     step_dir = skills_root / dir_name
     step_dir.mkdir(parents=True, exist_ok=True)
@@ -414,7 +414,6 @@ def _write_finalize_step(skills_root, dir_name, *, implements, name=None, order=
         lines.append(f'name: {name}')
     lines.extend([f'order: {order}', '---', '', '# Body', ''])
     (step_dir / 'SKILL.md').write_text('\n'.join(lines), encoding='utf-8')
-    return step_dir
 
 
 def test_scan_project_discovers_step_from_cwd_resolved_root(tmp_path, monkeypatch):
