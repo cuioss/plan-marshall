@@ -151,16 +151,16 @@ Using `.plan/temp/` ensures:
 
 ### R2: Wrapper Preference
 
-Extensions **must** prefer project-local wrappers over system installations. When `require_wrapper` is true (the default for maven, gradle, and pyproject), a missing wrapper is a **hard error** — the shared factory raises `FileNotFoundError` rather than falling through to a system binary. The `build.{tool}.require_wrapper` knob in marshal.json is the escape valve: setting it `false` restores the system fallback for a repo that genuinely lacks a checked-in wrapper.
+Extensions **must** prefer project-local wrappers over system installations. The shared factory's `_resolve_wrapper` resolves the project wrapper when present and falls back to the system binary when no checked-in wrapper exists.
 
-| Build System | Wrapper Priority | Missing-wrapper behaviour (default) |
-|--------------|------------------|-------------------------------------|
-| Maven | `./mvnw` → `mvn` | `require_wrapper=true` → hard error; `false` → system `mvn` |
-| Gradle | `./gradlew` → `gradle` | `require_wrapper=true` → hard error; `false` → system `gradle` |
-| pyproject | `./pw` → `pw.bat` | `require_wrapper=true` → hard error; `false` → system `pwx` |
-| npm | `npx` → `npm` | no wrapper concept; `require_wrapper` N-A |
+| Build System | Wrapper Priority | Missing-wrapper behaviour |
+|--------------|------------------|---------------------------|
+| Maven | `./mvnw` → `mvn` | system `mvn` |
+| Gradle | `./gradlew` → `gradle` | system `gradle` |
+| pyproject | `./pw` → `pw.bat` | system `pwx` |
+| npm | `npx` → `npm` | no wrapper concept |
 
-**Rationale**: Project wrappers ensure consistent versions across environments. Defaulting `require_wrapper` on closes the local-vs-CI divergence where a missing wrapper silently fell through to a globally-installed binary, so a build that passes locally can still break the whole-repo CI run.
+**Rationale**: Project wrappers ensure consistent versions across environments, so they are preferred whenever a checked-in wrapper is present.
 
 ### R3: Timeout Learning
 

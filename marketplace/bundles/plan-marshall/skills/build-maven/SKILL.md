@@ -8,7 +8,7 @@ implements: plan-marshall:extension-api/standards/ext-point-build
 
 # Build Maven
 
-Maven build execution with output parsing, module discovery, and wrapper detection. The project wrapper (`mvnw`) is **required by default** (`build.maven.require_wrapper`, default `true`): a build with no checked-in wrapper errors early instead of falling through to a system `mvn`. See [`build-api-reference.md`](../extension-api/standards/build-api-reference.md) § Wrapper Detection for the detection table and [`manage-config` SKILL.md](../manage-config/SKILL.md) § Build Wrapper-Policy Settings for the `build.maven.require_wrapper=false` escape valve.
+Maven build execution with output parsing, module discovery, and wrapper detection. Wrapper resolution prefers the project wrapper (`mvnw`) and falls back to the system `mvn` when no checked-in wrapper is present. See [`build-api-reference.md`](../extension-api/standards/build-api-reference.md) § Wrapper Detection for the detection table.
 
 ## Enforcement
 

@@ -167,18 +167,36 @@ def test_parse_log_handles_empty_file():
         assert test_summary is None
 
 
-def test_execute_direct_returns_error_when_no_wrapper():
-    """execute_direct() returns error when no wrapper is found."""
+def test_execute_direct_absent_wrapper_resolves_system_fallback():
+    """execute_direct() with no ./pw wrapper resolves to the system fallback
+    ('pwx') and runs it — no error is produced.
+
+    The require_wrapper gate was removed: an absent project wrapper now
+    auto-detects the system binary rather than erroring out. This mirrors
+    test_pyproject_execute.py::test_execute_direct_absent_wrapper_resolves_system_binary
+    at the real subprocess seam (that sibling test mocks the factory base; this
+    one drives execute_direct through subprocess.run)."""
     with BuildContext() as ctx:
-        # No ./pw and no system pwx
-        with patch('shutil.which', return_value=None):
+        # No ./pw wrapper in the project dir; pwx absent from PATH.
+        plan_temp = ctx.temp_dir / '.plan' / 'temp' / 'build-output' / 'default'
+        plan_temp.mkdir(parents=True)
+
+        # Mock subprocess.run to return success
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with (
+            patch('shutil.which', return_value=None),
+            patch('subprocess.run', return_value=mock_result),
+            patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
+        ):
             result = execute_direct(
                 args='verify', command_key='python:verify', default_timeout=300, project_dir=str(ctx.temp_dir)
             )
 
-            assert result['status'] == 'error'
-            assert result['exit_code'] == -1
-            assert 'No python wrapper found' in result['error']
+            assert result['status'] == 'success'
+            assert result['exit_code'] == 0
+            assert result['wrapper'] == 'pwx'
 
 
 def test_execute_direct_returns_success_on_zero_exit():

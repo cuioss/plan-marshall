@@ -1659,19 +1659,44 @@ def test_get_default_config_surfaces_build_queue_upper_limit_seconds_default_600
     assert config['build']['queue'].get('upper_limit_seconds') == 600
 
 
-def test_default_config_seeds_build_require_wrapper():
-    """get_default_config() must seed build.{tool}.require_wrapper with the
-    documented per-system defaults (true for maven/gradle/pyproject, false for
-    npm), peer to the build.queue block (no regression of that peer block)."""
+def test_default_config_seeds_no_require_wrapper():
+    """get_default_config() must NOT seed any build.{tool}.require_wrapper key.
+
+    The require_wrapper knob was removed entirely (wrapper presence is now
+    auto-detected per build system), so a freshly-seeded build block carries no
+    per-build-system block and no require_wrapper key anywhere — while the peer
+    build.queue block is untouched (additive removal only, no regression of that
+    peer block).
+    """
     config = _config_defaults_mod.get_default_config()
     build = config.get('build', {})
 
-    assert build.get('maven', {}).get('require_wrapper') is True
-    assert build.get('gradle', {}).get('require_wrapper') is True
-    assert build.get('pyproject', {}).get('require_wrapper') is True
-    assert build.get('npm', {}).get('require_wrapper') is False
-    # The peer build.queue block is still present (additive seeding).
+    # No per-build-system block is seeded, so no require_wrapper key exists.
+    for tool in ('maven', 'gradle', 'pyproject', 'npm'):
+        assert tool not in build, (
+            f'build.{tool} block must not be seeded — the require_wrapper knob was removed'
+        )
+    # Defensive: no nested block anywhere carries a require_wrapper key.
+    for key, sub in build.items():
+        if isinstance(sub, dict):
+            assert 'require_wrapper' not in sub, (
+                f'build.{key} must not carry a require_wrapper key'
+            )
+    # The peer build.queue block is still present (additive removal only).
     assert 'queue' in build
+
+
+def test_config_defaults_module_drops_require_wrapper_seed_constant():
+    """The DEFAULT_BUILD_REQUIRE_WRAPPER seed constant must be removed outright.
+
+    The per-build-system wrapper-policy seed was deleted along with the knob; a
+    surviving module-level constant would re-introduce the removed configuration
+    surface, so the constant must no longer exist.
+    """
+    assert not hasattr(_config_defaults_mod, 'DEFAULT_BUILD_REQUIRE_WRAPPER'), (
+        'DEFAULT_BUILD_REQUIRE_WRAPPER must be removed — the require_wrapper knob '
+        'was retired in favour of auto-detection'
+    )
 
 
 def test_marshal_build_queue_max_slots_override_wins(plan_context, monkeypatch):

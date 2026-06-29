@@ -58,7 +58,6 @@ _CONFIG = ExecuteConfig(
     scope_fn=_gradle_scope_fn,
     command_key_fn=_gradle_command_key_fn,
     default_timeout=DEFAULT_BUILD_TIMEOUT,
-    require_wrapper=True,
 )
 
 execute_direct, cmd_run = create_execute_handlers(_CONFIG, parse_log)
