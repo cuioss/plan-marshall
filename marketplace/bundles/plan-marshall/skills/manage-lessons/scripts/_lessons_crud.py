@@ -186,44 +186,6 @@ def set_body(
 # lifecycle alongside ``cleanup-superseded`` — deliberately NOT promote-to-skill.
 
 
-def _render_lesson(metadata: dict, title: str, body: str) -> str:
-    """Render a lesson file's content (metadata header, H1 title, body).
-
-    Mirrors ``write_lesson_to`` / ``_build_lesson_content`` in manage-lessons so
-    a reinforced lesson keeps the canonical on-disk shape.
-    """
-    lines = [f'{key}={value}' for key, value in metadata.items()]
-    lines.append('')
-    lines.append(f'# {title}')
-    lines.append('')
-    lines.append(body)
-    rendered = '\n'.join(lines)
-    if not rendered.endswith('\n'):
-        rendered += '\n'
-    return rendered
-
-
-def _read_lesson_file(target: Path) -> tuple[dict, str, str]:
-    """Return (metadata, title, body) for a lesson file.
-
-    Uses ``parse_markdown_metadata`` for the ``key=value`` header and locates the
-    first ``# `` line for the title; the body is everything after it. Returns
-    empty parts for a malformed file so callers can skip uniformly.
-    """
-    content = target.read_text(encoding='utf-8')
-    metadata = parse_markdown_metadata(content)
-    lines = content.split('\n')
-    title = ''
-    body_start = 0
-    for i, line in enumerate(lines):
-        if line.startswith('# '):
-            title = line[2:].strip()
-            body_start = i + 1
-            break
-    body = '\n'.join(lines[body_start:]).strip()
-    return metadata, title, body
-
-
 def find_active_arch_constraint_by_rule(lessons_dir: Path, rule: str) -> str | None:
     """Return the id of the active arch-constraint lesson for ``rule``, or None.
 
@@ -275,7 +237,18 @@ def reinforce_arch_constraint(
             'message': f'Lesson {lesson_id} not found',
         }
 
-    metadata, title, body = _read_lesson_file(target)
+    content = target.read_text(encoding='utf-8')
+    metadata = parse_markdown_metadata(content)
+    raw_lines = content.split('\n')
+    title = ''
+    body_start = 0
+    for i, line in enumerate(raw_lines):
+        if line.startswith('# '):
+            title = line[2:].strip()
+            body_start = i + 1
+            break
+    body = '\n'.join(raw_lines[body_start:]).strip()
+
     try:
         count = int(metadata.get('recurrence_count', '1')) + 1
     except (TypeError, ValueError):
@@ -288,7 +261,15 @@ def reinforce_arch_constraint(
         section += f'\n\n{detail.rstrip()}'
     new_body = f'{body.rstrip()}\n\n{section}' if body.strip() else section
 
-    atomic_write_file(target, _render_lesson(metadata, title, new_body))
+    out_lines = [f'{key}={value}' for key, value in metadata.items()]
+    out_lines.append('')
+    out_lines.append(f'# {title}')
+    out_lines.append('')
+    out_lines.append(new_body)
+    rendered = '\n'.join(out_lines)
+    if not rendered.endswith('\n'):
+        rendered += '\n'
+    atomic_write_file(target, rendered)
 
     return {
         'status': 'success',

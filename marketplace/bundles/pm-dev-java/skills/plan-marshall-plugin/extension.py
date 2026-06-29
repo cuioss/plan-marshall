@@ -206,16 +206,5 @@ class Extension(ExtensionBase):
         return 'pm-dev-java:ext-triage-java'
 
     def provides_arch_gate(self) -> dict | None:
-        """Declare the Java domain's arch-gate tool (ArchUnit).
-
-        Returns the single-field descriptor naming ArchUnit as the native
-        architectural-constraint tool. There is one execution model — a
-        per-deliverable read-only verify-step that resolves through
-        ``architecture resolve --command arch-gate`` and runs the ``@ArchTest``
-        rules as a dedicated ArchUnit-only invocation, emitting
-        ``arch-constraint``-typed findings. The descriptor carries only the
-        tool name (no ``execution_mode`` key). The structural model is owned by
-        ``plan-marshall:manage-architecture`` arch-gate-fitness-functions.md;
-        the Java binding is documented in ``pm-dev-java:arch-gate-java``.
-        """
+        """ArchUnit: Java arch-gate tool. Binding: pm-dev-java:arch-gate-java."""
         return {'tool': 'archunit'}

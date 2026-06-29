@@ -1617,35 +1617,36 @@ def cmd_supersede(args: argparse.Namespace) -> dict:
     }
 
 
-def _resolve_retention_days(cli_value: int | None) -> int:
-    """Resolve effective ``retention_days`` for ``cleanup-superseded``.
+def _resolve_retention_setting(cli_value: int | None, config_key: str, fallback: int) -> int:
+    """Resolve a ``system.retention`` integer setting.
 
-    Precedence:
-        1. ``cli_value`` (from ``--retention-days``) when not None.
-        2. ``system.retention.lessons_superseded_days`` from marshal.json.
-        3. :data:`DEFAULT_LESSONS_SUPERSEDED_DAYS` (hard fallback).
-
-    A missing or unreadable marshal.json silently falls through to the hard
-    fallback — this command must remain usable on pre-init checkouts where
-    marshal.json has not yet been written.
+    Precedence: ``cli_value`` (when not None) → ``system.retention.{config_key}``
+    from marshal.json → ``fallback``. A missing or unreadable marshal.json silently
+    falls through to the hard fallback so these commands remain usable on pre-init
+    checkouts.
     """
     if cli_value is not None:
         return cli_value
 
     marshal_path = get_marshal_path()
     if not marshal_path.exists():
-        return DEFAULT_LESSONS_SUPERSEDED_DAYS
+        return fallback
 
     try:
         config = json.loads(marshal_path.read_text(encoding='utf-8'))
     except (json.JSONDecodeError, OSError):
-        return DEFAULT_LESSONS_SUPERSEDED_DAYS
+        return fallback
 
     retention = config.get('system', {}).get('retention', {})
-    value = retention.get('lessons_superseded_days')
+    value = retention.get(config_key)
     if isinstance(value, int) and value >= 0:
         return value
-    return DEFAULT_LESSONS_SUPERSEDED_DAYS
+    return fallback
+
+
+def _resolve_retention_days(cli_value: int | None) -> int:
+    """Resolve effective ``retention_days`` for ``cleanup-superseded``."""
+    return _resolve_retention_setting(cli_value, 'lessons_superseded_days', DEFAULT_LESSONS_SUPERSEDED_DAYS)
 
 
 def cmd_cleanup_superseded(args: argparse.Namespace) -> dict:
@@ -1752,34 +1753,8 @@ def cmd_cleanup_superseded(args: argparse.Namespace) -> dict:
 
 
 def _resolve_quiet_days(cli_value: int | None) -> int:
-    """Resolve the effective retire-on-quiet window (days) for ``retire-quiet``.
-
-    Precedence:
-        1. ``cli_value`` (from ``--quiet-days``) when not None.
-        2. ``system.retention.arch_constraint_quiet_days`` from marshal.json.
-        3. :data:`DEFAULT_ARCH_CONSTRAINT_QUIET_DAYS` (hard fallback).
-
-    A missing or unreadable marshal.json silently falls through to the hard
-    fallback so the command stays usable on pre-init checkouts (mirrors
-    :func:`_resolve_retention_days`).
-    """
-    if cli_value is not None:
-        return cli_value
-
-    marshal_path = get_marshal_path()
-    if not marshal_path.exists():
-        return DEFAULT_ARCH_CONSTRAINT_QUIET_DAYS
-
-    try:
-        config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    except (json.JSONDecodeError, OSError):
-        return DEFAULT_ARCH_CONSTRAINT_QUIET_DAYS
-
-    retention = config.get('system', {}).get('retention', {})
-    value = retention.get('arch_constraint_quiet_days')
-    if isinstance(value, int) and value >= 0:
-        return value
-    return DEFAULT_ARCH_CONSTRAINT_QUIET_DAYS
+    """Resolve the effective retire-on-quiet window (days) for ``retire-quiet``."""
+    return _resolve_retention_setting(cli_value, 'arch_constraint_quiet_days', DEFAULT_ARCH_CONSTRAINT_QUIET_DAYS)
 
 
 def cmd_retire_quiet(args: argparse.Namespace) -> dict:
