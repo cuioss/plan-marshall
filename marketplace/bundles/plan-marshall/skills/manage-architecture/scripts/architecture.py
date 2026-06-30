@@ -48,6 +48,15 @@ def main() -> int:
         action='store_true',
         help='Overwrite the existing project-architecture/ tree (atomic tmp+swap)',
     )
+    discover_parser.add_argument(
+        '--regenerate-description',
+        dest='regenerate_description',
+        action='store_true',
+        help=(
+            'Blank the project description/description_reasoning instead of '
+            'preserving the existing curated values (opt back into regeneration)'
+        ),
+    )
 
     # init - Initialize per-module enrichment stubs
     init_parser = subparsers.add_parser(
