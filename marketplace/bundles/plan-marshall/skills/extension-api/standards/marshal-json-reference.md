@@ -20,6 +20,9 @@ Central reference for all extension-related configuration paths in `marshal.json
 | Path | Set By | Used By | Extension Point Doc |
 |------|--------|---------|---------------------|
 | `plan.phase-1-init.init_without_asking` | User config | plan-marshall orchestrator | - |
+| `plan.phase-1-init.lane_selection` (`ask`\|`auto`; default `ask`) | User config | phase-1-init lane dialogue, manage-execution-manifest (posture) | [ext-point-lane-element.md](ext-point-lane-element.md) |
+| `plan.phase-1-init.lane_prune_thresholds` (`confidence_complete`, `linear_change_max_deliverables`) | User config | manage-execution-manifest (`auto` prune predicates) | [ext-point-lane-element.md](ext-point-lane-element.md) |
+| `plan.<phase>.steps.<step>.lane` (per-element override `off`\|`minimal`\|`auto`\|`full`\|`ask`) | User config | manage-execution-manifest (lane resolution) | [ext-point-lane-element.md](ext-point-lane-element.md) |
 | `plan.phase-2-refine.confidence_threshold` | User config | phase-2-refine | - |
 | `plan.phase-2-refine.compatibility` | User config | phase-2-refine, phase-3-outline | - |
 | `plan.phase-3-outline.plan_without_asking` | User config | plan-marshall orchestrator | - |

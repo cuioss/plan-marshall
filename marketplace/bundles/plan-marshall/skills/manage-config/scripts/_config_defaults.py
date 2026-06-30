@@ -119,6 +119,137 @@ def validate_run_at_all(value: str, field_name: str) -> None:
         )
 
 
+# ---------------------------------------------------------------------------
+# Lane / execution-profile selection config.
+#
+# Three operator-facing knobs governing the execution-profile lane mechanism.
+# The per-element lane vocabulary (the closed `lane.class` enum), the
+# class→default tier table, and the prune-predicate NAMES are owned by the
+# central standard
+# (`extension-api/standards/ext-point-lane-element.md`) — these knobs carry only
+# the project-level posture / override / threshold config the manifest composer
+# resolves OVER that contract; they do not restate the enforcement-critical
+# enums.
+# ---------------------------------------------------------------------------
+
+# `lane_selection` (`plan.phase-1-init.lane_selection`) — whether init PROMPTS
+# for the execution-profile posture or silently takes the computed `auto`
+# posture.
+#   - 'ask'  (default): surface the minimal/auto/full posture dialogue at init.
+#   - 'auto':           skip the dialogue and take the `auto` projection silently.
+# Mirrors the sibling deep_lane / finalize_without_asking ask/auto family.
+VALID_LANE_SELECTION = ('ask', 'auto')
+
+
+def validate_lane_selection(value: str) -> None:
+    """Validate `lane_selection` (``ask|auto``).
+
+    Args:
+        value: The candidate lane-selection value.
+
+    Raises:
+        ValueError: If ``value`` is not in :data:`VALID_LANE_SELECTION`.
+    """
+    if value not in VALID_LANE_SELECTION:
+        raise ValueError(
+            f"Invalid lane_selection '{value}'. Allowed: {list(VALID_LANE_SELECTION)}"
+        )
+
+
+# Per-element lane override value set. Pins any lane-participating element
+# (nested under `plan.<phase>.steps.<step>.lane` in marshal.json, the same
+# channel finalize-step params use) to a fixed posture cutoff:
+#   - 'off':     never run the element (drops even a core/derived-state floor
+#                element — honored, but a derived-state weakening additionally
+#                emits a correctness warning at compose time).
+#   - 'minimal': force-keep in every posture (promote to the floor).
+#   - 'auto' / 'full': pin the element's effective tier on the lattice.
+#   - 'ask':     always surface the element individually in the init dialogue.
+# The shipped per-element default lives in each element's frontmatter `lane:`
+# block; this override is absent by default — marshal.json carries only the
+# project / meta overrides.
+VALID_LANE_OVERRIDE = ('off', 'minimal', 'auto', 'full', 'ask')
+
+
+def validate_lane_override(value: str, field_name: str = 'lane') -> None:
+    """Validate a per-element lane override (``off|minimal|auto|full|ask``).
+
+    Args:
+        value: The candidate override value.
+        field_name: The dotted ``plan.<phase>.steps.<step>.lane`` path, used in
+            the error message so a rejected value names the offending element.
+
+    Raises:
+        ValueError: If ``value`` is not in :data:`VALID_LANE_OVERRIDE`.
+    """
+    if value not in VALID_LANE_OVERRIDE:
+        raise ValueError(
+            f"Invalid {field_name} '{value}'. Allowed: {list(VALID_LANE_OVERRIDE)}"
+        )
+
+
+# Prune-predicate thresholds (`plan.phase-1-init.lane_prune_thresholds`) — the
+# tunable numeric thresholds the `auto` posture evaluates its prunable-element
+# predicates against at manifest-compose time. The predicate NAMES are owned by
+# the central standard's Prune-predicates table; only the numeric predicates
+# carry a threshold here (`no_code_delta` / `footprint_no_lesson_component` are
+# boolean and carry none):
+#   - 'confidence_complete': prune `refine` when the post-init confidence proxy
+#                            is >= this value (int 0-100; default 95, matching the
+#                            phase-2-refine confidence_threshold).
+#   - 'linear_change_max_deliverables': treat the plan as a `linear_change`
+#                            (pruning the 4-plan decomposition element) when the
+#                            deliverable count is <= this value (int >= 1; default
+#                            1 — a single deliverable with no fan-out).
+DEFAULT_LANE_PRUNE_THRESHOLDS = {
+    'confidence_complete': 95,
+    'linear_change_max_deliverables': 1,
+}
+
+
+def validate_lane_prune_thresholds(value: object) -> None:
+    """Validate the ``lane_prune_thresholds`` numeric-threshold mapping.
+
+    The key set must be exactly ``{confidence_complete,
+    linear_change_max_deliverables}``. ``confidence_complete`` is an int in
+    ``[0, 100]``; ``linear_change_max_deliverables`` is an int ``>= 1``. Booleans
+    are rejected even though ``bool`` is an ``int`` subclass.
+
+    Args:
+        value: The candidate threshold mapping.
+
+    Raises:
+        ValueError: If ``value`` is not a dict, if its key set is not exactly the
+            expected set, or if any value is out of range.
+    """
+    expected = set(DEFAULT_LANE_PRUNE_THRESHOLDS.keys())
+    if not isinstance(value, dict):
+        raise ValueError(
+            f"Invalid lane_prune_thresholds {value!r}: expected a dict with keys "
+            f"{sorted(expected)}."
+        )
+    keys = set(value.keys())
+    if keys != expected:
+        missing = sorted(expected - keys)
+        extra = sorted(keys - expected)
+        raise ValueError(
+            f"Invalid lane_prune_thresholds keys {sorted(keys)}: expected exactly "
+            f"{sorted(expected)} (missing={missing}, extra={extra})."
+        )
+    confidence = value['confidence_complete']
+    if isinstance(confidence, bool) or not isinstance(confidence, int) or not 0 <= confidence <= 100:
+        raise ValueError(
+            f"Invalid lane_prune_thresholds.confidence_complete {confidence!r}: "
+            "expected an int in [0, 100]."
+        )
+    max_deliverables = value['linear_change_max_deliverables']
+    if isinstance(max_deliverables, bool) or not isinstance(max_deliverables, int) or max_deliverables < 1:
+        raise ValueError(
+            f"Invalid lane_prune_thresholds.linear_change_max_deliverables "
+            f"{max_deliverables!r}: expected an int >= 1."
+        )
+
+
 # Plan-wide effort fallback (`plan.effort` in marshal.json — single string).
 #
 # Per-phase effort defaults are seeded at init so a fresh project gets per-phase
@@ -174,6 +305,17 @@ DEFAULT_PLAN_INIT = {
     # classifier share. Read via
     # `manage-config plan phase-1-init get --field auto_route_recipe_threshold`.
     'auto_route_recipe_threshold': 0.6,
+    # Execution-profile lane prompt gate (ask|auto). `ask` (default) surfaces the
+    # minimal/auto/full posture dialogue at init; `auto` takes the computed `auto`
+    # projection silently. Validated by validate_lane_selection. Read via
+    # `manage-config plan phase-1-init get --field lane_selection`.
+    'lane_selection': 'ask',
+    # Tunable numeric thresholds the `auto` posture evaluates its prunable-element
+    # predicates against at manifest-compose time (confidence_complete confidence
+    # floor; linear_change deliverable-count ceiling). Validated by
+    # validate_lane_prune_thresholds. Read via
+    # `manage-config plan phase-1-init get --field lane_prune_thresholds`.
+    'lane_prune_thresholds': DEFAULT_LANE_PRUNE_THRESHOLDS,
 }
 
 # Valid values for phase-2-refine.simplicity — enum controlling how aggressively
@@ -707,6 +849,11 @@ def get_default_config() -> dict:
     # default shape fails loud at seed time rather than at first read.
     validate_per_deliverable_build(DEFAULT_PLAN_EXECUTE['per_deliverable_build'])
     validate_cost_size_token_table(DEFAULT_PLAN_EXECUTE['cost_size_token_table'])
+    # Self-validate the seeded lane prune-threshold dict so a malformed default
+    # fails loud at seed time rather than at first read. (`lane_selection` is an
+    # enum string validated from the set path, mirroring validate_run_at_all /
+    # validate_simplicity — not self-validated here.)
+    validate_lane_prune_thresholds(DEFAULT_PLAN_INIT['lane_prune_thresholds'])
     # Materialize the finalize-step defaults seed lazily via the configurable-
     # contract parser (the `'steps': None` placeholder in DEFAULT_PLAN_FINALIZE is
     # replaced here). Done after the deepcopy below so the module-level constant

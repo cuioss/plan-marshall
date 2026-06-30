@@ -565,6 +565,217 @@ def test_validate_cost_size_token_table_rejects_unparseable_magnitude():
         )
 
 
+# =============================================================================
+# Execution-profile lane config knobs (this plan, D3)
+# =============================================================================
+#
+# Three operator-facing knobs added to the lane mechanism:
+#   - lane_selection (ask|auto) under DEFAULT_PLAN_INIT
+#   - the per-element lane override validator (off|minimal|auto|full|ask)
+#   - lane_prune_thresholds (confidence_complete, linear_change_max_deliverables)
+#     under DEFAULT_PLAN_INIT
+# The per-element vocabulary itself (lane.class enum, prune-predicate names) lives
+# in ext-point-lane-element.md, not in config; these tests cover only the config
+# defaults + validators.
+
+_EXPECTED_LANE_PRUNE_THRESHOLDS = {
+    'confidence_complete': 95,
+    'linear_change_max_deliverables': 1,
+}
+
+
+def test_default_plan_init_includes_lane_selection_ask():
+    """DEFAULT_PLAN_INIT must declare lane_selection with default 'ask'."""
+    init_defaults = _config_defaults_mod.DEFAULT_PLAN_INIT
+
+    assert 'lane_selection' in init_defaults, (
+        'lane_selection must be schema-registered in DEFAULT_PLAN_INIT'
+    )
+    assert init_defaults['lane_selection'] == 'ask', (
+        "lane_selection default must be 'ask' (surface the posture dialogue at init)"
+    )
+
+
+def test_get_default_config_includes_lane_selection():
+    """get_default_config() must surface plan.phase-1-init.lane_selection == 'ask'."""
+    config = _config_defaults_mod.get_default_config()
+
+    assert config['plan']['phase-1-init'].get('lane_selection') == 'ask'
+
+
+def test_valid_lane_selection_enumerates_ask_and_auto():
+    """VALID_LANE_SELECTION must enumerate exactly ('ask', 'auto')."""
+    assert _config_defaults_mod.VALID_LANE_SELECTION == ('ask', 'auto')
+    # the seeded default must be a member of the enum
+    assert (
+        _config_defaults_mod.DEFAULT_PLAN_INIT['lane_selection']
+        in _config_defaults_mod.VALID_LANE_SELECTION
+    )
+
+
+def test_validate_lane_selection_accepts_allowed_values():
+    """validate_lane_selection must accept every value in VALID_LANE_SELECTION."""
+    for value in _config_defaults_mod.VALID_LANE_SELECTION:
+        _config_defaults_mod.validate_lane_selection(value)
+
+
+def test_validate_lane_selection_rejects_unknown_value():
+    """validate_lane_selection must raise ValueError for a value outside the enum."""
+    import pytest
+
+    with pytest.raises(ValueError, match='Invalid lane_selection'):
+        _config_defaults_mod.validate_lane_selection('always')
+
+
+def test_valid_lane_override_enumerates_five_values():
+    """VALID_LANE_OVERRIDE must enumerate exactly off|minimal|auto|full|ask."""
+    assert _config_defaults_mod.VALID_LANE_OVERRIDE == (
+        'off', 'minimal', 'auto', 'full', 'ask'
+    )
+
+
+def test_validate_lane_override_accepts_allowed_values():
+    """validate_lane_override must accept every value in VALID_LANE_OVERRIDE."""
+    for value in _config_defaults_mod.VALID_LANE_OVERRIDE:
+        _config_defaults_mod.validate_lane_override(value)
+
+
+def test_validate_lane_override_rejects_unknown_value_naming_the_field():
+    """validate_lane_override must raise ValueError naming the offending field path."""
+    import pytest
+
+    with pytest.raises(ValueError, match=r'plan\.phase-6-finalize\.steps\.sonar-roundtrip\.lane'):
+        _config_defaults_mod.validate_lane_override(
+            'sometimes', 'plan.phase-6-finalize.steps.sonar-roundtrip.lane'
+        )
+
+
+def test_validate_lane_override_default_field_name():
+    """validate_lane_override default field_name is 'lane' (used in the error message)."""
+    import pytest
+
+    with pytest.raises(ValueError, match=r"Invalid lane 'nope'"):
+        _config_defaults_mod.validate_lane_override('nope')
+
+
+def test_default_lane_prune_thresholds_carries_expected_defaults():
+    """DEFAULT_LANE_PRUNE_THRESHOLDS must map the two numeric predicate thresholds."""
+    assert (
+        _config_defaults_mod.DEFAULT_LANE_PRUNE_THRESHOLDS
+        == _EXPECTED_LANE_PRUNE_THRESHOLDS
+    )
+
+
+def test_default_plan_init_includes_lane_prune_thresholds():
+    """DEFAULT_PLAN_INIT must declare lane_prune_thresholds with the expected defaults."""
+    init_defaults = _config_defaults_mod.DEFAULT_PLAN_INIT
+
+    assert 'lane_prune_thresholds' in init_defaults, (
+        'lane_prune_thresholds must be schema-registered in DEFAULT_PLAN_INIT'
+    )
+    assert init_defaults['lane_prune_thresholds'] == _EXPECTED_LANE_PRUNE_THRESHOLDS
+
+
+def test_get_default_config_includes_lane_prune_thresholds():
+    """get_default_config() must surface plan.phase-1-init.lane_prune_thresholds."""
+    config = _config_defaults_mod.get_default_config()
+
+    assert (
+        config['plan']['phase-1-init'].get('lane_prune_thresholds')
+        == _EXPECTED_LANE_PRUNE_THRESHOLDS
+    )
+
+
+def test_validate_lane_prune_thresholds_accepts_seeded_default():
+    """validate_lane_prune_thresholds must accept the seeded default mapping."""
+    _config_defaults_mod.validate_lane_prune_thresholds(
+        _config_defaults_mod.DEFAULT_LANE_PRUNE_THRESHOLDS
+    )
+    # boundary in-range values are also accepted
+    _config_defaults_mod.validate_lane_prune_thresholds(
+        {'confidence_complete': 0, 'linear_change_max_deliverables': 1}
+    )
+    _config_defaults_mod.validate_lane_prune_thresholds(
+        {'confidence_complete': 100, 'linear_change_max_deliverables': 5}
+    )
+
+
+def test_validate_lane_prune_thresholds_rejects_non_dict():
+    """validate_lane_prune_thresholds must reject a non-dict value."""
+    import pytest
+
+    with pytest.raises(ValueError, match='expected a dict'):
+        _config_defaults_mod.validate_lane_prune_thresholds([95, 1])
+
+
+def test_validate_lane_prune_thresholds_rejects_missing_key():
+    """validate_lane_prune_thresholds must reject a mapping missing a required key."""
+    import pytest
+
+    with pytest.raises(ValueError, match='expected exactly'):
+        _config_defaults_mod.validate_lane_prune_thresholds({'confidence_complete': 95})
+
+
+def test_validate_lane_prune_thresholds_rejects_extra_key():
+    """validate_lane_prune_thresholds must reject a mapping carrying an unexpected key."""
+    import pytest
+
+    with pytest.raises(ValueError, match='expected exactly'):
+        _config_defaults_mod.validate_lane_prune_thresholds(
+            {
+                'confidence_complete': 95,
+                'linear_change_max_deliverables': 1,
+                'bogus': 7,
+            }
+        )
+
+
+def test_validate_lane_prune_thresholds_rejects_out_of_range_confidence():
+    """validate_lane_prune_thresholds must reject confidence_complete outside [0, 100]."""
+    import pytest
+
+    with pytest.raises(ValueError, match='confidence_complete'):
+        _config_defaults_mod.validate_lane_prune_thresholds(
+            {'confidence_complete': 101, 'linear_change_max_deliverables': 1}
+        )
+
+
+def test_validate_lane_prune_thresholds_rejects_bool_confidence():
+    """validate_lane_prune_thresholds must reject a bool confidence (bool is an int subclass)."""
+    import pytest
+
+    with pytest.raises(ValueError, match='confidence_complete'):
+        _config_defaults_mod.validate_lane_prune_thresholds(
+            {'confidence_complete': True, 'linear_change_max_deliverables': 1}
+        )
+
+
+def test_validate_lane_prune_thresholds_rejects_non_positive_deliverables():
+    """validate_lane_prune_thresholds must reject linear_change_max_deliverables < 1."""
+    import pytest
+
+    with pytest.raises(ValueError, match='linear_change_max_deliverables'):
+        _config_defaults_mod.validate_lane_prune_thresholds(
+            {'confidence_complete': 95, 'linear_change_max_deliverables': 0}
+        )
+
+
+def test_plan_phase_1_init_get_lane_selection_returns_ask_default(plan_context):
+    """`plan phase-1-init get --field lane_selection` returns 'ask' from the merged default.
+
+    Exercises the actual cmd_phase get path against a fresh marshal.json, proving
+    the lane_selection default surfaces even when the persisted config omits the key.
+    """
+    # fresh marshal.json
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    args = Namespace(verb='get', field='lane_selection')
+    result = _cmd_quality_phases_mod.cmd_phase(args, 'phase-1-init')
+
+    assert result['status'] == 'success'
+    assert result['value'] == 'ask'
+
+
 _EXPECTED_PER_DELIVERABLE_BUILD = ['default:verify:compile', 'default:verify:module-tests']
 
 

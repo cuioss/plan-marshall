@@ -29,7 +29,6 @@ import re
 import sys
 from pathlib import Path
 
-from _tasks_cost import COST_SIZES
 from _tasks_core import (
     find_task_file,
     format_task_file,
@@ -49,6 +48,7 @@ from _tasks_core import (
     validate_step_intent,
     validate_steps_are_file_paths,
 )
+from _tasks_cost import COST_SIZES
 from file_ops import atomic_write_file  # type: ignore[import-not-found]
 from input_validation import (  # type: ignore[import-not-found]
     LessonInventoryUnavailable,

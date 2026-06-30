@@ -513,7 +513,12 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "deep_lane": "auto",
       "escalation": "auto",
       "auto_route_recipe": true,
-      "auto_route_recipe_threshold": 0.6
+      "auto_route_recipe_threshold": 0.6,
+      "lane_selection": "ask",
+      "lane_prune_thresholds": {
+        "confidence_complete": 95,
+        "linear_change_max_deliverables": 1
+      }
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
@@ -583,6 +588,17 @@ The lifecycle run-at-all gates and finalize automation knobs are flat phase-loca
 |-------|------|---------|---------|
 | `auto_route_recipe` | bool | `true` | Whether a high-confidence Tier 1 recipe match (top confidence `>= auto_route_recipe_threshold`) auto-routes to the matched recipe without prompting. `false` proposes the ranked matches via `AskUserQuestion` first. |
 | `auto_route_recipe_threshold` | float | `0.6` | Auto-route confidence threshold for the Tier 1 recipe match. Default `0.6` because free-form requests carry no plan domain/scope, so keyword-overlap-only confidence caps at `0.6` — the same threshold the `recipe-match` verb's `--threshold` default uses. The `aspect-classify` verb is unrelated: it scores via `_overlap_score` (request-token / keyword-table overlap fraction, 0.0–1.0) with NO `0.6` cap, so it carries its own `0.7` default threshold — do not conflate the two. |
+
+**Execution-profile lane knobs (under `phase-1-init`):**
+
+The lane mechanism's per-element vocabulary (the closed `lane.class` enum, the class→default tier table, the prune-predicate names) is owned by [`extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md); these knobs carry only the project-level posture / override / threshold config the manifest composer resolves over that contract.
+
+| Field | Type | Default | Meaning |
+|-------|------|---------|---------|
+| `lane_selection` | enum(`ask`\|`auto`) | `ask` | Whether init PROMPTS for the execution-profile posture (`ask` surfaces the minimal/auto/full dialogue) or silently takes the computed `auto` projection (`auto`). Validated by `validate_lane_selection`. Mirrors the `deep_lane` / `finalize_without_asking` ask/auto family. |
+| `lane_prune_thresholds` | dict(`confidence_complete`, `linear_change_max_deliverables`) | `{confidence_complete: 95, linear_change_max_deliverables: 1}` | Tunable numeric thresholds the `auto` posture evaluates its prunable-element predicates against at manifest-compose time. `confidence_complete` (int 0–100) is the post-init confidence floor that prunes `refine`; `linear_change_max_deliverables` (int ≥ 1) is the deliverable-count ceiling that prunes the 4-plan decomposition element. The boolean predicates (`no_code_delta`, `footprint_no_lesson_component`) carry no threshold. Validated by `validate_lane_prune_thresholds` (exact key set; ranges enforced). |
+
+**Per-element lane override** (`plan.<phase>.steps.<step>.lane`, value ∈ `off`\|`minimal`\|`auto`\|`full`\|`ask`, validated by `validate_lane_override`): pins any lane-participating element to a fixed posture cutoff via the same nested step-param channel finalize-step params use — `off` never runs it (a `derived-state`/`core` weakening additionally emits a correctness warning at compose time, but is honored), `minimal` force-keeps it in every posture, `auto`/`full` pin its tier, `ask` always surfaces it individually in the init dialogue. Absent by default — the shipped per-element default lives in each element's frontmatter `lane:` block, and `marshal.json` carries only the project / meta overrides.
 
 **Flat finalize automation knobs (boolean, under `phase-6-finalize`):**
 
