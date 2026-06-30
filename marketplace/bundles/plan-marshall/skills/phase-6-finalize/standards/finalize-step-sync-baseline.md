@@ -90,6 +90,29 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Sync baseline classifier: classification={classification}, auto_reconciled={auto_reconciled}, threshold={threshold}, decision={decision}, upstream_commits={upstream_commit_count}"
 ```
 
+### Semantic re-verify of upstream-touched deliverables
+
+This step fires **only when the classifier surfaced an overlap** — `classification == overlap_no_content_conflict` or `classification == overlap_with_content_conflict`. A `no_overlap` classification means the upstream commits and this plan's in-flight changes touch disjoint file sets, so no deliverable can have been pre-empted upstream; skip the semantic re-verify entirely and go straight to the **Pre-rebase gate**.
+
+When an overlap exists, at least one upstream commit landed on a file this plan also touches. The mechanical rebase mechanics (`worktree-rebase-to`) are correct either way — but a clean, conflict-free rebase is **not** evidence that the deliverable is still needed. If the upstream commit already delivered the same semantic outcome the deliverable was authored to produce, re-applying the deliverable on top of the equivalent upstream work is redundant at best and a regression-risk at worst (re-introducing a now-superseded variant of the change). The rebase reconciles the *text*; this step reconciles the *intent*.
+
+For each upstream commit that the classifier reports as touching a file in this plan's deliverable set, perform a semantic re-verify **before** the rebase re-applies the plan's commits:
+
+1. **Resolve the affected deliverable.** Map each overlapping file back to the deliverable that claims it (the deliverable whose `affected_files` — from `references.json` / the solution outline — names that path). One upstream commit may implicate one or more deliverables.
+2. **Compare semantic outcomes.** For each implicated deliverable, compare the upstream commit's semantic outcome against the deliverable's intended outcome (its `success_criteria` / change-per-file intent). This is an intent-level judgement — explicitly NOT a textual diff equality check. Ask: *does the landed upstream change already satisfy what this deliverable was authored to achieve?*
+3. **Branch on the verdict:**
+   - **Upstream already delivers the same outcome → DROP the now-redundant deliverable.** Do NOT re-apply it on the rebase. Drop the deliverable's still-pending tasks from the active queue (mark them superseded), and record the drop so the deliverable is not re-attempted downstream. A dropped deliverable is a first-class outcome of the reconcile, not an error.
+   - **Upstream delivers a different or partial outcome → KEEP the deliverable and re-apply as normal.** The rebase proceeds and the plan's commits land on top of the upstream tip.
+
+Log the per-deliverable re-verify verdict for grep-ability and retrospective audit:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Sync baseline semantic re-verify: deliverable={deliverable_id}, upstream_commit={upstream_sha}, verdict={drop_redundant|keep_and_reapply}"
+```
+
+When **every** overlapping deliverable is dropped as redundant, the rebase has nothing of this plan's left to re-apply for those files — the late `branch-cleanup` rebase (`order: 70`) remains the backstop for any residual reconciliation. When at least one deliverable is kept, proceed to the **Pre-rebase gate** and rebase as normal; the drop decisions above have already pruned the redundant work from the queue.
+
 ### Pre-rebase gate
 
 The pre-rebase gate decides whether the rebase fires silently or prompts the operator. It is **bypassed when `{decision} == auto_proceed`** (clean or auto-resolvable rebase under a permissive threshold) and **mandatory when `{decision} == needs_user`** (genuine conflict, or a classifier-bypassed `never` threshold).
