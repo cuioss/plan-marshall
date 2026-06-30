@@ -96,6 +96,8 @@ import ast
 import re
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'literal-count-drift'
 RULE_NAME = 'analyze_literal_count'
 
@@ -253,7 +255,7 @@ def _scan_extension_points_table(
         return []
     lines = text.splitlines()
 
-    findings: list[dict] = []
+    findings: list[Finding] = []
     in_section = False
     for idx, line in enumerate(lines):
         if not in_section:
@@ -292,27 +294,27 @@ def _scan_extension_points_table(
         if stated == actual:
             continue
         findings.append(
-            {
-                'rule_id': RULE_ID,
-                'type': RULE_ID,
-                'rule': RULE_NAME,
-                'file': str(skill_md),
-                'line': idx + 1,
-                'severity': 'warning',
-                'fixable': False,
-                'description': (
+            Finding(
+                type=RULE_ID,
+                file=str(skill_md),
+                line=idx + 1,
+                severity='warning',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=(
                     f'the "Extension Points" table states {stated} implementation(s) '
                     f'for hook `{hook_token}` but the bundle tree enumerates {actual} — '
                     f'the count is a stale mirror of the implementer set (literal-count-drift)'
                 ),
-                'details': {
+                details={
                     'hook': hook_token,
                     'stated': stated,
                     'actual': actual,
                 },
-            }
+                extra={'rule': RULE_NAME},
+            )
         )
-    return findings
+    return [f.to_dict() for f in findings]
 
 
 def analyze_literal_count(marketplace_root: Path) -> list[dict]:

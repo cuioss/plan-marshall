@@ -10,6 +10,7 @@ Provides functions to:
 - Detect circular dependencies
 """
 
+import ast
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -29,6 +30,51 @@ from marketplace_paths import get_bundle_cache_roots  # type: ignore[import-not-
 # Constants for path discovery
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
 CLAUDE_DIR = '.claude'
+
+
+class AstCache:
+    """Parse-once cache of ``ast.parse`` results for ``.py`` files.
+
+    The index substrate indexes frontmatter; the parsed Python AST is the one
+    piece it does not provide. This cache memoizes ``ast.parse`` so each file is
+    read and parsed at most once per scan run: repeated ``get_tree`` calls for
+    the same path return the identical cached ``ast.Module`` object (or ``None``
+    when the file is unreadable or fails to parse — the negative result is
+    cached too, so a bad file is never re-parsed). ``parse_count`` records how
+    many successful ``ast.parse`` calls ran, letting callers assert the
+    parse-once invariant.
+    """
+
+    def __init__(self) -> None:
+        self._trees: dict[str, ast.Module | None] = {}
+        self.parse_count = 0
+
+    def get_tree(self, file_path: Path) -> ast.Module | None:
+        """Return the cached AST for ``file_path``, parsing it on first request.
+
+        Reads the file as UTF-8 and parses with ``filename=str(file_path)`` —
+        byte-identical to the per-analyzer ``ast.parse`` calls this cache
+        replaces. ``None`` is returned and cached for unreadable or unparseable
+        files so the same path is never processed twice.
+        """
+        key = str(file_path)
+        if key in self._trees:
+            return self._trees[key]
+        tree = self._parse(file_path)
+        self._trees[key] = tree
+        return tree
+
+    def _parse(self, file_path: Path) -> ast.Module | None:
+        try:
+            source = file_path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            return None
+        try:
+            tree = ast.parse(source, filename=str(file_path))
+        except SyntaxError:
+            return None
+        self.parse_count += 1
+        return tree
 
 
 @dataclass
@@ -186,7 +232,7 @@ def discover_components(base_path: Path) -> list[ComponentInfo]:
                     name=agent_file.stem,
                 )
                 content = agent_file.read_text()
-                frontmatter, _ = extract_frontmatter(content)
+                frontmatter = extract_frontmatter(content).fields
                 components.append(
                     ComponentInfo(
                         component_id=component_id,
@@ -205,7 +251,7 @@ def discover_components(base_path: Path) -> list[ComponentInfo]:
                     name=command_file.stem,
                 )
                 content = command_file.read_text()
-                frontmatter, _ = extract_frontmatter(content)
+                frontmatter = extract_frontmatter(content).fields
                 components.append(
                     ComponentInfo(
                         component_id=component_id,
@@ -223,7 +269,7 @@ def discover_components(base_path: Path) -> list[ComponentInfo]:
 
                 # Add skill
                 content = skill_md.read_text()
-                frontmatter, _ = extract_frontmatter(content)
+                frontmatter = extract_frontmatter(content).fields
                 component_id = ComponentId(
                     bundle=bundle_name,
                     component_type='skill',
@@ -289,6 +335,67 @@ def _extract_bundle_name(bundle_dir: Path) -> str:
     if re.match(r'^\d+\.\d+', name):
         return bundle_dir.parent.name
     return name
+
+
+# Sub-document directories under a skill that hold markdown reference material.
+SKILL_SUBDOC_DIRS = ('references', 'standards', 'workflow', 'templates')
+
+
+@dataclass
+class SkillFile:
+    """An enumerated file belonging to a skill (markdown or script).
+
+    ``kind`` is one of ``skill_md`` (the skill's SKILL.md), ``subdoc`` (a markdown
+    sub-document under references/standards/workflow/templates), or ``script`` (a
+    ``.py``/``.sh`` file under ``scripts/`` — private ``_``-prefixed modules
+    included). Downstream framework passes (AST cache, single-pass runner) consume
+    this enumeration instead of re-globbing the bundle tree.
+    """
+
+    bundle: str
+    skill: str
+    kind: str
+    file_path: Path
+
+
+def enumerate_skill_files(base_path: Path) -> list[SkillFile]:
+    """Enumerate every skill SKILL.md, markdown sub-document, and script file.
+
+    Walks each bundle's ``skills/`` tree once and returns the full file set the
+    plugin-doctor framework needs: the skill definition, its sub-documents, and
+    its scripts (including private ``_``-prefixed Python modules). Pure
+    enumeration — no parsing — so callers layer their own frontmatter/AST passes.
+    """
+    files: list[SkillFile] = []
+
+    for plugin_json in sorted(base_path.rglob('.claude-plugin/plugin.json')):
+        bundle_dir = plugin_json.parent.parent
+        bundle_name = _extract_bundle_name(bundle_dir)
+
+        skills_dir = bundle_dir / 'skills'
+        if not skills_dir.is_dir():
+            continue
+
+        for skill_md in sorted(skills_dir.glob('*/SKILL.md')):
+            skill_dir = skill_md.parent
+            skill_name = skill_dir.name
+
+            files.append(SkillFile(bundle_name, skill_name, 'skill_md', skill_md))
+
+            for subdoc_dir_name in SKILL_SUBDOC_DIRS:
+                subdoc_dir = skill_dir / subdoc_dir_name
+                if subdoc_dir.is_dir():
+                    for md_file in sorted(subdoc_dir.rglob('*.md')):
+                        files.append(SkillFile(bundle_name, skill_name, 'subdoc', md_file))
+
+            scripts_dir = skill_dir / 'scripts'
+            if scripts_dir.is_dir():
+                for script_file in sorted(scripts_dir.glob('*.py')):
+                    files.append(SkillFile(bundle_name, skill_name, 'script', script_file))
+                for script_file in sorted(scripts_dir.glob('*.sh')):
+                    files.append(SkillFile(bundle_name, skill_name, 'script', script_file))
+
+    return files
 
 
 def build_dependency_index(

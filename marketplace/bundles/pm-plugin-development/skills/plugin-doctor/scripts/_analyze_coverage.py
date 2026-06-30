@@ -5,7 +5,7 @@
 import re
 from pathlib import Path
 
-from _analyze_shared import extract_frontmatter
+from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
 
 
 def extract_content_after_frontmatter(content: str) -> str:
@@ -89,7 +89,7 @@ def analyze_tool_coverage(file_path: Path) -> dict:
     except OSError as e:
         return {'error': f'Failed to read file: {e}'}
 
-    frontmatter_present, frontmatter = extract_frontmatter(content)
+    frontmatter_present, frontmatter, _ = extract_frontmatter(content)
     if not frontmatter_present:
         return {'error': 'No frontmatter found'}
 

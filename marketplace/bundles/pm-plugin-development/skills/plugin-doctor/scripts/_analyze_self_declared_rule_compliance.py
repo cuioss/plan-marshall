@@ -102,6 +102,7 @@ import re
 from pathlib import Path
 
 from _analyze_shared import read_frontmatter_disable_list
+from _doctor_shared import Finding  # type: ignore[import-not-found]
 
 RULE_ID = 'skill-self-declared-rule-violation'
 RULE_NAME = 'analyze_self_declared_rule_compliance'
@@ -205,17 +206,16 @@ def _scan_file(path: Path) -> list[dict]:
         text = path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError) as exc:
         return [
-            {
-                'rule_id': RULE_ID,
-                'type': 'file_read_error',
-                'rule': RULE_NAME,
-                'file': str(path),
-                'line': 0,
-                'severity': 'error',
-                'fixable': False,
-                'snippet': '',
-                'description': f'Could not read file: {exc}',
-            }
+            Finding(
+                type='file_read_error',
+                file=str(path),
+                line=0,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=f'Could not read file: {exc}',
+                extra={'rule': RULE_NAME, 'snippet': ''},
+            ).to_dict()
         ]
 
     # Granularity-3 (per-file frontmatter): skip the whole file when its
@@ -233,7 +233,7 @@ def _scan_file(path: Path) -> list[dict]:
     if not _declares_numbering_rule(lines, frontmatter, fences):
         return []
 
-    findings: list[dict] = []
+    findings: list[Finding] = []
     for idx, line in enumerate(lines):
         if idx in frontmatter or idx in fences:
             continue
@@ -242,26 +242,25 @@ def _scan_file(path: Path) -> list[dict]:
 
         heading_text = line.strip()
         findings.append(
-            {
-                'rule_id': RULE_ID,
-                'type': FINDING_TYPE,
-                'rule': RULE_NAME,
-                'file': str(path),
-                'line': idx + 1,  # 1-based
-                'severity': 'warning',
-                'fixable': False,
-                'snippet': heading_text,
-                'description': (
+            Finding(
+                type=FINDING_TYPE,
+                file=str(path),
+                line=idx + 1,  # 1-based
+                severity='warning',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=(
                     f'Heading `{heading_text}` uses sub-numbering, but this '
                     f'SKILL.md declares a flat-numbering / no-sub-numbering '
                     f'rule in its own body — a file that authors a numbering '
                     f'rule must obey it. Renumber to a flat sequence. '
                     f'See rule-catalog.md.'
                 ),
-            }
+                extra={'rule': RULE_NAME, 'snippet': heading_text},
+            )
         )
 
-    return findings
+    return [f.to_dict() for f in findings]
 
 
 # ---------------------------------------------------------------------------

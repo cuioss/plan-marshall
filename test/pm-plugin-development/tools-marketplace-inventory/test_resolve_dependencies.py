@@ -51,6 +51,10 @@ detect_skill_references = _dep_detection_mod.detect_skill_references
 extract_frontmatter = _dep_detection_mod.extract_frontmatter
 
 build_dependency_index = _dep_index_mod.build_dependency_index
+discover_components = _dep_index_mod.discover_components
+enumerate_skill_files = _dep_index_mod.enumerate_skill_files
+SkillFile = _dep_index_mod.SkillFile
+AstCache = _dep_index_mod.AstCache
 
 cmd_deps = _resolve_mod.cmd_deps
 cmd_rdeps = _resolve_mod.cmd_rdeps
@@ -124,10 +128,18 @@ class TestComponentId:
 
 
 class TestFrontmatterExtraction:
-    """Tests for YAML frontmatter extraction."""
+    """Tests for the single canonical YAML frontmatter parser.
+
+    ``extract_frontmatter`` is the one marketplace parser. It returns a
+    ``Frontmatter`` superset record exposing ``present`` (bool), ``raw`` (the
+    raw block text from the single regex ``match.group(1)``), and ``fields``
+    (the flat-parsed dict). Raw-text consumers read ``.raw``; index/dict
+    consumers read ``.fields`` — both derive from ONE regex match so the two
+    views never diverge.
+    """
 
     def test_extract_simple_frontmatter(self):
-        """Test extracting simple key-value frontmatter."""
+        """Simple key-value frontmatter parses into ``.fields``."""
         content = """---
 name: test-skill
 description: A test skill
@@ -136,14 +148,37 @@ user-invocable: true
 
 # Content here
 """
-        frontmatter, end_line = extract_frontmatter(content)
-        assert frontmatter['name'] == 'test-skill'
-        assert frontmatter['description'] == 'A test skill'
-        assert frontmatter['user-invocable'] == 'true'
-        assert end_line > 0
+        record = extract_frontmatter(content)
+        assert record.present is True
+        assert record.fields['name'] == 'test-skill'
+        assert record.fields['description'] == 'A test skill'
+        # Scalar values stay strings (no bool/int coercion) — byte-identical to
+        # the pre-refactor flat parse the index substrate consumed.
+        assert record.fields['user-invocable'] == 'true'
+
+    def test_raw_is_regex_group_one(self):
+        """``.raw`` is exactly the block between the ``---`` delimiters.
+
+        This is the byte-identical guarantee the raw-text analyzers
+        (_analyze_shared / _doctor_shared / plugin_discover) rely on: ``.raw``
+        equals the historical ``re.match(r'^---\\s*\\n(.*?)\\n---', ...)``
+        ``group(1)`` they each used before the collapse.
+        """
+        content = '---\nname: a\ndescription: d\n---\n\n# Body\n'
+        record = extract_frontmatter(content)
+        assert record.present is True
+        assert record.raw == 'name: a\ndescription: d'
+
+    def test_present_raw_and_fields_share_one_match(self):
+        """``.present``/``.raw``/``.fields`` are coherent for the same content."""
+        content = '---\nname: coherent\n---\n\n# Body\n'
+        record = extract_frontmatter(content)
+        assert record.present is True
+        assert 'name: coherent' in record.raw
+        assert record.fields == {'name': 'coherent'}
 
     def test_extract_list_frontmatter(self):
-        """Test extracting list values from frontmatter."""
+        """Block-list values parse into a Python list in ``.fields``."""
         content = """---
 name: test-skill
 skills:
@@ -153,12 +188,12 @@ skills:
 
 # Content
 """
-        frontmatter, _ = extract_frontmatter(content)
-        assert frontmatter['name'] == 'test-skill'
-        assert frontmatter['skills'] == ['plan-marshall:manage-files', 'plan-marshall:ref-toon-format']
+        record = extract_frontmatter(content)
+        assert record.fields['name'] == 'test-skill'
+        assert record.fields['skills'] == ['plan-marshall:manage-files', 'plan-marshall:ref-toon-format']
 
     def test_extract_implements(self):
-        """Test extracting implements field."""
+        """The ``implements`` field is exposed in ``.fields``."""
         content = """---
 name: ext-outline-workflow
 implements: plan-marshall:extension-api/standards/outline-extension.md
@@ -166,18 +201,33 @@ implements: plan-marshall:extension-api/standards/outline-extension.md
 
 # Content
 """
-        frontmatter, _ = extract_frontmatter(content)
-        assert frontmatter['implements'] == 'plan-marshall:extension-api/standards/outline-extension.md'
+        record = extract_frontmatter(content)
+        assert record.fields['implements'] == 'plan-marshall:extension-api/standards/outline-extension.md'
 
     def test_no_frontmatter(self):
-        """Test handling content without frontmatter."""
+        """Content without a leading ``---`` marker yields an absent record."""
         content = """# Just a heading
 
 No frontmatter here.
 """
-        frontmatter, end_line = extract_frontmatter(content)
-        assert frontmatter == {}
-        assert end_line == 0
+        record = extract_frontmatter(content)
+        assert record.present is False
+        assert record.raw == ''
+        assert record.fields == {}
+
+    def test_unterminated_frontmatter_is_absent(self):
+        """A frontmatter block without a closing ``---`` is treated as absent."""
+        content = '---\nname: a\nno closing marker\n'
+        record = extract_frontmatter(content)
+        assert record.present is False
+        assert record.raw == ''
+        assert record.fields == {}
+
+    def test_comment_and_blank_lines_skipped_in_fields(self):
+        """``#`` comment lines and blanks are ignored by the flat parse."""
+        content = '---\n# a comment\nname: x\n\ndescription: y\n---\n# Body\n'
+        record = extract_frontmatter(content)
+        assert record.fields == {'name': 'x', 'description': 'y'}
 
 
 # =============================================================================
@@ -683,3 +733,199 @@ class TestGetBasePathBundleCacheRouting:
         )
         with pytest.raises(FileNotFoundError):
             _dep_index_mod.get_base_path("plugin-cache")
+
+
+# =============================================================================
+# Tests - Index substrate file enumeration (enumerate_skill_files)
+# =============================================================================
+#
+# ``enumerate_skill_files`` is the index-substrate primitive that walks each
+# bundle's ``skills/`` tree once and returns the FULL file set the plugin-doctor
+# framework needs: the skill SKILL.md, its markdown sub-documents (under
+# references/standards/workflow/templates), and its scripts — INCLUDING private
+# ``_``-prefixed Python modules. Pure enumeration, no parsing.
+
+
+def _seed_skill_tree(root: Path) -> Path:
+    """Build a synthetic ``marketplace/bundles`` tree with one richly-populated skill.
+
+    Layout (bundle ``enum-bundle``):
+
+      skills/full-skill/SKILL.md
+      skills/full-skill/references/ref-one.md
+      skills/full-skill/standards/std-a.md
+      skills/full-skill/standards/nested/std-b.md      (rglob — nested sub-doc)
+      skills/full-skill/workflow/flow.md
+      skills/full-skill/templates/tmpl.md
+      skills/full-skill/scripts/run.py
+      skills/full-skill/scripts/_private.py            (private module — included)
+      skills/full-skill/scripts/helper.sh
+      skills/leaf-skill/SKILL.md                        (no sub-docs / scripts)
+
+    Returns the ``marketplace/bundles`` directory path.
+    """
+    bundles = root / 'marketplace' / 'bundles'
+    bundle = bundles / 'enum-bundle'
+    _write(bundle / '.claude-plugin' / 'plugin.json', '{\n  "name": "enum-bundle"\n}\n')
+
+    skill = bundle / 'skills' / 'full-skill'
+    _write(skill / 'SKILL.md', '---\nname: full-skill\n---\n# Full Skill\n')
+    _write(skill / 'references' / 'ref-one.md', '# Reference One\n')
+    _write(skill / 'standards' / 'std-a.md', '# Standard A\n')
+    _write(skill / 'standards' / 'nested' / 'std-b.md', '# Standard B\n')
+    _write(skill / 'workflow' / 'flow.md', '# Flow\n')
+    _write(skill / 'templates' / 'tmpl.md', '# Template\n')
+    _write(skill / 'scripts' / 'run.py', '# script\n')
+    _write(skill / 'scripts' / '_private.py', '"""private."""\n')
+    _write(skill / 'scripts' / 'helper.sh', '#!/usr/bin/env bash\n')
+
+    leaf = bundle / 'skills' / 'leaf-skill'
+    _write(leaf / 'SKILL.md', '---\nname: leaf-skill\n---\n# Leaf Skill\n')
+
+    return bundles
+
+
+class TestEnumerateSkillFiles:
+    """Tests for the ``enumerate_skill_files`` index-substrate primitive."""
+
+    def test_enumerates_skill_md_for_each_skill(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundles = _seed_skill_tree(Path(tmp))
+            files = enumerate_skill_files(bundles)
+
+        skill_mds = {sf.skill for sf in files if sf.kind == 'skill_md'}
+        assert skill_mds == {'full-skill', 'leaf-skill'}
+
+    def test_enumerates_subdocs_across_all_four_dirs_recursively(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundles = _seed_skill_tree(Path(tmp))
+            files = enumerate_skill_files(bundles)
+
+        subdoc_names = {sf.file_path.name for sf in files if sf.kind == 'subdoc'}
+        # One per references/standards/workflow/templates, plus the nested standard.
+        assert subdoc_names == {'ref-one.md', 'std-a.md', 'std-b.md', 'flow.md', 'tmpl.md'}
+
+    def test_enumerates_scripts_including_private_modules(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundles = _seed_skill_tree(Path(tmp))
+            files = enumerate_skill_files(bundles)
+
+        script_names = {sf.file_path.name for sf in files if sf.kind == 'script'}
+        # Private ``_``-prefixed modules and ``.sh`` scripts are included.
+        assert script_names == {'run.py', '_private.py', 'helper.sh'}
+
+    def test_skillfile_carries_bundle_and_skill(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundles = _seed_skill_tree(Path(tmp))
+            files = enumerate_skill_files(bundles)
+
+        assert all(isinstance(sf, SkillFile) for sf in files)
+        assert all(sf.bundle == 'enum-bundle' for sf in files)
+        run_py = next(sf for sf in files if sf.file_path.name == 'run.py')
+        assert run_py.skill == 'full-skill'
+        assert run_py.kind == 'script'
+
+    def test_leaf_skill_yields_only_skill_md(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundles = _seed_skill_tree(Path(tmp))
+            files = enumerate_skill_files(bundles)
+
+        leaf_files = [sf for sf in files if sf.skill == 'leaf-skill']
+        assert len(leaf_files) == 1
+        assert leaf_files[0].kind == 'skill_md'
+
+    def test_empty_tree_yields_nothing(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundles = Path(tmp) / 'marketplace' / 'bundles'
+            bundles.mkdir(parents=True)
+            assert enumerate_skill_files(bundles) == []
+
+
+# =============================================================================
+# Tests - Parse-once AST cache (AstCache)
+# =============================================================================
+#
+# ``AstCache`` is the index-substrate AST layer: a memoized ``ast.parse`` so
+# each ``.py`` file is read and parsed at most once per scan run. The parse-once
+# invariant is what the single-pass runner relies on to avoid the O(rules ×
+# files) re-parse cost.
+
+
+class TestAstCache:
+    """Tests for the parse-once AST cache."""
+
+    def test_get_tree_returns_ast_module(self, tmp_path):
+        import ast
+
+        script = tmp_path / 'mod.py'
+        script.write_text('x = 1\n', encoding='utf-8')
+        cache = AstCache()
+
+        tree = cache.get_tree(script)
+
+        assert isinstance(tree, ast.Module)
+
+    def test_repeat_request_returns_identical_object_without_reparsing(self, tmp_path):
+        script = tmp_path / 'mod.py'
+        script.write_text('x = 1\n', encoding='utf-8')
+        cache = AstCache()
+
+        first = cache.get_tree(script)
+        second = cache.get_tree(script)
+
+        # Same object identity — the cached tree is handed back, not re-parsed.
+        assert first is second
+        assert cache.parse_count == 1
+
+    def test_parse_count_counts_distinct_files_once_each(self, tmp_path):
+        a = tmp_path / 'a.py'
+        a.write_text('a = 1\n', encoding='utf-8')
+        b = tmp_path / 'b.py'
+        b.write_text('b = 2\n', encoding='utf-8')
+        cache = AstCache()
+
+        cache.get_tree(a)
+        cache.get_tree(b)
+        cache.get_tree(a)
+        cache.get_tree(b)
+
+        assert cache.parse_count == 2
+
+    def test_missing_file_returns_none_and_is_cached(self, tmp_path):
+        missing = tmp_path / 'gone.py'
+        cache = AstCache()
+
+        first = cache.get_tree(missing)
+        second = cache.get_tree(missing)
+
+        assert first is None
+        assert second is None
+        # A failed read never increments parse_count and is not re-attempted.
+        assert cache.parse_count == 0
+
+    def test_syntax_error_returns_none_and_is_cached(self, tmp_path):
+        broken = tmp_path / 'broken.py'
+        broken.write_text('def oops(\n', encoding='utf-8')
+        cache = AstCache()
+
+        first = cache.get_tree(broken)
+        second = cache.get_tree(broken)
+
+        assert first is None
+        assert second is None
+        # The unparseable result is cached — parse_count stays at zero (no
+        # successful parse) and the file is not re-parsed.
+        assert cache.parse_count == 0
+        assert str(broken) in cache._trees

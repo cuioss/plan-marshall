@@ -66,6 +66,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'shell-substitution-in-skills'
 RULE_NAME = 'analyze_shell_substitution_in_skills'
 FINDING_TYPE = 'shell_substitution_in_skills'
@@ -139,23 +141,22 @@ def _scan_file(path: Path) -> list[dict]:
         text = path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError) as exc:
         return [
-            {
-                'rule_id': RULE_ID,
-                'type': 'file_read_error',
-                'rule': RULE_NAME,
-                'file': str(path),
-                'line': 0,
-                'severity': 'error',
-                'fixable': False,
-                'snippet': '',
-                'description': f'Could not read file: {exc}',
-            }
+            Finding(
+                type='file_read_error',
+                file=str(path),
+                line=0,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=f'Could not read file: {exc}',
+                extra={'rule': RULE_NAME, 'snippet': ''},
+            ).to_dict()
         ]
 
     lines = text.splitlines()
     fence_map = _build_fence_map(lines)
 
-    findings: list[dict] = []
+    findings: list[Finding] = []
 
     for idx, line in enumerate(lines):
         matches = list(_DOLLAR_PAREN_RE.finditer(line))
@@ -184,24 +185,23 @@ def _scan_file(path: Path) -> list[dict]:
             end = min(len(line), offset + 50)
             snippet = line[start:end]
             findings.append(
-                {
-                    'rule_id': RULE_ID,
-                    'type': FINDING_TYPE,
-                    'rule': RULE_NAME,
-                    'file': str(path),
-                    'line': idx + 1,
-                    'severity': 'error',
-                    'fixable': False,
-                    'snippet': snippet,
-                    'description': (
+                Finding(
+                    type=FINDING_TYPE,
+                    file=str(path),
+                    line=idx + 1,
+                    severity='error',
+                    fixable=False,
+                    rule_id=RULE_ID,
+                    description=(
                         'Shell command substitution `$(...)` in plan-marshall skill markdown '
                         "violates the persona-plan-marshall-agent 'no shell constructs' hard rule. "
                         'Replace with the documented two-call + text-substitution pattern.'
                     ),
-                }
+                    extra={'rule': RULE_NAME, 'snippet': snippet},
+                )
             )
 
-    return findings
+    return [f.to_dict() for f in findings]
 
 
 # ---------------------------------------------------------------------------

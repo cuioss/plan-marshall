@@ -34,7 +34,7 @@ from _analyze_persona_profile_uniqueness import analyze_persona_profile_uniquene
 from _analyze_plan_path_in_scripts import analyze_plan_path_in_scripts
 from _analyze_resolution_branch_markers import analyze_resolution_branch_markers
 from _analyze_role_field import analyze_role_field
-from _analyze_shared import detect_component_type, extract_frontmatter
+from _analyze_shared import detect_component_type
 from _analyze_shell_active_tokens import analyze_shell_active_tokens
 from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
 from _analyze_simplicity import (
@@ -80,7 +80,6 @@ __all__ = [
     'analyze_unused_parameter',
     'analyze_verb_chains',
     'detect_component_type',
-    'extract_frontmatter',
     'scan_simplicity',
 ]
 

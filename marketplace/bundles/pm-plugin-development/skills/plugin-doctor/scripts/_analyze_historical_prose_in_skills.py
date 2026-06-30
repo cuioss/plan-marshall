@@ -105,6 +105,7 @@ from _analyze_shared import (
     load_default_suppression_config,
     read_frontmatter_disable_list,
 )
+from _doctor_shared import Finding  # type: ignore[import-not-found]
 
 RULE_ID = 'no-historical-prose-in-skills'
 RULE_NAME = 'analyze_historical_prose_in_skills'
@@ -266,18 +267,16 @@ def _scan_file(path: Path, rel_to_bundles: str, default_cfg: dict[str, list[str]
         text = path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError) as exc:
         return [
-            {
-                'rule_id': RULE_ID,
-                'type': 'file_read_error',
-                'rule': RULE_NAME,
-                'file': str(path),
-                'line': 0,
-                'severity': 'error',
-                'fixable': False,
-                'snippet': '',
-                'description': f'Could not read file: {exc}',
-                'pattern_family': 'file_read_error',
-            }
+            Finding(
+                type='file_read_error',
+                file=str(path),
+                line=0,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=f'Could not read file: {exc}',
+                extra={'rule': RULE_NAME, 'snippet': '', 'pattern_family': 'file_read_error'},
+            ).to_dict()
         ]
 
     # Granularity-3 (per-file frontmatter): skip the whole file when its
@@ -289,7 +288,7 @@ def _scan_file(path: Path, rel_to_bundles: str, default_cfg: dict[str, list[str]
     fence_map = _build_fence_map(lines)
     frontmatter = _build_frontmatter_set(lines)
 
-    findings: list[dict] = []
+    findings: list[Finding] = []
 
     for idx, line in enumerate(lines):
         # Skip lines inside YAML frontmatter or fenced code blocks.
@@ -323,25 +322,23 @@ def _scan_file(path: Path, rel_to_bundles: str, default_cfg: dict[str, list[str]
                 continue
             seen_families.add(family_name)
             findings.append(
-                {
-                    'rule_id': RULE_ID,
-                    'type': FINDING_TYPE,
-                    'rule': RULE_NAME,
-                    'file': str(path),
-                    'line': idx + 1,
-                    'severity': 'warning',
-                    'fixable': False,
-                    'snippet': m.group(0),
-                    'description': (
+                Finding(
+                    type=FINDING_TYPE,
+                    file=str(path),
+                    line=idx + 1,
+                    severity='warning',
+                    fixable=False,
+                    rule_id=RULE_ID,
+                    description=(
                         'Historical/transitional narrative — rewrite as a '
                         'present-tense rule or remove entirely. '
                         'See rule-catalog.md.'
                     ),
-                    'pattern_family': family_name,
-                }
+                    extra={'rule': RULE_NAME, 'snippet': m.group(0), 'pattern_family': family_name},
+                )
             )
 
-    return findings
+    return [f.to_dict() for f in findings]
 
 
 # ---------------------------------------------------------------------------

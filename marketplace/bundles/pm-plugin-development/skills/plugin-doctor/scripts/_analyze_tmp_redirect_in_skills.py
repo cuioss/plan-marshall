@@ -74,6 +74,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'tmp-redirect-in-skills'
 RULE_NAME = 'analyze_tmp_redirect_in_skills'
 FINDING_TYPE = 'tmp_redirect_in_skills'
@@ -133,24 +135,26 @@ def _make_finding(
     start = max(0, offset - 30)
     end = min(len(line), offset + 50)
     snippet = line[start:end]
-    return {
-        'rule_id': RULE_ID,
-        'type': FINDING_TYPE,
-        'rule': RULE_NAME,
-        'file': str(path),
-        'line': line_no,
-        'severity': 'error',
-        'fixable': False,
-        'redirect_type': redirect_type,
-        'target_prefix': target_prefix,
-        'snippet': snippet,
-        'description': (
+    return Finding(
+        type=FINDING_TYPE,
+        file=str(path),
+        line=line_no,
+        severity='error',
+        fixable=False,
+        rule_id=RULE_ID,
+        description=(
             f'Bash redirect to ``{target_prefix}`` in skill markdown violates the project '
             'policy that all temporary files must live under ``.plan/temp/``. '
             'Replace with a ``Write`` tool call targeting ``.plan/temp/{{plan_id}}-<name>`` '
             'or pass the value through a TOON field instead of writing to a temp file.'
         ),
-    }
+        extra={
+            'rule': RULE_NAME,
+            'redirect_type': redirect_type,
+            'target_prefix': target_prefix,
+            'snippet': snippet,
+        },
+    ).to_dict()
 
 
 # ---------------------------------------------------------------------------
@@ -164,19 +168,16 @@ def _scan_file(path: Path) -> list[dict]:
         text = path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError) as exc:
         return [
-            {
-                'rule_id': RULE_ID,
-                'type': 'file_read_error',
-                'rule': RULE_NAME,
-                'file': str(path),
-                'line': 0,
-                'severity': 'error',
-                'fixable': False,
-                'redirect_type': '',
-                'target_prefix': '',
-                'snippet': '',
-                'description': f'Could not read file: {exc}',
-            }
+            Finding(
+                type='file_read_error',
+                file=str(path),
+                line=0,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=f'Could not read file: {exc}',
+                extra={'rule': RULE_NAME, 'redirect_type': '', 'target_prefix': '', 'snippet': ''},
+            ).to_dict()
         ]
 
     lines = text.splitlines()

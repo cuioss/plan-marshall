@@ -31,11 +31,12 @@ from _analyze_markdown import (
     check_resolver_gap,
     get_bloat_classification,
 )
-from _analyze_notation_staleness import RULE_ID as NOTATION_STALENESS_RULE_ID
 from _analyze_notation_staleness import analyze_notation_staleness
-from _analyze_phase2_refine_contract import RULE_ID as REFINE_CONTRACT_RULE_ID
 from _analyze_phase2_refine_contract import analyze_phase2_refine_contract
-from _analyze_shared import check_agent_glob_resolver_workaround, extract_frontmatter
+from _analyze_shared import check_agent_glob_resolver_workaround
+from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
+from _dep_index import AstCache  # type: ignore[import-not-found]
+from _doctor_shared import Finding  # type: ignore[import-not-found]
 
 # Subdirectories that may contain markdown sub-documents
 SUBDOC_DIRS = ['references', 'standards', 'workflow', 'templates']
@@ -69,7 +70,7 @@ def _read_file_bloat_ack_tag(content: str) -> str | None:
 
         quality.file-bloat: ack-rationale-slug
     """
-    _, frontmatter_text = extract_frontmatter(content)
+    _, frontmatter_text, _ = extract_frontmatter(content)
     if not frontmatter_text:
         return None
 
@@ -158,20 +159,20 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
                         agent_content = ''
                     for finding in check_agent_glob_resolver_workaround(str(path), agent_content):
                         issues.append(
-                            {
-                                'type': 'agent-glob-resolver-workaround',
-                                'rule_id': 'agent-glob-resolver-workaround',
-                                'file': str(path),
-                                'line': finding.get('line'),
-                                'severity': 'error',
-                                'fixable': False,
-                                'description': finding.get(
+                            Finding(
+                                type='agent-glob-resolver-workaround',
+                                file=str(path),
+                                line=finding.get('line'),
+                                severity='error',
+                                fixable=False,
+                                rule_id='agent-glob-resolver-workaround',
+                                description=finding.get(
                                     'message',
                                     'Agent declares Glob without `forwards_tool_capabilities: true` '
                                     'frontmatter flag (agent-glob-resolver-workaround)',
                                 ),
-                                'details': finding,
-                            }
+                                details=finding,
+                            ).to_dict()
                         )
 
     elif component_type == 'skill':
@@ -190,17 +191,17 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
             directory_name = noun_suffix.get('directory_name', skill_dir.name)
             suffix = noun_suffix.get('suffix', '')
             issues.append(
-                {
-                    'type': 'skill-naming-noun-suffix',
-                    'file': str(skill_dir),
-                    'severity': 'warning',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type='skill-naming-noun-suffix',
+                    file=str(skill_dir),
+                    severity='warning',
+                    fixable=False,
+                    description=(
                         f'Skill directory name `{directory_name}` ends with reserved noun suffix '
                         f'`{suffix}` — use a verb-first name (skill-naming-noun-suffix)'
                     ),
-                    'details': noun_suffix,
-                }
+                    details=noun_suffix,
+                ).to_dict()
             )
 
         # Markdown analysis of SKILL.md
@@ -235,7 +236,7 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
         # opts in via either path. Absence keeps the cluster silent (no
         # findings) — matching the documented opt-in semantics.
         if 'verb_chain' in active_rules:
-            issues.extend(extract_issues_from_verb_chain_analysis(analyze_verb_chains(skill_dir)))
+            issues.extend(analyze_verb_chains(skill_dir))
 
         # manage-findings-invocation-invalid: catch invalid manage-findings
         # invocation shapes (snake_case script position, invalid top-level
@@ -243,11 +244,7 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
         # sub-verbs). Gated on ``active_rules`` mirroring the ``verb_chain``
         # opt-in semantics so the analyzer only runs when the caller opts in.
         if 'manage-findings-invocation-invalid' in active_rules:
-            issues.extend(
-                extract_issues_from_manage_findings_analysis(
-                    scan_skill_for_manage_findings_invocation(skill_dir)
-                )
-            )
+            issues.extend(scan_skill_for_manage_findings_invocation(skill_dir))
 
         # refine-contract-violation: catch Edit/Write tool references in
         # phase-2-refine workflow files whose path argument is not prefixed
@@ -259,11 +256,7 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
         # Unconditionally active (not gated on active_rules) — the rule
         # enforces a hard refine-contract requirement that must surface on
         # every plugin-doctor run.
-        issues.extend(
-            extract_issues_from_refine_contract_analysis(
-                analyze_phase2_refine_contract([skill_dir])
-            )
-        )
+        issues.extend(analyze_phase2_refine_contract([skill_dir]))
 
         # notation-staleness: catch three-part executor notations whose third
         # segment has no matching {script}.py file under the resolved
@@ -274,154 +267,9 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
         # guards against a half-done entrypoint rename (which silently breaks
         # the script's public notation) that must surface on every
         # plugin-doctor run.
-        issues.extend(
-            extract_issues_from_notation_staleness_analysis(
-                analyze_notation_staleness([skill_dir])
-            )
-        )
+        issues.extend(analyze_notation_staleness([skill_dir]))
 
     return {'component': component, 'analysis': analysis, 'issues': issues, 'issue_count': len(issues)}
-
-
-def extract_issues_from_verb_chain_analysis(findings: list[dict]) -> list[dict]:
-    """Translate ``analyze_verb_chains`` output into plugin-doctor issue dicts.
-
-    The scanner returns findings with the native shape
-    (``rule_id``/``file``/``line``/``script_notation``/``verb_chain``/
-    ``first_unknown_segment``). Plugin-doctor's downstream categorizer keys
-    on ``type``/``fixable`` (see ``categorize_all_issues``), so this helper
-    adapts each finding to the same schema argparse_safety findings use —
-    preserving the scanner's rule-specific fields under ``details``.
-    """
-    issues: list[dict] = []
-    for finding in findings:
-        unknown = finding.get('first_unknown_segment')
-        notation = finding.get('script_notation', '')
-        issues.append(
-            {
-                'type': 'prose-verb-chain-consistency',
-                'rule_id': 'prose-verb-chain-consistency',
-                'file': finding.get('file', ''),
-                'line': finding.get('line'),
-                'severity': 'error',
-                'fixable': False,
-                'description': (
-                    f'Stale script verb `{unknown}` referenced for `{notation}` — '
-                    "update prose to match the script's registered subparsers "
-                    '(prose-verb-chain-consistency)'
-                ),
-                'script_notation': notation,
-                'verb_chain': finding.get('verb_chain', []),
-                'first_unknown_segment': unknown,
-            }
-        )
-    return issues
-
-
-def extract_issues_from_manage_findings_analysis(findings: list[dict]) -> list[dict]:
-    """Translate ``analyze_manage_findings_invocation`` output into plugin-doctor
-    issue dicts.
-
-    The analyzer returns findings with the native shape
-    (``rule_id``/``file``/``line``/``details.notation``/``details.reason``/
-    ``details.canonical_hint``). Plugin-doctor's downstream categorizer keys
-    on ``type``/``fixable`` (see ``categorize_all_issues``), so this helper
-    normalises each finding to the shared schema while preserving rule-specific
-    fields under ``details``.
-    """
-    issues: list[dict] = []
-    for finding in findings:
-        issues.append(
-            {
-                'type': 'manage-findings-invocation-invalid',
-                'rule_id': 'manage-findings-invocation-invalid',
-                'file': finding.get('file', ''),
-                'line': finding.get('line'),
-                'severity': finding.get('severity', 'error'),
-                'fixable': False,
-                'description': finding.get(
-                    'description',
-                    'manage-findings invocation uses an invalid shape '
-                    '(manage-findings-invocation-invalid)',
-                ),
-                'details': finding.get('details', {}),
-            }
-        )
-    return issues
-
-
-def extract_issues_from_refine_contract_analysis(findings: list[dict]) -> list[dict]:
-    """Translate ``analyze_phase2_refine_contract`` output into plugin-doctor issue dicts.
-
-    The analyzer returns findings with the native shape
-    (``rule_id``/``file``/``line``/``tool``/``path``/``suggested_fix``).
-    Plugin-doctor's downstream categorizer keys on ``type``/``fixable`` (see
-    ``categorize_all_issues``), so this helper normalises each finding to the
-    shared schema while preserving rule-specific fields under ``details``.
-    """
-    issues: list[dict] = []
-    for finding in findings:
-        tool = finding.get('tool', '')
-        path_ref = finding.get('path', '')
-        issues.append(
-            {
-                'type': REFINE_CONTRACT_RULE_ID,
-                'rule_id': REFINE_CONTRACT_RULE_ID,
-                'file': finding.get('file', ''),
-                'line': finding.get('line'),
-                'severity': 'error',
-                'fixable': False,
-                'description': (
-                    f'phase-2-refine workflow file invokes `{tool}` against '
-                    f'a non-plan path `{path_ref}` — refine MUST write only '
-                    f'inside `.plan/local/plans/{{plan_id}}/**` or '
-                    f'`.plan/local/worktrees/{{plan_id}}/**` '
-                    f'(refine-contract-violation)'
-                ),
-                'details': {
-                    'tool': tool,
-                    'path': path_ref,
-                    'suggested_fix': finding.get('suggested_fix', ''),
-                },
-            }
-        )
-    return issues
-
-
-def extract_issues_from_notation_staleness_analysis(findings: list[dict]) -> list[dict]:
-    """Translate ``analyze_notation_staleness`` output into plugin-doctor issue dicts.
-
-    The analyzer returns findings with the native shape
-    (``rule_id``/``type``/``file``/``line``/``severity``/``fixable``/
-    ``details``). It emits TWO rules — ``notation-staleness`` (stale script
-    segment) and ``notation-bundle-skill-drift`` (non-resolving bundle / skill
-    segment); each finding carries its own ``rule_id``/``type``, so this helper
-    preserves them rather than collapsing both to a single rule key. Plugin-
-    doctor's downstream categorizer keys on ``type``/``fixable`` (see
-    ``categorize_all_issues``), so this helper normalises each finding to the
-    shared schema while preserving rule-specific fields under ``details``.
-    """
-    issues: list[dict] = []
-    for finding in findings:
-        details = finding.get('details', {})
-        rule_id = finding.get('rule_id', NOTATION_STALENESS_RULE_ID)
-        issues.append(
-            {
-                'type': finding.get('type', rule_id),
-                'rule_id': rule_id,
-                'file': finding.get('file', ''),
-                'line': finding.get('line'),
-                'severity': finding.get('severity', 'error'),
-                'fixable': False,
-                'description': finding.get(
-                    'description',
-                    'Executor notation has no matching script file '
-                    '(notation-staleness)',
-                ),
-                'details': details,
-            }
-        )
-    return issues
 
 
 def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, component_type: str) -> list[dict]:
@@ -431,19 +279,21 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
     # Check frontmatter
     fm = analysis.get('frontmatter', {})
     if not fm.get('present'):
-        issues.append({'type': 'missing-frontmatter', 'file': file_path, 'severity': 'error', 'fixable': True})
+        issues.append(Finding(type='missing-frontmatter', file=file_path, severity='error', fixable=True).to_dict())
     elif not fm.get('yaml_valid'):
-        issues.append({'type': 'invalid-yaml', 'file': file_path, 'severity': 'error', 'fixable': True})
+        issues.append(Finding(type='invalid-yaml', file=file_path, severity='error', fixable=True).to_dict())
     else:
         required = fm.get('required_fields', {})
         if not required.get('name', {}).get('present'):
-            issues.append({'type': 'missing-name-field', 'file': file_path, 'severity': 'error', 'fixable': True})
+            issues.append(Finding(type='missing-name-field', file=file_path, severity='error', fixable=True).to_dict())
         if not required.get('description', {}).get('present'):
             issues.append(
-                {'type': 'missing-description-field', 'file': file_path, 'severity': 'warning', 'fixable': True}
+                Finding(type='missing-description-field', file=file_path, severity='warning', fixable=True).to_dict()
             )
         if component_type in ('agent', 'command') and not required.get('tools', {}).get('present'):
-            issues.append({'type': 'missing-tools-field', 'file': file_path, 'severity': 'warning', 'fixable': True})
+            issues.append(
+                Finding(type='missing-tools-field', file=file_path, severity='warning', fixable=True).to_dict()
+            )
 
         # Skill-specific field checks
         if component_type == 'skill':
@@ -451,91 +301,91 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
             # Check for misspelled user-invokable (should be user-invocable)
             if user_inv.get('misspelled') and not user_inv.get('present'):
                 issues.append(
-                    {
-                        'type': 'misspelled-user-invocable',
-                        'file': file_path,
-                        'severity': 'warning',
-                        'fixable': True,
-                        'description': 'Skill uses `user-invokable` (misspelled) — should be `user-invocable`',
-                    }
+                    Finding(
+                        type='misspelled-user-invocable',
+                        file=file_path,
+                        severity='warning',
+                        fixable=True,
+                        description='Skill uses `user-invokable` (misspelled) — should be `user-invocable`',
+                    ).to_dict()
                 )
             # Check for missing user-invocable entirely
             elif not user_inv.get('present') and not user_inv.get('misspelled'):
                 issues.append(
-                    {
-                        'type': 'missing-user-invocable',
-                        'file': file_path,
-                        'severity': 'warning',
-                        'fixable': True,
-                        'description': 'Skill missing required `user-invocable` field',
-                    }
+                    Finding(
+                        type='missing-user-invocable',
+                        file=file_path,
+                        severity='warning',
+                        fixable=True,
+                        description='Skill missing required `user-invocable` field',
+                    ).to_dict()
                 )
 
             # Check for invokable value vs content-mode mismatch
             content_mode = analysis.get('content_mode', {})
             if user_inv.get('present') and user_inv.get('value') is True and content_mode.get('is_reference'):
                 issues.append(
-                    {
-                        'type': 'skill-invokable-mismatch',
-                        'file': file_path,
-                        'severity': 'warning',
-                        'fixable': True,
-                        'description': 'Skill declares REFERENCE MODE but has `user-invocable: true` — reference skills should be `false`',
-                    }
+                    Finding(
+                        type='skill-invokable-mismatch',
+                        file=file_path,
+                        severity='warning',
+                        fixable=True,
+                        description='Skill declares REFERENCE MODE but has `user-invocable: true` — reference skills should be `false`',
+                    ).to_dict()
                 )
 
     # Check rule violations
     rules = analysis.get('rules', {})
     if rules.get('agent_task_tool_prohibited'):
         issues.append(
-            {
-                'type': 'agent-task-tool-prohibited',
-                'file': file_path,
-                'severity': 'warning',
-                'fixable': True,
-                'description': 'Agent declares Task tool (agent-task-tool-prohibited)',
-            }
+            Finding(
+                type='agent-task-tool-prohibited',
+                file=file_path,
+                severity='warning',
+                fixable=True,
+                description='Agent declares Task tool (agent-task-tool-prohibited)',
+            ).to_dict()
         )
     if rules.get('agent_maven_restricted'):
         issues.append(
-            {
-                'type': 'agent-maven-restricted',
-                'file': file_path,
-                'severity': 'warning',
-                'fixable': False,
-                'description': 'Direct Maven usage outside builder (agent-maven-restricted)',
-            }
+            Finding(
+                type='agent-maven-restricted',
+                file=file_path,
+                severity='warning',
+                fixable=False,
+                description='Direct Maven usage outside builder (agent-maven-restricted)',
+            ).to_dict()
         )
     if rules.get('workflow_hardcoded_script_path'):
         issues.append(
-            {
-                'type': 'workflow-hardcoded-script-path',
-                'file': file_path,
-                'severity': 'warning',
-                'fixable': False,
-                'description': 'Hardcoded script path - use executor notation instead (workflow-hardcoded-script-path)',
-            }
+            Finding(
+                type='workflow-hardcoded-script-path',
+                file=file_path,
+                severity='warning',
+                fixable=False,
+                description='Hardcoded script path - use executor notation instead (workflow-hardcoded-script-path)',
+            ).to_dict()
         )
     if rules.get('agent_skill_tool_visibility'):
         issues.append(
-            {
-                'type': 'agent-skill-tool-visibility',
-                'file': file_path,
-                'severity': 'warning',
-                'fixable': True,
-                'description': 'Agent tools missing Skill — invisible to Task dispatcher (agent-skill-tool-visibility)',
-            }
+            Finding(
+                type='agent-skill-tool-visibility',
+                file=file_path,
+                severity='warning',
+                fixable=True,
+                description='Agent tools missing Skill — invisible to Task dispatcher (agent-skill-tool-visibility)',
+            ).to_dict()
         )
     for violation in rules.get('workflow_prose_param_violations', []):
         issues.append(
-            {
-                'type': 'workflow-prose-parameter-inconsistency',
-                'file': file_path,
-                'severity': 'warning',
-                'fixable': False,
-                'description': f'Prose-parameter inconsistency: {violation.get("issue", "")}',
-                'details': violation,
-            }
+            Finding(
+                type='workflow-prose-parameter-inconsistency',
+                file=file_path,
+                severity='warning',
+                fixable=False,
+                description=f'Prose-parameter inconsistency: {violation.get("issue", "")}',
+                details=violation,
+            ).to_dict()
         )
 
     # mark-step-done argument validation (phase-6-finalize finalize step termination)
@@ -550,15 +400,15 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
     for violation in rules.get('mark_step_done_violations', []):
         code = violation.get('code', '')
         issues.append(
-            {
-                'type': code,
-                'file': file_path,
-                'line': violation.get('line'),
-                'severity': 'error',
-                'fixable': False,
-                'description': _mark_step_done_descriptions.get(code, f'mark-step-done defect: {code}'),
-                'details': violation,
-            }
+            Finding(
+                type=code,
+                file=file_path,
+                line=violation.get('line'),
+                severity='error',
+                fixable=False,
+                description=_mark_step_done_descriptions.get(code, f'mark-step-done defect: {code}'),
+                details=violation,
+            ).to_dict()
         )
 
     # skill-resolver-gap (warning) — LLM-Glob discovery prose without an
@@ -566,19 +416,19 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
     # surfaced here as standard issue dicts.
     for violation in rules.get('resolver_gap_violations', []):
         issues.append(
-            {
-                'type': 'skill-resolver-gap',
-                'rule_id': 'skill-resolver-gap',
-                'file': file_path,
-                'line': violation.get('line'),
-                'severity': 'warning',
-                'fixable': False,
-                'description': violation.get(
+            Finding(
+                type='skill-resolver-gap',
+                file=file_path,
+                line=violation.get('line'),
+                severity='warning',
+                fixable=False,
+                rule_id='skill-resolver-gap',
+                description=violation.get(
                     'message',
                     'LLM-Glob discovery prose without adjacent resolver call (skill-resolver-gap)',
                 ),
-                'details': violation,
-            }
+                details=violation,
+            ).to_dict()
         )
 
     # --display-detail ASCII contract validation (phase-6-finalize finalize renderer)
@@ -593,78 +443,78 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
         value = violation.get('value', '')
         base_desc = _display_detail_descriptions.get(code, f'--display-detail defect: {code}')
         issues.append(
-            {
-                'type': code,
-                'file': file_path,
-                'line': violation.get('line'),
-                'severity': 'error',
-                'fixable': False,
-                'description': f'{base_desc}: "{value}"',
-                'details': violation,
-            }
+            Finding(
+                type=code,
+                file=file_path,
+                line=violation.get('line'),
+                severity='error',
+                fixable=False,
+                description=f'{base_desc}: "{value}"',
+                details=violation,
+            ).to_dict()
         )
 
     # hardcoded-model-on-canonical (agent-only rule introduced by role-variants plan)
     for violation in rules.get('hardcoded_model_on_canonical_violations', []):
         issues.append(
-            {
-                'type': 'HARDCODED_MODEL_ON_CANONICAL',
-                'file': file_path,
-                'severity': 'error',
-                'fixable': False,
-                'branch': violation.get('branch'),
-                'description': violation.get('message', 'hardcoded-model-on-canonical violation'),
-                'details': violation,
-            }
+            Finding(
+                type='HARDCODED_MODEL_ON_CANONICAL',
+                file=file_path,
+                severity='error',
+                fixable=False,
+                description=violation.get('message', 'hardcoded-model-on-canonical violation'),
+                details=violation,
+                extra={'branch': violation.get('branch')},
+            ).to_dict()
         )
 
     # broken-relative-link (error) — a relative markdown link whose target is
     # missing on disk. Driven by the analyzer in _analyze_markdown.py.
     for violation in rules.get('broken_relative_link_violations', []):
         issues.append(
-            {
-                'type': 'broken-relative-link',
-                'rule_id': 'broken-relative-link',
-                'file': file_path,
-                'line': violation.get('line'),
-                'severity': 'error',
-                'fixable': False,
-                'description': violation.get(
+            Finding(
+                type='broken-relative-link',
+                file=file_path,
+                line=violation.get('line'),
+                severity='error',
+                fixable=False,
+                rule_id='broken-relative-link',
+                description=violation.get(
                     'message', 'relative link target does not resolve on disk (broken-relative-link)'
                 ),
-                'details': violation,
-            }
+                details=violation,
+            ).to_dict()
         )
 
     # fenced-code-no-language (warning) — a fenced code block opened without an
     # info-string (MD040). Driven by the analyzer in _analyze_markdown.py.
     for violation in rules.get('fenced_code_no_language_violations', []):
         issues.append(
-            {
-                'type': 'fenced-code-no-language',
-                'rule_id': 'fenced-code-no-language',
-                'file': file_path,
-                'line': violation.get('line'),
-                'severity': 'warning',
-                'fixable': True,
-                'description': violation.get(
+            Finding(
+                type='fenced-code-no-language',
+                file=file_path,
+                line=violation.get('line'),
+                severity='warning',
+                fixable=True,
+                rule_id='fenced-code-no-language',
+                description=violation.get(
                     'message', 'fenced code block opens with no language info-string (fenced-code-no-language)'
                 ),
-                'details': violation,
-            }
+                details=violation,
+            ).to_dict()
         )
 
     # Check CI rule
     ci = analysis.get('continuous_improvement_rule', {})
     if ci.get('format', {}).get('agent_lessons_via_skill'):
         issues.append(
-            {
-                'type': 'agent-lessons-via-skill',
-                'file': file_path,
-                'severity': 'warning',
-                'fixable': True,
-                'description': 'Agent uses self-update pattern (agent-lessons-via-skill)',
-            }
+            Finding(
+                type='agent-lessons-via-skill',
+                file=file_path,
+                severity='warning',
+                fixable=True,
+                description='Agent uses self-update pattern (agent-lessons-via-skill)',
+            ).to_dict()
         )
 
     # Check bloat — suppressed when the file carries a valid file-bloat ack tag.
@@ -678,14 +528,16 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
         _ack_present, _ack_tag = _has_file_bloat_ack(_raw_content)
         if not _ack_present:
             issues.append(
-                {
-                    'type': 'file-bloat',
-                    'file': file_path,
-                    'severity': 'warning' if bloat == 'BLOATED' else 'error',
-                    'fixable': False,
-                    'classification': bloat,
-                    'line_count': analysis.get('metrics', {}).get('line_count', 0),
-                }
+                Finding(
+                    type='file-bloat',
+                    file=file_path,
+                    severity='warning' if bloat == 'BLOATED' else 'error',
+                    fixable=False,
+                    extra={
+                        'classification': bloat,
+                        'line_count': analysis.get('metrics', {}).get('line_count', 0),
+                    },
+                ).to_dict()
             )
         else:
             # Ack present — surface the tag in the analysis output for audit.
@@ -695,15 +547,17 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
     checklists = analysis.get('checklist_patterns', {})
     if checklists.get('has_checklists'):
         issues.append(
-            {
-                'type': 'checklist-pattern',
-                'file': file_path,
-                'severity': 'warning',
-                'fixable': True,
-                'description': f'Checkbox patterns in LLM-consumed file ({checklists["count"]} items)',
-                'count': checklists['count'],
-                'sections': checklists.get('sections', []),
-            }
+            Finding(
+                type='checklist-pattern',
+                file=file_path,
+                severity='warning',
+                fixable=True,
+                description=f'Checkbox patterns in LLM-consumed file ({checklists["count"]} items)',
+                extra={
+                    'count': checklists['count'],
+                    'sections': checklists.get('sections', []),
+                },
+            ).to_dict()
         )
 
     return issues
@@ -729,41 +583,41 @@ def extract_issues_from_coverage_analysis(coverage: dict, file_path: str, compon
     # agent-task-tool-prohibited: Agent declares Task tool (deterministic - check frontmatter only)
     if component_type == 'agent' and violations.get('has_task_declared'):
         issues.append(
-            {
-                'type': 'agent-task-tool-prohibited',
-                'file': file_path,
-                'severity': 'warning',
-                'fixable': True,
-                'description': 'Agent declares Task tool (agent-task-tool-prohibited)',
-            }
+            Finding(
+                type='agent-task-tool-prohibited',
+                file=file_path,
+                severity='warning',
+                fixable=True,
+                description='Agent declares Task tool (agent-task-tool-prohibited)',
+            ).to_dict()
         )
 
     # agent-maven-restricted: Maven calls outside builder (only flag if not in builder bundle)
     maven_calls = violations.get('maven_calls', [])
     if maven_calls and 'builder' not in file_path:
         issues.append(
-            {
-                'type': 'agent-maven-restricted',
-                'file': file_path,
-                'severity': 'warning',
-                'fixable': False,
-                'description': f'Direct Maven usage (agent-maven-restricted) - {len(maven_calls)} call(s)',
-                'details': {'maven_calls': maven_calls},
-            }
+            Finding(
+                type='agent-maven-restricted',
+                file=file_path,
+                severity='warning',
+                fixable=False,
+                description=f'Direct Maven usage (agent-maven-restricted) - {len(maven_calls)} call(s)',
+                details={'maven_calls': maven_calls},
+            ).to_dict()
         )
 
     # Backup file patterns (quality issue)
     backup_patterns = violations.get('backup_file_patterns', [])
     if backup_patterns:
         issues.append(
-            {
-                'type': 'backup-pattern',
-                'file': file_path,
-                'severity': 'info',
-                'fixable': False,
-                'description': f'Backup file patterns found - {len(backup_patterns)} occurrence(s)',
-                'details': {'patterns': backup_patterns},
-            }
+            Finding(
+                type='backup-pattern',
+                file=file_path,
+                severity='info',
+                fixable=False,
+                description=f'Backup file patterns found - {len(backup_patterns)} occurrence(s)',
+                details={'patterns': backup_patterns},
+            ).to_dict()
         )
 
     return issues
@@ -907,107 +761,111 @@ def extract_issues_from_subdoc_analysis(subdoc_results: list[dict], skill_path: 
 
             if issue['type'] == 'subdoc-bloat':
                 issues.append(
-                    {
-                        'type': 'subdoc-bloat',
-                        'file': file_path,
-                        'severity': 'warning' if issue['classification'] == 'BLOATED' else 'error',
-                        'fixable': False,
-                        'classification': issue['classification'],
-                        'line_count': issue['line_count'],
-                        'description': f'Sub-document bloat ({issue["classification"]}, {issue["line_count"]} lines)',
-                    }
+                    Finding(
+                        type='subdoc-bloat',
+                        file=file_path,
+                        severity='warning' if issue['classification'] == 'BLOATED' else 'error',
+                        fixable=False,
+                        description=f'Sub-document bloat ({issue["classification"]}, {issue["line_count"]} lines)',
+                        extra={
+                            'classification': issue['classification'],
+                            'line_count': issue['line_count'],
+                        },
+                    ).to_dict()
                 )
             elif issue['type'] == 'subdoc-forbidden-metadata':
                 issues.append(
-                    {
-                        'type': 'subdoc-forbidden-metadata',
-                        'file': file_path,
-                        'severity': 'warning',
-                        'fixable': True,
-                        'description': f'Forbidden metadata sections: {issue["sections"]}',
-                    }
+                    Finding(
+                        type='subdoc-forbidden-metadata',
+                        file=file_path,
+                        severity='warning',
+                        fixable=True,
+                        description=f'Forbidden metadata sections: {issue["sections"]}',
+                    ).to_dict()
                 )
             elif issue['type'] == 'subdoc-hardcoded-script-path':
                 issues.append(
-                    {
-                        'type': 'subdoc-hardcoded-script-path',
-                        'file': file_path,
-                        'severity': 'warning',
-                        'fixable': False,
-                        'description': 'Hardcoded script path in sub-document',
-                    }
+                    Finding(
+                        type='subdoc-hardcoded-script-path',
+                        file=file_path,
+                        severity='warning',
+                        fixable=False,
+                        description='Hardcoded script path in sub-document',
+                    ).to_dict()
                 )
             elif issue['type'] == 'subdoc-checklist-pattern':
                 issues.append(
-                    {
-                        'type': 'subdoc-checklist-pattern',
-                        'file': file_path,
-                        'severity': 'warning',
-                        'fixable': True,
-                        'description': f'Checkbox patterns in sub-document ({issue["count"]} items)',
-                        'count': issue['count'],
-                        'sections': issue.get('sections', []),
-                    }
+                    Finding(
+                        type='subdoc-checklist-pattern',
+                        file=file_path,
+                        severity='warning',
+                        fixable=True,
+                        description=f'Checkbox patterns in sub-document ({issue["count"]} items)',
+                        extra={
+                            'count': issue['count'],
+                            'sections': issue.get('sections', []),
+                        },
+                    ).to_dict()
                 )
             elif issue['type'] == 'skill-resolver-gap':
                 issues.append(
-                    {
-                        'type': 'skill-resolver-gap',
-                        'rule_id': 'skill-resolver-gap',
-                        'file': file_path,
-                        'line': issue.get('line'),
-                        'severity': 'warning',
-                        'fixable': False,
-                        'description': issue.get(
+                    Finding(
+                        type='skill-resolver-gap',
+                        file=file_path,
+                        line=issue.get('line'),
+                        severity='warning',
+                        fixable=False,
+                        rule_id='skill-resolver-gap',
+                        description=issue.get(
                             'message',
                             'LLM-Glob discovery prose without adjacent resolver call (skill-resolver-gap)',
                         ),
-                        'details': issue,
-                    }
+                        details=issue,
+                    ).to_dict()
                 )
             elif issue['type'] == 'subdoc-display-detail-violation':
                 code = issue.get('code', '')
                 value = issue.get('value', '')
                 issues.append(
-                    {
-                        'type': code,
-                        'file': file_path,
-                        'line': issue.get('line'),
-                        'severity': 'error',
-                        'fixable': False,
-                        'description': f'display_detail violation ({code}) at line {issue.get("line")}: "{value}"',
-                    }
+                    Finding(
+                        type=code,
+                        file=file_path,
+                        line=issue.get('line'),
+                        severity='error',
+                        fixable=False,
+                        description=f'display_detail violation ({code}) at line {issue.get("line")}: "{value}"',
+                    ).to_dict()
                 )
             elif issue['type'] == 'broken-relative-link':
                 issues.append(
-                    {
-                        'type': 'broken-relative-link',
-                        'rule_id': 'broken-relative-link',
-                        'file': file_path,
-                        'line': issue.get('line'),
-                        'severity': 'error',
-                        'fixable': False,
-                        'description': issue.get(
+                    Finding(
+                        type='broken-relative-link',
+                        file=file_path,
+                        line=issue.get('line'),
+                        severity='error',
+                        fixable=False,
+                        rule_id='broken-relative-link',
+                        description=issue.get(
                             'message', 'relative link target does not resolve on disk (broken-relative-link)'
                         ),
-                        'details': issue,
-                    }
+                        details=issue,
+                    ).to_dict()
                 )
             elif issue['type'] == 'fenced-code-no-language':
                 issues.append(
-                    {
-                        'type': 'fenced-code-no-language',
-                        'rule_id': 'fenced-code-no-language',
-                        'file': file_path,
-                        'line': issue.get('line'),
-                        'severity': 'warning',
-                        'fixable': True,
-                        'description': issue.get(
+                    Finding(
+                        type='fenced-code-no-language',
+                        file=file_path,
+                        line=issue.get('line'),
+                        severity='warning',
+                        fixable=True,
+                        rule_id='fenced-code-no-language',
+                        description=issue.get(
                             'message',
                             'fenced code block opens with no language info-string (fenced-code-no-language)',
                         ),
-                        'details': issue,
-                    }
+                        details=issue,
+                    ).to_dict()
                 )
 
     return issues
@@ -1070,29 +928,29 @@ def analyze_markdown_mirror_rules(marketplace_root: Path) -> list[dict]:
                     content, file_path, boundary_dir=marketplace_root.parent
                 ):
                     findings.append(
-                        {
-                            'type': 'broken-relative-link',
-                            'rule_id': 'broken-relative-link',
-                            'file': file_path,
-                            'line': violation.get('line'),
-                            'severity': 'error',
-                            'fixable': False,
-                            'description': violation.get('message'),
-                            'details': violation,
-                        }
+                        Finding(
+                            type='broken-relative-link',
+                            file=file_path,
+                            line=violation.get('line'),
+                            severity='error',
+                            fixable=False,
+                            rule_id='broken-relative-link',
+                            description=violation.get('message'),
+                            details=violation,
+                        ).to_dict()
                     )
                 for violation in check_fenced_code_no_language(content):
                     findings.append(
-                        {
-                            'type': 'fenced-code-no-language',
-                            'rule_id': 'fenced-code-no-language',
-                            'file': file_path,
-                            'line': violation.get('line'),
-                            'severity': 'warning',
-                            'fixable': True,
-                            'description': violation.get('message'),
-                            'details': violation,
-                        }
+                        Finding(
+                            type='fenced-code-no-language',
+                            file=file_path,
+                            line=violation.get('line'),
+                            severity='warning',
+                            fixable=True,
+                            rule_id='fenced-code-no-language',
+                            description=violation.get('message'),
+                            details=violation,
+                        ).to_dict()
                     )
     return findings
 
@@ -1144,20 +1002,22 @@ def _call_func_name(node: ast.Call) -> str | None:
     return None
 
 
-def _scan_file_for_argparse_safety(file_path: Path) -> list[dict]:
+def _scan_file_for_argparse_safety(file_path: Path, cache: AstCache | None = None) -> list[dict]:
     """Scan a single Python file for argparse calls missing ``allow_abbrev=False``.
+
+    The AST is sourced from the parse-once ``AstCache`` (the index-substrate AST
+    layer) so the file is read and parsed at most once per run. When no cache is
+    supplied a fresh one is used for this single file — behaviour is identical;
+    the shared-cache path is what the single-pass runner exploits.
 
     Returns a list of issue dicts (empty if the file has no violations, is
     unreadable, or fails to parse).
     """
-    try:
-        source = file_path.read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
-        return []
+    if cache is None:
+        cache = AstCache()
 
-    try:
-        tree = ast.parse(source, filename=str(file_path))
-    except SyntaxError:
+    tree = cache.get_tree(file_path)
+    if tree is None:
         return []
 
     issues: list[dict] = []
@@ -1170,15 +1030,15 @@ def _scan_file_for_argparse_safety(file_path: Path) -> list[dict]:
         if _call_has_allow_abbrev_false(node):
             continue
         issues.append(
-            {
-                'type': 'argparse_safety',
-                'file': str(file_path),
-                'line': node.lineno,
-                'severity': 'error',
-                'fixable': False,
-                'description': 'Add allow_abbrev=False to this argparse call',
-                'call': name,
-            }
+            Finding(
+                type='argparse_safety',
+                file=str(file_path),
+                line=node.lineno,
+                severity='error',
+                fixable=False,
+                description='Add allow_abbrev=False to this argparse call',
+                extra={'call': name},
+            ).to_dict()
         )
     return issues
 
@@ -1212,7 +1072,7 @@ def _iter_argparse_safety_targets(marketplace_root: Path) -> list[Path]:
     return sorted(set(targets))
 
 
-def scan_argparse_safety(marketplace_root: Path) -> list[dict]:
+def scan_argparse_safety(marketplace_root: Path, cache: AstCache | None = None) -> list[dict]:
     """Static-scan the marketplace tree for argparse calls missing
     ``allow_abbrev=False``.
 
@@ -1221,9 +1081,13 @@ def scan_argparse_safety(marketplace_root: Path) -> list[dict]:
     ``call`` (``ArgumentParser`` or ``add_parser``).
 
     See rule-catalog.md (argparse_safety) for the rationale. The check is a
-    lightweight AST walk — no parser is executed.
+    lightweight AST walk over the parse-once ``AstCache``. A shared ``cache``
+    may be threaded in by the single-pass runner so the scanned files are not
+    re-parsed by other AST rules; when omitted, one cache spans this scan.
     """
+    if cache is None:
+        cache = AstCache()
     findings: list[dict] = []
     for target in _iter_argparse_safety_targets(marketplace_root):
-        findings.extend(_scan_file_for_argparse_safety(target))
+        findings.extend(_scan_file_for_argparse_safety(target, cache))
     return findings

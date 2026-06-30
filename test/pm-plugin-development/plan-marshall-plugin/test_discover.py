@@ -52,6 +52,11 @@ _architecture_core = _load_arch_core()
 
 # =============================================================================
 # extract_frontmatter
+#
+# ``plugin_discover`` consumes the single canonical parser (imported from
+# ``_dep_detection``), which returns the ``Frontmatter(present, raw, fields)``
+# superset record. ``get_component_description`` reads ``.present``/``.raw``;
+# these tests unpack the leading ``(present, raw)`` pair and discard ``fields``.
 # =============================================================================
 
 
@@ -65,7 +70,7 @@ description: A test skill
 # Content here
 """
 
-    has_fm, fm = extract_frontmatter(content)
+    has_fm, fm, _fields = extract_frontmatter(content)
 
     assert has_fm
     assert 'name: test-skill' in fm
@@ -76,7 +81,7 @@ def test_no_frontmatter():
     """Test content without frontmatter."""
     content = '# Just a header\n\nSome content.'
 
-    has_fm, fm = extract_frontmatter(content)
+    has_fm, fm, _fields = extract_frontmatter(content)
 
     assert has_fm is False
     assert fm == ''
@@ -91,7 +96,7 @@ description: A test skill
 # Content here
 """
 
-    has_fm, fm = extract_frontmatter(content)
+    has_fm, _fm, _fields = extract_frontmatter(content)
 
     assert has_fm is False
 

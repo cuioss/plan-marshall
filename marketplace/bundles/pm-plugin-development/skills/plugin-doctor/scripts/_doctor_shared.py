@@ -14,9 +14,12 @@ import json
 import os
 import re
 import sys
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
+from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
 from file_ops import get_temp_dir  # type: ignore[import-not-found]
 from marketplace_bundles import resolve_bundles_root
 from marketplace_paths import (  # type: ignore[import-not-found]
@@ -246,7 +249,7 @@ def _detect_component_type(directory: Path) -> str:
         except (OSError, UnicodeDecodeError):
             continue
 
-        has_fm, fm_text = extract_frontmatter(content)
+        has_fm, fm_text, _ = extract_frontmatter(content)
         if not has_fm:
             continue
 
@@ -424,17 +427,6 @@ RISKY_FIX_TYPES = {
 # =============================================================================
 
 
-def extract_frontmatter(content: str) -> tuple[bool, str]:
-    """Extract YAML frontmatter from content."""
-    if not content.startswith('---'):
-        return False, ''
-
-    match = re.match(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
-    if match:
-        return True, match.group(1)
-    return False, ''
-
-
 def read_json_input(input_file: str) -> tuple[dict | None, str | None]:
     """Read and parse JSON from file or stdin."""
     try:
@@ -454,6 +446,76 @@ def read_json_input(input_file: str) -> tuple[dict | None, str | None]:
         return None, f'Invalid JSON: {str(e)}'
     except Exception as e:
         return None, f'Unexpected error: {str(e)}'
+
+
+# =============================================================================
+# Uniform Finding record
+# =============================================================================
+
+# Sentinel marking an optional field that was never supplied. ``to_dict``
+# OMITS such fields from the serialized issue dict, so the output is
+# byte-identical to the historical hand-built dicts — which included
+# different key subsets per rule (e.g. ``missing-frontmatter`` carries only
+# ``type``/``file``/``severity``/``fixable`` and no ``rule_id``/``line``).
+# A distinct sentinel is required because ``None`` is itself a valid present
+# value for ``line`` (component-level findings emit ``'line': None``).
+_UNSET: Any = object()
+
+
+@dataclass
+class Finding:
+    """The single uniform finding record for every plugin-doctor analyzer.
+
+    ``Finding`` is the only finding-construction path across the analyzer
+    subsystem. Each analyzer builds ``Finding`` objects and serializes them
+    via :meth:`to_dict`, whose output is the exact issue-dict shape the
+    downstream categorizer (:func:`categorize_all_issues`) and the existing
+    finding-shape tests consume.
+
+    Field semantics:
+
+    - ``type`` — the rule/issue key the categorizer switches on. Always
+      present in the serialized dict.
+    - ``file`` — the offending file path. Always present (default ``''``).
+    - ``line`` / ``severity`` / ``fixable`` / ``rule_id`` / ``description``
+      / ``details`` — the common optional fields. A field left at its
+      ``_UNSET`` sentinel default is OMITTED from :meth:`to_dict` output, so
+      a rule that historically did not emit a given key still does not.
+      Pass ``line=None`` explicitly to emit ``'line': None`` (a present
+      key with a ``None`` value), which several component-level rules do.
+    - ``extra`` — rule-specific top-level keys (e.g. ``script_notation``,
+      ``verb_chain``, ``classification``) that a handful of rules carry
+      alongside the common fields. Merged verbatim into :meth:`to_dict`
+      output after the common fields.
+    """
+
+    type: str
+    file: str = ''
+    line: Any = _UNSET
+    severity: Any = _UNSET
+    fixable: Any = _UNSET
+    rule_id: Any = _UNSET
+    description: Any = _UNSET
+    details: Any = _UNSET
+    extra: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to the issue-dict shape, omitting ``_UNSET`` fields."""
+        result: dict[str, Any] = {'type': self.type, 'file': self.file}
+        if self.line is not _UNSET:
+            result['line'] = self.line
+        if self.severity is not _UNSET:
+            result['severity'] = self.severity
+        if self.fixable is not _UNSET:
+            result['fixable'] = self.fixable
+        if self.rule_id is not _UNSET:
+            result['rule_id'] = self.rule_id
+        if self.description is not _UNSET:
+            result['description'] = self.description
+        if self.details is not _UNSET:
+            result['details'] = self.details
+        result.update(self.extra)
+        return result
 
 
 # =============================================================================

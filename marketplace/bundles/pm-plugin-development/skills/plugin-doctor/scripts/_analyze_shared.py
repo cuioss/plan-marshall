@@ -7,16 +7,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
-def extract_frontmatter(content: str) -> tuple[bool, str]:
-    """Extract YAML frontmatter from content."""
-    if not content.startswith('---'):
-        return False, ''
-
-    match = re.match(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
-    if match:
-        return True, match.group(1)
-    return False, ''
+from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
 
 
 def check_yaml_validity(frontmatter: str) -> bool:
@@ -126,7 +117,7 @@ def check_agent_glob_resolver_workaround(file_path: str, content: str) -> list:
     findings: list = []
 
     # Extract frontmatter; bail out if missing
-    has_frontmatter, frontmatter = extract_frontmatter(content)
+    has_frontmatter, frontmatter, _ = extract_frontmatter(content)
     if not has_frontmatter:
         return findings
 
@@ -297,7 +288,7 @@ def read_frontmatter_disable_list(content: str) -> set[str]:
 
     Returns an empty set when there is no frontmatter or the key is absent.
     """
-    has_frontmatter, frontmatter = extract_frontmatter(content)
+    has_frontmatter, frontmatter, _ = extract_frontmatter(content)
     if not has_frontmatter:
         return set()
 

@@ -60,6 +60,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'script-call-drift'
 RULE_NAME = 'analyze_script_call_drift'
 FINDING_TYPE_VERB = 'verb_not_in_subcommand_list'
@@ -218,7 +220,7 @@ def analyze_script_call_drift(marketplace_root: Path) -> list[dict]:
         # Without an executor we cannot probe --help; rule silently no-ops.
         return []
 
-    findings: list[dict] = []
+    findings: list[Finding] = []
 
     # Per-process caches. The flag cache is keyed by the full verb chain
     # (tuple) so nested subparser flags are resolved against the correct help
@@ -247,22 +249,24 @@ def analyze_script_call_drift(marketplace_root: Path) -> list[dict]:
             first_verb = verbs[0] if verbs else None
             if first_verb and choices and first_verb not in choices:
                 findings.append(
-                    {
-                        'rule_id': RULE_ID,
-                        'type': FINDING_TYPE_VERB,
-                        'rule': RULE_NAME,
-                        'file': str(md_path),
-                        'line': line_no,
-                        'severity': 'error',
-                        'fixable': False,
-                        'notation': notation,
-                        'invented_verb': first_verb,
-                        'valid_choices': sorted(choices),
-                        'description': (
+                    Finding(
+                        type=FINDING_TYPE_VERB,
+                        file=str(md_path),
+                        line=line_no,
+                        severity='error',
+                        fixable=False,
+                        rule_id=RULE_ID,
+                        description=(
                             f'Documented verb {first_verb!r} for {notation!r} is not in the script\'s '
                             f'declared subcommand choices: {sorted(choices)!r}'
                         ),
-                    }
+                        extra={
+                            'rule': RULE_NAME,
+                            'notation': notation,
+                            'invented_verb': first_verb,
+                            'valid_choices': sorted(choices),
+                        },
+                    )
                 )
 
             # Per-verb flag check — run when either (a) the notation is
@@ -282,23 +286,25 @@ def analyze_script_call_drift(marketplace_root: Path) -> list[dict]:
                         continue
                     if flag not in valid_flags:
                         findings.append(
-                            {
-                                'rule_id': RULE_ID,
-                                'type': FINDING_TYPE_FLAG,
-                                'rule': RULE_NAME,
-                                'file': str(md_path),
-                                'line': line_no,
-                                'severity': 'error',
-                                'fixable': False,
-                                'notation': notation,
-                                'verb': verb_label,
-                                'invented_flag': flag,
-                                'valid_flags': sorted(valid_flags),
-                                'description': (
+                            Finding(
+                                type=FINDING_TYPE_FLAG,
+                                file=str(md_path),
+                                line=line_no,
+                                severity='error',
+                                fixable=False,
+                                rule_id=RULE_ID,
+                                description=(
                                     f'Documented flag {flag!r} for {notation!r} {verb_label!r} is '
                                     f'not in the script\'s declared options: {sorted(valid_flags)!r}'
                                 ),
-                            }
+                                extra={
+                                    'rule': RULE_NAME,
+                                    'notation': notation,
+                                    'verb': verb_label,
+                                    'invented_flag': flag,
+                                    'valid_flags': sorted(valid_flags),
+                                },
+                            )
                         )
 
-    return findings
+    return [f.to_dict() for f in findings]

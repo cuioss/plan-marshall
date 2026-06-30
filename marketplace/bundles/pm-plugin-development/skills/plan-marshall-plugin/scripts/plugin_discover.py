@@ -29,7 +29,6 @@ Output:
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -44,6 +43,7 @@ if str(EXTENSION_API_DIR) not in sys.path:
     sys.path.insert(0, str(EXTENSION_API_DIR))
 
 from _build_discover import find_readme  # noqa: E402
+from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]  # noqa: E402
 from file_ops import safe_main  # type: ignore[import-not-found]  # noqa: E402
 
 # =============================================================================
@@ -99,24 +99,6 @@ def _is_plan_marshall_marketplace(project_root: str) -> bool:
 # =============================================================================
 # Frontmatter Extraction
 # =============================================================================
-
-
-def extract_frontmatter(content: str) -> tuple[bool, str]:
-    """Extract YAML frontmatter from content.
-
-    Args:
-        content: File content starting with potential frontmatter.
-
-    Returns:
-        Tuple of (has_frontmatter, frontmatter_content).
-    """
-    if not content.startswith('---'):
-        return False, ''
-
-    match = re.match(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
-    if match:
-        return True, match.group(1)
-    return False, ''
 
 
 def extract_description_from_frontmatter(frontmatter: str) -> str | None:
@@ -179,9 +161,9 @@ def get_component_description(file_path: Path) -> str | None:
 
     try:
         content = file_path.read_text(encoding='utf-8')
-        has_fm, frontmatter = extract_frontmatter(content)
-        if has_fm:
-            return extract_description_from_frontmatter(frontmatter)
+        record = extract_frontmatter(content)
+        if record.present:
+            return extract_description_from_frontmatter(record.raw)
     except OSError:
         pass
     return None

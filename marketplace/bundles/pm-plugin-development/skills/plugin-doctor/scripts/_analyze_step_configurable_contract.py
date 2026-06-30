@@ -91,6 +91,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'step-configurable-contract'
 RULE_NAME = 'scan_step_configurable_contract'
 FINDING_TYPE = 'step_configurable_contract'
@@ -217,25 +219,27 @@ def _scan_doc(parser: ModuleType, path: Path) -> list[dict]:
         parser.parse_configurable(path)
     except ValueError as exc:
         return [
-            {
-                'rule_id': RULE_ID,
-                'type': FINDING_TYPE,
-                'rule': RULE_NAME,
-                'file': str(path),
-                'line': _configurable_line(content),
-                'severity': 'error',
-                'fixable': False,
-                'message': (
-                    f'Malformed step `configurable:` declaration — {exc}. '
-                    f'See rule-catalog.md and '
-                    f'extension-api/scripts/configurable_contract.py for the '
-                    f'declaration schema (each entry needs key, default, '
-                    f'description).'
-                ),
-                'details': {
+            Finding(
+                type=FINDING_TYPE,
+                file=str(path),
+                line=_configurable_line(content),
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                details={
                     'parser_error': str(exc),
                 },
-            }
+                extra={
+                    'rule': RULE_NAME,
+                    'message': (
+                        f'Malformed step `configurable:` declaration — {exc}. '
+                        f'See rule-catalog.md and '
+                        f'extension-api/scripts/configurable_contract.py for the '
+                        f'declaration schema (each entry needs key, default, '
+                        f'description).'
+                    ),
+                },
+            ).to_dict()
         ]
     return []
 

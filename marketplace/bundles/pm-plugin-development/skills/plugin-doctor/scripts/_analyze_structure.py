@@ -17,7 +17,8 @@ from _analyze_markdown import (  # noqa: F401  # re-exported for stable import s
     DYNAMIC_LEVEL_EXECUTOR_REF,
     check_hardcoded_model_on_canonical,
 )
-from _analyze_shared import check_yaml_validity, extract_frontmatter, remove_code_blocks
+from _analyze_shared import check_yaml_validity, remove_code_blocks
+from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
 
 # Noun suffixes reserved for spawnable marketplace agents. Skill directory names
 # must not end with any of these — see pm-plugin-development:plugin-architecture
@@ -145,7 +146,7 @@ def analyze_skill_structure(skill_dir: Path) -> dict:
         except OSError:
             content = ''
 
-        frontmatter_present, frontmatter = extract_frontmatter(content)
+        frontmatter_present, frontmatter, _ = extract_frontmatter(content)
         if frontmatter_present:
             yaml_valid = check_yaml_validity(frontmatter)
 

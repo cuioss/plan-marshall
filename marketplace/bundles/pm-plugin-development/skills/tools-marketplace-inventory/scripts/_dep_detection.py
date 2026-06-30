@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 
 class DependencyType(Enum):
@@ -98,23 +98,26 @@ PYTHON_MODULE_MAPPINGS: dict[str, str] = {
 }
 
 
-def extract_frontmatter(content: str) -> tuple[dict[str, Any], int]:
-    """Extract YAML frontmatter from markdown content.
+class Frontmatter(NamedTuple):
+    """Canonical parsed-frontmatter record — the single marketplace parser's output.
 
-    Returns:
-        Tuple of (frontmatter dict, end line number)
+    Superset of the historical parser return shapes, all derived from ONE regex
+    match so raw-text and dict consumers never diverge:
+
+    - ``present``: whether a frontmatter block was found.
+    - ``raw``: the raw YAML text between the ``---`` delimiters (regex group 1),
+      consumed by raw-text analyzers that run their own sub-parsers/regex.
+    - ``fields``: the flat-parsed key/value (and block-list) mapping, consumed by
+      index/dict callers.
     """
-    if not content.startswith('---'):
-        return {}, 0
 
-    match = re.match(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
-    if not match:
-        return {}, 0
+    present: bool
+    raw: str
+    fields: dict[str, Any]
 
-    frontmatter_text = match.group(1)
-    end_line = content[: match.end()].count('\n')
 
-    # Simple YAML parsing (handles flat key: value and lists)
+def _parse_flat_fields(frontmatter_text: str) -> dict[str, Any]:
+    """Flat-parse frontmatter text into a dict (key: value and ``  - `` lists)."""
     result: dict[str, Any] = {}
     current_key: str | None = None
     current_list: list[str] = []
@@ -147,7 +150,24 @@ def extract_frontmatter(content: str) -> tuple[dict[str, Any], int]:
     if current_key and current_list:
         result[current_key] = current_list
 
-    return result, end_line
+    return result
+
+
+def extract_frontmatter(content: str) -> Frontmatter:
+    """Extract YAML frontmatter from markdown content — the single canonical parser.
+
+    One regex match yields both the raw block text (``raw``) and the flat-parsed
+    fields (``fields``), so raw-text and dict consumers stay byte-identical.
+    """
+    if not content.startswith('---'):
+        return Frontmatter(present=False, raw='', fields={})
+
+    match = re.match(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
+    if not match:
+        return Frontmatter(present=False, raw='', fields={})
+
+    raw = match.group(1)
+    return Frontmatter(present=True, raw=raw, fields=_parse_flat_fields(raw))
 
 
 def detect_script_notations(content: str, source: ComponentId) -> list[Dependency]:
@@ -379,7 +399,7 @@ def detect_all_dependencies(
     # Extract frontmatter for markdown files
     frontmatter: dict[str, Any] = {}
     if file_path.suffix == '.md':
-        frontmatter, _ = extract_frontmatter(content)
+        frontmatter = extract_frontmatter(content).fields
 
     # Detect each type
     if DependencyType.SCRIPT_NOTATION in dep_types:

@@ -63,6 +63,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 # =============================================================================
 # Rule IDs
 # =============================================================================
@@ -458,7 +460,7 @@ def scan_notation(
     2. The third segment exactly repeats the second (``foo:foo`` shape).
     3. The notation is not present in ``registered_notations``.
     """
-    findings: list[dict] = []
+    findings: list[Finding] = []
     for md in _markdown_targets(marketplace_root):
         for inv in _extract_invocations(md):
             notation = inv.notation
@@ -476,20 +478,20 @@ def scan_notation(
                 details['reason'] = 'not_registered'
 
             findings.append(
-                {
-                    'rule_id': RULE_NOTATION_INVALID,
-                    'type': RULE_NOTATION_INVALID,
-                    'file': str(inv.file),
-                    'line': inv.line,
-                    'severity': 'error',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=RULE_NOTATION_INVALID,
+                    file=str(inv.file),
+                    line=inv.line,
+                    severity='error',
+                    fixable=False,
+                    rule_id=RULE_NOTATION_INVALID,
+                    description=(
                         f'Notation `{notation}` is not registered in the executor (reason: {details["reason"]})'
                     ),
-                    'details': details,
-                }
+                    details=details,
+                )
             )
-    return findings
+    return [f.to_dict() for f in findings]
 
 
 # =============================================================================
@@ -502,7 +504,7 @@ def scan_subcommand(
     script_index: dict[str, _ScriptEntry],
 ) -> list[dict]:
     """Detect invented subcommand tokens following a registered notation."""
-    findings: list[dict] = []
+    findings: list[Finding] = []
     for md in _markdown_targets(marketplace_root):
         for inv in _extract_invocations(md):
             if inv.subcommand is None:
@@ -520,25 +522,25 @@ def scan_subcommand(
                 continue
 
             findings.append(
-                {
-                    'rule_id': RULE_SUBCOMMAND_UNKNOWN,
-                    'type': RULE_SUBCOMMAND_UNKNOWN,
-                    'file': str(inv.file),
-                    'line': inv.line,
-                    'severity': 'error',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=RULE_SUBCOMMAND_UNKNOWN,
+                    file=str(inv.file),
+                    line=inv.line,
+                    severity='error',
+                    fixable=False,
+                    rule_id=RULE_SUBCOMMAND_UNKNOWN,
+                    description=(
                         f'Subcommand `{inv.subcommand}` not declared on `{inv.notation}` '
                         f'(known: {sorted(entry.subcommands)})'
                     ),
-                    'details': {
+                    details={
                         'notation': inv.notation,
                         'subcommand': inv.subcommand,
                         'known_subcommands': sorted(entry.subcommands),
                     },
-                }
+                )
             )
-    return findings
+    return [f.to_dict() for f in findings]
 
 
 # =============================================================================
@@ -551,7 +553,7 @@ def scan_flag(
     script_index: dict[str, _ScriptEntry],
 ) -> list[dict]:
     """Detect invented ``--flag`` tokens against a script's argparse declarations."""
-    findings: list[dict] = []
+    findings: list[Finding] = []
     for md in _markdown_targets(marketplace_root):
         for inv in _extract_invocations(md):
             entry = script_index.get(inv.notation)
@@ -576,25 +578,25 @@ def scan_flag(
                 if flag in allowed:
                     continue
                 findings.append(
-                    {
-                        'rule_id': RULE_FLAG_UNKNOWN,
-                        'type': RULE_FLAG_UNKNOWN,
-                        'file': str(inv.file),
-                        'line': inv.line,
-                        'severity': 'error',
-                        'fixable': False,
-                        'description': (
+                    Finding(
+                        type=RULE_FLAG_UNKNOWN,
+                        file=str(inv.file),
+                        line=inv.line,
+                        severity='error',
+                        fixable=False,
+                        rule_id=RULE_FLAG_UNKNOWN,
+                        description=(
                             f'Flag `--{flag}` not declared on `{inv.notation} {scope_label}` (known: {sorted(allowed)})'
                         ),
-                        'details': {
+                        details={
                             'notation': inv.notation,
                             'subcommand': inv.subcommand,
                             'flag': flag,
                             'known_flags': sorted(allowed),
                         },
-                    }
+                    )
                 )
-    return findings
+    return [f.to_dict() for f in findings]
 
 
 # =============================================================================
@@ -680,10 +682,10 @@ def scan_canonical_forms(
     - the ``{sub}`` is not a declared subcommand on that script;
     - any ``--{flag}`` is not declared on the resolved (script, sub).
     """
-    findings: list[dict] = []
+    findings: list[Finding] = []
     md_path = _canonical_forms_path(marketplace_root)
     if not md_path.is_file():
-        return findings
+        return []
 
     for line, form in _parse_canonical_forms(md_path):
         tokens = form.split()
@@ -693,41 +695,41 @@ def scan_canonical_forms(
         notation = _resolve_shorthand_to_notation(shorthand, script_index)
         if notation is None:
             findings.append(
-                {
-                    'rule_id': RULE_CANONICAL_FORMS_DRIFT,
-                    'type': RULE_CANONICAL_FORMS_DRIFT,
-                    'file': str(md_path),
-                    'line': line,
-                    'severity': 'error',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=RULE_CANONICAL_FORMS_DRIFT,
+                    file=str(md_path),
+                    line=line,
+                    severity='error',
+                    fixable=False,
+                    rule_id=RULE_CANONICAL_FORMS_DRIFT,
+                    description=(
                         f'Canonical Forms row references unknown script `{shorthand}` — no registered notation matches'
                     ),
-                    'details': {
+                    details={
                         'shorthand': shorthand,
                         'form': form,
                         'reason': 'shorthand_unresolved',
                     },
-                }
+                )
             )
             continue
 
         entry = script_index[notation]
         if sub not in entry.subcommands:
             findings.append(
-                {
-                    'rule_id': RULE_CANONICAL_FORMS_DRIFT,
-                    'type': RULE_CANONICAL_FORMS_DRIFT,
-                    'file': str(md_path),
-                    'line': line,
-                    'severity': 'error',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=RULE_CANONICAL_FORMS_DRIFT,
+                    file=str(md_path),
+                    line=line,
+                    severity='error',
+                    fixable=False,
+                    rule_id=RULE_CANONICAL_FORMS_DRIFT,
+                    description=(
                         f'Canonical Forms row prescribes `{shorthand} {sub}` '
                         f'but argparse for `{notation}` declares no such subcommand '
                         f'(known: {sorted(entry.subcommands)})'
                     ),
-                    'details': {
+                    details={
                         'shorthand': shorthand,
                         'notation': notation,
                         'subcommand': sub,
@@ -735,7 +737,7 @@ def scan_canonical_forms(
                         'form': form,
                         'reason': 'subcommand_drift',
                     },
-                }
+                )
             )
             continue
 
@@ -750,19 +752,19 @@ def scan_canonical_forms(
             if not flag or flag in allowed:
                 continue
             findings.append(
-                {
-                    'rule_id': RULE_CANONICAL_FORMS_DRIFT,
-                    'type': RULE_CANONICAL_FORMS_DRIFT,
-                    'file': str(md_path),
-                    'line': line,
-                    'severity': 'error',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=RULE_CANONICAL_FORMS_DRIFT,
+                    file=str(md_path),
+                    line=line,
+                    severity='error',
+                    fixable=False,
+                    rule_id=RULE_CANONICAL_FORMS_DRIFT,
+                    description=(
                         f'Canonical Forms row prescribes `--{flag}` for '
                         f'`{shorthand} {sub}` but argparse declares it as '
                         f'{sorted(allowed)}'
                     ),
-                    'details': {
+                    details={
                         'shorthand': shorthand,
                         'notation': notation,
                         'subcommand': sub,
@@ -771,9 +773,9 @@ def scan_canonical_forms(
                         'form': form,
                         'reason': 'flag_drift',
                     },
-                }
+                )
             )
-    return findings
+    return [f.to_dict() for f in findings]
 
 
 # =============================================================================

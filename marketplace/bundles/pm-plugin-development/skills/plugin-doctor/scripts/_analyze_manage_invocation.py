@@ -96,6 +96,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 # =============================================================================
 # Rule IDs
 # =============================================================================
@@ -1086,16 +1088,16 @@ def _build_finding(
     description: str,
     details: dict,
 ) -> dict:
-    return {
-        'rule_id': rule_id,
-        'type': rule_id,
-        'file': file_path,
-        'line': line,
-        'severity': severity,
-        'fixable': False,
-        'description': description,
-        'details': details,
-    }
+    return Finding(
+        type=rule_id,
+        file=file_path,
+        line=line,
+        severity=severity,
+        fixable=False,
+        rule_id=rule_id,
+        description=description,
+        details=details,
+    ).to_dict()
 
 
 def _canonical_hint_for_subcommand(

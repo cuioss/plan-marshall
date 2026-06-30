@@ -33,12 +33,17 @@ Detection flow
 6. Honor a per-file ``plugin-doctor-disable: [prose-verb-chain-consistency]``
    frontmatter key, which suppresses every verb-check finding in that file.
 
-Findings have the shape::
+Findings are constructed via the uniform ``Finding`` dataclass and
+serialized to the plugin-doctor issue-dict shape::
 
     {
+        'type': 'prose-verb-chain-consistency',
         'rule_id': 'prose-verb-chain-consistency',
         'file': '<absolute markdown path>',
         'line': <int, 1-based line of the offending verb token>,
+        'severity': 'error',
+        'fixable': False,
+        'description': '<human-readable message>',
         'script_notation': 'bundle:skill:script',
         'verb_chain': ['verb', 'sub_verb', ...],
         'first_unknown_segment': 'stale_verb',
@@ -60,6 +65,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from _analyze_shared import read_frontmatter_disable_list
+from _doctor_shared import Finding
 
 RULE_ID = 'prose-verb-chain-consistency'
 
@@ -648,14 +654,25 @@ def analyze_verb_chains(skill_dir: Path) -> list[dict]:
                 continue
 
             findings.append(
-                {
-                    'rule_id': RULE_ID,
-                    'file': str(inv.markdown_path),
-                    'line': inv.line,
-                    'script_notation': inv.script_notation,
-                    'verb_chain': list(inv.verb_chain),
-                    'first_unknown_segment': result.first_unknown_segment,
-                }
+                Finding(
+                    type=RULE_ID,
+                    rule_id=RULE_ID,
+                    file=str(inv.markdown_path),
+                    line=inv.line,
+                    severity='error',
+                    fixable=False,
+                    description=(
+                        f'Stale script verb `{result.first_unknown_segment}` referenced for '
+                        f'`{inv.script_notation}` — '
+                        "update prose to match the script's registered subparsers "
+                        '(prose-verb-chain-consistency)'
+                    ),
+                    extra={
+                        'script_notation': inv.script_notation,
+                        'verb_chain': list(inv.verb_chain),
+                        'first_unknown_segment': result.first_unknown_segment,
+                    },
+                ).to_dict()
             )
 
     return findings

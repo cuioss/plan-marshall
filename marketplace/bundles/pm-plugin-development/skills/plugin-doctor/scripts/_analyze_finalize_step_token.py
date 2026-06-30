@@ -83,6 +83,8 @@ import re
 import sys
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'finalize-step-token-mismatch'
 RULE_NAME = 'scan_finalize_step_token'
 FINDING_TYPE = 'finalize_step_token_mismatch'
@@ -209,26 +211,28 @@ def _scan_skill(path: Path, expected_step_id: str) -> list[dict]:
         return []
 
     return [
-        {
-            'rule_id': RULE_ID,
-            'type': FINDING_TYPE,
-            'rule': RULE_NAME,
-            'file': str(path),
-            'line': line_number,
-            'severity': 'error',
-            'fixable': False,
-            'message': (
-                f'Documented mark-step-done --step token '
-                f'`{documented_token}` does not match the manifest step_id '
-                f'`{expected_step_id}`. The recorded phase_steps key drifts '
-                f'and the phase_steps_complete handshake reports the step '
-                f'missing. See rule-catalog.md.'
-            ),
-            'details': {
+        Finding(
+            type=FINDING_TYPE,
+            file=str(path),
+            line=line_number,
+            severity='error',
+            fixable=False,
+            rule_id=RULE_ID,
+            details={
                 'documented_token': documented_token,
                 'expected_step_id': expected_step_id,
             },
-        }
+            extra={
+                'rule': RULE_NAME,
+                'message': (
+                    f'Documented mark-step-done --step token '
+                    f'`{documented_token}` does not match the manifest step_id '
+                    f'`{expected_step_id}`. The recorded phase_steps key drifts '
+                    f'and the phase_steps_complete handshake reports the step '
+                    f'missing. See rule-catalog.md.'
+                ),
+            },
+        ).to_dict()
     ]
 
 

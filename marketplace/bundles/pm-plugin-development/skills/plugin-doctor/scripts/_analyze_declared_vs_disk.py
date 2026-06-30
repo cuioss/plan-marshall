@@ -49,6 +49,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'declared-component-vs-disk'
 RULE_NAME = 'analyze_declared_vs_disk'
 
@@ -83,7 +85,7 @@ def _scan_plugin_json(plugin_json: Path) -> list[dict]:
         return []
 
     bundle_dir = plugin_json.parent.parent
-    findings: list[dict] = []
+    findings: list[Finding] = []
     for key in _COMPONENT_KEYS:
         entries = data.get(key)
         if not isinstance(entries, list):
@@ -95,30 +97,30 @@ def _scan_plugin_json(plugin_json: Path) -> list[dict]:
             if anchor.is_file():
                 continue
             findings.append(
-                {
-                    'rule_id': RULE_ID,
-                    'type': RULE_ID,
-                    'rule': RULE_NAME,
-                    'file': str(plugin_json),
-                    'line': 1,
-                    'severity': 'error',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=RULE_ID,
+                    file=str(plugin_json),
+                    line=1,
+                    severity='error',
+                    fixable=False,
+                    rule_id=RULE_ID,
+                    description=(
                         f'plugin.json declares {key[:-1]} `{entry}` but the '
                         f'expected file `{anchor}` does not exist on disk — the '
                         f'declared component does not resolve '
                         f'(declared-component-vs-disk)'
                     ),
-                    'details': {
+                    details={
                         'bundle': bundle_dir.name,
                         'component_kind': key[:-1],
                         'declared_entry': entry,
                         'expected_path': str(anchor),
                         'reason': 'declared_file_missing',
                     },
-                }
+                    extra={'rule': RULE_NAME},
+                )
             )
-    return findings
+    return [f.to_dict() for f in findings]
 
 
 def analyze_declared_vs_disk(marketplace_root: Path) -> list[dict]:
