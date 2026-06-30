@@ -34,7 +34,12 @@ JSON structure and field definitions for project configuration.
       "use_worktree": true,
       "init_without_asking": true,
       "deep_lane": "auto",
-      "escalation": "auto"
+      "escalation": "auto",
+      "lane_selection": "ask",
+      "lane_prune_thresholds": {
+        "confidence_complete": 95,
+        "linear_change_max_deliverables": 1
+      }
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
@@ -325,7 +330,12 @@ These fields live directly under `plan`, outside any phase block.
       "use_worktree": true,
       "init_without_asking": true,
       "deep_lane": "auto",
-      "escalation": "auto"
+      "escalation": "auto",
+      "lane_selection": "ask",
+      "lane_prune_thresholds": {
+        "confidence_complete": 95,
+        "linear_change_max_deliverables": 1
+      }
     }
   }
 }
@@ -338,6 +348,10 @@ These fields live directly under `plan`, outside any phase block.
 | `init_without_asking` | bool | true | Auto-continue from `phase-1-init` to `phase-2-refine`. `true` (default) skips the gate; `false` stops after init and waits for the user. |
 | `deep_lane` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the precondition-driven deep planning lane. Consumed by the phase-1-init `planning-lane route`. `always` forces deep; `never` forces light (the DQ3 hard-escalation ratchet still fires unless `escalation` is also `never`); `auto` defers to the DQ1 signal set. Validated by `validate_run_at_all`. |
 | `escalation` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the hard-escalation safety ratchet (DQ3 explosion / build-break / premise). `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in. Validated by `validate_run_at_all`. |
+| `lane_selection` | enum(`ask`\|`auto`) | ask | Whether init PROMPTS for the execution-profile posture (`ask` surfaces the minimal/auto/full dialogue) or silently takes the computed `auto` projection (`auto`). Validated by `validate_lane_selection`. The per-element lane vocabulary (closed `lane.class` enum, class→default tier table, prune-predicate names) is owned by [`../../extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md). |
+| `lane_prune_thresholds` | dict | `{confidence_complete: 95, linear_change_max_deliverables: 1}` | Tunable numeric thresholds the `auto` posture evaluates its prunable-element predicates against at manifest-compose time. `confidence_complete` (int 0–100) is the post-init confidence floor that prunes `refine`; `linear_change_max_deliverables` (int ≥ 1) is the deliverable-count ceiling that prunes the 4-plan decomposition element. The boolean predicates (`no_code_delta`, `footprint_no_lesson_component`) carry no threshold. Validated by `validate_lane_prune_thresholds` (exact key set + range enforcement). |
+
+**Per-element lane override** (`plan.<phase>.steps.<step>.lane`, value ∈ `off`\|`minimal`\|`auto`\|`full`\|`ask`, validated by `validate_lane_override`): pins any lane-participating element to a fixed posture cutoff via the same nested step-param channel finalize-step params use. `off` never runs it (a `derived-state`/`core` weakening additionally emits a correctness warning at compose time, but is honored — *user decision wins*); `minimal` force-keeps it in every posture; `auto`/`full` pin its tier; `ask` always surfaces it individually in the init dialogue. Absent by default — the shipped per-element default lives in each element's frontmatter `lane:` block, and `marshal.json` carries only the project / meta overrides.
 
 ### phase-2-refine
 

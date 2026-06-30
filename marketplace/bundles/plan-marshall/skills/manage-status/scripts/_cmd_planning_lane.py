@@ -24,6 +24,16 @@ The signal set (DQ1 of the planning-lanes solution outline):
 short-circuits the evaluation: ``always`` forces deep, ``never`` forces light
 (the DQ3 hard-escalation ratchet still fires unless ``plan.phase-1-init.escalation``
 is also ``never``), ``auto`` (the default) defers to the signals.
+
+The router also projects a RECOMMENDED execution-profile posture
+(``minimal`` / ``auto`` / ``full``) over the SAME signals via
+``project_profile_pure``. The projection is a pure derivation that adds no
+discovery and no cognition; it is independent of the ``deep_lane`` ceremony gate
+(``deep_lane=always`` governs planning depth, NOT the profile — see
+``extension-api/standards/ext-point-lane-element.md`` for the lane contract). On
+``--persist`` the route command writes the projected posture into
+``status.metadata.execution_profile`` as the init-time default; the phase-1-init
+posture dialogue may override it via ``manage-status metadata``.
 """
 
 from __future__ import annotations
@@ -42,6 +52,21 @@ from plan_logging import log_entry  # type: ignore[import-not-found]
 
 LIGHT = 'light'
 DEEP = 'deep'
+
+# Execution-profile postures (the lane lattice minimal ⊏ auto ⊏ full). The
+# planning-lane router projects a RECOMMENDED posture over the same signals it
+# already scores for the {light, deep} verdict; the projection is independent of
+# the deep_lane ceremony gate (deep_lane governs planning DEPTH, not the profile
+# — see ext-point-lane-element.md and §4.2 of the lane-selection outline).
+MINIMAL = 'minimal'
+AUTO = 'auto'
+FULL = 'full'
+
+# Scope bands that read as broad-surface for the profile projection (a superset
+# trigger toward keeping full ceremony when combined with a generative change).
+_BROAD_SCOPE_ESTIMATES = frozenset({'multi_module', 'broad'})
+# Scope bands that read as narrow/localized for the minimal recommendation.
+_NARROW_SCOPE_ESTIMATES = frozenset({'surgical', 'single_module'})
 
 # S2 — scope_estimate values that bias deep (broad-surface / unknown bands).
 # surgical / single_module bias light.
@@ -151,6 +176,41 @@ def _read_deep_lane_gate() -> str:
     return 'auto'
 
 
+def project_profile_pure(
+    scope_estimate: str | None,
+    change_type: str | None,
+    compatibility: str | None,
+    request_concrete: bool,
+) -> str:
+    """Project the recommended execution-profile posture — pure, I/O-free.
+
+    A deterministic function of the SAME signals the lane verdict scores (it
+    adds no discovery and no cognition). It recommends a posture on the
+    ``minimal ⊏ auto ⊏ full`` lattice:
+
+    - ``full`` — a generative change (``change_type ∈ {feature,
+      feature_breaking}``) that is also broad (``scope_estimate`` ∈ multi_module
+      / broad) OR clean-slate breaking. These are the correctly-deep features
+      where the adversarial ceremony earns its cost.
+    - ``minimal`` — a non-generative change that is narrow (surgical /
+      single_module) AND concretely specified. A mechanical, well-anchored,
+      low-stakes change.
+    - ``auto`` — everything else (the generic recommendation / default).
+
+    The recommendation is exactly that — a default the operator overrides. It is
+    independent of the ``deep_lane`` ceremony gate (which governs planning depth,
+    not the profile).
+    """
+    generative = change_type in _DEEP_CHANGE_TYPES
+    broad = scope_estimate in _BROAD_SCOPE_ESTIMATES
+    breaking = compatibility == 'breaking'
+    if generative and (broad or breaking):
+        return FULL
+    if not generative and scope_estimate in _NARROW_SCOPE_ESTIMATES and request_concrete:
+        return MINIMAL
+    return AUTO
+
+
 def evaluate_signals_pure(
     scope_estimate: str | None,
     change_type: str | None,
@@ -162,9 +222,12 @@ def evaluate_signals_pure(
     """Score the S1–S6 signal set into a lane verdict — pure, I/O-free.
 
     Takes the realized signal values directly (the reads happen in the caller)
-    and returns the same ``{lane, fired_signals, signals}`` dict that drives the
-    route dispatch. Importable by downstream consumers (e.g. the audit
-    retrospective check) so the routing thresholds are never duplicated.
+    and returns the ``{lane, fired_signals, signals, profile}`` dict that drives
+    the route dispatch. ``profile`` carries the recommended execution-profile
+    posture (``project_profile_pure``) plus the candidate posture lattice — the
+    init dialogue consumes it as the default recommendation. Importable by
+    downstream consumers (e.g. the audit retrospective check) so the routing
+    thresholds are never duplicated.
     """
     # S5 — vague ask, no anchors → deep.
     s5_deep = not request_concrete
@@ -196,6 +259,12 @@ def evaluate_signals_pure(
         fired.append('S6:override')
 
     lane = DEEP if fired else LIGHT
+    recommended_posture = project_profile_pure(
+        scope_estimate=scope_estimate,
+        change_type=change_type,
+        compatibility=compatibility,
+        request_concrete=request_concrete,
+    )
     return {
         'lane': lane,
         'fired_signals': fired,
@@ -206,6 +275,10 @@ def evaluate_signals_pure(
             'compatibility': compatibility,
             'request_concrete': request_concrete,
             'planning_lane_override': override,
+        },
+        'profile': {
+            'recommended_posture': recommended_posture,
+            'candidate_postures': [MINIMAL, AUTO, FULL],
         },
     }
 
@@ -282,25 +355,44 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
 
     ceremony = _read_deep_lane_gate()
 
+    # The signal set is scored unconditionally so the execution-profile
+    # projection is available regardless of the deep_lane ceremony gate. The
+    # gate short-circuits ONLY the {light, deep} planning-depth verdict; it must
+    # NOT coerce the profile (deep_lane=always does not force `full` — §4.2).
+    signal_evaluation = _evaluate_signals(plan_id, metadata)
+    profile = signal_evaluation['profile']
+
     evaluation: dict[str, Any]
     if ceremony == 'always':
         lane = DEEP
         decision = 'plan.phase-1-init.deep_lane=always'
-        evaluation = {'lane': lane, 'fired_signals': ['deep_lane:always'], 'signals': {}}
+        evaluation = {
+            'lane': lane,
+            'fired_signals': ['deep_lane:always'],
+            'signals': signal_evaluation['signals'],
+            'profile': profile,
+        }
     elif ceremony == 'never':
         lane = LIGHT
         decision = 'plan.phase-1-init.deep_lane=never'
-        evaluation = {'lane': lane, 'fired_signals': [], 'signals': {}}
+        evaluation = {'lane': lane, 'fired_signals': [], 'signals': signal_evaluation['signals'], 'profile': profile}
     else:
-        evaluation = _evaluate_signals(plan_id, metadata)
+        evaluation = signal_evaluation
         lane = evaluation['lane']
         decision = 'signal_set'
+
+    recommended_posture = profile['recommended_posture']
 
     persisted = False
     if persist:
         if 'metadata' not in status or not isinstance(status['metadata'], dict):
             status['metadata'] = {}
         status['metadata']['planning_lane'] = lane
+        # Persist the projected posture as the init-time default; the operator's
+        # final choice (if it overrides the recommendation) is written by the
+        # phase-1-init dialogue via `manage-status metadata`.
+        if 'execution_profile' not in status['metadata']:
+            status['metadata']['execution_profile'] = recommended_posture
         if lane_override in (DEEP, LIGHT):
             status['metadata']['planning_lane_override'] = lane_override
         write_status(plan_id, status)
@@ -314,7 +406,8 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
         (
             f'(plan-marshall:manage-status:planning-lane) Routed planning_lane={lane} '
             f'(predicate={decision}, fired={fired or "none"}, '
-            f'ceremony.deep_lane={ceremony}, signals={evaluation["signals"]})'
+            f'ceremony.deep_lane={ceremony}, execution_profile={recommended_posture}, '
+            f'signals={evaluation["signals"]})'
         ),
     )
 
@@ -326,6 +419,8 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
         'decision_predicate': decision,
         'fired_signals': fired,
         'signals': evaluation['signals'],
+        'execution_profile': recommended_posture,
+        'profile': profile,
         'persisted': persisted,
         'classification_validation': {
             'mismatch_count': classification_validation.get('mismatch_count', 0),

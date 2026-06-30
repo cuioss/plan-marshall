@@ -1,4 +1,9 @@
 ---
+lane:
+  class: prunable
+  tier: minimal
+  prunable_when: footprint_no_lesson_component
+  cost_size: L
 name: finalize-step-lessons-housekeeping
 description: Finalize-phase wrapper that reconciles the just-finished plan's outcome against the lessons-learned corpus, removing fully-covered lessons, promoting reusable residue into the governing skill before retiring the lesson, and trimming partially-covered ones
 user-invocable: false

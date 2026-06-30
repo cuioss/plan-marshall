@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: XL
 name: phase-4-plan
 description: Domain-agnostic task planning from deliverables with skill resolution and optimization
 user-invocable: false
@@ -683,6 +686,8 @@ The packer's Next-Fit-in-task-order contract, the lone-oversized-task own-group 
 **Purpose**: Emit the per-plan execution manifest so that Phase 5 and Phase 6 can dispatch their steps as dumb manifest executors. The manifest is the single source of truth for which Phase 5 verification steps and Phase 6 finalize steps fire for this plan — per-doc skip logic in their standards is removed in favor of this single artifact.
 
 This step runs after Step 7 (execution order) and before Step 8 (Q-Gate). It MUST run on every successful plan-phase invocation; the manifest is required by phase-5-execute on entry.
+
+**Idempotent firm-signal re-compose (execution-profile lane resolution).** This Step 7b compose is the **second** of the two composes in the lane lifecycle (§4.5 of the lane-selection design): `phase-1-init` runs the FIRST, provisional compose at posture-decision time, and this end-of-phase-4 compose re-runs the SAME idempotent projection with the now-firm `change_type` / `affected_files` signals. The chosen posture and the `minimal` / `full` shapes were fixed at init and do NOT change here; the only thing this re-compose can move is `auto`'s footprint-gated prunes (e.g. `sonar-roundtrip` flips back on when the firm `affected_files` reveals a code delta the init guess missed). That is `auto` self-correcting in the safe, more-validation direction, so it is **logged (with any cost delta), never re-prompted** — there is no second posture dialogue at phase-4. The composer reads the posture from `status.metadata.execution_profile` (written by the init dialogue) and resolves each finalize element's `lane:` block under it; see [`manage-execution-manifest/standards/decision-rules.md`](../manage-execution-manifest/standards/decision-rules.md) § "Execution-profile lane resolution" for the resolution rules and the twice-compose timing.
 
 **Inputs**:
 - `change_type` — read from solution outline metadata (use the first deliverable's `change_type` when the outline has more than one; the plan-level summary in `solution_outline.md` Summary block also surfaces it).

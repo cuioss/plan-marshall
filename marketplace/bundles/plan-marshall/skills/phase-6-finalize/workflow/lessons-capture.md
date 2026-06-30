@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: M
 name: default:lessons-capture
 description: Capture lessons from triage findings and PR-review escalations (skipped when qgate_findings=0, pr_comments_promoted=0, and script_failure_clusters=0)
 order: 60

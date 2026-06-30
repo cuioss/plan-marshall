@@ -1,4 +1,8 @@
 ---
+lane:
+  class: prunable
+  prunable_when: no_code_delta
+  cost_size: M
 name: finalize-step-review-retrospective
 description: Finalize-phase wrapper that compares the PR's automated and human reviewers — a deterministic per-reviewer metrics pass (raw vs actionable vs meta comments, resolution buckets, %-resolved-as-fixed) augmented by an LLM qualitative quality judgment and a comparative verdict, persisted as a review-retrospective artifact
 user-invocable: false

@@ -1,4 +1,9 @@
 ---
+lane:
+  class: prunable
+  tier: full
+  prunable_when: linear_change
+  cost_size: L
 name: plan-retrospective
 description: Opt-in plan quality audit — analyzes artifacts, logs, metrics, chat, and invariants; compiles report and seeds lessons
 user-invocable: true
@@ -21,7 +26,7 @@ implements:
 
 ## Enforcement
 
-**Execution mode**: Select a mode (finalize-step live, user-invocable live, archived) from the Input Contract, dispatch the 12 aspect references in the documented order, compile the report, propose lessons, then emit the mode-appropriate termination (mark-step-done tail for finalize-step mode only).
+**Execution mode**: Select a mode (finalize-step live, user-invocable live, archived) from the Input Contract, dispatch the 14 aspect references in the documented order, compile the report, propose lessons, then emit the mode-appropriate termination (mark-step-done tail for finalize-step mode only).
 
 **Prohibited actions**:
 - Never re-run invariant capture. Read `status.metadata.phase_handshake` or `status.metadata.invariants` directly — invariants are already captured by phase transitions.
@@ -140,8 +145,9 @@ For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect
 | 10 | Direct gh/glab usage (Surfaces A+B: plan logs + plan diff) | `direct-gh-glab-usage` | `references/direct-gh-glab-usage.md` |
 | 11 | Execution-context dispatch audit (both directions: spawns rode the envelope AND DISPATCHED steps were dispatched) | (LLM on logs + dispatch decisions + phase_steps) | `standards/execution-context-dispatch-audit.md` |
 | 12 | Manifest decisions (conditional) | `check-manifest-consistency` | `standards/manifest-crosscheck.md` |
-| 13 | Chat history (conditional) | (LLM on session transcript) | `references/chat-history-analysis.md` |
-| 14 | Lessons proposal | (LLM on compiled fragments) | `references/lessons-proposal.md` |
+| 13 | Routing decisions (conditional) | `check-routing-decisions` | `references/routing-decision-verification.md` |
+| 14 | Chat history (conditional) | (LLM on session transcript) | `references/chat-history-analysis.md` |
+| 15 | Lessons proposal | (LLM on compiled fragments) | `references/lessons-proposal.md` |
 
 The Execution-context dispatch audit (aspect 11) consumes the `[DISPATCH]` work-log lines emitted by every dispatch site per [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) — that standard is the authoritative source for the line shape, and this aspect is its enforcement consumer. The aspect asserts dispatch discipline in **both directions**: that every spawn that DID happen rode the canonical `execution-context-{level}` envelope, AND that every finalize/execute step classified DISPATCHED actually WAS dispatched. The inverse-coverage half (`dispatch_coverage_violation` category) cross-references the SKILL's own dispatched/inline classification against the `status.metadata.phase_steps["6-finalize"]` outcome records — a step marked done with zero matching `[DISPATCH]` evidence is flagged as inline-where-dispatch-was-required. Report readers tracing an audit finding back to its evidence land in `dispatch-logging.md` § "Emission contract" for the canonical log-line format.
 
@@ -149,7 +155,9 @@ The Execution-context dispatch audit (aspect 11) consumes the `[DISPATCH]` work-
 
 **Aspect 12 (manifest decisions)** is skipped when `execution.toon` is absent. When present, the aspect loads the manifest via `plan-marshall:manage-execution-manifest:manage-execution-manifest read --plan-id {plan-id}` and pairs it with matching `(plan-marshall:phase-4-plan:manifest)` decision-log entries — manifest = WHAT was decided, decision.log = WHY. The cross-check engine is `plan-marshall:plan-retrospective:check-manifest-consistency` which evaluates each manifest assumption against the actual end-of-execute diff and emits one finding per violation. See `standards/manifest-crosscheck.md` for the cross-check matrix.
 
-**Aspect 13** is skipped when `--session-id` is absent.
+**Aspect 13 (routing decisions)** is skipped when `execution.toon` is absent. When present, it re-evaluates the lane prune predicates against the realized footprint (see Aspect 13 capture pattern below).
+
+**Aspect 14** is skipped when `--session-id` is absent.
 
 > **Achieved thoroughness**: there is no mechanical achieved-thoroughness measurement. The *achieved* side of coverage is the floor-graded self-report defined in [`../persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md) § Floor-Graded Self-Report; the Artifact-consistency aspect (aspect 1, above) supplies the deterministic declared-vs-actual footprint (derived live from the worktree, or the legacy `references.modified_files` key for older archived plans) that the self-report grades against.
 
@@ -194,7 +202,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
   add --plan-id {plan_id} --aspect {name} --fragment-file work/fragment-{aspect}.toon
 ```
 
-**LLM aspects (4-7, 9, 11, and 13)** — load the aspect reference via `Read`, produce the TOON fragment body per the reference's schema, emit it with the `Write` tool to `work/fragment-{aspect}.toon`, then register:
+**LLM aspects (4-7, 9, 11, and 14)** — load the aspect reference via `Read`, produce the TOON fragment body per the reference's schema, emit it with the `Write` tool to `work/fragment-{aspect}.toon`, then register:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
@@ -212,7 +220,18 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
 
 Skip the aspect entirely when the manifest file is absent.
 
-**Aspect 13 (chat-history, conditional)** — the session-transcript channel is target-dependent: only a target that exposes a session transcript can supply the chat history this aspect analyzes. On the Claude target, resolve the absolute transcript path from the canonical Claude Code path pattern `~/.claude/projects/{cwd-slug}/{session_id}.jsonl` (where `{cwd-slug}` is the absolute project cwd with each `/` replaced by `-`); read the file directly, and if absent try a parent-directory glob under `~/.claude/projects/` for cross-cwd recovery. Never substitute Bash file discovery (`ls`, `find`, Glob) for this resolution — the canonical path derivation is the only sanctioned lookup mechanism for the session JSONL. On a target that exposes no session transcript (e.g. OpenCode, where the metrics enrichment op itself returns `transcript_not_found`), there is no transcript to resolve: skip the aspect and emit a `status: skipped` fragment carrying the `transcript_unavailable` skip-reason token (the same data-absence path Tier 2 below takes).
+**Aspect 13 (routing-decisions, conditional)** — when `execution.toon` exists, run the deterministic script pattern with aspect name `routing-decisions`. The script re-evaluates each absent prunable step's `prunable_when` predicate against the realized footprint and emits the deterministic facts; the LLM judgment (the OVER/UNDER posture counterfactual) is synthesized from those facts per [`references/routing-decision-verification.md`](references/routing-decision-verification.md) — the script never judges. Pass the realized footprint as `--diff-file` (one path per line) so the prune-predicate re-evaluation has a footprint to test:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-routing-decisions \
+  run --plan-id {plan_id} --mode {live|archived} --diff-file work/footprint.txt > work/fragment-routing-decisions.toon
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
+  add --plan-id {plan_id} --aspect routing-decisions --fragment-file work/fragment-routing-decisions.toon
+```
+
+Skip the aspect entirely when the manifest file is absent.
+
+**Aspect 14 (chat-history, conditional)** — the session-transcript channel is target-dependent: only a target that exposes a session transcript can supply the chat history this aspect analyzes. On the Claude target, resolve the absolute transcript path from the canonical Claude Code path pattern `~/.claude/projects/{cwd-slug}/{session_id}.jsonl` (where `{cwd-slug}` is the absolute project cwd with each `/` replaced by `-`); read the file directly, and if absent try a parent-directory glob under `~/.claude/projects/` for cross-cwd recovery. Never substitute Bash file discovery (`ls`, `find`, Glob) for this resolution — the canonical path derivation is the only sanctioned lookup mechanism for the session JSONL. On a target that exposes no session transcript (e.g. OpenCode, where the metrics enrichment op itself returns `transcript_not_found`), there is no transcript to resolve: skip the aspect and emit a `status: skipped` fragment carrying the `transcript_unavailable` skip-reason token (the same data-absence path Tier 2 below takes).
 
 Run the `extract-chat-signal.py` signal-extraction pre-pass against the resolved `transcript_path` to obtain the tier decision and the reduced transcript:
 
@@ -361,7 +380,7 @@ display_detail: "<{aspects_dispatched} aspects, {lessons_recorded} lessons recor
 
 ## Canonical invocations
 
-The canonical argparse surface for the ten entry-point scripts this skill registers (twelve invocation forms — `collect-fragments` carries three sub-verbs). The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". The single-aspect scripts share the same `run` flag surface; `collect-fragments` carries the `init` / `add` / `finalize` sub-verbs.
+The canonical argparse surface for the eleven entry-point scripts this skill registers (thirteen invocation forms — `collect-fragments` carries three sub-verbs). The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". The single-aspect scripts share the same `run` flag surface; `collect-fragments` carries the `init` / `add` / `finalize` sub-verbs.
 
 ### extract-chat-signal — run
 
@@ -379,6 +398,16 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-manifest-
 ```
 
 `--base-ref` is required when `--diff-file` is absent.
+
+### check-routing-decisions — run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-routing-decisions run \
+  --mode {live,archived} [--plan-id PLAN_ID] [--archived-plan-path ARCHIVED_PLAN_PATH] \
+  [--diff-file DIFF_FILE]
+```
+
+`--diff-file` carries the realized footprint (one path per line) that the prune-predicate re-evaluation tests; absent → the mis-prune checks SKIP.
 
 ### script-failure-analysis — run
 

@@ -21,6 +21,11 @@ Coverage:
   pure scorer: each of the five signal arguments firing deep in isolation, the
   all-light default, the S6 override, and the importability of the S5 regex
   constants and ``_request_is_concrete`` for downstream consumers.
+- ``project_profile_pure`` — the execution-profile posture projection: the
+  ``full`` / ``minimal`` / ``auto`` recommendation as a pure function of the same
+  signals, the ``profile`` key on the route return, ``--persist`` writing
+  ``status.metadata.execution_profile``, and the independence invariant that
+  ``deep_lane=always`` does NOT coerce the posture to ``full``.
 """
 
 from __future__ import annotations
@@ -39,6 +44,7 @@ _mod = load_script_module(
 cmd_planning_lane_route = _mod.cmd_planning_lane_route
 cmd_planning_lane_escalate = _mod.cmd_planning_lane_escalate
 evaluate_signals_pure = _mod.evaluate_signals_pure
+project_profile_pure = _mod.project_profile_pure
 
 
 # =============================================================================
@@ -659,3 +665,164 @@ def test_request_is_concrete_true_for_each_anchor(body):
 def test_request_is_concrete_false_for_anchorless_body(body):
     """An empty or anchorless body is not concrete (→ S5 deep)."""
     assert _mod._request_is_concrete(body) is False
+
+
+# =============================================================================
+# project_profile_pure — execution-profile posture projection
+# =============================================================================
+#
+# The posture projection recommends minimal / auto / full over the SAME signals
+# the lane verdict scores. It is a pure derivation (no I/O, no cognition) and is
+# independent of the deep_lane ceremony gate (deep_lane governs planning depth,
+# not the profile — §4.2 of the lane-selection outline).
+
+
+@pytest.mark.parametrize('change_type', ['feature', 'feature_breaking'])
+@pytest.mark.parametrize('scope_estimate', ['multi_module', 'broad'])
+def test_profile_generative_broad_change_projects_full(change_type, scope_estimate):
+    """A generative change over a broad scope projects the full posture."""
+    posture = project_profile_pure(
+        scope_estimate=scope_estimate,
+        change_type=change_type,
+        compatibility='deprecation',
+        request_concrete=True,
+    )
+
+    assert posture == 'full'
+
+
+def test_profile_generative_breaking_change_projects_full():
+    """A generative clean-slate breaking change projects full even when narrow."""
+    posture = project_profile_pure(
+        scope_estimate='single_module',
+        change_type='feature',
+        compatibility='breaking',
+        request_concrete=True,
+    )
+
+    assert posture == 'full'
+
+
+@pytest.mark.parametrize('scope_estimate', ['surgical', 'single_module'])
+def test_profile_narrow_concrete_nongenerative_change_projects_minimal(scope_estimate):
+    """A non-generative, narrow, concretely-specified change projects minimal."""
+    posture = project_profile_pure(
+        scope_estimate=scope_estimate,
+        change_type='bug_fix',
+        compatibility='deprecation',
+        request_concrete=True,
+    )
+
+    assert posture == 'minimal'
+
+
+def test_profile_narrow_nongenerative_but_vague_request_projects_auto():
+    """A narrow non-generative change with a vague request falls back to auto."""
+    posture = project_profile_pure(
+        scope_estimate='surgical',
+        change_type='bug_fix',
+        compatibility='deprecation',
+        request_concrete=False,
+    )
+
+    assert posture == 'auto'
+
+
+def test_profile_generative_narrow_nonbreaking_change_projects_auto():
+    """A generative but narrow, non-breaking change is the generic auto case."""
+    posture = project_profile_pure(
+        scope_estimate='single_module',
+        change_type='feature',
+        compatibility='deprecation',
+        request_concrete=True,
+    )
+
+    assert posture == 'auto'
+
+
+def test_profile_projection_is_deterministic_over_the_signal_set():
+    """The projection is a pure function — identical inputs yield identical output."""
+    kwargs = {
+        'scope_estimate': 'multi_module',
+        'change_type': 'feature',
+        'compatibility': 'breaking',
+        'request_concrete': False,
+    }
+
+    first = project_profile_pure(**kwargs)
+    second = project_profile_pure(**kwargs)
+
+    assert first == second == 'full'
+
+
+def test_evaluate_signals_pure_emits_profile_projection():
+    """evaluate_signals_pure carries the profile projection alongside the lane verdict."""
+    result = _pure(scope_estimate='multi_module', change_type='feature')
+
+    assert result['profile']['recommended_posture'] == 'full'
+    assert result['profile']['candidate_postures'] == ['minimal', 'auto', 'full']
+
+
+def test_route_surfaces_execution_profile(plan_context):
+    """The route return surfaces execution_profile + the structured profile block."""
+    # Generative + broad signals → full posture, deep lane.
+    plan_dir = _light_setup(plan_context, 'pl-profile-full')
+    _write_references(plan_dir, scope_estimate='multi_module')
+    _write_status(plan_dir, metadata={'plan_source': 'lesson', 'change_type': 'feature'})
+
+    result = cmd_planning_lane_route(_ns_route('pl-profile-full'))
+
+    assert result['execution_profile'] == 'full'
+    assert result['profile']['recommended_posture'] == 'full'
+    assert result['profile']['candidate_postures'] == ['minimal', 'auto', 'full']
+
+
+def test_route_projects_minimal_for_narrow_concrete_change(plan_context):
+    """An all-light, narrow, concrete change projects the minimal posture."""
+    _light_setup(plan_context, 'pl-profile-minimal')
+
+    result = cmd_planning_lane_route(_ns_route('pl-profile-minimal'))
+
+    assert result['planning_lane'] == 'light'
+    assert result['execution_profile'] == 'minimal'
+
+
+def test_deep_lane_always_does_not_coerce_profile_to_full(plan_context):
+    """deep_lane=always forces planning_lane=deep but leaves the profile projection alone.
+
+    Planning depth and the execution profile are independent axes (§4.2): the
+    ceremony gate that ratchets the lane to deep must NOT coerce the posture to
+    full. An all-light narrow concrete change keeps its minimal projection even
+    under deep_lane=always.
+    """
+    _light_setup(plan_context, 'pl-profile-indep')
+    _write_marshal(plan_context.fixture_dir, compatibility='deprecation', deep_lane='always')
+
+    result = cmd_planning_lane_route(_ns_route('pl-profile-indep'))
+
+    # The deep-lane gate wins the planning-depth verdict ...
+    assert result['planning_lane'] == 'deep'
+    assert result['decision_predicate'] == 'plan.phase-1-init.deep_lane=always'
+    # ... but the execution-profile projection is unaffected by it.
+    assert result['execution_profile'] == 'minimal'
+
+
+def test_persist_writes_execution_profile_metadata(plan_context):
+    """--persist writes the projected posture into status.metadata.execution_profile."""
+    plan_dir = _light_setup(plan_context, 'pl-profile-persist')
+
+    result = cmd_planning_lane_route(_ns_route('pl-profile-persist', persist=True))
+
+    assert result['persisted'] is True
+    status = json.loads((plan_dir / 'status.json').read_text())
+    assert status['metadata']['execution_profile'] == 'minimal'
+
+
+def test_route_without_persist_does_not_write_execution_profile(plan_context):
+    """Without --persist the projected posture is not written to status.json."""
+    plan_dir = _light_setup(plan_context, 'pl-profile-nopersist')
+
+    cmd_planning_lane_route(_ns_route('pl-profile-nopersist'))
+
+    status = json.loads((plan_dir / 'status.json').read_text())
+    assert 'execution_profile' not in status.get('metadata', {})

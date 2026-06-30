@@ -2165,6 +2165,305 @@ def _log_execution_tier_routing(plan_id: str, mutated_tasks: int, phase_5_steps:
 # =============================================================================
 
 
+# =============================================================================
+# Execution-profile lane resolution
+# =============================================================================
+#
+# Every lane-participating phase-6 element self-declares a ``lane:`` frontmatter
+# block (``class`` / ``tier`` / ``prunable_when`` / ``cost_size``). The operator
+# postures ``minimal`` / ``auto`` / ``full`` are cutoffs over those
+# self-classifying elements on the lattice ``minimal ⊏ auto ⊏ full``. The closed
+# enums, the class→default-tier table, and the resolution rules are owned by
+# ``extension-api/standards/ext-point-lane-element.md`` — this composer is the
+# single resolver that reads each element's block and applies the posture cutoff.
+
+LANE_TIERS = ('minimal', 'auto', 'full')
+LANE_OVERRIDES = ('off', 'minimal', 'auto', 'full', 'ask')
+
+# Lattice rank for the ``effective_tier ⊑ posture`` comparison.
+_TIER_RANK = {'minimal': 0, 'auto': 1, 'full': 2}
+
+# class → default tier (ext-point-lane-element.md § The closed lane.class enum).
+_CLASS_DEFAULT_TIER = {
+    'derived-state': 'minimal',
+    'core': 'minimal',
+    'adversarial': 'auto',
+    'prunable': 'auto',
+}
+
+# Classes whose weakening (``off``) override is honored but emits a correctness
+# warning (§5 — minimal must not SILENTLY drop required derived state).
+_WARN_ON_DROP_CLASSES = ('derived-state', 'core')
+
+# Absent posture → full → no lane pruning. This keeps every plan that never set
+# an execution profile on the pre-lane composition path (back-compat default).
+DEFAULT_EXECUTION_PROFILE = 'full'
+
+# The six-size T-shirt table default (the home is phase-4-plan/standards/
+# cost-sizing.md; mirrored here only as the fallback when marshal.json carries no
+# override). Kept in sync with manage-config ``_config_defaults.py``.
+_DEFAULT_COST_SIZE_TABLE = {
+    'XS': '5K', 'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K', 'XXL': '520K',
+}
+
+
+def _read_frontmatter_lane(path: Path) -> dict[str, str] | None:
+    """Parse the nested ``lane:`` frontmatter block from a markdown file.
+
+    A minimal nested-block parser (PyYAML is intentionally avoided): scans the
+    first ``---``-fenced block for a top-level ``lane:`` key and collects its
+    2-space-indented scalar sub-keys (``class`` / ``tier`` / ``prunable_when`` /
+    ``cost_size``) until the block dedents. Returns the sub-key dict, or ``None``
+    when the file is missing, has no frontmatter, or declares no ``lane:`` block.
+    """
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding='utf-8')
+    except OSError:
+        return None
+    if not text.startswith('---'):
+        return None
+    lane: dict[str, str] = {}
+    in_lane = False
+    for line in text.splitlines()[1:]:
+        if line.strip() == '---':
+            break
+        if not in_lane:
+            if line.rstrip() == 'lane:':
+                in_lane = True
+            continue
+        if line.startswith('  ') and ':' in line:
+            stripped = line.strip()
+            if stripped.startswith('#'):
+                continue
+            key, _, value = stripped.partition(':')
+            lane[key.strip()] = value.strip().strip('"').strip("'")
+        else:
+            # A dedented (column-0) line ends the lane block.
+            break
+    return lane or None
+
+
+def _resolve_element_lane(step_id: str) -> dict[str, str] | None:
+    """Resolve a phase-6 element's ``lane:`` block from its source doc.
+
+    Built-in steps (bare or ``default:``-prefixed) resolve via the standards /
+    workflow doc; ``project:`` steps resolve via the project-local
+    ``{bare}/SKILL.md``. Other ``bundle:skill`` external steps have no
+    project-local source and return ``None`` (not lane-participating here).
+    """
+    if step_id.startswith('project:'):
+        bare = step_id[len('project:') :]
+        skill_path = resolve_project_skill_path(f'{bare}/SKILL.md', base=_REPO_ROOT)
+        return _read_frontmatter_lane(skill_path)
+    if _is_external_step(step_id):
+        return None
+    return _read_frontmatter_lane(_resolve_standards_path(step_id))
+
+
+def _lane_override_for(step_id: str, overrides: dict[str, dict] | None) -> str | None:
+    """Resolve the per-element ``lane`` override from the marshal.json step map.
+
+    The phase-6 candidate ids are bare-normalized; the marshal map keys preserve
+    ``default:`` / ``project:`` prefixes, so match on the prefix-stripped key.
+    Returns the override value when valid (``off|minimal|auto|full|ask``), else
+    ``None``.
+    """
+    if not overrides:
+        return None
+    for key, params in overrides.items():
+        if not isinstance(params, dict):
+            continue
+        if _strip_default_prefix(key) == step_id:
+            value = params.get('lane')
+            if isinstance(value, str) and value in LANE_OVERRIDES:
+                return value
+    return None
+
+
+def _effective_lane_tier(lane: dict[str, str], override: str | None) -> tuple[str | None, bool]:
+    """Resolve the effective tier per ext-point-lane-element § Per-element resolution.
+
+    Precedence: per-element override ▸ declared ``lane.tier`` ▸ class default.
+    Returns ``(effective_tier, is_off)`` where ``effective_tier`` is a lattice
+    level, the sentinel ``'ask'``, or ``None`` (undeterminable); ``is_off`` is
+    True when an explicit ``off`` override drops the element.
+    """
+    if override == 'off':
+        return None, True
+    if override in ('minimal', 'auto', 'full'):
+        return override, False
+    if override == 'ask':
+        return 'ask', False
+    declared = lane.get('tier')
+    if declared in LANE_TIERS:
+        return declared, False
+    cls = lane.get('class')
+    if cls in _CLASS_DEFAULT_TIER:
+        return _CLASS_DEFAULT_TIER[cls], False
+    return None, False
+
+
+def _lane_keep_decision(lane: dict[str, str], override: str | None, posture: str) -> tuple[bool, str | None]:
+    """Decide whether an element runs under ``posture`` — returns (keep, warning).
+
+    An element runs iff ``effective_tier ⊑ posture``. An ``off`` override drops
+    it (with a correctness warning for a ``derived-state`` / ``core`` floor
+    element — honored, never silently). An ``ask`` effective tier keeps the
+    element at compose time (the init dialogue owns the per-element prompt).
+    """
+    effective, is_off = _effective_lane_tier(lane, override)
+    if is_off:
+        cls = lane.get('class')
+        warning = None
+        if cls in _WARN_ON_DROP_CLASSES:
+            warning = f"override 'off' drops {cls} floor element — honored, but weakening a required element"
+        return False, warning
+    if effective == 'ask' or effective is None:
+        # ask → dialogue-resolved (keep at compose); undeterminable → keep.
+        return True, None
+    keep = _TIER_RANK[effective] <= _TIER_RANK.get(posture, _TIER_RANK['full'])
+    return keep, None
+
+
+def _apply_lane_resolution(
+    phase_6_steps: list[str],
+    posture: str,
+    marshal_phase_6_map: dict[str, dict] | None,
+    plan_id: str,
+) -> tuple[list[str], list[str], list[tuple[str, str]]]:
+    """Resolve the phase-6 step list under ``posture`` — returns (kept, dropped, warnings).
+
+    ``full`` is a no-op (keep everything). For ``minimal`` / ``auto`` each
+    lane-participating element is kept iff ``effective_tier ⊑ posture``; an
+    element with no ``lane:`` block is not lane-participating and is always kept.
+    The q-gate is never a phase-6 finalize step, so it is never reached here; the
+    adversarial-floor re-add for CI plans is handled downstream by the
+    bot-enforcement guard, which is why this pass runs BEFORE it.
+    """
+    if posture == 'full':
+        return list(phase_6_steps), [], []
+    kept: list[str] = []
+    dropped: list[str] = []
+    warnings: list[tuple[str, str]] = []
+    for step in phase_6_steps:
+        lane = _resolve_element_lane(step)
+        if not lane or 'class' not in lane:
+            kept.append(step)
+            continue
+        override = _lane_override_for(step, marshal_phase_6_map)
+        keep, warning = _lane_keep_decision(lane, override, posture)
+        if warning is not None:
+            warnings.append((step, warning))
+        (kept if keep else dropped).append(step)
+    return kept, dropped, warnings
+
+
+def _read_execution_profile(plan_id: str) -> str:
+    """Read the chosen posture from ``status.metadata.execution_profile``.
+
+    Returns ``full`` (the no-prune default) when status.json is absent / malformed
+    or carries no valid posture. A malformed-but-present status degrades to the
+    default rather than crashing compose (same guard as ``_read_recipe_source``).
+    """
+    status_path = get_plan_dir(plan_id) / FILE_STATUS
+    if not status_path.exists():
+        return DEFAULT_EXECUTION_PROFILE
+    try:
+        status = read_json(status_path, default={})
+    except (OSError, json.JSONDecodeError):
+        return DEFAULT_EXECUTION_PROFILE
+    if isinstance(status, dict):
+        metadata = status.get('metadata', {})
+        if isinstance(metadata, dict):
+            value = metadata.get('execution_profile')
+            if value in LANE_TIERS:
+                return str(value)
+    return DEFAULT_EXECUTION_PROFILE
+
+
+def _parse_cost_magnitude(raw: str) -> int:
+    """Parse a token-magnitude string (``5K`` / ``130K`` / ``520K`` / ``1.3M``) to int.
+
+    Returns ``0`` for an unparseable value (the cost preview degrades gracefully
+    rather than crashing).
+    """
+    from sensible_number import parse_sensible_int  # type: ignore[import-not-found]
+    try:
+        return parse_sensible_int(raw)
+    except (ValueError, TypeError):
+        return 0
+
+
+def _read_cost_size_token_table() -> dict[str, str]:
+    """Read ``plan.phase-5-execute.cost_size_token_table`` (six-size fallback)."""
+    marshal_path = get_marshal_path()
+    if marshal_path.exists():
+        try:
+            data = read_json(marshal_path, default={})
+        except (OSError, ValueError):
+            data = {}
+        if isinstance(data, dict):
+            plan = data.get('plan', {})
+            if isinstance(plan, dict):
+                execute_block = plan.get('phase-5-execute', {})
+                if isinstance(execute_block, dict):
+                    table = execute_block.get('cost_size_token_table')
+                    if isinstance(table, dict) and table:
+                        return table
+    return dict(_DEFAULT_COST_SIZE_TABLE)
+
+
+def _sum_lane_cost(steps: list[str], table: dict[str, str]) -> int:
+    """Sum each element's ``cost_size`` through the token table (§4.6 cost preview)."""
+    total = 0
+    for step in steps:
+        lane = _resolve_element_lane(step)
+        if not lane:
+            continue
+        size = lane.get('cost_size')
+        if size in table:
+            total += _parse_cost_magnitude(str(table[size]))
+    return total
+
+
+def cmd_lanes_preview(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Resolve all three posture step sets + cost sums in ONE TOON.
+
+    The preview is the same lane projection ``compose`` applies, so the init
+    dialogue preview and the executed flow cannot diverge: ``full``/``minimal``
+    are pure config projections (the lane cutoff over the configured phase-6
+    candidate list); ``auto`` additionally drops every ``full``-tier element. The
+    cost sum for each posture is ``Σ(resolved element cost_size → table)``.
+    """
+    plan_id = require_valid_plan_id(args)
+
+    marshal_phase_6 = _read_marshal_phase_steps('phase-6-finalize')
+    if marshal_phase_6 is not None:
+        candidates = list(marshal_phase_6)
+    else:
+        candidates = _split_csv(getattr(args, 'phase_6_steps', None), DEFAULT_PHASE_6_STEPS)
+    candidates = [_strip_default_prefix(s) for s in candidates]
+    marshal_phase_6_map = _read_marshal_phase_step_map('phase-6-finalize')
+    table = _read_cost_size_token_table()
+
+    lanes: dict[str, Any] = {}
+    for posture in LANE_TIERS:
+        kept, _dropped, _warnings = _apply_lane_resolution(candidates, posture, marshal_phase_6_map, plan_id)
+        lanes[posture] = {
+            'phase_6_steps': kept,
+            'phase_6_steps_count': len(kept),
+            'cost_sum_tokens': _sum_lane_cost(kept, table),
+        }
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'lanes': lanes,
+    }
+
+
 def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     """Compose and write the execution manifest."""
     plan_id = require_valid_plan_id(args)
@@ -2424,6 +2723,27 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         body['phase_6']['steps'], ceremony_finalize_gates
     )
 
+    # Execution-profile lane resolution runs AFTER the change-type / scope
+    # pre-filters and ceremony selection, and BEFORE the bot-enforcement guard.
+    # The posture is read from status.metadata.execution_profile (absent → full →
+    # no pruning, preserving the pre-lane composition path). Each element's
+    # ``lane:`` block (class / tier / cost_size — owned by
+    # extension-api/standards/ext-point-lane-element.md) plus its per-element
+    # marshal.json ``lane`` override resolves keep/drop under the posture cutoff:
+    # ``minimal`` keeps only the tier-minimal floor, ``auto`` additionally keeps
+    # tier-auto elements and drops tier-full ones, ``full`` keeps everything. A
+    # weakening ``off`` override of a derived-state / core floor element is
+    # honored but emits a correctness warning (§5 — minimal must NOT SILENTLY drop
+    # required derived state). Running before the bot-enforcement guard means a
+    # ``minimal`` posture that drops ``automated-review`` is still re-added for
+    # GitHub/GitLab plans (the §4.9 adversarial-floor / bot-review invariant). The
+    # q-gate is never a phase-6 finalize step, so it is never lane-pruned here.
+    execution_profile = _read_execution_profile(plan_id)
+    lane_kept, lane_dropped, lane_warnings = _apply_lane_resolution(
+        body['phase_6']['steps'], execution_profile, marshal_phase_6_map, plan_id
+    )
+    body['phase_6']['steps'] = lane_kept
+
     # Bot-enforcement guard runs AFTER the seven-row matrix and BEFORE manifest
     # persistence. On GitHub/GitLab plans where `automated-review` is missing
     # from `phase_6.steps`, the guard remediates in-place (appends the step and
@@ -2500,6 +2820,19 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_ceremony_finalize_selection(plan_id, change['gate'], 'always', change['step'])
     for change in ceremony_forced_out:
         _log_ceremony_finalize_selection(plan_id, change['gate'], 'never', change['step'])
+    if execution_profile != 'full' and lane_dropped:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) lane_resolution — '
+            f'execution_profile={execution_profile}, dropped {lane_dropped} from phase_6.steps '
+            '(tier above posture cutoff)',
+        )
+    for warned_step, warning in lane_warnings:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) lane_resolution warning — '
+            f'{warned_step}: {warning}',
+        )
     _log_decision(plan_id, rule, body)
 
     return {
@@ -2530,6 +2863,9 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'ceremony_finalize_forced_out': [c['step'] for c in ceremony_forced_out],
         'aspect': aspect,
         'aspect_step_dropping_dropped': aspect_dropped,
+        'execution_profile': execution_profile,
+        'lane_dropped': lane_dropped,
+        'lane_warnings': [{'step': s, 'warning': w} for s, w in lane_warnings],
     }
 
 
@@ -3279,6 +3615,25 @@ def _build_parser() -> argparse.ArgumentParser:
     read_parser = subparsers.add_parser('read', help='Read execution.toon as TOON', allow_abbrev=False)
     add_plan_id_arg(read_parser)
 
+    # lanes preview — resolve all three posture step sets + cost sums in one TOON.
+    lanes_parser = subparsers.add_parser(
+        'lanes',
+        help='Execution-profile lane resolver (preview)',
+        allow_abbrev=False,
+    )
+    lanes_sub = lanes_parser.add_subparsers(dest='lanes_verb', required=True, help='lanes operation')
+    lanes_preview = lanes_sub.add_parser(
+        'preview',
+        help='Resolve minimal/auto/full phase-6 step sets + cost sums in one TOON',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(lanes_preview)
+    lanes_preview.add_argument(
+        '--phase-6-steps',
+        default=None,
+        help='Comma-separated candidate Phase 6 step IDs (fallback when marshal.json carries none)',
+    )
+
     record_step_parser = subparsers.add_parser(
         'record-step',
         help='Append a per-step execution-log row (outcome + token attribution) to execution.toon',
@@ -3376,6 +3731,11 @@ def main() -> int:
             'set': cmd_step_params_set,
         }
         result = step_params_handlers[args.step_params_verb](args)
+    elif args.command == 'lanes':
+        lanes_handlers = {
+            'preview': cmd_lanes_preview,
+        }
+        result = lanes_handlers[args.lanes_verb](args)
     else:
         handler = handlers[args.command]
         result = handler(args)

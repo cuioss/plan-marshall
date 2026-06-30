@@ -4,6 +4,10 @@ description: Recipe for verifying documentation quality across project — valid
 user-invocable: false
 mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-recipe
+lane:
+  profile: auto
+  steps:
+    sonar-roundtrip: off
 ---
 
 # Recipe: Verify Documentation Quality

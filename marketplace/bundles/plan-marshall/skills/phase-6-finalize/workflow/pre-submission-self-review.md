@@ -1,4 +1,7 @@
 ---
+lane:
+  class: adversarial
+  cost_size: L
 name: default:pre-submission-self-review
 description: Pre-submission structural self-review (symmetric pairs, regex over-fit, wording, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check, ordinal-reference re-check) before push
 order: 7

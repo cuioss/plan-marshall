@@ -47,6 +47,7 @@ from _analyze_fail_closed_gate_reads import analyze_fail_closed_gate_reads
 from _analyze_finalize_step_token import scan_finalize_step_token
 from _analyze_frontmatter import analyze_frontmatter
 from _analyze_historical_prose_in_skills import analyze_historical_prose_in_skills
+from _analyze_lane_frontmatter import analyze_lane_frontmatter
 from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
 from _analyze_literal_count import analyze_literal_count
 from _analyze_manage_invocation import scan_manage_invocation
@@ -187,6 +188,14 @@ class RuleRunner:
             scoped(scan_step_configurable_contract(root)),
         )
         emit('analyze_role_field', scoped(analyze_role_field(root)))
+        # lane-frontmatter-invalid — validates every lane-participating element's
+        # ``lane:`` frontmatter block (closed-enum ``class`` + ``cost_size``, the
+        # ``prunable_when`` requirement for ``class: prunable``, and a valid
+        # ``tier``) consumed by the manage-execution-manifest lane resolver. The
+        # enums are owned by extension-api/standards/ext-point-lane-element.md.
+        # Routed through ``suppressed`` so per-file ``plugin-doctor-disable`` and
+        # project-config exemptions apply (CodeRabbit PR #811 review fix).
+        emit('analyze_lane_frontmatter', suppressed(analyze_lane_frontmatter(root)))
         emit('analyze_skill_mode', scoped(analyze_skill_mode(root)))
         emit(
             'analyze_persona_profile_uniqueness',
@@ -279,6 +288,7 @@ class RuleRunner:
         issues.extend(analyze_agentfile_line_budget(root))
         issues.extend(analyze_agentfile_directory_tree(root))
         issues.extend(analyze_role_field(root))
+        issues.extend(analyze_lane_frontmatter(root))
         issues.extend(analyze_declared_vs_disk(root))
         issues.extend(analyze_plugin_json_orphans(root))
         issues.extend(analyze_provides_method_table(root, cache=cache))

@@ -283,6 +283,35 @@ When all four gates resolve to `auto` (the default), the transform is a no-op an
 
 **Cross-reference**: the gate schema (run-at-all enum, defaults) is owned by [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) § phase-6-finalize — this section documents only how the composer consumes the four finalize gates. Do not restate the schema here.
 
+## Execution-profile lane resolution
+
+**Type**: Composition-time post-matrix transform (NOT a pre-filter). Runs *after* the seven-row matrix, the change-type / scope pre-filters, and `ceremony_finalize_selection` have produced the final `phase_6.steps`, and *before* the `bot_enforcement_guard`.
+
+**Posture source**: `status.metadata.execution_profile`, one of `minimal` / `auto` / `full`. An absent or invalid value resolves to `full`, which is a no-op — every plan that never chose a posture composes exactly as it did before the lane mechanism existed (the back-compat default).
+
+**Contract ownership**: the closed `lane.class` enum (`derived-state` / `core` / `adversarial` / `prunable`), the class→default-tier table, the resolution lattice `minimal ⊏ auto ⊏ full`, the per-element override vocabulary (`off | minimal | auto | full | ask`), and the `cost_size` binding are owned by [`extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md). This section documents only how the composer consumes them. Do not restate the enums here.
+
+**Per-element resolution**: for each step in `phase_6.steps` the composer resolves the element's `lane:` frontmatter block (built-in steps via the standards / workflow doc; `project:` steps via the project-local `{bare}/SKILL.md`). It then resolves the effective tier — per-element `marshal.json` `lane` override ▸ declared `lane.tier` ▸ class default — and keeps the element iff `effective_tier ⊑ posture`:
+
+- `minimal` keeps only the tier-`minimal` floor (`core` / `derived-state`, plus the `minimal`-deviated `lessons-capture` / `lessons-housekeeping`);
+- `auto` additionally keeps tier-`auto` elements and drops tier-`full` ones (`security-audit`, `plan-retrospective`);
+- `full` keeps everything.
+
+An element with no `lane:` block is not lane-participating and is always kept. An `off` override drops the element; when it weakens a `derived-state` / `core` floor element the drop is **honored but emits a correctness warning** (the lane-selection design §5 — `minimal` must never *silently* drop required derived state). An `ask` effective tier keeps the element at compose time (the `phase-1-init` dialogue owns the per-element prompt).
+
+**Why before the bot guard**: a `minimal` posture drops the adversarial `automated-review` step, but the `bot_enforcement_guard` (next section) re-adds it for GitHub/GitLab plans. Running the lane pass first means the adversarial-floor / bot-review invariant re-asserts `automated-review` on CI plans even under `minimal` — exactly the §4.9 precedence (operator posture < coverage-cell adversarial floor). **The q-gate is never a phase-6 finalize step, so the lane pass never touches it** — the adversarial q-gate is always kept.
+
+**Twice-compose timing**: `compose` runs at init (provisional `auto` footprint prunes) and again at end-of-phase-4 (idempotent re-compose with firm signals). The posture and the `minimal` / `full` shapes are fixed at init; only `auto`'s footprint-gated prunes can move on the second call, in the safe more-validation direction, and that refinement is **logged, never re-prompted**.
+
+**Decision log lines** (in addition to the row + pre-filter lines):
+
+```text
+(plan-marshall:manage-execution-manifest:compose) lane_resolution — execution_profile={posture}, dropped {steps} from phase_6.steps (tier above posture cutoff)
+(plan-marshall:manage-execution-manifest:compose) lane_resolution warning — {step}: override 'off' drops {class} floor element — honored, but weakening a required element
+```
+
+When the posture is `full` (or no lane-participating element is above the cutoff), the transform is a no-op and emits no log entry. The composer surfaces `execution_profile`, `lane_dropped`, and `lane_warnings` in the `compose` result for observability.
+
 ## Bot-Enforcement Guard
 
 **Type**: Composition-time defense-in-depth remediation (NOT a pre-filter, NOT an assertion). Runs *after* the seven-row matrix has produced the final `phase_6.steps` list, *before* the manifest is persisted.

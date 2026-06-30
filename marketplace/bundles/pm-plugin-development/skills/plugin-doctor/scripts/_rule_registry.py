@@ -93,6 +93,7 @@ _DESCRIPTOR_MODULES: tuple[str, ...] = (
     '_analyze_finalize_step_token',
     '_analyze_frontmatter',
     '_analyze_historical_prose_in_skills',
+    '_analyze_lane_frontmatter',
     '_analyze_lesson_id_in_skill_prose',
     '_analyze_literal_count',
     '_analyze_manage_findings_invocation',

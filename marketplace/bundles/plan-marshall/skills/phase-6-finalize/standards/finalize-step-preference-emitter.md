@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: XS
 name: default:finalize-step-preference-emitter
 description: Per-plan preference-learning sweep — promotes recurring user gate-dispositions in the just-finished plan to durable architecture hints via the shared disposition-to-hint contract
 order: 80

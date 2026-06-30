@@ -130,6 +130,19 @@ Verify LLM findings by re-reading referenced files:
 - Verified terminology issues
 - Single-file quality scores
 
+### 4.5: Lane-frontmatter validation (build-failing)
+
+The `analyze_lane_frontmatter` analyzer (`_analyze_lane_frontmatter.py`, rule id `lane-frontmatter-invalid`) is a deterministic frontmatter rule registered under `doctor-marketplace quality-gate` — a malformed `lane:` block fails the build. It walks every `.md` file in the marketplace tree and, for each file that declares a `lane:` frontmatter block, asserts the block is well-formed:
+
+- `class` is present and is one of the closed enum `derived-state | core | adversarial | prunable`;
+- `cost_size` is present and is one of the six-size scale `XS | S | M | L | XL | XXL`;
+- `prunable_when` is present when (and only meaningfully when) `class: prunable`;
+- `tier` (optional) is one of `minimal | auto | full`.
+
+**Predicate scope**: the rule validates every `lane:` block that exists; it does NOT require a given element to declare one. The closed enums, the class→default-tier table, and the `prunable_when` predicate vocabulary are owned by [`plan-marshall:extension-api/standards/ext-point-lane-element.md`](../../../../plan-marshall/skills/extension-api/standards/ext-point-lane-element.md) — the analyzer mirrors those enums as the structural backstop and links to that contract in every finding. The `manage-execution-manifest` lane resolver consumes these blocks, so a malformed one would make the composer mis-resolve or silently mis-prune the element.
+
+**Suppression**: findings carry the `lane-frontmatter-invalid` rule id and are suppressible through the standard declarative substrate (shipped `config/default-suppression.yml`, project `.plan/plugin-doctor.yml`, or a per-file `plugin-doctor-disable: [lane-frontmatter-invalid]` frontmatter key), same as every other file-anchored rule.
+
 ## Phase 5: Reorganize
 
 Based on Phase 2 classification results:

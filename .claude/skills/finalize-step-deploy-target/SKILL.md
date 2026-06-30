@@ -1,4 +1,7 @@
 ---
+lane:
+  class: derived-state
+  cost_size: XS
 name: finalize-step-deploy-target
 description: Generate Claude Code target output via the multi-target generator
 mode: script-executor

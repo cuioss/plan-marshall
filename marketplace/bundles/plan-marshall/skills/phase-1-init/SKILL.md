@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: M
 name: phase-1-init
 description: Init phase skill. Creates plan directory, request.md, references, and status, runs the Tier 1 recipe-match routing tier (registry-wide recipe scoring + request-aspect classification) ahead of planning-lane routing. Complete initialization in a single agent call.
 user-invocable: false
@@ -792,7 +795,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status siblin
 
 Parse the returned TOON. The relevant fields are `collision_detected` (bool), `source_origin_matches[]` (each `{plan_id, source, source_id}` — a sibling backed by the same audit / lesson / issue `source_id`), and `file_overlap_matches[]` (each `{plan_id, overlap_count, overlapping_files}` — a sibling whose `references.json` `affected_files` intersect concrete paths named in this plan's `request.md` body). The two checks are ordered: source-origin is primary, file-overlap secondary. See `manage-status` § `sibling-collision-check` and `manage-status` Canonical invocations → `sibling-collision-check` for the full subcommand contract.
 
-**No collision** (`collision_detected == false`): log the clean result and continue to Step 9.
+**No collision** (`collision_detected == false`): log the clean result and continue to Step 8d.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -802,7 +805,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Collision detected** (`collision_detected == true`): surface the init-time collision gate to the user via `AskUserQuestion`, naming the colliding sibling plan ids and the collision class(es). Offer exactly three options:
 
-- **Proceed** — accept the overlap and continue with this plan as-is (the sibling and this plan are intentionally distinct despite the shared source / files). Continue to Step 9.
+- **Proceed** — accept the overlap and continue with this plan as-is (the sibling and this plan are intentionally distinct despite the shared source / files). Continue to Step 8d.
 - **Rename** — delete this plan, then restart init with updated source/files (and a new `--plan-id` if needed) so the sibling-collision check passes. Delete via `manage-status delete-plan --plan-id {plan_id}` (mirroring the Step 3 Replace flow), then restart from Step 2.
 - **Abort** — this plan duplicates an already-active sibling and should not exist; delete it and stop plan creation. Delete via `manage-status delete-plan --plan-id {plan_id}` and return the abort TOON below without proceeding to Step 9.
 
@@ -823,6 +826,44 @@ plan_id: {plan_id}
 colliding_siblings: {comma_separated_sibling_ids}
 message: "Plan deleted; creation aborted because it duplicates an already-active sibling plan."
 ```
+
+### Step 8d: Execution-Profile Posture Dialogue
+
+Resolve the operator-facing execution-profile posture (`minimal` / `auto` / `full`) — the cost-visible lane decision (D9). This mirrors the Step 5c recipe-match prompt pattern (read knob → preview → AskUserQuestion → persist). Step 8b's `planning-lane route --persist` has already projected and persisted a recommended posture into `status.metadata.execution_profile`; this step shows the operator its consequences and lets them override it. The lane lattice, the class→default-tier table, and the posture decision rules are owned by [`../extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md) — do NOT inline-copy them here.
+
+**Read the prompt gate** — `lane_selection` (`ask` | `auto`, default `ask`) decides whether to prompt or take the projection silently:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-1-init get --field lane_selection
+```
+
+**Resolve the three-posture preview** — call `lanes preview` for ONE TOON carrying every posture's resolved phase-6 step set, per-posture step counts, and summed `cost_size` token estimates. This is the SAME projection the phase-4 `compose` applies, so the dialogue preview cannot diverge from the executed flow:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest lanes preview \
+  --plan-id {plan_id}
+```
+
+Parse `lanes.{minimal,auto,full}.phase_6_steps`, `phase_6_steps_count`, and `cost_sum_tokens`. The recipe lane seed (when Tier 1 recipe-match surfaced a `lane_seed` in Step 5c) is the lowest-precedence default — the recommended posture from Step 8b's projection already composes with it; an explicit operator choice here overrides both.
+
+**When `lane_selection: ask`** — surface the AskUserQuestion posture dialogue. Present each posture as a selectable option labeled with its concrete consequences: the kept/dropped step set and the summed token estimate (e.g. *"full · 14 steps · ≈0.96M tok"*, *"auto · 12 steps · ≈0.70M tok (skips sonar / lessons-housekeeping)"*, *"minimal · 6 steps · ≈0.03M tok — no security audit, no retrospectives — appropriate for docs / mechanical changes"*). Pre-select the projected recommendation. Persist the chosen posture:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --set --field execution_profile --value {chosen_posture}
+```
+
+Emit one decision-log line recording the choice:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-1-init) Execution-profile posture: {chosen_posture} (projected={projected_posture}, lane_selection=ask)"
+```
+
+**When `lane_selection: auto`** — take the projection silently. Step 8b already persisted the projected posture into `status.metadata.execution_profile`; do NOT prompt. Emit the decision-log line above with `lane_selection=auto` and `chosen_posture == projected_posture`.
+
+**Manifest timing.** The persisted posture is consumed by the phase-4 Step 7b `compose`, which resolves the lane-pruned `execution.toon` with the firm `change_type` / `affected_files` signals — see [`../manage-execution-manifest/standards/decision-rules.md`](../manage-execution-manifest/standards/decision-rules.md) § "Execution-profile lane resolution" (twice-compose timing) and `manage-execution-manifest` Canonical invocations → `compose`. The `lanes preview` projection shown here and that composed manifest share one resolver, so the preview cannot diverge from the executed finalize flow; the posture is fixed here and never re-prompted at phase-4.
 
 ### Step 9: Store Domains in References
 

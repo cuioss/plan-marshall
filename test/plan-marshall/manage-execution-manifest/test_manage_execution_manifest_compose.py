@@ -43,6 +43,18 @@ def _load_module(name: str, filename: str):
     return mod
 
 
+# Lane-block fixture, loaded via importlib per the _fixtures.py convention (a
+# sibling conftest.py is banned). The basename is bundle-unique.
+_FIXTURES_PATH = Path(__file__).parent / '_execution_manifest_fixtures.py'
+_fixtures_spec = importlib.util.spec_from_file_location(
+    '_execution_manifest_fixtures_compose_tests', _FIXTURES_PATH
+)
+assert _fixtures_spec is not None and _fixtures_spec.loader is not None
+_fixtures_mod = importlib.util.module_from_spec(_fixtures_spec)
+_fixtures_spec.loader.exec_module(_fixtures_mod)
+fake_lane_blocks = _fixtures_mod.fake_lane_blocks
+
+
 _mem = _load_module('_mem_script', 'manage-execution-manifest.py')
 cmd_compose = _mem.cmd_compose
 read_manifest = _mem.read_manifest
@@ -51,6 +63,15 @@ DEFAULT_PHASE_5_STEPS = _mem.DEFAULT_PHASE_5_STEPS
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 DEFAULT_ENVELOPE_COUNT = _mem.DEFAULT_ENVELOPE_COUNT
 _role_of = _mem._role_of
+
+# Execution-profile lane resolver surface (deliverable 5).
+cmd_lanes_preview = _mem.cmd_lanes_preview
+_apply_lane_resolution = _mem._apply_lane_resolution
+_lane_keep_decision = _mem._lane_keep_decision
+_effective_lane_tier = _mem._effective_lane_tier
+_read_execution_profile = _mem._read_execution_profile
+_parse_cost_magnitude = _mem._parse_cost_magnitude
+_sum_lane_cost = _mem._sum_lane_cost
 
 # Quiet down the best-effort decision-log subprocess so tests don't depend on a
 # running executor. The handler is wrapped in try/except so failures are
@@ -4073,3 +4094,260 @@ def test_envelope_count_absent_reads_cleanly_round_trip(plan_context):
     read_result = _mem.cmd_read(Namespace(plan_id='envelope-absent-round-trip'))
     assert read_result is not None and read_result['status'] == 'success'
     assert read_result['phase_5']['envelope_count'] == DEFAULT_ENVELOPE_COUNT
+
+
+# =============================================================================
+# Execution-profile lane resolution (deliverable 5)
+# =============================================================================
+#
+# The lane resolver projects the operator posture (minimal / auto / full) over
+# each phase-6 element's self-declared ``lane:`` frontmatter block. The unit
+# cases below exercise the pure resolution helpers with canned lane blocks; the
+# integration cases drive ``cmd_compose`` / ``cmd_lanes_preview`` end-to-end with
+# the element-lane resolver monkeypatched to deterministic blocks.
+
+# Canned lane blocks spanning all four classes + both tier deviations (shared
+# fixture in _execution_manifest_fixtures.py).
+_LANE_BLOCKS = fake_lane_blocks()
+_LANE_STEPS = list(_LANE_BLOCKS)
+
+
+def _patch_element_lane(monkeypatch, blocks=None):
+    """Monkeypatch ``_resolve_element_lane`` to return canned blocks per step id."""
+    table = _LANE_BLOCKS if blocks is None else blocks
+    monkeypatch.setattr(_mem, '_resolve_element_lane', lambda step: table.get(step))
+
+
+# --- Pure resolution helpers -------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    'lane,override,expected',
+    [
+        ({'class': 'core'}, None, ('minimal', False)),         # class default
+        ({'class': 'adversarial'}, None, ('auto', False)),     # class default
+        ({'class': 'adversarial', 'tier': 'full'}, None, ('full', False)),  # declared tier
+        ({'class': 'core'}, 'full', ('full', False)),          # override wins
+        ({'class': 'core'}, 'off', (None, True)),              # off drops
+        ({'class': 'prunable'}, 'ask', ('ask', False)),        # ask sentinel
+    ],
+)
+def test_effective_lane_tier_precedence(lane, override, expected):
+    """Effective tier resolves override ▸ declared tier ▸ class default."""
+    assert _effective_lane_tier(lane, override) == expected
+
+
+@pytest.mark.parametrize(
+    'lane,posture,expected_keep',
+    [
+        ({'class': 'core', 'tier': 'minimal'}, 'minimal', True),     # floor runs everywhere
+        ({'class': 'prunable', 'tier': 'auto'}, 'minimal', False),  # auto tier above minimal
+        ({'class': 'prunable', 'tier': 'auto'}, 'auto', True),      # auto tier at auto
+        ({'class': 'adversarial', 'tier': 'full'}, 'auto', False),  # full tier above auto
+        ({'class': 'adversarial', 'tier': 'full'}, 'full', True),   # full tier at full
+    ],
+)
+def test_lane_keep_decision_cutoff(lane, posture, expected_keep):
+    """An element runs iff effective_tier ⊑ posture on the lattice."""
+    keep, warning = _lane_keep_decision(lane, None, posture)
+    assert keep is expected_keep
+    assert warning is None
+
+
+def test_lane_keep_off_override_drops_derived_state_with_warning():
+    """An ``off`` override of a derived-state floor element is honored but warns (§5)."""
+    keep, warning = _lane_keep_decision({'class': 'derived-state', 'tier': 'minimal'}, 'off', 'minimal')
+
+    assert keep is False
+    assert warning is not None
+    assert 'derived-state' in warning
+
+
+def test_lane_keep_minimal_override_force_keeps_under_every_posture():
+    """A ``minimal`` override force-keeps an otherwise-full element at minimal posture."""
+    keep, warning = _lane_keep_decision({'class': 'adversarial', 'tier': 'full'}, 'minimal', 'minimal')
+
+    assert keep is True
+    assert warning is None
+
+
+@pytest.mark.parametrize(
+    'raw,expected',
+    [('5K', 5000), ('130K', 130000), ('520K', 520000), ('1.3M', 1300000), ('garbage', 0)],
+)
+def test_parse_cost_magnitude(raw, expected):
+    """Cost magnitudes parse K/M suffixes; an unparseable value degrades to 0."""
+    assert _parse_cost_magnitude(raw) == expected
+
+
+# --- _apply_lane_resolution --------------------------------------------------
+
+
+def test_apply_lane_resolution_full_is_noop(monkeypatch):
+    """The full posture keeps every element (no pruning)."""
+    _patch_element_lane(monkeypatch)
+    kept, dropped, warnings = _apply_lane_resolution(_LANE_STEPS, 'full', None, 'p')
+
+    assert kept == _LANE_STEPS
+    assert dropped == []
+    assert warnings == []
+
+
+def test_apply_lane_resolution_minimal_keeps_only_floor(monkeypatch):
+    """Minimal keeps only the tier-minimal floor; auto/full-tier elements drop."""
+    _patch_element_lane(monkeypatch)
+    kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'minimal', None, 'p')
+
+    assert kept == ['push', 'archive-plan', 'project:finalize-step-deploy-target']
+    assert set(dropped) == {'sonar-roundtrip', 'finalize-step-security-audit', 'plan-marshall:plan-retrospective'}
+
+
+def test_apply_lane_resolution_auto_drops_only_full_tier(monkeypatch):
+    """Auto keeps minimal + auto tiers and drops the two full-tier elements."""
+    _patch_element_lane(monkeypatch)
+    kept, dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, 'auto', None, 'p')
+
+    assert set(dropped) == {'finalize-step-security-audit', 'plan-marshall:plan-retrospective'}
+    assert 'sonar-roundtrip' in kept
+    assert 'project:finalize-step-deploy-target' in kept
+
+
+def test_apply_lane_resolution_keeps_unblocked_elements(monkeypatch):
+    """An element with no lane: block is not lane-participating and is always kept."""
+    monkeypatch.setattr(_mem, '_resolve_element_lane', lambda step: None)
+    kept, dropped, _warnings = _apply_lane_resolution(['no-block-step'], 'minimal', None, 'p')
+
+    assert kept == ['no-block-step']
+    assert dropped == []
+
+
+def test_apply_lane_resolution_derived_state_off_override_warns(monkeypatch):
+    """An ``off`` marshal override of a derived-state floor element drops it WITH a warning (§5 invariant)."""
+    _patch_element_lane(monkeypatch)
+    overrides = {'project:finalize-step-deploy-target': {'lane': 'off'}}
+    kept, dropped, warnings = _apply_lane_resolution(_LANE_STEPS, 'minimal', overrides, 'p')
+
+    assert 'project:finalize-step-deploy-target' in dropped
+    assert kept == ['push', 'archive-plan']
+    assert any(step == 'project:finalize-step-deploy-target' for step, _ in warnings)
+
+
+def test_meta_project_minimal_keeps_derived_state_without_override(monkeypatch):
+    """Meta-project invariant: a minimal posture keeps derived-state by default (never SILENTLY dropped)."""
+    _patch_element_lane(monkeypatch)
+    kept, dropped, warnings = _apply_lane_resolution(
+        ['project:finalize-step-deploy-target'], 'minimal', None, 'p'
+    )
+
+    assert kept == ['project:finalize-step-deploy-target']
+    assert dropped == []
+    assert warnings == []
+
+
+# --- cmd_lanes_preview -------------------------------------------------------
+
+
+def _lanes_preview_ns(plan_id: str, steps: list[str]) -> Namespace:
+    return Namespace(plan_id=plan_id, phase_6_steps=','.join(steps))
+
+
+def test_lanes_preview_resolves_all_three_postures(plan_context, monkeypatch):
+    """lanes preview returns the minimal/auto/full step sets + cost sums in one result."""
+    _patch_element_lane(monkeypatch)
+    result = cmd_lanes_preview(_lanes_preview_ns('lanes-preview', _LANE_STEPS))
+
+    assert result is not None and result['status'] == 'success'
+    lanes = result['lanes']
+    assert lanes['full']['phase_6_steps'] == _LANE_STEPS
+    assert lanes['minimal']['phase_6_steps'] == ['push', 'archive-plan', 'project:finalize-step-deploy-target']
+    assert set(lanes['auto']['phase_6_steps']) == {
+        'push', 'archive-plan', 'sonar-roundtrip', 'project:finalize-step-deploy-target',
+    }
+    # Cost sums: XS=5K, L=130K → full=405K, auto=145K, minimal=15K.
+    assert lanes['full']['cost_sum_tokens'] == 405000
+    assert lanes['auto']['cost_sum_tokens'] == 145000
+    assert lanes['minimal']['cost_sum_tokens'] == 15000
+
+
+def test_lanes_preview_agrees_with_apply_lane_resolution(plan_context, monkeypatch):
+    """The preview projection is the SAME one compose applies (one projection feeds both)."""
+    _patch_element_lane(monkeypatch)
+    result = cmd_lanes_preview(_lanes_preview_ns('lanes-agree', _LANE_STEPS))
+    assert result is not None
+
+    for posture in ('minimal', 'auto', 'full'):
+        kept, _dropped, _warnings = _apply_lane_resolution(_LANE_STEPS, posture, None, 'lanes-agree')
+        assert result['lanes'][posture]['phase_6_steps'] == kept
+
+
+# --- compose integration -----------------------------------------------------
+
+
+def test_compose_absent_profile_defaults_to_full_no_pruning(plan_context):
+    """A plan with no execution_profile composes as full — the back-compat no-prune path."""
+    result = cmd_compose(_compose_ns(plan_id='lane-absent-profile'))
+
+    assert result is not None
+    assert result['execution_profile'] == 'full'
+    assert result['lane_dropped'] == []
+    assert result['lane_warnings'] == []
+
+
+def test_compose_minimal_profile_prunes_phase_6_to_floor(plan_context, monkeypatch):
+    """A minimal posture prunes the auto/full-tier finalize steps from phase_6.steps."""
+    _patch_element_lane(monkeypatch)
+    plan_id = 'lane-minimal-compose'
+    _write_status_metadata(plan_context, plan_id, {'execution_profile': 'minimal'})
+
+    result = cmd_compose(
+        _compose_ns(
+            plan_id=plan_id,
+            change_type='feature',
+            scope_estimate='multi_module',
+            affected_files_count=5,
+            phase_6_steps=','.join(_LANE_STEPS),
+        )
+    )
+
+    assert result is not None
+    assert result['execution_profile'] == 'minimal'
+    manifest = read_manifest(plan_id)
+    assert manifest['phase_6']['steps'] == ['push', 'archive-plan', 'project:finalize-step-deploy-target']
+    assert set(result['lane_dropped']) == {
+        'sonar-roundtrip', 'finalize-step-security-audit', 'plan-marshall:plan-retrospective',
+    }
+
+
+def test_compose_auto_profile_drops_only_full_tier(plan_context, monkeypatch):
+    """An auto posture keeps tier-auto finalize steps and drops only the full-tier ones."""
+    _patch_element_lane(monkeypatch)
+    plan_id = 'lane-auto-compose'
+    _write_status_metadata(plan_context, plan_id, {'execution_profile': 'auto'})
+
+    result = cmd_compose(
+        _compose_ns(
+            plan_id=plan_id,
+            change_type='feature',
+            scope_estimate='multi_module',
+            affected_files_count=5,
+            phase_6_steps=','.join(_LANE_STEPS),
+        )
+    )
+
+    assert result is not None
+    assert result['execution_profile'] == 'auto'
+    manifest = read_manifest(plan_id)
+    assert 'sonar-roundtrip' in manifest['phase_6']['steps']
+    assert 'finalize-step-security-audit' not in manifest['phase_6']['steps']
+    assert 'plan-marshall:plan-retrospective' not in manifest['phase_6']['steps']
+
+
+def test_read_execution_profile_defaults_full_when_absent(plan_context):
+    """_read_execution_profile returns full when status.json is absent."""
+    assert _read_execution_profile('no-such-plan') == 'full'
+
+
+def test_read_execution_profile_reads_persisted_posture(plan_context):
+    """_read_execution_profile returns the persisted status.metadata.execution_profile."""
+    _write_status_metadata(plan_context, 'lane-read-posture', {'execution_profile': 'minimal'})
+    assert _read_execution_profile('lane-read-posture') == 'minimal'

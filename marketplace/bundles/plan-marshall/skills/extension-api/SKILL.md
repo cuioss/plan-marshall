@@ -70,6 +70,7 @@ extension-api/
     ├── ext-point-recipe.md         # Recipe extension point contract (4 implementations)
     ├── ext-point-build.md          # Build system extension point contract (4 implementations)
     ├── ext-point-provider.md     # Credential extension point contract (1 implementation)
+    ├── ext-point-lane-element.md   # Lane-element frontmatter contract — lane.{class,tier,prunable_when,cost_size} (every phase/finalize-step element)
     ├── marshal-json-reference.md   # Central marshal.json config path reference
     ├── module-discovery.md         # Module discovery contract + output specification
     ├── canonical-commands.md       # Command vocabulary and resolution
@@ -121,6 +122,7 @@ Each extension point has a dedicated contract document with formal parameters, p
 | Outline | `provides_outline_skill()` | [ext-point-outline.md](standards/ext-point-outline.md) | 1 |
 | Recipe | `provides_recipes()` | [ext-point-recipe.md](standards/ext-point-recipe.md) | 3 |
 | Provider | `*_provider.py` | [ext-point-provider.md](standards/ext-point-provider.md) | 4 |
+| Lane Element | `lane:` frontmatter block | [ext-point-lane-element.md](standards/ext-point-lane-element.md) | every phase / finalize-step element |
 
 For all extension-related configuration paths, see [marshal-json-reference.md](standards/marshal-json-reference.md).
 

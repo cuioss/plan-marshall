@@ -1,8 +1,10 @@
-# Task Cost Sizing Rubric
+# Cost Sizing Rubric
 
-**Purpose**: The single source of truth for mapping a planned task to a T-shirt cost size (`S`/`M`/`L`/`XL`) and a `predicted_cost_tokens` magnitude. This rubric is what the planner consults at phase-4-plan to size each task, and what the deterministic deriver (`manage-tasks derive-cost-size`) implements in code. The size and predicted cost are stamped onto each task and later consumed by the plan-time bin-packer (`manage-tasks pack-envelopes`) and the phase-5-execute envelope-group executor.
+**Purpose**: The single source of truth for the six-size T-shirt scale (`XS`/`S`/`M`/`L`/`XL`/`XXL`) and its `predicted_cost_tokens` magnitudes, shared by **two consumers**: planned **tasks** (sized deterministically by `manage-tasks derive-cost-size` at phase-4-plan) and **lane-elements** (phase / finalize-step elements that declare a `cost_size` in their `lane:` frontmatter per [`../../extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md)). The size and predicted cost are stamped onto each task and later consumed by the plan-time bin-packer (`manage-tasks pack-envelopes`) and the phase-5-execute envelope-group executor; for lane-elements the same scale feeds the execution-profile dialogue's per-posture cost preview.
 
 This doc is the **legible, reviewable, and tunable** model. The script is the deterministic default; the doc is what a human reads to understand, review, and tune the model, and what the planner consults to apply judgment when a task's true cost diverges from the mechanical step-count proxy.
+
+The scale is **six sizes**: the original `S`/`M`/`L`/`XL` plus `XS` (deterministic ≈0-token bookkeeping) and `XXL` (the heaviest elements). The four original score bands and token magnitudes are **unchanged**, so the task deriver and bin-packer behave identically for every existing task — `XS`/`XXL` only carve new bands below the old `S` floor and above the old `XL` ceiling.
 
 ## Why a planning-time cost model exists
 
@@ -60,23 +62,29 @@ The weighted score maps to a T-shirt size by score band. The bands are:
 
 | Size | Score band | Reading |
 |------|-----------|---------|
-| `S` | `score < 60` | Small, localized task — a few steps, light profile, few files. |
+| `XS` | `score < 30` | Trivial task — a single small step, no skills, no file surface; below the old `S` floor. |
+| `S` | `30 <= score < 60` | Small, localized task — a few steps, light profile, few files. |
 | `M` | `60 <= score < 150` | Moderate task — several steps or a code profile with a handful of files/skills. |
 | `L` | `150 <= score < 300` | Large task — many steps over a code profile with a broad file surface. |
-| `XL` | `score >= 300` | Very large task — heavy multi-file refactor or test rewrite; legitimately packs ~1 per envelope. |
+| `XL` | `300 <= score < 700` | Very large task — heavy multi-file refactor or test rewrite; legitimately packs ~1 per envelope. |
+| `XXL` | `score >= 700` | The largest tasks — execute on a substantial plan; above the old `XL` ceiling. |
+
+The four original boundaries (`S`/`M`/`L` cutoffs at 60/150/300) are unchanged; `XS` carves the `score < 30` band below the old `S` floor and `XXL` carves the `score >= 700` band above the old `XL` ceiling, so every canonical worked example in §4 still derives the same size it did under the four-size scale.
 
 The bands are monotone: increasing any signal can only raise (never lower) the score, so a task with more steps is never assigned a smaller size than an otherwise-identical task with fewer steps.
 
 ## 3. Size → token table
 
-Each size maps to a `predicted_cost_tokens` magnitude. These are the **tunable defaults**, calibrated against the forensic per-dispatch range observed in production (134K–392K tokens per dispatch):
+Each size maps to a `predicted_cost_tokens` magnitude. These are the **tunable defaults**, calibrated against the forensic per-dispatch range observed in production (134K–392K tokens per dispatch). The four original magnitudes (`S`/`M`/`L`/`XL`) are unchanged; `XS` and `XXL` are the two new ends:
 
-| Size | `predicted_cost_tokens` (default) |
-|------|----------------------------------:|
-| `S` | 25K (25 000) |
-| `M` | 60K (60 000) |
-| `L` | 130K (130 000) |
-| `XL` | 260K (260 000) |
+| Size | `predicted_cost_tokens` (default) | covers |
+|------|----------------------------------:|--------|
+| `XS` | 5K (5 000) | deterministic ≈0-token bookkeeping (push, branch-cleanup, archive, record-metrics, deploy-target, sync-plugin-cache) |
+| `S` | 25K (25 000) | small agent steps |
+| `M` | 60K (60 000) | medium |
+| `L` | 130K (130 000) | heavy single steps |
+| `XL` | 260K (260 000) | the planning phases |
+| `XXL` | 520K (520 000) | the largest elements — execute on a substantial plan; any element exceeding XL |
 
 This table is the tunable default. It is sourced from config (`plan.phase-5-execute.cost_size_token_table`); the deriver accepts the table as an injected parameter so it stays a pure function, and the config-backed value is the operator-visible, tunable surface. The magnitude strings (`"25K"`, …) are parsed to integers via `sensible_number.parse_sensible_int`. The orchestrator sees each envelope's real post-return `<usage>` and can feed actual-vs-predicted deltas back to recalibrate this table over time (the calibration loop).
 
@@ -86,10 +94,12 @@ These examples are calibrated to the bands above and are the canonical cases the
 
 | Task shape | step_count | profile | skills | target files | score | size | predicted |
 |------------|:----------:|---------|:------:|:------------:|:-----:|:----:|----------:|
+| 1-step doc-only verify | 1 | `verification` | 0 | 1 | `10·1 + 1·4 + 3·0 + 4·1 = 18` | **XS** | 5K |
 | 5-step documentation edit | 5 | `verification` | 1 | 5 | `10·5 + 1·4 + 3·1 + 4·5 = 77` | **M** | 60K |
 | 3-step doc-only verify | 3 | `verification` | 0 | 2 | `10·3 + 1·4 + 3·0 + 4·2 = 42` | **S** | 25K |
 | 14-step config change | 14 | `implementation` | 2 | 6 | `10·14 + 1·12 + 3·2 + 4·6 = 182` | **L** | 130K |
 | 55-step multi-file test refactor | 55 | `module_testing` | 3 | 20 | `10·55 + 1·12 + 3·3 + 4·20 = 651` | **XL** | 260K |
+| 70-step multi-module test rewrite | 70 | `module_testing` | 4 | 25 | `10·70 + 1·12 + 3·4 + 4·25 = 824` | **XXL** | 520K |
 
 The worked-example column order (step → profile → skills → target-file term → score → size → predicted) mirrors the deriver's computation exactly. A small task with few steps but unusually large files is the canonical case where the planner applies the consultation contract below rather than trusting the mechanical score alone.
 

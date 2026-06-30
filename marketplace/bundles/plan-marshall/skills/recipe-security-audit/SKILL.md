@@ -4,6 +4,8 @@ description: On-demand security-audit recipe that runs the shared five-stage aud
 user-invocable: false
 mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-recipe
+lane:
+  profile: full
 metadata:
   verification_profile: security
 ---

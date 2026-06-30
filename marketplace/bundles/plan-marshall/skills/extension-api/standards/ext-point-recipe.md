@@ -48,6 +48,36 @@ recipe_package_source: packages
 does **not** read the markdown body for them. A body-table row or prose mention of any of
 these keys is structurally inert and never shadows the frontmatter value.
 
+### Recipe Lane Seed (optional)
+
+A recipe MAY declare an optional **lane seed** — an execution-profile default the recipe
+recommends because it is best-informed about the intended plan shape. The seed is the
+**lowest-precedence** input to the lane resolver (§4.9 precedence: recipe seed < operator
+posture < coverage-cell adversarial floor): `recipe-match` surfaces it, the `phase-1-init`
+posture dialogue takes it as the recipe-recommended default, and the operator posture (and
+the cell floor) override it.
+
+The seed is declared as a `lane:` frontmatter block carrying a `profile` posture and an
+optional `steps:` map of per-element overrides in the override vocabulary
+(`off | minimal | auto | full | ask`):
+
+```yaml
+lane:
+  profile: auto
+  steps:
+    sonar-roundtrip: off
+```
+
+This recipe-seed `lane:` block is a **distinct contract** from the per-element `lane:` block
+(`class` / `tier` / `cost_size`) owned by
+[`ext-point-lane-element.md`](ext-point-lane-element.md) — they share the `lane:` key but
+the seed declares a `profile`, not a `class`. The plugin-doctor element-lane rule
+(`lane-frontmatter-invalid`) identifies a recipe seed by its `profile` sub-key and skips it;
+the seed is read instead by `script-shared:recipe_scoring.read_recipe_lane_seed`, which
+`manage-config recipe-match` calls to attach `lane_seed` to each match. A recipe with no
+`lane:` block yields no seed (the resolver falls back to the signal projection / operator
+posture).
+
 ### Implementation Pattern
 
 ```python

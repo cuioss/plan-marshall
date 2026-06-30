@@ -661,7 +661,7 @@ Deterministic planning-lane router with two sub-verbs (`route` / `escalate`). Re
 
 **Routing-tier sequencing** — this `planning-lane` router is **Tier 2** of the routing model. Tier 1 recipe-match (`manage-config recipe-match`, phase-1-init Step 5c) runs **ahead** of this `planning-lane route` call (phase-1-init Step 8b): registry-wide recipe scoring precedes the light/deep lane decision. The router's own resolution logic is unaffected by Tier 1 — the sequencing note records ordering only. See `manage-config` Canonical invocations → `recipe-match` for the Tier 1 verb contract and `ref-workflow-architecture/standards/phase-lifecycle.md` for the routing-tier position in the lifecycle.
 
-**route** — evaluate the signal set, resolve the lane, and (with `--persist`) write `status.metadata.planning_lane`. Emits one decision-log line naming every signal value and the winning predicate.
+**route** — evaluate the signal set, resolve the lane, project the recommended execution-profile posture, and (with `--persist`) write `status.metadata.planning_lane` and `status.metadata.execution_profile`. Emits one decision-log line naming every signal value, the winning predicate, and the projected posture.
 
 The signal set (`deep` IFF any deep-precondition fires; otherwise `light`):
 
@@ -675,6 +675,8 @@ The signal set (`deep` IFF any deep-precondition fires; otherwise `light`):
 | S6 | explicit override | `status.metadata.planning_lane_override` (or `--lane-override deep`) | == `deep` forces deep (one-way) |
 
 **deep-lane short-circuit** — `plan.phase-1-init.deep_lane` is read BEFORE the signal set: `always` → force `deep`; `never` → force `light` (the DQ3 hard-escalation ratchet still fires unless `plan.phase-1-init.escalation: never` is also set); `auto` (default) → the signal set decides.
+
+**Execution-profile projection** — `route` also projects a recommended execution-profile posture (`minimal` / `auto` / `full`) over the SAME signals, surfaced under `execution_profile` (and the structured `profile` block). The projection is a pure derivation — `full` for a generative change that is also broad or clean-slate breaking, `minimal` for a non-generative narrow change that is concretely specified, `auto` otherwise. It is **independent of the deep-lane gate**: `deep_lane: always` forces `planning_lane=deep` but does NOT coerce the profile to `full` (planning depth and the finalize-step profile are separate axes). The lane contract is owned by [`extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md). With `--persist`, the projected posture is written to `status.metadata.execution_profile` as the init-time default; the phase-1-init posture dialogue may override it via `metadata --set --field execution_profile`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status planning-lane route \
@@ -691,6 +693,10 @@ decision_predicate: signal_set
 fired_signals[2]:
   - "S3:change_type"
   - "S4:compatibility"
+execution_profile: full
+profile:
+  recommended_posture: full
+  candidate_postures[3]: [ minimal, auto, full ]
 persisted: true
 classification_validation:
   mismatch_count: 0
@@ -831,7 +837,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `get-routing-context` | `--plan-id` | Get combined routing context |
 | `change-type-heuristic` | `--plan-id [--persist]` | Deterministic change-type classifier for phase-3-outline Step 4. Reads the clarified-request narrative (falling back to original_input) and scores it against a fixed keyword table — returns one of `feature`, `bug_fix`, `tech_debt`, `enhancement`, `verification`, `analysis`, or `ambiguous=true` when no keyword fires / two change types tie / confidence < 0.7. With `--persist`, writes the resolved change_type to `status.metadata.change_type` (skipped in the ambiguous branch so the LLM `detect-change-type` workflow is the single writer there). |
 | `aggregate-confidence` | `--plan-id [--scores-file PATH] [--correctness N] [--completeness N] [--consistency N] [--non-duplication N] [--ambiguity N] [--module-mapping N] [--persist]` | Weighted-math confidence aggregator for phase-2-refine Step 10. Computes the overall confidence from per-dimension scores (0..100) using the fixed weights `correctness 20% / completeness 20% / consistency 20% / non-duplication 10% / ambiguity 20% / module-mapping 10%`. Missing dimensions default to 0 and are recorded in `missing_dimensions`. Scores can be supplied via `--scores-file` (JSON object keyed by dimension) and / or individual CLI flags; flags take precedence on conflict. With `--persist`, the overall confidence is written to `status.metadata.confidence`. |
-| `planning-lane route` | `--plan-id [--lane-override deep\|light] [--persist]` | Deterministic planning-lane router. Resolves `planning_lane ∈ {light, deep}` from the DQ1 signal set (S1–S6) plus a `request.md` regex with zero discovery; `plan.phase-1-init.deep_lane` (`always`/`never`/`auto`) short-circuits the signals. Default is light; any deep signal forces deep. With `--persist`, writes `status.metadata.planning_lane`. Emits one decision-log line naming every signal value and the winning predicate. |
+| `planning-lane route` | `--plan-id [--lane-override deep\|light] [--persist]` | Deterministic planning-lane router. Resolves `planning_lane ∈ {light, deep}` from the DQ1 signal set (S1–S6) plus a `request.md` regex with zero discovery; `plan.phase-1-init.deep_lane` (`always`/`never`/`auto`) short-circuits the signals. Default is light; any deep signal forces deep. Also projects the recommended `execution_profile` posture (`minimal`/`auto`/`full`) over the same signals, independent of the deep-lane gate. With `--persist`, writes `status.metadata.planning_lane` + `status.metadata.execution_profile`. Emits one decision-log line naming every signal value, the winning predicate, and the projected posture. |
 | `planning-lane escalate` | `--plan-id --trigger explosion\|premise\|cross_cutting [--persist]` | One-way light→deep ratchet. Sets `planning_lane=deep` + `lane_escalated=true` + `escalation_trigger`; the flag is sticky and there is no downgrade path. With `--persist`, writes the mutation to `status.metadata`. |
 | `classification-validate` | `--plan-id` | Deterministic classification-validation gate (flag-not-block). Cross-checks `change_type` / `scope_estimate` against cheap request signals; flags `feature_as_bug_fix` (bug_fix stamp over a non-ambiguous feature narrative) and `non_empty_affected_files_with_null_scope`, recording a `warning` `anti-pattern` Q-Gate finding against `2-refine` per mismatch. NEVER blocks routing; runs automatically as a pre-route pass inside `planning-lane route`. |
 | `sibling-collision-check` | `--plan-id` | Init-time semantic sibling-dedup collision gate (deterministic, read-only). Scans active (non-archived) sibling plans and flags `source_origin_matches` (same audit / lesson / issue `source_id` backing more than one active plan) and `file_overlap_matches` (concrete request-body paths intersecting a sibling's `references.json` `affected_files`); returns a `collision_detected` boolean. phase-1-init raises the user gate (proceed / rename / abort) before phase-2. |

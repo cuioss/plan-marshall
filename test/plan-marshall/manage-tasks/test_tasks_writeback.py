@@ -129,9 +129,9 @@ def test_update_accepts_zero_predicted_cost_tokens(plan_context):
     assert result['next']['predicted_cost_tokens'] == 0
 
 
-@pytest.mark.parametrize('size', ['S', 'M', 'L', 'XL'])
+@pytest.mark.parametrize('size', ['XS', 'S', 'M', 'L', 'XL', 'XXL'])
 def test_update_accepts_each_valid_cost_size(plan_context, size):
-    """Every valid T-shirt size band is accepted and persisted."""
+    """Every valid T-shirt size band (six-size scale) is accepted and persisted."""
     plan_id = f'wb-size-{size}'
     add_basic_task(plan_id=plan_id, title='Sized task', deliverable=1)
 
@@ -300,10 +300,14 @@ def test_update_rejects_negative_predicted_cost_tokens(plan_context):
 
 
 def test_update_rejects_invalid_cost_size(plan_context):
-    """An out-of-band cost_size yields a status: error result."""
+    """An out-of-band cost_size yields a status: error result.
+
+    XXL is a VALID size under the six-size scale, so the rejection case uses a
+    genuinely out-of-enum label (XXXL).
+    """
     add_basic_task(plan_id='wb-bad-size', title='Sized task', deliverable=1)
 
-    update = cmd_update(_update_ns(plan_id='wb-bad-size', number=1, cost_size='XXL'))
+    update = cmd_update(_update_ns(plan_id='wb-bad-size', number=1, cost_size='XXXL'))
 
     assert update['status'] == 'error'
     assert 'cost-size' in update['message']

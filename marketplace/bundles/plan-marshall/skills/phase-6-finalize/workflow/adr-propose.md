@@ -1,4 +1,8 @@
 ---
+lane:
+  class: prunable
+  prunable_when: no_code_delta
+  cost_size: M
 name: default:adr-propose
 description: Propose ADRs from plan decisions
 order: 62
