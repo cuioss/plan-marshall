@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: M
 name: phase-1-init
 description: Init phase skill. Creates plan directory, request.md, references, and status, runs the Tier 1 recipe-match routing tier (registry-wide recipe scoring + request-aspect classification) ahead of planning-lane routing. Complete initialization in a single agent call.
 user-invocable: false

@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: XS
 name: default:finalize-step-sync-baseline
 description: Early baseline rebase — rebase the worktree feature branch onto origin/{base_branch} at the start of finalize
 order: 3

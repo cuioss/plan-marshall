@@ -1,4 +1,7 @@
 ---
+lane:
+  class: derived-state
+  cost_size: S
 name: default:architecture-refresh
 description: Refresh architecture descriptors after a plan ships — tier-0 deterministic discover + diff-driven commit, tier-1 LLM re-enrichment
 order: 25

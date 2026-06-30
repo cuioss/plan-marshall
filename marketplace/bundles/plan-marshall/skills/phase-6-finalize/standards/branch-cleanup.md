@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: XS
 name: default:branch-cleanup
 description: Branch cleanup — adapts to PR mode or local-only based on create-pr step presence
 order: 70

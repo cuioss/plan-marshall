@@ -1,4 +1,7 @@
 ---
+lane:
+  class: adversarial
+  cost_size: L
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 

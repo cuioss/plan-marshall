@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: S
 implements: plan-marshall:extension-api/standards/ext-point-build-verify-step
 name: default:verify
 description: Parameterized canonical-verify step — resolves a canonical command and runs it

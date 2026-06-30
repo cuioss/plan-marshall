@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: M
 name: phase-6-finalize
 description: Complete plan execution with git workflow and PR management
 user-invocable: false

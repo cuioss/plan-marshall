@@ -1,4 +1,9 @@
 ---
+lane:
+  class: prunable
+  tier: full
+  prunable_when: linear_change
+  cost_size: L
 name: plan-retrospective
 description: Opt-in plan quality audit — analyzes artifacts, logs, metrics, chat, and invariants; compiles report and seeds lessons
 user-invocable: true

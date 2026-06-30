@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: XS
 name: default:record-metrics
 description: Record final plan metrics before archive
 order: 998

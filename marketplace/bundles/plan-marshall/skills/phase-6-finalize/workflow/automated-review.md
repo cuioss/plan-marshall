@@ -1,4 +1,7 @@
 ---
+lane:
+  class: adversarial
+  cost_size: L
 name: default:automated-review
 description: CI automated review
 order: 30

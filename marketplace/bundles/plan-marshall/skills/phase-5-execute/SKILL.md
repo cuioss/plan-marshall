@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: XXL
 name: phase-5-execute
 description: Execute phase skill for plan management. Manifest-driven task runner that executes tasks from TASK-*.json files sequentially and runs the per-deliverable plus end-of-phase verification sweep from manifest.phase_5.verification_steps.
 user-invocable: false

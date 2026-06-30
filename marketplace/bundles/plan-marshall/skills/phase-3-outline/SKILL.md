@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: XL
 name: phase-3-outline
 description: Two-lane solution outline creation - light lane for bounded localized changes, deep lane for codebase-wide discovery
 user-invocable: false

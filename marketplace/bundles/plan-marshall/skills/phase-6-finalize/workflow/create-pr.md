@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: M
 name: default:create-pr
 description: Create pull request
 order: 20

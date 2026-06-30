@@ -1,4 +1,8 @@
 ---
+lane:
+  class: prunable
+  prunable_when: no_code_delta
+  cost_size: M
 name: default:finalize-step-simplify
 description: Domain-agnostic phase-6 cognitive simplification pass — reviews the plan's changeset against the minimum-viable-code anti-patterns and deletes surplus structure directly in the worktree
 order: 8

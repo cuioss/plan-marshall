@@ -1,4 +1,7 @@
 ---
+lane:
+  class: adversarial
+  cost_size: S
 name: finalize-step-plugin-doctor
 description: Finalize-phase wrapper that runs the plugin-doctor quality-gate — scoped to the skills the plan touched, or whole-tree when a plugin-doctor/plan-doctor rule changes or the scope read is indeterminate — gating structural lint before push
 user-invocable: false

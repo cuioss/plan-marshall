@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: S
 name: default:ci-verify
 description: "Classify CI run failures into the multi-failure-mode taxonomy and emit one structured triage finding per failing check (requires: [ci-complete] in consume-failures mode)"
 order: 22

@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: XS
 name: default:push
 description: Push the converged branch
 order: 10

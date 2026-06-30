@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: XS
 name: default:archive-plan
 description: Archive the completed plan
 order: 1000

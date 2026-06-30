@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: XL
 name: phase-4-plan
 description: Domain-agnostic task planning from deliverables with skill resolution and optimization
 user-invocable: false

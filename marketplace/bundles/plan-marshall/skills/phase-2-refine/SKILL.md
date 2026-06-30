@@ -1,4 +1,8 @@
 ---
+lane:
+  class: prunable
+  prunable_when: confidence_complete
+  cost_size: M
 name: phase-2-refine
 description: Iterative request clarification until confidence threshold reached
 user-invocable: false

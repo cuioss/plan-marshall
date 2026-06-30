@@ -1,4 +1,7 @@
 ---
+lane:
+  class: core
+  cost_size: S
 name: default:pre-push-quality-gate
 description: Run quality-gate per affected bundle as the last gate before push
 order: 5
