@@ -25,6 +25,10 @@ ARTIFACT_SCRIPT = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'check-artifact-consistency.py'
 )
 
+ROUTING_SCRIPT = (
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'check-routing-decisions.py'
+)
+
 
 # =============================================================================
 # Fixture helpers
@@ -810,3 +814,179 @@ class TestArtifactConsistencyManifestForward:
         warning_findings = [f for f in data['findings'] if f.get('severity') == 'warning']
         # At least the exact_match warning is present.
         assert any('mismatch' in f['message'].lower() for f in warning_findings)
+
+
+# =============================================================================
+# Routing-decision aspect (deliverable 10)
+# =============================================================================
+#
+# check-routing-decisions re-evaluates the lane prune predicates against the
+# realized footprint and emits deterministic facts. The OVER/UNDER posture
+# counterfactual is reserved for LLM cognition — the script NEVER computes a
+# posture verdict and marks the boundary with llm_judgement_required.
+
+
+def _write_status_metadata(plan_dir: Path, metadata: dict) -> None:
+    """Overwrite the plan's status.json with the given metadata block."""
+    import json  # local import — script-test PYTHONPATH
+
+    (plan_dir / 'status.json').write_text(
+        json.dumps({'plan_id': plan_dir.name, 'metadata': metadata}, indent=2),
+        encoding='utf-8',
+    )
+
+
+def _manifest_with_steps_and_log(steps: list[str], log_rows: list[dict]) -> str:
+    return _serialize_manifest(
+        {
+            'manifest_version': 1,
+            'plan_id': 'manifest-plan',
+            'phase_5': {'early_terminate': False, 'verification_steps': []},
+            'phase_6': {'steps': steps},
+            'execution_log': log_rows,
+        }
+    )
+
+
+def _run_routing(plan_id: str, *extra: str):
+    return run_script(ROUTING_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', *extra)
+
+
+def _mis_prune(checks: list, step: str) -> dict | None:
+    for entry in checks:
+        if entry.get('check') == f'mis_prune:{step}':
+            return entry
+    return None
+
+
+class TestRoutingDecisionsAspect:
+    """Deterministic predicate re-evaluation + the LLM-judgement boundary."""
+
+    def test_no_manifest_emits_skipped_fragment(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = _setup_plan_with_manifest(
+            tmp_path, monkeypatch, manifest_body='', plan_id='routing-legacy'
+        )
+        (plan_dir / 'execution.toon').unlink()
+
+        result = _run_routing(plan_id)
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'skipped'
+        assert data['manifest_present'] is False
+
+    def test_mis_prune_flagged_when_sonar_skipped_but_diff_touched_production(self, tmp_path, monkeypatch):
+        """sonar-roundtrip absent + a production diff → its no_code_delta predicate is now false."""
+        plan_id, plan_dir = _setup_plan_with_manifest(
+            tmp_path,
+            monkeypatch,
+            manifest_body=_manifest_with_steps_and_log(['push', 'create-pr'], []),
+            plan_id='routing-misprune',
+        )
+        _write_status_metadata(plan_dir, {'execution_profile': 'auto', 'planning_lane': 'light'})
+        diff = _write_diff(tmp_path, ['marketplace/bundles/plan-marshall/skills/x/scripts/x.py'])
+
+        result = _run_routing(plan_id, '--diff-file', str(diff))
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['posture'] == 'auto'
+        sonar = _mis_prune(data['mis_prune_checks'], 'sonar-roundtrip')
+        assert sonar is not None
+        assert sonar['status'] == 'fail'
+        assert 'production' in sonar['detail']
+
+    def test_no_mis_prune_when_diff_is_docs_only(self, tmp_path, monkeypatch):
+        """sonar-roundtrip absent but a docs-only diff → the no_code_delta predicate still holds."""
+        plan_id, plan_dir = _setup_plan_with_manifest(
+            tmp_path,
+            monkeypatch,
+            manifest_body=_manifest_with_steps_and_log(['push', 'create-pr'], []),
+            plan_id='routing-docs',
+        )
+        _write_status_metadata(plan_dir, {'execution_profile': 'minimal'})
+        diff = _write_diff(tmp_path, ['doc/user/configuration.adoc', 'README.md'])
+
+        result = _run_routing(plan_id, '--diff-file', str(diff))
+
+        data = result.toon()
+        sonar = _mis_prune(data['mis_prune_checks'], 'sonar-roundtrip')
+        assert sonar is not None
+        assert sonar['status'] == 'pass'
+
+    def test_mis_prune_skipped_without_footprint(self, tmp_path, monkeypatch):
+        """No --diff-file → the prune-predicate re-evaluation skips (no false positive)."""
+        plan_id, plan_dir = _setup_plan_with_manifest(
+            tmp_path,
+            monkeypatch,
+            manifest_body=_manifest_with_steps_and_log(['push', 'create-pr'], []),
+            plan_id='routing-nofoot',
+        )
+        _write_status_metadata(plan_dir, {'execution_profile': 'auto'})
+
+        result = _run_routing(plan_id)
+
+        data = result.toon()
+        sonar = _mis_prune(data['mis_prune_checks'], 'sonar-roundtrip')
+        assert sonar is not None
+        assert sonar['status'] == 'skip'
+
+    def test_step_that_ran_is_pass(self, tmp_path, monkeypatch):
+        """sonar-roundtrip present in phase_6.steps → the step ran (pass)."""
+        plan_id, plan_dir = _setup_plan_with_manifest(
+            tmp_path,
+            monkeypatch,
+            manifest_body=_manifest_with_steps_and_log(['push', 'sonar-roundtrip', 'create-pr'], []),
+            plan_id='routing-ran',
+        )
+        _write_status_metadata(plan_dir, {'execution_profile': 'full'})
+        diff = _write_diff(tmp_path, ['src/x.py'])
+
+        result = _run_routing(plan_id, '--diff-file', str(diff))
+
+        data = result.toon()
+        sonar = _mis_prune(data['mis_prune_checks'], 'sonar-roundtrip')
+        assert sonar is not None
+        assert sonar['status'] == 'pass'
+
+    def test_cost_preview_delta_computed_from_execution_log(self, tmp_path, monkeypatch):
+        """Predicted (init preview) vs actual (execution_log sum) yields a signed delta."""
+        log_rows = [
+            {'step_id': 'push', 'phase': '6-finalize', 'total_tokens': 40000},
+            {'step_id': 'create-pr', 'phase': '6-finalize', 'total_tokens': 60000},
+        ]
+        plan_id, plan_dir = _setup_plan_with_manifest(
+            tmp_path,
+            monkeypatch,
+            manifest_body=_manifest_with_steps_and_log(['push', 'create-pr'], log_rows),
+            plan_id='routing-cost',
+        )
+        _write_status_metadata(
+            plan_dir, {'execution_profile': 'minimal', 'execution_profile_cost_preview': 80000}
+        )
+
+        result = _run_routing(plan_id)
+
+        data = result.toon()
+        preview = data['cost_preview']
+        assert preview['actual_tokens'] == 100000
+        assert preview['predicted_tokens'] == 80000
+        assert preview['delta_tokens'] == 20000
+
+    def test_llm_judgement_boundary_no_posture_verdict_in_script(self, tmp_path, monkeypatch):
+        """The script marks llm_judgement_required and emits NO posture verdict of its own."""
+        plan_id, plan_dir = _setup_plan_with_manifest(
+            tmp_path,
+            monkeypatch,
+            manifest_body=_manifest_with_steps_and_log(['push'], []),
+            plan_id='routing-boundary',
+        )
+        _write_status_metadata(plan_dir, {'execution_profile': 'auto'})
+
+        result = _run_routing(plan_id)
+
+        data = result.toon()
+        # The deterministic/LLM boundary: the script flags the judgement is the
+        # LLM's and never emits a posture_verdict / OVER-UNDER verdict itself.
+        assert data['llm_judgement_required'] is True
+        assert 'posture_verdict' not in data
