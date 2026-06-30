@@ -1,7 +1,10 @@
 = Configuration
 :nofooter:
 :toc: left
+:toc-title: Table of Contents
 :toclevels: 3
+:sectnums:
+:source-highlighter: highlight.js
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
 
@@ -141,6 +144,44 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 The companion `aspect-classify` step labels a request as analysis, planning, or implementation so the execution-manifest composer can drop build / quality-gate / test verification steps for analysis- and planning-only requests. Its classification uses an independent confidence threshold (`0.7`) that is *not* the recipe-match auto-route floor above — the two thresholds are unrelated and must not be conflated. The `recipe-match` and `aspect-classify` verbs are documented in xref:../../marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md[`manage-config/SKILL.md`] Canonical invocations.
 
+[#execution-profile-lane-selection]
+=== Execution-profile lane selection
+
+The **execution profile** is an operator-facing, cost-visible posture — `minimal`, `auto`, or `full` — chosen at plan init that decides how much ceremony (phase-6 finalize steps, adversarial validators, retrospectives) a plan runs. It is a separate axis from the `deep_lane` planning-depth gate above: `deep_lane: always` forces a deep *planning* lane without forcing a `full` *profile*. Every phase / finalize-step element self-declares its lane membership through a `lane:` frontmatter block (`class` / `tier` / `cost_size`); the postures are cutoffs over that lattice, so the posture→steps mapping stays derived, never a maintained list. The `manage-execution-manifest lanes preview` verb resolves all three postures (kept step set + summed token cost) for the init dialogue.
+
+The three postures:
+
+* **`minimal`** — only the tier-`minimal` floor (push, create-pr, ci-verify, branch-cleanup, record-metrics, archive, lessons capture, and the meta-project derived-state steps). No adversarial validators, no security audit, no retrospectives — appropriate for docs / mechanical changes.
+* **`auto`** (the projection) — keeps the adversarial validators and prunes the structurally-empty prunable steps (e.g. sonar when there is no code delta); drops the `full`-only steps (security-audit, plan-retrospective).
+* **`full`** — every configured step.
+
+Four `marshal.json` knobs govern the mechanism:
+
+[cols="1,1,3", options="header"]
+|===
+| Config key | Default | What it controls
+
+| `plan.phase-1-init.lane_selection` | `ask` | Whether init PROMPTS for the posture (`ask`) or takes the computed `auto` projection silently (`auto`). Mirrors the `deep_lane` / `finalize_without_asking` ask/auto family.
+| `plan.phase-<phase>.steps.<step>.lane` | _(per element)_ | Per-element override pinning any single lane element, value ∈ `off` \| `minimal` \| `auto` \| `full` \| `ask` (`off` = never run; `minimal` = force-keep in every posture; `ask` = always prompt). Nested under the owning step in the keyed map, like other step-owned params. The shipped default lives in each element's frontmatter `lane:` block; this override is the project-level pin.
+| `plan.phase-1-init.lane_prune_thresholds` | `{confidence_complete: 95, linear_change_max_deliverables: 1}` | The tunable bounds for `auto`'s numeric prune predicates — `confidence_complete` (prune `refine` when the post-init confidence proxy is ≥ this value, int 0–100, matching the refine `confidence_threshold`) and `linear_change_max_deliverables` (treat the plan as a linear change, pruning 4-plan decomposition, when the deliverable count is ≤ this value). Tighten to prune more aggressively, loosen to keep more steps.
+| `plan.phase-5-execute.cost_size_token_table` | `{XS: 5K, …, XXL: 520K}` | The six-size token table the dialogue sums for the per-posture cost preview — see <<execution-profile-lane-selection,the cost-size table above>> (shared with the task bin-packer).
+|===
+
+[NOTE]
+====
+**Meta-project derived-state caveat.** For plan-marshall itself, the cache-deploy steps (`deploy-target`, `sync-plugin-cache`, on-main executor regeneration) are correctness-required derived state, not optional ceremony — they carry `lane.class: derived-state` and run under *every* posture by default. An operator may still override one to `off`, but that emits a loud correctness warning ("dropping sync-cache ships a broken cache") rather than a silent drop. `minimal` therefore cannot silently drop required derived state.
+====
+
+Set a knob via the standard phase `set` verb (the per-element override goes through the step-param channel):
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init set --field lane_selection --value auto
+----
+
+The closed `lane.class` enum, the class→default-tier table, the resolution lattice, and the named prune predicates are owned by link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-lane-element.md[`ext-point-lane-element.md`]; the per-key knob contracts (validators, defaults) live in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
+
 [#step-configuration]
 === Step configuration (verify + finalize pipelines)
 
@@ -178,7 +219,7 @@ The `phase-5-execute` dispatch model is **budget-bounded**, neither per-task nor
 
 `plan.phase-5-execute.per_envelope_budget_tokens` (default `"400K"`) is the per-envelope packing budget — the token ceiling the bin-packer accumulates `predicted_cost_tokens` against before opening a new envelope group. It is consumed at PLAN time by the bin-packer (`manage-tasks pack-envelopes`), NOT a runtime comparand. The `_tokens` suffix names the unit; the human-friendly value form (`"400K"`) is parsed to an integer by `sensible_number.parse_sensible_int`. Raise it to pack more tasks into each envelope (fewer, larger dispatches), lower it to yield earlier (smaller dispatches). The 400K default leaves headroom below a typical context window.
 
-`plan.phase-5-execute.cost_size_token_table` (default `{S: 25K, M: 60K, L: 130K, XL: 260K}`) maps each T-shirt `cost_size` to a predicted-token magnitude. The bin-packer reads it to map a task's derived `cost_size` to its `predicted_cost_tokens`. Keys must be exactly `S`/`M`/`L`/`XL`; each value parses via `sensible_number.parse_sensible_int`. The default magnitudes are calibrated to the forensic 134K–392K per-dispatch range; tune them to recalibrate the cost model from observed post-return `<usage>`.
+`plan.phase-5-execute.cost_size_token_table` (default `{XS: 5K, S: 25K, M: 60K, L: 130K, XL: 260K, XXL: 520K}`) maps each T-shirt `cost_size` to a predicted-token magnitude. The bin-packer reads it to map a task's derived `cost_size` to its `predicted_cost_tokens`, and the execution-profile lane dialogue (see <<execution-profile-lane-selection>>) sums each resolved lane element's `cost_size` through the same table to produce its per-posture cost preview. Keys must be exactly the six-size scale `XS`/`S`/`M`/`L`/`XL`/`XXL`; each value parses via `sensible_number.parse_sensible_int`. `XS` (deterministic ≈0-token bookkeeping) and `XXL` (the largest elements) are the two ends added so lane elements and tasks share one scale; the four middle magnitudes are calibrated to the forensic 134K–392K per-dispatch range. Tune them to recalibrate the cost model from observed post-return `<usage>`.
 
 Set via:
 
