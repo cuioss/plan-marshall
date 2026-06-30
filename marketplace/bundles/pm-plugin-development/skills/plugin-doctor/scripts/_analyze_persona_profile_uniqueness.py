@@ -40,6 +40,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'persona-profile-uniqueness'
 RULE_NAME = 'analyze_persona_profile_uniqueness'
 
@@ -139,7 +141,7 @@ def analyze_persona_profile_uniqueness(marketplace_root: Path) -> list[dict]:
     """
     # Map primary profile -> first persona file that claimed it.
     primary_owner: dict[str, Path] = {}
-    findings: list[dict] = []
+    findings: list[Finding] = []
 
     for skill_md in _skill_md_files(marketplace_root):
         try:
@@ -159,15 +161,14 @@ def analyze_persona_profile_uniqueness(marketplace_root: Path) -> list[dict]:
             primary_owner[primary] = skill_md
             continue
         findings.append(
-            {
-                'rule_id': RULE_ID,
-                'type': RULE_ID,
-                'rule': RULE_NAME,
-                'file': str(skill_md),
-                'line': 1,
-                'severity': 'error',
-                'fixable': False,
-                'description': (
+            Finding(
+                type=RULE_ID,
+                file=str(skill_md),
+                line=1,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=(
                     f'persona skill declares primary profile `{primary}` already '
                     f'owned by `{owner.parent.name}` — the persona<->primary-profile '
                     'binding must be unique so phase-4-plan can reverse-look-up a '
@@ -175,11 +176,12 @@ def analyze_persona_profile_uniqueness(marketplace_root: Path) -> list[dict]:
                     'primary (first) `profiles:` entry, or remove the duplicate '
                     'binding.'
                 ),
-                'details': {
+                details={
                     'skill': skill_md.parent.name,
                     'primary_profile': primary,
                     'conflicting_skill': owner.parent.name,
                 },
-            }
+                extra={'rule': RULE_NAME},
+            )
         )
-    return findings
+    return [f.to_dict() for f in findings]

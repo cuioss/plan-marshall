@@ -8,9 +8,9 @@ from pathlib import Path
 from _analyze_shared import (
     check_yaml_validity,
     detect_component_type,
-    extract_frontmatter,
     read_frontmatter_disable_list,
 )
+from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
 from _doctor_shared import resolve_runtime_target
 
 
@@ -1071,7 +1071,7 @@ def analyze_markdown_file(file_path: Path, component_type: str) -> dict:
     if component_type == 'auto':
         component_type = detect_component_type(str(file_path))
 
-    frontmatter_present, frontmatter = extract_frontmatter(content)
+    frontmatter_present, frontmatter, _ = extract_frontmatter(content)
     yaml_valid = check_yaml_validity(frontmatter) if frontmatter_present else False
     required_fields = (
         check_frontmatter_fields(frontmatter)

@@ -76,6 +76,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'bash-chain-shapes-in-skills'
 RULE_NAME = 'analyze_bash_chain_shapes_in_skills'
 FINDING_TYPE = 'bash_chain_shapes_in_skills'
@@ -152,18 +154,16 @@ def _make_finding(path: Path, line_no: int, chain_type: str, line: str, offset: 
             '"Bash: one command per call" hard rule. Use run_in_background parameter instead.'
         ),
     }
-    return {
-        'rule_id': RULE_ID,
-        'type': FINDING_TYPE,
-        'rule': RULE_NAME,
-        'file': str(path),
-        'line': line_no,
-        'severity': 'error',
-        'fixable': False,
-        'chain_type': chain_type,
-        'snippet': snippet,
-        'description': descriptions.get(chain_type, 'Forbidden bash chain shape detected.'),
-    }
+    return Finding(
+        type=FINDING_TYPE,
+        file=str(path),
+        line=line_no,
+        severity='error',
+        fixable=False,
+        rule_id=RULE_ID,
+        description=descriptions.get(chain_type, 'Forbidden bash chain shape detected.'),
+        extra={'rule': RULE_NAME, 'chain_type': chain_type, 'snippet': snippet},
+    ).to_dict()
 
 
 # ---------------------------------------------------------------------------
@@ -177,18 +177,16 @@ def _scan_file(path: Path) -> list[dict]:
         text = path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError) as exc:
         return [
-            {
-                'rule_id': RULE_ID,
-                'type': 'file_read_error',
-                'rule': RULE_NAME,
-                'file': str(path),
-                'line': 0,
-                'severity': 'error',
-                'fixable': False,
-                'chain_type': '',
-                'snippet': '',
-                'description': f'Could not read file: {exc}',
-            }
+            Finding(
+                type='file_read_error',
+                file=str(path),
+                line=0,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=f'Could not read file: {exc}',
+                extra={'rule': RULE_NAME, 'chain_type': '', 'snippet': ''},
+            ).to_dict()
         ]
 
     lines = text.splitlines()

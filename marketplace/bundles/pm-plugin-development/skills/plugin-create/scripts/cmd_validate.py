@@ -6,75 +6,10 @@ import argparse
 import re
 from typing import Any
 
+from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
+
 Finding = dict[str, Any]
 Frontmatter = dict[str, Any]
-
-
-def parse_simple_yaml(yaml_text: str) -> Frontmatter:
-    """Parse simple YAML (key: value pairs only) without external dependencies.
-
-    Raises:
-        ValueError: If indentation or syntax is malformed.
-    """
-    result: Frontmatter = {}
-    lines = yaml_text.strip().split('\n')
-
-    for line_num, line in enumerate(lines, 1):
-        # Check for improper indentation (leading spaces before top-level keys)
-        if line and line[0] == ' ' and ':' in line:
-            raise ValueError(f'Line {line_num}: Improper indentation detected')
-
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-
-        if ':' not in line:
-            raise ValueError(f'Line {line_num}: Invalid YAML syntax - expected key: value pair')
-
-        key, _, value = line.partition(':')
-        key = key.strip()
-        value = value.strip()
-
-        if not key:
-            raise ValueError(f'Line {line_num}: Empty key in YAML')
-
-        # Handle different value types
-        if value.startswith('[') and value.endswith(']'):
-            items = value[1:-1].split(',')
-            result[key] = [item.strip() for item in items]
-        elif value.startswith('"') and value.endswith('"'):
-            result[key] = value[1:-1]
-        elif value.startswith("'") and value.endswith("'"):
-            result[key] = value[1:-1]
-        else:
-            result[key] = value
-
-    return result
-
-
-def extract_frontmatter(content: str) -> tuple[Frontmatter | None, str | None]:
-    """Extract YAML frontmatter from markdown content.
-
-    Args:
-        content: Full markdown file content.
-
-    Returns:
-        A tuple of the parsed frontmatter (or ``None``) and an error message
-        (or ``None`` on success).
-    """
-    pattern = r'^---\s*\n(.*?)\n---\s*\n'
-    match = re.match(pattern, content, re.DOTALL)
-
-    if not match:
-        return None, 'YAML frontmatter not found (must be between --- delimiters)'
-
-    frontmatter_text = match.group(1)
-
-    try:
-        frontmatter = parse_simple_yaml(frontmatter_text)
-        return frontmatter, None
-    except (ValueError, IndexError) as e:
-        return None, f'Invalid YAML syntax: {str(e)}'
 
 
 def validate_frontmatter_agent(frontmatter: Frontmatter) -> tuple[list[Finding], list[Finding]]:
@@ -324,12 +259,15 @@ def cmd_validate(args: argparse.Namespace) -> dict[str, Any]:
             'warnings': [],
         }
 
-    # Extract and validate frontmatter
-    frontmatter, error = extract_frontmatter(content)
+    # Extract and validate frontmatter via the single canonical parser.
+    record = extract_frontmatter(content)
 
-    if error or frontmatter is None:
-        errors.append({'type': 'frontmatter_missing', 'message': error or 'Frontmatter could not be parsed'})
+    if not record.present:
+        errors.append(
+            {'type': 'frontmatter_missing', 'message': 'YAML frontmatter not found (must be between --- delimiters)'}
+        )
     else:
+        frontmatter = record.fields
         # Validate frontmatter based on component type
         if args.type == 'agent':
             fm_errors, fm_warnings = validate_frontmatter_agent(frontmatter)

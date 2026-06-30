@@ -45,6 +45,8 @@ import ast
 import re
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_UNUSED_PARAMETER = 'SIMPLICITY_UNUSED_PARAMETER'
 RULE_BACKWARD_COMPAT_REEXPORT = 'SIMPLICITY_BACKWARD_COMPAT_REEXPORT'
 RULE_DEFENSIVE_CATCHALL = 'SIMPLICITY_DEFENSIVE_CATCHALL'
@@ -137,15 +139,15 @@ def _param_line_numbers(tree: ast.Module) -> set[int]:
 
 
 def _finding(rule_id: str, file_path: Path, line: int, description: str, *, fixable: bool) -> dict:
-    return {
-        'rule_id': rule_id,
-        'type': rule_id,
-        'file': str(file_path),
-        'line': line,
-        'severity': 'warning',
-        'fixable': fixable,
-        'description': f'{description} ({rule_id})',
-    }
+    return Finding(
+        type=rule_id,
+        file=str(file_path),
+        line=line,
+        severity='warning',
+        fixable=fixable,
+        rule_id=rule_id,
+        description=f'{description} ({rule_id})',
+    ).to_dict()
 
 
 def analyze_unused_parameter(marketplace_root: Path) -> list[dict]:

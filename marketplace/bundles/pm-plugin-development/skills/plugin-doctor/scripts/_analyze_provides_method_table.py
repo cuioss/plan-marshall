@@ -99,6 +99,8 @@ import ast
 import re
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'provides-method-table-drift'
 RULE_NAME = 'analyze_provides_method_table'
 
@@ -265,63 +267,63 @@ def _scan_skill(skill_md: Path) -> list[dict]:
         return []
 
     bundle = skill_md.parent.parent.parent.name
-    findings: list[dict] = []
+    findings: list[Finding] = []
 
     # Direction A: a real override missing from the table.
     for method, is_override in overrides.items():
         if is_override and method not in table:
             findings.append(
-                {
-                    'rule_id': RULE_ID,
-                    'type': RULE_ID,
-                    'rule': RULE_NAME,
-                    'file': str(skill_md),
-                    'line': 1,
-                    'severity': 'warning',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=RULE_ID,
+                    file=str(skill_md),
+                    line=1,
+                    severity='warning',
+                    fixable=False,
+                    rule_id=RULE_ID,
+                    description=(
                         f'extension.py overrides `{method}()` but the '
                         f'"Extension API" table does not list it — the table is '
                         f'a stale mirror of the extension overrides '
                         f'(provides-method-table-drift)'
                     ),
-                    'details': {
+                    details={
                         'bundle': bundle,
                         'method': method,
                         'reason': 'override_missing_from_table',
                         'extension_path': str(extension_path),
                     },
-                }
+                    extra={'rule': RULE_NAME},
+                )
             )
 
     # Direction B: a phantom table row naming a method that is not a real override.
     for method, line_no in table.items():
         if not overrides.get(method, False):
             findings.append(
-                {
-                    'rule_id': RULE_ID,
-                    'type': RULE_ID,
-                    'rule': RULE_NAME,
-                    'file': str(skill_md),
-                    'line': line_no,
-                    'severity': 'warning',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=RULE_ID,
+                    file=str(skill_md),
+                    line=line_no,
+                    severity='warning',
+                    fixable=False,
+                    rule_id=RULE_ID,
+                    description=(
                         f'the "Extension API" table lists `{method}()` but '
                         f'extension.py does not override it with a non-default '
                         f'return — the table row is a phantom mirror entry '
                         f'(provides-method-table-drift)'
                     ),
-                    'details': {
+                    details={
                         'bundle': bundle,
                         'method': method,
                         'reason': 'phantom_table_row',
                         'extension_path': str(extension_path),
                     },
-                }
+                    extra={'rule': RULE_NAME},
+                )
             )
 
-    return findings
+    return [f.to_dict() for f in findings]
 
 
 def analyze_provides_method_table(marketplace_root: Path) -> list[dict]:

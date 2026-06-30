@@ -77,6 +77,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'skill-relative-temp-path-git-c'
 RULE_NAME = 'analyze_skill_relative_temp_path'
 FINDING_TYPE = 'skill_relative_temp_path_git_c'
@@ -141,17 +143,14 @@ def _make_finding(
     start = max(0, offset - 30)
     end = min(len(line), offset + 50)
     snippet = line[start:end]
-    return {
-        'rule_id': RULE_ID,
-        'type': FINDING_TYPE,
-        'rule': RULE_NAME,
-        'file': str(path),
-        'line': line_no,
-        'severity': 'warning',
-        'fixable': False,
-        'temp_path': temp_path,
-        'snippet': snippet,
-        'description': (
+    return Finding(
+        type=FINDING_TYPE,
+        file=str(path),
+        line=line_no,
+        severity='warning',
+        fixable=False,
+        rule_id=RULE_ID,
+        description=(
             f'Relative ``.plan/temp`` path ``{temp_path}`` consumed by '
             '``git -C ... commit -F`` in skill markdown. The harness ``Write`` '
             'tool resolves a relative ``.plan/temp`` path against the main '
@@ -161,7 +160,8 @@ def _make_finding(
             'worktree-absolute ``{worktree_path}/.plan/temp/...`` form on BOTH '
             'the ``Write`` call and the ``git commit -F``.'
         ),
-    }
+        extra={'rule': RULE_NAME, 'temp_path': temp_path, 'snippet': snippet},
+    ).to_dict()
 
 
 # ---------------------------------------------------------------------------
@@ -175,18 +175,16 @@ def _scan_file(path: Path) -> list[dict]:
         text = path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError) as exc:
         return [
-            {
-                'rule_id': RULE_ID,
-                'type': 'file_read_error',
-                'rule': RULE_NAME,
-                'file': str(path),
-                'line': 0,
-                'severity': 'error',
-                'fixable': False,
-                'temp_path': '',
-                'snippet': '',
-                'description': f'Could not read file: {exc}',
-            }
+            Finding(
+                type='file_read_error',
+                file=str(path),
+                line=0,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=f'Could not read file: {exc}',
+                extra={'rule': RULE_NAME, 'temp_path': '', 'snippet': ''},
+            ).to_dict()
         ]
 
     lines = text.splitlines()

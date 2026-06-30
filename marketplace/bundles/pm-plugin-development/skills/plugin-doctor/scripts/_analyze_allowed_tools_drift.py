@@ -98,7 +98,9 @@ import re
 from pathlib import Path
 
 from _analyze_coverage import parse_declared_tools
-from _analyze_shared import extract_frontmatter, read_frontmatter_disable_list
+from _analyze_shared import read_frontmatter_disable_list
+from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
+from _doctor_shared import Finding  # type: ignore[import-not-found]
 
 RULE_ID = 'allowed-tools-body-drift'
 RULE_NAME = 'analyze_allowed_tools_drift'
@@ -217,17 +219,16 @@ def _scan_file(path: Path) -> list[dict]:
         text = path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError) as exc:
         return [
-            {
-                'rule_id': RULE_ID,
-                'type': 'file_read_error',
-                'rule': RULE_NAME,
-                'file': str(path),
-                'line': 0,
-                'severity': 'error',
-                'fixable': False,
-                'snippet': '',
-                'description': f'Could not read file: {exc}',
-            }
+            Finding(
+                type='file_read_error',
+                file=str(path),
+                line=0,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=f'Could not read file: {exc}',
+                extra={'rule': RULE_NAME, 'snippet': ''},
+            ).to_dict()
         ]
 
     # Granularity-3 (per-file frontmatter): skip the whole file when its
@@ -235,7 +236,7 @@ def _scan_file(path: Path) -> list[dict]:
     if RULE_ID in read_frontmatter_disable_list(text):
         return []
 
-    frontmatter_present, frontmatter = extract_frontmatter(text)
+    frontmatter_present, frontmatter, _ = extract_frontmatter(text)
     if not frontmatter_present:
         # No frontmatter → no declared tool list → nothing to drift against.
         return []
@@ -253,7 +254,7 @@ def _scan_file(path: Path) -> list[dict]:
     body_lines = body_text.splitlines()
     fence_set = _build_fence_set(body_lines)
 
-    findings: list[dict] = []
+    findings: list[Finding] = []
     for body_idx, line in enumerate(body_lines):
         if body_idx in fence_set:
             continue
@@ -266,25 +267,24 @@ def _scan_file(path: Path) -> list[dict]:
         abs_line = body_start + body_idx  # 0-based absolute index
 
         findings.append(
-            {
-                'rule_id': RULE_ID,
-                'type': FINDING_TYPE,
-                'rule': RULE_NAME,
-                'file': str(path),
-                'line': abs_line + 1,  # 1-based
-                'severity': 'warning',
-                'fixable': False,
-                'snippet': tool,
-                'description': (
+            Finding(
+                type=FINDING_TYPE,
+                file=str(path),
+                line=abs_line + 1,  # 1-based
+                severity='warning',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=(
                     f'Tool `{tool}` is invoked in the body but absent from the '
                     f'declared `allowed-tools`/`tools` frontmatter list '
                     f'({", ".join(sorted(declared_set))}) — add it to the '
                     f'declaration or remove the invocation. See rule-catalog.md.'
                 ),
-            }
+                extra={'rule': RULE_NAME, 'snippet': tool},
+            )
         )
 
-    return findings
+    return [f.to_dict() for f in findings]
 
 
 # ---------------------------------------------------------------------------

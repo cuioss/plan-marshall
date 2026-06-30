@@ -43,6 +43,8 @@ import functools
 import re
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'skill-notation-unresolved'
 RULE_NAME = 'analyze_skill_notation'
 
@@ -84,7 +86,7 @@ def _scan_file(path: Path, marketplace_root: Path) -> list[dict]:
     except (OSError, UnicodeDecodeError):
         return []
 
-    findings: list[dict] = []
+    findings: list[Finding] = []
     seen: set[tuple[int, str]] = set()
     for idx, line in enumerate(text.splitlines(), start=1):
         for match in _DIRECTIVE_RE.finditer(line):
@@ -107,29 +109,29 @@ def _scan_file(path: Path, marketplace_root: Path) -> list[dict]:
             seen.add(key)
 
             findings.append(
-                {
-                    'rule_id': RULE_ID,
-                    'type': RULE_ID,
-                    'rule': RULE_NAME,
-                    'file': str(path),
-                    'line': idx,
-                    'severity': 'error',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=RULE_ID,
+                    file=str(path),
+                    line=idx,
+                    severity='error',
+                    fixable=False,
+                    rule_id=RULE_ID,
+                    description=(
                         f'`Skill: {notation}` directive references a skill '
                         f'directory `bundles/{bundle}/skills/{skill}/` that does '
                         f'not exist — the Skill directive does not resolve '
                         f'(skill-notation-unresolved)'
                     ),
-                    'details': {
+                    details={
                         'notation': notation,
                         'bundle': bundle,
                         'skill': skill,
                         'reason': 'skill_dir_missing',
                     },
-                }
+                    extra={'rule': RULE_NAME},
+                )
             )
-    return findings
+    return [f.to_dict() for f in findings]
 
 
 def _scoped_markdown(marketplace_root: Path) -> list[Path]:

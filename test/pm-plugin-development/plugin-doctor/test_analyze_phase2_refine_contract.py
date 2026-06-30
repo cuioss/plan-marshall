@@ -103,8 +103,10 @@ def test_edit_to_marketplace_emits_finding(tmp_path: Path) -> None:
     assert len(findings) == 1
     finding = findings[0]
     assert finding['rule_id'] == RULE_ID
-    assert finding['tool'] == 'Edit'
-    assert 'marketplace' in finding['path']
+    # Rule-specific keys are carried in the nested ``details`` dict on the
+    # migrated Finding record (top-level ``type``/``rule_id``/``file``/``line``).
+    assert finding['details']['tool'] == 'Edit'
+    assert 'marketplace' in finding['details']['path']
     assert finding['line'] == 5
 
 
@@ -120,8 +122,8 @@ def test_write_to_src_emits_finding(tmp_path: Path) -> None:
     findings = analyze_phase2_refine_contract([file_path])
 
     assert len(findings) == 1
-    assert findings[0]['tool'] == 'Write'
-    assert findings[0]['path'] == 'src/main/foo.py'
+    assert findings[0]['details']['tool'] == 'Write'
+    assert findings[0]['details']['path'] == 'src/main/foo.py'
 
 
 def test_plan_local_path_is_allowed(tmp_path: Path) -> None:
@@ -238,7 +240,7 @@ def test_directory_input_recurses(tmp_path: Path) -> None:
     findings = analyze_phase2_refine_contract([tmp_path])
 
     assert len(findings) == 1
-    assert findings[0]['tool'] == 'Edit'
+    assert findings[0]['details']['tool'] == 'Edit'
 
 
 def test_suggested_fix_present_in_finding(tmp_path: Path) -> None:
@@ -252,5 +254,97 @@ def test_suggested_fix_present_in_finding(tmp_path: Path) -> None:
     findings = analyze_phase2_refine_contract([file_path])
 
     assert len(findings) == 1
-    assert 'suggested_fix' in findings[0]
-    assert '.plan/local/' in findings[0]['suggested_fix']
+    assert 'suggested_fix' in findings[0]['details']
+    assert '.plan/local/' in findings[0]['details']['suggested_fix']
+
+
+def test_finding_shape_contract(tmp_path: Path) -> None:
+    """Every finding must expose exactly the documented top-level + details keys.
+
+    The migrated ``Finding`` record emits the common fields
+    (``type``/``file``/``line``/``severity``/``fixable``/``rule_id``/
+    ``description``) at the top level and the three rule-specific keys
+    (``tool``/``path``/``suggested_fix``) inside the nested ``details`` dict.
+    """
+    content = (
+        '# Refine Step\n'
+        '\n'
+        'Edit("marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md")\n'
+    )
+    file_path = _make_refine_file(tmp_path, content)
+
+    findings = analyze_phase2_refine_contract([file_path])
+
+    assert len(findings) == 1
+    finding = findings[0]
+    expected_top_keys = {
+        'type',
+        'file',
+        'line',
+        'severity',
+        'fixable',
+        'rule_id',
+        'description',
+        'details',
+    }
+    assert set(finding.keys()) == expected_top_keys
+    assert finding['type'] == RULE_ID
+    assert finding['rule_id'] == RULE_ID
+    assert finding['severity'] == 'error'
+    assert finding['fixable'] is False
+    assert isinstance(finding['description'], str)
+    assert isinstance(finding['file'], str)
+    assert isinstance(finding['line'], int)
+    assert finding['line'] >= 1
+    assert set(finding['details'].keys()) == {'tool', 'path', 'suggested_fix'}
+
+
+def test_finding_is_byte_identical_to_pre_refactor_baseline(tmp_path: Path) -> None:
+    """The emitted finding dict must be dict-equal to the pre-refactor baseline.
+
+    Pre-refactor (git ``d428b164``) the typeless analyzer return was wrapped by
+    the ``extract_issues_from_refine_contract_analysis`` normalization shim in
+    ``_doctor_analysis.py``, which produced the FINAL plugin-doctor issue dict
+    with ``type``/``severity``/``fixable``/``description`` added and the three
+    rule-specific keys (``tool``/``path``/``suggested_fix``) nested under
+    ``details``. The foundation work deleted that shim and migrated the analyzer
+    onto the uniform ``Finding`` record. This test pins the FINAL emitted dict to
+    the exact baseline shape (same key set AND values) so a future ``Finding``
+    change cannot silently drift the refine-contract output.
+    """
+    content = (
+        '# Refine Step\n'
+        '\n'
+        'Edit("marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md")\n'
+    )
+    file_path = _make_refine_file(tmp_path, content)
+
+    findings = analyze_phase2_refine_contract([file_path])
+
+    assert len(findings) == 1
+    path_ref = 'marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md'
+    expected = {
+        'type': 'refine-contract-violation',
+        'rule_id': 'refine-contract-violation',
+        'file': str(file_path),
+        'line': 3,
+        'severity': 'error',
+        'fixable': False,
+        'description': (
+            'phase-2-refine workflow file invokes `Edit` against '
+            f'a non-plan path `{path_ref}` — refine MUST write only '
+            'inside `.plan/local/plans/{plan_id}/**` or '
+            '`.plan/local/worktrees/{plan_id}/**` '
+            '(refine-contract-violation)'
+        ),
+        'details': {
+            'tool': 'Edit',
+            'path': path_ref,
+            'suggested_fix': (
+                'route the operation through `manage-plan-documents` or restrict '
+                'the path to `.plan/local/plans/{plan_id}/**` '
+                f'(current: {path_ref!r})'
+            ),
+        },
+    }
+    assert findings[0] == expected

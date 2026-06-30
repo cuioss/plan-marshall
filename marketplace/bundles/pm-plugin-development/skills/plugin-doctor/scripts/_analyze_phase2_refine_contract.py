@@ -66,6 +66,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _doctor_shared import Finding
+
 RULE_ID = 'refine-contract-violation'
 
 _ALLOWED_PREFIXES = (
@@ -128,14 +130,26 @@ def _scan_file(path: Path) -> list[dict]:
             if _path_is_allowed(referenced_path):
                 continue
             findings.append(
-                {
-                    'rule_id': RULE_ID,
-                    'file': str(path),
-                    'line': idx + 1,
-                    'tool': tool,
-                    'path': referenced_path,
-                    'suggested_fix': _suggested_fix(referenced_path),
-                }
+                Finding(
+                    type=RULE_ID,
+                    rule_id=RULE_ID,
+                    file=str(path),
+                    line=idx + 1,
+                    severity='error',
+                    fixable=False,
+                    description=(
+                        f'phase-2-refine workflow file invokes `{tool}` against '
+                        f'a non-plan path `{referenced_path}` — refine MUST write only '
+                        f'inside `.plan/local/plans/{{plan_id}}/**` or '
+                        f'`.plan/local/worktrees/{{plan_id}}/**` '
+                        f'(refine-contract-violation)'
+                    ),
+                    details={
+                        'tool': tool,
+                        'path': referenced_path,
+                        'suggested_fix': _suggested_fix(referenced_path),
+                    },
+                ).to_dict()
             )
     return findings
 

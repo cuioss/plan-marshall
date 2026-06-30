@@ -129,6 +129,68 @@ def test_validate_command_missing_workflow_section():
         Path(f.name).unlink()
 
 
+# =============================================================================
+# Canonical-parser collapse: lenient frontmatter handling (Tier 2)
+#
+# ``cmd_validate`` now consumes the single canonical ``extract_frontmatter``
+# (collapse-all decision). The old strict ``parse_simple_yaml`` validator —
+# which RAISED on improper indentation and colon-less lines to emit
+# ``invalid-yaml`` / ``improper-indentation`` findings — was deleted. The
+# canonical flat parser handles those leniently instead. These tests pin the
+# user-accepted behavior change: a frontmatter block that the old strict
+# validator would have rejected as malformed is now parsed, and validation
+# proceeds on the recovered fields rather than failing with a parse error.
+# =============================================================================
+
+
+def test_validate_lenient_parse_of_indented_frontmatter():
+    """Improperly-indented keys are leniently parsed, not flagged as invalid YAML.
+
+    The deleted strict validator raised ``Improper indentation detected`` for
+    leading-space keys, surfacing a frontmatter parse error. The canonical
+    parser strips the indentation and recovers the fields, so neither a
+    ``frontmatter_missing`` error nor a ``frontmatter_field_missing`` for the
+    recovered ``name``/``description`` is produced.
+    """
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write(
+            '---\n  name: indented-skill\n  description: Has leading spaces\n---\n\n'
+            '# Indented Skill\n\n## What This Skill Provides\n\nStuff.\n\n'
+            '## When to Use\n\nAlways.\n\n## Workflow\n\nDo things.\n'
+        )
+        f.flush()
+        args = Namespace(file=f.name, type='skill', command='validate')
+        data = cmd_validate(args)
+        error_types = {e['type'] for e in data['errors']}
+        assert 'frontmatter_missing' not in error_types
+        missing_fields = {e.get('field') for e in data['errors'] if e['type'] == 'frontmatter_field_missing'}
+        assert 'name' not in missing_fields
+        assert 'description' not in missing_fields
+        Path(f.name).unlink()
+
+
+def test_validate_colonless_line_is_skipped_not_rejected():
+    """A colon-less frontmatter line is skipped, not treated as a parse failure.
+
+    The old strict validator raised ``Invalid YAML syntax`` for a line without
+    a ``key: value`` shape. The canonical parser silently skips it, so the
+    surrounding valid fields still drive validation.
+    """
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write(
+            '---\nname: skip-skill\ndescription: A skill\na-stray-line-without-a-colon\n---\n\n'
+            '# Skip Skill\n\n## What This Skill Provides\n\nStuff.\n\n'
+            '## When to Use\n\nAlways.\n\n## Workflow\n\nDo things.\n'
+        )
+        f.flush()
+        args = Namespace(file=f.name, type='skill', command='validate')
+        data = cmd_validate(args)
+        error_types = {e['type'] for e in data['errors']}
+        assert 'frontmatter_missing' not in error_types
+        assert data['valid'] is True
+        Path(f.name).unlink()
+
+
 def test_validate_valid_skill_returns_true():
     """Validate a well-formed skill returns valid=True."""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:

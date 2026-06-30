@@ -35,6 +35,7 @@ from _analyze_agentfile_shared import (
     read_text_or_none,
     repo_root_from_marketplace_root,
 )
+from _doctor_shared import Finding  # type: ignore[import-not-found]
 
 RULE_ID = 'agentfile-directory-tree-present'
 RULE_NAME = 'analyze_agentfile_directory_tree'
@@ -72,7 +73,7 @@ def analyze_agentfile_directory_tree(marketplace_root: str | Path) -> list[dict]
         One finding dict per offending fenced block (empty for a clean corpus).
     """
     repo_root = repo_root_from_marketplace_root(marketplace_root)
-    findings: list[dict] = []
+    findings: list[Finding] = []
     for path in discover_agentfiles(repo_root):
         text = read_text_or_none(path)
         if text is None:
@@ -83,21 +84,20 @@ def analyze_agentfile_directory_tree(marketplace_root: str | Path) -> list[dict]
             if glyph_idx is None:
                 continue
             findings.append(
-                {
-                    'rule_id': RULE_ID,
-                    'type': RULE_ID,
-                    'rule': RULE_NAME,
-                    'file': str(path),
-                    'line': glyph_idx + 1,
-                    'severity': 'warning',
-                    'fixable': False,
-                    'snippet': lines[glyph_idx].strip(),
-                    'description': (
+                Finding(
+                    type=RULE_ID,
+                    file=str(path),
+                    line=glyph_idx + 1,
+                    severity='warning',
+                    fixable=False,
+                    rule_id=RULE_ID,
+                    description=(
                         'Fenced directory-tree drawing in an always-on agentfile '
                         '— delete it (inert content the assistant reads more '
                         'reliably from the filesystem). See rule-catalog.md and '
                         'recipe-agentfile-hygiene.'
                     ),
-                }
+                    extra={'rule': RULE_NAME, 'snippet': lines[glyph_idx].strip()},
+                )
             )
-    return findings
+    return [f.to_dict() for f in findings]

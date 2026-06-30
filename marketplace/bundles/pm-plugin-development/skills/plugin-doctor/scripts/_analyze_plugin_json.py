@@ -60,6 +60,7 @@ import json
 from pathlib import Path
 
 from _analyze_declared_vs_disk import analyze_declared_vs_disk
+from _doctor_shared import Finding  # type: ignore[import-not-found]
 
 __all__ = [
     'RULE_ID',
@@ -131,26 +132,26 @@ def _frontmatter_user_invocable(skill_md: Path) -> bool | None:
 
 def _orphan_finding(component_path: Path, bundle: str, kind: str, rel: str) -> dict:
     """Construct a single ``plugin-json-orphan-component`` finding."""
-    return {
-        'rule_id': RULE_ID,
-        'type': RULE_ID,
-        'rule': RULE_NAME,
-        'file': str(component_path),
-        'line': 1,
-        'severity': 'warning',
-        'fixable': False,
-        'description': (
+    return Finding(
+        type=RULE_ID,
+        file=str(component_path),
+        line=1,
+        severity='warning',
+        fixable=False,
+        rule_id=RULE_ID,
+        description=(
             f'On-disk {kind} `{rel}` is not declared in bundle `{bundle}`\'s '
             f'plugin.json — the component ships but is invisible to the plugin '
             f'loader (plugin-json-orphan-component)'
         ),
-        'details': {
+        details={
             'bundle': bundle,
             'component_kind': kind,
             'disk_entry': rel,
             'reason': 'undeclared_on_disk_component',
         },
-    }
+        extra={'rule': RULE_NAME},
+    ).to_dict()
 
 
 def _scan_bundle(bundle_dir: Path) -> list[dict]:

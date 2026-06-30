@@ -32,11 +32,17 @@ def _bundle(bundles_root: Path, name: str) -> Path:
 
 # =============================================================================
 # extract_frontmatter
+#
+# ``_doctor_shared`` re-exports the single canonical parser (imported from
+# ``_dep_detection``), which returns the ``Frontmatter(present, raw, fields)``
+# superset record. The raw-text consumers in this module unpack the leading
+# ``(present, raw)`` — byte-identical to the pre-collapse ``(present, body)``
+# pair — and discard ``fields``.
 # =============================================================================
 
 
 def test_extract_frontmatter_present():
-    present, body = _shared.extract_frontmatter('---\nname: a\ndescription: d\n---\n\n# Body\n')
+    present, body, _fields = _shared.extract_frontmatter('---\nname: a\ndescription: d\n---\n\n# Body\n')
 
     assert present is True
     assert 'name: a' in body
@@ -44,16 +50,23 @@ def test_extract_frontmatter_present():
 
 
 def test_extract_frontmatter_absent_when_no_leading_marker():
-    present, body = _shared.extract_frontmatter('# Body\n\nNo frontmatter.\n')
+    present, body, _fields = _shared.extract_frontmatter('# Body\n\nNo frontmatter.\n')
 
     assert present is False
     assert body == ''
 
 
 def test_extract_frontmatter_absent_when_unterminated():
-    present, _body = _shared.extract_frontmatter('---\nname: a\nno closing marker\n')
+    present, _body, _fields = _shared.extract_frontmatter('---\nname: a\nno closing marker\n')
 
     assert present is False
+
+
+def test_extract_frontmatter_fields_view_available():
+    """The third element is the flat-parsed dict — the index/dict view."""
+    _present, _body, fields = _shared.extract_frontmatter('---\nname: a\ndescription: d\n---\n\n# Body\n')
+
+    assert fields == {'name': 'a', 'description': 'd'}
 
 
 # =============================================================================
@@ -328,3 +341,151 @@ def test_resolve_project_skill_trees_returns_existing_dirs(tmp_path):
 
     assert isinstance(trees, list)
     assert all(p.is_dir() for p in trees), 'only on-disk directories are returned'
+
+
+# =============================================================================
+# Finding — the single uniform finding record
+#
+# ``Finding`` is the only finding-construction path across the migrated analyzer
+# subsystem. Its ``to_dict()`` output is the exact issue-dict shape the
+# downstream categorizer and the per-analyzer finding-shape tests consume. The
+# tests below pin the serialization contract that makes the migration safe:
+# ``_UNSET`` optional fields are OMITTED (so each rule keeps its historical key
+# subset), an explicit ``line=None`` is EMITTED (component-level rules rely on
+# it), ``extra`` merges verbatim at the TOP level, and ``details`` stays NESTED.
+# =============================================================================
+
+
+def test_finding_to_dict_minimal_always_carries_type_and_file():
+    """A bare Finding serializes to exactly {type, file}; file defaults to ''."""
+    result = _shared.Finding(type='some-rule').to_dict()
+
+    assert result == {'type': 'some-rule', 'file': ''}
+
+
+def test_finding_to_dict_omits_unset_optional_fields():
+    """Optional fields left at the _UNSET sentinel are omitted from the dict."""
+    result = _shared.Finding(type='missing-frontmatter', file='a.md').to_dict()
+
+    assert result == {'type': 'missing-frontmatter', 'file': 'a.md'}
+    for omitted in ('line', 'severity', 'fixable', 'rule_id', 'description', 'details'):
+        assert omitted not in result
+
+
+def test_finding_to_dict_includes_present_optional_fields():
+    """Optional fields given a value are emitted verbatim."""
+    result = _shared.Finding(
+        type='r',
+        file='f.py',
+        line=12,
+        severity='error',
+        fixable=True,
+        rule_id='r',
+        description='boom',
+        details={'k': 'v'},
+    ).to_dict()
+
+    assert result == {
+        'type': 'r',
+        'file': 'f.py',
+        'line': 12,
+        'severity': 'error',
+        'fixable': True,
+        'rule_id': 'r',
+        'description': 'boom',
+        'details': {'k': 'v'},
+    }
+
+
+def test_finding_to_dict_emits_explicit_line_none():
+    """line=None is a PRESENT key with a None value — distinct from omission."""
+    result = _shared.Finding(type='component-rule', file='f', line=None).to_dict()
+
+    assert 'line' in result
+    assert result['line'] is None
+
+
+def test_finding_unset_sentinel_is_distinct_from_none():
+    """_UNSET is a sentinel object, never None, so line=None can be emitted."""
+    assert _shared._UNSET is not None
+    assert _shared.Finding(type='x').line is _shared._UNSET
+
+
+def test_finding_extra_is_merged_as_top_level_keys():
+    """extra={} keys merge verbatim at the top level (the verb-chain rule shape)."""
+    result = _shared.Finding(
+        type='prose-verb-chain-consistency',
+        file='f',
+        rule_id='prose-verb-chain-consistency',
+        extra={'script_notation': 'a:b:c', 'verb_chain': ['x', 'y']},
+    ).to_dict()
+
+    assert result['script_notation'] == 'a:b:c'
+    assert result['verb_chain'] == ['x', 'y']
+
+
+def test_finding_details_field_stays_nested_not_flattened():
+    """details={} is a single nested key — distinct from extra's top-level merge."""
+    result = _shared.Finding(
+        type='refine-contract-violation',
+        file='f',
+        details={'tool': 'Edit', 'path': 'marketplace/x.md'},
+    ).to_dict()
+
+    assert result['details'] == {'tool': 'Edit', 'path': 'marketplace/x.md'}
+    assert 'tool' not in result  # not flattened to the top level
+
+
+def test_finding_extra_and_details_are_independent_channels():
+    """extra (top-level merge) and details (nested key) coexist without collision."""
+    result = _shared.Finding(type='r', file='f', details={'a': 1}, extra={'b': 2}).to_dict()
+
+    assert result['details'] == {'a': 1}
+    assert result['b'] == 2
+
+
+def test_finding_to_dict_key_order_is_stable():
+    """Serialization order: type, file, present common fields, then extra keys."""
+    result = _shared.Finding(
+        type='r',
+        file='f',
+        line=1,
+        severity='error',
+        fixable=False,
+        rule_id='r',
+        description='d',
+        extra={'z_extra': 1},
+    ).to_dict()
+
+    assert list(result.keys()) == [
+        'type',
+        'file',
+        'line',
+        'severity',
+        'fixable',
+        'rule_id',
+        'description',
+        'z_extra',
+    ]
+
+
+def test_finding_to_dict_is_dict_equal_to_prior_handbuilt_dict():
+    """For a typed migrated rule, to_dict() equals the historical hand-built dict.
+
+    ``missing-frontmatter`` is the canonical byte-identical case: its pre-refactor
+    hand-built dict carried exactly ``type``/``file``/``severity``/``fixable`` and
+    no ``rule_id``/``line``/``description``. The _UNSET-omission rule reproduces
+    that exact key subset.
+    """
+    prior_handbuilt = {
+        'type': 'missing-frontmatter',
+        'file': 'x.md',
+        'severity': 'error',
+        'fixable': True,
+    }
+
+    result = _shared.Finding(
+        type='missing-frontmatter', file='x.md', severity='error', fixable=True
+    ).to_dict()
+
+    assert result == prior_handbuilt

@@ -111,6 +111,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'resolver-matrix-coverage'
 RULE_NAME = 'analyze_resolver_matrix_coverage'
 FINDING_TYPE = 'resolver-matrix-coverage'
@@ -377,18 +379,15 @@ def _build_finding(
             actual_cells=actual_cells,
             required_cells=required_cells,
         )
-    return {
-        'rule_id': RULE_ID,
-        'type': FINDING_TYPE,
-        'rule': RULE_NAME,
-        'file': str(production_path),
-        'line': func_node.lineno,
-        'severity': 'tip',
-        'fixable': False,
-        'snippet': f'{bundle}:{skill}:{func_node.name}',
-        'description': description,
-        'category': 'resolver-matrix-coverage',
-        'details': {
+    return Finding(
+        type=FINDING_TYPE,
+        file=str(production_path),
+        line=func_node.lineno,
+        severity='tip',
+        fixable=False,
+        rule_id=RULE_ID,
+        description=description,
+        details={
             'bundle': bundle,
             'skill': skill,
             'function_name': func_node.name,
@@ -398,7 +397,12 @@ def _build_finding(
             'test_file': str(test_file) if test_file is not None else None,
             'test_file_missing': test_file_missing,
         },
-    }
+        extra={
+            'rule': RULE_NAME,
+            'snippet': f'{bundle}:{skill}:{func_node.name}',
+            'category': 'resolver-matrix-coverage',
+        },
+    ).to_dict()
 
 
 # ---------------------------------------------------------------------------

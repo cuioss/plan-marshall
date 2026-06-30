@@ -76,6 +76,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'WORKFLOW_DOC_TOON_ERROR_FIELD'
 RULE_NAME = 'analyze_workflow_doc_toon_error_field'
 FINDING_TYPE = 'WORKFLOW_DOC_TOON_ERROR_FIELD'
@@ -124,23 +126,22 @@ def _build_fence_map(lines: list[str]) -> dict[int, str]:
 
 def _make_finding(path: Path, line_no: int, line: str) -> dict:
     snippet = line.strip()[:80]
-    return {
-        'rule_id': RULE_ID,
-        'type': FINDING_TYPE,
-        'rule': RULE_NAME,
-        'file': str(path),
-        'line': line_no,
-        'severity': 'error',
-        'fixable': False,
-        'snippet': snippet,
-        'description': (
+    return Finding(
+        type=FINDING_TYPE,
+        file=str(path),
+        line=line_no,
+        severity='error',
+        fixable=False,
+        rule_id=RULE_ID,
+        description=(
             'Fenced ``toon`` error block uses the non-canonical ``error_type`` key. '
             'The canonical error-envelope discriminator field is ``error`` (see '
             'plan-marshall workflow/planning.md). Rename the key to ``error``; for a '
             'two-key block carrying both a category and a human-readable message, '
             'demote the message to ``display_detail``.'
         ),
-    }
+        extra={'rule': RULE_NAME, 'snippet': snippet},
+    ).to_dict()
 
 
 # ---------------------------------------------------------------------------
@@ -154,17 +155,16 @@ def _scan_file(path: Path) -> list[dict]:
         text = path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError) as exc:
         return [
-            {
-                'rule_id': RULE_ID,
-                'type': 'file_read_error',
-                'rule': RULE_NAME,
-                'file': str(path),
-                'line': 0,
-                'severity': 'error',
-                'fixable': False,
-                'snippet': '',
-                'description': f'Could not read file: {exc}',
-            }
+            Finding(
+                type='file_read_error',
+                file=str(path),
+                line=0,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=f'Could not read file: {exc}',
+                extra={'rule': RULE_NAME, 'snippet': ''},
+            ).to_dict()
         ]
 
     lines = text.splitlines()

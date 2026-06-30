@@ -826,16 +826,28 @@ def test_finding_shape_contract(tmp_path):
 
     assert len(findings) == 1
     finding = findings[0]
+    # Migrated to the uniform ``Finding`` record: the common fields
+    # (``type``/``severity``/``fixable``/``rule_id``/``description``) come from
+    # the dataclass; the three rule-specific keys are passed via ``extra`` and
+    # merged verbatim at the top level of ``to_dict()``.
     expected_keys = {
-        'rule_id',
+        'type',
         'file',
         'line',
+        'severity',
+        'fixable',
+        'rule_id',
+        'description',
         'script_notation',
         'verb_chain',
         'first_unknown_segment',
     }
     assert set(finding.keys()) == expected_keys
-    assert isinstance(finding['rule_id'], str)
+    assert finding['type'] == RULE_ID
+    assert finding['rule_id'] == RULE_ID
+    assert finding['severity'] == 'error'
+    assert finding['fixable'] is False
+    assert isinstance(finding['description'], str)
     assert isinstance(finding['file'], str)
     assert isinstance(finding['line'], int)
     assert finding['line'] >= 1
@@ -843,6 +855,54 @@ def test_finding_shape_contract(tmp_path):
     assert isinstance(finding['verb_chain'], list)
     assert all(isinstance(s, str) for s in finding['verb_chain'])
     assert isinstance(finding['first_unknown_segment'], str)
+
+
+def test_finding_is_byte_identical_to_pre_refactor_baseline(tmp_path):
+    """The emitted finding dict must be dict-equal to the pre-refactor baseline.
+
+    Pre-refactor (git ``d428b164``) the typeless analyzer return was wrapped by
+    the ``extract_issues_from_verb_chain_analysis`` normalization shim in
+    ``_doctor_analysis.py``, which produced the FINAL plugin-doctor issue dict
+    with ``type``/``severity``/``fixable``/``description`` added and the three
+    rule-specific keys (``script_notation``/``verb_chain``/
+    ``first_unknown_segment``) carried at the top level. The foundation work
+    deleted that shim and migrated the analyzer onto the uniform ``Finding``
+    record. This test pins the FINAL emitted dict to the exact baseline shape
+    (same key set AND values) so a future ``Finding`` change cannot silently
+    drift the verb_chain output.
+    """
+    bundles = _make_marketplace(tmp_path)
+    target_skill = _make_skill(bundles, 'pm', 'target-skill')
+    _write_script(target_skill, 'target-script', _request_clarify_script())
+
+    caller_skill = _make_skill(bundles, 'pm', 'caller-skill')
+    (caller_skill / 'SKILL.md').write_text(
+        _bash_fence('python3 .plan/execute-script.py pm:target-skill:target-script request clarify')
+    )
+
+    findings = analyze_verb_chains(caller_skill)
+
+    assert len(findings) == 1
+    notation = 'pm:target-skill:target-script'
+    expected = {
+        'type': 'prose-verb-chain-consistency',
+        'rule_id': 'prose-verb-chain-consistency',
+        'file': str(caller_skill / 'SKILL.md'),
+        # The invocation sits on line 2 of a bare bash fence (line 1 is the
+        # opening ```bash fence, line 2 the invocation).
+        'line': 2,
+        'severity': 'error',
+        'fixable': False,
+        'description': (
+            f'Stale script verb `clarify` referenced for `{notation}` — '
+            "update prose to match the script's registered subparsers "
+            '(prose-verb-chain-consistency)'
+        ),
+        'script_notation': notation,
+        'verb_chain': ['request', 'clarify'],
+        'first_unknown_segment': 'clarify',
+    }
+    assert findings[0] == expected
 
 
 # =============================================================================

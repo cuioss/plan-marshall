@@ -36,6 +36,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'persona-binding-resolves'
 RULE_NAME = 'analyze_persona_binding_resolves'
 
@@ -185,7 +187,7 @@ def analyze_persona_binding_resolves(marketplace_root: Path) -> list[dict]:
         ``manage-personas resolve`` would return an error instead of a non-empty
         ``skills[]``.
     """
-    findings: list[dict] = []
+    findings: list[Finding] = []
     for skill_md in _skill_md_files(marketplace_root):
         try:
             text = skill_md.read_text(encoding='utf-8')
@@ -208,15 +210,14 @@ def analyze_persona_binding_resolves(marketplace_root: Path) -> list[dict]:
         if err is None:
             continue
         findings.append(
-            {
-                'rule_id': RULE_ID,
-                'type': RULE_ID,
-                'rule': RULE_NAME,
-                'file': str(skill_md),
-                'line': 1,
-                'severity': 'error',
-                'fixable': False,
-                'description': (
+            Finding(
+                type=RULE_ID,
+                file=str(skill_md),
+                line=1,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=(
                     f'persona declares `profiles:` {profiles} but its composition '
                     f'DAG does not resolve (`{err}`) — `manage-personas resolve` '
                     'would return an error instead of a non-empty skills[], so the '
@@ -224,12 +225,13 @@ def analyze_persona_binding_resolves(marketplace_root: Path) -> list[dict]:
                     'broken composition edge (a missing composed persona or a '
                     'composition cycle).'
                 ),
-                'details': {
+                details={
                     'skill': skill_md.parent.name,
                     'persona_key': persona_key,
                     'profiles': profiles,
                     'resolve_error': err,
                 },
-            }
+                extra={'rule': RULE_NAME},
+            )
         )
-    return findings
+    return [f.to_dict() for f in findings]

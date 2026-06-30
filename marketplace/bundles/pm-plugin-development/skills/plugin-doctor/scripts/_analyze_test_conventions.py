@@ -22,6 +22,8 @@ import subprocess
 from collections import defaultdict
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 GENERIC_HELPER_BASENAMES = frozenset({'_fixtures.py', '_helpers.py', '_common.py'})
 
 ID_LINE_PATTERN = re.compile(r'^\s*(?:- )?id:\s*(?P<id>\S+)\s*$', re.MULTILINE)
@@ -88,20 +90,20 @@ def _build_generic_basename_finding(path: Path) -> dict:
         f"helper module basename '{path.name}' is generic — rename to "
         f"'_<domain>_{path.name[1:]}' to avoid pytest sys.modules collisions"
     )
-    return {
-        'type': 'unique-fixture-basenames',
-        'rule_id': 'unique-fixture-basenames',
-        'file': str(path),
-        'line': 1,
-        'severity': 'error',
-        'fixable': False,
-        'description': description,
-        'details': {
+    return Finding(
+        type='unique-fixture-basenames',
+        file=str(path),
+        line=1,
+        severity='error',
+        fixable=False,
+        rule_id='unique-fixture-basenames',
+        description=description,
+        details={
             'kind': 'generic_basename',
             'basename': path.name,
             'standard_anchor': 'doctor-test-conventions.md#unique-fixture-basenames',
         },
-    }
+    ).to_dict()
 
 
 def analyze_subprocess_pythonpath(test_root: Path) -> list[dict]:
@@ -239,18 +241,18 @@ def _build_subprocess_pythonpath_finding(path: Path, node: ast.Call) -> dict:
         'subprocess.run([sys.executable, ...]) without PYTHONPATH propagation — '
         "wrap via conftest.run_script(...) or add env={'PYTHONPATH': os.pathsep.join(sys.path), ...}"
     )
-    return {
-        'type': 'subprocess-pythonpath',
-        'rule_id': 'subprocess-pythonpath',
-        'file': str(path),
-        'line': getattr(node, 'lineno', 1),
-        'severity': 'error',
-        'fixable': False,
-        'description': description,
-        'details': {
+    return Finding(
+        type='subprocess-pythonpath',
+        file=str(path),
+        line=getattr(node, 'lineno', 1),
+        severity='error',
+        fixable=False,
+        rule_id='subprocess-pythonpath',
+        description=description,
+        details={
             'standard_anchor': 'doctor-test-conventions.md#subprocess-pythonpath',
         },
-    }
+    ).to_dict()
 
 
 def analyze_validator_regex_vs_corpus(registry: list[dict], project_root: Path | None = None) -> list[dict]:
@@ -362,21 +364,21 @@ def _build_corpus_finding(validator_path: Path, pattern: str, list_command: str,
         f"regex r'{pattern}' rejects ID '{identifier}' returned by `{list_command}` — "
         'anchor the regex against repository data'
     )
-    return {
-        'type': 'identifier-validator-corpus',
-        'rule_id': 'identifier-validator-corpus',
-        'file': str(validator_path),
-        'line': 1,
-        'severity': 'error',
-        'fixable': False,
-        'description': description,
-        'details': {
+    return Finding(
+        type='identifier-validator-corpus',
+        file=str(validator_path),
+        line=1,
+        severity='error',
+        fixable=False,
+        rule_id='identifier-validator-corpus',
+        description=description,
+        details={
             'pattern': pattern,
             'list_command': list_command,
             'rejected_id': identifier,
             'standard_anchor': 'doctor-test-conventions.md#identifier-validator-corpus',
         },
-    }
+    ).to_dict()
 
 
 def _build_corpus_error_finding(validator_path: Path, regex_constant: str, list_command: str, reason: str) -> dict:
@@ -384,21 +386,21 @@ def _build_corpus_error_finding(validator_path: Path, regex_constant: str, list_
         f"identifier-validator-corpus check failed for {validator_path.name} "
         f"({regex_constant} via `{list_command}`) — reason: {reason}"
     )
-    return {
-        'type': 'identifier-validator-corpus',
-        'rule_id': 'identifier-validator-corpus',
-        'file': str(validator_path),
-        'line': 1,
-        'severity': 'error',
-        'fixable': False,
-        'description': description,
-        'details': {
+    return Finding(
+        type='identifier-validator-corpus',
+        file=str(validator_path),
+        line=1,
+        severity='error',
+        fixable=False,
+        rule_id='identifier-validator-corpus',
+        description=description,
+        details={
             'regex_constant': regex_constant,
             'list_command': list_command,
             'reason': reason,
             'standard_anchor': 'doctor-test-conventions.md#identifier-validator-corpus',
         },
-    }
+    ).to_dict()
 
 
 def _build_collision_finding(path: Path, basename: str, other_paths: list[Path]) -> dict:
@@ -408,18 +410,18 @@ def _build_collision_finding(path: Path, basename: str, other_paths: list[Path])
         f"directories ({others_repr}) — pytest sys.modules will register "
         f"only one; rename one or both to a domain-prefixed name"
     )
-    return {
-        'type': 'unique-fixture-basenames',
-        'rule_id': 'unique-fixture-basenames',
-        'file': str(path),
-        'line': 1,
-        'severity': 'error',
-        'fixable': False,
-        'description': description,
-        'details': {
+    return Finding(
+        type='unique-fixture-basenames',
+        file=str(path),
+        line=1,
+        severity='error',
+        fixable=False,
+        rule_id='unique-fixture-basenames',
+        description=description,
+        details={
             'kind': 'cross_directory_collision',
             'basename': basename,
             'colliding_with': [str(other) for other in other_paths],
             'standard_anchor': 'doctor-test-conventions.md#unique-fixture-basenames',
         },
-    }
+    ).to_dict()

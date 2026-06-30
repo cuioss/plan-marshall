@@ -86,6 +86,8 @@ import functools
 import re
 from pathlib import Path
 
+from _doctor_shared import Finding
+
 RULE_ID = 'notation-staleness'
 DRIFT_RULE_ID = 'notation-bundle-skill-drift'
 
@@ -189,20 +191,20 @@ def _scan_bundle_skill_drift(line: str, idx: int, path: Path, root: Path) -> lis
 
         if not _bundle_dir_exists(root, bundle):
             findings.append(
-                {
-                    'rule_id': DRIFT_RULE_ID,
-                    'type': DRIFT_RULE_ID,
-                    'file': str(path),
-                    'line': idx,
-                    'severity': 'error',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=DRIFT_RULE_ID,
+                    rule_id=DRIFT_RULE_ID,
+                    file=str(path),
+                    line=idx,
+                    severity='error',
+                    fixable=False,
+                    description=(
                         f'Executor notation `{notation}` names bundle '
                         f'`{bundle}`, but `bundles/{bundle}/` is not a real '
                         f'bundle directory — the notation does not resolve '
                         f'(notation-bundle-skill-drift)'
                     ),
-                    'details': {
+                    details={
                         'notation': notation,
                         'bundle': bundle,
                         'skill': skill,
@@ -214,27 +216,27 @@ def _scan_bundle_skill_drift(line: str, idx: int, path: Path, root: Path) -> lis
                             f'bundle name'
                         ),
                     },
-                }
+                ).to_dict()
             )
             continue
 
         if not _skill_dir_exists(root, bundle, skill):
             findings.append(
-                {
-                    'rule_id': DRIFT_RULE_ID,
-                    'type': DRIFT_RULE_ID,
-                    'file': str(path),
-                    'line': idx,
-                    'severity': 'error',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=DRIFT_RULE_ID,
+                    rule_id=DRIFT_RULE_ID,
+                    file=str(path),
+                    line=idx,
+                    severity='error',
+                    fixable=False,
+                    description=(
                         f'Executor notation `{notation}` names skill '
                         f'`{skill}` in bundle `{bundle}`, but '
                         f'`bundles/{bundle}/skills/{skill}/` does not exist — '
                         f'the notation does not resolve '
                         f'(notation-bundle-skill-drift)'
                     ),
-                    'details': {
+                    details={
                         'notation': notation,
                         'bundle': bundle,
                         'skill': skill,
@@ -246,7 +248,7 @@ def _scan_bundle_skill_drift(line: str, idx: int, path: Path, root: Path) -> lis
                             f'notation segment to a real skill name'
                         ),
                     },
-                }
+                ).to_dict()
             )
     return findings
 
@@ -306,20 +308,20 @@ def _scan_file(path: Path, root: Path) -> list[dict]:
                 )
 
             findings.append(
-                {
-                    'rule_id': RULE_ID,
-                    'type': RULE_ID,
-                    'file': str(path),
-                    'line': idx,
-                    'severity': 'error',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=RULE_ID,
+                    rule_id=RULE_ID,
+                    file=str(path),
+                    line=idx,
+                    severity='error',
+                    fixable=False,
+                    description=(
                         f'Executor notation `{notation}` has no matching '
                         f'`{script}.py` under '
                         f'`bundles/{bundle}/skills/{skill}/scripts/` — the '
                         f'notation does not resolve (notation-staleness)'
                     ),
-                    'details': {
+                    details={
                         'notation': notation,
                         'bundle': bundle,
                         'skill': skill,
@@ -327,7 +329,7 @@ def _scan_file(path: Path, root: Path) -> list[dict]:
                         'reason': 'script_file_missing',
                         'canonical_hint': canonical_hint,
                     },
-                }
+                ).to_dict()
             )
     return findings
 

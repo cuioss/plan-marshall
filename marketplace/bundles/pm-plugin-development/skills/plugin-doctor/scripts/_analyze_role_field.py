@@ -79,6 +79,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'phase-5-step-missing-role-field'
 RULE_NAME = 'analyze_role_field'
 FINDING_TYPE = 'missing_role_field'
@@ -230,7 +232,7 @@ def analyze_role_field(marketplace_root: Path) -> list[dict]:
     if not scoped.is_dir():
         return []
 
-    findings: list[dict] = []
+    findings: list[Finding] = []
     for md_path in sorted(scoped.glob('*.md')):
         try:
             text = md_path.read_text(encoding='utf-8')
@@ -240,16 +242,15 @@ def analyze_role_field(marketplace_root: Path) -> list[dict]:
         if _has_role_field(text):
             continue
         findings.append(
-            {
-                'rule_id': RULE_ID,
-                'type': FINDING_TYPE,
-                'rule': RULE_NAME,
-                'file': str(md_path),
-                'line': 1,
-                'severity': 'error',
-                'fixable': False,
-                'snippet': md_path.stem,
-                'description': _DESCRIPTION,
-            }
+            Finding(
+                type=FINDING_TYPE,
+                file=str(md_path),
+                line=1,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=_DESCRIPTION,
+                extra={'rule': RULE_NAME, 'snippet': md_path.stem},
+            )
         )
-    return findings
+    return [f.to_dict() for f in findings]

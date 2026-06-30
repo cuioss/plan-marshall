@@ -53,6 +53,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'skill-missing-mode'
 RULE_NAME = 'analyze_skill_mode'
 
@@ -185,17 +187,17 @@ def _scan_skill(skill_md: Path) -> list[dict]:
         details['declared_mode'] = declared
 
     return [
-        {
-            'rule_id': RULE_ID,
-            'type': RULE_ID,
-            'rule': RULE_NAME,
-            'file': str(skill_md),
-            'line': 1,
-            'severity': 'error',
-            'fixable': False,
-            'description': description,
-            'details': details,
-        }
+        Finding(
+            type=RULE_ID,
+            file=str(skill_md),
+            line=1,
+            severity='error',
+            fixable=False,
+            rule_id=RULE_ID,
+            description=description,
+            details=details,
+            extra={'rule': RULE_NAME},
+        ).to_dict()
     ]
 
 

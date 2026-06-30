@@ -26,6 +26,7 @@ _doctor_analysis = _load_module('_doctor_analysis', '_doctor_analysis.py')
 scan_argparse_safety = _doctor_analysis.scan_argparse_safety
 _scan_file_for_argparse_safety = _doctor_analysis._scan_file_for_argparse_safety
 _is_test_path = _doctor_analysis._is_test_path
+AstCache = _doctor_analysis.AstCache
 
 
 # =============================================================================
@@ -225,3 +226,72 @@ def test_scan_argparse_safety_on_fixture(tmp_path):
     )
     assert all(f['type'] == 'argparse_safety' for f in findings)
     assert all(f['severity'] == 'error' for f in findings)
+
+
+# =============================================================================
+# Parse-once AST cache integration
+#
+# The argparse scanner now sources its AST from the index-substrate ``AstCache``
+# instead of calling ``ast.parse`` directly. These tests pin two properties: the
+# scanner parses each file at most once when a shared cache is threaded through,
+# and its findings are byte-identical whether or not a cache is supplied.
+# =============================================================================
+
+
+def _argparse_fixture_tree(tmp_path: Path) -> Path:
+    """Build a fixture marketplace tree with four scannable production scripts."""
+    marketplace_root = tmp_path / 'marketplace' / 'bundles'
+    scripts_dir = marketplace_root / 'fake-bundle' / 'skills' / 'fake-skill' / 'scripts'
+    scripts_dir.mkdir(parents=True)
+    (scripts_dir / 'bad.py').write_text('import argparse\nparser = argparse.ArgumentParser()\n')
+    (scripts_dir / 'good.py').write_text('import argparse\nparser = argparse.ArgumentParser(allow_abbrev=False)\n')
+
+    targets_dir = tmp_path / 'marketplace' / 'targets'
+    targets_dir.mkdir()
+    (targets_dir / 'generate.py').write_text('import argparse\nparser = argparse.ArgumentParser()\n')
+    (targets_dir / 'emitter.py').write_text('import argparse\nparser = argparse.ArgumentParser()\n')
+    return marketplace_root
+
+
+def test_single_file_scanner_uses_shared_cache_once(tmp_path):
+    """Two scans of the same file via one cache parse it only once."""
+    script = _write_script(
+        tmp_path,
+        'my_script.py',
+        "import argparse\nparser = argparse.ArgumentParser(description='x')\n",
+    )
+    cache = AstCache()
+
+    first = _scan_file_for_argparse_safety(script, cache)
+    second = _scan_file_for_argparse_safety(script, cache)
+
+    assert first == second
+    assert len(first) == 1
+    assert cache.parse_count == 1
+
+
+def test_scan_argparse_safety_parses_each_target_once(tmp_path):
+    """A threaded cache parses each scannable production script exactly once."""
+    marketplace_root = _argparse_fixture_tree(tmp_path)
+    cache = AstCache()
+
+    scan_argparse_safety(marketplace_root, cache)
+
+    # bad.py, good.py, generate.py, emitter.py — four valid, parseable targets.
+    assert cache.parse_count == 4
+
+
+def test_findings_byte_identical_with_and_without_cache(tmp_path):
+    """Threading a shared cache does not change the scanner's findings."""
+    marketplace_root = _argparse_fixture_tree(tmp_path)
+
+    without_cache = scan_argparse_safety(marketplace_root)
+    with_cache = scan_argparse_safety(marketplace_root, AstCache())
+
+    def _key(findings):
+        return sorted((Path(f['file']).name, f['line'], f['call']) for f in findings)
+
+    assert _key(without_cache) == _key(with_cache)
+    assert _key(with_cache) == [('bad.py', 2, 'ArgumentParser'),
+                                ('emitter.py', 2, 'ArgumentParser'),
+                                ('generate.py', 2, 'ArgumentParser')]

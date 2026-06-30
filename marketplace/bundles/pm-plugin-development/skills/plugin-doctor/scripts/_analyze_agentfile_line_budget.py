@@ -33,6 +33,7 @@ from _analyze_agentfile_shared import (
     read_text_or_none,
     repo_root_from_marketplace_root,
 )
+from _doctor_shared import Finding  # type: ignore[import-not-found]
 
 RULE_ID = 'agentfile-line-count-over-budget'
 RULE_NAME = 'analyze_agentfile_line_budget'
@@ -64,7 +65,7 @@ def analyze_agentfile_line_budget(
         One finding dict per over-budget agentfile (empty for a clean corpus).
     """
     repo_root = repo_root_from_marketplace_root(marketplace_root)
-    findings: list[dict] = []
+    findings: list[Finding] = []
     for path in discover_agentfiles(repo_root):
         text = read_text_or_none(path)
         if text is None:
@@ -73,20 +74,19 @@ def analyze_agentfile_line_budget(
         if line_count <= budget:
             continue
         findings.append(
-            {
-                'rule_id': RULE_ID,
-                'type': RULE_ID,
-                'rule': RULE_NAME,
-                'file': str(path),
-                'line': 1,
-                'severity': 'warning',
-                'fixable': False,
-                'snippet': f'{line_count} lines (budget {budget})',
-                'description': (
+            Finding(
+                type=RULE_ID,
+                file=str(path),
+                line=1,
+                severity='warning',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=(
                     'Always-on agentfile exceeds the line budget — re-classify '
                     'its sections and demote or delete until back within budget. '
                     'See rule-catalog.md and recipe-agentfile-hygiene.'
                 ),
-            }
+                extra={'rule': RULE_NAME, 'snippet': f'{line_count} lines (budget {budget})'},
+            )
         )
-    return findings
+    return [f.to_dict() for f in findings]

@@ -51,6 +51,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _doctor_shared import Finding
+
 # =============================================================================
 # Rule ID
 # =============================================================================
@@ -194,24 +196,24 @@ def analyze_manage_findings_invocation(content: str, file_path: str) -> list[dic
         # Failure 1: script-position underscore.
         if script == 'manage_findings':
             findings.append(
-                {
-                    'rule_id': RULE_ID,
-                    'type': RULE_ID,
-                    'file': file_path,
-                    'line': idx,
-                    'severity': 'error',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=RULE_ID,
+                    rule_id=RULE_ID,
+                    file=file_path,
+                    line=idx,
+                    severity='error',
+                    fixable=False,
+                    description=(
                         'manage-findings notation uses snake_case in the script '
                         f'position (`{bundle}:{skill}:{script}`) — the executor '
                         'registry keys are kebab-case'
                     ),
-                    'details': {
+                    details={
                         'notation': f'{bundle}:{skill}:{script}',
                         'reason': 'script_position_underscore',
                         'canonical_hint': _build_canonical_hint(script, None, None),
                     },
-                }
+                ).to_dict()
             )
             # Stop further analysis on this line — the notation itself does
             # not resolve, so the subcommand tree is moot.
@@ -237,45 +239,45 @@ def analyze_manage_findings_invocation(content: str, file_path: str) -> list[dic
         # Failure 2: invalid top-level subcommand.
         if top not in VALID_TOP_LEVEL_SUBCOMMANDS:
             findings.append(
-                {
-                    'rule_id': RULE_ID,
-                    'type': RULE_ID,
-                    'file': file_path,
-                    'line': idx,
-                    'severity': 'error',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=RULE_ID,
+                    rule_id=RULE_ID,
+                    file=file_path,
+                    line=idx,
+                    severity='error',
+                    fixable=False,
+                    description=(
                         f'manage-findings invocation uses unregistered top-level '
                         f'subcommand `{top}` (registered: '
                         f'{sorted(VALID_TOP_LEVEL_SUBCOMMANDS)})'
                     ),
-                    'details': {
+                    details={
                         'notation': f'{bundle}:{skill}:{script}',
                         'subcommand': top,
                         'reason': 'top_level_subcommand_unknown',
                         'canonical_hint': _build_canonical_hint(script, top, sub),
                         'known_subcommands': sorted(VALID_TOP_LEVEL_SUBCOMMANDS),
                     },
-                }
+                ).to_dict()
             )
             continue
 
         # Failure 3a: invalid qgate sub-verb.
         if top == 'qgate' and sub is not None and sub not in VALID_QGATE_SUBVERBS:
             findings.append(
-                {
-                    'rule_id': RULE_ID,
-                    'type': RULE_ID,
-                    'file': file_path,
-                    'line': idx,
-                    'severity': 'error',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=RULE_ID,
+                    rule_id=RULE_ID,
+                    file=file_path,
+                    line=idx,
+                    severity='error',
+                    fixable=False,
+                    description=(
                         f'manage-findings invocation uses unregistered qgate '
                         f'sub-verb `{sub}` (registered: '
                         f'{sorted(VALID_QGATE_SUBVERBS)})'
                     ),
-                    'details': {
+                    details={
                         'notation': f'{bundle}:{skill}:{script}',
                         'subcommand': 'qgate',
                         'sub_verb': sub,
@@ -283,7 +285,7 @@ def analyze_manage_findings_invocation(content: str, file_path: str) -> list[dic
                         'canonical_hint': _build_canonical_hint(script, top, sub),
                         'known_sub_verbs': sorted(VALID_QGATE_SUBVERBS),
                     },
-                }
+                ).to_dict()
             )
             continue
 
@@ -294,19 +296,19 @@ def analyze_manage_findings_invocation(content: str, file_path: str) -> list[dic
             and sub not in VALID_ASSESSMENT_SUBVERBS
         ):
             findings.append(
-                {
-                    'rule_id': RULE_ID,
-                    'type': RULE_ID,
-                    'file': file_path,
-                    'line': idx,
-                    'severity': 'error',
-                    'fixable': False,
-                    'description': (
+                Finding(
+                    type=RULE_ID,
+                    rule_id=RULE_ID,
+                    file=file_path,
+                    line=idx,
+                    severity='error',
+                    fixable=False,
+                    description=(
                         f'manage-findings invocation uses unregistered '
                         f'assessment sub-verb `{sub}` (registered: '
                         f'{sorted(VALID_ASSESSMENT_SUBVERBS)})'
                     ),
-                    'details': {
+                    details={
                         'notation': f'{bundle}:{skill}:{script}',
                         'subcommand': 'assessment',
                         'sub_verb': sub,
@@ -314,7 +316,7 @@ def analyze_manage_findings_invocation(content: str, file_path: str) -> list[dic
                         'canonical_hint': _build_canonical_hint(script, top, sub),
                         'known_sub_verbs': sorted(VALID_ASSESSMENT_SUBVERBS),
                     },
-                }
+                ).to_dict()
             )
             continue
 

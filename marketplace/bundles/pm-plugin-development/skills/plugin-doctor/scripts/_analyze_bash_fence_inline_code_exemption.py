@@ -62,6 +62,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from _doctor_shared import Finding  # type: ignore[import-not-found]
+
 RULE_ID = 'bash-fence-inline-code-exemption'
 RULE_NAME = 'analyze_bash_fence_inline_code_exemption'
 
@@ -139,17 +141,16 @@ def _scan_file(file_path: Path) -> list[dict]:
     line_no, snippet = located
 
     return [
-        {
-            'rule_id': RULE_ID,
-            'type': 'bash_fence_inline_code_exemption',
-            'rule': RULE_NAME,
-            'file': str(file_path),
-            'line': line_no,
-            'severity': 'error',
-            'fixable': False,
-            'snippet': snippet,
-            'description': _DESCRIPTION,
-        }
+        Finding(
+            type='bash_fence_inline_code_exemption',
+            file=str(file_path),
+            line=line_no,
+            severity='error',
+            fixable=False,
+            rule_id=RULE_ID,
+            description=_DESCRIPTION,
+            extra={'rule': RULE_NAME, 'snippet': snippet},
+        ).to_dict()
     ]
 
 

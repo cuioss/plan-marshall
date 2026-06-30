@@ -5,7 +5,7 @@
 import re
 from pathlib import Path
 
-from _doctor_shared import extract_frontmatter
+from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
 
 
 def verify_frontmatter_fix(file_path: Path) -> dict:
@@ -15,7 +15,7 @@ def verify_frontmatter_fix(file_path: Path) -> dict:
     except OSError as e:
         return {'verified': False, 'error': f'Failed to read file: {e}'}
 
-    frontmatter_present, frontmatter = extract_frontmatter(content)
+    frontmatter_present, frontmatter, _ = extract_frontmatter(content)
 
     if not frontmatter_present:
         return {'verified': True, 'issue_resolved': False, 'details': 'Still missing frontmatter'}
@@ -40,7 +40,7 @@ def verify_array_syntax_fix(file_path: Path) -> dict:
     except OSError as e:
         return {'verified': False, 'error': f'Failed to read file: {e}'}
 
-    frontmatter_present, frontmatter = extract_frontmatter(content)
+    frontmatter_present, frontmatter, _ = extract_frontmatter(content)
 
     if not frontmatter_present:
         return {'verified': True, 'issue_resolved': True, 'details': 'No frontmatter to check'}
@@ -58,7 +58,7 @@ def verify_task_tool_fix(file_path: Path) -> dict:
     except OSError as e:
         return {'verified': False, 'error': f'Failed to read file: {e}'}
 
-    frontmatter_present, frontmatter = extract_frontmatter(content)
+    frontmatter_present, frontmatter, _ = extract_frontmatter(content)
 
     if not frontmatter_present:
         return {'verified': True, 'issue_resolved': True, 'details': 'No frontmatter to check'}
@@ -116,7 +116,7 @@ def verify_skill_tool_visibility_fix(file_path: Path) -> dict:
     except OSError as e:
         return {'verified': False, 'error': f'Failed to read file: {e}'}
 
-    frontmatter_present, frontmatter = extract_frontmatter(content)
+    frontmatter_present, frontmatter, _ = extract_frontmatter(content)
 
     if not frontmatter_present:
         return {'verified': True, 'issue_resolved': True, 'details': 'No frontmatter to check'}
@@ -147,7 +147,7 @@ def verify_misspelled_user_invocable_fix(file_path: Path) -> dict:
     except OSError as e:
         return {'verified': False, 'error': f'Failed to read file: {e}'}
 
-    frontmatter_present, frontmatter = extract_frontmatter(content)
+    frontmatter_present, frontmatter, _ = extract_frontmatter(content)
 
     if not frontmatter_present:
         return {'verified': True, 'issue_resolved': True, 'details': 'No frontmatter to check'}
@@ -169,7 +169,7 @@ def verify_invokable_mismatch_fix(file_path: Path) -> dict:
     except OSError as e:
         return {'verified': False, 'error': f'Failed to read file: {e}'}
 
-    frontmatter_present, frontmatter = extract_frontmatter(content)
+    frontmatter_present, frontmatter, _ = extract_frontmatter(content)
 
     if not frontmatter_present:
         return {'verified': True, 'issue_resolved': True, 'details': 'No frontmatter to check'}
