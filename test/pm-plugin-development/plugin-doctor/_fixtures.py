@@ -133,6 +133,7 @@ _appu = _load('_analyze_persona_profile_uniqueness.py', '_appu_fixtures')
 _apbr = _load('_analyze_persona_binding_resolves.py', '_apbr_fixtures')
 _aalb = _load('_analyze_agentfile_line_budget.py', '_aalb_fixtures')
 _aadt = _load('_analyze_agentfile_directory_tree.py', '_aadt_fixtures')
+_alf = _load('_analyze_lane_frontmatter.py', '_alf_fixtures')
 
 # ---------------------------------------------------------------------------
 # Registered-rule-ID extraction (relocated verbatim from the deleted
@@ -556,6 +557,24 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
             root / 'marketplace' / 'bundles'
         ),
         files={'CLAUDE.md': '# F\n\n```\nrepo/\n├── src/\n└── main.py\n```\n'},
+    )
+
+    # --- Lane-element contract (lane: frontmatter validation) ---------------
+    # A skill SKILL.md carrying a per-element ``lane:`` block missing the
+    # required ``cost_size`` sub-key (valid ``class``, no ``profile`` marker so
+    # it is not skipped as a recipe seed) fires lane-frontmatter-invalid and
+    # nothing else.
+    corpus['lane-frontmatter-invalid'] = FixtureSpec(
+        analyzer=_alf.analyze_lane_frontmatter,
+        files={
+            _PM_SKILL: (
+                '---\n'
+                'name: f\n'
+                'lane:\n'
+                '  class: core\n'
+                '---\n\n# F\n'
+            )
+        },
     )
 
     # --- Reference-resolution cluster (plugin.json / Skill: / recipe) -------
