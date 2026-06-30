@@ -5,8 +5,13 @@
 This module IMPLEMENTS the cost-sizing rubric defined in
 ``marketplace/bundles/plan-marshall/skills/phase-4-plan/standards/cost-sizing.md``.
 It is a pure, deterministic, total function over signals already present on a
-planned task record — it derives a T-shirt cost size (``S``/``M``/``L``/``XL``)
-and a ``predicted_cost_tokens`` magnitude. No LLM judgement, no I/O, no globals.
+planned task record — it derives a T-shirt cost size
+(``XS``/``S``/``M``/``L``/``XL``/``XXL``) and a ``predicted_cost_tokens``
+magnitude. No LLM judgement, no I/O, no globals. ``XS`` and ``XXL`` widen the
+original ``S``/``M``/``L``/``XL`` scale at both ends; the four original score
+bands and magnitudes are unchanged (every canonical worked example in the rubric
+still derives the same size), so ``XS`` only fires for trivial tasks below the
+old ``S`` floor and ``XXL`` only for tasks above the old ``XL`` ceiling.
 
 The four input signals and their weights (see the rubric § "Signals and
 weights"):
@@ -55,15 +60,21 @@ _PROFILE_WEIGHT_DEFAULT = 8
 
 # --- Thresholds (rubric § 2) ---------------------------------------------
 
-#: Size boundaries, evaluated low→high. A score below the first boundary is S;
-#: at or above the last boundary is XL. The bands are monotone, so increasing
-#: any signal can only raise (never lower) the size.
+#: Size boundaries, evaluated low→high. A score below the first boundary is XS;
+#: at or above the last boundary is XXL. The bands are monotone, so increasing
+#: any signal can only raise (never lower) the size. The four original
+#: boundaries (``_S_MAX`` / ``_M_MAX`` / ``_L_MAX``) are unchanged; ``_XS_MAX``
+#: carves a trivial-task band below the old ``S`` floor and ``_XL_MAX`` carves an
+#: ``XXL`` band above the old ``XL`` ceiling — both positioned so every canonical
+#: worked example in the rubric still derives the same size.
+_XS_MAX = 30
 _S_MAX = 60
 _M_MAX = 150
 _L_MAX = 300
+_XL_MAX = 700
 
 #: Ordered size labels, smallest first.
-COST_SIZES: tuple[str, ...] = ('S', 'M', 'L', 'XL')
+COST_SIZES: tuple[str, ...] = ('XS', 'S', 'M', 'L', 'XL', 'XXL')
 
 # --- Size → token table (rubric § 3) -------------------------------------
 
@@ -72,10 +83,12 @@ COST_SIZES: tuple[str, ...] = ('S', 'M', 'L', 'XL')
 #: default is used when the caller passes no ``size_table``; the operator-tunable
 #: surface is the config key ``plan.phase-5-execute.cost_size_token_table``.
 DEFAULT_SIZE_TABLE: dict[str, str] = {
+    'XS': '5K',
     'S': '25K',
     'M': '60K',
     'L': '130K',
     'XL': '260K',
+    'XXL': '520K',
 }
 
 
@@ -132,15 +145,19 @@ def score_to_size(score: int) -> str:
         score: The weighted score from :func:`compute_score`.
 
     Returns:
-        One of ``S`` / ``M`` / ``L`` / ``XL``.
+        One of ``XS`` / ``S`` / ``M`` / ``L`` / ``XL`` / ``XXL``.
     """
+    if score < _XS_MAX:
+        return 'XS'
     if score < _S_MAX:
         return 'S'
     if score < _M_MAX:
         return 'M'
     if score < _L_MAX:
         return 'L'
-    return 'XL'
+    if score < _XL_MAX:
+        return 'XL'
+    return 'XXL'
 
 
 def resolve_size_table(size_table: dict[str, object] | None) -> dict[str, int]:
@@ -191,8 +208,8 @@ def derive_cost_size(
 
     Returns:
         A ``(cost_size, predicted_cost_tokens)`` tuple — ``cost_size`` is one of
-        ``S`` / ``M`` / ``L`` / ``XL``; ``predicted_cost_tokens`` is the integer
-        token magnitude for that size.
+        ``XS`` / ``S`` / ``M`` / ``L`` / ``XL`` / ``XXL``;
+        ``predicted_cost_tokens`` is the integer token magnitude for that size.
 
     Raises:
         ValueError: when a count is negative or the size table is malformed.

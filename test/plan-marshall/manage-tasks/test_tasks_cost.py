@@ -11,10 +11,13 @@ the size→token table, the public ``derive_cost_size`` entry point, and the
 Per the task contract, the canonical thresholds are NOT inline-copied as bare
 magic numbers into assertions: each boundary test references the rubric weights
 imported from the module under test (``W_STEP`` / ``W_PROFILE`` / ``W_SKILLS`` /
-``W_TARGET_FILES`` / ``_S_MAX`` / ``_M_MAX`` / ``_L_MAX``), so the assertions
-track the single source of truth in ``cost-sizing.md`` rather than duplicating
-it. The rubric's band semantics (S ``< 60``, M ``[60,150)``, L ``[150,300)``,
-XL ``>= 300``) are exercised at and around each band boundary.
+``W_TARGET_FILES`` / ``_XS_MAX`` / ``_S_MAX`` / ``_M_MAX`` / ``_L_MAX`` /
+``_XL_MAX``), so the assertions track the single source of truth in
+``cost-sizing.md`` rather than duplicating it. The rubric's six-size band
+semantics (XS ``< 30``, S ``[30,60)``, M ``[60,150)``, L ``[150,300)``,
+XL ``[300,700)``, XXL ``>= 700``) are exercised at and around each band
+boundary. The four original boundaries (60/150/300) and magnitudes are unchanged;
+XS and XXL widen the scale at both ends.
 
 Tier 2 (direct import) tests for the pure functions, plus Tier 3 subprocess
 tests for the ``derive-cost-size`` CLI plumbing.
@@ -40,9 +43,11 @@ W_SKILLS = _cost.W_SKILLS
 W_TARGET_FILES = _cost.W_TARGET_FILES
 PROFILE_WEIGHTS = _cost.PROFILE_WEIGHTS
 _PROFILE_WEIGHT_DEFAULT = _cost._PROFILE_WEIGHT_DEFAULT
+_XS_MAX = _cost._XS_MAX
 _S_MAX = _cost._S_MAX
 _M_MAX = _cost._M_MAX
 _L_MAX = _cost._L_MAX
+_XL_MAX = _cost._XL_MAX
 COST_SIZES = _cost.COST_SIZES
 DEFAULT_SIZE_TABLE = _cost.DEFAULT_SIZE_TABLE
 
@@ -169,6 +174,16 @@ def test_compute_score_rejects_negative_target_file_count():
 # =============================================================================
 
 
+def test_score_to_size_below_xs_max_is_xs():
+    """A score just below the XS/S boundary maps to XS."""
+    assert score_to_size(_XS_MAX - 1) == 'XS'
+
+
+def test_score_to_size_at_xs_max_is_s():
+    """A score exactly at the XS/S boundary maps to S (band is [_XS_MAX, _S_MAX))."""
+    assert score_to_size(_XS_MAX) == 'S'
+
+
 def test_score_to_size_below_s_max_is_s():
     """A score just below the S/M boundary maps to S."""
     assert score_to_size(_S_MAX - 1) == 'S'
@@ -199,21 +214,31 @@ def test_score_to_size_at_l_max_is_xl():
     assert score_to_size(_L_MAX) == 'XL'
 
 
+def test_score_to_size_below_xl_max_is_xl():
+    """A score just below the XL/XXL boundary maps to XL."""
+    assert score_to_size(_XL_MAX - 1) == 'XL'
+
+
+def test_score_to_size_at_xl_max_is_xxl():
+    """A score exactly at the XL/XXL boundary maps to XXL."""
+    assert score_to_size(_XL_MAX) == 'XXL'
+
+
 def test_score_to_size_zero_is_smallest():
-    """A zero score maps to the smallest size."""
-    assert score_to_size(0) == 'S'
+    """A zero score maps to the smallest size (XS)."""
+    assert score_to_size(0) == 'XS'
 
 
-def test_score_to_size_very_large_is_xl():
-    """A very large score maps to XL."""
-    assert score_to_size(_L_MAX * 10) == 'XL'
+def test_score_to_size_very_large_is_xxl():
+    """A very large score maps to the largest size (XXL)."""
+    assert score_to_size(_XL_MAX * 10) == 'XXL'
 
 
 def test_score_to_size_is_monotone_non_decreasing():
     """The band mapping never assigns a smaller size to a larger score."""
     order = {label: i for i, label in enumerate(COST_SIZES)}
     prev = -1
-    for score in range(0, _L_MAX + 50):
+    for score in range(0, _XL_MAX + 50):
         rank = order[score_to_size(score)]
         assert rank >= prev
         prev = rank
@@ -232,38 +257,50 @@ def test_resolve_size_table_default_parses_magnitudes():
 
 
 def test_resolve_size_table_default_matches_rubric_defaults():
-    """The default resolved table matches the parsed DEFAULT_SIZE_TABLE."""
+    """The default resolved table matches the parsed DEFAULT_SIZE_TABLE.
+
+    The four original magnitudes (S/M/L/XL) are UNCHANGED; XS and XXL are the
+    two new ends.
+    """
     table = resolve_size_table(None)
+    assert table['XS'] == 5_000
     assert table['S'] == 25_000
     assert table['M'] == 60_000
     assert table['L'] == 130_000
     assert table['XL'] == 260_000
+    assert table['XXL'] == 520_000
 
 
 def test_resolve_size_table_default_is_monotone():
-    """Larger sizes map to larger token magnitudes."""
+    """Larger sizes map to larger token magnitudes across the full six-size scale."""
     table = resolve_size_table(None)
-    assert table['S'] < table['M'] < table['L'] < table['XL']
+    assert table['XS'] < table['S'] < table['M'] < table['L'] < table['XL'] < table['XXL']
 
 
 def test_resolve_size_table_accepts_injected_table():
     """A caller-injected table overrides the default and is parsed."""
-    injected = {'S': '1K', 'M': '2K', 'L': '3K', 'XL': '4K'}
+    injected = {'XS': '1K', 'S': '2K', 'M': '3K', 'L': '4K', 'XL': '5K', 'XXL': '6K'}
     table = resolve_size_table(injected)
-    assert table == {'S': 1000, 'M': 2000, 'L': 3000, 'XL': 4000}
+    assert table == {'XS': 1000, 'S': 2000, 'M': 3000, 'L': 4000, 'XL': 5000, 'XXL': 6000}
 
 
 def test_resolve_size_table_accepts_int_values():
     """A table with plain int values resolves unchanged."""
-    injected = {'S': 1, 'M': 2, 'L': 3, 'XL': 4}
+    injected = {'XS': 1, 'S': 2, 'M': 3, 'L': 4, 'XL': 5, 'XXL': 6}
     table = resolve_size_table(injected)
-    assert table == {'S': 1, 'M': 2, 'L': 3, 'XL': 4}
+    assert table == {'XS': 1, 'S': 2, 'M': 3, 'L': 4, 'XL': 5, 'XXL': 6}
 
 
 def test_resolve_size_table_rejects_missing_key():
-    """A table missing a required size key raises ValueError."""
+    """A table missing a required size key raises ValueError naming that key."""
     with pytest.raises(ValueError, match='XL'):
-        resolve_size_table({'S': '1K', 'M': '2K', 'L': '3K'})
+        resolve_size_table({'XS': '1K', 'S': '1K', 'M': '2K', 'L': '3K', 'XXL': '6K'})
+
+
+def test_resolve_size_table_rejects_missing_new_xs_key():
+    """A table missing the new XS key raises ValueError naming it."""
+    with pytest.raises(ValueError, match='XS'):
+        resolve_size_table({'S': '1K', 'M': '2K', 'L': '3K', 'XL': '4K', 'XXL': '6K'})
 
 
 # =============================================================================
@@ -286,7 +323,7 @@ def test_derive_cost_size_tokens_track_default_table():
 
 def test_derive_cost_size_honors_injected_table():
     """An injected size→token table drives the returned token magnitude."""
-    injected = {'S': '7K', 'M': '8K', 'L': '9K', 'XL': '10K'}
+    injected = {'XS': '6K', 'S': '7K', 'M': '8K', 'L': '9K', 'XL': '10K', 'XXL': '11K'}
     size, tokens = derive_cost_size(3, 'verification', 0, 2, size_table=injected)
     assert tokens == resolve_size_table(injected)[size]
 
@@ -318,10 +355,12 @@ def test_derive_cost_size_rejects_malformed_table():
 @pytest.mark.parametrize(
     'step_count,profile,skills,target_files,expected_size',
     [
+        (1, 'verification', 0, 1, 'XS'),      # 1-step doc-only verify -> score 18
         (5, 'verification', 1, 5, 'M'),       # 5-step documentation edit -> score 77
         (3, 'verification', 0, 2, 'S'),       # 3-step doc-only verify -> score 42
         (14, 'implementation', 2, 6, 'L'),    # 14-step config change -> score 182
         (55, 'module_testing', 3, 20, 'XL'),  # 55-step multi-file test refactor -> score 651
+        (70, 'module_testing', 4, 25, 'XXL'), # 70-step multi-module test rewrite -> score 824
     ],
 )
 def test_derive_cost_size_worked_examples(step_count, profile, skills, target_files, expected_size):
@@ -381,7 +420,7 @@ def test_cli_derive_cost_size_honors_injected_size_table():
         '--profile', 'implementation',
         '--skills-count', '2',
         '--target-file-count', '6',
-        '--size-table', '{"S": "1K", "M": "2K", "L": "3K", "XL": "4K"}',
+        '--size-table', '{"XS": "1K", "S": "1K", "M": "2K", "L": "3K", "XL": "4K", "XXL": "5K"}',
     )
     assert result.returncode == 0
     assert 'cost_size: L' in result.stdout

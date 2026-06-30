@@ -29,6 +29,7 @@ import re
 import sys
 from pathlib import Path
 
+from _tasks_cost import COST_SIZES
 from _tasks_core import (
     find_task_file,
     format_task_file,
@@ -60,8 +61,11 @@ from plan_logging import log_entry  # type: ignore[import-not-found]
 _PENDING_DIR_NAME = 'pending-tasks'
 _SLOT_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
 
-#: The four valid T-shirt cost sizes (see phase-4-plan/standards/cost-sizing.md).
-_VALID_COST_SIZES = ('S', 'M', 'L', 'XL')
+#: The valid T-shirt cost sizes for the cost-field write-back. Sourced from the
+#: deriver's canonical size set (``_tasks_cost.COST_SIZES`` — the six-size scale
+#: XS/S/M/L/XL/XXL) so the writeback validator and the deriver never drift. See
+#: phase-4-plan/standards/cost-sizing.md.
+_VALID_COST_SIZES = COST_SIZES
 
 
 def _get_pending_dir(plan_id: str):

@@ -342,28 +342,32 @@ def validate_per_deliverable_build(value: object) -> None:
         )
 
 
-# The exact key set the cost_size_token_table must carry — the four T-shirt
+# The exact key set the cost_size_token_table must carry — the six T-shirt
 # sizes the cost-sizing rubric (phase-4-plan/standards/cost-sizing.md) maps a
-# task to. The table value for each size is a human-friendly magnitude string
-# (e.g. "25K") parsed back to an int via sensible_number.parse_sensible_int.
-COST_SIZE_LABELS = ('S', 'M', 'L', 'XL')
+# task or lane-element to. The table value for each size is a human-friendly
+# magnitude string (e.g. "25K") parsed back to an int via
+# sensible_number.parse_sensible_int. XS and XXL widen the original S/M/L/XL
+# scale at both ends (XS for deterministic ≈0-token bookkeeping; XXL for the
+# heaviest elements); the four original magnitudes are unchanged so the
+# manage-tasks derive-cost-size deriver and bin-packer are unaffected.
+COST_SIZE_LABELS = ('XS', 'S', 'M', 'L', 'XL', 'XXL')
 
 
 def validate_cost_size_token_table(value: object) -> None:
     """Validate the ``cost_size_token_table`` size→token mapping.
 
     ``cost_size_token_table`` maps each T-shirt size in
-    :data:`COST_SIZE_LABELS` (``S``/``M``/``L``/``XL``) to a predicted-token
-    magnitude. The keys must be exactly that set (no missing, no extra), and
-    every value must parse as a human-friendly sensible int (``"25K"`` →
-    25000) via :func:`sensible_number.parse_sensible_int`. The phase-4-plan
-    bin-packer reads this table to map a task's derived ``cost_size`` to its
-    ``predicted_cost_tokens``.
+    :data:`COST_SIZE_LABELS` (``XS``/``S``/``M``/``L``/``XL``/``XXL``) to a
+    predicted-token magnitude. The keys must be exactly that set (no missing, no
+    extra), and every value must parse as a human-friendly sensible int
+    (``"25K"`` → 25000) via :func:`sensible_number.parse_sensible_int`. The
+    phase-4-plan bin-packer reads this table to map a task's derived
+    ``cost_size`` to its ``predicted_cost_tokens``.
 
     Raises:
         ValueError: If ``value`` is not a dict, if its key set is not exactly
-            ``{S, M, L, XL}``, or if any value does not parse as a sensible
-            int.
+            ``{XS, S, M, L, XL, XXL}``, or if any value does not parse as a
+            sensible int.
     """
     from sensible_number import parse_sensible_int  # type: ignore[import-not-found]
 
@@ -410,16 +414,19 @@ DEFAULT_PLAN_EXECUTE = {
     # whole-tree quality sweep stays once at end-of-phase. Use [] to disable the
     # per-deliverable build (the former 'off' enum value).
     'per_deliverable_build': ['default:verify:compile', 'default:verify:module-tests'],
-    # Size→token table mapping each T-shirt cost_size (S/M/L/XL) to a predicted
-    # token magnitude. Validated by validate_cost_size_token_table (keys exactly
-    # S/M/L/XL; every value parses via sensible_number.parse_sensible_int). The
-    # phase-4-plan bin-packer (_tasks_envelope.py, via manage-tasks pack-envelopes)
-    # reads this table at PLAN time to map a task's derived cost_size to its
-    # predicted_cost_tokens. The default magnitudes (S≈25K / M≈60K / L≈130K /
-    # XL≈260K) are calibrated to the forensic 134K–392K per-dispatch range and
-    # are the tunable defaults; raise/lower them in marshal.json to recalibrate
-    # the size model from observed post-return <usage>.
-    'cost_size_token_table': {'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K'},
+    # Size→token table mapping each T-shirt cost_size (XS/S/M/L/XL/XXL) to a
+    # predicted token magnitude. Validated by validate_cost_size_token_table
+    # (keys exactly XS/S/M/L/XL/XXL; every value parses via
+    # sensible_number.parse_sensible_int). The phase-4-plan bin-packer
+    # (_tasks_envelope.py, via manage-tasks pack-envelopes) reads this table at
+    # PLAN time to map a task's derived cost_size to its predicted_cost_tokens.
+    # The four original magnitudes (S≈25K / M≈60K / L≈130K / XL≈260K) are
+    # unchanged and calibrated to the forensic 134K–392K per-dispatch range; XS≈5K
+    # labels deterministic ≈0-token bookkeeping and XXL≈520K the heaviest elements
+    # (lane-elements, execute on a substantial plan). These are the tunable
+    # defaults; raise/lower them in marshal.json to recalibrate the size model
+    # from observed post-return <usage>.
+    'cost_size_token_table': {'XS': '5K', 'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K', 'XXL': '520K'},
     # Per-envelope packing budget — the token ceiling the phase-4-plan bin-packer
     # accumulates predicted_cost_tokens against before opening a new envelope
     # group. The `_tokens` suffix names the unit (tokens); the value is the

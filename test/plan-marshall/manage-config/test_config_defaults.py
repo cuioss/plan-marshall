@@ -427,23 +427,35 @@ def test_get_default_config_omits_retired_per_task_budget_reserve_tokens():
     assert 'per_task_budget_reserve_tokens' not in config['plan']['phase-5-execute']
 
 
-_EXPECTED_COST_SIZE_TOKEN_TABLE = {'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K'}
+_EXPECTED_COST_SIZE_TOKEN_TABLE = {
+    'XS': '5K',
+    'S': '25K',
+    'M': '60K',
+    'L': '130K',
+    'XL': '260K',
+    'XXL': '520K',
+}
 
 
 def test_default_plan_execute_includes_cost_size_token_table():
-    """DEFAULT_PLAN_EXECUTE must declare cost_size_token_table with the calibrated default."""
+    """DEFAULT_PLAN_EXECUTE must declare cost_size_token_table with the six-size default.
+
+    The four original magnitudes (S/M/L/XL) are UNCHANGED; XS and XXL widen the
+    scale at both ends.
+    """
     execute_defaults = _config_defaults_mod.DEFAULT_PLAN_EXECUTE
 
     assert 'cost_size_token_table' in execute_defaults, (
         'cost_size_token_table must be schema-registered in DEFAULT_PLAN_EXECUTE'
     )
     assert execute_defaults['cost_size_token_table'] == _EXPECTED_COST_SIZE_TOKEN_TABLE, (
-        'cost_size_token_table default must map S/M/L/XL to 25K/60K/130K/260K '
-        '(calibrated to the forensic 134K-392K per-dispatch range)'
+        'cost_size_token_table default must map XS/S/M/L/XL/XXL to '
+        '5K/25K/60K/130K/260K/520K (the S/M/L/XL magnitudes calibrated to the '
+        'forensic 134K-392K per-dispatch range are unchanged)'
     )
     # Every magnitude round-trips through the shared parser to the documented int.
     parsed = {k: parse_sensible_int(v) for k, v in execute_defaults['cost_size_token_table'].items()}
-    assert parsed == {'S': 25000, 'M': 60000, 'L': 130000, 'XL': 260000}
+    assert parsed == {'XS': 5000, 'S': 25000, 'M': 60000, 'L': 130000, 'XL': 260000, 'XXL': 520000}
 
 
 def test_get_default_config_includes_cost_size_token_table():
@@ -478,9 +490,9 @@ def test_get_default_config_includes_per_envelope_budget_tokens():
     assert parse_sensible_int(execute['per_envelope_budget_tokens']) == 400000
 
 
-def test_cost_size_labels_enumerates_the_four_tshirt_sizes():
-    """COST_SIZE_LABELS must enumerate exactly the four T-shirt sizes S/M/L/XL."""
-    assert _config_defaults_mod.COST_SIZE_LABELS == ('S', 'M', 'L', 'XL')
+def test_cost_size_labels_enumerates_the_six_tshirt_sizes():
+    """COST_SIZE_LABELS must enumerate exactly the six T-shirt sizes XS/S/M/L/XL/XXL."""
+    assert _config_defaults_mod.COST_SIZE_LABELS == ('XS', 'S', 'M', 'L', 'XL', 'XXL')
     # the seeded default table keys must match the label set exactly
     assert set(_config_defaults_mod.DEFAULT_PLAN_EXECUTE['cost_size_token_table'].keys()) == set(
         _config_defaults_mod.COST_SIZE_LABELS
@@ -488,13 +500,13 @@ def test_cost_size_labels_enumerates_the_four_tshirt_sizes():
 
 
 def test_validate_cost_size_token_table_accepts_seeded_default():
-    """validate_cost_size_token_table must accept the seeded default table."""
+    """validate_cost_size_token_table must accept the seeded six-size default table."""
     _config_defaults_mod.validate_cost_size_token_table(
         _config_defaults_mod.DEFAULT_PLAN_EXECUTE['cost_size_token_table']
     )
-    # an explicit valid table with int-typed magnitudes is also accepted
+    # an explicit valid six-size table with int-typed magnitudes is also accepted
     _config_defaults_mod.validate_cost_size_token_table(
-        {'S': 25000, 'M': '60K', 'L': '130_000', 'XL': '260K'}
+        {'XS': '5K', 'S': 25000, 'M': '60K', 'L': '130_000', 'XL': '260K', 'XXL': 520000}
     )
 
 
@@ -507,20 +519,39 @@ def test_validate_cost_size_token_table_rejects_non_dict():
 
 
 def test_validate_cost_size_token_table_rejects_missing_key():
-    """validate_cost_size_token_table must reject a table missing one of S/M/L/XL."""
-    import pytest
+    """validate_cost_size_token_table must reject a table missing one of XS/S/M/L/XL/XXL.
 
-    with pytest.raises(ValueError, match='expected exactly'):
-        _config_defaults_mod.validate_cost_size_token_table({'S': '25K', 'M': '60K', 'L': '130K'})
-
-
-def test_validate_cost_size_token_table_rejects_extra_key():
-    """validate_cost_size_token_table must reject a table carrying an unexpected size key."""
+    The four-size table (no XS, no XXL) is now incomplete under the six-size scale.
+    """
     import pytest
 
     with pytest.raises(ValueError, match='expected exactly'):
         _config_defaults_mod.validate_cost_size_token_table(
-            {'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K', 'XXL': '500K'}
+            {'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K'}
+        )
+
+
+def test_validate_cost_size_token_table_rejects_missing_new_xs_key():
+    """validate_cost_size_token_table must reject a six-size table missing the new XS key."""
+    import pytest
+
+    with pytest.raises(ValueError, match='expected exactly'):
+        _config_defaults_mod.validate_cost_size_token_table(
+            {'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K', 'XXL': '520K'}
+        )
+
+
+def test_validate_cost_size_token_table_rejects_extra_key():
+    """validate_cost_size_token_table must reject a table carrying an unexpected size key.
+
+    XXL is now a VALID key, so the extra-key case uses a genuinely out-of-enum
+    label (XXXL) on top of the complete six-size set.
+    """
+    import pytest
+
+    with pytest.raises(ValueError, match='expected exactly'):
+        _config_defaults_mod.validate_cost_size_token_table(
+            {'XS': '5K', 'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K', 'XXL': '520K', 'XXXL': '999K'}
         )
 
 
@@ -530,7 +561,7 @@ def test_validate_cost_size_token_table_rejects_unparseable_magnitude():
 
     with pytest.raises(ValueError, match='not a parseable token magnitude'):
         _config_defaults_mod.validate_cost_size_token_table(
-            {'S': '25K', 'M': 'sixty-thousand', 'L': '130K', 'XL': '260K'}
+            {'XS': '5K', 'S': '25K', 'M': 'sixty-thousand', 'L': '130K', 'XL': '260K', 'XXL': '520K'}
         )
 
 
