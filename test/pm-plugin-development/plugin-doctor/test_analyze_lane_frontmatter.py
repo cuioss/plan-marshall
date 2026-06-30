@@ -182,6 +182,21 @@ class TestNonParticipatingFiles:
         )
         assert analyze_lane_frontmatter(tmp_path) == []
 
+    def test_recipe_lane_seed_block_is_skipped(self, tmp_path: Path) -> None:
+        """A recipe lane SEED block (``profile:`` posture) is a different contract — not flagged.
+
+        Recipe seeds share the ``lane:`` key but carry a ``profile`` posture (and
+        optional ``steps:`` overrides) instead of the element ``class`` /
+        ``cost_size`` schema. They are validated by the recipe-scoring reader, so
+        the element-lane rule skips them rather than flagging a missing ``class``.
+        """
+        scoped = _bundle_dir(tmp_path)
+        _write(
+            scoped / 'recipe.md',
+            '---\nname: recipe-demo\nlane:\n  profile: auto\n  steps:\n    sonar-roundtrip: off\n---\n',
+        )
+        assert analyze_lane_frontmatter(tmp_path) == []
+
 
 # ===========================================================================
 # Finding shape + scope guards

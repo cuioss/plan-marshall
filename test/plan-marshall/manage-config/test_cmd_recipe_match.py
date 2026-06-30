@@ -38,6 +38,11 @@ from conftest import load_script_module, run_script
 _cmd_recipe_match_mod = load_script_module('plan-marshall', 'manage-config', '_cmd_recipe_match.py')
 cmd_recipe_match = _cmd_recipe_match_mod.cmd_recipe_match
 
+_recipe_scoring_mod = load_script_module('plan-marshall', 'script-shared', 'recipe_scoring.py')
+read_recipe_lane_seed = _recipe_scoring_mod.read_recipe_lane_seed
+_parse_recipe_lane_block = _recipe_scoring_mod._parse_recipe_lane_block
+_normalize_recipe_lane_seed = _recipe_scoring_mod._normalize_recipe_lane_seed
+
 
 # =============================================================================
 # Fixture builders
@@ -331,3 +336,107 @@ def test_cli_recipe_match_missing_request_text_rejected(plan_context, tmp_path):
 
     # argparse rejects the missing required flag with exit code 2.
     assert result.returncode == 2
+
+
+# =============================================================================
+# Recipe lane seed (deliverable 8)
+# =============================================================================
+#
+# A recipe may declare an execution-profile lane seed in its SKILL.md frontmatter
+# (a `profile` posture + optional per-element `steps` overrides) — the
+# lowest-precedence input to the lane resolver. recipe-match surfaces it as
+# `lane_seed` on each match.
+
+
+def _write_recipe_with_lane(skills_dir: Path, name: str, *, description: str, lane_block: str) -> Path:
+    """Seed a project recipe whose frontmatter carries a nested ``lane:`` seed block."""
+    skill_dir = skills_dir / name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    content = (
+        '---\n'
+        f'name: {name}\n'
+        f'description: {description}\n'
+        'recipe_domain: plan-marshall-plugin-dev\n'
+        f'{lane_block}'
+        '---\n\n'
+        f'# {name}\n'
+    )
+    skill_md = skill_dir / 'SKILL.md'
+    skill_md.write_text(content)
+    return skill_md
+
+
+# --- _parse_recipe_lane_block / _normalize_recipe_lane_seed (pure) -----------
+
+
+def test_parse_recipe_lane_block_profile_and_steps():
+    """The recipe lane block parser captures the profile posture and step overrides."""
+    text = '---\nname: recipe-x\nlane:\n  profile: auto\n  steps:\n    sonar-roundtrip: off\n---\n'
+    block = _parse_recipe_lane_block(text)
+    assert block == {'profile': 'auto', 'steps': {'sonar-roundtrip': 'off'}}
+
+
+def test_parse_recipe_lane_block_profile_only():
+    """A recipe lane block may carry only a posture (no steps map)."""
+    text = '---\nname: recipe-x\nlane:\n  profile: full\n---\n'
+    assert _parse_recipe_lane_block(text) == {'profile': 'full'}
+
+
+def test_parse_recipe_lane_block_absent_returns_none():
+    """A SKILL.md with no lane: frontmatter block yields no seed."""
+    text = '---\nname: recipe-x\ndescription: no lane here\n---\n'
+    assert _parse_recipe_lane_block(text) is None
+
+
+def test_normalize_recipe_lane_seed_drops_invalid_entries():
+    """Invalid postures and overrides are dropped during normalization."""
+    seed = _normalize_recipe_lane_seed({'profile': 'bogus', 'steps': {'a': 'off', 'b': 'nonsense'}})
+    assert seed == {'steps': {'a': 'off'}}
+
+
+def test_normalize_recipe_lane_seed_all_invalid_returns_none():
+    """A seed with nothing valid normalizes to None."""
+    assert _normalize_recipe_lane_seed({'profile': 'bogus'}) is None
+
+
+def test_read_recipe_lane_seed_from_direct_lane_key():
+    """An extension recipe carrying a `lane` dict directly is read without file resolution."""
+    recipe = {'key': 'x', 'lane': {'profile': 'auto', 'steps': {'sonar-roundtrip': 'off'}}}
+    assert read_recipe_lane_seed(recipe) == {'profile': 'auto', 'steps': {'sonar-roundtrip': 'off'}}
+
+
+def test_read_recipe_lane_seed_absent_yields_none():
+    """A recipe with neither a direct lane key nor a resolvable SKILL.md yields None."""
+    assert read_recipe_lane_seed({'key': 'no-such-recipe-zzz'}) is None
+
+
+# --- recipe-match integration ------------------------------------------------
+
+
+def test_recipe_match_surfaces_lane_seed(plan_context, tmp_path, monkeypatch):
+    """A matched recipe declaring a lane: seed surfaces it as `lane_seed` on the match."""
+    skills_dir = _make_skills_root(tmp_path)
+    _write_recipe_with_lane(
+        skills_dir,
+        'recipe-pangolin',
+        description='pangolin zephyr quokka',
+        lane_block='lane:\n  profile: auto\n  steps:\n    sonar-roundtrip: off\n',
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = cmd_recipe_match(_ns('pangolin zephyr quokka recipe-pangolin'))
+
+    match = next(m for m in result['matches'] if m['key'] == 'pangolin')
+    assert match['lane_seed'] == {'profile': 'auto', 'steps': {'sonar-roundtrip': 'off'}}
+
+
+def test_recipe_match_without_lane_seed_omits_key(plan_context, tmp_path, monkeypatch):
+    """A recipe with no lane: block yields a match WITHOUT a lane_seed key."""
+    skills_dir = _make_skills_root(tmp_path)
+    _seed_full_overlap_recipe(skills_dir)
+    monkeypatch.chdir(tmp_path)
+
+    result = cmd_recipe_match(_ns('hummingbird zephyr quokka recipe-hummingbird'))
+
+    match = next(m for m in result['matches'] if m['key'] == 'hummingbird')
+    assert 'lane_seed' not in match

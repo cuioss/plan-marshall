@@ -25,6 +25,7 @@ from typing import Any
 from recipe_scoring import (  # type: ignore[import-not-found]
     MIN_CONFIDENCE,
     load_registry,
+    read_recipe_lane_seed,
     score_recipe,
     tokenize,
 )
@@ -72,18 +73,25 @@ def cmd_recipe_match(args) -> dict[str, Any]:
 
     matches: list[dict[str, Any]] = []
     for confidence, recipe, breakdown in scored:
-        matches.append(
-            {
-                'key': recipe.get('key'),
-                'name': recipe.get('name'),
-                'skill': recipe.get('skill'),
-                'domain': recipe.get('domain'),
-                'scope': recipe.get('scope'),
-                'source': recipe.get('source'),
-                'confidence': confidence,
-                'breakdown': breakdown,
-            }
-        )
+        # Surface the recipe's execution-profile lane seed (§4.9 lowest-precedence
+        # default). The orchestrator (phase-1-init) feeds it into the posture
+        # dialogue as the recipe-recommended default, which the operator posture
+        # and the coverage-cell adversarial floor then override. ``None`` when the
+        # recipe declares no ``lane:`` block.
+        lane_seed = read_recipe_lane_seed(recipe)
+        match: dict[str, Any] = {
+            'key': recipe.get('key'),
+            'name': recipe.get('name'),
+            'skill': recipe.get('skill'),
+            'domain': recipe.get('domain'),
+            'scope': recipe.get('scope'),
+            'source': recipe.get('source'),
+            'confidence': confidence,
+            'breakdown': breakdown,
+        }
+        if lane_seed is not None:
+            match['lane_seed'] = lane_seed
+        matches.append(match)
 
     top_match = matches[0] if matches else None
     meets_auto_route_threshold = bool(top_match and top_match['confidence'] >= threshold)

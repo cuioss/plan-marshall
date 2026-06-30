@@ -17,6 +17,12 @@ analyzer is the structural backstop that reads those enums and flags drift. It
 does NOT enforce that a given element MUST declare a ``lane:`` block; it validates
 every block that exists.
 
+A recipe lane SEED block (a ``profile:`` posture plus optional ``steps:``
+per-element overrides, declared on a ``recipe-*`` SKILL.md and consumed by the
+recipe-scoring reader) is a DIFFERENT contract that happens to share the ``lane:``
+key. It is identified by its ``profile`` sub-key and is skipped here — recipe
+seeds are validated by ``script-shared:recipe_scoring``, not the element-lane rule.
+
 Pattern alignment
 -----------------
 Mirrors ``_analyze_role_field.py`` and ``_analyze_metadata_field_validity.py``:
@@ -153,6 +159,13 @@ def analyze_lane_frontmatter(marketplace_root: Path) -> list[dict]:
         if parsed is None:
             continue
         lane, lane_line = parsed
+        # A recipe lane SEED block (``profile:`` posture + optional ``steps:``
+        # overrides) is a DIFFERENT contract from a per-element lane block
+        # (``class`` / ``cost_size``) — both share the ``lane:`` key. Recipe seeds
+        # are validated by the recipe-scoring reader, not this element-lane rule,
+        # so skip any block that declares ``profile`` (the recipe-seed marker).
+        if 'profile' in lane:
+            continue
         for defect in _validate_lane_block(lane):
             findings.append(
                 Finding(
