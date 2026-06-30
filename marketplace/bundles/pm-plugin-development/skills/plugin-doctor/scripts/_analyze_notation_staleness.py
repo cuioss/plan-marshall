@@ -87,9 +87,25 @@ import re
 from pathlib import Path
 
 from _doctor_shared import Finding
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'notation-staleness'
 DRIFT_RULE_ID = 'notation-bundle-skill-drift'
+
+RULE_DESCRIPTORS = [
+    RuleDescriptor(
+        rule_id=RULE_ID,
+        severity='error',
+        category='structural',
+        scope='corpus-relational',
+    ),
+    RuleDescriptor(
+        rule_id=DRIFT_RULE_ID,
+        severity='error',
+        category='structural',
+        scope='corpus-relational',
+    ),
+]
 
 # Match a three-part executor notation following the canonical executor
 # invocation prefix ``python3 .plan/execute-script.py`` OR appearing as a

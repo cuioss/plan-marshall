@@ -1306,9 +1306,15 @@ class TestQualityGateWiring:
     """``cmd_quality_gate`` runs the manage-invocation cluster as a build gate."""
 
     def test_quality_gate_imports_scan_manage_invocation(self) -> None:
-        """The doctor-marketplace module imports the manage-invocation scanner."""
-        dm = _load_doctor_marketplace()
-        assert hasattr(dm, 'scan_manage_invocation')
+        """The single-pass runner imports the manage-invocation scanner.
+
+        The quality-gate dispatch (including the manage-invocation cluster) is
+        driven by ``_runner.RuleRunner.run_quality_gate``, so the scanner import
+        lives on the runner module rather than the doctor-marketplace CLI
+        orchestrator.
+        """
+        runner = _load_module('_runner', '_runner.py')
+        assert hasattr(runner, 'scan_manage_invocation')
 
     def test_quality_gate_runs_manage_invocation_cluster(self, tmp_path: Path) -> None:
         """cmd_quality_gate lists scan_manage_invocation in rules_run and

@@ -69,7 +69,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from _rule_registry import RuleDescriptor
+
 RULE_ID = 'executor-path-in-production'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='file-local',
+)
 
 # The literal string we scan for. This is RETAINED — the analyzer must still
 # detect the OLD hardcoded form so a file that embeds the executor path

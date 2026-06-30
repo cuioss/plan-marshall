@@ -80,10 +80,18 @@ from __future__ import annotations
 from pathlib import Path
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'phase-5-step-missing-role-field'
 RULE_NAME = 'analyze_role_field'
 FINDING_TYPE = 'missing_role_field'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='file-local',
+)
 
 _SCOPED_REL = ('plan-marshall', 'skills', 'phase-5-execute', 'standards')
 

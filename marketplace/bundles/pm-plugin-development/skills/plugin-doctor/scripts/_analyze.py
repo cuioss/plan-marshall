@@ -16,72 +16,11 @@ Output: JSON to stdout.
 
 import argparse
 
-from _analyze_bash_chain_shapes_in_skills import analyze_bash_chain_shapes_in_skills
-from _analyze_cmd_root_anchoring import analyze_cmd_root_anchoring
-from _analyze_coverage import analyze_tool_coverage, cmd_coverage
+from _analyze_coverage import cmd_coverage
 from _analyze_crossfile import DEFAULT_SIMILARITY_THRESHOLD, cmd_cross_file
-from _analyze_executor_path_in_production import analyze_executor_path_in_production
-from _analyze_fail_closed_gate_reads import analyze_fail_closed_gate_reads
-from _analyze_historical_prose_in_skills import analyze_historical_prose_in_skills
-from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
-from _analyze_manage_findings_invocation import analyze_manage_findings_invocation
-from _analyze_markdown import analyze_markdown_file, cmd_markdown
-from _analyze_metadata_field_validity import analyze_metadata_field_validity
-from _analyze_notation_staleness import analyze_notation_staleness
-from _analyze_orphan_argparse_flags import analyze_orphan_argparse_flags
-from _analyze_persona_binding_resolves import analyze_persona_binding_resolves
-from _analyze_persona_profile_uniqueness import analyze_persona_profile_uniqueness
-from _analyze_plan_path_in_scripts import analyze_plan_path_in_scripts
-from _analyze_resolution_branch_markers import analyze_resolution_branch_markers
-from _analyze_role_field import analyze_role_field
-from _analyze_shared import detect_component_type
-from _analyze_shell_active_tokens import analyze_shell_active_tokens
-from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
-from _analyze_simplicity import (
-    analyze_backward_compat_reexport,
-    analyze_defensive_catchall,
-    analyze_signature_docstring,
-    analyze_thin_wrapper,
-    analyze_unused_parameter,
-    scan_simplicity,
-)
-from _analyze_structure import analyze_skill_structure, cmd_structure
-from _analyze_tmp_redirect_in_skills import analyze_tmp_redirect_in_skills
-from _analyze_verb_chains import analyze_verb_chains
+from _analyze_markdown import cmd_markdown
+from _analyze_structure import cmd_structure
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
-
-# Public API surface — used by _doctor_analysis.py and other scripts
-__all__ = [
-    'analyze_backward_compat_reexport',
-    'analyze_bash_chain_shapes_in_skills',
-    'analyze_cmd_root_anchoring',
-    'analyze_defensive_catchall',
-    'analyze_executor_path_in_production',
-    'analyze_fail_closed_gate_reads',
-    'analyze_historical_prose_in_skills',
-    'analyze_lesson_id_in_skill_prose',
-    'analyze_manage_findings_invocation',
-    'analyze_markdown_file',
-    'analyze_metadata_field_validity',
-    'analyze_notation_staleness',
-    'analyze_orphan_argparse_flags',
-    'analyze_persona_binding_resolves',
-    'analyze_persona_profile_uniqueness',
-    'analyze_plan_path_in_scripts',
-    'analyze_resolution_branch_markers',
-    'analyze_role_field',
-    'analyze_shell_active_tokens',
-    'analyze_shell_substitution_in_skills',
-    'analyze_signature_docstring',
-    'analyze_skill_structure',
-    'analyze_thin_wrapper',
-    'analyze_tmp_redirect_in_skills',
-    'analyze_tool_coverage',
-    'analyze_unused_parameter',
-    'analyze_verb_chains',
-    'detect_component_type',
-    'scan_simplicity',
-]
 
 
 @safe_main

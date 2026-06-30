@@ -64,6 +64,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 # =============================================================================
 # Rule IDs
@@ -73,6 +74,21 @@ RULE_NOTATION_INVALID = 'ARGUMENT_NAMING_NOTATION_INVALID'
 RULE_SUBCOMMAND_UNKNOWN = 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN'
 RULE_FLAG_UNKNOWN = 'ARGUMENT_NAMING_FLAG_UNKNOWN'
 RULE_CANONICAL_FORMS_DRIFT = 'ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT'
+
+# Opt-in cluster descriptor. The four ARGUMENT_NAMING_* rules are produced by a
+# single ``analyze_argument_naming`` pass gated atomically by the
+# ``argument_naming`` --rules token, so the cluster is represented by ONE
+# descriptor whose rule_id is that token; the registry derives the opt-in set
+# as ``{d.rule_id for d in registry if d.opt_in}``.
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id='argument_naming',
+    severity='error',
+    category='structural',
+    scope='corpus-relational',
+    opt_in=True,
+    default_on=False,
+    has_fixer=False,
+)
 
 
 # =============================================================================

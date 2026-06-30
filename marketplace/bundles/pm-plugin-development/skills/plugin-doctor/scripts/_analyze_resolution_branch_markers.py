@@ -59,7 +59,16 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _rule_registry import RuleDescriptor
+
 RULE_ID = 'resolution-branch-side-effect-undocumented'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='warning',
+    category='content',
+    scope='file-local',
+)
 
 # ---------------------------------------------------------------------------
 # Configurable allowlists

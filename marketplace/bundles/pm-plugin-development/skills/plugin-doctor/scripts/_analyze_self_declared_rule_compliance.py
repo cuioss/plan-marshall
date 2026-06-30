@@ -103,10 +103,19 @@ from pathlib import Path
 
 from _analyze_shared import read_frontmatter_disable_list
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'skill-self-declared-rule-violation'
 RULE_NAME = 'analyze_self_declared_rule_compliance'
 FINDING_TYPE = 'skill_self_declared_rule_violation'
+
+# Suppressible content/structural scanner (project config / per-file frontmatter).
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='warning',
+    category='structural',
+    scope='file-local',
+)
 
 # ---------------------------------------------------------------------------
 # Detection patterns

@@ -78,10 +78,18 @@ import re
 from pathlib import Path
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'skill-relative-temp-path-git-c'
 RULE_NAME = 'analyze_skill_relative_temp_path'
 FINDING_TYPE = 'skill_relative_temp_path_git_c'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='warning',
+    category='safety',
+    scope='file-local',
+)
 
 # ---------------------------------------------------------------------------
 # Detection patterns

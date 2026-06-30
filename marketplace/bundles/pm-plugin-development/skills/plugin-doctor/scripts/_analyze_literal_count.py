@@ -96,10 +96,19 @@ import ast
 import re
 from pathlib import Path
 
+from _dep_index import AstCache  # type: ignore[import-not-found]
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'literal-count-drift'
 RULE_NAME = 'analyze_literal_count'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='warning',
+    category='content',
+    scope='corpus-relational',
+)
 
 # The ``provides_*`` / ``discover_modules`` hooks declared on ExtensionBase,
 # mapped to the base default each returns. A subclass override is a "real
@@ -173,7 +182,7 @@ def _subclasses_extension_base(class_node: ast.ClassDef) -> bool:
     return False
 
 
-def _extension_overrides(extension_path: Path) -> dict[str, bool]:
+def _extension_overrides(extension_path: Path, cache: AstCache | None = None) -> dict[str, bool]:
     """Map each AST hook method to whether ``extension_path`` really overrides it.
 
     Returns a dict keyed by the four AST hook names; the value is True when the
@@ -183,14 +192,19 @@ def _extension_overrides(extension_path: Path) -> dict[str, bool]:
     syntax rules cover that failure mode separately).
     """
     overrides: dict[str, bool] = dict.fromkeys(_AST_HOOK_DEFAULTS, False)
-    try:
-        source = extension_path.read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
-        return overrides
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return overrides
+    if cache is not None:
+        tree = cache.get_tree(extension_path)
+        if tree is None:
+            return overrides
+    else:
+        try:
+            source = extension_path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            return overrides
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return overrides
     for class_node in (n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)):
         if not _subclasses_extension_base(class_node):
             continue
@@ -202,7 +216,7 @@ def _extension_overrides(extension_path: Path) -> dict[str, bool]:
     return overrides
 
 
-def _ast_hook_counts(marketplace_root: Path) -> dict[str, int]:
+def _ast_hook_counts(marketplace_root: Path, cache: AstCache | None = None) -> dict[str, int]:
     """Count bundles whose ``extension.py`` really overrides each AST hook.
 
     Walks every ``*/skills/plan-marshall-plugin/extension.py`` under
@@ -217,7 +231,7 @@ def _ast_hook_counts(marketplace_root: Path) -> dict[str, int]:
     for ext in extensions:
         if not ext.is_file():
             continue
-        for hook, is_override in _extension_overrides(ext).items():
+        for hook, is_override in _extension_overrides(ext, cache).items():
             if is_override:
                 counts[hook] += 1
     return counts
@@ -317,7 +331,7 @@ def _scan_extension_points_table(
     return [f.to_dict() for f in findings]
 
 
-def analyze_literal_count(marketplace_root: Path) -> list[dict]:
+def analyze_literal_count(marketplace_root: Path, cache: AstCache | None = None) -> list[dict]:
     """Scan the extension-api Extension Points table for stale Implementations counts.
 
     Parameters
@@ -336,6 +350,6 @@ def analyze_literal_count(marketplace_root: Path) -> list[dict]:
     skill_md = marketplace_root / 'plan-marshall' / 'skills' / 'extension-api' / 'SKILL.md'
     if not skill_md.is_file():
         return []
-    ast_counts = _ast_hook_counts(marketplace_root)
+    ast_counts = _ast_hook_counts(marketplace_root, cache)
     provider_count = _provider_count(marketplace_root)
     return _scan_extension_points_table(skill_md, ast_counts, provider_count)

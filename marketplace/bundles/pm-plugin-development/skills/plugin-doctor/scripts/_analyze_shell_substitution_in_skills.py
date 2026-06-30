@@ -67,8 +67,16 @@ import re
 from pathlib import Path
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'shell-substitution-in-skills'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='safety',
+    scope='file-local',
+)
 RULE_NAME = 'analyze_shell_substitution_in_skills'
 FINDING_TYPE = 'shell_substitution_in_skills'
 

@@ -17,7 +17,6 @@ writes agentfiles under ``{repo}``.
 from pathlib import Path
 
 from conftest import get_scripts_dir, load_script_module
-from _fixtures import _function_body
 
 _adt = load_script_module(
     'pm-plugin-development',
@@ -223,12 +222,23 @@ class TestExcludedDirectories:
 class TestAnalyzeOnlyRegistration:
     """The rule is wired into cmd_analyze but NOT cmd_quality_gate."""
 
-    def test_call_present_in_cmd_analyze_absent_in_quality_gate(self) -> None:
-        driver = get_scripts_dir('pm-plugin-development', 'plugin-doctor') / 'doctor-marketplace.py'
-        source = driver.read_text(encoding='utf-8')
+    def test_call_present_in_analyze_runner_absent_in_quality_gate(self) -> None:
+        # The marketplace-wide dispatch lives on _runner.RuleRunner: agentfile
+        # rules run in run_analyze_marketplace_rules but NOT in run_quality_gate
+        # (analyze-surfaced only).
+        runner_src = (
+            get_scripts_dir('pm-plugin-development', 'plugin-doctor') / '_runner.py'
+        ).read_text(encoding='utf-8')
 
-        analyze_body = _function_body(source, 'cmd_analyze')
-        quality_gate_body = _function_body(source, 'cmd_quality_gate')
+        def _method_body(method: str) -> str:
+            marker = f'    def {method}('
+            start = runner_src.index(marker)
+            rest = runner_src[start + len(marker):]
+            nxt = rest.find('\n    def ')
+            return rest if nxt == -1 else rest[:nxt]
+
+        analyze_body = _method_body('run_analyze_marketplace_rules')
+        quality_gate_body = _method_body('run_quality_gate')
 
         assert 'analyze_agentfile_directory_tree(' in analyze_body
         assert 'analyze_agentfile_directory_tree(' not in quality_gate_body

@@ -77,10 +77,19 @@ import re
 from pathlib import Path
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'bash-chain-shapes-in-skills'
 RULE_NAME = 'analyze_bash_chain_shapes_in_skills'
 FINDING_TYPE = 'bash_chain_shapes_in_skills'
+
+# Analyze-active (not in quality-gate): the legacy tree pre-dates this rule.
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='safety',
+    scope='file-local',
+)
 
 # ---------------------------------------------------------------------------
 # Detection patterns

@@ -61,7 +61,16 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from _rule_registry import RuleDescriptor
+
 RULE_ID = 'plan-path-in-scripts'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='file-local',
+)
 
 # ---------------------------------------------------------------------------
 # Form A constants

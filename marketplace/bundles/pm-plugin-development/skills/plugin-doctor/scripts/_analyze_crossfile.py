@@ -8,8 +8,17 @@ from collections import defaultdict
 from difflib import SequenceMatcher
 from pathlib import Path
 
+from _rule_registry import RuleDescriptor
+
 # Constants
 CONTENT_DIRS = ['references', 'standards', 'workflows', 'templates']
+
+# Cross-file content analyzer (cmd_cross_file subcommand) — three emitted rules.
+RULE_DESCRIPTORS = [
+    RuleDescriptor(rule_id='duplication', severity='warning', category='content', scope='corpus-relational'),
+    RuleDescriptor(rule_id='extraction', severity='warning', category='content', scope='corpus-relational'),
+    RuleDescriptor(rule_id='terminology', severity='warning', category='style', scope='corpus-relational'),
+]
 DEFAULT_SIMILARITY_THRESHOLD = 0.4
 EXACT_THRESHOLD = 0.95
 MIN_SECTION_LENGTH = 100

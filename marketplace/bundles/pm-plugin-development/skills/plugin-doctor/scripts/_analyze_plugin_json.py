@@ -61,6 +61,7 @@ from pathlib import Path
 
 from _analyze_declared_vs_disk import analyze_declared_vs_disk
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 __all__ = [
     'RULE_ID',
@@ -70,6 +71,16 @@ __all__ = [
 
 RULE_ID = 'plugin-json-orphan-component'
 RULE_NAME = 'analyze_plugin_json_orphans'
+
+# Reverse-direction orphan rule. The forward-direction declared-component-vs-disk
+# descriptor lives in _analyze_declared_vs_disk.py (re-exported here, not
+# re-described, to keep the registry's rule_id set duplicate-free).
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='warning',
+    category='structural',
+    scope='corpus-relational',
+)
 
 _COMPONENT_KEYS = ('agents', 'commands', 'skills')
 

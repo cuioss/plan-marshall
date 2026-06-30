@@ -101,10 +101,19 @@ from _analyze_coverage import parse_declared_tools
 from _analyze_shared import read_frontmatter_disable_list
 from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'allowed-tools-body-drift'
 RULE_NAME = 'analyze_allowed_tools_drift'
 FINDING_TYPE = 'allowed_tools_body_drift'
+
+# Suppressible content scanner (project config / per-file frontmatter).
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='warning',
+    category='structural',
+    scope='file-local',
+)
 
 # ---------------------------------------------------------------------------
 # Known tool vocabulary

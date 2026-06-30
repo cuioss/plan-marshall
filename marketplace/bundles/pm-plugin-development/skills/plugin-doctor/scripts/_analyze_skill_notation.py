@@ -44,9 +44,17 @@ import re
 from pathlib import Path
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'skill-notation-unresolved'
 RULE_NAME = 'analyze_skill_notation'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='corpus-relational',
+)
 
 _SEGMENT = r'[A-Za-z0-9][A-Za-z0-9_-]*'
 # Match a `Skill: {bundle}:{skill}` directive. The directive may be indented

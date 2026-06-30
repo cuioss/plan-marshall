@@ -34,9 +34,18 @@ from _analyze_agentfile_shared import (
     repo_root_from_marketplace_root,
 )
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'agentfile-line-count-over-budget'
 RULE_NAME = 'analyze_agentfile_line_budget'
+
+# Analyze-surfaced agentfile-hygiene backstop (intentionally not in quality-gate).
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='warning',
+    category='content',
+    scope='file-local',
+)
 
 # Single configurable default budget (lines). Source: the rubric's "Always-on
 # line budget" section — an agentfile SHOULD stay at or under this many lines.

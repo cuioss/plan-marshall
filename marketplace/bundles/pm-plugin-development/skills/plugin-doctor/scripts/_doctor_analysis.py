@@ -14,15 +14,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-# Import from analyze.py
-from _analyze import (
-    analyze_markdown_file,
-    analyze_skill_structure,
-    analyze_tool_coverage,
-    analyze_verb_chains,
-)
+from _analyze_coverage import analyze_tool_coverage
 from _analyze_manage_findings_invocation import scan_skill_for_manage_findings_invocation
 from _analyze_markdown import (
+    analyze_markdown_file,
     check_broken_relative_link,
     check_checklist_patterns,
     check_display_detail_violations,
@@ -34,6 +29,8 @@ from _analyze_markdown import (
 from _analyze_notation_staleness import analyze_notation_staleness
 from _analyze_phase2_refine_contract import analyze_phase2_refine_contract
 from _analyze_shared import check_agent_glob_resolver_workaround
+from _analyze_structure import analyze_skill_structure
+from _analyze_verb_chains import analyze_verb_chains
 from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
 from _dep_index import AstCache  # type: ignore[import-not-found]
 from _doctor_shared import Finding  # type: ignore[import-not-found]

@@ -61,11 +61,26 @@ import subprocess
 from pathlib import Path
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'script-call-drift'
 RULE_NAME = 'analyze_script_call_drift'
 FINDING_TYPE_VERB = 'verb_not_in_subcommand_list'
 FINDING_TYPE_FLAG = 'flag_not_in_options'
+
+# Opt-in cluster descriptor. The drift scan is gated atomically by the
+# ``script_call_drift`` --rules token (subprocess --help probing is too heavy
+# for the unconditional gate), so the descriptor's rule_id is that token; the
+# registry derives the opt-in set as ``{d.rule_id for d in registry if d.opt_in}``.
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id='script_call_drift',
+    severity='error',
+    category='structural',
+    scope='corpus-relational',
+    opt_in=True,
+    default_on=False,
+    has_fixer=False,
+)
 
 # ---------------------------------------------------------------------------
 # Invocation extraction

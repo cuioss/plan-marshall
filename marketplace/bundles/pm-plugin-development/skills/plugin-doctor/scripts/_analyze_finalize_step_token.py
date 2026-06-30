@@ -84,10 +84,18 @@ import sys
 from pathlib import Path
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'finalize-step-token-mismatch'
 RULE_NAME = 'scan_finalize_step_token'
 FINDING_TYPE = 'finalize_step_token_mismatch'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='corpus-relational',
+)
 
 # ---------------------------------------------------------------------------
 # Parsing contract (verbatim from PR #629's regression helper)

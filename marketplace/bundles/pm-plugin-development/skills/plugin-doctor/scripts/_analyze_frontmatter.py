@@ -51,8 +51,16 @@ from __future__ import annotations
 from pathlib import Path
 
 from _doctor_shared import Finding, resolve_project_skill_trees
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'recipe-missing-implements'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='file-local',
+)
 RULE_NAME = 'analyze_frontmatter'
 
 _REQUIRED_IMPLEMENTS = 'plan-marshall:extension-api/standards/ext-point-recipe'
