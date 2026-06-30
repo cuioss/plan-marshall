@@ -368,7 +368,7 @@ def enumerate_skill_files(base_path: Path) -> list[SkillFile]:
     """
     files: list[SkillFile] = []
 
-    for plugin_json in base_path.rglob('.claude-plugin/plugin.json'):
+    for plugin_json in sorted(base_path.rglob('.claude-plugin/plugin.json')):
         bundle_dir = plugin_json.parent.parent
         bundle_name = _extract_bundle_name(bundle_dir)
 

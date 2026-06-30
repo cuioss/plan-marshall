@@ -96,7 +96,7 @@ description: A test skill
 # Content here
 """
 
-    has_fm, fm, _fields = extract_frontmatter(content)
+    has_fm, _fm, _fields = extract_frontmatter(content)
 
     assert has_fm is False
 
