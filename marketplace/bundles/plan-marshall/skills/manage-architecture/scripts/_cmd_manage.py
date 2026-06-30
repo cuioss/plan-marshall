@@ -721,7 +721,7 @@ def list_modules(project_dir: str = '.') -> list[str]:
 def cmd_discover(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for discover command."""
     try:
-        return api_discover(args.project_dir, args.force, getattr(args, 'regenerate_description', False))
+        return api_discover(args.project_dir, args.force, args.regenerate_description)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
