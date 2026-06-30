@@ -15,6 +15,7 @@ so an interrupted discover run never leaves a half-written tree behind.
 import argparse
 import re
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -458,7 +459,42 @@ def _empty_module_enrichment() -> dict[str, Any]:
     }
 
 
-def api_discover(project_dir: str = '.', force: bool = False) -> dict[str, Any]:
+def _resolve_repo_root_name(project_path: Path) -> str:
+    """Resolve the stable repository-root basename for project-identity seeding.
+
+    Runs ``git rev-parse --git-common-dir`` rooted at ``project_path``. In a
+    linked worktree the common git dir is the MAIN checkout's ``.git``, whose
+    parent is the canonical repository root — so a first-run discover inside a
+    worktree anchors the project name to the stable repo-root basename rather
+    than the volatile worktree/plan-id basename. Falls back to
+    ``project_path.name`` only when git is unavailable or the path is not
+    inside a work tree (e.g. a non-git test-fixture tree).
+    """
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--git-common-dir'],
+            cwd=str(project_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (OSError, ValueError):
+        return project_path.name
+    if result.returncode != 0:
+        return project_path.name
+    common_dir = result.stdout.strip()
+    if not common_dir:
+        return project_path.name
+    common_path = Path(common_dir)
+    if not common_path.is_absolute():
+        common_path = (project_path / common_path).resolve()
+    # ``--git-common-dir`` points at the main checkout's ``.git``; its parent
+    # is the canonical repository root.
+    repo_root_name = common_path.parent.name
+    return repo_root_name or project_path.name
+
+
+def api_discover(project_dir: str = '.', force: bool = False, regenerate_description: bool = False) -> dict[str, Any]:
     """Run extension API discovery and persist non-derived results per-module.
 
     Writes ``_project.json`` plus per-module ``enriched.json`` stubs into
@@ -474,9 +510,21 @@ def api_discover(project_dir: str = '.', force: bool = False) -> dict[str, Any]:
     that index (the index is the public on-disk record of "which modules
     were observed at the last discover invocation").
 
+    Project-identity preservation: a forced rediscovery (e.g. the
+    ``architecture-refresh`` finalize step, which runs ``discover --force``
+    inside a worktree) must NOT overwrite the curated project ``name`` with the
+    volatile worktree/plan-id basename, nor blank a curated ``description`` /
+    ``description_reasoning``. Each identity field is resolved from a stable
+    anchor: the existing ``_project.json`` when present, else the
+    repository-root basename — never ``project_path.name``. Pass
+    ``regenerate_description=True`` to opt back into blanking the description so
+    a fresh LLM enrichment pass can re-author it.
+
     Args:
         project_dir: Project directory path
         force: Overwrite existing ``project-architecture/`` tree
+        regenerate_description: When True, blank ``description`` /
+            ``description_reasoning`` instead of preserving the existing values
 
     Returns:
         Dict with status, modules_discovered, output_file (the new
@@ -492,6 +540,16 @@ def api_discover(project_dir: str = '.', force: bool = False) -> dict[str, Any]:
             'message': 'Use --force to overwrite',
         }
 
+    # Load the existing descriptor (if any) BEFORE the crawl so the identity
+    # fields can be carried forward. ``load_project_meta`` raises when absent;
+    # an absent descriptor is the first-run case (empty existing meta).
+    existing_meta: dict[str, Any] = {}
+    if project_meta_path.exists():
+        try:
+            existing_meta = load_project_meta(project_dir)
+        except (DataNotFoundError, OSError, ValueError):
+            existing_meta = {}
+
     # Crawl the live worktree filesystem to enumerate modules. A single
     # discover_project_modules call gives us both the module data and
     # extensions_used, avoiding the redundant second discovery pass that
@@ -504,12 +562,29 @@ def api_discover(project_dir: str = '.', force: bool = False) -> dict[str, Any]:
     _post_process_files(modules, project_dir)
     extensions_used = discovery_result.get('extensions_used', [])
 
+    # Resolve the project-identity fields from a stable anchor. ``name`` is the
+    # existing curated name when present, otherwise the repo-root basename —
+    # NEVER ``project_path.name`` (the worktree/plan-id basename under a forced
+    # rediscovery). ``description`` / ``description_reasoning`` are preserved
+    # unless the caller opted into regeneration.
+    existing_name_raw = existing_meta.get('name')
+    existing_name = existing_name_raw.strip() if isinstance(existing_name_raw, str) else ''
+    resolved_name = existing_name or _resolve_repo_root_name(project_path)
+    if regenerate_description:
+        resolved_description = ''
+        resolved_description_reasoning = ''
+    else:
+        description_raw = existing_meta.get('description')
+        reasoning_raw = existing_meta.get('description_reasoning')
+        resolved_description = description_raw if isinstance(description_raw, str) else ''
+        resolved_description_reasoning = reasoning_raw if isinstance(reasoning_raw, str) else ''
+
     # Build the project-meta document. The ``modules`` index here is the
     # canonical record of "which modules existed at last discover".
     project_meta: dict[str, Any] = {
-        'name': project_path.name,
-        'description': '',
-        'description_reasoning': '',
+        'name': resolved_name,
+        'description': resolved_description,
+        'description_reasoning': resolved_description_reasoning,
         'extensions_used': extensions_used,
         'modules': {name: {} for name in sorted(modules.keys())},
     }
@@ -649,7 +724,7 @@ def list_modules(project_dir: str = '.') -> list[str]:
 def cmd_discover(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for discover command."""
     try:
-        return api_discover(args.project_dir, args.force)
+        return api_discover(args.project_dir, args.force, args.regenerate_description)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
@@ -695,6 +770,7 @@ def cmd_derived_module(args: argparse.Namespace) -> dict[str, Any]:
 # ``_cmd_manage`` (e.g. patched callable lookups).
 __all__ = [
     'api_discover',
+    '_resolve_repo_root_name',
     'api_init',
     'api_get_derived',
     'api_get_derived_module',

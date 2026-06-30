@@ -9,21 +9,22 @@ Storage: JSON format (.plan/local/plans/{plan_id}/status.json)
 Output: TOON format for API responses
 
 Usage:
-    python3 manage-status.py create --plan-id EXAMPLE-PLAN --title "Title" --phases 1-init,2-refine,3-outline
-    python3 manage-status.py read --plan-id EXAMPLE-PLAN
-    python3 manage-status.py set-phase --plan-id EXAMPLE-PLAN --phase 2-refine
-    python3 manage-status.py update-phase --plan-id EXAMPLE-PLAN --phase 1-init --status done
-    python3 manage-status.py progress --plan-id EXAMPLE-PLAN
-    python3 manage-status.py metadata --plan-id EXAMPLE-PLAN --set --field change_type --value feature
-    python3 manage-status.py metadata --plan-id EXAMPLE-PLAN --get --field change_type
-    python3 manage-status.py get-context --plan-id EXAMPLE-PLAN
-    python3 manage-status.py list
-    python3 manage-status.py transition --plan-id EXAMPLE-PLAN --completed 1-init
-    python3 manage-status.py archive --plan-id EXAMPLE-PLAN
-    python3 manage-status.py route --phase 1-init
-    python3 manage-status.py get-routing-context --plan-id EXAMPLE-PLAN
-    python3 manage-status.py mark-step-done --plan-id EXAMPLE-PLAN --phase 5-execute --step discovery --outcome done
-    python3 manage-status.py assert-step-recorded --plan-id EXAMPLE-PLAN --phase 6-finalize --step ci-verify --require-terminal
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create --plan-id EXAMPLE-PLAN --title "Title" --phases 1-init,2-refine,3-outline
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read --plan-id EXAMPLE-PLAN
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status set-phase --plan-id EXAMPLE-PLAN --phase 2-refine
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-phase --plan-id EXAMPLE-PLAN --phase 1-init --status done
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status progress --plan-id EXAMPLE-PLAN
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id EXAMPLE-PLAN --set --field change_type --value feature
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id EXAMPLE-PLAN --get --field change_type
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-context --plan-id EXAMPLE-PLAN
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition --plan-id EXAMPLE-PLAN --completed 1-init
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status archive --plan-id EXAMPLE-PLAN
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status route --phase 1-init
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-routing-context --plan-id EXAMPLE-PLAN
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done --plan-id EXAMPLE-PLAN --phase 5-execute --step discovery --outcome done
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert-step-recorded --plan-id EXAMPLE-PLAN --phase 6-finalize --step ci-verify --require-terminal
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status sibling-collision-check --plan-id EXAMPLE-PLAN
 """
 
 import argparse
@@ -45,6 +46,7 @@ from _cmd_planning_lane import (
     cmd_planning_lane_route,
 )
 from _cmd_routing import cmd_get_routing_context, cmd_route, cmd_self_test
+from _cmd_sibling_collision import cmd_sibling_collision
 from _status_core import TITLE_TOKEN_STATES
 from _status_query import (
     cmd_get_context,
@@ -504,6 +506,29 @@ def main() -> int:
     )
     add_plan_id_arg(classification_validate_parser)
     classification_validate_parser.set_defaults(func=cmd_classification_validate)
+
+    # sibling-collision-check (deterministic, read-only init-time gate)
+    sibling_collision_parser = subparsers.add_parser(
+        'sibling-collision-check',
+        help='Flag source-origin / file-overlap collisions against active sibling plans (read-only)',
+        description=(
+            "Init-time semantic sibling-dedup collision gate. Scans every active "
+            "(non-archived) sibling plan and flags two collision classes against "
+            "the plan under init: (1) source-origin match — the same audit / "
+            "lesson / issue source_id backing more than one active plan (a "
+            "same-source fan-out), read from each plan's request.md header; and "
+            "(2) file-path overlap — concrete file paths named in this plan's "
+            "request.md body intersecting a sibling's references.json "
+            "affected_files. Deterministic and read-only — no LLM, no writes. "
+            "Returns source_origin_matches[] and file_overlap_matches[] plus a "
+            "collision_detected boolean; phase-1-init consumes the result and "
+            "raises the user gate (proceed / rename / abort) before phase-2."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(sibling_collision_parser)
+    sibling_collision_parser.set_defaults(func=cmd_sibling_collision)
 
     # self-test
     self_test_parser = subparsers.add_parser('self-test', help='Verify manage-status health', allow_abbrev=False)

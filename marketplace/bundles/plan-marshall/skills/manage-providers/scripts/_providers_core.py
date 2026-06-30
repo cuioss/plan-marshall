@@ -38,6 +38,9 @@ SECRET_PLACEHOLDERS = {
     'username': 'REPLACE_WITH_YOUR_USERNAME',
     'password': 'REPLACE_WITH_YOUR_PASSWORD',
 }
+# Canonical keys managed on a dedicated validation/saving path — reject from --extra
+# so they cannot be overwritten by a passthrough pair.
+RESERVED_EXTRA_KEYS = {'url'}
 _PROJECT_NAME_PATTERN = re.compile(r'[^a-zA-Z0-9._-]')
 
 
@@ -103,6 +106,49 @@ def write_provider_config(skill_name: str, provider_config: dict[str, Any]) -> N
         json.dumps(config, indent=2, ensure_ascii=False) + '\n',
         encoding='utf-8',
     )
+
+
+def apply_extra_passthrough(provider_config: dict[str, Any], extra_pairs: list[str]) -> list[str]:
+    """Apply ``--extra KEY=VALUE`` passthrough into a provider config in place.
+
+    This is the single guard shared by the ``configure`` and ``edit`` credential
+    commands so the two accept and reject ``--extra`` keys identically. Because
+    ``credentials_config`` is git-tracked and non-secret by intent, each pair is
+    validated before it is written:
+
+    - a pair without ``=`` is ignored,
+    - the key is whitespace-stripped and an empty key is skipped,
+    - a key naming a secret field (any key whose lower-cased form is in
+      ``SECRET_PLACEHOLDERS`` — ``token``, ``username``, ``password``) is
+      rejected case-insensitively, so neither ``token`` nor ``Token`` nor
+      ``TOKEN`` can persist a secret into the git-tracked ``marshal.json`` via
+      ``--extra``.
+
+    The supplied ``provider_config`` is mutated in place; persistence
+    (``write_provider_config``) is the caller's responsibility.
+
+    Args:
+        provider_config: The provider-config dict to update in place.
+        extra_pairs: Repeatable ``KEY=VALUE`` strings.
+
+    Returns:
+        The deduplicated list of keys that were applied, in supplied order.
+    """
+    applied_keys: list[str] = []
+    for pair in extra_pairs:
+        if '=' not in pair:
+            continue
+        key, value = pair.split('=', 1)
+        key = key.strip()
+        if not key:
+            continue
+        normalized_key = key.lower()
+        if normalized_key in SECRET_PLACEHOLDERS or normalized_key in RESERVED_EXTRA_KEYS:
+            continue
+        provider_config[key] = value
+        if key not in applied_keys:
+            applied_keys.append(key)
+    return applied_keys
 
 
 # === Path Resolution ===

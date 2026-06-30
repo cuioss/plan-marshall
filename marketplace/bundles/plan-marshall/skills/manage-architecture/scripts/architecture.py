@@ -48,6 +48,15 @@ def main() -> int:
         action='store_true',
         help='Overwrite the existing project-architecture/ tree (atomic tmp+swap)',
     )
+    discover_parser.add_argument(
+        '--regenerate-description',
+        dest='regenerate_description',
+        action='store_true',
+        help=(
+            'Blank the project description/description_reasoning instead of '
+            'preserving the existing curated values (opt back into regeneration)'
+        ),
+    )
 
     # init - Initialize per-module enrichment stubs
     init_parser = subparsers.add_parser(
@@ -254,6 +263,26 @@ def main() -> int:
         ),
     )
 
+    # descriptor-regression-check - Reject regressive project-identity deltas at the commit gate
+    descriptor_regression_parser = subparsers.add_parser(
+        'descriptor-regression-check',
+        help=(
+            'Classify the project-identity delta between a baseline _project.json '
+            '(--pre) and the regenerated descriptor as regressive or benign. '
+            'Returns regressive (bool) plus a violations list.'
+        ),
+        allow_abbrev=False,
+    )
+    descriptor_regression_parser.add_argument(
+        '--pre',
+        required=True,
+        help=(
+            'Path to the baseline-descriptor directory (either a snapshot root '
+            'containing _project.json directly, or a project root whose '
+            '.plan/project-architecture/ subtree holds the baseline)'
+        ),
+    )
+
     # =========================================================================
     # Enrich Commands (Write Enrichment)
     # =========================================================================
@@ -391,6 +420,7 @@ def main() -> int:
     from _cmd_client import (
         cmd_commands,
         cmd_derive_verification,
+        cmd_descriptor_regression_check,
         cmd_diff_modules,
         cmd_files,
         cmd_find,
@@ -451,6 +481,7 @@ def main() -> int:
         'which-module': cmd_which_module,
         'find': cmd_find,
         'diff-modules': cmd_diff_modules,
+        'descriptor-regression-check': cmd_descriptor_regression_check,
     }
 
     if args.command == 'enrich':

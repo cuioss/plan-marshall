@@ -61,7 +61,19 @@ For each pending finding, perform the following sequence sequentially. Every per
 1. **Detect domain** via `architecture which-module --path {finding.file_path}`.
 2. **Resolve the triage extension** via `manage-config resolve-workflow-skill-extension --domain {domain} --type triage`.
 3. **Load the resolved extension** with `Skill: {bundle}:ext-triage-{domain}`. The extension brings its `severity.md`, `suppression.md`, and `pr-comment-disposition.md` into context.
-4. **Decide** per the loaded `pr-comment-disposition.md` table:
+4. **Security-claim classification gate (pre-disposition).** Before applying the disposition table, classify whether the finding is a **security-claim edit**. The classification is **intent-based** — NOT keyword-based and NOT limited to polarity flips. A finding is a security-claim edit when the suggestion modifies a statement describing what a tool, API, command, or boundary *can or cannot do* from a **trust, access, or scope** perspective — for example, a reword that changes the asserted reach of a file-read tool, the privilege a command runs with, or the boundary a path resolver enforces. The classification is independent of the originating bot's own label: a comment a bot files as a "docs nit", "typo", or style suggestion still qualifies when its edit alters a trust / access / scope assertion. This gate is cross-cutting — it lives here in the shared lifecycle and applies to every finding regardless of domain, NOT in any per-domain `pr-comment-disposition.md` table.
+
+   When a finding IS a security-claim edit, the triage MUST route it to the security-expert persona for verification BEFORE any disposition:
+
+   ```text
+   Skill: plan-marshall:persona-security-expert
+   ```
+
+   The security-expert verifies whether the rewritten claim is *true* against the actual code / boundary behaviour. The accept path MUST NOT resolve a security-claim finding as `fixed` or `accepted` without explicit security-expert sign-off. A security-claim edit the persona finds false is closed as `rejected` (post a reply on the thread explaining why the suggested rewrite is incorrect, then resolve the thread) — never silently accepted and never routed to `SUPPRESS` or `AskUserQuestion`. Only after sign-off does the finding fall through to the disposition table below. When the finding is NOT a security-claim edit, proceed directly to the disposition table below.
+
+   **Canonical case (PR #784).** A review bot rewrote an unrestricted-`Read` statement into the false assertion *"Read is WORKTREE-path-scoped"*, inverting the plan's deliberate unrestricted-Read thesis. With no security-claim gate the comment was applied straight through as `fixed`. Under this gate the same comment is classified as a security-claim edit (it changes what the `Read` tool is asserted to be able to access), routed to the security-expert, found false against the actual unrestricted-Read behaviour, and refused acceptance.
+
+5. **Decide** per the loaded `pr-comment-disposition.md` table:
 
    | Decision | Action |
    |----------|--------|
@@ -78,7 +90,7 @@ For each pending finding, perform the following sequence sequentially. Every per
 
    When all three hold, reply on the thread with the rationale, then resolve the thread. `ACCEPT` resolves the finding with `resolution: accepted`.
 
-5. **Resolve the finding** via `manage-findings resolve --hash-id {hash_id} --resolution {fixed|suppressed|accepted|taken_into_account} --detail "{rationale}"`.
+6. **Resolve the finding** via `manage-findings resolve --hash-id {hash_id} --resolution {fixed|suppressed|accepted|taken_into_account} --detail "{rationale}"`.
 
 The PR thread reply / resolve calls use `plan-marshall:tools-integration-ci:ci pr prepare-comment` → `pr thread-reply` → `pr resolve-thread` (see the canonical phase-6-finalize `automated-review.md` standard for the exact command sequences).
 
