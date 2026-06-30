@@ -803,7 +803,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 **Collision detected** (`collision_detected == true`): surface the init-time collision gate to the user via `AskUserQuestion`, naming the colliding sibling plan ids and the collision class(es). Offer exactly three options:
 
 - **Proceed** — accept the overlap and continue with this plan as-is (the sibling and this plan are intentionally distinct despite the shared source / files). Continue to Step 9.
-- **Rename** — this plan is a duplicate keyed on a colliding id; delete it and re-run init with an explicit `--plan-id` that does not collide. Delete via `manage-status delete-plan --plan-id {plan_id}` (mirroring the Step 3 Replace flow), then restart from Step 2 with the new id.
+- **Rename** — delete this plan, then restart init with updated source/files (and a new `--plan-id` if needed) so the sibling-collision check passes. Delete via `manage-status delete-plan --plan-id {plan_id}` (mirroring the Step 3 Replace flow), then restart from Step 2.
 - **Abort** — this plan duplicates an already-active sibling and should not exist; delete it and stop plan creation. Delete via `manage-status delete-plan --plan-id {plan_id}` and return the abort TOON below without proceeding to Step 9.
 
 Record the user's choice to the decision log (substitute `{decision_summary}` with the chosen option and the matched sibling ids):
