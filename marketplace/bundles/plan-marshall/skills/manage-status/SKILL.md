@@ -748,6 +748,40 @@ blocked: false
 
 `blocked` is always `false` — the gate is advisory. When no mismatch fires, `mismatch_count: 0` and `findings_emitted: 0`.
 
+### sibling-collision-check
+
+Init-time **semantic sibling-dedup collision gate** — scans every active (non-archived) sibling plan and flags two collision classes against the plan under init. **Deterministic, read-only; zero LLM, zero writes.** Surfaced through a new phase-1-init step (after `planning-lane route`); the step consumes the result and raises the user gate (proceed / rename / abort) BEFORE phase-2, rather than deferring the discovery to finalize.
+
+Two collision classes are flagged, in priority order:
+
+- **source-origin match** (primary) — the same audit / lesson / issue `source_id` backs more than one active plan (a same-source fan-out). This plan's `(source, source_id)` is read from its `request.md` header and compared against every active sibling's header; a sibling whose non-empty `source_id` equals this plan's `source_id` is flagged. A description-sourced plan (no `source_id`) can never trip this check.
+- **file-path overlap** (secondary) — concrete repo-relative file paths named in this plan's `request.md` body intersect a sibling's `references.json` `affected_files`. Path extraction is deterministic (a repo-relative path regex requiring a `/` segment and a trailing extension) and the match is exact normalized-string equality, so the check raises zero false positives.
+
+Active-plan enumeration mirrors `list` — main-checkout plans merged with worktree-resident plans (a phase-5+ plan moved into its worktree), deduped by id.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status sibling-collision-check \
+  --plan-id {plan_id}
+```
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-plan
+source: lesson
+source_id: 2026-06-29-23-002
+active_sibling_count: 3
+source_origin_matches[1]{plan_id,source,source_id}:
+  sibling-plan,lesson,2026-06-29-23-002
+source_origin_match_count: 1
+file_overlap_matches[1]{plan_id,overlap_count,overlapping_files}:
+  other-plan,2,marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py;test/plan-marshall/manage-status/test_sibling_collision.py
+file_overlap_match_count: 1
+collision_detected: true
+```
+
+`overlapping_files` joins the per-row file list with `;` (paths never contain `;`) so each row stays a single TOON column. When no collision fires, both match lists are empty and `collision_detected: false`.
+
 ### self-test
 
 Verify manage-status health (checks imports, phase routing table, directory access).
@@ -800,6 +834,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `planning-lane route` | `--plan-id [--lane-override deep\|light] [--persist]` | Deterministic planning-lane router. Resolves `planning_lane ∈ {light, deep}` from the DQ1 signal set (S1–S6) plus a `request.md` regex with zero discovery; `plan.phase-1-init.deep_lane` (`always`/`never`/`auto`) short-circuits the signals. Default is light; any deep signal forces deep. With `--persist`, writes `status.metadata.planning_lane`. Emits one decision-log line naming every signal value and the winning predicate. |
 | `planning-lane escalate` | `--plan-id --trigger explosion\|premise\|cross_cutting [--persist]` | One-way light→deep ratchet. Sets `planning_lane=deep` + `lane_escalated=true` + `escalation_trigger`; the flag is sticky and there is no downgrade path. With `--persist`, writes the mutation to `status.metadata`. |
 | `classification-validate` | `--plan-id` | Deterministic classification-validation gate (flag-not-block). Cross-checks `change_type` / `scope_estimate` against cheap request signals; flags `feature_as_bug_fix` (bug_fix stamp over a non-ambiguous feature narrative) and `non_empty_affected_files_with_null_scope`, recording a `warning` `anti-pattern` Q-Gate finding against `2-refine` per mismatch. NEVER blocks routing; runs automatically as a pre-route pass inside `planning-lane route`. |
+| `sibling-collision-check` | `--plan-id` | Init-time semantic sibling-dedup collision gate (deterministic, read-only). Scans active (non-archived) sibling plans and flags `source_origin_matches` (same audit / lesson / issue `source_id` backing more than one active plan) and `file_overlap_matches` (concrete request-body paths intersecting a sibling's `references.json` `affected_files`); returns a `collision_detected` boolean. phase-1-init raises the user gate (proceed / rename / abort) before phase-2. |
 | `self-test` | _(none)_ | Verify manage-status health |
 
 ---
@@ -961,6 +996,13 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status planni
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status classification-validate \
+  --plan-id PLAN_ID
+```
+
+### sibling-collision-check
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status sibling-collision-check \
   --plan-id PLAN_ID
 ```
 

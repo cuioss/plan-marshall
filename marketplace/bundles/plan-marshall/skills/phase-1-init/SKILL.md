@@ -779,6 +779,51 @@ Parse `planning_lane` from the returned TOON (`light` or `deep`) and carry it in
 
 See `manage-status` Canonical invocations → `planning-lane` and `manage-status` § `classification-validate` for the full subcommand contracts (signal table, the one-way escalate verb, the two mismatch classes, and the decision-log shape).
 
+### Step 8c: Sibling-Dedup Collision Gate
+
+Before the plan leaves init, check it against every concurrently-active sibling plan for a duplication collision, and gate the user at init rather than deferring the discovery to finalize. The recurring failure this closes: the same audit source fanned out across multiple plans, or two plans targeting the same files, surfaces (if at all) only at finalize — far too late to cheaply re-scope.
+
+Run the deterministic, read-only collision verb. It is heuristic-free — no LLM dispatch, no writes — and mirrors `planning-lane route`'s zero-discovery cheap-read model:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status sibling-collision-check \
+  --plan-id {plan_id}
+```
+
+Parse the returned TOON. The relevant fields are `collision_detected` (bool), `source_origin_matches[]` (each `{plan_id, source, source_id}` — a sibling backed by the same audit / lesson / issue `source_id`), and `file_overlap_matches[]` (each `{plan_id, overlap_count, overlapping_files}` — a sibling whose `references.json` `affected_files` intersect concrete paths named in this plan's `request.md` body). The two checks are ordered: source-origin is primary, file-overlap secondary. See `manage-status` § `sibling-collision-check` and `manage-status` Canonical invocations → `sibling-collision-check` for the full subcommand contract.
+
+**No collision** (`collision_detected == false`): log the clean result and continue to Step 9.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-1-init) Sibling-collision check clean: no source-origin or file-overlap match against {active_sibling_count} active sibling(s)"
+```
+
+**Collision detected** (`collision_detected == true`): surface the init-time collision gate to the user via `AskUserQuestion`, naming the colliding sibling plan ids and the collision class(es). Offer exactly three options:
+
+- **Proceed** — accept the overlap and continue with this plan as-is (the sibling and this plan are intentionally distinct despite the shared source / files). Continue to Step 9.
+- **Rename** — this plan is a duplicate keyed on a colliding id; delete it and re-run init with an explicit `--plan-id` that does not collide. Delete via `manage-status delete-plan --plan-id {plan_id}` (mirroring the Step 3 Replace flow), then restart from Step 2 with the new id.
+- **Abort** — this plan duplicates an already-active sibling and should not exist; delete it and stop plan creation. Delete via `manage-status delete-plan --plan-id {plan_id}` and return the abort TOON below without proceeding to Step 9.
+
+Record the user's choice to the decision log (substitute `{decision_summary}` with the chosen option and the matched sibling ids):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level WARNING \
+  --message "(plan-marshall:phase-1-init) Sibling-collision gate: {decision_summary}"
+```
+
+On the **Abort** branch, after deleting the plan, return:
+
+```toon
+status: aborted
+reason: sibling_collision
+plan_id: {plan_id}
+colliding_siblings: {comma_separated_sibling_ids}
+message: "Plan deleted; creation aborted because it duplicates an already-active sibling plan."
+```
+
 ### Step 9: Store Domains in References
 
 Store the detected domain(s) in references.json:
