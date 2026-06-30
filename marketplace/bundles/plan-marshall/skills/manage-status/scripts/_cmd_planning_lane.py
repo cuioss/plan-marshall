@@ -369,13 +369,13 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
         evaluation = {
             'lane': lane,
             'fired_signals': ['deep_lane:always'],
-            'signals': {},
+            'signals': signal_evaluation['signals'],
             'profile': profile,
         }
     elif ceremony == 'never':
         lane = LIGHT
         decision = 'plan.phase-1-init.deep_lane=never'
-        evaluation = {'lane': lane, 'fired_signals': [], 'signals': {}, 'profile': profile}
+        evaluation = {'lane': lane, 'fired_signals': [], 'signals': signal_evaluation['signals'], 'profile': profile}
     else:
         evaluation = signal_evaluation
         lane = evaluation['lane']
@@ -391,7 +391,8 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
         # Persist the projected posture as the init-time default; the operator's
         # final choice (if it overrides the recommendation) is written by the
         # phase-1-init dialogue via `manage-status metadata`.
-        status['metadata']['execution_profile'] = recommended_posture
+        if 'execution_profile' not in status['metadata']:
+            status['metadata']['execution_profile'] = recommended_posture
         if lane_override in (DEEP, LIGHT):
             status['metadata']['planning_lane_override'] = lane_override
         write_status(plan_id, status)

@@ -133,6 +133,8 @@ def _validate_lane_block(lane: dict[str, str]) -> list[str]:
     prunable_when = lane.get('prunable_when')
     if cls == 'prunable' and not prunable_when:
         defects.append('`class: prunable` requires a `prunable_when` predicate id')
+    elif cls is not None and cls != 'prunable' and prunable_when:
+        defects.append('`prunable_when` is only allowed when `class: prunable`')
 
     return defects
 

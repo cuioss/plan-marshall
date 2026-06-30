@@ -563,7 +563,7 @@ DEFAULT_PLAN_EXECUTE = {
     # (_tasks_envelope.py, via manage-tasks pack-envelopes) reads this table at
     # PLAN time to map a task's derived cost_size to its predicted_cost_tokens.
     # The four original magnitudes (S≈25K / M≈60K / L≈130K / XL≈260K) are
-    # unchanged and calibrated to the forensic 134K–392K per-dispatch range; XS≈5K
+    # unchanged and calibrated to the forensic 134K-392K per-dispatch range; XS≈5K
     # labels deterministic ≈0-token bookkeeping and XXL≈520K the heaviest elements
     # (lane-elements, execute on a substantial plan). These are the tunable
     # defaults; raise/lower them in marshal.json to recalibrate the size model

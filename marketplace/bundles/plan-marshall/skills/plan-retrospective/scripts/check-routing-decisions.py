@@ -56,7 +56,7 @@ DECISION_LOG_RELPATH = ('logs', 'decision.log')
 # predicate re-evaluation (mirrors check-manifest-consistency).
 _BOOKKEEPING_PREFIXES = ('.plan/', '.claude/')
 _DOCS_SUFFIXES = ('.md', '.adoc')
-_TEST_DIR_TOKENS = ('/test/', '/tests/')
+_TEST_DIR_TOKENS = ('test/', '/test/', 'tests/', '/tests/')
 _TEST_NAME_RE = re.compile(
     r'(^|/)(test_[^/]+\.py|[^/]+_test\.py|[^/]+Test\.java|[^/]+\.test\.js|[^/]+\.spec\.js)$'
 )
@@ -68,7 +68,6 @@ _TEST_NAME_RE = re.compile(
 _PRUNABLE_PREDICATES = {
     'sonar-roundtrip': 'no_code_delta',
     'finalize-step-simplify': 'no_code_delta',
-    'finalize-step-security-audit': 'no_code_delta',
 }
 
 # The lane_resolution decision-log caller tag.
@@ -266,7 +265,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     metadata = load_status_metadata(plan_dir)
     lane_decision_entries = load_decision_lane_entries(plan_dir)
     footprint = load_diff_files(args.diff_file)
-    have_footprint = bool(args.diff_file)
+    have_footprint = bool(footprint)
 
     mis_prune_checks = evaluate_mis_prunes(manifest, footprint, have_footprint)
     cost_preview = evaluate_cost_preview(manifest, metadata)
@@ -284,7 +283,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'plan_dir': str(plan_dir),
         'manifest_present': True,
         # Recorded routing decisions (facts).
-        'posture': metadata.get('execution_profile', 'full'),
+        'posture': metadata.get('execution_profile'),
         'planning_lane': metadata.get('planning_lane'),
         # Deterministic predicate re-evaluation.
         'mis_prune_checks': mis_prune_checks,

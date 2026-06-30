@@ -164,7 +164,7 @@ Four `marshal.json` knobs govern the mechanism:
 | `plan.phase-1-init.lane_selection` | `ask` | Whether init PROMPTS for the posture (`ask`) or takes the computed `auto` projection silently (`auto`). Mirrors the `deep_lane` / `finalize_without_asking` ask/auto family.
 | `plan.phase-<phase>.steps.<step>.lane` | _(per element)_ | Per-element override pinning any single lane element, value ∈ `off` \| `minimal` \| `auto` \| `full` \| `ask` (`off` = never run; `minimal` = force-keep in every posture; `ask` = always prompt). Nested under the owning step in the keyed map, like other step-owned params. The shipped default lives in each element's frontmatter `lane:` block; this override is the project-level pin.
 | `plan.phase-1-init.lane_prune_thresholds` | `{confidence_complete: 95, linear_change_max_deliverables: 1}` | The tunable bounds for `auto`'s numeric prune predicates — `confidence_complete` (prune `refine` when the post-init confidence proxy is ≥ this value, int 0–100, matching the refine `confidence_threshold`) and `linear_change_max_deliverables` (treat the plan as a linear change, pruning 4-plan decomposition, when the deliverable count is ≤ this value). Tighten to prune more aggressively, loosen to keep more steps.
-| `plan.phase-5-execute.cost_size_token_table` | `{XS: 5K, …, XXL: 520K}` | The six-size token table the dialogue sums for the per-posture cost preview — see <<execution-profile-lane-selection,the cost-size table above>> (shared with the task bin-packer).
+| `plan.phase-5-execute.cost_size_token_table` | `{XS: 5K, …, XXL: 520K}` | The six-size token table the dialogue sums for the per-posture cost preview — see <<per-envelope-packing-budget,the cost-size token table below>> (shared with the task bin-packer).
 |===
 
 [NOTE]

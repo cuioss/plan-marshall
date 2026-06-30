@@ -130,7 +130,7 @@ changed) is a standalone improvement, not part of this contract; the lane only *
 | init · outline · plan · execute · push · create-pr · ci-verify · branch-cleanup · record-metrics · print-phase-breakdown · archive | core | minimal |
 | deploy-target · sync-plugin-cache *(meta-only)* | derived-state | minimal |
 | finalize-step-sync-baseline | core | minimal |
-| lessons-capture | core | **minimal** |
+| lessons-capture | core | minimal |
 | lessons-housekeeping | prunable | **minimal** |
 | refine · 4-plan task-decomposition · simplify · sonar-roundtrip | prunable | auto |
 | outline/plan q-gate · self-review · automated-review · plugin-doctor *(meta)* | adversarial | auto |

@@ -193,7 +193,9 @@ class RuleRunner:
         # ``prunable_when`` requirement for ``class: prunable``, and a valid
         # ``tier``) consumed by the manage-execution-manifest lane resolver. The
         # enums are owned by extension-api/standards/ext-point-lane-element.md.
-        emit('analyze_lane_frontmatter', scoped(analyze_lane_frontmatter(root)))
+        # Routed through ``suppressed`` so per-file ``plugin-doctor-disable`` and
+        # project-config exemptions apply (CodeRabbit PR #811 review fix).
+        emit('analyze_lane_frontmatter', suppressed(analyze_lane_frontmatter(root)))
         emit('analyze_skill_mode', scoped(analyze_skill_mode(root)))
         emit(
             'analyze_persona_profile_uniqueness',
