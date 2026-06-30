@@ -215,6 +215,8 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+**Execution-profile routing into the manifest.** The `manage-execution-manifest compose` step above is the single resolver for the execution-profile posture (`minimal` / `auto` / `full`). `phase-1-init`'s planning-lane router projects a recommended posture over its signals and the init posture dialogue persists the chosen value to `status.metadata.execution_profile`; `compose` then reads that posture and resolves each finalize element's `lane:` frontmatter block to produce the posture-pruned `phase_6.steps`. The profile is a distinct axis from the `planning_lane` (`light` / `deep`) depth decision — the two compose but do not coerce each other (`deep_lane: always` forces a deep planning lane without forcing a `full` profile). `compose` runs twice — provisional at init, idempotent re-compose with firm signals at Step 8b — so the posture-dialogue preview (`lanes preview`) and the executed finalize flow cannot diverge. See [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "Execution-profile lane resolution".
+
 ### 2.5 phase-5-execute
 
 ```text

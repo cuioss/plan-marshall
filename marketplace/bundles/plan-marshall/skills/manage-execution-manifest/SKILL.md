@@ -154,6 +154,36 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 **Output** (TOON): the full manifest content (see schema above), wrapped with `status: success` and echoed `plan_id`.
 
+### lanes preview
+
+Resolve all three execution-profile postures (`minimal` / `auto` / `full`) over the configured phase-6 candidate step list and return them — with per-posture step counts and summed token costs — in **one TOON**. This is the single projection the `phase-1-init` posture dialogue reads to show each posture's concrete kept-step set and cost preview; because it shares `_apply_lane_resolution` with `compose`, the dialogue preview and the executed flow cannot diverge. The lane contract (the closed `class` enum, the class→default-tier table, the resolution lattice) is owned by [`extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md).
+
+`full` and `minimal` are pure config projections (the lane cutoff over the configured candidates); `auto` additionally drops every `full`-tier element. Each posture's `cost_sum_tokens` is `Σ(resolved element cost_size → cost_size_token_table)` (the six-size table, default `{XS:5K, S:25K, M:60K, L:130K, XL:260K, XXL:520K}`, overridable at `plan.phase-5-execute.cost_size_token_table`).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  lanes preview --plan-id {plan_id}
+```
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+lanes:
+  minimal:
+    phase_6_steps[6]: [ push, create-pr, ci-verify, branch-cleanup, record-metrics, archive-plan ]
+    phase_6_steps_count: 6
+    cost_sum_tokens: 30000
+  auto:
+    phase_6_steps[12]: [ ... ]
+    phase_6_steps_count: 12
+    cost_sum_tokens: 700000
+  full:
+    phase_6_steps[14]: [ ... ]
+    phase_6_steps_count: 14
+    cost_sum_tokens: 960000
+```
+
 ### record-step
 
 Append one per-step execution record (outcome + token attribution) to the manifest's `execution_log[]` section. The manifest MUST already exist (composed by `phase-4-plan` Step 8b); `record-step` returns `file_not_found` otherwise.
@@ -334,6 +364,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 |---------|------------|-------------|
 | `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count] [--aspect]` | Compose and write execution.toon |
 | `read` | `--plan-id` | Read manifest as TOON |
+| `lanes preview` | `--plan-id [--phase-6-steps]` | Resolve the minimal/auto/full phase-6 step sets + cost sums in one TOON (the posture-dialogue projection) |
 | `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome {executed\|skipped\|error} [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon |
 | `step-params get` | `--plan-id --phase {5-execute\|6-finalize} --step-id` | Return a step's snapshotted param object from the manifest (plan-local read) |
 | `step-params set` | `--plan-id --phase {5-execute\|6-finalize} --step-id --param --value` | Write a per-plan param override into the manifest snapshot |
@@ -388,6 +419,13 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest read \
   --plan-id PLAN_ID
+```
+
+### lanes preview
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest lanes preview \
+  --plan-id PLAN_ID [--phase-6-steps PHASE_6_STEPS]
 ```
 
 ### record-step
@@ -482,6 +520,18 @@ After the seven-row matrix produces the final `phase_6.steps` (and after `execut
 `always` is the only path that re-adds a step the `scope_gated_finalize` pre-filter dropped — an operator-set `always` overrides the implicit scope gate. Of the three gates only `qgate` is a flat phase-local knob (`marshal.json::plan.phase-6-finalize.qgate`); `self_review` and `simplify` are step-owned params read via `_read_step_owned_knob` from their owning steps (`project:finalize-step-pre-submission-self-review` and `default:finalize-step-simplify` respectively). The transform NEVER touches `automated-review`, so the bot-review invariant (`bot_enforcement_guard`) is preserved verbatim regardless of any gate value.
 
 The composer emits one `decision.log` line per forced change (canonical prefix `(plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection`) and surfaces `ceremony_finalize_gates`, `ceremony_finalize_forced_in`, and `ceremony_finalize_forced_out` in the `compose` result for observability. The full rule (gate→step map, `automated-review` carve-out, post-matrix-transform rationale) is documented in [standards/decision-rules.md](standards/decision-rules.md) § "plan.phase-6-finalize Selection". The gate schema itself (run-at-all enum, defaults) is owned by [`manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) § phase-6-finalize.
+
+### Execution-profile lane resolution (`lane_resolution`)
+
+After the change-type / scope pre-filters and `ceremony_finalize_selection` produce the `phase_6.steps` list, and **before** the bot-enforcement guard, the composer applies the execution-profile lane cutoff. The posture is read from `status.metadata.execution_profile` (absent → `full` → no pruning, preserving the pre-lane composition path for every plan that never chose a posture). Each lane-participating element self-declares a `lane:` frontmatter block (`class` / `tier` / `prunable_when` / `cost_size`); the closed enums and the class→default-tier table are owned by [`extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md). Per element the composer resolves the effective tier (per-element `marshal.json` `lane` override ▸ declared `lane.tier` ▸ class default) and keeps the element iff `effective_tier ⊑ posture` on `minimal ⊏ auto ⊏ full`:
+
+- `minimal` keeps only the tier-`minimal` floor (`core` / `derived-state` plus the `minimal`-deviated lessons steps);
+- `auto` additionally keeps tier-`auto` elements and drops tier-`full` ones (`security-audit`, `plan-retrospective`);
+- `full` keeps everything (a no-op).
+
+An element with no `lane:` block is not lane-participating and is always kept. A weakening `off` override of a `derived-state` / `core` floor element is **honored but emits a correctness warning** (§5 of the lane-selection design — `minimal` must never *silently* drop required derived state). Running before the bot-enforcement guard means a `minimal` posture that drops `automated-review` is re-added for GitHub/GitLab plans (the adversarial-floor / bot-review invariant). The q-gate is never a phase-6 finalize step, so it is never lane-pruned. The composer emits one `decision.log` line when at least one step is dropped (canonical prefix `(plan-marshall:manage-execution-manifest:compose) lane_resolution`), one line per correctness warning, and surfaces `execution_profile`, `lane_dropped`, and `lane_warnings` in the `compose` result. The full rule is documented in [standards/decision-rules.md](standards/decision-rules.md) § "Execution-profile lane resolution".
+
+**Twice-compose timing.** `compose` runs twice (lane design §4.5): once at **init** (`phase-1-init`, provisional `auto` footprint prunes) and once at **end-of-phase-4** (idempotent re-compose with firm signals). The posture and the `minimal`/`full` shapes are fixed at init and never change on the second call; only `auto`'s footprint-gated prunes can move (in the safe, more-validation direction), and that refinement is **logged, never re-prompted**.
 
 ---
 

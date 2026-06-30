@@ -130,3 +130,27 @@ def fake_plugin_dev_extension(documentation: list[str] | None = None) -> FakeExt
         claims=claims,
         specificity=specificity,
     )
+
+
+def fake_lane_blocks() -> dict[str, dict[str, str]]:
+    """Return canned ``lane:`` frontmatter blocks for the lane-resolver tests.
+
+    A reusable fixture spanning all four ``lane.class`` values and both tier
+    deviations, keyed by phase-6 step id. The lane-resolver tests monkeypatch
+    ``manage-execution-manifest._resolve_element_lane`` to return blocks from this
+    table so the posture cutoff is exercised deterministically without depending
+    on the real frontmatter of the shipped finalize-step docs. The cost sizes
+    (``XS``/``L``) drive the ``lanes preview`` cost-sum assertions (XS=5K, L=130K).
+    """
+    return {
+        'push': {'class': 'core', 'tier': 'minimal', 'cost_size': 'XS'},
+        'archive-plan': {'class': 'core', 'tier': 'minimal', 'cost_size': 'XS'},
+        'sonar-roundtrip': {
+            'class': 'prunable', 'tier': 'auto', 'prunable_when': 'no_code_delta', 'cost_size': 'L',
+        },
+        'finalize-step-security-audit': {'class': 'adversarial', 'tier': 'full', 'cost_size': 'L'},
+        'plan-marshall:plan-retrospective': {'class': 'prunable', 'tier': 'full', 'cost_size': 'L'},
+        'project:finalize-step-deploy-target': {
+            'class': 'derived-state', 'tier': 'minimal', 'cost_size': 'XS',
+        },
+    }

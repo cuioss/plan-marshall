@@ -42,6 +42,10 @@ The in-manifest `verification_steps` / `steps` arrays carry the ordered step-id 
   `plan-marshall:extension-api/standards/ext-point-execution-context-workflow`
   contract.
 
+## `phase_6.steps` is the lane-resolved set
+
+The persisted `phase_6.steps` array is the **execution-profile-resolved** finalize-step set, not the raw configured candidate list. `compose` reads the chosen posture from `status.metadata.execution_profile` (absent → `full` → no pruning) and applies the lane cutoff over each element's `lane:` frontmatter block (`class` / `tier` / `cost_size`) — the contract is owned by [`../../extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md). The resolution rules, the twice-compose timing, and the q-gate / derived-state invariants are documented in [decision-rules.md](decision-rules.md) § "Execution-profile lane resolution". Because the same `lanes preview` projection feeds both the `phase-1-init` posture dialogue and this composed manifest, the previewed step set and the executed step set cannot diverge for the config-only part.
+
 ## `step_params` — per-step param snapshot + per-plan override
 
 `phase_5.step_params` and `phase_6.step_params` are id-keyed maps (one entry per SELECTED step, keyed by the bare in-manifest step id) carrying each step's resolved per-step param object. They implement the **plan-local tier** of the two-tier source model:
