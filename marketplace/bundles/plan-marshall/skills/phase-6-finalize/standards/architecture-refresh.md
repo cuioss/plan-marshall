@@ -39,7 +39,7 @@ The step flow is:
 
 1. Read inputs (run-config knobs + change_type).
 2. Extract the `origin/main` architecture baseline (Tier-0-enabled only); short-circuit when `origin/main` carries no committed baseline.
-3. Tier 0 — `discover --force`, diff against the extracted baseline, commit when `.plan/project-architecture` is dirty on disk.
+3. Tier 0 — `discover --force`, diff against the extracted baseline, reject a regressive descriptor delta at the commit gate, then commit when `.plan/project-architecture` is dirty on disk.
 4. Tier 1 — LLM re-enrichment of the affected modules (`added ∪ removed`).
 5. Mark step complete with `--display-detail` summarising the outcome.
 
@@ -165,9 +165,38 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:phase-6-finalize:architecture-refresh) Tier 0 — .plan/project-architecture clean after discover, no commit needed"
 ```
 
+### 3c.5. Regression gate — reject regressive descriptor deltas
+
+When `git status --porcelain .plan/project-architecture` is non-empty there is a regenerated delta queued for commit. Before committing it, inspect WHAT changed in the project-identity fields — the commit gate must refuse a *regressive* delta even though the porcelain status is non-empty. A regressive delta is a regenerated `name` that lost the curated value (canonically, overwritten with the worktree/plan-id basename) or a `description` / `description_reasoning` blanked from a previously-curated value. This is the defense-in-depth backstop for the `api_discover` identity-preservation fix: even if a future source path reintroduces the corruption, the commit gate refuses to ship it onto the plan's PR.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  descriptor-regression-check --pre {baseline_dir} --project-dir {worktree_path}
+```
+
+Parse `regressive` (bool) and `violations[]` from the TOON output. `{baseline_dir}` is the same extracted-baseline directory Step 3b passed to `diff-modules`.
+
+- **`regressive: false`** → the delta is benign (the module index shifted, project identity intact). Proceed to 3d and commit.
+- **`regressive: true`** → do NOT commit, do NOT push. The regenerated descriptor lost curated project identity. Log an ERROR naming the violated fields, leave the regressive descriptor uncommitted in the worktree, mark the step `outcome failed`, and return — do NOT abort the finalize pipeline (the next plan retries from a clean state once the source path is repaired):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR \
+  --message "[ERROR] (plan-marshall:phase-6-finalize:architecture-refresh) Regressive descriptor delta refused — {violation_fields}; leaving .plan/project-architecture uncommitted"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  mark-step-done --plan-id {plan_id} --phase 6-finalize \
+  --step architecture-refresh --outcome failed \
+  --display-detail "regressive descriptor delta refused — {violation_fields}"
+```
+
+`{violation_fields}` is the comma-separated list of `violations[].field` values (e.g., `name, description`).
+
 ### 3d. Non-empty status — commit the refresh
 
-When `git status --porcelain .plan/project-architecture` is non-empty, the regenerated descriptors are dirty in the worktree. Stage and commit the architecture path only:
+When `git status --porcelain .plan/project-architecture` is non-empty AND the 3c.5 regression gate returned `regressive: false`, the regenerated descriptors are dirty in the worktree and safe to ship. Stage and commit the architecture path only:
 
 ```bash
 git -C {worktree_path} add .plan/project-architecture
@@ -436,6 +465,7 @@ The `--display-detail` strings are subject to the output-template contract (≤8
 | `git archive origin/main .plan/project-architecture` exits non-zero | `origin/main` carries no committed architecture baseline (the pathspec matched nothing). This is NOT a failure — treat as Branch A: mark the step done with `--display-detail "skipped — no committed origin/main architecture baseline"`, return without running discover / diff / commit. |
 | `discover --force` returns `status: error` | Log ERROR, mark the step `outcome failed` with `--display-detail "discover failed — see work.log"`, return — do NOT abort the finalize pipeline. The next plan will retry from a clean state. |
 | `diff-modules --pre` returns `error: snapshot_not_found` | The extracted baseline lacked `_project.json` — equivalent to no committed baseline. Treat as Branch A (NOT a failure): mark the step done with `--display-detail "skipped — no committed origin/main architecture baseline"`. |
+| `descriptor-regression-check` returns `regressive: true` | The regenerated descriptor lost curated project identity (name overwritten with the worktree/plan-id basename, or description/description_reasoning blanked). Do NOT commit or push. Log ERROR, mark the step `outcome failed` with `--display-detail "regressive descriptor delta refused — {fields}"`, leave `.plan/project-architecture` uncommitted, and return — do NOT abort the finalize pipeline. The next plan retries from a clean state once the source path is repaired. |
 | `git push` fails | Log ERROR, mark the step `outcome failed` with `--display-detail "push failed — see work.log"`. The `automated-review` step will not see the architecture commit; the user can push manually before merging. |
 | `architecture enrich` fails | Log ERROR, fall back to Branch F (PR note) — do NOT mark the whole step failed. The deterministic refresh has already shipped; the user can re-enrich manually via `/marshall-steward` Step 13. Mark the step done with `--display-detail "refreshed; enrich failed — see work.log"`. |
 | `AskUserQuestion` aborted | Treat the same as `Skip — note in PR` (Branch F). The user actively backing out is informationally equivalent to declining the prompt. |
@@ -485,6 +515,11 @@ else:
         log: "Tier 0 — clean after discover, no commit needed"
         # fall through to Tier 1 with affected as computed
     else:
+        reg := architecture descriptor-regression-check --pre {baseline_dir} --project-dir {worktree_path}
+        if reg.regressive:
+            log ERROR: "Regressive descriptor delta refused — {fields}"
+            mark-step-done outcome=failed detail="regressive descriptor delta refused — {fields}"
+            return    # leave .plan/project-architecture uncommitted
         git -C {worktree_path} add .plan/project-architecture
         git -C {worktree_path} commit -m "chore(architecture): refresh derived data after {plan-title}"
         git -C {worktree_path} push
@@ -542,7 +577,7 @@ switch tier_1:
 
 - `phase-1-init/SKILL.md` — phase-1-init does not snapshot the architecture descriptor; this step derives its pre-baseline from the committed `origin/main` tree instead.
 - `manage-run-config/SKILL.md` `architecture-refresh` subcommand group — the source of truth for tier-0 / tier-1 knob semantics.
-- `manage-architecture/standards/client-api.md` `discover` and `diff-modules` — the deterministic backbone of Tier 0, including the derived-less-baseline classification note (every common module reports `changed` against a git baseline; consume `added` / `removed` only).
+- `manage-architecture/standards/client-api.md` `discover`, `diff-modules`, and `descriptor-regression-check` — the deterministic backbone of Tier 0, including the derived-less-baseline classification note (every common module reports `changed` against a git baseline; consume `added` / `removed` only) and the commit-gate regression predicate that refuses a regressive project-identity delta.
 - `manage-architecture` `enrich` verb — the LLM re-enrichment surface used by Tier 1 `auto` and `prompt`-accepted paths.
 - `phase-6-finalize/standards/output-template.md` — the renderer that consumes `--display-detail` from the Branch A–F templates above.
 - `phase-6-finalize/standards/required-steps.md` — declares `architecture-refresh` as a required step for the `phase_steps_complete` handshake.

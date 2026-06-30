@@ -488,6 +488,7 @@ npm,python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-ar
 | `which-module` | Reverse path lookup | Owning module for a given path |
 | `find` | Glob inventory search | Cross-module path matches |
 | `diff-modules` | Snapshot diff | `added`/`removed`/`changed`/`unchanged` module buckets |
+| `descriptor-regression-check` | Commit-gate regression predicate | `regressive` (bool) + `violations` list |
 
 **Default vs Full**:
 - Default: Key packages, key dependencies, proposed skill domains (no reasoning)
@@ -810,6 +811,78 @@ path: /does/not/exist
   `unchanged`
 - Drive deliverable scoping: a change touching `derived.json` in N
   modules implies N module-scoped tasks
+
+---
+
+### descriptor-regression-check
+
+Classify the project-identity delta between a baseline `_project.json` and
+the current (regenerated) descriptor as **regressive** or **benign**. The
+commit-gate backstop for `discover --force` identity preservation: the
+`architecture-refresh` finalize step calls this verb before committing a
+regenerated descriptor and refuses to commit when the delta is regressive
+(see [`phase-6-finalize/standards/architecture-refresh.md`](../../phase-6-finalize/standards/architecture-refresh.md)
+§ 3c.5).
+
+```bash
+architecture.py descriptor-regression-check --pre PATH
+```
+
+**Options**:
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--pre` | Yes | — | Path to the baseline descriptor. Either a snapshot root containing `_project.json` directly, or a project root whose `.plan/project-architecture/` subtree holds the baseline. Resolved with the same two-shape rule as `diff-modules --pre`. |
+
+**Comparison surface**: the baseline side reads `_project.json` from the
+`--pre` snapshot; the current side reads the live project's
+`.plan/project-architecture/_project.json` (the regenerated descriptor).
+Only the three project-identity fields are inspected — `name`,
+`description`, `description_reasoning`. The per-module index and
+`enriched.json` are out of scope (a module added or removed is a benign
+delta, surfaced by `diff-modules`, not this verb).
+
+**Regressive predicates** (each contributes one `violations[]` entry):
+
+- `name` — the baseline carried a curated name AND the regenerated name
+  differs from it. A regenerated name equal to the project-dir basename
+  (the canonical worktree/plan-id corruption) is reported with that
+  signature; any other divergence from the curated baseline name is also
+  regressive. A baseline with an empty `name` never produces a violation.
+- `description` — transitioned from non-empty to empty (curated text wiped).
+- `description_reasoning` — transitioned from non-empty to empty.
+
+`regressive` is `true` iff `violations` is non-empty.
+
+**Output** (TOON, regressive):
+
+```toon
+status: success
+regressive: true
+violations[1]{field,reason}:
+  name,"name overwritten with the project-dir basename \"my-worktree\" (curated name was \"plan-marshall\")"
+```
+
+**Output** (TOON, benign — identity preserved):
+
+```toon
+status: success
+regressive: false
+violations[0]:
+```
+
+**Error contract**: when the baseline directory or its `_project.json` is
+missing, returns `status: error, error: snapshot_not_found, path: <pre>`
+(same shape as `diff-modules`); when the current project's `_project.json`
+is absent, returns the standard `require_project_meta` error envelope.
+
+**Use cases**:
+
+- Gate an automated `discover --force` commit so a regressive descriptor
+  delta (name overwritten with the worktree basename, curated description
+  blanked) is never auto-committed onto a plan's PR
+- Defense-in-depth backstop independent of the `api_discover` source fix:
+  even a future source regression is refused at the commit boundary
 
 ---
 

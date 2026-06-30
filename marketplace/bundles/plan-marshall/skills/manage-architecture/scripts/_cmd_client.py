@@ -4,7 +4,7 @@
 
 Handles: info, modules, graph, path, neighbors, impact, module, overview,
 commands, resolve, profiles, siblings, files, which-module, find,
-diff-modules.
+diff-modules, descriptor-regression-check.
 
 Persistence model: ``_project.json`` and per-module ``enriched.json`` live on
 disk under ``.plan/project-architecture/``; per-module ``derived.json`` is
@@ -2074,4 +2074,107 @@ def cmd_diff_modules(args: argparse.Namespace) -> dict[str, Any]:
         'removed': removed,
         'changed': changed,
         'unchanged': unchanged,
+    }
+
+
+# =============================================================================
+# Descriptor Regression Check (descriptor-regression-check)
+# =============================================================================
+
+
+def _is_blanked(baseline_value: Any, current_value: Any) -> bool:
+    """Whether a descriptor field transitioned from non-empty to empty.
+
+    Treats ``None`` and whitespace-only strings as empty on both sides, so a
+    curated value being wiped to ``''`` (the legacy ``api_discover`` blanking
+    behaviour) is the only transition that returns ``True``. A field that was
+    already empty in the baseline never counts as regressive.
+    """
+    had_value = bool((baseline_value or '').strip())
+    has_value = bool((current_value or '').strip())
+    return had_value and not has_value
+
+
+def cmd_descriptor_regression_check(args: argparse.Namespace) -> dict[str, Any]:
+    """CLI handler for the ``descriptor-regression-check`` commit gate.
+
+    Compares the baseline ``_project.json`` (read from the on-disk snapshot
+    under ``--pre``) against the regenerated descriptor at the current
+    project's ``.plan/project-architecture/_project.json`` and classifies the
+    project-identity delta as regressive or benign. This is the defense-in-depth
+    backstop for the ``api_discover`` identity-preservation fix: even if a future
+    source path reintroduces the worktree-basename corruption, the
+    ``architecture-refresh`` commit gate refuses to commit a regressive delta.
+
+    Regressive predicates (each contributes one ``violations[]`` entry):
+
+    * ``name`` — the baseline carried a curated name AND the regenerated name
+      differs from it. A regenerated name equal to the project-dir basename (the
+      canonical worktree/plan-id corruption) is reported with that signature; any
+      other divergence from the curated baseline name is also regressive.
+    * ``description`` — transitioned from non-empty to empty (curated text wiped).
+    * ``description_reasoning`` — transitioned from non-empty to empty.
+
+    A benign refresh (identity preserved, only the ``modules`` index changing as
+    modules are added/removed) returns ``regressive: false`` with no violations.
+
+    Error contract: when the snapshot directory or its ``_project.json`` is
+    missing, returns ``status: error, error: snapshot_not_found, path: <pre>``;
+    when the current project's ``_project.json`` is absent, returns the standard
+    ``require_project_meta_result`` error.
+    """
+    pre_arg = args.pre
+    snapshot_dir = _resolve_snapshot_dir(pre_arg)
+    baseline_meta_path = snapshot_dir / FILE_PROJECT_META
+
+    if not baseline_meta_path.is_file():
+        return {
+            'status': 'error',
+            'error': 'snapshot_not_found',
+            'path': pre_arg,
+        }
+
+    try:
+        baseline_meta = json.loads(baseline_meta_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as e:
+        return {
+            'status': 'error',
+            'error': 'snapshot_not_found',
+            'path': pre_arg,
+            'detail': str(e),
+        }
+
+    try:
+        current_meta = load_project_meta(args.project_dir)
+    except DataNotFoundError:
+        return require_project_meta_result(args.project_dir)
+
+    project_basename = Path(args.project_dir).resolve().name
+
+    violations: list[dict[str, str]] = []
+
+    baseline_name = (baseline_meta.get('name') or '').strip()
+    current_name = (current_meta.get('name') or '').strip()
+    if baseline_name and current_name != baseline_name:
+        if current_name == project_basename:
+            reason = (
+                f'name overwritten with the project-dir basename "{project_basename}" '
+                f'(curated name was "{baseline_name}")'
+            )
+        else:
+            reason = f'name changed from curated "{baseline_name}" to "{current_name}"'
+        violations.append({'field': 'name', 'reason': reason})
+
+    if _is_blanked(baseline_meta.get('description'), current_meta.get('description')):
+        violations.append({'field': 'description', 'reason': 'curated description blanked'})
+
+    if _is_blanked(baseline_meta.get('description_reasoning'), current_meta.get('description_reasoning')):
+        violations.append(
+            {'field': 'description_reasoning', 'reason': 'curated description_reasoning blanked'}
+        )
+
+    return {
+        'status': 'success',
+        'regressive': bool(violations),
+        'violations': violations,
     }
