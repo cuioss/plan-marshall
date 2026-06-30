@@ -19,6 +19,16 @@ from _analyze_markdown import (  # noqa: F401  # re-exported for stable import s
 )
 from _analyze_shared import check_yaml_validity, remove_code_blocks
 from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
+
+# Typeless skill-structure analyzer; backs the skill-naming-noun-suffix rule
+# (the Finding is constructed in _doctor_analysis.py from check_noun_suffix_name).
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id='skill-naming-noun-suffix',
+    severity='warning',
+    category='style',
+    scope='file-local',
+)
 
 # Noun suffixes reserved for spawnable marketplace agents. Skill directory names
 # must not end with any of these — see pm-plugin-development:plugin-architecture

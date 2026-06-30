@@ -97,6 +97,7 @@ from pathlib import Path
 from typing import Protocol
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 # =============================================================================
 # Rule IDs
@@ -104,6 +105,21 @@ from _doctor_shared import Finding  # type: ignore[import-not-found]
 
 RULE_MANAGE_INVOCATION_INVALID = 'manage-invocation-invalid'
 RULE_MISSING_CANONICAL_BLOCK = 'missing-canonical-block'
+
+RULE_DESCRIPTORS = [
+    RuleDescriptor(
+        rule_id=RULE_MANAGE_INVOCATION_INVALID,
+        severity='error',
+        category='structural',
+        scope='corpus-relational',
+    ),
+    RuleDescriptor(
+        rule_id=RULE_MISSING_CANONICAL_BLOCK,
+        severity='warning',
+        category='style',
+        scope='corpus-relational',
+    ),
+]
 
 # Long flags that are ALWAYS accepted on any leaf, regardless of where (or
 # whether) they appear in the probed ``--help`` surface. Two distinct origins:

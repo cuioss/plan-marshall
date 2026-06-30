@@ -23,6 +23,19 @@ from collections import defaultdict
 from pathlib import Path
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
+
+# Three build-failing test-tree convention rules (cmd_test_conventions).
+RULE_DESCRIPTORS = [
+    RuleDescriptor(rule_id='unique-fixture-basenames', severity='error', category='structural', scope='corpus-relational'),
+    RuleDescriptor(rule_id='subprocess-pythonpath', severity='error', category='structural', scope='corpus-relational'),
+    RuleDescriptor(
+        rule_id='identifier-validator-corpus',
+        severity='error',
+        category='structural',
+        scope='corpus-relational',
+    ),
+]
 
 GENERIC_HELPER_BASENAMES = frozenset({'_fixtures.py', '_helpers.py', '_common.py'})
 

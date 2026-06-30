@@ -46,12 +46,28 @@ import re
 from pathlib import Path
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_UNUSED_PARAMETER = 'SIMPLICITY_UNUSED_PARAMETER'
 RULE_BACKWARD_COMPAT_REEXPORT = 'SIMPLICITY_BACKWARD_COMPAT_REEXPORT'
 RULE_DEFENSIVE_CATCHALL = 'SIMPLICITY_DEFENSIVE_CATCHALL'
 RULE_THIN_WRAPPER = 'SIMPLICITY_THIN_WRAPPER'
 RULE_SIGNATURE_DOCSTRING = 'SIMPLICITY_SIGNATURE_DOCSTRING'
+
+# Five SIMPLICITY_* detectors; only the signature-docstring rule is auto-fixable.
+RULE_DESCRIPTORS = [
+    RuleDescriptor(rule_id=RULE_UNUSED_PARAMETER, severity='warning', category='content', scope='file-local'),
+    RuleDescriptor(rule_id=RULE_BACKWARD_COMPAT_REEXPORT, severity='warning', category='content', scope='file-local'),
+    RuleDescriptor(rule_id=RULE_DEFENSIVE_CATCHALL, severity='warning', category='content', scope='file-local'),
+    RuleDescriptor(rule_id=RULE_THIN_WRAPPER, severity='warning', category='content', scope='file-local'),
+    RuleDescriptor(
+        rule_id=RULE_SIGNATURE_DOCSTRING,
+        severity='warning',
+        category='content',
+        scope='file-local',
+        has_fixer=True,
+    ),
+]
 
 # Comment markers that flag a backward-compat re-export (case-insensitive).
 _REEXPORT_COMMENT_RE = re.compile(r'#.*\b(backward[ -]?compat|re-?exported for)\b', re.IGNORECASE)

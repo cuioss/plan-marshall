@@ -52,12 +52,20 @@ import re
 from pathlib import Path
 
 from _doctor_shared import Finding
+from _rule_registry import RuleDescriptor
 
 # =============================================================================
 # Rule ID
 # =============================================================================
 
 RULE_ID = 'manage-findings-invocation-invalid'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='corpus-relational',
+)
 
 # Registered argparse tree for plan-marshall:manage-findings:manage-findings.
 # Source of truth: marketplace/bundles/plan-marshall/skills/manage-findings/

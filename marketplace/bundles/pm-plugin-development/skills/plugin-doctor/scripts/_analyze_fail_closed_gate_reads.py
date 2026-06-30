@@ -66,8 +66,26 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
+from _rule_registry import RuleDescriptor
+
 RULE_FAIL_CLOSED_GATE_READ = 'fail-closed-gate-read'
 RULE_REDUNDANT_ISINSTANCE = 'redundant-contract-typed-isinstance'
+
+# Two rules emitted by one whole-tree pass — declared as a descriptor list.
+RULE_DESCRIPTORS = [
+    RuleDescriptor(
+        rule_id=RULE_FAIL_CLOSED_GATE_READ,
+        severity='error',
+        category='safety',
+        scope='file-local',
+    ),
+    RuleDescriptor(
+        rule_id=RULE_REDUNDANT_ISINSTANCE,
+        severity='error',
+        category='structural',
+        scope='file-local',
+    ),
+]
 
 # ---------------------------------------------------------------------------
 # Gate-verb name pattern (Form A)

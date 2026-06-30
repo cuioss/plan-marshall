@@ -12,6 +12,26 @@ from _analyze_shared import (
 )
 from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
 from _doctor_shared import resolve_runtime_target
+from _rule_registry import RuleDescriptor
+
+# Markdown-mirror rules emitted via _doctor_analysis.py (the per-component pass
+# and analyze_markdown_mirror_rules). Descriptors are additive metadata — the
+# check_* functions' output shape is unchanged.
+RULE_DESCRIPTORS = [
+    RuleDescriptor(
+        rule_id='broken-relative-link',
+        severity='error',
+        category='structural',
+        scope='corpus-relational',
+    ),
+    RuleDescriptor(
+        rule_id='fenced-code-no-language',
+        severity='warning',
+        category='style',
+        scope='corpus-relational',
+        has_fixer=True,
+    ),
+]
 
 
 def check_frontmatter_fields(frontmatter: str) -> dict:

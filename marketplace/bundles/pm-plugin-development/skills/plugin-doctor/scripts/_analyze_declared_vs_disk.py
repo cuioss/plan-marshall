@@ -50,9 +50,17 @@ import json
 from pathlib import Path
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'declared-component-vs-disk'
 RULE_NAME = 'analyze_declared_vs_disk'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='corpus-relational',
+)
 
 # The three plugin.json array keys whose entries point at on-disk components.
 _COMPONENT_KEYS = ('agents', 'commands', 'skills')

@@ -63,9 +63,17 @@ from __future__ import annotations
 from pathlib import Path
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'bash-fence-inline-code-exemption'
 RULE_NAME = 'analyze_bash_fence_inline_code_exemption'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='file-local',
+)
 
 # Marker that an analyzer scopes its scan to ``bash``/``sh`` fenced blocks.
 _BASH_FENCE_MARKER = '_BASH_FENCE_INFO_STRINGS'

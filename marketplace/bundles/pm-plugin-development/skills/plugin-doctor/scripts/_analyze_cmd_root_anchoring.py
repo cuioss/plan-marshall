@@ -53,7 +53,16 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from _rule_registry import RuleDescriptor
+
 RULE_ID = 'cmd-root-anchoring-missing'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='file-local',
+)
 
 # Maximum number of top-level statements to look at in the function body
 # when searching for the ``find_marketplace_root`` prelude.  Comments and

@@ -77,10 +77,18 @@ import re
 from pathlib import Path
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'WORKFLOW_DOC_TOON_ERROR_FIELD'
 RULE_NAME = 'analyze_workflow_doc_toon_error_field'
 FINDING_TYPE = 'WORKFLOW_DOC_TOON_ERROR_FIELD'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='safety',
+    scope='file-local',
+)
 
 # ---------------------------------------------------------------------------
 # Detection patterns

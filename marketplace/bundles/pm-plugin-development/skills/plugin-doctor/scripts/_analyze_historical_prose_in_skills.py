@@ -106,9 +106,18 @@ from _analyze_shared import (
     read_frontmatter_disable_list,
 )
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'no-historical-prose-in-skills'
 RULE_NAME = 'analyze_historical_prose_in_skills'
+
+# Suppressible content scanner (project config / per-file frontmatter).
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='warning',
+    category='content',
+    scope='file-local',
+)
 FINDING_TYPE = 'historical_prose_in_skills'
 
 # ---------------------------------------------------------------------------

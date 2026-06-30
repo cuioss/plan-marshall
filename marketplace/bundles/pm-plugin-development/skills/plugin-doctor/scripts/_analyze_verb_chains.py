@@ -66,8 +66,23 @@ from pathlib import Path
 
 from _analyze_shared import read_frontmatter_disable_list
 from _doctor_shared import Finding
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'prose-verb-chain-consistency'
+
+# Opt-in cluster descriptor. The verb-chain scan is gated atomically by the
+# ``verb_chain`` --rules token, so the descriptor's rule_id is that token (not
+# the emitted ``prose-verb-chain-consistency`` finding rule_id); the registry
+# derives the opt-in set as ``{d.rule_id for d in registry if d.opt_in}``.
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id='verb_chain',
+    severity='error',
+    category='content',
+    scope='corpus-relational',
+    opt_in=True,
+    default_on=False,
+    has_fixer=False,
+)
 
 # Fences recognised for bash blocks. ``sh`` and bare ```` ``` ```` are
 # intentionally excluded — skill authors use ``bash`` consistently for

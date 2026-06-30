@@ -51,7 +51,16 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from _rule_registry import RuleDescriptor
+
 RULE_ID = 'orphan-argparse-flag'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='file-local',
+)
 
 # ---------------------------------------------------------------------------
 # AST helpers (reuse patterns from _analyze_verb_chains.py)

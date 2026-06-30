@@ -99,10 +99,19 @@ import ast
 import re
 from pathlib import Path
 
+from _dep_index import AstCache  # type: ignore[import-not-found]
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'provides-method-table-drift'
 RULE_NAME = 'analyze_provides_method_table'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='warning',
+    category='structural',
+    scope='corpus-relational',
+)
 
 # The four workflow-hook methods declared on ExtensionBase, mapped to the base
 # default each returns. A subclass override is a "real override" only when its
@@ -168,7 +177,7 @@ def _is_default_return(node: ast.FunctionDef, default: object) -> bool:
     return False
 
 
-def _extension_overrides(extension_path: Path) -> dict[str, bool] | None:
+def _extension_overrides(extension_path: Path, cache: AstCache | None = None) -> dict[str, bool] | None:
     """Map each ``provides_*`` hook method to whether it is a real override.
 
     AST-parses ``extension_path`` and inspects every class that subclasses a
@@ -178,14 +187,19 @@ def _extension_overrides(extension_path: Path) -> dict[str, bool] | None:
     default. Returns ``None`` when the file cannot be read or parsed (the
     structural / syntax rules cover that failure mode).
     """
-    try:
-        source = extension_path.read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
-        return None
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return None
+    if cache is not None:
+        tree = cache.get_tree(extension_path)
+        if tree is None:
+            return None
+    else:
+        try:
+            source = extension_path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            return None
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return None
 
     overrides: dict[str, bool] = dict.fromkeys(_HOOK_DEFAULTS, False)
     for class_node in (n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)):
@@ -245,13 +259,13 @@ def _table_methods(lines: list[str]) -> dict[str, int]:
     return methods
 
 
-def _scan_skill(skill_md: Path) -> list[dict]:
+def _scan_skill(skill_md: Path, cache: AstCache | None = None) -> list[dict]:
     """Scan one plan-marshall-plugin SKILL.md against its sibling extension.py."""
     extension_path = skill_md.parent / 'extension.py'
     if not extension_path.is_file():
         # No sibling extension — nothing to mirror against. Skip silently.
         return []
-    overrides = _extension_overrides(extension_path)
+    overrides = _extension_overrides(extension_path, cache)
     if overrides is None:
         return []
 
@@ -326,7 +340,7 @@ def _scan_skill(skill_md: Path) -> list[dict]:
     return [f.to_dict() for f in findings]
 
 
-def analyze_provides_method_table(marketplace_root: Path) -> list[dict]:
+def analyze_provides_method_table(marketplace_root: Path, cache: AstCache | None = None) -> list[dict]:
     """Scan every plan-marshall-plugin SKILL.md for Extension-API table drift.
 
     Parameters
@@ -350,5 +364,5 @@ def analyze_provides_method_table(marketplace_root: Path) -> list[dict]:
         return findings
     for skill_md in skill_mds:
         if skill_md.is_file():
-            findings.extend(_scan_skill(skill_md))
+            findings.extend(_scan_skill(skill_md, cache))
     return findings

@@ -62,7 +62,16 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _rule_registry import RuleDescriptor
+
 RULE_ID = 'shell-active-tokens'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='safety',
+    scope='file-local',
+)
 
 # ---------------------------------------------------------------------------
 # Fenced-block helpers

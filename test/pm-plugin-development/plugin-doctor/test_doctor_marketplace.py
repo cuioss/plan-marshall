@@ -9,20 +9,23 @@ Tests the hybrid Phase 1 script that provides automated batch operations:
 - report: Generate comprehensive report
 - quality-gate: Run invariant rules as a build gate (optionally --paths scoped)
 
-Output format: TOON (parsed via toon_parser).
-
-Marketplace discovery in these tests:
-- Real-marketplace tests rely on script-relative discovery inside
-  ``find_marketplace_root`` and therefore need no cwd/env setup.
-- Fixture tests that construct a fake marketplace under ``tmp_path`` pass
-  ``PM_MARKETPLACE_ROOT`` via ``env_overrides`` so the script targets the
-  fixture deterministically instead of the real tree.
+Invocation model in these tests:
+- Most cases drive the ``cmd_*`` subcommand entry points IN-PROCESS via the
+  ``_doctor`` module handle, passing an argparse-shaped namespace built by
+  ``_ns`` (``marketplace_root=...`` targets a fixture marketplace under
+  ``tmp_path``, replacing the former ``PM_MARKETPLACE_ROOT`` env override). The
+  cmd functions return their result dict directly, so there is no TOON round-trip.
+- Genuine CLI/exit-code/argparse-surface and dispatcher-traceback cases still
+  invoke the script as a subprocess via ``run_script`` (TOON parsed via
+  ``toon_parser``) — in-process cannot exercise the argparse parser, the process
+  exit code, or the ``@safe_main`` stderr-traceback backstop.
 """
 
 import json
 import shutil
 import sys
 import tempfile
+import types
 from pathlib import Path
 
 import pytest
@@ -46,6 +49,42 @@ def _load_doctor_shared():
 
 _doctor_shared = _load_doctor_shared()
 find_marketplace_root = _doctor_shared.find_marketplace_root
+
+# In-process handle for ``doctor-marketplace.py``'s ``cmd_*`` subcommand entry
+# points. Each cmd function takes an argparse-shaped namespace and RETURNS its
+# result dict directly (no subprocess, no TOON round-trip), so the bulk of this
+# suite drives them in-process — matching the style of
+# ``test_doctor_marketplace_commands.py``. Genuine CLI/exit-code/argparse-surface
+# cases below still use ``run_script`` where in-process cannot exercise the path.
+_doctor = load_script_module('pm-plugin-development', 'plugin-doctor', 'doctor-marketplace.py', 'doctor_marketplace_cmds')
+
+
+def _ns(**overrides):
+    """Build an argparse-shaped namespace for in-process ``cmd_*`` invocation.
+
+    Mirrors the full attribute surface ``main()`` would populate so any cmd
+    function can read the flags it needs; overrides set the per-test inputs
+    (``marketplace_root`` replaces the ``PM_MARKETPLACE_ROOT`` env override that
+    the subprocess form used).
+    """
+    defaults = {
+        'marketplace_root': None,
+        'bundles': None,
+        'type': None,
+        'name': None,
+        'paths': None,
+        'rules': None,
+        'enable_argument_naming': False,
+        'enable_verb_chain': False,
+        'dry_run': False,
+        'output': None,
+        'test_root': None,
+        'registry': None,
+        'extension_type': None,
+        'skill': None,
+    }
+    defaults.update(overrides)
+    return types.SimpleNamespace(**defaults)
 
 
 def parse_output(result):
@@ -169,7 +208,7 @@ def test_report_help():
 
 
 # =============================================================================
-# Integration Tests with Fixture (Tier 3 - subprocess, cwd-dependent)
+# Integration Tests with Fixture (in-process cmd_* invocation)
 # =============================================================================
 
 
@@ -245,18 +284,8 @@ def test_fixture_list_components():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(
-            SCRIPT_PATH,
-            'list-components',
-            env_overrides={
-                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
-                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
-                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
-            },
-        )
-        assert result.returncode == 0, f'list-components failed: {result.stderr}'
+        data = _doctor.cmd_list_components(_ns(marketplace_root=str(temp_dir / 'marketplace')))
 
-        data = parse_output(result)
         # Default enumeration (no --paths/--bundles) must NOT be in paths mode
         # (covers the former real-tree test_scan_without_paths_or_bundles).
         assert 'mode' not in data or data.get('mode') != 'paths', 'Default enumeration should not be in paths mode'
@@ -280,20 +309,10 @@ def test_fixture_list_components_bundle_filter():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(
-            SCRIPT_PATH,
-            'list-components',
-            '--bundles',
-            'test-bundle',
-            env_overrides={
-                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
-                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
-                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
-            },
+        data = _doctor.cmd_list_components(
+            _ns(marketplace_root=str(temp_dir / 'marketplace'), bundles='test-bundle')
         )
-        assert result.returncode == 0, f'list-components --bundles failed: {result.stderr}'
 
-        data = parse_output(result)
         assert data['total_bundles'] == 1, 'Should have exactly one bundle'
         assert data['bundles'][0]['name'] == 'test-bundle', 'Should be test-bundle'
     finally:
@@ -306,18 +325,8 @@ def test_fixture_analyze_finds_issues():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(
-            SCRIPT_PATH,
-            'analyze',
-            env_overrides={
-                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
-                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
-                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
-            },
-        )
-        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
+        data = _doctor.cmd_analyze(_ns(marketplace_root=str(temp_dir / 'marketplace')))
 
-        data = parse_output(result)
         # Valid-TOON structure (from the former real-tree test_analyze_returns_valid_toon)
         assert 'analysis' in data, 'Should have analysis field'
         assert 'total_components' in data, 'Should have total_components field'
@@ -342,20 +351,8 @@ def test_fixture_analyze_type_filter():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(
-            SCRIPT_PATH,
-            'analyze',
-            '--type',
-            'agents',
-            env_overrides={
-                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
-                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
-                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
-            },
-        )
-        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
+        data = _doctor.cmd_analyze(_ns(marketplace_root=str(temp_dir / 'marketplace'), type='agents'))
 
-        data = parse_output(result)
         # All analyzed components should be agents — check via analysis table rows
         for item in data['analysis']:
             component = item.get('component', {})
@@ -380,19 +377,8 @@ def test_fixture_fix_dry_run():
         bundle_path = fixture.marketplace_root / 'test-bundle'
         mtimes_before = {str(md): md.stat().st_mtime for md in bundle_path.rglob('*.md')}
 
-        result = run_script(
-            SCRIPT_PATH,
-            'fix',
-            '--dry-run',
-            env_overrides={
-                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
-                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
-                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
-            },
-        )
-        assert result.returncode == 0, f'Fix dry-run failed: {result.stderr}'
+        data = _doctor.cmd_fix(_ns(marketplace_root=str(temp_dir / 'marketplace'), dry_run=True))
 
-        data = parse_output(result)
         assert 'status' in data, 'Should have status field'
         assert 'dry_run' in data, 'Should have dry_run field'
         assert data['dry_run'] is True, 'Should be dry run'
@@ -412,18 +398,9 @@ def test_fixture_report():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(
-            SCRIPT_PATH,
-            'report',
-            env_overrides={
-                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
-                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
-                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
-            },
+        response = _doctor.cmd_report(
+            _ns(marketplace_root=str(temp_dir / 'marketplace'), output=str(temp_dir / 'report-out'))
         )
-        assert result.returncode == 0, f'Report failed: {result.stderr}'
-
-        response = parse_output(result)
         assert response['status'] == 'success', 'Status should be success'
 
         summary = response['summary']
@@ -461,18 +438,7 @@ def test_fixture_report_to_custom_dir():
     output_dir = Path(tempfile.mkdtemp())
 
     try:
-        result = run_script(
-            SCRIPT_PATH,
-            'report',
-            '--output',
-            str(output_dir),
-            env_overrides={
-                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
-                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
-                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
-            },
-        )
-        assert result.returncode == 0, f'Report failed: {result.stderr}'
+        _doctor.cmd_report(_ns(marketplace_root=str(temp_dir / 'marketplace'), output=str(output_dir)))
 
         json_files = list(output_dir.glob('*-report.json'))
         assert len(json_files) == 1, f'Should have exactly one report JSON file, found: {json_files}'
@@ -486,7 +452,7 @@ def test_fixture_report_to_custom_dir():
 
 
 # =============================================================================
-# Sub-Document Analysis Tests (Tier 3 - subprocess, cwd-dependent)
+# Sub-Document Analysis Tests (in-process cmd_* invocation)
 # =============================================================================
 
 
@@ -514,20 +480,7 @@ Read `references/guide.md` for standards.
 """)
 
     try:
-        result = run_script(
-            SCRIPT_PATH,
-            'analyze',
-            '--type',
-            'skills',
-            env_overrides={
-                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
-                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
-                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
-            },
-        )
-        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
-
-        data = parse_output(result)
+        data = _doctor.cmd_analyze(_ns(marketplace_root=str(temp_dir / 'marketplace'), type='skills'))
         # Find the test-skill analysis
         skill_analysis = None
         for item in data['analysis']:
@@ -575,20 +528,7 @@ Read `references/bloated-guide.md` for standards.
 """)
 
     try:
-        result = run_script(
-            SCRIPT_PATH,
-            'analyze',
-            '--type',
-            'skills',
-            env_overrides={
-                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
-                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
-                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
-            },
-        )
-        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
-
-        data = parse_output(result)
+        data = _doctor.cmd_analyze(_ns(marketplace_root=str(temp_dir / 'marketplace'), type='skills'))
         all_issues = _collect_issues(data)
 
         bloat_issues = [i for i in all_issues if i['type'] == 'subdoc-bloat']
@@ -610,20 +550,7 @@ def test_fixture_analyze_no_subdoc_for_normal_files():
     (skill_refs_dir / 'small-guide.md').write_text('# Small Guide\n\nJust a few lines.\n')
 
     try:
-        result = run_script(
-            SCRIPT_PATH,
-            'analyze',
-            '--type',
-            'skills',
-            env_overrides={
-                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
-                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
-                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
-            },
-        )
-        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
-
-        data = parse_output(result)
+        data = _doctor.cmd_analyze(_ns(marketplace_root=str(temp_dir / 'marketplace'), type='skills'))
         all_issues = _collect_issues(data)
 
         bloat_issues = [i for i in all_issues if i['type'] == 'subdoc-bloat']
@@ -633,7 +560,7 @@ def test_fixture_analyze_no_subdoc_for_normal_files():
 
 
 # =============================================================================
-# Sub-document Hardcoded Path Tests (Tier 3 - subprocess)
+# Sub-document Hardcoded Path Tests (in-process cmd_* invocation)
 # =============================================================================
 
 
@@ -649,20 +576,7 @@ def test_fixture_analyze_detects_subdoc_hardcoded_path():
     )
 
     try:
-        result = run_script(
-            SCRIPT_PATH,
-            'analyze',
-            '--type',
-            'skills',
-            env_overrides={
-                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
-                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
-                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
-            },
-        )
-        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
-
-        data = parse_output(result)
+        data = _doctor.cmd_analyze(_ns(marketplace_root=str(temp_dir / 'marketplace'), type='skills'))
         all_issues = _collect_issues(data)
 
         path_issues = [i for i in all_issues if i['type'] == 'subdoc-hardcoded-script-path']
@@ -672,7 +586,7 @@ def test_fixture_analyze_detects_subdoc_hardcoded_path():
 
 
 # =============================================================================
-# Rule 11 Detection Tests (Tier 3 - subprocess)
+# Rule 11 Detection Tests (in-process cmd_* invocation)
 # =============================================================================
 
 
@@ -687,18 +601,7 @@ def test_fixture_analyze_detects_rule_11():
     )
 
     try:
-        result = run_script(
-            SCRIPT_PATH,
-            'analyze',
-            env_overrides={
-                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
-                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
-                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
-            },
-        )
-        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
-
-        data = parse_output(result)
+        data = _doctor.cmd_analyze(_ns(marketplace_root=str(temp_dir / 'marketplace')))
         all_issues = _collect_issues(data)
 
         rule_11_issues = [i for i in all_issues if i['type'] == 'agent-skill-tool-visibility']
@@ -722,18 +625,7 @@ def test_fixture_analyze_no_rule_11_with_skill():
     )
 
     try:
-        result = run_script(
-            SCRIPT_PATH,
-            'analyze',
-            env_overrides={
-                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
-                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
-                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
-            },
-        )
-        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
-
-        data = parse_output(result)
+        data = _doctor.cmd_analyze(_ns(marketplace_root=str(temp_dir / 'marketplace')))
         all_issues = _collect_issues(data, path_filter='has-skill-agent')
 
         rule_11_issues = [i for i in all_issues if i['type'] == 'agent-skill-tool-visibility']
@@ -753,18 +645,7 @@ def test_fixture_analyze_no_rule_11_without_tools():
     )
 
     try:
-        result = run_script(
-            SCRIPT_PATH,
-            'analyze',
-            env_overrides={
-                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
-                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
-                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
-            },
-        )
-        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
-
-        data = parse_output(result)
+        data = _doctor.cmd_analyze(_ns(marketplace_root=str(temp_dir / 'marketplace')))
         all_issues = _collect_issues(data, path_filter='no-tools-agent')
 
         rule_11_issues = [i for i in all_issues if i['type'] == 'agent-skill-tool-visibility']
@@ -774,7 +655,7 @@ def test_fixture_analyze_no_rule_11_without_tools():
 
 
 # =============================================================================
-# Skill Tool Coverage Tests (Tier 3 - subprocess)
+# Skill Tool Coverage Tests (in-process cmd_* invocation)
 # =============================================================================
 
 
@@ -796,20 +677,7 @@ This skill provides testing capabilities.
 """)
 
     try:
-        result = run_script(
-            SCRIPT_PATH,
-            'analyze',
-            '--type',
-            'skills',
-            env_overrides={
-                'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'),
-                'PLAN_BASE_DIR': str(temp_dir / '.plan'),
-                'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials'),
-            },
-        )
-        assert result.returncode == 0, f'Analyze failed: {result.stderr}'
-
-        data = parse_output(result)
+        data = _doctor.cmd_analyze(_ns(marketplace_root=str(temp_dir / 'marketplace'), type='skills'))
         skill_analysis = None
         for item in data['analysis']:
             component = item.get('component', {})
@@ -856,7 +724,7 @@ def _collect_issues(data, path_filter=None):
 
 
 # =============================================================================
-# list-components --paths Flag Tests (Tier 3 - subprocess)
+# list-components --paths Flag Tests (in-process; argparse mutual-exclusion via subprocess)
 # =============================================================================
 
 
@@ -874,10 +742,8 @@ description: A test skill for paths enumeration
 Content here.
 """)
 
-    result = run_script(SCRIPT_PATH, 'list-components', '--paths', str(skill_dir))
-    assert result.returncode == 0, f'list-components --paths failed: {result.stderr}'
+    data = _doctor.cmd_list_components(_ns(paths=[str(skill_dir)]))
 
-    data = parse_output(result)
     assert data['mode'] == 'paths', 'Should report paths mode'
     assert data['total_components'] == 1, f'Should find 1 component, got {data["total_components"]}'
     assert data['components'][0]['type'] == 'skill', 'Should detect skill type'
@@ -911,10 +777,8 @@ tools: Read, Write
 # Test Agent
 """)
 
-    result = run_script(SCRIPT_PATH, 'list-components', '--paths', str(skill_dir), str(agents_parent))
-    assert result.returncode == 0, f'list-components --paths failed: {result.stderr}'
+    data = _doctor.cmd_list_components(_ns(paths=[str(skill_dir), str(agents_parent)]))
 
-    data = parse_output(result)
     assert data['mode'] == 'paths', 'Should report paths mode'
     assert data['total_components'] == 2, f'Should find 2 components, got {data["total_components"]}'
 
@@ -922,17 +786,15 @@ tools: Read, Write
     assert 'skill' in types_found, 'Should find the skill component'
 
 
-def test_list_components_paths_invalid_path(tmp_path):
+def test_list_components_paths_invalid_path(tmp_path, capsys):
     """Test list-components --paths with a non-existent path skips it with warning."""
     nonexistent = str(tmp_path / 'does-not-exist')
 
-    result = run_script(SCRIPT_PATH, 'list-components', '--paths', nonexistent)
-    assert result.returncode == 0, f'list-components --paths should succeed even with invalid path: {result.stderr}'
+    data = _doctor.cmd_list_components(_ns(paths=[nonexistent]))
 
-    data = parse_output(result)
     assert data['mode'] == 'paths', 'Should report paths mode'
     assert data['total_components'] == 0, 'Should find 0 components for invalid path'
-    assert 'WARNING' in result.stderr, 'Should emit warning on stderr for missing path'
+    assert 'WARNING' in capsys.readouterr().err, 'Should emit warning on stderr for missing path'
 
 
 def test_list_components_paths_mutual_exclusion_with_bundles():
@@ -1097,18 +959,8 @@ def test_quality_gate_help():
 def test_quality_gate_clean_fixture_passes(tmp_path):
     """quality-gate exits 0 with status: pass on a fixture with no findings."""
     temp_root = _build_clean_fixture(tmp_path)
-    result = run_script(
-        SCRIPT_PATH,
-        'quality-gate',
-        env_overrides={
-            'PM_MARKETPLACE_ROOT': str(temp_root / 'marketplace'),
-            'PLAN_BASE_DIR': str(temp_root / '.plan'),
-            'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_root / 'credentials'),
-        },
-    )
-    assert result.returncode == 0, f'Expected exit 0 on clean fixture, got {result.returncode}: {result.stderr}'
+    data = _doctor.cmd_quality_gate(_ns(marketplace_root=str(temp_root / 'marketplace')))
 
-    data = parse_output(result)
     assert data['status'] == 'pass', f'Expected status: pass on clean fixture, got: {data}'
     assert data['total_issues'] == 0, f'Clean fixture should have zero issues, got {data["total_issues"]}'
     assert 'rules_run' in data, 'Output should enumerate rules_run for transparency'
@@ -1117,20 +969,8 @@ def test_quality_gate_clean_fixture_passes(tmp_path):
 def test_quality_gate_argparse_violation_fails(tmp_path):
     """quality-gate exits non-zero with status: fail on argparse_safety violation."""
     temp_root = _build_argparse_violation_fixture(tmp_path)
-    result = run_script(
-        SCRIPT_PATH,
-        'quality-gate',
-        env_overrides={
-            'PM_MARKETPLACE_ROOT': str(temp_root / 'marketplace'),
-            'PLAN_BASE_DIR': str(temp_root / '.plan'),
-            'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_root / 'credentials'),
-        },
-    )
-    assert result.returncode == 1, (
-        f'Expected exit 1 on argparse_safety violation fixture, got {result.returncode}: {result.stderr}'
-    )
+    data = _doctor.cmd_quality_gate(_ns(marketplace_root=str(temp_root / 'marketplace')))
 
-    data = parse_output(result)
     assert data['status'] == 'fail', f'Expected status: fail on violation fixture, got: {data}'
     assert data['total_issues'] >= 1, 'Should report at least one finding'
 
@@ -1281,14 +1121,6 @@ def _build_two_skill_scope_fixture(temp_root: Path) -> tuple[Path, Path, Path]:
     return temp_root, skill_a, skill_b
 
 
-def _quality_gate_env(temp_root: Path) -> dict:
-    return {
-        'PM_MARKETPLACE_ROOT': str(temp_root / 'marketplace'),
-        'PLAN_BASE_DIR': str(temp_root / '.plan'),
-        'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_root / 'credentials'),
-    }
-
-
 def test_quality_gate_paths_runs_extension_contracts_whole_tree(tmp_path):
     """validate_extension_contracts ALWAYS runs under --paths (whole-tree, unfiltered).
 
@@ -1298,14 +1130,9 @@ def test_quality_gate_paths_runs_extension_contracts_whole_tree(tmp_path):
     enumeration is the observable signal that the contract rule executed.
     """
     temp_root, _skill_a, skill_b = _build_two_skill_scope_fixture(tmp_path)
-    result = run_script(
-        SCRIPT_PATH,
-        'quality-gate',
-        '--paths',
-        str(skill_b),
-        env_overrides=_quality_gate_env(temp_root),
+    data = _doctor.cmd_quality_gate(
+        _ns(marketplace_root=str(temp_root / 'marketplace'), paths=[str(skill_b)])
     )
-    data = parse_output(result)
     rules = {entry['rule'] for entry in data['rules_run']}
     assert 'validate_extension_contracts' in rules, (
         f'validate_extension_contracts must run whole-tree even under --paths, rules_run={data["rules_run"]}'
@@ -1315,16 +1142,10 @@ def test_quality_gate_paths_runs_extension_contracts_whole_tree(tmp_path):
 def test_quality_gate_paths_scopes_to_violating_skill(tmp_path):
     """quality-gate --paths {skill-a} surfaces skill A's violation."""
     temp_root, skill_a, _skill_b = _build_two_skill_scope_fixture(tmp_path)
-    result = run_script(
-        SCRIPT_PATH,
-        'quality-gate',
-        '--paths',
-        str(skill_a),
-        env_overrides=_quality_gate_env(temp_root),
+    data = _doctor.cmd_quality_gate(
+        _ns(marketplace_root=str(temp_root / 'marketplace'), paths=[str(skill_a)])
     )
-    assert result.returncode == 1, f'Expected exit 1 scoping to the violating skill, got {result.returncode}'
 
-    data = parse_output(result)
     assert data['status'] == 'fail', f'Scoped run over skill A should fail, got: {data}'
     assert data['total_issues'] >= 1, 'Scoped run over skill A should report the violation'
     # Every reported finding must be anchored under skill A.
@@ -1335,16 +1156,10 @@ def test_quality_gate_paths_scopes_to_violating_skill(tmp_path):
 def test_quality_gate_paths_clean_skill_filters_out_violation(tmp_path):
     """quality-gate --paths {skill-b} reports pass — skill A's violation is filtered out."""
     temp_root, _skill_a, skill_b = _build_two_skill_scope_fixture(tmp_path)
-    result = run_script(
-        SCRIPT_PATH,
-        'quality-gate',
-        '--paths',
-        str(skill_b),
-        env_overrides=_quality_gate_env(temp_root),
+    data = _doctor.cmd_quality_gate(
+        _ns(marketplace_root=str(temp_root / 'marketplace'), paths=[str(skill_b)])
     )
-    assert result.returncode == 0, f'Expected exit 0 scoping to the clean skill, got {result.returncode}: {result.stderr}'
 
-    data = parse_output(result)
     assert data['status'] == 'pass', f'Scoped run over clean skill B should pass, got: {data}'
     assert data['total_issues'] == 0, f'Scoped run over skill B must filter out skill A violation, got: {data}'
 
@@ -1356,14 +1171,8 @@ def test_quality_gate_no_flag_still_reports_violation(tmp_path):
     and still surfaces the marketplace-wide finding.
     """
     temp_root, skill_a, _skill_b = _build_two_skill_scope_fixture(tmp_path)
-    result = run_script(
-        SCRIPT_PATH,
-        'quality-gate',
-        env_overrides=_quality_gate_env(temp_root),
-    )
-    assert result.returncode == 1, f'No-flag whole-tree gate should fail on the violation, got {result.returncode}'
+    data = _doctor.cmd_quality_gate(_ns(marketplace_root=str(temp_root / 'marketplace')))
 
-    data = parse_output(result)
     assert data['status'] == 'fail', f'No-flag gate should fail, got: {data}'
     files = {issue['file'] for issue in data['issues']}
     assert any(str(skill_a) in f for f in files), 'No-flag gate should still report skill A violation'
@@ -1596,20 +1405,8 @@ def test_quality_gate_manage_invocation_drift_fails(tmp_path):
     the corresponding manage-invocation-invalid finding appears in issues.
     """
     temp_root = _build_manage_invocation_drift_fixture(tmp_path)
-    result = run_script(
-        SCRIPT_PATH,
-        'quality-gate',
-        env_overrides={
-            'PM_MARKETPLACE_ROOT': str(temp_root / 'marketplace'),
-            'PLAN_BASE_DIR': str(temp_root / '.plan'),
-            'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_root / 'credentials'),
-        },
-    )
-    assert result.returncode == 1, (
-        f'Expected exit 1 on manage-invocation doc-drift fixture, got {result.returncode}: {result.stderr}'
-    )
+    data = _doctor.cmd_quality_gate(_ns(marketplace_root=str(temp_root / 'marketplace')))
 
-    data = parse_output(result)
     assert data['status'] == 'fail', f'Expected status: fail on doc-drift fixture, got: {data}'
     assert data['total_issues'] >= 1, 'Should report at least one finding'
 
@@ -1657,20 +1454,8 @@ def test_quality_gate_registers_scan_finalize_step_token(tmp_path):
     scanner's own test module.
     """
     temp_root = _build_clean_fixture(tmp_path)
-    result = run_script(
-        SCRIPT_PATH,
-        'quality-gate',
-        env_overrides={
-            'PM_MARKETPLACE_ROOT': str(temp_root / 'marketplace'),
-            'PLAN_BASE_DIR': str(temp_root / '.plan'),
-            'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_root / 'credentials'),
-        },
-    )
-    assert result.returncode == 0, (
-        f'Expected exit 0 on clean fixture, got {result.returncode}: {result.stderr}'
-    )
+    data = _doctor.cmd_quality_gate(_ns(marketplace_root=str(temp_root / 'marketplace')))
 
-    data = parse_output(result)
     rules = {entry['rule'] for entry in data['rules_run']}
     assert 'scan_finalize_step_token' in rules, (
         f'scan_finalize_step_token must appear in rules_run, got: {data["rules_run"]}'
@@ -1704,20 +1489,8 @@ def test_quality_gate_registers_four_mirror_rules(tmp_path):
     fenced-code-no-language); asserting both IDs guards that partition.
     """
     temp_root = _build_clean_fixture(tmp_path)
-    result = run_script(
-        SCRIPT_PATH,
-        'quality-gate',
-        env_overrides={
-            'PM_MARKETPLACE_ROOT': str(temp_root / 'marketplace'),
-            'PLAN_BASE_DIR': str(temp_root / '.plan'),
-            'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_root / 'credentials'),
-        },
-    )
-    assert result.returncode == 0, (
-        f'Expected exit 0 on clean fixture, got {result.returncode}: {result.stderr}'
-    )
+    data = _doctor.cmd_quality_gate(_ns(marketplace_root=str(temp_root / 'marketplace')))
 
-    data = parse_output(result)
     rules = {entry['rule'] for entry in data['rules_run']}
     for rule_id in (
         'provides-method-table-drift',
@@ -2308,14 +2081,6 @@ def _write_project_suppression_config(temp_root: Path, content: str) -> Path:
     return config_path
 
 
-def _suppression_env(temp_root: Path) -> dict:
-    return {
-        'PM_MARKETPLACE_ROOT': str(temp_root / 'marketplace'),
-        'PLAN_BASE_DIR': str(temp_root / '.plan'),
-        'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_root / 'credentials'),
-    }
-
-
 def _historical_prose_findings(data) -> list[dict]:
     """Collect the consolidated historical-prose findings from analyze output.
 
@@ -2375,11 +2140,9 @@ def test_analyze_no_project_config_surfaces_finding(tmp_path):
     )
 
     # Act
-    result = run_script(SCRIPT_PATH, 'analyze', env_overrides=_suppression_env(temp_root))
-    assert result.returncode == 0, f'analyze failed: {result.stderr}'
+    data = _doctor.cmd_analyze(_ns(marketplace_root=str(temp_root / 'marketplace')))
 
     # Assert — the historical-prose finding is present in the consolidated output.
-    data = parse_output(result)
     findings = _historical_prose_findings(data)
     assert len(findings) >= 1, (
         f'Baseline (no project config) must surface the {_SUPPRESSION_RULE_ID} finding, '
@@ -2402,11 +2165,9 @@ def test_analyze_project_config_suppresses_finding(tmp_path):
     )
 
     # Act
-    result = run_script(SCRIPT_PATH, 'analyze', env_overrides=_suppression_env(temp_root))
-    assert result.returncode == 0, f'analyze failed: {result.stderr}'
+    data = _doctor.cmd_analyze(_ns(marketplace_root=str(temp_root / 'marketplace')))
 
     # Assert — the historical-prose finding is suppressed (absent).
-    data = parse_output(result)
     findings = _historical_prose_findings(data)
     assert findings == [], (
         f'Project config must suppress the {_SUPPRESSION_RULE_ID} finding, but it surfaced: {findings}'
@@ -2427,11 +2188,9 @@ def test_analyze_project_config_other_rule_does_not_suppress(tmp_path):
     )
 
     # Act
-    result = run_script(SCRIPT_PATH, 'analyze', env_overrides=_suppression_env(temp_root))
-    assert result.returncode == 0, f'analyze failed: {result.stderr}'
+    data = _doctor.cmd_analyze(_ns(marketplace_root=str(temp_root / 'marketplace')))
 
     # Assert — the historical-prose finding is still present (different rule disabled).
-    data = parse_output(result)
     findings = _historical_prose_findings(data)
     assert len(findings) >= 1, (
         f'Disabling an unrelated rule must NOT suppress {_SUPPRESSION_RULE_ID}, '
@@ -2452,11 +2211,9 @@ def test_analyze_frontmatter_disable_suppresses_finding(tmp_path):
     )
 
     # Act
-    result = run_script(SCRIPT_PATH, 'analyze', env_overrides=_suppression_env(temp_root))
-    assert result.returncode == 0, f'analyze failed: {result.stderr}'
+    data = _doctor.cmd_analyze(_ns(marketplace_root=str(temp_root / 'marketplace')))
 
     # Assert — the frontmatter disable list suppresses the finding.
-    data = parse_output(result)
     findings = _historical_prose_findings(data)
     assert findings == [], (
         f'Per-file plugin-doctor-disable must suppress the {_SUPPRESSION_RULE_ID} finding, '
@@ -2474,16 +2231,14 @@ def test_quality_gate_no_project_config_reports_finding(tmp_path):
     temp_root = _build_historical_prose_fixture(tmp_path)
 
     # Act
-    result = run_script(SCRIPT_PATH, 'quality-gate', env_overrides=_suppression_env(temp_root))
+    data = _doctor.cmd_quality_gate(_ns(marketplace_root=str(temp_root / 'marketplace')))
 
     # Assert — the gate fails and the historical-prose rule reports a finding.
-    data = parse_output(result)
     summaries = {entry['rule']: entry['findings'] for entry in data['rules_run']}
     assert summaries.get('analyze_historical_prose_in_skills', 0) >= 1, (
         f'Baseline gate must report the historical-prose finding, rules_run={data["rules_run"]}'
     )
     assert data['status'] == 'fail', f'Baseline gate over the violating fixture should fail, got: {data}'
-    assert result.returncode == 1, f'Baseline gate should exit 1 on the finding, got {result.returncode}'
 
 
 def test_quality_gate_project_config_suppresses_finding(tmp_path):
@@ -2501,10 +2256,9 @@ def test_quality_gate_project_config_suppresses_finding(tmp_path):
     )
 
     # Act
-    result = run_script(SCRIPT_PATH, 'quality-gate', env_overrides=_suppression_env(temp_root))
+    data = _doctor.cmd_quality_gate(_ns(marketplace_root=str(temp_root / 'marketplace')))
 
     # Assert — the historical-prose finding is suppressed from the gate verdict.
-    data = parse_output(result)
     summaries = {entry['rule']: entry['findings'] for entry in data['rules_run']}
     assert summaries.get('analyze_historical_prose_in_skills', 0) == 0, (
         f'Project config must suppress the historical-prose finding from the gate, rules_run={data["rules_run"]}'
@@ -2515,7 +2269,6 @@ def test_quality_gate_project_config_suppresses_finding(tmp_path):
     ]
     assert hist_issues == [], f'Suppressed finding leaked into gate issues: {hist_issues}'
     assert data['status'] == 'pass', f'Gate should pass once the finding is suppressed, got: {data}'
-    assert result.returncode == 0, f'Suppressed gate should exit 0, got {result.returncode}: {result.stderr}'
 
 
 # =============================================================================

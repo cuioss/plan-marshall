@@ -86,10 +86,27 @@ import functools
 import re
 from pathlib import Path
 
+from _dep_index import AstCache  # type: ignore[import-not-found]
 from _doctor_shared import Finding
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'notation-staleness'
 DRIFT_RULE_ID = 'notation-bundle-skill-drift'
+
+RULE_DESCRIPTORS = [
+    RuleDescriptor(
+        rule_id=RULE_ID,
+        severity='error',
+        category='structural',
+        scope='corpus-relational',
+    ),
+    RuleDescriptor(
+        rule_id=DRIFT_RULE_ID,
+        severity='error',
+        category='structural',
+        scope='corpus-relational',
+    ),
+]
 
 # Match a three-part executor notation following the canonical executor
 # invocation prefix ``python3 .plan/execute-script.py`` OR appearing as a
@@ -358,6 +375,7 @@ def analyze_notation_staleness(
     paths: list[Path],
     *,
     rules_filter: set[str] | None = None,
+    cache: AstCache | None = None,
 ) -> list[dict]:
     """Scan ``paths`` for stale executor notations.
 
@@ -372,6 +390,13 @@ def analyze_notation_staleness(
         Optional opt-in rule allow-list. When supplied and ``RULE_ID`` is
         not in the set, the analyzer returns no findings. When ``None``
         (the default), the rule is unconditionally active.
+    cache:
+        Optional shared parse-once :class:`AstCache` from the single-pass
+        runner's corpus context, accepted for the uniform corpus-relational
+        analyzer interface. This rule is regex-based (it resolves notation
+        tokens against the on-disk script tree, not the Python AST), so the
+        shared AST corpus is not consumed; the parameter exists so the runner
+        can pass the corpus uniformly. Output is identical with or without it.
 
     Returns
     -------

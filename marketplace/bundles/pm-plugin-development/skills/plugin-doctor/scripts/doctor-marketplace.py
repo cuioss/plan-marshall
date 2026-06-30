@@ -36,62 +36,26 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from _analyze_agentfile_directory_tree import analyze_agentfile_directory_tree
-from _analyze_agentfile_line_budget import analyze_agentfile_line_budget
-from _analyze_allowed_tools_drift import analyze_allowed_tools_drift
-from _analyze_argument_naming import analyze_argument_naming
-from _analyze_bash_chain_shapes_in_skills import analyze_bash_chain_shapes_in_skills
-from _analyze_bash_fence_inline_code_exemption import (
-    analyze_bash_fence_inline_code_exemption,
-)
-from _analyze_declared_vs_disk import analyze_declared_vs_disk
-from _analyze_fail_closed_gate_reads import analyze_fail_closed_gate_reads
-from _analyze_finalize_step_token import scan_finalize_step_token
-from _analyze_frontmatter import analyze_frontmatter
-from _analyze_historical_prose_in_skills import analyze_historical_prose_in_skills
-from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
-from _analyze_literal_count import analyze_literal_count
 from _analyze_manage_invocation import (
     _NOTATION_RE,
     _resolve_executor,
     analyze_manage_invocation_markdown,
     check_missing_canonical_blocks,
     derive_script_tree,
-    scan_manage_invocation,
 )
-from _analyze_persona_binding_resolves import analyze_persona_binding_resolves
-from _analyze_persona_profile_uniqueness import analyze_persona_profile_uniqueness
-from _analyze_plugin_json import analyze_plugin_json_orphans
-from _analyze_provides_method_table import analyze_provides_method_table
-from _analyze_resolver_matrix_coverage import analyze_resolver_matrix_coverage
-from _analyze_role_field import analyze_role_field
-from _analyze_script_call_drift import analyze_script_call_drift
-from _analyze_self_declared_rule_compliance import analyze_self_declared_rule_compliance
 from _analyze_shared import (
     is_rule_suppressed,
     load_default_suppression_config,
     load_project_suppression_config,
 )
-from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
-from _analyze_simplicity import scan_simplicity
-from _analyze_skill_mode import analyze_skill_mode
-from _analyze_skill_notation import analyze_skill_notation
-from _analyze_skill_relative_temp_path import analyze_skill_relative_temp_path
-from _analyze_step_configurable_contract import scan_step_configurable_contract
 from _analyze_test_conventions import (
     analyze_subprocess_pythonpath,
     analyze_unique_fixture_basenames,
     analyze_validator_regex_vs_corpus,
 )
-from _analyze_tmp_redirect_in_skills import analyze_tmp_redirect_in_skills
-from _analyze_workflow_doc_toon_error_field import analyze_workflow_doc_toon_error_field
 from _cmd_apply import apply_single_fix, load_templates
 from _cmd_extension import validate_extension_contracts
-from _doctor_analysis import (
-    analyze_component,
-    analyze_markdown_mirror_rules,
-    scan_argparse_safety,
-)
+from _doctor_analysis import analyze_component
 from _doctor_report import generate_report
 from _doctor_shared import (
     categorize_all_issues,
@@ -104,6 +68,8 @@ from _doctor_shared import (
     get_report_filename,
     resolve_component_paths,
 )
+from _rule_registry import optin_rule_names
+from _runner import CorpusContext, RuleRunner
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 SCRIPT_DIR = Path(__file__).parent
@@ -122,8 +88,15 @@ SCRIPT_DIR = Path(__file__).parent
 #
 # This replaces the prior env-var gate, which violated the
 # ``persona-plan-marshall-agent`` hard rule against ``VAR=val cmd`` invocations.
+#
+# The opt-in set is no longer a hand-maintained literal — it is derived from
+# the central rule registry (``_rule_registry.optin_rule_names``), which
+# collects the ``opt_in=True`` descriptors declared by the analyzer modules
+# (``argument_naming`` / ``verb_chain`` / ``script_call_drift``). Computed once
+# at module import, after the analyzer imports above, so the whole descriptor
+# population is loadable by the time the registry is built.
 
-_OPTIN_RULE_NAMES = frozenset({'argument_naming', 'verb_chain', 'script_call_drift'})
+_OPTIN_RULE_NAMES = optin_rule_names()
 
 
 def _parse_rules_flag(rules_value: str | None) -> frozenset[str]:
@@ -504,244 +477,16 @@ def cmd_analyze(args) -> dict:
     for result in all_analysis:
         all_issues.extend(result.get('issues', []))
 
-    # Marketplace-wide argparse_safety scan (lightweight AST check).
-    # Runs on every analyze invocation — findings are file-scoped, not
-    # component-scoped, so they live alongside per-component issues rather
-    # than nested under any single component entry.
-    argparse_issues = scan_argparse_safety(marketplace_root)
-    all_issues.extend(argparse_issues)
-    total_issues += len(argparse_issues)
-
-    # Marketplace-wide SIMPLICITY_* rule cluster (five static detectors).
-    # Unconditionally active — the detectors are the mechanical enforcement
-    # layer for the ref-code-quality "minimum viable code" posture and
-    # are cheap (one AST walk + regex pass per script). Rules 1-3 are risky
-    # (fixable=False, confirm); rules 4-5 are safe (fixable=True, auto-apply).
-    simplicity_issues = scan_simplicity(marketplace_root)
-    all_issues.extend(simplicity_issues)
-    total_issues += len(simplicity_issues)
-
-    # Marketplace-wide shell-substitution-in-skills rule. Unconditionally
-    # active (not gated by --rules) because it enforces a hard rule from
-    # persona-plan-marshall-agent and the analyzer is cheap (regex over markdown).
-    shell_substitution_issues = analyze_shell_substitution_in_skills(marketplace_root)
-    all_issues.extend(shell_substitution_issues)
-    total_issues += len(shell_substitution_issues)
-
-    # Marketplace-wide bash-chain-shapes-in-skills rule. Unconditionally
-    # active — detects compound Bash command sequences (&&, ;, trailing &)
-    # inside fenced bash/sh blocks in plan-marshall skill markdown.  Enforces
-    # the persona-plan-marshall-agent "Bash: one command per call" hard rule.
-    bash_chain_issues = analyze_bash_chain_shapes_in_skills(marketplace_root)
-    all_issues.extend(bash_chain_issues)
-    total_issues += len(bash_chain_issues)
-
-    # Marketplace-wide tmp-redirect-in-skills rule. Unconditionally active —
-    # detects > / >> redirects targeting /tmp/ or /var/tmp/ inside fenced
-    # bash/sh blocks in plan-marshall skill markdown.  Enforces the project
-    # policy that temporary files must live under .plan/temp/.
-    tmp_redirect_issues = analyze_tmp_redirect_in_skills(marketplace_root)
-    all_issues.extend(tmp_redirect_issues)
-    total_issues += len(tmp_redirect_issues)
-
-    # Marketplace-wide skill-relative-temp-path-git-c rule. Unconditionally
-    # active — detects a relative .plan/temp/... path consumed by a
-    # git -C ... commit -F command inside fenced bash/sh blocks in plan-marshall
-    # skill markdown. The harness Write tool resolves a relative .plan/temp path
-    # against the main checkout while git -C {worktree_path} resolves it against
-    # the worktree, so a relative-path round-trip references two different files.
-    relative_temp_path_issues = analyze_skill_relative_temp_path(marketplace_root)
-    all_issues.extend(relative_temp_path_issues)
-    total_issues += len(relative_temp_path_issues)
-
-    # Marketplace-wide WORKFLOW_DOC_TOON_ERROR_FIELD rule. Unconditionally
-    # active — flags the non-canonical ``error_type`` key inside fenced
-    # ``toon`` workflow/agent error blocks in plan-marshall skill markdown.
-    # The canonical error-envelope discriminator field is ``error`` (see
-    # plan-marshall workflow/planning.md). Also wired into quality-gate
-    # below — the normalization sweep guarantees zero residual findings.
-    workflow_toon_error_field_issues = analyze_workflow_doc_toon_error_field(marketplace_root)
-    all_issues.extend(workflow_toon_error_field_issues)
-    total_issues += len(workflow_toon_error_field_issues)
-
-    # Marketplace-wide bash-fence-inline-code-exemption rule. Unconditionally
-    # active — reintroduction guard that flags any analyzer module scanning
-    # inside a bash/sh fence (defines _BASH_FENCE_INFO_STRINGS) that also
-    # carries a markdown inline-code exemption (_INLINE_CODE_RE /
-    # _inline_code_spans). Inside a bash fence backticks are command
-    # substitution, not markdown inline-code, so the two are mutually exclusive
-    # in a single analyzer.
-    bash_fence_inline_code_issues = analyze_bash_fence_inline_code_exemption(marketplace_root)
-    all_issues.extend(bash_fence_inline_code_issues)
-    total_issues += len(bash_fence_inline_code_issues)
-
-    # Marketplace-wide no-lesson-id-in-skill-prose rule. Unconditionally
-    # active — strips narrative lesson-ID citations from skill prose while
-    # exempting structural-provenance contexts and the lesson-domain
-    # allowlist. Scans *.md AND *.py under each bundle's
-    # {skills,agents,commands} tree PLUS the project-local .claude/skills/**
-    # tree (the analyzer derives the .claude/skills path internally from
-    # marketplace_root, so this call site needs only the bundles root).
-    # Analyzer is regex-cheap.
-    lesson_id_issues = analyze_lesson_id_in_skill_prose(marketplace_root)
-    all_issues.extend(lesson_id_issues)
-    total_issues += len(lesson_id_issues)
-
-    # Marketplace-wide allowed-tools-body-drift rule. Unconditionally active —
-    # flags any skill/agent/command whose body invokes a tool absent from a
-    # declared, non-empty allowed-tools/tools frontmatter list. Skills that
-    # omit the declaration entirely are NOT flagged (the "inherit all tools"
-    # default; the fabricated unsupported-skill-tools-field rule stays retired).
-    # Scans *.md under each bundle's {skills,agents,commands} tree PLUS the
-    # project-local .claude/skills/** tree (derived internally from
-    # marketplace_root). Analyzer is regex-cheap.
-    allowed_tools_drift_issues = analyze_allowed_tools_drift(marketplace_root)
-    all_issues.extend(allowed_tools_drift_issues)
-    total_issues += len(allowed_tools_drift_issues)
-
-    # Marketplace-wide skill-self-declared-rule-violation rule. Unconditionally
-    # active — flags a SKILL.md that declares a flat-numbering / no-sub-numbering
-    # rule in its own body yet uses sub-numbered (1a/3a/5a-style) step headings
-    # in that same body. Self-referential: a file that uses sub-numbering
-    # WITHOUT declaring such a rule is NOT flagged (not a global numbering ban).
-    # Scans SKILL.md under each bundle's {skills,agents,commands} tree PLUS the
-    # project-local .claude/skills/** tree (derived internally from
-    # marketplace_root). Analyzer is regex-cheap.
-    self_declared_rule_issues = analyze_self_declared_rule_compliance(marketplace_root)
-    all_issues.extend(self_declared_rule_issues)
-    total_issues += len(self_declared_rule_issues)
-
-    # Marketplace-wide no-historical-prose-in-skills rule. Unconditionally
-    # active — detects historical/transitional narrative (driving-lesson
-    # prefixes, back-references, earlier-proposal descriptions, seed-failure
-    # citations, plan-authorship annotations, guard-introduction prose) in
-    # skill markdown. Skills must document present-tense rules, not history.
-    historical_prose_issues = analyze_historical_prose_in_skills(marketplace_root)
-    all_issues.extend(historical_prose_issues)
-    total_issues += len(historical_prose_issues)
-
-    # Agentfile-hygiene backstop rules (analyze-surfaced only — intentionally
-    # NOT in quality-gate). Two deterministic rules embody the shared rubric in
-    # plan-marshall:ref-agentfile-hygiene and back the cognitive
-    # recipe-agentfile-hygiene sweep:
-    #   - agentfile-line-count-over-budget: an always-on agentfile (CLAUDE.md at
-    #     any nesting level, AGENTS.md) over the line budget is a bloat proxy.
-    #   - agentfile-directory-tree-present: a fenced directory-tree drawing
-    #     (├──/│/└── glyphs) in an agentfile is inert content.
-    # Discovery anchors at the repo root (not the bundle tree), so each rule
-    # translates marketplace_root to the repo root internally. They are absent
-    # from quality-gate because the repository's own agentfiles legitimately
-    # exceed the heuristic budget / draw trees; the rules are advisory backstops
-    # for the recipe, not build gates.
-    agentfile_line_budget_issues = analyze_agentfile_line_budget(marketplace_root)
-    all_issues.extend(agentfile_line_budget_issues)
-    total_issues += len(agentfile_line_budget_issues)
-
-    agentfile_directory_tree_issues = analyze_agentfile_directory_tree(marketplace_root)
-    all_issues.extend(agentfile_directory_tree_issues)
-    total_issues += len(agentfile_directory_tree_issues)
-
-    # The manage-invocation rule cluster (manage-invocation-invalid +
-    # missing-canonical-block) is intentionally NOT run here. It derives each
-    # script's canonical surface from the script's live ``--help`` output (one
-    # subprocess per parser node) — far heavier than analyze's other AST/regex
-    # rules. Running it on every per-component ``analyze`` pass cold-derives the
-    # whole marketplace surface and overruns the test harness's per-call
-    # subprocess budget. The rule is the marketplace-wide authoritative gate and
-    # runs only under ``cmd_quality_gate`` (which CI invokes as its own step with
-    # the appropriate budget). ``test_analyze_does_not_run_manage_invocation_cluster``
-    # guards against re-introducing it here.
-
-    # Phase-5 step standards files MUST declare a ``role:`` frontmatter field
-    # so the manage-execution-manifest composer's role-based intersection
-    # (Rows 2/3/4/5) can resolve candidates correctly. Unconditionally active;
-    # path-scoped to plan-marshall/skills/phase-5-execute/standards/*.md so
-    # the analyzer's cost is bounded to a handful of files.
-    role_field_issues = analyze_role_field(marketplace_root)
-    all_issues.extend(role_field_issues)
-    total_issues += len(role_field_issues)
-
-    # Marketplace-wide reference-resolution rule cluster. Unconditionally
-    # active — each analyzer is a cheap json/regex/filesystem pass over the
-    # bundle tree, and each catches a class of declared-vs-discoverable drift
-    # that resolves to a dead reference at runtime:
-    #   - declared-component-vs-disk: plugin.json declares a component whose
-    #     file is missing on disk (forward manifest check).
-    #   - plugin-json-orphan-component: an on-disk user-invocable skill / agent
-    #     / command is not declared in its bundle's plugin.json (reverse
-    #     manifest check; advisory warning severity).
-    #   - skill-notation-unresolved: a `Skill: {bundle}:{skill}` directive
-    #     references a skill directory that does not exist.
-    #   - recipe-missing-implements: a recipe-* skill omits / diverges from the
-    #     `implements: …ext-point-recipe` frontmatter recipe discovery needs.
-    declared_vs_disk_issues = analyze_declared_vs_disk(marketplace_root)
-    all_issues.extend(declared_vs_disk_issues)
-    total_issues += len(declared_vs_disk_issues)
-
-    plugin_json_orphan_issues = analyze_plugin_json_orphans(marketplace_root)
-    all_issues.extend(plugin_json_orphan_issues)
-    total_issues += len(plugin_json_orphan_issues)
-
-    # Marketplace-wide provides-method-table-drift rule. Analyze-only —
-    # AST/regex pass over each bundle's plan-marshall-plugin extension.py +
-    # SKILL.md "Extension API" table, detecting drift between the extension's
-    # provides_*() overrides (machine-derivable source of truth) and the
-    # manually-maintained function-name column in the table mirror. Reported
-    # under ``analyze`` only; it does NOT gate quality-gate, pending a follow-up
-    # activation plan that flips it to build-failing once the tree is clean.
-    provides_method_table_issues = analyze_provides_method_table(marketplace_root)
-    all_issues.extend(provides_method_table_issues)
-    total_issues += len(provides_method_table_issues)
-
-    # Marketplace-wide literal-count-drift rule. Analyze-only —
-    # AST/regex/pathlib pass over the extension-api SKILL.md "Extension Points"
-    # table, detecting drift between each row's manually-maintained
-    # "Implementations" count token and the machine-derivable implementer count
-    # enumerated from the bundle tree (extension.py overrides per hook, plus the
-    # *_provider.py file count). Reported under ``analyze`` only; it does NOT
-    # gate quality-gate, pending a follow-up activation plan that flips it to
-    # build-failing once the tree is clean.
-    literal_count_issues = analyze_literal_count(marketplace_root)
-    all_issues.extend(literal_count_issues)
-    total_issues += len(literal_count_issues)
-
-    skill_notation_issues = analyze_skill_notation(marketplace_root)
-    all_issues.extend(skill_notation_issues)
-    total_issues += len(skill_notation_issues)
-
-    frontmatter_issues = analyze_frontmatter(marketplace_root)
-    all_issues.extend(frontmatter_issues)
-    total_issues += len(frontmatter_issues)
-
-    # Marketplace-wide resolver-matrix-coverage rule. Unconditionally active —
-    # AST scan over scripts is cheap and the rule emits ``tip``-severity
-    # findings only (advisory, not build-failing). Detects N-input skip-on-
-    # miss resolvers (>=3 tiers) whose test files lack a full
-    # ``tier x {hit, miss}`` parametrize matrix. See
-    # ``_analyze_resolver_matrix_coverage.py`` for the detection contract.
-    resolver_matrix_issues = analyze_resolver_matrix_coverage(marketplace_root)
-    all_issues.extend(resolver_matrix_issues)
-    total_issues += len(resolver_matrix_issues)
-
-    # Marketplace-wide script-call-drift rule. Gated OFF by default — opt in
-    # via ``--rules script_call_drift``. The analyzer probes --help via
-    # subprocess for every documented notation/verb pair, which costs many
-    # process spawns on the full marketplace and is unsuitable for unconditional
-    # runs. Replaces the removed runtime SUBCOMMANDS pre-flight validator
-    # with dev-time drift detection.
-    if 'script_call_drift' in active_rules:
-        script_call_drift_issues = analyze_script_call_drift(marketplace_root)
-        all_issues.extend(script_call_drift_issues)
-        total_issues += len(script_call_drift_issues)
-
-    # Marketplace-wide argument-naming rule cluster (notation/subcommand/
-    # flag/Canonical-Forms cross-check). Gated OFF by default; opt in via
-    # ``--rules argument_naming`` or the ``--enable-argument-naming`` alias.
-    # Absence of the flag keeps the cluster silent (no findings, no warnings).
-    if 'argument_naming' in active_rules:
-        argument_naming_issues = analyze_argument_naming(marketplace_root)
-        all_issues.extend(argument_naming_issues)
-        total_issues += len(argument_naming_issues)
+    # The marketplace-wide rule set is dispatched once through the single-pass
+    # runner: it builds the parse-once AST corpus and reproduces the exact pre-D5
+    # emission order and the two opt-in active_rules gates (script_call_drift,
+    # argument_naming). The per-component analyze_component loop above, the
+    # suppression filter, and the categorize step below stay in this command.
+    marketplace_issues = RuleRunner(
+        CorpusContext.build(marketplace_root)
+    ).run_analyze_marketplace_rules(active_rules=active_rules)
+    all_issues.extend(marketplace_issues)
+    total_issues += len(marketplace_issues)
 
     # Granularity-2 driver integration: drop findings from the six content
     # scanners that the project config (`.plan/plugin-doctor.yml`) or a per-file
@@ -1046,278 +791,19 @@ def cmd_quality_gate(args) -> dict:
     def _suppressed(findings: list[dict]) -> list[dict]:
         return filter_suppressed_findings(_scoped(findings), marketplace_root, default_cfg, project_cfg)
 
-    argparse_findings = _scoped(scan_argparse_safety(marketplace_root))
-    all_issues.extend(argparse_findings)
-    rule_summaries.append({'rule': 'scan_argparse_safety', 'findings': len(argparse_findings)})
-
-    # validate_extension_contracts ALWAYS runs whole-tree and is NEVER filtered,
-    # even under --paths — extension-contract compliance has no per-path subset,
-    # and a scoped gate must still catch a broken extension contract.
-    contract_result = validate_extension_contracts(marketplace_root.parent)
-    contract_errors = contract_result.get('errors', [])
-    for err in contract_errors:
-        all_issues.append(
-            {
-                'type': 'extension_contract',
-                'rule': err.get('rule', ''),
-                'file': err.get('file', ''),
-                'message': err.get('message', ''),
-                'severity': 'error',
-            }
-        )
-    rule_summaries.append({'rule': 'validate_extension_contracts', 'findings': len(contract_errors)})
-
-    naming_findings = _scoped(analyze_argument_naming(marketplace_root))
-    all_issues.extend(naming_findings)
-    rule_summaries.append({'rule': 'analyze_argument_naming', 'findings': len(naming_findings)})
-
-    shell_substitution_findings = _scoped(analyze_shell_substitution_in_skills(marketplace_root))
-    all_issues.extend(shell_substitution_findings)
-    rule_summaries.append(
-        {'rule': 'analyze_shell_substitution_in_skills', 'findings': len(shell_substitution_findings)}
-    )
-
-    # WORKFLOW_DOC_TOON_ERROR_FIELD — flags the non-canonical ``error_type`` key
-    # inside fenced ``toon`` workflow/agent error blocks in plan-marshall skill
-    # markdown. Quality-gate-active: the normalization sweep that established the
-    # canonical ``error`` discriminator eliminated every fenced-TOON ``error_type``
-    # key, so the post-sweep tree produces zero residual findings.
-    workflow_toon_error_field_findings = _scoped(
-        analyze_workflow_doc_toon_error_field(marketplace_root)
-    )
-    all_issues.extend(workflow_toon_error_field_findings)
-    rule_summaries.append(
-        {
-            'rule': 'analyze_workflow_doc_toon_error_field',
-            'findings': len(workflow_toon_error_field_findings),
-        }
-    )
-
-    # skill-relative-temp-path-git-c — flags a relative ``.plan/temp/...`` path
-    # consumed by a ``git -C ... commit -F`` command inside fenced bash/sh blocks
-    # in plan-marshall skill markdown. Quality-gate-active: this is a NEW
-    # anti-pattern with no legacy occurrences in the tree (unlike tmp-redirect /
-    # bash-chain), so the post-fix tree produces zero residual findings and the
-    # rule enforces immediately. Findings carry absolute file paths, so _scoped's
-    # path filter applies uniformly under --paths.
-    relative_temp_path_findings = _scoped(analyze_skill_relative_temp_path(marketplace_root))
-    all_issues.extend(relative_temp_path_findings)
-    rule_summaries.append(
-        {
-            'rule': 'analyze_skill_relative_temp_path',
-            'findings': len(relative_temp_path_findings),
-        }
-    )
-
-    # bash-chain-shapes and tmp-redirect are intentionally NOT in quality-gate —
-    # the existing marketplace tree pre-dates these rules and contains legitimate
-    # documented examples of the forbidden patterns inside bash fences.  Adding
-    # them to quality-gate would require a large upfront cleanup sweep before the
-    # rules could enforce.  Invoke via ``analyze`` for explicit drift sweeps;
-    # new code written after this plan is checked by the analyze path.
-
-    # Scans *.md and *.py under each bundle's {skills,agents,commands} tree
-    # PLUS the project-local .claude/skills/** tree (derived internally from
-    # marketplace_root). Findings carry absolute file paths, so _scoped's
-    # path filter applies uniformly to both trees under --paths.
-    lesson_id_findings = _suppressed(analyze_lesson_id_in_skill_prose(marketplace_root))
-    all_issues.extend(lesson_id_findings)
-    rule_summaries.append(
-        {'rule': 'analyze_lesson_id_in_skill_prose', 'findings': len(lesson_id_findings)}
-    )
-
-    # allowed-tools-body-drift — flags body-invoked tools absent from a
-    # declared non-empty allowed-tools/tools frontmatter list. Scans *.md under
-    # each bundle's {skills,agents,commands} tree PLUS the project-local
-    # .claude/skills/** tree (derived internally). Findings carry absolute file
-    # paths, so _scoped's path filter applies uniformly under --paths.
-    allowed_tools_drift_findings = _suppressed(analyze_allowed_tools_drift(marketplace_root))
-    all_issues.extend(allowed_tools_drift_findings)
-    rule_summaries.append(
-        {'rule': 'analyze_allowed_tools_drift', 'findings': len(allowed_tools_drift_findings)}
-    )
-
-    # skill-self-declared-rule-violation — flags a SKILL.md that declares a
-    # flat-numbering / no-sub-numbering rule in its body yet uses sub-numbered
-    # step headings in that same body. Self-referential (a file that uses
-    # sub-numbering without declaring such a rule is not flagged). Scans
-    # SKILL.md under each bundle's {skills,agents,commands} tree PLUS the
-    # project-local .claude/skills/** tree (derived internally). Findings carry
-    # absolute file paths, so _scoped's path filter applies uniformly under --paths.
-    self_declared_rule_findings = _suppressed(analyze_self_declared_rule_compliance(marketplace_root))
-    all_issues.extend(self_declared_rule_findings)
-    rule_summaries.append(
-        {
-            'rule': 'analyze_self_declared_rule_compliance',
-            'findings': len(self_declared_rule_findings),
-        }
-    )
-
-    historical_prose_findings = _suppressed(analyze_historical_prose_in_skills(marketplace_root))
-    all_issues.extend(historical_prose_findings)
-    rule_summaries.append(
-        {'rule': 'analyze_historical_prose_in_skills', 'findings': len(historical_prose_findings)}
-    )
-
-    # finalize-step-token-mismatch — flags a finalize-step skill whose documented
-    # mark-step-done --step token (under --phase 6-finalize) diverges from the
-    # skill's fully-qualified manifest step_id. Scans bundle SKILL.md files
-    # surfaced as bundle-optional finalize-step implementors by the reusable
-    # extension_discovery.find_implementors discovery query, plus the project-local
-    # .claude/skills/finalize-step-*/SKILL.md tree (derived internally). Findings
-    # carry absolute file paths, so _scoped's path filter applies uniformly under
-    # --paths.
-    finalize_step_token_findings = _scoped(scan_finalize_step_token(marketplace_root))
-    all_issues.extend(finalize_step_token_findings)
-    rule_summaries.append(
-        {'rule': 'scan_finalize_step_token', 'findings': len(finalize_step_token_findings)}
-    )
-
-    # step-configurable-contract — flags a finalize-step body doc whose
-    # ``configurable:`` frontmatter block is present but malformed (missing a
-    # required sub-field, wrong type, empty description, duplicate key, or any
-    # declaration that fails the D1 contract parser). Validation is delegated to
-    # the central parser (extension-api/scripts/configurable_contract.py), the
-    # single source of truth for the declaration schema. Ownerless docs (no
-    # ``configurable:`` block) are silently skipped. Scans the built-in
-    # phase-6-finalize body docs plus the project-local
-    # .claude/skills/finalize-step-*/SKILL.md tree (derived internally). Findings
-    # carry absolute file paths, so _scoped's path filter applies uniformly.
-    step_configurable_findings = _scoped(scan_step_configurable_contract(marketplace_root))
-    all_issues.extend(step_configurable_findings)
-    rule_summaries.append(
-        {'rule': 'scan_step_configurable_contract', 'findings': len(step_configurable_findings)}
-    )
-
-    role_field_findings = _scoped(analyze_role_field(marketplace_root))
-    all_issues.extend(role_field_findings)
-    rule_summaries.append({'rule': 'analyze_role_field', 'findings': len(role_field_findings)})
-
-    # skill-missing-mode — flags any skill SKILL.md whose frontmatter omits the
-    # ``mode:`` archetype field or carries a value outside the closed enum
-    # {knowledge, workflow, script-executor, manifest}. Scans both the
-    # marketplace bundle tree and the project-local .claude/skills tree (derived
-    # internally from marketplace_root). Findings carry absolute file paths, so
-    # _scoped's path filter applies uniformly under --paths.
-    skill_mode_findings = _scoped(analyze_skill_mode(marketplace_root))
-    all_issues.extend(skill_mode_findings)
-    rule_summaries.append({'rule': 'analyze_skill_mode', 'findings': len(skill_mode_findings)})
-
-    # persona-profile-uniqueness — flags any two persona SKILL.md files
-    # (implements: persona) that declare the same primary (first) ``profiles:``
-    # entry. The persona<->primary-profile binding must be unique so phase-4-plan
-    # can reverse-look-up a task's persona unambiguously. Meta personas that omit
-    # ``profiles:`` carry no primary and are exempt. Findings carry absolute file
-    # paths, so _scoped's path filter applies uniformly under --paths.
-    persona_uniqueness_findings = _scoped(analyze_persona_profile_uniqueness(marketplace_root))
-    all_issues.extend(persona_uniqueness_findings)
-    rule_summaries.append(
-        {
-            'rule': 'analyze_persona_profile_uniqueness',
-            'findings': len(persona_uniqueness_findings),
-        }
-    )
-
-    # persona-binding-resolves — flags any persona that declares a ``profiles:``
-    # binding but whose composition DAG does not resolve (a missing composed
-    # persona or a composition cycle), so ``manage-personas resolve`` would
-    # return an error instead of a non-empty skills[]. Statically mirrors the
-    # resolver's DAG walk (no subprocess / no target-script import). Findings
-    # carry absolute file paths, so _scoped's path filter applies under --paths.
-    persona_binding_findings = _scoped(analyze_persona_binding_resolves(marketplace_root))
-    all_issues.extend(persona_binding_findings)
-    rule_summaries.append(
-        {
-            'rule': 'analyze_persona_binding_resolves',
-            'findings': len(persona_binding_findings),
-        }
-    )
-
-    # provides-method-table-drift — build-failing. AST/regex pass detecting drift
-    # between each bundle's extension.py provides_*() overrides and the
-    # manually-maintained function-name column in its SKILL.md "Extension API"
-    # table mirror. Findings carry absolute file paths, so _scoped's path filter
-    # applies uniformly under --paths.
-    provides_method_table_findings = _scoped(analyze_provides_method_table(marketplace_root))
-    all_issues.extend(provides_method_table_findings)
-    rule_summaries.append(
-        {'rule': 'provides-method-table-drift', 'findings': len(provides_method_table_findings)}
-    )
-
-    # literal-count-drift — build-failing. AST/regex/pathlib pass detecting drift
-    # between each extension-api "Extension Points" row's manually-maintained
-    # "Implementations" count token and the machine-derivable implementer count.
-    # Findings carry absolute file paths, so _scoped's path filter applies under
-    # --paths.
-    literal_count_findings = _scoped(analyze_literal_count(marketplace_root))
-    all_issues.extend(literal_count_findings)
-    rule_summaries.append(
-        {'rule': 'literal-count-drift', 'findings': len(literal_count_findings)}
-    )
-
-    # markdown-mirror cluster — build-failing. A single marketplace-wide pass
-    # emits two rule IDs: broken-relative-link (relative cross-references whose
-    # on-disk target is missing) and fenced-code-no-language (bare opening code
-    # fences). Partition its findings so each rule ID gets its own rules_run
-    # summary entry — a de-registration of either regresses the build. Findings
-    # carry absolute file paths, so _scoped's path filter applies under --paths.
-    markdown_mirror_findings = _scoped(analyze_markdown_mirror_rules(marketplace_root))
-    all_issues.extend(markdown_mirror_findings)
-    rule_summaries.append(
-        {
-            'rule': 'broken-relative-link',
-            'findings': sum(
-                1 for f in markdown_mirror_findings if f.get('rule_id') == 'broken-relative-link'
-            ),
-        }
-    )
-    rule_summaries.append(
-        {
-            'rule': 'fenced-code-no-language',
-            'findings': sum(
-                1 for f in markdown_mirror_findings if f.get('rule_id') == 'fenced-code-no-language'
-            ),
-        }
-    )
-
-    # fail-closed-gate-read + redundant-contract-typed-isinstance — the whole-tree
-    # Python-script pass that runs alongside analyze_plan_path_in_scripts /
-    # analyze_executor_path_in_production. Form A flags an unguarded file read
-    # inside a read-only gate/boundary verb (must be enclosed in a try that
-    # catches OSError so the verdict fails closed); Form B flags a redundant
-    # isinstance guard on a parameter already annotated with that concrete
-    # contract type. Findings carry absolute file paths, so _scoped's path filter
-    # applies uniformly under --paths. The tree is fail-closed almost everywhere
-    # already, so the post-fix tree produces zero residual findings.
-    fail_closed_gate_read_findings = _scoped(analyze_fail_closed_gate_reads(marketplace_root))
-    all_issues.extend(fail_closed_gate_read_findings)
-    rule_summaries.append(
-        {'rule': 'analyze_fail_closed_gate_reads', 'findings': len(fail_closed_gate_read_findings)}
-    )
-
-    # manage-invocation rule cluster — validates documented script invocations
-    # against each script-bearing skill's live argparse surface derived from
-    # ``--help`` (manage-invocation-invalid) and flags script-bearing SKILL.md
-    # files lacking a ``## Canonical invocations`` section
-    # (missing-canonical-block). The surface is derived dynamically via
-    # subprocesses and cached to disk, making it highly accurate and cheap
-    # enough to run on every analyze pass. The in-scope set is derived from the
-    # bundle tree, so it is a build-failing regression net against future
-    # argparse-rejection drift.
-    # ``find_marketplace_root`` returns the ``bundles/`` directory, but the
-    # manage-invocation helpers expect the marketplace root (parent of
-    # ``bundles/``) so their layout probing and executor discovery resolve —
-    # the same ``.parent`` conversion already used for
-    # ``validate_extension_contracts`` above.
-    if scope_dirs:
-        # Scoped: derive only the notations the scoped docs reference (never the
-        # eager whole-marketplace build_script_index).
-        manage_invocation_findings = _scoped_manage_invocation(marketplace_root.parent, scope_dirs)
-    else:
-        manage_invocation_findings = scan_manage_invocation(marketplace_root.parent)
-    all_issues.extend(manage_invocation_findings)
-    rule_summaries.append(
-        {'rule': 'scan_manage_invocation', 'findings': len(manage_invocation_findings)}
+    # The marketplace-wide invariant rule set is dispatched once through the
+    # single-pass runner: it builds the parse-once AST corpus and reproduces the
+    # exact pre-D5 emission order, the per-rule _scoped/_suppressed wrapping, and
+    # every rule_summaries label (including the provides-method-table-drift /
+    # literal-count-drift rule-name labels and the two-entry markdown-mirror
+    # split). The scope/suppression closures and the scoped manage-invocation
+    # resolver are injected so their definitions stay in this module.
+    runner = RuleRunner(CorpusContext.build(marketplace_root))
+    all_issues, rule_summaries = runner.run_quality_gate(
+        scope_dirs=scope_dirs,
+        scoped=_scoped,
+        suppressed=_suppressed,
+        scoped_manage_invocation=_scoped_manage_invocation,
     )
 
     # script-call-drift is intentionally NOT in quality-gate — it probes

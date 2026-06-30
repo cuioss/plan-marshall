@@ -6,6 +6,17 @@ import re
 from pathlib import Path
 
 from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
+
+# Typeless tool-coverage analyzer consumed by _doctor_analysis.py; the
+# descriptor represents the coverage capability and leaves its output shape
+# unchanged.
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id='tool-coverage',
+    severity='info',
+    category='structural',
+    scope='file-local',
+)
 
 
 def extract_content_after_frontmatter(content: str) -> str:

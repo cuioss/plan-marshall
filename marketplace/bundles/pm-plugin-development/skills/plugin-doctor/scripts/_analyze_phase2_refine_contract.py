@@ -67,8 +67,16 @@ import re
 from pathlib import Path
 
 from _doctor_shared import Finding
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'refine-contract-violation'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='safety',
+    scope='file-local',
+)
 
 _ALLOWED_PREFIXES = (
     '.plan/local/',

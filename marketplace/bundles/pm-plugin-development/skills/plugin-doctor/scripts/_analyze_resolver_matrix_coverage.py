@@ -111,11 +111,20 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from _dep_index import AstCache  # type: ignore[import-not-found]
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'resolver-matrix-coverage'
 RULE_NAME = 'analyze_resolver_matrix_coverage'
 FINDING_TYPE = 'resolver-matrix-coverage'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='tip',
+    category='content',
+    scope='corpus-relational',
+)
 
 MIN_TIER_COUNT = 3
 
@@ -238,8 +247,16 @@ def _resolve_test_file(
     return project_root / 'test' / bundle / skill / test_name
 
 
-def _parse_test_file(test_path: Path) -> ast.AST | None:
-    """Read and parse ``test_path``; return ``None`` on unreadable / unparseable."""
+def _parse_test_file(test_path: Path, cache: AstCache | None = None) -> ast.AST | None:
+    """Read and parse ``test_path``; return ``None`` on unreadable / unparseable.
+
+    When a shared ``cache`` is supplied the AST is sourced from the parse-once
+    corpus (byte-identical to the local read+parse below — same UTF-8 read,
+    same SyntaxError-to-None semantics); absent a cache the file is read and
+    parsed standalone.
+    """
+    if cache is not None:
+        return cache.get_tree(test_path)
     try:
         source = test_path.read_text(encoding='utf-8')
     except OSError:
@@ -433,8 +450,15 @@ def _iter_script_files(marketplace_root: Path) -> list[Path]:
     return results
 
 
-def _parse_script(path: Path) -> ast.AST | None:
-    """Read and parse ``path``; return ``None`` on unreadable / unparseable."""
+def _parse_script(path: Path, cache: AstCache | None = None) -> ast.AST | None:
+    """Read and parse ``path``; return ``None`` on unreadable / unparseable.
+
+    When a shared ``cache`` is supplied the AST is sourced from the parse-once
+    corpus (byte-identical to the local read+parse below); absent a cache the
+    file is read and parsed standalone.
+    """
+    if cache is not None:
+        return cache.get_tree(path)
     try:
         source = path.read_text(encoding='utf-8')
     except OSError:
@@ -465,7 +489,7 @@ def _bundle_skill_for(path: Path, marketplace_root: Path) -> tuple[str, str] | N
 
 
 def analyze_resolver_matrix_coverage(
-    marketplace_root: Path, project_root: Path | None = None
+    marketplace_root: Path, project_root: Path | None = None, cache: AstCache | None = None
 ) -> list[dict]:
     """Scan marketplace scripts for under-covered N-input skip-on-miss resolvers.
 
@@ -488,7 +512,7 @@ def analyze_resolver_matrix_coverage(
         if bundle_skill is None:
             continue
         bundle, skill = bundle_skill
-        tree = _parse_script(script_path)
+        tree = _parse_script(script_path, cache)
         if tree is None:
             continue
         resolvers = _iter_resolver_functions(tree)
@@ -500,7 +524,7 @@ def analyze_resolver_matrix_coverage(
         if not test_file_missing:
             # test_file is not None here (verified by test_file_missing check).
             assert test_file is not None
-            test_tree = _parse_test_file(test_file)
+            test_tree = _parse_test_file(test_file, cache)
         for func_node in resolvers:
             tier_count = _count_skip_on_miss_tiers(func_node)
             required = tier_count * 2

@@ -54,9 +54,17 @@ from __future__ import annotations
 from pathlib import Path
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'skill-missing-mode'
 RULE_NAME = 'analyze_skill_mode'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='file-local',
+)
 
 # Closed enum of valid ``mode:`` values. Owned authoritatively by
 # plugin-architecture/references/frontmatter-standards.md § "mode (required)";

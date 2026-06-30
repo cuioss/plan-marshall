@@ -55,7 +55,16 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _rule_registry import RuleDescriptor
+
 RULE_ID = 'metadata-field-undefined'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='corpus-relational',
+)
 
 # ---------------------------------------------------------------------------
 # Phase 1: authoritative-set construction

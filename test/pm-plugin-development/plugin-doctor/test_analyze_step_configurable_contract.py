@@ -435,12 +435,17 @@ class _Args:
 class TestDoctorMarketplaceWiring:
     """``doctor-marketplace.py`` imports and runs the analyzer in quality-gate."""
 
-    def test_doctor_marketplace_imports_scanner(self) -> None:
-        """The orchestrator binds ``scan_step_configurable_contract``."""
-        doctor = _load_module('doctor_marketplace', 'doctor-marketplace.py')
-        assert hasattr(doctor, 'scan_step_configurable_contract')
+    def test_runner_imports_scanner(self) -> None:
+        """The single-pass runner binds ``scan_step_configurable_contract``.
+
+        After D5 the quality-gate dispatch is driven by
+        ``_runner.RuleRunner.run_quality_gate``, so the scanner import lives on
+        the runner module rather than the doctor-marketplace CLI orchestrator.
+        """
+        runner = _load_module('_runner', '_runner.py')
+        assert hasattr(runner, 'scan_step_configurable_contract')
         assert (
-            doctor.scan_step_configurable_contract
+            runner.scan_step_configurable_contract
             is scan_step_configurable_contract
         )
 

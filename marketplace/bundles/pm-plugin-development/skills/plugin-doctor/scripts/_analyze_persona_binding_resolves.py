@@ -37,9 +37,17 @@ import re
 from pathlib import Path
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'persona-binding-resolves'
 RULE_NAME = 'analyze_persona_binding_resolves'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='corpus-relational',
+)
 
 
 def _leading_frontmatter(text: str) -> str:

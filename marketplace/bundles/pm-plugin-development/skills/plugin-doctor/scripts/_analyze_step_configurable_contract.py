@@ -92,10 +92,18 @@ from pathlib import Path
 from types import ModuleType
 
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'step-configurable-contract'
 RULE_NAME = 'scan_step_configurable_contract'
 FINDING_TYPE = 'step_configurable_contract'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='file-local',
+)
 
 # Matches the top-level ``configurable:`` key on its own frontmatter line.
 _CONFIGURABLE_KEY_RE = re.compile(r'^configurable:\s*$|^configurable:\s+\S', re.MULTILINE)

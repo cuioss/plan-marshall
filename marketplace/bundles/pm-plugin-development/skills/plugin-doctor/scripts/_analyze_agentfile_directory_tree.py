@@ -36,9 +36,18 @@ from _analyze_agentfile_shared import (
     repo_root_from_marketplace_root,
 )
 from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _rule_registry import RuleDescriptor
 
 RULE_ID = 'agentfile-directory-tree-present'
 RULE_NAME = 'analyze_agentfile_directory_tree'
+
+# Analyze-surfaced agentfile-hygiene backstop (intentionally not in quality-gate).
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='warning',
+    category='content',
+    scope='file-local',
+)
 
 
 def _first_glyph_line(lines: list[str], open_idx: int, close_idx: int) -> int | None:
