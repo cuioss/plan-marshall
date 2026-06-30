@@ -2389,15 +2389,10 @@ def _parse_cost_magnitude(raw: str) -> int:
     Returns ``0`` for an unparseable value (the cost preview degrades gracefully
     rather than crashing).
     """
-    text = raw.strip().upper()
-    multiplier = 1
-    if text.endswith('K'):
-        multiplier, text = 1000, text[:-1]
-    elif text.endswith('M'):
-        multiplier, text = 1_000_000, text[:-1]
+    from sensible_number import parse_sensible_int  # type: ignore[import-not-found]
     try:
-        return int(float(text) * multiplier)
-    except ValueError:
+        return parse_sensible_int(raw)
+    except (ValueError, TypeError):
         return 0
 
 

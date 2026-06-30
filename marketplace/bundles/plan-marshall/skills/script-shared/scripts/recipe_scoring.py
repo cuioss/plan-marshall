@@ -93,21 +93,14 @@ def _parse_recipe_lane_block(text: str) -> dict[str, Any] | None:
     Returns ``{'profile': ..., 'steps': {...}}`` (either key optional) or
     ``None`` when the file declares no leading-frontmatter ``lane:`` block.
     """
-    if not text.startswith('---'):
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != '---':
         return None
     seed: dict[str, Any] = {}
     steps: dict[str, str] = {}
-    in_frontmatter = False
     in_lane = False
     in_steps = False
-    for index, line in enumerate(text.splitlines()):
-        if index == 0:
-            if line.strip() != '---':
-                return None
-            in_frontmatter = True
-            continue
-        if not in_frontmatter:
-            break
+    for line in lines[1:]:
         if line.strip() == '---':
             break
         if not in_lane:
