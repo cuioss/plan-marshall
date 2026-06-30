@@ -53,6 +53,21 @@ def test_each_secret_placeholder_key_is_rejected():
         assert secret_key not in config
 
 
+def test_secret_keys_are_rejected_case_insensitively():
+    """A capital/mixed-case variant of a secret key is rejected too (CWE-178).
+
+    The denylist normalizes the key with ``.lower()`` before the membership
+    check, so ``Token`` / ``TOKEN`` / ``Password`` can never bypass the guard
+    and persist a secret into the git-tracked ``marshal.json``.
+    """
+    config: dict = {}
+    applied = apply_extra_passthrough(
+        config, ['Token=leak', 'TOKEN=leak', 'Password=hunter2', 'UserName=admin']
+    )
+    assert applied == []
+    assert config == {}
+
+
 def test_benign_keys_are_applied_in_order():
     """Non-secret keys are written and returned in supplied order."""
     config: dict = {}

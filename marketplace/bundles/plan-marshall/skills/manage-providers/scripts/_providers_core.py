@@ -115,9 +115,11 @@ def apply_extra_passthrough(provider_config: dict[str, Any], extra_pairs: list[s
 
     - a pair without ``=`` is ignored,
     - the key is whitespace-stripped and an empty key is skipped,
-    - a key naming a secret field (any key in ``SECRET_PLACEHOLDERS`` —
-      ``token``, ``username``, ``password``) is rejected, so a secret can never
-      be persisted into the git-tracked ``marshal.json`` via ``--extra``.
+    - a key naming a secret field (any key whose lower-cased form is in
+      ``SECRET_PLACEHOLDERS`` — ``token``, ``username``, ``password``) is
+      rejected case-insensitively, so neither ``token`` nor ``Token`` nor
+      ``TOKEN`` can persist a secret into the git-tracked ``marshal.json`` via
+      ``--extra``.
 
     The supplied ``provider_config`` is mutated in place; persistence
     (``write_provider_config``) is the caller's responsibility.
@@ -137,7 +139,7 @@ def apply_extra_passthrough(provider_config: dict[str, Any], extra_pairs: list[s
         key = key.strip()
         if not key:
             continue
-        if key in SECRET_PLACEHOLDERS:
+        if key.lower() in SECRET_PLACEHOLDERS:
             continue
         provider_config[key] = value
         if key not in applied_keys:
