@@ -38,6 +38,9 @@ SECRET_PLACEHOLDERS = {
     'username': 'REPLACE_WITH_YOUR_USERNAME',
     'password': 'REPLACE_WITH_YOUR_PASSWORD',
 }
+# Canonical keys managed on a dedicated validation/saving path — reject from --extra
+# so they cannot be overwritten by a passthrough pair.
+RESERVED_EXTRA_KEYS = {'url'}
 _PROJECT_NAME_PATTERN = re.compile(r'[^a-zA-Z0-9._-]')
 
 
@@ -139,7 +142,8 @@ def apply_extra_passthrough(provider_config: dict[str, Any], extra_pairs: list[s
         key = key.strip()
         if not key:
             continue
-        if key.lower() in SECRET_PLACEHOLDERS:
+        normalized_key = key.lower()
+        if normalized_key in SECRET_PLACEHOLDERS or normalized_key in RESERVED_EXTRA_KEYS:
             continue
         provider_config[key] = value
         if key not in applied_keys:

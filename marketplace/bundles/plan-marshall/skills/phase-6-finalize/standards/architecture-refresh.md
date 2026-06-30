@@ -174,8 +174,9 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   descriptor-regression-check --pre {baseline_dir} --project-dir {worktree_path}
 ```
 
-Parse `regressive` (bool) and `violations[]` from the TOON output. `{baseline_dir}` is the same extracted-baseline directory Step 3b passed to `diff-modules`.
+Parse `status`, `regressive` (bool), and `violations[]` from the TOON output. `{baseline_dir}` is the same extracted-baseline directory Step 3b passed to `diff-modules`.
 
+- **`status: error`** → the regression check itself failed (e.g., the baseline directory cannot be read, the project-architecture descriptor is malformed, or a required field is absent). Treat this the same as `regressive: true`: do NOT commit, do NOT push. Log an ERROR carrying the TOON `error` and `detail` fields, mark the step `outcome failed`, and return — the delta is left uncommitted in the worktree.
 - **`regressive: false`** → the delta is benign (the module index shifted, project identity intact). Proceed to 3d and commit.
 - **`regressive: true`** → do NOT commit, do NOT push. The regenerated descriptor lost curated project identity. Log an ERROR naming the violated fields, leave the regressive descriptor uncommitted in the worktree, mark the step `outcome failed`, and return — do NOT abort the finalize pipeline (the next plan retries from a clean state once the source path is repaired):
 

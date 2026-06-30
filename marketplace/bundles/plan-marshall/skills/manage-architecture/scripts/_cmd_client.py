@@ -2082,6 +2082,16 @@ def cmd_diff_modules(args: argparse.Namespace) -> dict[str, Any]:
 # =============================================================================
 
 
+def _descriptor_text(value: Any) -> str:
+    """Safely convert a descriptor field value to a stripped string.
+
+    Non-string values (list, int, dict) are treated as empty rather than
+    raising ``AttributeError`` when ``.strip()`` is called, so a malformed
+    ``_project.json`` field cannot crash the regression check.
+    """
+    return value.strip() if isinstance(value, str) else ''
+
+
 def _is_blanked(baseline_value: Any, current_value: Any) -> bool:
     """Whether a descriptor field transitioned from non-empty to empty.
 
@@ -2090,8 +2100,8 @@ def _is_blanked(baseline_value: Any, current_value: Any) -> bool:
     behaviour) is the only transition that returns ``True``. A field that was
     already empty in the baseline never counts as regressive.
     """
-    had_value = bool((baseline_value or '').strip())
-    has_value = bool((current_value or '').strip())
+    had_value = bool(_descriptor_text(baseline_value))
+    has_value = bool(_descriptor_text(current_value))
     return had_value and not has_value
 
 
@@ -2153,8 +2163,8 @@ def cmd_descriptor_regression_check(args: argparse.Namespace) -> dict[str, Any]:
 
     violations: list[dict[str, str]] = []
 
-    baseline_name = (baseline_meta.get('name') or '').strip()
-    current_name = (current_meta.get('name') or '').strip()
+    baseline_name = _descriptor_text(baseline_meta.get('name'))
+    current_name = _descriptor_text(current_meta.get('name'))
     if baseline_name and current_name != baseline_name:
         if current_name == project_basename:
             reason = (

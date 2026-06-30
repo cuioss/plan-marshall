@@ -547,7 +547,7 @@ def api_discover(project_dir: str = '.', force: bool = False, regenerate_descrip
     if project_meta_path.exists():
         try:
             existing_meta = load_project_meta(project_dir)
-        except DataNotFoundError:
+        except (DataNotFoundError, OSError, ValueError):
             existing_meta = {}
 
     # Crawl the live worktree filesystem to enumerate modules. A single
@@ -567,14 +567,17 @@ def api_discover(project_dir: str = '.', force: bool = False, regenerate_descrip
     # NEVER ``project_path.name`` (the worktree/plan-id basename under a forced
     # rediscovery). ``description`` / ``description_reasoning`` are preserved
     # unless the caller opted into regeneration.
-    existing_name = (existing_meta.get('name') or '').strip()
+    existing_name_raw = existing_meta.get('name')
+    existing_name = existing_name_raw.strip() if isinstance(existing_name_raw, str) else ''
     resolved_name = existing_name or _resolve_repo_root_name(project_path)
     if regenerate_description:
         resolved_description = ''
         resolved_description_reasoning = ''
     else:
-        resolved_description = existing_meta.get('description', '') or ''
-        resolved_description_reasoning = existing_meta.get('description_reasoning', '') or ''
+        description_raw = existing_meta.get('description')
+        reasoning_raw = existing_meta.get('description_reasoning')
+        resolved_description = description_raw if isinstance(description_raw, str) else ''
+        resolved_description_reasoning = reasoning_raw if isinstance(reasoning_raw, str) else ''
 
     # Build the project-meta document. The ``modules`` index here is the
     # canonical record of "which modules existed at last discover".

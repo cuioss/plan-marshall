@@ -781,7 +781,7 @@ See `manage-status` Canonical invocations → `planning-lane` and `manage-status
 
 ### Step 8c: Sibling-Dedup Collision Gate
 
-Before the plan leaves init, check it against every concurrently-active sibling plan for a duplication collision, and gate the user at init rather than deferring the discovery to finalize. The recurring failure this closes: the same audit source fanned out across multiple plans, or two plans targeting the same files, surfaces (if at all) only at finalize — far too late to cheaply re-scope.
+Before the plan leaves init, check it against every concurrently-active sibling plan for a duplication collision. The same audit source fanning out across multiple plans, or two plans targeting the same files, is caught here — when it is cheapest to re-scope — rather than surfacing at finalize.
 
 Run the deterministic, read-only collision verb. It is heuristic-free — no LLM dispatch, no writes — and mirrors `planning-lane route`'s zero-discovery cheap-read model:
 

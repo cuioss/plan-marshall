@@ -9,22 +9,22 @@ Storage: JSON format (.plan/local/plans/{plan_id}/status.json)
 Output: TOON format for API responses
 
 Usage:
-    python3 manage-status.py create --plan-id EXAMPLE-PLAN --title "Title" --phases 1-init,2-refine,3-outline
-    python3 manage-status.py read --plan-id EXAMPLE-PLAN
-    python3 manage-status.py set-phase --plan-id EXAMPLE-PLAN --phase 2-refine
-    python3 manage-status.py update-phase --plan-id EXAMPLE-PLAN --phase 1-init --status done
-    python3 manage-status.py progress --plan-id EXAMPLE-PLAN
-    python3 manage-status.py metadata --plan-id EXAMPLE-PLAN --set --field change_type --value feature
-    python3 manage-status.py metadata --plan-id EXAMPLE-PLAN --get --field change_type
-    python3 manage-status.py get-context --plan-id EXAMPLE-PLAN
-    python3 manage-status.py list
-    python3 manage-status.py transition --plan-id EXAMPLE-PLAN --completed 1-init
-    python3 manage-status.py archive --plan-id EXAMPLE-PLAN
-    python3 manage-status.py route --phase 1-init
-    python3 manage-status.py get-routing-context --plan-id EXAMPLE-PLAN
-    python3 manage-status.py mark-step-done --plan-id EXAMPLE-PLAN --phase 5-execute --step discovery --outcome done
-    python3 manage-status.py assert-step-recorded --plan-id EXAMPLE-PLAN --phase 6-finalize --step ci-verify --require-terminal
-    python3 manage-status.py sibling-collision-check --plan-id EXAMPLE-PLAN
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create --plan-id EXAMPLE-PLAN --title "Title" --phases 1-init,2-refine,3-outline
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read --plan-id EXAMPLE-PLAN
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status set-phase --plan-id EXAMPLE-PLAN --phase 2-refine
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-phase --plan-id EXAMPLE-PLAN --phase 1-init --status done
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status progress --plan-id EXAMPLE-PLAN
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id EXAMPLE-PLAN --set --field change_type --value feature
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id EXAMPLE-PLAN --get --field change_type
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-context --plan-id EXAMPLE-PLAN
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition --plan-id EXAMPLE-PLAN --completed 1-init
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status archive --plan-id EXAMPLE-PLAN
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status route --phase 1-init
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-routing-context --plan-id EXAMPLE-PLAN
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done --plan-id EXAMPLE-PLAN --phase 5-execute --step discovery --outcome done
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert-step-recorded --plan-id EXAMPLE-PLAN --phase 6-finalize --step ci-verify --require-terminal
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status sibling-collision-check --plan-id EXAMPLE-PLAN
 """
 
 import argparse

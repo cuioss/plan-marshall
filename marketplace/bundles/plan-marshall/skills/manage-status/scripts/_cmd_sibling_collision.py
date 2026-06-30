@@ -139,8 +139,13 @@ def _iter_active_plan_dirs() -> dict[str, Path]:
 
     plans_dir = get_plans_dir()
     if plans_dir.is_dir():
-        for plan_dir in sorted(plans_dir.iterdir()):
-            if plan_dir.is_dir() and (plan_dir / FILE_STATUS).is_file():
+        try:
+            plan_dirs = sorted(plans_dir.iterdir())
+        except OSError:
+            plan_dirs = []
+        for plan_dir in plan_dirs:
+            status_file = plan_dir / FILE_STATUS
+            if plan_dir.is_dir() and status_file.is_file() and not status_file.is_symlink():
                 result.setdefault(plan_dir.name, plan_dir)
 
     try:
@@ -149,7 +154,11 @@ def _iter_active_plan_dirs() -> dict[str, Path]:
         worktree_root = None
 
     if worktree_root is not None and worktree_root.is_dir():
-        for worktree_dir in sorted(worktree_root.iterdir()):
+        try:
+            wt_dirs = sorted(worktree_root.iterdir())
+        except OSError:
+            wt_dirs = []
+        for worktree_dir in wt_dirs:
             if not worktree_dir.is_dir():
                 continue
             wt_plans_dir = worktree_dir / PLAN_DIR_NAME / 'local' / DIR_PLANS
@@ -160,10 +169,12 @@ def _iter_active_plan_dirs() -> dict[str, Path]:
             except OSError:
                 continue
             for plan_dir in plan_dirs:
+                status_file = plan_dir / FILE_STATUS
                 if (
                     plan_dir.is_dir()
                     and plan_dir.name not in result
-                    and (plan_dir / FILE_STATUS).is_file()
+                    and status_file.is_file()
+                    and not status_file.is_symlink()
                 ):
                     result[plan_dir.name] = plan_dir
 
@@ -191,9 +202,14 @@ def run_sibling_collision_check(plan_id: str) -> dict[str, Any]:
         sibling_dir = siblings[sibling_id]
 
         # Check 1 (primary): source-origin fan-out.
-        if self_source_id is not None:
+        if self_source is not None and self_source_id is not None:
             sib_source, sib_source_id = _read_request_source(sibling_dir)
-            if sib_source_id is not None and sib_source_id == self_source_id:
+            if (
+                sib_source is not None
+                and sib_source == self_source
+                and sib_source_id is not None
+                and sib_source_id == self_source_id
+            ):
                 source_origin_matches.append(
                     {
                         'plan_id': sibling_id,

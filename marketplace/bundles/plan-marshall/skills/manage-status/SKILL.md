@@ -750,7 +750,7 @@ blocked: false
 
 ### sibling-collision-check
 
-Init-time **semantic sibling-dedup collision gate** — scans every active (non-archived) sibling plan and flags two collision classes against the plan under init. **Deterministic, read-only; zero LLM, zero writes.** Surfaced through a new phase-1-init step (after `planning-lane route`); the step consumes the result and raises the user gate (proceed / rename / abort) BEFORE phase-2, rather than deferring the discovery to finalize.
+Init-time **semantic sibling-dedup collision gate** — scans every active (non-archived) sibling plan and flags two collision classes against the plan under init. **Deterministic, read-only; zero LLM, zero writes.** Surfaced through the phase-1-init step (after `planning-lane route`); the step consumes the result and raises the user gate (proceed / rename / abort) before phase-2.
 
 Two collision classes are flagged, in priority order:
 
@@ -769,10 +769,10 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status siblin
 status: success
 plan_id: my-plan
 source: lesson
-source_id: 2026-06-29-23-002
+source_id: EXAMPLE-SOURCE-ID
 active_sibling_count: 3
 source_origin_matches[1]{plan_id,source,source_id}:
-  sibling-plan,lesson,2026-06-29-23-002
+  sibling-plan,lesson,EXAMPLE-SOURCE-ID
 source_origin_match_count: 1
 file_overlap_matches[1]{plan_id,overlap_count,overlapping_files}:
   other-plan,2,marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py;test/plan-marshall/manage-status/test_sibling_collision.py
