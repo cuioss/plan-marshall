@@ -138,7 +138,7 @@ def test_run_quality_gate_emits_canonical_label_order(tmp_path):
     bundles = _clean_bundles(tmp_path)
     runner = RuleRunner(CorpusContext.build(bundles))
 
-    issues, summaries = runner.run_quality_gate(
+    _issues, summaries = runner.run_quality_gate(
         scope_dirs=[],
         scoped=_identity,
         suppressed=_identity,

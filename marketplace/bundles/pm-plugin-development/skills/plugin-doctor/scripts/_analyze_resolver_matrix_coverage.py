@@ -259,7 +259,7 @@ def _parse_test_file(test_path: Path, cache: AstCache | None = None) -> ast.AST 
         return cache.get_tree(test_path)
     try:
         source = test_path.read_text(encoding='utf-8')
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     try:
         return ast.parse(source, filename=str(test_path))
@@ -461,7 +461,7 @@ def _parse_script(path: Path, cache: AstCache | None = None) -> ast.AST | None:
         return cache.get_tree(path)
     try:
         source = path.read_text(encoding='utf-8')
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     try:
         return ast.parse(source, filename=str(path))
