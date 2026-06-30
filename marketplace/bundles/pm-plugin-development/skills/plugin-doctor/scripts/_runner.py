@@ -3,20 +3,19 @@
 """Single-pass two-phase rule runner for the plugin-doctor analyzers.
 
 The runner builds the file/AST corpus ONCE — a shared parse-once
-:class:`AstCache` (the D2 substrate) — and dispatches the marketplace-wide
-rules through one place, replacing the two hand-maintained ~25-call dispatch
-enumerations previously open-coded in ``cmd_analyze`` and ``cmd_quality_gate``.
+:class:`AstCache` — and dispatches the marketplace-wide rules through one
+place.
 
 Byte-identical contract
 -----------------------
 The emitted findings, their ORDER, the per-rule ``_scoped`` / ``_suppressed``
 wrapping, and every ``rule_summaries`` label are preserved byte-for-byte. The
-runner owns ordered per-command dispatch tables that reproduce the prior
-sequences exactly. The D4 descriptor ``scope`` field conceptually partitions
-the corpus-relational analyzers (which can read the shared :class:`AstCache`)
-from the file-local ones, but the runner does NOT reorder the emitted findings:
-the shared corpus is the single-pass substrate (AST parsing happens at most
-once per file), while emission order stays identical to the pre-D5 hand-order.
+runner owns ordered per-command dispatch tables that preserve the canonical
+emission sequences exactly. The descriptor ``scope`` field conceptually
+partitions the corpus-relational analyzers (which can read the shared
+:class:`AstCache`) from the file-local ones, but the runner does NOT reorder
+the emitted findings: the shared corpus is the single-pass substrate (AST
+parsing happens at most once per file), while emission order is preserved.
 
 Wrapping injection
 ------------------
@@ -88,7 +87,6 @@ class CorpusContext:
 
     @classmethod
     def build(cls, marketplace_root: Path) -> CorpusContext:
-        """Construct a fresh corpus context with an empty shared AST cache."""
         return cls(marketplace_root=marketplace_root, ast_cache=AstCache())
 
 
@@ -117,7 +115,7 @@ class RuleRunner:
     ) -> tuple[list[dict], list[dict]]:
         """Run the quality-gate invariant rule set; return (issues, rule_summaries).
 
-        Reproduces the pre-D5 ``cmd_quality_gate`` dispatch byte-for-byte: the
+        Preserves the canonical ``cmd_quality_gate`` dispatch byte-for-byte: the
         same ordered rule calls, the same ``_scoped`` / ``_suppressed`` wrapping
         per rule, the same ``rule_summaries`` labels (including the
         ``provides-method-table-drift`` / ``literal-count-drift`` rule-name
@@ -256,7 +254,7 @@ class RuleRunner:
     def run_analyze_marketplace_rules(self, *, active_rules: frozenset[str]) -> list[dict]:
         """Run the marketplace-wide rule set for ``cmd_analyze``; return findings.
 
-        Reproduces the pre-D5 ``cmd_analyze`` marketplace-wide dispatch
+        Preserves the canonical ``cmd_analyze`` marketplace-wide dispatch
         byte-for-byte: the same ordered analyzer calls and the same
         ``active_rules`` gating for the two opt-in clusters (``script_call_drift``
         and ``argument_naming``). The per-component ``analyze_component`` loop,

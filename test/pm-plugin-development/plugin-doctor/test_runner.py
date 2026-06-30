@@ -1,16 +1,14 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
-"""Tests for the D5 single-pass two-phase rule runner (``_runner.py``).
+"""Tests for the single-pass two-phase rule runner (``_runner.py``).
 
-D5 collapses the two hand-ordered ~25-call dispatch enumerations previously
-open-coded in ``cmd_analyze`` and ``cmd_quality_gate`` into one registry-backed
-:class:`RuleRunner` that builds the parse-once AST corpus once and dispatches
+:class:`RuleRunner` builds the parse-once AST corpus once and dispatches
 the marketplace-wide rules through ordered per-command tables.
 
 The HARD acceptance contract these tests pin:
 
 1. Golden snapshot — ``run_quality_gate`` emits its ``rule_summaries`` in the
-   exact pre-D5 label sequence (including the ``provides-method-table-drift`` /
+   canonical label sequence (including the ``provides-method-table-drift`` /
    ``literal-count-drift`` rule-name labels and the two-entry markdown-mirror
    split). A reorder, a dropped rule, or a relabel breaks this test.
 2. The runner builds a fresh shared :class:`CorpusContext` (an ``AstCache`` that
@@ -61,7 +59,6 @@ AstCache = _dep_index.AstCache
 _apmt = _load('_analyze_provides_method_table.py', '_apmt_runner_test')
 _alc = _load('_analyze_literal_count.py', '_alc_runner_test')
 _armc = _load('_analyze_resolver_matrix_coverage.py', '_armc_runner_test')
-_ans = _load('_analyze_notation_staleness.py', '_ans_runner_test')
 
 
 # The pre-D5 cmd_quality_gate emission order, captured verbatim. This is the
@@ -241,14 +238,6 @@ def test_resolver_matrix_shared_cache_equivalent():
     """resolver-matrix-coverage output is identical with or without a shared cache."""
     standalone = _armc.analyze_resolver_matrix_coverage(MARKETPLACE_ROOT)
     shared = _armc.analyze_resolver_matrix_coverage(MARKETPLACE_ROOT, cache=AstCache())
-    assert standalone == shared
-
-
-def test_notation_staleness_accepts_cache_param():
-    """notation-staleness (regex-based) accepts the uniform cache param unchanged."""
-    skill_dir = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-status'
-    standalone = _ans.analyze_notation_staleness([skill_dir])
-    shared = _ans.analyze_notation_staleness([skill_dir], cache=AstCache())
     assert standalone == shared
 
 

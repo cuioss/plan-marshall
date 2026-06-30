@@ -14,9 +14,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-# Analyzer entry points are imported directly from their owning modules (the
-# former ``_analyze`` re-export surface has been removed in favour of the
-# central rule registry + per-module imports).
 from _analyze_coverage import analyze_tool_coverage
 from _analyze_manage_findings_invocation import scan_skill_for_manage_findings_invocation
 from _analyze_markdown import (

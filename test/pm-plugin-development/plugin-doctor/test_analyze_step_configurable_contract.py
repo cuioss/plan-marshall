@@ -438,7 +438,7 @@ class TestDoctorMarketplaceWiring:
     def test_runner_imports_scanner(self) -> None:
         """The single-pass runner binds ``scan_step_configurable_contract``.
 
-        After D5 the quality-gate dispatch is driven by
+        The quality-gate dispatch is driven by
         ``_runner.RuleRunner.run_quality_gate``, so the scanner import lives on
         the runner module rather than the doctor-marketplace CLI orchestrator.
         """

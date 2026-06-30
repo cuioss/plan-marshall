@@ -89,9 +89,9 @@ SCRIPT_DIR = Path(__file__).parent
 # This replaces the prior env-var gate, which violated the
 # ``persona-plan-marshall-agent`` hard rule against ``VAR=val cmd`` invocations.
 #
-# The opt-in set is no longer a hand-maintained literal — it is derived from
-# the central rule registry (``_rule_registry.optin_rule_names``), which
-# collects the ``opt_in=True`` descriptors declared by the analyzer modules
+# The opt-in set is derived from the central rule registry
+# (``_rule_registry.optin_rule_names``), which collects the ``opt_in=True``
+# descriptors declared by the analyzer modules
 # (``argument_naming`` / ``verb_chain`` / ``script_call_drift``). Computed once
 # at module import, after the analyzer imports above, so the whole descriptor
 # population is loadable by the time the registry is built.
@@ -478,7 +478,7 @@ def cmd_analyze(args) -> dict:
         all_issues.extend(result.get('issues', []))
 
     # The marketplace-wide rule set is dispatched once through the single-pass
-    # runner: it builds the parse-once AST corpus and reproduces the exact pre-D5
+    # runner: it builds the parse-once AST corpus and preserves the canonical
     # emission order and the two opt-in active_rules gates (script_call_drift,
     # argument_naming). The per-component analyze_component loop above, the
     # suppression filter, and the categorize step below stay in this command.
@@ -792,8 +792,8 @@ def cmd_quality_gate(args) -> dict:
         return filter_suppressed_findings(_scoped(findings), marketplace_root, default_cfg, project_cfg)
 
     # The marketplace-wide invariant rule set is dispatched once through the
-    # single-pass runner: it builds the parse-once AST corpus and reproduces the
-    # exact pre-D5 emission order, the per-rule _scoped/_suppressed wrapping, and
+    # single-pass runner: it builds the parse-once AST corpus and preserves the
+    # canonical emission order, the per-rule _scoped/_suppressed wrapping, and
     # every rule_summaries label (including the provides-method-table-drift /
     # literal-count-drift rule-name labels and the two-entry markdown-mirror
     # split). The scope/suppression closures and the scoped manage-invocation

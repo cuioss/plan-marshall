@@ -22,11 +22,6 @@ from _analyze_markdown import cmd_markdown
 from _analyze_structure import cmd_structure
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
-# The former ``__all__`` re-export surface is removed. ``_analyze.py`` is now a
-# thin CLI entry point; consumers import each analyzer directly from its owning
-# ``_analyze_*`` module (or discover it through ``_rule_registry``), so the
-# hand-maintained re-export list is no longer the public API mirror.
-
 
 @safe_main
 def main() -> int:

@@ -13,8 +13,8 @@ Invocation model in these tests:
 - Most cases drive the ``cmd_*`` subcommand entry points IN-PROCESS via the
   ``_doctor`` module handle, passing an argparse-shaped namespace built by
   ``_ns`` (``marketplace_root=...`` targets a fixture marketplace under
-  ``tmp_path``, replacing the former ``PM_MARKETPLACE_ROOT`` env override). The
-  cmd functions return their result dict directly, so there is no TOON round-trip.
+  ``tmp_path``). The cmd functions return their result dict directly, so there
+  is no TOON round-trip.
 - Genuine CLI/exit-code/argparse-surface and dispatcher-traceback cases still
   invoke the script as a subprocess via ``run_script`` (TOON parsed via
   ``toon_parser``) — in-process cannot exercise the argparse parser, the process
@@ -63,9 +63,7 @@ def _ns(**overrides):
     """Build an argparse-shaped namespace for in-process ``cmd_*`` invocation.
 
     Mirrors the full attribute surface ``main()`` would populate so any cmd
-    function can read the flags it needs; overrides set the per-test inputs
-    (``marketplace_root`` replaces the ``PM_MARKETPLACE_ROOT`` env override that
-    the subprocess form used).
+    function can read the flags it needs; overrides set the per-test inputs.
     """
     defaults = {
         'marketplace_root': None,

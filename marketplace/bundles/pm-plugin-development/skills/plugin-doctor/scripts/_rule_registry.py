@@ -5,10 +5,9 @@
 Each rule-bearing ``_analyze_*.py`` module exposes a module-level
 ``RULE_DESCRIPTOR`` (or a ``RULE_DESCRIPTORS`` list for modules that back more
 than one distinct rule). This module imports every such module and collects
-its descriptor(s) into a single registry. The three hand-maintained sets that
-the doctor previously carried as literals — the ``__all__`` re-export list in
-``_analyze.py``, ``doctor-marketplace.py::_OPTIN_RULE_NAMES``, and the
-``active_rules`` gating literals — become pure functions of this registry.
+its descriptor(s) into a single registry. The opt-in rule set, the
+active-rules gating, and the analyzer-name surface are all derived as pure
+functions of this registry.
 
 Descriptor semantics
 --------------------
@@ -30,7 +29,7 @@ their current dict shape unchanged). The fields are:
   file under inspection) vs ``corpus-relational`` (the verdict depends on the
   cross-file corpus: resolving notations against the script tree, comparing a
   table mirror against a derived set, checking a link target on disk, etc.).
-  This is the field the D5 single-pass runner dispatches on.
+  This is the field the single-pass runner dispatches on.
 - ``opt_in`` — gated OFF by default; only runs when the caller passes the
   rule's token via ``--rules``.
 - ``default_on`` — runs unconditionally when not opt-in.
@@ -52,7 +51,7 @@ from __future__ import annotations
 import importlib
 from dataclasses import dataclass
 
-# Scope values — the field the D5 single-pass runner dispatches on.
+# Scope values — the field the single-pass runner dispatches on.
 SCOPE_FILE_LOCAL = 'file-local'
 SCOPE_CORPUS_RELATIONAL = 'corpus-relational'
 
@@ -142,9 +141,7 @@ def _descriptors_for_module(module_name: str) -> list[RuleDescriptor]:
 
 
 def _build_registry() -> tuple[RuleDescriptor, ...]:
-    """Import every descriptor-bearing module and collect its descriptors.
-
-    Raises ``ValueError`` on a duplicate ``rule_id`` so a copy-paste descriptor
+    """Raise ``ValueError`` on a duplicate ``rule_id`` so a copy-paste descriptor
     collision fails loudly rather than silently shadowing.
     """
     collected: list[RuleDescriptor] = []
@@ -167,9 +164,5 @@ def get_registry() -> tuple[RuleDescriptor, ...]:
 
 
 def optin_rule_names() -> frozenset[str]:
-    """Derive the opt-in rule token set from the registry descriptors.
-
-    Replaces the prior hand-maintained ``_OPTIN_RULE_NAMES`` literal in
-    ``doctor-marketplace.py``.
-    """
+    """Derive the opt-in rule token set from the registry descriptors."""
     return frozenset(descriptor.rule_id for descriptor in get_registry() if descriptor.opt_in)

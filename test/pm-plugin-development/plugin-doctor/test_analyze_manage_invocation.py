@@ -1308,10 +1308,10 @@ class TestQualityGateWiring:
     def test_quality_gate_imports_scan_manage_invocation(self) -> None:
         """The single-pass runner imports the manage-invocation scanner.
 
-        After D5 the quality-gate dispatch (including the manage-invocation
-        cluster) is driven by ``_runner.RuleRunner.run_quality_gate``, so the
-        scanner import lives on the runner module rather than the
-        doctor-marketplace CLI orchestrator.
+        The quality-gate dispatch (including the manage-invocation cluster) is
+        driven by ``_runner.RuleRunner.run_quality_gate``, so the scanner import
+        lives on the runner module rather than the doctor-marketplace CLI
+        orchestrator.
         """
         runner = _load_module('_runner', '_runner.py')
         assert hasattr(runner, 'scan_manage_invocation')

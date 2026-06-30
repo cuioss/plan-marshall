@@ -224,9 +224,9 @@ class TestAnalyzeOnlyRegistration:
     """The rule is wired into cmd_analyze but NOT cmd_quality_gate."""
 
     def test_call_present_in_analyze_runner_absent_in_quality_gate(self) -> None:
-        # After D5 the marketplace-wide dispatch lives on the single-pass
-        # _runner.RuleRunner: agentfile rules run in run_analyze_marketplace_rules
-        # but NOT in run_quality_gate (analyze-surfaced only).
+        # The marketplace-wide dispatch lives on _runner.RuleRunner: agentfile
+        # rules run in run_analyze_marketplace_rules but NOT in run_quality_gate
+        # (analyze-surfaced only).
         runner_src = (
             get_scripts_dir('pm-plugin-development', 'plugin-doctor') / '_runner.py'
         ).read_text(encoding='utf-8')

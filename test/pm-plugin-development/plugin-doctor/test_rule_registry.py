@@ -2,12 +2,11 @@
 # ruff: noqa: I001, E402
 """Regression tests for the declarative rule registry (``_rule_registry.py``).
 
-D4 replaces three hand-maintained sets — ``_analyze.__all__``, the
-``doctor-marketplace.py::_OPTIN_RULE_NAMES`` literal, and the ``active_rules``
-gating literals — with pure functions of a descriptor registry. Each
-rule-bearing ``_analyze_*.py`` module exposes a module-level ``RULE_DESCRIPTOR``
-(or a ``RULE_DESCRIPTORS`` list for multi-rule modules); ``_rule_registry.py``
-imports every such module and collects its descriptor(s).
+Each rule-bearing ``_analyze_*.py`` module exposes a module-level
+``RULE_DESCRIPTOR`` (or a ``RULE_DESCRIPTORS`` list for multi-rule modules);
+``_rule_registry.py`` imports every such module and collects its descriptor(s).
+The opt-in rule set, the active-rules gating, and the analyzer-name surface are
+all derived as pure functions of this registry.
 
 The HARD acceptance contract these tests pin:
 
@@ -17,7 +16,7 @@ The HARD acceptance contract these tests pin:
    ``default_on`` / ``has_fixer`` flags.
 2. No duplicate ``rule_id`` across the registry; the collector raises
    ``ValueError`` on a collision rather than silently shadowing.
-3. The descriptor-derived opt-in set is byte-identical to the prior literal
+3. The descriptor-derived opt-in set equals
    ``frozenset({'argument_naming', 'verb_chain', 'script_call_drift'})``, and
    the value ``doctor-marketplace.py`` consumes (``_OPTIN_RULE_NAMES``) is the
    same derived set.
@@ -57,9 +56,8 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(_FILE_OPS_DIR))
 
 
-# The pre-D4 hand-maintained opt-in literal, captured verbatim from the prior
-# ``doctor-marketplace.py::_OPTIN_RULE_NAMES``. This is the byte-identical
-# regression target the derivation must reproduce.
+# The canonical opt-in rule token set; the regression target the registry
+# derivation must reproduce.
 PRIOR_OPTIN_RULE_NAMES = frozenset({'argument_naming', 'verb_chain', 'script_call_drift'})
 
 VALID_SCOPES = frozenset({'file-local', 'corpus-relational'})
