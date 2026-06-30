@@ -10,8 +10,8 @@ For secret changes, the user edits the credential file directly.
 import argparse
 
 from _providers_core import (
-    SECRET_PLACEHOLDERS,
     VALID_AUTH_TYPES,
+    apply_extra_passthrough,
     check_credential_completeness,
     get_project_name,
     load_credential,
@@ -31,12 +31,10 @@ def _upsert_extra_fields(skill: str, extra_pairs: list[str]) -> list[str]:
     absent and replaced in place when present; all other existing extras are
     preserved. Running with the same pairs twice yields the same end state.
 
-    Because ``credentials_config`` is git-tracked and non-secret by intent,
-    each key is validated before it is written: the key is whitespace-stripped,
-    an empty key is skipped, and a key naming a secret field (any key in
-    ``SECRET_PLACEHOLDERS`` — ``token``, ``username``, ``password``) is rejected
-    so a secret can never be persisted into marshal.json via ``--extra``. The
-    returned key list is deduplicated.
+    The per-key validation (whitespace-strip, empty-key skip, secret-key
+    denylist, dedup) is delegated to the shared ``apply_extra_passthrough``
+    guard so ``configure`` and ``edit`` reject the same keys identically. The
+    config is persisted only when at least one key was upserted.
 
     Args:
         skill: Skill name keying the provider config.
@@ -48,19 +46,7 @@ def _upsert_extra_fields(skill: str, extra_pairs: list[str]) -> list[str]:
         The deduplicated list of keys that were upserted (in supplied order).
     """
     provider_config = dict(read_provider_config(skill))
-    upserted_keys: list[str] = []
-    for pair in extra_pairs:
-        if '=' not in pair:
-            continue
-        key, value = pair.split('=', 1)
-        key = key.strip()
-        if not key:
-            continue
-        if key in SECRET_PLACEHOLDERS:
-            continue
-        provider_config[key] = value
-        if key not in upserted_keys:
-            upserted_keys.append(key)
+    upserted_keys = apply_extra_passthrough(provider_config, extra_pairs)
 
     if upserted_keys:
         write_provider_config(skill, provider_config)

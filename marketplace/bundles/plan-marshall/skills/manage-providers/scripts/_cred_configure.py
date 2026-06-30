@@ -14,6 +14,7 @@ from pathlib import Path
 from _list_providers import find_provider_with_details  # type: ignore[import-not-found]
 from _providers_core import (
     SECRET_PLACEHOLDERS,
+    apply_extra_passthrough,
     check_credential_completeness,
     get_project_name,
     load_credential,
@@ -207,15 +208,12 @@ def run_configure(args: argparse.Namespace) -> int:
     # Save credential file (secrets only)
     path = save_credential(skill_name, data, scope, project_name)
 
-    # Write non-secret config to marshal.json
+    # Write non-secret config to marshal.json. The --extra passthrough routes
+    # through the shared guard so configure and edit reject secret keys (and
+    # skip empty/duplicate keys) identically.
     provider_config: dict[str, str] = {'url': url}
     extra_fields = getattr(args, 'extra', None) or []
-    supplied_keys: set[str] = set()
-    for pair in extra_fields:
-        if '=' in pair:
-            key, value = pair.split('=', 1)
-            provider_config[key] = value
-            supplied_keys.add(key)
+    supplied_keys: set[str] = set(apply_extra_passthrough(provider_config, extra_fields))
 
     # Sonar provider + Maven-detected: auto-derive organization/project_key from
     # pom.xml, and warn (non-fatally) when a user-supplied value disagrees.

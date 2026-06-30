@@ -105,6 +105,46 @@ def write_provider_config(skill_name: str, provider_config: dict[str, Any]) -> N
     )
 
 
+def apply_extra_passthrough(provider_config: dict[str, Any], extra_pairs: list[str]) -> list[str]:
+    """Apply ``--extra KEY=VALUE`` passthrough into a provider config in place.
+
+    This is the single guard shared by the ``configure`` and ``edit`` credential
+    commands so the two accept and reject ``--extra`` keys identically. Because
+    ``credentials_config`` is git-tracked and non-secret by intent, each pair is
+    validated before it is written:
+
+    - a pair without ``=`` is ignored,
+    - the key is whitespace-stripped and an empty key is skipped,
+    - a key naming a secret field (any key in ``SECRET_PLACEHOLDERS`` —
+      ``token``, ``username``, ``password``) is rejected, so a secret can never
+      be persisted into the git-tracked ``marshal.json`` via ``--extra``.
+
+    The supplied ``provider_config`` is mutated in place; persistence
+    (``write_provider_config``) is the caller's responsibility.
+
+    Args:
+        provider_config: The provider-config dict to update in place.
+        extra_pairs: Repeatable ``KEY=VALUE`` strings.
+
+    Returns:
+        The deduplicated list of keys that were applied, in supplied order.
+    """
+    applied_keys: list[str] = []
+    for pair in extra_pairs:
+        if '=' not in pair:
+            continue
+        key, value = pair.split('=', 1)
+        key = key.strip()
+        if not key:
+            continue
+        if key in SECRET_PLACEHOLDERS:
+            continue
+        provider_config[key] = value
+        if key not in applied_keys:
+            applied_keys.append(key)
+    return applied_keys
+
+
 # === Path Resolution ===
 
 
