@@ -77,6 +77,7 @@ GOLDEN_QG_LABELS = [
     'scan_finalize_step_token',
     'scan_step_configurable_contract',
     'analyze_role_field',
+    'analyze_lane_frontmatter',
     'analyze_skill_mode',
     'analyze_persona_profile_uniqueness',
     'analyze_persona_binding_resolves',
