@@ -120,15 +120,22 @@ def test_first_invocation_creates_file_with_one_row(plan_context):
     assert path.exists()
     content = path.read_text(encoding='utf-8')
 
-    # Header lines present
+    # Header lines present — the 9-column schema (legacy five columns followed
+    # by the four appended per-dispatch context-load columns).
     assert 'plan_id: disp-first' in content
     assert 'phase: 5-execute' in content
-    assert 'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:' in content
+    expected_header = (
+        'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
+        'input_tokens,output_tokens,cache_read_input_tokens,'
+        'cache_creation_input_tokens}:'
+    )
+    assert expected_header in content
 
-    # Exactly one data row
+    # Exactly one data row — legacy five columns positionally unchanged, the
+    # four appended context-load columns each defaulting to 0 when not supplied.
     rows = _data_rows(content)
     assert len(rows) == 1
-    assert ',voluntary_checkpoint,12345,10,60000' in rows[0]
+    assert ',voluntary_checkpoint,12345,10,60000,0,0,0,0' in rows[0]
 
 
 # =============================================================================

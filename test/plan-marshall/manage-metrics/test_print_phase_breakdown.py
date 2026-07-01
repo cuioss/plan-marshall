@@ -395,15 +395,20 @@ class TestPhaseBreakdownRenderingRule:
         )
         lines = _render_breakdown('render-rule-02')
         total_line = next(ln for ln in lines if '**Total**' in ln)
-        # Tokens subset has 2/3 phases contributing.
-        assert '3,000 (n=2/3)' in total_line, total_line
+        # Tokens subset has 2 of the canonical six phases contributing; the
+        # completeness denominator is the canonical six, not the present-row count.
+        assert '3,000 (n=2/6)' in total_line, total_line
         # Other numeric columns stay '-'.
         cells = [c.strip() for c in total_line.split('|') if c.strip()]
         # Duration cell.
         assert cells[1] == '**-**'
 
-    def test_all_cells_present_plain_sum(self, plan_context):
-        """All per-phase cells present → Total renders plain sum (no marker)."""
+    def test_all_present_cells_use_canonical_six_denominator(self, plan_context):
+        """All present per-phase cells contribute, yet the completeness denominator
+        is the canonical six — a 2-of-6 subset renders the partial (n=2/6) marker,
+        not a plain sum. The denominator is len(PHASE_NAMES), not the present-row
+        count, so a fewer-than-six fixture can never look complete.
+        """
         _seed_phases(
             'render-rule-03',
             {
@@ -413,10 +418,9 @@ class TestPhaseBreakdownRenderingRule:
         )
         lines = _render_breakdown('render-rule-03')
         total_line = next(ln for ln in lines if '**Total**' in ln)
-        # 2 contributors out of 2 breakdown rows → plain sum, no marker.
-        assert '3,000' in total_line  # tokens total
-        assert '12' in total_line  # tool_uses total
-        assert '(n=' not in total_line, total_line
+        # 2 contributing phases out of the canonical six → partial marker (n=2/6).
+        assert '3,000 (n=2/6)' in total_line  # tokens total
+        assert '12 (n=2/6)' in total_line  # tool_uses total
 
     def test_worked_cell_uses_max_of_agent_and_subagent_duration(self, plan_context):
         """Worked cell = max(agent_duration_ms, subagent_duration_ms) via format_duration.
@@ -470,8 +474,9 @@ class TestPhaseBreakdownRenderingRule:
         )
         lines = _render_breakdown('render-rule-06')
         total_line = next(ln for ln in lines if '**Total**' in ln)
-        # Two of three breakdown rows contribute worked time → marker '(n=2/3)'.
-        assert '(n=2/3)' in total_line, total_line
+        # Two of the canonical six phases contribute worked time; the completeness
+        # denominator is the canonical six, not the present-row count → marker '(n=2/6)'.
+        assert '(n=2/6)' in total_line, total_line
 
 
 class TestEndToEndPhaseBreakdownRendering:
@@ -614,6 +619,8 @@ class TestEndToEndPhaseBreakdownRendering:
         # worked total = 120 + 240 = 360 s = '6m0s';
         # wall total   = 180 + 600 = 780 s = '13m0s';
         # idle total   = (180-120) + (600-240) = 60 + 360 = 420 s = '7m0s'.
-        assert total_cells[1] == '**6m0s**'   # Worked
-        assert total_cells[2] == '**13m0s**'  # Reported (wall)
-        assert total_cells[3] == '**7m0s**'   # Idle
+        # Only two of the canonical six phases are present, so the completeness
+        # denominator is six → every time-column Total carries the (n=2/6) marker.
+        assert total_cells[1] == '**6m0s (n=2/6)**'   # Worked
+        assert total_cells[2] == '**13m0s (n=2/6)**'  # Reported (wall)
+        assert total_cells[3] == '**7m0s (n=2/6)**'   # Idle

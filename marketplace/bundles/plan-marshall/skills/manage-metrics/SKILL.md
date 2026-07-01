@@ -89,14 +89,23 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics gene
 status: success
 plan_id: EXAMPLE-PLAN
 file: metrics.md
-phases_recorded: 4
-total_duration_seconds: 572.5
+phases_recorded: 6
+partial: true
+unrecorded_phases[1]:
+  - 6-finalize
+total_worked_seconds: 572.5
+total_wall_seconds: 640.0
+total_idle_seconds: 67.5
 total_tokens: 86754
-total_duration_formatted: 9m32s
+total_worked_formatted: 9m32s
+total_wall_formatted: 10m40s
+total_idle_formatted: 1m7s
 total_tokens_formatted: 86.8K
 ```
 
-The `total_duration_formatted` field is produced by `format_duration` (shared with the metrics.md Phase Breakdown table) and `total_tokens_formatted` is produced by `format_tokens_short` from `tools-file-ops` (abbreviated decimal-suffix form, e.g. `599K`, `1.2M`). Raw `total_duration_seconds` and `total_tokens` are kept for backward compatibility — consumers that want the human-readable form for an `[OK]` row should read the `_formatted` fields instead of re-formatting.
+The `total_worked_formatted` / `total_wall_formatted` / `total_idle_formatted` fields are produced by `format_duration` (shared with the metrics.md Phase Breakdown table) and `total_tokens_formatted` is produced by `format_tokens_short` from `tools-file-ops` (abbreviated decimal-suffix form, e.g. `599K`, `1.2M`). The raw `total_worked_seconds` / `total_wall_seconds` / `total_idle_seconds` / `total_tokens` seconds-and-count figures are kept alongside them — consumers that want the human-readable form for an `[OK]` row should read the `_formatted` fields instead of re-formatting.
+
+**Partiality (floor-not-truth)**: `partial` and `unrecorded_phases` make the report's completeness first-class. A canonical phase is *recorded* iff its `metrics.toon` row carries an `end_time` (the boundary-close marker); a phase with no row at all is unrecorded too. `unrecorded_phases` lists every canonical phase (from the six-phase model) that lacks that marker, and `partial` is `true` whenever the list is non-empty. A `partial: true` total is a **floor, not a truth** — at least the listed phases' tokens/durations are under-counted (the canonical case is a `6-finalize` whose terminal close never folded its accumulator in). A fully-recorded six-phase plan reports `partial: false` with an empty `unrecorded_phases`. The same verdict is persisted as top-level keys in `metrics.toon` and rendered as a `> Partial: unrecorded phases — …` marker under the `## Phase Breakdown` heading in `metrics.md`; the Phase Breakdown Total uses the canonical-six baseline as its completeness denominator, so an entirely-absent phase renders the Total as partial (`n=k/6`) instead of looking complete.
 
 Returns `status: error, error: no_data` if no metrics have been collected yet (no start-phase/end-phase calls made).
 
@@ -321,7 +330,8 @@ See `plan-retrospective` for the correlation logic.
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
   --plan-id {plan_id} --phase {phase} \
   --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty} \
-  [--total-tokens N] [--tool-uses N] [--duration-ms N]
+  [--total-tokens N] [--tool-uses N] [--duration-ms N] \
+  [--input-tokens N] [--output-tokens N] [--cache-read-input-tokens N] [--cache-creation-input-tokens N]
 ```
 
 **Parameters:**
@@ -334,10 +344,11 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
   - `error` — the dispatch raised a fatal error captured via the skill's Error Handling section.
   - `clean_exit_queue_empty` — canonical value for a clean exit where the loop drove to completion AND `manage-tasks loop-exit-guard` confirmed the pending queue is empty.
 - `--total-tokens`, `--tool-uses`, `--duration-ms` — Subagent `<usage>` totals at termination (each optional, default 0).
+- `--input-tokens`, `--output-tokens`, `--cache-read-input-tokens`, `--cache-creation-input-tokens` — Per-dispatch context-load totals from the dispatched agent's four-field `message.usage` view at termination (each optional, default 0). These are the per-DISPATCH counterpart to the per-PHASE four-field view `enrich` writes; they are recorded as four columns appended at the END of each row so the legacy five columns stay positionally unchanged. See [data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution for the canonical column order, count, and defaults.
 
 **Behaviour:**
 - Appends one row to `.plan/plans/{plan_id}/work/metrics-dispatch-boundaries-{phase}.toon`.
-- The file's first three lines are a TOON-tabular header (`plan_id:`, `phase:`, `rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:`); subsequent lines are CSV-style data rows.
+- The file's first three lines are a TOON-tabular header followed by CSV-style data rows; the canonical row-header schema (column order, count, defaults) is owned by [data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution.
 - Atomic write — partial files are not visible to readers.
 - The same shared file-write helpers as `accumulate-agent-usage` are used.
 
@@ -350,6 +361,10 @@ termination_cause: voluntary_checkpoint
 total_tokens: 84211
 tool_uses: 38
 duration_ms: 412390
+input_tokens: 38000
+output_tokens: 4000
+cache_read_input_tokens: 210000
+cache_creation_input_tokens: 12000
 timestamp: 2026-05-08T14:23:11Z
 rows_recorded: 4
 dispatch_boundary_file: work/metrics-dispatch-boundaries-5-execute.toon
@@ -527,7 +542,8 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accu
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
   --plan-id PLAN_ID --phase PHASE \
   --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty} \
-  [--total-tokens N] [--tool-uses N] [--duration-ms N]
+  [--total-tokens N] [--tool-uses N] [--duration-ms N] \
+  [--input-tokens N] [--output-tokens N] [--cache-read-input-tokens N] [--cache-creation-input-tokens N]
 ```
 
 ### enrich

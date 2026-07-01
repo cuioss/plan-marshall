@@ -100,6 +100,35 @@ For every phase row that carries both signals, `Worked <= Reported (wall)` MUST 
 
 The four-field usage view is no longer stored as plan-level `enriched.{field}` keys — it is attributed per phase by the transcript walks. See the Per-Phase Fields table for `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, and `billing_weighted_total`.
 
+## Partiality (Completeness Verdict)
+
+`generate` computes a first-class completeness verdict over the canonical six-phase baseline and persists it as two plan-level (top-level, non-phase) keys in `metrics.toon`, alongside the `generate` return TOON and a `metrics.md` marker.
+
+### Plan-Level Fields
+
+| Field | Type | Source |
+|-------|------|--------|
+| `partial` | bool (`true` / `false`) | Derived by `generate` — `true` whenever at least one canonical phase lacks a recorded boundary |
+| `unrecorded_phases` | list (comma-joined in `metrics.toon`, simple TOON array in the `generate` return) | Derived by `generate` — every canonical phase that lacks a recorded boundary, in canonical phase order |
+
+### Recorded-Phase Predicate
+
+A canonical phase is **recorded** iff its `metrics.toon` row carries an `end_time` (the boundary-close marker `end-phase` / `phase-boundary` write — the same definition `boundary-status` uses for a missing boundary). A phase with no row at all is **unrecorded** too. `unrecorded_phases` is the list of canonical phases (from the standard six-phase model) failing this predicate; `partial = len(unrecorded_phases) > 0`.
+
+### Floor-Not-Truth Semantics
+
+A `partial: true` total is a **floor, not a truth**: the tokens and durations of at least the listed phases are under-counted, so a consumer MUST treat the aggregate as a lower bound rather than a complete accounting. The canonical under-count is a `6-finalize` whose terminal `record-metrics` close never folded its durable accumulator in (interrupt / loop-back / never-reached). A fully-recorded six-phase plan reports `partial: false` with an empty `unrecorded_phases`.
+
+### Completeness Denominator and the `metrics.md` Marker
+
+The `## Phase Breakdown` Total uses the **canonical-six baseline** (`len(PHASE_NAMES)`) as its completeness denominator rather than the count of present rows. An entirely-absent phase therefore makes a per-column Total render as partial (`{sum} (n=k/6)`) instead of silently looking complete. When `partial` is `true`, `generate` also renders an explicit marker line directly under the `## Phase Breakdown` heading:
+
+```markdown
+## Phase Breakdown
+
+> Partial: unrecorded phases — 6-finalize
+```
+
 ## Generated Report (metrics.md)
 
 The `generate` command produces a markdown report with per-phase rows:
@@ -238,3 +267,45 @@ updated: 2026-03-27T10:25:00+00:00
 - `accumulate-agent-usage` always reads-then-writes: missing flags do not zero a field, they leave it unchanged. Each call increments `samples` by 1 regardless of which flags were provided.
 - The file is left in `work/` after `end-phase` consumes it — the audit trail (per-call `samples` count, last `updated` timestamp) is useful when investigating drift between accumulator totals and the closed-phase row.
 - `archive-plan` moves `work/` along with the rest of the plan directory; archived accumulator files therefore remain available for retrospective analysis.
+
+## Per-Dispatch Boundary Record (`work/metrics-dispatch-boundaries-{phase}.toon`)
+
+Written by `record-dispatch-boundary`, one TOON-tabular row appended per phase Task dispatch termination. The file is the audit trail `plan-retrospective` correlates with `[OUTCOME]`-log coverage gaps to detect agent-initiated re-dispatch. One file per phase that dispatches Task agents (in practice `5-execute`).
+
+### Format
+
+```toon
+plan_id: EXAMPLE-PLAN
+phase: 5-execute
+rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens}:
+2026-05-08T14:23:11Z,clean_exit_queue_empty,84211,38,412390,38000,4000,210000,12000
+```
+
+The first three lines are the TOON-tabular header (`plan_id:`, `phase:`, `rows[]{…}:`); each subsequent line is one CSV-style data row in the declared column order.
+
+### Per-Dispatch Context-Load Attribution
+
+This section is the **single source of truth** for the dispatch-boundary row's column order, count, and defaults. Consumers (the `manage-metrics` script writer, the `plan-retrospective` `analyze-logs.py` reader, and `SKILL.md`) reference this section rather than restating the schema.
+
+Each row carries **nine columns**: the **legacy five** followed by the **four context-load columns appended at the END** for positional backward compatibility. The four context-load columns are the per-DISPATCH counterpart to the per-PHASE four-field `message.usage` view that `enrich` writes (see Per-Phase Fields above); they capture the dispatched agent's context-load totals at dispatch termination so per-dispatch context cost (dispatch count, collapsed triage contexts, per-dispatch context size) becomes measurable.
+
+| # | Column | Type | Source | Default |
+|---|--------|------|--------|---------|
+| 1 | `timestamp` | ISO 8601 timestamp | Set by `record-dispatch-boundary` at append time | — |
+| 2 | `termination_cause` | enum | `--termination-cause` (see enum below) | — (required) |
+| 3 | `total_tokens` | int | `--total-tokens` (subagent `<usage>` total at termination) | `0` |
+| 4 | `tool_uses` | int | `--tool-uses` | `0` |
+| 5 | `duration_ms` | int | `--duration-ms` | `0` |
+| 6 | `input_tokens` | int | `--input-tokens` (dispatch `message.usage.input_tokens`) | `0` |
+| 7 | `output_tokens` | int | `--output-tokens` (dispatch `message.usage.output_tokens`) | `0` |
+| 8 | `cache_read_input_tokens` | int | `--cache-read-input-tokens` (dispatch `message.usage.cache_read_input_tokens`) | `0` |
+| 9 | `cache_creation_input_tokens` | int | `--cache-creation-input-tokens` (dispatch `message.usage.cache_creation_input_tokens`) | `0` |
+
+**Positional backward compatibility**: the four context-load columns are appended at the END so columns 1–5 are positionally unchanged. A legacy five-column row (written before the columns existed) still parses — the `plan-retrospective` reader uses a `len(parts) >= 5` floor and defaults columns 6–9 to `0` when a row carries only the legacy five. A malformed appended field degrades the four context fields to `0` rather than dropping the whole row.
+
+**`termination_cause` enum**: `voluntary_checkpoint`, `task_complete_returned_verbatim`, `budget_yield`, `harness_cancellation`, `error`, `clean_exit_queue_empty`, `step_complete`, `blocked_user_review`, `blocked_session_restart`, `task_batch_complete`, `agent_returned`. Missing or unrecognised causes are script errors (no implicit fallback).
+
+### Lifecycle
+
+- Atomic append — partial files are never visible to readers; the same shared file-write helpers as `accumulate-agent-usage` are used.
+- The file is left in `work/` after the plan completes; `archive-plan` moves it with the rest of the plan directory so archived dispatch-boundary records remain available for retrospective analysis.
