@@ -1,0 +1,536 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""CLI scaffolding for build-* skills.
+
+Provides argparse subparser helpers, registration utilities, and the common
+main() entry point used by all build skill scripts (maven.py, gradle.py,
+npm.py, pyproject_build.py).
+
+Split from _build_shared.py to separate CLI wiring from command implementations.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+
+from _build_format import format_toon
+from _build_parse import Issue
+from _build_shared import ParserFn, cmd_discover_common, cmd_parse_common
+
+
+def add_project_dir_arg(parser) -> None:
+    """Attach the standard --project-dir / --plan-id argument pair to a subparser.
+
+    All build subcommands accept ``--project-dir`` and ``--plan-id`` so
+    invocations from an isolated worktree (or any non-cwd directory)
+    can pin subprocess cwd without relying on the caller's working
+    directory. The two flags implement the two-state contract documented
+    in ``script_shared/scripts/resolve_project_dir.py``:
+
+    * ``--plan-id X`` and ``--project-dir Y`` together — error
+      ``mutually_exclusive_args``.
+    * ``--plan-id X`` only — auto-resolve via
+      ``manage-status get-worktree-path``.
+    * ``--project-dir Y`` only — explicit override (legacy / escape
+      hatch).
+    * Neither — main checkout via ``git rev-parse --show-toplevel``.
+
+    The ``--project-dir`` default stays ``'.'`` so the existing
+    ``execute_direct(project_dir=args.project_dir, ...)`` call sites
+    keep compiling. ``apply_plan_id_routing`` (called by the run / parse
+    / coverage / check-warnings handlers via ``_build_shared``)
+    rewrites ``args.project_dir`` to the resolved value before
+    subprocess execution.
+    """
+    parser.add_argument(
+        '--project-dir',
+        dest='project_dir',
+        default='.',
+        help='Project root directory (default: current directory). Mutually exclusive with --plan-id.',
+    )
+    # The companion --plan-id flag is added by the shared helper so the
+    # help text and default stay aligned with the canonical contract.
+    from resolve_project_dir import add_plan_id_arg  # type: ignore[import-not-found]
+
+    add_plan_id_arg(parser)
+
+
+def add_run_subparser(
+    subparsers,
+    *,
+    command_args_help: str = 'Complete command arguments',
+    default_timeout: int = 300,
+    extra_args_fn=None,
+):
+    """Add standard 'run' subparser with common arguments.
+
+    All build skills share the same run subparser pattern:
+    --command-args, --timeout, --mode, --format, --project-dir.
+
+    Args:
+        subparsers: argparse subparsers object.
+        command_args_help: Help text for --command-args.
+        default_timeout: Default timeout in seconds.
+        extra_args_fn: Optional callable(run_parser) to add tool-specific args
+            (e.g., --working-dir, --env for npm).
+
+    Returns:
+        The created run subparser (for setting defaults like func=cmd_run).
+    """
+    run_parser = subparsers.add_parser(
+        'run', help='Execute build and auto-parse on failure (primary API)', allow_abbrev=False
+    )
+    run_parser.add_argument(
+        '--command-args',
+        dest='command_args',
+        required=True,
+        help=command_args_help,
+    )
+    run_parser.add_argument(
+        '--timeout',
+        type=int,
+        default=default_timeout,
+        help=f'Build timeout in seconds (default: {default_timeout})',
+    )
+    run_parser.add_argument(
+        '--mode',
+        choices=['actionable', 'structured', 'errors'],
+        default='actionable',
+        help='Output mode',
+    )
+    run_parser.add_argument(
+        '--format',
+        choices=['toon', 'json'],
+        default='toon',
+        help='Output format (default: toon)',
+    )
+    # ``add_project_dir_arg`` adds BOTH ``--project-dir`` and ``--plan-id``
+    # so the run subparser inherits the canonical two-state routing
+    # contract automatically. The same ``--plan-id`` value also drives
+    # the producer-side auto-storage of parsed issues into the per-type
+    # finding store via manage-findings (always-on when set; when unset,
+    # the historical silent behaviour is preserved — parse + format
+    # only). The flag is therefore declared exactly once.
+    add_project_dir_arg(run_parser)
+    if extra_args_fn:
+        extra_args_fn(run_parser)
+    return run_parser
+
+
+def add_coverage_subparser(subparsers, *, help_text: str = 'Parse coverage report', default_threshold: int = 80):
+    """Add standard 'coverage-report' subparser with common arguments.
+
+    Args:
+        subparsers: argparse subparsers object.
+        help_text: Help text for the subparser.
+        default_threshold: Default coverage threshold percent.
+
+    Returns:
+        The created coverage-report subparser.
+    """
+    cov_parser = subparsers.add_parser('coverage-report', help=help_text, allow_abbrev=False)
+    cov_parser.add_argument('--project-path', dest='project_path', help='Project or module directory path')
+    cov_parser.add_argument('--report-path', dest='report_path', help='Override coverage report path')
+    cov_parser.add_argument(
+        '--threshold',
+        type=int,
+        default=default_threshold,
+        help=f'Coverage threshold percent (default: {default_threshold})',
+    )
+    add_project_dir_arg(cov_parser)
+    return cov_parser
+
+
+def add_parse_subparser(
+    subparsers,
+    parse_fn,
+    *,
+    help_text: str = 'Parse build output and categorize issues',
+    extra_modes: list[str] | None = None,
+    extra_filters: dict[str, Callable[[Issue], bool]] | None = None,
+    parser_needs_command: bool = False,
+):
+    """Add standard 'parse' subparser with common arguments.
+
+    All build skills share the same parse subparser pattern:
+    --log, --mode, --format. This helper creates the subparser, wires
+    up the func default to call cmd_parse_common with the right args.
+
+    Args:
+        subparsers: argparse subparsers object.
+        parse_fn: Tool-specific parse_log function.
+        help_text: Help text for the subparser.
+        extra_modes: Additional mode choices beyond default/errors/structured.
+        extra_filters: Mode filters to pass to cmd_parse_common.
+        parser_needs_command: If True, passes command to parser_fn.
+
+    Returns:
+        The created parse subparser.
+    """
+    modes = ['default', 'errors', 'structured']
+    if extra_modes:
+        modes.extend(extra_modes)
+
+    parse_parser = subparsers.add_parser('parse', help=help_text, allow_abbrev=False)
+    parse_parser.add_argument('--log', required=True, help='Path to build log file')
+    parse_parser.add_argument('--mode', choices=modes, default='structured', help='Output mode')
+    parse_parser.add_argument(
+        '--format',
+        choices=['toon', 'json'],
+        default='toon',
+        help='Output format (default: toon)',
+    )
+    add_project_dir_arg(parse_parser)
+
+    def _cmd_parse(args):
+        return cmd_parse_common(
+            args,
+            parse_fn,
+            extra_filters=extra_filters,
+            parser_needs_command=parser_needs_command,
+        )
+
+    parse_parser.set_defaults(func=_cmd_parse)
+    return parse_parser
+
+
+def add_check_warnings_subparser(subparsers, check_warnings_fn, *, help_text: str = 'Categorize build warnings'):
+    """Add standard 'check-warnings' subparser with common arguments.
+
+    Args:
+        subparsers: argparse subparsers object.
+        check_warnings_fn: Handler function (from create_check_warnings_handler).
+        help_text: Help text for the subparser.
+
+    Returns:
+        The created check-warnings subparser.
+    """
+    warn_parser = subparsers.add_parser('check-warnings', help=help_text, allow_abbrev=False)
+    warn_parser.add_argument('--warnings', help='JSON array of warning objects')
+    warn_parser.add_argument(
+        '--acceptable-warnings',
+        dest='acceptable_warnings',
+        help='JSON object with acceptable patterns',
+    )
+    add_project_dir_arg(warn_parser)
+    warn_parser.set_defaults(func=check_warnings_fn)
+    return warn_parser
+
+
+def add_discover_subparser(subparsers, discover_fn, *, help_text: str = 'Discover project modules'):
+    """Add standard 'discover' subparser with common arguments.
+
+    All build skills share the same discover subparser pattern:
+    --root, --format.
+
+    Args:
+        subparsers: argparse subparsers object.
+        discover_fn: Tool-specific discover_modules function.
+            Must accept (project_root: str) and return list of module dicts.
+        help_text: Help text for the subparser.
+
+    Returns:
+        The created discover subparser.
+    """
+    discover_parser = subparsers.add_parser('discover', help=help_text, allow_abbrev=False)
+    discover_parser.add_argument('--root', default='.', help='Project root directory')
+    discover_parser.add_argument(
+        '--format',
+        choices=['toon', 'json'],
+        default='toon',
+        help='Output format (default: toon)',
+    )
+
+    def _cmd_discover(args):
+        return cmd_discover_common(args, discover_fn)
+
+    discover_parser.set_defaults(func=_cmd_discover)
+    return discover_parser
+
+
+def add_run_config_key_subparser(subparsers, config, *, help_text: str = 'Compute canonical run-config key for a given command args string'):
+    """Add a 'run-config-key' subparser that prints the canonical run-config key.
+
+    Returns TOON with three fields:
+
+    * ``build_tool`` — the build skill's ``tool_name`` (e.g. ``maven``,
+      ``python``, ``gradle``, ``npm``).
+    * ``key_suffix`` — output of ``config.command_key_fn(command_args)``
+      (the part after the colon).
+    * ``command_key`` — the full key ``{build_tool}:{key_suffix}`` produced
+      by ``compute_command_key(config, command_args)``.
+
+    The handler reuses the same ``compute_command_key`` helper that
+    ``cmd_run`` uses at execute time, so there is exactly one source of
+    truth for the canonical key. Consumers of ``architecture resolve``
+    use this subcommand to look up the adaptive-timeout entry without
+    re-implementing the key construction.
+
+    Args:
+        subparsers: argparse subparsers object.
+        config: The build skill's ExecuteConfig instance.
+        help_text: Help text for the subparser.
+
+    Returns:
+        The created run-config-key subparser.
+    """
+    from _build_execute_factory import compute_command_key as _compute_command_key
+
+    key_parser = subparsers.add_parser('run-config-key', help=help_text, allow_abbrev=False)
+    key_parser.add_argument(
+        '--command-args',
+        dest='command_args',
+        required=True,
+        help='Canonical command args string (e.g., "verify", "verify plan-marshall")',
+    )
+    key_parser.add_argument(
+        '--format',
+        choices=['toon', 'json'],
+        default='toon',
+        help='Output format (default: toon)',
+    )
+
+    def _cmd_run_config_key(args) -> int:
+        key_suffix = config.command_key_fn(args.command_args)
+        command_key = _compute_command_key(config, args.command_args)
+        result = {
+            'status': 'success',
+            'build_tool': config.tool_name,
+            'key_suffix': key_suffix,
+            'command_key': command_key,
+        }
+        output_format = getattr(args, 'format', 'toon')
+        if output_format == 'json':
+            import json as _json
+
+            print(_json.dumps(result, indent=2))
+        else:
+            # Use the canonical generic TOON serializer rather than
+            # ``format_toon``: the latter is build-result-specific and silently
+            # drops keys outside its CORE_FIELDS/EXTRA_FIELDS allow-list (e.g.
+            # ``build_tool``, ``key_suffix``, ``command_key``), which would
+            # collapse our payload to just ``status: success``.
+            from toon_parser import serialize_toon as _serialize_toon
+
+            print(_serialize_toon(result))
+        return 0
+
+    key_parser.set_defaults(func=_cmd_run_config_key)
+    return key_parser
+
+
+def add_search_markers_subparser(subparsers, search_markers_fn, *, default_extensions: str = '.java'):
+    """Add standard 'search-markers' subparser for OpenRewrite TODO markers.
+
+    Used by Maven and Gradle build skills that support OpenRewrite integration.
+
+    Args:
+        subparsers: argparse subparsers object.
+        search_markers_fn: Handler function for search-markers command.
+        default_extensions: Default file extensions to search (e.g., '.java', '.java,.kt').
+
+    Returns:
+        The created search-markers subparser.
+    """
+    markers_parser = subparsers.add_parser(
+        'search-markers', help='Search for OpenRewrite TODO markers', allow_abbrev=False
+    )
+    markers_parser.add_argument('--source-dir', default='src', help='Directory to search')
+    markers_parser.add_argument('--extensions', default=default_extensions, help='Comma-separated extensions')
+    markers_parser.add_argument(
+        '--format', choices=['toon', 'json'], default='toon', help='Output format (default: toon)'
+    )
+    markers_parser.set_defaults(func=search_markers_fn)
+    return markers_parser
+
+
+def register_standard_subparsers(
+    *,
+    run_handler: Callable | None = None,
+    run_args_help: str = 'Complete command arguments',
+    run_extra_args_fn: Callable | None = None,
+    parse_handler: ParserFn | None = None,
+    parse_help: str = 'Parse build output and categorize issues',
+    parse_extra_modes: list[str] | None = None,
+    parse_extra_filters: dict[str, Callable[[Issue], bool]] | None = None,
+    parse_needs_command: bool = False,
+    discover_handler: Callable | None = None,
+    discover_help: str = 'Discover project modules',
+    coverage_handler: Callable | None = None,
+    coverage_help: str = 'Parse coverage report',
+    check_warnings_handler: Callable | None = None,
+    run_config_key_config=None,
+    extra_register_fns: list[Callable] | None = None,
+) -> list[Callable]:
+    """Build a list of subparser registration functions from declarative config.
+
+    Reduces boilerplate in build skill main scripts by replacing individual
+    _register_* wrapper functions with a single declarative call.
+
+    Args:
+        run_handler: Handler for 'run' subcommand (cmd_run function).
+        run_args_help: Help text for --command-args.
+        run_extra_args_fn: Extra args callback for run subparser (e.g., npm's --env).
+        parse_handler: Log parser function for 'parse' subcommand.
+        parse_help: Help text for parse subparser.
+        parse_extra_modes: Additional parse mode choices.
+        parse_extra_filters: Extra mode filters for parse.
+        parse_needs_command: If True, passes command to parser.
+        discover_handler: Discovery function for 'discover' subcommand.
+        discover_help: Help text for discover subparser.
+        coverage_handler: Handler for 'coverage-report' subcommand.
+        coverage_help: Help text for coverage subparser.
+        check_warnings_handler: Handler for 'check-warnings' subcommand.
+        run_config_key_config: When non-None, an ExecuteConfig instance that
+            registers the 'run-config-key' subcommand exposing the canonical
+            run-config key construction. The same config object that
+            cmd_run uses MUST be passed so the exposed key matches the
+            persisted key exactly (round-trip property).
+        extra_register_fns: Additional registration functions for tool-specific subcommands.
+
+    Returns:
+        List of registration functions suitable for build_main().
+    """
+    fns: list[Callable] = []
+
+    if run_handler is not None:
+
+        def _reg_run(subparsers, _h=run_handler, _help=run_args_help, _extra=run_extra_args_fn):
+            p = add_run_subparser(subparsers, command_args_help=_help, extra_args_fn=_extra)
+            p.set_defaults(func=_h)
+
+        fns.append(_reg_run)
+
+    if parse_handler is not None:
+
+        def _reg_parse(
+            subparsers,
+            _h=parse_handler,
+            _ht=parse_help,
+            _em=parse_extra_modes,
+            _ef=parse_extra_filters,
+            _nc=parse_needs_command,
+        ):
+            add_parse_subparser(
+                subparsers, _h, help_text=_ht, extra_modes=_em, extra_filters=_ef, parser_needs_command=_nc
+            )
+
+        fns.append(_reg_parse)
+
+    if extra_register_fns:
+        fns.extend(extra_register_fns)
+
+    if coverage_handler is not None:
+
+        def _reg_cov(subparsers, _h=coverage_handler, _ht=coverage_help):
+            p = add_coverage_subparser(subparsers, help_text=_ht)
+            p.set_defaults(func=_h)
+
+        fns.append(_reg_cov)
+
+    if check_warnings_handler is not None:
+
+        def _reg_warn(subparsers, _h=check_warnings_handler):
+            add_check_warnings_subparser(subparsers, _h)
+
+        fns.append(_reg_warn)
+
+    if discover_handler is not None:
+
+        def _reg_disc(subparsers, _h=discover_handler, _ht=discover_help):
+            add_discover_subparser(subparsers, _h, help_text=_ht)
+
+        fns.append(_reg_disc)
+
+    if run_config_key_config is not None:
+
+        def _reg_rck(subparsers, _cfg=run_config_key_config):
+            add_run_config_key_subparser(subparsers, _cfg)
+
+        fns.append(_reg_rck)
+
+    return fns
+
+
+def build_main(
+    description: str,
+    subparser_fns: list[Callable],
+) -> int:
+    """Common main() entry point for all build skills.
+
+    Creates the argparse parser, adds all subparsers via the provided
+    registration functions, parses args, and dispatches to the handler.
+
+    Each subparser_fn receives (subparsers) and registers one subcommand.
+
+    Args:
+        description: Parser description (e.g., 'Maven build operations').
+        subparser_fns: List of callables that each add one subparser.
+
+    Returns:
+        Exit code from the dispatched handler.
+    """
+    import argparse as _argparse
+
+    parser = _argparse.ArgumentParser(
+        description=description,
+        formatter_class=_argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    for register_fn in subparser_fns:
+        register_fn(subparsers)
+
+    args = parser.parse_args()
+
+    # Two-state ``--plan-id`` / ``--project-dir`` resolution. Bucket B
+    # build scripts uniformly opt in via ``add_project_dir_arg`` so the
+    # routing happens here, before any handler reads ``args.project_dir``.
+    # Subcommands that do not declare the pair (e.g., ``parse``) simply
+    # lack ``args.plan_id`` and ``args.project_dir`` — the helper is a
+    # no-op for those namespaces.
+    from resolve_project_dir import (  # type: ignore[import-not-found]
+        MutuallyExclusiveArgsError,
+        WorktreeResolutionError,
+        emit_mutually_exclusive_error,
+        emit_worktree_error,
+        resolve_project_dir,
+    )
+
+    plan_id = getattr(args, 'plan_id', None)
+    project_dir = getattr(args, 'project_dir', None)
+    if hasattr(args, 'project_dir'):
+        try:
+            args.project_dir = resolve_project_dir(plan_id, project_dir, default='.')
+        except MutuallyExclusiveArgsError:
+            print(format_toon(emit_mutually_exclusive_error(plan_id, project_dir)))
+            return 2
+        except WorktreeResolutionError as exc:
+            assert plan_id is not None  # only reachable when plan_id was supplied
+            print(format_toon(emit_worktree_error(plan_id, exc)))
+            return 2
+
+    result: int = args.func(args)
+    return result
+
+
+def safe_main(main_fn: Callable[[], int]) -> int:
+    """Wrap a build script's main() to catch unhandled exceptions and emit TOON failure.
+
+    Ensures all build scripts produce structured TOON output even on
+    unexpected errors, instead of raw tracebacks that corrupt output.
+
+    Usage::
+
+        if __name__ == '__main__':
+            sys.exit(safe_main(main))
+    """
+    try:
+        return main_fn()
+    except SystemExit as e:
+        # Let argparse --help / missing-arg exits pass through
+        raise e
+    except Exception as e:
+        print(format_toon({'status': 'error', 'error': f'unexpected_error: {e}'}))
+        return 1

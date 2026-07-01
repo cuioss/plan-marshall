@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Extension API for pm-documents bundle.
+
+Provides documentation domain detection for projects with doc directories or AsciiDoc files.
+"""
+
+from pathlib import Path
+
+from extension_base import ExtensionBase
+
+
+class Extension(ExtensionBase):
+    """Documentation extension for pm-documents bundle."""
+
+    def provides_triage(self) -> str | None:
+        """Return triage skill reference."""
+        return 'pm-documents:ext-triage-docs'
+
+    # Note: Documentation domain uses generic phase-3-outline standards from plan-marshall.
+    # Domain-specific skills can be added later if needed by implementing
+    # provides_outline_skill() with documentation-specific outline instructions.
+
+    def get_skill_domains(self) -> list[dict]:
+        """Domain metadata for skill loading."""
+        return [
+            {
+                'domain': {
+                    'key': 'documentation',
+                    'name': 'Documentation',
+                    'description': 'AsciiDoc documentation, ADRs, and interface specifications',
+                },
+                'profiles': {
+                    'core': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-documents:ref-asciidoc',
+                                'description': 'AsciiDoc formatting, validation, link verification, and template creation',
+                            },
+                            {
+                                'skill': 'pm-documents:ref-documentation',
+                                'description': 'Content quality, tone analysis, organization standards, and review orchestration',
+                            },
+                            {
+                                'skill': 'pm-documents:ref-narrative-styles',
+                                'description': 'Narrative styles for technical documentation — tone, voice, and arc for the engineering-narrative style',
+                            },
+                            {
+                                'skill': 'pm-documents:ref-svg-diagrams',
+                                'description': 'SVG diagram authoring standards — visual language, theme handling, AsciiDoc embedding, per-diagram-type patterns',
+                            },
+                        ],
+                        'optionals': [],
+                    },
+                    'documentation': {
+                        'defaults': [],
+                        'optionals': [
+                            {
+                                'skill': 'plan-marshall:manage-adr',
+                                'description': 'Manage Architectural Decision Records with CRUD operations and AsciiDoc formatting',
+                            },
+                            {
+                                'skill': 'pm-documents:manage-interface',
+                                'description': 'Manage Interface specifications with CRUD operations and AsciiDoc formatting',
+                            },
+                        ],
+                    },
+                },
+            }
+        ]
+
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
+        """Check if documentation domain applies based on doc directories."""
+        paths = module_data.get('paths') or {}
+        module_path = paths.get('module') or ''
+        sources = paths.get('sources') or []
+
+        signals = []
+        all_paths = [module_path] + sources
+        for p in all_paths:
+            p_str = str(p)
+            if 'doc' in p_str.lower():
+                signals.append(f'doc directory in {p}')
+
+        # Check build_systems for documentation marker
+        build_systems = module_data.get('build_systems') or []
+        if 'documentation' in build_systems:
+            signals.append('build_systems=documentation')
+
+        if not signals:
+            return {
+                'applicable': False,
+                'confidence': 'none',
+                'signals': [],
+                'additive_to': None,
+                'skills_by_profile': {},
+            }
+
+        return self._build_applicable_result('high', signals, module_data=module_data, active_profiles=active_profiles)
+
+    def provides_recipes(self) -> list[dict]:
+        """Return documentation recipes."""
+        return [
+            {
+                'key': 'doc-verify',
+                'name': 'Verify Documentation Quality',
+                'description': 'Validate AsciiDoc format, links, and documentation drift',
+                'skill': 'pm-documents:recipe-doc-verify',
+                'default_change_type': 'verification',
+                'scope': 'codebase_wide',
+            },
+            {
+                'key': 'verify-architecture-diagrams',
+                'name': 'Verify Architecture Diagrams',
+                'description': 'Verify and update PlantUML diagrams to reflect current codebase state',
+                'skill': 'pm-documents:recipe-verify-architecture-diagrams',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+            },
+            {
+                'key': 'verify-ascii-diagrams',
+                'name': 'Verify ASCII Diagrams',
+                'description': 'Verify and fix alignment of ASCII box diagrams across .md and .adoc files',
+                'skill': 'pm-documents:recipe-verify-ascii-diagrams',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+            },
+        ]
+
+    def discover_modules(self, project_root: str) -> list:
+        """Discover documentation modules in the project.
+
+        Detects projects with documentation by checking for:
+        - doc/ or docs/ directory with .adoc or .md files
+        - README.adoc at project root
+
+        Returns a single 'documentation' module if documentation is found.
+        """
+        root = Path(project_root)
+        has_documentation = False
+        found_doc_dir = 'doc'
+
+        # Check for doc/ or docs/ directory with documentation files
+        for doc_dir_name in ['doc', 'docs']:
+            doc_dir = root / doc_dir_name
+            if doc_dir.is_dir():
+                # Check for .adoc or .md files
+                adoc_files = list(doc_dir.glob('*.adoc'))
+                md_files = list(doc_dir.glob('*.md'))
+                if adoc_files or md_files:
+                    has_documentation = True
+                    found_doc_dir = doc_dir_name
+                    break
+
+        # Check for README.adoc at root
+        if not has_documentation and (root / 'README.adoc').exists():
+            has_documentation = True
+
+        if not has_documentation:
+            return []
+
+        return [
+            {
+                'name': 'documentation',
+                'paths': {'module': found_doc_dir},
+                'build_systems': ['documentation'],
+                'metadata': {
+                    'description': 'Project documentation',
+                },
+            }
+        ]

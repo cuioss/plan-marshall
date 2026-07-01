@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Extension API for pm-dev-java-cui bundle.
+
+Provides CUI-specific Java patterns for logging, testing, and HTTP.
+
+This is an ADDITIVE bundle - it extends pm-dev-java rather than standing alone.
+It intentionally does NOT provide triage; it relies on pm-dev-java:ext-triage-java.
+"""
+
+from extension_base import ExtensionBase  # type: ignore[import-not-found]
+
+
+class Extension(ExtensionBase):
+    """CUI Java extension for pm-dev-java-cui bundle."""
+
+    def get_skill_domains(self) -> list[dict]:
+        """Domain metadata for skill loading."""
+        return [
+            {
+                'domain': {
+                    'key': 'java-cui',
+                    'name': 'CUI Java Development',
+                    'description': 'CUI-specific Java patterns for logging, testing, and HTTP',
+                },
+                'profiles': {
+                    'core': {'defaults': ['pm-dev-java-cui:cui-logging'], 'optionals': []},
+                    'implementation': {'defaults': [], 'optionals': ['pm-dev-java-cui:cui-http']},
+                    'module_testing': {
+                        'defaults': [],
+                        'optionals': ['pm-dev-java-cui:cui-testing', 'pm-dev-java-cui:cui-http-testing'],
+                    },
+                    'quality': {'defaults': [], 'optionals': []},
+                    'security': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-dev-java-cui:cui-http',
+                                'description': 'CUI HTTP request-sanitization security surface',
+                            }
+                        ],
+                        'optionals': [],
+                    },
+                },
+            }
+        ]
+
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
+        """Check if CUI Java domain applies. Additive to 'java'."""
+        build_systems = module_data.get('build_systems') or []
+        if 'maven' not in build_systems and 'gradle' not in build_systems:
+            return {
+                'applicable': False,
+                'confidence': 'none',
+                'signals': [],
+                'additive_to': None,
+                'skills_by_profile': {},
+            }
+
+        signals = [f'build_systems={",".join(build_systems)}']
+
+        # Check for CUI dependencies as additional signal
+        deps = module_data.get('dependencies') or []
+        dep_strings = [d if isinstance(d, str) else '' for d in deps]
+        cui_deps = [d for d in dep_strings if 'de.cuioss' in d or 'de.cuioss.portal' in d or 'de.cuioss.jsf' in d]
+        if cui_deps:
+            signals.append(f'de.cuioss:* deps ({len(cui_deps)} found)')
+
+        return self._build_applicable_result(
+            'high', signals, additive_to='java', module_data=module_data, active_profiles=active_profiles
+        )
+
+    def provides_recipes(self) -> list[dict]:
+        """Return CUI-specific recipes."""
+        return [
+            {
+                'key': 'cui-logging-enforce',
+                'name': 'Enforce CUI Logging Standards',
+                'description': 'Enforce CUI logging standards across all modules — migrate loggers, implement LogRecords, add test coverage',
+                'skill': 'pm-dev-java-cui:recipe-cui-logging-enforce',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+            },
+        ]
+
+    def config_defaults(self, project_root: str) -> None:
+        """Configure CUI-specific Maven defaults.
+
+        Sets project-specific configuration for CUI Open Source projects:
+        - Profile mappings for standard CUI profiles (pre-commit, coverage, javadoc)
+        - Skip list for internal/infrastructure profiles
+
+        Uses write-once semantics - only sets values if not already configured.
+        """
+        from _config_core import ext_defaults_set_default  # type: ignore[import-not-found]
+        from _maven_cmd_discover import EXT_KEY_PROFILES_MAP, EXT_KEY_PROFILES_SKIP  # type: ignore[import-not-found]
+        from plan_logging import log_entry  # type: ignore[import-not-found]
+
+        log_entry('script', 'global', 'INFO', '[CUI-JAVA-EXT] Configuring CUI Maven defaults')
+
+        # CUI standard profile mappings
+        # pre-commit → quality-gate, coverage → coverage, javadoc → javadoc
+        ext_defaults_set_default(
+            EXT_KEY_PROFILES_MAP, 'pre-commit:quality-gate,coverage:coverage,javadoc:javadoc', project_root
+        )
+
+        # Skip internal profiles that shouldn't generate commands
+        ext_defaults_set_default(
+            EXT_KEY_PROFILES_SKIP,
+            'build-plantuml,rewrite-maven-clean,release,release-snapshot,license-cleanup,sonar,only-eclipse,release-pom',
+            project_root,
+        )

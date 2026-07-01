@@ -1,0 +1,385 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+Lifecycle command handlers for manage-status: create, transition, archive, delete-plan.
+"""
+
+import argparse
+import shutil
+from pathlib import Path
+from typing import Any
+
+from _handshake_commands import cmd_verify  # type: ignore[import-not-found]
+from _invariants import _BLOCKING_BOUNDARIES  # type: ignore[import-not-found]
+from _short_description import derive_short_description  # type: ignore[import-not-found]
+from _status_core import (
+    get_archive_dir,
+    get_status_path,
+    log_entry,
+    now_utc_iso,
+    require_status,
+    require_valid_plan_id,
+    write_status,
+)
+from constants import (  # type: ignore[import-not-found]
+    PHASE_STATUS_DONE,
+    PHASE_STATUS_IN_PROGRESS,
+    PHASE_STATUS_PENDING,
+)
+from file_ops import get_plan_dir  # type: ignore[import-not-found]
+
+# Result-status values that indicate the strict-verify gate refuses to advance.
+# Mirrors the ``--strict`` exit-1 conditions in ``phase_handshake.py`` main()
+# so the inline guard in ``cmd_transition`` and the CLI exit-code wrapper in
+# ``manage_status.py`` main() treat the same situations as boundary refusals.
+# Single source of truth — both consumers import this name; do not duplicate
+# the literal set.
+VERIFY_REFUSAL_ERRORS = frozenset({
+    'worktree_unresolved',
+    'worktree_metadata_drift',
+    'main_checkout_dirtied_during_plan',
+})
+
+
+def verify_blocks_transition(verify_result: dict[str, Any]) -> bool:
+    """Return True when a cmd_verify result MUST block the transition.
+
+    Consumed by both ``cmd_transition`` (refuse to mutate state) and
+    ``manage_status.py`` main() (exit 1) so the in-process refusal and the
+    CLI exit-code contract stay in lockstep.
+    """
+    if verify_result.get('status') == 'drift':
+        return True
+    return verify_result.get('error') in VERIFY_REFUSAL_ERRORS
+
+
+def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
+    """Create status.json for a new plan.
+
+    When the plan runs in an isolated worktree, the caller passes
+    ``--use-worktree`` so the use-worktree intent is recorded in
+    ``status.metadata`` at creation time. Only ``use_worktree`` is
+    persisted at create — the feature branch (``feature/{plan_id}``)
+    and the resolved ``worktree_path`` are derived and back-filled at
+    phase-5-execute Step 2.5, when the worktree directory is created on
+    disk via ``git worktree add``.
+
+    When ``--use-worktree`` is omitted (or set to ``false``), no
+    worktree metadata is written and the plan is treated as running
+    against the main checkout.
+    """
+    require_valid_plan_id(args)
+
+    path = get_status_path(args.plan_id)
+    if path.exists() and not args.force:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'file_exists',
+            'message': 'status.json already exists. Use --force to overwrite.',
+        }
+
+    # Parse phases from comma-separated argument
+    phases = [p.strip() for p in args.phases.split(',') if p.strip()]
+    if not phases:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_phases',
+            'message': 'At least one phase is required',
+        }
+
+    # Worktree intent — at create the only durable fact is whether the plan
+    # runs in an isolated worktree. The feature branch (always
+    # ``feature/{plan_id}``) and the resolved ``worktree_path`` are derived at
+    # phase-5-execute Step 2.5 and back-filled there, so nothing about the
+    # branch is read or validated here: ``feature/`` is unconditionally in the
+    # closed working-prefix set, making a create-time prefix check vacuous.
+    use_worktree = bool(getattr(args, 'use_worktree', False))
+
+    now = now_utc_iso()
+
+    status: dict[str, Any] = {
+        'title': args.title,
+        'short_description': derive_short_description(args.title),
+        'current_phase': phases[0],
+        'phases': [{'name': p, 'status': PHASE_STATUS_PENDING} for p in phases],
+        'created': now,
+        'updated': now,
+    }
+    # Mark first phase as in_progress
+    status['phases'][0]['status'] = PHASE_STATUS_IN_PROGRESS
+
+    if use_worktree:
+        # Only the use-worktree intent is durable at create. The branch and
+        # the resolved worktree_path are derived and persisted at
+        # phase-5-execute Step 2.5 when `git worktree add` runs.
+        status['metadata'] = {'use_worktree': True}
+    else:
+        # Explicit false-state seeding: even when no worktree is
+        # allocated, downstream consumers benefit from a definite
+        # ``use_worktree: false`` marker rather than having to treat
+        # absence-of-metadata as "main-checkout". Keeps the contract
+        # symmetric.
+        status['metadata'] = {'use_worktree': False}
+
+    write_status(args.plan_id, status)
+
+    result: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'file': 'status.json',
+        'created': True,
+        'plan': {'title': args.title, 'current_phase': phases[0]},
+        'use_worktree': use_worktree,
+    }
+    return result
+
+
+def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Transition to next phase."""
+    status = require_status(args)
+    if status is None:
+        return None
+
+    phases = status.get('phases', [])
+    phase_names = [p['name'] for p in phases]
+
+    if args.completed not in phase_names:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_phase',
+            'message': f'Invalid phase: {args.completed}',
+        }
+
+    completed_idx = phase_names.index(args.completed)
+
+    # Determine next phase early so the guard below can inspect it before any
+    # state mutation. The standalone ``cmd_transition`` later computes the same
+    # value after marking the completed phase done, but the inline guard MUST
+    # see ``next_phase`` first to decide whether the strict-verify gate fires.
+    if completed_idx + 1 < len(phase_names):
+        next_phase: str | None = phase_names[completed_idx + 1]
+    else:
+        next_phase = None
+
+    # Inline strict-verify guard for guarded boundaries — folds the
+    # ``phase_handshake verify --phase {completed} --strict`` step that
+    # workflow docs used to issue separately into the transition itself.
+    # When ``next_phase`` is in ``_BLOCKING_BOUNDARIES`` (currently
+    # ``{'6-finalize'}``), re-run the verify code path against the captured
+    # baseline for the completed phase. On drift (or any of the three
+    # worktree-/main-checkout boundary refusals listed in
+    # ``VERIFY_REFUSAL_ERRORS``) return the verify result unchanged and
+    # SKIP ``write_status`` so ``current_phase`` stays on the completed
+    # phase. Non-guarded transitions are unaffected — they keep today's
+    # behaviour with no verify invoked.
+    if next_phase in _BLOCKING_BOUNDARIES:
+        verify_args = argparse.Namespace(
+            plan_id=args.plan_id,
+            phase=args.completed,
+            strict=True,
+        )
+        verify_result = cmd_verify(verify_args)
+        if verify_blocks_transition(verify_result):
+            return verify_result
+
+    # Mark completed phase as done
+    phases[completed_idx]['status'] = PHASE_STATUS_DONE
+
+    # Apply the next-phase mutation. ``next_phase`` was resolved earlier so
+    # the inline strict-verify guard could decide whether to fire — here we
+    # only need to perform the state changes that follow from it.
+    if next_phase is not None:
+        phases[completed_idx + 1]['status'] = PHASE_STATUS_IN_PROGRESS
+        status['current_phase'] = next_phase
+    else:
+        # Last phase completed — set the post-finalize sentinel so dormant
+        # consumers (phase-6-finalize SKILL.md "current_phase: complete"
+        # check, planning.md cleanup --filter complete) start matching.
+        # Mirrors cmd_archive's atomic-archive behavior so the two verbs
+        # produce the same end-state.
+        status['current_phase'] = 'complete'
+
+    write_status(args.plan_id, status)
+
+    result: dict[str, Any] = {'status': 'success', 'plan_id': args.plan_id, 'completed_phase': args.completed}
+    if next_phase:
+        result['next_phase'] = next_phase
+    else:
+        result['message'] = 'All phases completed'
+
+    return result
+
+
+def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Archive a completed plan.
+
+    Atomically closes the active phase before moving the plan directory:
+    marks the active phase ``done``, and when every phase is done sets
+    ``current_phase = 'complete'``. Mirrors cmd_transition so an archived
+    status.json reflects a fully-closed plan instead of being frozen at the
+    last phase's in_progress state.
+    """
+    require_valid_plan_id(args)
+
+    plan_dir = get_plan_dir(args.plan_id)
+    if not plan_dir.exists():
+        return {'status': 'error', 'plan_id': args.plan_id, 'error': 'not_found', 'message': 'Plan directory not found'}
+
+    date_prefix = now_utc_iso()[:10]  # YYYY-MM-DD
+    archive_name = f'{date_prefix}-{args.plan_id}'
+    archive_dir = get_archive_dir()
+    archive_path = archive_dir / archive_name
+
+    if args.dry_run:
+        return {'status': 'success', 'plan_id': args.plan_id, 'dry_run': True, 'would_archive_to': str(archive_path)}
+
+    # Atomic phase close: load status, mark the active phase done, set the
+    # post-finalize sentinel when all phases are complete, then write back
+    # to the live plan directory BEFORE the shutil.move. This guarantees the
+    # archived status.json reflects the closed state — historically this
+    # was attempted via a follow-up `transition --completed 6-finalize`
+    # call, but that always failed because shutil.move had already
+    # invalidated the live path.
+    status = require_status(args)
+    if status is None:
+        # Plan dir exists but status.json is missing/unreadable. Fail
+        # loudly via require_status's error contract instead of moving the
+        # broken plan into the archive — silent archives mask data loss.
+        return None
+    phases = status.get('phases', [])
+    active_idx = next(
+        (i for i, p in enumerate(phases) if p.get('status') != PHASE_STATUS_DONE),
+        None,
+    )
+    if active_idx is not None:
+        phases[active_idx]['status'] = PHASE_STATUS_DONE
+    if all(p.get('status') == PHASE_STATUS_DONE for p in phases):
+        status['current_phase'] = 'complete'
+    # Drop any in-flight terminal-title token (any TITLE_TOKEN_STATES value —
+    # lock-waiting/lock-owned/build-busy) before archiving. An archived plan has
+    # no live session driving its terminal title, so a token left behind would
+    # persist a stale glyph in the archived snapshot. Token-agnostic: a single
+    # pop covers every TITLE_TOKEN_STATES value.
+    status.pop('title_token', None)
+    # Persist optional --reason into status.metadata.archived_reason before
+    # write_status so the archived status.json carries the structured reason.
+    # Absent --reason leaves the field unset (no schema migration). Mirrors the
+    # additive-metadata contract used elsewhere in this module.
+    reason = getattr(args, 'reason', None)
+    if reason is not None:
+        metadata = status.setdefault('metadata', {})
+        metadata['archived_reason'] = reason
+    write_status(args.plan_id, status)
+
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(plan_dir), str(archive_path))
+
+    return {'status': 'success', 'plan_id': args.plan_id, 'archived_to': str(archive_path)}
+
+
+def _restore_lesson_from_plan_dir(plan_id: str, plan_dir: Path) -> tuple[bool, list[str]]:
+    """Scan ``plan_dir`` for lesson-{id}.md files and move each one back to the
+    global lessons-learned directory.
+
+    Returns ``(restored_any, lesson_ids)`` — ``restored_any=False, lesson_ids=[]``
+    when nothing was restored (no lesson files, plan dir missing). When the plan
+    directory contains multiple ``lesson-*.md`` files (e.g., a plan derived from
+    consolidating several lessons), every file is restored; per-file skips
+    (destination collision, path-traversal id) are silently dropped from the
+    returned list so the caller sees only the ids that successfully landed back
+    in ``lessons-learned/``. ``restored_any`` is ``True`` iff at least one file
+    was restored.
+    """
+    from file_ops import base_path  # type: ignore[import-not-found]
+
+    if not plan_dir.exists():
+        return False, []
+
+    matches = sorted(plan_dir.glob('lesson-*.md'))
+    if not matches:
+        return False, []
+
+    lessons_dir = base_path('lessons-learned').resolve()
+    lessons_dir.mkdir(parents=True, exist_ok=True)
+
+    restored_ids: list[str] = []
+    for match in matches:
+        source = match.resolve()
+        lesson_id = source.stem[len('lesson-'):]
+        if any(sep in lesson_id for sep in ('/', '\\', '..')):
+            continue
+
+        destination = (lessons_dir / f'{lesson_id}.md').resolve()
+        if destination.parent != lessons_dir or destination.exists():
+            continue
+
+        shutil.move(str(source), str(destination))
+        log_entry(
+            'work',
+            plan_id,
+            'INFO',
+            f'[RESTORE] (plan-marshall:manage-status:delete-plan) Restored lesson file '
+            f'lesson-{lesson_id}.md to .plan/local/lessons-learned/{lesson_id}.md before '
+            'plan-dir deletion',
+        )
+        restored_ids.append(lesson_id)
+
+    return bool(restored_ids), restored_ids
+
+
+def cmd_delete_plan(args: argparse.Namespace) -> dict[str, Any]:
+    """Delete an entire plan directory."""
+    require_valid_plan_id(args)
+
+    plan_dir = get_plan_dir(args.plan_id)
+
+    if not plan_dir.exists():
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_not_found',
+            'message': f'Plan directory does not exist: {plan_dir}',
+        }
+
+    # Auto-restore moved lesson files (default behaviour; opt-out via
+    # ``--no-restore-lessons``). Plans derived from multiple lessons can
+    # carry more than one ``lesson-*.md`` file; restore them all.
+    lesson_restored = False
+    restored_lesson_ids: list[str] = []
+    if not getattr(args, 'no_restore_lessons', False):
+        lesson_restored, restored_lesson_ids = _restore_lesson_from_plan_dir(args.plan_id, plan_dir)
+
+    # Count files before deletion for audit trail
+    files_removed = sum(1 for _ in plan_dir.rglob('*') if _.is_file())
+
+    try:
+        shutil.rmtree(plan_dir)
+        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Deleted plan ({files_removed} files)')
+        result: dict[str, Any] = {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'action': 'deleted',
+            'path': str(plan_dir),
+            'files_removed': files_removed,
+            'lesson_restored': lesson_restored,
+        }
+        if restored_lesson_ids:
+            result['restored_lesson_ids'] = restored_lesson_ids
+        return result
+    except PermissionError as e:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'permission_denied',
+            'message': f'Permission denied: {e}',
+        }
+    except Exception as e:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'delete_failed',
+            'message': f'Failed to delete plan directory: {e}',
+        }

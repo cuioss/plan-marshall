@@ -1,0 +1,415 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+GitHub PR workflow operations - producer-side fetch + pre-filter + per-finding store.
+
+Producer-side flow: ``comments-stage`` fetches PR review comments, applies the
+keyword pre-filter from ``standards/comment-patterns.json`` to drop obvious
+noise, then writes one ``pr-comment`` finding per surviving comment via
+``manage-findings add`` (direct ``add_finding`` import). LLM consumers query
+via ``manage-findings query --type pr-comment`` — the script-side triage
+batch surface that previously accepted inline JSON has been retired.
+
+Usage:
+    github_pr.py fetch-comments [--pr <number>] [--unresolved-only]
+    github_pr.py comments-stage --pr-number <N> --plan-id <P>
+    github_pr.py --help
+
+Subcommands:
+    fetch-comments    Fetch PR review comments (raw, no filtering or storage)
+    comments-stage    Producer-side: fetch + pre-filter + store one finding per surviving comment
+
+Examples:
+    # Fetch raw comments
+    github_pr.py fetch-comments --pr 123
+
+    # Producer-side stage (fetch, filter, store findings)
+    github_pr.py comments-stage --pr-number 123 --plan-id EXAMPLE-PLAN
+"""
+
+import re
+import sys
+from typing import Any
+
+import github_ops as _github  # type: ignore[import-not-found]
+from ci_base import extract_routing_args, register_subcommands, set_default_cwd  # type: ignore[import-not-found]
+from github_re_review import bot_kind_for_author  # type: ignore[import-not-found]
+from triage_helpers import (  # type: ignore[import-not-found]
+    ErrorCode,
+    compile_patterns_from_config,
+    create_workflow_cli,
+    load_skill_config,
+    make_error,
+    safe_main,
+)
+
+# Register this script's top-level subcommand tokens so that extract_routing_args
+# correctly identifies the subcommand boundary when github_pr.py is the entry
+# point (i.e., does not consume a subcommand-level --plan-id as a router flag).
+register_subcommands({'fetch-comments', 'comments-stage'})
+
+# ============================================================================
+# PRE-FILTER CONFIGURATION (loaded from comment-patterns.json)
+# ============================================================================
+#
+# comment-patterns.json is a PRE-FILTER for noise removal only. It used to
+# carry the LLM decision authority (full keyword classification), but the
+# producer-side migration moves the decision to the LLM consumer, which
+# loads each surviving finding from the per-type store. The keyword data is
+# kept here verbatim so we can still drop obvious automated/acknowledgment
+# noise (e.g., "lgtm", "thanks!", bot signatures) before the finding store
+# is populated. A surviving comment becomes a ``pr-comment`` finding.
+
+PATTERNS: dict[str, Any] = load_skill_config(__file__, 'comment-patterns.json')
+
+# Pre-compile only the ``ignore`` category — that's what the pre-filter uses.
+# Other categories (``code_change``, ``explain``) are no longer consulted by
+# this script; the LLM decides classification downstream from the finding
+# detail.
+_COMPILED_IGNORE: list[re.Pattern] = []
+for _priority, _pattern_list in PATTERNS.get('ignore', {}).items():
+    _COMPILED_IGNORE.extend(
+        compile_patterns_from_config(
+            _pattern_list,
+            f'comment-patterns.json [ignore][{_priority}]',
+        )
+    )
+
+
+# ============================================================================
+# FETCH-COMMENTS SUBCOMMAND (raw fetch, no filtering or storage)
+# ============================================================================
+
+
+def get_current_pr_number() -> int | None:
+    """Get PR number for current branch via GitHub's view_pr_data()."""
+    result = _github.view_pr_data()
+    if result.get('status') != 'success':
+        return None
+
+    pr_number = result.get('pr_number')
+    if pr_number is None or pr_number == 'unknown':
+        return None
+    try:
+        return int(pr_number)
+    except (ValueError, TypeError):
+        return None
+
+
+def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, Any]:
+    """Fetch review comments for a PR via GitHub's fetch_pr_comments_data().
+
+    The wrapper forwards the unified comments list from the provider verbatim,
+    preserving every field on each entry — including the ``kind`` discriminator
+    (``inline``, ``review_body``, or ``issue_comment``). No field filtering is
+    applied, so downstream callers see the full provider-side schema unchanged.
+    """
+
+    result = _github.fetch_pr_comments_data(pr_number, unresolved_only)
+
+    if result.get('status') != 'success':
+        return make_error(result.get('error', 'Failed to fetch PR comments'), code=ErrorCode.FETCH_FAILURE)
+
+    # Re-key the envelope for github_pr.py's expected format. The ``comments``
+    # list is passed through by reference — every entry retains ``kind`` and all
+    # other fields produced by ``github_ops.fetch_pr_comments_data``.
+    return {
+        'pr_number': pr_number,
+        'provider': result.get('provider', 'unknown'),
+        'comments': result.get('comments', []),
+        'total_comments': result.get('total', 0),
+        'unresolved_count': result.get('unresolved', 0),
+        'status': 'success',
+    }
+
+
+def cmd_fetch_comments(args):
+    """Handle fetch-comments subcommand."""
+    # Determine PR number
+    pr_number = args.pr
+    if not pr_number:
+        pr_number = get_current_pr_number()
+        if not pr_number:
+            return make_error('No PR found for current branch. Use --pr to specify.', code=ErrorCode.NOT_FOUND)
+
+    result = fetch_comments(pr_number, getattr(args, 'unresolved_only', False))
+    return result
+
+
+# ============================================================================
+# PRE-FILTER (Python-internal helper)
+# ============================================================================
+
+
+def _is_obvious_noise(body: str) -> bool:
+    """Pre-filter: True if the comment body matches an ``ignore`` keyword.
+
+    Used by ``comments-stage`` to drop obvious automated/acknowledgment noise
+    (e.g., "lgtm", "thanks!", bot signatures) before each surviving comment is
+    persisted as a ``pr-comment`` finding. This is intentionally permissive —
+    the goal is only to skip the most obvious noise, not to make the final
+    classification decision (that belongs to the LLM consumer).
+    """
+    if not body:
+        return True
+    body_lower = body.lower()
+    return any(p.search(body_lower) for p in _COMPILED_IGNORE)
+
+
+# ============================================================================
+# COMMENTS-STAGE SUBCOMMAND (producer-side fetch + filter + store)
+# ============================================================================
+
+# Matches the ``comment_id: <value>`` line written into every pr-comment
+# finding's ``detail`` block by cmd_comments_stage.
+_COMMENT_ID_DETAIL = re.compile(r'^comment_id:\s*(?P<id>.+?)\s*$', re.MULTILINE)
+
+
+def _existing_pr_comment_ids(query_findings, plan_id: str) -> set[str]:
+    """Return the set of comment_id values already stored as pr-comment findings.
+
+    Each pr-comment finding embeds its source ``comment_id`` on a
+    ``comment_id: <value>`` line inside its ``detail`` block. Reconstructing the
+    set from the persisted findings (across all resolution states) lets the
+    producer skip a thread_id-less comment that was already staged in a prior
+    finalize iteration, closing the cross-iteration phantom loop.
+
+    Args:
+        query_findings: The ``_findings_core.query_findings`` callable.
+        plan_id: Plan identifier whose findings store is queried.
+
+    Returns:
+        Set of comment_id strings already present in the pr-comment store.
+    """
+    result = query_findings(plan_id, finding_type='pr-comment')
+    comment_ids: set[str] = set()
+    for finding in result.get('findings') or []:
+        match = _COMMENT_ID_DETAIL.search(finding.get('detail') or '')
+        if match:
+            comment_ids.add(match.group('id'))
+    return comment_ids
+
+
+def cmd_comments_stage(args):
+    """Producer-side: fetch + pre-filter + write one finding per surviving comment.
+
+    Pre-filters applied in order (both contribute to ``count_skipped_noise``):
+    1. Already-resolved threads — skipped silently; the thread owner addressed them.
+    2. Obvious text noise — matched via ``_is_obvious_noise`` (lgtm, bot sigs, etc.).
+
+    Always-on storage: every surviving comment becomes a ``pr-comment`` finding
+    via ``add_finding``. ``count_fetched`` vs ``count_stored`` mismatches are
+    recorded as a ``qgate`` finding with title prefix ``(producer-mismatch)``
+    so the LLM sees them in ``manage-findings qgate list``.
+    """
+    from _findings_core import (  # type: ignore[import-not-found]
+        add_finding,
+        add_qgate_finding,
+        query_findings,
+    )
+
+    pr_number: int = args.pr_number
+    plan_id: str = args.plan_id
+
+    fetch_result = fetch_comments(pr_number, unresolved_only=False)
+    if fetch_result.get('status') != 'success':
+        return fetch_result
+
+    raw_comments: list[dict] = fetch_result.get('comments') or []
+    count_fetched = len(raw_comments)
+
+    # Cross-iteration phantom-loop guard: ``review_body`` comments carry no
+    # ``thread_id``, so a resolution from a prior finalize iteration cannot be
+    # matched back to the comment on the next fetch. Without a ``comment_id``
+    # dedup the resolved comment re-enters as a fresh pending finding every
+    # time HEAD advances, producing an endless finalize loop. Build the set of
+    # ``comment_id`` values already recorded as ``pr-comment`` findings
+    # (regardless of resolution state) and skip any thread_id-less comment
+    # whose id is already present.
+    existing_comment_ids = _existing_pr_comment_ids(query_findings, plan_id)
+
+    # Stamp every finding with the PR HEAD SHA at ingestion time so re-review
+    # matching can tell whether HEAD has advanced past the reviewed commit.
+    # Fetched once for the whole batch (empty string on any failure path — the
+    # field is then simply omitted from the record).
+    reviewed_commit_sha = _github.fetch_pr_head_sha(pr_number)
+
+    stored_hashes: list[str] = []
+    skipped_noise = 0
+    skipped_duplicate = 0
+    store_failures: list[str] = []
+
+    for comment in raw_comments:
+        # Pre-filter 1: already-resolved threads — skip silently (not noise,
+        # not a finding; the thread owner already addressed the comment).
+        if comment.get('resolved'):
+            skipped_noise += 1
+            continue
+
+        body = comment.get('body') or ''
+        if _is_obvious_noise(body):
+            skipped_noise += 1
+            continue
+
+        kind = comment.get('kind') or 'inline'
+        thread_id = comment.get('thread_id') or ''
+        author = comment.get('author') or 'unknown'
+        path = comment.get('path') or None
+        line = comment.get('line') or None
+        comment_id = comment.get('id') or 'unknown'
+
+        # Pre-filter 3: cross-iteration dedup for thread_id-less comments
+        # (``review_body`` / issue-comment kinds). A comment_id already
+        # staged in a prior iteration MUST NOT re-surface as a new pending
+        # finding when HEAD advances. Comments that carry a thread_id are
+        # matched back via their thread on the next fetch, so they do not
+        # need this guard.
+        if not thread_id and comment_id in existing_comment_ids:
+            skipped_duplicate += 1
+            continue
+
+        # Build a stable, deterministic title that disambiguates same-author
+        # comments on the same file. The full body and provider metadata go in
+        # ``detail`` so the LLM consumer can run its own classification later.
+        location_suffix = f' @ {path}:{line}' if path and line else ''
+        title = f'PR #{pr_number} {kind} comment by {author}{location_suffix} ({comment_id})'
+
+        detail_lines = [
+            f'pr_number: {pr_number}',
+            f'kind: {kind}',
+            f'author: {author}',
+            f'thread_id: {thread_id}',
+            f'comment_id: {comment_id}',
+        ]
+        if path:
+            detail_lines.append(f'path: {path}')
+        if line:
+            detail_lines.append(f'line: {line}')
+        detail_lines.append('')
+        detail_lines.append('--- body ---')
+        detail_lines.append(body)
+        detail = '\n'.join(detail_lines)
+
+        # ``line`` may be 0 from the GraphQL fallback for review-body /
+        # issue-comment kinds — pass None in that case to keep the finding
+        # record clean.
+        line_arg: int | None = None
+        if isinstance(line, int) and line > 0:
+            line_arg = line
+
+        # Derive bot_kind from the comment author login (coderabbitai ->
+        # coderabbit, gemini-code-assist -> gemini); a human author resolves to
+        # None and leaves bot_kind unset on the finding.
+        bot_kind = bot_kind_for_author(author)
+
+        add_result = add_finding(
+            plan_id=plan_id,
+            finding_type='pr-comment',
+            title=title,
+            detail=detail,
+            file_path=path or None,
+            line=line_arg,
+            author=author,
+            kind=kind,
+            reviewed_commit_sha=reviewed_commit_sha or None,
+            bot_kind=bot_kind,
+        )
+        if add_result.get('status') == 'success':
+            stored_hashes.append(add_result.get('hash_id', ''))
+        else:
+            store_failures.append(comment_id)
+
+    count_stored = len(stored_hashes)
+    # Duplicates skipped by the cross-iteration guard are legitimate non-stores,
+    # so they drop out of expected_stored alongside the noise skips — otherwise
+    # every deduped comment would spuriously trip the producer-mismatch Q-Gate.
+    expected_stored = count_fetched - skipped_noise - skipped_duplicate
+
+    qgate_hash: str | None = None
+    if count_stored != expected_stored:
+        # Producer-side mismatch — surfaced as a Q-Gate finding so the LLM
+        # picks it up in the standard query path. Phase ``5-execute`` is the
+        # canonical phase for execution-time producer issues.
+        mismatch_detail = (
+            f'count_fetched={count_fetched}, '
+            f'count_skipped_noise={skipped_noise}, '
+            f'count_stored={count_stored}, '
+            f'expected_stored={expected_stored}, '
+            f'failed_comment_ids={store_failures}'
+        )
+        qgate_result = add_qgate_finding(
+            plan_id=plan_id,
+            phase='5-execute',
+            source='qgate',
+            finding_type='pr-comment',
+            title=f'(producer-mismatch) github_pr comments-stage PR #{pr_number}',
+            detail=mismatch_detail,
+        )
+        qgate_hash = qgate_result.get('hash_id')
+
+    return {
+        'status': 'success',
+        'pr_number': pr_number,
+        'plan_id': plan_id,
+        'count_fetched': count_fetched,
+        'count_skipped_noise': skipped_noise,
+        'count_skipped_duplicate': skipped_duplicate,
+        'count_stored': count_stored,
+        'stored_hash_ids': stored_hashes,
+        'producer_mismatch_hash_id': qgate_hash,
+    }
+
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+
+def main():
+    """Main entry point."""
+    # Consume top-level --plan-id / --project-dir before argparse runs,
+    # matching the pattern used by ci.py. Two-state contract: --plan-id
+    # auto-resolves via manage-status; --project-dir is the explicit
+    # override; both together is a hard error. Resolved cwd is forwarded
+    # to every gh subprocess via run_cli's process-global default.
+    project_dir, remaining = extract_routing_args(sys.argv[1:])
+    sys.argv = [sys.argv[0], *remaining]
+    if project_dir is not None:
+        set_default_cwd(project_dir)
+
+    parser = create_workflow_cli(
+        description='PR workflow operations',
+        epilog="""
+Examples:
+  github_pr.py fetch-comments --pr 123
+  github_pr.py comments-stage --pr-number 123 --plan-id EXAMPLE-PLAN
+""",
+        subcommands=[
+            {
+                'name': 'fetch-comments',
+                'help': 'Fetch PR review comments (raw)',
+                'handler': cmd_fetch_comments,
+                'args': [
+                    {'flags': ['--pr'], 'type': int, 'help': "PR number (default: current branch's PR)"},
+                    {'flags': ['--unresolved-only'], 'action': 'store_true', 'help': 'Only return unresolved comments'},
+                ],
+            },
+            {
+                'name': 'comments-stage',
+                'help': 'Producer-side: fetch + pre-filter + store one pr-comment finding per surviving comment',
+                'handler': cmd_comments_stage,
+                'args': [
+                    {'flags': ['--pr-number'], 'dest': 'pr_number', 'type': int, 'required': True, 'help': 'PR number'},
+                    {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
+                ],
+            },
+        ],
+    )
+    args = parser.parse_args()
+    from triage_helpers import print_toon as _output_toon  # type: ignore[import-not-found]
+
+    return _output_toon(args.func(args))
+
+
+if __name__ == '__main__':
+    sys.exit(safe_main(main))

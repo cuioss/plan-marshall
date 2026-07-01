@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+component.py - Marketplace component creation utilities.
+
+Consolidated from:
+- generate-frontmatter.py → generate subcommand
+- validate-component.py → validate subcommand
+
+Provides frontmatter generation and component validation for agents, commands, and skills.
+
+Output: YAML for generate, JSON for validate.
+
+Usage:
+    component.py generate --type <type> --config <json>
+    component.py validate --file <path> --type <type>
+"""
+
+import argparse
+
+from cmd_generate import cmd_generate
+from cmd_validate import cmd_validate
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
+
+
+@safe_main
+def main() -> int:
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description='Marketplace component creation utilities',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+        epilog="""
+Examples:
+  # Generate agent frontmatter
+  %(prog)s generate --type agent --config '{"name": "my-agent", "description": "Does things", "tools": ["Read", "Write"]}'
+
+  # Generate command frontmatter
+  %(prog)s generate --type command --config '{"name": "my-cmd", "description": "A command"}'
+
+  # Generate skill frontmatter
+  %(prog)s generate --type skill --config '{"name": "my-skill", "description": "A skill"}'
+
+  # Validate agent
+  %(prog)s validate --file ./agents/my-agent.md --type agent
+
+  # Validate command
+  %(prog)s validate --file ./commands/my-command.md --type command
+
+  # Validate skill
+  %(prog)s validate --file ./skills/my-skill/SKILL.md --type skill
+""",
+    )
+
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
+
+    # generate command
+    p_generate = subparsers.add_parser('generate', help='Generate YAML frontmatter', allow_abbrev=False)
+    p_generate.add_argument('--type', required=True, choices=['agent', 'command', 'skill'], help='Component type')
+    p_generate.add_argument('--config', required=True, help='JSON string with component configuration')
+    p_generate.set_defaults(func=cmd_generate)
+
+    # validate command
+    p_validate = subparsers.add_parser('validate', help='Validate component structure', allow_abbrev=False)
+    p_validate.add_argument('--file', required=True, help='Path to component file')
+    p_validate.add_argument('--type', required=True, choices=['agent', 'command', 'skill'], help='Component type')
+    p_validate.set_defaults(func=cmd_validate)
+
+    args = parser.parse_args()
+
+    result = args.func(args)
+    output_toon(result)
+    return 0
+
+
+if __name__ == '__main__':
+    main()

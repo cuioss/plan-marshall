@@ -1,0 +1,528 @@
+# Skill Design Principles
+
+Workflow-focused design principles for building goal-based skills.
+
+## Skill Naming Convention
+
+**Principle**: Skill directory names MUST be verb phrases that describe the action the skill performs. Noun-suffix names are reserved for spawnable marketplace agents.
+
+**Rationale**: Noun-suffix skill names (e.g., `task-executor`) cause the LLM to treat the skill as a spawnable agent and invoke it directly rather than through its wrapping `execution-context-{level}` dispatch. Verb-first names (e.g., `execute-task`) align with the marketplace convention that skills describe actions while agent bodies live under the canonical `execution-context` dispatcher.
+
+### Prescribed Pattern: Verb-First Names
+
+Skill directory names use verb phrases:
+
+```text
+# PASS — Verb-first names
+execute-task
+build-maven
+manage-files
+plan-retrospective
+sync-plugin-cache
+```
+
+### Forbidden Pattern: Noun Suffixes
+
+The following noun suffixes are **reserved for spawnable marketplace agents** and MUST NOT appear at the end of a skill directory name (singular or plural):
+
+| Reserved Suffix | Plural Form |
+|-----------------|-------------|
+| `-executor`     | `-executors` |
+| `-manager`      | `-managers` |
+| `-runner`       | `-runners` |
+| `-handler`      | `-handlers` |
+| `-orchestrator` | `-orchestrators` |
+
+```text
+# FAIL — Noun-suffix skill names (reserved for agents)
+task-executor          → use execute-task
+test-runner            → use run-tests
+build-manager          → use manage-builds
+error-handler          → use handle-errors
+workflow-orchestrator  → use orchestrate-workflow
+```
+
+### Enforcement
+
+`plugin-doctor` flags skill directories whose names end in any reserved noun suffix. If a skill legitimately needs a noun-phrase name, the component should be implemented as an agent (with the `-agent` suffix) rather than a skill.
+
+## Core Concept: Workflows Over Monolithic Operations
+
+**Principle**: Skills provide **workflows** (specific capabilities) not monolithic operations. Multiple workflows serve a single goal.
+
+**Example**:
+```markdown
+# FAIL BAD: Monolithic skill
+Skill: analyze-everything
+  - Analyzes agents, commands, skills, metadata, scripts all in one workflow
+
+# PASS GOOD: Workflow-based skill
+Skill: plugin-doctor
+  - Workflow 1: analyze-component (single component)
+  - Workflow 2: analyze-all-of-type (all components of one type)
+  - Workflow 3: validate-marketplace (complete marketplace)
+  - Workflow 4: validate-references (reference compliance)
+  - Workflow 5: detect-duplication (cross-component analysis)
+```
+
+## Single-Workflow vs Multi-Workflow Skills
+
+### Single-Workflow Skills
+
+**When to Use**:
+- Simple, focused capability
+- No variations in execution
+- Single pattern implementation
+
+**Structure**:
+```markdown
+---
+name: simple-formatter
+description: Formats files using specific rules
+user-invocable: true
+allowed-tools: Read, Write, Edit
+---
+
+# Simple Formatter
+
+## Workflow
+
+Step 1: Read input file
+Step 2: Apply formatting rules
+Step 3: Write formatted output
+```
+
+**Examples**:
+- Pattern 10 (Reference Library) - single purpose: provide references
+- Pattern 2 (Read-Process-Write) - single linear workflow
+
+### Multi-Workflow Skills
+
+**When to Use**:
+- Multiple related capabilities
+- Different execution paths for same goal
+- Complex operations with variants
+
+**Structure**:
+```markdown
+---
+name: plugin-doctor
+description: Find and understand quality issues in marketplace components
+user-invocable: true
+allowed-tools: Read, Bash, Glob, Grep, Skill
+---
+
+# Plugin Doctor Skill
+
+## Workflows
+
+### Workflow 1: analyze-component
+Analyzes single component for quality issues.
+[Workflow details]
+
+### Workflow 2: analyze-all-of-type
+Analyzes all components of specific type.
+[Workflow details]
+
+### Workflow 3: validate-marketplace
+Complete marketplace health check.
+[Workflow details]
+```
+
+**Examples**:
+- Pattern 1 (Script Automation) - multiple scripts for different analysis types
+- Pattern 3 (Search-Analyze-Report) - different search patterns, analysis criteria
+- Pattern 5 (Wizard-Style) - different templates, validation rules
+
+## Workflow Parameter Design
+
+### Input Parameters
+
+**Define clearly** what each workflow needs:
+
+```markdown
+### Workflow: analyze-component
+
+**Input Parameters**:
+- `component_path`: Absolute path to component file (required)
+- `component_type`: "agent" | "command" | "skill" (required)
+- `standards_preloaded`: Boolean, true if standards already loaded (optional)
+
+**Process**:
+[Workflow steps]
+
+**Output**:
+Structured quality report with issues categorized by severity
+```
+
+### Parameter Patterns
+
+**Required vs Optional**:
+```markdown
+- `file_path` (required) - Must be provided
+- `output_format` (optional, default: "json") - Has sensible default
+- `verbose` (optional, default: false) - Boolean flag
+```
+
+**Type Specifications**:
+```markdown
+- `component_type`: "agent" | "command" | "skill" - Enum values
+- `severity_filter`: ["high", "medium", "low"] - Array of values
+- `max_results`: Integer, 1-1000 - Constrained number
+```
+
+## Conditional Workflow Selection
+
+**Pattern**: Let commands/users choose workflow based on their needs.
+
+### Implicit Selection (by parameters)
+
+```markdown
+## Determining Workflow
+
+If `component_path` provided:
+  → Use workflow: analyze-component
+
+If `component_type` provided without path:
+  → Use workflow: analyze-all-of-type
+
+If neither provided:
+  → Use workflow: validate-marketplace
+```
+
+### Explicit Selection (by name)
+
+```markdown
+# Command specifies workflow explicitly
+Skill: plugin-doctor
+Workflow: analyze-component
+Parameters: {component_path: "...", component_type: "agent"}
+```
+
+## Workflow Composition Patterns
+
+### Sequential Composition
+
+**Pattern**: One workflow's output feeds into another.
+
+```markdown
+Workflow 1: scan-inventory (conceptual)
+  Output: List of components
+  # Actual: pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory
+
+Workflow 2: analyze-component
+  Input: Component from Workflow 1
+  Output: Analysis results
+
+# Command composes them:
+1. Invoke scan-inventory → get list
+2. For each component: invoke analyze-component
+3. Aggregate results
+```
+
+### Parallel Composition
+
+**Pattern**: Multiple workflows execute independently, results combined.
+
+```markdown
+Workflow 1: validate-format
+Workflow 2: validate-links
+Workflow 3: validate-content
+
+# Command invokes all in parallel:
+Results = [
+  invoke validate-format,
+  invoke validate-links,
+  invoke validate-content
+]
+Combine results into final report
+```
+
+### Hierarchical Composition
+
+**Pattern**: Top-level workflow delegates to sub-workflows.
+
+```markdown
+Workflow: validate-marketplace
+  Step 1: Invoke validate-format (all components)
+  Step 2: Invoke validate-links (all components)
+  Step 3: Invoke detect-duplication (cross-component)
+  Step 4: Aggregate all results
+```
+
+## Progressive Disclosure in Workflows
+
+### Workflow-Level Loading
+
+```markdown
+## Workflow 1: basic-analysis
+
+Step 1: Load core standards
+Read references/core-standards.md
+
+[Basic analysis steps]
+
+## Workflow 2: deep-analysis
+
+Step 1: Load core standards
+Read references/core-standards.md
+
+Step 2: Load detailed patterns
+Read references/advanced-patterns.md
+
+[Detailed analysis steps]
+```
+
+**Benefit**: Workflow 1 only loads what it needs, Workflow 2 loads more.
+
+### Step-Level Loading
+
+```markdown
+## Workflow: comprehensive-analysis
+
+Step 1: Quick Scan
+[Fast, lightweight scan]
+
+Step 2: Load Details for Issues
+If issues found in Step 1:
+  Read references/detailed-patterns.md
+
+Step 3: Deep Analysis
+[Only executes if Step 1 found issues]
+```
+
+**Benefit**: Detailed patterns only load if needed.
+
+## Workflow Quality Standards
+
+### Clear Purpose
+
+**Each workflow should have**:
+- Single, well-defined purpose
+- Clear input/output contract
+- Documented when to use
+
+**Example**:
+```markdown
+### Workflow: analyze-component
+
+**Purpose**: Analyze a single component for quality issues
+
+**When to Use**:
+- Validating newly created component
+- Analyzing specific component after changes
+- Investigating reported issues in component
+
+**When NOT to Use**:
+- Analyzing multiple components (use analyze-all-of-type)
+- Complete marketplace health (use validate-marketplace)
+```
+
+### Focused Scope
+
+**Avoid**:
+```markdown
+# FAIL Workflow trying to do too much
+Workflow: do-everything
+  - Analyzes component
+  - Fixes all issues
+  - Generates documentation
+  - Runs tests
+  - Commits changes
+```
+
+**Prefer**:
+```markdown
+# PASS Focused workflows
+Workflow 1: analyze-component (analysis only)
+Workflow 2: fix-issues (fixing only, separate skill)
+Workflow 3: generate-docs (documentation only, separate skill)
+```
+
+### Testability
+
+**Design workflows to be testable**:
+
+```markdown
+## Workflow: validate-format
+
+**Test Cases**:
+- Valid component → Returns clean status
+- Missing frontmatter → Returns error with specific message
+- Invalid YAML → Returns parse error
+- Missing sections → Returns list of missing sections
+```
+
+## Workflow Documentation Template
+
+```markdown
+### Workflow: workflow-name
+
+**Purpose**: One-sentence description of what this workflow does
+
+**When to Use**:
+- Specific scenario 1
+- Specific scenario 2
+
+**Input Parameters**:
+- `param1` (required): Description and type
+- `param2` (optional, default: value): Description and type
+
+**Process**:
+1. Step 1 description
+   ```
+   Commands or pseudo-code
+   ```text
+2. Step 2 description
+3. Step 3 description
+
+**Output**: Description of return value/result
+
+**Example**:
+```
+Skill: skill-name
+Workflow: workflow-name
+Parameters: {param1: "value", param2: "value"}
+```text
+```
+
+## Skill Composition
+
+### Skills Invoking Other Skills
+
+**Pattern**: Skills can load other skills for prerequisites.
+
+```markdown
+## Workflow: analyze-java-code
+
+Step 1: Load Architecture Principles
+Skill: pm-plugin-development:plugin-architecture
+
+Step 2: Load Java Standards
+Skill: pm-dev-java:java-core
+
+Step 3: Apply Standards
+[Analysis using loaded standards]
+```
+
+**Benefits**:
+- Reuse existing knowledge
+- Avoid duplication
+- Stay up-to-date with standard changes
+
+### Avoiding Circular Dependencies
+
+**Rule**: Skills should not circularly depend on each other.
+
+```markdown
+# FAIL BAD: Circular dependency
+Skill A loads Skill B
+Skill B loads Skill A
+
+# PASS GOOD: Linear dependency
+Skill A loads Skill B (foundation)
+Skill C loads both A and B
+```
+
+## Best Practices Summary
+
+**1. Design for Workflows**:
+- Multiple focused workflows, not monolithic operations
+- Clear purpose per workflow
+- Well-defined input/output contracts
+
+**2. Parameter Design**:
+- Required vs optional clearly marked
+- Type specifications provided
+- Sensible defaults where applicable
+
+**3. Composition**:
+- Sequential, parallel, or hierarchical as needed
+- Workflows compose to build complex capabilities
+- Avoid circular dependencies
+
+**4. Progressive Disclosure**:
+- Load references at workflow level or step level
+- Only load what's needed for current execution
+- Minimize upfront context usage
+
+**5. Quality**:
+- Each workflow is testable
+- Clear documentation
+- Focused scope per workflow
+
+**6. Skill Composition**:
+- Invoke other skills for prerequisites
+- Avoid duplication of knowledge
+- Build on foundation skills
+
+## Examples
+
+### Example 1: Internal Reference Skill (Pattern 10)
+
+```markdown
+---
+name: plugin-architecture
+description: Architecture principles and patterns for marketplace components
+user-invocable: false
+allowed-tools: Read
+---
+
+# Plugin Architecture Skill
+
+## Workflow
+
+This skill provides reference material only. No execution.
+
+Load specific reference when needed:
+- Read references/core-principles.md
+- Read references/skill-patterns.md
+- Read references/goal-based-organization.md
+
+Never load all references at once. Load only what's needed for current task.
+```
+
+### Example 2: User-Invocable Multi-Workflow Skill (Pattern 3)
+
+```markdown
+---
+name: plugin-doctor
+description: Find and understand quality issues in marketplace components
+user-invocable: true
+allowed-tools: Read, Bash, Glob, Grep, Skill
+---
+
+# Plugin Doctor Skill
+
+## Workflows
+
+### Workflow 1: analyze-component
+**Input**: component_path, component_type
+**Output**: Quality report for single component
+[Detailed workflow steps]
+
+### Workflow 2: analyze-all-of-type
+**Input**: component_type, scope
+**Output**: Aggregated report for all components of type
+[Detailed workflow steps]
+
+### Workflow 3: validate-marketplace
+**Input**: None
+**Output**: Complete marketplace health report
+[Detailed workflow steps]
+```
+
+## Plugin-Doctor Rule Provenance Contract
+
+When authoring a new `plugin-doctor` validation rule, every rule MUST be paired with a provenance entry before merge. The complete contract — required artifacts, fix-catalog requirements, audit gate — lives in `pm-plugin-development:plugin-doctor` `references/rule-catalog.md` § "Provenance Contract for New Rules" and the source-of-truth registry at `references/rule-provenance.md`.
+
+**Summary**: A new rule needs (1) an analyzer emitter, (2) a row in `rule-provenance.md` with class + Source citation, (3) a row in `rule-catalog.md` describing intent / detection / fix, and (4) a test in `test/pm-plugin-development/plugin-doctor/`. Fixable rules additionally need entries in `_doctor_shared.py::FIXABLE_ISSUE_TYPES`, `_cmd_apply.py::FIX_HANDLERS`, `_cmd_verify.py::cmd_verify`, and `fix-catalog.md`. Rules without a Source citation are inadmissible — the `test_rule_provenance_table.py` regression suite fails the build until provenance is added.
+
+**Rationale**: Rules emitted by plugin-doctor become hard constraints on every marketplace contributor. Without an explicit source citation, a rule's purpose becomes archaeology: nobody can tell why the rule fires or whether it still applies. The provenance table preserves the institutional knowledge that justifies each rule. See the audit history at the bottom of `rule-provenance.md` for the fabricated `unsupported-skill-tools-field` precedent that motivated this contract.
+
+## Related References
+
+- Core Principles: references/core-principles.md
+- Skill Patterns: references/skill-patterns.md
+- Command Design: references/command-design.md
+- Plugin-Doctor Rule Provenance: `pm-plugin-development:plugin-doctor` `references/rule-provenance.md`

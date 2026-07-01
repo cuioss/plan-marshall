@@ -1,0 +1,126 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Finalize-steps command handler for manage-config.
+
+Handles:
+    finalize-steps apply-preset --preset <name>   (preset writer)
+
+The write path imports :class:`FinalizeStepPresets` from this skill.
+``apply-preset`` surgically writes the preset's step list into
+``plan.phase-6-finalize.steps`` while preserving every other phase-6 knob
+(``max_iterations``, ``pr_merge_strategy``, ``auto_rebase_threshold``,
+…). Step enumeration stays on the existing ``list-finalize-steps`` surface;
+this module only adds the preset writer.
+"""
+
+from _cmd_quality_phases import _resolve_step_orders, _steps_map
+from _config_core import (
+    error_exit,
+    is_initialized,
+    load_config,
+    save_config,
+    success_exit,
+)
+from _config_defaults import FINALIZE_STEP_EXT_POINT
+from finalize_step_presets import (  # type: ignore[import-not-found]
+    FinalizeStepPresets,
+)
+
+# Phase key the preset writes into.
+_PHASE_SECTION = 'phase-6-finalize'
+
+
+def _known_finalize_steps() -> frozenset[str]:
+    """Return the known finalize-step universe via the discovery query.
+
+    Defence-in-depth: recomputed from the reusable
+    ``extension_discovery.find_implementors`` query (the same SOLE discovery path
+    the seed and preset builder consume) so the writer re-validates the preset
+    payload against the live discovered universe — built-in, bundle-optional, and
+    project step ids alike. Computed on demand (not at module import) so this
+    module stays a leaf and the universe always reflects the current step docs.
+    """
+    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+
+    return frozenset(
+        rec['name'] for rec in find_implementors(FINALIZE_STEP_EXT_POINT) if rec.get('name')
+    )
+
+
+def cmd_finalize_steps_apply_preset(args) -> dict:
+    """Handle ``finalize-steps apply-preset --preset <name>`` subcommand.
+
+    Surgically writes the preset's step list into
+    ``config['plan']['phase-6-finalize']['steps']``. Other per-phase config
+    knobs (``max_iterations``, ``pr_merge_strategy``,
+    ``auto_rebase_threshold``, …) are preserved.
+
+    Resolution flow:
+
+    1. ``FinalizeStepPresets.get(args.preset)`` returns a deep copy of the
+       preset's step list. The lookup is case-insensitive.
+    2. Defence-in-depth: re-validate every step against the known
+       finalize-step universe imported from ``_config_defaults`` — guards
+       against a preset that passed the registry import-time check drifting
+       out of sync with the registry at write time.
+    3. Load ``marshal.json``, merge the ``steps`` map into the
+       ``plan.phase-6-finalize`` entry (creating the entry if absent) in the
+       canonical keyed-map form (``{step_id: {params}}``, ``{}`` for config-less
+       steps), and save.
+    """
+    if not is_initialized():
+        return error_exit('marshal.json not initialized; run /marshall-steward first')
+
+    try:
+        steps = FinalizeStepPresets.get(args.preset)
+    except ValueError as exc:
+        return error_exit(str(exc))
+
+    # Defence-in-depth re-validation against the discovered universe.
+    known_steps = _known_finalize_steps()
+    for step in steps:
+        if step not in known_steps:
+            return error_exit(
+                f"preset '{args.preset}' references unknown finalize step "
+                f"'{step}'"
+            )
+
+    config = load_config()
+    plan_block = config.setdefault('plan', {})
+    if not isinstance(plan_block, dict):
+        return error_exit(
+            "plan block in marshal.json is not a dict; cannot merge preset steps"
+        )
+    phase_entry = plan_block.setdefault(_PHASE_SECTION, {})
+    if not isinstance(phase_entry, dict):
+        return error_exit(
+            f"plan['{_PHASE_SECTION}'] exists but is not a dict; "
+            f'cannot merge steps attribute'
+        )
+
+    # Sort the preset's step list ascending by resolved frontmatter `order`
+    # before persisting, reusing the same helper `set-steps`/`add-step` use.
+    # This closes the durability gap that let a preset persist an out-of-order
+    # phase-6-finalize steps list. On the helper's error return (missing order
+    # / collision) propagate the error rather than persisting.
+    resolved, err = _resolve_step_orders(steps, _PHASE_SECTION)
+    if err is not None:
+        return err
+    sorted_ids = [s for s, _ in sorted(resolved, key=lambda pair: pair[1])]
+    # Read any existing per-step params through `_steps_map`, which normalizes the
+    # on-disk keyed map to the internal id-keyed map ({step_id: param-object}, {}
+    # for config-less steps) so the preset preserves them.
+    existing_params = _steps_map(phase_entry.get('steps'))
+    # Build the ordered id-keyed map (preset order = execution order), preserving
+    # existing params for retained steps and seeding empty params for new ones,
+    # then persist the keyed map directly (the sole on-disk shape).
+    ordered_map = {step_id: existing_params.get(step_id, {}) for step_id in sorted_ids}
+    phase_entry['steps'] = ordered_map
+
+    save_config(config)
+
+    return success_exit(
+        {
+            'preset': args.preset,
+            'steps_count': len(sorted_ids),
+        }
+    )
