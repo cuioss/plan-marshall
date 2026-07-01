@@ -296,6 +296,43 @@ def _clamp_worked_to_wall(phase_data: dict, duration_ms: int) -> int:
     return duration_ms
 
 
+def _reconcile_accumulator_into_phase(phase_data: dict, accumulator: dict[str, int]) -> None:
+    """Fold a phase's durable accumulator totals into its metrics row in place.
+
+    The per-phase accumulator (``work/metrics-accumulator-{phase}.toon``) is the
+    durable snapshot written after every subagent return. When a phase row was
+    never closed by ``end-phase`` / ``phase-boundary`` — the terminal-phase gap
+    where ``6-finalize`` accrued tokens but ``record-metrics`` never ran to fold
+    them in — its accumulated totals would otherwise be dropped from the
+    generated report. This helper backfills the row from the accumulator so the
+    snapshot survives.
+
+    Explicit-wins precedence: a field already present on the row (recorded by
+    ``end-phase`` / ``phase-boundary``) is NEVER overwritten — only absent
+    fields are backfilled, and only from a truthy accumulator value. Closed rows
+    are therefore byte-identical to before. The accumulator's ``duration_ms`` is
+    folded as ``agent_duration_ms`` (mirroring ``cmd_end_phase``): it is clamped
+    to the phase wall-clock span and the derived ``agent_duration_seconds`` is
+    written alongside it.
+    """
+    if not accumulator:
+        return
+
+    acc_tokens = accumulator.get('total_tokens')
+    if acc_tokens and 'total_tokens' not in phase_data:
+        phase_data['total_tokens'] = acc_tokens
+
+    acc_tool_uses = accumulator.get('tool_uses')
+    if acc_tool_uses and 'tool_uses' not in phase_data:
+        phase_data['tool_uses'] = acc_tool_uses
+
+    acc_duration_ms = accumulator.get('duration_ms')
+    if acc_duration_ms and 'agent_duration_ms' not in phase_data:
+        clamped = _clamp_worked_to_wall(phase_data, acc_duration_ms)
+        phase_data['agent_duration_ms'] = clamped
+        phase_data['agent_duration_seconds'] = round(clamped / 1000.0, 1)
+
+
 def cmd_end_phase(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
     phase = args.phase
@@ -438,6 +475,18 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     if not phases:
         return {'status': 'error', 'error': 'no_data', 'message': 'No metrics data found'}
 
+    # Reconcile each canonical phase against its durable on-disk accumulator
+    # BEFORE deriving idle and rendering. A phase row that was never closed by
+    # end-phase / phase-boundary (e.g. a 6-finalize interrupted, looped-back, or
+    # never reaching record-metrics) still surfaces its accrued tokens because
+    # the accumulator is the durable snapshot of record. Explicit-wins
+    # precedence: rows already closed by end-phase / phase-boundary are left
+    # byte-identical — only absent fields are backfilled.
+    for phase_name in PHASE_NAMES:
+        if phase_name not in phases:
+            continue
+        _reconcile_accumulator_into_phase(phases[phase_name], _read_accumulator(plan_id, phase_name))
+
     # Persist the per-phase idle residual back into metrics.toon before
     # rendering: idle = max(0, wall_clock - worked). Derived deterministically
     # from already-persisted fields via session-boundary inference — no new API.
@@ -450,6 +499,22 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             continue
         idle_ms = max(0, wall_ms - _worked_ms(phase))
         phase['idle_duration_ms'] = idle_ms
+
+    # First-class partiality verdict over the canonical six-phase baseline.
+    # A canonical phase is "recorded" iff its metrics.toon row carries an
+    # end_time (the boundary-close marker, consistent with cmd_boundary_status's
+    # missing-boundary definition); a phase with no row at all is unrecorded
+    # too. `partial` is true whenever any canonical phase lacks that marker —
+    # the floor-not-truth signal a consumer reads to tell an under-count (e.g. a
+    # 6-finalize whose terminal close never folded the accumulator in) from a
+    # genuinely complete report. Persist both as top-level keys in metrics.toon
+    # (round-tripped via read_metrics_raw's arbitrary-top-level-key path):
+    # `partial` as a true/false token and `unrecorded_phases` comma-joined.
+    unrecorded_phases = [name for name in PHASE_NAMES if not phases.get(name, {}).get('end_time')]
+    partial = len(unrecorded_phases) > 0
+    data['partial'] = 'true' if partial else 'false'
+    data['unrecorded_phases'] = ','.join(unrecorded_phases)
+
     write_metrics(plan_id, data)
 
     # Build metrics.md content
@@ -463,9 +528,19 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     lines.append('## Phase Breakdown')
     lines.append('')
 
+    # First-class partiality marker: when a canonical phase lacks a recorded
+    # boundary, surface the gap directly under the heading so a reader sees the
+    # report is a floor, not a complete accounting.
+    if partial:
+        lines.append(f'> Partial: unrecorded phases — {", ".join(unrecorded_phases)}')
+        lines.append('')
+
     # Collect breakdown rows (phases that exist) preserving canonical phase order.
+    # The completeness denominator is the canonical-six baseline (len(PHASE_NAMES)),
+    # NOT the count of present rows: an entirely-absent phase must still make the
+    # Total render as partial (n=k/6) rather than silently looking complete.
     breakdown_rows = [(name, phases[name]) for name in PHASE_NAMES if name in phases]
-    breakdown_n = len(breakdown_rows)
+    breakdown_n = len(PHASE_NAMES)
 
     def _numeric(value: object) -> int | float | None:
         """Return value as int/float if it's a truthy number, else None.
@@ -669,6 +744,8 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'plan_id': plan_id,
         'file': METRICS_MD,
         'phases_recorded': len(phases),
+        'partial': partial,
+        'unrecorded_phases': unrecorded_phases,
         'total_worked_seconds': round(total_worked, 1),
         'total_wall_seconds': round(total_wall, 1),
         'total_idle_seconds': round(total_idle, 1),
@@ -1137,10 +1214,19 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     `[OUTCOME]`-coverage gaps caused by agent-initiated re-dispatch.
 
     The file uses the same column layout for every row so plan-retrospective
-    fact extractors can ingest it without a schema lookup. Each row is a
-    single line in the form ``<timestamp>,<termination_cause>,
-    <total_tokens>,<tool_uses>,<duration_ms>``. The file's first line is a
-    TOON-tabular header declaring the column order.
+    fact extractors can ingest it without a schema lookup. Each row carries the
+    legacy five columns (``<timestamp>,<termination_cause>,<total_tokens>,
+    <tool_uses>,<duration_ms>``) followed by the four per-dispatch context-load
+    columns appended at the END (``input_tokens``, ``output_tokens``,
+    ``cache_read_input_tokens``, ``cache_creation_input_tokens``) — the
+    per-DISPATCH counterpart to the per-PHASE four-field view ``enrich`` writes.
+    Each context-load column defaults to 0 when its flag is omitted, mirroring
+    the existing optional ``--total-tokens`` / ``--tool-uses`` / ``--duration-ms``
+    fields. Appending at the END keeps the legacy five columns positionally
+    unchanged so the existing plan-retrospective reader stays valid. The file's
+    first line is a TOON-tabular header declaring the column order. The
+    canonical column order / count / defaults are owned by
+    ``standards/data-format.md`` (Per-Dispatch Context-Load Attribution section).
     """
     plan_id = require_valid_plan_id(args)
     phase = args.phase
@@ -1166,6 +1252,14 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     total_tokens = args.total_tokens if args.total_tokens is not None else 0
     tool_uses = args.tool_uses if args.tool_uses is not None else 0
     duration_ms = args.duration_ms if args.duration_ms is not None else 0
+    # Four per-dispatch context-load columns (the four-field message.usage view at
+    # dispatch termination). Each defaults to 0 when its flag is omitted, mirroring
+    # the legacy optional fields above. Canonical column order / count / defaults
+    # live in standards/data-format.md (Per-Dispatch Context-Load Attribution).
+    input_tokens = getattr(args, 'input_tokens', 0) or 0
+    output_tokens = getattr(args, 'output_tokens', 0) or 0
+    cache_read_input_tokens = getattr(args, 'cache_read_input_tokens', 0) or 0
+    cache_creation_input_tokens = getattr(args, 'cache_creation_input_tokens', 0) or 0
 
     # Guard at script side: refuse to record a dispatch boundary when the
     # plan directory does not exist (and was never initialised by phase-1).
@@ -1179,7 +1273,12 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     path.parent.mkdir(parents=True, exist_ok=True)
 
     timestamp = now_utc_iso()
-    row = f'{timestamp},{cause},{total_tokens},{tool_uses},{duration_ms}'
+    # Legacy five columns first, then the four context-load columns appended at
+    # the END so legacy readers stay positionally valid.
+    row = (
+        f'{timestamp},{cause},{total_tokens},{tool_uses},{duration_ms},'
+        f'{input_tokens},{output_tokens},{cache_read_input_tokens},{cache_creation_input_tokens}'
+    )
 
     if path.exists():
         existing = path.read_text(encoding='utf-8')
@@ -1191,7 +1290,8 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
         header = (
             f'plan_id: {plan_id}\n'
             f'phase: {phase}\n'
-            'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:\n'
+            'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
+            'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens}:\n'
         )
         new_content = header + row + '\n'
 
@@ -1212,6 +1312,10 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
         'total_tokens': total_tokens,
         'tool_uses': tool_uses,
         'duration_ms': duration_ms,
+        'input_tokens': input_tokens,
+        'output_tokens': output_tokens,
+        'cache_read_input_tokens': cache_read_input_tokens,
+        'cache_creation_input_tokens': cache_creation_input_tokens,
         'timestamp': timestamp,
         'rows_recorded': row_count,
         'dispatch_boundary_file': str(path.relative_to(get_plan_dir(plan_id))),
@@ -1590,6 +1694,30 @@ def main() -> int:
         type=int,
         default=None,
         help="Subagent duration_ms at termination (from the agent's <usage>).",
+    )
+    rdb.add_argument(
+        '--input-tokens',
+        type=int,
+        default=None,
+        help="Dispatch context-load input_tokens at termination (message.usage; default 0).",
+    )
+    rdb.add_argument(
+        '--output-tokens',
+        type=int,
+        default=None,
+        help="Dispatch context-load output_tokens at termination (message.usage; default 0).",
+    )
+    rdb.add_argument(
+        '--cache-read-input-tokens',
+        type=int,
+        default=None,
+        help="Dispatch context-load cache_read_input_tokens at termination (message.usage; default 0).",
+    )
+    rdb.add_argument(
+        '--cache-creation-input-tokens',
+        type=int,
+        default=None,
+        help="Dispatch context-load cache_creation_input_tokens at termination (message.usage; default 0).",
     )
     rdb.set_defaults(func=cmd_record_dispatch_boundary)
 

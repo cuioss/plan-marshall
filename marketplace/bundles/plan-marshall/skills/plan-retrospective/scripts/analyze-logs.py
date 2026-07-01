@@ -475,9 +475,20 @@ def detect_outcome_for_diffed_tasks(
 def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
     """Parse a single ``metrics-dispatch-boundaries-{phase}.toon`` artifact.
 
-    Returned dict shape (unchanged from the legacy phase-5-only reader):
+    Accepts BOTH the legacy five-column rows AND the widened nine-column rows
+    that ``manage-metrics record-dispatch-boundary`` writes once the four
+    per-dispatch context-load columns are appended. The length guard is a floor
+    (``len(parts) < 5``) rather than a strict equality so a widened row is no
+    longer silently dropped. The canonical column order / count / defaults are
+    owned by ``manage-metrics`` ``standards/data-format.md`` (Per-Dispatch
+    Context-Load Attribution section); this reader consumes that order.
+
+    Returned dict shape:
       - present: bool
-      - rows: list of {timestamp, termination_cause, total_tokens, tool_uses, duration_ms}
+      - rows: list of {timestamp, termination_cause, total_tokens, tool_uses,
+            duration_ms, input_tokens, output_tokens, cache_read_input_tokens,
+            cache_creation_input_tokens}. The four context-load keys default to
+            ``0`` when a legacy five-column row carries only the legacy columns.
       - unknown_count: number of rows with ``termination_cause == "unknown"``
       - clean_exit_queue_empty_count: number of rows with
             ``termination_cause == "clean_exit_queue_empty"``
@@ -506,7 +517,11 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
         if not stripped or stripped.startswith(('plan_id:', 'phase:', 'rows[]')):
             continue
         parts = stripped.split(',')
-        if len(parts) != 5:
+        # Floor, not equality: a row with at least the five legacy columns parses.
+        # Widened nine-column rows (legacy five + four appended context-load
+        # columns) parse too rather than being silently dropped by the old
+        # strict ``!= 5`` guard.
+        if len(parts) < 5:
             continue
         try:
             row = {
@@ -518,6 +533,19 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
             }
         except (ValueError, IndexError):
             continue
+        # Read the four appended context-load columns when present, defaulting
+        # to 0 for legacy five-column rows. A malformed appended field degrades
+        # the four context fields to 0 rather than dropping the whole row.
+        try:
+            row['input_tokens'] = int(parts[5])
+            row['output_tokens'] = int(parts[6])
+            row['cache_read_input_tokens'] = int(parts[7])
+            row['cache_creation_input_tokens'] = int(parts[8])
+        except (ValueError, IndexError):
+            row['input_tokens'] = 0
+            row['output_tokens'] = 0
+            row['cache_read_input_tokens'] = 0
+            row['cache_creation_input_tokens'] = 0
         rows.append(row)
 
     unknown_count = sum(1 for row in rows if row['termination_cause'] == 'unknown')

@@ -567,6 +567,202 @@ class TestPhase5LoggingGapExtractors:
 
 
 # =============================================================================
+# Per-dispatch context-load columns in the dispatch-boundary reader
+# =============================================================================
+#
+# Deliverable 4 widened the dispatch-boundary row from five columns to nine
+# (legacy five + input_tokens, output_tokens, cache_read_input_tokens,
+# cache_creation_input_tokens appended at the END). ``_parse_dispatch_boundary_file``
+# uses a ``len(parts) >= 5`` floor so a legacy five-column row still parses with
+# the four context-load keys defaulting to 0, while a widened nine-column row
+# surfaces the four values. A malformed appended field degrades the four context
+# fields to 0 rather than dropping the whole row. The canonical column
+# order/count/defaults are owned by manage-metrics ``standards/data-format.md``
+# (Per-Dispatch Context-Load Attribution section); this reader consumes that order.
+
+
+class TestDispatchBoundaryContextLoadColumns:
+    """``_parse_dispatch_boundary_file`` ingests the four context-load columns."""
+
+    _CTX_HEADER = (
+        'timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
+        'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens'
+    )
+    _LEGACY_HEADER = 'timestamp,termination_cause,total_tokens,tool_uses,duration_ms'
+
+    def _write_boundary(self, plan_dir: Path, phase: str, header_cols: str, rows: list[str]) -> Path:
+        """Write a metrics-dispatch-boundaries-{phase}.toon artifact and return its path."""
+        work = plan_dir / 'work'
+        work.mkdir(parents=True, exist_ok=True)
+        lines = [f'plan_id: {plan_dir.name}', f'phase: {phase}', f'rows[]{{{header_cols}}}:']
+        lines.extend(rows)
+        path = work / f'metrics-dispatch-boundaries-{phase}.toon'
+        path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+        return path
+
+    def test_nine_column_row_surfaces_four_context_load_values(self, tmp_path):
+        """A widened nine-column row exposes the four context-load values and
+        leaves the legacy five columns unchanged."""
+        plan_dir = tmp_path / 'plans' / 'ctx-nine'
+        plan_dir.mkdir(parents=True)
+        path = self._write_boundary(
+            plan_dir,
+            '5-execute',
+            self._CTX_HEADER,
+            ['2026-05-08T14:00:00Z,clean_exit_queue_empty,84211,38,412390,38000,4000,210000,12000'],
+        )
+
+        result = _analyze_logs._parse_dispatch_boundary_file(path)
+
+        assert result['present'] is True
+        assert len(result['rows']) == 1
+        row = result['rows'][0]
+        # Legacy five columns parse unchanged.
+        assert row['timestamp'] == '2026-05-08T14:00:00Z'
+        assert row['termination_cause'] == 'clean_exit_queue_empty'
+        assert row['total_tokens'] == 84211
+        assert row['tool_uses'] == 38
+        assert row['duration_ms'] == 412390
+        # The four appended context-load columns surface.
+        assert row['input_tokens'] == 38000
+        assert row['output_tokens'] == 4000
+        assert row['cache_read_input_tokens'] == 210000
+        assert row['cache_creation_input_tokens'] == 12000
+
+    def test_legacy_five_column_row_defaults_context_load_to_zero(self, tmp_path):
+        """A legacy five-column row still parses; the four context-load keys
+        default to 0 and the legacy five are unchanged."""
+        plan_dir = tmp_path / 'plans' / 'ctx-legacy'
+        plan_dir.mkdir(parents=True)
+        path = self._write_boundary(
+            plan_dir,
+            '5-execute',
+            self._LEGACY_HEADER,
+            ['2026-05-08T14:00:00Z,voluntary_checkpoint,100,2,1000'],
+        )
+
+        result = _analyze_logs._parse_dispatch_boundary_file(path)
+
+        assert result['present'] is True
+        assert len(result['rows']) == 1
+        row = result['rows'][0]
+        # Legacy five columns unchanged.
+        assert row['termination_cause'] == 'voluntary_checkpoint'
+        assert row['total_tokens'] == 100
+        assert row['tool_uses'] == 2
+        assert row['duration_ms'] == 1000
+        # The four context-load columns default to 0 for a legacy row.
+        assert row['input_tokens'] == 0
+        assert row['output_tokens'] == 0
+        assert row['cache_read_input_tokens'] == 0
+        assert row['cache_creation_input_tokens'] == 0
+
+    def test_mixed_legacy_and_widened_rows_each_parse(self, tmp_path):
+        """A file mixing a legacy five-column row and a widened nine-column row
+        parses both — neither is dropped by the floor guard."""
+        plan_dir = tmp_path / 'plans' / 'ctx-mixed'
+        plan_dir.mkdir(parents=True)
+        path = self._write_boundary(
+            plan_dir,
+            '5-execute',
+            self._CTX_HEADER,
+            [
+                # Legacy five-column row (written before the columns existed).
+                '2026-05-08T14:00:00Z,voluntary_checkpoint,100,2,1000',
+                # Widened nine-column row.
+                '2026-05-08T14:01:00Z,clean_exit_queue_empty,200,4,2000,50,10,3000,90',
+            ],
+        )
+
+        result = _analyze_logs._parse_dispatch_boundary_file(path)
+
+        assert len(result['rows']) == 2
+        legacy_row, widened_row = result['rows']
+        # Legacy row → context columns default to 0.
+        assert legacy_row['total_tokens'] == 100
+        assert legacy_row['input_tokens'] == 0
+        assert legacy_row['cache_creation_input_tokens'] == 0
+        # Widened row → context columns surface.
+        assert widened_row['total_tokens'] == 200
+        assert widened_row['input_tokens'] == 50
+        assert widened_row['output_tokens'] == 10
+        assert widened_row['cache_read_input_tokens'] == 3000
+        assert widened_row['cache_creation_input_tokens'] == 90
+
+    def test_malformed_appended_field_degrades_context_load_to_zero(self, tmp_path):
+        """A non-numeric appended field degrades the four context fields to 0
+        rather than dropping the whole row — the legacy five still parse."""
+        plan_dir = tmp_path / 'plans' / 'ctx-malformed'
+        plan_dir.mkdir(parents=True)
+        path = self._write_boundary(
+            plan_dir,
+            '5-execute',
+            self._CTX_HEADER,
+            ['2026-05-08T14:00:00Z,error,1,2,3,xx,yy,zz,ww'],
+        )
+
+        result = _analyze_logs._parse_dispatch_boundary_file(path)
+
+        assert len(result['rows']) == 1
+        row = result['rows'][0]
+        # Legacy five columns still parse.
+        assert row['termination_cause'] == 'error'
+        assert row['total_tokens'] == 1
+        assert row['tool_uses'] == 2
+        assert row['duration_ms'] == 3
+        # The malformed appended fields degrade all four to 0.
+        assert row['input_tokens'] == 0
+        assert row['output_tokens'] == 0
+        assert row['cache_read_input_tokens'] == 0
+        assert row['cache_creation_input_tokens'] == 0
+
+    def test_truncated_appended_fields_degrade_to_zero(self, tmp_path):
+        """A row with only some appended fields (an IndexError reach) degrades
+        all four context fields to 0 — the whole row is still kept."""
+        plan_dir = tmp_path / 'plans' / 'ctx-truncated'
+        plan_dir.mkdir(parents=True)
+        path = self._write_boundary(
+            plan_dir,
+            '5-execute',
+            self._CTX_HEADER,
+            # Seven columns: legacy five + input_tokens + output_tokens only.
+            ['2026-05-08T14:00:00Z,clean_exit_queue_empty,100,2,1000,7,8'],
+        )
+
+        result = _analyze_logs._parse_dispatch_boundary_file(path)
+
+        assert len(result['rows']) == 1
+        row = result['rows'][0]
+        # Legacy five parse; the incomplete appended set degrades all four to 0.
+        assert row['total_tokens'] == 100
+        assert row['input_tokens'] == 0
+        assert row['output_tokens'] == 0
+        assert row['cache_read_input_tokens'] == 0
+        assert row['cache_creation_input_tokens'] == 0
+
+    def test_read_per_phase_carries_context_load_columns(self, tmp_path):
+        """``read_dispatch_boundaries_per_phase`` surfaces the four context-load
+        keys end-to-end via the glob reader."""
+        plan_dir = tmp_path / 'plans' / 'ctx-per-phase'
+        path = self._write_boundary(
+            plan_dir,
+            '5-execute',
+            self._CTX_HEADER,
+            ['2026-05-08T14:00:00Z,clean_exit_queue_empty,200,4,2000,50,10,3000,90'],
+        )
+        assert path.exists()
+
+        result = _analyze_logs.read_dispatch_boundaries_per_phase(plan_dir)
+
+        assert set(result.keys()) == {'5-execute'}
+        row = result['5-execute']['rows'][0]
+        assert row['input_tokens'] == 50
+        assert row['output_tokens'] == 10
+        assert row['cache_read_input_tokens'] == 3000
+        assert row['cache_creation_input_tokens'] == 90
+
+
+# =============================================================================
 # Folded-in global-log per-plan signals
 # =============================================================================
 #
