@@ -1,0 +1,432 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+Query command handlers for manage-tasks.py.
+
+Contains: list, read, next, tasks-by-domain, tasks-by-profile, next-tasks,
+loop-exit-guard subcommands.
+"""
+
+from _tasks_core import (
+    calculate_progress,
+    find_task_file,
+    get_all_tasks,
+    get_deliverable_context,
+    get_tasks_dir,
+    output_error,
+    parse_task_file,
+)
+
+
+def _build_done_set(all_tasks: list) -> set[str]:
+    """Build set of done task identifiers for dependency checking.
+
+    Includes both zero-padded (TASK-001) and non-padded (TASK-1) formats
+    to handle depends_on values stored in either format.
+    """
+    done = set()
+    for _, t in all_tasks:
+        if t.get('status') == 'done':
+            n = t['number']
+            done.add(f'TASK-{n:03d}')
+            done.add(f'TASK-{n}')
+    return done
+
+
+def cmd_list(args) -> dict:
+    """Handle 'list' subcommand."""
+    task_dir = get_tasks_dir(args.plan_id)
+    all_tasks = get_all_tasks(task_dir)
+
+    # Build set of done task numbers for dependency checking
+    done_tasks = _build_done_set(all_tasks)
+
+    # Filter by deliverable if specified
+    if args.deliverable:
+        all_tasks = [(p, t) for p, t in all_tasks if args.deliverable == t.get('deliverable', 0)]
+
+    # Filter by ready (dependencies satisfied) if specified
+    if args.ready:
+        all_tasks = [(p, t) for p, t in all_tasks if all(dep in done_tasks for dep in t.get('depends_on', []))]
+
+    # Filter by domain if specified
+    if getattr(args, 'domain', None):
+        all_tasks = [(p, t) for p, t in all_tasks if t.get('domain') == args.domain]
+
+    # Filter by profile if specified
+    if getattr(args, 'profile', None):
+        all_tasks = [(p, t) for p, t in all_tasks if t.get('profile') == args.profile]
+
+    # Get filtered list for status filtering
+    filtered_tasks = all_tasks
+    if args.status and args.status != 'all':
+        filtered_tasks = [(p, t) for p, t in all_tasks if t.get('status') == args.status]
+
+    # Compute counts from filtered list
+    pending = sum(1 for _, t in all_tasks if t.get('status') == 'pending')
+    in_progress = sum(1 for _, t in all_tasks if t.get('status') == 'in_progress')
+    done_count = sum(1 for _, t in all_tasks if t.get('status') == 'done')
+    failed_count = sum(1 for _, t in all_tasks if t.get('status') == 'failed')
+    blocked = sum(1 for _, t in all_tasks if t.get('status') == 'blocked')
+    infeasible = sum(1 for _, t in all_tasks if t.get('status') == 'infeasible')
+
+    # Build table data
+    table = []
+    for _path, task in filtered_tasks:
+        completed, total = calculate_progress(task)
+        deliverable = task.get('deliverable', 0)
+        table.append(
+            {
+                'number': task['number'],
+                'title': task['title'],
+                'domain': task.get('domain'),
+                'profile': task.get('profile'),
+                'deliverable': deliverable,
+                'status': task['status'],
+                'progress': f'{completed}/{total}',
+            }
+        )
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'counts': {
+            'total': len(all_tasks),
+            'pending': pending,
+            'in_progress': in_progress,
+            'done': done_count,
+            'failed': failed_count,
+            'blocked': blocked,
+            'infeasible': infeasible,
+        },
+        'tasks_table': table,
+    }
+
+
+def cmd_read(args) -> dict:
+    """Handle 'read' subcommand."""
+    task_dir = get_tasks_dir(args.plan_id)
+
+    filepath = find_task_file(task_dir, args.task_number)
+    if not filepath:
+        return output_error(f'Task TASK-{args.task_number} not found')
+
+    content = filepath.read_text(encoding='utf-8')
+    task = parse_task_file(content)
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'file': filepath.name,
+        'task': {
+            'number': task['number'],
+            'title': task['title'],
+            'domain': task.get('domain'),
+            'profile': task.get('profile'),
+            'skills': task.get('skills', []),
+            'origin': task.get('origin', 'plan'),
+            'deliverable': task.get('deliverable', 0),
+            'depends_on': task.get('depends_on', []),
+            'status': task['status'],
+            'current_step': task.get('current_step', 1),
+            'description': task.get('description', ''),
+            'steps': task.get('steps', []),
+            'verification': task.get('verification', {}),
+        },
+    }
+
+
+def cmd_exists(args) -> dict:
+    """Handle 'exists' subcommand.
+
+    Boolean presence probe: returns ``status: success`` with
+    ``exists: true|false`` for any task number, never erroring on absence.
+    Reuses the same task-file resolver as ``cmd_read`` (``find_task_file``)
+    but maps the ``None`` outcome to ``exists: false`` instead of an
+    error so callers can probe without polluting ``script-execution.log``
+    with recoverable not-found rows.
+    """
+    task_dir = get_tasks_dir(args.plan_id)
+    filepath = find_task_file(task_dir, args.task_number)
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'task': args.task_number,
+        'exists': filepath is not None,
+    }
+
+
+def cmd_next(args) -> dict:
+    """Handle 'next' subcommand."""
+    task_dir = get_tasks_dir(args.plan_id)
+    all_tasks = get_all_tasks(task_dir)
+
+    # Build set of done task numbers for dependency checking
+    done_tasks = _build_done_set(all_tasks)
+
+    filtered_tasks = all_tasks
+
+    total_tasks = len(filtered_tasks)
+    completed_tasks = sum(1 for _, t in filtered_tasks if t.get('status') == 'done')
+    in_progress_count = sum(1 for _, t in filtered_tasks if t.get('status') == 'in_progress')
+
+    # Helper to check if dependencies are satisfied
+    def deps_satisfied(task):
+        if getattr(args, 'ignore_deps', False):
+            return True
+        deps = task.get('depends_on', [])
+        return all(dep in done_tasks for dep in deps)
+
+    # Find first in_progress or pending task with satisfied dependencies
+    next_task = None
+    blocked_tasks = []
+
+    # First, look for in_progress tasks
+    for _path, task in filtered_tasks:
+        if task.get('status') == 'in_progress':
+            next_task = task
+            break
+
+    # If no in_progress, find first pending with satisfied deps
+    if not next_task:
+        for _path, task in filtered_tasks:
+            if task.get('status') == 'pending':
+                if deps_satisfied(task):
+                    next_task = task
+                    break
+                else:
+                    waiting_for = [dep for dep in task.get('depends_on', []) if dep not in done_tasks]
+                    blocked_tasks.append(
+                        {'number': task['number'], 'title': task['title'], 'waiting_for': ', '.join(waiting_for)}
+                    )
+
+    if not next_task:
+        if blocked_tasks:
+            return {
+                'status': 'success',
+                'plan_id': args.plan_id,
+                'next': None,
+                'blocked_tasks': blocked_tasks,
+                'context': {
+                    'total_tasks': total_tasks,
+                    'completed_tasks': completed_tasks,
+                    'in_progress': in_progress_count,
+                    'blocked_by_deps': len(blocked_tasks),
+                    'message': 'Waiting for in-progress tasks to complete',
+                },
+            }
+        else:
+            return {
+                'status': 'success',
+                'plan_id': args.plan_id,
+                'next': None,
+                'context': {
+                    'total_tasks': total_tasks,
+                    'completed_tasks': completed_tasks,
+                    'message': 'All tasks completed',
+                },
+            }
+
+    # Find next pending step in this task
+    steps = next_task.get('steps', [])
+    next_step = None
+    completed_steps = 0
+
+    for step in steps:
+        if step['status'] in ('done', 'skipped'):
+            completed_steps += 1
+        elif step['status'] == 'in_progress':
+            next_step = step
+        elif step['status'] == 'pending' and not next_step:
+            next_step = step
+
+    remaining_steps = len(steps) - completed_steps
+
+    if not next_step:
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'next': None,
+            'context': {
+                'total_tasks': total_tasks,
+                'completed_tasks': completed_tasks,
+                'message': 'All tasks completed',
+            },
+        }
+
+    # Build base result
+    result = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'next': {
+            'task_number': next_task['number'],
+            'task_title': next_task['title'],
+            'domain': next_task.get('domain'),
+            'profile': next_task.get('profile'),
+            'skills': next_task.get('skills', []),
+            'origin': next_task.get('origin', 'plan'),
+            'deliverable': next_task.get('deliverable', 0),
+            'cost_size': next_task.get('cost_size'),
+            'predicted_cost_tokens': next_task.get('predicted_cost_tokens'),
+            'envelope_id': next_task.get('envelope_id'),
+            'step_number': next_step['number'],
+            'step_target': next_step['target'],
+        },
+        'context': {
+            'completed_steps': completed_steps,
+            'remaining_steps': remaining_steps,
+            'total_tasks': total_tasks,
+            'completed_tasks': completed_tasks,
+        },
+    }
+
+    # Include deliverable context if requested
+    if getattr(args, 'include_context', False):
+        deliverable = next_task.get('deliverable', 0)
+        if deliverable:
+            deliverable_context = get_deliverable_context(deliverable)
+            result['next'].update(deliverable_context)
+
+    return result
+
+
+def cmd_loop_exit_guard(args) -> dict:
+    """Handle 'loop-exit-guard' subcommand.
+
+    Script-level enforcement of the phase-5-execute "unfinished > 0 → must
+    continue" invariant. The predicate is the union of two unfinished
+    terminal-state buckets: ``pending`` (task never started) AND
+    ``in_progress`` (task started but not finalized — e.g., the dispatch
+    that began it terminated mid-flight). Returns ``status: continue`` when
+    EITHER bucket is non-empty so the orchestrator MUST re-dispatch;
+    returns ``status: success`` only when BOTH counts are zero.
+
+    The TOON return carries both axis counts/ids in BOTH branches so callers
+    can log which axis was non-empty and so downstream consumers (e.g., the
+    ``unfinished_tasks_count`` handshake invariant) can read either field
+    without conditional presence checks. The bucket traversal reuses the
+    same ``get_all_tasks`` walk as ``cmd_list``/``cmd_next_tasks``; no
+    behaviour change to existing query commands. The guard remains
+    intentionally narrow — it answers exactly one question (is the queue
+    empty by the broadened predicate?) and never tries to classify why a
+    task is pending/in_progress or whether its dependencies are satisfied.
+    The skill prose at ``phase-5-execute/SKILL.md`` § Step 12a names the
+    contract; authoritative enforcement lives here.
+    """
+    task_dir = get_tasks_dir(args.plan_id)
+    all_tasks = get_all_tasks(task_dir)
+
+    pending_ids = [t['number'] for _, t in all_tasks if t.get('status') == 'pending']
+    in_progress_ids = [
+        t['number'] for _, t in all_tasks if t.get('status') == 'in_progress'
+    ]
+    pending_count = len(pending_ids)
+    in_progress_count = len(in_progress_ids)
+
+    if pending_count > 0 or in_progress_count > 0:
+        if pending_count > 0 and in_progress_count > 0:
+            message = (
+                f'{pending_count} pending and {in_progress_count} in_progress '
+                f'task(s) remain — orchestrator MUST re-dispatch the '
+                f'execution-context before transitioning out of phase-5-execute.'
+            )
+        elif pending_count > 0:
+            message = (
+                f'{pending_count} pending task(s) remain — orchestrator MUST '
+                f're-dispatch the execution-context before transitioning out '
+                f'of phase-5-execute.'
+            )
+        else:
+            message = (
+                f'{in_progress_count} in_progress task(s) remain — orchestrator '
+                f'MUST re-dispatch the execution-context before transitioning '
+                f'out of phase-5-execute.'
+            )
+        return {
+            'status': 'continue',
+            'plan_id': args.plan_id,
+            'pending_count': pending_count,
+            'pending_ids': pending_ids,
+            'in_progress_count': in_progress_count,
+            'in_progress_ids': in_progress_ids,
+            'message': message,
+        }
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'pending_count': 0,
+        'pending_ids': [],
+        'in_progress_count': 0,
+        'in_progress_ids': [],
+        'message': 'Unfinished queue empty — clean exit permitted.',
+    }
+
+
+def cmd_next_tasks(args) -> dict:
+    """Handle 'next-tasks' subcommand.
+
+    Returns all tasks that are ready for parallel execution
+    (all depends_on tasks are completed).
+    """
+    task_dir = get_tasks_dir(args.plan_id)
+    all_tasks = get_all_tasks(task_dir)
+
+    # Build set of done task numbers for dependency checking
+    done_tasks = _build_done_set(all_tasks)
+
+    # Find all pending tasks with satisfied dependencies
+    ready_tasks = []
+    blocked_tasks = []
+
+    for _path, task in all_tasks:
+        if task.get('status') != 'pending':
+            continue
+
+        deps = task.get('depends_on', [])
+        unmet_deps = [dep for dep in deps if dep not in done_tasks]
+
+        if not unmet_deps:
+            # All dependencies satisfied - ready for execution
+            completed, total = calculate_progress(task)
+            ready_tasks.append(
+                {
+                    'number': task['number'],
+                    'title': task['title'],
+                    'domain': task.get('domain'),
+                    'profile': task.get('profile'),
+                    'skills': task.get('skills', []),
+                    'deliverable': task.get('deliverable', 0),
+                    'progress': f'{completed}/{total}',
+                }
+            )
+        else:
+            # Has unmet dependencies
+            blocked_tasks.append({'number': task['number'], 'title': task['title'], 'waiting_for': unmet_deps})
+
+    # Also include in_progress tasks
+    in_progress_tasks = []
+    for _path, task in all_tasks:
+        if task.get('status') == 'in_progress':
+            completed, total = calculate_progress(task)
+            in_progress_tasks.append(
+                {
+                    'number': task['number'],
+                    'title': task['title'],
+                    'domain': task.get('domain'),
+                    'profile': task.get('profile'),
+                    'skills': task.get('skills', []),
+                    'progress': f'{completed}/{total}',
+                }
+            )
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'ready_count': len(ready_tasks),
+        'in_progress_count': len(in_progress_tasks),
+        'blocked_count': len(blocked_tasks),
+        'ready_tasks': ready_tasks,
+        'in_progress_tasks': in_progress_tasks,
+        'blocked_tasks': blocked_tasks,
+    }

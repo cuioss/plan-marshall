@@ -1,0 +1,55 @@
+---
+lane:
+  class: core
+  cost_size: XS
+name: default:archive-plan
+description: Archive the completed plan
+order: 1000
+default_on: true
+presets:
+  - local
+  - standard
+  - full
+implements: plan-marshall:extension-api/standards/ext-point-finalize-step
+---
+
+# Archive Plan
+
+Pure executor for the `archive-plan` finalize step. Archives the completed plan to `.plan/archived-plans/`.
+
+## Exit-code convention for `manage-*` script calls
+
+Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
+
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `archive-plan` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
+
+**CRITICAL**: Archive MUST be the last step in the pipeline because it moves plan files (including status.json), which breaks `manage-status transition` and other manage-* scripts. All plan operations must complete before archive.
+
+Lesson-sourced plans carry their `lesson-{id}.md` file along when the plan directory is archived — no separate mark-applied step is needed.
+
+## Mark Step Complete
+
+Record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. This MUST happen BEFORE the archive call below, because archive moves `status.json` out of `.plan/plans/{plan_id}/` and any subsequent `mark-step-done` call would fail to locate the plan.
+
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the archive destination. `{archive_path}` is the canonical archive location `.plan/archived-plans/{date}-{plan_id}` (the same path `manage-status archive` will move the plan directory to in the next call):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step archive-plan --outcome done \
+  --display-detail "-> {archive_path}"
+```
+
+## Archive
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status archive \
+  --plan-id {plan_id}
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan archived: {plan_id}"
+```

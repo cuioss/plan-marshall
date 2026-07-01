@@ -1,0 +1,745 @@
+# Python Core Patterns
+
+Comprehensive Python best practices for Python 3.10+ based on PEP 8, Google Python Style Guide, and modern community standards.
+
+---
+
+## Type Annotations
+
+### Modern Syntax (Python 3.10+)
+
+```python
+# Built-in generics - prefer over typing module equivalents
+items: list[str]
+mapping: dict[str, int]
+optional: str | None
+
+# Union syntax with |
+def fetch(url: str) -> dict | None:
+    ...
+
+# Use float instead of int | float (float accepts int)
+def calculate(value: float) -> float:
+    ...
+```
+
+### Abstract Types for Parameters
+
+Use `collections.abc` for function parameters to accept any compatible type:
+
+```python
+from collections.abc import Mapping, Sequence, Iterable
+
+# Accept any mapping, return concrete dict
+def transform(data: Mapping[str, int]) -> dict[str, str]:
+    return {k: str(v) for k, v in data.items()}
+
+# Accept any iterable
+def process_all(items: Iterable[str]) -> list[str]:
+    return [item.upper() for item in items]
+```
+
+### TypedDict for Structured Data
+
+```python
+from typing import TypedDict, NotRequired
+
+class UserData(TypedDict):
+    name: str
+    email: str
+    age: NotRequired[int]  # Optional field
+
+def create_user(data: UserData) -> None:
+    ...
+```
+
+### Type Aliases
+
+```python
+# Python 3.12+ type statement
+type Vector = list[float]
+type Matrix = list[Vector]
+
+# Pre-3.12 alternative
+from typing import TypeAlias
+Vector: TypeAlias = list[float]
+```
+
+---
+
+## Data Structures
+
+### Choosing the Right Tool
+
+| Use Case | Choice | Reason |
+|----------|--------|--------|
+| Simple data container | `dataclass` | Standard library, no dependencies |
+| Performance-critical | `attrs` with `slots=True` | Faster, more features |
+| API boundaries | `pydantic` | Validation, JSON serialization |
+| Immutable config | `dataclass(frozen=True)` | Prevents modification |
+
+### Dataclasses
+
+```python
+from dataclasses import dataclass, field
+
+@dataclass(slots=True)
+class User:
+    name: str
+    email: str
+    tags: list[str] = field(default_factory=list)
+
+# Immutable version
+@dataclass(frozen=True, slots=True)
+class Config:
+    host: str
+    port: int = 8080
+```
+
+### Named Tuples
+
+For simple immutable records:
+
+```python
+from typing import NamedTuple
+
+class Point(NamedTuple):
+    x: float
+    y: float
+
+    def distance_from_origin(self) -> float:
+        return (self.x ** 2 + self.y ** 2) ** 0.5
+```
+
+---
+
+## Error Handling
+
+### Principles
+
+1. **Catch specific exceptions** - Never bare `except:` or broad `except Exception:`
+2. **Minimize try scope** - Only wrap code that may raise the expected exception
+3. **Chain exceptions** - Use `from` to preserve context
+4. **Fail fast** - Validate early and raise meaningful errors
+
+### Patterns
+
+```python
+# Specific exceptions with minimal scope
+try:
+    config = parse_config(path)
+except FileNotFoundError:
+    config = default_config()
+except json.JSONDecodeError as e:
+    raise ConfigError(f"Invalid JSON in {path}") from e
+
+# Early validation
+def process_file(path: Path) -> dict:
+    if not path.exists():
+        raise FileNotFoundError(f"File not found: {path}")
+    if not path.suffix == ".json":
+        raise ValueError(f"Expected JSON file, got: {path.suffix}")
+    # Main logic after validation
+    ...
+```
+
+### Type-Guard at the External-Config Boundary
+
+After reading a block from external or user-editable config (`config.setdefault(key, {})` / `config.get(key, {})`) and before treating it as a dict (item-assignment, `.setdefault`, `.get`, iteration), guard it with `isinstance(block, dict)` and raise or return a structured error on the off-type case — a hand-edited malformed config then yields a clear diagnostic instead of an `AttributeError` / `TypeError`. This is the "fail fast — validate early" principle applied at the system boundary: re-apply the guard on every mutating path and for each nested descent.
+
+```python
+config = load_config()  # parsed from a hand-editable file
+
+system = config.get("system", {})
+if not isinstance(system, dict):
+    raise ValueError(f"system block is not a dict, got {type(system).__name__}")
+
+# Guard each nested descent before mutating it.
+retention = system.get("retention", {})
+if not isinstance(retention, dict):
+    raise ValueError(f"system.retention is not a dict, got {type(retention).__name__}")
+retention["logs_days"] = 7
+```
+
+### Filesystem-Boundary I/O Guards
+
+A read or write that crosses the filesystem boundary can fail for reasons outside the program's control — a missing path, a permission denial, a vanished mount, a directory whose readability this process does not own, or bytes that are not valid in the declared encoding. Two guards belong on every such boundary, and both fail in a place the obvious `try` does not cover. The happy path passes the type checker and the well-formed-fixture test suite; the guards are what keep hostile filesystem state from crashing the program.
+
+**Glob / iterate guard.** Any `Path.glob` / `Path.iterdir` / `Path.rglob` over a directory whose readability this process does not control must be wrapped in `try`/`except OSError`, returning an empty result on failure. The subtlety: these return lazy iterators, so the `OSError` surfaces while the iterator is *consumed*, not at the call site — the `try` must enclose the consuming loop (or the `list(...)` that drains it), not merely the `.glob()` expression.
+
+```python
+def list_agent_logs(subagents_dir: Path) -> list[Path]:
+    try:
+        # OSError surfaces HERE, during iteration — not at the .glob() call.
+        return list(subagents_dir.glob("agent-*.jsonl"))
+    except OSError:
+        return []
+```
+
+**Text-read guard.** Any `open(..., encoding=...)` / `read_text(encoding=...)` reading externally-sourced or possibly-malformed text must pass `errors="replace"` (or an explicit decode strategy), so a decode failure degrades to replacement characters instead of crashing mid-read. Critically, a decode failure is **not** caught by `except OSError`: `UnicodeDecodeError` is a subclass of `ValueError`, not of `OSError`, and it is raised while the file is *read*, not when it is opened. Do not rely on an `except OSError` block to cover it. When both the I/O failure and the decode failure must be handled, catch them explicitly as a tuple.
+
+```python
+# Lossy-but-total decode: malformed bytes become U+FFFD instead of crashing.
+with path.open(encoding="utf-8", errors="replace") as handle:
+    for line in handle:
+        process(line)
+
+# If you must distinguish, catch BOTH classes — `except OSError` alone lets
+# UnicodeDecodeError (a ValueError) escape and crash the caller.
+try:
+    raw = path.read_text(encoding="utf-8")
+except (OSError, ValueError) as e:  # OSError: open/read failure; ValueError: decode failure
+    raise IngestError(f"Could not read {path}: {e}") from e
+```
+
+Chain with `from e` so the originating exception stays attached for debugging.
+
+### Anti-Patterns to Avoid
+
+```python
+# BAD: Bare except catches everything including KeyboardInterrupt
+try:
+    result = risky_operation()
+except:
+    pass
+
+# BAD: Catching Exception hides bugs
+try:
+    result = operation()
+except Exception:
+    result = default
+
+# BAD: Large try block obscures error source
+try:
+    data = fetch_data()
+    processed = transform(data)
+    result = save(processed)
+except ValueError:
+    ...  # Which function raised it?
+```
+
+---
+
+## Resource Management
+
+### Context Managers
+
+Always use context managers for resources that need cleanup:
+
+```python
+# File operations
+with open(path, "r", encoding="utf-8") as f:
+    data = f.read()
+
+# Multiple resources
+with open(input_path) as src, open(output_path, "w") as dst:
+    dst.write(process(src.read()))
+
+# Database connections, network sockets, locks
+with connection.cursor() as cursor:
+    cursor.execute(query)
+```
+
+### pathlib for File Operations
+
+```python
+from pathlib import Path
+
+# Simple read/write (handles open/close automatically)
+content = Path("data.txt").read_text(encoding="utf-8")
+Path("output.txt").write_text(result, encoding="utf-8")
+
+# Binary files
+data = Path("image.png").read_bytes()
+Path("copy.png").write_bytes(data)
+```
+
+### Custom Context Managers
+
+```python
+from contextlib import contextmanager
+
+@contextmanager
+def temporary_directory():
+    import tempfile
+    import shutil
+    path = Path(tempfile.mkdtemp())
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path)
+```
+
+---
+
+## Path Handling
+
+### Use pathlib, Not Strings
+
+```python
+from pathlib import Path
+
+# Path construction with / operator
+config_path = Path("data") / "config" / "settings.json"
+
+# Cross-platform - works on Windows and Unix
+project_root = Path.cwd()
+home = Path.home()
+
+# Never string concatenation
+# BAD: path = "data" + "/" + "file.txt"
+# GOOD: path = Path("data") / "file.txt"
+```
+
+### Common Operations
+
+```python
+path = Path("data/config/settings.json")
+
+# Components
+path.name        # "settings.json"
+path.stem        # "settings"
+path.suffix      # ".json"
+path.parent      # Path("data/config")
+path.parts       # ("data", "config", "settings.json")
+
+# Checks
+path.exists()
+path.is_file()
+path.is_dir()
+
+# Traversal
+for file in path.parent.iterdir():
+    if file.suffix == ".json":
+        process(file)
+
+# Glob patterns
+for py_file in Path("src").rglob("*.py"):
+    analyze(py_file)
+```
+
+### Security
+
+```python
+# Validate user input paths to prevent traversal attacks
+user_path = Path(user_input)
+safe_base = Path("/data/uploads")
+
+# Check path doesn't escape base directory
+if not user_path.resolve().is_relative_to(safe_base):
+    raise ValueError("Invalid path")
+```
+
+### Injection and Unsafe Deserialization
+
+> **Security surface.** This section and the **Security** (path-traversal) section above are the Python security surface owned by `Skill: pm-dev-python:python-security`. Resolve them through the `security` profile (`skills_by_profile.security`) for security review and hardening tasks.
+
+Treat every externally-sourced value (request data, file contents, environment, CLI args) as untrusted at these stdlib boundaries.
+
+**Subprocess** — never `shell=True` with untrusted input; pass an argv list so the OS, not a shell, receives the arguments:
+
+```python
+import subprocess
+
+# Right: argv list, no shell — arguments are never re-parsed
+subprocess.run(["git", "log", "--oneline", user_ref], check=True)
+
+# Wrong: shell=True lets user_ref inject arbitrary commands
+subprocess.run(f"git log {user_ref}", shell=True)  # command injection
+
+# If a shell is genuinely unavoidable, quote each interpolated value
+import shlex
+subprocess.run(f"git log {shlex.quote(user_ref)}", shell=True)
+```
+
+**Unsafe deserialization** — `pickle` executes arbitrary code while loading; never unpickle untrusted bytes, and never use bare `yaml.load`:
+
+```python
+import pickle
+import yaml
+
+# Wrong: pickle.load / pickle.loads on untrusted data is remote code execution
+pickle.loads(untrusted_bytes)
+
+# Wrong: yaml.load without a safe loader can construct arbitrary objects
+yaml.load(untrusted_text)               # unsafe
+
+# Right: yaml.safe_load for YAML; json for plain data interchange
+yaml.safe_load(untrusted_text)
+import json
+json.loads(untrusted_text)
+```
+
+**Dynamic execution** — `eval` / `exec` / `compile` on externally-sourced strings run arbitrary code; use `ast.literal_eval` to parse a literal:
+
+```python
+import ast
+
+# Wrong: eval/exec on an untrusted string executes it
+eval(untrusted_expr)
+
+# Right: literal_eval parses only Python literals, never executes
+value = ast.literal_eval(untrusted_expr)  # e.g. "[1, 2, 3]" -> [1, 2, 3]
+```
+
+**SQL** — always use DB-API 2.0 parameter placeholders with a params tuple; never interpolate user values into the query string:
+
+```python
+import sqlite3
+
+# Right: placeholder + params tuple — the driver escapes the value
+cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))      # sqlite3
+cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))     # psycopg
+
+# Wrong: string interpolation is SQL injection
+cur.execute(f"SELECT * FROM users WHERE id = {user_id}")
+```
+
+---
+
+## Async Programming
+
+### Entry Point
+
+```python
+import asyncio
+
+async def main():
+    result = await fetch_data()
+    return result
+
+# Always use asyncio.run() as entry point
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### Concurrent Execution
+
+```python
+# Sequential (slow) - each await blocks
+result1 = await fetch("url1")
+result2 = await fetch("url2")
+
+# Concurrent (fast) - both run simultaneously
+results = await asyncio.gather(
+    fetch("url1"),
+    fetch("url2"),
+)
+
+# With tasks for more control
+task1 = asyncio.create_task(fetch("url1"))
+task2 = asyncio.create_task(fetch("url2"))
+result1 = await task1
+result2 = await task2
+```
+
+### Rate Limiting with Semaphores
+
+```python
+async def fetch_all(urls: list[str], max_concurrent: int = 10):
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def fetch_one(url: str):
+        async with semaphore:
+            return await fetch(url)
+
+    return await asyncio.gather(*[fetch_one(url) for url in urls])
+```
+
+### CPU-Bound Work
+
+Offload CPU-intensive work to avoid blocking the event loop:
+
+```python
+import asyncio
+from concurrent.futures import ProcessPoolExecutor
+
+async def process_images(paths: list[Path]):
+    loop = asyncio.get_running_loop()
+    with ProcessPoolExecutor() as pool:
+        results = await asyncio.gather(*[
+            loop.run_in_executor(pool, process_image, path)
+            for path in paths
+        ])
+    return results
+```
+
+---
+
+## Structural Pattern Matching
+
+### Basic Match (Python 3.10+)
+
+```python
+def handle_command(command: str) -> str:
+    match command.split():
+        case ["quit"]:
+            return "Goodbye"
+        case ["go", direction]:
+            return f"Moving {direction}"
+        case ["get", item] if item != "sword":
+            return f"Picked up {item}"
+        case _:
+            return "Unknown command"
+```
+
+### Matching Data Structures
+
+```python
+def process_event(event: dict) -> None:
+    match event:
+        case {"type": "click", "position": (x, y)}:
+            handle_click(x, y)
+        case {"type": "keypress", "key": str(key)}:
+            handle_key(key)
+        case {"type": "error", "code": int(code)} if code >= 500:
+            handle_server_error(code)
+        case _:
+            log_unknown_event(event)
+```
+
+### Matching Classes
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class Point:
+    x: float
+    y: float
+
+def describe(shape) -> str:
+    match shape:
+        case Point(x=0, y=0):
+            return "Origin"
+        case Point(x, y) if x == y:
+            return f"On diagonal at {x}"
+        case Point(x, y):
+            return f"Point({x}, {y})"
+```
+
+### When to Use Match vs If/Elif
+
+- **Use `match`**: Destructuring complex data, multiple structural patterns, guard clauses on structure
+- **Use `if/elif`**: Simple value comparisons, boolean conditions, fewer than 3 branches
+
+---
+
+## Modern Features (3.11-3.13)
+
+### Exception Groups (3.11+)
+
+```python
+# Raise multiple exceptions together
+def validate_all(data: dict) -> None:
+    errors = []
+    if not data.get("name"):
+        errors.append(ValueError("name is required"))
+    if not data.get("email"):
+        errors.append(ValueError("email is required"))
+    if errors:
+        raise ExceptionGroup("validation failed", errors)
+
+# Catch specific exceptions from a group
+try:
+    validate_all(data)
+except* ValueError as eg:
+    for err in eg.exceptions:
+        print(f"Validation: {err}")
+except* TypeError as eg:
+    for err in eg.exceptions:
+        print(f"Type error: {err}")
+```
+
+### Override Decorator (3.12+)
+
+```python
+from typing import override
+
+class Base:
+    def get_color(self) -> str:
+        return "blue"
+
+class Child(Base):
+    @override
+    def get_color(self) -> str:  # Verified by type checkers
+        return "red"
+
+    @override
+    def get_colour(self) -> str:  # Type checker ERROR: no matching base method
+        return "red"
+```
+
+### Batched Iteration (3.12+)
+
+```python
+from itertools import batched
+
+# Process items in chunks
+for batch in batched(range(10), 3):
+    print(batch)  # (0, 1, 2), (3, 4, 5), (6, 7, 8), (9,)
+
+# Useful for bulk API calls, database inserts
+for chunk in batched(records, 100):
+    db.insert_many(chunk)
+```
+
+---
+
+## Functions and Classes
+
+### Function Design
+
+```python
+# Keep functions focused and under ~40 lines
+def calculate_total(items: list[Item], tax_rate: float = 0.0) -> float:
+    """Calculate total price including tax."""
+    subtotal = sum(item.price * item.quantity for item in items)
+    return subtotal * (1 + tax_rate)
+
+# Use early returns to reduce nesting
+def get_user(user_id: int) -> User | None:
+    if user_id <= 0:
+        return None
+    user = database.find(user_id)
+    if not user.is_active:
+        return None
+    return user
+```
+
+### Avoid Mutable Default Arguments
+
+```python
+# BAD: Mutable default is shared across calls
+def append_item(item, items=[]):
+    items.append(item)
+    return items
+
+# GOOD: Use None and create inside function
+def append_item(item, items: list | None = None):
+    if items is None:
+        items = []
+    items.append(item)
+    return items
+
+# BEST: Use dataclass field factory for class attributes
+from dataclasses import dataclass, field
+
+@dataclass
+class Container:
+    items: list[str] = field(default_factory=list)
+```
+
+### Class Design
+
+```python
+# Prefer composition over inheritance
+class UserService:
+    def __init__(self, repository: UserRepository, cache: Cache):
+        self._repository = repository
+        self._cache = cache
+
+# Use properties only for trivial computed values
+class Rectangle:
+    def __init__(self, width: float, height: float):
+        self.width = width
+        self.height = height
+
+    @property
+    def area(self) -> float:
+        return self.width * self.height
+
+# Avoid staticmethod - use module-level functions instead
+# BAD: Rectangle.validate(data)
+# GOOD: validate_rectangle(data)
+```
+
+---
+
+## Naming Conventions
+
+| Type | Style | Example |
+|------|-------|---------|
+| Module | `lower_with_under` | `user_service.py` |
+| Package | `lower_with_under` | `my_package/` |
+| Class | `CapWords` | `UserService` |
+| Exception | `CapWords` + Error | `ValidationError` |
+| Function | `lower_with_under` | `get_user_by_id()` |
+| Method | `lower_with_under` | `calculate_total()` |
+| Variable | `lower_with_under` | `user_count` |
+| Constant | `CAPS_WITH_UNDER` | `MAX_RETRIES` |
+| Type Variable | `CapWords` | `T`, `KeyType` |
+| Internal | `_leading_under` | `_internal_helper` |
+
+### Naming Guidelines
+
+- Avoid abbreviations unfamiliar outside your project
+- Single-character names only for iterators (`i`, `j`) or math notation
+- Boolean variables: `is_valid`, `has_permission`, `can_edit`
+- Collections: plural nouns (`users`, `items`)
+
+---
+
+## Imports
+
+Organize into three blank-line-separated, alphabetically sorted groups: standard library, third-party packages, and local application imports. Prefer importing the module and using dotted access (`import os; os.path.exists(path)`); reserve `from ... import name` for explicitly documented helpers (`typing`, `collections.abc`, `dataclasses`). Never use wildcard imports (`from module import *`).
+
+---
+
+## Docstrings
+
+Use Google-style docstrings. Function docstrings start with a one-line summary, followed by a longer description paragraph, then `Args:`, `Returns:`, `Raises:`, and (optionally) `Example:` sections. Document each parameter on its own indented line (`filters: Key-value pairs for filtering`). Always describe the return shape (including the empty-result case) and every exception the function raises.
+
+Module docstrings are one summary line plus a short paragraph describing the module's purpose. Class docstrings include a summary, description, and an `Attributes:` section listing key instance state.
+
+---
+
+## Comprehensions and Generators
+
+Prefer list/dict comprehensions for simple transformations (`[x ** 2 for x in range(10)]`, `{user.id: user for user in users}`) and fall back to a regular loop when the logic branches or mutates state. Use generator expressions (`sum(order.amount for order in orders)`) for large datasets to avoid materializing intermediate lists. Filter-and-transform dict comprehensions read cleanly when the source has an explicit `if` clause.
+
+### Batch Glob Matching Over Per-Element Loops
+
+When testing whether a glob pattern matches any name in a corpus, prefer `fnmatch.filter(names, pattern)` over `any(fnmatch.fnmatch(name, pattern) for name in names)` — `filter` does one batch pass instead of re-dispatching the matcher per element. Pair it with the basename-vs-full-path regime: a bare-basename pattern (no `/`) matches against the names' basenames so the file is found at any tree depth; only match against the full path when the pattern itself contains a path separator. See the [Path Handling](#path-handling) section for `Path.name` / `Path.parts`.
+
+```python
+import fnmatch
+from pathlib import Path
+
+# BAD: re-dispatches the matcher per element
+matched = any(fnmatch.fnmatch(name, pattern) for name in names)
+
+# GOOD: one batch pass — and regime-aware
+def pattern_matches_any(pattern: str, names: list[str]) -> bool:
+    if "/" not in pattern:  # bare-basename: match at any depth
+        return bool(fnmatch.filter([Path(n).name for n in names], pattern))
+    return bool(fnmatch.filter(names, pattern))  # path-bearing: full path
+```
+
+## String Handling
+
+Use f-strings for interpolation, including format specs (`f"Total: {price * quantity:.2f}"`) and the debug form (`f"{variable=}"`). Use triple-quoted strings for multi-line SQL/text and implicit-concatenation inside parentheses for wrapped logical strings. Build strings with `"".join(items)` or a list-plus-`join` for loops — never with `+=` in a loop.
+
+### Quote-Normalise Regex-Extracted Config Values
+
+When extracting a value from YAML frontmatter or other quotable config with a regex rather than a real parser, chain `.strip()` then `.strip("\"'")` so a quoted value compares equal to its unquoted form downstream — a regex captures the surrounding quotes verbatim, and the un-normalized value then silently fails an exact-string match that looks correct. Prefer a real parser when the surface is more than a couple of flat keys; reach for a regex only for the trivial flat-key case, and quote-strip when you do.
+
+```python
+import re
+
+# BAD: surrounding quotes leak into the captured value
+m = re.search(r'^domain:\s*(.+)$', content, re.MULTILINE)
+domain = m.group(1).strip()            # '"plan-marshall"' — fails an exact match
+
+# GOOD: normalise the quotes so the downstream comparison succeeds
+domain = m.group(1).strip().strip("\"'")   # 'plan-marshall'
+```
+
+---
+
+## References
+
+- [PEP 8 - Style Guide for Python Code](https://peps.python.org/pep-0008/)
+- [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)
+- [Python Typing Best Practices](https://typing.python.org/en/latest/reference/best_practices.html)
+- [Real Python Best Practices](https://realpython.com/tutorials/best-practices/)

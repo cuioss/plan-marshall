@@ -1,0 +1,38 @@
+package ${PACKAGE};
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Tests for {@link ${CLASS_UNDER_TEST}}.
+ */
+@DisplayName("Tests for ${CLASS_UNDER_TEST}")
+class ${CLASS_UNDER_TEST}Test {
+
+    private final ${CLASS_UNDER_TEST} underTest = new ${CLASS_UNDER_TEST}(/* dependencies */);
+
+    @Nested
+    @DisplayName("${METHOD_1}")
+    class ${Method1}Tests {
+
+        @Test
+        @DisplayName("Should ${EXPECTED_BEHAVIOR} when ${CONDITION}")
+        void should${ExpectedBehavior}When${Condition}() {
+            var input = /* test data */;
+
+            var result = underTest.${METHOD_1}(input);
+
+            assertNotNull(result);
+        }
+
+        @Test
+        @DisplayName("Should throw ${EXCEPTION} when ${ERROR_CONDITION}")
+        void shouldThrow${Exception}When${ErrorCondition}() {
+            assertThrows(${EXCEPTION}.class,
+                () -> underTest.${METHOD_1}(/* invalid input */));
+        }
+    }
+}

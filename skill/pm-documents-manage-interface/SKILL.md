@@ -1,0 +1,335 @@
+---
+name: pm-documents-manage-interface
+description: Manage Interface specifications with CRUD operations, automatic numbering, and AsciiDoc formatting
+compatibility: Adapted from plan-marshall marketplace (Claude Code native)
+---
+
+# Interface Management Skill
+
+## Enforcement
+
+**Execution mode**: Select workflow and execute immediately using documented script commands.
+
+**Prohibited actions:**
+- Do not invoke scripts with arguments other than those documented in workflow steps
+- Do not skip confirmation steps for delete operations
+- Do not create interfaces without automatic numbering via the create workflow
+
+**Constraints:**
+- Run scripts EXACTLY as documented using `python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface ...`
+- Always validate interface format after creation or update using ref-asciidoc
+- Interface specifications must be stored in `doc/interfaces/` directory
+
+---
+
+Manage Interface specifications stored in `doc/interfaces/` directory.
+
+## Purpose
+
+Provide structured management of interface documentation:
+
+- **Create** interface specs with automatic numbering and template
+- **Read** interface content by number
+- **Update** interface specifications
+- **Delete** interfaces when necessary
+- **List** all interfaces with optional filtering
+- **Validate** interface format using ref-asciidoc
+
+## Available Workflows
+
+| Workflow | Purpose | Script Used |
+|----------|---------|-------------|
+| **list-interfaces** | List all interfaces with optional filtering | `manage-interface.py list` |
+| **create-interface** | Create new interface from template | `manage-interface.py create` |
+| **read-interface** | Read interface content | `manage-interface.py read` |
+| **update-interface** | Update interface content | `manage-interface.py update` |
+| **delete-interface** | Delete interface (with confirmation) | `manage-interface.py delete` |
+| **validate-interface** | Validate interface format | ref-asciidoc workflows |
+
+## Workflow: list-interfaces
+
+List all interfaces with optional type filtering.
+
+### Parameters
+
+- `type` (optional): Filter by type (REST_API, Event, gRPC, Database, File, Other)
+
+### Steps
+
+**Step 1: Execute List**
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface list [--type {type}]
+```
+
+**Step 2: Parse Output**
+
+Parse TOON output containing interface list with metadata.
+
+### Output
+
+```toon
+status: success
+operation: list
+count: 2
+interfaces[2]{number,title,type,path}:
+1,User Service API,REST_API,doc/interfaces/001-User_Service_API.adoc
+2,Event Bus,Event,doc/interfaces/002-Event_Bus.adoc
+```
+
+## Workflow: create-interface
+
+Create a new interface specification with automatic numbering.
+
+### Parameters
+
+- `title` (required): Interface name
+- `type` (required): Interface type (REST_API, Event, gRPC, Database, File, Other)
+
+### Steps
+
+**Step 1: Create Interface**
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface create --title "{title}" --type "{type}"
+```
+
+**Step 2: Parse Output**
+
+Extract created file path from TOON output.
+
+**Step 3: Open for Editing**
+
+Read the created file and inform user to fill in content sections.
+
+**Step 4: Validate Format**
+
+```text
+Call the `skill` tool with `{ name: "pm-documents-ref-asciidoc" }` before continuing.
+Execute workflow: validate-format
+Parameters:
+  target: {created_path}
+```
+
+### Output
+
+```text
+Interface Created: doc/interfaces/003-{title}.adoc
+Number: INTER-003
+Type: REST_API
+
+Next steps:
+1. Edit doc/interfaces/003-{title}.adoc to fill in:
+   - Contract definition (request/response)
+   - Error handling
+   - Authentication requirements
+   - Examples
+2. Add consumers and providers
+```
+
+## Workflow: read-interface
+
+Read interface content by number.
+
+### Parameters
+
+- `number` (required): Interface number (1, 2, 3, etc.)
+
+### Steps
+
+**Step 1: Read Interface**
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface read --number {number}
+```
+
+**Step 2: Display Content**
+
+Show interface metadata and content to user.
+
+## Workflow: update-interface
+
+Update interface field content.
+
+### Parameters
+
+- `number` (required): Interface number
+- `field` (required): Field to update (overview, type, input, output, errors, auth, versioning, consumers, providers)
+- `value` (required): New value for the field
+
+### Steps
+
+**Step 1: Update Interface**
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface update --number {number} --field {field} --value "{value}"
+```
+
+**Step 2: Confirm Update**
+
+Report updated field to user.
+
+## Workflow: delete-interface
+
+Delete interface with confirmation.
+
+### Parameters
+
+- `number` (required): Interface number
+- `force` (required): Must be true to confirm deletion
+
+### Steps
+
+**Step 1: Delete Interface**
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface delete --number {number} --force
+```
+
+**Step 2: Confirm Deletion**
+
+Report deletion to user.
+
+## Workflow: validate-interface
+
+Validate interface format using ref-asciidoc skill.
+
+### Parameters
+
+- `number` (required): Interface number to validate
+
+### Steps
+
+**Step 1: Find Interface Path**
+
+Use list-interfaces workflow to get interface path by number.
+
+**Step 2: Validate Format**
+
+```text
+Call the `skill` tool with `{ name: "pm-documents-ref-asciidoc" }` before continuing.
+Execute workflow: validate-format
+Parameters:
+  target: {interface_path}
+```
+
+**Step 3: Report Results**
+
+Report validation results to user.
+
+## Integration with ref-asciidoc
+
+This skill integrates with `ref-asciidoc` for:
+
+- **Format validation**: Ensures AsciiDoc formatting compliance
+- **Link verification**: Validates cross-references
+- **Content review**: Reviews interface content quality
+
+## Interface Types
+
+| Type | Description |
+|------|-------------|
+| REST_API | HTTP/REST service endpoints |
+| Event | Event-driven message contracts |
+| gRPC | gRPC service and message definitions |
+| Database | Database schema and access contracts |
+| File | File format and exchange specifications |
+| Other | Other interface types |
+
+## Interface Template Structure
+
+Each interface specification contains these sections:
+
+1. **Overview** - Brief description of the interface
+2. **Interface Type** - REST_API, Event, gRPC, Database, File, Other
+3. **Contract Definition** - Request/Input, Response/Output, Error Handling
+4. **Authentication & Authorization** - Security requirements
+5. **Versioning** - Version strategy and compatibility
+6. **Examples** - Request and response examples
+7. **Consumers** - Systems that consume this interface
+8. **Providers** - Systems that provide this interface
+9. **References** - Related documents and links
+
+## File Naming Convention
+
+Interfaces follow this naming pattern:
+
+```text
+doc/interfaces/{NNN}-{Title_With_Underscores}.adoc
+```
+
+Examples:
+- `doc/interfaces/001-User_Service_API.adoc`
+- `doc/interfaces/002-Event_Bus_Interface.adoc`
+- `doc/interfaces/003-Database_Schema_V2.adoc`
+
+## Scripts
+
+Script: `pm-documents:manage-interface` → `manage-interface.py`
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List all interfaces with optional type filtering |
+| `create` | Create new interface from template with automatic numbering |
+| `read` | Read interface content by number |
+| `update` | Update interface field content |
+| `delete` | Delete interface (requires --force) |
+
+**Usage Examples:**
+```bash
+# List all interfaces
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface list
+
+# Create new interface
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface create --title "User Service API" --type REST_API
+
+# Update interface field
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface update --number 1 --field overview --value "Updated description"
+```
+
+## Canonical invocations
+
+The canonical argparse surface for `manage-interface.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### list
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface list \
+  [--type {REST_API,Event,gRPC,Database,File,Other}]
+```
+
+### create
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface create \
+  --title TITLE --type {REST_API,Event,gRPC,Database,File,Other}
+```
+
+### read
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface read --number NUMBER
+```
+
+### update
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface update \
+  --number NUMBER [--field FIELD] [--value VALUE]
+```
+
+### delete
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface delete --number NUMBER [--force]
+```
+
+### next-number
+
+```bash
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface next-number
+```
+
+## Related Skills
+
+- `pm-documents:ref-asciidoc` - Format validation

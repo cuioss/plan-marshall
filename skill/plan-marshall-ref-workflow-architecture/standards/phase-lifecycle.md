@@ -1,0 +1,157 @@
+# Phase Lifecycle Patterns
+
+Shared patterns that apply to all 6 phases. Individual phase SKILL.md files reference this document for boilerplate behavior and override only where phase-specific logic differs.
+
+See [phases.md](phases.md) for the phase flow model and transition rules.
+
+---
+
+## Phase Enforcement Template
+
+All phase skills enforce these rules. Phase-specific enforcement blocks may add additional constraints.
+
+**Execution mode**: Follow workflow steps sequentially. Each step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command.
+
+**Prohibited actions:**
+- Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
+- Never skip phase transitions — use `manage-status transition`, never set status directly
+- Never improvise script subcommands — use only those documented in the skill's workflow steps
+- Never use Edit/Write tools on `.plan/` files (triggers permission prompts)
+
+**Constraints:**
+- Scripts are invoked only through `python3 .plan/execute-script.py` with 3-part notation
+- Phase transitions are sequential: 1-init → 2-refine → 3-outline → 4-plan → 5-execute → 6-finalize
+- All script output uses TOON format — parse `status` field to determine success/error
+- User review gates must be respected. The forward-direction transition gates (`plan_without_asking`, `execute_without_asking`) gate phase transitions (3→4, 4→5); the two auto-continuation knobs `finalize_without_asking` and `loop_back_without_asking` are flat knobs under `plan.phase-6-finalize` (read at runtime via `manage-config plan phase-6-finalize get --field <knob>`). `plan.phase-6-finalize.finalize_without_asking` gates the forward 5→6 transition; `plan.phase-6-finalize.loop_back_without_asking` is the symmetric **reverse-direction** gate that controls whether a phase-6-finalize step's `outcome: loop_back` re-dispatches the execute pipeline inline (capped by `phase-6-finalize.max_iterations`, default 3) or halts and prompts the user. Defaults are asymmetric — `finalize_without_asking` defaults to `true` (forward auto-continue), `loop_back_without_asking` defaults to `false` (reverse halt); full unattended execution requires opting into both for the phase-5-execute ↔ phase-6-finalize cycle. See [`manage-config/SKILL.md`](../../manage-config/SKILL.md) § "Phase-Local Run-at-all Gates and Automation Knobs" for the automation-knob semantics and [`phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) Step 3 § "Loop-back continuation hook" for the dispatch shape.
+
+---
+
+## Routing Tiers (phase-1-init entry)
+
+Before the phase sequence begins its light/deep lane work, phase-1-init runs a two-tier routing model over the request narrative. Both tiers are deterministic heuristic-first scoring (zero LLM call inside the scripts); Tier 1 additionally includes a bounded orchestrator-driven LLM fallback for ambiguous matches, while Tier 2 is fully deterministic with no LLM involvement:
+
+- **Tier 1 — recipe-match** (phase-1-init Step 5c): registry-wide recipe scoring via `manage-config recipe-match`, plus request-aspect classification via `manage-config aspect-classify`. When `auto_route_recipe == true` and the top match clears the auto-route confidence floor (`auto_route_recipe_threshold`), the request auto-routes to the matched recipe without prompting; otherwise the ranked matches are proposed via `AskUserQuestion`. Tier 1 runs for every source other than `recipe` (an explicit `--recipe` choice is never overridden).
+- **Tier 2 — planning-lane route** (phase-1-init Step 8b): the deterministic `manage-status planning-lane route` light/deep lane decision.
+
+Tier 1 is **sequenced ahead** of Tier 2: recipe-match precedes the light/deep lane decision. The enforcement-critical tier definitions, the verb argument contracts, and the threshold values live in [`phase-1-init/SKILL.md`](../../phase-1-init/SKILL.md) Step 5c/8b and [`manage-config/SKILL.md`](../../manage-config/SKILL.md) Canonical invocations → `recipe-match` / `aspect-classify` — this subsection records the tier position in the lifecycle only and does not re-state them.
+
+---
+
+## Phase Entry Protocol
+
+### Q-Gate Check (phases 2-6)
+
+Before starting phase work, check for unresolved Q-Gate findings from the previous phase. Phase 1-init skips this (no previous phase).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate list --plan-id {plan_id} --phase {current_phase} --resolution pending
+```
+
+**If pending findings exist:**
+
+For each finding, resolve it based on the action taken:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate resolve --plan-id {plan_id} --hash-id {hash_id} --resolution {resolution} --phase {current_phase} \
+  --detail "{what was done to address this finding}"
+
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:{phase_skill}:qgate) Finding {hash_id} [{source}]: {resolution} — {detail}"
+```
+
+Resolution values: `taken_into_account`, `fixed`, `deduplicated`, `reopened`.
+
+**If no pending findings:** Continue to the next step.
+
+### Phase Handshake Verify (phases 2-6)
+
+After the Q-Gate check, verify the handshake captured by the previous phase:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake verify \
+  --plan-id {plan_id} --phase {previous_phase_key} --strict
+```
+
+**On `status: ok`**: Continue to the next step.
+
+**On `status: drift`**: Stop the phase immediately. Surface the `diffs[]` table to the user verbatim. **Do NOT rationalize the differences. Do NOT auto-continue.** The only valid responses are:
+- **Authorized override**: user confirms the drift is legitimate, then run `phase_handshake capture --override --reason "{user rationale}"` on the previous phase and re-enter the current phase.
+- **Manual investigation**: user investigates the root cause and corrects the drift before re-entry.
+
+Drift is a *signal*, not a *nuisance*. `--strict` makes the script exit non-zero so tooling that swallows TOON still sees the failure.
+
+**On `status: skipped`**: Log a warning to work.log and continue. Skipped means "first-time rollout, manual transition, or post-clear capture" — not an error, but worth surfacing so the audit trail is honest.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING --message "[HANDSHAKE] (plan-marshall:{phase_skill}) Verify skipped — no capture for {previous_phase_key}"
+```
+
+### Log Phase Start
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:{phase_skill}) Starting {phase_name} phase"
+```
+
+---
+
+## Phase Completion Protocol
+
+After all phase-specific steps are done, execute this 4-step completion sequence:
+
+### Step 1: Transition Phase
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
+  --plan-id {plan_id} \
+  --completed {phase_key}
+```
+
+Where `{phase_key}` is: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, or `6-finalize`.
+
+### Step 2: Log Completion
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:{phase_skill}) {phase_name} phase complete — {summary}"
+```
+
+The `{summary}` should include phase-specific metrics (e.g., "plan created with {domain} domain", "{N} deliverables, Q-Gate: pass", "{M} tasks created").
+
+### Step 3: Log Separator
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  separator --plan-id {plan_id} --type work
+```
+
+### Step 4: Phase Handshake Capture
+
+Capture invariants so the next phase's entry protocol can verify them:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+  --plan-id {plan_id} --phase {phase_key}
+```
+
+Returns `status: success` with the captured invariants. Re-running a phase replaces the previous row. See [`../../plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md) for the full contract, storage format, and invariant registry.
+
+---
+
+## Error Handling Convention
+
+All phase skills use a `| Scenario | Action |` table for error documentation:
+
+| Pattern | Standard Action |
+|---------|----------------|
+| Script returns `status: error` | Report error to caller with details. Do not proceed. |
+| Q-Gate findings pending | List findings, resolve or ask user. Do not skip. |
+| Build verification failure | Report failing tests/compilation. Do not commit broken state. |
+| Max iterations reached | Return with current state. Do not loop further. |
+| Push failure | Report error. Never force-push as fallback. |
+| Missing prerequisites | Return error with details on what is needed. |
+
+Phase-specific error scenarios should be added to each phase's own error table, following this format.

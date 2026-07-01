@@ -1,0 +1,130 @@
+# Change Tech Debt — Generic Outline Instructions
+
+Instructions for `tech_debt` change type. Handles refactoring, cleanup, and code quality improvement requests.
+
+## Exit-code convention for `manage-*` script calls
+
+Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+
+- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
+
+Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`) — are documented inline in the step that issues them.
+
+## When Used
+
+Requests with `change_type: tech_debt`:
+- "Refactor the authentication module"
+- "Remove deprecated API endpoints"
+- "Migrate from callbacks to async/await"
+- "Clean up unused code"
+
+## Discovery
+
+Use `architecture find --pattern P` for module-spanning patterns and `architecture files --module X` to enumerate a module's components; fall back to Glob/Grep for content-search inside an already-known file or when narrowing to sub-module components.
+
+Identify:
+
+1. **Target pattern** — What code pattern to change
+2. **Occurrences** — All files containing the pattern
+3. **Dependencies** — Code that depends on affected code
+
+> **Mandatory for delete/rename refactors**: When the request removes or renames a public symbol (function, class, constant, skill notation), run the consumer sweep documented in [`consumer-sweep.md`](consumer-sweep.md) before finalizing each deliverable's `Affected files` list. Tech-debt deliverables are the most common source of cross-bundle consumer breakage and the sweep is the single highest-value outline-time check for this change type.
+
+Log findings:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Refactoring: {pattern} in {N} files"
+```
+
+## Analysis
+
+Based on compatibility setting:
+
+| Compatibility | Strategy |
+|---------------|----------|
+| `breaking` | Clean-slate, remove old code immediately |
+| `deprecation` | Mark old code deprecated, add new implementation |
+| `smart_and_ask` | Assess impact, ask user for guidance |
+
+> When a tech-debt deliverable removes an internal code path, apply the [clean-break vs migration-shim decision checklist](outline-workflow-detail.md#clean-break-vs-migration-shim-decision-checklist) to decide between an outright clean break and a deprecation shim — internal-path-removal refactors most commonly arrive as tech-debt deliverables.
+
+## Deliverable Structure
+
+For systematic changes:
+
+```markdown
+### {N}. Refactor: {Pattern/Module}
+
+**Metadata:**
+- change_type: tech_debt
+- execution_mode: automated
+- domain: {domain}
+- module: {module}
+- depends: {previous deliverable if sequential}
+
+**Profiles:**
+- implementation
+
+**Refactoring:**
+- Pattern: {what pattern is being changed}
+- Strategy: {breaking|deprecation|smart_and_ask}
+
+**Affected files:**
+- `{path/to/file1}`
+- `{path/to/file2}`
+- `{path/to/file3}`
+
+**Change per file:**
+- `{file1}`: {specific refactoring to apply}
+- `{file2}`: {specific refactoring to apply}
+- `{file3}`: {specific refactoring to apply}
+
+**Verification:**
+- Command: {resolved command from architecture}
+- Criteria: Build passes, behavior unchanged
+
+**Success Criteria:**
+- Old pattern is removed/deprecated
+- New pattern is in place
+- All tests pass
+- No behavioral changes
+```
+
+For cleanup (if removing code):
+
+```markdown
+### {N+1}. Cleanup: Remove {Deprecated/Unused Code}
+
+**Metadata:**
+- change_type: tech_debt
+- execution_mode: automated
+- domain: {domain}
+- module: {module}
+- depends: {refactoring deliverable}
+
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `{path/to/file_to_clean}`
+
+**Change per file:**
+- `{file}`: Remove {what to remove}
+
+**Verification:**
+- Command: {resolved command from architecture}
+- Criteria: Build passes, no references to removed code
+
+**Success Criteria:**
+- Deprecated/unused code removed
+- No dangling references
+- Build and tests pass
+```
+
+## Guidelines
+
+- Refactor = structure change only, no behavior change
+- Respect compatibility setting
+- Group files by module (one deliverable per logical batch)
