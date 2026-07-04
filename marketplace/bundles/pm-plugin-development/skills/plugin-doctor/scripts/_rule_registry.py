@@ -121,6 +121,7 @@ _DESCRIPTOR_MODULES: tuple[str, ...] = (
     '_analyze_skill_relative_temp_path',
     '_analyze_step_configurable_contract',
     '_analyze_structure',
+    '_analyze_sys_path_bootstrap',
     '_analyze_test_conventions',
     '_analyze_tmp_redirect_in_skills',
     '_analyze_verb_chains',

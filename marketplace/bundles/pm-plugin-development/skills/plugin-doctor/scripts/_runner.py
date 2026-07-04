@@ -65,6 +65,7 @@ from _analyze_skill_mode import analyze_skill_mode
 from _analyze_skill_notation import analyze_skill_notation
 from _analyze_skill_relative_temp_path import analyze_skill_relative_temp_path
 from _analyze_step_configurable_contract import scan_step_configurable_contract
+from _analyze_sys_path_bootstrap import analyze_sys_path_bootstrap
 from _analyze_tmp_redirect_in_skills import analyze_tmp_redirect_in_skills
 from _analyze_workflow_doc_toon_error_field import analyze_workflow_doc_toon_error_field
 from _cmd_extension import validate_extension_contracts
@@ -242,6 +243,10 @@ class RuleRunner:
             'analyze_fail_closed_gate_reads',
             scoped(analyze_fail_closed_gate_reads(root)),
         )
+        emit(
+            'analyze_sys_path_bootstrap',
+            scoped(analyze_sys_path_bootstrap(root)),
+        )
 
         # manage-invocation cluster — scoped uses the referenced-notation index,
         # unscoped uses the eager whole-marketplace scan. find_marketplace_root
@@ -277,6 +282,7 @@ class RuleRunner:
         issues.extend(scan_simplicity(root))
         issues.extend(analyze_shell_substitution_in_skills(root))
         issues.extend(analyze_bash_chain_shapes_in_skills(root))
+        issues.extend(analyze_sys_path_bootstrap(root))
         issues.extend(analyze_tmp_redirect_in_skills(root))
         issues.extend(analyze_skill_relative_temp_path(root))
         issues.extend(analyze_workflow_doc_toon_error_field(root))

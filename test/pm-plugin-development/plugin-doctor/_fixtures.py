@@ -90,6 +90,7 @@ _da = _load('_doctor_analysis.py', '_doctor_analysis_fixtures')
 analyze_component = _da.analyze_component
 
 _atrs = _load('_analyze_tmp_redirect_in_skills.py', '_atrs_fixtures')
+_aspb = _load('_analyze_sys_path_bootstrap.py', '_aspb_fixtures')
 _asrtp = _load('_analyze_skill_relative_temp_path.py', '_asrtp_fixtures')
 _assub = _load('_analyze_shell_substitution_in_skills.py', '_assub_fixtures')
 _abcs = _load('_analyze_bash_chain_shapes_in_skills.py', '_abcs_fixtures')
@@ -374,6 +375,15 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['tmp-redirect-in-skills'] = FixtureSpec(
         analyzer=_atrs.analyze_tmp_redirect_in_skills,
         files={_PM_SKILL: '# F\n\n```bash\npython3 r.py > /tmp/out.log\n```\n'},
+    )
+    # A per-script sys.path bootstrap in a non-allowlisted skill script.
+    corpus['sys-path-bootstrap'] = FixtureSpec(
+        analyzer=_aspb.analyze_sys_path_bootstrap,
+        files={
+            'plan-marshall/skills/manage-widgets/scripts/manage-widgets.py': (
+                'import sys\nsys.path.insert(0, "x")\n'
+            )
+        },
     )
     # A relative ``.plan/temp`` path consumed by ``git -C ... commit -F`` inside a
     # bash fence — the harness Write/git -C resolution mismatch the rule catches.
