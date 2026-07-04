@@ -90,8 +90,11 @@ pm-documents/
     ├── recipe-verify-ascii-diagrams/  # ASCII diagram recipe
     │   └── SKILL.md
     ├── ref-ascii-diagrams/       # ASCII diagram standards
+    │   └── SKILL.md
     ├── ref-svg-diagrams/         # SVG diagram standards
+    │   └── SKILL.md
     ├── ref-narrative-styles/     # Narrative style standards
+    │   └── SKILL.md
     ├── ext-triage-docs/          # Triage extension point
     └── plan-marshall-plugin/     # Extension registration
 ```
