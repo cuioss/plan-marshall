@@ -33,7 +33,6 @@ verb, the executor ``kind=build`` writer, and the gate.
 
 from __future__ import annotations
 
-import sys
 from argparse import Namespace
 from typing import Any
 
@@ -272,4 +271,4 @@ Examples:
 
 
 if __name__ == '__main__':
-    sys.exit(safe_main(main))
+    safe_main(main)()

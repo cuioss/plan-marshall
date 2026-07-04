@@ -106,7 +106,6 @@ logging failure is swallowed and cannot affect admission/release.
 
 from __future__ import annotations
 
-import sys
 import time
 import uuid
 from argparse import Namespace
@@ -606,4 +605,4 @@ Examples:
 
 
 if __name__ == '__main__':
-    sys.exit(safe_main(main))
+    safe_main(main)()

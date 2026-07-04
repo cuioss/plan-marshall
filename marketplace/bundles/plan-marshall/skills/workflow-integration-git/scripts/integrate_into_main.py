@@ -68,7 +68,6 @@ import importlib.util
 import os
 import shutil
 import subprocess
-import sys
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
@@ -612,4 +611,4 @@ Examples:
 
 
 if __name__ == '__main__':
-    sys.exit(safe_main(main))
+    safe_main(main)()

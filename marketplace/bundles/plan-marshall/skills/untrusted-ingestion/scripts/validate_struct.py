@@ -25,7 +25,6 @@ Usage:
 
 import argparse
 import re
-import sys
 from typing import Any
 from urllib.parse import urlparse
 
@@ -294,4 +293,4 @@ Examples:
 
 
 if __name__ == '__main__':
-    sys.exit(safe_main(main))
+    safe_main(main)()
