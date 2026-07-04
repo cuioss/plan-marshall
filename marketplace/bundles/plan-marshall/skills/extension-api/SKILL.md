@@ -64,13 +64,21 @@ extension-api/
 │   └── _module_aggregation.py      # Virtual module splitting
 └── standards/
     ├── extension-contract.md       # Extension API contract (core methods, overview, examples)
-    ├── ext-point-verify.md         # Verify extension point contract — finding validity-verification before triage (1 implementation)
-    ├── ext-point-triage.md         # Triage extension point contract — PR review comments + Sonar issues (7 implementations)
-    ├── ext-point-outline.md        # Outline extension point contract (1 implementation)
-    ├── ext-point-recipe.md         # Recipe extension point contract (4 implementations)
-    ├── ext-point-build.md          # Build system extension point contract (4 implementations)
-    ├── ext-point-provider.md     # Credential extension point contract (1 implementation)
+    ├── ext-point-build.md          # Build system extension point contract
+    ├── ext-point-build-verify-step.md # Phase-5 build/verify command step contract
+    ├── ext-point-domain-bundle.md  # Domain bundle shape contract (plan-marshall-plugin marker)
+    ├── ext-point-dynamic-level-executor.md # Per-level agent variant emission contract
+    ├── ext-point-execution-context-workflow.md # Dispatchable workflow document contract
+    ├── ext-point-finalize-step.md  # Phase-6 finalize step contract
     ├── ext-point-lane-element.md   # Lane-element frontmatter contract — lane.{class,tier,prunable_when,cost_size} (every phase/finalize-step element)
+    ├── ext-point-outline.md        # Outline extension point contract
+    ├── ext-point-provider.md       # Credential extension point contract
+    ├── ext-point-recipe.md         # Recipe extension point contract
+    ├── ext-point-retrospective.md  # Retrospective check contract
+    ├── ext-point-self-review-surfacing.md # Pre-submission self-review surfacing contract
+    ├── ext-point-triage.md         # Triage extension point contract — PR review comments + Sonar issues
+    ├── ext-point-verify.md         # Verify extension point contract — finding validity-verification before triage
+    ├── dispatch-granularity.md     # Dispatch granularity guidance
     ├── marshal-json-reference.md   # Central marshal.json config path reference
     ├── module-discovery.md         # Module discovery contract + output specification
     ├── canonical-commands.md       # Command vocabulary and resolution
@@ -112,17 +120,30 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 
 ## Extension Points
 
-Each extension point has a dedicated contract document with formal parameters, pre-conditions, and post-conditions:
+Each extension point has a dedicated contract document with formal parameters, pre-conditions, and post-conditions. All 14 contracts:
 
-| Extension Point | Hook Method | Contract | Implementations |
-|-----------------|-------------|----------|-----------------|
-| Build System | `discover_modules()` + `ExecuteConfig` | [ext-point-build.md](standards/ext-point-build.md) | 3 |
-| Verify (finding validity-verification) | producer `verification_profile` | [ext-point-verify.md](standards/ext-point-verify.md) | 1 |
-| Triage (PR comments + Sonar issues) | `provides_triage()` | [ext-point-triage.md](standards/ext-point-triage.md) | 7 |
-| Outline | `provides_outline_skill()` | [ext-point-outline.md](standards/ext-point-outline.md) | 1 |
-| Recipe | `provides_recipes()` | [ext-point-recipe.md](standards/ext-point-recipe.md) | 3 |
-| Provider | `*_provider.py` | [ext-point-provider.md](standards/ext-point-provider.md) | 4 |
-| Lane Element | `lane:` frontmatter block | [ext-point-lane-element.md](standards/ext-point-lane-element.md) | every phase / finalize-step element |
+| Extension Point | Declared Via | Contract |
+|-----------------|--------------|----------|
+| Build System | `discover_modules()` + `ExecuteConfig` | [ext-point-build.md](standards/ext-point-build.md) |
+| Build Verify Step | frontmatter `implements:` on step documents | [ext-point-build-verify-step.md](standards/ext-point-build-verify-step.md) |
+| Domain Bundle | `skills/plan-marshall-plugin/` marker skill + `extension.py` | [ext-point-domain-bundle.md](standards/ext-point-domain-bundle.md) |
+| Dynamic Level Executor | frontmatter `implements:` on agent files | [ext-point-dynamic-level-executor.md](standards/ext-point-dynamic-level-executor.md) |
+| Execution Context Workflow | frontmatter `implements:` on workflow documents | [ext-point-execution-context-workflow.md](standards/ext-point-execution-context-workflow.md) |
+| Finalize Step | frontmatter `implements:` on finalize-step skills | [ext-point-finalize-step.md](standards/ext-point-finalize-step.md) |
+| Lane Element | `lane:` frontmatter block (every phase / finalize-step element) | [ext-point-lane-element.md](standards/ext-point-lane-element.md) |
+| Outline | `provides_outline_skill()` | [ext-point-outline.md](standards/ext-point-outline.md) |
+| Provider | `*_provider.py` | [ext-point-provider.md](standards/ext-point-provider.md) |
+| Recipe | `provides_recipes()` / frontmatter `implements:` | [ext-point-recipe.md](standards/ext-point-recipe.md) |
+| Retrospective | frontmatter `implements:` on check skills | [ext-point-retrospective.md](standards/ext-point-retrospective.md) |
+| Self-Review Surfacing | frontmatter `implements:` | [ext-point-self-review-surfacing.md](standards/ext-point-self-review-surfacing.md) |
+| Triage (PR comments + Sonar issues) | `provides_triage()` | [ext-point-triage.md](standards/ext-point-triage.md) |
+| Verify (finding validity-verification) | producer `verification_profile` | [ext-point-verify.md](standards/ext-point-verify.md) |
+
+Implementation counts are deliberately not listed here — they drift. Enumerate live implementors with:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery implementors --ext-point plan-marshall:extension-api/standards/ext-point-{name}
+```
 
 For all extension-related configuration paths, see [marshal-json-reference.md](standards/marshal-json-reference.md).
 
@@ -174,7 +195,7 @@ For understanding the complete system architecture, reference these documents:
 | Document | Purpose | When to Read |
 |----------|---------|--------------|
 | [extension-contract.md](standards/extension-contract.md) | Core extension API contract (ExtensionBase, get_skill_domains, examples) | Creating or modifying an extension |
-| [ext-point-*.md](standards/) | Individual extension point contracts (13 documents) | Implementing a specific extension point |
+| [ext-point-*.md](standards/) | Individual extension point contracts (14 documents) | Implementing a specific extension point |
 | [marshal-json-reference.md](standards/marshal-json-reference.md) | Central marshal.json config path reference | Understanding where extension config is stored |
 | [module-discovery.md](standards/module-discovery.md) | Module discovery + output specification | Implementing `discover_modules()` |
 | [canonical-commands.md](standards/canonical-commands.md) | Command vocabulary and resolution | Implementing `discover_modules()` commands |
