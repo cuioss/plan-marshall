@@ -25,7 +25,7 @@ These are in the tree today. Treat them as the foundation, not as open work.
 
 | Capability | Where it lives |
 |------------|----------------|
-| `platform-runtime` abstraction (15 ops, both runtimes; OpenCode no-ops where the mechanism is absent) | `marketplace/bundles/plan-marshall/skills/platform-runtime/` |
+| `platform-runtime` abstraction (18 ops, both runtimes; OpenCode no-ops where the mechanism is absent) | `marketplace/bundles/plan-marshall/skills/platform-runtime/` |
 | Target generator framework (`TargetBase`, `TARGET_REGISTRY`, `generate.py`); Claude target (verbatim mirror + `plugin.json` + variant emission) and OpenCode target (emitter, frontmatter transform, body transforms, dual-emit, mapping) | `marketplace/targets/` |
 | Target-aware executor (Claude-cache resolver or OpenCode 7-root resolver, switched on `runtime.target`) | `tools-script-executor/scripts/generate_executor.py` |
 | Distribution pipeline — target-parametrized `strategy.matrix`, `dist-{name}` orphan branch + `{name}/v*` tags | `.github/workflows/claude-distribute.yml` |
@@ -48,14 +48,14 @@ old assumptions):
 
 | # | Workstream | Open work | Document |
 |---|------------|-----------|----------|
-| 01 | Finish portability gaps | **Landed** — all 8 code-level gaps closed: permission tooling (both sides), metrics/transcript engine, `session_id` validation, project-local skill resolution, bundle/cache discovery, body-text tool-name transforms, terminal-title, target-aware authoring tools. Each routed to one of the four homes (platform-runtime / OpenCode build target / stays-agnostic / target-specific skill). The closing-audit grep returns only accepted hits | [01-finish-portability.md](01-finish-portability.md) |
+| 01 | Finish portability gaps | **Landed** — all 8 code-level gaps closed: permission tooling (both sides), metrics/transcript engine, `session_id` validation, project-local skill resolution, bundle/cache discovery, body-text tool-name transforms, terminal-title, target-aware authoring tools. Each routed to one of the four homes (platform-runtime / OpenCode build target / stays-agnostic / target-specific skill). The closing-audit grep returns accepted hits plus a short known-residuals list (see 01 § Closing audit) | [01-finish-portability.md](01-finish-portability.md) |
 | 02 | Validate the OpenCode runtime live | Never run on a real OpenCode install. Accepted risks unconfirmed; smoke flows not executed. Setup checks (sections 0–1) are automatable and pass; sections 2–3 need an interactive session. Runbook: [02-verification-protocol.md](02-verification-protocol.md) | [02-validate-opencode-runtime.md](02-validate-opencode-runtime.md) |
 | 02-protocol | Verification runbook for 02 | Companion checklist — exact commands, expected observations, pass/fail per check | [02-verification-protocol.md](02-verification-protocol.md) |
 | 03 | Add the OpenCode distribution target | Matrix entry + generation-gate CI exist; the OpenCode install/consumption path is unverified on a live client | [03-distribution-opencode-target.md](03-distribution-opencode-target.md) |
 | 04 | OpenCode developer inner loop | `sync-opencode` deploy skill + script do not exist yet | [04-developer-workflow-sync-opencode.md](04-developer-workflow-sync-opencode.md) |
 | 05 | OpenCode user + developer documentation | Write once the runtime is validated | [05-opencode-documentation.md](05-opencode-documentation.md) |
-| 06 | Execution-context cross-target mapping | Reference + one open task: OpenCode variant emitter (concrete model-per-level is already mappable via the existing `model_map`) | [06-execution-context-cross-target.md](06-execution-context-cross-target.md) |
-| 07 | Target extensibility (optimise for further targets) | Generalise the seams so target #3 is cheap: target-opaque `install-hook`, target-neutral ABC contracts, data-driven body transforms, consolidated registration | [07-target-extensibility.md](07-target-extensibility.md) |
+| 06 | Execution-context cross-target mapping | Reference + two open tasks: OpenCode variant emitter (concrete model-per-level is already mappable via the existing `model_map`) and the step-3 skill-load prose rewording. The `Task:` treatment is settled — a `preserve` disposition in the idiom registry | [06-execution-context-cross-target.md](06-execution-context-cross-target.md) |
+| 07 | Target extensibility (optimise for further targets) | Generalise the seams so target #3 is cheap: target-opaque `install-hook`, target-neutral ABC contracts, consolidated registration, the `targets:` frontmatter mechanism, and finishing data-driven body transforms (the registered-idiom class already ships as `mapping.json::body_idiom_rewrites`, validated fail-closed at registry load and applied by a shared applier; the `Skill:`-directive and `/slash` rewrites are still emitter code) | [07-target-extensibility.md](07-target-extensibility.md) |
 | 08 | Claude-coupling candidate inventory | Reference — the exhaustive `file:line` registry from a two-pass read-everything audit (~880 files, all 17 slices char-by-char in pass 2); evidence base behind 01's gaps and 07's seams. Pass 2 validated the four-home model end-to-end (no candidate needed a home beyond the four) | [08-claude-coupling-inventory.md](08-claude-coupling-inventory.md) |
 
 ## Sequencing

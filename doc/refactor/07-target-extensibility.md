@@ -56,15 +56,17 @@ would change shape on a different target, the format is leaking — normalize th
 |------|----------|---------------|
 | Build target contract | `marketplace/targets/base.py` (`TargetBase` ABC), `__init__.py` `TARGET_REGISTRY` | Capability flags (`supports_agents`/`supports_commands`); add = subclass + register |
 | Build CLI | `generate.py:34,79-82` | `--target` choices and `--target all` derive from the registry — no per-target CLI edit |
-| Runtime contract | `runtime_base.py` (`Runtime` ABC, 15 ops), `platform_runtime.py:155` `_REGISTRY`, `_make_runtime` | Registry dispatch; add = subclass + register |
+| Runtime contract | `runtime_base.py` (`Runtime` ABC, 18 ops), `platform_runtime.py` `_REGISTRY`, `_make_runtime` | Registry dispatch; add = subclass + register |
 | Decline mechanism | `toon_noop` + [No-Op Policy](principles.md) | A target implements what it can, declines the rest, never fakes success |
-| Per-target data | `marketplace/targets/opencode/mapping.json` (`tool_permissions`, `model_map`) under each `config_dir` | Mappings are data, not code |
+| Per-target data | `marketplace/targets/opencode/mapping.json` (`tool_permissions`, `model_map`, `body_idiom_rewrites`) under each `config_dir` | Mappings are data, not code |
 | Layout resolution home | decided in [01](01-finish-portability.md) (Gaps 4/5) → `platform-runtime` op | Each target declares its own roots; the core owns no per-target root table |
+| Registered-idiom body rewrites | `mapping.json::body_idiom_rewrites`; `load_idiom_registry` fails closed via `UnmappedIdiomError`, `rewrite_registered_idioms` applies (`body_transforms.py`) | Idiom dispositions are per-target data, validated at load, applied by a generic applier |
+| Terminal-title composer | `manage_terminal_title.py` `resolve_icon(process_state)` takes a target-neutral state enum; the Claude hook-event → state mapping lives in `claude_runtime` | The composer encodes no target vocabulary |
 
 ### Not N-target-optimal (structural work)
 
 **1. `project_install_hook` encodes Claude's hook model in the interface.**
-`runtime_base.py:125-159` names `SessionStart`, `UserPromptSubmit`, `Notification`, `Stop`,
+`runtime_base.py:126-168` names `SessionStart`, `UserPromptSubmit`, `Notification`, `Stop`,
 `PostToolUse:AskUserQuestion`, `statusLine`, and `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`, and its
 `target` parameter is a *settings-file path*. A third target can only no-op the whole thing.
 **Required:** generalise to a target-opaque op (e.g. `session install-integration` — "wire up
@@ -73,33 +75,38 @@ event vocabulary, the `statusLine` command, and the env-var move entirely into
 `claude_runtime.py`. The router stops passing a Claude settings-file path as `target`.
 
 **2. The ABC contract enumerates two targets.** Nearly every docstring in `runtime_base.py`
-reads "On Claude: … On OpenCode: …" (e.g. `session_capture`, `metrics_capture`,
+reads "On Claude: … On OpenCode: …" (`layout_skill_roots`, `layout_bundle_cache_root`,
+`session_capture`, `metrics_capture`, `metrics_normalized_tokens`, and
 `subagent_dispatch` "`Task:` on Claude, `task` on OpenCode"). A third implementer has no slot.
 **Required:** rewrite each ABC docstring as target-neutral *intent* + the no-op fallback;
 move per-target behaviour notes into the concrete `*_runtime` classes.
 
-**3. Body transforms are per-target code, not data.** `marketplace/targets/opencode/body_transforms.py`
-hardcodes the rewrite strings (`Skill:` → skill-tool call, `/slash`). A new target must write a
-whole new module. **Required:** a shared transform engine that reads per-target rewrite rules
-from the target's `mapping.json` (the single canonical config artifact from the cost-to-add
-contract above) — `directive_rewrites`, `tool_name_rewrites`, `slash_rewrites`. Each target
-supplies data; the engine is shared. Fold the existing `transforms.md` spec into the shared
-engine's contract. (This is the
-mechanism behind [01](01-finish-portability.md) Gap 6 — `AskUserQuestion`/`Task:`/`Skill:`.)
+**3. Body transforms are only partially data-driven.** The registered-idiom class already
+follows the target pattern: `mapping.json::body_idiom_rewrites` declares the
+`AskUserQuestion`/`Task:`/`Skill: <entry>` dispositions as data; `load_idiom_registry`
+validates them fail-closed (`UnmappedIdiomError`) and `rewrite_registered_idioms` applies
+them — the [01](01-finish-portability.md) Gap-6 mechanism. What remains code: Transform 1
+(`Skill:` directive → skill-tool call) and Transform 2 (`/slash` rewrites) hardcode their
+rewrite strings in `marketplace/targets/opencode/body_transforms.py`, and the module itself
+lives under the OpenCode target rather than as a target-shared engine. **Required:** fold
+the directive and slash rewrite *templates* into `mapping.json` alongside
+`body_idiom_rewrites` (the single canonical config artifact from the cost-to-add contract
+above) and lift the applier into a shared engine, so a new target supplies only data.
 
 **4. Registration is scattered.** Adding a runtime target touches `_REGISTRY`, two imports,
-`_TARGET_BOOTSTRAP_LIBS:67`, and several `default="claude"` fallbacks
-(`platform_runtime.py:239,490,507,513`). **Required:** consolidate to one registration block
+the `_TARGET_BOOTSTRAP_LIBS` per-target dict, and several `default="claude"` fallbacks
+scattered through `platform_runtime.py` (the `--target` argparse default plus the
+`runtime.target` peek fallbacks). **Required:** consolidate to one registration block
 plus a single `_DEFAULT_TARGET` constant, so "add a target" is one obvious edit per side.
 
-**5. Two concrete leaks the full audit ([08](08-claude-coupling-inventory.md) §D) confirmed:**
-- `opencode_runtime.py:411` hardcodes `subagent_type: "execution-context-level-3"` (a fixed
-  level) while `claude_runtime` parameterizes `subagent_type`. Parameterize it — a hardcoded
-  level is both a bug and a target-shaped assumption.
-- `manage-terminal-title/scripts/manage_terminal_title.py:71-101` is labelled "platform-agnostic"
-  but `resolve_icon` is keyed on Claude hook-event names + tool names (`AskUserQuestion`, `Bash`).
-  The composer must take a target-neutral state, not Claude event strings — the event→icon
-  mapping is a `platform-runtime` concern (audit class A3).
+**5. One concrete leak the full audit ([08](08-claude-coupling-inventory.md) §D) confirmed:**
+`opencode_runtime.py` `subagent_dispatch` hardcodes `subagent_type:
+"execution-context-level-3"` (a fixed level) while `claude_runtime` parameterizes
+`subagent_type`. Parameterize it — a hardcoded level is both a bug and a target-shaped
+assumption. (The audit's second §D leak — `manage_terminal_title.py` keying `resolve_icon`
+on Claude hook-event names — is fixed: the composer now takes the target-neutral
+process-state enum, with the Claude event→state mapping owned by `claude_runtime`; see the
+seam table above.)
 
 **6. No mechanism for target-specific skills (the gated 4th home).** Some capabilities exist on
 only one target and have no analog elsewhere (`tools-fix-intellij-diagnostics` IDE-MCP; a Claude

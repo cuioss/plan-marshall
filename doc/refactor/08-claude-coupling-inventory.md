@@ -24,7 +24,7 @@ in [07](07-target-extensibility.md).
 | stays-agnostic (source target value from runtime) | CI/git/build ops, metrics storage/aggregation, validators, `.plan/` executor, credentials | — |
 | target-specific skill (`targets:`-scoped) | whole capabilities that exist only on some targets — IDE-MCP command, Claude harness-hook wizard, future OpenCode/Cursor flows | Small |
 | prose-neutralize | "Claude Code" naming, host-permission-UI rationale, per-target doc tables | Medium |
-| sanctioned-ok (no action) | `.claude-plugin`/`marketplace.json` manifests; the `claude_runtime.py`/`claude_hook.py` concrete impl + env-overridable resolver models (`generate_executor.py`, `bootstrap_plugin.py`). **Not** the `Runtime`/`TargetBase` ABCs, the router, or `manage-terminal-title` — those are active seam work (§D, §A3, §07) | — |
+| sanctioned-ok (no action) | `.claude-plugin`/`marketplace.json` manifests; the `claude_runtime.py`/`claude_hook.py` concrete impl + env-overridable resolver models (`generate_executor.py`, `bootstrap_plugin.py`). **Not** the `Runtime`/`TargetBase` ABCs or the router — those are active seam work (§D, §07). `manage-terminal-title` has since been made target-neutral (§A3) | — |
 | cleanup byproducts | stale `.pyc`, doc-drift bugs | Incidental |
 
 ---
@@ -69,15 +69,15 @@ core parses it" is a relocated coupling, not an abstraction.
 
 | Evidence | Coupling |
 |----------|----------|
-| `manage-terminal-title/scripts/manage_terminal_title.py:71-101,95-98` | **mislabeled "platform-agnostic"**: `resolve_icon` keyed on Claude hook-event names (`Stop/Notification/PreToolUse/...`) + tool names (`AskUserQuestion`, `Bash`) — a §6 target-shaped interface |
+| `manage-terminal-title/scripts/manage_terminal_title.py` | **FIXED** — `resolve_icon(process_state)` now takes the target-neutral `PROCESS_STATE_*` enum; the Claude hook-event → state mapping lives in `claude_runtime`. Formerly keyed on Claude hook-event + tool names (a §6 target-shaped interface) |
 | `marshall-steward/references/menu-terminal-title.md:58-115,280-368` | steward independently enumerates the full hook-event vocabulary, names `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`, and composes+writes the `$CLAUDE_CODE_SESSION_ID/active-plan` cache path itself instead of via a runtime op |
 | `marshall-steward/references/menu-healthcheck.md`, `menu-configuration.md` | literal `--settings ~/.claude/settings.json` paths supplied by the steward |
 | `plan-marshall/references/hook-authoring-guide.md` (whole) | Claude-Code hook/statusline/envelope contract |
 | `tools-script-executor/scripts/generate_executor.py:36-47` | writes `~/.cache/plan-marshall/sessions/{session_id}/active-plan` (session-keyed) |
 
-Destination: PR-behavior. The icon→event mapping and the session-cache write belong behind a
-runtime op; `manage-terminal-title` should compose from a target-neutral state, not Claude
-event names.
+Destination: PR-behavior. The session-cache write belongs behind a runtime op. The composer
+half is done — `manage-terminal-title` composes from the target-neutral state enum, and the
+lock glyphs are single-sourced (`TITLE_TOKEN_GLYPHS`, imported by `merge_lock.py`).
 
 ### A4. Host-IDE launch (per-host, not per-target — but same relocation)
 
@@ -94,7 +94,7 @@ Destination: PR-behavior (a runtime side-effect), though it keys on host editor,
 | `manage-metrics/SKILL.md:21,326-337`, `standards/data-format.md:64,70-77`, `manage-metrics.py:720-739` | the A2 leak is wider than the parser — the **docs and the renderer** also carry the Claude four-field / `<usage>` / billing-weight vocabulary. The normalized-token boundary must reach the doc + render surfaces too |
 | `manage-architecture/scripts/_cmd_client.py:110-120` + `standards/resolve-command.md:14,57-59` | `_BASH_CEILING_SECONDS=600` bakes the Claude Bash-tool 600s timeout ceiling into core; `execution_tier` (per_task/orchestrator) routing is *derived* from it. The ceiling is a per-target runtime fact → it should come from the runtime |
 | `manage-providers/scripts/_cred_ensure_denied.py:19-80` | emits Claude `permissions.deny` DSL (`Read(~/.plan-marshall-credentials/**)`, `Bash(cat …)`) into the host settings file — same class as the A1 permission-DSL leak (the SKILL prose is already neutralized to "host platform", the emitted rule strings are not) |
-| `manage-locks/scripts/merge_lock.py:183-189,316-419` | duplicates the terminal-title glyph vocabulary (`⏳`/`🔒`) and reaches into the title-render surface — co-owns the A3 target-shaped interface |
+| `manage-locks/scripts/merge_lock.py` | **FIXED** — no longer duplicates the glyph vocabulary; it imports `TITLE_TOKEN_GLYPHS` from `manage_terminal_title` as the single source of truth |
 
 Destination: all PR-behavior (normalize the contract / source the value from the runtime), except the metrics docs which are prose-neutralize alongside the A2 code fix.
 
@@ -160,7 +160,7 @@ highest-leverage fix because every agent loads it.
 | `plan-marshall/standards/effort-variants.md` | variant emission + plugin-loader + `CLAUDE_CODE_SUBAGENT_MODEL` |
 | `plan-marshall/scripts/effort_presets.py:25,72,180`; `manage-config/scripts/_cmd_effort.py:59` | `opus`/`fable` aliases in shared preset library |
 | `extension-api/standards/ext-point-dynamic-level-executor.md:26-99` | level→model table + "subagent runs on Opus" + session-restart + `target/claude/` paths |
-| `pm-plugin-development/.../_cmd_apply.py:48`, `plugin-create/scripts/cmd_generate.py`, `frontmatter-standards.md` | emit `model: sonnet` + comma-vs-array `tools:` format |
+| `pm-plugin-development/.../_cmd_apply.py:22-23` (now target-selected named constants — the Claude branch still emits `model: sonnet`), `plugin-create/scripts/cmd_generate.py`, `frontmatter-standards.md` | emit `model: sonnet` + comma-vs-array `tools:` format |
 
 Destination: build-target data (level-N naming is the correct abstraction; the concrete aliases,
 `CLAUDE_CODE_SUBAGENT_MODEL`, and `plugin.json` variant expansion are Claude-target data —
@@ -170,8 +170,8 @@ see [06](06-execution-context-cross-target.md)).
 
 | Evidence | Coupling |
 |----------|----------|
-| `pm-documents/skills/recipe-doc-verify/SKILL.md:55,118,122,207` | hardcodes `CLAUDE.md` as the doc-drift-check target (OpenCode → `AGENTS.md`) |
-| `workflow-integration-git/SKILL.md:134` | commit trailer `Co-Authored-By: Claude <noreply@anthropic.com>` |
+| `pm-documents/skills/recipe-doc-verify/SKILL.md` | **FIXED** — the agent-instructions filename is now target-aware (`CLAUDE.md` on Claude, `AGENTS.md` on OpenCode) |
+| `workflow-integration-git/SKILL.md:131,137` | commit trailer — prose is now target-aware ("the trailer identity is target-aware, not hardcoded"); the `Co-Authored-By: Claude <noreply@anthropic.com>` literal survives as the Claude example |
 | `manage-lessons/scripts/manage-lessons.py:1396`, `_cmd_auto_suggest.py:186` | emit `/plan-marshall …` slash-command launch strings |
 | `pm-plugin-development/.../_cmd_apply.py:236-261`, `cmd_validate.py:210` | `/plugin-update-*` slash-command names |
 
@@ -183,12 +183,12 @@ Destination: build-target (per-target filename / trailer / command-form data).
 
 | Evidence | Coupling |
 |----------|----------|
-| `platform-runtime/scripts/runtime_base.py:126-159` | `project_install_hook` ABC signature + docstring name Claude hook events + `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` — **target-shaped interface** |
-| `runtime_base.py:169-180,214-217,359-361,386-389` | ABC docstrings enumerate "On Claude / On OpenCode" |
-| `platform_runtime.py:67-76` | `_TARGET_BOOTSTRAP_LIBS={"claude":..,"opencode":..}` core-owned per-target table |
-| `platform_runtime.py:239,490,507,513` | silent `default="claude"` fallbacks |
-| `opencode_runtime.py:411` | hardcodes `subagent_type:"execution-context-level-3"` (a fixed level) while `claude_runtime` parameterizes — a real inconsistency/bug |
-| `pm-plugin-development/.../_analyze_markdown.py:306-313` | literal `if 'target/claude/' in file_path` in a core analyzer |
+| `platform-runtime/scripts/runtime_base.py:126-168` | `project_install_hook` ABC signature + docstring name Claude hook events + `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` — **target-shaped interface** |
+| `runtime_base.py` (`layout_skill_roots`, `layout_bundle_cache_root`, `session_capture`, `metrics_capture`, `metrics_normalized_tokens`, `subagent_dispatch`) | ABC docstrings enumerate "On Claude / On OpenCode" |
+| `platform_runtime.py:71` | `_TARGET_BOOTSTRAP_LIBS={"claude":..,"opencode":..}` core-owned per-target table |
+| `platform_runtime.py:243,550,567,573` | silent `default="claude"` fallbacks |
+| `opencode_runtime.py:467` | hardcodes `subagent_type:"execution-context-level-3"` (a fixed level) while `claude_runtime` parameterizes — a real inconsistency/bug |
+| `pm-plugin-development/.../_analyze_markdown.py` | **FIXED** — the former literal `if 'target/claude/' in file_path` is now target-aware via `_BUILD_OUTPUT_PREFIXES` + `resolve_runtime_target()`, documented as a Claude rule-pack concern |
 
 Destination: these are the [07](07-target-extensibility.md) structural fixes (target-opaque
 interface, registry consolidation, parameterize the dispatch level).
@@ -240,8 +240,8 @@ classed as a target-specific skill — §I.)
 
 | Evidence | Action |
 |----------|--------|
-| `skills/manage-worktree/scripts/__pycache__/manage-worktree.cpython-314.pyc` | stale `.pyc`, no source — delete (skill relocated) |
-| `plan-marshall/skills/ext-self-review-plan-marshall/scripts/__pycache__/self_review.cpython-314.pyc` | stale `.pyc`, real skill is under `pm-plugin-development/` — delete. **Divergence:** the empty skill is still listed active in the available-skills header despite having no source |
+| `skills/manage-worktree/scripts/__pycache__/` (stale compiled artifact, no source) | **DONE** — stale `.pyc` deleted |
+| `plan-marshall/skills/ext-self-review-plan-marshall/scripts/__pycache__/` (stale compiled artifact) | **DONE** — stale `.pyc` deleted; `ext-self-review-plan-marshall` now has real source under `pm-plugin-development/` and is registered |
 | `doctor-skill-knowledge.md:13` ("Rule 9/10a/11"); `doctor-skills.md:101` (`domain-extension-api:validate_manifest`) | doc-drift bugs (rules are now named; stale notation) — fix in passing |
 | `plugin-doctor/references/rule-catalog.md:236` ("PM-Workflow Rules" heading), `:252` ("seven" vs 8 rows); `commands-guide.md:23` ("9 Anti-Bloat" with uncodified names); `skills-guide.md:94`, `metadata-guide.md` (stale counts / bundle-root `plugin.json`) | doc-drift in plugin-doctor reference docs (pm-workflow bundle absorbed; stale counts) — fix in passing |
 | `script-shared/SKILL.md:28` (stale `parents[6]` resolution prose); `plan-marshall-plugin/standards/doctor-plan-marshall.md:1` ("PM-Workflow Workflow" naming); `phase-6-finalize/SKILL.md:159,1291` (dispatch table says `standards/lessons-capture.md`, file is `workflow/lessons-capture.md`) | doc/path drift surfaced by pass-2 full reads — fix in passing |

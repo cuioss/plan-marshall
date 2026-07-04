@@ -33,7 +33,7 @@ behaviour that [02](02-validate-opencode-runtime.md) or
    `doc/developer/`) covering generate → `sync-opencode` → test, the three deploy options,
    and the singular→plural rename. Cross-reference `marketplace-build.adoc`.
 
-3. **Reference: platform-runtime + no-op surface** — document the 15-operation
+3. **Reference: platform-runtime + no-op surface** — document the 18-operation
    `platform-runtime` API and, per operation, the OpenCode behaviour (real vs `no-op`
    with its `reason`/`alternative`). The authoritative contract is the runtime's own
    `standards/` docs; the `doc/` entry orients and cross-references rather than

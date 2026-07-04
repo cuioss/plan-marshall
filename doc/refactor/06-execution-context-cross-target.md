@@ -6,7 +6,8 @@ Record how the `execution-context` dispatcher maps across the Claude Code and Op
 targets — what is already correct, what diverges by design, and what is an unbuilt
 **emitter gap** (work the OpenCode target could do but does not yet). This is a reference
 for workstreams [01](01-finish-portability.md) and [02](02-validate-opencode-runtime.md);
-it also carries one concrete open task (the OpenCode variant emitter).
+it also carries two concrete open tasks (the OpenCode variant emitter and the step-3
+skill-load prose rewording).
 
 The single source agent is `marketplace/bundles/plan-marshall/agents/execution-context.md`.
 Both targets derive their output from it.
@@ -136,15 +137,20 @@ placeholder.
 
 The dispatcher body references `Task:` (the Claude tool name) in its leaf constraint, its
 enforcement section, and its lifecycle description. OpenCode's equivalent tool is `task`.
-The body transformer does not rewrite these references.
 
 A blanket `Task:` → `task` rewrite is **risky for this specific agent**: its entire purpose
 is that it is a leaf that must *not* dispatch ("no `Task:` dispatch", "every plan-marshall
 `Task:` invocation"). These are descriptive references, and a careless substitution
-corrupts them. The divergence is real terminology drift; any remediation must be
-target-aware and must preserve the leaf-constraint prose.
+corrupts them.
 
-**Divergence — remediation must be careful, not a blanket rewrite.**
+This is now a **settled, recorded decision**: the idiom registry
+(`mapping.json::body_idiom_rewrites`, applied by `rewrite_registered_idioms` in
+`body_transforms.py`) declares `Task:` with the `preserve` disposition — the references are
+deliberately left intact on OpenCode, with the leaf-aware rationale recorded in
+`transforms.md`. The same registry rewrites `AskUserQuestion` → `question`
+(`rewrite_inline_code`) and marks `Skill: <entry>` as `source_fix` (item 2 below).
+
+**Settled — `preserve` disposition in the idiom registry.**
 
 ## Summary
 
@@ -156,8 +162,8 @@ target-aware and must preserve the leaf-constraint prose.
 | Model pinning | `model:` per variant | `model:` supported and already emitted *when present*; canonical carries none | Emitter gap (open) |
 | Effort pinning | `effort:` per variant | no native field; provider-passthrough only | Fidelity caveat |
 | Skill load (step 2) | `Skill:` directive | rewritten to `skill` tool | Correct |
-| Skill load (step 3) | `Skill: <entry>` placeholder + loop prose | not rewritten | Prose fix (open) |
-| `Task:` references | native tool name | not rewritten to `task` | Careful fix (open) |
+| Skill load (step 3) | `Skill: <entry>` placeholder + loop prose | `source_fix` disposition recorded; source not yet reworded | Prose fix (open) |
+| `Task:` references | native tool name | `preserve` disposition in the idiom registry | Settled |
 | Prompt-body / TOON contract | 5 fields + extras | identical | Correct |
 | `resolve-target` | returns level-variant name | returns canonical name (no variants emitted) | Follows the emitter gap |
 
@@ -175,12 +181,12 @@ target-aware and must preserve the leaf-constraint prose.
 
 2. **Step-3 skill-load prose.** Reword the "For each entry in `skills[]` … `Skill: <entry>`"
    block in `agents/execution-context.md` so the OpenCode body transform is unnecessary and
-   the instruction is target-neutral. (Source-side change; folds into
-   [01](01-finish-portability.md) prose cleanup.)
+   the instruction is target-neutral. The idiom registry already records the `source_fix`
+   disposition for this placeholder; the source rewording itself is the open piece.
+   (Source-side change; folds into [01](01-finish-portability.md) prose cleanup.)
 
-3. **`Task:` terminology.** Decide a target-aware treatment for the dispatcher's `Task:`
-   references that preserves the leaf-constraint prose. Likely a deliberate
-   `transforms.md` spec change rather than a naive substitution.
+(The former third item — deciding the `Task:` treatment — is resolved: the registry's
+`preserve` disposition with leaf-aware rationale, see the `Task:` section above.)
 
 ## Related
 
