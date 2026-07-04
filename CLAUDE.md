@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ## Repository Overview
 
-This is a **Claude Code Marketplace** repository providing development standards, automation tools, and AI-assisted workflows for CUI (Common User Interface) Open Source projects. It contains 10 production bundles with 94 components (skills, agents, and commands) that integrate with Claude Code's plugin system.
+This is a **Claude Code Marketplace** repository providing development standards, automation tools, and AI-assisted workflows for CUI (Common User Interface) Open Source projects. It contains 10 production bundles with 148 registered components (144 skills, 2 agents, 2 commands) that integrate with Claude Code's plugin system.
 
 ## Branch Naming
 
@@ -34,7 +34,7 @@ plan-marshall/
 │       ├── plan-marshall/          # Utilities, workflow, and orchestration
 │       ├── pm-dev-frontend/        # JavaScript/CSS standards
 │       ├── pm-dev-frontend-cui/    # CUI-specific JavaScript standards
-│       ├── pm-dev-java/            # Java development standards + agents
+│       ├── pm-dev-java/            # Java development standards
 │       ├── pm-dev-java-cui/        # CUI-specific Java standards
 │       ├── pm-dev-oci/             # OCI container standards + security
 │       ├── pm-dev-python/          # Python standards + build operations
@@ -52,9 +52,9 @@ The marketplace uses a three-tier component hierarchy:
 
 | Component | Count | Purpose |
 |-----------|-------|---------|
-| **Skills** | 80 | Domain knowledge, standards, and reference documentation |
-| **Agents** | 10 | Autonomous task executors with focused responsibilities |
-| **Commands** | 4 | User-invokable slash commands that orchestrate workflows |
+| **Skills** | 144 registered (135 unique — the `plan-marshall-plugin` extension marker is registered once per bundle) | Domain knowledge, standards, workflows, and reference documentation |
+| **Agents** | 2 | The `execution-context` (write-capable) and `execution-context-reader` (read-only) dispatchers, expanded into per-level variants at build time |
+| **Commands** | 2 | User-invokable slash commands for narrow tool-specific tasks |
 
 ### Bundle Structure
 
@@ -78,10 +78,10 @@ bundle-name/
 ## The 10 Production Bundles
 
 ### plan-marshall
-Core infrastructure with script execution, permission management, lessons learned, and project configuration. Includes the complete 5-phase development workflow (init, refine, outline, plan, execute, finalize), task planning, git workflows, PR management, Sonar integration, and build automation for Maven/Gradle/npm.
+Core infrastructure with script execution, permission management, lessons learned, and project configuration. Includes the complete six-phase development workflow (init, refine, outline, plan, execute, finalize), task planning, git workflows, PR management, Sonar integration, and build automation for Maven/Gradle/npm.
 
 ### pm-dev-java
-Java development standards covering core patterns, null safety, Lombok, CDI/Quarkus, unit testing with JUnit 5, JavaDoc, and logging. Includes agents for verification and coverage analysis.
+Java development standards covering core patterns, null safety, Lombok, CDI/Quarkus, unit testing with JUnit 5, JavaDoc, and logging. Verification flows through the skill-based extension API.
 
 ### pm-dev-java-cui
 CUI-specific Java standards covering CuiLogger, test generators, value object contracts, HTTP client patterns, and MockWebServer testing.

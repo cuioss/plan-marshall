@@ -1,7 +1,7 @@
 {
   "name": "pm-dev-java",
   "version": "0.1-BETA",
-  "description": "Comprehensive Java development expertise bundle with agent-first architecture for autonomous code implementation, testing, and standards compliance",
+  "description": "Comprehensive Java development expertise bundle providing domain knowledge skills for standards-compliant implementation, testing, and verification via the plan-marshall extension API",
   "author": {
     "name": "https://github.com/cuioss/plan-marshall",
     "email": "contact@cuioss.de"
@@ -15,8 +15,7 @@
     "quarkus",
     "testing",
     "standards",
-    "patterns",
-    "agents"
+    "patterns"
   ],
   "agents": [],
   "commands": [],
