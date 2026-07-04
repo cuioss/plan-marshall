@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ## Repository Overview
 
-This is a **Claude Code Marketplace** repository providing development standards, automation tools, and AI-assisted workflows for CUI (Common User Interface) Open Source projects. It contains 10 production bundles with 148 registered components (144 skills, 2 agents, 2 commands) that integrate with Claude Code's plugin system.
+This is a **Claude Code Marketplace** repository providing development standards, automation tools, and AI-assisted workflows for CUI (Common User Interface) Open Source projects. It contains 10 production bundles with 149 registered components (145 skills, 2 agents, 2 commands) that integrate with Claude Code's plugin system.
 
 ## Branch Naming
 
@@ -52,7 +52,7 @@ The marketplace uses a three-tier component hierarchy:
 
 | Component | Count | Purpose |
 |-----------|-------|---------|
-| **Skills** | 144 registered (135 unique — the `plan-marshall-plugin` extension marker is registered once per bundle) | Domain knowledge, standards, workflows, and reference documentation |
+| **Skills** | 145 registered (136 unique — the `plan-marshall-plugin` extension marker is registered once per bundle) | Domain knowledge, standards, workflows, and reference documentation |
 | **Agents** | 2 | The `execution-context` (write-capable) and `execution-context-reader` (read-only) dispatchers, expanded into per-level variants at build time |
 | **Commands** | 2 | User-invokable slash commands for narrow tool-specific tasks |
 
