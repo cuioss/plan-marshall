@@ -137,7 +137,10 @@ def _inject_effort(frontmatter_block: str, effort: str) -> str:
     closing fence (after any indented ``permission:`` children) is valid YAML.
     """
     lines = frontmatter_block.split('\n')
-    for idx in range(len(lines) - 1, -1, -1):
+    # Stop before index 0 so the opening fence is never matched — a malformed
+    # block missing its closing '---' leaves the frontmatter untouched rather
+    # than inserting above the opening fence.
+    for idx in range(len(lines) - 1, 0, -1):
         if lines[idx].strip() == '---':
             lines.insert(idx, f'{EFFORT_PASSTHROUGH_KEY}: {effort}')
             break
