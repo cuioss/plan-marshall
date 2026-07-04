@@ -75,10 +75,12 @@ The resolver (`manage-config effort resolve-target`) picks which variant the orc
 dispatches based on `marshal.json` effort settings.
 
 **What OpenCode does.** The OpenCode emitter (`marketplace/targets/opencode/emitter.py`,
-`_emit_agent`) writes **one** agent file per canonical source. It does not run any
-variant emitter — there is no OpenCode counterpart to `variant_emitter.py`. Because the
-canonical source carries no `model:`, the emitted OpenCode `execution-context` ends up
-with no model pinning either.
+`_emit_agent`) writes the canonical no-suffix agent file (which, because the source carries
+no `model:`, correctly has no model pinning — the `inherit` behaviour) **and** now routes
+role-eligible canonicals through `marketplace/targets/opencode/variant_emitter.py`, the
+counterpart to the Claude `variant_emitter.py`. That emitter writes the seven
+`execution-context-level-N` files with a concrete `model: anthropic/<id>` per level. See
+"Open work" item 1 below for the full contract, including the effort passthrough.
 
 **Why the previous "OpenCode has no `model:` field / deferred to runtime" framing was
 wrong.** OpenCode agents *do* support a `model:` field (`model: provider/model-id`, e.g.
@@ -100,14 +102,13 @@ iterate `LEVEL_TABLE`, resolve each alias through `model_map`, and emit
 build-time tables the Claude target already uses. The model dimension is fully mappable.
 
 **The one real fidelity caveat is effort, not model.** `LEVEL_TABLE` distinguishes
-level-4/5/6 *only* by effort (all three are `opus`). OpenCode has no first-class `effort:`
-field, but it forwards unrecognised frontmatter keys to the provider, so a level's effort
-can be carried as a provider-passthrough option (`reasoningEffort`, or the Claude
-`thinking` / `budgetTokens` shape). Levels that differ by **model** (haiku / sonnet / opus /
-fable) are distinguishable from the model line alone; the opus-effort tiers need the
-passthrough option to stay distinct, or they collapse to a single agent.
-
-**Emitter gap with a bounded fix — see "Open work" below.**
+level-2/3 (both `sonnet`) and level-4/5/6 (all `opus`) *only* by effort. OpenCode has no
+first-class `effort:` field, but it forwards unrecognised frontmatter keys to the provider,
+so the emitter carries each level's effort as a provider-passthrough `reasoningEffort:
+<effort>` key. Levels that differ by **model** (haiku / sonnet / opus / fable) are
+distinguishable from the model line alone; the same-model tiers rely on the passthrough to
+stay distinct (without it they would collapse to byte-identical files). The passthrough is
+unvalidated on a live runtime — see "Open work" item 1 for the decision and caveat.
 
 ## Skill loading
 
@@ -158,32 +159,44 @@ deliberately left intact on OpenCode, with the leaf-aware rationale recorded in
 |--------|--------|----------|-------|
 | Agent format | `tools:` + `forwards_tool_capabilities` | `mode: subagent` + `permission:` | Correct |
 | Permissions | tools list | `permission:` block (`Write`→`edit`) | Correct |
-| Level variants | 7 model+effort-pinned files via `variant_emitter.py` | single file, no variant emitter | Emitter gap (open) |
-| Model pinning | `model:` per variant | `model:` supported and already emitted *when present*; canonical carries none | Emitter gap (open) |
-| Effort pinning | `effort:` per variant | no native field; provider-passthrough only | Fidelity caveat |
+| Level variants | 7 model+effort-pinned files via `variant_emitter.py` | 7 model-pinned files via `opencode/variant_emitter.py` (mirrors the Claude emitter, reuses `LEVEL_TABLE`) | Resolved |
+| Model pinning | `model:` per variant | `model: anthropic/<id>` per variant, resolved through `mapping.json::model_map` | Resolved |
+| Effort pinning | `effort:` per variant | `reasoningEffort: <effort>` provider-passthrough per variant (keeps same-model tiers distinct); unvalidated on a live runtime | Passthrough (fidelity caveat) |
 | Skill load (step 2) | `Skill:` directive | rewritten to `skill` tool | Correct |
-| Skill load (step 3) | `Skill: <entry>` placeholder + loop prose | `source_fix` disposition recorded; source not yet reworded | Prose fix (open) |
+| Skill load (step 3) | `Skill: <entry>` placeholder + loop prose | `source_fix` disposition recorded; source reworded target-neutrally | Resolved |
 | `Task:` references | native tool name | `preserve` disposition in the idiom registry | Settled |
 | Prompt-body / TOON contract | 5 fields + extras | identical | Correct |
 | `resolve-target` | returns level-variant name | returns canonical name (no variants emitted) | Follows the emitter gap |
 
 ## Open work
 
-1. **OpenCode variant emitter.** Add an OpenCode counterpart to
-   `marketplace/targets/claude/variant_emitter.py` that, for any agent declaring
-   `implements: …ext-point-dynamic-level-executor`, emits `execution-context-level-N`
-   agent files with a concrete `model:` resolved from `LEVEL_TABLE` + `mapping.json::model_map`.
-   Decide how to express each level's effort (provider-passthrough `reasoningEffort` /
-   `thinking` budget) or document that opus-effort tiers collapse on OpenCode. This is the
-   prerequisite for verification check 2.2d in
-   [02-verification-protocol.md](02-verification-protocol.md) ("`level-N` variant
-   resolution").
+(All items below are resolved; the section is retained as an implementation record.)
 
-2. **Step-3 skill-load prose.** Reword the "For each entry in `skills[]` … `Skill: <entry>`"
-   block in `agents/execution-context.md` so the OpenCode body transform is unnecessary and
-   the instruction is target-neutral. The idiom registry already records the `source_fix`
-   disposition for this placeholder; the source rewording itself is the open piece.
-   (Source-side change; folds into [01](01-finish-portability.md) prose cleanup.)
+1. **OpenCode variant emitter — done.** `marketplace/targets/opencode/variant_emitter.py`
+   mirrors the Claude emitter: for any agent declaring
+   `implements: …ext-point-dynamic-level-executor` it emits `execution-context-level-N`
+   agent files with a concrete `model: anthropic/<id>` resolved from `LEVEL_TABLE` +
+   `mapping.json::model_map`. `LEVEL_TABLE` and `ALIAS_GATED_EFFORTS` are *imported* from the
+   Claude emitter (not copied) so the two targets cannot drift; the `xhigh`/`max` alias-
+   capability gate is the same `supports_effort` check. The emitter is wired into
+   `opencode/emitter.py::_emit_agent` and registers each variant in `opencode.json`.
+   **Effort decision:** each level's effort is carried as a provider-passthrough
+   `reasoningEffort: <effort>` frontmatter key rather than letting the tiers collapse —
+   without it the same-model tiers (`level-2`/`level-3` sonnet; `level-4`/`level-5`/`level-6`
+   opus) would emit byte-identical files. `level-1` (haiku) carries no effort key. The
+   passthrough is unvalidated on a live OpenCode runtime (only Claude Code is a tested
+   runtime); if a downstream stack ignores it the same-model tiers degrade to equivalent
+   behaviour, but the emitted files stay distinct and independently resolvable — satisfying
+   verification check 2.2d in
+   [02-verification-protocol.md](02-verification-protocol.md) ("`level-N` variant
+   resolution"). Lockstep + emission tests live under
+   `test/marketplace/targets/opencode/`.
+
+2. **Step-3 skill-load prose — done.** The "For each entry in `skills[]` … `Skill: <entry>`"
+   block in `agents/execution-context.md` now reads target-neutrally ("load that skill into
+   context using the platform's skill-loading mechanism"), so no OpenCode body transform is
+   needed. The idiom registry already recorded the `source_fix` disposition for this
+   placeholder.
 
 (The former third item — deciding the `Task:` treatment — is resolved: the registry's
 `preserve` disposition with leaf-aware rationale, see the `Task:` section above.)
