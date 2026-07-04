@@ -38,10 +38,12 @@ def test_safe_main_defined_only_in_file_ops():
 
 
 def test_barrels_reexport_canonical_safe_main():
-    """The build and workflow barrels expose the canonical object, not a copy."""
+    """The build, workflow, and CI barrels expose the canonical object, not a copy."""
     import _build_cli
+    import ci_base
     import file_ops
     import triage_helpers
 
     assert _build_cli.safe_main is file_ops.safe_main
+    assert ci_base.safe_main is file_ops.safe_main
     assert triage_helpers.safe_main is file_ops.safe_main
