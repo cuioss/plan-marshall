@@ -32,13 +32,7 @@ import os
 import sys
 from pathlib import Path
 
-# pretooluse_gate is a sibling module in this same scripts directory. Ensure the
-# directory is importable whether the leaf is run directly or via the executor.
-_SCRIPT_DIR = str(Path(__file__).resolve().parent)
-if _SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, _SCRIPT_DIR)
-
-import pretooluse_gate as gate  # noqa: E402
+import pretooluse_gate as gate
 
 # Plan-dir name is configurable via the executor-exported PLAN_DIR_NAME env var,
 # with a fallback for standalone invocation.

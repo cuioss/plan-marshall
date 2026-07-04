@@ -35,26 +35,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-# Bootstrap sys.path so script-shared/scripts is importable. file_ops needs
-# _find_plan_root_from_cwd from script-shared.marketplace_paths (the canonical
-# uniform cwd-relative resolver lives there to avoid byte-for-byte duplication
-# between the two bundles — see PR #160 review). The walk locates the bundle's
-# skills/ root from this script's own __file__ and inserts script-shared/scripts
-# at the front of sys.path. Doing this in module init means callers (tests,
-# bootstrap scripts) don't have to remember to set up PYTHONPATH first.
-_THIS_FILE = Path(__file__).resolve()
-for _ancestor in _THIS_FILE.parents:
-    if _ancestor.name == 'skills' and (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
-        _shared_scripts = str(_ancestor / 'script-shared' / 'scripts')
-        if _shared_scripts not in sys.path:
-            sys.path.insert(0, _shared_scripts)
-        break
-
-from marketplace_paths import (  # noqa: E402
+from marketplace_paths import (
     PLAN_DIR_NAME,
     _find_plan_root_from_cwd,
 )
-from toon_parser import serialize_toon  # noqa: E402
+from toon_parser import serialize_toon
 
 # Plan-marshall runtime state (plans, archived-plans, run-configuration.json,
 # lessons-learned, logs) is resolved by the SINGLE uniform cwd-relative rule
