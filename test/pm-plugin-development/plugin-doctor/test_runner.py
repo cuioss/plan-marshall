@@ -86,6 +86,7 @@ GOLDEN_QG_LABELS = [
     'broken-relative-link',
     'fenced-code-no-language',
     'analyze_fail_closed_gate_reads',
+    'analyze_sys_path_bootstrap',
     'scan_manage_invocation',
 ]
 
