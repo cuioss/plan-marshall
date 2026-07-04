@@ -408,6 +408,27 @@ def test_source_fix_disposition_leaves_skill_entry_placeholder():
     assert result == body
 
 
+def test_integration_source_fix_contract_no_skill_entry_placeholder_in_bundles():
+    """The source_fix disposition's contract: the `Skill: <entry>` placeholder stays
+    fixed in the source. Because the emitter never rewrites this idiom, a source
+    regression would flow verbatim into every emitted agent/skill body."""
+    project_root = Path(__file__).resolve().parents[3].parent
+    marketplace = project_root / 'marketplace' / 'bundles'
+    if not marketplace.is_dir():
+        pytest.skip('marketplace/bundles not available in this checkout')
+
+    offenders = [
+        path.relative_to(project_root).as_posix()
+        for path in sorted(marketplace.rglob('*.md'))
+        if 'Skill: <entry>' in path.read_text(encoding='utf-8')
+    ]
+    assert not offenders, (
+        f'`Skill: <entry>` placeholder found in bundle sources {offenders}; '
+        'the source_fix disposition requires target-neutral wording in the source '
+        '(see the step-3 skill-load loop in agents/execution-context.md)'
+    )
+
+
 def test_assert_dispositions_known_accepts_valid_registry():
     """A registry with only known dispositions passes the fail-closed guard."""
     assert_dispositions_known(_registry())  # does not raise
