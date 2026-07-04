@@ -15,7 +15,6 @@ Usage:
 import argparse
 import json
 import os
-import sys
 from typing import Any
 
 from _build_cli import safe_main
@@ -321,4 +320,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    sys.exit(safe_main(main))
+    safe_main(main)()

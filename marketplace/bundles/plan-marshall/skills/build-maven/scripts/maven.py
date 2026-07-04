@@ -19,8 +19,6 @@ Subcommands:
     coverage-report Parse JaCoCo coverage report
 """
 
-import sys
-
 from _build_check_warnings import create_check_warnings_handler
 from _build_cli import (
     add_search_markers_subparser,
@@ -76,4 +74,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    sys.exit(safe_main(main))
+    safe_main(main)()
