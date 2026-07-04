@@ -8,7 +8,7 @@ This bundle provides documentation domain knowledge through two core skills (`re
 
 ## Components Included
 
-### Skills (5 registered)
+### Skills (11 registered)
 
 **ref-asciidoc** - AsciiDoc formatting and validation skill (5 workflows):
 
@@ -41,13 +41,19 @@ This bundle provides documentation domain knowledge through two core skills (`re
 
 **ext-triage-docs** - Extension point for documentation finding triage
 
-### Extensions (not registered in plugin.json)
-
 **plan-marshall-plugin** - Documentation domain manifest for plan-marshall workflow integration
 
 **recipe-doc-verify** - Recipe for verifying documentation quality (format, links, drift)
 
-**recipe-verify-architecture-diagrams** - Recipe for verifying and updating PlantUML diagrams
+**recipe-verify-architecture-diagrams** - Recipe for verifying and updating architecture diagrams
+
+**recipe-verify-ascii-diagrams** - Recipe for verifying ASCII diagrams
+
+**ref-ascii-diagrams** - ASCII diagram authoring standards
+
+**ref-svg-diagrams** - SVG diagram authoring standards
+
+**ref-narrative-styles** - Narrative style standards for documentation
 
 ### Templates
 
@@ -79,7 +85,15 @@ pm-documents/
     │   └── templates/
     ├── recipe-doc-verify/        # Documentation verification recipe
     │   └── SKILL.md
-    ├── recipe-verify-architecture-diagrams/  # PlantUML diagram recipe
+    ├── recipe-verify-architecture-diagrams/  # Architecture diagram recipe
+    │   └── SKILL.md
+    ├── recipe-verify-ascii-diagrams/  # ASCII diagram recipe
+    │   └── SKILL.md
+    ├── ref-ascii-diagrams/       # ASCII diagram standards
+    │   └── SKILL.md
+    ├── ref-svg-diagrams/         # SVG diagram standards
+    │   └── SKILL.md
+    ├── ref-narrative-styles/     # Narrative style standards
     │   └── SKILL.md
     ├── ext-triage-docs/          # Triage extension point
     └── plan-marshall-plugin/     # Extension registration
