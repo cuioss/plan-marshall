@@ -4,22 +4,21 @@ Guidelines for AI assistants working in the plan-marshall repository.
 
 ## What This Repository Is
 
-A **Claude Code Marketplace** with 10 bundles of skills, agents, and commands for CUI (Common User Interface) Open Source projects. Source format IS Claude Code native. Multi-target distribution to OpenCode is in design phase (see `doc/refactor/`).
+A **Claude Code Marketplace** with 10 bundles of skills, agents, and commands for CUI (Common User Interface) Open Source projects. Source format IS Claude Code native. Multi-target distribution (Claude Code native, OpenCode export) is implemented via `marketplace/targets/`; design history lives in `doc/refactor/`.
 
 ## Quick Commands
 
-Build system: Pyprojectx wrapper (`./pw`), Python 3.12+ required.
+Build system: Pyprojectx wrapper (`./pw`); only Python 3 is required on the host — Pyprojectx provisions the toolchain. Never invoke `./pw` directly; use the resolved executor commands:
 
 ```bash
-./pw verify                    # Full: mypy + ruff + pytest
-./pw compile [module]          # mypy on bundle (e.g. pm-dev-java)
-./pw module-tests [module]     # pytest on test/ or test/<module>
-./pw quality-gate [module]     # ruff + mypy (no tests)
-./pw lint / ./pw lint-fix      # ruff check / fix
-./pw fmt                       # ruff format
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "verify"        # Full: mypy + ruff + pytest
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "compile"      # mypy
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests" # pytest
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate" # ruff + mypy + plugin-doctor
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "coverage"     # branch coverage, 80% gate
 ```
 
-**Module filtering**: Most commands accept a bundle name (e.g. `plan-marshall`, `pm-dev-java`) to scope to a single bundle. Omit for all.
+**Module filtering**: Append a bundle name inside `--command-args` (e.g. `"verify plan-marshall"`) to scope to a single bundle. Omit for all.
 
 ## Executor Pattern (CRITICAL)
 
@@ -90,26 +89,14 @@ After editing skills/agents/commands in `marketplace/bundles/`, sync to Claude C
 
 This copies to `~/.claude/plugins/cache/plan-marshall/` via rsync `--delete`.
 
-## Multi-Target Distribution (In Design)
+## Multi-Target Distribution
 
-See `doc/refactor/` for the 7-cluster plan to distribute to both Claude Code and OpenCode:
-
-| Cluster | Document | Topic |
-|---------|----------|-------|
-| 00 | `00-cleanup-precondition/plan.md` | Source-side prose cleanup of skill bodies (precondition) |
-| 01 | `01-design-platform-api/plan.md` | `platform-runtime` API (13 operations) |
-| 02 | `02-build-system/plan.md` | Target generator, OpenCode emitter |
-| 03 | `03-refactor-for-portability/plan.md` | Skill rewrites for portability |
-| 04 | `04-validate-and-document/plan.md` | Test plan, acceptance criteria |
-| 05 | `05-distribution/plan.md` | CI/CD, artifact hosting, installation |
-| 06 | `06-developer-workflow/plan.md` | Developer inner loop (both platforms) |
-
-**Current state**: `marketplace/targets/` is the authoritative multi-target generator framework. Run `python3 marketplace/targets/generate.py --target {claude,opencode,all} --output {dir}` to emit per-target output trees.
+`marketplace/targets/` is the authoritative multi-target generator framework. Run `python3 marketplace/targets/generate.py --target {claude,opencode,all} --output {dir}` to emit per-target output trees. The original refactor plan that produced this framework is retired; `doc/refactor/README.md` records the landed baseline and any open workstreams.
 
 ## Key Files for Context
 
 - `CLAUDE.md` — Full project context for Claude Code (more detailed than this file)
-- `doc/build-structure.adoc` — Build system details
+- `doc/developer/build.adoc` — Build system details
 - `pyproject.toml` — Tool configs (ruff, mypy, pytest)
 - `build.py` — Build script with module filtering
 - `marketplace/.claude-plugin/marketplace.json` — Master marketplace manifest
