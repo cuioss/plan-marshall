@@ -21,6 +21,7 @@
   "commands": [],
   "skills": [
     "./skills/ext-outline-workflow",
+    "./skills/ext-self-review-plan-marshall",
     "./skills/ext-triage-plugin",
     "./skills/plan-marshall-plugin",
     "./skills/plugin-apply-lessons-learned",

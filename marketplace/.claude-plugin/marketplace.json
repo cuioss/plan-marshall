@@ -14,7 +14,7 @@
       "source": "./bundles/plan-marshall",
       "strict": false
     },
-{
+    {
       "name": "pm-dev-frontend",
       "description": "JavaScript, CSS, and web component standards for applications",
       "source": "./bundles/pm-dev-frontend",
