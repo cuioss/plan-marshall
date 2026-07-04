@@ -70,11 +70,7 @@ Skill: plan-marshall:persona-plan-marshall-agent
 
 ## Step 3: Load Caller-Specified Skills
 
-For each entry in `skills[]`, in order:
-
-```text
-Skill: <entry>
-```
+For each entry in `skills[]`, in order, load that skill into context using the platform's skill-loading mechanism before continuing to the next entry. Each entry is a runtime `{bundle}:{skill}` notation substituted per iteration.
 
 If any skill load fails, STOP and return:
 

@@ -39,6 +39,7 @@ from marketplace.targets.opencode.frontmatter import (
     transform_command_frontmatter,
     transform_skill_frontmatter,
 )
+from marketplace.targets.opencode.variant_emitter import emit_agent_variants
 
 # Path to the wrapper template used by user-invocable dual-emit.
 _TEMPLATES_DIR = Path(__file__).resolve().parent / 'templates'
@@ -237,6 +238,7 @@ def _emit_agent(
     body_transformer: BodyTransformer,
     written: list[Path],
     agent_index: dict[str, dict[str, str]],
+    mapping_path: Path,
 ) -> None:
     if not agent_md.exists():
         return
@@ -257,6 +259,29 @@ def _emit_agent(
     # the agent identifier matches OpenCode's CLI / config conventions.
     agent_id = agent_md.stem
     agent_index[agent_id] = {'bundle': bundle_name, 'source': source_label}
+
+    # Role-eligible agents (dynamic-level-executor extension point) also emit
+    # per-level variant files alongside the canonical one, each with a concrete
+    # model resolved from LEVEL_TABLE + mapping.json::model_map. Non-eligible
+    # agents leave this a no-op (returns None).
+    result = emit_agent_variants(
+        fm,
+        new_body,
+        agent_id,
+        agent_dir,
+        mapping,
+        rules,
+        source_label=source_label,
+        mapping_path=mapping_path,
+    )
+    if result is not None:
+        for level in result.variants_emitted:
+            variant_path = agent_dir / f'{agent_id}-{level}.md'
+            written.append(variant_path)
+            agent_index[f'{agent_id}-{level}'] = {
+                'bundle': bundle_name,
+                'source': source_label,
+            }
 
 
 def _emit_command(
@@ -379,6 +404,7 @@ def emit_bundles(
     """
     mapping = load_mapping(config_dir)
     rules = load_rules(config_dir)
+    mapping_path = config_dir / 'mapping.json'
     transform_body = body_transformer or _identity_body
 
     bundle_list = list(bundles) if bundles is not None else None
@@ -404,6 +430,7 @@ def emit_bundles(
                 transform_body,
                 written,
                 agent_index,
+                mapping_path,
             )
 
         for command_md in _resolve_md_components(bundle_dir, plugin_config, 'commands', 'commands'):
