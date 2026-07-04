@@ -259,7 +259,7 @@ def test_no_subcommand():
 def _prepare_thread_reply_body(tmp_path, monkeypatch, body_text='Fixed it', plan_id='p'):
     """Seed PLAN_BASE_DIR with a prepared thread-reply body scratch file."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
-    from ci_base import (  # type: ignore[import-not-found]
+    from ci_base import (
         BODY_KIND_PR_THREAD_REPLY,
         get_body_path,
     )
@@ -276,7 +276,7 @@ def test_pr_thread_reply_uses_thread_reply_mutation(monkeypatch, tmp_path):
     for a PR id. The follow-up PENDING-review check must see zero stuck reviews."""
     import argparse
 
-    import github_ops  # type: ignore[import-not-found]
+    import github_ops
 
     graphql_calls: list[tuple[str, dict]] = []
     gh_calls: list[list[str]] = []
@@ -323,7 +323,7 @@ def test_pr_thread_reply_fails_when_pending_review_remains(monkeypatch, tmp_path
     NOT status: success."""
     import argparse
 
-    import github_ops  # type: ignore[import-not-found]
+    import github_ops
 
     def fake_run_graphql(query: str, variables: dict):
         if 'addPullRequestReviewThreadReply' in query:
@@ -373,7 +373,7 @@ def test_pr_submit_review_calls_submit_mutation(monkeypatch):
     exactly {reviewId, event} variables and return the state field."""
     import argparse
 
-    import github_ops  # type: ignore[import-not-found]
+    import github_ops
 
     captured: dict = {}
 
@@ -425,7 +425,7 @@ def _install_github_ops_stubs(monkeypatch, pull_request_payload: dict):
 
     Returns the imported github_ops module so callers can invoke handlers.
     """
-    import github_ops  # type: ignore[import-not-found]
+    import github_ops
 
     def fake_check_auth():
         return True, ''

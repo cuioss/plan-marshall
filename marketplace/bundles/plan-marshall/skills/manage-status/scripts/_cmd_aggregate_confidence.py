@@ -31,8 +31,8 @@ from pathlib import Path
 from typing import Any
 
 from _status_core import read_status, write_status
-from file_ops import get_plan_dir  # type: ignore[import-not-found]
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from file_ops import get_plan_dir
+from plan_logging import log_entry
 
 # Canonical dimension weights from phase-2-refine § Step 10. Order is
 # fixed so the breakdown is deterministic.

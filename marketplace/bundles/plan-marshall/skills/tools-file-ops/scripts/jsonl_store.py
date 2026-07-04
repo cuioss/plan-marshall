@@ -32,8 +32,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from constants import HASH_ID_LENGTH  # type: ignore[import-not-found]
-from file_ops import base_path  # type: ignore[import-not-found]
+from constants import HASH_ID_LENGTH
+from file_ops import base_path
 
 
 def get_artifact_path(plan_id: str, filename: str) -> Path:

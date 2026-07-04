@@ -20,7 +20,7 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
-import extension_base  # type: ignore[import-not-found]
+import extension_base
 import pytest
 
 from conftest import PlanContext
@@ -105,7 +105,7 @@ def _seed_marshal(ci_provider: str | None = 'github') -> Path:
     globs (D7/D8), so the seed carries a build_map entry whose ``**/*.py`` glob
     keeps the gate active against a matching footprint.
     """
-    from file_ops import get_marshal_path  # type: ignore[import-not-found]
+    from file_ops import get_marshal_path
 
     marshal: dict = {
         'plan': {'phase-6-finalize': {}},
@@ -401,7 +401,7 @@ def _seed_task_file(plan_id: str, task_number: int, status: str) -> None:
     on disk". A test that seeds at least one pending task forces the
     short-circuit to fall through to Rule 7 (default).
     """
-    from file_ops import get_plan_dir  # type: ignore[import-not-found]
+    from file_ops import get_plan_dir
 
     tasks_dir = get_plan_dir(plan_id) / 'tasks'
     tasks_dir.mkdir(parents=True, exist_ok=True)

@@ -218,7 +218,7 @@ def _resolve_active_profiles(domain_key: str, project_dir: str, explicit: set[st
     try:
         config = json.loads(marshal_path.read_text(encoding='utf-8'))
     except Exception as e:
-        from plan_logging import log_entry  # type: ignore[import-not-found]
+        from plan_logging import log_entry
 
         log_entry('script', None, 'WARNING', f'[ENRICH] Failed to parse marshal.json: {e}')
         return None
@@ -258,7 +258,7 @@ def enrich_add_domain(
     module_data = _load_module_or_raise(module_name, project_dir, crawled_modules)
 
     # Find extension for this domain (supports multi-domain extensions)
-    from extension_discovery import discover_all_extensions  # type: ignore[import-not-found]
+    from extension_discovery import discover_all_extensions
 
     extensions = discover_all_extensions()
     target_ext = None
@@ -275,7 +275,7 @@ def enrich_add_domain(
             if target_ext:
                 break
         except Exception as e:
-            from plan_logging import log_entry  # type: ignore[import-not-found]
+            from plan_logging import log_entry
 
             log_entry('script', None, 'WARNING', f'[ENRICH] get_skill_domains() failed for extension: {e}')
             continue

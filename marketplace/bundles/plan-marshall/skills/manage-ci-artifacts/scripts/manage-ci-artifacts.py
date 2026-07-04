@@ -46,8 +46,8 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from file_ops import get_base_dir, get_plan_dir  # type: ignore[import-not-found]
-from toon_parser import (  # type: ignore[import-not-found]
+from file_ops import get_base_dir, get_plan_dir
+from toon_parser import (
     ToonParseError,
     parse_toon,
     serialize_toon,

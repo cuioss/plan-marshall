@@ -313,8 +313,8 @@ def _make_findings_run_script_stub():
     ``_findings_core`` engine so the handshake gate reads the genuine store
     written by ``add_finding`` / ``resolve_finding``.
     """
-    from _findings_core import query_findings, query_qgate_findings  # type: ignore[import-not-found]
-    from file_ops import serialize_toon  # type: ignore[import-not-found]
+    from _findings_core import query_findings, query_qgate_findings
+    from file_ops import serialize_toon
 
     def _flag(args: list[str], name: str) -> str | None:
         if name in args:
@@ -347,7 +347,7 @@ def _make_findings_run_script_stub():
 @pytest.fixture
 def real_findings_store(monkeypatch: pytest.MonkeyPatch):
     """Redirect ``inv._run_script`` to the real-store stub and expose helpers."""
-    from _findings_core import (  # type: ignore[import-not-found]
+    from _findings_core import (
         add_finding,
         add_qgate_finding,
         resolve_finding,

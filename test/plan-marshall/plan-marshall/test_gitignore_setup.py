@@ -21,7 +21,7 @@ from conftest import MARKETPLACE_ROOT, run_script
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'gitignore_setup.py'
 
 # Tier 2 direct imports — conftest sets up PYTHONPATH for cross-skill imports
-from gitignore_setup import (  # type: ignore[import-not-found]  # noqa: E402, I001
+from gitignore_setup import (  # noqa: E402, I001
     GITIGNORE_PLAN_LOCAL_WORKTREES,
     check_gitignore_status,
     consolidate_managed_blocks,

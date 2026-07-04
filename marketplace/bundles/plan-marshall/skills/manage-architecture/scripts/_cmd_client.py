@@ -43,11 +43,11 @@ from _architecture_core import (
     require_project_meta_result,
     resolve_module_for_path,
 )
-from constants import (  # type: ignore[import-not-found]
+from constants import (
     DIR_PER_MODULE_DERIVED,
     FILE_PROJECT_META,
 )
-from marketplace_bundles import (  # type: ignore[import-not-found]
+from marketplace_bundles import (
     resolve_bundle_path,
     resolve_bundles_root,
 )
@@ -322,9 +322,9 @@ def _lookup_bash_timeout(tool_name: str, command_args: str, project_dir: str) ->
         sys.path.insert(0, run_config_dir)
 
     try:
-        from _build_execute_factory import compute_command_key  # type: ignore[import-not-found]
-        from _build_shared import DEFAULT_BUILD_TIMEOUT, get_bash_timeout  # type: ignore[import-not-found]
-        from run_config import timeout_get  # type: ignore[import-not-found]
+        from _build_execute_factory import compute_command_key
+        from _build_shared import DEFAULT_BUILD_TIMEOUT, get_bash_timeout
+        from run_config import timeout_get
     except ImportError:
         return None
 
@@ -399,7 +399,7 @@ def _enrich_maven_module_cached(module_name: str, derived: dict[str, Any], proje
         return _ENRICH_CACHE[cache_key]
 
     try:
-        from _maven_cmd_discover import enrich_maven_module  # type: ignore[import-not-found]
+        from _maven_cmd_discover import enrich_maven_module
     except ImportError:
         _ENRICH_CACHE[cache_key] = None
         return None
@@ -433,7 +433,7 @@ def _enrich_module_commands(module_name: str, derived: dict[str, Any], project_d
         return dict(derived.get('commands', {}))
 
     try:
-        from _maven_cmd_discover import _build_commands  # type: ignore[import-not-found]
+        from _maven_cmd_discover import _build_commands
     except ImportError:
         return None
 

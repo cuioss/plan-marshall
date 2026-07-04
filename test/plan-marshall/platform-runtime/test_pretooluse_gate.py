@@ -22,7 +22,7 @@ from __future__ import annotations
 import os
 import sys
 
-from conftest import get_script_path  # type: ignore[import-not-found]
+from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path("plan-marshall", "platform-runtime", "pretooluse_gate.py")
 SCRIPTS_DIR = SCRIPT_PATH.parent

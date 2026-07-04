@@ -35,15 +35,15 @@ import re
 from pathlib import Path
 from typing import Any
 
-from _plan_parsing import parse_document_sections  # type: ignore[import-not-found]
+from _plan_parsing import parse_document_sections
 from _status_core import get_plans_dir
-from constants import DIR_PLANS, FILE_STATUS  # type: ignore[import-not-found]
-from file_ops import (  # type: ignore[import-not-found]
+from constants import DIR_PLANS, FILE_STATUS
+from file_ops import (
     get_plan_dir,
     get_worktree_root,
     read_json,
 )
-from marketplace_paths import PLAN_DIR_NAME  # type: ignore[import-not-found]
+from marketplace_paths import PLAN_DIR_NAME
 
 # source_id values that count as "no traceable origin" — a description-sourced
 # plan has no external id, so it can never trip the source-origin check.

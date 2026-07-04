@@ -38,17 +38,17 @@ import json
 from collections import defaultdict
 from typing import Any
 
-from _dep_detection import Dependency, DependencyType  # type: ignore[import-not-found]
-from _dep_index import (  # type: ignore[import-not-found]
+from _dep_detection import Dependency, DependencyType
+from _dep_index import (
     DependencyIndex,
     build_dependency_index,
     get_base_path,
 )
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
 
 # Try to import toon_parser, fall back to simple serialization
 try:
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+    from toon_parser import serialize_toon
 
     HAS_TOON_PARSER = True
 except ImportError:

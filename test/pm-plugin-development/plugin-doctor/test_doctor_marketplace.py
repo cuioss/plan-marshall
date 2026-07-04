@@ -29,7 +29,7 @@ import types
 from pathlib import Path
 
 import pytest
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 from conftest import get_script_path, get_scripts_dir, load_script_module, run_script
 

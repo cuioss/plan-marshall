@@ -9,7 +9,7 @@ Delegates to build-system-specific discovery scripts in sibling skill directorie
 
 from pathlib import Path
 
-from extension_base import ExtensionBase  # type: ignore[import-not-found]
+from extension_base import ExtensionBase
 
 # Build systems that indicate code content (vs documentation or plugin metadata)
 _CODE_BUILD_SYSTEMS = {'maven', 'gradle', 'npm', 'python'}

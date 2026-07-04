@@ -34,7 +34,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from conftest import load_script_module  # type: ignore[import-not-found]
+from conftest import load_script_module
 
 _dm = load_script_module(
     'plan-marshall',

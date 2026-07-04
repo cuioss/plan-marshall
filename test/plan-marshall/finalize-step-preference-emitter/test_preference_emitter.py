@@ -63,7 +63,7 @@ def _discovered_seed_step_ids() -> list:
     ``default_on == true``, sort by ``(order, name)``), mirroring
     ``_seed_finalize_steps()``.
     """
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors
 
     seed_records = sorted(
         (
@@ -78,7 +78,7 @@ def _discovered_seed_step_ids() -> list:
 
 def _discovered_description(step_id: str) -> str:
     """Return the discovered ``description`` for a finalize-step id."""
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors
 
     for rec in find_implementors(_config_defaults.FINALIZE_STEP_EXT_POINT):
         if rec.get('name') == step_id:

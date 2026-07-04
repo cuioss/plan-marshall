@@ -8,13 +8,13 @@ In-scope flags from TASK-1: ``--plan-id``, ``--phase``, ``--session-id``.
 from __future__ import annotations
 
 import pytest
-from _pm_input_validation_fixtures import (  # type: ignore[import-not-found]
+from _pm_input_validation_fixtures import (
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_invalid_field,
 )
 
-from conftest import get_script_path, run_script  # type: ignore[import-not-found]
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
 

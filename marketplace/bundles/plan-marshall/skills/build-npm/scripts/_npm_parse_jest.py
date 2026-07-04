@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary, add_issue_deduped  # type: ignore[import-not-found]
+from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary, add_issue_deduped
 
 # Jest failure header pattern
 FAIL_PATTERN = re.compile(r'^\s*FAIL\s+(.+)$', re.MULTILINE)

@@ -49,10 +49,10 @@ from _cmd_system_plan import cmd_plan, cmd_project, cmd_system
 from _config_core import normalize_keys
 
 # Direct imports - PYTHONPATH set by executor
-from effort_presets import EffortPresets  # type: ignore[import-not-found]
+from effort_presets import EffortPresets
 from file_ops import output_toon, safe_main
-from finalize_step_presets import FinalizeStepPresets  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from finalize_step_presets import FinalizeStepPresets
+from input_validation import (
     add_domain_arg,
     add_field_arg,
     parse_args_with_toon_errors,

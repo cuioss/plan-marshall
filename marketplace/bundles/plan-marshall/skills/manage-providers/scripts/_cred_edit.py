@@ -19,7 +19,7 @@ from _providers_core import (
     save_credential,
     write_provider_config,
 )
-from file_ops import output_toon  # type: ignore[import-not-found]
+from file_ops import output_toon
 
 
 def _upsert_extra_fields(skill: str, extra_pairs: list[str]) -> list[str]:

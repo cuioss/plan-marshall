@@ -19,7 +19,7 @@ from contextlib import redirect_stdout
 import pytest
 
 from conftest import get_script_path, run_script
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
 
@@ -350,7 +350,7 @@ def _render_breakdown(plan_id: str) -> list[str]:
     """
     result = cmd_generate(_ns_generate(plan_id))
     assert result['status'] == 'success', result
-    from file_ops import get_plan_dir  # type: ignore[import-not-found]
+    from file_ops import get_plan_dir
 
     md_path = get_plan_dir(plan_id) / 'metrics.md'
     content = md_path.read_text(encoding='utf-8')
@@ -522,7 +522,7 @@ class TestEndToEndPhaseBreakdownRendering:
         print_result = cmd_print_phase_breakdown(_ns_print_breakdown('metrics-e2e-01'))
         assert print_result['status'] == 'success'
         assert print_result['file'] == 'work/phase-breakdown-output.txt'
-        from file_ops import get_plan_dir  # type: ignore[import-not-found]
+        from file_ops import get_plan_dir
         section = (get_plan_dir('metrics-e2e-01') / print_result['file']).read_text(encoding='utf-8')
 
         # The captured section begins with the heading and carries the three
@@ -570,7 +570,7 @@ class TestEndToEndPhaseBreakdownRendering:
         assert cmd_generate(_ns_generate('metrics-e2e-02'))['status'] == 'success'
         print_result = cmd_print_phase_breakdown(_ns_print_breakdown('metrics-e2e-02'))
         assert print_result['status'] == 'success'
-        from file_ops import get_plan_dir  # type: ignore[import-not-found]
+        from file_ops import get_plan_dir
         section = (get_plan_dir('metrics-e2e-02') / print_result['file']).read_text(encoding='utf-8')
 
         exec_line = next(ln for ln in section.splitlines() if ln.startswith('| 5-execute'))
@@ -608,7 +608,7 @@ class TestEndToEndPhaseBreakdownRendering:
         assert cmd_generate(_ns_generate('metrics-e2e-03'))['status'] == 'success'
         print_result = cmd_print_phase_breakdown(_ns_print_breakdown('metrics-e2e-03'))
         assert print_result['status'] == 'success'
-        from file_ops import get_plan_dir  # type: ignore[import-not-found]
+        from file_ops import get_plan_dir
         section = (get_plan_dir('metrics-e2e-03') / print_result['file']).read_text(encoding='utf-8')
 
         total_line = next(ln for ln in section.splitlines() if '**Total**' in ln)

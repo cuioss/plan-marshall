@@ -10,7 +10,7 @@ revert re-breaks a named test here.
 
 from __future__ import annotations
 
-from conftest import (  # type: ignore[import-not-found]
+from conftest import (
     MARKETPLACE_ROOT,
 )
 

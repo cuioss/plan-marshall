@@ -27,7 +27,7 @@ _TOON_DIR = _PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skill
 if str(_TOON_DIR) not in sys.path:
     sys.path.insert(0, str(_TOON_DIR))
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
+from toon_parser import serialize_toon  # noqa: E402
 
 # Mirrors HANDSHAKE_FIELDS in
 # marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_handshake_store.py.

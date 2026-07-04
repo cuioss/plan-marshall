@@ -17,7 +17,7 @@ import argparse
 
 from _cmd_analyze_tone import cmd_analyze_tone
 from _cmd_review import cmd_review
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
 
 
 @safe_main

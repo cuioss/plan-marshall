@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import sys
 
-from conftest import get_script_path  # type: ignore[import-not-found]
+from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'phase-5-execute', 'verify_failure_scope.py')
 SCRIPTS_DIR = SCRIPT_PATH.parent

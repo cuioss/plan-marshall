@@ -31,7 +31,7 @@ from pathlib import Path
 
 # extension_base is importable: conftest._setup_marketplace_pythonpath() adds
 # script-shared/scripts/extension/ to sys.path.
-from extension_base import (  # type: ignore[import-not-found]
+from extension_base import (
     BUILD_CLASS_BUILD_CONFIG_FULL,
     BUILD_CLASS_PROD_COMPILE,
     BUILD_CLASS_TEST_RUN,

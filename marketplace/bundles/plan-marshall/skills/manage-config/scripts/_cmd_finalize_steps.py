@@ -21,7 +21,7 @@ from _config_core import (
     success_exit,
 )
 from _config_defaults import FINALIZE_STEP_EXT_POINT
-from finalize_step_presets import (  # type: ignore[import-not-found]
+from finalize_step_presets import (
     FinalizeStepPresets,
 )
 
@@ -39,7 +39,7 @@ def _known_finalize_steps() -> frozenset[str]:
     project step ids alike. Computed on demand (not at module import) so this
     module stays a leaf and the universe always reflects the current step docs.
     """
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors
 
     return frozenset(
         rec['name'] for rec in find_implementors(FINALIZE_STEP_EXT_POINT) if rec.get('name')

@@ -15,13 +15,13 @@ from _status_core import (
     require_status,
     write_status,
 )
-from constants import (  # type: ignore[import-not-found]
+from constants import (
     DIR_PLANS,
     PHASE_STATUS_DONE,
     PHASE_STATUS_IN_PROGRESS,
 )
-from file_ops import get_worktree_root  # type: ignore[import-not-found]
-from marketplace_paths import PLAN_DIR_NAME  # type: ignore[import-not-found]
+from file_ops import get_worktree_root
+from marketplace_paths import PLAN_DIR_NAME
 
 # Metadata fields that are semantically boolean. The ``metadata --set`` CLI
 # receives every value as a raw string; for these keys the raw string is

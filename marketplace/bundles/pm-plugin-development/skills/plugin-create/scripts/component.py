@@ -20,7 +20,7 @@ import argparse
 
 from cmd_generate import cmd_generate
 from cmd_validate import cmd_validate
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
 
 
 @safe_main

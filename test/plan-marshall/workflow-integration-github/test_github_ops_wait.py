@@ -22,8 +22,8 @@ import argparse
 import time
 from pathlib import Path
 
-import ci_base  # type: ignore[import-not-found]
-import github_ops  # type: ignore[import-not-found]
+import ci_base
+import github_ops
 
 # Real committed GitHub-Actions-shaped failure log fixture. Resolved relative to
 # this test file so resolution never depends on cwd. Fed as the mocked

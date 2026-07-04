@@ -30,8 +30,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 # permission_web: reuse the WebFetch domain-membership logic — do NOT restate it.
-from permission_web import categorize_domain, check_red_flags  # type: ignore[import-not-found]
-from triage_helpers import (  # type: ignore[import-not-found]
+from permission_web import categorize_domain, check_red_flags
+from triage_helpers import (
     create_workflow_cli,
     make_error,
     parse_json_arg,

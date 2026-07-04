@@ -117,7 +117,7 @@ def isolated_run_config(monkeypatch, tmp_path):
     plan_dir.mkdir()
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-    import _config_core  # type: ignore[import-not-found]
+    import _config_core
 
     monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', plan_dir)
     monkeypatch.setattr(_config_core, 'RUN_CONFIG_PATH', plan_dir / 'run-configuration.json')

@@ -3,7 +3,7 @@
 # ruff: noqa: I001
 """Tests for Git provider loading from marshal.json declarations."""
 
-from _providers_core import load_declared_providers  # type: ignore[import-not-found]
+from _providers_core import load_declared_providers
 from _providers_fixtures import stage_marshal
 
 import conftest  # noqa: F401

@@ -139,7 +139,7 @@ def test_stage_persists_substantive_comments_only(plan_context):
     assert result['count_skipped_noise'] == 1
     assert result['count_stored'] == 1
 
-    from _findings_core import query_findings  # type: ignore[import-not-found]
+    from _findings_core import query_findings
 
     q = query_findings(plan_id, finding_type='pr-comment')
     assert q['filtered_count'] == 1

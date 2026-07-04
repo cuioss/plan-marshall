@@ -26,15 +26,15 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from _findings_core import add_qgate_finding  # type: ignore[import-not-found]
-from _plan_parsing import (  # type: ignore[import-not-found]
+from _findings_core import add_qgate_finding
+from _plan_parsing import (
     extract_deliverables,
     parse_document_sections,
 )
 from _tasks_core import get_all_tasks, get_tasks_dir
-from constants import FILE_SOLUTION_OUTLINE  # type: ignore[import-not-found]
-from file_ops import get_plan_dir  # type: ignore[import-not-found]
-from marketplace_paths import _find_plan_root_from_cwd  # type: ignore[import-not-found]
+from constants import FILE_SOLUTION_OUTLINE
+from file_ops import get_plan_dir
+from marketplace_paths import _find_plan_root_from_cwd
 
 _PHASE = '4-plan'
 _QGATE_SOURCE = 'qgate'

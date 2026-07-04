@@ -36,7 +36,7 @@ for _ancestor in Path(__file__).resolve().parents:
             sys.path.insert(0, _shared_scripts)
         break
 
-from marketplace_bundles import resolve_skills_root  # type: ignore[import-not-found]  # noqa: E402
+from marketplace_bundles import resolve_skills_root  # noqa: E402
 
 _SKILLS_DIR = resolve_skills_root(Path(__file__))
 for _lib in ('ref-toon-format', 'tools-file-ops', 'tools-permission-doctor'):
@@ -44,7 +44,7 @@ for _lib in ('ref-toon-format', 'tools-file-ops', 'tools-permission-doctor'):
     if _lib_path not in sys.path:
         sys.path.insert(0, _lib_path)
 
-from permission_common import (  # type: ignore[import-not-found]  # noqa: E402
+from permission_common import (  # noqa: E402
     EXIT_SUCCESS,
     get_project_settings_path_for_write,
     get_settings_path,
@@ -53,13 +53,13 @@ from permission_common import (  # type: ignore[import-not-found]  # noqa: E402
     resolve_scope_to_paths,
     save_settings,
 )
-from permission_doctor import (  # type: ignore[import-not-found]  # noqa: E402
+from permission_doctor import (  # noqa: E402
     cmd_detect_redundant,
     extract_project_steps,
     load_marshal_config,
     skill_permission_covered,
 )
-from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
+from toon_parser import serialize_toon  # noqa: E402
 
 # Executor-only permission pattern
 EXECUTOR_PERMISSION = 'Bash(python3 .plan/execute-script.py *)'
@@ -1287,6 +1287,6 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    from file_ops import safe_main  # type: ignore[import-not-found]
+    from file_ops import safe_main
 
     safe_main(main)()

@@ -35,7 +35,7 @@ import pytest
 
 # conftest.py sets up PYTHONPATH so cross-skill imports resolve without manual
 # sys.path manipulation.
-from claude_runtime import (  # type: ignore[import-not-found]
+from claude_runtime import (
     _BUILD_WRAPPER_NOTATIONS,
     ClaudeRuntime,
     _command_is_build,
@@ -44,7 +44,7 @@ from claude_runtime import (  # type: ignore[import-not-found]
     _RENDER_HOOK_COMMAND,
     _STATUSLINE_COMMAND,
 )
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 
 # =============================================================================

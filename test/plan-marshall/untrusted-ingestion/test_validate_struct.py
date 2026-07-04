@@ -15,9 +15,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import get_script_path, run_script  # type: ignore[import-not-found]  # noqa: E402
+from conftest import get_script_path, run_script  # noqa: E402
 
-from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
+from toon_parser import parse_toon  # noqa: E402
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'untrusted-ingestion', 'validate_struct.py')
 

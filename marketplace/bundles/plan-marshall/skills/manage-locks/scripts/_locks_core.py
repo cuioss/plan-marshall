@@ -61,11 +61,11 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from marketplace_paths import (  # type: ignore[import-not-found]
+from marketplace_paths import (
     PLAN_DIR_NAME,
     resolve_main_anchored_path,
 )
-from plan_logging import format_log_entry  # type: ignore[import-not-found]
+from plan_logging import format_log_entry
 
 # Guard-file spin parameters. Deliberately minimal — a coordination critical
 # section (admit/release a slot, acquire/release the mutex) is short, so a fixed

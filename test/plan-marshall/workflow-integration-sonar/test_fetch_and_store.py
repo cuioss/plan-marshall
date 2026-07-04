@@ -37,7 +37,7 @@ _resolve_ce_wait_timeout = sonar_mod._resolve_ce_wait_timeout
 # call, which extends the shared ci_base subcommand registry. ``extract_routing_args`` is the
 # router-level pre-parser that the bug stripped ``--plan-id`` through; the regression test below
 # exercises it directly.
-from ci_base import extract_routing_args  # type: ignore[import-not-found]  # noqa: E402,I001
+from ci_base import extract_routing_args  # noqa: E402,I001
 
 
 # =============================================================================
@@ -130,7 +130,7 @@ class TestFetchAndStore:
         assert result['count_skipped_suppressable'] == 0
         assert result['count_stored'] == 1
 
-        from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings
 
         q = query_findings('sonar-stage-1', finding_type='sonar-issue')
         assert q['filtered_count'] == 1
@@ -146,7 +146,7 @@ class TestFetchAndStore:
         # the test exercises real configuration. If the dict is empty the
         # test trivially passes; that is acceptable because the assertion
         # is on observable counter behaviour, not config presence.
-        from sonar_mod import SUPPRESSABLE_RULES  # type: ignore[import-not-found]
+        from sonar_mod import SUPPRESSABLE_RULES
 
         if not SUPPRESSABLE_RULES:
             pytest.skip('No suppressable rules configured in sonar-rules.json')
@@ -211,7 +211,7 @@ class TestFetchAndStore:
         assert result['count_skipped_suppressable'] == 0
         assert result['count_stored'] == 1
 
-        from _findings_core import query_qgate_findings  # type: ignore[import-not-found]
+        from _findings_core import query_qgate_findings
 
         q = query_qgate_findings('sonar-stage-mismatch', phase='5-execute')
         assert q['filtered_count'] == 1
@@ -233,7 +233,7 @@ def _read_scan_summary_rows(plan_id):
     uses (``_findings_core.get_findings_dir``), so the test reads back exactly
     where ``_write_scan_summary`` wrote. Returns ``[]`` when the file is absent.
     """
-    from _findings_core import get_findings_dir  # type: ignore[import-not-found]
+    from _findings_core import get_findings_dir
 
     marker_path = get_findings_dir(plan_id) / 'sonar-scan-summary.jsonl'
     if not marker_path.exists():
@@ -342,8 +342,8 @@ class TestReadManifestSonarParams:
     falling back to an empty dict when the manifest is absent or malformed."""
 
     def test_reads_snapshotted_params_from_manifest(self, plan_context):
-        from file_ops import get_plan_dir  # type: ignore[import-not-found]
-        from toon_parser import serialize_toon  # type: ignore[import-not-found]
+        from file_ops import get_plan_dir
+        from toon_parser import serialize_toon
 
         plan_dir = get_plan_dir('sonar-snap')
         plan_dir.mkdir(parents=True, exist_ok=True)

@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
-from constants import DIR_ARCHIVED, DIR_LOGS  # type: ignore[import-not-found]
-from file_ops import (  # type: ignore[import-not-found]
+from constants import DIR_ARCHIVED, DIR_LOGS
+from file_ops import (
     get_base_dir,
     get_marshal_path,
     get_temp_dir,

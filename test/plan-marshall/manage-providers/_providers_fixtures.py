@@ -41,7 +41,7 @@ def stage_marshal(base_dir: Path, monkeypatch, config: dict[str, Any] | None = N
     Returns:
         Path to the resolved ``marshal.json`` (written iff ``config`` is given).
     """
-    import _config_core  # type: ignore[import-not-found]
+    import _config_core
 
     marshal_path = base_dir / 'marshal.json'
 

@@ -11,7 +11,7 @@ import argparse
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from _list_providers import find_provider_with_details  # type: ignore[import-not-found]
+from _list_providers import find_provider_with_details
 from _providers_core import (
     SECRET_PLACEHOLDERS,
     apply_extra_passthrough,
@@ -23,7 +23,7 @@ from _providers_core import (
     save_credential,
     write_provider_config,
 )
-from file_ops import get_tracked_config_dir, output_toon  # type: ignore[import-not-found]
+from file_ops import get_tracked_config_dir, output_toon
 
 # Skill name of the Sonar provider — pom.xml auto-derivation is gated behind this
 # provider so non-Sonar configure flows are byte-for-byte unchanged.

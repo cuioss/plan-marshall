@@ -15,7 +15,7 @@ import json
 import os
 from argparse import Namespace
 
-from permission_doctor import (  # type: ignore[import-not-found]
+from permission_doctor import (
     cmd_detect_missing_project_step_permissions,
     cmd_detect_redundant,
     cmd_detect_suspicious,

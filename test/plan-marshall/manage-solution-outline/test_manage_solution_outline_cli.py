@@ -20,9 +20,9 @@ from __future__ import annotations
 import sys
 
 import pytest
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
-from conftest import load_script_module  # type: ignore[import-not-found]
+from conftest import load_script_module
 
 # Distinct sys.modules name so this load never clobbers the
 # 'manage_solution_outline' module the sibling test files register.

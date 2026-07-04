@@ -194,7 +194,7 @@ def test_folded_finalize_knob_is_not_a_flat_sibling(owner_step, knob, default):
     `configurable:` frontmatter, resolved by the configurable_contract parser), so
     it must NOT survive as a flat phase-level field.
     """
-    from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+    from configurable_contract import resolve_step_defaults
 
     config = _config_defaults_mod.get_default_config()
     finalize = config['plan']['phase-6-finalize']

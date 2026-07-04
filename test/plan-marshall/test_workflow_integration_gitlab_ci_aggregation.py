@@ -28,8 +28,8 @@ invocations.
 import argparse
 import time
 
-import ci_base  # type: ignore[import-not-found]
-import gitlab_ops  # type: ignore[import-not-found]
+import ci_base
+import gitlab_ops
 
 # =============================================================================
 # Helpers

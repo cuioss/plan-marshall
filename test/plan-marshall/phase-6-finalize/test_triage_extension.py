@@ -14,7 +14,7 @@ from conftest import get_script_path, run_script
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-config', 'manage-config.py')
 
 # Import toon_parser - conftest sets up PYTHONPATH
-from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
+from toon_parser import parse_toon  # noqa: E402
 
 
 def create_marshal_json(fixture_dir: Path, config: dict):

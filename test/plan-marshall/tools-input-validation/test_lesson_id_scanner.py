@@ -23,9 +23,9 @@ test-collection time.
 import re
 import subprocess
 
-import input_validation as _iv  # type: ignore[import-not-found]
+import input_validation as _iv
 import pytest
-from input_validation import (  # type: ignore[import-not-found]
+from input_validation import (
     LESSON_ID_RE,
     LessonInventoryUnavailable,
     LessonRegexAnchoringError,
@@ -450,13 +450,13 @@ class TestExistingLessonIdValidatorsUnchanged:
     """
 
     def test_validate_lesson_id_accepts_real_ids(self):
-        from input_validation import validate_lesson_id  # type: ignore[import-not-found]
+        from input_validation import validate_lesson_id
 
         for lid in REAL_LESSON_IDS:
             assert validate_lesson_id(lid) == lid
 
     def test_is_valid_lesson_id_rejects_bogus(self):
-        from input_validation import is_valid_lesson_id  # type: ignore[import-not-found]
+        from input_validation import is_valid_lesson_id
 
         assert is_valid_lesson_id('not-an-id') is False
         assert is_valid_lesson_id('') is False

@@ -37,7 +37,7 @@ import sys
 from argparse import Namespace
 from typing import Any
 
-from _ledger_core import (  # type: ignore[import-not-found]
+from _ledger_core import (
     KIND_BUILD,
     KIND_CHANGE,
     append_entry,
@@ -46,14 +46,14 @@ from _ledger_core import (  # type: ignore[import-not-found]
     read_entries,
     resolve_ledger_path,
 )
-from triage_helpers import (  # type: ignore[import-not-found]
+from triage_helpers import (
     ErrorCode,
     create_workflow_cli,
     make_error,
     print_toon,
     safe_main,
 )
-from worktree_sha import compute_worktree_sha  # type: ignore[import-not-found]
+from worktree_sha import compute_worktree_sha
 
 
 def _split_changed_paths(raw: str | None) -> list[str]:

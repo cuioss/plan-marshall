@@ -7,7 +7,7 @@ from argparse import Namespace
 
 import pytest
 
-from conftest import get_script_path, load_script_module, run_script  # type: ignore[import-not-found]
+from conftest import get_script_path, load_script_module, run_script
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')

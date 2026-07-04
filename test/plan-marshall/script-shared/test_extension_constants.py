@@ -8,7 +8,7 @@ required command in any resolution category, so no module is ever forced to
 provide one.
 """
 
-from _extension_constants import (  # type: ignore[import-not-found]
+from _extension_constants import (
     ALL_CANONICAL_COMMANDS,
     CANONICAL_COMMANDS,
     CMD_ARCH_GATE,
@@ -48,6 +48,6 @@ def test_arch_gate_has_no_profile_aliases():
 
 
 def test_arch_gate_reexported_from_extension_base():
-    from extension_base import CMD_ARCH_GATE as reexported  # type: ignore[import-not-found]
+    from extension_base import CMD_ARCH_GATE as reexported
 
     assert reexported == 'arch-gate'

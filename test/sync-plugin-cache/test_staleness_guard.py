@@ -44,8 +44,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PROJECT_ROOT  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from conftest import PROJECT_ROOT
+from toon_parser import parse_toon
 
 # Ensure the marketplace package is importable so the fingerprint helper
 # can be loaded directly in the unit tests below.

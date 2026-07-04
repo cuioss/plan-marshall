@@ -11,7 +11,7 @@ from _status_core import (
     PHASE_ROUTING,
     require_status,
 )
-from constants import PHASE_STATUS_DONE, PHASES  # type: ignore[import-not-found]
+from constants import PHASE_STATUS_DONE, PHASES
 
 
 def cmd_route(args: argparse.Namespace) -> dict[str, Any]:

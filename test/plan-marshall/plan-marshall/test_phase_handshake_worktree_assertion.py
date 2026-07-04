@@ -23,7 +23,7 @@ import types
 from pathlib import Path
 
 import pytest
-from conftest import get_script_path  # type: ignore[import-not-found]
+from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
 SCRIPTS_DIR = SCRIPT_PATH.parent
@@ -343,7 +343,7 @@ def _capture_row_for_strict_test(plan_id: str) -> None:
     the strict-flag tests is the exit code on the refusal path, not the
     capture pipeline (which is exercised elsewhere).
     """
-    import _handshake_store as store  # type: ignore[import-not-found]
+    import _handshake_store as store
 
     store.upsert_row(
         plan_id,

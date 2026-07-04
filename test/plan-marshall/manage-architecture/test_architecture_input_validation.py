@@ -16,14 +16,14 @@ identifier flag is the one under test. The script-CLI boundary (``main()``
 from __future__ import annotations
 
 import pytest
-from _pm_input_validation_fixtures import (  # type: ignore[import-not-found]
+from _pm_input_validation_fixtures import (
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_invalid_field,
 )
 
-from conftest import get_script_path, run_script  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from conftest import get_script_path, run_script
+from toon_parser import parse_toon
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-architecture', 'architecture.py')
 

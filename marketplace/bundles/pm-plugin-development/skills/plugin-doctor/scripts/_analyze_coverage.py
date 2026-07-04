@@ -5,7 +5,7 @@
 import re
 from pathlib import Path
 
-from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
+from _dep_detection import extract_frontmatter
 from _rule_registry import RuleDescriptor
 
 # Typeless tool-coverage analyzer consumed by _doctor_analysis.py; the

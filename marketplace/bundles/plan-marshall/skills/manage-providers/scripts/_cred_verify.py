@@ -7,14 +7,14 @@ Makes a test request using RestClient and updates verified_at metadata.
 
 import argparse
 
-from _list_providers import find_provider_with_details  # type: ignore[import-not-found]
+from _list_providers import find_provider_with_details
 from _providers_core import (
     get_authenticated_client,
     get_project_name,
     touch_verified_at,
     verify_system_auth,
 )
-from file_ops import output_toon  # type: ignore[import-not-found]
+from file_ops import output_toon
 
 
 def run_verify(args: argparse.Namespace) -> int:

@@ -10,7 +10,7 @@ from _analyze_shared import (
     detect_component_type,
     read_frontmatter_disable_list,
 )
-from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
+from _dep_detection import extract_frontmatter
 from _doctor_shared import resolve_runtime_target
 from _rule_registry import RuleDescriptor
 

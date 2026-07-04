@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from plan_logging import log_entry
 
 # Promotional language patterns
 PROMOTIONAL_PATTERNS = [

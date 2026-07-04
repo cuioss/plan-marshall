@@ -59,7 +59,7 @@ def _patch_discovery(monkeypatch):
     ``api_discover`` imports ``extension_discovery`` lazily inside its body, so
     patching the already-loaded module attribute is sufficient.
     """
-    import extension_discovery  # type: ignore[import-not-found]
+    import extension_discovery
 
     monkeypatch.setattr(extension_discovery, 'discover_project_modules', _fake_discover_one_module)
 

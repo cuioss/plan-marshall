@@ -16,10 +16,10 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from _config_core import load_config, require_initialized, save_config  # type: ignore[import-not-found]
-from file_ops import output_toon  # type: ignore[import-not-found]
-from marketplace_bundles import collect_script_dirs  # type: ignore[import-not-found]
-from marketplace_paths import get_base_path  # type: ignore[import-not-found]
+from _config_core import load_config, require_initialized, save_config
+from file_ops import output_toon
+from marketplace_bundles import collect_script_dirs
+from marketplace_paths import get_base_path
 
 
 def _scan_for_providers() -> list[dict[str, Any]]:

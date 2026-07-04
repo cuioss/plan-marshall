@@ -18,7 +18,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from conftest import PROJECT_ROOT  # type: ignore[import-not-found]
+from conftest import PROJECT_ROOT
 
 _AUDIT_SCRIPTS_DIR = (
     PROJECT_ROOT / ".claude" / "skills" / "audit-archived-plan-retrospectives" / "scripts"

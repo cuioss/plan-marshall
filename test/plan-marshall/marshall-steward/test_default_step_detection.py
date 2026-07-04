@@ -26,7 +26,7 @@ import json
 import sys
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT  # type: ignore[import-not-found]
+from conftest import MARKETPLACE_ROOT
 
 _SCRIPTS_DIR = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts'
@@ -62,8 +62,8 @@ def _canonical_built_in_finalize_steps() -> list[str]:
     ``extension_discovery.find_implementors``, sorted by ``(order, name)``. The
     hand-maintained ``BUILT_IN_FINALIZE_STEPS`` constant was removed.
     """
-    from _config_defaults import FINALIZE_STEP_EXT_POINT  # type: ignore[import-not-found]
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from _config_defaults import FINALIZE_STEP_EXT_POINT
+    from extension_discovery import find_implementors
 
     default_on = sorted(
         (

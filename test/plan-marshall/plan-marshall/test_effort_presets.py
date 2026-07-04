@@ -28,7 +28,7 @@ from __future__ import annotations
 import sys
 
 import pytest
-from conftest import get_script_path  # type: ignore[import-not-found]
+from conftest import get_script_path
 
 PRESETS_SCRIPT = get_script_path('plan-marshall', 'plan-marshall', 'effort_presets.py')
 PRESETS_DIR = PRESETS_SCRIPT.parent

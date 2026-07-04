@@ -9,8 +9,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
-from constants import FILE_REFERENCES  # type: ignore[import-not-found]
-from file_ops import get_plan_dir, read_json, write_json  # type: ignore[import-not-found]
+from constants import FILE_REFERENCES
+from file_ops import get_plan_dir, read_json, write_json
 
 # =============================================================================
 # Type Definitions

@@ -22,8 +22,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
+from plan_logging import log_entry
 
 # ADR directory relative to project root
 ADR_DIR = Path('doc/adr')

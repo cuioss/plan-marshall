@@ -25,7 +25,7 @@ Subcommands:
 import argparse
 from pathlib import Path
 
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
 
 # Box-drawing characters used to recognise box runs.
 TOP_LEFT = '┌'

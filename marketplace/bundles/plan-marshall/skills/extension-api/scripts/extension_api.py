@@ -20,10 +20,10 @@ from types import SimpleNamespace
 from typing import Any
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _cmd_skill_resolution import cmd_resolve_domain_skills  # type: ignore[import-not-found]
-from _references_core import require_references  # type: ignore[import-not-found]
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from _cmd_skill_resolution import cmd_resolve_domain_skills
+from _references_core import require_references
+from file_ops import output_toon, safe_main
+from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )

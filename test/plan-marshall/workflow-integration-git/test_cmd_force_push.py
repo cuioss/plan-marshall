@@ -21,7 +21,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
 
@@ -315,7 +315,7 @@ class TestFindExecutor:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """When get_executor_path resolves an existing file, return it."""
-        import file_ops  # type: ignore[import-not-found]  # noqa: PLC0415
+        import file_ops  # noqa: PLC0415
 
         executor = tmp_path / 'execute-script.py'
         executor.write_text('# executor\n')
@@ -329,7 +329,7 @@ class TestFindExecutor:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """When the resolved path does not exist on disk, return None."""
-        import file_ops  # type: ignore[import-not-found]  # noqa: PLC0415
+        import file_ops  # noqa: PLC0415
 
         missing = tmp_path / 'execute-script.py'  # never created
         monkeypatch.setattr(file_ops, 'get_executor_path', lambda: missing)
@@ -342,7 +342,7 @@ class TestFindExecutor:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """When get_executor_path raises RuntimeError (no git repo), return None."""
-        import file_ops  # type: ignore[import-not-found]  # noqa: PLC0415
+        import file_ops  # noqa: PLC0415
 
         def _raise() -> Path:
             raise RuntimeError('no git repository')

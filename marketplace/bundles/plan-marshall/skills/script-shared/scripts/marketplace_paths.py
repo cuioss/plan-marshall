@@ -130,14 +130,14 @@ def _invoke_layout_op(target: str, method_name: str = 'layout_skill_roots') -> t
             sys.path.append(lib_dir)
 
     try:
-        from toon_parser import parse_toon  # type: ignore[import-not-found]
+        from toon_parser import parse_toon
 
         if target == 'opencode':
-            from opencode_runtime import OpenCodeRuntime  # type: ignore[import-not-found]
+            from opencode_runtime import OpenCodeRuntime
 
             runtime: Any = OpenCodeRuntime()
         else:
-            from claude_runtime import ClaudeRuntime  # type: ignore[import-not-found]
+            from claude_runtime import ClaudeRuntime
 
             runtime = ClaudeRuntime()
         parsed = parse_toon(getattr(runtime, method_name)())
@@ -323,7 +323,7 @@ def _override_is_set() -> bool:
     ``marketplace_paths`` is imported BY ``file_ops``, so a module-top import
     here would create a circular import. Mirrors ``merge_lock._override_is_set``.
     """
-    import file_ops  # type: ignore[import-not-found]
+    import file_ops
 
     return getattr(file_ops, '_BASE_DIR_OVERRIDE', None) is not None
 
@@ -398,7 +398,7 @@ def resolve_main_anchored_path(subpath: str | Path) -> Path:
     #    main-checkout .plan/local, so the subpath lives directly under it. The
     #    file_ops import is deferred — see _override_is_set's docstring.
     if os.environ.get('PLAN_BASE_DIR') or _override_is_set():
-        import file_ops  # type: ignore[import-not-found]
+        import file_ops
 
         return file_ops.get_base_dir() / subpath
 

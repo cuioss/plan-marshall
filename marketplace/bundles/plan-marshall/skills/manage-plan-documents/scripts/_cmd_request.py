@@ -18,18 +18,18 @@ splice a pre-written body into the rendered stub.
 
 from pathlib import Path
 
-from _documents_core import (  # type: ignore[import-not-found]
+from _documents_core import (
     output_error,
     render_template,
     resolve_document_path,
     validate_doc_type_and_plan,
     validate_fields,
 )
-from _plan_parsing import (  # type: ignore[import-not-found]
+from _plan_parsing import (
     _slugify_section_name,
     parse_document_sections,
 )
-from file_ops import atomic_write_file  # type: ignore[import-not-found]
+from file_ops import atomic_write_file
 
 # Placeholder paragraph emitted by templates/request.md when no body is provided.
 # When --body-file is supplied, cmd_create replaces this line with the file contents.

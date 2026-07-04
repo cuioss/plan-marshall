@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for schema_validation.py shared module."""
 
-from schema_validation import (  # type: ignore[import-not-found]  # noqa: I001
+from schema_validation import (  # noqa: I001
     MAX_MESSAGE_LENGTH,
     MAX_PHASES_ITEMS,
     MAX_PLAN_ID_LENGTH,

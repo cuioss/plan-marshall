@@ -60,7 +60,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _doctor_shared import Finding
 from _rule_registry import RuleDescriptor
 
 RULE_ID = 'script-call-drift'

@@ -47,8 +47,8 @@ class TestVerifySystemAuth:
 
     def test_system_auth_routes_to_verify_command(self, tmp_path, monkeypatch):
         """Verify with system auth runs verify_command instead of HTTP check."""
-        from _cred_verify import run_verify  # type: ignore[import-not-found]
-        from _providers_core import save_credential  # type: ignore[import-not-found]
+        from _cred_verify import run_verify
+        from _providers_core import save_credential
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
@@ -92,8 +92,8 @@ class TestVerifySystemAuth:
 
     def test_system_auth_failed_verify_command(self, tmp_path, monkeypatch):
         """Verify with system auth reports failure when verify_command fails."""
-        from _cred_verify import run_verify  # type: ignore[import-not-found]
-        from _providers_core import save_credential  # type: ignore[import-not-found]
+        from _cred_verify import run_verify
+        from _providers_core import save_credential
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
@@ -137,8 +137,8 @@ class TestVerifySystemAuth:
 
     def test_system_auth_no_provider_extension(self, tmp_path, monkeypatch):
         """Verify without provider extension reports error (convention inference fails gracefully)."""
-        from _cred_verify import run_verify  # type: ignore[import-not-found]
-        from _providers_core import save_credential  # type: ignore[import-not-found]
+        from _cred_verify import run_verify
+        from _providers_core import save_credential
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
@@ -172,8 +172,8 @@ class TestVerifySystemAuth:
 
     def test_system_auth_does_not_call_get_authenticated_client(self, tmp_path, monkeypatch):
         """Verify with system auth must NOT attempt HTTP connectivity check."""
-        from _cred_verify import run_verify  # type: ignore[import-not-found]
-        from _providers_core import save_credential  # type: ignore[import-not-found]
+        from _cred_verify import run_verify
+        from _providers_core import save_credential
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()

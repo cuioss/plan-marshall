@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import (  # type: ignore[import-not-found]
+from _build_parse import (
     SEVERITY_ERROR,
     SEVERITY_WARNING,
     Issue,

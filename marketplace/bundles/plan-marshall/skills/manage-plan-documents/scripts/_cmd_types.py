@@ -6,7 +6,7 @@ Document type command handlers for manage-plan-documents.py.
 Contains: list-types subcommand and type enumeration logic.
 """
 
-from _documents_core import (  # type: ignore[import-not-found]
+from _documents_core import (
     get_available_types,
     load_document_type,
 )

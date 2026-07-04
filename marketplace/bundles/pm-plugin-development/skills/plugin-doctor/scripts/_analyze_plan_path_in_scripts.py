@@ -206,7 +206,7 @@ def _collect_form_a_node_ids(tree: ast.Module, docstring_ids: set[int]) -> list[
         #
         # The canonical false-positive cases (print(), help=) are handled by
         # the parent-context visitor below.
-        findings.append(node.lineno if hasattr(node, 'lineno') else 0)  # type: ignore[attr-defined]
+        findings.append(node.lineno if hasattr(node, 'lineno') else 0)
 
     return findings
 
@@ -425,7 +425,7 @@ def _collect_sys_path_insert_arg_lines(tree: ast.Module) -> set[int]:
                 for arg in call.args:
                     for sub in ast.walk(arg):
                         if hasattr(sub, 'lineno'):
-                            exempt_lines.add(sub.lineno)  # type: ignore[attr-defined]
+                            exempt_lines.add(sub.lineno)
     return exempt_lines
 
 

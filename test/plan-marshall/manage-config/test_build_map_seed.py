@@ -313,8 +313,8 @@ def test_seed_never_writes_retired_override_keys(plan_context, monkeypatch):
 # environmental collaborators redirected: the extension set it discovers and the
 # project modules it scopes against (applicability ground truth).
 
-import extension_base  # type: ignore[import-not-found]  # noqa: E402
-from extension_base import (  # type: ignore[import-not-found]  # noqa: E402
+import extension_base  # noqa: E402
+from extension_base import (  # noqa: E402
     ROLE_CONFIG,
     ROLE_PRODUCTION,
     ROLE_TEST,

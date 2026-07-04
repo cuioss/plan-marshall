@@ -8,7 +8,7 @@ No build system detection or module discovery — this domain provides
 standards only for container-related development.
 """
 
-from extension_base import ExtensionBase  # type: ignore[import-not-found]
+from extension_base import ExtensionBase
 
 
 class Extension(ExtensionBase):

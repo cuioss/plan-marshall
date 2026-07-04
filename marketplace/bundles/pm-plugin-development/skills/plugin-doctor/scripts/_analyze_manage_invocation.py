@@ -96,7 +96,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _doctor_shared import Finding
 from _rule_registry import RuleDescriptor
 
 # =============================================================================

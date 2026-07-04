@@ -33,7 +33,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
 
@@ -60,7 +60,7 @@ cmd_worktree_remove = git_workflow.cmd_worktree_remove
 
 def _serialize_toon_payload(payload: dict) -> str:
     """Serialize a dict into TOON for ``_manage_status_call`` stubs."""
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+    from toon_parser import serialize_toon
 
     return serialize_toon(payload)
 

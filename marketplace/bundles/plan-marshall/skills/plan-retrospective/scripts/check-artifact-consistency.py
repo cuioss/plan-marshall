@@ -29,16 +29,16 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from _plan_parsing import (  # type: ignore[import-not-found]
+from _plan_parsing import (
     extract_deliverable_headings,
     parse_document_sections,
 )
-from _references_core import (  # type: ignore[import-not-found]
+from _references_core import (
     compute_plan_branch_diff,
     resolve_base_ref,
 )
-from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from file_ops import base_path, output_toon, safe_main
+from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
@@ -430,4 +430,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    main()  # type: ignore[no-untyped-call]
+    main()

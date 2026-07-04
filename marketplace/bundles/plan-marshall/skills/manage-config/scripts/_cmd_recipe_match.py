@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from recipe_scoring import (  # type: ignore[import-not-found]
+from recipe_scoring import (
     MIN_CONFIDENCE,
     load_registry,
     read_recipe_lane_seed,

@@ -137,7 +137,7 @@ def cmd_build_decision(args: argparse.Namespace) -> dict:
     phase-4-plan per-task verification derivation, the per-bundle classify logic)
     share this one entry point so the decision is never re-derived inline.
     """
-    from extension_base import should_execute_build  # type: ignore[import-not-found]
+    from extension_base import should_execute_build
 
     plan_id = getattr(args, 'plan_id', None) or getattr(args, 'audit_plan_id', None)
     if not plan_id:

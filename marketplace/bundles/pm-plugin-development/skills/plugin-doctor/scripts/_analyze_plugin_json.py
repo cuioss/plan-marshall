@@ -60,7 +60,7 @@ import json
 from pathlib import Path
 
 from _analyze_declared_vs_disk import analyze_declared_vs_disk
-from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _doctor_shared import Finding
 from _rule_registry import RuleDescriptor
 
 __all__ = [

@@ -92,11 +92,11 @@ def _classify_profile(profile_id: str) -> str:
         Canonical command name (e.g., "quality-gate", "coverage") or "NO-MATCH-FOUND".
     """
     if profile_id in PROFILE_PATTERNS:
-        return PROFILE_PATTERNS[profile_id]  # type: ignore[no-any-return]
+        return PROFILE_PATTERNS[profile_id]
     profile_lower = profile_id.lower()
     for alias, canonical in PROFILE_PATTERNS.items():
         if alias.lower() == profile_lower:
-            return canonical  # type: ignore[no-any-return]
+            return canonical
     return 'NO-MATCH-FOUND'
 
 

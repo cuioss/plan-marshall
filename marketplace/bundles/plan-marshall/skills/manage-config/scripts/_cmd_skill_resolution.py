@@ -23,10 +23,10 @@ from _config_core import (
 )
 
 # Direct imports - PYTHONPATH set by executor
-from extension_discovery import (  # type: ignore[import-not-found]
+from extension_discovery import (
     discover_all_extensions,
 )
-from marketplace_paths import (  # type: ignore[import-not-found]
+from marketplace_paths import (
     iter_project_skill_dirs,
 )
 
@@ -376,7 +376,7 @@ def _discover_all_finalize_steps() -> list[dict]:
     are the caller's responsibility (marshall-steward).
     """
     from _config_defaults import FINALIZE_STEP_EXT_POINT
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors
 
     return [
         {

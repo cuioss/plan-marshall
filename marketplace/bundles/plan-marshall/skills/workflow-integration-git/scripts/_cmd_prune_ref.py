@@ -29,7 +29,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from git_provider import run_git  # type: ignore[import-not-found]
+from git_provider import run_git
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -45,7 +45,7 @@ def _find_executor() -> Path | None:
     implementations in sync when modifying this logic.
     """
     try:
-        from file_ops import get_executor_path  # type: ignore[import-not-found]
+        from file_ops import get_executor_path
         candidate = get_executor_path()
         return candidate if candidate.exists() else None
     except (ImportError, RuntimeError):
@@ -110,7 +110,7 @@ def _resolve_project_dir_and_head(args) -> tuple[Path | None, str | None, dict |
             }
 
         try:
-            from toon_parser import parse_toon  # type: ignore[import-not-found]
+            from toon_parser import parse_toon
             parsed = parse_toon(result.stdout)
         except Exception as exc:  # noqa: BLE001
             return None, None, {
@@ -141,7 +141,7 @@ def _resolve_project_dir_and_head(args) -> tuple[Path | None, str | None, dict |
         # directory is in. Derive the checkout root via the uniform cwd rule
         # (ADR-002): the nearest ancestor of cwd containing ``.plan/local``.
         try:
-            from marketplace_paths import _find_plan_root_from_cwd  # type: ignore[import-not-found]
+            from marketplace_paths import _find_plan_root_from_cwd
             main_root = _find_plan_root_from_cwd()
             if main_root is None:
                 return None, None, {

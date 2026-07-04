@@ -10,8 +10,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from file_ops import base_path  # type: ignore[import-not-found]
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
+from file_ops import base_path
+from toon_parser import parse_toon, serialize_toon
 
 HANDSHAKE_FILE = 'handshakes.toon'
 

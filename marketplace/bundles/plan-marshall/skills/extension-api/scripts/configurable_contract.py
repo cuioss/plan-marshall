@@ -43,8 +43,8 @@ from pathlib import Path
 from typing import Any
 
 # Direct import - executor sets up PYTHONPATH for cross-skill imports.
-from marketplace_bundles import resolve_bundles_root, resolve_skills_root  # type: ignore[import-not-found]
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from marketplace_bundles import resolve_bundles_root, resolve_skills_root
+from toon_parser import serialize_toon
 
 # The three mandatory sub-fields every ``configurable`` entry MUST declare.
 _REQUIRED_SUBFIELDS: tuple[str, ...] = ('key', 'default', 'description')

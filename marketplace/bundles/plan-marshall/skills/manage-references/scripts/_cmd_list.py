@@ -12,7 +12,7 @@ from _references_core import (
     require_references,
     write_references,
 )
-from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
+from input_validation import require_valid_plan_id
 
 
 def cmd_add_list(args: argparse.Namespace) -> dict:

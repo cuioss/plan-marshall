@@ -22,7 +22,7 @@ purely through the REST leaf, never through local git.
 
 import argparse
 
-import gitlab_ops  # type: ignore[import-not-found]
+import gitlab_ops
 
 # ---------------------------------------------------------------------------
 # Helpers

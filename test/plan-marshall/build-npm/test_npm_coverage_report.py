@@ -13,7 +13,7 @@ from build_test_helpers import (
     assert_coverage_high,
     assert_coverage_missing_file,
 )
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
 

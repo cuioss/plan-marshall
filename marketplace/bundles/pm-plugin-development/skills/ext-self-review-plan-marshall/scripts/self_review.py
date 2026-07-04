@@ -26,20 +26,20 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from _references_core import (  # type: ignore[import-not-found]
+from _references_core import (
     compute_plan_branch_diff,
 )
-from file_ops import (  # type: ignore[import-not-found]
+from file_ops import (
     output_toon,
     output_toon_error,
     safe_main,
 )
-from input_validation import (  # type: ignore[import-not-found]
+from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
     require_valid_plan_id,
 )
-from resolve_project_dir import (  # type: ignore[import-not-found]
+from resolve_project_dir import (
     WorktreeResolutionError,
     emit_worktree_error,
     resolve_project_dir,

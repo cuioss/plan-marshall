@@ -12,15 +12,15 @@ import re
 from pathlib import Path
 from typing import Any, cast
 
-from file_ops import (  # type: ignore[import-not-found]  # noqa: F401 - atomic_write_file re-exported
+from file_ops import (  # noqa: F401 - atomic_write_file re-exported
     atomic_write_file,
     get_plan_dir,
     now_utc_iso,
     output_toon,
     output_toon_error,
 )
-from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from input_validation import is_valid_plan_id
+from toon_parser import parse_toon
 
 # Skill directory paths for document definitions and templates
 SKILL_DIR = Path(__file__).parent.parent

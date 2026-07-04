@@ -41,12 +41,12 @@ import re
 from pathlib import Path
 from typing import Any
 
-from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from file_ops import base_path, output_toon, safe_main
+from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 MANIFEST_FILENAME = 'execution.toon'
 STATUS_FILENAME = 'status.json'

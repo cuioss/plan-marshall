@@ -113,7 +113,20 @@ quote-style = "single"
 python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
-ignore_missing_imports = true
+# Cross-skill modules are imported by flat name (`from file_ops import ...`) and
+# resolved through MYPYPATH, which build.py:_compute_mypypath() derives from the
+# same collect_script_dirs() source of truth as the runtime PYTHONPATH. Because
+# every by-name import resolves, missing-import silencing is not merely
+# unnecessary — it is harmful: it would let a renamed or deleted shared module
+# pass static analysis while breaking by-name resolution at runtime. Keeping this
+# false makes an unresolvable shared import a hard [import-not-found] error, so a
+# rename that misses a call site is caught at compile time.
+ignore_missing_imports = false
+# Fail on any `# type: ignore` that no longer suppresses a real diagnostic. This
+# is what keeps the flat-import boundaries honest: an import-silencing ignore
+# cannot be reintroduced without mypy flagging it the moment the underlying
+# import resolves.
+warn_unused_ignores = true
 explicit_package_bases = true
 # MYPYPATH is injected at runtime by build.py:_compute_mypypath() via the
 # MYPYPATH env var, derived from collect_script_dirs(). Do NOT re-add entries
@@ -133,3 +146,11 @@ exclude = [
     "test/.*/integration/",
     "\\.claude/worktrees/",
 ]
+
+# The only genuinely third-party imports in the tree ship no type information
+# (PyYAML's `yaml`, the `tomli` TOML reader). Scope missing-import tolerance to
+# exactly these modules so the global `ignore_missing_imports = false` continues
+# to catch every unresolved cross-skill import.
+[[tool.mypy.overrides]]
+module = ["yaml", "tomli"]
+ignore_missing_imports = true

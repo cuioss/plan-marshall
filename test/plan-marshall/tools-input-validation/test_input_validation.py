@@ -3,7 +3,7 @@
 """Tests for input_validation.py shared module."""
 
 import pytest
-from input_validation import (  # type: ignore[import-not-found]  # noqa: I001
+from input_validation import (  # noqa: I001
     add_session_id_arg,
     is_valid_component,
     is_valid_domain_name,

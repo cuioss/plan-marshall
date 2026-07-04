@@ -188,14 +188,14 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-from _locks_core import holder_is_dead, log_lock_event, rmw_json  # type: ignore[import-not-found]
-from file_ops import get_executor_path  # type: ignore[import-not-found]
-from manage_terminal_title import TITLE_TOKEN_GLYPHS  # type: ignore[import-not-found]
-from marketplace_paths import (  # type: ignore[import-not-found]
+from _locks_core import holder_is_dead, log_lock_event, rmw_json
+from file_ops import get_executor_path
+from manage_terminal_title import TITLE_TOKEN_GLYPHS
+from marketplace_paths import (
     resolve_main_anchored_path,
 )
-from toon_parser import parse_toon  # type: ignore[import-not-found]
-from triage_helpers import (  # type: ignore[import-not-found]
+from toon_parser import parse_toon
+from triage_helpers import (
     ErrorCode,
     create_workflow_cli,
     make_error,

@@ -19,10 +19,10 @@ Mirrors the tiered pattern used by ``test_ci_base.py``, ``test_ci.py``, and
 
 import argparse
 
-import github_ops  # type: ignore[import-not-found]
-import gitlab_ops  # type: ignore[import-not-found]
+import github_ops
+import gitlab_ops
 import pytest
-from ci_base import build_parser  # type: ignore[import-not-found]
+from ci_base import build_parser
 
 # =============================================================================
 # Shared test helpers

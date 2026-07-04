@@ -5,7 +5,7 @@
 import re
 from pathlib import Path
 
-from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
+from _dep_detection import extract_frontmatter
 
 
 def verify_frontmatter_fix(file_path: Path) -> dict:

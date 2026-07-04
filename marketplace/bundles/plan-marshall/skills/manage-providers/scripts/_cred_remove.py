@@ -6,7 +6,7 @@ Remove credential file.
 import argparse
 
 from _providers_core import get_project_name, remove_credential
-from file_ops import output_toon  # type: ignore[import-not-found]
+from file_ops import output_toon
 
 
 def run_remove(args: argparse.Namespace) -> int:

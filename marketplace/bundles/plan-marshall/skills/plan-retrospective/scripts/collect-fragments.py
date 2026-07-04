@@ -40,18 +40,18 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from file_ops import (  # type: ignore[import-not-found]
+from file_ops import (
     atomic_write_file,
     base_path,
     output_toon,
     safe_main,
 )
-from input_validation import (  # type: ignore[import-not-found]
+from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
-from retro_sections import valid_aspect_keys  # type: ignore[import-not-found]
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
+from retro_sections import valid_aspect_keys
+from toon_parser import parse_toon, serialize_toon
 
 _ARCHIVED_TMP_SUBDIR = 'plan-retrospective'
 _META_KEY = '_meta'
@@ -260,7 +260,7 @@ def _domain_aspect_keys() -> set[str]:
     and ``extension_discovery`` live on the executor PYTHONPATH, so the import is
     a direct in-process call rather than a subprocess shell-out.
     """
-    from extension_discovery import (  # type: ignore[import-not-found]
+    from extension_discovery import (
         discover_all_extensions,
         get_retrospective_aspects_from_extensions,
     )
@@ -488,4 +488,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    main()  # type: ignore[no-untyped-call]
+    main()

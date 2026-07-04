@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from platform_runtime import (  # type: ignore[import-not-found]
+from platform_runtime import (
     _COMMON_BOOTSTRAP_LIBS,
     _TARGET_BOOTSTRAP_LIBS,
     _bootstrap_glob_discover,

@@ -60,9 +60,9 @@ import argparse
 from typing import Any
 
 # Direct imports from same directory (local imports)
-from constants import VALID_LOG_LEVELS, VALID_LOG_TYPES  # type: ignore[import-not-found]
+from constants import VALID_LOG_LEVELS, VALID_LOG_TYPES
 from file_ops import output_toon, safe_main
-from input_validation import (  # type: ignore[import-not-found]
+from input_validation import (
     add_phase_arg,
     add_plan_id_arg,
     parse_args_with_toon_errors,

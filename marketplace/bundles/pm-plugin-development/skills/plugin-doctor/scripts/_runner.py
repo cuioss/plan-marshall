@@ -68,7 +68,7 @@ from _analyze_step_configurable_contract import scan_step_configurable_contract
 from _analyze_tmp_redirect_in_skills import analyze_tmp_redirect_in_skills
 from _analyze_workflow_doc_toon_error_field import analyze_workflow_doc_toon_error_field
 from _cmd_extension import validate_extension_contracts
-from _dep_index import AstCache  # type: ignore[import-not-found]
+from _dep_index import AstCache
 from _doctor_analysis import analyze_markdown_mirror_rules, scan_argparse_safety
 
 
