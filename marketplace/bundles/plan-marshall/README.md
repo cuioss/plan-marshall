@@ -15,32 +15,36 @@ This bundle provides **core infrastructure** organized into functional areas:
 
 ## Components
 
-### Commands (4)
+### Commands (2)
 
 | Command | Description |
 |---------|-------------|
-| `/marshall-steward` | Project configuration wizard for planning system |
 | `/tools-fix-intellij-diagnostics` | Retrieve and fix IDE diagnostics automatically |
-| `/workflow-permission-web` | Analyze and consolidate WebFetch domain permissions |
 | `/tools-sync-agents-file` | Create or update project-specific agents.md file |
 
-### Skills (18)
+Configuration (`marshall-steward`) and WebFetch permission consolidation (`workflow-permission-web`) are skills, not commands.
+
+### Skills (71)
 
 | Category | Skills |
 |----------|--------|
-| **Configuration** | `manage-config`, `run-config`, `marshall-steward` |
-| **Permissions** | `tools-permission-doctor`, `tools-permission-fix`, `workflow-permission-web` |
-| **Extension API** | `extension-api`, `manage-architecture` |
-| **Utilities** | `logging`, `script-executor`, `file-operations-base` |
-| **Standards** | `persona-plan-marshall-agent`, `diagnostic-patterns`, `toon-usage` |
-| **Lessons** | `manage-lessons` |
-| **CI** | `tools-integration-ci` |
+| **Workflow phases** | `phase-1-init`, `phase-2-refine`, `phase-3-outline`, `phase-4-plan`, `phase-5-execute`, `phase-6-finalize` |
+| **Orchestration** | `plan-marshall`, `execute-task`, `plan-doctor`, `plan-retrospective`, `marshall-steward` |
+| **Personas** | `persona-plan-marshall-agent` plus 7 role personas (`persona-auditor`, `persona-code-reviewer`, `persona-documenter`, `persona-implementer`, `persona-integration-tester`, `persona-module-tester`, `persona-security-expert`) |
+| **Services (`manage-*`)** | `manage-adr`, `manage-architecture`, `manage-change-ledger`, `manage-ci-artifacts`, `manage-config`, `manage-execution-manifest`, `manage-files`, `manage-findings`, `manage-lessons`, `manage-locks`, `manage-logging`, `manage-metrics`, `manage-personas`, `manage-plan-documents`, `manage-providers`, `manage-references`, `manage-run-config`, `manage-solution-outline`, `manage-status`, `manage-tasks`, `manage-terminal-title` |
+| **Build systems** | `build-gradle`, `build-maven`, `build-npm`, `build-pyproject` |
+| **Workflow integrations** | `workflow-integration-git`, `workflow-integration-github`, `workflow-integration-gitlab`, `workflow-integration-sonar`, `workflow-pr-doctor`, `workflow-permission-web` |
+| **Tools** | `tools-file-ops`, `tools-input-validation`, `tools-integration-ci`, `tools-permission-doctor`, `tools-permission-fix`, `tools-script-executor` |
+| **Recipes** | `recipe-agentfile-hygiene`, `recipe-code-review`, `recipe-lesson-cleanup`, `recipe-refactor-to-profile-standards`, `recipe-security-audit`, `recipe-simplify-codebase` |
+| **References** | `ref-agentfile-hygiene`, `ref-code-quality`, `ref-toon-format`, `ref-workflow-architecture` |
+| **Extension / infrastructure** | `extension-api`, `plan-marshall-plugin`, `platform-runtime`, `script-shared`, `untrusted-ingestion` |
 
-### Agents (1)
+### Agents (2)
 
 | Agent | Description |
 |-------|-------------|
-| `execution-context` | Generic execution-context dispatcher (canonical + 5 level variants). Every `Task:` dispatch in this bundle targets `plan-marshall:execution-context` (canonical, inherits parent model) or `plan-marshall:execution-context-{level}` (variant pinned by level resolved from the role key). The workflow doc and skill list flow through the prompt body. |
+| `execution-context` | Generic execution-context dispatcher (canonical + 7 level variants). Every `Task:` dispatch in this bundle targets `plan-marshall:execution-context` (canonical, inherits parent model) or `plan-marshall:execution-context-{level}` (variant pinned by level resolved from the role key). The workflow doc and skill list flow through the prompt body. |
+| `execution-context-reader` | Read-only counterpart with a restricted tool surface (`WebSearch`, `WebFetch`, `Read`, `Grep`), used for untrusted-ingestion research dispatches. Same canonical + 7 level variant expansion. |
 
 ## Entry Points and Discoverability
 
@@ -58,11 +62,11 @@ The `extension-api` skill provides the foundation for domain bundle discovery:
 
 ### Script Executor
 
-The `script-executor` skill generates `.plan/execute-script.py` with embedded script mappings, enabling notation-based script invocation across all bundles.
+The `tools-script-executor` skill generates `.plan/execute-script.py` with embedded script mappings, enabling notation-based script invocation across all bundles.
 
 ### TOON Format
 
-The `toon-usage` skill documents the Tab-separated Object Notation format used for agent communication and persistent storage.
+The `ref-toon-format` skill documents the Tab-separated Object Notation format used for agent communication and persistent storage.
 
 ## Plugin cache sync — meta-project tooling (project-local)
 

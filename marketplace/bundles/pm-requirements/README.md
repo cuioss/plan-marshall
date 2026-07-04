@@ -15,6 +15,7 @@ This bundle provides Claude Code with expert knowledge in creating, structuring,
 | `planning` | Standards for planning documents, task tracking, and status indicators |
 | `traceability` | Standards for maintaining bidirectional traceability between requirements, specifications, and implementation code |
 | `ext-triage-reqs` | Extension point for requirements finding triage |
+| `plan-marshall-plugin` | Requirements domain manifest for plan-marshall workflow integration |
 
 ## What This Bundle Provides
 
