@@ -240,8 +240,8 @@ classed as a target-specific skill — §I.)
 
 | Evidence | Action |
 |----------|--------|
-| `skills/manage-worktree/scripts/__pycache__/manage-worktree.cpython-314.pyc` | **DONE** — stale `.pyc` deleted |
-| `plan-marshall/skills/ext-self-review-plan-marshall/scripts/__pycache__/self_review.cpython-314.pyc` | **DONE** — stale `.pyc` deleted; `ext-self-review-plan-marshall` now has real source under `pm-plugin-development/` and is registered |
+| `skills/manage-worktree/scripts/__pycache__/` (stale compiled artifact, no source) | **DONE** — stale `.pyc` deleted |
+| `plan-marshall/skills/ext-self-review-plan-marshall/scripts/__pycache__/` (stale compiled artifact) | **DONE** — stale `.pyc` deleted; `ext-self-review-plan-marshall` now has real source under `pm-plugin-development/` and is registered |
 | `doctor-skill-knowledge.md:13` ("Rule 9/10a/11"); `doctor-skills.md:101` (`domain-extension-api:validate_manifest`) | doc-drift bugs (rules are now named; stale notation) — fix in passing |
 | `plugin-doctor/references/rule-catalog.md:236` ("PM-Workflow Rules" heading), `:252` ("seven" vs 8 rows); `commands-guide.md:23` ("9 Anti-Bloat" with uncodified names); `skills-guide.md:94`, `metadata-guide.md` (stale counts / bundle-root `plugin.json`) | doc-drift in plugin-doctor reference docs (pm-workflow bundle absorbed; stale counts) — fix in passing |
 | `script-shared/SKILL.md:28` (stale `parents[6]` resolution prose); `plan-marshall-plugin/standards/doctor-plan-marshall.md:1` ("PM-Workflow Workflow" naming); `phase-6-finalize/SKILL.md:159,1291` (dispatch table says `standards/lessons-capture.md`, file is `workflow/lessons-capture.md`) | doc/path drift surfaced by pass-2 full reads — fix in passing |

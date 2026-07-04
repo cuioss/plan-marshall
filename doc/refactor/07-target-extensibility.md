@@ -60,7 +60,7 @@ would change shape on a different target, the format is leaking — normalize th
 | Decline mechanism | `toon_noop` + [No-Op Policy](principles.md) | A target implements what it can, declines the rest, never fakes success |
 | Per-target data | `marketplace/targets/opencode/mapping.json` (`tool_permissions`, `model_map`, `body_idiom_rewrites`) under each `config_dir` | Mappings are data, not code |
 | Layout resolution home | decided in [01](01-finish-portability.md) (Gaps 4/5) → `platform-runtime` op | Each target declares its own roots; the core owns no per-target root table |
-| Registered-idiom body rewrites | `mapping.json::body_idiom_rewrites` + `rewrite_registered_idioms` (`body_transforms.py`), fail-closed via `UnmappedIdiomError` | Idiom dispositions are per-target data applied by a generic applier |
+| Registered-idiom body rewrites | `mapping.json::body_idiom_rewrites`; `load_idiom_registry` fails closed via `UnmappedIdiomError`, `rewrite_registered_idioms` applies (`body_transforms.py`) | Idiom dispositions are per-target data, validated at load, applied by a generic applier |
 | Terminal-title composer | `manage_terminal_title.py` `resolve_icon(process_state)` takes a target-neutral state enum; the Claude hook-event → state mapping lives in `claude_runtime` | The composer encodes no target vocabulary |
 
 ### Not N-target-optimal (structural work)
@@ -83,9 +83,9 @@ move per-target behaviour notes into the concrete `*_runtime` classes.
 
 **3. Body transforms are only partially data-driven.** The registered-idiom class already
 follows the target pattern: `mapping.json::body_idiom_rewrites` declares the
-`AskUserQuestion`/`Task:`/`Skill: <entry>` dispositions as data, and
-`rewrite_registered_idioms` applies them fail-closed (`UnmappedIdiomError`) — the
-[01](01-finish-portability.md) Gap-6 mechanism. What remains code: Transform 1
+`AskUserQuestion`/`Task:`/`Skill: <entry>` dispositions as data; `load_idiom_registry`
+validates them fail-closed (`UnmappedIdiomError`) and `rewrite_registered_idioms` applies
+them — the [01](01-finish-portability.md) Gap-6 mechanism. What remains code: Transform 1
 (`Skill:` directive → skill-tool call) and Transform 2 (`/slash` rewrites) hardcode their
 rewrite strings in `marketplace/targets/opencode/body_transforms.py`, and the module itself
 lives under the OpenCode target rather than as a target-shared engine. **Required:** fold

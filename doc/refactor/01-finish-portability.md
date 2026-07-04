@@ -106,7 +106,7 @@ All gaps are **landed**. The `Destination` column records where each gap's coupl
 | 3 | `session_id` validation | landed | stays-agnostic + Gap 2 | shared validator reworded to opaque-token; strict-UUID regex folded into the Gap-2 metrics engine |
 | 4 | Project-local skill / step resolution | landed | `platform-runtime` | `layout skill-roots` op + memoised `get_project_skill_roots()`; resolvers routed through it |
 | 5 | Bundle / plugin-cache discovery | landed | `platform-runtime` | `layout bundle-cache-root` op + memoised `get_bundle_cache_roots()`; discovery routed through it |
-| 6 | Body-text tool-name transforms | landed | OpenCode build target | `AskUserQuestion` / `Task:` / `Skill: <entry>` dispositions live as data in `mapping.json::body_idiom_rewrites` (mirrored in `transforms.md`), applied fail-closed by `rewrite_registered_idioms` |
+| 6 | Body-text tool-name transforms | landed | OpenCode build target | `AskUserQuestion` / `Task:` / `Skill: <entry>` dispositions live as data in `mapping.json::body_idiom_rewrites` (mirrored in `transforms.md`); `load_idiom_registry` fails closed on unknown dispositions, `rewrite_registered_idioms` applies the validated registry |
 | 7 | Terminal-title / hooks | landed | `platform-runtime` | composer takes a neutral state enum; state→icon mapping owned by the runtime; lock glyphs de-duplicated |
 | 8 | Authoring / meta tools | landed | `platform-runtime` + build target | `plugin-doctor` engine/rule-pack split; `plugin-doctor` + `tools-marketplace-inventory` scan both layouts; target-aware frontmatter |
 
@@ -266,8 +266,9 @@ untransformed:
 **Resolved as:** the source stays Claude-native; the registered idioms are per-target
 **rewrite data** — `mapping.json::body_idiom_rewrites` declares `AskUserQuestion` →
 `rewrite_inline_code` (to `question`), `Task:` → `preserve` (the leaf-aware decision from
-06 item 3), and `Skill: <entry>` → `source_fix`; `rewrite_registered_idioms` applies the
-registry and fails closed (`UnmappedIdiomError`) on an unknown disposition. `Skill: <entry>`
+06 item 3), and `Skill: <entry>` → `source_fix`; `load_idiom_registry` validates the
+registry up front and fails closed (`UnmappedIdiomError`) on an unknown disposition before
+`rewrite_registered_idioms` applies the per-idiom rewrites. `Skill: <entry>`
 remains the one true source change — reword the placeholder prose (06 item 2, still open).
 No universal `{{ }}` templating ([principles §5](principles.md)) and no neutralised source
 vocabulary.
@@ -383,7 +384,7 @@ the tail of this workstream rather than re-opening the gap classes:
   discovery are target-aware; the shared `session_id` validator is an opaque-token contract.
 - [landed] Body-text tool-name divergences (`AskUserQuestion`, `Task:`, `Skill: <entry>`) have a
   recorded disposition in `mapping.json::body_idiom_rewrites` (mirrored in `transforms.md`),
-  applied fail-closed at build time.
+  validated fail-closed at registry load and applied at build time.
 - [landed] Terminal-title/hook composer takes a neutral state enum; OpenCode no-op path is the
   end-to-end confirmation deferred to [02](02-validate-opencode-runtime.md).
 - [landed] Authoring tools (`plugin-doctor`, `tools-marketplace-inventory`) scan both layouts via
