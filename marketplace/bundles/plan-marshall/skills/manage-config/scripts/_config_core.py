@@ -11,17 +11,17 @@ from pathlib import Path
 from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
-from file_ops import (  # type: ignore[import-not-found]
+from file_ops import (
     get_base_dir,
     get_marshal_path,
     get_tracked_config_dir,
     output_toon,
 )
-from marketplace_bundles import (  # type: ignore[import-not-found]
+from marketplace_bundles import (
     resolve_bundle_path,
     resolve_bundles_root,
 )
-from marketplace_paths import (  # type: ignore[import-not-found]
+from marketplace_paths import (
     resolve_project_skill_path,
 )
 
@@ -418,7 +418,7 @@ def aggregate_build_map() -> dict[str, list[dict[str, str]]]:
         dicts as values. Non-applicable domains and domains contributing no routes
         are omitted entirely.
     """
-    from extension_discovery import (  # type: ignore[import-not-found]
+    from extension_discovery import (
         derive_build_map_globs,
         discover_all_extensions,
         discover_build_extensions,
@@ -495,7 +495,7 @@ def _applicable_domain_keys(project_root: Path, module_by_domain: dict[str, Any]
     Each ``applies_to_module()`` call is defended so a single misbehaving extension
     cannot crash the seed.
     """
-    from extension_discovery import (  # type: ignore[import-not-found]
+    from extension_discovery import (
         discover_project_modules,
     )
 

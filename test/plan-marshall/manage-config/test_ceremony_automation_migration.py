@@ -157,7 +157,7 @@ def test_flat_knobs_homed_in_default_plan_finalize():
 
 def test_step_owned_knob_homed_in_configurable_declaration():
     """final_merge_without_asking must resolve under default:branch-cleanup via the parser."""
-    from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+    from configurable_contract import resolve_step_defaults
 
     step_id, param, expected = _STEP_OWNED_KNOB
     step_params = resolve_step_defaults(step_id)

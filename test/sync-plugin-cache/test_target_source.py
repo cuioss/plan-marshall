@@ -20,8 +20,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from conftest import PROJECT_ROOT  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from conftest import PROJECT_ROOT
+from toon_parser import parse_toon
 
 _HELPER = (
     PROJECT_ROOT

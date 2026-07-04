@@ -113,16 +113,16 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-from _locks_core import holder_is_dead, log_lock_event, rmw_json  # type: ignore[import-not-found]
-from file_ops import get_marshal_path, read_json  # type: ignore[import-not-found]
-from marketplace_paths import (  # type: ignore[import-not-found]
+from _locks_core import holder_is_dead, log_lock_event, rmw_json
+from file_ops import get_marshal_path, read_json
+from marketplace_paths import (
     resolve_main_anchored_path,
 )
-from run_config import (  # type: ignore[import-not-found]
+from run_config import (
     _read_build_queue_upper_limit,
     _write_build_queue_upper_limit,
 )
-from triage_helpers import (  # type: ignore[import-not-found]
+from triage_helpers import (
     ErrorCode,
     create_workflow_cli,
     make_error,

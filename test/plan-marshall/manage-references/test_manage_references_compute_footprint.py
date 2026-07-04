@@ -42,14 +42,14 @@ from unittest.mock import patch
 import pytest
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from _resolve_project_dir_fixtures import (  # type: ignore[import-not-found]
+from _resolve_project_dir_fixtures import (
     CANONICAL_PLAN_ID,
     CANONICAL_WORKTREE,
     patch_main_checkout_root,
     patch_query_worktree_path,
 )
 
-from conftest import get_script_path, run_script  # type: ignore[import-not-found]
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-references', 'manage-references.py')
 

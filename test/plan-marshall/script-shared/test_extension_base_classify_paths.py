@@ -27,7 +27,7 @@ and the validator.
 
 import subprocess
 
-from extension_base import (  # type: ignore[import-not-found]
+from extension_base import (
     BUILD_CLASS_BUILD_CONFIG_FULL,
     BUILD_CLASS_NONE,
     BUILD_CLASS_PROD_COMPILE,

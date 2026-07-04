@@ -17,8 +17,8 @@ Python build, so neither is a build-map config route.
 import fnmatch
 from pathlib import Path
 
-import marketplace_paths  # type: ignore[import-not-found]
-from extension_base import BuildExtensionBase  # type: ignore[import-not-found]
+import marketplace_paths
+from extension_base import BuildExtensionBase
 
 
 def _project_local_skill_globs() -> list[tuple[str, str]]:

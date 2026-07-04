@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import get_script_path, run_script  # type: ignore[import-not-found]
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
 

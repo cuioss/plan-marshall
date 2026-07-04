@@ -68,7 +68,7 @@ def tokenize(text: str | None) -> set[str]:
 def load_registry() -> list[dict[str, Any]]:
     """Return the live recipe registry via manage-config's discovery path."""
     try:
-        from _cmd_skill_resolution import _discover_all_recipes  # type: ignore[import-not-found]
+        from _cmd_skill_resolution import _discover_all_recipes
     except ImportError:
         return []
     try:
@@ -194,7 +194,7 @@ def _resolve_recipe_skill_md(recipe: dict[str, Any]) -> Path | None:
         return None
     # Bundle recipes (extension-registered) live under the marketplace tree.
     try:
-        from marketplace_bundles import resolve_bundles_root  # type: ignore[import-not-found]
+        from marketplace_bundles import resolve_bundles_root
 
         bundles_root: Path | None = resolve_bundles_root(Path(__file__))
     except (ImportError, ValueError, OSError):
@@ -207,7 +207,7 @@ def _resolve_recipe_skill_md(recipe: dict[str, Any]) -> Path | None:
     # Project recipes live under the cwd-relative project skill roots (the same
     # cwd-relative discovery the registry uses — default base is Path.cwd()).
     try:
-        from marketplace_paths import resolve_project_skill_path  # type: ignore[import-not-found]
+        from marketplace_paths import resolve_project_skill_path
     except ImportError:
         return None
     for name in candidates:

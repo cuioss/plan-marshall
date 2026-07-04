@@ -42,8 +42,8 @@ import argparse
 from _cmd_request import cmd_create, cmd_exists, cmd_mark_clarified, cmd_path, cmd_read, cmd_remove
 from _cmd_types import cmd_list_types
 from _documents_core import get_available_types, load_document_type
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
+from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )

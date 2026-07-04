@@ -18,7 +18,7 @@ sibling build-maven extension.
 
 import fnmatch
 
-from extension_base import BuildExtensionBase  # type: ignore[import-not-found]
+from extension_base import BuildExtensionBase
 
 
 class BuildExtension(BuildExtensionBase):

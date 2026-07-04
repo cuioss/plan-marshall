@@ -20,9 +20,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from _config_core import load_config  # type: ignore[import-not-found]
-from _plan_parsing import parse_document_sections  # type: ignore[import-not-found]
-from file_ops import get_plan_dir  # type: ignore[import-not-found]
+from _config_core import load_config
+from _plan_parsing import parse_document_sections
+from file_ops import get_plan_dir
 
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]+")
 

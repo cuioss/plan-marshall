@@ -20,12 +20,12 @@ import argparse
 import re
 from pathlib import Path
 
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
+from input_validation import (
     add_field_arg,
     parse_args_with_toon_errors,
 )
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from plan_logging import log_entry
 
 # Interface directory relative to project root
 INTERFACE_DIR = Path('doc/interfaces')

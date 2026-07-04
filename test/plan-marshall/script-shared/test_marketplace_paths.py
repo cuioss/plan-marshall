@@ -545,7 +545,7 @@ class TestResolveMainAnchoredPath:
         # production git-common-dir branch is exercised with cwd pinned into the
         # worktree.
         monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-        import file_ops  # type: ignore[import-not-found]
+        import file_ops
 
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
         main_repo = tmp_path / 'main'
@@ -572,7 +572,7 @@ class TestResolveMainAnchoredPath:
         # (not a linked worktree) — the production branch must anchor at the same
         # main root.
         monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-        import file_ops  # type: ignore[import-not-found]
+        import file_ops
 
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
         main_repo = tmp_path / 'main'
@@ -613,7 +613,7 @@ class TestResolveMainAnchoredPath:
         # Outside any git repo, no override — the production branch must raise
         # RuntimeError (identical contract to merge_lock).
         monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-        import file_ops  # type: ignore[import-not-found]
+        import file_ops
 
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
         bare = tmp_path / 'bare'

@@ -104,7 +104,7 @@ def _resolve_repo_root_for_sentinel(source_root: Path) -> Path:
     return source_root.parent.parent
 
 
-def _import_source_fingerprint():  # type: ignore[no-untyped-def]
+def _import_source_fingerprint():
     """Import the shared fingerprint helper.
 
     The helper lives under ``marketplace/targets/claude/source_fingerprint.py``
@@ -128,7 +128,7 @@ def _import_source_fingerprint():  # type: ignore[no-untyped-def]
     return compute_source_tree_fingerprint, FingerprintError
 
 
-def _import_hash_objects():  # type: ignore[no-untyped-def]
+def _import_hash_objects():
     """Import the shared per-file blob-hash helper.
 
     Resolves the project root the same way as

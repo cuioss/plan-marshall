@@ -27,11 +27,11 @@ from pathlib import Path
 
 # Direct imports — PYTHONPATH set by the executor (collect_script_dirs adds
 # every skill scripts/ dir, including script-shared).
-from marketplace_bundles import (  # type: ignore[import-not-found]
+from marketplace_bundles import (
     resolve_bundle_path,
     resolve_bundles_root,
 )
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from toon_parser import serialize_toon
 
 BASE_PERSONA = 'plan-marshall:persona-plan-marshall-agent'
 
@@ -135,7 +135,7 @@ def _resolve_profile_domain_skills(profile: str, domain: str) -> list[str]:
     resolution still emits base + composition.
     """
     try:
-        from _cmd_skill_resolution import cmd_resolve_domain_skills  # type: ignore[import-not-found]
+        from _cmd_skill_resolution import cmd_resolve_domain_skills
     except Exception:
         return []
 

@@ -111,8 +111,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from _dep_index import AstCache  # type: ignore[import-not-found]
-from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _dep_index import AstCache
+from _doctor_shared import Finding
 from _rule_registry import RuleDescriptor
 
 RULE_ID = 'resolver-matrix-coverage'

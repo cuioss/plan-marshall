@@ -21,8 +21,8 @@ class TestClassifyIssueFindingType:
     """Issue.category → finding type routing."""
 
     def setup_method(self):
-        from _build_parse import Issue  # type: ignore[import-not-found]
-        from _build_shared import _classify_issue_finding_type  # type: ignore[import-not-found]
+        from _build_parse import Issue
+        from _build_shared import _classify_issue_finding_type
 
         self.Issue = Issue
         self.classify = _classify_issue_finding_type
@@ -56,9 +56,9 @@ class TestStoreBuildFindings:
     """Every parsed Issue must be persisted as a finding."""
 
     def test_store_three_issue_kinds(self, plan_context):
-        from _build_parse import Issue  # type: ignore[import-not-found]
-        from _build_shared import _store_build_findings  # type: ignore[import-not-found]
-        from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _build_parse import Issue
+        from _build_shared import _store_build_findings
+        from _findings_core import query_findings
 
         issues = [
             Issue(
@@ -114,7 +114,7 @@ class TestStoreBuildFindings:
         assert li_record['severity'] == 'warning'
 
     def test_store_zero_issues(self, plan_context):
-        from _build_shared import _store_build_findings  # type: ignore[import-not-found]
+        from _build_shared import _store_build_findings
 
         count_seen, count_stored, failures = _store_build_findings(
             plan_id=plan_context.plan_id,
@@ -129,8 +129,8 @@ class TestRecordProducerMismatch:
     """Producer mismatches must be recorded as a Q-Gate finding."""
 
     def test_record_producer_mismatch_writes_qgate(self, plan_context):
-        from _build_shared import _record_producer_mismatch  # type: ignore[import-not-found]
-        from _findings_core import query_qgate_findings  # type: ignore[import-not-found]
+        from _build_shared import _record_producer_mismatch
+        from _findings_core import query_qgate_findings
 
         _record_producer_mismatch(
             plan_id=plan_context.plan_id,
@@ -163,7 +163,7 @@ class TestCmdRunCommonPlanIdGuard:
         }
 
     def _fake_parser(self, _log_file):
-        from _build_parse import Issue  # type: ignore[import-not-found]
+        from _build_parse import Issue
 
         issue = Issue(
             file='src/Main.py',
@@ -175,7 +175,7 @@ class TestCmdRunCommonPlanIdGuard:
         return [issue], None, 'failed'
 
     def test_cmd_run_common_without_plan_id_writes_no_findings(self, plan_context):
-        from _build_shared import cmd_run_common  # type: ignore[import-not-found]
+        from _build_shared import cmd_run_common
 
         log_file = plan_context.fixture_dir / 'fake.log'
         log_file.write_text('failed\n')
@@ -200,7 +200,7 @@ class TestCmdRunCommonPlanIdGuard:
         mock_qgate.assert_not_called()
 
     def test_cmd_run_common_with_plan_id_invokes_store(self, plan_context):
-        from _build_shared import cmd_run_common  # type: ignore[import-not-found]
+        from _build_shared import cmd_run_common
 
         log_file = plan_context.fixture_dir / 'fake.log'
         log_file.write_text('failed\n')
@@ -230,7 +230,7 @@ class TestReconcilePendingBuildFindings:
     prior failing run."""
 
     def _seed_pending_build_findings(self, plan_id):
-        from _findings_core import add_finding  # type: ignore[import-not-found]
+        from _findings_core import add_finding
 
         add_finding(
             plan_id=plan_id,
@@ -252,8 +252,8 @@ class TestReconcilePendingBuildFindings:
         )
 
     def test_reconcile_resolves_all_pending_build_findings(self, plan_context):
-        from _build_shared import _reconcile_pending_build_findings  # type: ignore[import-not-found]
-        from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _build_shared import _reconcile_pending_build_findings
+        from _findings_core import query_findings
 
         self._seed_pending_build_findings(plan_context.plan_id)
 
@@ -270,7 +270,7 @@ class TestReconcilePendingBuildFindings:
                 assert 'auto-resolved by green build' in (record.get('resolution_detail') or '')
 
     def test_reconcile_with_no_pending_findings_returns_zero(self, plan_context):
-        from _build_shared import _reconcile_pending_build_findings  # type: ignore[import-not-found]
+        from _build_shared import _reconcile_pending_build_findings
 
         resolved = _reconcile_pending_build_findings(
             plan_id=plan_context.plan_id,
@@ -296,7 +296,7 @@ class TestCmdRunCommonGreenBuildReconciliation:
         return [], None, 'success'
 
     def test_green_build_with_plan_id_invokes_reconciliation(self, plan_context):
-        from _build_shared import cmd_run_common  # type: ignore[import-not-found]
+        from _build_shared import cmd_run_common
 
         log_file = plan_context.fixture_dir / 'green.log'
         log_file.write_text('BUILD SUCCESS\n')
@@ -319,7 +319,7 @@ class TestCmdRunCommonGreenBuildReconciliation:
         )
 
     def test_green_build_without_plan_id_skips_reconciliation(self, plan_context):
-        from _build_shared import cmd_run_common  # type: ignore[import-not-found]
+        from _build_shared import cmd_run_common
 
         log_file = plan_context.fixture_dir / 'green.log'
         log_file.write_text('BUILD SUCCESS\n')
@@ -338,8 +338,8 @@ class TestCmdRunCommonGreenBuildReconciliation:
         mock_reconcile.assert_not_called()
 
     def test_green_build_with_plan_id_resolves_seeded_findings_end_to_end(self, plan_context):
-        from _build_shared import cmd_run_common  # type: ignore[import-not-found]
-        from _findings_core import add_finding, query_findings  # type: ignore[import-not-found]
+        from _build_shared import cmd_run_common
+        from _findings_core import add_finding, query_findings
 
         add_finding(
             plan_id=plan_context.plan_id,

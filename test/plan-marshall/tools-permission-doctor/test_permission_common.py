@@ -8,7 +8,7 @@ both permission_doctor and permission_fix scripts.
 
 import json
 
-from permission_common import (  # type: ignore[import-not-found]I001
+from permission_common import (  # noqa: I001
     EXIT_SUCCESS,
     load_settings,
     load_settings_path,

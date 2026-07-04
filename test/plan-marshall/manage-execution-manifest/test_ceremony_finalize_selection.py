@@ -149,7 +149,7 @@ def _seed_marshal(
     that compose with a custom candidate list pass the matching list here so the
     seeded ``steps`` map and the composed candidate list stay in sync.
     """
-    from file_ops import get_marshal_path  # type: ignore[import-not-found]
+    from file_ops import get_marshal_path
 
     if candidates is None:
         candidates = _phase_6_with_ceremony_steps().split(',')
@@ -224,7 +224,7 @@ def _stub_footprint(footprint: list[str]) -> None:
     extension_base module's ``_resolve_plan_footprint``. Stub BOTH so the test
     footprint drives every activation decision.
     """
-    import extension_base  # type: ignore[import-not-found]
+    import extension_base
 
     _mem._resolve_footprint = lambda plan_id: list(footprint)
     extension_base._resolve_plan_footprint = lambda plan_id: list(footprint)

@@ -39,7 +39,7 @@ import re
 import sys
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT, get_scripts_dir  # type: ignore[import-not-found]
+from conftest import MARKETPLACE_ROOT, get_scripts_dir
 
 # ---------------------------------------------------------------------------
 # Source anchors
@@ -148,7 +148,7 @@ def test_canonical_step_id_is_authoritative_registry_member() -> None:
     (the SOLE finalize-step discovery path; ``OPTIONAL_BUNDLE_FINALIZE_STEPS``
     was removed).
     """
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors
 
     optional_steps = [
         rec['name']

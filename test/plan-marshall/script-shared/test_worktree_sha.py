@@ -34,7 +34,7 @@ from pathlib import Path
 
 import pytest
 
-from worktree_sha import compute_worktree_sha  # type: ignore[import-not-found]
+from worktree_sha import compute_worktree_sha
 
 _HEX64 = 64
 
@@ -191,7 +191,7 @@ def test_repo_with_no_commit_returns_none(tmp_path: Path) -> None:
 def test_missing_git_binary_returns_none(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Simulate the git binary being absent: the internal shell-out raises OSError,
     # which ``_run_git`` maps to (1, b'').
-    import worktree_sha  # type: ignore[import-not-found]
+    import worktree_sha
 
     def _boom(*_args: object, **_kwargs: object) -> None:
         raise OSError('git not found')

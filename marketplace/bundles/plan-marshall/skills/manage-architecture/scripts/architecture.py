@@ -7,8 +7,8 @@ Entry point for all architecture operations. Dispatches to command modules.
 
 import argparse
 
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
+from input_validation import (
     add_domain_arg,
     add_module_arg,
     add_name_arg,
@@ -16,7 +16,7 @@ from input_validation import (  # type: ignore[import-not-found]
     parse_args_with_toon_errors,
     validate_module_name,
 )
-from resolve_project_dir import (  # type: ignore[import-not-found]
+from resolve_project_dir import (
     MutuallyExclusiveArgsError,
     WorktreeResolutionError,
     add_plan_id_arg,

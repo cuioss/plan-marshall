@@ -24,19 +24,19 @@ for _ancestor in Path(__file__).resolve().parents:
             sys.path.append(_rt_path)
         break
 
-from claude_runtime import (  # type: ignore[import-not-found]  # noqa: E402
+from claude_runtime import (  # noqa: E402
     _extract_project_steps,
     _load_marshal_config,
     _skill_permission_covered,
 )
-from permission_common import (  # type: ignore[import-not-found]  # noqa: E402
+from permission_common import (  # noqa: E402
     EXIT_SUCCESS,
     get_global_settings_path,
     get_project_settings_path,
     load_settings,
     resolve_scope_to_paths,
 )
-from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
+from toon_parser import serialize_toon  # noqa: E402
 
 # =============================================================================
 # detect-redundant subcommand
@@ -543,6 +543,6 @@ def main():
 
 
 if __name__ == '__main__':
-    from file_ops import safe_main  # type: ignore[import-not-found]
+    from file_ops import safe_main
 
     safe_main(main)()

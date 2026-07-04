@@ -28,7 +28,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from constants import (  # type: ignore[import-not-found]
+from constants import (
     DIR_LOGS,
     DIR_PLANS,
     HASH_ID_LENGTH,
@@ -36,8 +36,8 @@ from constants import (  # type: ignore[import-not-found]
     VALID_LOG_TYPES,
     VALID_WORK_CATEGORIES,
 )
-from file_ops import get_base_dir, now_utc_iso  # type: ignore[import-not-found]
-from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
+from file_ops import get_base_dir, now_utc_iso
+from input_validation import is_valid_plan_id
 
 # =============================================================================
 # CONFIGURATION

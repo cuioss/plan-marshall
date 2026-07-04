@@ -9,8 +9,8 @@ commands, resolve, siblings, profiles.
 
 import argparse
 
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
-from resolve_project_dir import (  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
+from resolve_project_dir import (
     MutuallyExclusiveArgsError,
     WorktreeResolutionError,
     add_plan_id_arg,

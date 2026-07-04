@@ -33,11 +33,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from _references_core import (  # type: ignore[import-not-found]
+from _references_core import (
     compute_plan_branch_diff,
     resolve_base_ref,
 )
-from file_ops import get_plan_dir  # type: ignore[import-not-found]
+from file_ops import get_plan_dir
 
 
 def _resolve_worktree_root(plan_dir: Path) -> Path:

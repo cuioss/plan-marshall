@@ -38,7 +38,7 @@ def fresh_marshal(tmp_path, monkeypatch):
     ``.plan/marshal.json``. This mirrors the ``tmp_config_dir`` fixture in
     ``test/conftest.py`` (which is private to manage-config tests).
     """
-    import _config_core  # type: ignore[import-not-found]
+    import _config_core
 
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()

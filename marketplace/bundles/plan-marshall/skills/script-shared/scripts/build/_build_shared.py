@@ -292,7 +292,7 @@ def _store_build_findings(
     ``count_seen`` and ``count_stored`` are surfaced by the caller as a Q-Gate
     finding with title prefix ``(producer-mismatch)``.
     """
-    from _findings_core import add_finding  # type: ignore[import-not-found]
+    from _findings_core import add_finding
 
     count_seen = len(issues)
     count_stored = 0
@@ -366,7 +366,7 @@ def _record_producer_mismatch(
 ) -> None:
     """Emit a Q-Gate finding when a build run's parsed-issue count does not
     match the count successfully stored in the findings store."""
-    from _findings_core import add_qgate_finding  # type: ignore[import-not-found]
+    from _findings_core import add_qgate_finding
 
     detail = (
         f'count_seen={count_seen}, '
@@ -397,7 +397,7 @@ def _reconcile_pending_build_findings(plan_id: str, command_str: str) -> int:
 
     Returns the count of findings resolved (0 when none were pending).
     """
-    from _findings_core import resolve_findings_by_type  # type: ignore[import-not-found]
+    from _findings_core import resolve_findings_by_type
 
     reconcile_result = resolve_findings_by_type(
         plan_id=plan_id,

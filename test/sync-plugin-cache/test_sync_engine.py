@@ -25,8 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import PROJECT_ROOT  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from conftest import PROJECT_ROOT
+from toon_parser import parse_toon
 
 _SYNC_PY = PROJECT_ROOT / '.claude' / 'skills' / 'sync-plugin-cache' / 'scripts' / 'sync.py'
 

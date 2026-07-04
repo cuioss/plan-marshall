@@ -55,18 +55,18 @@ def _ensure_sibling_skill_paths() -> None:
 
 _ensure_sibling_skill_paths()
 
-from file_ops import (  # type: ignore[import-not-found]  # noqa: E402, F401
+from file_ops import (  # noqa: E402, F401
     PlanNotFoundError,
     get_plan_dir,
     output_toon,
     require_plan_exists,
     safe_main,
 )
-from input_validation import (  # type: ignore[import-not-found]  # noqa: E402, F401
+from input_validation import (  # noqa: E402, F401
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]  # noqa: E402, F401
+from toon_parser import parse_toon, serialize_toon  # noqa: E402, F401
 
 # Exit codes
 EXIT_SUCCESS = 0
@@ -296,7 +296,7 @@ def _resolve_ci_timeout() -> int:
         # RuntimeError when no git root is resolvable from cwd. Catching
         # Exception broadly here is deliberate — the resolver MUST NOT raise
         # under any project state; falling back to 600s keeps the CLI usable.
-        from _config_core import is_initialized, load_config  # type: ignore[import-not-found]
+        from _config_core import is_initialized, load_config
     except Exception:
         return 600
     try:
@@ -490,7 +490,7 @@ def extract_routing_args(argv: list[str]) -> tuple[str | None, list[str]]:
     # that monkeypatch ci_base in isolation do not need to satisfy the
     # full PYTHONPATH for resolve_project_dir.
     try:
-        from resolve_project_dir import (  # type: ignore[import-not-found]
+        from resolve_project_dir import (
             MutuallyExclusiveArgsError,
             WorktreeResolutionError,
             emit_mutually_exclusive_error,
@@ -516,12 +516,12 @@ def extract_routing_args(argv: list[str]) -> tuple[str | None, list[str]]:
         # Local fallback for output_error — defer to print() so we don't
         # introduce a cycle with the format_toon helper that may live in
         # a sibling module.
-        from toon_parser import serialize_toon  # type: ignore[import-not-found]
+        from toon_parser import serialize_toon
 
         print(serialize_toon(emit_mutually_exclusive_error(plan_id, project_dir)))
         sys.exit(2)
     except WorktreeResolutionError as exc:
-        from toon_parser import serialize_toon  # type: ignore[import-not-found]
+        from toon_parser import serialize_toon
 
         assert plan_id is not None  # only reachable when plan_id was supplied
         print(serialize_toon(emit_worktree_error(plan_id, exc)))
@@ -1382,7 +1382,7 @@ def truncate_log_content(stdout: str, max_lines: int = CI_LOG_TRUNCATE_LINES) ->
 # ---------------------------------------------------------------------------
 
 
-def _load_persist():  # type: ignore[no-untyped-def]
+def _load_persist():
     """Lazily load ``manage-ci-artifacts.persist`` from the sibling skill.
 
     The persistence layer lives in the ``manage-ci-artifacts`` skill with a
@@ -1511,7 +1511,7 @@ def _select_slug_path(paths: Any, slug: str, suffix: str) -> str:
     return ''
 
 
-def _load_log_filter():  # type: ignore[no-untyped-def]
+def _load_log_filter():
     """Lazily import ``filter_log`` and ``slugify_check_name`` from this skill.
 
     Both live in the sibling ``_ci_log_filter`` module in this skill's scripts
@@ -1519,7 +1519,7 @@ def _load_log_filter():  # type: ignore[no-untyped-def]
     when the module is unavailable (callers degrade gracefully).
     """
     try:
-        from _ci_log_filter import (  # type: ignore[import-not-found]
+        from _ci_log_filter import (
             filter_log,
             slugify_check_name,
         )

@@ -24,7 +24,7 @@ exemption explicitly.
 from __future__ import annotations
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import get_script_path  # type: ignore[import-not-found]
+from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'extension-api', 'extension_discovery.py')
 
@@ -156,7 +156,7 @@ def test_extension_discovery_does_not_use_input_validation_helpers() -> None:
 # These tests pin that wiring so a future regression that drops one of
 # the routing flags fails loudly.
 
-from conftest import run_script  # type: ignore[import-not-found]  # noqa: E402
+from conftest import run_script  # noqa: E402
 
 
 def test_extension_discovery_imports_routing_helpers() -> None:

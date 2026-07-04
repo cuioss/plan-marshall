@@ -70,7 +70,7 @@ from _doctor_shared import (
 )
 from _rule_registry import optin_rule_names
 from _runner import CorpusContext, RuleRunner
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
 
 SCRIPT_DIR = Path(__file__).parent
 

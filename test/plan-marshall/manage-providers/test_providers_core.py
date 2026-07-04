@@ -10,7 +10,7 @@ import json
 from unittest.mock import patch
 
 import pytest
-from _providers_core import (  # type: ignore[import-not-found]
+from _providers_core import (
     VALID_AUTH_TYPES,
     RestClient,
     get_authenticated_client,
@@ -24,7 +24,7 @@ from _providers_core import (  # type: ignore[import-not-found]
 )
 from _providers_fixtures import stage_marshal
 
-import _providers_core  # type: ignore[import-not-found]  # noqa: E402
+import _providers_core  # noqa: E402
 import conftest  # noqa: F401
 
 # =============================================================================
@@ -247,7 +247,7 @@ class TestProviderConfig:
 
     def test_write_and_read_provider_config(self, tmp_path, monkeypatch):
         """Write provider config to marshal.json and read it back."""
-        from _providers_core import read_provider_config, write_provider_config  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config, write_provider_config
 
         stage_marshal(tmp_path, monkeypatch, config=None)
 
@@ -258,7 +258,7 @@ class TestProviderConfig:
 
     def test_read_returns_empty_when_no_marshal(self, tmp_path, monkeypatch):
         """Returns empty dict when marshal.json does not exist."""
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config
 
         stage_marshal(tmp_path, monkeypatch, config=None)
         config = read_provider_config('nonexistent')
@@ -266,7 +266,7 @@ class TestProviderConfig:
 
     def test_write_preserves_existing_content(self, tmp_path, monkeypatch):
         """Writing provider config preserves other marshal.json content."""
-        from _providers_core import write_provider_config  # type: ignore[import-not-found]
+        from _providers_core import write_provider_config
 
         marshal = stage_marshal(
             tmp_path,
@@ -290,7 +290,7 @@ class TestProviderConfig:
 
     def test_write_updates_existing_provider(self, tmp_path, monkeypatch):
         """Writing to same provider overwrites previous config."""
-        from _providers_core import read_provider_config, write_provider_config  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config, write_provider_config
 
         stage_marshal(tmp_path, monkeypatch, config=None)
 
@@ -364,7 +364,7 @@ class TestCheckCompletenessSystem:
 
     def test_system_auth_reports_complete(self, tmp_path, monkeypatch):
         """auth_type=system credential with no secret fields reports complete."""
-        from _providers_core import check_credential_completeness  # type: ignore[import-not-found]
+        from _providers_core import check_credential_completeness
 
         creds_dir = tmp_path / 'creds'
         monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
@@ -382,7 +382,7 @@ class TestCheckCompletenessSystem:
 
     def test_system_auth_no_token_check(self, tmp_path, monkeypatch):
         """auth_type=system must not check for missing token field."""
-        from _providers_core import check_credential_completeness  # type: ignore[import-not-found]
+        from _providers_core import check_credential_completeness
 
         creds_dir = tmp_path / 'creds'
         monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
@@ -421,7 +421,7 @@ class TestGetAuthenticatedClientSystem:
         }
         save_credential(skill, data, 'global')
         # Write URL to marshal.json provider config
-        from _providers_core import write_provider_config  # type: ignore[import-not-found]
+        from _providers_core import write_provider_config
 
         write_provider_config(skill, {'url': 'https://api.example.com'})
 

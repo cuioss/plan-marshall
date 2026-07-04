@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from _dep_detection import (  # type: ignore[import-not-found]
+from _dep_detection import (
     ComponentId,
     Dependency,
     DependencyType,
@@ -25,7 +25,7 @@ from _dep_detection import (  # type: ignore[import-not-found]
     extract_frontmatter,
 )
 from marketplace_bundles import resolve_bundles_root
-from marketplace_paths import get_bundle_cache_roots  # type: ignore[import-not-found]
+from marketplace_paths import get_bundle_cache_roots
 
 # Constants for path discovery
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'

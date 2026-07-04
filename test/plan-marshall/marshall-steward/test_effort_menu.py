@@ -28,7 +28,7 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT  # type: ignore[import-not-found]
+from conftest import MARKETPLACE_ROOT
 
 _MANAGE_CONFIG_SCRIPTS_DIR = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'

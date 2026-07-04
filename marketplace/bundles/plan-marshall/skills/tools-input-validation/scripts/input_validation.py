@@ -323,7 +323,7 @@ def require_plan_file(plan_id: str, *path_parts: str) -> Path:
         plan_dir = require_plan_file(plan_id)
         status_path = require_plan_file(plan_id, 'status.json')
     """
-    from file_ops import base_path  # type: ignore[import-not-found]
+    from file_ops import base_path
     from toon_parser import serialize_toon
 
     if not is_valid_plan_id(plan_id):
@@ -387,7 +387,7 @@ def add_phase_arg(parser, *, choices=None, required: bool = True) -> None:
         required: Whether the argument is required (default True)
     """
     if choices is None:
-        from constants import PHASES  # type: ignore[import-not-found]
+        from constants import PHASES
 
         choices = PHASES
     parser.add_argument('--phase', required=required, choices=choices, help='Phase name')
@@ -748,7 +748,7 @@ def _list_live_lesson_ids() -> list[str]:
     # that don't use the scanner.
 
     try:
-        from toon_parser import parse_toon  # type: ignore[import-not-found]
+        from toon_parser import parse_toon
     except ImportError as exc:
         raise LessonInventoryUnavailable(f'toon_parser is not importable: {exc}') from exc
 
@@ -958,13 +958,13 @@ def parse_args_with_toon_errors(parser):
 
     Returns the parsed ``argparse.Namespace`` on success.
     """
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+    from toon_parser import serialize_toon
 
     parsers = list(_iter_all_parsers(parser))
     originals = {id(p): p.error for p in parsers}
 
     def make_toon_error(orig):
-        def toon_error(message: str):  # type: ignore[no-untyped-def]
+        def toon_error(message: str):
             # argparse error messages for type-validator failures look like:
             #   "argument --plan-id: Invalid plan_id format: 'BAD!'. Must match ..."
             # We match only when the offending flag is the SUBJECT of the
@@ -993,9 +993,9 @@ def parse_args_with_toon_errors(parser):
         return toon_error
 
     for p in parsers:
-        p.error = make_toon_error(originals[id(p)])  # type: ignore[method-assign]
+        p.error = make_toon_error(originals[id(p)])
     try:
         return parser.parse_args()
     finally:
         for p in parsers:
-            p.error = originals[id(p)]  # type: ignore[method-assign]
+            p.error = originals[id(p)]

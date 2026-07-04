@@ -35,7 +35,7 @@ function; the canonical default table mirrors the rubric § "Size → token tabl
 
 from __future__ import annotations
 
-from sensible_number import parse_sensible_int  # type: ignore[import-not-found]
+from sensible_number import parse_sensible_int
 
 # --- Weights (rubric § 1) ------------------------------------------------
 

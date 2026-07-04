@@ -40,7 +40,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT  # type: ignore[import-not-found]
+from conftest import MARKETPLACE_ROOT
 
 
 # -----------------------------------------------------------------------------

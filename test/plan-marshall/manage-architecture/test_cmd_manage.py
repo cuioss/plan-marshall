@@ -193,7 +193,7 @@ def test_api_discover_preserves_enrichment(monkeypatch):
         # extension_discovery lazily inside its body, so monkeypatching the
         # already-loaded module is sufficient — no need to manipulate
         # sys.modules.
-        import extension_discovery  # type: ignore[import-not-found]
+        import extension_discovery
 
         def _fake_discover(_project_root):
             return {

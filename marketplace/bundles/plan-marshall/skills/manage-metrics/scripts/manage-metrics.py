@@ -35,8 +35,8 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from constants import FILE_STATUS, FILE_WORK_METRICS, PHASES  # type: ignore[import-not-found]
-from file_ops import (  # type: ignore[import-not-found]
+from constants import FILE_STATUS, FILE_WORK_METRICS, PHASES
+from file_ops import (
     PlanNotFoundError,
     atomic_write_file,
     format_duration,
@@ -47,7 +47,7 @@ from file_ops import (  # type: ignore[import-not-found]
     require_plan_exists,
     safe_main,
 )
-from input_validation import (  # type: ignore[import-not-found]
+from input_validation import (
     add_phase_arg,
     add_plan_id_arg,
     add_session_id_arg,
@@ -55,7 +55,7 @@ from input_validation import (  # type: ignore[import-not-found]
     parse_args_with_toon_errors,
     require_valid_plan_id,
 )
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 METRICS_FILE = FILE_WORK_METRICS
 METRICS_MD = 'metrics.md'

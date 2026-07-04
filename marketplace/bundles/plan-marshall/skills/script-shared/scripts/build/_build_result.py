@@ -31,7 +31,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, TypedDict
 
-from file_ops import get_temp_dir  # type: ignore[import-not-found]
+from file_ops import get_temp_dir
 
 # =============================================================================
 # Type Definitions

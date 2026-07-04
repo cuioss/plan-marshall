@@ -102,8 +102,8 @@ for _ancestor in Path(__file__).resolve().parents:
             sys.path.insert(0, _shared_scripts)
         break
 
-from marketplace_bundles import resolve_skills_root  # type: ignore[import-not-found]  # noqa: E402
-from marketplace_paths import iter_project_skill_dirs  # type: ignore[import-not-found]  # noqa: E402
+from marketplace_bundles import resolve_skills_root  # noqa: E402
+from marketplace_paths import iter_project_skill_dirs  # noqa: E402
 
 _SKILLS_DIR = resolve_skills_root(Path(__file__))
 for _lib in ('ref-toon-format',):
@@ -548,8 +548,8 @@ def _canonical_built_in_finalize_steps() -> list[str]:
     the wizard never crashes on an unexpected import topology).
     """
     try:
-        from _config_defaults import FINALIZE_STEP_EXT_POINT  # type: ignore[import-not-found]
-        from extension_discovery import find_implementors  # type: ignore[import-not-found]
+        from _config_defaults import FINALIZE_STEP_EXT_POINT
+        from extension_discovery import find_implementors
     except ImportError:
         return []
 
@@ -754,7 +754,7 @@ def detect_working_prefixes_drift(plan_dir: Path) -> dict:
         return ok_result
 
     try:
-        from _config_defaults import DEFAULT_PROJECT  # type: ignore[import-not-found]
+        from _config_defaults import DEFAULT_PROJECT
     except ImportError:
         return ok_result
 
@@ -914,7 +914,7 @@ def main() -> int:
         parser.print_help()
         return 1
 
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+    from toon_parser import serialize_toon
 
     print(serialize_toon(result))
     return 0

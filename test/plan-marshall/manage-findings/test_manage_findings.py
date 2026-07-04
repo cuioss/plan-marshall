@@ -15,7 +15,7 @@ from conftest import get_script_path, run_script
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-findings', 'manage-findings.py')
 
 # Import toon_parser - conftest sets up PYTHONPATH
-from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
+from toon_parser import parse_toon  # noqa: E402
 
 # Tier 2 direct imports - load hyphenated module via importlib
 _MANAGE_FINDINGS_SCRIPT = str(

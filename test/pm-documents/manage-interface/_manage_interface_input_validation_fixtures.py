@@ -41,7 +41,7 @@ HAPPY_VALUES: dict[str, str] = dict(_HAPPY)
 
 def parse_toon_output(stdout: str) -> dict[str, Any]:
     """Parse a TOON document from script stdout."""
-    from toon_parser import parse_toon  # type: ignore[import-not-found]
+    from toon_parser import parse_toon
 
     return parse_toon(stdout)
 

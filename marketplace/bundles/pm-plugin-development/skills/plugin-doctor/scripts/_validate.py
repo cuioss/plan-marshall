@@ -25,7 +25,7 @@ from _cmd_cross_file import cmd_cross_file
 from _cmd_extension import cmd_extension
 from _cmd_inventory import cmd_inventory
 from _cmd_references import cmd_references
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
 
 
 @safe_main

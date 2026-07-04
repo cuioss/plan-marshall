@@ -26,7 +26,7 @@ import sys
 
 import pytest
 from test_helpers import create_marshal_json, create_nested_marshal_json
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 from conftest import load_script_module
 

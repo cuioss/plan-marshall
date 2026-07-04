@@ -58,7 +58,7 @@ def _expected_verify_step_ids() -> list[str]:
     ``BUILT_IN_VERIFY_STEPS`` constant is gone; this is its discovery-derived
     replacement.
     """
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors
 
     built_in = sorted(
         (rec for rec in find_implementors(_BUILD_VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),

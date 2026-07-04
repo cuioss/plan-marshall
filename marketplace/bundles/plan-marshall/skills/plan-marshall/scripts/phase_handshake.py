@@ -56,15 +56,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _handshake_commands import (  # type: ignore[import-not-found]
+from _handshake_commands import (
     cmd_capture,
     cmd_clear,
     cmd_findings_check,
     cmd_list,
     cmd_verify,
 )
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
+from input_validation import (
     add_phase_arg,
     add_plan_id_arg,
     parse_args_with_toon_errors,

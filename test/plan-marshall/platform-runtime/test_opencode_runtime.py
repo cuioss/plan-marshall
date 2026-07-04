@@ -15,8 +15,8 @@ import pathlib
 import pytest
 
 # conftest.py sets up PYTHONPATH so imports resolve without manual sys.path work.
-from opencode_runtime import OpenCodeRuntime  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from opencode_runtime import OpenCodeRuntime
+from toon_parser import parse_toon
 
 
 # =============================================================================

@@ -14,7 +14,7 @@ LIFECYCLE_SCRIPT = get_script_path('plan-marshall', 'manage-status', 'manage-sta
 STATUS_SCRIPT = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
 
 # Import toon_parser - conftest sets up PYTHONPATH
-from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
+from toon_parser import parse_toon  # noqa: E402
 
 
 def _create_plan(plan_id: str, title: str, phases: str) -> None:

@@ -18,8 +18,8 @@ Usage:
 
 import argparse
 
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
+from input_validation import (
     add_field_arg,
     add_plan_id_arg,
     parse_args_with_toon_errors,

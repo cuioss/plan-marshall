@@ -48,7 +48,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path  # type: ignore[import-not-found]
+from conftest import get_script_path
 
 # The entrypoint filename is kebab-case (git-workflow.py), which is not a
 # valid Python module identifier — load it via importlib instead of `import`.

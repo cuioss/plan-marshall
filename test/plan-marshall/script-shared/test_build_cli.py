@@ -43,7 +43,7 @@ from _build_cli import (
     build_main,
     register_standard_subparsers,
 )
-from _resolve_project_dir_fixtures import (  # type: ignore[import-not-found]
+from _resolve_project_dir_fixtures import (
     CANONICAL_PLAN_ID,
     CANONICAL_PROJECT_DIR,
     CANONICAL_WORKTREE,

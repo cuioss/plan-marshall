@@ -50,11 +50,11 @@ for _ancestor in _THIS_FILE.parents:
             sys.path.insert(0, _shared_scripts)
         break
 
-from marketplace_paths import (  # type: ignore[import-not-found]  # noqa: E402
+from marketplace_paths import (  # noqa: E402
     PLAN_DIR_NAME,
     _find_plan_root_from_cwd,
 )
-from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
+from toon_parser import serialize_toon  # noqa: E402
 
 # Plan-marshall runtime state (plans, archived-plans, run-configuration.json,
 # lessons-learned, logs) is resolved by the SINGLE uniform cwd-relative rule

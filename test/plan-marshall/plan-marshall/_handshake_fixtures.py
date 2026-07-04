@@ -21,7 +21,7 @@ import types
 from pathlib import Path
 
 import pytest
-from conftest import get_script_path  # type: ignore[import-not-found]
+from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
 SCRIPTS_DIR = SCRIPT_PATH.parent

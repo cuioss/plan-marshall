@@ -917,8 +917,8 @@ _PLAN_HANDSHAKE_SCRIPTS_DIR = str(
 if _PLAN_HANDSHAKE_SCRIPTS_DIR not in _sys.path:
     _sys.path.insert(0, _PLAN_HANDSHAKE_SCRIPTS_DIR)
 
-import _handshake_commands as _cmds  # type: ignore[import-not-found]  # noqa: E402
-import _invariants as _inv  # type: ignore[import-not-found]  # noqa: E402
+import _handshake_commands as _cmds  # noqa: E402
+import _invariants as _inv  # noqa: E402
 
 
 @pytest.fixture

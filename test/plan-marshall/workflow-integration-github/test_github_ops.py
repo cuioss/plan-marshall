@@ -8,7 +8,7 @@ the --pr-number/--head dual-flag validation works as expected.
 
 import argparse
 
-import github_ops  # type: ignore[import-not-found]
+import github_ops
 
 
 def _ok_auth():
@@ -45,7 +45,7 @@ def _capture_run_gh():
 def _prepare_pr_create_body(tmp_path, monkeypatch, body_text='B', plan_id='p'):
     """Seed PLAN_BASE_DIR with a prepared pr-create body scratch file."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
-    from ci_base import BODY_KIND_PR_CREATE, get_body_path  # type: ignore[import-not-found]
+    from ci_base import BODY_KIND_PR_CREATE, get_body_path
 
     path = get_body_path(plan_id, BODY_KIND_PR_CREATE)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -600,7 +600,7 @@ def test_main_project_dir_sets_default_cwd(tmp_path, monkeypatch, capsys):
     """
     import sys
 
-    import ci_base  # type: ignore[import-not-found]
+    import ci_base
 
     monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
 
@@ -644,7 +644,7 @@ def test_main_project_dir_equals_form(tmp_path, monkeypatch, capsys):
     """
     import sys
 
-    import ci_base  # type: ignore[import-not-found]
+    import ci_base
 
     monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
 
@@ -685,7 +685,7 @@ def test_main_without_project_dir_leaves_cwd_untouched(tmp_path, monkeypatch):
     """
     import sys
 
-    import ci_base  # type: ignore[import-not-found]
+    import ci_base
 
     sentinel = str(tmp_path / 'sentinel')
     monkeypatch.setattr(ci_base, '_DEFAULT_CWD', sentinel, raising=False)
@@ -799,7 +799,7 @@ def test_format_checks_toon_clamps_runaway_aggregate(monkeypatch, capsys):
     We patch compute_total_elapsed to simulate the exact pre-fix bug
     (63.9 billion seconds) and verify the clamp engages.
     """
-    import ci_base  # type: ignore[import-not-found]
+    import ci_base
 
     # Simulate the pre-fix bug: compute_total_elapsed returns runaway value.
     monkeypatch.setattr(github_ops, 'compute_total_elapsed', lambda values, now: 63_870_000_000)
@@ -1251,7 +1251,7 @@ def test_cmd_ci_logs_returns_error_context_window_not_head(monkeypatch):
 def _prepare_issue_comment_body(tmp_path, monkeypatch, body_text='Milestone reached', plan_id='p'):
     """Seed PLAN_BASE_DIR with a prepared issue-comment body scratch file."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
-    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path  # type: ignore[import-not-found]
+    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path
 
     path = get_body_path(plan_id, BODY_KIND_ISSUE_COMMENT)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1277,7 +1277,7 @@ def test_cmd_issue_comment_posts_prepared_body(monkeypatch, tmp_path):
 
 def test_cmd_issue_comment_deletes_body_on_success(monkeypatch, tmp_path):
     """The prepared scratch body is removed only after a successful post."""
-    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path  # type: ignore[import-not-found]
+    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path
 
     run_gh_stub, _ = _capture_run_gh()
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
@@ -1311,7 +1311,7 @@ def test_cmd_issue_comment_body_not_prepared(monkeypatch, tmp_path):
 
 def test_cmd_issue_comment_api_failure_keeps_body(monkeypatch, tmp_path):
     """A non-zero gh exit returns an error and leaves the scratch body in place."""
-    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path  # type: ignore[import-not-found]
+    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path
 
     def failing_run_gh(args, capture_json=False, timeout=60):
         return 1, '', 'gh: not found'

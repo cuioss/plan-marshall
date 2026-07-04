@@ -29,7 +29,7 @@ from conftest import MARKETPLACE_ROOT, run_script
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-fix' / 'scripts' / 'permission_fix.py'
 
 # Tier 2 direct imports
-from permission_fix import (  # type: ignore[import-not-found]  # noqa: E402
+from permission_fix import (  # noqa: E402
     cmd_apply_fixes,
     cmd_apply_project_step_permissions,
     cmd_consolidate,

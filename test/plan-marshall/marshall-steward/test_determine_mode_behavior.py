@@ -384,7 +384,7 @@ def test_read_finalize_steps_returns_list(tmp_path: Path):
 
 def _default_prefixes() -> list[str]:
     """Return the canonical working_prefixes default entries."""
-    from _config_defaults import DEFAULT_PROJECT  # type: ignore[import-not-found]
+    from _config_defaults import DEFAULT_PROJECT
 
     return list(DEFAULT_PROJECT['working_prefixes'])
 

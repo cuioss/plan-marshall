@@ -31,7 +31,7 @@ import json
 import sys
 from pathlib import Path
 
-from ci_base import (  # type: ignore[import-not-found]
+from ci_base import (
     extract_project_dir,
     extract_routing_args,
     output_error,

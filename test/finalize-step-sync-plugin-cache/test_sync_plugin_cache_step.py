@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT, PROJECT_ROOT  # type: ignore[import-not-found]
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
 
 _SKILL_MD = (
     PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-sync-plugin-cache' / 'SKILL.md'
@@ -113,7 +113,7 @@ def test_sync_plugin_cache_is_not_a_built_in_default():
     A ``default:sync-plugin-cache`` built-in id must NOT appear among the
     discovered finalize steps, and must NOT be in the default-on seed.
     """
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors
 
     discovered_names = {
         rec['name'] for rec in find_implementors(cd.FINALIZE_STEP_EXT_POINT) if rec.get('name')

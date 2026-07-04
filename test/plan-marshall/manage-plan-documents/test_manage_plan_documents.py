@@ -28,7 +28,7 @@ from conftest import get_script_path, load_script_module, run_script
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-plan-documents', 'manage-plan-documents.py')
 
 # Import toon_parser for subprocess tests
-from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402, I001
+from toon_parser import parse_toon  # noqa: E402, I001
 
 
 _cmd_request = load_script_module('plan-marshall', 'manage-plan-documents', '_cmd_request.py', '_cmd_request')

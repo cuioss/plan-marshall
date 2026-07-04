@@ -29,7 +29,7 @@ from __future__ import annotations
 import sys
 
 import pytest
-from conftest import get_script_path  # type: ignore[import-not-found]
+from conftest import get_script_path
 
 PRESETS_SCRIPT = get_script_path('plan-marshall', 'manage-config', 'finalize_step_presets.py')
 PRESETS_DIR = PRESETS_SCRIPT.parent
@@ -44,7 +44,7 @@ if str(CONFIG_DEFAULTS_DIR) not in sys.path:
 
 import _config_defaults as cfg  # noqa: E402
 import finalize_step_presets as fp  # noqa: E402
-from extension_discovery import find_implementors  # type: ignore[import-not-found]  # noqa: E402
+from extension_discovery import find_implementors  # noqa: E402
 
 
 # =============================================================================

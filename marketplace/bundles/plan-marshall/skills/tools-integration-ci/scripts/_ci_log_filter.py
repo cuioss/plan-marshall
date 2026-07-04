@@ -248,7 +248,7 @@ def _render_issues(issues: list[object]) -> str:
     return '\n'.join(out)
 
 
-def _load_parse_log(error_style: str):  # type: ignore[no-untyped-def]
+def _load_parse_log(error_style: str):
     """Lazily import the per-system ``parse_log`` for a structured style.
 
     Adds the build skill script directories to ``sys.path`` on first use so the

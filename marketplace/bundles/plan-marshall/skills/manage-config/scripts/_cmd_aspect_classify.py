@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from recipe_scoring import tokenize  # type: ignore[import-not-found]
+from recipe_scoring import tokenize
 
 # Default acceptance threshold: a winning aspect score at or above this
 # confidence is accepted; anything below falls back to ``implementation``.

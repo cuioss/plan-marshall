@@ -18,8 +18,8 @@ from conftest import MARKETPLACE_ROOT, run_script
 
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'determine_mode.py'
 
-from _config_defaults import DEFAULT_PROJECT  # type: ignore[import-not-found]  # noqa: E402
-from determine_mode import (  # type: ignore[import-not-found]  # noqa: E402
+from _config_defaults import DEFAULT_PROJECT  # noqa: E402
+from determine_mode import (  # noqa: E402
     check_docs,
     cmd_check_docs,
     cmd_check_working_prefixes,

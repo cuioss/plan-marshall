@@ -37,7 +37,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from file_ops import get_tracked_config_dir, now_utc_iso  # type: ignore[import-not-found]
+from file_ops import get_tracked_config_dir, now_utc_iso
 
 KIND_BUILD = 'build'
 KIND_CHANGE = 'change'

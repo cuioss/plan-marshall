@@ -40,7 +40,7 @@ from _build_execute import detect_wrapper as _detect_wrapper  # noqa: E402
 from _build_queue_slot import BuildQueueTimeout, build_queue_slot  # noqa: E402
 from _build_result import DirectCommandResult  # noqa: E402
 from _build_shared import cmd_run_common  # noqa: E402
-from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
+from toon_parser import serialize_toon  # noqa: E402
 
 # Error type emitted when the build queue is saturated past max_retries.
 ERROR_QUEUE_SATURATED = 'queue_saturated'

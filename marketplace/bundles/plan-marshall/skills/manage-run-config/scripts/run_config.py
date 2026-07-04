@@ -14,10 +14,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from constants import VALID_WARNING_CATEGORIES  # type: ignore[import-not-found]
-from file_ops import output_toon, read_json, safe_main, write_json  # type: ignore[import-not-found]
-from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
-from marketplace_paths import resolve_main_anchored_path  # type: ignore[import-not-found]
+from constants import VALID_WARNING_CATEGORIES
+from file_ops import output_toon, read_json, safe_main, write_json
+from input_validation import check_field_type, check_required_fields
+from marketplace_paths import resolve_main_anchored_path
 
 # Constants for timeout handling
 SAFETY_MARGIN = 1.25  # Multiplier applied to persisted values on retrieval

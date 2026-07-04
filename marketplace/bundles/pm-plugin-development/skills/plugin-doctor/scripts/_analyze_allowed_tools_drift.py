@@ -99,8 +99,8 @@ from pathlib import Path
 
 from _analyze_coverage import parse_declared_tools
 from _analyze_shared import read_frontmatter_disable_list
-from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
-from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _dep_detection import extract_frontmatter
+from _doctor_shared import Finding
 from _rule_registry import RuleDescriptor
 
 RULE_ID = 'allowed-tools-body-drift'

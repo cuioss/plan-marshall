@@ -409,7 +409,7 @@ class TestSurfaceCDomainContribution:
         retrospective aspects — the default keeps the generic retrospective
         domain-invariant.
         """
-        from extension_base import ExtensionBase  # type: ignore[import-not-found]
+        from extension_base import ExtensionBase
 
         class _Bare(ExtensionBase):
             def get_skill_domains(self) -> list[dict]:

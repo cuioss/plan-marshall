@@ -71,11 +71,11 @@ from _cmd_baseline_reconcile import cmd_baseline_reconcile
 from _cmd_force_push import cmd_force_push
 from _cmd_prune_ref import cmd_prune_ref
 from _cmd_switch_and_pull import cmd_switch_and_pull
-from file_ops import get_executor_path, get_worktree_root  # type: ignore[import-not-found]
-from git_provider import run_git  # type: ignore[import-not-found]
-from marketplace_paths import _find_plan_root_from_cwd  # type: ignore[import-not-found]
-from toon_parser import parse_toon, parse_toon_table  # type: ignore[import-not-found]
-from triage_helpers import (  # type: ignore[import-not-found]
+from file_ops import get_executor_path, get_worktree_root
+from git_provider import run_git
+from marketplace_paths import _find_plan_root_from_cwd
+from toon_parser import parse_toon, parse_toon_table
+from triage_helpers import (
     ErrorCode,
     create_workflow_cli,
     is_test_file,
@@ -1855,7 +1855,7 @@ Examples:
         ],
     )
     args = parser.parse_args()
-    from triage_helpers import print_toon as _output_toon  # type: ignore[import-not-found]
+    from triage_helpers import print_toon as _output_toon
 
     return _output_toon(args.func(args))
 

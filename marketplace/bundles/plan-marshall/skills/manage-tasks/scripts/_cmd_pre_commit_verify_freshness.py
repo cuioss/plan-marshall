@@ -81,16 +81,16 @@ phase-6-finalize ``push`` — is documented in
 from functools import lru_cache
 from pathlib import Path
 
-from _ledger_core import (  # type: ignore[import-not-found]
+from _ledger_core import (
     KIND_BUILD,
     read_entries,
     resolve_ledger_path,
 )
-from _tasks_core import get_plan_dir  # type: ignore[import-not-found]
-from constants import FILE_STATUS  # type: ignore[import-not-found]
-from file_ops import read_json  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
-from worktree_sha import compute_worktree_sha  # type: ignore[import-not-found]
+from _tasks_core import get_plan_dir
+from constants import FILE_STATUS
+from file_ops import read_json
+from toon_parser import parse_toon
+from worktree_sha import compute_worktree_sha
 
 # The per-plan execution manifest lives alongside status.json at
 # .plan/local/plans/{plan_id}/execution.toon. Its name is owned by

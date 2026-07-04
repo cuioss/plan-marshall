@@ -10,10 +10,10 @@ subsequent tasks can have their step targets auto-rewritten.
 from pathlib import Path
 
 from _tasks_core import format_task_file, get_tasks_dir, output_error, parse_task_file
-from constants import DIR_WORK  # type: ignore[import-not-found]
-from file_ops import atomic_write_file, get_plan_dir  # type: ignore[import-not-found]
-from plan_logging import log_entry  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from constants import DIR_WORK
+from file_ops import atomic_write_file, get_plan_dir
+from plan_logging import log_entry
+from toon_parser import parse_toon
 
 RENAME_MAPPING_FILE = 'rename_mapping.toon'
 

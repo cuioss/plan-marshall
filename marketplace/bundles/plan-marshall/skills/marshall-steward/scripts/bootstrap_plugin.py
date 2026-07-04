@@ -50,7 +50,7 @@ for _ancestor in Path(__file__).resolve().parents:
             sys.path.insert(0, _shared_scripts)
         break
 
-from marketplace_bundles import resolve_skills_root  # type: ignore[import-not-found]  # noqa: E402
+from marketplace_bundles import resolve_skills_root  # noqa: E402
 
 _SKILLS_DIR = resolve_skills_root(Path(__file__))
 for _lib in ('ref-toon-format', 'tools-file-ops'):
@@ -58,7 +58,7 @@ for _lib in ('ref-toon-format', 'tools-file-ops'):
     if _lib_path not in sys.path:
         sys.path.insert(0, _lib_path)
 
-from file_ops import get_base_dir, output_toon, safe_main  # type: ignore[import-not-found]  # noqa: E402
+from file_ops import get_base_dir, output_toon, safe_main  # noqa: E402
 
 # Default plugin name to search for
 PLUGIN_NAME = 'plan-marshall'

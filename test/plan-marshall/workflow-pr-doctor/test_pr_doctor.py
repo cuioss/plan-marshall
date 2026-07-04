@@ -20,8 +20,8 @@ from conftest import get_script_path, run_script
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-pr-doctor', 'pr_doctor.py')
 
 # Tier 2 direct imports — conftest sets up PYTHONPATH for cross-skill imports
-import pr_doctor  # type: ignore[import-not-found]  # noqa: E402
-from pr_doctor import (  # type: ignore[import-not-found]  # noqa: E402
+import pr_doctor  # noqa: E402
+from pr_doctor import (  # noqa: E402
     check_attempt,
     diagnose_pr,
     forward_project_dir,
@@ -30,7 +30,7 @@ from pr_doctor import (  # type: ignore[import-not-found]  # noqa: E402
     set_project_dir,
     validate_handoff,
 )
-from triage_helpers import make_error, parse_json_arg  # type: ignore[import-not-found]  # noqa: E402
+from triage_helpers import make_error, parse_json_arg  # noqa: E402
 
 
 def _parse_and_merge(handoff_json, pr=None, checks=None, auto_fix=None, max_fix_attempts=None, wait=None):
@@ -821,7 +821,7 @@ def test_main_without_project_dir_leaves_unset(clean_project_dir, capture_run):
 
 def test_main_plan_id_resolves_via_manage_status(clean_project_dir, capture_run):
     """Router-level --plan-id auto-resolves to the persisted worktree path."""
-    import resolve_project_dir as _routing  # type: ignore[import-not-found]
+    import resolve_project_dir as _routing
 
     argv = [
         'pr_doctor.py',
@@ -869,7 +869,7 @@ def test_main_emits_mutually_exclusive_error_on_both_flags(clean_project_dir):
 
 def test_main_plan_id_use_worktree_false_falls_back_to_main_checkout(clean_project_dir, capture_run):
     """``use_worktree=false`` resolution surfaces the main checkout root."""
-    import resolve_project_dir as _routing  # type: ignore[import-not-found]
+    import resolve_project_dir as _routing
 
     argv = [
         'pr_doctor.py',

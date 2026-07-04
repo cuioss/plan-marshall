@@ -37,7 +37,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from triage_helpers import (  # type: ignore[import-not-found]
+from triage_helpers import (
     ErrorCode,
     compile_patterns_from_config,
     create_workflow_cli,
@@ -580,7 +580,7 @@ Examples:
         ],
     )
     args = parser.parse_args()
-    from triage_helpers import print_toon as _output_toon  # type: ignore[import-not-found]
+    from triage_helpers import print_toon as _output_toon
 
     return _output_toon(args.func(args))
 

@@ -19,10 +19,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
-from file_ops import get_temp_dir  # type: ignore[import-not-found]
+from _dep_detection import extract_frontmatter
+from file_ops import get_temp_dir
 from marketplace_bundles import resolve_bundles_root
-from marketplace_paths import (  # type: ignore[import-not-found]
+from marketplace_paths import (
     _read_runtime_target,
     get_project_skill_roots,
 )

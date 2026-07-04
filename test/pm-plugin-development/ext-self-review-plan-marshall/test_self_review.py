@@ -6,7 +6,7 @@ import subprocess  # noqa: I001
 from pathlib import Path
 
 import pytest
-from self_review import (  # type: ignore[import-not-found]
+from self_review import (
     _detect_advertised_form_help_strings,
     _detect_contract_sources,
     _detect_count_prose,
@@ -1989,7 +1989,7 @@ class TestCountsTotalInvariant:
     )
 
     def _surface(self, repo: Path):
-        from conftest import get_script_path, run_script  # type: ignore[import-not-found]
+        from conftest import get_script_path, run_script
 
         script = get_script_path(
             'pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py'

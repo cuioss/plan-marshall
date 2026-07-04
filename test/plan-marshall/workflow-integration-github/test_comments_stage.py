@@ -180,7 +180,7 @@ class TestCommentsStage:
         assert result['producer_mismatch_hash_id'] is None
 
         # Verify the finding made it into the per-type store.
-        from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings
 
         q = query_findings('gh-pr-stage-1', finding_type='pr-comment')
         assert q['filtered_count'] == 1
@@ -242,7 +242,7 @@ class TestCommentsStage:
         assert result['count_stored'] == 1
         assert result['producer_mismatch_hash_id'] is None
 
-        from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings
 
         q = query_findings('gh-pr-stage-resolved', finding_type='pr-comment')
         assert q['filtered_count'] == 1
@@ -327,7 +327,7 @@ class TestCommentsStage:
         assert result['count_stored'] == 1
         assert result['producer_mismatch_hash_id'] is not None
 
-        from _findings_core import query_qgate_findings  # type: ignore[import-not-found]
+        from _findings_core import query_qgate_findings
 
         q = query_qgate_findings('gh-pr-stage-mismatch', phase='5-execute')
         assert q['filtered_count'] == 1
@@ -394,7 +394,7 @@ class TestCommentsStage:
         assert result_2['producer_mismatch_hash_id'] is None
 
         # The store holds exactly ONE pr-comment finding — no phantom duplicate.
-        from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings
 
         q = query_findings('gh-pr-stage-dedup', finding_type='pr-comment')
         assert q['filtered_count'] == 1
@@ -464,7 +464,7 @@ class TestCommentsStage:
         assert result_2['producer_mismatch_hash_id'] is None
 
         # The store now holds exactly TWO findings — RB1 (from iter 1) and RB2.
-        from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings
 
         q = query_findings('gh-pr-stage-newid', finding_type='pr-comment')
         assert q['filtered_count'] == 2
@@ -525,7 +525,7 @@ class TestCommentsStageAuthorKindFields:
         assert result['status'] == 'success'
         assert result['count_stored'] == 1
 
-        from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings
 
         q = query_findings('gh-pr-author-field', finding_type='pr-comment')
         assert q['filtered_count'] == 1
@@ -578,7 +578,7 @@ class TestCommentsStageAuthorKindFields:
         assert result['status'] == 'success'
         assert result['count_stored'] == 1
 
-        from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings
 
         q = query_findings(plan_id, finding_type='pr-comment')
         assert q['filtered_count'] == 1
@@ -630,7 +630,7 @@ class TestCommentsStageAuthorKindFields:
         assert result['status'] == 'success'
         assert result['count_stored'] == 2
 
-        from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings
 
         inline_only = query_findings('gh-pr-kind-query', finding_type='pr-comment', kind='inline')
         assert inline_only['filtered_count'] == 1
@@ -682,7 +682,7 @@ class TestCommentsStageAuthorKindFields:
         assert result['status'] == 'success'
         assert result['count_stored'] == 2
 
-        from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings
 
         bot_only = query_findings('gh-pr-author-query', finding_type='pr-comment', author='coderabbitai')
         assert bot_only['filtered_count'] == 1
@@ -720,7 +720,7 @@ class TestCommentsStageAuthorKindFields:
         assert result['status'] == 'success'
         assert result['count_stored'] == 1
 
-        from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings
 
         q = query_findings('gh-pr-author-unknown', finding_type='pr-comment')
         assert q['filtered_count'] == 1
@@ -778,7 +778,7 @@ class TestCommentsStageReviewedShaAndBotKind:
         # HEAD SHA is fetched once for the whole batch, not per comment.
         assert mock_head.call_count == 1
 
-        from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings
 
         q = query_findings('gh-pr-reviewed-sha', finding_type='pr-comment')
         assert q['filtered_count'] == 1
@@ -824,7 +824,7 @@ class TestCommentsStageReviewedShaAndBotKind:
         assert result['status'] == 'success'
         assert result['count_stored'] == 1
 
-        from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings
 
         q = query_findings(plan_id, finding_type='pr-comment')
         assert q['filtered_count'] == 1
@@ -875,7 +875,7 @@ class TestCommentsStageReviewedShaAndBotKind:
         assert result['count_stored'] == 1
         assert result['producer_mismatch_hash_id'] is None
 
-        from _findings_core import query_findings  # type: ignore[import-not-found]
+        from _findings_core import query_findings
 
         q = query_findings('gh-pr-botkind-human', finding_type='pr-comment')
         assert q['filtered_count'] == 1
@@ -925,7 +925,7 @@ class TestPRProjectDirPlumbing:
     """Verify github_pr.main() strips --project-dir and forwards cwd."""
 
     def test_main_project_dir_sets_default_cwd(self):
-        import ci_base  # type: ignore[import-not-found]
+        import ci_base
 
         saved_argv = sys.argv
         saved_cwd = ci_base.get_default_cwd()
@@ -967,8 +967,8 @@ class TestPRTwoStateRoutingContract:
 
     def test_main_plan_id_sets_default_cwd_via_manage_status_resolution(self):
         """Router-level --plan-id auto-routes to the persisted worktree path."""
-        import ci_base  # type: ignore[import-not-found]
-        import resolve_project_dir as _routing  # type: ignore[import-not-found]
+        import ci_base
+        import resolve_project_dir as _routing
 
         saved_argv = sys.argv
         saved_cwd = ci_base.get_default_cwd()

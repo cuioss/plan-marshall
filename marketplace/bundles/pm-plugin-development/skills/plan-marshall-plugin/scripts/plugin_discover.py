@@ -43,8 +43,8 @@ if str(EXTENSION_API_DIR) not in sys.path:
     sys.path.insert(0, str(EXTENSION_API_DIR))
 
 from _build_discover import find_readme  # noqa: E402
-from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]  # noqa: E402
-from file_ops import safe_main  # type: ignore[import-not-found]  # noqa: E402
+from _dep_detection import extract_frontmatter  # noqa: E402
+from file_ops import safe_main  # noqa: E402
 
 # =============================================================================
 # Constants

@@ -10,7 +10,7 @@ import argparse
 from _references_core import (
     require_references,
 )
-from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
+from input_validation import require_valid_plan_id
 
 
 def cmd_get_context(args: argparse.Namespace) -> dict:

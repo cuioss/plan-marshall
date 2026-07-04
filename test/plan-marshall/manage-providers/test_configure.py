@@ -120,7 +120,7 @@ class TestConfigureLogic:
 
     def test_find_provider_returns_match(self):
         """_find_provider returns matching provider."""
-        from _cred_configure import _find_provider  # type: ignore[import-not-found]
+        from _cred_configure import _find_provider
 
         providers = [
             {'skill_name': 'a', 'display_name': 'A'},
@@ -131,7 +131,7 @@ class TestConfigureLogic:
 
     def test_find_provider_returns_none_for_missing(self):
         """_find_provider returns None when not found."""
-        from _cred_configure import _find_provider  # type: ignore[import-not-found]
+        from _cred_configure import _find_provider
 
         providers = [{'skill_name': 'a'}]
         assert _find_provider(providers, 'missing') is None
@@ -167,7 +167,7 @@ class TestCheckCompleteness:
 
     def test_not_found(self, tmp_path):
         """Returns exists=False when credential file does not exist."""
-        from _providers_core import check_credential_completeness  # type: ignore[import-not-found]
+        from _providers_core import check_credential_completeness
 
         result = check_credential_completeness('nonexistent', 'global')
         # May or may not exist depending on system state
@@ -179,7 +179,7 @@ class TestCheckCompleteness:
 
     def test_complete_credential(self, tmp_path, monkeypatch):
         """Returns complete=True when no placeholders present."""
-        from _providers_core import (  # type: ignore[import-not-found]
+        from _providers_core import (
             check_credential_completeness,
             save_credential,
         )
@@ -203,7 +203,7 @@ class TestCheckCompleteness:
 
     def test_incomplete_credential(self, tmp_path, monkeypatch):
         """Returns complete=False when placeholders present."""
-        from _providers_core import (  # type: ignore[import-not-found]
+        from _providers_core import (
             SECRET_PLACEHOLDERS,
             check_credential_completeness,
             save_credential,
@@ -228,7 +228,7 @@ class TestCheckCompleteness:
 
     def test_auth_none_reports_complete(self, tmp_path, monkeypatch):
         """auth_type=none with no secret fields reports complete."""
-        from _providers_core import (  # type: ignore[import-not-found]
+        from _providers_core import (
             check_credential_completeness,
             save_credential,
         )
@@ -325,7 +325,7 @@ class TestConfigureMarshalJsonSeparation:
         """Configure writes url to marshal.json, not to credential file."""
         import json as _json
 
-        from _providers_core import (  # type: ignore[import-not-found]
+        from _providers_core import (
             load_credential,
             read_provider_config,
         )
@@ -367,7 +367,7 @@ class TestConfigureMarshalJsonSeparation:
         """Configure writes extra fields (organization, project_key) to marshal.json."""
         import json as _json
 
-        from _providers_core import (  # type: ignore[import-not-found]
+        from _providers_core import (
             load_credential,
             read_provider_config,
         )
@@ -457,7 +457,7 @@ class TestConfigureSonarPomDerive:
 
     def test_auto_derives_org_and_project_key_from_pom(self, tmp_path, monkeypatch):
         """Maven-detected Sonar configure auto-derives org/project_key from pom.xml."""
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config
 
         creds_env = self._stage(tmp_path, monkeypatch, _POM_WITH_SONAR)
         skill = 'plan-marshall:workflow-integration-sonar'
@@ -478,7 +478,7 @@ class TestConfigureSonarPomDerive:
 
     def test_supplied_matching_value_no_warning(self, tmp_path, monkeypatch):
         """A supplied --extra value matching the pom value succeeds with no warning."""
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config
 
         creds_env = self._stage(tmp_path, monkeypatch, _POM_WITH_SONAR)
         skill = 'plan-marshall:workflow-integration-sonar'
@@ -504,7 +504,7 @@ class TestConfigureSonarPomDerive:
 
     def test_supplied_mismatch_warns_and_preserves_user_value(self, tmp_path, monkeypatch):
         """A supplied value disagreeing with the pom value warns but keeps the user's value."""
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config
 
         creds_env = self._stage(tmp_path, monkeypatch, _POM_WITH_SONAR)
         skill = 'plan-marshall:workflow-integration-sonar'
@@ -528,7 +528,7 @@ class TestConfigureSonarPomDerive:
 
     def test_non_maven_project_unchanged(self, tmp_path, monkeypatch):
         """Without a pom.xml, configure behavior is unchanged — no derivation, no warning."""
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config
 
         creds_env = self._stage(tmp_path, monkeypatch, pom_content=None)
         skill = 'plan-marshall:workflow-integration-sonar'
@@ -553,7 +553,7 @@ class TestConfigureSonarPomDerive:
 
     def test_pom_without_sonar_properties_unchanged(self, tmp_path, monkeypatch):
         """A pom.xml without Sonar properties leaves behavior unchanged."""
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config
 
         creds_env = self._stage(tmp_path, monkeypatch, _POM_WITHOUT_SONAR)
         skill = 'plan-marshall:workflow-integration-sonar'
@@ -577,7 +577,7 @@ class TestConfigureSonarPomDerive:
         """A non-Sonar provider is unaffected even when a Sonar-bearing pom.xml is present."""
         import json as _json
 
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config
 
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
@@ -623,7 +623,7 @@ class TestConfigureAuthTypeMismatch:
         """Configure with token auth overwrites existing none credential."""
         import json as _json
 
-        from _providers_core import (  # type: ignore[import-not-found]
+        from _providers_core import (
             load_credential,
             save_credential,
         )
@@ -682,8 +682,8 @@ class TestConfigureSystemAuth:
 
     def test_system_auth_creates_credential_without_secrets(self, plan_context, monkeypatch):
         """Configure with system auth creates credential file with no secret placeholders."""
-        from _cred_configure import run_configure  # type: ignore[import-not-found]
-        from _providers_core import (  # type: ignore[import-not-found]
+        from _cred_configure import run_configure
+        from _providers_core import (
             check_credential_completeness,
             load_credential,
         )
@@ -731,8 +731,8 @@ class TestConfigureSystemAuth:
 
     def test_system_auth_does_not_require_url(self, plan_context, monkeypatch):
         """Configure with system auth succeeds without --url."""
-        from _cred_configure import run_configure  # type: ignore[import-not-found]
-        from _providers_core import load_credential  # type: ignore[import-not-found]
+        from _cred_configure import run_configure
+        from _providers_core import load_credential
 
         tmp_path = plan_context.fixture_dir
         creds_dir = tmp_path / 'creds'
@@ -772,7 +772,7 @@ class TestConfigureSystemAuth:
 
     def test_system_auth_override_accepted(self, plan_context, monkeypatch):
         """Configure accepts explicit --auth-type override for system provider."""
-        from _cred_configure import run_configure  # type: ignore[import-not-found]
+        from _cred_configure import run_configure
 
         tmp_path = plan_context.fixture_dir
         creds_dir = tmp_path / 'creds'

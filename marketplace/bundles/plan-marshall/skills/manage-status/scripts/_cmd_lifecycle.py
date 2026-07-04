@@ -9,9 +9,9 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from _handshake_commands import cmd_verify  # type: ignore[import-not-found]
-from _invariants import _BLOCKING_BOUNDARIES  # type: ignore[import-not-found]
-from _short_description import derive_short_description  # type: ignore[import-not-found]
+from _handshake_commands import cmd_verify
+from _invariants import _BLOCKING_BOUNDARIES
+from _short_description import derive_short_description
 from _status_core import (
     get_archive_dir,
     get_status_path,
@@ -21,12 +21,12 @@ from _status_core import (
     require_valid_plan_id,
     write_status,
 )
-from constants import (  # type: ignore[import-not-found]
+from constants import (
     PHASE_STATUS_DONE,
     PHASE_STATUS_IN_PROGRESS,
     PHASE_STATUS_PENDING,
 )
-from file_ops import get_plan_dir  # type: ignore[import-not-found]
+from file_ops import get_plan_dir
 
 # Result-status values that indicate the strict-verify gate refuses to advance.
 # Mirrors the ``--strict`` exit-1 conditions in ``phase_handshake.py`` main()
@@ -293,7 +293,7 @@ def _restore_lesson_from_plan_dir(plan_id: str, plan_dir: Path) -> tuple[bool, l
     in ``lessons-learned/``. ``restored_any`` is ``True`` iff at least one file
     was restored.
     """
-    from file_ops import base_path  # type: ignore[import-not-found]
+    from file_ops import base_path
 
     if not plan_dir.exists():
         return False, []

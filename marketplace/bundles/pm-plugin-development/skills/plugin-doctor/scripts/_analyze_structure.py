@@ -18,7 +18,7 @@ from _analyze_markdown import (  # noqa: F401  # re-exported for stable import s
     check_hardcoded_model_on_canonical,
 )
 from _analyze_shared import check_yaml_validity, remove_code_blocks
-from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
+from _dep_detection import extract_frontmatter
 from _rule_registry import RuleDescriptor
 
 # Typeless skill-structure analyzer; backs the skill-naming-noun-suffix rule

@@ -31,7 +31,7 @@ import shutil
 from pathlib import Path
 from typing import Any, NoReturn
 
-from constants import (  # type: ignore[import-not-found]
+from constants import (
     DIR_ARCHITECTURE,
     DIR_PER_MODULE_DERIVED,
     DIR_PER_MODULE_ENRICHED,
@@ -266,8 +266,8 @@ def _compute_all_modules(project_dir: str, project_path: Path) -> dict[str, dict
     # ``extension_discovery`` is kept local for the same reason — it is an
     # extension-API module that should not become a module-level dependency of
     # this low-level utility module.
-    from _cmd_manage import _post_process_files  # type: ignore[import-not-found]
-    from extension_discovery import discover_project_modules  # type: ignore[import-not-found]
+    from _cmd_manage import _post_process_files
+    from extension_discovery import discover_project_modules
 
     result = discover_project_modules(project_path)
     modules: dict[str, dict[str, Any]] = result.get('modules', {}) or {}
@@ -602,7 +602,7 @@ def _merge_build_map(config: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
     """
     import sys
 
-    from marketplace_bundles import (  # type: ignore[import-not-found]
+    from marketplace_bundles import (
         resolve_bundle_path,
         resolve_bundles_root,
     )
@@ -612,7 +612,7 @@ def _merge_build_map(config: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
     if config_scripts_dir not in sys.path:
         sys.path.insert(0, config_scripts_dir)
     try:
-        from _config_core import BuildMapMissingError, merge_build_map  # type: ignore[import-not-found]
+        from _config_core import BuildMapMissingError, merge_build_map
     except ImportError:
         return {}
     try:
@@ -708,7 +708,7 @@ def error_exit(message: str, context: dict[str, Any] | None = None) -> NoReturn:
     CLI-boundary helper — only call from command handlers, not library functions.
     For library code, raise ArchitectureError or DataNotFoundError instead.
     """
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+    from toon_parser import serialize_toon
 
     error_data: dict[str, Any] = {'status': 'error', 'error': 'architecture_error', 'message': message}
     if context:
@@ -748,7 +748,7 @@ def require_project_meta(project_dir: str = '.') -> dict[str, Any]:
 
 def handle_module_not_found(module_name: str, project_dir: str) -> int:
     """Print module-not-found error with available modules list and return 1."""
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+    from toon_parser import serialize_toon
 
     try:
         modules = iter_modules(project_dir)

@@ -32,13 +32,13 @@ import sys
 from datetime import UTC, datetime
 from typing import Any
 
-from ci_base import (  # type: ignore[import-not-found]
+from ci_base import (
     extract_routing_args,
     poll_until,
     register_subcommands,
     set_default_cwd,
 )
-from triage_helpers import (  # type: ignore[import-not-found]
+from triage_helpers import (
     create_workflow_cli,
     is_test_file,
     load_skill_config,
@@ -95,8 +95,8 @@ def _read_manifest_sonar_params(plan_id: str) -> dict[str, Any]:
     composed plan.
     """
     try:
-        from file_ops import get_plan_dir  # type: ignore[import-not-found]
-        from toon_parser import parse_toon  # type: ignore[import-not-found]
+        from file_ops import get_plan_dir
+        from toon_parser import parse_toon
     except Exception:
         return {}
     try:
@@ -201,7 +201,7 @@ def _poll_ce_status(project: str, pr: str | None) -> tuple[bool, dict[str, Any]]
     success ``data`` carries ``ce_state`` (the current task status string) and
     ``queue_length`` (number of still-queued tasks for the component).
     """
-    from _providers_core import (  # type: ignore[import-not-found]
+    from _providers_core import (
         RestClientError,
         get_authenticated_client,
     )
@@ -315,7 +315,7 @@ def _write_scan_summary(
     """
     import json
 
-    from _findings_core import get_findings_dir  # type: ignore[import-not-found]
+    from _findings_core import get_findings_dir
 
     row: dict[str, Any] = {
         'count_status': count_status,
@@ -359,7 +359,7 @@ def _fetch_issues(project: str, pr: str | None, severities: str | None, types: s
     enumerates only the new-code issues, so a reported ``0`` is a confirmed
     PR-scoped zero rather than an inferred one.
     """
-    from _providers_core import (  # type: ignore[import-not-found]
+    from _providers_core import (
         RestClientError,
         get_authenticated_client,
     )
@@ -420,7 +420,7 @@ def cmd_fetch_and_store(args):
     ``new_code_issue_count: null`` and ``count_status: undecidable`` with a
     ``count_status_reason`` — NEVER a false ``0``.
     """
-    from _findings_core import (  # type: ignore[import-not-found]
+    from _findings_core import (
         add_finding,
         add_qgate_finding,
     )
@@ -651,7 +651,7 @@ Examples:
         ],
     )
     args = parser.parse_args()
-    from triage_helpers import print_toon as _output_toon  # type: ignore[import-not-found]
+    from triage_helpers import print_toon as _output_toon
 
     return _output_toon(args.func(args))
 

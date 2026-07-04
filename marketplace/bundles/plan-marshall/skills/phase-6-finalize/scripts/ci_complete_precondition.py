@@ -82,8 +82,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from file_ops import get_executor_path, get_plan_dir  # type: ignore[import-not-found]
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
+from file_ops import get_executor_path, get_plan_dir
+from toon_parser import parse_toon, serialize_toon
 
 # ---------------------------------------------------------------------------
 # Constants

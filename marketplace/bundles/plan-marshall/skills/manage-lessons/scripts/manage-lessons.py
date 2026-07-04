@@ -36,34 +36,34 @@ from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
 from _cmd_auto_suggest import cmd_auto_suggest
-from _lessons_crud import (  # type: ignore[import-not-found]
+from _lessons_crud import (
     DEFAULT_ARCH_CONSTRAINT_QUIET_DAYS,
     find_active_arch_constraint_by_rule,
     reinforce_arch_constraint,
     retire_quiet_arch_constraints,
     set_body,
 )
-from constants import DIR_LESSONS, LESSON_CATEGORIES  # type: ignore[import-not-found]
-from file_ops import (  # type: ignore[import-not-found]
+from constants import DIR_LESSONS, LESSON_CATEGORIES
+from file_ops import (
     atomic_write_file,
     get_marshal_path,
     output_toon,
     parse_markdown_metadata,
     safe_main,
 )
-from input_validation import (  # type: ignore[import-not-found]
+from input_validation import (
     add_component_arg,
     add_lesson_id_arg,
     add_plan_id_arg,
     parse_args_with_toon_errors,
     validate_lesson_id,
 )
-from marketplace_paths import (  # type: ignore[import-not-found]
+from marketplace_paths import (
     MARKETPLACE_BUNDLES_PATH,
     find_marketplace_path,
     resolve_main_anchored_path,
 )
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from plan_logging import log_entry
 
 VALID_CATEGORIES = LESSON_CATEGORIES
 VALID_STATUSES = ('active', 'superseded', 'removed')

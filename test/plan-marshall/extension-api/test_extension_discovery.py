@@ -42,7 +42,7 @@ import subprocess
 import pytest
 
 # conftest.py sets up the marketplace PYTHONPATH and exposes module loaders.
-from conftest import (  # type: ignore[import-not-found]
+from conftest import (
     MARKETPLACE_ROOT,
     PROJECT_ROOT,
     load_script_module,
@@ -53,7 +53,7 @@ from conftest import (  # type: ignore[import-not-found]
 # ROLE_HEURISTIC_* constants were removed by the build_map redesign — routes
 # now declare resolved roles directly. ``BuildExtensionBase`` is the Axis-B
 # contract anchor the real build extensions subclass.
-from extension_base import (  # type: ignore[import-not-found]
+from extension_base import (
     ROLE_CONFIG,
     ROLE_PRODUCTION,
     ROLE_TEST,

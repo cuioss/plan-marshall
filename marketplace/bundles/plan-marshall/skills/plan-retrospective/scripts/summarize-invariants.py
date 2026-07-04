@@ -32,13 +32,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from file_ops import base_path, output_toon, safe_main
+from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
-from marketplace_paths import find_marketplace_path  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from marketplace_paths import find_marketplace_path
+from toon_parser import parse_toon
 
 # Invariants that apply to every plan. Additional invariants
 # (``worktree_sha``, ``worktree_dirty``) are only recorded when the plan
@@ -383,4 +383,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    main()  # type: ignore[no-untyped-call]
+    main()

@@ -22,14 +22,14 @@ import sys
 import pytest
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from _pm_input_validation_fixtures import (  # type: ignore[import-not-found]
+from _pm_input_validation_fixtures import (
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_invalid_field,
     assert_not_invalid_field,
 )
 
-from conftest import get_script_path, run_script  # type: ignore[import-not-found]
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
 
@@ -39,7 +39,7 @@ _SCRIPTS_DIR = SCRIPT_PATH.parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
-import _invariants as inv  # type: ignore[import-not-found]  # noqa: E402
+import _invariants as inv  # noqa: E402
 
 # Subcommands that declare ``--plan-id`` (all four).
 _PLAN_ID_SUBCOMMANDS = ('capture', 'verify', 'list', 'clear')
@@ -227,7 +227,7 @@ def test_check_main_dirty_drift_gated_to_planning_phases():
     worktree-routed plan. At ``4-plan`` it raises ``MainCheckoutDirtiedDuringPlan``;
     at ``5-execute`` it returns ``None`` (relaxed) for the SAME input.
     """
-    import _handshake_commands as cmds  # type: ignore[import-not-found]
+    import _handshake_commands as cmds
 
     captured_row = {'main_dirty_files': ['existing.txt']}
     observed = {'main_dirty_files': ['existing.txt', 'leaked.py']}
@@ -252,7 +252,7 @@ def test_cwd_unchanged_invariant_guard_holds_when_cwd_is_worktree(tmp_path, monk
     ``None`` (invariant holds). Pins ``PLAN_BASE_DIR`` + cwd per the
     test-isolation lessons.
     """
-    import file_ops  # type: ignore[import-not-found]
+    import file_ops
 
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     worktree = tmp_path / 'worktrees' / 'plan-guard-ok'
@@ -264,7 +264,7 @@ def test_cwd_unchanged_invariant_guard_holds_when_cwd_is_worktree(tmp_path, monk
 
 def test_cwd_unchanged_invariant_guard_flags_when_cwd_left_worktree(tmp_path, monkeypatch):
     """The guard flags a violation when cwd has left the worktree."""
-    import file_ops  # type: ignore[import-not-found]
+    import file_ops
 
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     worktree = tmp_path / 'worktrees' / 'plan-guard-left'

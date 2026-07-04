@@ -571,7 +571,7 @@ def test_list_finalize_steps_project_skill_order_defaults_to_zero_when_absent():
     """
     import tempfile
 
-    from extension_discovery import _build_implementor_record  # type: ignore[import-not-found]
+    from extension_discovery import _build_implementor_record
 
     handle = tempfile.NamedTemporaryFile(
         mode='w', suffix='.md', delete=False, encoding='utf-8'

@@ -33,7 +33,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from file_ops import get_plan_dir  # type: ignore[import-not-found]
+from file_ops import get_plan_dir
 
 DEFAULT_THRESHOLD = 5
 

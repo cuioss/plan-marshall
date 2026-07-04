@@ -19,7 +19,7 @@ from conftest import get_script_path, run_script
 SCRIPT_PATH = get_script_path('plan-marshall', 'tools-integration-ci', 'ci_health.py')
 
 # Tier 2 direct imports — resolved after conftest bootstraps PYTHONPATH above.
-from ci_health import (  # type: ignore[import-not-found]  # noqa: E402
+from ci_health import (  # noqa: E402
     _match_directory,
     _match_url,
     cmd_detect,

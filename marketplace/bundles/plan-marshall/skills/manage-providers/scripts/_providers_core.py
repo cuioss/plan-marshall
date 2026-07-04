@@ -27,7 +27,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from file_ops import get_marshal_path  # type: ignore[import-not-found]
+from file_ops import get_marshal_path
 
 # === Constants ===
 
@@ -97,7 +97,7 @@ def write_provider_config(skill_name: str, provider_config: dict[str, Any]) -> N
     # save produces a spurious reorder diff. Imported lazily (executor sets the
     # cross-skill PYTHONPATH); no import cycle — _config_core never imports this
     # module.
-    from _config_core import order_config_keys  # type: ignore[import-not-found]
+    from _config_core import order_config_keys
 
     config = order_config_keys(config)
 

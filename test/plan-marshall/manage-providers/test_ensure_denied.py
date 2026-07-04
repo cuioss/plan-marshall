@@ -28,8 +28,8 @@ class TestEnsureDeniedRules:
         """
         import importlib
 
-        import _cred_ensure_denied  # type: ignore[import-not-found]
-        import _providers_core  # type: ignore[import-not-found]
+        import _cred_ensure_denied
+        import _providers_core
 
         # Capture the sandboxed dir so the global reload below is fully reverted
         # in the finally block — otherwise _cred_ensure_denied.DENY_RULES would
@@ -51,14 +51,14 @@ class TestEnsureDeniedRules:
 
     def test_deny_rules_cover_read_tool(self):
         """Deny rules must cover Read tool access."""
-        from _cred_ensure_denied import DENY_RULES  # type: ignore[import-not-found]
+        from _cred_ensure_denied import DENY_RULES
 
         read_rules = [r for r in DENY_RULES if r.startswith('Read(')]
         assert len(read_rules) >= 2, 'Must have Read() deny rules (tilde + abs)'
 
     def test_deny_rules_cover_common_bash_commands(self):
         """Deny rules must cover cat, head, tail, etc."""
-        from _cred_ensure_denied import DENY_RULES  # type: ignore[import-not-found]
+        from _cred_ensure_denied import DENY_RULES
 
         bash_commands = ['cat', 'head', 'tail', 'less', 'more', 'cp', 'grep', 'base64']
         for cmd in bash_commands:
@@ -81,7 +81,7 @@ class TestEnsureDeniedCLI:
                 with patch('permission_common.save_settings') as mock_save:
                     from argparse import Namespace
 
-                    from _cred_ensure_denied import run_ensure_denied  # type: ignore[import-not-found]
+                    from _cred_ensure_denied import run_ensure_denied
 
                     result = run_ensure_denied(Namespace(target='project'))
                     assert result == 0
@@ -89,7 +89,7 @@ class TestEnsureDeniedCLI:
 
     def test_ensure_denied_idempotent(self, tmp_path):
         """Running ensure-denied twice doesn't duplicate rules."""
-        from _cred_ensure_denied import DENY_RULES  # type: ignore[import-not-found]
+        from _cred_ensure_denied import DENY_RULES
 
         settings = {'permissions': {'allow': [], 'deny': list(DENY_RULES), 'ask': []}}
 
@@ -98,7 +98,7 @@ class TestEnsureDeniedCLI:
                 with patch('permission_common.save_settings'):
                     from argparse import Namespace
 
-                    from _cred_ensure_denied import run_ensure_denied  # type: ignore[import-not-found]
+                    from _cred_ensure_denied import run_ensure_denied
 
                     run_ensure_denied(Namespace(target='project'))
                     assert len(settings['permissions']['deny']) == len(DENY_RULES)

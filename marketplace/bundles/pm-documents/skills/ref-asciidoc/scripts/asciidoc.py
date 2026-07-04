@@ -26,7 +26,7 @@ from _cmd_format import cmd_format
 from _cmd_stats import cmd_stats
 from _cmd_validate import cmd_validate
 from _cmd_verify_links import cmd_verify_links
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
 
 
 @safe_main

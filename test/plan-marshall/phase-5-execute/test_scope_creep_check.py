@@ -21,7 +21,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
-from conftest import get_script_path  # type: ignore[import-not-found]
+from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'phase-5-execute', 'scope_creep_check.py')
 SCRIPTS_DIR = SCRIPT_PATH.parent

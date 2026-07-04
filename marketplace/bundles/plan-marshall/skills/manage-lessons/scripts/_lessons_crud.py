@@ -23,7 +23,7 @@ from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
 
-from file_ops import atomic_write_file, parse_markdown_metadata  # type: ignore[import-not-found]
+from file_ops import atomic_write_file, parse_markdown_metadata
 
 # Body H2 marker appended on each arch-constraint recurrence. The format matches
 # the existing ``RECURRENCE_H2_REGEX`` (``^## Recurrence —``) the aggregate verb

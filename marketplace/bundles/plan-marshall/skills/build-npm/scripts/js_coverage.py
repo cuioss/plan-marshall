@@ -18,7 +18,7 @@ import os
 from typing import Any
 
 from _build_cli import safe_main
-from resolve_project_dir import (  # type: ignore[import-not-found]
+from resolve_project_dir import (
     MutuallyExclusiveArgsError,
     WorktreeResolutionError,
     add_plan_id_arg,
@@ -26,7 +26,7 @@ from resolve_project_dir import (  # type: ignore[import-not-found]
     emit_worktree_error,
     resolve_project_dir,
 )
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from toon_parser import serialize_toon
 
 EXIT_SUCCESS = 0
 

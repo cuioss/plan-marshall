@@ -29,7 +29,7 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, run_script  # type: ignore[import-not-found]
+from conftest import get_script_path, run_script
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent

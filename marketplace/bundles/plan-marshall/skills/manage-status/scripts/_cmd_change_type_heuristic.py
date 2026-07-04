@@ -23,10 +23,10 @@ import argparse
 import re
 from typing import Any
 
-from _plan_parsing import parse_document_sections  # type: ignore[import-not-found]
+from _plan_parsing import parse_document_sections
 from _status_core import read_status, write_status
-from file_ops import get_plan_dir  # type: ignore[import-not-found]
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from file_ops import get_plan_dir
+from plan_logging import log_entry
 
 # Confidence floor: below this the heuristic refuses to commit and the
 # caller MUST dispatch the LLM detect-change-type workflow instead.

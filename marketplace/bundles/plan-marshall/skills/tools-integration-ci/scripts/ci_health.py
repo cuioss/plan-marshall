@@ -23,7 +23,7 @@ import argparse
 import re
 from pathlib import Path
 
-from ci_base import run_cli, safe_main, serialize_toon  # type: ignore[import-not-found]
+from ci_base import run_cli, safe_main, serialize_toon
 
 # Tool definitions: {tool: requires_auth}
 # Note: python3 not checked - if it wasn't available, this script couldn't run
@@ -56,7 +56,7 @@ def _discover_provider_tools() -> dict[str, str | None]:
     Returns:
         Dict mapping provider name to CLI tool name.
     """
-    from _list_providers import find_full_providers_by_category  # type: ignore[import-not-found]
+    from _list_providers import find_full_providers_by_category
 
     ci_providers = find_full_providers_by_category('ci')
     mapping: dict[str, str | None] = {'unknown': None}
@@ -150,7 +150,7 @@ def _discover_detection_patterns() -> list[dict]:
         List of dicts with 'provider_key' and detection fields
         (url_patterns, directory_markers, enterprise_patterns).
     """
-    from _list_providers import find_full_providers_by_category  # type: ignore[import-not-found]
+    from _list_providers import find_full_providers_by_category
 
     ci_providers = find_full_providers_by_category('ci')
     patterns: list[dict] = []
@@ -351,7 +351,7 @@ def cmd_verify_all(args: argparse.Namespace) -> dict:
     """
     del args
 
-    from file_ops import get_marshal_path  # type: ignore[import-not-found]
+    from file_ops import get_marshal_path
 
     marshal_path = get_marshal_path()
     if not marshal_path.exists():

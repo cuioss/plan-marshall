@@ -70,7 +70,7 @@ assert _rc_spec is not None and _rc_spec.loader is not None
 run_config = importlib.util.module_from_spec(_rc_spec)
 _rc_spec.loader.exec_module(run_config)
 
-import marketplace_paths  # type: ignore[import-not-found]  # noqa: E402
+import marketplace_paths  # noqa: E402
 
 _PLAN_ID = 'lifecycle-plan'
 
@@ -114,7 +114,7 @@ def real_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     main_local = main / '.plan' / 'local'
 
     monkeypatch.setenv('PLAN_BASE_DIR', str(main_local))
-    import file_ops  # type: ignore[import-not-found]
+    import file_ops
 
     monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
     monkeypatch.chdir(main)

@@ -16,7 +16,7 @@ from collections.abc import Callable
 from _build_format import format_toon
 from _build_parse import Issue
 from _build_shared import ParserFn, cmd_discover_common, cmd_parse_common
-from file_ops import safe_main  # type: ignore[import-not-found]  # noqa: F401  # canonical entry-point wrapper
+from file_ops import safe_main  # noqa: F401  # canonical entry-point wrapper
 
 
 def add_project_dir_arg(parser) -> None:
@@ -51,7 +51,7 @@ def add_project_dir_arg(parser) -> None:
     )
     # The companion --plan-id flag is added by the shared helper so the
     # help text and default stay aligned with the canonical contract.
-    from resolve_project_dir import add_plan_id_arg  # type: ignore[import-not-found]
+    from resolve_project_dir import add_plan_id_arg
 
     add_plan_id_arg(parser)
 
@@ -491,7 +491,7 @@ def build_main(
     # Subcommands that do not declare the pair (e.g., ``parse``) simply
     # lack ``args.plan_id`` and ``args.project_dir`` — the helper is a
     # no-op for those namespaces.
-    from resolve_project_dir import (  # type: ignore[import-not-found]
+    from resolve_project_dir import (
         MutuallyExclusiveArgsError,
         WorktreeResolutionError,
         emit_mutually_exclusive_error,

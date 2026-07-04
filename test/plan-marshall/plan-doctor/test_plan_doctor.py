@@ -51,7 +51,7 @@ from pathlib import Path
 # the task contract's "NOT conftest.py" requirement.
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _doctor_fixtures import (  # type: ignore[import-not-found]  # noqa: E402
+from _doctor_fixtures import (  # noqa: E402
     REAL_LESSON_IDS,
     make_archived_plan,
     make_healthy_plan,
@@ -61,7 +61,7 @@ from _doctor_fixtures import (  # type: ignore[import-not-found]  # noqa: E402
     seed_lesson_inventory,
 )
 
-from conftest import (  # type: ignore[import-not-found]
+from conftest import (
     get_script_path,
     run_script,
 )

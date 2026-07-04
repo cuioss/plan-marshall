@@ -53,12 +53,12 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-from file_ops import (  # type: ignore[import-not-found]
+from file_ops import (
     get_plan_dir,
     get_worktree_root,
 )
-from marketplace_paths import PLAN_DIR_NAME  # type: ignore[import-not-found]
-from triage_helpers import (  # type: ignore[import-not-found]
+from marketplace_paths import PLAN_DIR_NAME
+from triage_helpers import (
     ErrorCode,
     create_workflow_cli,
     make_error,

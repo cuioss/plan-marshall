@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary  # type: ignore[import-not-found]
+from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary
 
 # npm error code pattern: "npm ERR! code XXXXX"
 NPM_ERROR_CODE_PATTERN = re.compile(r'^npm ERR! code (\S+)', re.MULTILINE)

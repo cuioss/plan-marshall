@@ -40,7 +40,7 @@ def _run(monkeypatch, capsys, argv):
 
 
 def _parse(out):
-    from toon_parser import parse_toon  # type: ignore[import-not-found]
+    from toon_parser import parse_toon
 
     return parse_toon(out)
 

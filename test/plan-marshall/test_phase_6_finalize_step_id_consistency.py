@@ -45,7 +45,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from conftest import get_script_path  # type: ignore[import-not-found]
+from conftest import get_script_path
 
 # Load _invariants the same way the existing phase-handshake test split
 # does — _invariants is a private module under the plan-marshall scripts

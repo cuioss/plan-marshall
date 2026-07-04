@@ -23,7 +23,7 @@ for _ancestor in Path(__file__).resolve().parents:
             sys.path.append(_rt_path)
         break
 
-from claude_runtime import (  # type: ignore[import-not-found]  # noqa: E402
+from claude_runtime import (  # noqa: E402
     _claude_global_settings_path,
     _claude_project_settings_path,
     _load_settings,

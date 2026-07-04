@@ -346,7 +346,7 @@ def test_cli_help_exits_0():
 
 def test_cli_create_roundtrip(plan_context):
     """CLI create + get roundtrip verifies end-to-end plumbing."""
-    from toon_parser import parse_toon  # type: ignore[import-not-found]
+    from toon_parser import parse_toon
 
     create_result = run_script(
         SCRIPT_PATH,

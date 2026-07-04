@@ -20,11 +20,11 @@ import json  # noqa: I001
 from pathlib import Path
 
 # conftest.py sets up PYTHONPATH so imports resolve without manual sys.path work.
-import claude_runtime  # type: ignore[import-not-found]
-import platform_runtime  # type: ignore[import-not-found]
-from claude_runtime import ClaudeRuntime  # type: ignore[import-not-found]
-from opencode_runtime import OpenCodeRuntime  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+import claude_runtime
+import platform_runtime
+from claude_runtime import ClaudeRuntime
+from opencode_runtime import OpenCodeRuntime
+from toon_parser import parse_toon
 
 
 def _parse(toon_str: str) -> dict:

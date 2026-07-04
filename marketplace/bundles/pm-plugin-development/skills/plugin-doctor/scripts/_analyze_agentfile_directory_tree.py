@@ -35,7 +35,7 @@ from _analyze_agentfile_shared import (
     read_text_or_none,
     repo_root_from_marketplace_root,
 )
-from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _doctor_shared import Finding
 from _rule_registry import RuleDescriptor
 
 RULE_ID = 'agentfile-directory-tree-present'

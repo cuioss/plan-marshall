@@ -23,7 +23,7 @@ Tests import the fixtures explicitly::
     )
 """
 
-from extension_base import ExtensionBase  # type: ignore[import-not-found]
+from extension_base import ExtensionBase
 
 
 class FakeExtension(ExtensionBase):

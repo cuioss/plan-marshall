@@ -43,7 +43,7 @@ import sys
 from typing import Any
 
 import pytest
-from conftest import MARKETPLACE_ROOT  # type: ignore[import-not-found]
+from conftest import MARKETPLACE_ROOT
 
 # ---------------------------------------------------------------------------
 # Standards-doc paths (authoritative narrative surface).

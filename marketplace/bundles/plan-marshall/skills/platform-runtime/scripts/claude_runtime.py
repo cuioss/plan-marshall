@@ -37,9 +37,9 @@ for _ancestor in Path(__file__).resolve().parents:
                 sys.path.append(_lib_path)
         break
 
-from manage_terminal_title import _compose_body, compose  # type: ignore[import-not-found]  # noqa: E402
-from runtime_base import Runtime, toon_error, toon_noop, toon_success  # type: ignore[import-not-found]  # noqa: E402
-from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
+from manage_terminal_title import _compose_body, compose  # noqa: E402
+from runtime_base import Runtime, toon_error, toon_noop, toon_success  # noqa: E402
+from toon_parser import parse_toon  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Session cache helpers — shared constants
@@ -740,7 +740,7 @@ def _read_json(path: Path) -> dict[str, Any] | None:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             return None
-        return data  # type: ignore[return-value]
+        return data
     except (OSError, json.JSONDecodeError):
         return None
 

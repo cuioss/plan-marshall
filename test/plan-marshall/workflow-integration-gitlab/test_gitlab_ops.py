@@ -9,7 +9,7 @@ is exercised via a stubbed ``glab mr list``.
 
 import argparse
 
-import gitlab_ops  # type: ignore[import-not-found]
+import gitlab_ops
 
 
 def _ok_auth():
@@ -51,7 +51,7 @@ def _capture_run_glab(*, mr_list_iid: int = 7):
 def _prepare_pr_create_body(tmp_path, monkeypatch, body_text='B', plan_id='p'):
     """Seed PLAN_BASE_DIR with a prepared pr-create body scratch file."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
-    from ci_base import BODY_KIND_PR_CREATE, get_body_path  # type: ignore[import-not-found]
+    from ci_base import BODY_KIND_PR_CREATE, get_body_path
 
     path = get_body_path(plan_id, BODY_KIND_PR_CREATE)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -246,7 +246,7 @@ def test_main_project_dir_sets_default_cwd(tmp_path, monkeypatch, capsys):
     """
     import sys
 
-    import ci_base  # type: ignore[import-not-found]
+    import ci_base
 
     monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
 
@@ -291,7 +291,7 @@ def test_main_project_dir_equals_form(tmp_path, monkeypatch, capsys):
     """
     import sys
 
-    import ci_base  # type: ignore[import-not-found]
+    import ci_base
 
     monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
 
@@ -325,7 +325,7 @@ def test_main_project_dir_equals_form(tmp_path, monkeypatch, capsys):
 def test_ci_logs_honours_default_cwd(monkeypatch):
     """gitlab_ops.cmd_ci_logs uses subprocess.run directly (120s timeout) and
     must forward the process-global default cwd installed via --project-dir."""
-    import ci_base  # type: ignore[import-not-found]
+    import ci_base
 
     captured: dict = {}
 
@@ -361,7 +361,7 @@ def test_ci_logs_honours_default_cwd(monkeypatch):
 def test_ci_logs_without_default_cwd_passes_none(monkeypatch):
     """When --project-dir was not supplied, ci_logs falls through with cwd=None
     so subprocess.run inherits the Python process cwd."""
-    import ci_base  # type: ignore[import-not-found]
+    import ci_base
 
     captured: dict = {}
 
@@ -575,7 +575,7 @@ def test_gitlab_main_project_dir_only_keeps_legacy_path(monkeypatch):
 def _prepare_issue_comment_body(tmp_path, monkeypatch, body_text='Milestone reached', plan_id='p'):
     """Seed PLAN_BASE_DIR with a prepared issue-comment body scratch file."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
-    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path  # type: ignore[import-not-found]
+    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path
 
     path = get_body_path(plan_id, BODY_KIND_ISSUE_COMMENT)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -606,7 +606,7 @@ def test_cmd_issue_comment_posts_prepared_body(monkeypatch, tmp_path):
 
 def test_cmd_issue_comment_deletes_body_on_success(monkeypatch, tmp_path):
     """The prepared scratch body is removed only after a successful post."""
-    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path  # type: ignore[import-not-found]
+    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path
 
     monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(gitlab_ops, 'run_glab', lambda args: (0, '', ''))
@@ -644,7 +644,7 @@ def test_cmd_issue_comment_body_not_prepared(monkeypatch, tmp_path):
 
 def test_cmd_issue_comment_api_failure_keeps_body(monkeypatch, tmp_path):
     """A non-zero glab exit returns an error and leaves the scratch body in place."""
-    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path  # type: ignore[import-not-found]
+    from ci_base import BODY_KIND_ISSUE_COMMENT, get_body_path
 
     monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(gitlab_ops, 'run_glab', lambda args: (1, '', 'glab: not found'))
