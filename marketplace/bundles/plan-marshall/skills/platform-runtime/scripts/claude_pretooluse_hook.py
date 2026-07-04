@@ -46,16 +46,9 @@ import json
 import re
 import sys
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
-# pretooluse_gate is a sibling module in this same scripts directory. Ensure the
-# directory is importable whether the leaf is run directly or via the executor.
-_SCRIPT_DIR = str(Path(__file__).resolve().parent)
-if _SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, _SCRIPT_DIR)
-
-import pretooluse_gate as gate  # noqa: E402
+import pretooluse_gate as gate
 
 # =============================================================================
 # Rule-matcher constants — enforcement-only knowledge that lives in this leaf.

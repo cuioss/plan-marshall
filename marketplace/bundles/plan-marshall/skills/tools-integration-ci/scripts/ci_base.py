@@ -9,8 +9,7 @@ functions and CLI details.
 
 This module re-exports commonly used helpers from sibling skill scripts
 (toon_parser, file_ops) so that CI provider scripts can import everything
-they need from ``ci_base`` alone — reducing the PYTHONPATH entries required
-for manual invocations from 4 directories to 2.
+they need from ``ci_base`` alone.
 """
 
 import argparse
@@ -22,51 +21,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-# ---------------------------------------------------------------------------
-# sys.path auto-discovery for sibling skill script directories
-# ---------------------------------------------------------------------------
-# When invoked via the executor, PYTHONPATH already contains the required
-# directories.  For manual invocations we add them here so that ``file_ops``
-# and ``toon_parser`` are importable without the caller having to set up 4
-# separate PYTHONPATH entries.
-
-
-def _ensure_sibling_skill_paths() -> None:
-    """Add sibling skill script directories to sys.path if not already present.
-
-    Navigates from this file's location (``tools-integration-ci/scripts/``)
-    up to the ``skills/`` directory and adds the script directories for
-    ``tools-file-ops`` and ``ref-toon-format``.
-    """
-    scripts_dir = Path(__file__).resolve().parent  # .../tools-integration-ci/scripts
-    skills_dir = scripts_dir.parent.parent  # .../skills
-
-    sibling_dirs = [
-        skills_dir / 'tools-file-ops' / 'scripts',
-        skills_dir / 'ref-toon-format' / 'scripts',
-        skills_dir / 'tools-input-validation' / 'scripts',
-        skills_dir / 'manage-config' / 'scripts',
-    ]
-    for d in sibling_dirs:
-        d_str = str(d)
-        if d.is_dir() and d_str not in sys.path:
-            sys.path.insert(0, d_str)
-
-
-_ensure_sibling_skill_paths()
-
-from file_ops import (  # noqa: E402, F401
+from file_ops import (  # noqa: F401
     PlanNotFoundError,
     get_plan_dir,
     output_toon,
     require_plan_exists,
     safe_main,
 )
-from input_validation import (  # noqa: E402, F401
+from input_validation import (  # noqa: F401
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
-from toon_parser import parse_toon, serialize_toon  # noqa: E402, F401
+from toon_parser import parse_toon, serialize_toon  # noqa: F401
 
 # Exit codes
 EXIT_SUCCESS = 0

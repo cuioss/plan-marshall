@@ -24,11 +24,6 @@ All commands output TOON format.
 """
 
 import argparse
-import sys
-from pathlib import Path
-
-# Allow direct invocation and testing — executor sets PYTHONPATH for production
-sys.path.insert(0, str(Path(__file__).parent))
 
 from _findings_core import (
     BOT_KINDS,

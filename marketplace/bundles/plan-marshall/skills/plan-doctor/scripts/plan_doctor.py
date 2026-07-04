@@ -52,12 +52,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Any
-
-# Allow direct invocation and testing — executor sets PYTHONPATH for production.
-sys.path.insert(0, str(Path(__file__).parent))
 
 from file_ops import base_path, output_toon, output_toon_error, safe_main
 from input_validation import (
