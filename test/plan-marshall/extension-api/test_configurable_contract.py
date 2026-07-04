@@ -20,7 +20,7 @@ import pytest
 # conftest.py sets up the executor PYTHONPATH so the sibling script module
 # (configurable_contract) and the shared test infrastructure (conftest) import
 # directly.
-from configurable_contract import (  # type: ignore[import-not-found]
+from configurable_contract import (
     parse_configurable,
     resolve_step_defaults,
     resolve_step_doc_path,

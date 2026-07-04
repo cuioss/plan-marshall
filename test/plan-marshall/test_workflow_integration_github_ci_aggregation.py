@@ -27,8 +27,8 @@ Tests use the conftest run_gh / poll_until monkeypatch seam — no live
 import argparse
 import time
 
-import ci_base  # type: ignore[import-not-found]
-import github_ops  # type: ignore[import-not-found]
+import ci_base
+import github_ops
 
 # =============================================================================
 # Helpers

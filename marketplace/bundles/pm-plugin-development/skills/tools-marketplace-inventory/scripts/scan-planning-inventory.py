@@ -26,8 +26,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
+from toon_parser import parse_toon
 
 # Planning-related name patterns
 PLANNING_PATTERNS = [

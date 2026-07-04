@@ -33,7 +33,7 @@ cmd_get_field = _mod.cmd_get_field
 SCOPE_ESTIMATE_VALUES = _mod.SCOPE_ESTIMATE_VALUES
 
 # Import toon_parser - conftest sets up PYTHONPATH
-from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
+from toon_parser import parse_toon  # noqa: E402
 
 # Sample valid solution outline with ASCII diagram (contract-compliant)
 VALID_SOLUTION = """# Solution: JWT Validation Service

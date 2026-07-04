@@ -27,7 +27,7 @@ import re
 from dataclasses import dataclass, field
 
 from _warnings_classify import pattern_match
-from file_ops import base_path  # type: ignore[import-not-found]
+from file_ops import base_path
 
 # =============================================================================
 # Constants

@@ -34,7 +34,7 @@ import argparse
 import shlex
 import sys
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from toon_parser import serialize_toon
 
 _BUCKET_B_NOTATIONS: frozenset[str] = frozenset(
     {

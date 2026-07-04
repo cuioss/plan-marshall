@@ -60,8 +60,8 @@ def _discover_presets() -> dict[str, list[str]]:
     Returns:
         A mapping from each canonical preset name to its ordered step-id list.
     """
-    from _config_defaults import FINALIZE_STEP_EXT_POINT  # type: ignore[import-not-found]
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from _config_defaults import FINALIZE_STEP_EXT_POINT
+    from extension_discovery import find_implementors
 
     implementors = sorted(
         find_implementors(FINALIZE_STEP_EXT_POINT),

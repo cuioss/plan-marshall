@@ -9,7 +9,7 @@ project initialization and detection.
 # Direct import - PYTHONPATH set by executor. The branch-prefix literals live
 # in constants.py exactly once; this module imports them to build
 # DEFAULT_PROJECT['working_prefixes'] (the fail-closed fallback seed).
-from constants import (  # type: ignore[import-not-found]
+from constants import (
     DEFAULT_BRANCH_PREFIX_WORKING,
 )
 
@@ -400,7 +400,7 @@ def _verify_step_ids() -> list[str]:
         The ordered list of ``default:verify:{canonical}`` step IDs.
     """
     # Lazy import — executor sets PYTHONPATH for cross-skill imports.
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors
 
     implementors = sorted(
         (rec for rec in find_implementors(BUILD_VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),
@@ -511,7 +511,7 @@ def validate_cost_size_token_table(value: object) -> None:
             ``{XS, S, M, L, XL, XXL}``, or if any value does not parse as a
             sensible int.
     """
-    from sensible_number import parse_sensible_int  # type: ignore[import-not-found]
+    from sensible_number import parse_sensible_int
 
     if not isinstance(value, dict):
         raise ValueError(
@@ -700,10 +700,10 @@ def _seed_finalize_steps() -> dict:
         execution order.
     """
     # Lazy imports — executor sets PYTHONPATH for cross-skill imports.
-    from configurable_contract import (  # type: ignore[import-not-found]
+    from configurable_contract import (
         resolve_step_defaults_optional,
     )
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors
 
     implementors = find_implementors(FINALIZE_STEP_EXT_POINT)
     seed_records = sorted(

@@ -148,9 +148,9 @@ _bootstrap_glob_discover()
 # ---------------------------------------------------------------------------
 # Imports — deferred until after sys.path bootstrap above.
 # ---------------------------------------------------------------------------
-from claude_runtime import ClaudeRuntime  # type: ignore[import-not-found]  # noqa: E402
-from opencode_runtime import OpenCodeRuntime  # type: ignore[import-not-found]  # noqa: E402
-from runtime_base import Runtime, toon_error  # type: ignore[import-not-found]  # noqa: E402
+from claude_runtime import ClaudeRuntime  # noqa: E402
+from opencode_runtime import OpenCodeRuntime  # noqa: E402
+from runtime_base import Runtime, toon_error  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Target registry

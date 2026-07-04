@@ -23,7 +23,7 @@ from _config_defaults import (
     get_default_config,
     validate_per_deliverable_build,
 )
-from constants import PHASES  # type: ignore[import-not-found]
+from constants import PHASES
 
 # Valid phase sections - derived from centralized PHASES with 'phase-' prefix for marshal.json keys
 PHASE_SECTIONS = {f'phase-{p}' for p in PHASES}

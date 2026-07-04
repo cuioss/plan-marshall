@@ -20,7 +20,7 @@ from _analyze_coverage import cmd_coverage
 from _analyze_crossfile import DEFAULT_SIMILARITY_THRESHOLD, cmd_cross_file
 from _analyze_markdown import cmd_markdown
 from _analyze_structure import cmd_structure
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
 
 
 @safe_main

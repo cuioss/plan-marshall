@@ -66,7 +66,7 @@ import sys
 from typing import Any
 from urllib.parse import quote
 
-from ci_base import (  # type: ignore[import-not-found]
+from ci_base import (
     BODY_KIND_ISSUE_COMMENT,
     BODY_KIND_ISSUE_CREATE,
     BODY_KIND_PR_CREATE,
@@ -790,7 +790,7 @@ def _capture_router_plan_id(argv: list[str]) -> str | None:
     hook degrades to a no-op enrichment in that case).
     """
     try:
-        from resolve_project_dir import extract_plan_id  # type: ignore[import-not-found]
+        from resolve_project_dir import extract_plan_id
     except ImportError:
         return None
     plan_id, _ = extract_plan_id(list(argv))

@@ -21,7 +21,7 @@ Usage:
 import argparse
 import sys
 
-from file_ops import safe_main  # type: ignore[import-not-found]
+from file_ops import safe_main
 
 
 @safe_main

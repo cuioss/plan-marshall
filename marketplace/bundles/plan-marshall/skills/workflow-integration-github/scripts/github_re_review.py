@@ -43,9 +43,9 @@ import argparse
 import sys
 from datetime import UTC, datetime
 
-import github_ops as _github  # type: ignore[import-not-found]
-from _findings_core import BOT_KINDS  # type: ignore[import-not-found]
-from ci_base import (  # type: ignore[import-not-found]
+import github_ops as _github
+from _findings_core import BOT_KINDS
+from ci_base import (
     DEFAULT_CI_INTERVAL,
     DEFAULT_CI_TIMEOUT,
     extract_routing_args,

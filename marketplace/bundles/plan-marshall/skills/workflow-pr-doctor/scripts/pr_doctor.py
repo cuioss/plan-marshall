@@ -29,8 +29,8 @@ import subprocess
 import sys
 from typing import Any
 
-from ci_base import extract_routing_args  # type: ignore[import-not-found]
-from triage_helpers import (  # type: ignore[import-not-found]
+from ci_base import extract_routing_args
+from triage_helpers import (
     ErrorCode,
     create_workflow_cli,
     load_skill_config,
@@ -504,7 +504,7 @@ Examples:
         ],
     )
     args = parser.parse_args()
-    from triage_helpers import print_toon as _output_toon  # type: ignore[import-not-found]
+    from triage_helpers import print_toon as _output_toon
 
     return _output_toon(args.func(args))
 

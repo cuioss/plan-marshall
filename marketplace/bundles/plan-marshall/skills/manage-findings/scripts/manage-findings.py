@@ -55,7 +55,7 @@ from _findings_core import (
     resolve_qgate_finding,
 )
 from file_ops import output_toon, safe_main
-from input_validation import (  # type: ignore[import-not-found]
+from input_validation import (
     add_component_arg,
     add_hash_id_arg,
     add_module_arg,

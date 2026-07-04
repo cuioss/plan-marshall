@@ -23,9 +23,9 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
-from conftest import get_script_path, run_script  # type: ignore[import-not-found]
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
 

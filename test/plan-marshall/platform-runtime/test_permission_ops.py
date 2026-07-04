@@ -23,13 +23,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-import claude_runtime  # type: ignore[import-not-found]
-import permission_common  # type: ignore[import-not-found]
-import platform_runtime  # type: ignore[import-not-found]
-import permission_doctor  # type: ignore[import-not-found]
-import permission_fix  # type: ignore[import-not-found]
-import permission_web  # type: ignore[import-not-found]
-from claude_runtime import (  # type: ignore[import-not-found]
+import claude_runtime
+import permission_common
+import platform_runtime
+import permission_doctor
+import permission_fix
+import permission_web
+from claude_runtime import (
     _claude_global_settings_path,
     _claude_project_settings_path,
     _extract_project_steps,
@@ -38,8 +38,8 @@ from claude_runtime import (  # type: ignore[import-not-found]
     _save_settings,
     _skill_permission_covered,
 )
-from opencode_runtime import OpenCodeRuntime  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from opencode_runtime import OpenCodeRuntime
+from toon_parser import parse_toon
 
 
 def _parse(output: str) -> dict[str, Any]:

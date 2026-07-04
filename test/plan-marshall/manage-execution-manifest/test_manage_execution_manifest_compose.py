@@ -1559,7 +1559,7 @@ def _stub_footprint(footprint: list[str]) -> None:
     ``TestPrePushQualityGatePreFilter`` autouse fixture restores both after each
     test.
     """
-    import extension_base  # type: ignore[import-not-found]
+    import extension_base
 
     _mem._resolve_footprint = lambda plan_id: list(footprint)
     extension_base._resolve_plan_footprint = lambda plan_id: list(footprint)
@@ -1587,7 +1587,7 @@ class TestPrePushQualityGatePreFilter:
 
     @pytest.fixture(autouse=True)
     def _restore_footprint_resolver(self):
-        import extension_base  # type: ignore[import-not-found]
+        import extension_base
 
         original = _mem._resolve_footprint
         original_plan_footprint = extension_base._resolve_plan_footprint

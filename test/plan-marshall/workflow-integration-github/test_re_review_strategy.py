@@ -27,8 +27,8 @@ import argparse
 import sys
 import time
 
-import ci_base  # type: ignore[import-not-found]
-import github_re_review  # type: ignore[import-not-found]
+import ci_base
+import github_re_review
 
 
 def _noop_sleep(monkeypatch):
@@ -76,7 +76,7 @@ def test_resolve_strategy_covers_every_bot_kind():
     The registry imports BOT_KINDS rather than inline-copying the enum, so this
     asserts the registry stays complete when a new bot_kind is added upstream.
     """
-    from _findings_core import BOT_KINDS  # type: ignore[import-not-found]
+    from _findings_core import BOT_KINDS
 
     for bot_kind in BOT_KINDS:
         assert github_re_review.resolve_strategy(bot_kind) is not None, bot_kind

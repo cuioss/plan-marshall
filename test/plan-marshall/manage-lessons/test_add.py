@@ -598,7 +598,7 @@ class TestLessonsCorpusMainAnchoring:
         main_base = tmp_path / 'main' / '.plan' / 'local'
         (main_base / 'lessons-learned').mkdir(parents=True)
         monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
-        import file_ops  # type: ignore[import-not-found]
+        import file_ops
 
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
         worktree = tmp_path / 'worktrees' / 'some-plan'
@@ -640,7 +640,7 @@ class TestLessonsCorpusMainAnchoring:
             'id=2025-01-01-02-001\ncomponent=x\ncategory=bug\ncreated=2025-01-01\n\n# converted\n'
         )
         monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
-        import file_ops  # type: ignore[import-not-found]
+        import file_ops
 
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
         worktree = tmp_path / 'worktrees' / 'some-plan'

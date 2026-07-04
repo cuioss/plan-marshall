@@ -51,7 +51,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 from conftest import get_script_path, load_script_module, run_script
 
@@ -1127,7 +1127,7 @@ class TestStaleReap:
 class TestAdaptiveUpperLimit:
     def _read_limit(self) -> int:
         """Read the persisted build_queue_upper_limit via the run_config getter."""
-        from run_config import _read_build_queue_upper_limit  # type: ignore[import-not-found]
+        from run_config import _read_build_queue_upper_limit
 
         return _read_build_queue_upper_limit()
 
@@ -1152,7 +1152,7 @@ class TestAdaptiveUpperLimit:
         # releasing an entry held ~4000 s when the live limit is already high
         # enough that 2 × limit > 4000 so it is not reaped first.
         # Set the live limit to its ceiling first so the reap threshold is 7200 s.
-        from run_config import _write_build_queue_upper_limit  # type: ignore[import-not-found]
+        from run_config import _write_build_queue_upper_limit
 
         _write_build_queue_upper_limit(3600)  # reap threshold now 2 × 3600 = 7200 s
         _seed_active_entry(
@@ -1188,7 +1188,7 @@ class TestAdaptiveUpperLimit:
         mid_id = 'plan-mid:mid-uuid'
         # Pre-grow the live limit so the 1800 s hold is not reaped first
         # (2 × 1800 = 3600 s threshold > 1800 s held).
-        from run_config import _write_build_queue_upper_limit  # type: ignore[import-not-found]
+        from run_config import _write_build_queue_upper_limit
 
         _write_build_queue_upper_limit(1800)
         _seed_active_entry(

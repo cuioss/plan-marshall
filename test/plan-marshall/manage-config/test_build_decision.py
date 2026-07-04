@@ -55,7 +55,7 @@ _cmd_build_map_mod = _load_module('_cmd_build_map_for_build_decision_test', '_cm
 # skill scripts dir). The handler resolves should_execute_build from it at call
 # time, so monkeypatching helpers on this same module object is what the handler
 # (and the direct should_execute_build calls below) actually observe.
-import extension_base  # type: ignore[import-not-found]  # noqa: E402
+import extension_base  # noqa: E402
 
 
 # =============================================================================

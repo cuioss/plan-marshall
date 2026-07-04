@@ -6,7 +6,7 @@ import re
 import shutil
 from pathlib import Path
 
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from plan_logging import log_entry
 
 
 def fix_lists(content: str) -> tuple[str, int]:

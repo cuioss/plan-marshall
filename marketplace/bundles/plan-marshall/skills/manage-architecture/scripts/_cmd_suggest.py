@@ -51,7 +51,7 @@ def suggest_domains(module_name: str, project_dir: str = '.') -> dict[str, Any]:
     module_data = load_module_derived(module_name, project_dir)
 
     # Discover all extensions
-    from extension_discovery import discover_all_extensions  # type: ignore[import-not-found]
+    from extension_discovery import discover_all_extensions
 
     extensions = discover_all_extensions()
 
@@ -68,7 +68,7 @@ def suggest_domains(module_name: str, project_dir: str = '.') -> dict[str, Any]:
         try:
             all_skill_domains = ext_module.get_skill_domains()
         except Exception as e:
-            from plan_logging import log_entry  # type: ignore[import-not-found]
+            from plan_logging import log_entry
 
             log_entry('script', None, 'WARNING', f'[SUGGEST] get_skill_domains() failed for extension: {e}')
             continue
@@ -86,7 +86,7 @@ def suggest_domains(module_name: str, project_dir: str = '.') -> dict[str, Any]:
         try:
             result = ext_module.applies_to_module(module_data)
         except Exception as e:
-            from plan_logging import log_entry  # type: ignore[import-not-found]
+            from plan_logging import log_entry
 
             log_entry('script', None, 'WARNING', f'[SUGGEST] applies_to_module() failed for extension: {e}')
             continue

@@ -44,11 +44,11 @@ import re
 from typing import Any
 
 from _cmd_classification_validate import run_classification_validation
-from _plan_parsing import parse_document_sections  # type: ignore[import-not-found]
+from _plan_parsing import parse_document_sections
 from _status_core import read_status, write_status
-from constants import FILE_MARSHAL  # type: ignore[import-not-found]
-from file_ops import base_path, get_plan_dir, read_json  # type: ignore[import-not-found]
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from constants import FILE_MARSHAL
+from file_ops import base_path, get_plan_dir, read_json
+from plan_logging import log_entry
 
 LIGHT = 'light'
 DEEP = 'deep'

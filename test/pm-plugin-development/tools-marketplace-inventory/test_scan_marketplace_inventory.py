@@ -34,7 +34,7 @@ Script count (public): 1.
 from pathlib import Path
 from typing import Any
 
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import load_script_module

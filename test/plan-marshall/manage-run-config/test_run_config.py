@@ -780,7 +780,7 @@ class TestRunConfigMainAnchoring:
         main_base = tmp_path / 'main' / '.plan' / 'local'
         main_base.mkdir(parents=True)
         monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
-        import file_ops  # type: ignore[import-not-found]
+        import file_ops
 
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
         worktree = tmp_path / 'worktrees' / 'some-plan'
@@ -799,7 +799,7 @@ class TestRunConfigMainAnchoring:
         # REAL git repo + REAL linked worktree, no override — exercises the
         # production git-common-dir branch of the shared utility.
         monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-        import file_ops  # type: ignore[import-not-found]
+        import file_ops
 
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
         main_repo = tmp_path / 'main'
@@ -826,7 +826,7 @@ class TestRunConfigMainAnchoring:
         main_base = tmp_path / 'main' / '.plan' / 'local'
         main_base.mkdir(parents=True)
         monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
-        import file_ops  # type: ignore[import-not-found]
+        import file_ops
 
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
         worktree = tmp_path / 'worktrees' / 'some-plan'
@@ -864,7 +864,7 @@ class TestBuildQueueLimitMainAnchoring:
         main_base = tmp_path / 'main' / '.plan' / 'local'
         main_base.mkdir(parents=True)
         monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
-        import file_ops  # type: ignore[import-not-found]
+        import file_ops
 
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
         worktree = tmp_path / 'worktrees' / 'some-plan'
@@ -890,7 +890,7 @@ class TestBuildQueueLimitMainAnchoring:
         main_base = tmp_path / 'main' / '.plan' / 'local'
         main_base.mkdir(parents=True)
         monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
-        import file_ops  # type: ignore[import-not-found]
+        import file_ops
 
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
         worktree = tmp_path / 'worktrees' / 'some-plan'

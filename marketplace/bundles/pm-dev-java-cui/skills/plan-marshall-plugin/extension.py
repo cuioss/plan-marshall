@@ -8,7 +8,7 @@ This is an ADDITIVE bundle - it extends pm-dev-java rather than standing alone.
 It intentionally does NOT provide triage; it relies on pm-dev-java:ext-triage-java.
 """
 
-from extension_base import ExtensionBase  # type: ignore[import-not-found]
+from extension_base import ExtensionBase
 
 
 class Extension(ExtensionBase):
@@ -91,9 +91,9 @@ class Extension(ExtensionBase):
 
         Uses write-once semantics - only sets values if not already configured.
         """
-        from _config_core import ext_defaults_set_default  # type: ignore[import-not-found]
-        from _maven_cmd_discover import EXT_KEY_PROFILES_MAP, EXT_KEY_PROFILES_SKIP  # type: ignore[import-not-found]
-        from plan_logging import log_entry  # type: ignore[import-not-found]
+        from _config_core import ext_defaults_set_default
+        from _maven_cmd_discover import EXT_KEY_PROFILES_MAP, EXT_KEY_PROFILES_SKIP
+        from plan_logging import log_entry
 
         log_entry('script', 'global', 'INFO', '[CUI-JAVA-EXT] Configuring CUI Maven defaults')
 

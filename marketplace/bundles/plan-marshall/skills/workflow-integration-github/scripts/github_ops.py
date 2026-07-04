@@ -66,7 +66,7 @@ import sys
 from typing import Any
 from urllib.parse import quote
 
-from ci_base import (  # type: ignore[import-not-found]
+from ci_base import (
     BODY_KIND_ISSUE_COMMENT,
     BODY_KIND_ISSUE_CREATE,
     BODY_KIND_PR_CREATE,
@@ -1652,7 +1652,7 @@ def _capture_router_plan_id(argv: list[str]) -> str | None:
     hook degrades to a no-op enrichment in that case).
     """
     try:
-        from resolve_project_dir import extract_plan_id  # type: ignore[import-not-found]
+        from resolve_project_dir import extract_plan_id
     except ImportError:
         return None
     plan_id, _ = extract_plan_id(list(argv))
@@ -1969,7 +1969,7 @@ def cmd_ci_wait_for_status_flip(args: argparse.Namespace) -> dict:
     }
 
 
-def _load_filter_log():  # type: ignore[no-untyped-def]
+def _load_filter_log():
     """Lazily import ``filter_log`` from the sibling ``_ci_log_filter`` module.
 
     Mirrors :func:`ci_base._load_log_filter` so the generic error-context
@@ -1978,7 +1978,7 @@ def _load_filter_log():  # type: ignore[no-untyped-def]
     when the module is unavailable (caller degrades to the raw stdout).
     """
     try:
-        from _ci_log_filter import filter_log  # type: ignore[import-not-found]
+        from _ci_log_filter import filter_log
     except ImportError:
         return None
     return filter_log

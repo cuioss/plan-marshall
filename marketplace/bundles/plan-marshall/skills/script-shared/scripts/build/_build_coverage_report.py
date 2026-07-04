@@ -10,8 +10,8 @@ to build a tool-specific handler from config.
 from __future__ import annotations
 
 from _build_shared import create_subcommand_handler  # noqa: F401 -- re-export for backward compat
-from _coverage_parse import find_report, parse_coverage_report  # type: ignore[import-not-found]
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from _coverage_parse import find_report, parse_coverage_report
+from toon_parser import serialize_toon
 
 
 def create_coverage_report_handler(

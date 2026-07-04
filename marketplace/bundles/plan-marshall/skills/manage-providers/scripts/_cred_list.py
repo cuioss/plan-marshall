@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from _providers_core import CREDENTIALS_DIR, get_project_name
-from file_ops import output_toon  # type: ignore[import-not-found]
+from file_ops import output_toon
 
 
 def _read_entry(path: Path, scope: str) -> dict | None:

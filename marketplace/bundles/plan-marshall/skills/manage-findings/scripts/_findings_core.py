@@ -24,7 +24,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
-from constants import (  # type: ignore[import-not-found]
+from constants import (
     FILE_FINDINGS_DIR,
     FINDING_SEVERITIES,
     FINDING_TYPES,
@@ -33,8 +33,8 @@ from constants import (  # type: ignore[import-not-found]
     VALID_CERTAINTIES,
     VALID_RESOLUTIONS,
 )
-from input_validation import validate_plan_id  # type: ignore[import-not-found]
-from jsonl_store import (  # type: ignore[import-not-found]
+from input_validation import validate_plan_id
+from jsonl_store import (
     append_jsonl,
     ensure_parent_dir,
     find_by_title,

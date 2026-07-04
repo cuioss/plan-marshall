@@ -37,14 +37,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from _handshake_store import (  # type: ignore[import-not-found]
+from _handshake_store import (
     HANDSHAKE_FIELDS,
     get_row,
     load_rows,
     remove_row,
     upsert_row,
 )
-from _invariants import (  # type: ignore[import-not-found]
+from _invariants import (
     INVARIANTS,
     BlockingFindingsPresent,
     MainCheckoutDirtiedDuringPlan,
@@ -56,8 +56,8 @@ from _invariants import (  # type: ignore[import-not-found]
     capture_all,
     is_invariant_blocking_at_phase,
 )
-from file_ops import get_executor_path  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from file_ops import get_executor_path
+from toon_parser import parse_toon
 
 
 def _now_iso() -> str:

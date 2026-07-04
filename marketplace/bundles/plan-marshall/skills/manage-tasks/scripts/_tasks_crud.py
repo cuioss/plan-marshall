@@ -49,14 +49,14 @@ from _tasks_core import (
     validate_steps_are_file_paths,
 )
 from _tasks_cost import COST_SIZES
-from file_ops import atomic_write_file  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from file_ops import atomic_write_file
+from input_validation import (
     LessonInventoryUnavailable,
     LessonRegexAnchoringError,
     scan_lesson_id_tokens,
     verify_lesson_ids_exist,
 )
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from plan_logging import log_entry
 
 _PENDING_DIR_NAME = 'pending-tasks'
 _SLOT_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')

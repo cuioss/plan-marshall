@@ -14,7 +14,7 @@ The npm build extension claims JS/TS production / test sources (recognising
 files (``package.json`` / ``tsconfig.json``).
 """
 
-from extension_base import BuildExtensionBase  # type: ignore[import-not-found]
+from extension_base import BuildExtensionBase
 
 
 class BuildExtension(BuildExtensionBase):

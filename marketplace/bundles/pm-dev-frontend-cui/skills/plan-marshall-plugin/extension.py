@@ -9,7 +9,7 @@ This is an ADDITIVE bundle - it extends pm-dev-frontend rather than standing alo
 It intentionally does NOT provide triage; it relies on pm-dev-frontend:ext-triage-js.
 """
 
-from extension_base import ExtensionBase  # type: ignore[import-not-found]
+from extension_base import ExtensionBase
 
 
 class Extension(ExtensionBase):
@@ -91,9 +91,9 @@ class Extension(ExtensionBase):
 
         See: plan-marshall:build-maven:standards/maven-impl.md
         """
-        from _config_core import ext_defaults_set_default  # type: ignore[import-not-found]
-        from _maven_cmd_discover import EXT_KEY_PROFILES_MAP, EXT_KEY_PROFILES_SKIP  # type: ignore[import-not-found]
-        from plan_logging import log_entry  # type: ignore[import-not-found]
+        from _config_core import ext_defaults_set_default
+        from _maven_cmd_discover import EXT_KEY_PROFILES_MAP, EXT_KEY_PROFILES_SKIP
+        from plan_logging import log_entry
 
         log_entry('script', 'global', 'INFO', '[CUI-FRONTEND-EXT] Configuring CUI Maven defaults for frontend module')
 

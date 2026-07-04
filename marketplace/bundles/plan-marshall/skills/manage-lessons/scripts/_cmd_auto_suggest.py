@@ -22,11 +22,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from _findings_core import add_finding  # type: ignore[import-not-found]
-from _plan_parsing import parse_document_sections  # type: ignore[import-not-found]
-from _status_core import read_status  # type: ignore[import-not-found]
-from file_ops import get_plan_dir  # type: ignore[import-not-found]
-from recipe_scoring import (  # type: ignore[import-not-found]
+from _findings_core import add_finding
+from _plan_parsing import parse_document_sections
+from _status_core import read_status
+from file_ops import get_plan_dir
+from recipe_scoring import (
     MIN_CONFIDENCE,
     load_registry,
     score_recipe,

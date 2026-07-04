@@ -22,7 +22,7 @@ import subprocess
 from collections import defaultdict
 from pathlib import Path
 
-from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _doctor_shared import Finding
 from _rule_registry import RuleDescriptor
 
 # Three build-failing test-tree convention rules (cmd_test_conventions).

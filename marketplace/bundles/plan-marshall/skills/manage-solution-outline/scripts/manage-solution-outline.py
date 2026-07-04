@@ -25,8 +25,8 @@ import argparse
 from pathlib import Path
 from typing import Any, cast
 
-import resolve_project_dir as _routing  # type: ignore[import-not-found]
-from _architecture_core import (  # type: ignore[import-not-found]
+import resolve_project_dir as _routing
+from _architecture_core import (
     DataNotFoundError,
     get_project_meta_path,
     iter_modules,
@@ -34,14 +34,14 @@ from _architecture_core import (  # type: ignore[import-not-found]
     load_module_enriched_or_empty,
     load_project_meta,
 )
-from _plan_parsing import (  # type: ignore[import-not-found]
+from _plan_parsing import (
     _slugify_section_name,
     extract_deliverables,
     parse_document_sections,
 )
-from constants import VALID_STEP_INTENTS  # type: ignore[import-not-found]
-from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from constants import VALID_STEP_INTENTS
+from file_ops import base_path, output_toon, safe_main
+from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
     require_valid_plan_id,

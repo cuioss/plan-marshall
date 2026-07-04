@@ -430,7 +430,7 @@ def _read_build_map_globs(project_root: str | None = None) -> list[str]:
     del project_root  # resolved from execution context, not forwarded
     import json as _json
 
-    from file_ops import get_marshal_path, read_json  # type: ignore[import-not-found]
+    from file_ops import get_marshal_path, read_json
 
     marshal_path = get_marshal_path()
     if not marshal_path.exists():
@@ -484,12 +484,12 @@ def _resolve_plan_footprint(plan_id: str) -> list[str]:
     import subprocess as _subprocess
     from pathlib import Path as _Path
 
-    from _references_core import (  # type: ignore[import-not-found]
+    from _references_core import (
         compute_plan_branch_diff,
         resolve_base_ref,
     )
-    from constants import FILE_REFERENCES, FILE_STATUS  # type: ignore[import-not-found]
-    from file_ops import get_plan_dir, read_json  # type: ignore[import-not-found]
+    from constants import FILE_REFERENCES, FILE_STATUS
+    from file_ops import get_plan_dir, read_json
 
     status_path = get_plan_dir(plan_id) / FILE_STATUS
     if not status_path.exists():

@@ -33,7 +33,7 @@ import builtins
 
 import pytest
 
-from recipe_scoring import (  # type: ignore[import-not-found]
+from recipe_scoring import (
     MIN_CONFIDENCE,
     load_registry,
     score_recipe,

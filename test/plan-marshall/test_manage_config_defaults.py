@@ -55,7 +55,7 @@ def _discovered_seed_step_ids() -> list:
     ``extension_discovery.find_implementors`` query (filter ``default_on == true``,
     sort by ``(order, name)``), mirroring ``_seed_finalize_steps()``.
     """
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors
 
     seed_records = sorted(
         (
@@ -74,7 +74,7 @@ def _discovered_descriptions() -> dict:
     Replaces the removed ``BUILT_IN_FINALIZE_STEP_DESCRIPTIONS`` map: each step's
     description is now a frontmatter field surfaced by the discovery query.
     """
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors
 
     return {
         rec['name']: rec.get('description', '')
@@ -179,7 +179,7 @@ class TestFinalMergeWithoutAskingDefault:
         """The parser-resolved default MUST agree with the value exposed by
         ``get_default_config()`` — both derive from the same `configurable:`
         declaration and must never drift."""
-        from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+        from configurable_contract import resolve_step_defaults
 
         assert (
             resolve_step_defaults('default:branch-cleanup')[
@@ -203,7 +203,7 @@ class TestFinalMergeWithoutAskingDefault:
             'Fresh-project bootstrap must seed final_merge_without_asking '
             'explicitly under steps[default:branch-cleanup]'
         )
-        from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+        from configurable_contract import resolve_step_defaults
 
         assert (
             branch_cleanup['final_merge_without_asking']
@@ -473,7 +473,7 @@ class TestSonarConfigKnobsDefaults:
     def test_touched_file_cleanup_finalize_block_matches(self) -> None:
         """The parser-resolved default MUST agree with the value exposed by
         ``get_default_config()`` — same physical default, no drift."""
-        from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+        from configurable_contract import resolve_step_defaults
 
         assert (
             resolve_step_defaults('default:sonar-roundtrip')[
@@ -487,7 +487,7 @@ class TestSonarConfigKnobsDefaults:
         ``VALID_SONAR_TOUCHED_FILE_CLEANUP`` and MUST pass
         ``validate_sonar_touched_file_cleanup`` without raising — the default
         can never be an out-of-enum value."""
-        from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+        from configurable_contract import resolve_step_defaults
 
         default = resolve_step_defaults('default:sonar-roundtrip')[
             'touched_file_cleanup'
@@ -521,7 +521,7 @@ class TestSonarConfigKnobsDefaults:
     def test_do_transition_finalize_block_matches(self) -> None:
         """The parser-resolved default MUST agree with the value exposed by
         ``get_default_config()`` — same physical default, no drift."""
-        from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+        from configurable_contract import resolve_step_defaults
 
         assert (
             resolve_step_defaults('default:sonar-roundtrip')[
@@ -543,7 +543,7 @@ class TestSonarConfigKnobsDefaults:
     def test_ce_wait_timeout_finalize_block_matches(self) -> None:
         """The parser-resolved default MUST agree with the value exposed by
         ``get_default_config()`` — same physical default, no drift."""
-        from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+        from configurable_contract import resolve_step_defaults
 
         assert (
             resolve_step_defaults('default:sonar-roundtrip')[
@@ -560,7 +560,7 @@ class TestSonarConfigKnobsDefaults:
         fallback, the exact bug pattern these tests guard against. Each seeded
         value also matches the parser-resolved default, and no flat
         ``sonar_``-prefixed sibling of ``steps`` survives."""
-        from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+        from configurable_contract import resolve_step_defaults
 
         cfg = _config_defaults.get_default_config()
         finalize = cfg['plan']['phase-6-finalize']

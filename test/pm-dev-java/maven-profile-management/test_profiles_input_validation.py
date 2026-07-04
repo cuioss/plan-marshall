@@ -33,7 +33,7 @@ import pytest
 # without requiring conftest plumbing.
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _maven_profile_input_validation_fixtures import (  # type: ignore[import-not-found]  # noqa: E402
+from _maven_profile_input_validation_fixtures import (  # noqa: E402
     HAPPY_VALUES,
     MALFORMED_AXES,
     parse_toon_output,
@@ -42,12 +42,12 @@ from _maven_profile_input_validation_fixtures import (  # type: ignore[import-no
 # input_validation lives on the conftest-managed PYTHONPATH (every skill's
 # scripts/ dir is added). The validator + TOON-error wrapper are the in-process
 # surface under test.
-from input_validation import (  # type: ignore[import-not-found]  # noqa: E402
+from input_validation import (  # noqa: E402
     add_module_arg,
     parse_args_with_toon_errors,
 )
 
-from conftest import get_script_path, run_script  # type: ignore[import-not-found]  # noqa: E402
+from conftest import get_script_path, run_script  # noqa: E402
 
 SCRIPT_PATH = get_script_path('pm-dev-java', 'manage-maven-profiles', 'profiles.py')
 

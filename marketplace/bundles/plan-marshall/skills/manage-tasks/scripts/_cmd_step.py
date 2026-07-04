@@ -16,8 +16,8 @@ from _tasks_core import (
     parse_task_file,
     validate_step_intent,
 )
-from file_ops import atomic_write_file  # type: ignore[import-not-found]
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from file_ops import atomic_write_file
+from plan_logging import log_entry
 
 
 def cmd_finalize_step(args) -> dict:

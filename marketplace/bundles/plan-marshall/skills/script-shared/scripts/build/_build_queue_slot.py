@@ -56,7 +56,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from file_ops import get_marshal_path, read_json  # type: ignore[import-not-found]
+from file_ops import get_marshal_path, read_json
 
 logger = logging.getLogger(__name__)
 

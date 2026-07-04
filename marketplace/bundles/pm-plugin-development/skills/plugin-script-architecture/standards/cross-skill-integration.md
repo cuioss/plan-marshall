@@ -60,26 +60,40 @@ from _helpers import parse_config
 from _validators import validate_input
 ```
 
-## Type Ignore Comments
+## Static Import Resolution
 
-IDE tools (Pylance, mypy) show "Import could not be resolved" warnings for cross-skill imports because PYTHONPATH is set at runtime, not at development time.
+Cross-skill imports are statically resolved — `mypy` type-checks across skill
+boundaries with full type information, not `Any`.
 
-### Handling IDE Warnings
+### How It Works
 
-Add `# type: ignore[import-not-found]` to suppress IDE noise:
+`build.py` derives `MYPYPATH` from `collect_script_dirs()` — the same source of
+truth that produces the runtime `PYTHONPATH`. Every by-name cross-skill import
+(`from file_ops import ...`) therefore resolves to its real module under mypy,
+so a symbol's actual signature is checked at every call site.
+
+### No Import Silencing
+
+Write cross-skill imports plainly. Do NOT add `# type: ignore[import-not-found]`:
 
 ```python
-from plan_logging import log_entry  # type: ignore[import-not-found]
-from _config_core import ext_defaults_get  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
-from file_ops import atomic_write_file  # type: ignore[import-not-found]
+from plan_logging import log_entry
+from _config_core import ext_defaults_get
+from toon_parser import parse_toon
+from file_ops import atomic_write_file
 ```
 
-### Why This Is Acceptable
+`ignore_missing_imports` is `false` and `warn_unused_ignores` is `true` in
+`[tool.mypy]`. Two consequences follow, and both are load-bearing:
 
-- PYTHONPATH is correctly set at runtime by the executor
-- IDE warnings are false positives in this context
-- Type ignore comments document that this is intentional
+- An unresolvable shared import is a hard `[import-not-found]` error. A rename or
+  deletion of a shared module that misses a call site is caught at compile time
+  instead of breaking by-name resolution silently at runtime.
+- An `# type: ignore[import-not-found]` on an import that *does* resolve is a hard
+  `[unused-ignore]` error. The silencing comment cannot be reintroduced.
+
+The only modules exempted from resolution are the genuinely untyped third-party
+packages (`yaml`, `tomli`), scoped by a `[[tool.mypy.overrides]]` entry.
 
 ## Standard Cross-Skill APIs
 
@@ -88,7 +102,7 @@ from file_ops import atomic_write_file  # type: ignore[import-not-found]
 Use `plan_logging.log_entry()` for all structured logging needs.
 
 ```python
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from plan_logging import log_entry
 
 # Log to global script log
 log_entry('script', 'global', 'INFO', '[MY-COMPONENT] Processing started')
@@ -119,7 +133,7 @@ log_entry('script', 'global', 'ERROR', '[MY-COMPONENT] Failed to process')
 Use `_config_core.ext_defaults_get()` for accessing extension default values stored in `marshal.json`.
 
 ```python
-from _config_core import ext_defaults_get  # type: ignore[import-not-found]
+from _config_core import ext_defaults_get
 
 # Get extension default value
 value = ext_defaults_get('build.maven.profiles.skip', project_dir)
@@ -134,7 +148,7 @@ if value:
 Use `file_ops` for atomic file writes and base path resolution.
 
 ```python
-from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
+from file_ops import atomic_write_file, base_path
 
 # Get path relative to .plan directory
 plan_dir = base_path('plans', 'EXAMPLE-PLAN')
@@ -148,7 +162,7 @@ atomic_write_file(plan_dir / 'config.toon', content)
 Use `toon_parser` for TOON format parsing and serialization.
 
 ```python
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon, serialize_toon
 
 # Parse TOON content
 data = parse_toon(file_content)
@@ -179,7 +193,7 @@ result = subprocess.run([
 
 ```python
 # PASS CORRECT - direct import and function call
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from plan_logging import log_entry
 
 log_entry('script', 'global', 'INFO', 'message')
 ```
@@ -310,7 +324,7 @@ Internal modules import from each other or from cross-skill APIs:
 
 ```python
 # _tasks_crud.py (internal module)
-from file_ops import atomic_write_file  # type: ignore[import-not-found]
+from file_ops import atomic_write_file
 from _manage_tasks_shared import parse_task_file, format_task_file
 ```
 
@@ -340,7 +354,7 @@ from conftest import run_script, TestRunner, get_script_path
 SCRIPT_PATH = get_script_path('my-bundle', 'my-skill', 'my-script.py')
 
 # Direct imports from other skills work automatically
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 def test_example():
     result = run_script(SCRIPT_PATH, 'subcommand', '--arg', 'value')
@@ -353,7 +367,7 @@ def test_example():
 
 - **One sys.path insert**: Only for conftest, NOT for cross-skill imports
 - **Direct imports work**: After conftest import, cross-skill imports are available
-- **IDE warnings expected**: Use `# type: ignore[import-not-found]`
+- **Statically resolved**: `MYPYPATH` covers the same script dirs `conftest.py` puts on `sys.path`, so cross-skill imports need no silencing comment
 
 ## Script invocation in documentation
 
@@ -439,7 +453,7 @@ Before publishing a script:
 - Subprocess calls use minimal parameters
 - Entry point scripts follow naming convention (`script.py`)
 - Internal modules use underscore prefix (`_module.py`)
-- IDE import warnings suppressed with `# type: ignore[import-not-found]`
+- Cross-skill imports written plainly — no `# type: ignore[import-not-found]` (resolution is via `MYPYPATH`; the ignore is a hard `[unused-ignore]` error)
 - Tests use conftest import pattern (one sys.path insert only)
 - Documented script invocations follow the explicit-call-or-xref rules above; script-bearing skills publish a `## Canonical invocations` section
 - A new `get`/`set` verb whose value proposition is a new input shape (dotted path, glob, compound key) has that exact shape as its first boundary test, driven through the CLI entry point

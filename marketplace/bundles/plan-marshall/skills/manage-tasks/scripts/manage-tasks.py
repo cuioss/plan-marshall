@@ -96,9 +96,9 @@ from _tasks_query import (
     cmd_next_tasks,
     cmd_read,
 )
-from constants import VALID_STEP_INTENTS  # type: ignore[import-not-found]
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from constants import VALID_STEP_INTENTS
+from file_ops import output_toon, safe_main
+from input_validation import (
     add_domain_arg,
     add_plan_id_arg,
     add_task_number_arg,

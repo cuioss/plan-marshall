@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from plan_logging import log_entry
 
 
 @dataclass

@@ -45,8 +45,8 @@ from _cmd_change_type_heuristic import (
     _tokenize,
 )
 from _status_core import read_status
-from file_ops import get_plan_dir, read_json  # type: ignore[import-not-found]
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from file_ops import get_plan_dir, read_json
+from plan_logging import log_entry
 
 # The Q-Gate phase the classification finding attaches to. ``1-init`` is not a
 # Q-Gate phase (the store opens at ``2-refine``); ``2-refine`` is where
@@ -203,7 +203,7 @@ def _emit_finding(plan_id: str, descriptor: dict[str, Any]) -> tuple[str, str | 
     executor's PYTHONPATH (and the test conftest's).
     """
     try:
-        from _findings_core import add_qgate_finding  # type: ignore[import-not-found]
+        from _findings_core import add_qgate_finding
     except ImportError:
         return 'unrecorded', None
 

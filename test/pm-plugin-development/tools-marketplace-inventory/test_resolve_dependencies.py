@@ -653,7 +653,7 @@ class TestOutputFormats:
 
     def test_toon_format(self, synthetic_index):
         """TOON serialization of a validate result is parseable."""
-        from toon_parser import parse_toon  # type: ignore[import-not-found]
+        from toon_parser import parse_toon
 
         result = cmd_validate(synthetic_index, dep_types=set(DependencyType))
         rendered = serialize_output(result, 'toon')

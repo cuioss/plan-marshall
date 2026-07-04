@@ -14,11 +14,11 @@ from pathlib import Path
 from typing import Any
 
 # Direct import - executor sets up PYTHONPATH for cross-skill imports
-import resolve_project_dir as _routing  # type: ignore[import-not-found]
-from marketplace_bundles import resolve_bundles_root, resolve_skills_root  # type: ignore[import-not-found]
-from marketplace_paths import get_bundle_cache_roots  # type: ignore[import-not-found]
+import resolve_project_dir as _routing
+from marketplace_bundles import resolve_bundles_root, resolve_skills_root
+from marketplace_paths import get_bundle_cache_roots
 from plan_logging import log_entry
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from toon_parser import serialize_toon
 
 
 def get_plugin_cache_path() -> Path:
@@ -485,7 +485,7 @@ def derive_build_map_globs(
         A dict keyed by domain-key with a list of de-duplicated ``(pattern, role)``
         tuples. Domains that declare no routes are omitted.
     """
-    from extension_base import derive_globs_from_tree  # type: ignore[import-not-found]
+    from extension_base import derive_globs_from_tree
 
     discovered = extensions if extensions is not None else discover_build_extensions()
     modules = [ext['module'] for ext in discovered if ext.get('module') is not None]
@@ -714,7 +714,7 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
         A dict mapping each present key to its coerced scalar value, or to a
         ``list`` when the key is declared as a block sequence.
     """
-    from configurable_contract import _coerce_scalar, _extract_frontmatter_lines  # type: ignore[import-not-found]
+    from configurable_contract import _coerce_scalar, _extract_frontmatter_lines
 
     try:
         text = doc_path.read_text(encoding='utf-8')
@@ -960,7 +960,7 @@ def _scan_phase6_for_implementors(ext_point: str) -> list[dict[str, Any]]:
         One ``built-in`` record per matching step doc, de-duplicated by bare name
         with ``workflow/`` winning.
     """
-    from configurable_contract import _phase_6_skill_dir  # type: ignore[import-not-found]
+    from configurable_contract import _phase_6_skill_dir
 
     skill_dir = _phase_6_skill_dir()
     records: list[dict[str, Any]] = []
@@ -1049,7 +1049,7 @@ def _scan_project_for_implementors(ext_point: str) -> list[dict[str, Any]]:
     Returns:
         One ``project`` record per matching ``finalize-step-*/SKILL.md``.
     """
-    from file_ops import _resolve_plan_root  # type: ignore[import-not-found]
+    from file_ops import _resolve_plan_root
 
     project_root = _resolve_plan_root()
     if project_root is None:

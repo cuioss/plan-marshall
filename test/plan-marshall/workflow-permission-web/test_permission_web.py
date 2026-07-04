@@ -9,7 +9,7 @@ import tempfile
 from argparse import Namespace
 from pathlib import Path
 
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
 
@@ -17,7 +17,7 @@ from conftest import get_script_path, run_script
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-permission-web', 'permission_web.py')
 
 # Tier 2 direct imports — conftest sets up PYTHONPATH for cross-skill imports
-from permission_web import (  # type: ignore[import-not-found]  # noqa: E402
+from permission_web import (  # noqa: E402
     apply_recommendations,
     categorize_domains,
     check_red_flags,

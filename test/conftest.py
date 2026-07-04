@@ -674,7 +674,7 @@ def _plan_base_dir_sandbox(request, tmp_path_factory, monkeypatch):
     # already-imported callers; patch the module attributes the same way
     # ``plan_context`` / ``PlanContext`` do. Imported lazily to avoid a
     # top-level import cycle during test bootstrap.
-    import _config_core  # type: ignore[import-not-found]
+    import _config_core
 
     monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', sandbox)
     monkeypatch.setattr(_config_core, 'MARSHAL_PATH', sandbox / 'marshal.json')
@@ -721,7 +721,7 @@ def _credentials_dir_sandbox(request, tmp_path_factory, monkeypatch):
 
     # Redirect in-process callers too — the module constant is import-bound.
     # Imported lazily to avoid a top-level import cycle during test bootstrap.
-    import _providers_core  # type: ignore[import-not-found]
+    import _providers_core
 
     monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', sandbox)
 
@@ -755,7 +755,7 @@ def plan_context(tmp_path, monkeypatch):
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     monkeypatch.setenv('PLAN_DIR_NAME', PLAN_DIR_NAME)
 
-    import _config_core  # type: ignore[import-not-found]
+    import _config_core
 
     monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
     monkeypatch.setattr(_config_core, 'MARSHAL_PATH', tmp_path / 'marshal.json')
@@ -907,7 +907,7 @@ class PlanContext:
         # resolve against the fixture tree instead of the real repo-local
         # .plan/local/. Imported lazily to avoid top-level import cycles
         # during test bootstrap. Save originals for restoration in __exit__.
-        import _config_core  # type: ignore[import-not-found]
+        import _config_core
 
         self._config_core_module = _config_core
         overrides = {

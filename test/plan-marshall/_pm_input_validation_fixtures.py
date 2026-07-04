@@ -126,7 +126,7 @@ def parse_toon_output(stdout: str) -> dict[str, Any]:
     emitting the error). This helper handles the common case of a
     single-document TOON payload.
     """
-    from toon_parser import parse_toon  # type: ignore[import-not-found]
+    from toon_parser import parse_toon
 
     return parse_toon(stdout)
 

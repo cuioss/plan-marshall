@@ -28,7 +28,7 @@ from _references_core import (
     read_references,
     resolve_base_ref,
 )
-from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
+from input_validation import require_valid_plan_id
 
 
 def cmd_compute_footprint(args: argparse.Namespace) -> dict:

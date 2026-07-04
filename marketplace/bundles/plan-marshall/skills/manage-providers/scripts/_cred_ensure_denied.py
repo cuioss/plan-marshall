@@ -12,7 +12,7 @@ import os
 import sys
 
 from _providers_core import CREDENTIALS_DIR
-from file_ops import output_toon  # type: ignore[import-not-found]
+from file_ops import output_toon
 
 # Expand ~ to absolute path to cover both forms
 CREDENTIALS_DIR_ABS = str(CREDENTIALS_DIR)
@@ -41,7 +41,7 @@ def run_ensure_denied(args: argparse.Namespace) -> int:
 
     # Import permission utilities
     try:
-        from permission_common import (  # type: ignore[import-not-found]
+        from permission_common import (
             get_settings_path,
             load_settings_path,
             save_settings,

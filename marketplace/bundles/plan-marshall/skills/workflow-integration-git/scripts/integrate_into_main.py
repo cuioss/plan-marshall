@@ -73,16 +73,16 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-from file_ops import (  # type: ignore[import-not-found]
+from file_ops import (
     get_executor_path,
     get_worktree_root,
 )
-from marketplace_paths import (  # type: ignore[import-not-found]
+from marketplace_paths import (
     PLAN_DIR_NAME,
     resolve_main_anchored_path,
 )
-from toon_parser import parse_toon  # type: ignore[import-not-found]
-from triage_helpers import (  # type: ignore[import-not-found]
+from toon_parser import parse_toon
+from triage_helpers import (
     ErrorCode,
     create_workflow_cli,
     make_error,

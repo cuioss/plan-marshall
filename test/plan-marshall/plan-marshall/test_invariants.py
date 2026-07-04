@@ -40,7 +40,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
-from conftest import get_script_path, load_script_module  # type: ignore[import-not-found]
+from conftest import get_script_path, load_script_module
 
 # =============================================================================
 # Import the invariants module under test.
@@ -191,7 +191,7 @@ def _finalize_step(plan_id: str, task: int, step: int, outcome: str) -> None:
 
 def _make_stub_run_script():
     """Return a function that mimics ``_run_script`` for manage-tasks calls."""
-    from file_ops import serialize_toon  # type: ignore[import-not-found]
+    from file_ops import serialize_toon
 
     def _stub(args: list[str]) -> str | None:
         # args shape per _invariants._capture_task_graph_valid:
@@ -1296,7 +1296,7 @@ def _make_findings_stub_run_script():
     pending`` to the real ``query_qgate_findings`` so the blocking-count capture
     reads the genuine store written by add_finding / resolve_finding.
     """
-    from file_ops import serialize_toon  # type: ignore[import-not-found]
+    from file_ops import serialize_toon
 
     def _flag(args: list[str], name: str) -> str | None:
         if name in args:

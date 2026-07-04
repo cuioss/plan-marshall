@@ -38,7 +38,7 @@ from _architecture_core import (
     save_project_meta,
     swap_data_dir,
 )
-from constants import (  # type: ignore[import-not-found]
+from constants import (
     DIR_PER_MODULE_ENRICHED,
     FILE_PROJECT_META,
 )
@@ -554,7 +554,7 @@ def api_discover(project_dir: str = '.', force: bool = False, regenerate_descrip
     # discover_project_modules call gives us both the module data and
     # extensions_used, avoiding the redundant second discovery pass that
     # crawl_all_modules + a follow-up discover_project_modules would cause.
-    from extension_discovery import discover_project_modules  # type: ignore[import-not-found]
+    from extension_discovery import discover_project_modules
 
     project_path = Path(project_dir).resolve()
     discovery_result = discover_project_modules(project_path)

@@ -5,8 +5,8 @@
 import pytest  # noqa: I001
 
 # conftest.py sets up PYTHONPATH so imports resolve without manual sys.path work.
-from runtime_base import Runtime, toon_error, toon_noop, toon_success  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from runtime_base import Runtime, toon_error, toon_noop, toon_success
+from toon_parser import parse_toon
 
 
 # =============================================================================

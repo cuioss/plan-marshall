@@ -1158,13 +1158,13 @@ def main() -> int:
     args = parser.parse_args()
     result = args.func(args)
 
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+    from toon_parser import serialize_toon
 
     print(serialize_toon(result))
     return 0
 
 
 if __name__ == '__main__':
-    from file_ops import safe_main  # type: ignore[import-not-found]
+    from file_ops import safe_main
 
     safe_main(main)()

@@ -15,7 +15,7 @@ from _gradle_cmd_discover import (
     find_settings_file,
     parse_included_projects,
 )
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from toon_parser import serialize_toon
 
 
 def get_root_project_name(settings_path: Path) -> str | None:

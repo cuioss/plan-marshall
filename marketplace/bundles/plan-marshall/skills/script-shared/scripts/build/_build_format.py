@@ -27,7 +27,7 @@ import json
 from collections import OrderedDict
 from typing import Any
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from toon_parser import serialize_toon
 
 # =============================================================================
 # Constants

@@ -27,7 +27,7 @@ cmd_get_routing_context, cmd_route, cmd_self_test = (
 )
 
 # Import toon_parser - conftest sets up PYTHONPATH
-from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
+from toon_parser import parse_toon  # noqa: E402
 
 # =============================================================================
 # Helper: create a status.json with standard phase structure

@@ -31,7 +31,7 @@ from __future__ import annotations
 import json
 import sys
 
-from conftest import get_script_path, run_script  # type: ignore[import-not-found]
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path(
     "plan-marshall", "platform-runtime", "claude_pretooluse_hook.py"

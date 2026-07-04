@@ -27,14 +27,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from file_ops import base_path, output_toon, safe_main
+from input_validation import (
     add_plan_id_arg,
     add_session_id_arg,
     parse_args_with_toon_errors,
 )
-from retro_sections import SECTION_SPEC  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from retro_sections import SECTION_SPEC
+from toon_parser import parse_toon
 
 # The canonical section→fragment-key registry lives in ``retro_sections`` so the
 # producer (``collect-fragments``) and this consumer share one source of truth.
@@ -343,4 +343,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    main()  # type: ignore[no-untyped-call]
+    main()

@@ -21,9 +21,9 @@ import sys
 from argparse import Namespace
 
 import pytest
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
-from conftest import load_script_module  # type: ignore[import-not-found]
+from conftest import load_script_module
 
 # Distinct sys.modules name so this in-process load never clobbers the
 # 'manage_findings' module the sibling test file registers.

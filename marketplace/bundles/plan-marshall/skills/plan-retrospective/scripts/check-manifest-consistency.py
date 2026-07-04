@@ -30,12 +30,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from file_ops import base_path, output_toon, safe_main
+from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 # Manifest schema version known to this script. Bump in lock-step with
 # ``manage-execution-manifest`` whenever the manifest body changes shape.
@@ -518,4 +518,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    main()  # type: ignore[no-untyped-call]
+    main()

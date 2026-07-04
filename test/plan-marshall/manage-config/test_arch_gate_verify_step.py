@@ -211,7 +211,7 @@ def test_arch_constraint_is_a_producible_finding_type():
     member of that enum — this test pins the registration so the jsonl-format.md
     taxonomy claim stays true in code.
     """
-    from constants import FINDING_TYPES  # type: ignore[import-not-found]
+    from constants import FINDING_TYPES
 
     assert 'arch-constraint' in FINDING_TYPES
 
@@ -224,7 +224,7 @@ def test_arch_constraint_passes_the_producer_type_validator():
     finding is genuinely producible (not merely documented) while a non-registered
     type is still rejected.
     """
-    from constants import FINDING_TYPES  # type: ignore[import-not-found]
+    from constants import FINDING_TYPES
 
     assert 'arch-constraint' in FINDING_TYPES
     assert 'not-a-real-finding-type' not in FINDING_TYPES

@@ -34,11 +34,11 @@ from _config_defaults import (
 from _config_detection import detect_domains
 
 # Direct imports - PYTHONPATH set by executor
-from extension_discovery import (  # type: ignore[import-not-found]
+from extension_discovery import (
     discover_all_extensions,
     discover_applicable_extensions,
 )
-from marketplace_paths import (  # type: ignore[import-not-found]
+from marketplace_paths import (
     iter_project_skill_dirs,
 )
 
@@ -458,7 +458,7 @@ def _discover_all_verify_steps() -> list[dict]:
     """
     # Lazy import — executor sets PYTHONPATH for cross-skill imports.
     from _config_defaults import _VERIFY_STEP_PREFIX, BUILD_VERIFY_STEP_EXT_POINT
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors
 
     all_steps: list[dict] = []
 

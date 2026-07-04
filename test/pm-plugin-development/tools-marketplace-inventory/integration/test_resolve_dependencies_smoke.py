@@ -18,7 +18,7 @@ Two smokes are retained — both assert against the real shipped marketplace:
    skill resolves a known real shipped chain.
 """
 
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
 

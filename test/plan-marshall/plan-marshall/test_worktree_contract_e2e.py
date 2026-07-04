@@ -31,7 +31,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from conftest import (  # type: ignore[import-not-found]
+from conftest import (
     get_script_path,
 )
 

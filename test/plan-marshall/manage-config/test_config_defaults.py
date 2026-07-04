@@ -127,7 +127,7 @@ def _discovered_seed_step_ids() -> list:
     and project to the step ids. The result is the expected key insertion order of
     the seeded ``plan.phase-6-finalize.steps`` keyed map.
     """
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors
 
     seed_records = sorted(
         (
@@ -146,7 +146,7 @@ def _discovered_step_description(step_id: str) -> str:
     Replaces the removed ``BUILT_IN_FINALIZE_STEP_DESCRIPTIONS`` map: the per-step
     description is now a frontmatter field surfaced by the discovery query.
     """
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors
 
     for rec in find_implementors(_config_defaults_mod.FINALIZE_STEP_EXT_POINT):
         if rec.get('name') == step_id:
@@ -166,7 +166,7 @@ def _discovered_verify_step_ids() -> list:
     key insertion order of the seeded ``plan.phase-5-execute.verification_steps``
     keyed map.
     """
-    from extension_discovery import find_implementors  # type: ignore[import-not-found]
+    from extension_discovery import find_implementors
 
     built_in = sorted(
         (
@@ -280,7 +280,7 @@ def test_default_plan_finalize_carries_all_finalize_gates():
     # self_review is owned by the project-only pre-submission-self-review step,
     # which is NOT a built-in candidate, so it is absent from the seed; its
     # default resolves directly via the configurable_contract parser.
-    from configurable_contract import resolve_step_defaults  # type: ignore[import-not-found]
+    from configurable_contract import resolve_step_defaults
 
     self_review_defaults = resolve_step_defaults(
         'project:finalize-step-pre-submission-self-review'

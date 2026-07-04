@@ -27,7 +27,7 @@ import json
 import sys
 from pathlib import Path
 
-from conftest import get_script_path, run_script  # type: ignore[import-not-found]
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path(
     "plan-marshall", "platform-runtime", "claude_pretooluse_capture.py"

@@ -49,7 +49,7 @@ from _config_core import (
     save_config,
     success_exit,
 )
-from effort_presets import EffortPresets  # type: ignore[import-not-found]
+from effort_presets import EffortPresets
 
 # Allowed-effort-levels enum, kept in lock-step with effort-levels.md.
 ALLOWED_LEVELS = (

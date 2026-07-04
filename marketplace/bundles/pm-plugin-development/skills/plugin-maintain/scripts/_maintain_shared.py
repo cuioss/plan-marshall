@@ -4,7 +4,7 @@
 
 from typing import Any
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from toon_parser import serialize_toon
 
 EXIT_SUCCESS = 0
 

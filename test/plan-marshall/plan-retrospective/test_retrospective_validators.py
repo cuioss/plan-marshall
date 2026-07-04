@@ -21,14 +21,14 @@ from __future__ import annotations
 import pytest
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from _pm_input_validation_fixtures import (  # type: ignore[import-not-found]
+from _pm_input_validation_fixtures import (
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_invalid_field,
     assert_not_invalid_field,
 )
 
-from conftest import get_script_path, run_script  # type: ignore[import-not-found]
+from conftest import get_script_path, run_script
 
 # Script registry: each entry is (script_filename, subcommand). All eight
 # retrospective scripts use the ``run`` subcommand and live under
@@ -157,7 +157,7 @@ def test_compile_report_canonical_session_id(tmp_path):
 # guard turns this red: the uncaught OSError surfaces as an `internal_error`
 # TOON with a non-zero exit, which both assertions below reject.
 
-from _plan_retrospective_fixtures import build_happy_plan_dir  # type: ignore[import-not-found]  # noqa: E402
+from _plan_retrospective_fixtures import build_happy_plan_dir  # noqa: E402
 
 
 def _make_dir_at(path) -> None:

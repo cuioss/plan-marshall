@@ -47,7 +47,7 @@ for _ancestor in Path(__file__).resolve().parents:
             sys.path.insert(0, _shared_scripts)
         break
 
-from marketplace_bundles import resolve_skills_root  # type: ignore[import-not-found]  # noqa: E402
+from marketplace_bundles import resolve_skills_root  # noqa: E402
 
 _SKILLS_DIR = resolve_skills_root(Path(__file__))
 for _lib in ('ref-toon-format',):
@@ -55,7 +55,7 @@ for _lib in ('ref-toon-format',):
     if _lib_path not in sys.path:
         sys.path.insert(0, _lib_path)
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
+from toon_parser import serialize_toon  # noqa: E402
 
 # Lines to add to .gitignore
 # Use .plan/* (not .plan/) to allow exceptions - .plan/ ignores entire directory

@@ -34,7 +34,7 @@ import sys
 
 import pytest
 
-from conftest import PROJECT_ROOT  # type: ignore[import-not-found]
+from conftest import PROJECT_ROOT
 
 _SCRIPTS_DIR = (
     PROJECT_ROOT

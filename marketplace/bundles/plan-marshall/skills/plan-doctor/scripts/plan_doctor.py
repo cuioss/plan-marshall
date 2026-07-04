@@ -59,8 +59,8 @@ from typing import Any
 # Allow direct invocation and testing — executor sets PYTHONPATH for production.
 sys.path.insert(0, str(Path(__file__).parent))
 
-from file_ops import base_path, output_toon, output_toon_error, safe_main  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from file_ops import base_path, output_toon, output_toon_error, safe_main
+from input_validation import (
     LessonInventoryUnavailable,
     LessonRegexAnchoringError,
     add_plan_id_arg,
@@ -246,7 +246,7 @@ def _emit_finding_to_qgate(finding: dict[str, Any]) -> None:
     """
     # Local import — keeps the manage-findings dependency lazy so the
     # ``--no-emit`` path doesn't pay for it.
-    from _findings_core import add_qgate_finding  # type: ignore[import-not-found]
+    from _findings_core import add_qgate_finding
 
     reason = finding.get('reason')
     severity: str = 'warning'

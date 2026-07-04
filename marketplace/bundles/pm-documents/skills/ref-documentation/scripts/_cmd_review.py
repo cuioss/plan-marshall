@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from plan_logging import log_entry
 
 # Marketing language patterns
 MARKETING_PATTERNS = [

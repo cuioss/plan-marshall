@@ -37,7 +37,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
-from conftest import (  # type: ignore[import-not-found]
+from conftest import (
     MARKETPLACE_ROOT,
     get_script_path,
     run_script,
@@ -121,7 +121,7 @@ def _make_stub_run_script():
       ``_capture_config_hash`` produces a deterministic hash without needing
       a real marshal.json.
     """
-    from file_ops import serialize_toon  # type: ignore[import-not-found]
+    from file_ops import serialize_toon
 
     def _stub(args: list[str]) -> str | None:
         if len(args) < 2:

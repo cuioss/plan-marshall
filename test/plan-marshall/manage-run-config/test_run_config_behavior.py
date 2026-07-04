@@ -38,7 +38,7 @@ def rc_env(tmp_path, monkeypatch):
     """
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     monkeypatch.setenv('PLAN_DIR_NAME', '.plan')
-    import file_ops  # type: ignore[import-not-found]
+    import file_ops
 
     monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
     return tmp_path

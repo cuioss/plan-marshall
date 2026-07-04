@@ -31,9 +31,9 @@ from _analyze_phase2_refine_contract import analyze_phase2_refine_contract
 from _analyze_shared import check_agent_glob_resolver_workaround
 from _analyze_structure import analyze_skill_structure
 from _analyze_verb_chains import analyze_verb_chains
-from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
-from _dep_index import AstCache  # type: ignore[import-not-found]
-from _doctor_shared import Finding  # type: ignore[import-not-found]
+from _dep_detection import extract_frontmatter
+from _dep_index import AstCache
+from _doctor_shared import Finding
 
 # Subdirectories that may contain markdown sub-documents
 SUBDOC_DIRS = ['references', 'standards', 'workflow', 'templates']

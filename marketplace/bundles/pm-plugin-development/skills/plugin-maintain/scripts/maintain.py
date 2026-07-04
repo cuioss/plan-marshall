@@ -22,7 +22,7 @@ from _cmd_analyze import cmd_analyze
 from _cmd_check_duplication import cmd_check_duplication
 from _cmd_readme import cmd_readme
 from _cmd_update import cmd_update
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
 
 
 @safe_main

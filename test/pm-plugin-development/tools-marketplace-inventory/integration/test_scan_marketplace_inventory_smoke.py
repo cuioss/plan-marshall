@@ -24,7 +24,7 @@ Two smokes are retained:
 import subprocess
 from pathlib import Path
 
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
 

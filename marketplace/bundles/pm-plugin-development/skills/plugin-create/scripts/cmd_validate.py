@@ -6,7 +6,7 @@ import argparse
 import re
 from typing import Any
 
-from _dep_detection import extract_frontmatter  # type: ignore[import-not-found]
+from _dep_detection import extract_frontmatter
 
 Finding = dict[str, Any]
 Frontmatter = dict[str, Any]

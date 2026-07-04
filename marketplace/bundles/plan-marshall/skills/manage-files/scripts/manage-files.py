@@ -38,7 +38,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from file_ops import (  # type: ignore[import-not-found]
+from file_ops import (
     atomic_write_file,
     get_executor_path,
     get_marshal_path,
@@ -46,13 +46,13 @@ from file_ops import (  # type: ignore[import-not-found]
     output_toon,
     safe_main,
 )
-from input_validation import (  # type: ignore[import-not-found]
+from input_validation import (
     add_plan_id_arg,
     is_valid_relative_path,
     parse_args_with_toon_errors,
     require_valid_plan_id,
 )
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from plan_logging import log_entry
 
 # get_plan_dir imported from file_ops
 

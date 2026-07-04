@@ -31,10 +31,10 @@ import re
 import sys
 from typing import Any
 
-import github_ops as _github  # type: ignore[import-not-found]
-from ci_base import extract_routing_args, register_subcommands, set_default_cwd  # type: ignore[import-not-found]
-from github_re_review import bot_kind_for_author  # type: ignore[import-not-found]
-from triage_helpers import (  # type: ignore[import-not-found]
+import github_ops as _github
+from ci_base import extract_routing_args, register_subcommands, set_default_cwd
+from github_re_review import bot_kind_for_author
+from triage_helpers import (
     ErrorCode,
     compile_patterns_from_config,
     create_workflow_cli,
@@ -202,7 +202,7 @@ def cmd_comments_stage(args):
     recorded as a ``qgate`` finding with title prefix ``(producer-mismatch)``
     so the LLM sees them in ``manage-findings qgate list``.
     """
-    from _findings_core import (  # type: ignore[import-not-found]
+    from _findings_core import (
         add_finding,
         add_qgate_finding,
         query_findings,
@@ -406,7 +406,7 @@ Examples:
         ],
     )
     args = parser.parse_args()
-    from triage_helpers import print_toon as _output_toon  # type: ignore[import-not-found]
+    from triage_helpers import print_toon as _output_toon
 
     return _output_toon(args.func(args))
 

@@ -12,18 +12,18 @@ import sys
 from typing import Any
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _architecture_core import (  # type: ignore[import-not-found]
+from _architecture_core import (
     DataNotFoundError,
     iter_modules,
     load_module_derived,
 )
-from _config_core import ext_defaults_get  # type: ignore[import-not-found]
-from file_ops import print_toon_list, print_toon_table  # type: ignore[import-not-found]
-from input_validation import (  # type: ignore[import-not-found]
+from _config_core import ext_defaults_get
+from file_ops import print_toon_list, print_toon_table
+from input_validation import (
     add_module_arg,
     parse_args_with_toon_errors,
 )
-from resolve_project_dir import (  # type: ignore[import-not-found]
+from resolve_project_dir import (
     MutuallyExclusiveArgsError,
     WorktreeResolutionError,
     add_plan_id_arg,
@@ -31,7 +31,7 @@ from resolve_project_dir import (  # type: ignore[import-not-found]
     emit_worktree_error,
     resolve_project_dir,
 )
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from toon_parser import serialize_toon
 
 # Extension defaults keys for profile configuration
 EXT_KEY_PROFILES_SKIP = 'build.maven.profiles.skip'

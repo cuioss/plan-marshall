@@ -8,13 +8,13 @@ In-scope flags from TASK-1: ``--component``, ``--lesson-id``, ``--plan-id``.
 from __future__ import annotations
 
 import pytest
-from _pm_input_validation_fixtures import (  # type: ignore[import-not-found]
+from _pm_input_validation_fixtures import (
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_invalid_field,
 )
 
-from conftest import get_script_path, run_script  # type: ignore[import-not-found]
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-lessons', 'manage-lessons.py')
 
@@ -75,7 +75,7 @@ def test_get_accepts_canonical_lesson_id():
     result = run_script(SCRIPT_PATH, 'get', '--lesson-id', HAPPY_VALUES['lesson_id'])
     assert result.returncode == 0
     if result.stdout.strip():
-        from toon_parser import parse_toon  # type: ignore[import-not-found]
+        from toon_parser import parse_toon
 
         data = parse_toon(result.stdout)
         assert data.get('error') != 'invalid_lesson_id'

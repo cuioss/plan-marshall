@@ -22,7 +22,7 @@ import pytest
 
 # conftest.py sets up PYTHONPATH so cross-skill imports resolve without
 # manual sys.path manipulation.
-from platform_runtime import (  # type: ignore[import-not-found]
+from platform_runtime import (
     _build_operation,
     _dispatch,
     _make_runtime,
@@ -32,8 +32,8 @@ from platform_runtime import (  # type: ignore[import-not-found]
     _resolve_target,
     main,
 )
-from runtime_base import toon_success  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from runtime_base import toon_success
+from toon_parser import parse_toon
 
 
 # =============================================================================
@@ -254,7 +254,7 @@ class TestMakeRuntime:
 
     def test_claude_target_returns_claude_runtime(self):
         """_make_runtime('claude') returns a ClaudeRuntime instance."""
-        from claude_runtime import ClaudeRuntime  # type: ignore[import-not-found]
+        from claude_runtime import ClaudeRuntime
 
         runtime = _make_runtime("claude")
         assert runtime is not None
@@ -262,7 +262,7 @@ class TestMakeRuntime:
 
     def test_opencode_target_returns_opencode_runtime(self):
         """_make_runtime('opencode') returns an OpenCodeRuntime instance."""
-        from opencode_runtime import OpenCodeRuntime  # type: ignore[import-not-found]
+        from opencode_runtime import OpenCodeRuntime
 
         runtime = _make_runtime("opencode")
         assert runtime is not None
@@ -721,7 +721,7 @@ class TestMain:
         """main() respects PLAN_DIR_NAME env var when locating marshal.json."""
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("PLAN_DIR_NAME", ".custom-plan")
-        import platform_runtime as _pr  # type: ignore[import-not-found]
+        import platform_runtime as _pr
 
         monkeypatch.setattr(_pr, "_PLAN_DIR_NAME", ".custom-plan")
         custom_plan = tmp_path / ".custom-plan"

@@ -248,7 +248,7 @@ def test_pr_comments_kind_inline_vs_issue_comment(monkeypatch):
     otherwise. GitLab has no equivalent of GitHub's review_body kind."""
     import argparse
 
-    import gitlab_ops  # type: ignore[import-not-found]
+    import gitlab_ops
 
     discussions_payload = [
         {

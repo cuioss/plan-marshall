@@ -169,7 +169,7 @@ def _build_profile_patterns() -> dict[str, str]:
     """Build PROFILE_PATTERNS from CANONICAL_COMMANDS aliases."""
     patterns: dict[str, str] = {}
     for cmd, meta in CANONICAL_COMMANDS.items():
-        aliases: list[str] = meta.get('aliases', [])  # type: ignore[assignment]
+        aliases: list[str] = meta.get('aliases', [])
         for alias in aliases:
             patterns[alias] = cmd
     return patterns

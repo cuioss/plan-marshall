@@ -15,18 +15,18 @@ import re
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict
 
-from constants import (  # type: ignore[import-not-found]
+from constants import (
     DIR_TASKS,
     VALID_SOURCE_EXTENSIONS,
     VALID_STEP_INTENTS,
     VALID_TASK_ORIGINS,
 )
-from file_ops import (  # type: ignore[import-not-found]  # noqa: F401 - re-exported
+from file_ops import (  # noqa: F401 - re-exported
     get_plan_dir,
     normalize_to_repo_relative,
     now_utc_iso,
 )
-from input_validation import require_valid_plan_id  # type: ignore[import-not-found]  # noqa: F401 - re-exported
+from input_validation import require_valid_plan_id  # noqa: F401 - re-exported
 
 # =============================================================================
 # Type definitions

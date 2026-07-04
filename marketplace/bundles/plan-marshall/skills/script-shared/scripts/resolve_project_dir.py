@@ -39,8 +39,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from file_ops import get_executor_path  # type: ignore[import-not-found]
-from marketplace_paths import _find_plan_root_from_cwd  # type: ignore[import-not-found]
+from file_ops import get_executor_path
+from marketplace_paths import _find_plan_root_from_cwd
 
 
 class MutuallyExclusiveArgsError(ValueError):

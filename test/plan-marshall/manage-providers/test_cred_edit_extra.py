@@ -28,7 +28,7 @@ _TOKEN = 'super-secret-token-value'
 
 def _seed_token_credential(skill: str = _SKILL, token: str = _TOKEN) -> None:
     """Persist a token credential into the per-test sandbox credential store."""
-    from _providers_core import save_credential  # type: ignore[import-not-found]
+    from _providers_core import save_credential
 
     save_credential(
         skill,
@@ -48,8 +48,8 @@ class TestUpsertExtraFieldsIdempotent:
     def test_upsert_adds_new_key(self):
         """An absent key is added to the provider config."""
         # Arrange
-        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _cred_edit import _upsert_extra_fields
+        from _providers_core import read_provider_config
 
         # Act
         upserted = _upsert_extra_fields(_SKILL, ['organization=my-org'])
@@ -61,8 +61,8 @@ class TestUpsertExtraFieldsIdempotent:
     def test_repeated_upsert_same_key_is_idempotent(self):
         """Repeating the same pair leaves the provider config unchanged."""
         # Arrange
-        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _cred_edit import _upsert_extra_fields
+        from _providers_core import read_provider_config
 
         # Act
         _upsert_extra_fields(_SKILL, ['organization=my-org'])
@@ -77,8 +77,8 @@ class TestUpsertExtraFieldsIdempotent:
     def test_upsert_replaces_existing_key_in_place(self):
         """A present key is replaced with the new value, not duplicated."""
         # Arrange
-        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _cred_edit import _upsert_extra_fields
+        from _providers_core import read_provider_config
 
         # Act
         _upsert_extra_fields(_SKILL, ['organization=old-org'])
@@ -90,8 +90,8 @@ class TestUpsertExtraFieldsIdempotent:
     def test_upsert_preserves_other_extras(self):
         """Upserting one key leaves unrelated existing extras intact."""
         # Arrange
-        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
-        from _providers_core import (  # type: ignore[import-not-found]
+        from _cred_edit import _upsert_extra_fields
+        from _providers_core import (
             read_provider_config,
             write_provider_config,
         )
@@ -109,8 +109,8 @@ class TestUpsertExtraFieldsIdempotent:
     def test_pairs_without_equals_are_ignored(self):
         """A token lacking ``=`` is skipped and triggers no write."""
         # Arrange
-        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _cred_edit import _upsert_extra_fields
+        from _providers_core import read_provider_config
 
         # Act
         upserted = _upsert_extra_fields(_SKILL, ['no-equals-here'])
@@ -122,8 +122,8 @@ class TestUpsertExtraFieldsIdempotent:
     def test_empty_pairs_returns_empty(self):
         """An empty pair list is a no-op returning no keys."""
         # Arrange
-        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _cred_edit import _upsert_extra_fields
+        from _providers_core import read_provider_config
 
         # Act
         upserted = _upsert_extra_fields(_SKILL, [])
@@ -135,7 +135,7 @@ class TestUpsertExtraFieldsIdempotent:
     def test_upsert_returns_keys_in_supplied_order(self):
         """Multiple pairs are reported in the order supplied."""
         # Arrange
-        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
+        from _cred_edit import _upsert_extra_fields
 
         # Act
         upserted = _upsert_extra_fields(_SKILL, ['project_key=pk', 'organization=org'])
@@ -150,8 +150,8 @@ class TestUpsertExtraFieldsValidation:
     def test_empty_key_is_skipped(self):
         """A pair whose key is empty (``=value``) is skipped, triggering no write."""
         # Arrange
-        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _cred_edit import _upsert_extra_fields
+        from _providers_core import read_provider_config
 
         # Act
         upserted = _upsert_extra_fields(_SKILL, ['=orphan-value'])
@@ -163,8 +163,8 @@ class TestUpsertExtraFieldsValidation:
     def test_whitespace_only_key_is_skipped(self):
         """A pair whose key is only whitespace is skipped after stripping."""
         # Arrange
-        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _cred_edit import _upsert_extra_fields
+        from _providers_core import read_provider_config
 
         # Act
         upserted = _upsert_extra_fields(_SKILL, ['   =value'])
@@ -176,8 +176,8 @@ class TestUpsertExtraFieldsValidation:
     def test_key_whitespace_is_stripped(self):
         """Surrounding whitespace is stripped from the key before it is stored."""
         # Arrange
-        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _cred_edit import _upsert_extra_fields
+        from _providers_core import read_provider_config
 
         # Act
         upserted = _upsert_extra_fields(_SKILL, ['  organization  =my-org'])
@@ -191,8 +191,8 @@ class TestUpsertExtraFieldsValidation:
     def test_secret_key_token_is_rejected(self):
         """A key named ``token`` is rejected so no secret lands in marshal.json."""
         # Arrange
-        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _cred_edit import _upsert_extra_fields
+        from _providers_core import read_provider_config
 
         # Act
         upserted = _upsert_extra_fields(_SKILL, ['token=should-not-persist'])
@@ -204,8 +204,8 @@ class TestUpsertExtraFieldsValidation:
     def test_secret_keys_username_and_password_are_rejected(self):
         """Keys named ``username`` and ``password`` are both rejected."""
         # Arrange
-        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _cred_edit import _upsert_extra_fields
+        from _providers_core import read_provider_config
 
         # Act
         upserted = _upsert_extra_fields(_SKILL, ['username=alice', 'password=hunter2'])
@@ -219,8 +219,8 @@ class TestUpsertExtraFieldsValidation:
     def test_stripped_secret_key_is_rejected(self):
         """A padded secret key (``  token  ``) is rejected after stripping."""
         # Arrange
-        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _cred_edit import _upsert_extra_fields
+        from _providers_core import read_provider_config
 
         # Act
         upserted = _upsert_extra_fields(_SKILL, ['  token  =should-not-persist'])
@@ -232,8 +232,8 @@ class TestUpsertExtraFieldsValidation:
     def test_secret_keys_rejected_alongside_valid_keys(self):
         """Secret keys are dropped while valid keys in the same call still upsert."""
         # Arrange
-        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _cred_edit import _upsert_extra_fields
+        from _providers_core import read_provider_config
 
         # Act
         upserted = _upsert_extra_fields(
@@ -250,8 +250,8 @@ class TestUpsertExtraFieldsValidation:
     def test_duplicate_keys_are_deduplicated(self):
         """A key supplied twice is reported once; the last value wins."""
         # Arrange
-        from _cred_edit import _upsert_extra_fields  # type: ignore[import-not-found]
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _cred_edit import _upsert_extra_fields
+        from _providers_core import read_provider_config
 
         # Act
         upserted = _upsert_extra_fields(_SKILL, ['organization=first', 'organization=second'])
@@ -267,8 +267,8 @@ class TestRunEditPreservesToken:
     def test_edit_extra_preserves_token(self):
         """Editing extras keeps the stored token untouched."""
         # Arrange
-        from _cred_edit import run_edit  # type: ignore[import-not-found]
-        from _providers_core import (  # type: ignore[import-not-found]
+        from _cred_edit import run_edit
+        from _providers_core import (
             load_credential,
             read_provider_config,
         )
@@ -288,8 +288,8 @@ class TestRunEditPreservesToken:
     def test_edit_does_not_write_extras_into_credential_file(self):
         """Extras land in marshal.json, never in the credential file."""
         # Arrange
-        from _cred_edit import run_edit  # type: ignore[import-not-found]
-        from _providers_core import load_credential  # type: ignore[import-not-found]
+        from _cred_edit import run_edit
+        from _providers_core import load_credential
 
         _seed_token_credential()
 
@@ -306,8 +306,8 @@ class TestRunEditPreservesToken:
     def test_repeated_edit_extra_idempotent_and_token_preserved(self):
         """Two identical extra edits converge and keep the token."""
         # Arrange
-        from _cred_edit import run_edit  # type: ignore[import-not-found]
-        from _providers_core import (  # type: ignore[import-not-found]
+        from _cred_edit import run_edit
+        from _providers_core import (
             load_credential,
             read_provider_config,
         )
@@ -329,8 +329,8 @@ class TestRunEditPreservesToken:
     def test_token_preserved_across_sequential_distinct_extra_mutations(self):
         """The token survives a sequence of distinct extra-key mutations."""
         # Arrange
-        from _cred_edit import run_edit  # type: ignore[import-not-found]
-        from _providers_core import (  # type: ignore[import-not-found]
+        from _cred_edit import run_edit
+        from _providers_core import (
             load_credential,
             read_provider_config,
         )
@@ -352,8 +352,8 @@ class TestRunEditPreservesToken:
     def test_edit_without_extra_leaves_provider_config_untouched(self):
         """An edit with no extras neither adds provider config nor drops the token."""
         # Arrange
-        from _cred_edit import run_edit  # type: ignore[import-not-found]
-        from _providers_core import (  # type: ignore[import-not-found]
+        from _cred_edit import run_edit
+        from _providers_core import (
             load_credential,
             read_provider_config,
             write_provider_config,
@@ -389,7 +389,7 @@ class TestEditCliExtra:
         """The CLI edit upserts the extra and keeps the credential token."""
         # Arrange — seed a credential the subprocess will resolve via the shared
         # sandbox env (PLAN_MARSHALL_CREDENTIALS_DIR propagated by run_script).
-        from _providers_core import (  # type: ignore[import-not-found]
+        from _providers_core import (
             load_credential,
             read_provider_config,
         )
@@ -417,7 +417,7 @@ class TestEditCliExtra:
     def test_edit_cli_repeated_extra_is_idempotent(self):
         """Running the CLI edit twice with the same extra converges."""
         # Arrange
-        from _providers_core import read_provider_config  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config
 
         _seed_token_credential()
 

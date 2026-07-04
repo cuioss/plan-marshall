@@ -9,10 +9,10 @@ import sys
 import time
 from typing import Any
 
-from run_config import timeout_get, timeout_set  # type: ignore[import-not-found]
+from run_config import timeout_get, timeout_set
 
 # Direct imports - PYTHONPATH set by executor
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon, serialize_toon
 
 DEFAULT_TIMEOUT = 300
 DEFAULT_INTERVAL = 30

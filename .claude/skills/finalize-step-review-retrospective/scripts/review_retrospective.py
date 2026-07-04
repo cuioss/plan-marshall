@@ -203,7 +203,7 @@ def _read_pr_comment_findings(plan_id: str) -> list[dict[str, Any]]:
     Imported lazily so `aggregate` stays importable (and unit-testable) without the
     executor PYTHONPATH that supplies `_findings_core`.
     """
-    from _findings_core import query_findings  # type: ignore[import-not-found]
+    from _findings_core import query_findings
 
     result = query_findings(plan_id, finding_type='pr-comment')
     if result.get('status') == 'error':
@@ -225,7 +225,7 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     try:
-        from toon_parser import serialize_toon  # type: ignore[import-not-found]
+        from toon_parser import serialize_toon
 
         records = _read_pr_comment_findings(args.plan_id)
         result = aggregate(records)

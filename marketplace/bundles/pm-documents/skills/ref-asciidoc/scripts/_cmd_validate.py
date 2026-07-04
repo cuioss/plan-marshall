@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from plan_logging import log_entry  # type: ignore[import-not-found]
+from plan_logging import log_entry
 
 # Required attributes for AsciiDoc files
 REQUIRED_ATTRS = [

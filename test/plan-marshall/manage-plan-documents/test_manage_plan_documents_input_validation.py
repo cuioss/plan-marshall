@@ -10,13 +10,13 @@ The script's CLI shape is ``<doc-type> <verb>`` (e.g. ``request read``).
 from __future__ import annotations
 
 import pytest
-from _pm_input_validation_fixtures import (  # type: ignore[import-not-found]
+from _pm_input_validation_fixtures import (
     HAPPY_VALUES,
     MALFORMED_AXES,
     assert_invalid_field,
 )
 
-from conftest import get_script_path, run_script  # type: ignore[import-not-found]
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-plan-documents', 'manage-plan-documents.py')
 
@@ -32,7 +32,7 @@ def test_request_read_accepts_canonical_plan_id():
     result = run_script(SCRIPT_PATH, 'request', 'read', '--plan-id', HAPPY_VALUES['plan_id'])
     assert result.returncode == 0
     if result.stdout.strip():
-        from toon_parser import parse_toon  # type: ignore[import-not-found]
+        from toon_parser import parse_toon
 
         data = parse_toon(result.stdout)
         assert data.get('error') != 'invalid_plan_id'

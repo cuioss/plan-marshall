@@ -26,12 +26,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from _references_core import (  # type: ignore[import-not-found]
+from _references_core import (
     compute_plan_branch_diff,
     resolve_base_ref,
 )
-from constants import FILE_REFERENCES, FILE_STATUS  # type: ignore[import-not-found]
-from file_ops import (  # type: ignore[import-not-found]
+from constants import FILE_REFERENCES, FILE_STATUS
+from file_ops import (
     atomic_write_file,
     get_executor_path,
     get_marshal_path,
@@ -41,19 +41,19 @@ from file_ops import (  # type: ignore[import-not-found]
     read_json,
     safe_main,
 )
-from input_validation import (  # type: ignore[import-not-found]
+from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
     require_valid_plan_id,
 )
-from marketplace_bundles import (  # type: ignore[import-not-found]
+from marketplace_bundles import (
     resolve_bundles_root,
     resolve_skills_root,
 )
-from marketplace_paths import (  # type: ignore[import-not-found]
+from marketplace_paths import (
     resolve_project_skill_path,
 )
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon, serialize_toon
 
 # =============================================================================
 # Constants
@@ -664,7 +664,7 @@ def _classify_paths_via_extensions(
     # during unit tests.
     if extensions is None:
         try:
-            from extension_discovery import discover_build_extensions  # type: ignore[import-not-found]
+            from extension_discovery import discover_build_extensions
         except ImportError:
             extensions = []
         else:
@@ -800,7 +800,7 @@ def _emit_decision_log(plan_id: str, message: str) -> None:
     scripts dir; the test conftest does the same).
     """
     try:
-        from plan_logging import log_entry  # type: ignore[import-not-found]
+        from plan_logging import log_entry
 
         log_entry('decision', plan_id, 'INFO', message)
     except Exception:
@@ -1106,7 +1106,7 @@ def _apply_pre_push_quality_gate_inactive(phase_6_candidates: list[str], plan_id
     if 'pre-push-quality-gate' not in phase_6_candidates:
         return phase_6_candidates, False
 
-    from extension_base import should_execute_build  # type: ignore[import-not-found]
+    from extension_base import should_execute_build
 
     verdict = should_execute_build('quality-gate', plan_id)
     if verdict.get('decision') != 'build':
@@ -2389,7 +2389,7 @@ def _parse_cost_magnitude(raw: str) -> int:
     Returns ``0`` for an unparseable value (the cost preview degrades gracefully
     rather than crashing).
     """
-    from sensible_number import parse_sensible_int  # type: ignore[import-not-found]
+    from sensible_number import parse_sensible_int
     try:
         return parse_sensible_int(raw)
     except (ValueError, TypeError):

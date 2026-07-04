@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from git_provider import run_git  # type: ignore[import-not-found]
+from git_provider import run_git
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -98,7 +98,7 @@ def _resolve_branch_and_path(args) -> tuple[str | None, Path | None, dict | None
 
         # Parse TOON output for worktree_path and worktree_branch.
         try:
-            from toon_parser import parse_toon  # type: ignore[import-not-found]
+            from toon_parser import parse_toon
             parsed = parse_toon(result.stdout)
         except Exception as exc:  # noqa: BLE001
             return None, None, {
@@ -155,7 +155,7 @@ def _find_executor() -> Path | None:
     implementations in sync when modifying this logic.
     """
     try:
-        from file_ops import get_executor_path  # type: ignore[import-not-found]
+        from file_ops import get_executor_path
         candidate = get_executor_path()
         return candidate if candidate.exists() else None
     except (ImportError, RuntimeError):

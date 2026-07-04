@@ -6,7 +6,7 @@ import importlib.util
 import subprocess
 from pathlib import Path
 
-from extension_base import (  # type: ignore[import-not-found]
+from extension_base import (
     ROLE_CONFIG,
     ROLE_PRODUCTION,
     ROLE_TEST,

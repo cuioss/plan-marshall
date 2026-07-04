@@ -14,7 +14,7 @@ also consumed it has been removed (see ``test_compose_docs_only_branch.py``).
 import importlib.util
 from pathlib import Path
 
-from extension_base import BuildExtensionBase  # type: ignore[import-not-found]
+from extension_base import BuildExtensionBase
 
 # =============================================================================
 # Module loading

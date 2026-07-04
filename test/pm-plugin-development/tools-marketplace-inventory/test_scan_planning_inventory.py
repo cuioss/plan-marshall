@@ -59,7 +59,7 @@ total_components = 11 + 2 = 13.
 from pathlib import Path
 
 import pytest
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH and exposes
 # the script-dir list the inner subprocess needs on its own PYTHONPATH).

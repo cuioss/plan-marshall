@@ -22,8 +22,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-from _findings_core import add_qgate_finding  # type: ignore[import-not-found]
-from git_provider import run_git  # type: ignore[import-not-found]
+from _findings_core import add_qgate_finding
+from git_provider import run_git
 
 _PHASE = '2-refine'
 _QGATE_SOURCE = 'qgate'
@@ -42,7 +42,7 @@ def _resolve_worktree_path(plan_id: str, override: str | None) -> tuple[str | No
         return override, None
 
     try:
-        from _status_core import read_status  # type: ignore[import-not-found]
+        from _status_core import read_status
     except ImportError:
         return None, 'status_module_unavailable'
 
@@ -77,7 +77,7 @@ def _resolve_base_branch(plan_id: str, override: str | None) -> tuple[str, str |
         return override, 'cli'
 
     try:
-        from _config_core import load_config  # type: ignore[import-not-found]
+        from _config_core import load_config
     except ImportError:
         return _DEFAULT_BASE_BRANCH, 'default'
 
@@ -105,7 +105,7 @@ def _resolve_baseline_sha(plan_id: str, worktree_path: str) -> tuple[str, str]:
     phase-1-init) → current worktree HEAD.
     """
     try:
-        from _status_core import read_status  # type: ignore[import-not-found]
+        from _status_core import read_status
 
         status = read_status(plan_id)
         metadata = status.get('metadata', {}) if isinstance(status, dict) else {}
@@ -163,7 +163,7 @@ def _update_references_base_branch(plan_id: str, new_branch: str) -> bool:
     fail-loud or continue against the updated in-memory value.
     """
     try:
-        from _references_core import read_references, write_references  # type: ignore[import-not-found]
+        from _references_core import read_references, write_references
     except ImportError:
         return False
 
@@ -210,7 +210,7 @@ def _maybe_auto_update_stale_base_branch(
     persisted = _update_references_base_branch(plan_id, detected)
     if persisted:
         try:
-            from plan_logging import log_entry  # type: ignore[import-not-found]
+            from plan_logging import log_entry
         except ImportError:
             log_entry = None  # type: ignore[assignment]
         if log_entry is not None:
@@ -403,7 +403,7 @@ def cmd_baseline_reconcile(args) -> dict:
             if rc_sha == 0:
                 merge_commit_sha = sha_out.strip() or None
             try:
-                from plan_logging import log_entry  # type: ignore[import-not-found]
+                from plan_logging import log_entry
             except ImportError:
                 log_entry = None  # type: ignore[assignment]
             if log_entry is not None:

@@ -45,8 +45,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from file_ops import safe_main  # type: ignore[import-not-found]
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from file_ops import safe_main
+from toon_parser import serialize_toon
 
 # Constants
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'

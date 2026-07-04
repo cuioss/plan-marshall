@@ -36,13 +36,13 @@ import pytest
 # (extension_api) and the shared cross-skill helpers import directly. The module
 # object itself is imported so its module-level collaborators
 # (``require_references`` / ``cmd_resolve_domain_skills``) can be monkeypatched.
-import extension_api  # type: ignore[import-not-found]
-from extension_api import (  # type: ignore[import-not-found]
+import extension_api
+from extension_api import (
     cmd_resolve_skills,
     resolve_security_skills,
 )
-from file_ops import output_toon  # type: ignore[import-not-found]
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from file_ops import output_toon
+from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
 
