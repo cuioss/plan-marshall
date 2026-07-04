@@ -16,6 +16,7 @@ from collections.abc import Callable
 from _build_format import format_toon
 from _build_parse import Issue
 from _build_shared import ParserFn, cmd_discover_common, cmd_parse_common
+from file_ops import safe_main  # type: ignore[import-not-found]  # noqa: F401  # canonical entry-point wrapper
 
 
 def add_project_dir_arg(parser) -> None:
@@ -513,24 +514,3 @@ def build_main(
 
     result: int = args.func(args)
     return result
-
-
-def safe_main(main_fn: Callable[[], int]) -> int:
-    """Wrap a build script's main() to catch unhandled exceptions and emit TOON failure.
-
-    Ensures all build scripts produce structured TOON output even on
-    unexpected errors, instead of raw tracebacks that corrupt output.
-
-    Usage::
-
-        if __name__ == '__main__':
-            sys.exit(safe_main(main))
-    """
-    try:
-        return main_fn()
-    except SystemExit as e:
-        # Let argparse --help / missing-arg exits pass through
-        raise e
-    except Exception as e:
-        print(format_toon({'status': 'error', 'error': f'unexpected_error: {e}'}))
-        return 1
