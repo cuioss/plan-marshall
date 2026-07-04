@@ -5,7 +5,7 @@ Shared helpers for workflow scripts in plan-marshall bundle.
 
 Provides:
 - ``print_toon`` / ``print_error`` — output helpers replacing repetitive print+serialize+return patterns
-- ``safe_main`` — wrapper for consistent error handling across all workflow scripts
+- ``safe_main`` — re-export of the canonical ``file_ops.safe_main`` entry-point wrapper
 - ``ErrorCode`` / ``make_error`` — error code taxonomy for cross-skill error propagation
 - ``load_skill_config`` — standardized config loading from skill standards directories
 - ``create_workflow_cli`` — argparse boilerplate reduction for subcommand-based scripts
@@ -27,11 +27,10 @@ import argparse
 import json
 import re
 import sys
-import traceback as tb_module
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypedDict
 
+from file_ops import safe_main
 from toon_parser import serialize_toon
 
 __all__ = [
@@ -160,35 +159,6 @@ def print_error(message: str, *, code: str | None = None, **extra: Any) -> int:
     Replaces the triple: ``print(serialize_toon(make_error(...))); return 0``.
     """
     return print_toon(make_error(message, code=code, **extra))
-
-
-def safe_main(main_fn: Callable[[], int]) -> int:
-    """Wrap a script's main() to catch unhandled exceptions and emit TOON failure.
-
-    Ensures all workflow scripts produce structured TOON output even on
-    unexpected errors, instead of raw tracebacks. The full traceback is
-    included in the TOON payload for debugging.
-
-    Usage::
-
-        if __name__ == '__main__':
-            sys.exit(safe_main(main))
-    """
-    try:
-        return main_fn()
-    except SystemExit as e:
-        # Let argparse --help / missing-arg exits pass through
-        raise e
-    except Exception as e:
-        print(
-            serialize_toon(
-                make_error(
-                    f'Unexpected error: {e}',
-                    traceback=tb_module.format_exc(),
-                )
-            )
-        )
-        return 1
 
 
 # ============================================================================

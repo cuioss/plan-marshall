@@ -32,7 +32,6 @@ Examples:
 import json
 import os
 import re
-import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -586,4 +585,4 @@ Examples:
 
 
 if __name__ == '__main__':
-    sys.exit(safe_main(main))
+    safe_main(main)()

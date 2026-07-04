@@ -62,7 +62,6 @@ import fnmatch
 import os
 import re
 import subprocess
-import sys
 import textwrap
 from pathlib import Path
 from typing import Any
@@ -1861,4 +1860,4 @@ Examples:
 
 
 if __name__ == '__main__':
-    sys.exit(safe_main(main))
+    safe_main(main)()

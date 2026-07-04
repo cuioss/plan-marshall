@@ -948,4 +948,4 @@ Examples:
 
 
 if __name__ == '__main__':
-    sys.exit(safe_main(main))
+    safe_main(main)()

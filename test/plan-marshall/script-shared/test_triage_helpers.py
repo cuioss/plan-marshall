@@ -16,7 +16,6 @@ from triage_helpers import (
     parse_json_arg,
     print_error,
     print_toon,
-    safe_main,
 )
 
 
@@ -73,30 +72,18 @@ def test_print_error(capsys):
     assert result['error_code'] == 'INVALID_INPUT'
 
 
-def test_safe_main_success():
-    """Test safe_main passes through successful return code."""
-    rc = safe_main(lambda: 0)
-    assert rc == 0
+def test_safe_main_is_file_ops_reexport():
+    """triage_helpers.safe_main is the canonical file_ops.safe_main.
 
+    The workflow subsystem does not define its own entry-point wrapper — it
+    re-exports the single canonical implementation. Its decorator behaviour
+    (status:error TOON on stdout, exit 1 on crash) is pinned by
+    ``tools-file-ops/test_file_ops.py``.
+    """
+    import file_ops
+    import triage_helpers
 
-def test_safe_main_nonzero():
-    """Test safe_main passes through non-zero return code."""
-    rc = safe_main(lambda: 42)
-    assert rc == 42
-
-
-def test_safe_main_exception(capsys):
-    """Test safe_main catches exceptions and produces TOON error."""
-
-    def boom():
-        raise ValueError('test explosion')
-
-    rc = safe_main(boom)
-    assert rc == 1
-    captured = capsys.readouterr()
-    result = parse_toon(captured.out)
-    assert 'test explosion' in result['error']
-    assert 'traceback' in captured.out.lower() or 'ValueError' in captured.out
+    assert triage_helpers.safe_main is file_ops.safe_main
 
 
 def test_parse_json_arg_success():
