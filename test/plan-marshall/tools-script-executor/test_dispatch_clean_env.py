@@ -61,18 +61,19 @@ _DISPATCH_CASES = [
 
 
 def _clean_env(sandbox: str) -> dict[str, str]:
-    """Return a minimal environment with PYTHONPATH deliberately absent.
+    """Return the current environment with PYTHONPATH removed.
 
-    Keeps only PATH (to find ``python3``), HOME (Path.home() resolution), and the
-    plan-base sandbox redirect. Notably omits PYTHONPATH so the dispatched script
-    can only resolve cross-skill imports through the executor's own injection.
+    Copies ``os.environ`` — so platform-required variables (``SystemRoot`` on
+    Windows, ``LANG``, proxy settings, any virtualenv wiring) survive — and drops
+    ONLY ``PYTHONPATH``, the single variable whose absence forces the dispatched
+    script to rely on the executor's own path injection. ``PLAN_BASE_DIR`` is
+    redirected to a per-test sandbox so no dispatch writes into the real
+    ``.plan/`` tree.
     """
-    env = {
-        'PATH': os.environ.get('PATH', ''),
-        'HOME': os.environ.get('HOME', ''),
-        'PLAN_BASE_DIR': sandbox,
-        'PLAN_DIR_NAME': '.plan',
-    }
+    env = os.environ.copy()
+    env.pop('PYTHONPATH', None)
+    env['PLAN_BASE_DIR'] = sandbox
+    env['PLAN_DIR_NAME'] = '.plan'
     return env
 
 
