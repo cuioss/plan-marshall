@@ -28,8 +28,8 @@ Verify that portability gaps from [01-finish-portability.md](01-finish-portabili
 | Check | Command | Pass | Fail |
 |-------|---------|------|------|
 | 0.1a | `git log --oneline -5` | Contains commits implementing 01 tasks | File as BLOCKED; do not proceed |
-| 0.1b | `grep -r 'platform-runtime permission' marketplace/bundles/plan-marshall/skills/tools-permission-doctor/` | At least 1 match (SKILL.md delegates to runtime) | NOTE — scripts still hardcode `.claude/` paths; SKILL.md guidance added |
-| 0.1c | `grep -r 'platform_runtime' marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` | At least 1 match (metrics capture delegated) | BLOCKED — phase-5 must use runtime |
+| 0.1b | `grep -r 'platform_runtime permission' marketplace/bundles/plan-marshall/skills/tools-permission-doctor/` | At least 1 match (SKILL.md delegates to runtime; the invocation token is `plan-marshall:platform-runtime:platform_runtime permission …`) | NOTE — settings I/O lives in `claude_runtime.py`; residual `.claude/` literals are listed in [01 § Closing audit](01-finish-portability.md#closing-audit) |
+| 0.1c | `grep -r 'platform_runtime' marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md` | At least 1 match (session/metrics capture delegated) | BLOCKED — phase-5 must use runtime |
 | 0.1d | `grep -r 'runtime.target' marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py` | At least 1 match (bootstrap reads target) | BLOCKED — bootstrap must resolve both targets |
 
 ### 0.2 OpenCode installed and discoverable
@@ -118,7 +118,7 @@ python3 /path/to/plan-marshall/.plan/execute-script.py \
 
 ### 2.1 Subagent `AskUserQuestion`
 
-**What the runtime does** (`opencode_runtime.py:369-414`): `subagent_dispatch` returns `{"tool": "task", "subagent_type": "execution-context-level-3"}`. It assumes a dispatched subagent can call `question` to prompt the user.
+**What the runtime does** (`opencode_runtime.py`, `subagent_dispatch`): returns `{"tool": "task", "subagent_type": "execution-context-level-3"}` (the hardcoded level is the known [07 §5](07-target-extensibility.md) leak). It assumes a dispatched subagent can call `question` to prompt the user.
 
 **Test procedure:**
 1. Start a plan that reaches a finalize step requiring user confirmation (e.g. branch-deletion)

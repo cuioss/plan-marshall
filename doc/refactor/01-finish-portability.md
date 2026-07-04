@@ -106,7 +106,7 @@ All gaps are **landed**. The `Destination` column records where each gap's coupl
 | 3 | `session_id` validation | landed | stays-agnostic + Gap 2 | shared validator reworded to opaque-token; strict-UUID regex folded into the Gap-2 metrics engine |
 | 4 | Project-local skill / step resolution | landed | `platform-runtime` | `layout skill-roots` op + memoised `get_project_skill_roots()`; resolvers routed through it |
 | 5 | Bundle / plugin-cache discovery | landed | `platform-runtime` | `layout bundle-cache-root` op + memoised `get_bundle_cache_roots()`; discovery routed through it |
-| 6 | Body-text tool-name transforms | landed | OpenCode build target | `AskUserQuestion` / `Task:` / `Skill: <entry>` dispositions recorded in `transforms.md` |
+| 6 | Body-text tool-name transforms | landed | OpenCode build target | `AskUserQuestion` / `Task:` / `Skill: <entry>` dispositions live as data in `mapping.json::body_idiom_rewrites` (mirrored in `transforms.md`), applied fail-closed by `rewrite_registered_idioms` |
 | 7 | Terminal-title / hooks | landed | `platform-runtime` | composer takes a neutral state enum; state→icon mapping owned by the runtime; lock glyphs de-duplicated |
 | 8 | Authoring / meta tools | landed | `platform-runtime` + build target | `plugin-doctor` engine/rule-pack split; `plugin-doctor` + `tools-marketplace-inventory` scan both layouts; target-aware frontmatter |
 
@@ -252,39 +252,42 @@ Claude-only anchor.
 
 ## Gap 6 — Body-text tool-name transforms are incomplete
 
-The OpenCode body transform (`body_transforms.py`) rewrites only concrete `Skill:` directives
-and `/slash` commands. Claude tool names referenced in body prose are not rewritten:
+The gap as found: the OpenCode body transform (`body_transforms.py`) rewrote only concrete
+`Skill:` directives and `/slash` commands, leaving Claude tool names in body prose
+untransformed:
 
 - **`AskUserQuestion`** — 313 references across skill/agent/command bodies (escalation
-  mechanism). OpenCode's equivalent is `question`/`ask`; the name is never rewritten.
+  mechanism). OpenCode's equivalent is `question`/`ask`.
 - **`Task:`** dispatch references — Claude tool name; OpenCode's is `task` (see
   [06](06-execution-context-cross-target.md)).
-- **`Skill: <entry>`** placeholder loops — not rewritten because `<entry>` is a runtime
-  placeholder, not an identifier (06 item 2).
+- **`Skill: <entry>`** placeholder loops — `<entry>` is a runtime placeholder, not an
+  identifier (06 item 2).
 
-**Required:** the source stays Claude-native; `AskUserQuestion` and `Task:` become per-target
-**rewrite data** applied by the shared transform engine ([07](07-target-extensibility.md)),
-with the build failing closed on any unmapped registered Claude idiom. `Task:` needs a
-careful, leaf-aware rule (06 item 3); `Skill: <entry>` is the one true source change — reword
-the placeholder prose (06 item 2). Do not introduce universal `{{ }}` templating
-([principles §5](principles.md)) or neutralise the source vocabulary.
+**Resolved as:** the source stays Claude-native; the registered idioms are per-target
+**rewrite data** — `mapping.json::body_idiom_rewrites` declares `AskUserQuestion` →
+`rewrite_inline_code` (to `question`), `Task:` → `preserve` (the leaf-aware decision from
+06 item 3), and `Skill: <entry>` → `source_fix`; `rewrite_registered_idioms` applies the
+registry and fails closed (`UnmappedIdiomError`) on an unknown disposition. `Skill: <entry>`
+remains the one true source change — reword the placeholder prose (06 item 2, still open).
+No universal `{{ }}` templating ([principles §5](principles.md)) and no neutralised source
+vocabulary.
 
 ## Gap 7 — Terminal-title / hooks (verify, likely acceptable)
 
-`manage-terminal-title/scripts/manage_terminal_title.py` is *labelled* "pure platform-agnostic
-composition," but pass 2 ([08](08-claude-coupling-inventory.md) §A3) found its `resolve_icon`
-(lines 71-101) is keyed on Claude hook-event names (`Stop`/`Notification`/`PreToolUse`/`PostToolUse`)
-and tool names (`AskUserQuestion`, `Bash`) — a target-shaped interface, not a neutral one. The
-icon palette + its SKILL/architecture docs co-own that interface, and `manage-locks/merge_lock.py`
-duplicates the glyph vocabulary. `render-title` already no-ops on OpenCode, and `manage-status`
-persists only the bare state string.
+The gap as found: `manage-terminal-title/scripts/manage_terminal_title.py` was *labelled*
+"pure platform-agnostic composition," but pass 2 ([08](08-claude-coupling-inventory.md) §A3)
+found its `resolve_icon` keyed on Claude hook-event names
+(`Stop`/`Notification`/`PreToolUse`/`PostToolUse`) and tool names (`AskUserQuestion`,
+`Bash`) — a target-shaped interface, not a neutral one — with `manage-locks/merge_lock.py`
+duplicating the glyph vocabulary.
 
-**Required:** the composer must take a **target-neutral state** (a phase/status enum), with the
-state→icon (event) mapping owned by `platform-runtime`; retire the Claude hook-event vocabulary
-from the "agnostic" composer and de-duplicate the lock glyphs. Confirm (during
-[02](02-validate-opencode-runtime.md)) the title/statusline path is genuinely no-op on OpenCode
-end-to-end. The `project_install_hook` *interface* encoding Claude's hook model is the related
-seam-shape fix in [07](07-target-extensibility.md).
+**Resolved as:** `resolve_icon(process_state)` takes the target-neutral `PROCESS_STATE_*`
+enum; the Claude hook-event → state mapping is owned by `claude_runtime`; the lock glyphs
+are single-sourced in `TITLE_TOKEN_GLYPHS` (imported by `merge_lock.py`). `render-title`
+no-ops on OpenCode, and `manage-status` persists only the bare state string. Confirm (during
+[02](02-validate-opencode-runtime.md)) the title/statusline path is genuinely no-op on
+OpenCode end-to-end. The `project_install_hook` *interface* encoding Claude's hook model is
+the related seam-shape fix in [07](07-target-extensibility.md).
 
 ## Gap 8 — Authoring / meta tools: make target-aware
 
@@ -322,8 +325,9 @@ grep -rnE '\.claude/|~/\.claude' marketplace/bundles --include='*.py' --include=
   | grep -v '/platform-runtime/' | grep -v '\.claude-plugin'
 ```
 
-The remaining hits all fall into the accepted set — **no behavioural Claude-path hardcode
-remains in a general skill body, shared runtime script, or authoring tool**. The accepted
+The remaining hits are dominated by the accepted set — the behavioural Claude-path
+hardcodes in general skill bodies, shared runtime scripts, and authoring tools have been
+routed to the four homes, **with the short known-residuals list below**. The accepted
 categories the audit confirms:
 
 - **`platform-runtime` internals** — `claude_runtime.py` / `opencode_runtime.py` /
@@ -351,6 +355,25 @@ categories the audit confirms:
   settings file the runtime targets.
 - **`references/{topic}.md` pointers** — documentation cross-references, never live resolution.
 
+**Known residuals** — live Claude literals the audit still surfaces (or misses), tracked as
+the tail of this workstream rather than re-opening the gap classes:
+
+- `tools-permission-fix/scripts/permission_fix.py` — `DEFAULT_PERMISSIONS` still carries the
+  literal `Read(~/.claude/plugins/cache/**)` permission string (Gap-1 grammar residue; should
+  render inside `claude_runtime.py`).
+- `tools-permission-doctor/scripts/permission_common.py` — the *read-preference* selector
+  (`get_project_settings_path`) still inlines `.claude/settings*.json`; only the write path
+  delegates to `claude_runtime`.
+- `tools-marketplace-inventory/scripts/scan-marketplace-inventory.py` — builds a live
+  `./.claude/skills/{skill}/scripts/…` `runtime_mount` display string (Gap-8 residue).
+- `plan-retrospective/scripts/check-manifest-consistency.py` and
+  `check-routing-decisions.py` — `.claude/` appears in a live `_BOOKKEEPING_PREFIXES`
+  filter tuple (benign, but not in any accepted category).
+- `extension-api/scripts/extension_discovery.py` — `_scan_project_finalize_steps` builds
+  `project_root / '.claude' / 'skills'` **segment-wise**, which the audit grep cannot see
+  (Gap-4 residue). The audit should be supplemented with a segment-wise probe
+  (`grep -rn "'.claude'" marketplace/bundles --include='*.py'`) to close this blind spot.
+
 ## Acceptance — met
 
 - [landed] Permission tooling: Claude settings I/O in `claude_runtime.py`; SKILL bodies call
@@ -359,13 +382,15 @@ categories the audit confirms:
   format stays in `claude_runtime`); project-local-skill resolution and bundle/extension
   discovery are target-aware; the shared `session_id` validator is an opaque-token contract.
 - [landed] Body-text tool-name divergences (`AskUserQuestion`, `Task:`, `Skill: <entry>`) have a
-  recorded `transforms.md` disposition.
+  recorded disposition in `mapping.json::body_idiom_rewrites` (mirrored in `transforms.md`),
+  applied fail-closed at build time.
 - [landed] Terminal-title/hook composer takes a neutral state enum; OpenCode no-op path is the
   end-to-end confirmation deferred to [02](02-validate-opencode-runtime.md).
 - [landed] Authoring tools (`plugin-doctor`, `tools-marketplace-inventory`) scan both layouts via
   the layout op and apply target-aware frontmatter checks; `plugin-doctor` carries the
   engine / Claude-rule-pack split (fork point documented in `plugin-doctor/references/rule-provenance.md`).
-- [met] The closing-audit grep returns only accepted hits (see [§ Closing audit](#closing-audit)).
+- [met] The closing-audit grep returns accepted hits plus the tracked known-residuals list
+  (see [§ Closing audit](#closing-audit)).
 - [met] `verify` passes on all bundles (Claude canary — no regression).
 
 ## Dependencies

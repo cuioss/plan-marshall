@@ -3,7 +3,7 @@
 ## Objective
 
 Run plan-marshall on a real OpenCode installation for the first time. Every OpenCode
-operation is coded (`opencode_runtime.py` implements all 15 operations and the OpenCode
+operation is coded (`opencode_runtime.py` implements all 18 operations and the OpenCode
 emitter produces a full `target/opencode/` tree), but **none of it has executed in a
 live OpenCode session.** This document is the gate: 03/04/05 are only worth finishing
 once the runtime is proven.
