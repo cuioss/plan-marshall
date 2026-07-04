@@ -16,6 +16,18 @@
     "TaskGet": "todoread",
     "TaskList": "todoread"
   },
+  "directive_rewrites": {
+    "skill_directive": {
+      "template": "Call the `skill` tool with `{ name: \"{bundle}-{skill}\" }` before continuing.",
+      "note": "Transform 1: a full-line `Skill: {bundle}:{skill}` directive rewrites to an OpenCode `skill`-tool call. `{bundle}` / `{skill}` are substituted from the source directive; the emitter's `{bundle}-{skill}` namespacing makes the load target resolve. The full-line matcher (SKILL_DIRECTIVE_RE) is owned by the shared engine, so only this template is target data."
+    }
+  },
+  "slash_rewrites": {
+    "slash_command": {
+      "template": "/{name}",
+      "note": "Transform 2: `/skill-name` cross-references rewrite to `/{bundle}-{skill}` (the dual-emit command id). `{name}` is the namespaced form resolved from the marketplace user-invocable scan. The bare-name matcher is owned by the shared engine, so only this template is target data."
+    }
+  },
   "body_idiom_rewrites": {
     "AskUserQuestion": {
       "disposition": "rewrite_inline_code",

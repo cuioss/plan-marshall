@@ -114,8 +114,9 @@ unvalidated on a live runtime — see "Open work" item 1 for the decision and ca
 
 Step 2 of the dispatch sequence (load `persona-plan-marshall-agent`) uses a concrete
 `Skill: plan-marshall:persona-plan-marshall-agent` directive. The OpenCode body transform
-(`rewrite_skill_directives` in `marketplace/targets/opencode/body_transforms.py`) rewrites
-it to:
+(`rewrite_skill_directives` in the target-shared
+`marketplace/targets/body_transform_engine.py`, driven by the
+`mapping.json::directive_rewrites` template) rewrites it to:
 
 ```text
 Call the `skill` tool with `{ name: "plan-marshall-persona-plan-marshall-agent" }` before continuing.
@@ -145,8 +146,8 @@ is that it is a leaf that must *not* dispatch ("no `Task:` dispatch", "every pla
 corrupts them.
 
 This is now a **settled, recorded decision**: the idiom registry
-(`mapping.json::body_idiom_rewrites`, applied by `rewrite_registered_idioms` in
-`body_transforms.py`) declares `Task:` with the `preserve` disposition — the references are
+(`mapping.json::body_idiom_rewrites`, applied by `rewrite_registered_idioms` in the
+target-shared `body_transform_engine`) declares `Task:` with the `preserve` disposition — the references are
 deliberately left intact on OpenCode, with the leaf-aware rationale recorded in
 `transforms.md`. The same registry rewrites `AskUserQuestion` → `question`
 (`rewrite_inline_code`) and marks `Skill: <entry>` as `source_fix` (item 2 below).

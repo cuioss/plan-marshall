@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from marketplace.targets.opencode.body_transforms import build_user_invocable_lookup
+from marketplace.targets.body_transform_engine import build_user_invocable_lookup
 from marketplace.targets.opencode.emitter import emit_bundles
 from marketplace.targets.opencode.frontmatter import (
     OPENCODE_MODEL_PREFIX,

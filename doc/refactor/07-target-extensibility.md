@@ -23,8 +23,9 @@ Concretely, adding target `X` should be exactly:
    subclass `Runtime`, implement each op or decline via `no-op`. Declares X's layout roots.
 2. `marketplace/targets/x/` — subclass `TargetBase`, plus a single `mapping.json` declaring X's
    `tool_permissions`, `model_map`, the body-transform rules (`directive_rewrites`,
-   `tool_name_rewrites`, `slash_rewrites`), and frontmatter shape. `mapping.json` is the one
-   canonical per-target config artifact — no separate transform file.
+   `slash_rewrites`, `body_idiom_rewrites`), and frontmatter shape. `mapping.json` is the one
+   canonical per-target config artifact — no separate transform file. The target-shared
+   `body_transform_engine` reads that data and applies it; X writes no transform code.
 3. Register X once on each side (the runtime `_REGISTRY`, the build `TARGET_REGISTRY`).
 
 Nothing else. No general skill body, no shared script, and no other target may need editing.
@@ -60,7 +61,7 @@ would change shape on a different target, the format is leaking — normalize th
 | Decline mechanism | `toon_noop` + [No-Op Policy](principles.md) | A target implements what it can, declines the rest, never fakes success |
 | Per-target data | `marketplace/targets/opencode/mapping.json` (`tool_permissions`, `model_map`, `body_idiom_rewrites`) under each `config_dir` | Mappings are data, not code |
 | Layout resolution home | decided in [01](01-finish-portability.md) (Gaps 4/5) → `platform-runtime` op | Each target declares its own roots; the core owns no per-target root table |
-| Registered-idiom body rewrites | `mapping.json::body_idiom_rewrites`; `load_idiom_registry` fails closed via `UnmappedIdiomError`, `rewrite_registered_idioms` applies (`body_transforms.py`) | Idiom dispositions are per-target data, validated at load, applied by a generic applier |
+| Body rewrites (all three transforms) | `mapping.json::{directive_rewrites, slash_rewrites, body_idiom_rewrites}`; the target-shared `body_transform_engine` loads + fails closed (`load_transform_rules` → `assert_dispositions_known` + `assert_source_vocabulary_mapped`, both raising `UnmappedIdiomError`) and applies | Directive/slash templates and idiom dispositions are all per-target data, validated at load, applied by one shared engine — a new target adds no transform code |
 | Terminal-title composer | `manage_terminal_title.py` `resolve_icon(process_state)` takes a target-neutral state enum; the Claude hook-event → state mapping lives in `claude_runtime` | The composer encodes no target vocabulary |
 
 ### Not N-target-optimal (structural work)
@@ -81,17 +82,20 @@ reads "On Claude: … On OpenCode: …" (`layout_skill_roots`, `layout_bundle_ca
 **Required:** rewrite each ABC docstring as target-neutral *intent* + the no-op fallback;
 move per-target behaviour notes into the concrete `*_runtime` classes.
 
-**3. Body transforms are only partially data-driven.** The registered-idiom class already
-follows the target pattern: `mapping.json::body_idiom_rewrites` declares the
-`AskUserQuestion`/`Task:`/`Skill: <entry>` dispositions as data; `load_idiom_registry`
-validates them fail-closed (`UnmappedIdiomError`) and `rewrite_registered_idioms` applies
-them — the [01](01-finish-portability.md) Gap-6 mechanism. What remains code: Transform 1
-(`Skill:` directive → skill-tool call) and Transform 2 (`/slash` rewrites) hardcode their
-rewrite strings in `marketplace/targets/opencode/body_transforms.py`, and the module itself
-lives under the OpenCode target rather than as a target-shared engine. **Required:** fold
-the directive and slash rewrite *templates* into `mapping.json` alongside
-`body_idiom_rewrites` (the single canonical config artifact from the cost-to-add contract
-above) and lift the applier into a shared engine, so a new target supplies only data.
+**3. Body transforms are fully data-driven. [landed]** All three transforms now follow
+the target pattern. `mapping.json` declares Transform 1's `Skill:`-directive template
+(`directive_rewrites.skill_directive.template`, with `{bundle}`/`{skill}` placeholders),
+Transform 2's slash-command template (`slash_rewrites.slash_command.template`, `{name}`
+placeholder), and Transform 3's `AskUserQuestion`/`Task:`/`Skill: <entry>` dispositions
+(`body_idiom_rewrites`) — one canonical config artifact. The applier is lifted to the
+target-shared engine `marketplace/targets/body_transform_engine.py`, which owns the source
+matchers (the "Claude source vocabulary") and applies the per-target templates; a new
+target supplies only this data — no transform code. Fail-closed is preserved:
+`load_transform_rules` runs `assert_dispositions_known` (Transform 3, unknown disposition →
+`UnmappedIdiomError`) and `assert_source_vocabulary_mapped` (a non-verbatim target that
+leaves a structural source idiom without a template → `UnmappedIdiomError`). A verbatim
+target (no rewrite category — the canonical Claude target) is exempt and its output stays
+byte-identical to source and equality-validated.
 
 **4. Registration is scattered.** Adding a runtime target touches `_REGISTRY`, two imports,
 the `_TARGET_BOOTSTRAP_LIBS` per-target dict, and several `default="claude"` fallbacks
@@ -143,9 +147,14 @@ the source vocabulary — symmetric but loses Claude-verbatim validation and cha
 - A documented "add target X" checklist exists and is exactly the three steps above.
 - No `Runtime` / `TargetBase` ABC docstring or signature names a specific non-canonical target.
 - `project_install_hook` is target-opaque; Claude hook specifics live only in `claude_runtime.py`.
-- Body transforms run through one shared engine over per-target rule data; a new target adds
-  no transform code.
-- The build fails closed on an unmapped registered Claude idiom.
+- [landed] Body transforms run through one shared engine
+  (`marketplace/targets/body_transform_engine.py`) over per-target rule data
+  (`mapping.json::{directive_rewrites, slash_rewrites, body_idiom_rewrites}`); a new target
+  adds no transform code.
+- [landed] The build fails closed on an unmapped registered Claude idiom — both an unknown
+  Transform-3 disposition (`assert_dispositions_known`) and a non-verbatim target that leaves
+  a structural source idiom without a template (`assert_source_vocabulary_mapped`) raise
+  `UnmappedIdiomError` at rule-load time.
 - Runtime + build target registration is each a single obvious edit site.
 - Claude output remains verbatim and equality-validated.
 

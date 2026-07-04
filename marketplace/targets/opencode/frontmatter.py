@@ -21,7 +21,7 @@ Validation contract:
     ``tool_permissions``, raise ``UnmappedToolError`` so the CLI exits 2.
 
 The body of the source markdown is returned untouched — body-text
-transforms are owned by ``body-transforms.py`` in deliverable 4.
+transforms are owned by the target-shared ``body_transform_engine``.
 """
 
 from __future__ import annotations
