@@ -57,40 +57,53 @@ Usage (bodies supplied via path-allocate pattern: prepare-body → write file �
     python3 github.py issue close --issue 123
 
 Output: TOON format
+
+Module layout: this entry file defines the gh/GraphQL primitives and the
+monkeypatch-sensitive data helpers (``run_gh``, ``run_graphql``, ``check_auth``,
+``get_repo_info``, ``view_pr_data``, ``fetch_pr_comments_data``,
+``format_checks_toon``, ``_fetch_pr_overall_ci_status``,
+``_fetch_issue_state_and_labels``, ``_fetch_failed_run_log``,
+``_safe_merge_stuck_state_gate``/``_safe_merge_behind_by_zero``), plus the
+shared ``_resolve_pr_identifier`` and the ``main`` dispatch. The ``cmd_*``
+handler bodies live in the co-located ``_github_pr`` / ``_github_ci`` /
+``_github_issue`` submodules and are imported back at the bottom of this file
+for the dispatch table. Those submodules reach every primitive above via
+``github_ops.<name>`` attribute access at call time, so a test's
+``monkeypatch.setattr(github_ops, '<name>', ...)`` is seen by the handlers
+unchanged.
 """
 
 import argparse
 import json
-import re
 import sys
 from typing import Any
 from urllib.parse import quote
 
+from _github_checks import (  # noqa: F401 — re-exported for callers and tests
+    _BUCKET_TO_CONCLUSION,
+    _CONCLUSION_FAILING,
+    _CONCLUSION_NON_FAILING,
+    _CONCLUSION_WAIT,
+    _build_failing_check_entry,
+    _classify_check_buckets,
+    _derive_overall_status,
+    _extract_job_id_from_link,
+    _extract_run_id_from_link,
+    _extract_segment_from_link,
+    _normalize_conclusion,
+)
 from ci_base import (
-    BODY_KIND_ISSUE_COMMENT,
-    BODY_KIND_ISSUE_CREATE,
-    BODY_KIND_PR_CREATE,
-    BODY_KIND_PR_EDIT,
-    BODY_KIND_PR_REPLY,
-    BODY_KIND_PR_THREAD_REPLY,
     MAX_ELAPSED_SECONDS,
     add_pr_create_args,
     build_parser,
     check_auth_cli,
     compute_elapsed,
     compute_total_elapsed,
-    delete_consumed_body,
     dispatch,
-    enrich_failing_checks_with_logs,
     extract_routing_args,
     make_error,
-    make_pr_number_handler,
-    make_simple_handler,
-    normalize_issue_ref,
     parse_args_with_toon_errors,
-    poll_until,
-    prepare_body,
-    read_and_consume_body,
+    poll_until,  # noqa: F401 — re-exported as a patchable primitive for submodule handlers
     run_cli,
     safe_main,
     serialize_toon,
@@ -165,56 +178,8 @@ def run_graphql(query: str, variables: dict) -> tuple[int, dict | None, str]:
 
 
 # ---------------------------------------------------------------------------
-# Command handlers
+# Shared PR-identifier resolution
 # ---------------------------------------------------------------------------
-
-
-def cmd_pr_create(args: argparse.Namespace) -> dict:
-    """Handle 'pr create' subcommand."""
-    # Check auth
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('pr_create', err)
-
-    # Resolve body via the path-allocate body store
-    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
-    if err_dict:
-        return make_error('pr_create', err_dict.get('message', 'body not prepared'))
-
-    # Build command
-    gh_args = ['pr', 'create', '--title', args.title, '--body', body]
-    if args.base:
-        gh_args.extend(['--base', args.base])
-    if args.draft:
-        gh_args.append('--draft')
-    if getattr(args, 'head', None):
-        gh_args.extend(['--head', args.head])
-
-    # Execute
-    returncode, stdout, stderr = run_gh(gh_args)
-    if returncode != 0:
-        return make_error('pr_create', 'Failed to create PR', stderr.strip())
-
-    # Delete the consumed scratch body — success only
-    delete_consumed_body(args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
-
-    # Parse the URL from output (gh pr create outputs the URL)
-    pr_url = stdout.strip()
-
-    # Get PR number from URL
-    pr_number = 'unknown'
-    if '/pull/' in pr_url:
-        try:
-            pr_number = pr_url.split('/pull/')[1].split('/')[0].split('?')[0]
-        except (IndexError, ValueError):
-            pass
-
-    return {
-        'status': 'success',
-        'operation': 'pr_create',
-        'pr_number': pr_number,
-        'pr_url': pr_url,
-    }
 
 
 def _resolve_pr_identifier(args: argparse.Namespace, operation: str) -> tuple[str | None, dict | None]:
@@ -289,303 +254,6 @@ def view_pr_data(head: str | None = None) -> dict:
         'mergeable': data.get('mergeable', 'unknown').lower() if data.get('mergeable') else 'unknown',
         'merge_state': data.get('mergeStateStatus', 'unknown').lower() if data.get('mergeStateStatus') else 'unknown',
         'review_decision': data.get('reviewDecision', 'none').lower() if data.get('reviewDecision') else 'none',
-    }
-
-
-def cmd_pr_view(args: argparse.Namespace) -> dict:
-    """Handle 'pr view' subcommand - get PR for current branch (or --head branch)."""
-    return view_pr_data(head=getattr(args, 'head', None))
-
-
-def cmd_pr_list(args: argparse.Namespace) -> dict:
-    """Handle 'pr list' subcommand - list pull requests with optional filters."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('pr_list', err)
-
-    gh_args = [
-        'pr',
-        'list',
-        '--json',
-        'number,url,title,state,headRefName,baseRefName',
-        '--state',
-        args.state,
-    ]
-    if args.head:
-        gh_args.extend(['--head', args.head])
-
-    returncode, stdout, stderr = run_gh(gh_args)
-    if returncode != 0:
-        return make_error('pr_list', 'Failed to list PRs', stderr.strip())
-
-    try:
-        prs = json.loads(stdout)
-    except json.JSONDecodeError:
-        return make_error('pr_list', 'Failed to parse gh output', stdout[:100])
-
-    pr_list = [
-        {
-            'number': pr.get('number', 0),
-            'url': pr.get('url', ''),
-            'title': pr.get('title', ''),
-            'state': pr.get('state', 'unknown').lower(),
-            'head_branch': pr.get('headRefName', ''),
-            'base_branch': pr.get('baseRefName', ''),
-        }
-        for pr in prs
-    ]
-    return {
-        'status': 'success',
-        'operation': 'pr_list',
-        'total': len(prs),
-        'state_filter': args.state,
-        'head_filter': args.head or '',
-        'prs': pr_list,
-    }
-
-
-def cmd_pr_reply(args: argparse.Namespace) -> dict:
-    """Handle 'pr reply' — post a comment using the prepared body."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('pr_reply', err)
-
-    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_PR_REPLY, getattr(args, 'slot', None))
-    if err_dict or body is None:
-        return make_error('pr_reply', (err_dict or {}).get('message', 'body not prepared'))
-
-    gh_args = ['pr', 'comment', str(args.pr_number), '--body', body]
-    returncode, stdout, stderr = run_gh(gh_args)
-    if returncode != 0:
-        return make_error('pr_reply', 'Failed to post comment', stderr.strip())
-
-    delete_consumed_body(args.plan_id, BODY_KIND_PR_REPLY, getattr(args, 'slot', None))
-    return {
-        'status': 'success',
-        'operation': 'pr_reply',
-        'pr_number': args.pr_number,
-        'output': stdout.strip(),
-    }
-
-
-RESOLVE_THREAD_MUTATION = """
-mutation($threadId: ID!) {
-  resolveReviewThread(input: {threadId: $threadId}) {
-    thread { id isResolved }
-  }
-}
-"""
-
-
-THREAD_REPLY_MUTATION = """
-mutation($threadId: ID!, $body: String!) {
-  addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $threadId, body: $body}) {
-    comment { id databaseId }
-  }
-}
-"""
-
-
-VIEWER_LOGIN_QUERY = """
-query { viewer { login } }
-"""
-
-
-PENDING_REVIEWS_QUERY = """
-query($owner: String!, $repo: String!, $pr: Int!) {
-  repository(owner: $owner, name: $repo) {
-    pullRequest(number: $pr) {
-      reviews(states: [PENDING], first: 20) {
-        nodes { id author { login } }
-      }
-    }
-  }
-}
-"""
-
-
-def get_viewer_login() -> tuple[str | None, str]:
-    """Return the authenticated viewer's login, or (None, error_message)."""
-    returncode, data, err = run_graphql(VIEWER_LOGIN_QUERY, {})
-    if returncode != 0 or data is None:
-        return None, err or 'Failed to resolve viewer login'
-    try:
-        login = data['viewer']['login']
-    except (KeyError, TypeError):
-        return None, 'viewer.login missing from GraphQL response'
-    if not login:
-        return None, 'viewer.login empty'
-    return login, ''
-
-
-def cmd_pr_resolve_thread(args: argparse.Namespace) -> dict:
-    """Handle 'pr resolve-thread' subcommand - resolve a review thread."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('pr_resolve_thread', err)
-
-    returncode, data, err = run_graphql(RESOLVE_THREAD_MUTATION, {'threadId': args.thread_id})
-    if returncode != 0 or data is None:
-        return make_error('pr_resolve_thread', f'Failed to resolve thread: {err}')
-
-    return {
-        'status': 'success',
-        'operation': 'pr_resolve_thread',
-        'thread_id': args.thread_id,
-    }
-
-
-def cmd_pr_thread_reply(args: argparse.Namespace) -> dict:
-    """Handle 'pr thread-reply' subcommand - reply to a specific review thread.
-
-    Uses addPullRequestReviewThreadReply which publishes replies immediately and
-    takes a real review-thread node id (``PRRT_*``). No PR node-id lookup is
-    needed — the thread already belongs to a PR. After a successful reply we
-    verify that no PENDING review remains for the authenticated viewer; the
-    presence of one indicates the reply silently landed in a draft review and
-    callers need to recover it explicitly.
-    """
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('pr_thread_reply', err)
-
-    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_PR_THREAD_REPLY, getattr(args, 'slot', None))
-    if err_dict:
-        return make_error('pr_thread_reply', err_dict.get('message', 'body not prepared'))
-
-    returncode, data, err = run_graphql(
-        THREAD_REPLY_MUTATION,
-        {'threadId': args.thread_id, 'body': body},
-    )
-    if returncode != 0 or data is None:
-        return make_error('pr_thread_reply', f'Failed to reply to thread: {err}')
-
-    delete_consumed_body(args.plan_id, BODY_KIND_PR_THREAD_REPLY, getattr(args, 'slot', None))
-
-    # Post-call regression check: a successful addPullRequestReviewThreadReply
-    # must not leave a PENDING review owned by the current viewer. If it does,
-    # the reply is queued into a draft review and is invisible to reviewers.
-    viewer_login, viewer_err = get_viewer_login()
-    if viewer_login is None:
-        return make_error(
-            'pr_thread_reply',
-            f'Reply sent but viewer.login lookup failed: {viewer_err}',
-        )
-
-    owner, repo = get_repo_info()
-    if not owner or not repo:
-        return make_error(
-            'pr_thread_reply',
-            'Reply sent but could not determine repository owner/name for PENDING-review check',
-        )
-
-    rc2, pending_data, pending_err = run_graphql(
-        PENDING_REVIEWS_QUERY,
-        {'owner': owner, 'repo': repo, 'pr': args.pr_number},
-    )
-    if rc2 != 0 or pending_data is None:
-        return make_error(
-            'pr_thread_reply',
-            f'Reply sent but PENDING-review check failed: {pending_err}',
-        )
-
-    try:
-        pending_nodes = pending_data['repository']['pullRequest']['reviews']['nodes'] or []
-    except (KeyError, TypeError):
-        pending_nodes = []
-
-    stuck = [n for n in pending_nodes if (n.get('author') or {}).get('login') == viewer_login]
-    if stuck:
-        stuck_ids = ', '.join(n.get('id', '<unknown>') for n in stuck)
-        return make_error(
-            'pr_thread_reply',
-            (
-                f'Reply queued into PENDING review owned by {viewer_login}; '
-                f"run 'ci pr submit-review --review-id <id>' to publish it. "
-                f'Stuck review id(s): {stuck_ids}'
-            ),
-            stuck_ids,
-        )
-
-    return {
-        'status': 'success',
-        'operation': 'pr_thread_reply',
-        'pr_number': args.pr_number,
-        'thread_id': args.thread_id,
-    }
-
-
-SUBMIT_REVIEW_MUTATION = """
-mutation($reviewId: ID!, $event: PullRequestReviewEvent!) {
-  submitPullRequestReview(input: {pullRequestReviewId: $reviewId, event: $event}) {
-    pullRequestReview { id state }
-  }
-}
-"""
-
-
-def cmd_pr_submit_review(args: argparse.Namespace) -> dict:
-    """Handle 'pr submit-review' subcommand - publish a pending review."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('pr_submit_review', err)
-
-    returncode, data, err = run_graphql(
-        SUBMIT_REVIEW_MUTATION,
-        {'reviewId': args.review_id, 'event': args.event},
-    )
-    if returncode != 0 or data is None:
-        return make_error('pr_submit_review', f'Failed to submit review: {err}')
-
-    try:
-        review = data['submitPullRequestReview']['pullRequestReview']
-        review_id = review.get('id', args.review_id)
-        state = review.get('state', 'unknown')
-    except (KeyError, TypeError):
-        return make_error('pr_submit_review', 'Malformed GraphQL response', str(data)[:200])
-
-    return {
-        'status': 'success',
-        'operation': 'pr_submit_review',
-        'review_id': review_id,
-        'event': args.event,
-        'state': state,
-    }
-
-
-def cmd_pr_reviews(args: argparse.Namespace) -> dict:
-    """Handle 'pr reviews' subcommand."""
-    # Check auth
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('pr_reviews', err)
-
-    # Get reviews
-    returncode, stdout, stderr = run_gh(['pr', 'view', str(args.pr_number), '--json', 'reviews'])
-    if returncode != 0:
-        return make_error('pr_reviews', f'Failed to get reviews for PR {args.pr_number}', stderr.strip())
-
-    # Parse JSON
-    try:
-        data = json.loads(stdout)
-        reviews = data.get('reviews', [])
-    except json.JSONDecodeError:
-        return make_error('pr_reviews', 'Failed to parse gh output', stdout[:100])
-
-    review_list = [
-        {
-            'user': r.get('author', {}).get('login', 'unknown'),
-            'state': r.get('state', 'UNKNOWN'),
-            'submitted_at': r.get('submittedAt', '-'),
-        }
-        for r in reviews
-    ]
-    return {
-        'status': 'success',
-        'operation': 'pr_reviews',
-        'pr_number': args.pr_number,
-        'review_count': len(reviews),
-        'reviews': review_list,
     }
 
 
@@ -767,229 +435,9 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
     }
 
 
-def cmd_pr_comments(args: argparse.Namespace) -> dict:
-    """Handle 'pr comments' subcommand - fetch inline code review comments."""
-    return fetch_pr_comments_data(args.pr_number, args.unresolved_only)
-
-
-def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
-    """Handle 'pr wait-for-comments' — poll until new unresolved comments arrive or timeout.
-
-    Replaces the blocking shell ``sleep`` previously used by workflow-pr-doctor's
-    Automated Review Lifecycle Step 2. Snapshots the unresolved-comment count
-    once, then polls on the standard CI interval and exits as soon as the count
-    grows (a new bot comment arrived) or the timeout is reached. Reuses the
-    same ``poll_until`` helper that powers ``ci wait``.
-    """
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('pr_wait_for_comments', err)
-
-    initial = fetch_pr_comments_data(args.pr_number, unresolved_only=True)
-    if initial.get('status') != 'success':
-        return make_error(
-            'pr_wait_for_comments',
-            f'Initial unresolved-comment fetch failed for PR {args.pr_number}',
-            str(initial.get('error', '')),
-        )
-    baseline = int(initial.get('unresolved') or 0)
-
-    def check_fn() -> tuple[bool, dict]:
-        snapshot = fetch_pr_comments_data(args.pr_number, unresolved_only=True)
-        if snapshot.get('status') != 'success':
-            return False, {
-                'error': f'Unresolved-comment fetch failed for PR {args.pr_number}',
-                'context': str(snapshot.get('error', '')),
-            }
-        return True, {'unresolved': int(snapshot.get('unresolved') or 0)}
-
-    def is_complete_fn(data: dict) -> bool:
-        return int(data.get('unresolved', 0)) > baseline
-
-    result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
-
-    if 'error' in result:
-        return make_error(
-            'pr_wait_for_comments',
-            result['error'],
-            result.get('last_data', {}).get('context', ''),
-        )
-
-    final_count = int(result['last_data'].get('unresolved', baseline))
-    return {
-        'status': 'success',
-        'operation': 'pr_wait_for_comments',
-        'pr_number': args.pr_number,
-        'timed_out': result['timed_out'],
-        'duration_sec': result['duration_sec'],
-        'polls': result['polls'],
-        'baseline_count': baseline,
-        'final_count': final_count,
-        'new_count': max(final_count - baseline, 0),
-    }
-
-
-def cmd_pr_merge(args: argparse.Namespace) -> dict:
-    """Handle 'pr merge' subcommand - merge a pull request.
-
-    When ``--delete-branch`` is requested, the merge is performed WITHOUT the
-    ``--delete-branch`` pass-through to ``gh pr merge``; instead, after a
-    successful merge, the PR's head branch is deleted remotely via the
-    ``cmd_branch_delete`` handler (REST ``DELETE /git/refs/heads/{branch}``).
-    Local git state is never touched by this handler — callers who want a
-    local branch gone must invoke ``git -C {path} branch -D`` separately.
-
-    On branch-delete failure after a successful merge, a compound result is
-    returned with ``merged: true`` and ``branch_delete_error`` populated. The
-    merge is NOT retried.
-    """
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('pr_merge', err)
-
-    identifier, err_dict = _resolve_pr_identifier(args, 'pr_merge')
-    if err_dict:
-        return err_dict
-    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
-
-    gh_args = ['pr', 'merge', identifier, f'--{args.strategy}']
-
-    returncode, stdout, stderr = run_gh(gh_args)
-    if returncode != 0:
-        return make_error('pr_merge', f'Failed to merge PR {identifier}', stderr.strip())
-
-    result: dict = {
-        'status': 'success',
-        'operation': 'pr_merge',
-        'pr_number': args.pr_number if args.pr_number else identifier,
-        'strategy': args.strategy,
-    }
-
-    # Branch-delete is an optional follow-up. The merge has already succeeded;
-    # we never retry the merge on branch-delete failure.
-    if args.delete_branch:
-        result['merged'] = True
-
-        # Resolve the PR head branch name via existing PR metadata.
-        # ``gh pr view`` accepts either a PR number or a branch name as the
-        # positional, so ``identifier`` (already resolved) is passed through
-        # directly.
-        pr_view = view_pr_data(head=identifier)
-        if pr_view.get('status') != 'success':
-            result['branch_delete_error'] = (
-                f'Merge succeeded but could not resolve head branch for delete: '
-                f'{pr_view.get("error", "pr_view failed")}'
-            )
-            return result
-
-        head_branch = pr_view.get('head_branch') or ''
-        if not head_branch:
-            result['branch_delete_error'] = 'Merge succeeded but pr_view returned empty head_branch'
-            return result
-
-        # Invoke the branch_delete handler with a synthesized argparse.Namespace.
-        delete_args = argparse.Namespace(branch=head_branch)
-        delete_result = cmd_branch_delete(delete_args)
-        if delete_result.get('status') != 'success':
-            result['branch_delete_error'] = delete_result.get('error', f'Failed to delete remote branch {head_branch}')
-            return result
-
-        result['branch_deleted'] = head_branch
-        result['already_gone'] = delete_result.get('already_gone', False)
-
-    return result
-
-
-def cmd_branch_delete(args: argparse.Namespace) -> dict:
-    """Handle 'branch delete' subcommand - delete a remote branch via REST API.
-
-    Uses the GitHub REST API endpoint ``DELETE /repos/{owner}/{repo}/git/refs/heads/{branch}``
-    invoked through ``gh api``. The ``--remote-only`` flag is required and explicit:
-    local branch management is out of scope and handled via ``git -C {path} branch``.
-
-    HTTP semantics:
-      - 204 No Content  → ``status: success`` (normal delete)
-      - 404 Not Found   → ``status: success`` with ``already_gone: true``
-        (branch does not exist remotely; deletion is idempotent).
-      - 422 Unprocessable Entity → ``status: success`` with ``already_gone: true``
-        (GitHub returns 422 when the ref is already gone; same idempotent semantics).
-      - Anything else   → ``status: error``
-    """
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('branch_delete', err)
-
-    owner, repo = get_repo_info()
-    if not owner or not repo:
-        return make_error('branch_delete', 'Failed to resolve repository owner/name from current cwd')
-
-    branch = args.branch
-    # URL-encode the branch segment so names like ``feature/x`` serialize as
-    # ``feature%2Fx``. ``safe=''`` ensures ``/`` is encoded (mirrors the same
-    # pattern used in gitlab_ops.py). Without this, branch names containing
-    # ``/``, ``#``, ``?``, or other reserved characters would produce a
-    # malformed REST path.
-    branch_encoded = quote(branch, safe='')
-    endpoint = f'repos/{owner}/{repo}/git/refs/heads/{branch_encoded}'
-    returncode, _stdout, stderr = run_gh(['api', '-X', 'DELETE', endpoint])
-    if returncode != 0:
-        stderr_text = stderr.strip()
-        # gh api surfaces the HTTP status in stderr as "(HTTP 404)" / "(HTTP 422)".
-        # Treat those as success (already gone) — deletion is idempotent by design.
-        if 'HTTP 404' in stderr_text or 'HTTP 422' in stderr_text:
-            return {
-                'status': 'success',
-                'operation': 'branch_delete',
-                'branch': branch,
-                'remote_only': True,
-                'already_gone': True,
-            }
-        return make_error(
-            'branch_delete',
-            f'Failed to delete remote branch {branch}',
-            stderr_text,
-        )
-
-    return {
-        'status': 'success',
-        'operation': 'branch_delete',
-        'branch': branch,
-        'remote_only': True,
-        'already_gone': False,
-    }
-
-
-def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
-    """Handle 'pr auto-merge' subcommand - enable auto-merge on a pull request."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('pr_auto_merge', err)
-
-    identifier, err_dict = _resolve_pr_identifier(args, 'pr_auto_merge')
-    if err_dict:
-        return err_dict
-    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
-
-    gh_args = ['pr', 'merge', identifier, '--auto', f'--{args.strategy}']
-
-    returncode, stdout, stderr = run_gh(gh_args)
-    if returncode != 0:
-        return make_error('pr_auto_merge', f'Failed to enable auto-merge for PR {identifier}', stderr.strip())
-
-    return {
-        'status': 'success',
-        'operation': 'pr_auto_merge',
-        'pr_number': args.pr_number if args.pr_number else identifier,
-        'enabled': True,
-    }
-
-
-# Mergeable states for which a normal merge will succeed. ``clean`` is the
-# fully-ready state; ``unstable`` (non-required checks failing) and
-# ``has_hooks`` (merge will fire post-merge hooks) are also mergeable per the
-# GitHub mergeStateStatus contract. ``blocked`` / ``behind`` / ``dirty`` /
-# ``unknown`` are NOT mergeable and keep the readiness poll running.
-_SAFE_MERGE_READY_STATES = frozenset({'clean', 'unstable', 'has_hooks'})
+# ---------------------------------------------------------------------------
+# Safe-merge stuck-state gate (GitHub-only ruleset verification)
+# ---------------------------------------------------------------------------
 
 
 def _safe_merge_stuck_state_gate(identifier: str) -> tuple[bool, str | None]:
@@ -1104,486 +552,9 @@ def _safe_merge_behind_by_zero(identifier: str, head_oid: str) -> tuple[bool, st
     return True, None
 
 
-def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
-    """Handle 'pr safe-merge' subcommand - poll readiness then merge.
-
-    Layer 1 (both providers): poll the PR's ``mergeStateStatus`` until it
-    reaches a mergeable state, then delegate the actual merge (including the
-    ``--delete-branch`` REST follow-up) to :func:`cmd_pr_merge`.
-
-    Layer 2 (GitHub-only): when readiness stays ``blocked`` past the poll
-    timeout AND ``--admin-merge-on-stuck-state`` is set AND every active
-    ruleset requirement is provably met, fall back to ``gh pr merge --admin``.
-    This targets GitHub's post-force-push ``mergeable_state: blocked``
-    staleness, where the merge requirements are met but GitHub has not
-    recomputed mergeability.
-
-    Returns canonical TOON with ``operation: pr_safe_merge``, ``merge_path``
-    (``polled_clean`` | ``admin_fallback``), ``polls``, and ``duration_sec``.
-    """
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('pr_safe_merge', err)
-
-    identifier, err_dict = _resolve_pr_identifier(args, 'pr_safe_merge')
-    if err_dict:
-        return err_dict
-    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
-
-    # Layer 1 — poll readiness via the shared poll_until helper.
-    def check_fn() -> tuple[bool, dict]:
-        data = view_pr_data(head=identifier)
-        if data.get('status') != 'success':
-            return False, {'error': data.get('error', 'pr_view failed')}
-        return True, data
-
-    def is_ready(data: dict) -> bool:
-        return data.get('merge_state') in _SAFE_MERGE_READY_STATES
-
-    poll_result = poll_until(
-        check_fn,
-        is_ready,
-        timeout=args.poll_timeout,
-        interval=args.poll_interval,
-    )
-
-    polls = poll_result.get('polls', 0)
-    duration_sec = poll_result.get('duration_sec', 0)
-
-    # A check_fn failure (PR not found / auth) is propagated immediately.
-    if poll_result.get('error'):
-        return make_error('pr_safe_merge', f'Readiness poll failed for PR {identifier}', poll_result['error'])
-
-    last_state = (poll_result.get('last_data') or {}).get('merge_state', 'unknown')
-
-    if not poll_result.get('timed_out'):
-        # Readiness reached — delegate to the normal merge path.
-        merge_result = cmd_pr_merge(_safe_merge_delegate_ns(args))
-        if merge_result.get('status') != 'success':
-            # Normalize the delegated failure to this verb's operation so the
-            # safe-merge response contract holds for downstream consumers.
-            return make_error(
-                'pr_safe_merge',
-                merge_result.get('error', f'Failed to merge PR {identifier}'),
-                merge_result.get('context', ''),
-            )
-        merge_result['operation'] = 'pr_safe_merge'
-        merge_result['merge_path'] = 'polled_clean'
-        merge_result['polls'] = polls
-        merge_result['duration_sec'] = duration_sec
-        # Prefer the integer PR number resolved during polling over the branch
-        # name cmd_pr_merge echoes back when --head was used.
-        merge_result['pr_number'] = (poll_result.get('last_data') or {}).get('pr_number') or merge_result.get('pr_number')
-        return merge_result
-
-    # Timed out while not ready. Layer 2 admin fallback is GitHub-only and
-    # gated by the knob plus a provably-met ruleset.
-    if not args.admin_merge_on_stuck_state:
-        return make_error(
-            'pr_safe_merge',
-            f'PR {identifier} not mergeable after poll timeout (merge_state={last_state}); '
-            'admin fallback not enabled (--admin-merge-on-stuck-state)',
-        )
-
-    if last_state != 'blocked':
-        return make_error(
-            'pr_safe_merge',
-            f'PR {identifier} not mergeable after poll timeout (merge_state={last_state}); '
-            'admin fallback applies only to a stuck blocked state',
-        )
-
-    gate_ok, gate_reason = _safe_merge_stuck_state_gate(identifier)
-    if not gate_ok:
-        return make_error(
-            'pr_safe_merge',
-            f'PR {identifier} stuck blocked but ruleset requirements not provably met; '
-            f'refusing admin fallback: {gate_reason}',
-        )
-
-    # Every requirement provably met — perform the admin merge.
-    returncode, _stdout, stderr = run_gh(['pr', 'merge', identifier, '--admin', f'--{args.strategy}'])
-    if returncode != 0:
-        return make_error('pr_safe_merge', f'Admin merge failed for PR {identifier}', stderr.strip())
-
-    result: dict = {
-        'status': 'success',
-        'operation': 'pr_safe_merge',
-        'pr_number': (poll_result.get('last_data') or {}).get('pr_number') or (args.pr_number if args.pr_number else identifier),
-        'strategy': args.strategy,
-        'merge_path': 'admin_fallback',
-        'polls': polls,
-        'duration_sec': duration_sec,
-    }
-
-    # Reuse the same REST-delete follow-up as the normal merge path.
-    if args.delete_branch:
-        result['merged'] = True
-        pr_view = view_pr_data(head=identifier)
-        if pr_view.get('status') != 'success':
-            result['branch_delete_error'] = (
-                f'Merge succeeded but could not resolve head branch for delete: '
-                f'{pr_view.get("error", "pr_view failed")}'
-            )
-            return result
-        head_branch = pr_view.get('head_branch') or ''
-        if not head_branch:
-            result['branch_delete_error'] = 'Merge succeeded but pr_view returned empty head_branch'
-            return result
-        delete_result = cmd_branch_delete(argparse.Namespace(branch=head_branch))
-        if delete_result.get('status') != 'success':
-            result['branch_delete_error'] = delete_result.get('error', f'Failed to delete remote branch {head_branch}')
-            return result
-        result['branch_deleted'] = head_branch
-        result['already_gone'] = delete_result.get('already_gone', False)
-
-    return result
-
-
-def _safe_merge_delegate_ns(args: argparse.Namespace) -> argparse.Namespace:
-    """Synthesize the argparse.Namespace cmd_pr_merge expects from safe-merge args.
-
-    cmd_pr_merge reads ``pr_number``, ``head``, ``strategy``, and
-    ``delete_branch`` and re-resolves the PR identifier itself, so only those
-    four fields are forwarded.
-    """
-    return argparse.Namespace(
-        pr_number=args.pr_number,
-        head=args.head,
-        strategy=args.strategy,
-        delete_branch=args.delete_branch,
-    )
-
-
-def cmd_pr_update_branch(args: argparse.Namespace) -> dict:
-    """Handle 'pr update-branch' subcommand - update PR branch with base branch changes."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('pr_update_branch', err)
-
-    identifier, err_dict = _resolve_pr_identifier(args, 'pr_update_branch')
-    if err_dict:
-        return err_dict
-    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
-
-    gh_args = ['pr', 'update-branch', identifier]
-
-    returncode, stdout, stderr = run_gh(gh_args)
-    if returncode != 0:
-        return make_error('pr_update_branch', f'Failed to update branch for PR {identifier}', stderr.strip())
-
-    return {
-        'status': 'success',
-        'operation': 'pr_update_branch',
-        'pr_number': args.pr_number if args.pr_number else identifier,
-    }
-
-
-cmd_pr_close = make_pr_number_handler(
-    'pr_close',
-    lambda args: ['pr', 'close', str(args.pr_number)],
-    run_gh,
-    check_auth,
-)
-
-
-cmd_pr_ready = make_pr_number_handler(
-    'pr_ready',
-    lambda args: ['pr', 'ready', str(args.pr_number)],
-    run_gh,
-    check_auth,
-)
-
-
-def cmd_pr_edit(args: argparse.Namespace) -> dict:
-    """Handle 'pr edit' subcommand - edit PR title and/or body.
-
-    Body is consumed from the prepared scratch file for
-    ``BODY_KIND_PR_EDIT``; callers who want to update only the title can skip
-    preparing a body and the edit proceeds without touching the description.
-    """
-    # Body is optional on edit: the caller may just want to rename the PR.
-    body, err_dict = read_and_consume_body(
-        args.plan_id,
-        BODY_KIND_PR_EDIT,
-        getattr(args, 'slot', None),
-        required=False,
-    )
-    if err_dict:
-        return make_error('pr_edit', err_dict.get('message', 'body not prepared'))
-
-    if not args.title and not body:
-        return make_error(
-            'pr_edit',
-            'At least one of --title or a prepared body must be provided',
-        )
-
-    gh_args = ['pr', 'edit', str(args.pr_number)]
-    if args.title:
-        gh_args.extend(['--title', args.title])
-    if body:
-        gh_args.extend(['--body', body])
-
-    result: dict = make_pr_number_handler('pr_edit', lambda a: gh_args, run_gh, check_auth)(args)
-    if body and result.get('status') == 'success':
-        delete_consumed_body(args.plan_id, BODY_KIND_PR_EDIT, getattr(args, 'slot', None))
-    return result
-
-
-# GitHub check ``conclusion`` (raw ``state`` from ``gh pr checks --json state``)
-# partitioning. The raw conclusion vocabulary is upper-case
-# ``SUCCESS | SKIPPED | NEUTRAL | FAILURE | TIMED_OUT | CANCELLED |
-# ACTION_REQUIRED | STALE | STARTUP_FAILURE | IN_PROGRESS | QUEUED | PENDING |
-# null``. The three partitions below carry the canonical conclusion → outcome
-# mapping for ``cmd_ci_status``, ``cmd_ci_wait``, and
-# ``_fetch_pr_overall_ci_status``.
-_CONCLUSION_NON_FAILING: frozenset[str] = frozenset({'SUCCESS', 'SKIPPED', 'NEUTRAL'})
-_CONCLUSION_FAILING: frozenset[str] = frozenset(
-    {'FAILURE', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STALE', 'STARTUP_FAILURE'}
-)
-_CONCLUSION_WAIT: frozenset[str] = frozenset({'IN_PROGRESS', 'QUEUED', 'PENDING', ''})
-
-# GitHub ``bucket`` field (``gh pr checks --json bucket``) → canonical
-# conclusion fallback. The ``bucket`` vocabulary is
-# ``pass | fail | pending | skipping | cancel``. Only consulted when the raw
-# ``state`` field is null/empty — a workflow-level check that has concluded
-# (e.g. a skipped reusable workflow, or a timed-out/errored run) can arrive
-# from ``gh pr checks`` carrying its outcome in ``bucket`` while ``state`` is
-# null. ``pending`` maps to the empty string (genuine wait); an absent or
-# unrecognised bucket also keeps the empty-string wait result.
-_BUCKET_TO_CONCLUSION: dict[str, str] = {
-    'pass': 'SUCCESS',
-    'fail': 'FAILURE',
-    'cancel': 'CANCELLED',
-    'skipping': 'SKIPPED',
-    'pending': '',
-}
-
-
-def _normalize_conclusion(check: dict) -> str:
-    """Return the canonical upper-case conclusion for a check row.
-
-    Reads the raw ``state`` field from ``gh pr checks --json state``. When
-    ``state`` is null/empty, falls back to the ``bucket`` field (``gh pr
-    checks --json bucket``), mapping it to a canonical conclusion via
-    ``_BUCKET_TO_CONCLUSION`` (``pass`` → ``SUCCESS``, ``fail`` → ``FAILURE``,
-    ``cancel`` → ``CANCELLED``, ``skipping`` → ``SKIPPED``, ``pending`` →
-    ``''``). This corrects the spurious wait-state for checks whose outcome
-    is carried only in ``bucket`` (a workflow-level skipped/timed-out run). An
-    absent or unrecognised bucket keeps the empty string, which the partition
-    table treats as a wait-state.
-    """
-
-    raw = check.get('state')
-    if raw is not None and str(raw) != '':
-        return str(raw).upper()
-    bucket = check.get('bucket')
-    if bucket is None:
-        return ''
-    return _BUCKET_TO_CONCLUSION.get(str(bucket).lower(), '')
-
-
-def _extract_segment_from_link(link: str | None, marker: str, *, numeric_only: bool = False) -> str:
-    """Extract a URL path segment that follows ``marker`` from a GitHub check link.
-
-    GitHub check links follow the pattern
-    ``https://github.com/<owner>/<repo>/actions/runs/<run_id>/job/<job_id>``.
-    Returns the segment immediately after ``marker``, or an empty string when
-    the marker is absent. When ``numeric_only=True``, non-numeric segments
-    (e.g. a missing ``job_id``) return an empty string instead.
-    """
-
-    if not link:
-        return ''
-    idx = link.find(marker)
-    if idx == -1:
-        return ''
-    tail = link[idx + len(marker):]
-    segment = tail.split('/', 1)[0]
-    if numeric_only and not re.match(r'^\d+$', segment):
-        return ''
-    return segment
-
-
-def _extract_run_id_from_link(link: str | None) -> str:
-    return _extract_segment_from_link(link, '/actions/runs/')
-
-
-def _extract_job_id_from_link(link: str | None) -> str:
-    return _extract_segment_from_link(link, '/job/', numeric_only=True)
-
-
-def _build_failing_check_entry(check: dict) -> dict:
-    """Build the transport-rich ``failing_checks[]`` entry for a single check.
-
-    Includes the per-check fields downstream consumers (deliverables 6 and 7)
-    need to classify failure modes and persist artifacts.
-    """
-
-    link = check.get('link') or ''
-    entry: dict[str, Any] = {
-        'name': check.get('name', 'unknown'),
-        'conclusion': _normalize_conclusion(check) or 'PENDING',
-        'workflow_name': check.get('workflow') or '',
-        'job_name': check.get('name', '') or '',
-        'started_at': check.get('startedAt') or '',
-        'completed_at': check.get('completedAt') or '',
-        'run_id': _extract_run_id_from_link(link),
-        'job_id': _extract_job_id_from_link(link),
-        'run_url': link,
-    }
-    return entry
-
-
-def _classify_check_buckets(
-    checks: list[dict],
-) -> tuple[list[dict], list[dict], list[dict]]:
-    """Partition GitHub check rows into ``(failing, wait, non_failing)``.
-
-    The partition uses the raw ``state`` (conclusion) field per the canonical
-    conclusion → outcome table. Conclusions not present in any partition table
-    are treated as failing (defense in
-    depth — an unknown conclusion is never silently accepted as success).
-    """
-
-    failing: list[dict] = []
-    wait: list[dict] = []
-    non_failing: list[dict] = []
-    for check in checks:
-        conclusion = _normalize_conclusion(check)
-        if conclusion in _CONCLUSION_NON_FAILING:
-            non_failing.append(check)
-        elif conclusion in _CONCLUSION_WAIT:
-            wait.append(check)
-        else:
-            # Includes _CONCLUSION_FAILING and any unknown future conclusion.
-            failing.append(check)
-    return failing, wait, non_failing
-
-
-def _fetch_pr_head_sha(pr_number: int | str) -> str:
-    """Resolve the head commit SHA for a PR via ``gh pr view``.
-
-    Returns the SHA on success; on any failure path returns an empty string
-    so callers can still emit the rest of the envelope without aborting. The
-    head SHA is needed by deliverable 7 to key artifact persistence by run.
-    """
-
-    returncode, stdout, _stderr = run_gh(['pr', 'view', str(pr_number), '--json', 'headRefOid'])
-    if returncode != 0:
-        return ''
-    try:
-        data = json.loads(stdout)
-    except json.JSONDecodeError:
-        return ''
-    return str(data.get('headRefOid') or '')
-
-
-def fetch_pr_head_sha(pr_number: int | str) -> str:
-    """Public wrapper over :func:`_fetch_pr_head_sha`.
-
-    Exposes the PR HEAD-SHA resolution for the re-review strategy registry
-    (``github_re_review.py``), which needs the current HEAD to match a fresh
-    bot review against. Returns the SHA on success or an empty string on any
-    failure path, mirroring the private helper's no-abort contract.
-    """
-
-    return _fetch_pr_head_sha(pr_number)
-
-
-def post_pr_comment(pr_number: int | str, body: str) -> dict:
-    """Post a comment on a PR via ``gh pr comment``.
-
-    Used by the re-review strategy registry to post a bot review-trigger
-    comment (e.g. ``/gemini review``). Reuses the existing ``run_gh`` wrapper —
-    no new HTTP path. Returns a structured envelope with ``status`` of
-    ``success`` or ``error``.
-    """
-
-    returncode, stdout, stderr = run_gh(['pr', 'comment', str(pr_number), '--body', body])
-    if returncode != 0:
-        return make_error('post_pr_comment', 'Failed to post comment', stderr.strip())
-    return {
-        'status': 'success',
-        'operation': 'post_pr_comment',
-        'pr_number': pr_number,
-        'output': stdout.strip(),
-    }
-
-
-def fetch_pr_reviews_with_commits(pr_number: int | str) -> dict:
-    """Fetch a PR's reviews with their reviewed commit SHA and submission time.
-
-    ``gh pr view --json reviews`` does not expose each review's reviewed commit,
-    so the re-review registry needs the raw ``commit.oid`` plus ``submittedAt``
-    and the author login to match a fresh review against the current HEAD. Uses
-    the ``gh api`` REST path (still via ``run_gh``) — the GraphQL
-    ``PullRequestReview`` node exposes ``commit`` only on a recent schema, while
-    the REST ``/reviews`` payload carries ``commit_id`` directly.
-
-    Returns a structured envelope. On success ``reviews`` is a list of
-    ``{user, state, submitted_at, commit_sha}`` dicts.
-    """
-
-    owner, repo = get_repo_info()
-    if not owner or not repo:
-        return make_error('fetch_pr_reviews_with_commits', 'Could not determine repository owner/name')
-
-    endpoint = f'repos/{owner}/{repo}/pulls/{pr_number}/reviews'
-    returncode, stdout, stderr = run_gh(['api', endpoint, '--paginate', '--slurp'])
-    if returncode != 0:
-        return make_error('fetch_pr_reviews_with_commits', f'Failed to fetch reviews for PR {pr_number}', stderr.strip())
-
-    try:
-        raw_pages = json.loads(stdout)
-    except json.JSONDecodeError:
-        return make_error('fetch_pr_reviews_with_commits', 'Failed to parse gh api output', stdout[:100])
-
-    if not isinstance(raw_pages, list):
-        return make_error('fetch_pr_reviews_with_commits', 'Unexpected reviews payload shape', str(raw_pages)[:100])
-
-    # --slurp wraps all pages into an outer array; flatten pages into a single list.
-    raw_reviews: list[dict] = []
-    for page in raw_pages:
-        if isinstance(page, list):
-            raw_reviews.extend(r for r in page if isinstance(r, dict))
-        elif isinstance(page, dict):
-            raw_reviews.append(page)
-
-    reviews = [
-        {
-            'user': (r.get('user') or {}).get('login', 'unknown'),
-            'state': r.get('state', 'UNKNOWN'),
-            'submitted_at': r.get('submitted_at') or '',
-            'commit_sha': r.get('commit_id') or '',
-        }
-        for r in raw_reviews
-    ]
-    return {
-        'status': 'success',
-        'operation': 'fetch_pr_reviews_with_commits',
-        'pr_number': pr_number,
-        'review_count': len(reviews),
-        'reviews': reviews,
-    }
-
-
-def _derive_overall_status(checks: list[dict]) -> tuple[str, list[dict], list[dict]]:
-    """Derive ``overall | final_status`` plus failing-checks transport.
-
-    Returns ``(status, failing_check_rows, wait_check_rows)`` where ``status``
-    is one of ``pending | success | failure | none``. The ``mixed`` outcome
-    is intentionally absent — every input resolves to one of the four
-    canonical states.
-    """
-
-    if not checks:
-        return 'none', [], []
-    failing, wait, _non_failing = _classify_check_buckets(checks)
-    if wait:
-        return 'pending', [], wait
-    if failing:
-        return 'failure', failing, []
-    return 'success', [], []
+# ---------------------------------------------------------------------------
+# CI check-table formatting (depends on the patchable compute_total_elapsed)
+# ---------------------------------------------------------------------------
 
 
 def format_checks_toon(
@@ -1641,6 +612,11 @@ def format_checks_toon(
     return check_dicts, total_elapsed
 
 
+# ---------------------------------------------------------------------------
+# CI / issue polling primitives (monkeypatch-sensitive fetchers)
+# ---------------------------------------------------------------------------
+
+
 def _capture_router_plan_id(argv: list[str]) -> str | None:
     """Re-extract the router-level ``--plan-id`` from the original argv.
 
@@ -1682,208 +658,6 @@ def _fetch_failed_run_log(run_id: str, job_id: str = '') -> str | None:
     return stdout
 
 
-def _enrich_failing_checks(
-    entries: list[dict],
-    *,
-    plan_id: str | None,
-    error_style: str,
-    head_sha: str,
-    pr_number: int | str,
-) -> list[dict]:
-    """Inject per-run keys and run the shared download+filter+store hook.
-
-    Seeds each entry with ``head_sha`` / ``pr_number`` so the persisted manifest
-    is keyed correctly, then delegates to
-    :func:`ci_base.enrich_failing_checks_with_logs` (per-entry graceful degrade).
-    """
-    for entry in entries:
-        entry.setdefault('head_sha', head_sha)
-        entry.setdefault('pr_number', pr_number)
-    return enrich_failing_checks_with_logs(
-        failing_checks=entries,
-        provider='github',
-        raw_log_fetcher=_fetch_failed_run_log,
-        plan_id=plan_id,
-        error_style=error_style,
-    )
-
-
-def cmd_ci_status(args: argparse.Namespace) -> dict:
-    """Handle 'ci status' subcommand."""
-    # Check auth
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('ci_status', err)
-
-    identifier, err_dict = _resolve_pr_identifier(args, 'ci_status')
-    if err_dict:
-        return err_dict
-    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
-
-    # Get checks (bucket field contains pass/fail result)
-    returncode, stdout, stderr = run_gh(
-        ['pr', 'checks', identifier, '--json', 'name,state,bucket,link,startedAt,completedAt,workflow']
-    )
-    if returncode != 0:
-        return make_error('ci_status', f'Failed to get CI status for PR {identifier}', stderr.strip())
-
-    # Parse JSON
-    try:
-        checks = json.loads(stdout)
-    except json.JSONDecodeError:
-        return make_error('ci_status', 'Failed to parse gh output', stdout[:100])
-
-    # Determine overall status via the canonical conclusion partition.
-    # ``mixed`` is no longer a possible outcome — every input resolves to
-    # ``pending | success | failure | none``.
-    overall, failing_rows, _wait_rows = _derive_overall_status(checks)
-
-    # Format checks table — ci_status has no caller-supplied duration ceiling,
-    # so out-of-range aggregates are substituted with 0.
-    check_dicts, total_elapsed = format_checks_toon(checks, duration_ceiling=0)
-
-    result: dict[str, Any] = {
-        'status': 'success',
-        'operation': 'ci_status',
-        'pr_number': args.pr_number if args.pr_number else identifier,
-        'overall_status': overall,
-        'check_count': len(checks),
-        'elapsed_sec': total_elapsed,
-        'checks': check_dicts,
-    }
-
-    # On failure, surface the per-check failing-checks table enriched with each
-    # entry's downloaded raw + filtered log paths. Success/pending paths are
-    # unchanged.
-    if overall == 'failure':
-        failing_entries = [_build_failing_check_entry(c) for c in failing_rows]
-        head_sha = _fetch_pr_head_sha(identifier)
-        result['failing_checks'] = _enrich_failing_checks(
-            failing_entries,
-            plan_id=getattr(args, 'router_plan_id', None),
-            error_style=getattr(args, 'error_style', 'generic'),
-            head_sha=head_sha,
-            pr_number=args.pr_number if args.pr_number else identifier,
-        )
-
-    return result
-
-
-def cmd_ci_wait(args: argparse.Namespace) -> dict:
-    """Handle 'ci wait' subcommand."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('ci_wait', err)
-
-    def check_fn() -> tuple[bool, dict]:
-        returncode, stdout, stderr = run_gh(
-            ['pr', 'checks', str(args.pr_number), '--json', 'name,state,bucket,link,startedAt,completedAt,workflow']
-        )
-        if returncode != 0:
-            return False, {'error': f'Failed to get CI status for PR {args.pr_number}', 'context': stderr.strip()}
-        try:
-            checks = json.loads(stdout)
-        except json.JSONDecodeError:
-            return False, {'error': 'Failed to parse gh output', 'context': stdout[:100]}
-        return True, {'checks': checks}
-
-    def is_complete_fn(data: dict) -> bool:
-        checks = data.get('checks', [])
-        if not checks:
-            return False
-        _failing, wait, _non_failing = _classify_check_buckets(checks)
-        return not wait
-
-    result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
-
-    if 'error' in result:
-        return make_error('ci_wait', result['error'], result['last_data'].get('context', ''))
-
-    checks = result['last_data'].get('checks', [])
-    # ci_wait already tracks its own poll duration — use it as the clamp ceiling
-    # so an out-of-range aggregate is substituted with the actual poll time.
-    check_dicts, total_elapsed = format_checks_toon(checks, duration_ceiling=result['duration_sec'])
-
-    head_sha = _fetch_pr_head_sha(args.pr_number)
-
-    if result['timed_out']:
-        # Wait-deadline exhaustion: at least one check is still in the wait
-        # partition. Enumerate every wait-state check as a ``failing_checks``
-        # entry so deliverables 6 and 7 can route the timeout into the
-        # ``ci-verify-timeout`` producer.
-        _f, wait_rows, _nf = _classify_check_buckets(checks)
-        wait_entries = [_build_failing_check_entry(c) for c in wait_rows]
-        run_ids = sorted({e['run_id'] for e in wait_entries if e['run_id']})
-        wait_entries = _enrich_failing_checks(
-            wait_entries,
-            plan_id=getattr(args, 'router_plan_id', None),
-            error_style=getattr(args, 'error_style', 'generic'),
-            head_sha=head_sha,
-            pr_number=args.pr_number,
-        )
-        error_data: dict[str, Any] = {
-            'status': 'error',
-            'operation': 'ci_wait',
-            'error': 'Timeout waiting for CI',
-            'pr_number': args.pr_number,
-            'duration_sec': result['duration_sec'],
-            'last_status': 'pending',
-            'wait_outcome': 'deadline_exceeded',
-            'failing_checks': wait_entries,
-            'run_id': run_ids[0] if run_ids else '',
-            'head_sha': head_sha,
-        }
-        if check_dicts:
-            error_data['elapsed_sec'] = total_elapsed
-            error_data['checks'] = check_dicts
-        return error_data
-
-    # Wait loop terminated naturally — every check reached a terminal
-    # conclusion. Partition and derive the final status; the ``mixed``
-    # outcome no longer exists.
-    final_status, failing_rows, _wait_rows = _derive_overall_status(checks)
-    failing_checks_entries = [_build_failing_check_entry(c) for c in failing_rows]
-    if final_status == 'failure':
-        failing_checks_entries = _enrich_failing_checks(
-            failing_checks_entries,
-            plan_id=getattr(args, 'router_plan_id', None),
-            error_style=getattr(args, 'error_style', 'generic'),
-            head_sha=head_sha,
-            pr_number=args.pr_number,
-        )
-    run_ids = sorted(
-        {
-            _extract_run_id_from_link(c.get('link') or '')
-            for c in checks
-            if _extract_run_id_from_link(c.get('link') or '')
-        }
-    )
-
-    return {
-        'status': 'success',
-        'operation': 'ci_wait',
-        'pr_number': args.pr_number,
-        'final_status': final_status,
-        'duration_sec': result['duration_sec'],
-        'polls': result['polls'],
-        'elapsed_sec': total_elapsed,
-        'checks': check_dicts,
-        'failing_checks': failing_checks_entries,
-        'wait_outcome': 'completed',
-        'run_id': run_ids[0] if run_ids else '',
-        'head_sha': head_sha,
-    }
-
-
-cmd_ci_rerun = make_simple_handler(
-    'ci_rerun',
-    lambda args: ['run', 'rerun', str(args.run_id)],
-    run_gh,
-    check_auth,
-    result_extras=lambda args: {'run_id': args.run_id},
-)
-
-
 def _fetch_pr_overall_ci_status(pr_number: int) -> tuple[bool, Any]:
     """Fetch the overall CI status for a PR's head commit.
 
@@ -1910,250 +684,6 @@ def _fetch_pr_overall_ci_status(pr_number: int) -> tuple[bool, Any]:
     return True, overall
 
 
-def cmd_ci_wait_for_status_flip(args: argparse.Namespace) -> dict:
-    """Handle 'ci wait-for-status-flip' — poll until PR CI status flips from pending or timeout.
-
-    Replaces the blocking shell ``sleep`` previously used by workflow-pr-doctor's
-    Automated Review Lifecycle. Snapshots the current CI status, then polls on
-    the standard CI interval and exits as soon as the status differs from the
-    baseline and is no longer ``pending`` (optionally constrained via
-    ``--expected`` to ``success`` or ``failure``). Reuses the same ``poll_until``
-    helper that powers ``ci wait``.
-    """
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('ci_wait_for_status_flip', err)
-
-    ok, initial = _fetch_pr_overall_ci_status(args.pr_number)
-    if not ok:
-        return make_error(
-            'ci_wait_for_status_flip',
-            initial.get('error', f'Initial CI status fetch failed for PR {args.pr_number}'),
-            initial.get('context', ''),
-        )
-    baseline = initial
-
-    def check_fn() -> tuple[bool, dict]:
-        inner_ok, data = _fetch_pr_overall_ci_status(args.pr_number)
-        if not inner_ok:
-            return False, data
-        return True, {'status': data}
-
-    def is_complete_fn(data: dict) -> bool:
-        fresh = data.get('status')
-        if fresh == baseline or fresh == 'pending':
-            return False
-        if args.expected != 'any' and fresh != args.expected:
-            return False
-        return True
-
-    result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
-
-    if 'error' in result:
-        return make_error(
-            'ci_wait_for_status_flip',
-            result['error'],
-            result.get('last_data', {}).get('context', ''),
-        )
-
-    final_status = result['last_data'].get('status', baseline)
-    return {
-        'status': 'success',
-        'operation': 'ci_wait_for_status_flip',
-        'pr_number': args.pr_number,
-        'timed_out': result['timed_out'],
-        'duration_sec': result['duration_sec'],
-        'polls': result['polls'],
-        'baseline_status': baseline,
-        'final_status': final_status,
-    }
-
-
-def _load_filter_log():
-    """Lazily import ``filter_log`` from the sibling ``_ci_log_filter`` module.
-
-    Mirrors :func:`ci_base._load_log_filter` so the generic error-context
-    heuristic stays stdlib-only and the import is deferred until a failed-run
-    log is actually fetched. Returns the ``filter_log`` callable, or ``None``
-    when the module is unavailable (caller degrades to the raw stdout).
-    """
-    try:
-        from _ci_log_filter import filter_log
-    except ImportError:
-        return None
-    return filter_log
-
-
-def cmd_ci_logs(args: argparse.Namespace) -> dict:
-    """Handle 'ci logs' subcommand - get failed run logs.
-
-    ``gh run view --log-failed`` already returns failure-only output, but a
-    head window drops the failure tail for long logs (runner-setup lines fill
-    the first N lines). Route the raw stdout through the generic error-context
-    filter (the same ERROR/FAIL/Exception/Traceback context-window heuristic the
-    download path uses) so the failure tail is always surfaced.
-    """
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('ci_logs', err)
-
-    returncode, stdout, stderr = run_gh(['run', 'view', str(args.run_id), '--log-failed'], timeout=120)
-    if returncode != 0:
-        return make_error('ci_logs', f'Failed to get logs for run {args.run_id}', stderr.strip())
-
-    filter_log = _load_filter_log()
-    if filter_log is not None:
-        filtered = filter_log(stdout, 'generic')
-    else:
-        filtered = stdout
-    filtered_lines = filtered.splitlines()
-    content = '\n'.join(filtered_lines).replace(chr(10), '\\n')
-
-    return {
-        'status': 'success',
-        'operation': 'ci_logs',
-        'run_id': args.run_id,
-        'log_lines': len(filtered_lines),
-        'content': content,
-    }
-
-
-def cmd_issue_create(args: argparse.Namespace) -> dict:
-    """Handle 'issue create' subcommand."""
-    # Check auth
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('issue_create', err)
-
-    # Consume the prepared issue body
-    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None))
-    if err_dict:
-        return make_error('issue_create', err_dict.get('message', 'body not prepared'))
-
-    # Build command
-    gh_args = ['issue', 'create', '--title', args.title, '--body', body]
-    if args.labels:
-        gh_args.extend(['--label', args.labels])
-
-    # Execute
-    returncode, stdout, stderr = run_gh(gh_args)
-    if returncode != 0:
-        return make_error('issue_create', 'Failed to create issue', stderr.strip())
-
-    delete_consumed_body(args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None))
-
-    # Parse the URL from output
-    issue_url = stdout.strip()
-
-    # Get issue number from URL
-    issue_number = 'unknown'
-    if '/issues/' in issue_url:
-        try:
-            issue_number = issue_url.split('/issues/')[1].split('/')[0].split('?')[0]
-        except (IndexError, ValueError):
-            pass
-
-    return {
-        'status': 'success',
-        'operation': 'issue_create',
-        'issue_number': issue_number,
-        'issue_url': issue_url,
-    }
-
-
-def cmd_issue_comment(args: argparse.Namespace) -> dict:
-    """Handle 'issue comment' subcommand - post a comment on an existing issue."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('issue_comment', err)
-
-    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_ISSUE_COMMENT, getattr(args, 'slot', None))
-    if err_dict or body is None:
-        return make_error('issue_comment', (err_dict or {}).get('message', 'body not prepared'))
-
-    issue_id = normalize_issue_ref(args.issue)
-    gh_args = ['issue', 'comment', issue_id, '--body', body]
-    returncode, stdout, stderr = run_gh(gh_args)
-    if returncode != 0:
-        return make_error('issue_comment', f'Failed to comment on issue {issue_id}', stderr.strip())
-
-    delete_consumed_body(args.plan_id, BODY_KIND_ISSUE_COMMENT, getattr(args, 'slot', None))
-    return {
-        'status': 'success',
-        'operation': 'issue_comment',
-        'issue_number': issue_id,
-        'output': stdout.strip(),
-    }
-
-
-def cmd_issue_view(args: argparse.Namespace) -> dict:
-    """Handle 'issue view' subcommand."""
-    # Check auth
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('issue_view', err)
-
-    # Get issue details - request all relevant fields
-    issue_id = normalize_issue_ref(args.issue)
-    gh_args = [
-        'issue',
-        'view',
-        issue_id,
-        '--json',
-        'number,url,title,body,author,state,createdAt,updatedAt,labels,assignees,milestone',
-    ]
-
-    returncode, stdout, stderr = run_gh(gh_args)
-    if returncode != 0:
-        return make_error('issue_view', f'Failed to view issue {issue_id}', stderr.strip())
-
-    # Parse JSON
-    try:
-        data = json.loads(stdout)
-    except json.JSONDecodeError:
-        return make_error('issue_view', 'Failed to parse gh output', stdout[:100])
-
-    # Build output dict conditionally
-    result = {
-        'status': 'success',
-        'operation': 'issue_view',
-        'issue_number': data.get('number', 'unknown'),
-        'issue_url': data.get('url', ''),
-        'title': data.get('title', ''),
-        'body': data.get('body', ''),
-        'author': data.get('author', {}).get('login', 'unknown'),
-        'state': data.get('state', 'unknown').lower(),
-        'created_at': data.get('createdAt', ''),
-        'updated_at': data.get('updatedAt', ''),
-    }
-
-    # Labels
-    labels = data.get('labels', [])
-    if labels:
-        result['labels'] = [label.get('name', '') for label in labels]
-
-    # Assignees
-    assignees = data.get('assignees', [])
-    if assignees:
-        result['assignees'] = [assignee.get('login', '') for assignee in assignees]
-
-    # Milestone
-    milestone = data.get('milestone')
-    if milestone:
-        result['milestone'] = milestone.get('title', '')
-
-    return result
-
-
-cmd_issue_close = make_simple_handler(
-    'issue_close',
-    lambda args: ['issue', 'close', normalize_issue_ref(args.issue)],
-    run_gh,
-    check_auth,
-    result_extras=lambda args: {'issue_number': normalize_issue_ref(args.issue)},
-)
-
-
 def _fetch_issue_state_and_labels(issue_number: int) -> tuple[bool, Any]:
     """Fetch issue state and labels for polling handlers.
 
@@ -2177,142 +707,73 @@ def _fetch_issue_state_and_labels(issue_number: int) -> tuple[bool, Any]:
     return True, {'state': state, 'labels': labels}
 
 
-def cmd_issue_wait_for_close(args: argparse.Namespace) -> dict:
-    """Handle 'issue wait-for-close' — poll until the issue transitions to closed or timeout.
-
-    Replaces blocking shell ``sleep`` patterns in workflows that wait for an
-    issue to be closed by another actor. Snapshots the current state, then
-    polls on the standard CI interval and exits as soon as the state is no
-    longer ``open`` (i.e. the issue has transitioned to ``closed``).
-    """
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('issue_wait_for_close', err)
-
-    ok, initial = _fetch_issue_state_and_labels(args.issue_number)
-    if not ok:
-        return make_error(
-            'issue_wait_for_close',
-            initial.get('error', f'Initial state fetch failed for issue {args.issue_number}'),
-            initial.get('context', ''),
-        )
-    baseline_state = initial['state']
-
-    def check_fn() -> tuple[bool, dict]:
-        inner_ok, data = _fetch_issue_state_and_labels(args.issue_number)
-        if not inner_ok:
-            return False, data
-        return True, {'state': data['state']}
-
-    def is_complete_fn(data: dict) -> bool:
-        return data.get('state') != 'open'
-
-    result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
-
-    if 'error' in result:
-        return make_error(
-            'issue_wait_for_close',
-            result['error'],
-            result.get('last_data', {}).get('context', ''),
-        )
-
-    final_state = result['last_data'].get('state', baseline_state)
-    return {
-        'status': 'success',
-        'operation': 'issue_wait_for_close',
-        'issue_number': args.issue_number,
-        'timed_out': result['timed_out'],
-        'duration_sec': result['duration_sec'],
-        'polls': result['polls'],
-        'baseline_state': baseline_state,
-        'final_state': final_state,
-    }
-
-
-def cmd_issue_wait_for_label(args: argparse.Namespace) -> dict:
-    """Handle 'issue wait-for-label' — poll until the requested label transitions state.
-
-    Snapshots whether ``args.label`` is present on the issue, then polls on the
-    standard CI interval and exits as soon as presence flips and matches the
-    requested ``--mode`` (``present`` means wait for the label to appear,
-    ``absent`` means wait for it to disappear).
-    """
-    is_auth, err = check_auth()
-    if not is_auth:
-        return make_error('issue_wait_for_label', err)
-
-    ok, initial = _fetch_issue_state_and_labels(args.issue_number)
-    if not ok:
-        return make_error(
-            'issue_wait_for_label',
-            initial.get('error', f'Initial label fetch failed for issue {args.issue_number}'),
-            initial.get('context', ''),
-        )
-    baseline_present = args.label in initial['labels']
-
-    def check_fn() -> tuple[bool, dict]:
-        inner_ok, data = _fetch_issue_state_and_labels(args.issue_number)
-        if not inner_ok:
-            return False, data
-        return True, {'labels': data['labels']}
-
-    def is_complete_fn(data: dict) -> bool:
-        present_now = args.label in data.get('labels', [])
-        if present_now == baseline_present:
-            return False
-        if args.mode == 'present':
-            return present_now is True
-        return present_now is False
-
-    result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
-
-    if 'error' in result:
-        return make_error(
-            'issue_wait_for_label',
-            result['error'],
-            result.get('last_data', {}).get('context', ''),
-        )
-
-    final_present = args.label in result['last_data'].get('labels', [])
-    return {
-        'status': 'success',
-        'operation': 'issue_wait_for_label',
-        'issue_number': args.issue_number,
-        'label': args.label,
-        'mode': args.mode,
-        'timed_out': result['timed_out'],
-        'duration_sec': result['duration_sec'],
-        'polls': result['polls'],
-        'baseline_present': baseline_present,
-        'final_present': final_present,
-    }
-
-
 # ---------------------------------------------------------------------------
-# Prepare-body handlers (path-allocate pattern)
+# Command handlers (bodies live in the co-located domain submodules)
+#
+# These imports sit at the bottom of the file, after every primitive above is
+# defined: each submodule does ``import github_ops`` and only ACCESSES the
+# primitives at call time, so importing them here (once this module is
+# partially initialized with all primitives present) is load-order safe. The
+# names are brought back so the dispatch table and external callers/tests can
+# resolve ``github_ops.cmd_*`` / ``github_ops.post_pr_comment`` etc.
+#
+# When this file is executed directly (``python github_ops.py``) it is loaded
+# under the name ``__main__``. The domain submodules below do ``import
+# github_ops`` and resolve every primitive via attribute access; alias this
+# live module under its real name FIRST so that import returns THIS partially
+# initialized module (whose primitives are all defined by now) instead of
+# triggering a second, circular load of the file.
 # ---------------------------------------------------------------------------
 
+sys.modules.setdefault('github_ops', sys.modules[__name__])
 
-def _cmd_pr_prepare_body(args: argparse.Namespace) -> dict:
-    """Allocate a scratch path for a PR body (create or edit)."""
-    kind = BODY_KIND_PR_EDIT if getattr(args, 'prepare_for', 'create') == 'edit' else BODY_KIND_PR_CREATE
-    return prepare_body(args.plan_id, kind, getattr(args, 'slot', None))
+from _github_ci import (  # noqa: E402 — bottom import: primitives must be defined first
+    cmd_ci_logs,
+    cmd_ci_rerun,
+    cmd_ci_status,
+    cmd_ci_wait,
+    cmd_ci_wait_for_status_flip,
+    fetch_pr_head_sha,
+)
+from _github_issue import (  # noqa: E402 — bottom import: primitives must be defined first
+    _cmd_issue_prepare_body,
+    _cmd_issue_prepare_comment,
+    cmd_issue_close,
+    cmd_issue_comment,
+    cmd_issue_create,
+    cmd_issue_view,
+    cmd_issue_wait_for_close,
+    cmd_issue_wait_for_label,
+)
+from _github_pr import (  # noqa: E402 — bottom import: primitives must be defined first
+    _cmd_pr_prepare_body,
+    _cmd_pr_prepare_comment,
+    cmd_branch_delete,
+    cmd_pr_auto_merge,
+    cmd_pr_close,
+    cmd_pr_comments,
+    cmd_pr_create,
+    cmd_pr_edit,
+    cmd_pr_list,
+    cmd_pr_merge,
+    cmd_pr_ready,
+    cmd_pr_reply,
+    cmd_pr_resolve_thread,
+    cmd_pr_reviews,
+    cmd_pr_safe_merge,
+    cmd_pr_submit_review,
+    cmd_pr_thread_reply,
+    cmd_pr_update_branch,
+    cmd_pr_view,
+    cmd_pr_wait_for_comments,
+    fetch_pr_reviews_with_commits,
+    post_pr_comment,
+)
 
-
-def _cmd_pr_prepare_comment(args: argparse.Namespace) -> dict:
-    """Allocate a scratch path for a PR comment (reply or thread-reply)."""
-    kind = BODY_KIND_PR_THREAD_REPLY if getattr(args, 'prepare_for', 'reply') == 'thread-reply' else BODY_KIND_PR_REPLY
-    return prepare_body(args.plan_id, kind, getattr(args, 'slot', None))
-
-
-def _cmd_issue_prepare_body(args: argparse.Namespace) -> dict:
-    """Allocate a scratch path for an issue description."""
-    return prepare_body(args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None))
-
-
-def _cmd_issue_prepare_comment(args: argparse.Namespace) -> dict:
-    """Allocate a scratch path for an issue comment."""
-    return prepare_body(args.plan_id, BODY_KIND_ISSUE_COMMENT, getattr(args, 'slot', None))
+# fetch_pr_head_sha / fetch_pr_reviews_with_commits / post_pr_comment are
+# re-exported for the sibling ``github_pr`` / ``github_re_review`` scripts,
+# which import this module and call them as ``github_ops.<name>``.
+_ = (fetch_pr_head_sha, fetch_pr_reviews_with_commits, post_pr_comment)
 
 
 # ---------------------------------------------------------------------------
