@@ -129,7 +129,7 @@ def cmd_issue_view(args: argparse.Namespace) -> dict:
         'issue_url': data.get('url', ''),
         'title': data.get('title', ''),
         'body': data.get('body', ''),
-        'author': data.get('author', {}).get('login', 'unknown'),
+        'author': (data.get('author') or {}).get('login', 'unknown'),
         'state': data.get('state', 'unknown').lower(),
         'created_at': data.get('createdAt', ''),
         'updated_at': data.get('updatedAt', ''),
