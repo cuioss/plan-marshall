@@ -805,7 +805,15 @@ def _resolve_cwd() -> str:
 
 
 def _read_active_plan(session_id: str) -> str | None:
-    """Read the active plan_id from the session cache."""
+    """Read the active plan_id from the session cache.
+
+    ``session_id`` originates from an external hook payload
+    (``$CLAUDE_CODE_SESSION_ID``) and is interpolated into the cache path below,
+    so reject empty values and any path-traversal token (a separator or ``..``)
+    before use — a crafted value must not escape the session-cache root.
+    """
+    if not session_id or "/" in session_id or "\\" in session_id or ".." in session_id:
+        return None
     active_plan_path = _SESSION_CACHE_BASE / session_id / "active-plan"
     try:
         raw = active_plan_path.read_text(encoding="utf-8").strip()

@@ -766,7 +766,11 @@ class ClaudeRuntime(Runtime):
         proposed_additions: list[str] = []
 
         if mp_path.is_dir():
-            for bundle_dir in sorted(mp_path.iterdir()):
+            try:
+                bundle_dirs = sorted(mp_path.iterdir())
+            except OSError:
+                bundle_dirs = []
+            for bundle_dir in bundle_dirs:
                 if not bundle_dir.is_dir():
                     continue
                 plugin_json = bundle_dir / ".claude-plugin" / "plugin.json"
@@ -1284,7 +1288,10 @@ class ClaudeRuntime(Runtime):
                 if not path.is_file():
                     return False
                 sd = claude_runtime._read_json(path) or {}
-                session_starts = sd.get("hooks", {}).get("SessionStart", [])
+                hooks = sd.get("hooks")
+                session_starts = hooks.get("SessionStart", []) if isinstance(hooks, dict) else []
+                if not isinstance(session_starts, list):
+                    session_starts = []
                 for entry in session_starts:
                     if isinstance(entry, dict):
                         for h in entry.get("hooks", []):
