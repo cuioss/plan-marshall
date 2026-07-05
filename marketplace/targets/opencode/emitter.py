@@ -9,10 +9,10 @@ Layout written under ``output_dir``::
     ├── command/{command}.md
     └── opencode.json
 
-Body text is emitted verbatim — body-text rewrites are owned by
-``body-transforms.py`` (deliverable 4). The emitter wires through any
-caller-supplied ``body_transformer`` so deliverable 4 can plug in
-without editing this module.
+Body text is emitted verbatim — body-text rewrites are owned by the
+target-shared ``body_transform_engine`` (data-driven from
+``mapping.json``). The emitter wires through any caller-supplied
+``body_transformer`` so the engine plugs in without editing this module.
 
 Validation contract (silent exclusion is prohibited):
   * Missing required frontmatter field → ``UnmappedFrontmatterError``

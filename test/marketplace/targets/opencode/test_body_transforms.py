@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the OpenCode body transforms (Skill: rewrite + slash-command rewrite)."""
+"""Tests for the shared body-transform engine, exercised via OpenCode rule data.
+
+The engine lives at ``marketplace/targets/body_transform_engine`` (target-shared);
+these tests drive it with the OpenCode ``mapping.json`` templates and registry so
+the OpenCode-facing behaviour (Transform 1 directive rewrite, Transform 2 slash
+rewrite, Transform 3 registered-idiom rewrite) stays covered after the applier was
+lifted out of the OpenCode target.
+"""
 
 from __future__ import annotations
 
@@ -7,19 +14,39 @@ from pathlib import Path
 
 import pytest
 
-from marketplace.targets.opencode.body_transforms import (
+from marketplace.targets.body_transform_engine import (
     SKILL_DIRECTIVE_RE,
-    SKILL_REWRITTEN_RE,
+    TransformRules,
     UnmappedIdiomError,
     assert_dispositions_known,
+    assert_source_vocabulary_mapped,
     build_slash_command_re,
     build_user_invocable_lookup,
-    load_idiom_registry,
+    load_transform_rules,
     make_body_transformer,
     rewrite_registered_idioms,
     rewrite_skill_directives,
     rewrite_slash_commands,
 )
+
+# The OpenCode rewrite templates, mirrored from mapping.json for direct-applier
+# tests. Integration/composition tests load them from the real mapping.json.
+OPENCODE_DIRECTIVE_TEMPLATE = (
+    'Call the `skill` tool with `{ name: "{bundle}-{skill}" }` before continuing.'
+)
+OPENCODE_SLASH_TEMPLATE = '/{name}'
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[3].parent
+
+
+def _opencode_mapping_path() -> Path:
+    return _project_root() / 'marketplace' / 'targets' / 'opencode' / 'mapping.json'
+
+
+def _opencode_rules() -> TransformRules:
+    return load_transform_rules(_opencode_mapping_path())
 
 
 def _write(path: Path, content: str | bytes) -> None:
@@ -31,7 +58,7 @@ def _write(path: Path, content: str | bytes) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Transform 1 — Skill: directive rewrite
+# Transform 1 — Skill: directive rewrite (template-driven)
 # ---------------------------------------------------------------------------
 
 
@@ -39,13 +66,13 @@ def test_rewrite_skill_directives_full_line_match():
     """Full-line directive is rewritten; the regex's trailing ``\\s*$`` consumes
     the line's terminating newline as part of the match."""
     body = 'Skill: foo:bar\n'
-    result = rewrite_skill_directives(body)
+    result = rewrite_skill_directives(body, OPENCODE_DIRECTIVE_TEMPLATE)
     assert result == 'Call the `skill` tool with `{ name: "foo-bar" }` before continuing.'
 
 
 def test_rewrite_skill_directives_full_line_with_extra_spacing():
     body = 'Skill:   plan-marshall:phase-5-execute\n'
-    result = rewrite_skill_directives(body)
+    result = rewrite_skill_directives(body, OPENCODE_DIRECTIVE_TEMPLATE)
     assert (
         result
         == 'Call the `skill` tool with `{ name: "plan-marshall-phase-5-execute" }` before continuing.'
@@ -55,20 +82,20 @@ def test_rewrite_skill_directives_full_line_with_extra_spacing():
 def test_rewrite_skill_directives_inline_backtick_left_alone():
     """Inline backtick references must NOT be rewritten — they are prose."""
     body = 'Some text `Skill: foo:bar` more text\n'
-    assert rewrite_skill_directives(body) == body
+    assert rewrite_skill_directives(body, OPENCODE_DIRECTIVE_TEMPLATE) == body
 
 
 def test_rewrite_skill_directives_mid_line_left_alone():
     """A Skill: token in the middle of a sentence is not a full-line directive."""
     body = 'See the Skill: foo:bar reference for details\n'
-    assert rewrite_skill_directives(body) == body
+    assert rewrite_skill_directives(body, OPENCODE_DIRECTIVE_TEMPLATE) == body
 
 
 def test_rewrite_skill_directives_idempotent():
     """Running the transform on already-rewritten text is a no-op."""
     body = 'Skill: foo:bar\n'
-    once = rewrite_skill_directives(body)
-    twice = rewrite_skill_directives(once)
+    once = rewrite_skill_directives(body, OPENCODE_DIRECTIVE_TEMPLATE)
+    twice = rewrite_skill_directives(once, OPENCODE_DIRECTIVE_TEMPLATE)
     assert once == twice
 
 
@@ -78,7 +105,7 @@ def test_rewrite_skill_directives_multiple_directives():
         'middle prose\n'
         'Skill: beta:two\n'
     )
-    result = rewrite_skill_directives(body)
+    result = rewrite_skill_directives(body, OPENCODE_DIRECTIVE_TEMPLATE)
     assert 'Call the `skill` tool with `{ name: "alpha-one" }` before continuing.' in result
     assert 'Call the `skill` tool with `{ name: "beta-two" }` before continuing.' in result
     assert 'middle prose' in result
@@ -86,7 +113,14 @@ def test_rewrite_skill_directives_multiple_directives():
 
 def test_rewrite_skill_directives_no_match_returns_unchanged():
     body = '# Heading\n\nSome prose without a directive.\n'
-    assert rewrite_skill_directives(body) == body
+    assert rewrite_skill_directives(body, OPENCODE_DIRECTIVE_TEMPLATE) == body
+
+
+def test_rewrite_skill_directives_honours_custom_template():
+    """The template is data — a different target's template drives the rewrite."""
+    body = 'Skill: foo:bar\n'
+    result = rewrite_skill_directives(body, 'load skill {bundle}::{skill} now')
+    assert result == 'load skill foo::bar now'
 
 
 def test_skill_directive_re_anchored_to_full_line():
@@ -96,13 +130,8 @@ def test_skill_directive_re_anchored_to_full_line():
     assert pattern.endswith(r'\s*$')
 
 
-def test_skill_rewritten_re_matches_canonical_replacement():
-    line = 'Call the `skill` tool with `{ name: "foo-bar" }` before continuing.'
-    assert SKILL_REWRITTEN_RE.search(line) is not None
-
-
 # ---------------------------------------------------------------------------
-# Transform 2 — Slash-command rewrite
+# Transform 2 — Slash-command rewrite (template-driven)
 # ---------------------------------------------------------------------------
 
 
@@ -115,52 +144,59 @@ def _basic_lookup() -> dict[str, str]:
 
 def test_rewrite_slash_commands_happy_path():
     body = 'Run /plan-marshall to start.\n'
-    result = rewrite_slash_commands(body, _basic_lookup())
+    result = rewrite_slash_commands(body, _basic_lookup(), OPENCODE_SLASH_TEMPLATE)
     assert result == 'Run /plan-marshall-plan-marshall to start.\n'
 
 
 def test_rewrite_slash_commands_path_substring_left_alone():
     """A slash inside a filesystem path MUST NOT be rewritten."""
     body = 'See path/to/plan-marshall for details.\n'
-    assert rewrite_slash_commands(body, _basic_lookup()) == body
+    assert rewrite_slash_commands(body, _basic_lookup(), OPENCODE_SLASH_TEMPLATE) == body
 
 
 def test_rewrite_slash_commands_with_action_arg():
     """Slash commands followed by `key=value` args are still rewritten."""
     body = 'Try /plan-marshall action=execute now.\n'
-    result = rewrite_slash_commands(body, _basic_lookup())
+    result = rewrite_slash_commands(body, _basic_lookup(), OPENCODE_SLASH_TEMPLATE)
     assert result == 'Try /plan-marshall-plan-marshall action=execute now.\n'
 
 
 def test_rewrite_slash_commands_at_end_of_line():
     body = 'And finally /sync-plugin-cache\n'
-    result = rewrite_slash_commands(body, _basic_lookup())
+    result = rewrite_slash_commands(body, _basic_lookup(), OPENCODE_SLASH_TEMPLATE)
     assert result == 'And finally /plan-marshall-sync-plugin-cache\n'
 
 
 def test_rewrite_slash_commands_already_namespaced_passthrough():
     """Already-namespaced names are not in the lookup keys, so they pass through."""
     body = 'Run /plan-marshall-plan-marshall to start.\n'
-    result = rewrite_slash_commands(body, _basic_lookup())
+    result = rewrite_slash_commands(body, _basic_lookup(), OPENCODE_SLASH_TEMPLATE)
     assert result == body
 
 
 def test_rewrite_slash_commands_unknown_name_passthrough():
     body = 'Run /unknown-thing here.\n'
-    result = rewrite_slash_commands(body, _basic_lookup())
+    result = rewrite_slash_commands(body, _basic_lookup(), OPENCODE_SLASH_TEMPLATE)
     assert result == body
 
 
 def test_rewrite_slash_commands_empty_lookup_returns_unchanged():
     body = 'Run /plan-marshall to start.\n'
-    assert rewrite_slash_commands(body, {}) == body
+    assert rewrite_slash_commands(body, {}, OPENCODE_SLASH_TEMPLATE) == body
 
 
 def test_rewrite_slash_commands_idempotent():
     body = 'Run /plan-marshall to start.\n'
-    once = rewrite_slash_commands(body, _basic_lookup())
-    twice = rewrite_slash_commands(once, _basic_lookup())
+    once = rewrite_slash_commands(body, _basic_lookup(), OPENCODE_SLASH_TEMPLATE)
+    twice = rewrite_slash_commands(once, _basic_lookup(), OPENCODE_SLASH_TEMPLATE)
     assert once == twice
+
+
+def test_rewrite_slash_commands_honours_custom_template():
+    """The invocation form is data — a target using a different prefix drives it."""
+    body = 'Run /plan-marshall now.\n'
+    result = rewrite_slash_commands(body, _basic_lookup(), '#{name}')
+    assert result == 'Run #plan-marshall-plan-marshall now.\n'
 
 
 def test_build_slash_command_re_empty_returns_none():
@@ -244,19 +280,19 @@ def test_build_user_invocable_lookup_skips_user_invocable_false_string(tmp_path:
 
 
 # ---------------------------------------------------------------------------
-# make_body_transformer (composition)
+# make_body_transformer (composition over rule data)
 # ---------------------------------------------------------------------------
 
 
 def test_make_body_transformer_applies_transform_1():
-    transform = make_body_transformer({})
+    transform = make_body_transformer({}, _opencode_rules())
     body = 'Skill: foo:bar\n'
     result = transform(body, 'demo', 'skill')
     assert 'Call the `skill` tool with `{ name: "foo-bar" }`' in result
 
 
 def test_make_body_transformer_applies_transform_2():
-    transform = make_body_transformer({'foo': 'demo-foo'})
+    transform = make_body_transformer({'foo': 'demo-foo'}, _opencode_rules())
     body = 'Run /foo now.\n'
     result = transform(body, 'demo', 'skill')
     assert result == 'Run /demo-foo now.\n'
@@ -264,7 +300,7 @@ def test_make_body_transformer_applies_transform_2():
 
 def test_make_body_transformer_applies_both_in_one_pass():
     body = 'Skill: demo:foo\nThen run /foo to continue.\n'
-    transform = make_body_transformer({'foo': 'demo-foo'})
+    transform = make_body_transformer({'foo': 'demo-foo'}, _opencode_rules())
     result = transform(body, 'demo', 'skill')
     assert 'Call the `skill` tool with `{ name: "demo-foo" }`' in result
     assert '/demo-foo' in result
@@ -272,7 +308,7 @@ def test_make_body_transformer_applies_both_in_one_pass():
 
 def test_make_body_transformer_idempotent_on_already_transformed():
     body = 'Skill: demo:foo\nUse /foo here.\n'
-    transform = make_body_transformer({'foo': 'demo-foo'})
+    transform = make_body_transformer({'foo': 'demo-foo'}, _opencode_rules())
     once = transform(body, 'demo', 'skill')
     twice = transform(once, 'demo', 'skill')
     assert once == twice
@@ -280,14 +316,21 @@ def test_make_body_transformer_idempotent_on_already_transformed():
 
 def test_make_body_transformer_kind_signature():
     """The transformer must accept (body, bundle, kind) — emitter contract."""
-    transform = make_body_transformer({})
+    transform = make_body_transformer({}, _opencode_rules())
     # All three kinds must be accepted; bodies pass through identity when no patterns match
     for kind in ('skill', 'agent', 'command'):
         assert transform('plain text\n', 'demo', kind) == 'plain text\n'
 
 
+def test_make_body_transformer_verbatim_rules_are_identity():
+    """A verbatim target (empty rules) emits bodies byte-identical to source."""
+    transform = make_body_transformer(_basic_lookup(), TransformRules())
+    body = 'Skill: foo:bar\nRun /plan-marshall and escalate via `AskUserQuestion`.\n'
+    assert transform(body, 'demo', 'skill') == body
+
+
 # ---------------------------------------------------------------------------
-# Integration — fixture skill body with both transforms
+# Integration — fixture skill body with all transforms
 # ---------------------------------------------------------------------------
 
 
@@ -297,7 +340,7 @@ def test_integration_fixture_skill_body_both_transforms(tmp_path: Path):
     _write_skill(marketplace, 'demo', 'runner', user_invocable=True)
 
     lookup = build_user_invocable_lookup(marketplace)
-    transform = make_body_transformer(lookup)
+    transform = make_body_transformer(lookup, _opencode_rules())
 
     body = (
         '# Skill body\n'
@@ -326,8 +369,7 @@ def test_integration_fixture_skill_body_both_transforms(tmp_path: Path):
 
 def test_integration_real_marketplace_lookup_namespacing():
     """The real marketplace lookup namespacing matches {bundle}-{skill} convention."""
-    project_root = Path(__file__).resolve().parents[3].parent
-    marketplace = project_root / 'marketplace' / 'bundles'
+    marketplace = _project_root() / 'marketplace' / 'bundles'
     if not marketplace.is_dir():
         pytest.skip('marketplace/bundles not available in this checkout')
 
@@ -343,8 +385,7 @@ def test_integration_real_marketplace_lookup_namespacing():
 
 def test_integration_real_marketplace_pickup_at_least_one():
     """Sanity check: real marketplace has user-invocable skills."""
-    project_root = Path(__file__).resolve().parents[3].parent
-    marketplace = project_root / 'marketplace' / 'bundles'
+    marketplace = _project_root() / 'marketplace' / 'bundles'
     if not marketplace.is_dir():
         pytest.skip('marketplace/bundles not available in this checkout')
 
@@ -412,7 +453,7 @@ def test_integration_source_fix_contract_no_skill_entry_placeholder_in_bundles()
     """The source_fix disposition's contract: the `Skill: <entry>` placeholder stays
     fixed in the source. Because the emitter never rewrites this idiom, a source
     regression would flow verbatim into every emitted agent/skill body."""
-    project_root = Path(__file__).resolve().parents[3].parent
+    project_root = _project_root()
     marketplace = project_root / 'marketplace' / 'bundles'
     if not marketplace.is_dir():
         pytest.skip('marketplace/bundles not available in this checkout')
@@ -448,30 +489,9 @@ def test_assert_dispositions_known_fails_closed_on_missing_disposition():
         assert_dispositions_known(bad)
 
 
-def test_load_idiom_registry_reads_real_mapping_json():
-    """The real mapping.json registry loads and validates fail-closed (no raise)."""
-    registry = load_idiom_registry()
-    # The three registered idioms are present with their documented dispositions.
-    assert registry['AskUserQuestion']['disposition'] == 'rewrite_inline_code'
-    assert registry['AskUserQuestion']['opencode_tool'] == 'question'
-    assert registry['Task:']['disposition'] == 'preserve'
-    assert registry['Skill: <entry>']['disposition'] == 'source_fix'
-
-
-def test_load_idiom_registry_fails_closed_on_bad_mapping(tmp_path: Path):
-    """A mapping.json with an unknown disposition raises at load time."""
-    bad_mapping = tmp_path / 'mapping.json'
-    _write(
-        bad_mapping,
-        '{"body_idiom_rewrites": {"Foo": {"disposition": "bogus"}}}',
-    )
-    with pytest.raises(UnmappedIdiomError):
-        load_idiom_registry(bad_mapping)
-
-
 def test_make_body_transformer_applies_transform_3_from_real_mapping():
     """make_body_transformer wires Transform 3 using the real mapping.json registry."""
-    transform = make_body_transformer({})
+    transform = make_body_transformer({}, _opencode_rules())
     body = 'Escalate via `AskUserQuestion`.\n'
     result = transform(body, 'demo', 'skill')
     assert '`question`' in result
@@ -480,7 +500,81 @@ def test_make_body_transformer_applies_transform_3_from_real_mapping():
 
 def test_make_body_transformer_transform_3_preserves_task():
     """The composed transformer preserves `Task:` (leaf-aware disposition)."""
-    transform = make_body_transformer({})
+    transform = make_body_transformer({}, _opencode_rules())
     body = 'no `Task:` dispatch here\n'
     result = transform(body, 'demo', 'skill')
     assert result == body
+
+
+# ---------------------------------------------------------------------------
+# load_transform_rules + source-vocabulary fail-closed guard
+# ---------------------------------------------------------------------------
+
+
+def test_load_transform_rules_reads_real_mapping_json():
+    """The real mapping.json loads all three categories and validates fail-closed."""
+    rules = _opencode_rules()
+    assert not rules.is_verbatim
+    assert rules.directive_rewrites['skill_directive']['template']
+    assert rules.slash_rewrites['slash_command']['template'] == '/{name}'
+    assert rules.body_idiom_rewrites['AskUserQuestion']['disposition'] == 'rewrite_inline_code'
+    assert rules.body_idiom_rewrites['AskUserQuestion']['opencode_tool'] == 'question'
+    assert rules.body_idiom_rewrites['Task:']['disposition'] == 'preserve'
+    assert rules.body_idiom_rewrites['Skill: <entry>']['disposition'] == 'source_fix'
+
+
+def test_load_transform_rules_missing_file_is_verbatim(tmp_path: Path):
+    """A target with no mapping.json is verbatim (all-empty rules)."""
+    rules = load_transform_rules(tmp_path / 'does-not-exist.json')
+    assert rules.is_verbatim
+    assert rules.directive_rewrites == {}
+    assert rules.slash_rewrites == {}
+    assert rules.body_idiom_rewrites == {}
+
+
+def test_load_transform_rules_fails_closed_on_bad_disposition(tmp_path: Path):
+    """A mapping.json with an unknown Transform-3 disposition raises at load time."""
+    mapping = tmp_path / 'mapping.json'
+    _write(mapping, '{"body_idiom_rewrites": {"Foo": {"disposition": "bogus"}}}')
+    with pytest.raises(UnmappedIdiomError):
+        load_transform_rules(mapping)
+
+
+def test_load_transform_rules_fails_closed_on_unmapped_structural_idiom(tmp_path: Path):
+    """A non-verbatim target that omits a structural template fails closed at load.
+
+    Declaring slash_rewrites (non-verbatim) but omitting directive_rewrites leaves
+    the `skill_directive` source idiom unmapped — the build must fail."""
+    mapping = tmp_path / 'mapping.json'
+    _write(mapping, '{"slash_rewrites": {"slash_command": {"template": "/{name}"}}}')
+    with pytest.raises(UnmappedIdiomError, match='skill_directive'):
+        load_transform_rules(mapping)
+
+
+def test_assert_source_vocabulary_mapped_exempts_verbatim_target():
+    """A verbatim target (no rewrite category) is exempt from the vocabulary check."""
+    assert_source_vocabulary_mapped(TransformRules())  # does not raise
+
+
+def test_assert_source_vocabulary_mapped_requires_slash_when_directive_present():
+    """A non-verbatim target missing the slash template fails closed."""
+    rules = TransformRules(
+        directive_rewrites={'skill_directive': {'template': 'x {bundle}-{skill}'}},
+    )
+    with pytest.raises(UnmappedIdiomError, match='slash_command'):
+        assert_source_vocabulary_mapped(rules)
+
+
+def test_assert_source_vocabulary_mapped_rejects_empty_template():
+    """A present-but-empty template does not satisfy the vocabulary check."""
+    rules = TransformRules(
+        directive_rewrites={'skill_directive': {'template': ''}},
+        slash_rewrites={'slash_command': {'template': '/{name}'}},
+    )
+    with pytest.raises(UnmappedIdiomError, match='skill_directive'):
+        assert_source_vocabulary_mapped(rules)
+
+
+def test_assert_source_vocabulary_mapped_accepts_full_opencode_rules():
+    """The real OpenCode rules map every structural source idiom — no raise."""
+    assert_source_vocabulary_mapped(_opencode_rules())

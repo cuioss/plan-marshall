@@ -126,6 +126,28 @@ class TestBodyIdiomRewritesSchema:
                 )
 
 
+class TestStructuralRewriteSchema:
+    """`directive_rewrites` / `slash_rewrites` carry the Transform-1/2 templates."""
+
+    def test_directive_rewrites_present_with_skill_directive_template(self, opencode_config_dir: Path):
+        data = load_mapping(opencode_config_dir)
+        assert 'directive_rewrites' in data
+        record = data['directive_rewrites']['skill_directive']
+        template = record['template']
+        assert isinstance(template, str) and template
+        # The template carries both source-capture placeholders.
+        assert '{bundle}' in template
+        assert '{skill}' in template
+
+    def test_slash_rewrites_present_with_slash_command_template(self, opencode_config_dir: Path):
+        data = load_mapping(opencode_config_dir)
+        assert 'slash_rewrites' in data
+        record = data['slash_rewrites']['slash_command']
+        template = record['template']
+        assert isinstance(template, str) and template
+        assert '{name}' in template
+
+
 # ---------------------------------------------------------------------------
 # frontmatter-rules.json
 # ---------------------------------------------------------------------------

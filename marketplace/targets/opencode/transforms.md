@@ -1,19 +1,35 @@
 # OpenCode Body Transforms
 
 This document is the authoritative spec for the line-level body
-transforms applied by the OpenCode emitter. The implementation lives in
-`body_transforms.py` (snake-case for Python import — see Note on
-filename below). Adding a new transform is a deliberate spec change:
-the emitter does not silently rewrite anything else.
+transforms applied to OpenCode-emitted bodies. All three transforms are
+**data-driven**: the applier is the target-shared engine
+`marketplace/targets/body_transform_engine.py`, and every per-target
+rewrite *template* / disposition lives as data in this target's
+`mapping.json`. Adding a new transform is a deliberate spec change: the
+engine does not silently rewrite anything the rule data does not
+declare.
 
-## Note on filename
+## The shared engine and its data
 
-Cluster 02 plan.md and the wider design narrative refer to this module
-as `body-transforms.py`. Python rejects hyphens in importable module
-names, so the on-disk filename uses snake-case (`body_transforms.py`).
-External documentation may use either form interchangeably; treat
-`body-transforms.py` as the design name and `body_transforms.py` as the
-filesystem name.
+The engine owns the **matchers** — the "Claude source vocabulary": how
+each source idiom is found (`SKILL_DIRECTIVE_RE`, the slash-command
+regex, the inline-backtick registered-idiom form). Each target's
+`mapping.json` supplies only the replacement *data*:
+
+| `mapping.json` key | Transform | Data supplied |
+|--------------------|-----------|---------------|
+| `directive_rewrites.skill_directive.template` | 1 | `Skill:`-directive rewrite string (`{bundle}` / `{skill}` placeholders) |
+| `slash_rewrites.slash_command.template` | 2 | slash-command rewrite string (`{name}` placeholder) |
+| `body_idiom_rewrites` | 3 | registered-idiom dispositions |
+
+A target that declares **none** of these is *verbatim* — the engine
+applies no transform and the emitted body is byte-identical to source.
+The canonical Claude target is verbatim by construction (it has no
+`mapping.json`), which keeps its output independently
+equality-validatable. A **new target supplies only this data** — no
+transform code. See
+[07 — Target Extensibility](../../../doc/refactor/07-target-extensibility.md)
+§ structural item 3.
 
 ## Transform 1 — `Skill:` directive rewrite
 
@@ -22,15 +38,16 @@ and loads the named skill into context. OpenCode does not — its `skill`
 tool is LLM-driven, not runtime-parsed. Without rewriting, the `Skill:`
 line is just text the LLM may or may not act on.
 
-| Match in source body | Rewrite in OpenCode body |
-|----------------------|--------------------------|
+| Match in source body (engine-owned matcher) | Rewrite template (`mapping.json::directive_rewrites`) |
+|----------------------------------------------|-------------------------------------------------------|
 | `^Skill:\s+{bundle}:{skill}\s*$` (full line) | `` Call the `skill` tool with `{ name: "{bundle}-{skill}" }` before continuing. `` |
 
 The regex is anchored to a full line (`^...$`, MULTILINE) so inline
 backtick references like `` `Skill: foo:bar` `` in prose are
-unaffected. The replacement uses the same `{bundle}-{skill}`
-namespacing the emitter produces for skill directories so the load
-target always resolves.
+unaffected. The template's `{bundle}` / `{skill}` placeholders are
+substituted from the matched directive; the `{bundle}-{skill}`
+namespacing matches the skill directories the emitter produces so the
+load target always resolves.
 
 **Idempotence:** The rewritten line does not match the source pattern,
 so re-running the transform on already-transformed text is a no-op.
@@ -43,13 +60,13 @@ Claude Code skills with `user-invocable: true` are invoked as
 Cross-references in skill bodies and usage examples must be rewritten
 to the namespaced form.
 
-**Build-time lookup table.** The emitter walks every source skill with
+**Build-time lookup table.** The engine walks every source skill with
 `user-invocable: true` and builds a global map
 `{skill-name → {bundle}-{skill-name}}` across all bundles, not
 per-bundle. The lookup is provided by
 `build_user_invocable_lookup(marketplace_dir)`.
 
-**Body regex:**
+**Body regex (engine-owned matcher):**
 
 ```
 (?<![\w-])/(?P<name>{any-known-skill-name})(?=\s|$|=)
@@ -61,9 +78,13 @@ per-bundle. The lookup is provided by
 * `(?=\s|$|=)` — lookahead permits the form `/skill action=...` used
   in usage examples.
 
-The replacement is `/{bundle}-{skill-name}`. Names already in
-namespaced form pass through unchanged because the regex only matches
-the bare names listed in the lookup.
+The rewrite *template* lives in
+`mapping.json::slash_rewrites.slash_command.template` (`/{name}`); its
+`{name}` placeholder is substituted with the resolved namespaced form
+`{bundle}-{skill-name}` from the lookup. Names already in namespaced
+form pass through unchanged because the regex only matches the bare
+names listed in the lookup. A target using a different invocation form
+declares a different template (e.g. `#{name}`) — no code change.
 
 **Argument syntax stays as-is.** Both Claude and OpenCode pass the
 post-command tail to the LLM as a string; the body's natural-language
@@ -101,7 +122,7 @@ Claude idiom is registered without an engine-handled disposition.
 | `preserve` | A deliberate non-rewrite — the body is unchanged. |
 | `source_fix` | The divergence is fixed in the source, not at emit time — the body is unchanged. |
 
-**Fail-closed.** `load_idiom_registry` validates the registry up-front
+**Fail-closed.** `load_transform_rules` validates the registry up-front
 via `assert_dispositions_known`: any registered idiom whose `disposition`
 is missing or not one of the three above raises `UnmappedIdiomError` at
 build time. A new Claude idiom therefore cannot be added to the registry
@@ -136,30 +157,48 @@ Body transforms are reserved for cases where the same source line has
 different meaning on the two targets and the LLM cannot bridge the gap
 by itself. Everything else is either source-cleaned or left alone.
 
+## Fail-closed on an unmapped structural source idiom
+
+Transforms 1 and 2 rewrite the two *structural* source idioms
+(`skill_directive`, `slash_command`). The engine registers these as its
+Claude source vocabulary and, for any **non-verbatim** target (one that
+declares at least one rewrite category), requires a non-empty template
+for each — `assert_source_vocabulary_mapped` raises `UnmappedIdiomError`
+when one is missing. This is the same fail-closed discipline as
+`UnmappedToolError` for frontmatter tools and `assert_dispositions_known`
+for Transform 3: a target cannot partially opt into rewriting and
+silently leave a known Claude source idiom un-rewritten. A verbatim
+target (no rewrite category — the canonical Claude target) is exempt and
+emits source bytes unchanged.
+
 ## Public API
 
-The module exposes:
+The shared engine (`marketplace/targets/body_transform_engine.py`)
+exposes:
 
 | Symbol | Purpose |
 |--------|---------|
-| `rewrite_skill_directives(body)` | Apply Transform 1 only. |
-| `rewrite_slash_commands(body, lookup)` | Apply Transform 2 with the supplied lookup. |
+| `rewrite_skill_directives(body, template)` | Apply Transform 1 with the supplied `directive_rewrites` template. |
+| `rewrite_slash_commands(body, lookup, template)` | Apply Transform 2 with the supplied lookup and `slash_rewrites` template. |
 | `rewrite_registered_idioms(body, registry)` | Apply Transform 3 with the supplied idiom registry. |
-| `load_idiom_registry(mapping_path=None)` | Load + fail-closed-validate the `body_idiom_rewrites` registry from `mapping.json`. |
-| `assert_dispositions_known(registry)` | Fail-closed guard: raise `UnmappedIdiomError` on any unknown disposition. |
+| `load_transform_rules(mapping_path)` | Load + fail-closed-validate all three rule categories into a `TransformRules`. |
+| `assert_dispositions_known(registry)` | Fail-closed guard: raise `UnmappedIdiomError` on any unknown Transform-3 disposition. |
+| `assert_source_vocabulary_mapped(rules)` | Fail-closed guard: raise `UnmappedIdiomError` when a non-verbatim target omits a structural template. |
 | `build_user_invocable_lookup(marketplace_dir)` | Scan source bundles for `user-invocable: true` skills. |
-| `make_body_transformer(lookup, idiom_registry=None)` | Compose Transform 1 + Transform 2 + Transform 3 into a `BodyTransformer` callable matching the emitter's contract. |
+| `make_body_transformer(lookup, rules)` | Compose Transforms 1 + 2 + 3 into a `BodyTransformer` callable matching the emitter's contract; a verbatim `rules` yields an identity transform. |
 
-The emitter is wired up via:
+The target is wired up via:
 
 ```python
-from marketplace.targets.opencode.body_transforms import (
+from marketplace.targets.body_transform_engine import (
     build_user_invocable_lookup,
+    load_transform_rules,
     make_body_transformer,
 )
 from marketplace.targets.opencode.emitter import emit_bundles
 
+rules = load_transform_rules(config_dir / 'mapping.json')
 lookup = build_user_invocable_lookup(marketplace_dir)
-transformer = make_body_transformer(lookup)
+transformer = make_body_transformer(lookup, rules)
 emit_bundles(marketplace_dir, output_dir, config_dir, body_transformer=transformer)
 ```

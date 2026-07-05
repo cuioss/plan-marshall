@@ -12,8 +12,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from marketplace.targets.base import TargetBase
-from marketplace.targets.opencode.body_transforms import (
+from marketplace.targets.body_transform_engine import (
     build_user_invocable_lookup,
+    load_transform_rules,
     make_body_transformer,
 )
 from marketplace.targets.opencode.emitter import emit_bundles
@@ -48,8 +49,9 @@ class OpenCodeTarget(TargetBase):
                 'OpenCodeTarget requires --output: pass an output directory '
                 '(e.g. target/opencode/)'
             )
+        rules = load_transform_rules(self.config_dir / 'mapping.json')
         lookup = build_user_invocable_lookup(marketplace_dir)
-        transformer = make_body_transformer(lookup)
+        transformer = make_body_transformer(lookup, rules)
         return emit_bundles(
             marketplace_dir,
             output_dir,

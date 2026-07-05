@@ -68,7 +68,8 @@ to **four** destinations, chosen by *what kind* of coupling it is:
   config resolution pays the runtime call at most once.
 - **OpenCode build target** — emitted-**text vocabulary** (tool names in body prose) and
   emitted-**frontmatter format** (e.g. `model: sonnet` vs. `model: anthropic/...`). Belongs in
-  `marketplace/targets/opencode/transforms.md` + `body_transforms.py` and the frontmatter
+  `marketplace/targets/opencode/transforms.md` + the target-shared
+  `body_transform_engine.py` (per-target data in `mapping.json`) and the frontmatter
   transform, or in target-neutral source rewording. Build-time, not runtime
   ([principles §4/§5](principles.md)).
 - **Stays put (platform-agnostic)** — logic that is identical across targets stays where it is
@@ -106,7 +107,7 @@ All gaps are **landed**. The `Destination` column records where each gap's coupl
 | 3 | `session_id` validation | landed | stays-agnostic + Gap 2 | shared validator reworded to opaque-token; strict-UUID regex folded into the Gap-2 metrics engine |
 | 4 | Project-local skill / step resolution | landed | `platform-runtime` | `layout skill-roots` op + memoised `get_project_skill_roots()`; resolvers routed through it |
 | 5 | Bundle / plugin-cache discovery | landed | `platform-runtime` | `layout bundle-cache-root` op + memoised `get_bundle_cache_roots()`; discovery routed through it |
-| 6 | Body-text tool-name transforms | landed | OpenCode build target | `AskUserQuestion` / `Task:` / `Skill: <entry>` dispositions live as data in `mapping.json::body_idiom_rewrites` (mirrored in `transforms.md`); `load_idiom_registry` fails closed on unknown dispositions, `rewrite_registered_idioms` applies the validated registry |
+| 6 | Body-text tool-name transforms | landed | target-shared `body_transform_engine` | `AskUserQuestion` / `Task:` / `Skill: <entry>` dispositions live as data in `mapping.json::body_idiom_rewrites` (mirrored in `transforms.md`); `load_transform_rules` fails closed on unknown dispositions, `rewrite_registered_idioms` applies the validated registry |
 | 7 | Terminal-title / hooks | landed | `platform-runtime` | composer takes a neutral state enum; state→icon mapping owned by the runtime; lock glyphs de-duplicated |
 | 8 | Authoring / meta tools | landed | `platform-runtime` + build target | `plugin-doctor` engine/rule-pack split; `plugin-doctor` + `tools-marketplace-inventory` scan both layouts; target-aware frontmatter |
 
@@ -266,7 +267,7 @@ untransformed:
 **Resolved as:** the source stays Claude-native; the registered idioms are per-target
 **rewrite data** — `mapping.json::body_idiom_rewrites` declares `AskUserQuestion` →
 `rewrite_inline_code` (to `question`), `Task:` → `preserve` (the leaf-aware decision from
-06 item 3), and `Skill: <entry>` → `source_fix`; `load_idiom_registry` validates the
+06 item 3), and `Skill: <entry>` → `source_fix`; `load_transform_rules` validates the
 registry up front and fails closed (`UnmappedIdiomError`) on an unknown disposition before
 `rewrite_registered_idioms` applies the per-idiom rewrites. `Skill: <entry>`
 remains the one true source change — reword the placeholder prose (06 item 2, still open).
