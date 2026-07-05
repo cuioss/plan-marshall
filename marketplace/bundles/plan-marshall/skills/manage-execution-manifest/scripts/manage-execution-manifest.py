@@ -19,20 +19,117 @@ Usage:
 
 import argparse
 import json
-import shlex
 import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from _manifest_core import (
+    _CANONICAL_TO_ROLE,  # noqa: F401
+    _CANONICAL_VERIFY_PREFIX,  # noqa: F401
+    _DOC_SUFFIXES,  # noqa: F401
+    DEFAULT_ENVELOPE_COUNT,  # noqa: F401
+    DEFAULT_PHASE_5_STEPS,  # noqa: F401
+    DEFAULT_PHASE_6_STEPS,  # noqa: F401
+    EXECUTION_LOG_KEY,  # noqa: F401
+    MANIFEST_FILENAME,  # noqa: F401
+    MANIFEST_VERSION,  # noqa: F401
+    VALID_CHANGE_TYPES,  # noqa: F401
+    VALID_RECORD_OUTCOMES,  # noqa: F401
+    VALID_RECORD_PHASES,  # noqa: F401
+    VALID_SCOPE_ESTIMATES,  # noqa: F401
+    VALID_TRACKS,  # noqa: F401
+    _denormalize_step_params_for_write,  # noqa: F401
+    _is_documentation_path,  # noqa: F401
+    _normalize_step_params_block,  # noqa: F401
+    _role_of,  # noqa: F401
+    _strip_default_prefix,  # noqa: F401
+    get_manifest_path,  # noqa: F401
+    read_manifest,  # noqa: F401
+    write_manifest,  # noqa: F401
+)
+from _manifest_decide import (
+    _decide,  # noqa: F401
+    _looks_docs_only,  # noqa: F401
+    _read_recipe_source,  # noqa: F401
+    _read_task_queue_active,  # noqa: F401
+    _split_csv,  # noqa: F401
+)
+from _manifest_lanes import (
+    _CLASS_DEFAULT_TIER,  # noqa: F401
+    _DEFAULT_COST_SIZE_TABLE,  # noqa: F401
+    _TIER_RANK,  # noqa: F401
+    _WARN_ON_DROP_CLASSES,  # noqa: F401
+    DEFAULT_EXECUTION_PROFILE,  # noqa: F401
+    LANE_OVERRIDES,  # noqa: F401
+    LANE_TIERS,  # noqa: F401
+    _effective_lane_tier,  # noqa: F401
+    _lane_keep_decision,  # noqa: F401
+    _lane_override_for,  # noqa: F401
+    _parse_cost_magnitude,  # noqa: F401
+    _read_cost_size_token_table,  # noqa: F401
+    _read_execution_profile,  # noqa: F401
+    _read_frontmatter_lane,  # noqa: F401
+)
+from _manifest_rules import (
+    _BUILD_DROPPING_ASPECTS,  # noqa: F401
+    _CEREMONY_FINALIZE_DEFAULT,  # noqa: F401
+    _CEREMONY_FINALIZE_GATES,  # noqa: F401
+    _CEREMONY_FINALIZE_STEP_MAP,  # noqa: F401
+    _FOOTPRINT_GATED_CANONICAL_ROLES,  # noqa: F401
+    _PRE_SUBMISSION_SELF_REVIEW_STEP,  # noqa: F401
+    _SCOPE_GATED_OVERRIDE_DROP,  # noqa: F401
+    _SCOPE_GATED_SINGLE_MODULE_DROP,  # noqa: F401
+    _SCOPE_GATED_SURGICAL_DROP,  # noqa: F401
+    _SECURITY_AUDIT_OWNER_STEP,  # noqa: F401
+    _SIMPLIFY_CHANGE_TYPES,  # noqa: F401
+    _SIMPLIFY_OWNER_STEP,  # noqa: F401
+    _VERB_TO_PHASE_5_STEP,  # noqa: F401
+    _apply_aspect_step_dropping,  # noqa: F401
+    _apply_ceremony_finalize_selection,  # noqa: F401
+    _apply_code_step_inactive,  # noqa: F401
+    _apply_commit_push_disabled,  # noqa: F401
+    _apply_scope_gated_finalize,  # noqa: F401
+    _apply_security_audit_inactive,  # noqa: F401
+    _apply_simplify_inactive,  # noqa: F401
+    _bot_enforcement_insert_index,  # noqa: F401
+    _ceremony_finalize_insert_index,  # noqa: F401
+    _footprint_has_role,  # noqa: F401
+    _parse_verification_command,  # noqa: F401
+    _read_ci_provider,  # noqa: F401
+    _read_drop_review_on_scope_gate,  # noqa: F401
+    _read_finalize_gates,  # noqa: F401
+    _read_marshal_phase_step_map,  # noqa: F401
+    _read_step_owned_knob,  # noqa: F401
+    _snapshot_step_params,  # noqa: F401
+    _validate_automated_review_placement,  # noqa: F401
+    _verb_to_phase_5_step,  # noqa: F401
+)
+from _manifest_validation import (
+    _PHASE_6_SKILL_DIR,  # noqa: F401
+    _PHASE_6_STANDARDS_DIR,  # noqa: F401
+    _PHASE_6_WORKFLOW_DIR,  # noqa: F401
+    _PHASE_TO_BODY_SECTION,  # noqa: F401
+    _REPO_ROOT,  # noqa: F401
+    _check_ascending_order,  # noqa: F401
+    _check_step_loadable,  # noqa: F401
+    _coerce_param_value,  # noqa: F401
+    _is_external_step,  # noqa: F401
+    _read_frontmatter_order,  # noqa: F401
+    _render_standards_rel_path,  # noqa: F401
+    _resolve_standards_path,  # noqa: F401
+    _resolve_step_order,  # noqa: F401
+    cmd_step_params_get,  # noqa: F401
+    cmd_step_params_set,  # noqa: F401
+    cmd_validate,  # noqa: F401
+)
 from _references_core import (
     compute_plan_branch_diff,
     resolve_base_ref,
 )
 from constants import FILE_REFERENCES, FILE_STATUS
 from file_ops import (
-    atomic_write_file,
     get_executor_path,
     get_marshal_path,
     get_plan_dir,
@@ -46,532 +143,14 @@ from input_validation import (
     parse_args_with_toon_errors,
     require_valid_plan_id,
 )
-from marketplace_bundles import (
-    resolve_bundles_root,
-    resolve_skills_root,
-)
 from marketplace_paths import (
     resolve_project_skill_path,
 )
-from toon_parser import parse_toon, serialize_toon
-
-# =============================================================================
-# Constants
-# =============================================================================
-
-MANIFEST_FILENAME = 'execution.toon'
-MANIFEST_VERSION = 1
-
-# Default number of phase-5 execution envelopes the orchestrator dispatches when
-# the composer is not given an explicit ``--envelope-count``. ``1`` reproduces
-# the pre-existing single-envelope behaviour: one budget-bounded
-# ``execution-context`` envelope greedily drives the task loop until the queue
-# is empty or a TASK-boundary re-dispatch point fires (token-budget sentinel,
-# ``triage_required``, or ``baseline_drift``). The field is the orchestrator's
-# read-side signal for how many envelopes to plan for; a manifest composed
-# before this field existed simply has no ``phase_5.envelope_count`` key, and
-# every reader treats an absent value as this same default.
-DEFAULT_ENVELOPE_COUNT = 1
-
-VALID_CHANGE_TYPES = (
-    'analysis',
-    'feature',
-    'enhancement',
-    'bug_fix',
-    'tech_debt',
-    'verification',
-)
-
-VALID_SCOPE_ESTIMATES = (
-    'none',
-    'surgical',
-    'single_module',
-    'multi_module',
-    'broad',
-)
-
-VALID_TRACKS = ('simple', 'complex')
-
-# Documentation file suffixes recognized generically by the change-footprint
-# classifier. Documentation has NO build-system owner — it is not a buildable
-# unit and not a build_map route role — so doc recognition is an
-# extension-agnostic file-suffix fact rather than a build-extension classify
-# claim. Any changed path ending in one of these suffixes is tagged with the
-# ``documentation`` footprint role independently of (and BEFORE) the
-# build-extension classify_paths() iteration. The build extensions still supply
-# production / test / config recognition; this generic rule is the sole source of
-# documentation recognition. The vocabulary mirrors the suffixes the retired
-# pm-documents Axis-B classifier used (``.md`` / ``.adoc`` / ``.asciidoc``).
-_DOC_SUFFIXES: tuple[str, ...] = ('.md', '.adoc', '.asciidoc')
-
-
-def _is_documentation_path(path: str) -> bool:
-    """Return True when ``path`` is a documentation file by suffix.
-
-    The generic, extension-agnostic documentation predicate consumed by
-    :func:`_classify_paths_via_extensions`. Documentation has no build-system
-    owner, so doc recognition is a pure file-suffix fact — a path is
-    documentation iff it ends in one of :data:`_DOC_SUFFIXES`.
-    """
-    return path.endswith(_DOC_SUFFIXES)
-
-# record-step contract. The execution log records per-step execution outcome
-# plus token attribution into a new ``execution_log[]`` section of the
-# manifest, written by the ``record-step`` subcommand. Phases are the bare
-# phase keys the orchestrator emits at step-dispatch time; outcomes name
-# whether the step ran, was skipped, or errored.
-VALID_RECORD_PHASES = ('5-execute', '6-finalize')
-VALID_RECORD_OUTCOMES = ('executed', 'skipped', 'error')
-EXECUTION_LOG_KEY = 'execution_log'
-
-# Default candidate step sets when callers don't pass --phase-5-steps / --phase-6-steps.
-# These are bare step IDs (post boundary-normalization shape). The phase-5
-# defaults are parameterized canonical-verify IDs in their bare
-# ``verify:{canonical}`` form (the ``default:`` prefix is stripped at the compose
-# boundary); their matrix ``role:`` is resolved purely in-code by ``_role_of``
-# below (via the ``_CANONICAL_TO_ROLE`` table, keyed on the trailing canonical
-# segment) for structural role-based intersection in the 7-row decision matrix.
-# There are no longer any legacy fixed-name IDs and no per-step
-# ``standards/{name}.md`` role-files to read.
-DEFAULT_PHASE_5_STEPS = ('verify:quality-gate', 'verify:module-tests')
-DEFAULT_PHASE_6_STEPS = (
-    'finalize-step-simplify',
-    'finalize-step-security-audit',
-    'push',
-    'create-pr',
-    'ci-verify',
-    'automated-review',
-    'sonar-roundtrip',
-    'lessons-capture',
-    'adr-propose',
-    'branch-cleanup',
-    'record-metrics',
-    'archive-plan',
-)
-
-
-def _strip_default_prefix(step: str) -> str:
-    """Return the bare step name regardless of the optional ``default:`` prefix."""
-    return step[len('default:') :] if step.startswith('default:') else step
-
-
-# Canonical-verify step prefix. A step ID of the shape
-# ``default:verify:{canonical}`` (or its bare ``verify:{canonical}`` form) is
-# the single parameterized canonical-verify step — the matrix role is derived
-# from the trailing ``{canonical}`` segment rather than from a per-canonical
-# role-file. See ``phase-5-execute/standards/canonical_verify.md``.
-_CANONICAL_VERIFY_PREFIX = 'verify:'
-
-# Canonical command segment → matrix ``role:`` value. This is the composer's
-# copy of the canonical→role table documented in
-# ``phase-5-execute/standards/canonical_verify.md`` § "derived role". Both
-# ``verify`` and ``module-tests`` map to the ``module-tests`` role (running the
-# full module-test suite); ``quality-gate`` maps to ``quality-gate``;
-# ``coverage`` maps to ``coverage``; whole-tree gates map to their own roles.
-_CANONICAL_TO_ROLE: dict[str, str] = {
-    'quality-gate': 'quality-gate',
-    'verify': 'module-tests',
-    'module-tests': 'module-tests',
-    'coverage': 'coverage',
-    'integration-tests': 'integration',
-    'e2e': 'e2e',
-}
-
-
-def _role_of(step_id: str, cache: dict[str, str | None]) -> str | None:
-    """Resolve a phase-5 candidate step ID to its matrix ``role:`` value.
-
-    The composer intersects phase-5 candidates by role rather than by literal
-    step ID. Resolution is purely in-code via the ``_CANONICAL_TO_ROLE`` table —
-    no role-file is ever read (the ``phase-5-execute/standards/{name}.md``
-    role-files were deleted). Every built-in verify step is a parameterized
-    canonical-verify step (``default:verify:{canonical}`` or the bare
-    ``verify:{canonical}`` form); the role is derived from the trailing
-    ``{canonical}`` segment via the ``_CANONICAL_TO_ROLE`` table. A single
-    parameterized step backs every canonical, and the canonical is the parameter
-    that selects the role.
-
-    Returns ``None`` for:
-
-    - External steps (``project:`` or ``bundle:skill``) — no role concept.
-    - Canonical-verify steps whose ``{canonical}`` segment is unrecognized.
-    - Any other bare name that is not a ``verify:{canonical}`` form (preserving
-      the "missing data → step is never role-selected" convention).
-
-    Results are cached per compose call to avoid re-resolving the same step
-    when a candidate appears in multiple intersection sites.
-    """
-    if step_id in cache:
-        return cache[step_id]
-
-    bare = _strip_default_prefix(step_id)
-
-    # Canonical-verify steps: ``default:verify:{canonical}`` (bare:
-    # ``verify:{canonical}``). The role is derived from the trailing canonical
-    # segment by table lookup.
-    if bare.startswith(_CANONICAL_VERIFY_PREFIX):
-        canonical = bare[len(_CANONICAL_VERIFY_PREFIX) :]
-        derived_role = _CANONICAL_TO_ROLE.get(canonical)
-        cache[step_id] = derived_role
-        return derived_role
-
-    # External steps (project:foo or bundle:skill) have no role — they are
-    # dispatched as PROJECT/SKILL steps, not built-in default steps. Any other
-    # bare name (no longer any legacy fixed-name ID) is never role-selected.
-    cache[step_id] = None
-    return None
-
-
-# =============================================================================
-# File Operations
-# =============================================================================
-
-
-def get_manifest_path(plan_id: str) -> Path:
-    """Return the absolute path to the execution manifest for ``plan_id``."""
-    return get_plan_dir(plan_id) / MANIFEST_FILENAME
-
-
-def _denormalize_step_params_for_write(manifest: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of ``manifest`` with ownerless ``step_params`` collapsed to ``null``.
-
-    The write-side mirror of :func:`_normalize_step_params_block`: an ownerless
-    step (its param value is an empty dict ``{}`` or ``None``) is written as
-    ``None`` (serialized as ``null``) so the manifest TOON never carries a noisy
-    empty ``{}`` block — regardless of which write path produced the in-memory
-    manifest (compose snapshot, or a ``step-params set`` round-trip that read the
-    normalized ``{}`` back). A param-owning step keeps its nested object. The
-    input ``manifest`` is never mutated; only the ``phase_5`` / ``phase_6``
-    sections that actually carry a ``step_params`` block are shallow-copied.
-    """
-    out = dict(manifest)
-    for section_key in ('phase_5', 'phase_6'):
-        section = out.get(section_key)
-        if not isinstance(section, dict):
-            continue
-        step_params = section.get('step_params')
-        if not isinstance(step_params, dict):
-            continue
-        collapsed = {
-            step_id: (params if isinstance(params, dict) and params else None)
-            for step_id, params in step_params.items()
-        }
-        section_copy = dict(section)
-        section_copy['step_params'] = collapsed
-        out[section_key] = section_copy
-    return out
-
-
-def write_manifest(plan_id: str, manifest: dict[str, Any]) -> None:
-    """Atomically write the manifest as TOON to its plan path.
-
-    Ownerless ``step_params`` entries are collapsed to ``null`` at the write
-    boundary (:func:`_denormalize_step_params_for_write`) so no empty ``{}``
-    block is ever serialized, keeping every manifest-write path (compose +
-    ``step-params set``) consistent with the no-empty-``{}`` contract.
-    """
-    path = get_manifest_path(plan_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_file(path, serialize_toon(_denormalize_step_params_for_write(manifest)))
-
-
-def _normalize_step_params_block(manifest: dict[str, Any]) -> None:
-    """Coerce each ``step_params`` per-step value to ``{}`` when not a non-empty dict.
-
-    The manifest persists as TOON, and an empty param object (``{}``) round-trips
-    back from TOON as the empty string ``''`` on read. The step-params contract
-    requires an ownerless step to read back as ``{}`` (an empty param object), not
-    ``''``. This normalizes the read-side exposure for both phase sections in
-    place: any per-step value that is not a dict (notably the ``''`` produced by
-    the empty-dict TOON round-trip) becomes ``{}``. A step id MISSING from the
-    snapshot is left absent — only present-but-empty values normalize.
-    """
-    for section_key in ('phase_5', 'phase_6'):
-        section = manifest.get(section_key)
-        if not isinstance(section, dict):
-            continue
-        step_params = section.get('step_params')
-        if not isinstance(step_params, dict):
-            section['step_params'] = {}
-            continue
-        section['step_params'] = {
-            step_id: (params if isinstance(params, dict) else {})
-            for step_id, params in step_params.items()
-        }
-
-
-def read_manifest(plan_id: str) -> dict[str, Any] | None:
-    """Read and parse the manifest, returning ``None`` if missing.
-
-    The parsed manifest is normalized at this read boundary so each
-    ``step_params`` per-step value is a dict (``{}`` for ownerless steps),
-    repairing the empty-dict→``''`` TOON round-trip. See
-    :func:`_normalize_step_params_block`.
-    """
-    path = get_manifest_path(plan_id)
-    if not path.exists():
-        return None
-    manifest = parse_toon(path.read_text(encoding='utf-8'))
-    if isinstance(manifest, dict):
-        _normalize_step_params_block(manifest)
-    return manifest
-
+from toon_parser import parse_toon
 
 # =============================================================================
 # Decision Engine (seven-row matrix from standards/decision-rules.md)
 # =============================================================================
-
-
-def _split_csv(value: str | None, default: tuple[str, ...]) -> list[str]:
-    if value is None or value == '':
-        return list(default)
-    return [item.strip() for item in value.split(',') if item.strip()]
-
-
-def _decide(
-    change_type: str,
-    track: str,
-    scope_estimate: str,
-    recipe_key: str | None,
-    affected_files_count: int,
-    phase_5_candidates: list[str],
-    phase_6_candidates: list[str],
-    task_queue_active: bool = False,
-) -> tuple[dict[str, Any], str]:
-    """Apply the seven-row decision matrix.
-
-    Returns the manifest body (under ``phase_5`` / ``phase_6`` keys) plus the
-    name of the rule that fired (one of the seven rule keys defined in
-    standards/decision-rules.md).
-
-    Rows 2, 3, 5, 6 intersect phase-5 candidates by each candidate's matrix
-    ``role:`` rather than by literal step ID. The intersection mechanism is
-    structural: each candidate's role is resolved in-code by ``_role_of`` (via
-    the ``_CANONICAL_TO_ROLE`` table, keyed on the trailing canonical segment)
-    and the matrix matches against a set of role names. See ``_role_of`` and
-    ``standards/decision-rules.md`` § Role-Field Intersection.
-
-    Rule 1's ``early_terminate`` predicate also requires ``task_queue_active``
-    to be ``False``. When the implementation task queue carries any pending or
-    in-progress task, Rule 1 falls through to Rule 7 (default) so phase-5
-    iterates the queue normally. Without this guard, an analysis-only plan
-    that produces zero affected files but still queues at least one
-    deliverable task would short-circuit before TASK-001 runs and skip the
-    Step 2.5 worktree materialization as a cascade.
-    """
-
-    # Per-compose role-lookup cache: avoid re-reading a candidate's source file
-    # when it appears in multiple intersection sites.
-    role_cache: dict[str, str | None] = {}
-
-    # Rule 1: early_terminate — analysis without affected files AND no pending
-    # / in-progress tasks. Phase 5 is skipped entirely; Phase 6 still runs
-    # lessons capture so the analysis doesn't leak insights silently. When the
-    # task queue is non-empty, fall through to Rule 7 (default) so phase-5
-    # iterates the queue normally — see ``task_queue_active`` rationale above.
-    if change_type == 'analysis' and affected_files_count == 0 and not task_queue_active:
-        body = {
-            'phase_5': {
-                'early_terminate': True,
-                'verification_steps': [],
-            },
-            'phase_6': {
-                'steps': [s for s in phase_6_candidates if s in {'lessons-capture', 'adr-propose', 'archive-plan'}],
-            },
-        }
-        return body, 'early_terminate_analysis'
-
-    # Rule 2: recipe path — recipe-driven plans get a slim manifest. The
-    # recipe-lesson-cleanup recipe (deliverable 7) sets scope_estimate=surgical
-    # so the surgical-style cascades still apply downstream; here we only need
-    # to drop the legacy ``ci-wait`` step ID (defensively, against project
-    # marshal.json files that still list it as a candidate). Review gates a
-    # project opted into (``automated-review`` / ``sonar-roundtrip``) are
-    # NEVER silently suppressed by the planner — the recipe label is exactly
-    # the case where the bots' job is to catch what humans miss.
-    if recipe_key:
-        phase_6_steps = [s for s in phase_6_candidates if s not in {'ci-wait'}]
-        body = {
-            'phase_5': {
-                'early_terminate': False,
-                'verification_steps': [
-                    s for s in phase_5_candidates if _role_of(s, role_cache) in {'quality-gate', 'module-tests'}
-                ],
-            },
-            'phase_6': {'steps': phase_6_steps},
-        }
-        return body, 'recipe'
-
-    # Rule 3: docs-only — surgical scope plus no test/code expectations. Skip
-    # build verification entirely; keep capture + commit + PR + branch cleanup.
-    # Only the legacy ``ci-wait`` step ID is subtracted (defensively, against
-    # project marshal.json files that still list it). Review gates a project
-    # opted into are NEVER silently suppressed by the planner.
-    if (
-        scope_estimate in ('surgical', 'single_module')
-        and change_type in ('tech_debt', 'enhancement')
-        and affected_files_count > 0
-        and _looks_docs_only(phase_5_candidates, role_cache)
-    ):
-        body = {
-            'phase_5': {
-                'early_terminate': False,
-                'verification_steps': [],
-            },
-            'phase_6': {
-                'steps': [s for s in phase_6_candidates if s not in {'ci-wait'}],
-            },
-        }
-        return body, 'docs_only'
-
-    # Rule 4: tests-only — verification change_type with affected files. Run
-    # the module-tests step but skip quality-gate; full Phase 6.
-    if change_type == 'verification' and affected_files_count > 0:
-        body = {
-            'phase_5': {
-                'early_terminate': False,
-                'verification_steps': [s for s in phase_5_candidates if _role_of(s, role_cache) == 'module-tests'],
-            },
-            'phase_6': {'steps': list(phase_6_candidates)},
-        }
-        return body, 'tests_only'
-
-    # Rule 5: surgical + bug_fix / tech_debt — Q-Gate bypass already applies
-    # at outline time (deliverable 4). Here the only subtraction is the
-    # legacy ``ci-wait`` step ID (defensively, against project marshal.json
-    # files that still list it). Review gates a project opted into
-    # (``automated-review`` / ``sonar-roundtrip``) are NEVER silently
-    # suppressed by the planner — surgical bug_fix / tech_debt is exactly
-    # the case where the bots' job is to catch what humans miss.
-    if scope_estimate == 'surgical' and change_type in ('bug_fix', 'tech_debt'):
-        phase_6_steps = [s for s in phase_6_candidates if s not in {'ci-wait'}]
-        body = {
-            'phase_5': {
-                'early_terminate': False,
-                'verification_steps': [
-                    s for s in phase_5_candidates if _role_of(s, role_cache) in {'quality-gate', 'module-tests'}
-                ],
-            },
-            'phase_6': {'steps': phase_6_steps},
-        }
-        rule = f'surgical_{change_type}'
-        return body, rule
-
-    # Rule 6: verification change_type without affected files — same shape as
-    # rule 1's Phase 6 minimum, but Phase 5 still runs whatever was passed.
-    if change_type == 'verification' and affected_files_count == 0:
-        body = {
-            'phase_5': {
-                'early_terminate': False,
-                'verification_steps': list(phase_5_candidates),
-            },
-            'phase_6': {
-                'steps': [s for s in phase_6_candidates if s in {'lessons-capture', 'adr-propose', 'archive-plan'}],
-            },
-        }
-        return body, 'verification_no_files'
-
-    # Rule 7 (default): code-shaped feature / enhancement / large change. Full
-    # verification + full finalize. This is the safe baseline the request
-    # called the "default code-shaped feature" row.
-    body = {
-        'phase_5': {
-            'early_terminate': False,
-            'verification_steps': list(phase_5_candidates),
-        },
-        'phase_6': {'steps': list(phase_6_candidates)},
-    }
-    return body, 'default'
-
-
-def _read_task_queue_active(plan_id: str) -> bool:
-    """Return ``True`` when the plan has at least one pending or in-progress task.
-
-    Reads ``TASK-*.json`` files from ``get_plan_dir(plan_id) / 'tasks'`` and
-    checks the ``status`` field on each. The check is intentionally direct
-    file I/O — invoking ``manage-tasks list`` as a subprocess would couple
-    composer behaviour to the executor and would add cross-script logging
-    noise. Returns ``False`` when the tasks directory is missing (no plan
-    structure yet) or contains no parseable task files; the composer treats
-    that as "no work queued, the analysis-only short-circuit is safe to
-    fire". This predicate is the gate that keeps Rule 1 from short-circuiting
-    plans where deliverables exist but affected_files happens to be empty at
-    compose time.
-    """
-    tasks_dir = get_plan_dir(plan_id) / 'tasks'
-    if not tasks_dir.is_dir():
-        return False
-    active_statuses = {'pending', 'in_progress'}
-    for task_path in tasks_dir.glob('TASK-*.json'):
-        try:
-            data = read_json(task_path, default=None)
-        except (OSError, json.JSONDecodeError):
-            continue
-        if not isinstance(data, dict):
-            continue
-        status = data.get('status')
-        if isinstance(status, str) and status in active_statuses:
-            return True
-    return False
-
-
-def _read_recipe_source(plan_id: str) -> str | None:
-    """Resolve the recipe / lesson provenance surrogate from status metadata.
-
-    ``phase-1-init`` seeds ``status.metadata.plan_source`` with the raw lesson
-    id for lesson-derived plans (Step 5b.5) or the literal string ``"recipe"``
-    for recipe-routed plans (Step 5c, which also sets ``recipe_key``). Either
-    value is the Row 2 recipe signal.
-
-    The composer reads this surrogate directly so recipe / lesson provenance no
-    longer depends on the ``phase-4-plan`` agent remembering to forward
-    ``--recipe-key`` from ``manage-status read`` — the gap the archived-plan
-    audit surfaced as recipe→default drift (lesson/recipe plans composing the
-    ``default`` rule because the flag was omitted). This mirrors the audit's own
-    surrogate (``audit-archived-plan-retrospectives/scripts/audit.py``
-    ``collect_inputs``: a non-empty ``plan_source`` is treated as ``recipe_key``
-    for matrix purposes). An explicit ``--recipe-key`` argument still takes
-    precedence at the call site in :func:`cmd_compose`.
-
-    Returns the trimmed provenance string, or ``None`` when ``status.json`` is
-    absent or its metadata carries no ``plan_source`` / ``recipe_key``.
-    """
-    status_path = get_plan_dir(plan_id) / FILE_STATUS
-    if not status_path.exists():
-        return None
-    # Best-effort: a malformed status.json must degrade to "no provenance"
-    # rather than crash compose. read_json returns its default only for a
-    # missing file, so a corrupt-but-present file raises here — mirror the
-    # OSError / JSONDecodeError guard used by _read_task_queue_active and
-    # _read_ci_provider in this module.
-    try:
-        status = read_json(status_path, default={})
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(status, dict):
-        return None
-    metadata = status.get('metadata', {})
-    if not isinstance(metadata, dict):
-        return None
-    for field in ('plan_source', 'recipe_key'):
-        value = metadata.get(field)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
-
-
-def _looks_docs_only(phase_5_candidates: list[str], role_cache: dict[str, str | None]) -> bool:
-    """Heuristic: docs-only plans don't request module-tests or coverage.
-
-    The composer treats any candidate set whose declared roles include
-    neither ``module-tests`` nor ``coverage`` as a docs-only signal. Real
-    code-shaped plans always include at least one candidate whose derived role
-    is ``module-tests`` (typically ``default:verify:module-tests``).
-
-    Uses the per-compose role cache to avoid re-resolving the same step.
-    """
-    roles = {_role_of(s, role_cache) for s in phase_5_candidates}
-    return 'module-tests' not in roles and 'coverage' not in roles
 
 
 def _classify_paths_via_extensions(
@@ -921,50 +500,6 @@ def _log_bot_enforcement_placement_violation(plan_id: str, diagnostic: str) -> N
 # =============================================================================
 
 
-def _read_marshal_phase_step_map(phase_key: str) -> dict[str, dict] | None:
-    """Read the id-keyed step MAP for ``phase_key`` from marshal.json.
-
-    ``phase_key`` is the marshal.json key (e.g. ``'phase-5-execute'`` or
-    ``'phase-6-finalize'``). The map-field read under that key is phase-aware:
-    ``phase-5-execute`` reads ``verification_steps`` while ``phase-6-finalize``
-    (and any other phase) reads ``steps``.
-
-    The on-disk serial form is the canonical keyed map:
-    ``{step_id: {param: value, ...}, ...}``, with key insertion order as the
-    execution order and each value the step's nested param object (``{}`` for a
-    config-less step). This is the sole accepted on-disk shape — there is no
-    list / dual-form tolerance.
-
-    Returns the internal id-keyed dict (``{step_id: param-object}``, ``{}`` for
-    config-less steps, prefixes preserved), or ``None`` when the marshal file is
-    missing, the keys are absent, or the value is not a dict.
-    """
-    marshal_path = get_marshal_path()
-    if not marshal_path.exists():
-        return None
-    try:
-        data = read_json(marshal_path, default={})
-    except (OSError, ValueError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    plan = data.get('plan')
-    if not isinstance(plan, dict):
-        return None
-    phase = plan.get(phase_key)
-    if not isinstance(phase, dict):
-        return None
-    field = 'verification_steps' if phase_key == 'phase-5-execute' else 'steps'
-    steps = phase.get(field)
-    if isinstance(steps, dict):
-        return {
-            step_id: (params if isinstance(params, dict) else {})
-            for step_id, params in steps.items()
-            if isinstance(step_id, str) and step_id
-        }
-    return None
-
-
 def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
     """Read the ordered step-id list for ``phase_key`` from marshal.json.
 
@@ -984,44 +519,6 @@ def _read_marshal_phase_steps(phase_key: str) -> list[str] | None:
     if step_map is None:
         return None
     return list(step_map.keys())
-
-
-def _snapshot_step_params(
-    final_step_ids: list[str], marshal_step_map: dict[str, dict] | None
-) -> dict[str, dict | None]:
-    """Snapshot the resolved per-step params for the FINAL selected steps.
-
-    ``final_step_ids`` is the composer's final in-manifest step-id list (bare
-    names — the ``default:`` prefix is stripped at the compose boundary).
-    ``marshal_step_map`` is the marshal.json id-keyed map (full refs preserved),
-    as returned by :func:`_read_marshal_phase_step_map`, or ``None`` when the
-    marshal file is absent (CSV-fallback path).
-
-    Returns a snapshot ``{step_id: params}`` keyed by the in-manifest (bare)
-    step id, carrying each selected step's resolved param object copied from the
-    marshal map. Only steps that survive into ``final_step_ids`` are snapshotted.
-    An OWNERLESS step (no marshal-side entry, an empty param object, or when the
-    marshal map is absent) snapshots as ``None`` (serialized as ``null``) — no
-    noisy empty ``{}`` block is written to the manifest. The read boundary
-    (:func:`_normalize_step_params_block`) coerces every ``null`` / ``{}`` /
-    TOON-``''`` value back to an empty dict, so ownerless steps read back as
-    ``{}``. The marshal keys are matched against the bare in-manifest ids via the
-    same ``default:`` prefix-strip used at the compose boundary.
-    """
-    if not marshal_step_map:
-        return dict.fromkeys(final_step_ids)
-    # Index the marshal map by its prefix-stripped key so a bare in-manifest id
-    # matches a ``default:``-prefixed marshal key.
-    bare_to_params: dict[str, dict] = {
-        _strip_default_prefix(key): params for key, params in marshal_step_map.items()
-    }
-    # A param-owning step snapshots its nested object; an ownerless step (no
-    # marshal entry or an empty param object) snapshots as ``None`` so the
-    # manifest carries no empty ``{}``.
-    return {
-        step_id: (dict(params) if (params := bare_to_params.get(step_id)) else None)
-        for step_id in final_step_ids
-    }
 
 
 def _resolve_footprint(plan_id: str) -> list[str]:
@@ -1062,26 +559,6 @@ def _resolve_footprint(plan_id: str) -> list[str]:
     except subprocess.CalledProcessError:
         return []
     return sorted(footprint)
-
-
-def _apply_commit_push_disabled(phase_6_candidates: list[str], commit_and_push: bool) -> tuple[list[str], bool]:
-    """Pre-filter: drop ``push`` when ``commit_and_push is False``.
-
-    Also drops ``pre-push-quality-gate`` and ``pre-submission-self-review``
-    because both gates are only meaningful when a downstream push exists.
-    Returns the filtered list plus a flag indicating whether the pre-filter
-    fired.
-    """
-    if commit_and_push:
-        return phase_6_candidates, False
-    fired = False
-    filtered: list[str] = []
-    for step in phase_6_candidates:
-        if step in {'push', 'pre-push-quality-gate', 'pre-submission-self-review'}:
-            fired = True
-            continue
-        filtered.append(step)
-    return filtered, fired
 
 
 def _apply_pre_push_quality_gate_inactive(phase_6_candidates: list[str], plan_id: str) -> tuple[list[str], bool]:
@@ -1142,38 +619,6 @@ def _apply_pre_submission_self_review_inactive(phase_6_candidates: list[str], pl
     return phase_6_candidates, False
 
 
-# Footprint roles that gate a whole-tree canonical-verify step. Each canonical
-# whose derived matrix role appears here is footprint-gated: when the live
-# footprint is non-empty AND carries no path of the gating role, the
-# corresponding ``default:verify:{canonical}`` step is dropped from the
-# composed phase-5 list. This is the generic, canonical-agnostic
-# footprint pre-filter — it adds no per-canonical branch, only a role→suffix
-# membership test. ``integration`` / ``e2e`` are the gateable roles because a
-# project with no integration/e2e sources never needs those whole-tree gates;
-# the core ``quality-gate`` / ``module-tests`` / ``coverage`` roles are NEVER
-# footprint-gated (they always run when present).
-_FOOTPRINT_GATED_CANONICAL_ROLES: dict[str, tuple[str, ...]] = {
-    'integration': ('it.java', 'integrationtest', 'integration_test', 'test_integration', '_it.py'),
-    'e2e': ('e2e', 'endtoend', 'end_to_end'),
-}
-
-
-def _footprint_has_role(footprint: list[str], suffix_markers: tuple[str, ...]) -> bool:
-    """Return True when any footprint path's lowercased name contains a marker.
-
-    The match is a generic substring test against the path's basename and the
-    full path (lowercased), so it is build-system agnostic — it never imports a
-    build extension or reads ``build.map``. A canonical whose gating role has at
-    least one matching path is kept; one with zero matches is dropped only when
-    the footprint is otherwise non-empty.
-    """
-    for path in footprint:
-        low = path.lower()
-        if any(marker in low for marker in suffix_markers):
-            return True
-    return False
-
-
 def _apply_canonical_verify_inactive(
     phase_5_steps: list[str],
     plan_id: str,
@@ -1210,256 +655,6 @@ def _apply_canonical_verify_inactive(
             dropped.append(step)
             continue
         kept.append(step)
-    return kept, dropped
-
-
-# Request aspects (from the ``manage-config aspect-classify`` verb) that drop
-# build / quality-gate / test steps from the composed phase-5 manifest. An
-# ``analysis`` or ``planning`` request produces no production / test footprint,
-# so the build/verify gates have nothing to gate; dropping them keeps phase-5
-# from running (and failing) build/quality-gate/test commands against a
-# code-free change. ``implementation`` (the safe classifier fallback below the
-# ``>= 0.7`` threshold) is NOT in this set — it retains every gate. See the
-# aspect-classify threshold contract in
-# ``manage-config/scripts/_cmd_aspect_classify.py`` and the outline's
-# request-aspect classification deliverable.
-_BUILD_DROPPING_ASPECTS = frozenset({'analysis', 'planning'})
-
-def _apply_aspect_step_dropping(
-    phase_5_steps: list[str],
-    aspect: str | None,
-    role_cache: dict[str, str | None],
-) -> tuple[list[str], list[str]]:
-    """Clear the phase-5 verification list when the request aspect is analysis / planning.
-
-    When ``aspect ∈ {analysis, planning}`` (the build-dropping aspects), the
-    ENTIRE phase-5 verification list is dropped — not just the canonical
-    build/verify steps (``quality-gate`` / ``module-tests`` / ``coverage``) but
-    also every external (``project:`` / ``bundle:skill``) step whose derived
-    matrix role is ``None``. Analysis / planning requests carry no production /
-    test footprint, so the build/verify gates have nothing to gate.
-
-    Dropping the full list (rather than only the role-matched build steps) is
-    load-bearing for the phase-5-execute Step 11b contract: Step 11b fires a
-    ``quality-gate`` sweep whenever ``phase_5.verification_steps`` is non-empty.
-    A role-only filter that left any external ``None``-role step in the list
-    would keep it non-empty and re-trigger ``quality-gate`` via Step 11b for an
-    analysis / planning request — exactly the build the aspect drop exists to
-    prevent. Clearing the full list keeps the enforcement at the manifest layer
-    where it belongs, so Step 11b's non-empty check naturally short-circuits.
-
-    An ``implementation`` aspect (the classifier's safe sub-threshold fallback)
-    and an absent aspect are no-ops: every gate is retained.
-
-    Returns ``(kept_steps, dropped_steps)``. ``role_cache`` is retained in the
-    signature for call-site symmetry with the other role-driven filters; the
-    full-clear path does not consult it.
-    """
-    if aspect not in _BUILD_DROPPING_ASPECTS:
-        return phase_5_steps, []
-
-    # Build-dropping aspect: drop the FULL list (every step, build and external
-    # alike). See docstring — a partial role-only drop would leave external
-    # None-role steps in place and re-trigger Step 11b's quality-gate sweep.
-    return [], list(phase_5_steps)
-
-
-# Code-touching change types that gate ``finalize-step-simplify`` activation.
-# Branch-prefix reconciliation: ``fix`` → ``bug_fix``, ``chore`` → ``tech_debt``,
-# ``feature`` → ``feature``. ``analysis`` / ``enhancement`` / ``verification`` are
-# excluded. See standards/decision-rules.md § Pre-Filter: simplify_inactive.
-_SIMPLIFY_CHANGE_TYPES = frozenset({'feature', 'bug_fix', 'tech_debt'})
-
-
-def _apply_code_step_inactive(
-    phase_6_candidates: list[str],
-    step_name: str,
-    change_type: str,
-    affected_files_count: int,
-) -> tuple[list[str], bool]:
-    """Pre-filter: drop a code-gated phase-6 step when its activation gate fails.
-
-    Shared gate for ``finalize-step-simplify`` and ``finalize-step-security-audit``.
-    Both steps activate when BOTH:
-
-    1. ``change_type ∈ {feature, bug_fix, tech_debt}`` — the three code-touching
-       change types; and
-    2. ``affected_files_count > 0``.
-
-    When either condition fails, ``step_name`` is removed from
-    ``phase_6_candidates``. The pre-filter is a no-op when ``step_name`` is
-    already absent from the candidate set. Returns the filtered list plus a flag
-    indicating whether the pre-filter fired (i.e., the step was active in the
-    input but dropped after the check).
-    """
-    if step_name not in phase_6_candidates:
-        return phase_6_candidates, False
-
-    if change_type in _SIMPLIFY_CHANGE_TYPES and affected_files_count > 0:
-        # Gate passes — keep the step.
-        return phase_6_candidates, False
-
-    return [s for s in phase_6_candidates if s != step_name], True
-
-
-def _apply_simplify_inactive(
-    phase_6_candidates: list[str],
-    change_type: str,
-    affected_files_count: int,
-) -> tuple[list[str], bool]:
-    """Pre-filter: drop ``finalize-step-simplify`` when its activation gate fails."""
-    return _apply_code_step_inactive(phase_6_candidates, 'finalize-step-simplify', change_type, affected_files_count)
-
-
-def _apply_security_audit_inactive(
-    phase_6_candidates: list[str],
-    change_type: str,
-    affected_files_count: int,
-) -> tuple[list[str], bool]:
-    """Pre-filter: drop ``finalize-step-security-audit`` when its activation gate fails."""
-    return _apply_code_step_inactive(phase_6_candidates, 'finalize-step-security-audit', change_type, affected_files_count)
-
-
-# Scope-gated phase-6 subtraction sets. Each entry lists the step references the
-# scope_gated_finalize pre-filter drops, expressed as match-sets that cover both
-# the bare and prefixed forms a candidate list may carry. The candidate list is
-# boundary-normalized by ``_strip_default_prefix`` before pre-filters run, so the
-# optional ``default:`` prefix is already gone; ``project:`` and ``bundle:skill``
-# prefixes are preserved verbatim, so the surgical set lists both forms. See
-# standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
-#
-# ``automated-review`` is deliberately NOT in either implicit set: the
-# bot-enforcement guard re-adds it on GitHub/GitLab plans, so dropping it via
-# the implicit scope gate would be a silently-undone no-op. The only path that
-# suppresses ``automated-review`` is the explicit ``drop_review_on_scope_gate``
-# opt-in (see ``_apply_scope_gated_finalize``).
-_SCOPE_GATED_SURGICAL_DROP = frozenset(
-    {
-        'plan-retrospective',
-        'plan-marshall:plan-retrospective',
-        'pre-submission-self-review',
-        'finalize-step-pre-submission-self-review',
-        'project:finalize-step-pre-submission-self-review',
-        'finalize-step-plugin-doctor',
-        'project:finalize-step-plugin-doctor',
-    }
-)
-_SCOPE_GATED_SINGLE_MODULE_DROP = frozenset(
-    {
-        'plan-retrospective',
-        'plan-marshall:plan-retrospective',
-    }
-)
-_SCOPE_GATED_OVERRIDE_DROP = frozenset({'automated-review', 'default:automated-review'})
-
-
-# Owning finalize step ids for the step-folded run-at-all / escape-hatch knobs.
-# The three knobs that each map to exactly one finalize step are stored nested
-# under their owning step's param object in marshal.json's ``phase-6-finalize.steps``
-# keyed map (folded there from their former flat-sibling location). ``qgate`` is
-# the one finalize run-at-all gate that stays a flat phase-level sibling.
-_SIMPLIFY_OWNER_STEP = 'default:finalize-step-simplify'
-_SECURITY_AUDIT_OWNER_STEP = 'default:finalize-step-security-audit'
-_PRE_SUBMISSION_SELF_REVIEW_STEP = 'project:finalize-step-pre-submission-self-review'
-
-
-def _read_step_owned_knob(owner_step_id: str, knob: str) -> object | None:
-    """Read a step-owned knob from ``phase-6-finalize.steps`` in marshal.json.
-
-    The step-folded knobs (``simplify`` / ``self_review`` /
-    ``drop_review_on_scope_gate``) live nested under their owning finalize step's
-    param object in the ``phase-6-finalize.steps`` keyed map. This reads
-    ``steps[owner_step_id][knob]`` via :func:`_read_marshal_phase_step_map` (which
-    preserves the full ``default:`` / ``project:`` step-id prefixes), returning
-    ``None`` when the marshal file is missing, the owning step is absent from the
-    map, or the knob is absent from the step's param object. The caller supplies
-    the canonical default for the ``None`` case.
-
-    Args:
-        owner_step_id: The full-prefixed finalize step id that owns the knob.
-        knob: The param key to read from the owning step's nested param object.
-
-    Returns:
-        The knob's value, or ``None`` when it cannot be resolved.
-    """
-    step_map = _read_marshal_phase_step_map('phase-6-finalize')
-    if not step_map:
-        return None
-    params = step_map.get(owner_step_id)
-    if not isinstance(params, dict):
-        return None
-    return params.get(knob)
-
-
-def _read_drop_review_on_scope_gate() -> bool:
-    """Read ``drop_review_on_scope_gate`` from its owning finalize step's params.
-
-    The knob is folded under
-    ``phase-6-finalize.steps['project:finalize-step-pre-submission-self-review']
-    .drop_review_on_scope_gate`` in marshal.json (its former flat-sibling
-    location is gone). Returns ``False`` when the file is missing, the owning step
-    is absent, the knob is absent, or the value is not a boolean ``True``. The
-    escape hatch defaults to off: only an explicit ``true`` activates the
-    additional ``automated-review`` suppression in the scope_gated_finalize
-    pre-filter.
-    """
-    return _read_step_owned_knob(_PRE_SUBMISSION_SELF_REVIEW_STEP, 'drop_review_on_scope_gate') is True
-
-
-def _apply_scope_gated_finalize(
-    phase_6_candidates: list[str],
-    scope_estimate: str,
-    drop_review_on_scope_gate: bool,
-) -> tuple[list[str], list[str]]:
-    """Pre-filter: drop heavyweight phase-6 review/audit steps by scope.
-
-    Subtractions:
-
-    - ``scope_estimate == 'surgical'`` → drop ``plan-marshall:plan-retrospective``,
-      ``pre-submission-self-review``, and ``finalize-step-plugin-doctor`` (every
-      bare and prefixed form — including the generic ``default:`` /
-      meta-project ``project:`` variants).
-    - ``scope_estimate == 'single_module'`` → drop only
-      ``plan-marshall:plan-retrospective``.
-    - Any other scope value → no implicit subtraction.
-
-    ``automated-review`` is NEVER subtracted by the implicit scope gate (the
-    bot-enforcement guard would re-add it, making the subtraction a no-op).
-    When ``drop_review_on_scope_gate`` is ``True`` AND the plan is itself
-    scope-gated (``scope_estimate in ('surgical', 'single_module')``), the gate
-    additionally drops ``automated-review`` — the only path that suppresses the
-    bot-review gate, explicitly opted into via marshal.json. The override is
-    scoped, not global: on non-scope-gated plans (``multi_module`` / ``broad`` /
-    ``none``) the override is inert, so flipping the project-wide knob can never
-    silently disable bot review on a large plan.
-
-    Consistent with the composer's "rows and pre-filters only ever narrow the
-    candidate list" architecture, this pre-filter runs before the seven-row
-    matrix and the bot-enforcement guard. Returns the filtered candidate list
-    plus the list of step references that were dropped (for per-subtraction
-    decision-log emission). The dropped list preserves the candidate's verbatim
-    form so the decision log names exactly what was removed.
-    """
-    if scope_estimate == 'surgical':
-        drop_set: frozenset[str] = _SCOPE_GATED_SURGICAL_DROP
-    elif scope_estimate == 'single_module':
-        drop_set = _SCOPE_GATED_SINGLE_MODULE_DROP
-    else:
-        drop_set = frozenset()
-
-    if drop_review_on_scope_gate and scope_estimate in ('surgical', 'single_module'):
-        drop_set = drop_set | _SCOPE_GATED_OVERRIDE_DROP
-
-    if not drop_set:
-        return phase_6_candidates, []
-
-    kept: list[str] = []
-    dropped: list[str] = []
-    for step in phase_6_candidates:
-        if step in drop_set:
-            dropped.append(step)
-        else:
-            kept.append(step)
     return kept, dropped
 
 
@@ -1508,160 +703,6 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # bare form for `pre-push-quality-gate` (a built-in `default:` step, normalized
 # bare).
 
-# Gate → (match-set, canonical insertion form). The match-set covers every
-# prefixed/bare form a candidate list may carry; the insertion form is the
-# canonical identifier `always` re-adds when the step is absent.
-_CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
-    'self_review': (
-        frozenset(
-            {
-                'pre-submission-self-review',
-                'default:pre-submission-self-review',
-                'finalize-step-pre-submission-self-review',
-                'project:finalize-step-pre-submission-self-review',
-            }
-        ),
-        'default:pre-submission-self-review',
-    ),
-    'qgate': (
-        frozenset({'pre-push-quality-gate'}),
-        'pre-push-quality-gate',
-    ),
-    'simplify': (
-        frozenset({'finalize-step-simplify'}),
-        'finalize-step-simplify',
-    ),
-    'security_audit': (
-        frozenset({'finalize-step-security-audit'}),
-        'finalize-step-security-audit',
-    ),
-}
-
-# The run-at-all gate fields for the finalize section, in canonical order.
-_CEREMONY_FINALIZE_GATES = ('self_review', 'qgate', 'simplify', 'security_audit')
-
-# Canonical default for every finalize gate when marshal.json omits the block.
-_CEREMONY_FINALIZE_DEFAULT = 'auto'
-
-
-def _read_finalize_gates() -> dict[str, str]:
-    """Resolve the four ``plan.phase-6-finalize`` run-at-all gate values.
-
-    Each gate reads from its canonical home and merges the ``auto`` default
-    under an absent value:
-
-    - ``qgate`` stays a flat phase-local knob, read from
-      ``plan.phase-6-finalize.qgate`` directly (it is consumed as a phase-level
-      run-at-all gate, not a param the owning step body reads).
-    - ``simplify``, ``self_review``, and ``security_audit`` are folded under their
-      owning finalize step's nested param object in ``phase-6-finalize.steps``
-      (``simplify`` → ``default:finalize-step-simplify``; ``self_review`` →
-      ``project:finalize-step-pre-submission-self-review``; ``security_audit`` →
-      ``default:finalize-step-security-audit``). They are read via
-      :func:`_read_step_owned_knob`.
-
-    Returns a ``{gate: value}`` dict for the four finalize gates; values are
-    always one of the configured values (or the ``auto`` default). The caller
-    treats any value other than ``always`` / ``never`` as defer.
-    """
-    resolved: dict[str, str] = dict.fromkeys(_CEREMONY_FINALIZE_GATES, _CEREMONY_FINALIZE_DEFAULT)
-
-    # qgate stays a flat phase-level sibling.
-    marshal_path = get_marshal_path()
-    if marshal_path is not None and marshal_path.exists():
-        try:
-            data = read_json(marshal_path, default={})
-        except (OSError, ValueError):
-            data = {}
-        if isinstance(data, dict):
-            plan_block = data.get('plan')
-            if isinstance(plan_block, dict):
-                finalize = plan_block.get('phase-6-finalize')
-                if isinstance(finalize, dict):
-                    qgate_value = finalize.get('qgate')
-                    if isinstance(qgate_value, str) and qgate_value:
-                        resolved['qgate'] = qgate_value
-
-    # simplify / self_review / security_audit are folded under their owning
-    # step's param object.
-    simplify_value = _read_step_owned_knob(_SIMPLIFY_OWNER_STEP, 'simplify')
-    if isinstance(simplify_value, str) and simplify_value:
-        resolved['simplify'] = simplify_value
-    self_review_value = _read_step_owned_knob(_PRE_SUBMISSION_SELF_REVIEW_STEP, 'self_review')
-    if isinstance(self_review_value, str) and self_review_value:
-        resolved['self_review'] = self_review_value
-    security_audit_value = _read_step_owned_knob(_SECURITY_AUDIT_OWNER_STEP, 'security_audit')
-    if isinstance(security_audit_value, str) and security_audit_value:
-        resolved['security_audit'] = security_audit_value
-
-    return resolved
-
-
-def _ceremony_finalize_insert_index(phase_6_steps: list[str]) -> int:
-    """Resolve the insertion position for an ``always``-forced finalize step.
-
-    A ceremony finalize step must run before the plan-mutating tail
-    (``archive-plan`` / ``record-metrics`` / ``branch-cleanup`` /
-    ``plan-marshall:plan-retrospective``) so the gate is honoured before the
-    plan directory is moved or the branch cleaned up. Returns the index of the
-    first plan-mutating step, or the end of the list when no anchor is present.
-    """
-    plan_mutating = {
-        'archive-plan',
-        'record-metrics',
-        'branch-cleanup',
-        'plan-marshall:plan-retrospective',
-    }
-    for index, step in enumerate(phase_6_steps):
-        if step in plan_mutating:
-            return index
-    return len(phase_6_steps)
-
-
-def _apply_ceremony_finalize_selection(
-    phase_6_steps: list[str],
-    gates: dict[str, str],
-) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
-    """Force ceremony finalize gates in (``always``) / out (``never``) in-place.
-
-    For each of the three finalize gates:
-
-    - ``never`` → drop every match-set form of the gate's step from
-      ``phase_6_steps`` (a no-op when already absent).
-    - ``always`` → ensure the gate's canonical step is present, inserting it
-      before the plan-mutating tail when absent (a no-op when any match-set form
-      is already present).
-    - any other value (``auto`` / malformed) → defer (no-op).
-
-    ``automated-review`` is NEVER touched — the gate map contains only the three
-    ceremony finalize steps, so the bot-review invariant is structurally
-    preserved.
-
-    Mutates ``phase_6_steps`` in place. Returns ``(forced_in, forced_out)`` —
-    two lists of ``{'gate': ..., 'step': ...}`` dicts naming each gate that
-    actually changed the list, for per-change decision-log emission.
-    """
-    forced_in: list[dict[str, str]] = []
-    forced_out: list[dict[str, str]] = []
-
-    for gate in _CEREMONY_FINALIZE_GATES:
-        value = gates.get(gate, _CEREMONY_FINALIZE_DEFAULT)
-        match_set, canonical = _CEREMONY_FINALIZE_STEP_MAP[gate]
-
-        if value == 'never':
-            present = [s for s in phase_6_steps if s in match_set]
-            if present:
-                phase_6_steps[:] = [s for s in phase_6_steps if s not in match_set]
-                forced_out.append({'gate': gate, 'step': present[0]})
-        elif value == 'always':
-            if not any(s in match_set for s in phase_6_steps):
-                insert_index = _ceremony_finalize_insert_index(phase_6_steps)
-                phase_6_steps.insert(insert_index, canonical)
-                forced_in.append({'gate': gate, 'step': canonical})
-        # else: defer (auto / malformed) — no-op.
-
-    return forced_in, forced_out
-
 
 def _log_ceremony_finalize_selection(
     plan_id: str,
@@ -1676,43 +717,6 @@ def _log_ceremony_finalize_selection(
         f'{"to" if value == "always" else "from"} phase_6.steps'
     )
     _emit_decision_log(plan_id, message)
-
-
-def _read_ci_provider() -> str | None:
-    """Return the CI provider identifier (``github``, ``gitlab``) from marshal.json.
-
-    The provider is resolved from the ``providers[]`` entry where
-    ``category == 'ci'``, mapping skill name to a short identifier:
-
-    * ``plan-marshall:workflow-integration-github`` -> ``github``
-    * ``plan-marshall:workflow-integration-gitlab`` -> ``gitlab``
-
-    Returns ``None`` when the marshal file is missing, no CI provider is
-    declared, or the resolved value is neither ``github`` nor ``gitlab``.
-    """
-    marshal_path = get_marshal_path()
-    if marshal_path is None or not marshal_path.is_file():
-        return None
-    try:
-        data = read_json(marshal_path)
-    except (OSError, json.JSONDecodeError):
-        return None
-    providers = data.get('providers')
-    if not isinstance(providers, list):
-        return None
-    for entry in providers:
-        if not isinstance(entry, dict):
-            continue
-        if entry.get('category') != 'ci':
-            continue
-        skill_name = entry.get('skill_name', '')
-        if not isinstance(skill_name, str):
-            continue
-        if skill_name == 'plan-marshall:workflow-integration-github':
-            return 'github'
-        if skill_name == 'plan-marshall:workflow-integration-gitlab':
-            return 'gitlab'
-    return None
 
 
 def _apply_bot_enforcement_guard(phase_6_steps: list[str], plan_id: str) -> str | None:
@@ -1756,92 +760,6 @@ def _apply_bot_enforcement_guard(phase_6_steps: list[str], plan_id: str) -> str 
     return None
 
 
-def _bot_enforcement_insert_index(phase_6_steps: list[str]) -> int:
-    """Resolve the canonical insertion position for ``automated-review``.
-
-    The remediation must place ``automated-review`` somewhere it can run before
-    plan-mutating steps (notably ``archive-plan``, which moves the plan
-    directory). ``phase_6_steps`` carries boundary-normalized bare default
-    names (plus possibly the project-prefixed early sync step), so anchor
-    lookups compare plain strings without per-site stripping. Resolution
-    order:
-
-    1. Immediately after ``create-pr`` (its natural neighbour in the
-       candidate ordering — review runs against the freshly-opened PR).
-    2. Else immediately before the first plan-mutating step
-       (``archive-plan``, ``record-metrics``,
-       ``plan-marshall:plan-retrospective``, ``branch-cleanup``).
-    3. Else at the end of the list (no anchors found).
-    """
-    for index, step in enumerate(phase_6_steps):
-        if step == 'create-pr':
-            return index + 1
-    plan_mutating = {
-        'archive-plan',
-        'record-metrics',
-        'branch-cleanup',
-        'plan-marshall:plan-retrospective',
-    }
-    for index, step in enumerate(phase_6_steps):
-        if step in plan_mutating:
-            return index
-    return len(phase_6_steps)
-
-
-def _validate_automated_review_placement(phase_6_steps: list[str]) -> str | None:
-    """Compose-time placement check for ``automated-review`` ordering.
-
-    Defense-in-depth complement to ``_apply_bot_enforcement_guard``. The
-    remediation guard ensures ``automated-review`` is *present* on
-    GitHub/GitLab plans, but a future pre-filter, recipe interaction, or
-    candidate ordering glitch could leave it *misplaced* — sitting at an
-    index later than a plan-mutating step (``archive-plan``,
-    ``record-metrics``, ``branch-cleanup``, or
-    ``plan-marshall:plan-retrospective``). Such a manifest would dispatch
-    the review bot only after the plan directory has already been moved or
-    the branch cleaned up, defeating the lesson the guard exists to enforce.
-
-    Comparison runs against bare names: by the time this validator is
-    invoked, ``cmd_compose`` has already boundary-normalized
-    ``phase_6_candidates`` and the matrix output preserves the same shape.
-    Both the bare ``automated-review`` name and its
-    ``default:automated-review`` form are detected so future callers cannot
-    silently slip past the check by re-prefixing.
-
-    Returns a diagnostic string naming both the offending
-    ``automated-review`` index and the first plan-mutating anchor that
-    precedes it. Returns ``None`` when the order is valid (or when
-    ``automated-review`` is absent — the remediation guard is responsible
-    for presence; this validator is concerned only with ordering).
-    """
-    plan_mutating = {
-        'archive-plan',
-        'record-metrics',
-        'branch-cleanup',
-        'plan-marshall:plan-retrospective',
-    }
-
-    review_index: int | None = None
-    for index, step in enumerate(phase_6_steps):
-        if step in {'automated-review', 'default:automated-review'}:
-            review_index = index
-            break
-    if review_index is None:
-        return None
-
-    # The violation is the inverse of the desired order: a plan-mutating
-    # anchor at an index *less* than ``review_index`` means the review bot
-    # fires AFTER the plan directory has been moved or the branch cleaned
-    # up. Return the earliest such anchor so the diagnostic names the
-    # first ordering breach.
-    for index, step in enumerate(phase_6_steps):
-        if index >= review_index:
-            break
-        if step in plan_mutating:
-            return f'automated-review at index {review_index} must precede {step} at index {index}'
-    return None
-
-
 # =============================================================================
 # execution_tier Routing (per-task verification command classification)
 # =============================================================================
@@ -1877,98 +795,6 @@ def _validate_automated_review_placement(phase_6_steps: list[str]) -> str | None
 # A previous compose that left a task with empty ``verification.commands``
 # is re-noted but the empty state is the canonical "all orchestrator"
 # signal.
-
-# Build verb → phase-5 step ID mapping. The four canonical verbs are the
-# ones registered by every build skill's ``_CONFIG`` (verify / quality-gate /
-# coverage / module-tests). Verbs not in this map are left to the consumer
-# (the composer skips routing for unmapped verbs, preserving today's
-# behaviour).
-#
-# The step IDs are BARE (no ``default:`` prefix) per the boundary-
-# normalization contract: the candidate lists are stripped to bare names at
-# the compose boundary (``_strip_default_prefix``), and ``phase_5.verification
-# _steps`` is built from those bare names. Each routed step ID is the bare
-# canonical-verify form ``verify:{canonical}`` (the post-strip shape of
-# ``default:verify:{canonical}``); both ``verify`` and ``module-tests`` route to
-# ``verify:module-tests`` (the canonical-verify step whose derived role is
-# ``module-tests``). Emitting a ``default:``-prefixed ID here would append a
-# duplicate prefixed form alongside the bare form the matrix already produced,
-# and the prefixed stray would then fail the prefix-strict validate gate.
-# Keeping the routed step IDs bare matches the rest of the phase-5 list.
-_VERB_TO_PHASE_5_STEP: dict[str, str] = {
-    'quality-gate': 'verify:quality-gate',
-    'verify': 'verify:module-tests',
-    'module-tests': 'verify:module-tests',
-    'coverage': 'verify:coverage',
-}
-
-
-def _parse_verification_command(cmd: str) -> tuple[str, str] | None:
-    """Extract ``(verb, command_args)`` from a Bucket B build verification command.
-
-    Accepts the canonical shape::
-
-        python3 .plan/execute-script.py {build_notation} run --command-args "{args}"
-
-    where ``{args}`` typically reads as ``"<verb> [module]"`` (e.g.
-    ``"verify plan-marshall"``). Returns ``(verb, command_args)`` on a
-    successful parse, ``None`` for any non-build invocation (raw shell,
-    grep, Bucket A ``manage-*`` notations, malformed quoting, etc.). The
-    verb is always the first whitespace-separated token of ``command_args``.
-
-    The parse is intentionally permissive on the trailing module/profile
-    arguments — only ``verb`` is needed to map to a phase-5 step ID; the
-    ``command_args`` payload is forwarded verbatim to ``architecture
-    resolve`` when the composer subprocesses it.
-    """
-    if not cmd:
-        return None
-    try:
-        tokens = shlex.split(cmd)
-    except ValueError:
-        return None
-    # Locate the executor token (allow ``python3`` / ``python`` prefix variations).
-    script_index: int | None = None
-    for i, tok in enumerate(tokens):
-        if tok.endswith('.plan/execute-script.py') or tok.endswith('execute-script.py'):
-            script_index = i
-            break
-    if script_index is None:
-        return None
-    # Notation immediately follows the script path; the four Bucket B build
-    # notations are the only ones that emit execution_tier fields on resolve.
-    notation_index = script_index + 1
-    if notation_index >= len(tokens):
-        return None
-    notation = tokens[notation_index]
-    if not notation.startswith('plan-marshall:build-'):
-        return None
-    # Subcommand ``run``.
-    sub_index = notation_index + 1
-    if sub_index >= len(tokens) or tokens[sub_index] != 'run':
-        return None
-    # ``--command-args`` (accept ``--command-args VAL`` and ``--command-args=VAL``).
-    command_args: str | None = None
-    i = sub_index + 1
-    while i < len(tokens):
-        tok = tokens[i]
-        if tok == '--command-args':
-            if i + 1 < len(tokens):
-                command_args = tokens[i + 1]
-            break
-        if tok.startswith('--command-args='):
-            command_args = tok[len('--command-args=') :]
-            break
-        i += 1
-    if command_args is None or not command_args.strip():
-        return None
-    verb = command_args.strip().split()[0]
-    return verb, command_args
-
-
-def _verb_to_phase_5_step(verb: str) -> str | None:
-    """Return the phase-5 step ID for a build verb, or ``None`` when unmapped."""
-    return _VERB_TO_PHASE_5_STEP.get(verb)
 
 
 def _resolve_command_tier(cmd: str, plan_id: str) -> dict[str, Any] | None:
@@ -2177,73 +1003,6 @@ def _log_execution_tier_routing(plan_id: str, mutated_tasks: int, phase_5_steps:
 # ``extension-api/standards/ext-point-lane-element.md`` — this composer is the
 # single resolver that reads each element's block and applies the posture cutoff.
 
-LANE_TIERS = ('minimal', 'auto', 'full')
-LANE_OVERRIDES = ('off', 'minimal', 'auto', 'full', 'ask')
-
-# Lattice rank for the ``effective_tier ⊑ posture`` comparison.
-_TIER_RANK = {'minimal': 0, 'auto': 1, 'full': 2}
-
-# class → default tier (ext-point-lane-element.md § The closed lane.class enum).
-_CLASS_DEFAULT_TIER = {
-    'derived-state': 'minimal',
-    'core': 'minimal',
-    'adversarial': 'auto',
-    'prunable': 'auto',
-}
-
-# Classes whose weakening (``off``) override is honored but emits a correctness
-# warning (§5 — minimal must not SILENTLY drop required derived state).
-_WARN_ON_DROP_CLASSES = ('derived-state', 'core')
-
-# Absent posture → full → no lane pruning. This keeps every plan that never set
-# an execution profile on the pre-lane composition path (back-compat default).
-DEFAULT_EXECUTION_PROFILE = 'full'
-
-# The six-size T-shirt table default (the home is phase-4-plan/standards/
-# cost-sizing.md; mirrored here only as the fallback when marshal.json carries no
-# override). Kept in sync with manage-config ``_config_defaults.py``.
-_DEFAULT_COST_SIZE_TABLE = {
-    'XS': '5K', 'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K', 'XXL': '520K',
-}
-
-
-def _read_frontmatter_lane(path: Path) -> dict[str, str] | None:
-    """Parse the nested ``lane:`` frontmatter block from a markdown file.
-
-    A minimal nested-block parser (PyYAML is intentionally avoided): scans the
-    first ``---``-fenced block for a top-level ``lane:`` key and collects its
-    2-space-indented scalar sub-keys (``class`` / ``tier`` / ``prunable_when`` /
-    ``cost_size``) until the block dedents. Returns the sub-key dict, or ``None``
-    when the file is missing, has no frontmatter, or declares no ``lane:`` block.
-    """
-    if not path.is_file():
-        return None
-    try:
-        text = path.read_text(encoding='utf-8')
-    except OSError:
-        return None
-    if not text.startswith('---'):
-        return None
-    lane: dict[str, str] = {}
-    in_lane = False
-    for line in text.splitlines()[1:]:
-        if line.strip() == '---':
-            break
-        if not in_lane:
-            if line.rstrip() == 'lane:':
-                in_lane = True
-            continue
-        if line.startswith('  ') and ':' in line:
-            stripped = line.strip()
-            if stripped.startswith('#'):
-                continue
-            key, _, value = stripped.partition(':')
-            lane[key.strip()] = value.strip().strip('"').strip("'")
-        else:
-            # A dedented (column-0) line ends the lane block.
-            break
-    return lane or None
-
 
 def _resolve_element_lane(step_id: str) -> dict[str, str] | None:
     """Resolve a phase-6 element's ``lane:`` block from its source doc.
@@ -2260,71 +1019,6 @@ def _resolve_element_lane(step_id: str) -> dict[str, str] | None:
     if _is_external_step(step_id):
         return None
     return _read_frontmatter_lane(_resolve_standards_path(step_id))
-
-
-def _lane_override_for(step_id: str, overrides: dict[str, dict] | None) -> str | None:
-    """Resolve the per-element ``lane`` override from the marshal.json step map.
-
-    The phase-6 candidate ids are bare-normalized; the marshal map keys preserve
-    ``default:`` / ``project:`` prefixes, so match on the prefix-stripped key.
-    Returns the override value when valid (``off|minimal|auto|full|ask``), else
-    ``None``.
-    """
-    if not overrides:
-        return None
-    for key, params in overrides.items():
-        if not isinstance(params, dict):
-            continue
-        if _strip_default_prefix(key) == step_id:
-            value = params.get('lane')
-            if isinstance(value, str) and value in LANE_OVERRIDES:
-                return value
-    return None
-
-
-def _effective_lane_tier(lane: dict[str, str], override: str | None) -> tuple[str | None, bool]:
-    """Resolve the effective tier per ext-point-lane-element § Per-element resolution.
-
-    Precedence: per-element override ▸ declared ``lane.tier`` ▸ class default.
-    Returns ``(effective_tier, is_off)`` where ``effective_tier`` is a lattice
-    level, the sentinel ``'ask'``, or ``None`` (undeterminable); ``is_off`` is
-    True when an explicit ``off`` override drops the element.
-    """
-    if override == 'off':
-        return None, True
-    if override in ('minimal', 'auto', 'full'):
-        return override, False
-    if override == 'ask':
-        return 'ask', False
-    declared = lane.get('tier')
-    if declared in LANE_TIERS:
-        return declared, False
-    cls = lane.get('class')
-    if cls in _CLASS_DEFAULT_TIER:
-        return _CLASS_DEFAULT_TIER[cls], False
-    return None, False
-
-
-def _lane_keep_decision(lane: dict[str, str], override: str | None, posture: str) -> tuple[bool, str | None]:
-    """Decide whether an element runs under ``posture`` — returns (keep, warning).
-
-    An element runs iff ``effective_tier ⊑ posture``. An ``off`` override drops
-    it (with a correctness warning for a ``derived-state`` / ``core`` floor
-    element — honored, never silently). An ``ask`` effective tier keeps the
-    element at compose time (the init dialogue owns the per-element prompt).
-    """
-    effective, is_off = _effective_lane_tier(lane, override)
-    if is_off:
-        cls = lane.get('class')
-        warning = None
-        if cls in _WARN_ON_DROP_CLASSES:
-            warning = f"override 'off' drops {cls} floor element — honored, but weakening a required element"
-        return False, warning
-    if effective == 'ask' or effective is None:
-        # ask → dialogue-resolved (keep at compose); undeterminable → keep.
-        return True, None
-    keep = _TIER_RANK[effective] <= _TIER_RANK.get(posture, _TIER_RANK['full'])
-    return keep, None
 
 
 def _apply_lane_resolution(
@@ -2358,61 +1052,6 @@ def _apply_lane_resolution(
             warnings.append((step, warning))
         (kept if keep else dropped).append(step)
     return kept, dropped, warnings
-
-
-def _read_execution_profile(plan_id: str) -> str:
-    """Read the chosen posture from ``status.metadata.execution_profile``.
-
-    Returns ``full`` (the no-prune default) when status.json is absent / malformed
-    or carries no valid posture. A malformed-but-present status degrades to the
-    default rather than crashing compose (same guard as ``_read_recipe_source``).
-    """
-    status_path = get_plan_dir(plan_id) / FILE_STATUS
-    if not status_path.exists():
-        return DEFAULT_EXECUTION_PROFILE
-    try:
-        status = read_json(status_path, default={})
-    except (OSError, json.JSONDecodeError):
-        return DEFAULT_EXECUTION_PROFILE
-    if isinstance(status, dict):
-        metadata = status.get('metadata', {})
-        if isinstance(metadata, dict):
-            value = metadata.get('execution_profile')
-            if value in LANE_TIERS:
-                return str(value)
-    return DEFAULT_EXECUTION_PROFILE
-
-
-def _parse_cost_magnitude(raw: str) -> int:
-    """Parse a token-magnitude string (``5K`` / ``130K`` / ``520K`` / ``1.3M``) to int.
-
-    Returns ``0`` for an unparseable value (the cost preview degrades gracefully
-    rather than crashing).
-    """
-    from sensible_number import parse_sensible_int
-    try:
-        return parse_sensible_int(raw)
-    except (ValueError, TypeError):
-        return 0
-
-
-def _read_cost_size_token_table() -> dict[str, str]:
-    """Read ``plan.phase-5-execute.cost_size_token_table`` (six-size fallback)."""
-    marshal_path = get_marshal_path()
-    if marshal_path.exists():
-        try:
-            data = read_json(marshal_path, default={})
-        except (OSError, ValueError):
-            data = {}
-        if isinstance(data, dict):
-            plan = data.get('plan', {})
-            if isinstance(plan, dict):
-                execute_block = plan.get('phase-5-execute', {})
-                if isinstance(execute_block, dict):
-                    table = execute_block.get('cost_size_token_table')
-                    if isinstance(table, dict) and table:
-                        return table
-    return dict(_DEFAULT_COST_SIZE_TABLE)
 
 
 def _sum_lane_cost(steps: list[str], table: dict[str, str]) -> int:
@@ -2986,353 +1625,8 @@ def cmd_record_step(args: argparse.Namespace) -> dict[str, Any] | None:
 
 
 # =============================================================================
-# Plan-local step-params get/set (manifest snapshot reads + per-plan overrides)
-# =============================================================================
-
-# Maps the ``--phase`` record vocabulary (``5-execute`` / ``6-finalize``) to the
-# manifest body section key. step-params reuses VALID_RECORD_PHASES so the phase
-# argument is identical to record-step's.
-_PHASE_TO_BODY_SECTION = {'5-execute': 'phase_5', '6-finalize': 'phase_6'}
-
-
-def _coerce_param_value(raw: str) -> Any:
-    """Coerce a CLI string ``--value`` to bool / int / str for a step param.
-
-    Mirrors the lightweight coercion manage-config's ``step set`` applies so a
-    per-plan manifest override stores the same typed value the global keyed map
-    would. ``true``/``false`` (case-insensitive) → bool; an integer literal →
-    int; everything else stays a string.
-    """
-    lowered = raw.lower()
-    if lowered == 'true':
-        return True
-    if lowered == 'false':
-        return False
-    try:
-        return int(raw)
-    except ValueError:
-        return raw
-
-
-def cmd_step_params_get(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Return a step's snapshotted param object from the manifest (plan-local read).
-
-    Reads ``body[phase_section].step_params[step_id]`` from the persisted
-    manifest — a literal file read of the compose-time snapshot, never a
-    marshal.json read. An absent step id (or a manifest with no ``step_params``
-    section) is an explicit error.
-
-    The lookup is PREFIX-AGNOSTIC: the snapshot is keyed by the bare step id
-    (``_snapshot_step_params`` strips the ``default:`` prefix at compose time),
-    so the caller's ``--step-id`` is stripped here too before the dict lookup.
-    Both ``default:branch-cleanup`` and ``branch-cleanup`` therefore resolve to
-    the same bare-keyed entry, mirroring ``cmd_validate``'s membership test.
-    """
-    plan_id = require_valid_plan_id(args)
-
-    if args.phase not in VALID_RECORD_PHASES:
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'invalid_phase',
-            'message': f'Invalid phase: {args.phase!r}. Must be one of {list(VALID_RECORD_PHASES)}',
-        }
-
-    manifest = read_manifest(plan_id)
-    if manifest is None:
-        output_toon_error(
-            'file_not_found',
-            f'execution.toon not found for plan {plan_id}',
-            plan_id=plan_id,
-        )
-        return None
-
-    bare_step_id = _strip_default_prefix(args.step_id)
-    section = manifest.get(_PHASE_TO_BODY_SECTION[args.phase], {})
-    step_params = section.get('step_params', {}) if isinstance(section, dict) else {}
-    if not isinstance(step_params, dict) or bare_step_id not in step_params:
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'step_not_found',
-            'message': f"Step '{args.step_id}' has no snapshotted params in phase {args.phase}",
-        }
-
-    return {
-        'status': 'success',
-        'plan_id': plan_id,
-        'phase': args.phase,
-        'step_id': args.step_id,
-        'params': step_params[bare_step_id],
-    }
-
-
-def cmd_step_params_set(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Write a per-plan param override into the manifest's step_params snapshot.
-
-    Writes ``body[phase_section].step_params[step_id][param] = value`` into the
-    persisted manifest (value-coerced) — a plan-local override that wins over the
-    marshal.json compose-time default for subsequent ``step-params get`` reads.
-    Operates on the manifest only, never on marshal.json. An absent step id is an
-    explicit error (the override targets a snapshotted step, not a new one).
-
-    The lookup/write is PREFIX-AGNOSTIC: the snapshot is keyed by the bare step
-    id (``_snapshot_step_params`` strips the ``default:`` prefix at compose
-    time), so the caller's ``--step-id`` is stripped here too before the dict
-    lookup/write. Both ``default:branch-cleanup`` and ``branch-cleanup``
-    therefore resolve to the same bare-keyed entry, mirroring ``cmd_validate``.
-    """
-    plan_id = require_valid_plan_id(args)
-
-    if args.phase not in VALID_RECORD_PHASES:
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'invalid_phase',
-            'message': f'Invalid phase: {args.phase!r}. Must be one of {list(VALID_RECORD_PHASES)}',
-        }
-
-    manifest = read_manifest(plan_id)
-    if manifest is None:
-        output_toon_error(
-            'file_not_found',
-            f'execution.toon not found for plan {plan_id}',
-            plan_id=plan_id,
-        )
-        return None
-
-    bare_step_id = _strip_default_prefix(args.step_id)
-    section = manifest.get(_PHASE_TO_BODY_SECTION[args.phase])
-    if not isinstance(section, dict):
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'invalid_manifest',
-            'message': f'Manifest section {_PHASE_TO_BODY_SECTION[args.phase]!r} is missing or malformed',
-        }
-    step_params = section.get('step_params')
-    if not isinstance(step_params, dict) or bare_step_id not in step_params:
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'step_not_found',
-            'message': f"Step '{args.step_id}' has no snapshotted params in phase {args.phase}",
-        }
-
-    params = dict(step_params[bare_step_id])
-    params[args.param] = _coerce_param_value(args.value)
-    step_params[bare_step_id] = params
-    section['step_params'] = step_params
-    write_manifest(plan_id, manifest)
-
-    return {
-        'status': 'success',
-        'plan_id': plan_id,
-        'phase': args.phase,
-        'step_id': args.step_id,
-        'params': params,
-    }
-
-
-# =============================================================================
 # Loadability Check (validate-loadable)
 # =============================================================================
-
-# Paths to the phase-6-finalize standards + workflow directories, resolved
-# relative to this script's location in the marketplace source tree. Built-in
-# step docs may live under either directory: orchestrator-style steps that the
-# dispatcher reads inline live under ``standards/``; ext-point implementor
-# workflows (LLM-judgement workflows dispatched as a unit via
-# ``execution-context``) live under ``workflow/``. The loadability check
-# searches both, ``workflow/`` first.
-_PHASE_6_SKILL_DIR = resolve_skills_root(Path(__file__)) / 'phase-6-finalize'
-_PHASE_6_WORKFLOW_DIR = _PHASE_6_SKILL_DIR / 'workflow'
-_PHASE_6_STANDARDS_DIR = _PHASE_6_SKILL_DIR / 'standards'
-
-# Repository-root anchor used to render the standards path as a project-relative
-# string in the script output. ``resolve_bundles_root`` identity-walks to the
-# ``marketplace/bundles`` root (no index arithmetic); its grandparent is the
-# repo root, so rendered paths start with `marketplace/bundles/…` and match the
-# documented contract.
-_REPO_ROOT = resolve_bundles_root(Path(__file__)).parent.parent
-
-
-def _is_external_step(step_id: str) -> bool:
-    """Return True when ``step_id`` is a project/skill (external) step.
-
-    External steps carry a colon (``project:foo`` or ``bundle:skill``).
-    Bare names and ``default:``-prefixed names are built-in.
-    """
-    if step_id.startswith('default:'):
-        return False
-    return ':' in step_id
-
-
-def _resolve_standards_path(step_id: str) -> Path:
-    """Resolve the doc file path for a built-in ``step_id``.
-
-    Strips the optional ``default:`` prefix. Searches ``workflow/`` first,
-    then falls back to ``standards/``. Returns the first matching path; if
-    neither exists, returns the ``workflow/`` path (so the caller's missing-
-    file error message reports the preferred location).
-    """
-    bare = _strip_default_prefix(step_id)
-    workflow_path = _PHASE_6_WORKFLOW_DIR / f'{bare}.md'
-    if workflow_path.is_file():
-        return workflow_path
-    standards_path = _PHASE_6_STANDARDS_DIR / f'{bare}.md'
-    if standards_path.is_file():
-        return standards_path
-    return workflow_path
-
-
-def _render_standards_rel_path(absolute: Path) -> str:
-    """Render ``absolute`` as a repo-root-relative POSIX string.
-
-    Falls back to the absolute string when ``absolute`` is outside the repo.
-    """
-    try:
-        return absolute.relative_to(_REPO_ROOT).as_posix()
-    except ValueError:
-        return str(absolute)
-
-
-def _read_frontmatter_order(path: Path) -> int | None:
-    """Read the integer ``order:`` frontmatter key from a markdown file.
-
-    A minimal frontmatter parser — scans the first ``---``-fenced block for an
-    ``order:`` key and returns its value coerced to ``int``. Returns ``None``
-    when the file is missing, has no
-    frontmatter block, lacks an ``order:`` key, or the value is not an
-    integer. PyYAML is intentionally avoided to keep the dependency surface
-    narrow; the frontmatter shape is constrained by plugin-doctor and the
-    test suite.
-    """
-    if not path.is_file():
-        return None
-    try:
-        text = path.read_text(encoding='utf-8')
-    except OSError:
-        return None
-    if not text.startswith('---'):
-        return None
-    for line in text.splitlines()[1:]:
-        if line.strip() == '---':
-            break
-        stripped = line.strip()
-        if not stripped or stripped.startswith('#'):
-            continue
-        if ':' not in stripped:
-            continue
-        key, _, value = stripped.partition(':')
-        if key.strip() != 'order':
-            continue
-        candidate = value.strip().strip('"').strip("'")
-        try:
-            return int(candidate)
-        except ValueError:
-            return None
-    return None
-
-
-def _resolve_step_order(step_id: str) -> int | None:
-    """Resolve a step's frontmatter ``order`` integer from its source file.
-
-    Resolution is broader than loadability: it covers ``project:`` steps too,
-    because real ordering inversions can occur among project-local steps.
-
-    - Built-in steps (bare or ``default:``-prefixed): resolve the standards /
-      workflow doc via ``_resolve_standards_path`` and read its ``order:``
-      frontmatter.
-    - ``project:``-prefixed steps: resolve the project-local-skill
-      ``{bare-name}/SKILL.md`` via the target's layout roots (relative to the
-      repo root) and read its ``order:`` frontmatter.
-    - Other external steps (``bundle:skill``): no resolvable project-local
-      source file — return ``None``.
-
-    Returns ``None`` when no source file exists or no ``order:`` key is
-    present. Steps that resolve to ``None`` are skipped by the ascending-order
-    check (they neither break nor satisfy ascending order).
-    """
-    if step_id.startswith('project:'):
-        bare = step_id[len('project:') :]
-        skill_path = resolve_project_skill_path(f'{bare}/SKILL.md', base=_REPO_ROOT)
-        return _read_frontmatter_order(skill_path)
-    if _is_external_step(step_id):
-        # bundle:skill external steps have no project-local source file.
-        return None
-    return _read_frontmatter_order(_resolve_standards_path(step_id))
-
-
-def _check_ascending_order(steps: list[Any]) -> str | None:
-    """Assert ``steps`` resolve to non-decreasing frontmatter ``order`` values.
-
-    Walks the step list in position order, resolving each step's ``order``
-    via ``_resolve_step_order``. Steps whose ``order`` resolves to ``None``
-    are skipped (they do not participate in the ascending assertion). An
-    inversion is a step whose resolved ``order`` is strictly less than the
-    maximum resolved ``order`` seen so far at an earlier list position.
-
-    Returns an actionable diagnostic naming the inverted pair on the first
-    inversion, or ``None`` when the resolvable subsequence is non-decreasing.
-    The message phrasing matches the request: it names the later-positioned
-    step (with the smaller order) and the earlier-positioned step (with the
-    larger order) that it appears before.
-    """
-    max_order: int | None = None
-    max_step: str | None = None
-    for entry in steps:
-        if not isinstance(entry, str):
-            continue
-        order = _resolve_step_order(entry)
-        if order is None:
-            continue
-        if max_order is not None and order < max_order:
-            return (
-                f'step `{entry}` (order={order}) appears after '
-                f'step `{max_step}` (order={max_order}) — phase_6.steps must be '
-                f'in ascending frontmatter `order`'
-            )
-        if max_order is None or order > max_order:
-            max_order = order
-            max_step = entry
-    return None
-
-
-def _check_step_loadable(step_id: str) -> dict[str, Any]:
-    """Single-step loadability check.
-
-    Returns a dict with ``step_id``, ``standards_path``, ``loadable`` and an
-    optional ``message`` (canonical actionable phrasing on failure).
-    External steps are short-circuited to ``loadable: true`` with an empty
-    standards_path because their loadability is owned by the host plugin
-    cache, not the marketplace standards tree.
-    """
-    if _is_external_step(step_id):
-        return {
-            'step_id': step_id,
-            'standards_path': '',
-            'loadable': True,
-        }
-    bare = _strip_default_prefix(step_id)
-    absolute_path = _resolve_standards_path(step_id)
-    rel_path = _render_standards_rel_path(absolute_path)
-    if absolute_path.is_file():
-        return {
-            'step_id': bare,
-            'standards_path': rel_path,
-            'loadable': True,
-        }
-    message = (
-        f'step `{bare}` referenced by `marshal.json` is missing standards file '
-        f'`{rel_path}` — the plan likely deleted the file without sweeping `marshal.json`'
-    )
-    return {
-        'step_id': bare,
-        'standards_path': rel_path,
-        'loadable': False,
-        'message': message,
-    }
 
 
 def cmd_validate_loadable(args: argparse.Namespace) -> dict[str, Any] | None:
@@ -3475,94 +1769,6 @@ def cmd_validate_loadable(args: argparse.Namespace) -> dict[str, Any] | None:
         'plan_id': plan_id,
         'unloadable_count': unloadable_count,
         'results': results,
-    }
-
-
-def cmd_validate(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Validate manifest schema and (optionally) step IDs against candidate sets."""
-    plan_id = require_valid_plan_id(args)
-
-    manifest = read_manifest(plan_id)
-    if manifest is None:
-        output_toon_error(
-            'file_not_found',
-            f'execution.toon not found for plan {plan_id}',
-            plan_id=plan_id,
-        )
-        return None
-
-    errors: list[str] = []
-
-    # Schema checks.
-    if manifest.get('manifest_version') != MANIFEST_VERSION:
-        errors.append(
-            f'manifest_version mismatch: expected {MANIFEST_VERSION}, got {manifest.get("manifest_version")!r}'
-        )
-    if manifest.get('plan_id') != plan_id:
-        errors.append(f'plan_id mismatch: expected {plan_id!r}, got {manifest.get("plan_id")!r}')
-
-    phase_5 = manifest.get('phase_5')
-    phase_6 = manifest.get('phase_6')
-    if not isinstance(phase_5, dict):
-        errors.append('phase_5 section missing or not a mapping')
-        phase_5 = {}
-    if not isinstance(phase_6, dict):
-        errors.append('phase_6 section missing or not a mapping')
-        phase_6 = {}
-
-    if 'early_terminate' not in phase_5 or not isinstance(phase_5.get('early_terminate'), bool):
-        errors.append('phase_5.early_terminate missing or not a bool')
-    p5_steps = phase_5.get('verification_steps', [])
-    if not isinstance(p5_steps, list):
-        errors.append('phase_5.verification_steps must be a list')
-        p5_steps = []
-    p6_steps = phase_6.get('steps', [])
-    if not isinstance(p6_steps, list):
-        errors.append('phase_6.steps must be a list')
-        p6_steps = []
-
-    # Step-ID checks (only when caller passes candidate sets).
-    #
-    # The comparison is PREFIX-AGNOSTIC: the composer normalizes manifest step
-    # IDs to bare names at the compose boundary (``_strip_default_prefix``),
-    # while the caller's ``--phase-{5,6}-steps`` CSV may still carry the
-    # optional ``default:`` prefix (e.g. ``default:verify:module-tests``). Stripping
-    # the prefix from BOTH the allowed set and the manifest step IDs before the
-    # set-membership test lets a bare manifest ID validate against a
-    # ``default:``-prefixed allowed-list (and vice versa). ``project:`` /
-    # ``bundle:skill`` prefixes are preserved verbatim by
-    # ``_strip_default_prefix`` so external steps still compare exactly.
-    p5_unknown: list[str] = []
-    p6_unknown: list[str] = []
-    if args.phase_5_steps is not None:
-        allowed_5 = {_strip_default_prefix(s) for s in _split_csv(args.phase_5_steps, ())}
-        p5_unknown = [s for s in p5_steps if _strip_default_prefix(s) not in allowed_5]
-        if p5_unknown:
-            errors.append(f'phase_5.verification_steps contains unknown IDs: {p5_unknown}')
-    if args.phase_6_steps is not None:
-        allowed_6 = {_strip_default_prefix(s) for s in _split_csv(args.phase_6_steps, ())}
-        p6_unknown = [s for s in p6_steps if _strip_default_prefix(s) not in allowed_6]
-        if p6_unknown:
-            errors.append(f'phase_6.steps contains unknown IDs: {p6_unknown}')
-
-    if errors:
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'invalid_manifest',
-            'message': '; '.join(errors),
-            'phase_5_unknown_steps_count': len(p5_unknown),
-            'phase_5_unknown_steps': p5_unknown,
-            'phase_6_unknown_steps_count': len(p6_unknown),
-            'phase_6_unknown_steps': p6_unknown,
-        }
-
-    return {
-        'status': 'success',
-        'plan_id': plan_id,
-        'valid': True,
-        'phase_5_unknown_steps_count': 0,
-        'phase_6_unknown_steps_count': 0,
     }
 
 
