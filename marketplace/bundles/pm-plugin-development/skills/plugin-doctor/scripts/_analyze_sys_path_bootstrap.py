@@ -103,7 +103,7 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # 2. Functional lazy-imports (add a directory on demand, degrade gracefully)
         'plan-marshall/skills/script-shared/scripts/marketplace_paths.py',
         'plan-marshall/skills/manage-architecture/scripts/_architecture_core.py',
-        'plan-marshall/skills/manage-architecture/scripts/_cmd_client.py',
+        'plan-marshall/skills/manage-architecture/scripts/_cmd_client_build.py',
         'plan-marshall/skills/tools-integration-ci/scripts/_ci_log_filter.py',
         'plan-marshall/skills/script-shared/scripts/build/_build_queue_slot.py',
         # 3. Dynamic-introspection tools (import an arbitrary target dir to load it)

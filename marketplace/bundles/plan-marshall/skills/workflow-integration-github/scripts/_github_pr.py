@@ -364,7 +364,7 @@ def cmd_pr_reviews(args: argparse.Namespace) -> dict:
 
     review_list = [
         {
-            'user': r.get('author', {}).get('login', 'unknown'),
+            'user': (r.get('author') or {}).get('login', 'unknown'),
             'state': r.get('state', 'UNKNOWN'),
             'submitted_at': r.get('submittedAt', '-'),
         }

@@ -575,6 +575,8 @@ def _read_ci_provider() -> str | None:
         data = read_json(marshal_path)
     except (OSError, json.JSONDecodeError):
         return None
+    if not isinstance(data, dict):
+        return None
     providers = data.get('providers')
     if not isinstance(providers, list):
         return None
