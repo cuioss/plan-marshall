@@ -36,17 +36,47 @@ from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
 from _cmd_auto_suggest import cmd_auto_suggest
+from _lessons_aggregate import (
+    AGGREGATE_PREVIEW_CHARS,
+    RECURRENCE_H2_REGEX,
+    SIGNAL_CROSS_REF,
+    SIGNAL_PRIORITY,
+    _absorbed_reason,
+    _compose_merged_body,
+    _derive_workflow_boundary,
+    _extract_cross_refs,
+    _group_by_signals,
+    _pick_primary,
+    _truncate_preview,
+)
 from _lessons_crud import (
     DEFAULT_ARCH_CONSTRAINT_QUIET_DAYS,
     find_active_arch_constraint_by_rule,
     reinforce_arch_constraint,
     retire_quiet_arch_constraints,
-    set_body,
 )
-from constants import DIR_LESSONS, LESSON_CATEGORIES
+from _lessons_io import (
+    _build_lesson_content,
+    get_lessons_dir,
+    get_tombstones_dir,
+    read_lesson,
+)
+from _lessons_query import (
+    cmd_get,
+    cmd_list,
+    cmd_list_stalled,
+    cmd_restore_from_plan,
+    cmd_set_body,
+    cmd_set_title,
+)
+from _lessons_retention import (
+    DEFAULT_LESSONS_SUPERSEDED_DAYS,
+    _resolve_quiet_days,
+    _resolve_retention_days,
+)
+from constants import LESSON_CATEGORIES
 from file_ops import (
     atomic_write_file,
-    get_marshal_path,
     output_toon,
     parse_markdown_metadata,
     safe_main,
@@ -72,32 +102,6 @@ LIST_STATUS_CHOICES = ('active', 'superseded', 'removed', 'all')
 # Maximum retry attempts when allocating a fresh lesson id; bounded so that a
 # pathological caller cannot wedge the script in an unbounded loop.
 MAX_ID_ALLOCATION_RETRIES = 99
-
-# Hard fallback for ``cleanup-superseded --retention-days`` when neither the
-# CLI flag nor ``system.retention.lessons_superseded_days`` in marshal.json
-# yields an integer. Matches the default seeded into ``DEFAULT_SYSTEM_RETENTION``
-# (0 days — superseded stubs are pruned on the next cleanup invocation).
-DEFAULT_LESSONS_SUPERSEDED_DAYS = 0
-
-
-def get_lessons_dir() -> Path:
-    """Get the lessons-learned directory.
-
-    The lessons corpus is a genuinely-shared cross-session global-scope state,
-    so it is main-anchored via the single sanctioned resolver
-    :func:`marketplace_paths.resolve_main_anchored_path` (ADR-002): it resolves
-    to the MAIN checkout regardless of caller cwd (test override first, then
-    git-common-dir). This is required by the audit finding — a phase-5
-    ``execute-task`` lesson recording runs with cwd pinned to the worktree, and
-    without main-anchoring the lesson would land in the worktree's empty corpus
-    and be lost on move-back. There is NO local git-common-dir copy here.
-    """
-    return resolve_main_anchored_path(DIR_LESSONS)
-
-
-def get_tombstones_dir() -> Path:
-    """Get the tombstones directory under lessons-learned."""
-    return get_lessons_dir() / '.tombstones'
 
 
 def get_next_id() -> str:
@@ -162,33 +166,6 @@ def get_next_id() -> str:
     return f'{prefix}-{max_seq + 1:03d}'
 
 
-def read_lesson(lesson_id: str) -> tuple[dict, str, str]:
-    """Read a lesson file and return (metadata, title, body)."""
-    lessons_dir = get_lessons_dir()
-    path = lessons_dir / f'{lesson_id}.md'
-
-    if not path.exists():
-        return {}, '', ''
-
-    content = path.read_text(encoding='utf-8')
-    metadata = parse_markdown_metadata(content)
-
-    # Extract title and body
-    lines = content.split('\n')
-    title = ''
-    body_start = 0
-
-    for i, line in enumerate(lines):
-        if line.startswith('# '):
-            title = line[2:].strip()
-            body_start = i + 1
-            break
-
-    body = '\n'.join(lines[body_start:]).strip()
-
-    return metadata, title, body
-
-
 def write_lesson(lesson_id: str, metadata: dict, title: str, body: str) -> None:
     """Write a lesson file to the lessons directory."""
     lessons_dir = get_lessons_dir()
@@ -210,25 +187,6 @@ def write_lesson_to(path: Path, metadata: dict, title: str, body: str) -> None:
     lines.append(body)
 
     atomic_write_file(path, '\n'.join(lines))
-
-
-def _build_lesson_content(metadata: dict, title: str, body: str) -> str:
-    """Render a lesson file's content to a string.
-
-    Mirrors the on-disk shape produced by ``write_lesson_to`` /
-    ``atomic_write_file`` (metadata header, blank line, ``# title``, blank line,
-    body, terminating newline) so callers using exclusive create can write the
-    same bytes without going through the atomic temp-file path.
-    """
-    lines = [f'{key}={value}' for key, value in metadata.items()]
-    lines.append('')
-    lines.append(f'# {title}')
-    lines.append('')
-    lines.append(body)
-    rendered = '\n'.join(lines)
-    if not rendered.endswith('\n'):
-        rendered += '\n'
-    return rendered
 
 
 def _next_sequential_id(current_id: str) -> str:
@@ -541,90 +499,6 @@ def cmd_update(args: argparse.Namespace) -> dict:
     return {'status': 'success', 'id': args.lesson_id, 'field': field, 'value': value, 'previous': previous}
 
 
-def cmd_get(args: argparse.Namespace) -> dict:
-    """Get a single lesson."""
-    metadata, title, body = read_lesson(args.lesson_id)
-
-    if not metadata:
-        return {
-            'status': 'error',
-            'id': args.lesson_id,
-            'error': 'not_found',
-            'message': f'Lesson {args.lesson_id} not found',
-        }
-
-    result = {
-        'status': 'success',
-        'id': metadata.get('id', args.lesson_id),
-        'component': metadata.get('component', ''),
-        'category': metadata.get('category', ''),
-        'lifecycle_status': metadata.get('status', 'active'),
-        'created': metadata.get('created', ''),
-        'title': title,
-    }
-
-    if body:
-        result['content'] = body
-
-    return result
-
-
-def cmd_list(args: argparse.Namespace) -> dict:
-    """List lessons with filtering."""
-    lessons_dir = get_lessons_dir()
-
-    if not lessons_dir.exists():
-        return {'status': 'success', 'total': 0, 'filtered': 0, 'lessons': []}
-
-    status_filter = getattr(args, 'status', None) or 'active'
-
-    lessons = []
-    total = 0
-
-    for path in sorted(lessons_dir.glob('*.md')):
-        total += 1
-        content = path.read_text(encoding='utf-8')
-        metadata = parse_markdown_metadata(content)
-
-        # Status filter — absence of frontmatter ``status`` field defaults to ``active``.
-        lesson_status = metadata.get('status', 'active')
-        if status_filter != 'all' and lesson_status != status_filter:
-            continue
-
-        # Apply legacy filters
-        if args.component and metadata.get('component') != args.component:
-            continue
-        if args.category and metadata.get('category') != args.category:
-            continue
-
-        # Get title
-        title = ''
-        for line in content.split('\n'):
-            if line.startswith('# '):
-                title = line[2:].strip()
-                break
-
-        entry = {
-            'id': metadata.get('id', path.stem),
-            'component': metadata.get('component', ''),
-            'category': metadata.get('category', ''),
-            'status': lesson_status,
-            'title': title,
-        }
-
-        if args.full:
-            body_start = 0
-            for i, line in enumerate(content.split('\n')):
-                if line.startswith('# '):
-                    body_start = i + 1
-                    break
-            entry['content'] = '\n'.join(content.split('\n')[body_start:]).strip()
-
-        lessons.append(entry)
-
-    return {'status': 'success', 'total': total, 'filtered': len(lessons), 'lessons': lessons}
-
-
 def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
     """Move a lesson file from the global lessons directory into a plan directory.
 
@@ -709,300 +583,6 @@ def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
     }
 
 
-def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
-    """Move all lesson files from a plan directory back to the global lessons directory.
-
-    Inverse of ``cmd_convert_to_plan``. Scans the plan directory for every
-    ``lesson-*.md`` file, derives the original ``lesson_id`` from each filename,
-    and moves the file back to ``.plan/local/lessons-learned/{lesson_id}.md``.
-    Plans that consolidate several lessons may carry more than one
-    ``lesson-*.md`` file at the plan-dir root; every match is restored.
-
-    Idempotent on missing lesson file — returns ``status: success`` with
-    ``action: no_lesson_file`` when nothing to restore so callers don't need to
-    pre-check. Refuses to clobber a pre-existing destination file (fail-fast on
-    the first collision; any lessons restored before the collision remain in
-    ``lessons-learned/``).
-    """
-    if any(sep in args.plan_id for sep in ('/', '\\', '..')):
-        return {
-            'status': 'error',
-            'error': 'invalid_id',
-            'message': 'Identifiers must not contain path separators or traversal sequences',
-        }
-
-    plan_parent = resolve_main_anchored_path('plans').resolve()
-    plan_dir = (plan_parent / args.plan_id).resolve()
-    lessons_dir = get_lessons_dir().resolve()
-
-    if plan_dir.parent != plan_parent:
-        return {
-            'status': 'error',
-            'error': 'path_traversal',
-            'message': 'Resolved path escapes intended parent directory',
-        }
-
-    if not plan_dir.exists():
-        return {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'action': 'no_lesson_file',
-        }
-
-    matches = sorted(plan_dir.glob('lesson-*.md'))
-    if not matches:
-        return {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'action': 'no_lesson_file',
-        }
-
-    lessons_dir.mkdir(parents=True, exist_ok=True)
-    restored_lessons: list[dict] = []
-
-    for match in matches:
-        source = match.resolve()
-        # Derive lesson id by stripping the ``lesson-`` prefix and ``.md`` suffix.
-        lesson_id = source.stem[len('lesson-'):]
-
-        # Defensive: ensure the derived id has no traversal sequences and resolves
-        # back inside the plan dir.
-        if any(sep in lesson_id for sep in ('/', '\\', '..')) or source.parent != plan_dir:
-            return {
-                'status': 'error',
-                'error': 'path_traversal',
-                'message': 'Resolved path escapes intended parent directory',
-            }
-
-        destination = (lessons_dir / f'{lesson_id}.md').resolve()
-
-        if destination.parent != lessons_dir:
-            return {
-                'status': 'error',
-                'error': 'path_traversal',
-                'message': 'Resolved path escapes intended parent directory',
-            }
-
-        if destination.exists():
-            return {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'lesson_id': lesson_id,
-                'error': 'destination_exists',
-                'message': f'Destination {destination} already exists; refusing to clobber',
-            }
-
-        shutil.move(source, destination)
-        restored_lessons.append({
-            'lesson_id': lesson_id,
-            'source': str(source),
-            'destination': str(destination),
-        })
-
-    return {
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'restored_count': len(restored_lessons),
-        'restored_lessons': restored_lessons,
-    }
-
-
-# Lesson ids embedded in a plan's ``metadata.plan_source`` must match the
-# canonical ``YYYY-MM-DD-HH-NNN`` shape exactly (anchored full-match) to mark
-# the plan as lesson-sourced. The unanchored ``LESSON_ID_REGEX`` below is used
-# for free-text scanning; this one is the strict classifier gate.
-LESSON_SOURCE_ID_REGEX = re.compile(r'^\d{4}-\d{2}-\d{2}-\d{2}-\d{3}$')
-
-
-def cmd_list_stalled(args: argparse.Namespace) -> dict:  # noqa: ARG001
-    """List lesson-sourced plans whose relocated lesson is stranded (stalled).
-
-    A lesson-sourced plan relocates its lesson into the plan directory via
-    ``convert-to-plan`` (``plans/{plan_id}/lesson-{id}.md``). If such a plan
-    stalls or is abandoned in ``5-execute``/``6-finalize`` without running
-    ``restore-from-plan``, the lesson is trapped out of the active corpus and
-    silently lost. This read-only scanner surfaces every such plan so callers
-    can decide whether to restore or discard.
-    """
-    plans_root = resolve_main_anchored_path('plans')
-    if not plans_root.exists():
-        return {'status': 'success', 'stalled_count': 0, 'stalled_plans': []}
-
-    # Group relocated lesson files by their owning plan directory.
-    by_plan: dict[Path, list[str]] = {}
-    for lesson_file in sorted(plans_root.glob('*/lesson-*.md')):
-        if not lesson_file.is_file():
-            continue
-        plan_dir = lesson_file.parent
-        lesson_id = lesson_file.stem[len('lesson-'):]
-        by_plan.setdefault(plan_dir, []).append(lesson_id)
-
-    stalled_plans: list[dict] = []
-
-    for plan_dir in sorted(by_plan, key=lambda p: p.name):
-        lesson_ids = sorted(by_plan[plan_dir])
-        status_path = plan_dir / 'status.json'
-        if not status_path.exists():
-            # No status.json — cannot classify; skip rather than crash.
-            continue
-
-        try:
-            status = json.loads(status_path.read_text(encoding='utf-8'))
-        except (json.JSONDecodeError, OSError):
-            # Corrupt/unreadable status.json — skip rather than crash.
-            continue
-
-        if not isinstance(status, dict):
-            # Valid JSON but not an object (e.g. a list or string) — calling
-            # status.get() would raise AttributeError; skip rather than crash.
-            continue
-
-        metadata = status.get('metadata', {})
-        plan_source = metadata.get('plan_source', '') if isinstance(metadata, dict) else ''
-        if not isinstance(plan_source, str) or not LESSON_SOURCE_ID_REGEX.match(plan_source):
-            # Not lesson-sourced — the relocated lesson is unexpected, but a
-            # non-lesson-id plan_source is out of scope for stalled detection.
-            continue
-
-        current_phase = status.get('current_phase', '')
-        phase_status = ''
-        phases = status.get('phases', [])
-        if isinstance(phases, list):
-            for row in phases:
-                if isinstance(row, dict) and row.get('name') == current_phase:
-                    phase_status = row.get('status', '')
-                    break
-
-        # Terminal guard: a lesson-sourced plan whose current phase has fully
-        # completed is NOT stalled — its lesson was (or will be) restored on a
-        # normal terminal path. Stalled = the relocated lesson is present AND
-        # the current phase has not reached ``done`` (covers in_progress /
-        # blocked / pending in 5-execute / 6-finalize, and any non-terminal
-        # dormated-without-merge state).
-        is_stalled = current_phase in ('5-execute', '6-finalize') and phase_status != 'done'
-
-        if not is_stalled:
-            continue
-
-        plan_id = plan_dir.name
-        stalled_plans.append({
-            'plan_id': plan_id,
-            'plan_source': plan_source,
-            'current_phase': current_phase,
-            'phase_status': phase_status,
-            'lesson_ids': lesson_ids,
-            'restore_command': (
-                'python3 .plan/execute-script.py '
-                'plan-marshall:manage-lessons:manage-lessons '
-                f'restore-from-plan --plan-id {plan_id}'
-            ),
-        })
-
-    return {
-        'status': 'success',
-        'stalled_count': len(stalled_plans),
-        'stalled_plans': stalled_plans,
-    }
-
-
-def cmd_set_body(args: argparse.Namespace) -> dict:
-    """Overwrite the body of an existing lesson stub.
-
-    Reads the body content from ``--file PATH`` (preferred) or ``--content
-    STRING`` (secondary), preserves the ``key=value`` frontmatter and the H1
-    title verbatim, and replaces everything after the H1 with the supplied
-    body. Returns TOON ``{status, id, path, body_bytes_written}``.
-    """
-    return set_body(
-        get_lessons_dir(),
-        args.lesson_id,
-        file_path=args.file,
-        content=args.content,
-    )
-
-
-def cmd_set_title(args: argparse.Namespace) -> dict:
-    """Rewrite the H1 title of a lesson file in place.
-
-    Locates the first ``^# `` line in the lesson markdown (skipping fenced
-    code blocks so a ``# `` line inside a ```` ``` ```` block is not picked
-    up) and replaces only that line; the ``key=value`` frontmatter, blank
-    lines, and body remain untouched on disk. Active and superseded lifecycle
-    states are both rewriteable — only ``not_found`` (no markdown file at the
-    canonical path) and malformed-lesson states fail.
-
-    The function is idempotent: rewriting with the existing title produces no
-    on-disk change but still returns ``status: success`` with
-    ``old_title == new_title``. Returns TOON
-    ``{status, lesson_id, old_title, new_title, file}``.
-    """
-    lessons_dir = get_lessons_dir()
-    target = lessons_dir / f'{args.lesson_id}.md'
-
-    if not target.exists():
-        return {
-            'status': 'error',
-            'lesson_id': args.lesson_id,
-            'error': 'not_found',
-            'message': f'Lesson {args.lesson_id} not found',
-        }
-
-    original = target.read_text(encoding='utf-8')
-    lines = original.split('\n')
-
-    # Walk lines, tracking fenced-code-block state, and rewrite the first
-    # outside-fence line that starts with ``# ``. Three-backtick fences that
-    # appear inside the body must be skipped so a literal ``# heading`` line
-    # inside a code example is not mistaken for the lesson H1.
-    in_fence = False
-    h1_index = -1
-    for i, line in enumerate(lines):
-        stripped = line.lstrip()
-        if stripped.startswith('```'):
-            in_fence = not in_fence
-            continue
-        if not in_fence and line.startswith('# '):
-            h1_index = i
-            break
-
-    if h1_index == -1:
-        return {
-            'status': 'error',
-            'lesson_id': args.lesson_id,
-            'error': 'malformed_lesson',
-            'message': (
-                f'Lesson {args.lesson_id} has no H1 title line; cannot rewrite title'
-            ),
-        }
-
-    old_title = lines[h1_index][2:].strip()
-    new_title = args.title.strip()
-
-    if old_title == new_title:
-        # Idempotent no-op — surface success without rewriting the file so
-        # callers can re-run safely without churning mtimes or the audit log.
-        return {
-            'status': 'success',
-            'lesson_id': args.lesson_id,
-            'old_title': old_title,
-            'new_title': new_title,
-            'file': str(target.resolve()),
-        }
-
-    lines[h1_index] = f'# {new_title}'
-    rebuilt = '\n'.join(lines)
-
-    atomic_write_file(target, rebuilt)
-
-    return {
-        'status': 'success',
-        'lesson_id': args.lesson_id,
-        'old_title': old_title,
-        'new_title': new_title,
-        'file': str(target.resolve()),
-    }
-
-
 # =============================================================================
 # Aggregate verb — read-only cross-lesson classifier
 # =============================================================================
@@ -1020,29 +600,14 @@ def cmd_set_title(args: argparse.Namespace) -> dict:
 #      → lowest lesson id.
 #   6. Compose merged-body preview (~400 chars) per the doc template.
 #   7. Emit deterministic TOON.
-
-# Regex matching the lesson-id pattern ``YYYY-MM-DD-HH-NNN`` exactly.
-LESSON_ID_REGEX = re.compile(r'\b\d{4}-\d{2}-\d{2}-\d{2}-\d{3}\b')
-
-# Recurrence H2 regex used to count appended dedup-merge sections in a body.
-RECURRENCE_H2_REGEX = re.compile(r'(?m)^## Recurrence —')
-
-# Maximum size of merged_body_preview in characters.
-AGGREGATE_PREVIEW_CHARS = 400
-
-# Signal priority labels (highest first). Used both for tier-detection during
-# grouping and for ordering the headline command list.
-SIGNAL_CROSS_REF = 'cross-ref'
-SIGNAL_SHARED_COMPONENT = 'shared-component'
-SIGNAL_SHARED_STANDARDS_DIR = 'shared-standards-dir'
-SIGNAL_SHARED_WORKFLOW_BOUNDARY = 'shared-workflow-boundary'
-
-SIGNAL_PRIORITY: tuple[str, ...] = (
-    SIGNAL_CROSS_REF,
-    SIGNAL_SHARED_COMPONENT,
-    SIGNAL_SHARED_STANDARDS_DIR,
-    SIGNAL_SHARED_WORKFLOW_BOUNDARY,
-)
+#
+# The datetime-free, non-patched pieces of this section (the lesson-id /
+# recurrence regexes, the signal-tier constants, and the pure grouping /
+# primary-pick / composition helpers) live in the co-located
+# ``_lessons_aggregate`` module and are imported at the top of this file.
+# ``_derive_standards_dir`` (below) and ``_load_active_lessons_with_signals``
+# stay here because the former reads the test-patched ``find_marketplace_path``
+# and the latter drives the corpus scan.
 
 
 def _derive_standards_dir(component: str) -> str:
@@ -1071,35 +636,6 @@ def _derive_standards_dir(component: str) -> str:
     bundles_root = find_marketplace_path()
     base = str(bundles_root) if bundles_root is not None else MARKETPLACE_BUNDLES_PATH
     return f'{base}/{bundle}/skills/{skill}/standards/'
-
-
-def _derive_workflow_boundary(component: str) -> str:
-    """Derive the workflow-boundary label from a component value.
-
-    The workflow boundary is the ``{bundle}:{skill}`` pair stripped of any
-    task-number suffix (e.g., ``plan-marshall:phase-5-execute:5`` →
-    ``plan-marshall:phase-5-execute``). Returns the component verbatim when
-    no trailing numeric suffix is present, or the empty string for unparseable
-    values.
-    """
-    if not component:
-        return ''
-    parts = component.split(':')
-    if len(parts) < 2:
-        return ''
-    # Drop a trailing purely-numeric segment if present.
-    if len(parts) >= 3 and parts[-1].isdigit():
-        parts = parts[:-1]
-    return ':'.join(parts[:2]) if len(parts) >= 2 else ''
-
-
-def _extract_cross_refs(lesson_id: str, body: str) -> set[str]:
-    """Extract lesson-id cross references from a body, excluding self-refs."""
-    if not body:
-        return set()
-    matches = set(LESSON_ID_REGEX.findall(body))
-    matches.discard(lesson_id)
-    return matches
 
 
 def _load_active_lessons_with_signals() -> list[dict]:
@@ -1143,219 +679,6 @@ def _load_active_lessons_with_signals() -> list[dict]:
             }
         )
     return lessons
-
-
-def _group_by_signals(lessons: list[dict]) -> list[dict]:
-    """Build groups using the strongest-wins priority order.
-
-    Walks signal tiers in priority order. Within each tier, members are
-    placed into buckets keyed by the tier's signal value (cross-ref groups
-    by alphabetically-smallest member id; shared-component groups by the
-    component value; etc.). A lesson placed at a higher tier is not
-    eligible for a weaker tier. Multi-member groups only — singletons are
-    dropped.
-    """
-    by_id = {lesson['id']: lesson for lesson in lessons}
-    placed: dict[str, dict] = {}  # lesson_id -> {group_id, signal}
-    # Keyed by (signal, group_key) tuple so the same string value can serve as
-    # a group key at multiple tiers without collision.
-    groups: dict[tuple[str, str], dict] = {}
-
-    # ---- Tier 1: cross-ref ----
-    # A cross-ref pair links two lessons when either body cites the other's
-    # id. Connected components form a group.
-    adjacency: dict[str, set[str]] = {lid: set() for lid in by_id}
-    for lid, lesson in by_id.items():
-        for ref in lesson['cross_refs']:
-            if ref in by_id:
-                adjacency[lid].add(ref)
-                adjacency[ref].add(lid)
-
-    visited: set[str] = set()
-    for lid in sorted(by_id):
-        if lid in visited:
-            continue
-        # BFS the component containing lid.
-        component_members: set[str] = set()
-        queue = [lid]
-        while queue:
-            cur = queue.pop()
-            if cur in visited:
-                continue
-            visited.add(cur)
-            component_members.add(cur)
-            for neighbour in adjacency[cur]:
-                if neighbour not in visited:
-                    queue.append(neighbour)
-        if len(component_members) < 2:
-            continue
-        # Place all members at the cross-ref tier.
-        group_key = sorted(component_members)[0]  # alphabetically smallest member id
-        groups[(SIGNAL_CROSS_REF, group_key)] = {
-            'key': group_key,
-            'signal': SIGNAL_CROSS_REF,
-            'members': component_members,
-        }
-        for member in component_members:
-            placed[member] = {'group_key': group_key, 'signal': SIGNAL_CROSS_REF}
-
-    # Helper: attempt to add lesson at a given tier with a given key.
-    def _try_place(lesson_id: str, group_key: str, signal: str) -> None:
-        if lesson_id in placed:
-            return
-        existing = groups.get((signal, group_key))
-        if existing is None:
-            groups[(signal, group_key)] = {
-                'key': group_key,
-                'signal': signal,
-                'members': {lesson_id},
-            }
-        else:
-            existing['members'].add(lesson_id)
-
-    # ---- Tier 2: shared-component ----
-    component_buckets: dict[str, list[str]] = {}
-    for lid, lesson in by_id.items():
-        if lid in placed:
-            continue
-        comp = lesson['component']
-        if not comp:
-            continue
-        component_buckets.setdefault(comp, []).append(lid)
-    for comp, members in component_buckets.items():
-        if len(members) < 2:
-            continue
-        for member in members:
-            _try_place(member, comp, SIGNAL_SHARED_COMPONENT)
-        # Mark as placed only if the bucket actually formed a group.
-        bucket_group = groups.get((SIGNAL_SHARED_COMPONENT, comp))
-        if bucket_group and len(bucket_group['members']) >= 2:
-            for member in bucket_group['members']:
-                placed[member] = {
-                    'group_key': comp,
-                    'signal': SIGNAL_SHARED_COMPONENT,
-                }
-
-    # ---- Tier 3: shared-standards-dir ----
-    standards_buckets: dict[str, list[str]] = {}
-    for lid, lesson in by_id.items():
-        if lid in placed:
-            continue
-        sdir = lesson['standards_dir']
-        if not sdir:
-            continue
-        standards_buckets.setdefault(sdir, []).append(lid)
-    for sdir, members in standards_buckets.items():
-        if len(members) < 2:
-            continue
-        for member in members:
-            _try_place(member, sdir, SIGNAL_SHARED_STANDARDS_DIR)
-        bucket_group = groups.get((SIGNAL_SHARED_STANDARDS_DIR, sdir))
-        if bucket_group and len(bucket_group['members']) >= 2:
-            for member in bucket_group['members']:
-                placed[member] = {
-                    'group_key': sdir,
-                    'signal': SIGNAL_SHARED_STANDARDS_DIR,
-                }
-
-    # ---- Tier 4: shared-workflow-boundary ----
-    boundary_buckets: dict[str, list[str]] = {}
-    for lid, lesson in by_id.items():
-        if lid in placed:
-            continue
-        boundary = lesson['workflow_boundary']
-        if not boundary:
-            continue
-        boundary_buckets.setdefault(boundary, []).append(lid)
-    for boundary, members in boundary_buckets.items():
-        if len(members) < 2:
-            continue
-        for member in members:
-            _try_place(member, boundary, SIGNAL_SHARED_WORKFLOW_BOUNDARY)
-        bucket_group = groups.get((SIGNAL_SHARED_WORKFLOW_BOUNDARY, boundary))
-        if bucket_group and len(bucket_group['members']) >= 2:
-            for member in bucket_group['members']:
-                placed[member] = {
-                    'group_key': boundary,
-                    'signal': SIGNAL_SHARED_WORKFLOW_BOUNDARY,
-                }
-
-    # Filter to multi-member groups only (drop singletons that may have
-    # leaked through helper bookkeeping).
-    return [
-        {
-            'key': info['key'],
-            'signal': info['signal'],
-            'members': sorted(info['members']),
-        }
-        for info in groups.values()
-        if len(info['members']) >= 2
-    ]
-
-
-def _pick_primary(group_member_ids: list[str], by_id: dict[str, dict]) -> str:
-    """Apply the primary-pick rule from ``aggregate-analysis.md``.
-
-    Order: highest cross-ref-fan-in (count of OTHER members citing this
-    lesson) → highest recurrence-count → lowest lesson id ascending.
-    """
-    member_set = set(group_member_ids)
-
-    def fan_in(lid: str) -> int:
-        return sum(
-            1
-            for other in member_set
-            if other != lid and lid in by_id[other]['cross_refs']
-        )
-
-    # Sort by (-fan_in, -recurrence, id ascending) — ascending wins are first.
-    ranked = sorted(
-        group_member_ids,
-        key=lambda lid: (-fan_in(lid), -by_id[lid]['recurrence_count'], lid),
-    )
-    return ranked[0]
-
-
-def _absorbed_reason(
-    absorbed_id: str,
-    primary_id: str,
-    signal: str,
-    by_id: dict[str, dict],
-    group_key: str,
-) -> str:
-    """Compose the absorbed-row ``reason`` field per the doc contract."""
-    if signal == SIGNAL_CROSS_REF:
-        return f'cross-ref to {primary_id}'
-    if signal == SIGNAL_SHARED_COMPONENT:
-        return f'shared component {by_id[absorbed_id]["component"]}'
-    if signal == SIGNAL_SHARED_STANDARDS_DIR:
-        return f'shared standards-dir {group_key}'
-    if signal == SIGNAL_SHARED_WORKFLOW_BOUNDARY:
-        return f'shared workflow-boundary {group_key}'
-    return signal
-
-
-def _compose_merged_body(primary: dict, absorbed: list[dict]) -> str:
-    """Compose the would-be merged body verbatim per the doc template."""
-    sections = [primary['body'].rstrip()]
-    for member in absorbed:
-        sections.append(
-            f'## Sub-task: {member["title"]} ({member["id"]})\n\n'
-            f'{member["body"].rstrip()}'
-        )
-    return '\n\n'.join(sections)
-
-
-def _truncate_preview(text: str, limit: int) -> str:
-    """Truncate ``text`` to at most ``limit`` characters on a code-point boundary.
-
-    Python string slicing already operates on code-point boundaries, so a
-    plain ``text[:limit]`` is safe here. The helper is kept as a named
-    boundary for the doc contract (``first ~400 chars`` rule).
-    """
-    if len(text) <= limit:
-        return text
-    return text[:limit]
 
 
 def cmd_aggregate(args: argparse.Namespace) -> dict:
@@ -1618,38 +941,6 @@ def cmd_supersede(args: argparse.Namespace) -> dict:
     }
 
 
-def _resolve_retention_setting(cli_value: int | None, config_key: str, fallback: int) -> int:
-    """Resolve a ``system.retention`` integer setting.
-
-    Precedence: ``cli_value`` (when not None) → ``system.retention.{config_key}``
-    from marshal.json → ``fallback``. A missing or unreadable marshal.json silently
-    falls through to the hard fallback so these commands remain usable on pre-init
-    checkouts.
-    """
-    if cli_value is not None:
-        return cli_value if cli_value >= 0 else fallback
-
-    marshal_path = get_marshal_path()
-    if not marshal_path.exists():
-        return fallback
-
-    try:
-        config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    except (json.JSONDecodeError, OSError):
-        return fallback
-
-    retention = config.get('system', {}).get('retention', {})
-    value = retention.get(config_key)
-    if isinstance(value, int) and value >= 0:
-        return value
-    return fallback
-
-
-def _resolve_retention_days(cli_value: int | None) -> int:
-    """Resolve effective ``retention_days`` for ``cleanup-superseded``."""
-    return _resolve_retention_setting(cli_value, 'lessons_superseded_days', DEFAULT_LESSONS_SUPERSEDED_DAYS)
-
-
 def cmd_cleanup_superseded(args: argparse.Namespace) -> dict:
     """Prune the markdown stubs of superseded lessons while preserving tombstones.
 
@@ -1751,11 +1042,6 @@ def cmd_cleanup_superseded(args: argparse.Namespace) -> dict:
         'already_removed': already_removed,
         'skipped_no_tombstone': skipped_no_tombstone,
     }
-
-
-def _resolve_quiet_days(cli_value: int | None) -> int:
-    """Resolve the effective retire-on-quiet window (days) for ``retire-quiet``."""
-    return _resolve_retention_setting(cli_value, 'arch_constraint_quiet_days', DEFAULT_ARCH_CONSTRAINT_QUIET_DAYS)
 
 
 def cmd_retire_quiet(args: argparse.Namespace) -> dict:
