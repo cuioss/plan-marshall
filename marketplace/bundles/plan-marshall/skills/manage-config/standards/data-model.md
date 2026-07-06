@@ -62,10 +62,12 @@ JSON structure and field definitions for project configuration.
         "default:verify:module-tests"
       ],
       "cost_size_token_table": {
+        "XS": "5K",
         "S": "25K",
         "M": "60K",
         "L": "130K",
-        "XL": "260K"
+        "XL": "260K",
+        "XXL": "520K"
       },
       "per_envelope_budget_tokens": "400K",
       "verification_steps": [
@@ -424,10 +426,12 @@ Execute phase with integrated verification pipeline. Contains the `commit_and_pu
         "default:verify:module-tests"
       ],
       "cost_size_token_table": {
+        "XS": "5K",
         "S": "25K",
         "M": "60K",
         "L": "130K",
-        "XL": "260K"
+        "XL": "260K",
+        "XXL": "520K"
       },
       "per_envelope_budget_tokens": "400K",
       "verification_steps": {
@@ -445,7 +449,7 @@ Execute phase with integrated verification pipeline. Contains the `commit_and_pu
 | `commit_and_push` | bool | true | true=commit per-deliverable + push at finalize; false=local-only run (push/PR steps stripped by the manifest `commit_push_disabled` pre-filter) |
 | `max_iterations` | int | 5 | Maximum verify-execute-verify loops |
 | `per_deliverable_build` | list[string] | `["default:verify:compile","default:verify:module-tests"]` | A list of `default:verify:{canonical}` step IDs — the canonical-verify rungs phase-5-execute runs for the changed module at each per-deliverable chain-tail point (Step 10). The default runs `compile` + the module's scoped `module-tests`. Set to `[]` to disable the focused build (the whole-tree sweep at end-of-phase remains the only build). Each entry must be a `default:verify:{canonical}` ID; the retired enum strings (`off` / `compile-only` / `compile+scoped-test` / `full`) are rejected with a migration error. |
-| `cost_size_token_table` | dict | `{"S":"25K","M":"60K","L":"130K","XL":"260K"}` | Size→token table mapping each T-shirt `cost_size` (`S`/`M`/`L`/`XL`) to a predicted-token magnitude. The phase-4-plan bin-packer (`manage-tasks pack-envelopes`) reads it to map a task's derived `cost_size` to its `predicted_cost_tokens`. Keys must be exactly `S`/`M`/`L`/`XL`; each value parses via `sensible_number.parse_sensible_int`. Validated by `validate_cost_size_token_table`. The default magnitudes are calibrated to the forensic 134K–392K per-dispatch range and are tunable to recalibrate the cost model. |
+| `cost_size_token_table` | dict | `{"XS":"5K","S":"25K","M":"60K","L":"130K","XL":"260K","XXL":"520K"}` | Size→token table mapping each T-shirt `cost_size` (`XS`/`S`/`M`/`L`/`XL`/`XXL`) to a predicted-token magnitude. The phase-4-plan bin-packer (`manage-tasks pack-envelopes`) reads it to map a task's derived `cost_size` to its `predicted_cost_tokens`. Keys must be exactly `XS`/`S`/`M`/`L`/`XL`/`XXL`; each value parses via `sensible_number.parse_sensible_int`. Validated by `validate_cost_size_token_table`. The four original magnitudes (`S`≈25K / `M`≈60K / `L`≈130K / `XL`≈260K) are calibrated to the forensic 134K–392K per-dispatch range; `XS`≈5K labels deterministic ≈0-token bookkeeping and `XXL`≈520K the heaviest elements. The magnitudes are tunable to recalibrate the cost model. |
 | `per_envelope_budget_tokens` | string | "400K" | Per-envelope packing budget — the token ceiling the phase-4-plan bin-packer accumulates `predicted_cost_tokens` against before opening a new envelope group. Consumed at PLAN time by the bin-packer (`manage-tasks pack-envelopes`), NOT a runtime comparand. The `_tokens` suffix names the unit; the human-friendly value form (`"400K"`) parses to an int via `sensible_number.parse_sensible_int`. The 400K default leaves headroom below a typical context window. |
 
 #### Verify step ID scheme
