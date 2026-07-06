@@ -128,6 +128,22 @@ def should_emit(section_key: str, trigger_key: str | None, fragments: dict[str, 
     # the fragment claims a present manifest, regardless of finding count.
     if trigger_key == 'manifest-decisions' and fragment.get('manifest_present') is True:
         return True
+    # Routing-decisions is the same shape of special case: the aspect grades the
+    # run's lane/recipe/posture routing and carries verdict/cost/prune facts
+    # (``posture``, ``mis_prune_checks``, ``cost_preview``, and the LLM-synthesized
+    # ``posture_verdict``) rather than a ``findings`` list, so a clean run — which
+    # is the common case and the whole point of the lane feedback loop — has none
+    # of the payload fields checked above. Emit whenever the fragment reports a
+    # present routing-decision analysis (``manifest_present``, set by the
+    # deterministic producer) or carries any of its content fields (the
+    # LLM-synthesized fragment shape).
+    if trigger_key == 'routing-decisions':
+        if fragment.get('manifest_present') is True:
+            return True
+        for key in ('mis_prune_checks', 'cost_preview', 'posture_verdict', 'posture'):
+            value = fragment.get(key)
+            if value not in (None, '', [], {}):
+                return True
     return False
 
 

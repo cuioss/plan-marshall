@@ -172,3 +172,59 @@ class TestDispatchedAspectsHaveStaticRow:
             'The completeness guard must flag routing-decisions as dispatched-but-unlisted '
             'when its SECTION_SPEC row is absent — proving the guard bites.'
         )
+
+
+class TestConditionalFragmentActuallyRenders:
+    """A SECTION_SPEC row is necessary but NOT sufficient — the fragment's shape
+    must also pass ``compile-report.should_emit()``. The dispatched-vs-row guard
+    above cannot see this: a listed aspect whose real fragment carries no
+    ``findings``/``failures``/``prompts``/``candidates`` list (the routing-decisions
+    case) still ships dead unless ``should_emit`` has a carve-out for it. These
+    tests exercise the render path with the aspect's REAL fragment shape.
+    """
+
+    @staticmethod
+    def _routing_decisions_fragment() -> dict:
+        """The success-shape fragment ``check-routing-decisions.py`` emits (plus the
+        LLM-synthesized ``posture_verdict``) — findings-less by design."""
+        return {
+            'status': 'success',
+            'aspect': 'routing-decisions',
+            'manifest_present': True,
+            'posture': 'auto',
+            'planning_lane': 'deep',
+            'mis_prune_checks': [
+                {'check': 'mis_prune:sonar-roundtrip', 'status': 'pass',
+                 'predicate': 'no_code_delta', 'detail': 'step ran'},
+            ],
+            'cost_preview': {'actual_tokens': 123, 'predicted_tokens': 100, 'delta_tokens': 23},
+            'posture_verdict': 'correct',
+            'summary': {'passed': 1, 'failed': 0, 'skipped': 0},
+        }
+
+    def test_routing_decisions_should_emit_true_for_real_shape(self):
+        # Direct should_emit assertion: the findings-less routing-decisions
+        # fragment MUST be judged renderable. Without the carve-out this returns
+        # False and the section is silently dropped despite its SECTION_SPEC row.
+        fragment = self._routing_decisions_fragment()
+        assert _cr.should_emit('routing-decisions', 'routing-decisions',
+                               {'routing-decisions': fragment}) is True
+
+    def test_routing_decisions_section_renders_in_document(self):
+        # End-to-end: build a document from the real fragment shape and assert the
+        # "Routing Decisions" section actually appears in the compiled report.
+        heading = next(
+            (h for h, fragment_key, _trigger in _rs.SECTION_SPEC
+             if fragment_key == 'routing-decisions'),
+            None,
+        )
+        assert heading is not None, 'routing-decisions must have a SECTION_SPEC row (D1)'
+
+        fragments = {'_meta': {'mode': 'live'},
+                     'routing-decisions': self._routing_decisions_fragment()}
+        content, _written, _omitted = _cr.build_document(
+            'p', 'live', Path('/tmp/plan'), None, fragments)
+        assert f'## {heading}' in content, (
+            'routing-decisions has a SECTION_SPEC row but its real (findings-less) '
+            'fragment shape is rejected by should_emit — the section never renders'
+        )
