@@ -528,12 +528,12 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
     --message "(plan-marshall:phase-1-init) Tier 1 recipe-match auto-routed: recipe_key={top_match_key} (confidence={top_match_confidence} >= auto_route_recipe_threshold)"
   ```
 
-- **Propose** — when `auto_route_recipe == false`, OR `top_match.confidence < auto_route_recipe_threshold` (a match exists but does not clear the auto-route floor): surface the ranked `matches[]` to the user via `AskUserQuestion`. Offer each match (`name` + `confidence`) as a selectable option plus a "No recipe — proceed with the standard refine/outline pipeline" option. On a recipe selection, persist `status.metadata.recipe_key = {selected_key}` via the same `manage-status metadata` call above; on the no-recipe option, persist nothing. Emit a decision-log entry recording the user's choice:
+- **Propose** — when `auto_route_recipe == false`, OR `top_match.confidence < auto_route_recipe_threshold` (a match exists but does not clear the auto-route floor): **do NOT fire `AskUserQuestion` here.** This step runs inside a dispatched `execution-context` envelope, where operator input is unreachable — a dispatched leaf cannot fire `AskUserQuestion` and MUST hand the prompt back to the inline orchestrator via an escalation/prompt-required envelope (see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). Instead, compute the ranked `matches[]` preview and carry it out as a `recipe_match_prompt` block in the Step 12 return TOON so the main-context orchestrator (`plan-marshall/workflow/planning.md` § Action: init) owns the prompt. The block enumerates each match (`key`, `name`, `confidence`) as a selectable option plus a "No recipe — proceed with the standard refine/outline pipeline" option. **Persist nothing here** — the orchestrator persists `status.metadata.recipe_key` after the operator selects a recipe (and persists nothing on the no-recipe option). Emit a decision-log entry recording that the propose branch was surfaced for orchestrator-owned prompting:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level INFO \
-    --message "(plan-marshall:phase-1-init) Tier 1 recipe-match proposed {match_count} matches; user selected: {selection}"
+    --message "(plan-marshall:phase-1-init) Tier 1 recipe-match proposed {match_count} matches below the auto-route floor — returning recipe_match_prompt for the orchestrator to own the AskUserQuestion"
   ```
 
 When `matches[]` is empty, log the no-match decision and skip routing:
@@ -846,22 +846,21 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 Parse `lanes.{minimal,auto,full}.phase_6_steps`, `phase_6_steps_count`, and `cost_sum_tokens`. The recipe lane seed (when Tier 1 recipe-match surfaced a `lane_seed` in Step 5c) is the lowest-precedence default — the recommended posture from Step 8b's projection already composes with it; an explicit operator choice here overrides both.
 
-**When `lane_selection: ask`** — surface the AskUserQuestion posture dialogue. Present each posture as a selectable option labeled with its concrete consequences: the kept/dropped step set and the summed token estimate (e.g. *"full · 14 steps · ≈0.96M tok"*, *"auto · 12 steps · ≈0.70M tok (skips sonar / lessons-housekeeping)"*, *"minimal · 6 steps · ≈0.03M tok — no security audit, no retrospectives — appropriate for docs / mechanical changes"*). Pre-select the projected recommendation. Persist the chosen posture:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} --set --field execution_profile --value {chosen_posture}
-```
-
-Emit one decision-log line recording the choice:
+**When `lane_selection: ask`** — **do NOT fire `AskUserQuestion` here.** This step runs inside a dispatched `execution-context` envelope, where operator input is unreachable — a dispatched leaf cannot fire `AskUserQuestion` and MUST hand the prompt back to the inline orchestrator via an escalation/prompt-required envelope (see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). Step 8b's `planning-lane route --persist` has ALREADY persisted the projected posture into `status.metadata.execution_profile`, so no persistence is needed here — instead, carry the three-posture preview out as a `posture_prompt` block in the Step 12 return TOON so the main-context orchestrator (`plan-marshall/workflow/planning.md` § Action: init) owns the prompt. The block carries the projected recommendation (pre-selected) plus the three per-posture previews resolved from `lanes preview` above — each labeled with its concrete consequences: the kept/dropped step set and the summed token estimate (e.g. *"full · 14 steps · ≈0.96M tok"*, *"auto · 12 steps · ≈0.70M tok (skips sonar / lessons-housekeeping)"*, *"minimal · 6 steps · ≈0.03M tok — no security audit, no retrospectives — appropriate for docs / mechanical changes"*). The orchestrator persists the operator's chosen posture into `status.metadata.execution_profile` (overwriting the projection) after the prompt resolves. Emit one decision-log line recording that the posture dialogue was surfaced for orchestrator-owned prompting:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-1-init) Execution-profile posture: {chosen_posture} (projected={projected_posture}, lane_selection=ask)"
+  --message "(plan-marshall:phase-1-init) Execution-profile posture dialogue surfaced (projected={projected_posture}, lane_selection=ask) — returning posture_prompt for the orchestrator to own the AskUserQuestion"
 ```
 
-**When `lane_selection: auto`** — take the projection silently. Step 8b already persisted the projected posture into `status.metadata.execution_profile`; do NOT prompt. Emit the decision-log line above with `lane_selection=auto` and `chosen_posture == projected_posture`.
+**When `lane_selection: auto`** — take the projection silently. Step 8b already persisted the projected posture into `status.metadata.execution_profile`; do NOT prompt and return NO `posture_prompt` block. Emit one decision-log line recording the silent projection:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-1-init) Execution-profile posture: {projected_posture} (lane_selection=auto, silent projection — no prompt)"
+```
 
 **Manifest timing.** The persisted posture is consumed by the phase-4 Step 7b `compose`, which resolves the lane-pruned `execution.toon` with the firm `change_type` / `affected_files` signals — see [`../manage-execution-manifest/standards/decision-rules.md`](../manage-execution-manifest/standards/decision-rules.md) § "Execution-profile lane resolution" (twice-compose timing) and `manage-execution-manifest` Canonical invocations → `compose`. The `lanes preview` projection shown here and that composed manifest share one resolver, so the preview cannot diverge from the executed finalize flow; the posture is fixed here and never re-prompted at phase-4.
 
@@ -931,9 +930,37 @@ artifacts:
   request_md: request.md
   status: status.json
   references: references.json
+
+# Optional — present ONLY when the Step 5c propose branch fired (a recipe matched
+# below the auto-route floor). Absent on auto-route and on no-match. The orchestrator
+# fires the AskUserQuestion in main context and persists status.metadata.recipe_key
+# on a recipe selection (nothing on the "No recipe" option).
+recipe_match_prompt:
+  match_count: {N}
+  options[N]{key,name,confidence}:
+    {key},{name},{confidence}
+  no_recipe_option: "No recipe — proceed with the standard refine/outline pipeline"
+
+# Optional — present ONLY when Step 8d ran with lane_selection: ask. Absent when
+# lane_selection: auto (the projected posture was taken silently). The orchestrator
+# fires the AskUserQuestion in main context and persists status.metadata.execution_profile
+# with the chosen posture (overwriting Step 8b's projection).
+posture_prompt:
+  projected: {minimal|auto|full}
+  options[3]{posture,phase_6_steps_count,cost_sum_tokens,summary}:
+    minimal,{count},{tokens},{summary}
+    auto,{count},{tokens},{summary}
+    full,{count},{tokens},{summary}
 ```
 
 `planning_lane` is the value resolved by Step 8b's `manage-status planning-lane route`. The orchestrator dispatches the planning pipeline by this lane.
+
+**Optional operator-prompt blocks** — `recipe_match_prompt` and `posture_prompt` are the two escalation/prompt-required envelopes this phase returns for the inline orchestrator to own (a dispatched leaf cannot fire `AskUserQuestion` — see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). Each block is present ONLY on the branch that would have prompted:
+
+- `recipe_match_prompt` — emitted by the Step 5c **propose** branch (a recipe matched but did not clear the auto-route floor). Carries the ranked `options[]` (each `key`/`name`/`confidence`) plus the `no_recipe_option` label. Absent on the auto-route branch (which silently persists `recipe_key`) and on no-match. The orchestrator fires the prompt and persists `status.metadata.recipe_key` on a recipe selection.
+- `posture_prompt` — emitted by Step 8d when `lane_selection: ask`. Carries the `projected` posture (pre-selected) and the three `options[]` previews from `lanes preview` (per-posture step count + summed cost estimate). Absent when `lane_selection: auto` (the projection is taken silently). The orchestrator fires the prompt and persists `status.metadata.execution_profile` with the chosen posture, overwriting Step 8b's projection.
+
+Neither field appears when its branch did not fire; the orchestrator treats an absent block as "no prompt required" and proceeds with the already-persisted projection / silent recipe route.
 
 **Always append the current-checkout cwd directive from Step 6 point 4 verbatim after the TOON output.** Phases 2-4 run on the current working tree because worktree materialization is deferred to phase-5-execute Step 2.5. The orchestrating LLM uses the directive to decide, per call, whether a `.plan/execute-script.py` invocation is Bucket A (cwd-agnostic, no routing flags) or Bucket B (pass `--plan-id {plan_id}`, which auto-resolves the current working tree now and the materialized worktree once phase-5 creates it).
 
@@ -950,7 +977,7 @@ display_detail: "<plan {plan_id} created, domain {domain}>"
 
 `display_detail` shape on success: `"plan {plan_id} created, domain {domain}"` (e.g. `"plan 2026-05-11-15-007 created, domain plan-marshall"`); ≤80 chars, ASCII, no trailing period. On error, `display_detail` carries the short error label (see § Error Handling for the structured envelope).
 
-All other fields (`plan_id`, `domain`, `next_phase`, `use_worktree`, `planning_lane`, `source`, `artifacts`) are documented in Step 12 above and form the rest of the return payload.
+All other fields (`plan_id`, `domain`, `next_phase`, `use_worktree`, `planning_lane`, `source`, `artifacts`) are documented in Step 12 above and form the rest of the return payload. The two optional escalation/prompt-required blocks (`recipe_match_prompt`, `posture_prompt`) are also documented in Step 12 — each is present only on the branch that would have prompted, and the inline orchestrator owns the `AskUserQuestion` and the resulting metadata persistence.
 
 ---
 

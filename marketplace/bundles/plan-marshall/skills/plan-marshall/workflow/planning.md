@@ -221,6 +221,72 @@ Do NOT call the **Metrics** fused-call. Do NOT capture the phase handshake. Do N
 - `plan-marshall:phase-1-init` § Enforcement — the prohibition this assertion enforces
 - `feedback_phase2_refine_never_implements` — driving failure history for the symmetric post-refine guard
 
+**Orchestrator-owned operator prompts (recipe-match + posture)**: `phase-1-init` runs as a dispatched `execution-context` leaf, where `AskUserQuestion` is unreachable at runtime (see [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). The two init-phase operator dialogues therefore come back as optional prompt-required blocks on the init return TOON — `recipe_match_prompt` (Step 5c propose branch) and `posture_prompt` (Step 8d `lane_selection: ask`). The orchestrator owns both `AskUserQuestion` prompts here, after the post-init contract assertions pass and BEFORE the inline-early-phase-path detection and the automatic-continuation decision below (the inline early-phase path reads `status.metadata.recipe_key`, so the recipe prompt must resolve and persist first). Each block is present only when its branch fired; when a block is absent, skip its prompt entirely.
+
+**Consume `recipe_match_prompt` (conditional)**: When the init return carries a `recipe_match_prompt` block, fire the `AskUserQuestion` in main context, offering each `options[]` entry (`name` + `confidence`) as a selectable choice plus the `no_recipe_option` label:
+
+```text
+AskUserQuestion:
+  questions:
+    - question: "A project recipe matched this request below the auto-route threshold. Route through it, or proceed with the standard pipeline?"
+      header: "Recipe"
+      options:
+        # For each recipe_match_prompt.options[] entry (dynamic):
+        - label: "{name} ({confidence})"
+          description: "Route this plan through the {key} recipe"
+        - label: "No recipe"
+          description: "Proceed with the standard refine/outline pipeline"
+      multiSelect: false
+```
+
+On a recipe selection, persist the chosen recipe key (the orchestrator, not the leaf, owns this write):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --set --field recipe_key --value {selected_key}
+```
+
+On the "No recipe" option, persist nothing. Either way, log the choice:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:planning) Recipe-match prompt resolved: {selection}"
+```
+
+When the init return carries NO `recipe_match_prompt` block (auto-routed, or no match), skip this prompt — `recipe_key` is either already persisted by init's auto-route branch or intentionally unset.
+
+**Consume `posture_prompt` (conditional)**: When the init return carries a `posture_prompt` block, fire the `AskUserQuestion` in main context, pre-selecting `posture_prompt.projected` and labeling each `options[]` entry with its concrete consequences (step count + summed token estimate):
+
+```text
+AskUserQuestion:
+  questions:
+    - question: "Choose the execution-profile posture for this plan (governs which phase-6 finalize steps run)."
+      header: "Posture"
+      options:
+        # For each posture_prompt.options[] entry (minimal / auto / full):
+        - label: "{posture} · {phase_6_steps_count} steps · ≈{cost_sum_tokens} tok"
+          description: "{summary}"
+      multiSelect: false
+```
+
+Persist the operator's chosen posture, overwriting Step 8b's projection (the orchestrator owns this write):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --set --field execution_profile --value {chosen_posture}
+```
+
+Log the choice:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:planning) Execution-profile posture prompt resolved: {chosen_posture} (projected={projected})"
+```
+
+When the init return carries NO `posture_prompt` block (`lane_selection: auto`), skip this prompt — the projected posture Step 8b persisted stands.
+
 **Metrics**: After the init agent completes and `plan_id` is known, record the
 `1-init → 2-refine` boundary in a single fused call (forwarding the agent's
 `<usage>` data to the closing phase). The fused command persists the same
@@ -361,7 +427,7 @@ Task: plan-marshall:{target}
     WORKTREE: .
 ```
 
-The agent returns confidence + track + scope_estimate + qgate_pending_count + qgate_validation_required in its TOON. The 12-step confidence loop (Steps 3b/3c/8/9/10/11/12) iterates *inside* this single envelope; `AskUserQuestion` in Step 11 propagates to the host UI directly from the subagent (no main-context routing required).
+The agent returns confidence + track + scope_estimate + qgate_pending_count + qgate_validation_required in its TOON. The 12-step confidence loop (Steps 3b/3c/8/9/10/11/12) iterates *inside* this single envelope. **Operator prompts inside an `execution-context` dispatch are unreachable at runtime** — a dispatched leaf does NOT receive `AskUserQuestion`, so the Step 11 clarification prompt does NOT propagate to the host UI from the subagent. Any operator input a dispatched phase needs must be owned by the main-context orchestrator (the leaf returns an escalation/prompt-required envelope; the orchestrator fires the `AskUserQuestion`), per [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope". The phase-2-refine Step 11 clarification is a known exposure of this constraint: because it is embedded in an in-envelope confidence loop, migrating it to the orchestrator-owned pattern requires breaking the loop across dispatch boundaries and is deferred (surfaced as a finding by the plugin-doctor reachability guard) rather than fixed here.
 
 **Post-return q-gate-validation dispatch (conditional)**: Read `qgate_validation_required` from the phase return TOON captured above. When `true` (lesson-derived plan activated Step 13.5's `narrative-vs-code-validator`), dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. When `false` or absent, skip this block and continue to the Post-dispatch contract assertion below.
 
