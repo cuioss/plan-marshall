@@ -263,7 +263,7 @@ AskUserQuestion:
         - label: "Refine"
           description: "Adapt scope — attach the obsolescence report to the request as a clarifying note"
         - label: "Close as resolved"
-          description: "The problem no longer exists — delete the lesson and abort plan creation"
+          description: "The problem no longer exists — delete both the lesson and the just-created plan, then abort"
         - label: "Residual scope"
           description: "Keep only the still-valid references; drop the stale ones"
       multiSelect: false
