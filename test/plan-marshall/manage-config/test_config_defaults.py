@@ -2244,15 +2244,15 @@ def test_plan_phase_1_init_get_auto_route_recipe_threshold_returns_0_6_default(p
 # knob's defaults, the validator, and the seed on both planning phases.
 
 
-def test_default_plan_outline_includes_q_gate_validation_until_clean():
-    """DEFAULT_PLAN_OUTLINE must declare q_gate_validation == 'until_clean'."""
+def test_default_plan_outline_includes_q_gate_validation_once():
+    """DEFAULT_PLAN_OUTLINE must declare q_gate_validation == 'once'."""
     outline_defaults = _config_defaults_mod.DEFAULT_PLAN_OUTLINE
 
     assert 'q_gate_validation' in outline_defaults, (
         'q_gate_validation must be schema-registered in DEFAULT_PLAN_OUTLINE'
     )
-    assert outline_defaults['q_gate_validation'] == 'until_clean', (
-        "DEFAULT_PLAN_OUTLINE.q_gate_validation default must be 'until_clean'"
+    assert outline_defaults['q_gate_validation'] == 'once', (
+        "DEFAULT_PLAN_OUTLINE.q_gate_validation default must be 'once'"
     )
 
 
@@ -2268,15 +2268,15 @@ def test_default_plan_outline_drops_retired_qgate_gate():
     )
 
 
-def test_default_plan_plan_includes_q_gate_validation_until_clean():
-    """DEFAULT_PLAN_PLAN must seed q_gate_validation == 'until_clean'."""
+def test_default_plan_plan_includes_q_gate_validation_once():
+    """DEFAULT_PLAN_PLAN must seed q_gate_validation == 'once'."""
     plan_defaults = _config_defaults_mod.DEFAULT_PLAN_PLAN
 
     assert 'q_gate_validation' in plan_defaults, (
         'q_gate_validation must be schema-registered in DEFAULT_PLAN_PLAN'
     )
-    assert plan_defaults['q_gate_validation'] == 'until_clean', (
-        "DEFAULT_PLAN_PLAN.q_gate_validation default must be 'until_clean'"
+    assert plan_defaults['q_gate_validation'] == 'once', (
+        "DEFAULT_PLAN_PLAN.q_gate_validation default must be 'once'"
     )
 
 
@@ -2284,8 +2284,8 @@ def test_get_default_config_includes_q_gate_validation_on_both_planning_phases()
     """get_default_config() must surface q_gate_validation on phase-3-outline and phase-4-plan."""
     config = _config_defaults_mod.get_default_config()
 
-    assert config['plan']['phase-3-outline'].get('q_gate_validation') == 'until_clean'
-    assert config['plan']['phase-4-plan'].get('q_gate_validation') == 'until_clean'
+    assert config['plan']['phase-3-outline'].get('q_gate_validation') == 'once'
+    assert config['plan']['phase-4-plan'].get('q_gate_validation') == 'once'
     # the retired outline qgate gate must not surface either
     assert 'qgate' not in config['plan']['phase-3-outline']
 
@@ -2319,8 +2319,8 @@ def test_validate_q_gate_validation_rejects_invalid_value():
         )
 
 
-def test_plan_phase_3_outline_get_q_gate_validation_returns_until_clean_default(plan_context):
-    """`plan phase-3-outline get --field q_gate_validation` returns 'until_clean' from the merged default.
+def test_plan_phase_3_outline_get_q_gate_validation_returns_once_default(plan_context):
+    """`plan phase-3-outline get --field q_gate_validation` returns 'once' from the merged default.
 
     Exercises the actual cmd_phase get path against a fresh marshal.json, proving
     the default surfaces even when the persisted config omits the key.
@@ -2332,4 +2332,4 @@ def test_plan_phase_3_outline_get_q_gate_validation_returns_until_clean_default(
     result = _cmd_quality_phases_mod.cmd_phase(args, 'phase-3-outline')
 
     assert result['status'] == 'success'
-    assert result['value'] == 'until_clean'
+    assert result['value'] == 'once'
