@@ -67,8 +67,8 @@ Legend (used in every diagram below):
 │    ╞══► execution-context   role=phase-2-refine   workflow=phase-2-refine/SKILL.md     │
 │    ╞══► execution-context   role=phase-3-outline   workflow=phase-3-outline/SKILL.md   │
 │    ╞══► execution-context   role=phase-4-plan   workflow=phase-4-plan/SKILL.md         │
-│    ╞══► execution-context   role=phase-5-execute   workflow=execute-task/SKILL.md      │
-│    │                                 (one dispatch per task in the queue)              │
+│    ╞══► execution-context   role=phase-5-execute   workflow=phase-5-execute/SKILL.md   │
+│    │                            (one envelope dispatch, loops per task)                │
 │    ╘══► execution-context   role=phase-6-finalize.{step}                               │
 │                              workflow=phase-6-finalize/workflow/{step}.md              │
 │                              (one dispatch per dispatched manifest step)               │
@@ -232,7 +232,7 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │   │  PHASE-5 ENVELOPE     execution-context  role=phase-5-execute       │              │
 │   │  ════════════════                                                   │              │
 │   │                                                                     │              │
-│   │    workflow=execute-task/SKILL.md                                   │              │
+│   │    workflow=phase-5-execute/SKILL.md                                │              │
 │   │    skills[] = task-declared list from TASK-N.json                   │              │
 │   │                                                                     │              │
 │   │    Steps: execute → verify (LLM + scripts inside)                   │              │

@@ -20,6 +20,13 @@ Stay in your lane:
 - Do NOT create tasks (that's `phase-4-plan` skill).
 - Verify deliverables by executing the workflow steps below.
 
+## One-context invariant (as it applies to q-gate)
+
+The governing lifecycle invariant is that **each core phase completes in exactly ONE execution-context dispatch**. q-gate-validation is one of the few **sanctioned sibling** dispatches to that phase — the calling phase (phase-3-outline / phase-4-plan) signals `qgate_validation_required` and the orchestrator fires this workflow as a sibling top-level Task, never as a per-iteration or per-finding-class re-dispatch. Two disciplines keep q-gate within that one-context budget:
+
+- **Full-coverage-in-one-pass** (Step 4): a single validation pass runs AND records EVERY applicable validator, so all finding classes surface at once — collapsing what would otherwise be N sequential re-validation round-trips (one per discovered finding class) into 1.
+- **Content-gated, cheap-in-turn re-runs** (Step 3.5 + the orchestrator's whole-outline re-run gate): a re-entry is skipped wholesale when the content is unchanged, and when it does run, the deterministic validators re-run in-turn over only the changed deliverables — NOT as a fresh full sibling dispatch per iteration. An unchanged, already-clean outline therefore triggers zero additional q-gate dispatches.
+
 ## Inputs
 
 ```toon
@@ -101,7 +108,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
   --plan-id {plan_id} --file work/deliverable-hashes.toon
 ```
 
-Parse the prior `hashes[]{deliverable,hash}` rows into a `stored_hash(D)` lookup. When the file does not exist (first pass / `exists: false`), treat `stored_hash(D)` as empty for every deliverable — nothing is skipped on the first pass.
+Parse the prior `hashes[]{deliverable,hash}` rows into a `stored_hash(D)` lookup; the reserved `deliverable` key `__whole_outline__` carries the aggregate whole-outline fingerprint (`stored_whole_outline_hash`), consumed by the whole-outline short-circuit below rather than by a single deliverable. When the file does not exist (first pass / `exists: false`), treat `stored_hash(D)` as empty for every deliverable and `stored_whole_outline_hash` as absent — nothing is skipped on the first pass.
 
 **Per-deliverable skip predicate** — for each deliverable D parsed from solution_outline.md (Step 3 §1.1), compute `hash(D)` over D's current deliverable text (the full markdown block from its `### {N}.` heading through the line before the next deliverable heading; SHA-256 of the UTF-8 bytes, hex digest). Then query D's pending findings — pending = recorded but not yet resolved:
 
@@ -123,7 +130,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --audit-plan-id {plan_id}
 ```
 
-**After the Step 4 pass — write the current hash set back to the artifact** (covers both validated and skipped deliverables, so the next re-entry has a complete fingerprint set). Author the TOON body via the Write tool to a plan-id-scoped `.plan/temp/{plan_id}/` file (scoping the path to `{plan_id}` prevents collisions under concurrent plan execution), then persist it through `manage-files write` (never assemble multi-line content inside a shell argument):
+**Whole-outline aggregate hash gate (re-run gate)** — in addition to the per-deliverable rows, this same artifact carries one aggregate `__whole_outline__` row whose hash fingerprints the ENTIRE `solution_outline.md` (SHA-256 of the full document's UTF-8 bytes, hex digest). It is the coarse counterpart to the per-deliverable rows: where those decide which deliverables to skip, the aggregate decides whether ANY validator needs to run this pass at all.
+
+> **WHOLE-OUTLINE SHORT-CIRCUIT — on a re-entry (stored `__whole_outline__` row present), if `hash(whole_outline) == stored_whole_outline_hash` AND there are zero pending findings across ALL deliverables, the entire validation is a complete no-op**: skip Step 4 wholesale, re-emit the prior `qgate_pending_count` (which is `0`), and return immediately. The deterministic validators would produce an identical result on byte-identical input, so a fresh full pass is pure waste. On the first pass (no stored aggregate row) OR when the aggregate hash changed, proceed into the per-deliverable skip predicate and Step 4 as normal.
+
+This aggregate row is the artifact the orchestrator's whole-outline content-hash re-run gate (`planning-outline.md` Step 2b for the outline loop, and the phase-4-plan q-gate block for the plan loop) reads to decide whether to re-dispatch q-gate-validation at all: a re-outline that left `solution_outline.md` byte-identical never triggers a fresh sibling dispatch. The FIRST pass is never gated — it always runs (there is no stored aggregate row yet).
+
+**After the Step 4 pass — write the current hash set back to the artifact** (covers both validated and skipped deliverables PLUS the `__whole_outline__` aggregate row, so the next re-entry has a complete fingerprint set). Author the TOON body via the Write tool to a plan-id-scoped `.plan/temp/{plan_id}/` file (scoping the path to `{plan_id}` prevents collisions under concurrent plan execution), then persist it through `manage-files write` (never assemble multi-line content inside a shell argument):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \

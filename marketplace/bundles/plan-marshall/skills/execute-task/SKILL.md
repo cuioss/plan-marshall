@@ -200,6 +200,8 @@ message: {error message if status=error}
 infeasibility_reason: {required when status=infeasible — why the declared deliverable cannot be built as scoped}
 ```
 
+**`next_action: task_complete` is a per-task signal, not the phase's terminal payload.** It reports single-task completion to the enclosing `phase-5-execute` envelope loop, which consumes it to advance to the next same-`envelope_id` task. Echoing a bare `task_complete` to the orchestrator while pending same-envelope tasks remain is the `task_complete_returned_verbatim` defect — see [`../phase-5-execute/SKILL.md`](../phase-5-execute/SKILL.md) § "Forbidden: agent-initiated checkpoints".
+
 `status: infeasible` is the terminal return for a deliverable that cannot be built as the task specifies (the required surface does not exist, an assumed precondition is false, or building the named artifact is structurally impossible as scoped). It is distinct from `error` (an execution failure that may be retried) — `infeasible` is a planning-level verdict resolved by a gate decision (drop / re-scope into a new task / abort), never by re-running the same task. When `status: infeasible`, the skill MUST have already marked the task `infeasible` via `manage-tasks update --status infeasible` and MUST populate `infeasibility_reason`. See the Infeasible-deliverable contract in the Enforcement section.
 
 ---

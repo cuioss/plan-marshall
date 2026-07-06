@@ -49,10 +49,11 @@ JSON structure and field definitions for project configuration.
     },
     "phase-3-outline": {
       "plan_without_asking": false,
-      "qgate": "auto"
+      "q_gate_validation": "until_clean"
     },
     "phase-4-plan": {
-      "execute_without_asking": true
+      "execute_without_asking": true,
+      "q_gate_validation": "until_clean"
     },
     "phase-5-execute": {
       "commit_and_push": true,
@@ -384,7 +385,7 @@ These fields live directly under `plan`, outside any phase block.
   "plan": {
     "phase-3-outline": {
       "plan_without_asking": false,
-      "qgate": "auto"
+      "q_gate_validation": "until_clean"
     }
   }
 }
@@ -393,7 +394,7 @@ These fields live directly under `plan`, outside any phase block.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `plan_without_asking` | bool | false | Auto-proceed from outline to task creation without user review |
-| `qgate` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the planning-time Q-Gate validation (deep-lane outline dispatch). Validated by `validate_run_at_all`. |
+| `q_gate_validation` | enum(`off`\|`once`\|`until_clean`) | until_clean | Planning-time q-gate validation knob consumed by the deep-lane outline dispatch. `off` skips q-gate validation; `once` runs a single validation pass without re-looping on findings; `until_clean` (default) re-runs validation until it reports no blocking findings. Validated by `validate_q_gate_validation`. Replaces the retired planning-time `qgate` run-at-all gate. |
 
 ### phase-4-plan
 
@@ -401,7 +402,8 @@ These fields live directly under `plan`, outside any phase block.
 {
   "plan": {
     "phase-4-plan": {
-      "execute_without_asking": true
+      "execute_without_asking": true,
+      "q_gate_validation": "until_clean"
     }
   }
 }
@@ -410,6 +412,7 @@ These fields live directly under `plan`, outside any phase block.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `execute_without_asking` | bool | true | Auto-continue to execute phase after task creation |
+| `q_gate_validation` | enum(`off`\|`once`\|`until_clean`) | until_clean | Planning-time q-gate validation knob consumed by phase-4-plan over the emerging task plan. `off` skips q-gate validation; `once` runs a single validation pass without re-looping on findings; `until_clean` (default) re-runs validation until it reports no blocking findings. Validated by `validate_q_gate_validation`. |
 
 ### phase-5-execute
 
@@ -597,9 +600,9 @@ Default steps: `default:finalize-step-simplify`, `default:push`, `default:create
 
 ### Run-at-all gates and finalize automation knobs (phase-local)
 
-The lifecycle run-at-all gates are flat phase-local knobs — each owned by the phase whose decision machinery consumes it, tabled under the owning phase section above. There is no top-level policy block: `deep_lane` / `escalation` under `phase-1-init`, `revalidation` under `phase-2-refine`, `qgate` under `phase-3-outline`. Under `phase-6-finalize` only `qgate` stays flat, alongside the two flat automation knobs (`finalize_without_asking` / `loop_back_without_asking`). The two other `phase-6-finalize` run-at-all gates (`simplify`, `self_review`) and the `drop_review_on_scope_gate` escape hatch each own exactly one finalize step, so they are NOT flat — they are step-owned params nested under their owning step in the `steps` map (`simplify` → `default:finalize-step-simplify`; `self_review` / `drop_review_on_scope_gate` → `project:finalize-step-pre-submission-self-review`; `final_merge_without_asking` → `default:branch-cleanup`; see the per-step param sub-tables above). Each gate takes `auto|always|never`, validated by `validate_run_at_all`; the automation knobs are boolean.
+The lifecycle run-at-all gates are flat phase-local knobs — each owned by the phase whose decision machinery consumes it, tabled under the owning phase section above. There is no top-level policy block: `deep_lane` / `escalation` under `phase-1-init`, `revalidation` under `phase-2-refine`. Under `phase-6-finalize` only `qgate` stays flat, alongside the two flat automation knobs (`finalize_without_asking` / `loop_back_without_asking`). The two other `phase-6-finalize` run-at-all gates (`simplify`, `self_review`) and the `drop_review_on_scope_gate` escape hatch each own exactly one finalize step, so they are NOT flat — they are step-owned params nested under their owning step in the `steps` map (`simplify` → `default:finalize-step-simplify`; `self_review` / `drop_review_on_scope_gate` → `project:finalize-step-pre-submission-self-review`; `final_merge_without_asking` → `default:branch-cleanup`; see the per-step param sub-tables above). Each gate takes `auto|always|never`, validated by `validate_run_at_all`; the automation knobs are boolean.
 
-The three `phase-6-finalize` run-at-all gates (`self_review` / `qgate` / `simplify`) map one-to-one to finalize steps and are consumed by the manifest composer's finalize selection post-matrix transform — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "plan.phase-6-finalize Selection" for the gate→step map and the `automated-review` carve-out. `deep_lane` / `escalation` are consumed by the phase-1-init lane router, `revalidation` by the refine revalidation pass, and `phase-3-outline.qgate` by the planning-time Q-Gate dispatch.
+The three `phase-6-finalize` run-at-all gates (`self_review` / `qgate` / `simplify`) map one-to-one to finalize steps and are consumed by the manifest composer's finalize selection post-matrix transform — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "plan.phase-6-finalize Selection" for the gate→step map and the `automated-review` carve-out. `deep_lane` / `escalation` are consumed by the phase-1-init lane router, and `revalidation` by the refine revalidation pass. (The planning-time Q-Gate dispatch on `phase-3-outline` / `phase-4-plan` is governed by the distinct `q_gate_validation` knob — `off`/`once`/`until_clean` — not a run-at-all gate; see those phase sections above.)
 
 **Access shape.** Read/write the flat phase-local knobs (`qgate` and the two automation knobs) via the standard `manage-config plan <phase> get/set --field <knob>` verb; read/write the step-owned knobs (`simplify` / `self_review` / `drop_review_on_scope_gate`) via the `step get/set --step-id <owning-step>` verb. See [`manage-config/SKILL.md`](../SKILL.md) § "Phase-Local Run-at-all Gates and Automation Knobs".
 

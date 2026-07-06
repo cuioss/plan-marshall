@@ -96,9 +96,14 @@ DEFAULT_OPEN_IN_IDE = True
 DEFAULT_PLAN_COVERAGE = {'thoroughness': 'inherit', 'scope': 'inherit'}
 
 # Run-at-all gate enum. Each distributed gate knob (deep_lane, escalation,
-# revalidation, qgate, self_review, simplify) takes one of these
-# values. `auto` (the default) defers to the owning phase's decision machinery;
-# `always` forces the gate's step/lane in; `never` forces it out.
+# revalidation, self_review, simplify) takes one of these values. `auto` (the
+# default) defers to the owning phase's decision machinery; `always` forces the
+# gate's step/lane in; `never` forces it out. Note: `qgate` governs ONLY the
+# phase-6-finalize pre-push-quality-gate run-at-all gate; the retired
+# planning-time outline `qgate` gate has been replaced by the distinct
+# `q_gate_validation` knob (see :data:`VALID_Q_GATE_VALIDATION` below), which
+# now governs planning-time q-gate validation on phase-3-outline and
+# phase-4-plan.
 VALID_RUN_AT_ALL = ('auto', 'always', 'never')
 
 
@@ -116,6 +121,36 @@ def validate_run_at_all(value: str, field_name: str) -> None:
     if value not in VALID_RUN_AT_ALL:
         raise ValueError(
             f"Invalid {field_name} '{value}'. Allowed: {list(VALID_RUN_AT_ALL)}"
+        )
+
+
+# Planning-time q-gate validation enum. The `q_gate_validation` knob governs how
+# the planning phases (phase-3-outline, phase-4-plan) run q-gate validation over
+# the emerging plan artifacts:
+#   - 'off':         skip q-gate validation entirely.
+#   - 'once':        run a single validation pass; do not re-loop on findings.
+#   - 'until_clean': re-run validation until it reports no blocking findings
+#                    (default).
+# This replaces the retired planning-time `qgate` run-at-all gate on the outline
+# step; the finalize-time `qgate` gate is unaffected (it stays a VALID_RUN_AT_ALL
+# gate — see :data:`VALID_RUN_AT_ALL`).
+VALID_Q_GATE_VALIDATION = ('off', 'once', 'until_clean')
+
+
+def validate_q_gate_validation(value: str, field_name: str) -> None:
+    """Validate a q-gate-validation value (``off|once|until_clean``).
+
+    Args:
+        value: The candidate q-gate-validation value.
+        field_name: The dotted ``plan.<phase>.q_gate_validation`` path, used in
+            the error message so a rejected value names the offending knob.
+
+    Raises:
+        ValueError: If ``value`` is not in :data:`VALID_Q_GATE_VALIDATION`.
+    """
+    if value not in VALID_Q_GATE_VALIDATION:
+        raise ValueError(
+            f"Invalid {field_name} '{value}'. Allowed: {list(VALID_Q_GATE_VALIDATION)}"
         )
 
 
@@ -352,10 +387,11 @@ DEFAULT_PLAN_REFINE = {
 
 DEFAULT_PLAN_OUTLINE = {
     'plan_without_asking': False,
-    # Planning-time q-gate validation run-at-all gate (auto|always|never).
-    # Consumed by the deep-lane outline dispatch. Read via
-    # `manage-config plan phase-3-outline get --field qgate`.
-    'qgate': 'auto',
+    # Planning-time q-gate validation knob (off|once|until_clean). Consumed by
+    # the deep-lane outline dispatch to decide how q-gate validation loops over
+    # the emerging outline. Validated by validate_q_gate_validation. Read via
+    # `manage-config plan phase-3-outline get --field q_gate_validation`.
+    'q_gate_validation': 'until_clean',
     # Per-phase effort default (seeded at init; balanced-preset baseline lifts
     # outline analysis to level-4).
     'effort': 'level-4',
@@ -363,6 +399,11 @@ DEFAULT_PLAN_OUTLINE = {
 
 DEFAULT_PLAN_PLAN = {
     'execute_without_asking': True,
+    # Planning-time q-gate validation knob (off|once|until_clean). Consumed by
+    # phase-4-plan to decide how q-gate validation loops over the emerging task
+    # plan. Validated by validate_q_gate_validation. Read via
+    # `manage-config plan phase-4-plan get --field q_gate_validation`.
+    'q_gate_validation': 'until_clean',
     # Per-phase effort default (seeded at init; balanced-preset baseline).
     'effort': 'level-3',
 }

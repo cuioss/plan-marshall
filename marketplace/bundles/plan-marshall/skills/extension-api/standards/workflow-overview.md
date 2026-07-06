@@ -16,7 +16,7 @@ Every phase dispatches through `Task: plan-marshall:execution-context-{level}` w
 | **2-refine** | `phase-2-refine` | `plan-marshall:phase-2-refine/SKILL.md` | Clarify request | Refined request with confidence score |
 | **3-outline** | `phase-3-outline` | `plan-marshall:phase-3-outline/SKILL.md` | Create solution outline | solution_outline.md |
 | **4-plan** | `phase-4-plan` | `plan-marshall:phase-4-plan/SKILL.md` | Decompose into tasks | TASK-*.json |
-| **5-execute** | `phase-5-execute` | `plan-marshall:execute-task/SKILL.md` (one dispatch per task) | Run implementation + verification | Modified + verified project files |
+| **5-execute** | `phase-5-execute` | `plan-marshall:phase-5-execute/SKILL.md` (one envelope dispatch loops `execute-task` in-context per task) | Run implementation + verification | Modified + verified project files |
 | **6-finalize** | per-step keys (see `phase-6-finalize/SKILL.md` § Dispatched workflows vs inline steps) | Per-step workflow docs under `phase-6-finalize/workflow/` | Commit, PR, automated review | Git commit, PR |
 
 ### Phase Transitions

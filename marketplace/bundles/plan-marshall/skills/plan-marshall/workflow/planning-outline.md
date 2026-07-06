@@ -45,7 +45,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 ```
 
 - **`planning_lane == light`** → the [light-lane envelope](../../phase-3-outline/workflow/light-lane.md) dispatched from `planning.md` ALREADY self-derived the outline (it folds Simple-outline + deliverable-derivation in one envelope and wrote `solution_outline.md` + transitioned `3-outline`). The light lane sets `qgate_validation_required: false` — there is NO Complex-Track outline dispatch and NO q-gate-validation sibling dispatch on the light lane. Skip the entire Step-2 phase-3-outline dispatch + the **Post-return q-gate-validation dispatch** block below; proceed directly to **Step 3 (USER REVIEW GATE)** to display the light-lane-derived outline. (On a light-lane `escalate_to_deep` return, `planning.md` already flipped the lane to `deep` and re-entered the deep pipeline, so this read sees `deep`.)
-- **`planning_lane == deep`** (or absent) → run today's full Complex-Track dispatch below, guarded by `plan.phase-3-outline.qgate` (the q-gate-validation sibling dispatch is suppressed when that gate resolves to `never`).
+- **`planning_lane == deep`** (or absent) → run today's full Complex-Track dispatch below, guarded by `plan.phase-3-outline.q_gate_validation` (the q-gate-validation sibling dispatch is suppressed when that knob resolves to `off`).
 
 **Metrics**: The start of `3-outline` was already recorded by the
 `2-refine → 3-outline` fused boundary call above (or by the
@@ -127,7 +127,9 @@ Task: plan-marshall:{target}
 
 The agent returns the outline summary (`track`, `deliverable_count`, `qgate_pending_count`, `qgate_validation_required`, etc.) in its TOON. The Complex-Track per-deliverable loop (Steps 9c + 10 + 10b) iterates *inside* this envelope; the per-deliverable loop never spawns per-iteration subagents.
 
-**Post-return q-gate-validation dispatch (conditional, deep lane only)**: Read `qgate_validation_required` from the phase return TOON captured above. When `true` (the surgical-bypass predicate did NOT fire in Step 11) AND `plan.phase-3-outline.qgate != never` (read via `manage-config plan phase-3-outline get --field qgate`), dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. When `false` (bypass fired or recipe path short-circuited), when the plan ran the light lane (which sets `qgate_validation_required: false`), or when the `plan.phase-3-outline.qgate` gate resolves to `never` (the operator opted out at config-set time), skip this block and continue directly to "Log solution outline creation" below.
+**Post-return `outline_prompt` batched operator-question dispatch (conditional)**: Read the `outline_prompt` envelope from the phase return TOON captured above. When it is present with one or more questions, the leaf surfaced operator-facing design uncertainties it could not resolve on its own — it completed the outline with best-judgment defaults but flagged these for confirmation. Because the dispatched leaf cannot reach the operator but this orchestrator runs in the main context and can (see [`ref-workflow-architecture/standards/agents.md` § Leaf cannot fire AskUserQuestion](../../ref-workflow-architecture/standards/agents.md#leaf-cannot-fire-askuserquestion--return-a-prompt-required-envelope)), fire ONE batched `AskUserQuestion` covering EVERY question in the envelope, presenting each with the leaf's `recommended` default. After the operator answers, re-dispatch phase-3-outline **at most once** via the same `Task: plan-marshall:{target}` envelope used in Step 2 above, baking every answer into the dispatch prompt so the leaf resolves each open point deterministically on re-entry. When the `outline_prompt` envelope is absent or carries no questions, skip this block. This batched single-cycle handling — together with the Step 3 review-gate change-requests folded into it (§ 3c below) — is what bounds a normal outline to at most one feedback re-dispatch.
+
+**Post-return q-gate-validation dispatch (conditional, deep lane only)**: Read `qgate_validation_required` from the phase return TOON captured above. When `true` (the surgical-bypass predicate did NOT fire in Step 11) AND `plan.phase-3-outline.q_gate_validation != off` (read via `manage-config plan phase-3-outline get --field q_gate_validation`), dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. This is the FIRST q-gate-validation pass and always runs unconditionally when the knob is `once` or `until_clean` (it is never content-gated — only re-runs in Step 2b are). When `false` (bypass fired or recipe path short-circuited), when the plan ran the light lane (which sets `qgate_validation_required: false`), or when the `plan.phase-3-outline.q_gate_validation` knob resolves to `off` (the operator opted out at config-set time), skip this block and continue directly to "Log solution outline creation" below.
 
 Resolve the dispatch target via the same role used for phase-3-outline (q-gate-validation tracks the calling phase's default):
 
@@ -172,9 +174,22 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:plan-marshall) Created solution_outline.md - pending user review"
 ```
 
-**Step 2b**: Q-Gate auto-loop (max 3 iterations)
+**Step 2b**: Q-Gate auto-loop (max 3 iterations), governed by `plan.phase-3-outline.q_gate_validation`
 
-Check if the phase returned Q-Gate findings. If so, auto-loop without user intervention.
+First read the operator's re-run knob (once, at Step 2b entry):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-3-outline get --field q_gate_validation --audit-plan-id {plan_id}
+```
+
+The value is one of `off` \| `once` \| `until_clean` (default `until_clean`; consult [`q-gate-validation.md`](q-gate-validation.md) and the central standard `manage-config/standards/data-model.md` for the enum semantics — do NOT inline-copy them). The knob selects the loop behaviour:
+
+- **`off`** — the FIRST-pass q-gate-validation dispatch was already suppressed above, so there are no q-gate findings to loop on. Skip the auto-loop entirely and continue to Step 2c.
+- **`once`** — the FIRST-pass q-gate-validation dispatch already ran. Do NOT auto-loop: a single validation pass is the contract. Any remaining `qgate_pending_count > 0` findings surface to the operator at the Step 3 user-review gate rather than being auto-fixed. Continue to Step 2c after the single pass.
+- **`until_clean`** (default) — run the auto-loop below, re-validating until clean, with each q-gate re-dispatch guarded by the whole-outline content-hash re-run gate.
+
+**`until_clean` auto-loop with the whole-outline content-hash re-run gate**:
 
 ```text
 qgate_iteration = 0
@@ -184,14 +199,15 @@ WHILE qgate_pending_count > 0 AND qgate_iteration < MAX_QGATE_ITERATIONS:
   qgate_iteration += 1
   1. Log: "(plan-marshall:plan-marshall:qgate) Auto-fix iteration {qgate_iteration}/{MAX_QGATE_ITERATIONS}: {count} findings — re-dispatching phase-3-outline"
   2. Re-dispatch phase-3-outline via the same Task: plan-marshall:{target} envelope used in Step 2 (phase reads findings at Step 1 and addresses them)
-  3. Check qgate_pending_count from phase return
+  3. WHOLE-OUTLINE CONTENT-HASH RE-RUN GATE — before re-dispatching q-gate-validation, compare the current solution_outline.md content against the whole-outline hash recorded on the previous pass (the `__whole_outline__` row in work/deliverable-hashes.toon, written by q-gate-validation.md Step 3.5). When the outline content is UNCHANGED since the last validated pass, SKIP the q-gate-validation re-dispatch entirely — the deterministic validators would return an identical result on identical input, so a fresh sibling dispatch is pure waste. Treat the pending count as unchanged and break the loop (no progress is possible without an outline change). Only when the content CHANGED do you re-dispatch q-gate-validation as the sibling top-level Task (same envelope used in the Post-return block above) and update qgate_pending_count from its return.
+  4. Check qgate_pending_count
 
 IF qgate_pending_count > 0 AND qgate_iteration >= MAX_QGATE_ITERATIONS:
   → STOP: Escalate to user — "Q-Gate auto-loop exhausted after {MAX_QGATE_ITERATIONS} iterations. {count} findings remain unresolved."
   → Present remaining findings and ask user how to proceed
 ```
 
-This loop runs automatically — do NOT prompt the user for Q-Gate findings unless the max iteration limit is reached. Q-Gate findings are objective quality failures that the phase must self-correct. Only proceed to Step 2c when `qgate_pending_count == 0`.
+The `until_clean` loop runs automatically — do NOT prompt the user for Q-Gate findings unless the max iteration limit is reached. Q-Gate findings are objective quality failures that the phase must self-correct. The content-hash re-run gate is the key economy: it is what prevents an unchanged outline cycle from triggering a second q-gate dispatch (the observed `q-gate ×2 with 0 findings` waste). Only proceed to Step 2c when `qgate_pending_count == 0`.
 
 **Step 2c**: Transition phase after outline completes AND Q-Gate is clean:
 ```bash
@@ -314,8 +330,8 @@ AskUserQuestion:
 ### 3c. Handle user response:
 - **If "Proceed to create tasks"**: Continue to Step 4
 - **If "Request changes"** or user provides custom feedback:
-  - Capture the user's feedback
-  - Write each feedback point as a Q-Gate finding:
+  - Capture ALL of the user's feedback points in one batch — do NOT round-trip per point. This review-gate feedback is folded into the same single batched re-dispatch cycle as the `outline_prompt` handling after Step 2, so a normal outline needs at most one feedback re-dispatch.
+  - Write each captured feedback point as a Q-Gate finding:
     ```bash
     python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
       qgate add --plan-id {plan_id} --phase 3-outline --source user_review \
@@ -327,8 +343,8 @@ AskUserQuestion:
     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
       decision --plan-id {plan_id} --level INFO --message "(plan-marshall:plan-marshall) User review: {count} change requests recorded to artifacts/qgate-3-outline.jsonl"
     ```
-  - Re-dispatch phase-3-outline via the same Task: plan-marshall:{target} envelope used in Step 2 (phase reads Q-Gate findings at Step 1)
-  - **Loop back to Step 3a**
+  - Re-dispatch phase-3-outline ONCE via the same Task: plan-marshall:{target} envelope used in Step 2, carrying every captured change request together (the phase reads the Q-Gate findings at Step 1)
+  - **Loop back to Step 3a** to review the revised outline
 
 ---
 
@@ -400,7 +416,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
 
 Substitute the `--termination-cause` value with the canonical cause from the table above and `{n}` with the integer parsed from the phase-4-plan agent's `<usage>...</usage>` block (use `0` when the field is absent).
 
-**Post-return q-gate-validation dispatch (conditional)**: Read `qgate_validation_required` from the phase return TOON captured above. When `true` (the default — phase-4-plan signals unconditionally on successful completion per Step 9b), dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. When `false` or absent (unrecoverable error path), skip this block and continue directly to the Metrics fused-call below.
+**Post-return q-gate-validation dispatch (conditional)**: Read `qgate_validation_required` from the phase return TOON captured above. phase-4-plan already folds the operator's `plan.phase-4-plan.q_gate_validation` knob into this flag (Step 8b B1: `off` ⇒ `false`; `once`/`until_clean` ⇒ `true`, subject to the B2 surgical bypass). When `true`, dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. This is the FIRST q-gate-validation pass and always runs unconditionally when the flag is `true` (it is never content-gated — only re-runs in the auto-loop below are). When `false` or absent (`q_gate_validation == off`, surgical bypass, or unrecoverable error path), skip this block and continue directly to the Metrics fused-call below.
 
 Resolve the dispatch target via the same role used for phase-4-plan (q-gate-validation tracks the calling phase's default):
 
@@ -438,7 +454,7 @@ Task: plan-marshall:{target}
     validators: [module-mapping-validator, scope-criterion-validator]
 ```
 
-The agent returns `qgate_pending_count` in its TOON. ADD that value to the `qgate_pending_count` already returned by phase-4-plan so the combined aggregate drives the existing 3-iteration auto-loop predicate uniformly (re-dispatch phase-4-plan via the same envelope used in Step 4 when the combined count is non-zero, up to `max_iterations`). Fold the q-gate-validation `<usage>` data into the per-phase running totals so it lands in the fused `phase-boundary` metrics call below.
+The agent returns `qgate_pending_count` in its TOON. ADD that value to the `qgate_pending_count` already returned by phase-4-plan so the combined aggregate drives the existing 3-iteration auto-loop predicate. The loop behaviour follows the same `plan.phase-4-plan.q_gate_validation` knob folded into `qgate_validation_required` above: under **`once`** do NOT auto-loop — the single validation pass is the contract and any remaining findings surface at the next operator gate; under **`until_clean`** (default) re-dispatch phase-4-plan via the same envelope used in Step 4 when the combined count is non-zero, up to `max_iterations`. Guard every q-gate-validation re-dispatch in the `until_clean` loop with the whole-outline content-hash re-run gate (the `__whole_outline__` row in `work/deliverable-hashes.toon`, written by q-gate-validation.md Step 3.5): when the outline/task-plan content is unchanged since the last validated pass, SKIP the re-dispatch — the deterministic validators would return an identical result on identical input. Fold the q-gate-validation `<usage>` data into the per-phase running totals so it lands in the fused `phase-boundary` metrics call below.
 
 **Metrics**: After the plan agent completes, record the `4-plan → 5-execute`
 boundary in a single fused call (forwarding the aggregated `<usage>` data

@@ -10,7 +10,6 @@ governs:
 
 - ``deep_lane`` / ``escalation``     → ``plan.phase-1-init``
 - ``revalidation``                   → ``plan.phase-2-refine``
-- ``qgate`` (planning)               → ``plan.phase-3-outline``
 - ``self_review`` / ``qgate`` /
   ``simplify``                       → ``plan.phase-6-finalize``
 - the three auto-continuation knobs  → ``plan.phase-6-finalize``
@@ -90,7 +89,6 @@ _DISTRIBUTED_GATES = (
     ('phase-1-init', 'deep_lane'),
     ('phase-1-init', 'escalation'),
     ('phase-2-refine', 'revalidation'),
-    ('phase-3-outline', 'qgate'),
     ('phase-6-finalize', 'qgate'),
 )
 
