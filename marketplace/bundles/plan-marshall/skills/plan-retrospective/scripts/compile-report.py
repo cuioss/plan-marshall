@@ -206,6 +206,17 @@ def render_section_body(fragment: Any) -> str:
     return summary_text + findings_block + data_block
 
 
+def _heading_from_aspect_key(aspect_key: str) -> str:
+    """Derive a human-readable section heading from an aspect key.
+
+    Hyphenated (or underscored) aspect keys map to title-cased headings for
+    the generic fallback render path — e.g. ``wrapper-tangle`` -> ``Wrapper
+    Tangle``. Used only for registered aspects that have no dedicated
+    ``SECTION_SPEC`` row, so the heading is synthesized rather than looked up.
+    """
+    return aspect_key.replace('-', ' ').replace('_', ' ').title()
+
+
 def build_header(plan_id: str, mode: str, plan_path: Path, session_id: str | None) -> str:
     """Build the document header (title + metadata list)."""
     generated = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -263,6 +274,29 @@ def build_document(
             body = render_dispatch_boundaries_body(fragment)
         else:
             body = render_section_body(fragment)
+        parts.append(f'## {heading}\n\n{body}')
+        written.append(heading)
+
+    # Generic fallback render path (registered ⇒ rendered completeness guard).
+    # collect-fragments accepts domain-contributed aspects (via
+    # ``_registerable_aspect_keys`` = ``valid_aspect_keys()`` ∪
+    # ``_domain_aspect_keys()``) that are NOT in the static SECTION_SPEC — e.g.
+    # ``wrapper-tangle`` from pm-plugin-development. Without this fallback the
+    # SECTION_SPEC loop above never looks them up and compile-report silently
+    # drops their sections. Iterate the bundle for any genuine aspect key that
+    # has no dedicated SECTION_SPEC row and is not a reserved/underscore-prefixed
+    # meta key (``_meta``, ``_executive-summary``), and render each verbatim via
+    # the existing render_section_body. The renderer stays judgment-free — a
+    # domain aspect is surfaced rather than lost. Keys are sorted for a
+    # deterministic section order.
+    spec_keys = {fragment_key for _heading, fragment_key, _trigger in SECTION_SPEC}
+    for aspect_key in sorted(fragments):
+        if aspect_key.startswith('_'):
+            continue
+        if aspect_key in spec_keys:
+            continue
+        heading = _heading_from_aspect_key(aspect_key)
+        body = render_section_body(fragments.get(aspect_key))
         parts.append(f'## {heading}\n\n{body}')
         written.append(heading)
 
