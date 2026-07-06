@@ -82,6 +82,7 @@ _DESCRIPTOR_MODULES: tuple[str, ...] = (
     '_analyze_agentfile_line_budget',
     '_analyze_allowed_tools_drift',
     '_analyze_argument_naming',
+    '_analyze_askuserquestion_reachability',
     '_analyze_bash_chain_shapes_in_skills',
     '_analyze_bash_fence_inline_code_exemption',
     '_analyze_cmd_root_anchoring',

@@ -38,6 +38,9 @@ from _analyze_agentfile_directory_tree import analyze_agentfile_directory_tree
 from _analyze_agentfile_line_budget import analyze_agentfile_line_budget
 from _analyze_allowed_tools_drift import analyze_allowed_tools_drift
 from _analyze_argument_naming import analyze_argument_naming
+from _analyze_askuserquestion_reachability import (
+    analyze_askuserquestion_reachability,
+)
 from _analyze_bash_chain_shapes_in_skills import analyze_bash_chain_shapes_in_skills
 from _analyze_bash_fence_inline_code_exemption import (
     analyze_bash_fence_inline_code_exemption,
@@ -286,6 +289,7 @@ class RuleRunner:
         issues.extend(analyze_tmp_redirect_in_skills(root))
         issues.extend(analyze_skill_relative_temp_path(root))
         issues.extend(analyze_workflow_doc_toon_error_field(root))
+        issues.extend(analyze_askuserquestion_reachability(root))
         issues.extend(analyze_bash_fence_inline_code_exemption(root))
         issues.extend(analyze_lesson_id_in_skill_prose(root))
         issues.extend(analyze_allowed_tools_drift(root))
