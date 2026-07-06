@@ -46,6 +46,12 @@ SECTION_SPEC: tuple[tuple[str, str, str | None], ...] = (
     # ``check-manifest-consistency`` only emits a fragment when execution.toon
     # exists, so plans pre-dating the manifest deliverable get no section.
     ('Manifest Decisions', 'manifest-decisions', 'manifest-decisions'),
+    # Routing Decisions is conditional on its own fragment being present —
+    # ``check-routing-decisions`` grades the recorded routing/lane/posture
+    # decisions against the realized footprint, mirroring the other conditional
+    # analysis rows above (lesson 2026-06-20-17-003: a producer without this
+    # render row ships the aspect dead).
+    ('Routing Decisions', 'routing-decisions', 'routing-decisions'),
     ('Proposed Lessons', 'lessons-proposal', None),
 )
 

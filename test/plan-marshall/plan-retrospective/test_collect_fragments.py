@@ -371,6 +371,32 @@ class TestAddAspectKeyValidation:
         assert data['aspect'] == 'request-result-alignment'
         assert data['aspects'] == ['request-result-alignment']
 
+    def test_accepts_routing_decisions_aspect_key(self, tmp_path, monkeypatch):
+        # routing-decisions ships with a producer (check-routing-decisions.py)
+        # AND a SECTION_SPEC render row. The row makes it a member of
+        # valid_aspect_keys(), so cmd_add MUST accept it — without the row the
+        # aspect ships dead, rejected at add time (lesson 2026-06-20-17-003).
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        _init_bundle(plan_id)
+        fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('routing-decisions'))
+
+        result = run_script(
+            SCRIPT_PATH,
+            'add',
+            '--plan-id',
+            plan_id,
+            '--aspect',
+            'routing-decisions',  # registered static key (SECTION_SPEC row)
+            '--fragment-file',
+            str(fragment_path),
+        )
+
+        assert result.success, result.stderr
+        data = result.toon()
+        assert data['status'] == 'success'
+        assert data['aspect'] == 'routing-decisions'
+        assert data['aspects'] == ['routing-decisions']
+
     def test_accepts_registered_domain_aspect_key(self, tmp_path, monkeypatch):
         # a domain-contributed aspect (e.g. wrapper-tangle from
         # pm-plugin-development) is registered through provides_retrospective_aspects
