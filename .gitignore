@@ -55,6 +55,9 @@ target/
 .mypy_cache/
 .ruff_cache/
 
+# Gradle build cache (created by build-gradle fixture tests under test/)
+**/.gradle/
+
 # Coverage reports
 htmlcov/
 .coverage
