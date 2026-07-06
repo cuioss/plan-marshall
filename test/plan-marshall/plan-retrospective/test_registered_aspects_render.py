@@ -38,6 +38,7 @@ import re
 from pathlib import Path
 
 import retro_sections as _rs
+
 from conftest import MARKETPLACE_ROOT, load_script_module
 
 _cr = load_script_module('plan-marshall', 'plan-retrospective', 'compile-report.py', 'cr_render_guard_mod')
