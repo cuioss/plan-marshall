@@ -34,11 +34,16 @@ Synthesize ONE verdict — `OVER-PROVISIONED | UNDER-PROVISIONED | correct` — 
 
 Emit a TOON fragment carrying the verdict, the supporting facts, and — when a mis-prune fired or the posture counterfactual disagrees with the chosen posture — a proposed lesson. A **recurring** mis-prune across plans is the file-worthy signal: it routes to threshold tuning of the prune predicates (sonar / lessons-housekeeping) through the existing lesson / `architecture enrich` path, so the thresholds learn from outcomes rather than staying hard-coded. A one-off mis-prune is reported but not necessarily filed.
 
+The judgment fragment carries the LLM verdict (`posture_verdict`, `proposed_lessons`) alongside the script's supporting facts, **using the same field names the script emits** (`mis_prune_checks`, `cost_preview`, `posture`, `planning_lane`) — the LLM augments the facts, it does not rename them. Keeping the names identical is what lets `compile-report.should_emit()` recognize the fragment as renderable (its routing-decisions carve-out gates on `manifest_present` / `mis_prune_checks` / `cost_preview` / `posture_verdict` / `posture`):
+
 ```toon
 status: success
 aspect: routing-decisions
+manifest_present: true
+posture: minimal | auto | full
+planning_lane: light | deep
 posture_verdict: UNDER-PROVISIONED | OVER-PROVISIONED | correct
-mis_prunes[N]: [ step, ... ]
-cost_preview_delta_pct: <number>
+mis_prune_checks[N]: [ {check, status, predicate, detail}, ... ]
+cost_preview: { predicted_tokens, actual_tokens, delta_tokens, delta_pct }
 proposed_lessons[M]: [ ... ]
 ```
