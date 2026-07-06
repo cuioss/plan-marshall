@@ -200,7 +200,7 @@ def test_project_non_dict_project_block_set_returns_structured_error(plan_contex
 # phase-3-outline and phase-4-plan through `validate_q_gate_validation` at the
 # set boundary. These tests exercise that delegation path end-to-end via
 # `cmd_plan`: a valid value round-trips through set→get on both planning phases,
-# an absent key surfaces the seeded `until_clean` default on get, and a malformed
+# an absent key surfaces the seeded `once` default on get, and a malformed
 # value is rejected before it persists. The retired outline `qgate` run-at-all
 # set path has no branch here — it was removed from the outline defaults entirely.
 
@@ -240,8 +240,8 @@ def test_plan_phase_4_plan_q_gate_validation_set_get_roundtrip(plan_context):
     assert get_result['value'] == 'off'
 
 
-def test_plan_q_gate_validation_get_returns_until_clean_default(plan_context):
-    """A fresh config lacking q_gate_validation surfaces the seeded 'until_clean' default via get."""
+def test_plan_q_gate_validation_get_returns_once_default(plan_context):
+    """A fresh config lacking q_gate_validation surfaces the seeded 'once' default via get."""
     create_marshal_json(plan_context.fixture_dir)
 
     get_result = cmd_plan(
@@ -249,7 +249,7 @@ def test_plan_q_gate_validation_get_returns_until_clean_default(plan_context):
     )
 
     assert get_result['status'] == 'success'
-    assert get_result['value'] == 'until_clean'
+    assert get_result['value'] == 'once'
 
 
 def test_plan_q_gate_validation_set_rejects_invalid_value(plan_context):
