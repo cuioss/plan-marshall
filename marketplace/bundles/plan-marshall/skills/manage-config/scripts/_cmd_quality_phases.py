@@ -22,6 +22,7 @@ from _config_core import (
 from _config_defaults import (
     get_default_config,
     validate_per_deliverable_build,
+    validate_q_gate_validation,
 )
 from constants import PHASES
 
@@ -290,6 +291,18 @@ def cmd_phase(args, phase_section: str) -> dict:
             value = [s.strip() for s in args.value.split(',') if s.strip()]
             try:
                 validate_per_deliverable_build(value)
+            except ValueError as e:
+                return error_exit(str(e))
+        elif phase_section in ('phase-3-outline', 'phase-4-plan') and field == 'q_gate_validation':
+            # Planning-time q-gate validation knob (off|once|until_clean). Route
+            # the value through validate_q_gate_validation at this set boundary so
+            # a malformed value is rejected before it persists. Mirrors the
+            # per_deliverable_build validation branch above. The retired
+            # planning-time `qgate` run-at-all gate has no branch here — it was
+            # removed from the outline defaults entirely.
+            value = _coerce_value(args.value)
+            try:
+                validate_q_gate_validation(str(value), f'plan.{phase_section}.q_gate_validation')
             except ValueError as e:
                 return error_exit(str(e))
         else:

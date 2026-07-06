@@ -97,7 +97,6 @@ Separate from the auto-continuation knobs above (which decide *whether to pause*
 | `plan.phase-1-init.deep_lane` | `auto` | Whether the precondition-driven deep planning lane runs. `always` forces deep; `never` forces light.
 | `plan.phase-1-init.escalation` | `auto` | Whether the hard-escalation safety ratchet stays live. `never` is the explicit full-speed-full-risk opt-in.
 | `plan.phase-2-refine.revalidation` | `auto` | Whether the premise / narrative-vs-code safety check runs.
-| `plan.phase-3-outline.qgate` | `auto` | Whether the planning-time Q-Gate validation runs.
 | `plan.phase-6-finalize.self_review` | `auto` | Whether the pre-submission structural + cognitive self-review is selected into the execution manifest.
 | `plan.phase-6-finalize.qgate` | `auto` | Whether the finalize blocking-findings re-capture runs. Highest-risk gate — `never` can push a red tree.
 | `plan.phase-6-finalize.plugin_doctor` | `auto` | Whether the structural marketplace lint runs before push.
@@ -117,6 +116,31 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ----
 
 See the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] for the full per-phase gate catalogue.
+
+NOTE: The planning-time Q-Gate validation on `plan.phase-3-outline` / `plan.phase-4-plan` is *not* a run-at-all gate. It is governed by the separate `q_gate_validation` re-run knob (`off` \| `once` \| `until_clean`) documented in <<q-gate-validation>> below. The finalize `qgate` gate above is a different gate — the pre-push-quality-gate — and is unrelated.
+
+[#q-gate-validation]
+=== Planning-time Q-Gate validation
+
+`plan.phase-3-outline.q_gate_validation` and `plan.phase-4-plan.q_gate_validation` control how much the planning-time Q-Gate validation re-runs over the emerging outline (phase-3) and task plan (phase-4). Each is a three-value re-run knob — *not* the `auto`\|`always`\|`never` run-at-all enum — tuned independently per phase:
+
+[cols="1,1,3", options="header"]
+|===
+| Config key | Default | What it controls
+
+| `plan.phase-3-outline.q_gate_validation` | `until_clean` | How the outline Q-Gate re-runs. `off` skips Q-Gate validation entirely; `once` runs a single validation pass and does not re-loop on findings; `until_clean` (default) re-validates until the outline reports no blocking findings. The first pass always runs; re-runs fire only when the outline content changed since the last pass.
+| `plan.phase-4-plan.q_gate_validation` | `until_clean` | How the task-plan Q-Gate re-runs. Same `off`\|`once`\|`until_clean` semantics as the outline knob, tuned independently over the emerging task plan.
+|===
+
+The first validation pass always runs unconditionally (it is never gated by confidence); a re-validation is skipped when the outline/plan content is unchanged since the prior pass, so an already-clean outline does not trigger a fresh Q-Gate dispatch. Set either knob via the standard phase `set` verb:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-3-outline set --field q_gate_validation --value once
+----
+
+See the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] for the field semantics and validator.
 
 [#recipe-routing]
 === Recipe-match routing

@@ -148,7 +148,7 @@ Emit the standardized post-resolve dispatch log line — see [`../../ref-workflo
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-5-execute workflow=plan-marshall:execute-task/SKILL.md plan_id={plan_id}"
+  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-5-execute workflow=plan-marshall:phase-5-execute/SKILL.md plan_id={plan_id}"
 ```
 
 Dispatch:
@@ -162,7 +162,7 @@ Task: plan-marshall:{target}
     - plan-marshall:phase-5-execute
     - plan-marshall:execute-task
     - <task-declared domain skills>
-    workflow: plan-marshall:execute-task/SKILL.md
+    workflow: plan-marshall:phase-5-execute/SKILL.md
     WORKTREE: {worktree_path}
     task_number: {N}
     envelope_id: {E}

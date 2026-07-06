@@ -40,7 +40,7 @@ Skill: plan-marshall:persona-plan-marshall-agent
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-3-outline`** (resolves through `phase-3-outline.default`; `track={simple|complex}` is a runtime input — both tracks share the envelope and resolver lookup). The Complex Track bundles Steps 9c (per-deliverable design-intent classification) and 10 (the heavyweight design body) into one `phase-3-outline` envelope — the per-deliverable loop iterates *inside* the dispatch. Mechanical sub-procedures stay inline: Step 4 detect-change-type uses `manage-status:change-type-heuristic` (heuristic-first, dispatches via `effort read --default` when ambiguous); Simple Track Step 6 target validation is a Bash one-liner; Complex Track Step 9 domain-resolution and Step 10 consumer-sweep run as scripts. Step 11 Q-Gate validation activation is *signaled* by setting `qgate_validation_required: true` in the phase return TOON; the orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag and issues q-gate-validation as a sibling top-level `Task: plan-marshall:{target}` dispatch — the phase body cannot spawn it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. The flag is set to `false` (no orchestrator dispatch) when the surgical-bypass predicate holds (`scope_estimate == surgical` AND `change_type ∈ {bug_fix, tech_debt, verification}` AND `deliverable_count == 1`). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 3–4 (bundle when steps share context; per-iteration only when models differ or parallel).
+This phase dispatches under one role key: **`phase-3-outline`** (resolves through `phase-3-outline.default`; `track={simple|complex}` is a runtime input — both tracks share the envelope and resolver lookup). The Complex Track bundles Steps 9c (per-deliverable design-intent classification) and 10 (the heavyweight design body) into one `phase-3-outline` envelope — the per-deliverable loop iterates *inside* the dispatch. Mechanical sub-procedures stay inline: Step 4 detect-change-type uses `manage-status:change-type-heuristic` (heuristic-first, dispatches via `effort read --default` when ambiguous); Simple Track Step 6 target validation is a Bash one-liner; Complex Track Step 9 domain-resolution and Step 10 consumer-sweep run as scripts. Step 11 Q-Gate validation activation is *signaled* by setting `qgate_validation_required: true` in the phase return TOON; the orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag and issues q-gate-validation as a sibling top-level `Task: plan-marshall:{target}` dispatch — the phase body cannot spawn it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. The flag is set to `false` (no orchestrator dispatch) when the operator's `plan.phase-3-outline.q_gate_validation` knob resolves to `off`, or when the surgical-bypass predicate holds (`scope_estimate == surgical` AND `change_type ∈ {bug_fix, tech_debt, verification}` AND `deliverable_count == 1`). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 3–4 (bundle when steps share context; per-iteration only when models differ or parallel).
 
 ### Loop-invariant inputs (cached at phase entry)
 
@@ -57,6 +57,20 @@ The Complex Track per-deliverable loop (Steps 9c + 10) iterates over the deliver
 - Never re-read loop-invariant inputs inside the per-deliverable loop body — re-reading inside the loop is envelope-cost waste; resolve all invariant inputs before the loop begins.
 
 See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 5.1 (Heuristic 2 — bundle when steps share context) for the granularity rationale.
+
+## Operator-input contract: batch open questions into one `outline_prompt` envelope
+
+A dispatched phase-3-outline leaf **cannot fire `AskUserQuestion`** — operator input is unreachable inside a dispatched `execution-context` envelope (see [`ref-workflow-architecture/standards/agents.md` § Leaf cannot fire AskUserQuestion](../ref-workflow-architecture/standards/agents.md#leaf-cannot-fire-askuserquestion--return-a-prompt-required-envelope)). When outline authoring surfaces operator-facing design uncertainties or open questions, the leaf MUST NOT prompt in-leaf and MUST NOT silently guess. Instead it **completes the outline fully** — writing `solution_outline.md` with its best-judgment resolution of every open point — and returns ALL open questions together in ONE `outline_prompt` prompt-required envelope on the return TOON (the persist-and-continue envelope shape from agents.md).
+
+The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads the `outline_prompt` envelope, fires ONE batched `AskUserQuestion` covering every question, and re-dispatches phase-3-outline **at most once** with all answers baked in. Batching the questions this way bounds a normal outline to a single answer-laden feedback re-dispatch — never a per-question round-trip.
+
+The envelope rides back on an otherwise-complete `status: success` return; emit it only when at least one genuine open question remains, and omit it entirely when the outline resolved cleanly. Envelope shape:
+
+```toon
+outline_prompt:
+  questions[N]{id,question,header,options,recommended}:
+    ...
+```
 
 ## cwd for `.plan/execute-script.py` calls
 
@@ -343,7 +357,16 @@ For codebase-wide changes requiring discovery and analysis.
 
 **Step 10 may also refine `scope_estimate`**: After Complex Track discovery and deliverable composition, the concrete Affected files lists may narrow the actual scope. Phase-3-outline MAY downgrade `scope_estimate` (e.g., `multi_module` → `single_module`, or `single_module` → `surgical`) and persist via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 11 so the bypass rule sees the refined value.
 
-**Step 11 — Q-Gate surgical bypass rule** (evaluated BEFORE signaling the Q-Gate validation requirement):
+**Step 11 — `q_gate_validation` knob consult** (evaluated FIRST, before the surgical bypass): read the operator's planning-time Q-Gate knob:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-3-outline get --field q_gate_validation --audit-plan-id {plan_id}
+```
+
+The value is one of `off` \| `once` \| `until_clean` (default `until_clean`; consult the central standard [`../manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) for the enum semantics — do NOT inline-copy them). When the value is `off`, set `qgate_validation_required: false` in the return TOON and skip directly to Step 12 — Q-Gate validation is opted out entirely, so no orchestrator dispatch happens. When the value is `once` or `until_clean`, proceed to the surgical bypass rule below (the `once` vs `until_clean` re-run distinction is applied by the orchestrator's auto-loop, not by this phase).
+
+**Step 11 — Q-Gate surgical bypass rule** (evaluated after the knob consult, only when `q_gate_validation != off`, BEFORE signaling the Q-Gate validation requirement):
 
 Bypass Q-Gate when ALL of the following are true:
 - `scope_estimate == surgical`, AND
@@ -551,9 +574,12 @@ deliverable_count: {N}
 qgate_passed: {true|false}
 qgate_pending_count: {0 if no findings}
 qgate_validation_required: {true|false}
+outline_prompt: {optional — present only when the leaf has open operator questions; see § Operator-input contract}
 ```
 
-`qgate_validation_required` is `true` when the phase decided q-gate-validation must run (surgical-bypass predicate did NOT fire), and `false` otherwise (bypass fired or recipe path short-circuited at Step 3). The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads this flag after the phase returns and dispatches `q-gate-validation` as a sibling top-level Task when it is `true`.
+`outline_prompt` is the batched prompt-required envelope described in § "Operator-input contract" — the leaf emits it (alongside an otherwise-complete `status: success`) only when outline authoring surfaced open operator design questions, and omits it entirely when the outline resolved cleanly. The orchestrator fires ONE batched `AskUserQuestion` over it and re-dispatches phase-3-outline at most once with the answers baked in.
+
+`qgate_validation_required` is `true` when the phase decided q-gate-validation must run (`plan.phase-3-outline.q_gate_validation != off` AND the surgical-bypass predicate did NOT fire), and `false` otherwise (`q_gate_validation == off`, bypass fired, or recipe path short-circuited at Step 3). The orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads this flag after the phase returns and dispatches `q-gate-validation` as a sibling top-level Task when it is `true`.
 
 ---
 
@@ -569,7 +595,7 @@ qgate_validation_required: {true|false}
 
 `display_detail` shape on success: `"track {track}, {deliverable_count} deliverables, {qgate_pending_count} pending"` (e.g. `"track complex, 5 deliverables, 0 pending"`); ≤80 chars, ASCII, no trailing period. On error, carries the short error label from § Error Handling.
 
-All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgate_pending_count`, `qgate_validation_required`) are documented in "Return Results" above.
+All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgate_pending_count`, `qgate_validation_required`, and the optional `outline_prompt` batched-question envelope) are documented in "Return Results" above.
 
 ---
 

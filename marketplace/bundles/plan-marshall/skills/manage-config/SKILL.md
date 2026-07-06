@@ -265,7 +265,6 @@ The lifecycle run-at-all gates and automation knobs are flat knobs under their o
 | `auto_route_recipe` | `plan.phase-1-init` | `plan phase-1-init get --field auto_route_recipe` |
 | `auto_route_recipe_threshold` | `plan.phase-1-init` | `plan phase-1-init get --field auto_route_recipe_threshold` |
 | `revalidation` | `plan.phase-2-refine` | `plan phase-2-refine get --field revalidation` |
-| `qgate` (planning) | `plan.phase-3-outline` | `plan phase-3-outline get --field qgate` |
 | `finalize_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field finalize_without_asking` |
 | `loop_back_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field loop_back_without_asking` |
 | `final_merge_without_asking` | `plan.phase-6-finalize.steps['default:branch-cleanup']` (step-owned param) | `plan phase-6-finalize step get --step-id default:branch-cleanup` (read `final_merge_without_asking` off `params`) |
@@ -527,7 +526,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     },
     "phase-3-outline": {
       "plan_without_asking": false,
-      "qgate": "auto"
+      "q_gate_validation": "until_clean"
     },
     "phase-5-execute": {
       "commit_and_push": true,
@@ -577,7 +576,6 @@ The lifecycle run-at-all gates and finalize automation knobs are flat phase-loca
 | `deep_lane` | `phase-1-init` | Whether the precondition-driven deep planning lane runs (phase-1-init lane router). `never` forces light, but a hard escalation still ratchets unless `escalation: never` is also set. |
 | `escalation` | `phase-1-init` | Whether the hard-escalation safety ratchet (explosion / build-break / premise) stays live. `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in. |
 | `revalidation` | `phase-2-refine` | Whether the premise / narrative-vs-code safety check runs (light lane + deep refine). |
-| `qgate` | `phase-3-outline` | Whether the planning-time q-gate validation runs (deep-lane outline dispatch). |
 | `self_review` | `phase-6-finalize` | Whether the pre-submission structural + cognitive self-review runs (manifest finalize step-selection). |
 | `qgate` | `phase-6-finalize` | Whether finalize re-captures blocking findings. **Highest-risk gate** — `never` can mask real build/test failures. |
 | `simplify` | `phase-6-finalize` | Whether the holistic post-implementation simplification sweep (`finalize-step-simplify`) runs. `always` forces it in even when the composer's `simplify_inactive` pre-filter would drop it; `never` skips it; `auto` defers to that pre-filter. |

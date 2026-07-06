@@ -39,6 +39,7 @@ _cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
 
 cmd_system = _cmd_system_plan.cmd_system
 cmd_project = _cmd_system_plan.cmd_project
+cmd_plan = _cmd_system_plan.cmd_plan
 
 from conftest import run_script  # noqa: E402
 
@@ -188,6 +189,80 @@ def test_project_non_dict_project_block_set_returns_structured_error(plan_contex
     assert result['status'] == 'error'
     assert result['error_type'] == 'invalid_type'
     assert 'project block' in result['error']
+
+
+# =============================================================================
+# plan phase q_gate_validation validator dispatch (this plan, D2)
+# =============================================================================
+#
+# `cmd_plan` delegates phase-based sub-nouns to `cmd_phase`, which routes the
+# planning-time `q_gate_validation` field (off|once|until_clean) on
+# phase-3-outline and phase-4-plan through `validate_q_gate_validation` at the
+# set boundary. These tests exercise that delegation path end-to-end via
+# `cmd_plan`: a valid value round-trips through set→get on both planning phases,
+# an absent key surfaces the seeded `until_clean` default on get, and a malformed
+# value is rejected before it persists. The retired outline `qgate` run-at-all
+# set path has no branch here — it was removed from the outline defaults entirely.
+
+
+def test_plan_phase_3_outline_q_gate_validation_set_get_roundtrip(plan_context):
+    """`plan phase-3-outline set/get --field q_gate_validation` round-trips a valid value."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    set_result = cmd_plan(
+        Namespace(sub_noun='phase-3-outline', verb='set', field='q_gate_validation', value='once')
+    )
+    assert set_result['status'] == 'success'
+    assert set_result['field'] == 'q_gate_validation'
+    assert set_result['value'] == 'once'
+
+    get_result = cmd_plan(
+        Namespace(sub_noun='phase-3-outline', verb='get', field='q_gate_validation')
+    )
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == 'once'
+
+
+def test_plan_phase_4_plan_q_gate_validation_set_get_roundtrip(plan_context):
+    """`plan phase-4-plan set/get --field q_gate_validation` round-trips a valid value."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    set_result = cmd_plan(
+        Namespace(sub_noun='phase-4-plan', verb='set', field='q_gate_validation', value='off')
+    )
+    assert set_result['status'] == 'success'
+    assert set_result['value'] == 'off'
+
+    get_result = cmd_plan(
+        Namespace(sub_noun='phase-4-plan', verb='get', field='q_gate_validation')
+    )
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == 'off'
+
+
+def test_plan_q_gate_validation_get_returns_until_clean_default(plan_context):
+    """A fresh config lacking q_gate_validation surfaces the seeded 'until_clean' default via get."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    get_result = cmd_plan(
+        Namespace(sub_noun='phase-4-plan', verb='get', field='q_gate_validation')
+    )
+
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == 'until_clean'
+
+
+def test_plan_q_gate_validation_set_rejects_invalid_value(plan_context):
+    """A malformed q_gate_validation value is rejected at the set boundary, naming the field."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_plan(
+        Namespace(sub_noun='phase-3-outline', verb='set', field='q_gate_validation', value='sometimes')
+    )
+
+    assert result['status'] == 'error'
+    # the validator error message names the offending dotted field path
+    assert 'q_gate_validation' in result['error']
 
 
 # =============================================================================
