@@ -30,8 +30,18 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+def _load_module(name: str, filename: str, *, base_dir: Path = _SCRIPTS_DIR, extra_syspath_dirs=()):
+    """Load a module from ``base_dir / filename`` via importlib by explicit path.
+
+    Mirrors the per-file importlib loading used across the manage-config tests so
+    a test does not depend on conftest PYTHONPATH discovery order. ``extra_syspath_dirs``
+    are inserted into ``sys.path`` (if absent) before the module is exec'd, for
+    modules whose own top-level imports resolve against a sibling directory.
+    """
+    for d in extra_syspath_dirs:
+        if str(d) not in sys.path:
+            sys.path.insert(0, str(d))
+    spec = importlib.util.spec_from_file_location(name, base_dir / filename)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
@@ -41,9 +51,7 @@ def _load_module(name: str, filename: str):
 def _load_sensible_number():
     """Load the script-shared sensible_number module by explicit path.
 
-    Mirrors the per-file importlib loading used for the manage-config scripts so
-    the test does not depend on conftest PYTHONPATH discovery order. The module
-    lives under the shared ``script-shared/scripts`` surface.
+    The module lives under the shared ``script-shared/scripts`` surface.
     """
     shared_dir = (
         Path(__file__).parent.parent.parent.parent
@@ -54,13 +62,9 @@ def _load_sensible_number():
         / 'script-shared'
         / 'scripts'
     )
-    spec = importlib.util.spec_from_file_location(
-        '_sensible_number_for_config_defaults_test', shared_dir / 'sensible_number.py'
+    return _load_module(
+        '_sensible_number_for_config_defaults_test', 'sensible_number.py', base_dir=shared_dir
     )
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules['_sensible_number_for_config_defaults_test'] = mod
-    spec.loader.exec_module(mod)
-    return mod
 
 
 _sensible_number_mod = _load_sensible_number()
@@ -570,23 +574,17 @@ def _load_tasks_cost():
 
     ``_tasks_cost.py`` imports ``from sensible_number import parse_sensible_int``
     at module top, so the shared ``script-shared/scripts`` surface must be on
-    ``sys.path`` before the module is exec'd. Mirrors the per-file importlib
-    loading used for the manage-config scripts, keeping the test independent of
-    conftest PYTHONPATH discovery order.
+    ``sys.path`` before the module is exec'd.
     """
     root = Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles' / 'plan-marshall'
     shared_dir = root / 'skills' / 'script-shared' / 'scripts'
     tasks_scripts_dir = root / 'skills' / 'manage-tasks' / 'scripts'
-    for d in (shared_dir, tasks_scripts_dir):
-        if str(d) not in sys.path:
-            sys.path.insert(0, str(d))
-    spec = importlib.util.spec_from_file_location(
-        '_tasks_cost_for_drift_test', tasks_scripts_dir / '_tasks_cost.py'
+    return _load_module(
+        '_tasks_cost_for_drift_test',
+        '_tasks_cost.py',
+        base_dir=tasks_scripts_dir,
+        extra_syspath_dirs=(shared_dir, tasks_scripts_dir),
     )
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules['_tasks_cost_for_drift_test'] = mod
-    spec.loader.exec_module(mod)
-    return mod
 
 
 def test_cost_size_token_table_seed_matches_consumer_default():
