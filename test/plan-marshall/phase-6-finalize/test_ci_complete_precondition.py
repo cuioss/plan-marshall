@@ -28,9 +28,21 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
+
+# Python 3.14's argparse colorizes ``--help`` output when the environment
+# advertises color support (FORCE_COLOR / PYTHON_COLORS), injecting ANSI SGR
+# escapes into the usage banner even under captured (non-TTY) stdout. Strip
+# them so substring assertions on the banner are robust to color state.
+_ANSI_SGR_RE = re.compile(r'\x1b\[[0-9;]*m')
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI SGR color escapes from ``text``."""
+    return _ANSI_SGR_RE.sub('', text)
 
 # PlanContext fixture is provided automatically by conftest.py as `plan_context`.
 
@@ -391,11 +403,13 @@ def test_executor_invocation_with_scrubbed_pythonpath():
     # The argparse help banner MUST appear on stdout. We pin the script
     # filename (``ci_complete_precondition.py``) and the documented
     # ``resolve`` subcommand to guard against accidental rename drift in
-    # the future.
-    assert 'usage: ci_complete_precondition.py' in completed.stdout, (
+    # the future. Strip ANSI color escapes first so the substring checks
+    # hold whether or not Python 3.14's argparse colorized the banner.
+    plain_stdout = _strip_ansi(completed.stdout)
+    assert 'usage: ci_complete_precondition.py' in plain_stdout, (
         f'Argparse usage banner missing from stdout: {completed.stdout!r}'
     )
-    assert 'resolve' in completed.stdout, (
+    assert 'resolve' in plain_stdout, (
         f'``resolve`` subcommand missing from help output: '
         f'{completed.stdout!r}'
     )
