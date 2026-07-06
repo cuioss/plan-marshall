@@ -117,17 +117,13 @@ Rules:
 
 ## Existing Plan Handling
 
-When plan directory already exists:
+When the plan directory already exists, phase-1-init runs as a dispatched `execution-context` leaf and **cannot** fire `AskUserQuestion` (see [`../../ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). It returns the early-return `plan_exists_prompt` envelope (`status: prompt_required`, carrying the three options) and stops — the main-context orchestrator (`plan-marshall/workflow/planning.md` § Action: init) owns the prompt and its resolution:
 
-```text
-AskUserQuestion:
-  "Plan 'my-feature' already exists. What would you like to do?"
+- **Resume** — continue with the existing plan as-is
+- **Replace** — delete the existing plan and re-dispatch a fresh init
+- **Rename** — re-dispatch init under a different plan_id
 
-  Options:
-  1. Resume - Continue with existing plan
-  2. Replace - Delete and recreate
-  3. Rename - Use different plan_id
-```
+See SKILL.md Step 3 for the full contract.
 
 ## Validation Criteria
 
