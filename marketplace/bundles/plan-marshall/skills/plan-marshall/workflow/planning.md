@@ -169,6 +169,35 @@ Task: plan-marshall:{target}
 
 The agent returns `plan_id` and `domains` in its TOON.
 
+**Early-return handling — `plan_exists_prompt`**: When the init return carries `status: prompt_required` with a `plan_exists_prompt` block (Step 3 detected the plan directory already exists), the leaf did NO init work and cannot continue — handle it BEFORE the post-init contract assertions below (those assertions assume a freshly-created plan). Fire the `AskUserQuestion` in main context using the block's three options, then resolve:
+
+```text
+AskUserQuestion:
+  questions:
+    - question: "A plan with id '{plan_id}' already exists. How would you like to proceed?"
+      header: "Plan exists"
+      options:
+        - label: "Resume"
+          description: "Continue with the existing plan as-is"
+        - label: "Replace"
+          description: "Delete the existing plan and create a fresh one"
+        - label: "Rename"
+          description: "Create the plan under a different plan_id"
+      multiSelect: false
+```
+
+- **Resume** → do NOT re-dispatch init. The existing plan stands; route to it via the auto-detect-from-phase path (see [`SKILL.md`](../SKILL.md#auto-detect-from-phase)) so the orchestrator continues from the plan's current phase. Skip the post-init assertions and the Metrics fused-call below (no new init ran).
+- **Replace** → delete the existing plan, then re-dispatch the **1-Init Phase** dispatch above verbatim (a fresh init now returns `action: created`):
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan \
+    --plan-id {plan_id}
+  ```
+
+- **Rename** → re-dispatch the **1-Init Phase** dispatch above with a new `plan_id` (append `-2`, `-3`, … or a fresh slug) so the collision clears.
+
+On Replace/Rename, the re-dispatched init returns a normal `status: success`, and control resumes at the post-init contract assertion below. A `plan_exists_prompt` return NEVER carries a `pr_url` / `branch` / patched-files payload, so it is not a contract violation — it is the sanctioned early-return escalation shape.
+
 **Post-init contract assertion**: phase-1-init's contract is plan-structure creation only — it writes `request.md`, `references.json`, and `status.json` under `.plan/local/plans/{plan_id}/**` and returns `plan_id` + `domains` (+ `next_phase`) and nothing else of substance (see `plan-marshall:phase-1-init` § Enforcement). When the `content` it receives reads like a ready-to-apply implementation spec, the agent treats it as a work order — editing source files, switching the checkout onto a `fix/`/`feature/` branch, and returning a payload that omits `plan_id` and carries a `pr_url` instead. This is the same failure class as the post-refine violation one phase later (see `feedback_phase2_refine_never_implements`), and it silently advances the orchestrator into phase-2-refine with main-checkout drift. Assert structurally that the init was contract-clean before advancing.
 
 **Return-shape check**: assert the phase-1-init return TOON carries a non-empty `plan_id` AND does NOT carry a `pr_url`, a `branch`, or a "patched N files" / files-patched `display_detail`. Any of those is a rogue-implementation signal — phase-1-init never opens a PR, never reports a branch, and never reports files patched.
@@ -221,7 +250,51 @@ Do NOT call the **Metrics** fused-call. Do NOT capture the phase handshake. Do N
 - `plan-marshall:phase-1-init` § Enforcement — the prohibition this assertion enforces
 - `feedback_phase2_refine_never_implements` — driving failure history for the symmetric post-refine guard
 
-**Orchestrator-owned operator prompts (recipe-match + posture)**: `phase-1-init` runs as a dispatched `execution-context` leaf, where `AskUserQuestion` is unreachable at runtime (see [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). The two init-phase operator dialogues therefore come back as optional prompt-required blocks on the init return TOON — `recipe_match_prompt` (Step 5c propose branch) and `posture_prompt` (Step 8d `lane_selection: ask`). The orchestrator owns both `AskUserQuestion` prompts here, after the post-init contract assertions pass and BEFORE the inline-early-phase-path detection and the automatic-continuation decision below (the inline early-phase path reads `status.metadata.recipe_key`, so the recipe prompt must resolve and persist first). Each block is present only when its branch fired; when a block is absent, skip its prompt entirely.
+**Orchestrator-owned operator prompts**: `phase-1-init` runs as a dispatched `execution-context` leaf, where `AskUserQuestion` is unreachable at runtime (see [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). Every init-phase operator dialogue therefore comes back as an optional prompt-required block on the init return TOON — `obsolescence_prompt` (Step 4b.3 stale lesson references), `recipe_match_prompt` (Step 5c propose branch), `domain_prompt` (Step 7 ambiguous domain), `sibling_collision_prompt` (Step 8c collision), and `posture_prompt` (Step 8d `lane_selection: ask`). (The sixth, `plan_exists_prompt`, is the early-return envelope already handled above, before these assertions.) The orchestrator owns every `AskUserQuestion` here, after the post-init contract assertions pass and BEFORE the inline-early-phase-path detection and the automatic-continuation decision below (the inline early-phase path reads `status.metadata.recipe_key`, so the recipe prompt must resolve and persist first). Consume the blocks in phase order — `obsolescence_prompt`, `recipe_match_prompt`, `domain_prompt`, `sibling_collision_prompt`, `posture_prompt`. Each block is present only when its branch fired; when a block is absent, skip its prompt entirely. A block whose resolution deletes the plan (`obsolescence_prompt` → Close, `sibling_collision_prompt` → Abort) STOPS the orchestrator — do not proceed to the remaining prompts or to phase-2-refine.
+
+**Consume `obsolescence_prompt` (conditional)**: When the init return carries an `obsolescence_prompt` block (a lesson-source plan with stale cited references), fire the `AskUserQuestion` in main context, listing the `stale[]` references and offering the three options:
+
+```text
+AskUserQuestion:
+  questions:
+    - question: "This lesson cites references that no longer exist in the tree. How should the plan proceed?"
+      header: "Stale refs"
+      options:
+        - label: "Refine"
+          description: "Adapt scope — attach the obsolescence report to the request as a clarifying note"
+        - label: "Close as resolved"
+          description: "The problem no longer exists — delete the lesson and abort plan creation"
+        - label: "Residual scope"
+          description: "Keep only the still-valid references; drop the stale ones"
+      multiSelect: false
+```
+
+Apply the operator's choice post-init (the leaf left the request/references intact):
+
+- **Refine** — append the obsolescence report (each stale reference + evidence from the block) to `request.md` under a `## Pre-flight Reference Verification` heading via `manage-plan-documents request` append, then continue.
+- **Close as resolved** — delete the lesson and the plan, then STOP:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
+    --lesson-id {lesson_id} --reason "Closed as resolved during phase-1-init premise check"
+  ```
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan \
+    --plan-id {plan_id}
+  ```
+
+- **Residual scope** — work-log each dropped stale reference for downstream scope audit, then continue.
+
+Log the choice:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:planning) Obsolescence prompt resolved: {selection}"
+```
+
+When the init return carries NO `obsolescence_prompt` block, skip this prompt — all cited references verified clean (or the source was not a lesson).
 
 **Consume `recipe_match_prompt` (conditional)**: When the init return carries a `recipe_match_prompt` block, fire the `AskUserQuestion` in main context, offering each `options[]` entry (`name` + `confidence`) as a selectable choice plus the `no_recipe_option` label:
 
@@ -255,6 +328,66 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```
 
 When the init return carries NO `recipe_match_prompt` block (auto-routed, or no match), skip this prompt — `recipe_key` is either already persisted by init's auto-route branch or intentionally unset.
+
+**Consume `domain_prompt` (conditional)**: When the init return carries a `domain_prompt` block (Step 7 resolved the domain as ambiguous, and the return's `domain` is `unresolved`), fire the `AskUserQuestion` in main context, offering the `candidates[]` list:
+
+```text
+AskUserQuestion:
+  questions:
+    - question: "The plan's domain could not be resolved unambiguously. Which domain applies?"
+      header: "Domain"
+      options:
+        # For each domain_prompt.candidates[] entry (dynamic):
+        - label: "{candidate}"
+          description: "Use the {candidate} domain for this plan"
+      multiSelect: false
+```
+
+Persist the operator's chosen domain to `references.json` (the leaf stored none for the ambiguous case), then use it as `{domain}` for the rest of Action: init:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set-list \
+  --plan-id {plan_id} --field domains --values {chosen_domain}
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:planning) Domain prompt resolved: {chosen_domain}"
+```
+
+When the init return carries NO `domain_prompt` block, skip this prompt — the domain was resolved unambiguously and stored by init's Step 9.
+
+**Consume `sibling_collision_prompt` (conditional)**: When the init return carries a `sibling_collision_prompt` block (Step 8c detected a duplication collision), fire the `AskUserQuestion` in main context, naming the `colliding_siblings[]` and `collision_classes[]`:
+
+```text
+AskUserQuestion:
+  questions:
+    - question: "This plan collides with active sibling plan(s) ({colliding_siblings}). How should it proceed?"
+      header: "Sibling collision"
+      options:
+        - label: "Proceed"
+          description: "The plans are intentionally distinct despite the shared source / files"
+        - label: "Rename"
+          description: "Delete this plan and re-create it with updated source/files"
+        - label: "Abort"
+          description: "This plan duplicates an active sibling — delete it and stop"
+      multiSelect: false
+```
+
+Apply the operator's choice post-init:
+
+- **Proceed** — continue with this plan as-is.
+- **Rename** — delete this plan (`manage-status delete-plan --plan-id {plan_id}`) and re-dispatch the **1-Init Phase** dispatch above with updated source/files (and a new `plan_id` if needed).
+- **Abort** — delete this plan (`manage-status delete-plan --plan-id {plan_id}`) and STOP; do not proceed to the remaining prompts or to phase-2-refine.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level WARNING \
+  --message "(plan-marshall:planning) Sibling-collision prompt resolved: {selection}"
+```
+
+When the init return carries NO `sibling_collision_prompt` block, skip this prompt — the sibling-collision check was clean.
 
 **Consume `posture_prompt` (conditional)**: When the init return carries a `posture_prompt` block, fire the `AskUserQuestion` in main context, pre-selecting `posture_prompt.projected` and labeling each `options[]` entry with its concrete consequences (step count + summed token estimate):
 

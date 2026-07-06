@@ -205,7 +205,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files create-o
 
 Parse the TOON output. The `action` field indicates:
 - `action: created` - New plan directory was created, log phase start and continue to Step 4
-- `action: exists` - Plan already exists, prompt user
+- `action: exists` - Plan already exists; a dispatched leaf cannot fire `AskUserQuestion`, so return the `plan_exists_prompt` early-return envelope for the orchestrator to own (see the `action: exists` handling below)
 
 **On successful creation**, log the phase start (directory now exists):
 
@@ -225,32 +225,20 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics \
 
 **Rationale**: Bootstrap phase has no preceding `phase-boundary` call to stamp `start_time` (the call requires a `plan_id`, which doesn't exist until Step 3 returns). Recording the start as early as the plan directory permits makes the subsequent fused `phase-boundary --prev-phase 1-init` call (in `plan-marshall/workflow/planning.md`) compute a wall duration that bounds the agent's `<usage>` duration — restoring the `Worked <= Wall` invariant. The `_read_status_created` backfill in `manage-metrics.py` is a safety net for plans materialised under older orchestrator versions; the start-time recorded here is authoritative for current plans.
 
-If `action: exists`, use AskUserQuestion:
-- **Resume**: Continue with existing plan (skip to Step 9 with existing data)
-- **Replace**: Delete existing plan and create new (see below)
-- **Rename**: Ask for new plan_id and re-run from Step 2
+**If `action: exists`** — the plan directory already exists from a prior run. This step runs inside a dispatched `execution-context` envelope, where operator input is unreachable — a dispatched leaf cannot fire `AskUserQuestion` (see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). The leaf also cannot meaningfully continue: Resume, Replace, and Rename branch the entire phase differently. So **do NOT create, delete, or modify anything** — return the early-return prompt-required envelope and STOP, handing the decision to the orchestrator:
 
-**Replace Flow** (see `standards/plan-overwrite.md` for details):
-
-1. Delete the existing plan:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan \
-  --plan-id {plan_id}
+```toon
+status: prompt_required
+plan_id: {plan_id}
+plan_exists_prompt:
+  plan_id: {plan_id}
+  options[3]{choice,summary}:
+    resume,"Continue with the existing plan as-is (proceed to refine)"
+    replace,"Delete the existing plan and create a fresh one"
+    rename,"Create the plan under a different plan_id"
 ```
 
-2. Re-run create-or-reference (should now return `action: created`):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-files:manage-files create-or-reference \
-  --plan-id {plan_id}
-```
-
-3. Log the replacement (directory now exists for logging):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[ACTION] (plan-marshall:phase-1-init) Replaced existing plan - deleted previous version"
-```
-
-4. Continue with Step 4 (Get Task Content)
+The orchestrator (`plan-marshall/workflow/planning.md` § Action: init) fires the `AskUserQuestion` and owns the resolution — **Resume** proceeds to phase-2-refine with the existing plan (no init re-run), **Replace** deletes the existing plan via `manage-status delete-plan --plan-id {plan_id}` and re-dispatches a fresh init (which then returns `action: created`), and **Rename** re-dispatches init with a new `plan_id`. The leaf accepts no resolution input — Replace and Rename are resolved by re-dispatching a fresh init once the collision is cleared. See `standards/plan-overwrite.md` for the overwrite details the orchestrator applies on Replace.
 
 ### Step 4: Get Task Content
 
@@ -322,19 +310,19 @@ For each extracted reference:
 
 Record each `(reference, status, evidence)` triple in an in-memory obsolescence report.
 
-**Sub-step 4b.3 — Surface obsolescence to the user**:
+**Sub-step 4b.3 — Surface obsolescence to the orchestrator**:
 
-If ANY reference is stale, present the obsolescence report to the user via `AskUserQuestion` using the 3-option menu defined in `lesson-source-premise-check.md`:
+This step runs inside a dispatched `execution-context` envelope, where operator input is unreachable — a dispatched leaf cannot fire `AskUserQuestion` (see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). If ANY reference is stale, do **NOT** fire `AskUserQuestion` and do **NOT** drop or adapt references here — instead carry an `obsolescence_prompt` block (the stale/valid reference report plus the 3 options defined in `lesson-source-premise-check.md`) in the Step 12 return TOON, and continue init normally with **all references intact**. The main-context orchestrator (`plan-marshall/workflow/planning.md` § Action: init) fires the prompt after init returns and applies the resolution post-init:
 
-1. **Refine** — adapt the lesson scope to the current code surface and continue with a clarifying note attached.
-2. **Close as resolved** — the lesson describes a problem that no longer exists; delete the lesson and abort plan creation.
-3. **Residual scope** — keep only the references that are still valid; drop the stale ones and continue.
+1. **Refine** — the orchestrator attaches the obsolescence report to `request.md` as a clarifying note and proceeds.
+2. **Close as resolved** — the lesson describes a problem that no longer exists; the orchestrator deletes the lesson and the just-created plan, aborting.
+3. **Residual scope** — the orchestrator drops the stale references (keeping the still-valid ones) and proceeds.
 
-If ALL references verify cleanly, log the success and continue to Step 5 — no prompt is shown.
+If ALL references verify cleanly, emit no `obsolescence_prompt` block, log the success, and continue to Step 5 — no prompt is surfaced.
 
-**Sub-step 4b.4 — Persist the decision**:
+**Sub-step 4b.4 — Log the detection**:
 
-For every branch (including the all-clean branch), emit a decision-log entry with the `(plan-marshall:phase-1-init:source-premise)` prefix:
+The leaf records only what it *detected* — it does NOT know or apply the operator's choice, because the orchestrator owns the prompt. Emit one decision-log entry with the `(plan-marshall:phase-1-init:source-premise)` prefix:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -345,39 +333,15 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 Where `{decision_summary}` is one of:
 
 - `All N references verified — no obsolescence detected.`
-- `User chose refine — attaching obsolescence report (N stale of M total) as clarifying note.`
-- `User chose close-as-resolved — lesson {lesson_id} deleted, aborting plan creation.`
-- `User chose residual-scope — dropping N stale references, continuing with M-N valid references.`
+- `Obsolescence detected (N stale of M total) — surfaced to the orchestrator via obsolescence_prompt.`
 
-**Sub-step 4b.5 — Branch-specific actions**:
+**Sub-step 4b.5 — Emit the prompt block and continue**:
 
-- **Refine branch**: Append the obsolescence report (a short bulleted markdown section listing each stale reference plus its evidence) to the body content that Step 5.2 will write into request.md. The report MUST appear under a `## Pre-flight Reference Verification` heading so downstream phases see it as part of the request scope. Continue to Step 5.
-- **Close-as-resolved branch**: Delete the lesson and abort plan creation:
-
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
-    --lesson-id {lesson_id} --reason "Closed as resolved during phase-1-init premise check"
-  ```
-
-  Then return the close-out TOON without proceeding to Step 5:
-
-  ```toon
-  status: aborted
-  reason: lesson_already_resolved
-  plan_id: {plan_id}
-  lesson_id: {lesson_id}
-  message: "Lesson deleted; plan creation aborted because every cited reference is obsolete."
-  ```
-
-- **Residual-scope branch**: Record each dropped reference via a separate work-log entry so downstream phases can audit which scope items were removed:
-
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-    work --plan-id {plan_id} --level INFO \
-    --message "[ARTIFACT] (plan-marshall:phase-1-init:source-premise) Dropped stale reference: {reference} ({evidence})"
-  ```
-
-  Then continue to Step 5 with the reduced reference set.
+- **All-clean** (no stale references): emit no `obsolescence_prompt` block and continue to Step 5 with the full reference set.
+- **Obsolescence detected** (at least one stale reference): carry an `obsolescence_prompt` block in the Step 12 return TOON (see Step 12), then continue to Step 5 writing `request.md` with the **full** lesson body intact — the leaf drops nothing and aborts nothing here. The block carries, per stale reference, its path/name and the verification evidence, plus the three option labels (`refine` / `close` / `residual`). The main-context orchestrator (`plan-marshall/workflow/planning.md` § Action: init) fires the `AskUserQuestion` after init returns and applies the chosen branch post-init:
+  - **Refine** — the orchestrator appends the obsolescence report to `request.md` under a `## Pre-flight Reference Verification` heading so downstream phases see it as part of the request scope.
+  - **Close as resolved** — the orchestrator deletes the lesson (`manage-lessons remove --lesson-id {lesson_id}`) and the just-created plan, aborting.
+  - **Residual scope** — the orchestrator work-logs each dropped stale reference for downstream scope audit and proceeds with the reduced set.
 
 ### Step 5: Write request.md
 
@@ -701,7 +665,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 7: Detect Domain
 
-Run the deterministic detector; only raise `AskUserQuestion` on the ambiguous branch. There is no LLM dispatch on this code path — multi-match cases are genuinely human-input territory.
+Run the deterministic detector; on the ambiguous branch surface a `domain_prompt` block for the orchestrator (a dispatched leaf cannot fire `AskUserQuestion` — see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). There is no LLM dispatch on this code path — multi-match cases are genuinely human-input territory, owned by the main-context orchestrator.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -713,9 +677,9 @@ The script reads `request.md` (clarified_request → original_input fallback; le
 - **Single-domain auto-select** (`source=single_domain_configured`): only one non-system domain is configured → that domain wins regardless of narrative.
 - **Unambiguous narrative match** (`source` = lesson body or request section): exactly one domain's alias set intersects the narrative tokens.
 - **Explicit override** (`source=cli_override`): `--domain-override` resolved to a known domain.
-- **Ambiguous** (`ambiguous: true`): multi-match OR zero-match. The caller MUST raise `AskUserQuestion` with the `candidates` list (when present) so the user picks the right domain; no auto-selection in this branch.
+- **Ambiguous** (`ambiguous: true`): multi-match OR zero-match. The leaf MUST NOT fire `AskUserQuestion` and MUST NOT auto-select. Instead it carries a `domain_prompt` block (the `candidates` list, when present) in the Step 12 return TOON and leaves the domain **unresolved** — Step 9 stores no domain for the ambiguous case, and the Step 12 return carries `domain: unresolved`. The main-context orchestrator fires the prompt after init returns and persists the operator's chosen domain to `references.json` (`manage-references set-list --field domains`) post-init, before dispatching phase-2-refine.
 
-**After resolving the domain**, log the decision:
+**After resolving the domain** (any non-ambiguous branch), log the decision:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -803,29 +767,19 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:phase-1-init) Sibling-collision check clean: no source-origin or file-overlap match against {active_sibling_count} active sibling(s)"
 ```
 
-**Collision detected** (`collision_detected == true`): surface the init-time collision gate to the user via `AskUserQuestion`, naming the colliding sibling plan ids and the collision class(es). Offer exactly three options:
-
-- **Proceed** — accept the overlap and continue with this plan as-is (the sibling and this plan are intentionally distinct despite the shared source / files). Continue to Step 8d.
-- **Rename** — delete this plan, then restart init with updated source/files (and a new `--plan-id` if needed) so the sibling-collision check passes. Delete via `manage-status delete-plan --plan-id {plan_id}` (mirroring the Step 3 Replace flow), then restart from Step 2.
-- **Abort** — this plan duplicates an already-active sibling and should not exist; delete it and stop plan creation. Delete via `manage-status delete-plan --plan-id {plan_id}` and return the abort TOON below without proceeding to Step 9.
-
-Record the user's choice to the decision log (substitute `{decision_summary}` with the chosen option and the matched sibling ids):
+**Collision detected** (`collision_detected == true`): this step runs inside a dispatched `execution-context` envelope, where operator input is unreachable — a dispatched leaf cannot fire `AskUserQuestion` (see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). Do **NOT** fire `AskUserQuestion`, do **NOT** delete the plan, and do **NOT** abort here. Instead carry a `sibling_collision_prompt` block (the colliding sibling plan ids and the collision class(es), plus the three option labels `proceed` / `rename` / `abort`) in the Step 12 return TOON, and continue init through Step 8d and Step 9 normally. Log the detection (not a user choice):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level WARNING \
-  --message "(plan-marshall:phase-1-init) Sibling-collision gate: {decision_summary}"
+  --message "(plan-marshall:phase-1-init) Sibling-collision detected against {comma_separated_sibling_ids} — surfaced to the orchestrator via sibling_collision_prompt"
 ```
 
-On the **Abort** branch, after deleting the plan, return:
+The main-context orchestrator (`plan-marshall/workflow/planning.md` § Action: init) fires the `AskUserQuestion` after init returns and applies the chosen branch post-init:
 
-```toon
-status: aborted
-reason: sibling_collision
-plan_id: {plan_id}
-colliding_siblings: {comma_separated_sibling_ids}
-message: "Plan deleted; creation aborted because it duplicates an already-active sibling plan."
-```
+- **Proceed** — accept the overlap; the sibling and this plan are intentionally distinct despite the shared source / files. Proceed to phase-2-refine.
+- **Rename** — the orchestrator deletes this plan (`manage-status delete-plan --plan-id {plan_id}`) and re-dispatches init with updated source/files (and a new `plan_id` if needed) so the sibling-collision check passes.
+- **Abort** — this plan duplicates an already-active sibling and should not exist; the orchestrator deletes it (`manage-status delete-plan --plan-id {plan_id}`) and stops plan creation.
 
 ### Step 8d: Execution-Profile Posture Dialogue
 
@@ -874,6 +828,8 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --field domains \
   --values {domain}
 ```
+
+**Ambiguous-domain case**: when Step 7 resolved `ambiguous: true` (and therefore deferred to a `domain_prompt` block, leaving the domain unresolved), SKIP this store — do not write a placeholder domain. The main-context orchestrator persists the operator's chosen domain to `references.json` (`manage-references set-list --field domains`) after init returns and before dispatching phase-2-refine. Every non-ambiguous branch stores the resolved domain here as normal.
 
 Project-level settings (compatibility, commit_and_push, branch_strategy, verification steps, finalize steps) are read directly from `marshal.json` by each phase skill at runtime.
 
@@ -931,6 +887,15 @@ artifacts:
   status: status.json
   references: references.json
 
+# Optional — present ONLY when Step 4b.3 detected a stale lesson reference (lesson
+# source only). Absent when all references verified clean. The orchestrator fires the
+# AskUserQuestion and applies Refine (append report to request.md) / Close (delete lesson
+# + plan, abort) / Residual (log dropped refs) post-init.
+obsolescence_prompt:
+  stale[N]{reference,evidence}:
+    {reference},{evidence}
+  options[3]: [refine, close, residual]
+
 # Optional — present ONLY when the Step 5c propose branch fired (a recipe matched
 # below the auto-route floor). Absent on auto-route and on no-match. The orchestrator
 # fires the AskUserQuestion in main context and persists status.metadata.recipe_key
@@ -940,6 +905,21 @@ recipe_match_prompt:
   options[N]{key,name,confidence}:
     {key},{name},{confidence}
   no_recipe_option: "No recipe — proceed with the standard refine/outline pipeline"
+
+# Optional — present ONLY when Step 7 resolved ambiguous (multi-match or zero-match).
+# Absent on any unambiguous domain resolution. When present, `domain` above is
+# `unresolved`. The orchestrator fires the AskUserQuestion and persists the chosen
+# domain to references.json (set-list --field domains) post-init.
+domain_prompt:
+  candidates[N]: [{domain}, ...]
+
+# Optional — present ONLY when Step 8c detected a sibling-collision. Absent when the
+# collision check was clean. The orchestrator fires the AskUserQuestion and applies
+# Proceed (continue) / Rename (delete + redispatch) / Abort (delete plan) post-init.
+sibling_collision_prompt:
+  colliding_siblings[N]: [{sibling_plan_id}, ...]
+  collision_classes[M]: [source_origin, file_overlap]
+  options[3]: [proceed, rename, abort]
 
 # Optional — present ONLY when Step 8d ran with lane_selection: ask. Absent when
 # lane_selection: auto (the projected posture was taken silently). The orchestrator
@@ -953,14 +933,32 @@ posture_prompt:
     full,{count},{tokens},{summary}
 ```
 
+**Early-return variant** — when Step 3 detected `action: exists`, the phase does NOT return the `status: success` shape above. It returns the early-return prompt-required envelope instead and performs no further init work:
+
+```toon
+status: prompt_required
+plan_id: {plan_id}
+plan_exists_prompt:
+  plan_id: {plan_id}
+  options[3]{choice,summary}:
+    resume,"Continue with the existing plan as-is (proceed to refine)"
+    replace,"Delete the existing plan and create a fresh one"
+    rename,"Create the plan under a different plan_id"
+```
+
 `planning_lane` is the value resolved by Step 8b's `manage-status planning-lane route`. The orchestrator dispatches the planning pipeline by this lane.
 
-**Optional operator-prompt blocks** — `recipe_match_prompt` and `posture_prompt` are the two escalation/prompt-required envelopes this phase returns for the inline orchestrator to own (a dispatched leaf cannot fire `AskUserQuestion` — see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). Each block is present ONLY on the branch that would have prompted:
+**Optional operator-prompt blocks** — this phase is a dispatched `execution-context` leaf that cannot fire `AskUserQuestion` (see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). Every operator dialogue therefore comes back as a prompt-required envelope for the main-context orchestrator to own. Five are **persist-and-continue** blocks on the `status: success` return above (init completes; the orchestrator fires the prompt and applies the resolution post-return); each is present ONLY on the branch that would have prompted:
 
+- `obsolescence_prompt` — emitted by Step 4b.3 (lesson source) when a cited reference is stale. Carries the `stale[]` report (reference + evidence). The orchestrator applies Refine (append the report to `request.md`), Close (delete the lesson + plan, abort), or Residual (log dropped refs). Absent when all references verify clean.
 - `recipe_match_prompt` — emitted by the Step 5c **propose** branch (a recipe matched but did not clear the auto-route floor). Carries the ranked `options[]` (each `key`/`name`/`confidence`) plus the `no_recipe_option` label. Absent on the auto-route branch (which silently persists `recipe_key`) and on no-match. The orchestrator fires the prompt and persists `status.metadata.recipe_key` on a recipe selection.
+- `domain_prompt` — emitted by Step 7 when domain detection is ambiguous (multi-match or zero-match). Carries the `candidates[]` list; `domain` is `unresolved` on this branch. The orchestrator fires the prompt and persists the chosen domain to `references.json` post-init. Absent on any unambiguous resolution.
+- `sibling_collision_prompt` — emitted by Step 8c when a duplication collision is detected. Carries the `colliding_siblings[]` and `collision_classes[]`. The orchestrator applies Proceed (continue), Rename (delete + re-dispatch), or Abort (delete plan). Absent when the collision check is clean.
 - `posture_prompt` — emitted by Step 8d when `lane_selection: ask`. Carries the `projected` posture (pre-selected) and the three `options[]` previews from `lanes preview` (per-posture step count + summed cost estimate). Absent when `lane_selection: auto` (the projection is taken silently). The orchestrator fires the prompt and persists `status.metadata.execution_profile` with the chosen posture, overwriting Step 8b's projection.
 
-Neither field appears when its branch did not fire; the orchestrator treats an absent block as "no prompt required" and proceeds with the already-persisted projection / silent recipe route.
+The sixth, `plan_exists_prompt`, is the **early-return** variant documented in the TOON block above: Step 3's `action: exists` branch returns `status: prompt_required` (NOT `success`) and stops, and the orchestrator owns the Resume/Replace/Rename resolution.
+
+None of the five success-return blocks appears when its branch did not fire; the orchestrator treats an absent block as "no prompt required" and proceeds with the already-persisted projection / silent route.
 
 **Always append the current-checkout cwd directive from Step 6 point 4 verbatim after the TOON output.** Phases 2-4 run on the current working tree because worktree materialization is deferred to phase-5-execute Step 2.5. The orchestrating LLM uses the directive to decide, per call, whether a `.plan/execute-script.py` invocation is Bucket A (cwd-agnostic, no routing flags) or Bucket B (pass `--plan-id {plan_id}`, which auto-resolves the current working tree now and the materialized worktree once phase-5 creates it).
 
@@ -977,7 +975,7 @@ display_detail: "<plan {plan_id} created, domain {domain}>"
 
 `display_detail` shape on success: `"plan {plan_id} created, domain {domain}"` (e.g. `"plan 2026-05-11-15-007 created, domain plan-marshall"`); ≤80 chars, ASCII, no trailing period. On error, `display_detail` carries the short error label (see § Error Handling for the structured envelope).
 
-All other fields (`plan_id`, `domain`, `next_phase`, `use_worktree`, `planning_lane`, `source`, `artifacts`) are documented in Step 12 above and form the rest of the return payload. The two optional escalation/prompt-required blocks (`recipe_match_prompt`, `posture_prompt`) are also documented in Step 12 — each is present only on the branch that would have prompted, and the inline orchestrator owns the `AskUserQuestion` and the resulting metadata persistence.
+All other fields (`plan_id`, `domain`, `next_phase`, `use_worktree`, `planning_lane`, `source`, `artifacts`) are documented in Step 12 above and form the rest of the return payload. The six optional prompt-required envelopes (the five persist-and-continue blocks `obsolescence_prompt`, `recipe_match_prompt`, `domain_prompt`, `sibling_collision_prompt`, `posture_prompt`, plus the early-return `plan_exists_prompt`) are also documented in Step 12 — each is present only on the branch that would have prompted, and the inline orchestrator owns the `AskUserQuestion` and the resulting persistence.
 
 ---
 
