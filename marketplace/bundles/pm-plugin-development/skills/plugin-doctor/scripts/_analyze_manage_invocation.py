@@ -54,6 +54,10 @@ keyed by the script file's content hash:
 - A cache entry is regenerated only when the script's content hash changes
   (i.e. the surface could actually have drifted). Otherwise the cached
   surface is returned with no subprocess at all.
+- The cache filename also folds in a ``_CACHE_VERSION`` token, bumped whenever
+  the derivation logic changes in a way that invalidates prior entries. This
+  busts pre-fix poisoned entries (empty surfaces derived from ANSI-colored
+  ``--help`` output) by making them cache misses, forcing clean re-derivation.
 - The on-disk cache lives under ``.plan/temp/plugin-doctor-help-cache/`` so
   it is covered by the standard temp-write permission and never pollutes
   the source tree.
@@ -606,9 +610,16 @@ def _cache_dir(executor: Path) -> Path:
     return plan_dir / 'temp' / 'plugin-doctor-help-cache'
 
 
+# Bumped whenever the surface-derivation logic changes in a way that
+# invalidates previously cached entries. Folded into the cache filename so
+# pre-fix poisoned entries (empty surfaces derived from ANSI-colored
+# ``--help`` output) become cache misses and are re-derived from clean text.
+_CACHE_VERSION = 2
+
+
 def _cache_path(executor: Path, notation: str, content_hash: str) -> Path:
     safe = notation.replace(':', '__')
-    return _cache_dir(executor) / f'{safe}.{content_hash}.json'
+    return _cache_dir(executor) / f'{safe}.v{_CACHE_VERSION}.{content_hash}.json'
 
 
 def _read_cache(cache_path: Path) -> _ScriptTree | None:
@@ -644,12 +655,43 @@ def _write_cache(cache_path: Path, tree: _ScriptTree) -> None:
             tmp.unlink(missing_ok=True)
 
 
+# Matches ANSI CSI escape sequences — the SGR color codes Python 3.14 wraps
+# around ``usage:``, subcommand choices, and ``--flag`` tokens in colorized
+# ``argparse --help`` output, plus the broader CSI set. Stripping them before
+# parsing keeps surface derivation robust even against a subprocess that
+# ignores the color-suppression env pins below.
+_ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI CSI escape sequences from ``text``."""
+    return _ANSI_ESCAPE_RE.sub('', text)
+
+
+def _color_suppressed_env() -> dict[str, str]:
+    """A copy of the current environment with color output suppressed.
+
+    Mirrors the executor front-door pins so the ``--help`` probe emits plain
+    text even when invoked directly. Python 3.14's ``can_colorize()`` consults
+    ``PYTHON_COLORS``, then ``NO_COLOR``, then ``FORCE_COLOR``; ``NO_COLOR``
+    overrides ``FORCE_COLOR`` and ``PYTHON_COLORS=0`` is the explicit override.
+    """
+    env = os.environ.copy()
+    env['PYTHON_COLORS'] = '0'
+    env['NO_COLOR'] = '1'
+    env.pop('FORCE_COLOR', None)
+    return env
+
+
 def _run_help(executor: Path, notation: str, *positionals: str) -> str | None:
     """Run ``{executor} {notation} {positionals...} --help`` and return stdout.
 
     Returns ``None`` when the probe fails (non-zero exit, timeout, missing
     interpreter). The synthetic test executor and the real executor both
-    forward the target's ``--help`` output verbatim on stdout.
+    forward the target's ``--help`` output verbatim on stdout. The probe runs
+    with a color-suppressed environment and the captured stdout is
+    ANSI-stripped before the ``usage:`` check and downstream flag parsing, so
+    colorized ``--help`` output never defeats the plain-text surface regexes.
     """
     cmd = [sys.executable, str(executor), notation, *positionals, '--help']
     try:
@@ -659,14 +701,16 @@ def _run_help(executor: Path, notation: str, *positionals: str) -> str | None:
                 capture_output=True,
                 text=True,
                 timeout=_HELP_TIMEOUT_SECONDS,
+                env=_color_suppressed_env(),
             )
     except (subprocess.TimeoutExpired, OSError):
         return None
     if result.returncode != 0:
         return None
-    if not result.stdout or 'usage:' not in result.stdout:
+    stdout = _strip_ansi(result.stdout) if result.stdout else result.stdout
+    if not stdout or 'usage:' not in stdout:
         return None
-    return result.stdout
+    return stdout
 
 
 # Hard ceiling on recursion depth — argparse subparser chains never approach

@@ -709,6 +709,21 @@ def main():
     # Use setdefault to respect existing value (e.g., set by test infrastructure)
     env.setdefault('PLAN_DIR_NAME', PLAN_DIR_NAME)
 
+    # Suppress ANSI color in every fronted subprocess so downstream text
+    # parsers receive plain output. Python 3.14's argparse --help colorizes
+    # when can_colorize() allows it (consulting PYTHON_COLORS, then NO_COLOR,
+    # then FORCE_COLOR); colored escapes corrupt option-flag parsers such as
+    # plugin-doctor's manage-invocation analyzer. NO_COLOR overrides
+    # FORCE_COLOR and PYTHON_COLORS=0 is the explicit override; popping
+    # FORCE_COLOR is belt-and-suspenders. CLICOLOR/CLICOLOR_FORCE/PY_COLORS
+    # pin the broader CLI surface (git/mvn/gradle/npm/pytest).
+    env['PYTHON_COLORS'] = '0'
+    env['NO_COLOR'] = '1'
+    env.pop('FORCE_COLOR', None)
+    env['CLICOLOR'] = '0'
+    env['CLICOLOR_FORCE'] = '0'
+    env['PY_COLORS'] = '0'
+
     try:
         # Capture output for logging (but still stream to console)
         result = subprocess.run(
