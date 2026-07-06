@@ -172,6 +172,11 @@ Four `marshal.json` knobs govern the mechanism:
 **Meta-project derived-state caveat.** For plan-marshall itself, the cache-deploy steps (`deploy-target`, `sync-plugin-cache`, on-main executor regeneration) are correctness-required derived state, not optional ceremony — they carry `lane.class: derived-state` and run under *every* posture by default. An operator may still override one to `off`, but that emits a loud correctness warning ("dropping sync-cache ships a broken cache") rather than a silent drop. `minimal` therefore cannot silently drop required derived state.
 ====
 
+[NOTE]
+====
+**Independent of `init_without_asking`.** `lane_selection` and `plan.phase-1-init.init_without_asking` (see <<review-gates>>) are two independent `phase-1-init` gates that govern different decisions and do not interact. `lane_selection` gates only whether init *prompts* for the execution-profile posture; `init_without_asking` gates only the `phase-1-init` → `phase-2-refine` auto-continue. Concretely: `init_without_asking: true` does **not** suppress the `lane_selection: ask` posture dialogue — the posture prompt fires *within* init, before the transition the auto-continue governs — and `lane_selection: auto` does **not** change the init→refine auto-continue, since it only skips the posture dialogue and leaves the transition gate untouched.
+====
+
 Set a knob via the standard phase `set` verb (the per-element override goes through the step-param channel):
 
 [source,bash]
