@@ -37,6 +37,7 @@
         "default:verify:compile",
         "default:verify:module-tests"
       ],
+      "per_envelope_budget_tokens": "400K",
       "verification_steps": {
         "default:verify:quality-gate": {},
         "default:verify:module-tests": {},
@@ -45,14 +46,7 @@
       "effort": {
         "default": "level-4",
         "verification-feedback": "level-3"
-      },
-      "cost_size_token_table": {
-        "S": "25K",
-        "M": "60K",
-        "L": "130K",
-        "XL": "260K"
-      },
-      "per_envelope_budget_tokens": "400K"
+      }
     },
     "phase-6-finalize": {
       "max_iterations": 3,

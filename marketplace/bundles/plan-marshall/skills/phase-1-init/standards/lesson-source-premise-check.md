@@ -1,6 +1,8 @@
 # Lesson Source-Premise Check
 
-Authoritative supplement to `phase-1-init/SKILL.md` Step 4b. Defines the extraction heuristics, verification helpers, the `AskUserQuestion` shape, and the per-branch persistence contract used to detect stale lesson prescriptions before plan scope is locked.
+Authoritative supplement to `phase-1-init/SKILL.md` Step 4b. Defines the extraction heuristics, verification helpers, the `obsolescence_prompt` return-block shape, and the per-branch resolution contract used to detect stale lesson prescriptions before plan scope is locked.
+
+phase-1-init runs as a dispatched `execution-context` leaf and **cannot** fire `AskUserQuestion` (see [`../../ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). The leaf only *detects* obsolescence and carries an `obsolescence_prompt` block back on its return TOON; the main-context orchestrator (`plan-marshall/workflow/planning.md` § Action: init) fires the prompt and applies the chosen branch post-init. This document describes both sides.
 
 ## Scope
 
@@ -53,46 +55,40 @@ For each extracted reference, verify against the live tree:
 
 Record each verification as a `(reference, kind, status, evidence)` tuple. `status` is one of `valid` or `stale`. `evidence` is a short string suitable for inclusion in a markdown bullet (e.g., `Read returned ENOENT`, `Grep matched 0 lines`, `--help omits subcommand 'foo'`).
 
-## AskUserQuestion Contract
+## Obsolescence Prompt Contract
 
-Triggered only when at least one reference is stale. Show the obsolescence report inline as the question's `details` field, then offer exactly three options:
+Triggered only when at least one reference is stale. The **leaf does NOT fire `AskUserQuestion`** — it carries an `obsolescence_prompt` block on its Step 12 return TOON listing each stale reference and its evidence plus the three option ids, then continues to Step 5 writing `request.md` with the full lesson body intact:
 
-```text
-question: "The lesson cites references that no longer match the current tree. How should we proceed?"
-details: |
-  Obsolescence report:
-  - {reference_1} — {evidence_1}
-  - {reference_2} — {evidence_2}
-  ...
-  ({stale_count} stale / {total_count} total)
-options:
-  - id: refine
-    label: "Refine the lesson into the current code surface"
-    detail: "Continue plan creation; obsolescence report is attached to request.md as a clarifying note."
-  - id: close-as-resolved
-    label: "Close the lesson as already-resolved"
-    detail: "Delete the lesson via manage-lessons and abort plan creation."
-  - id: residual-scope
-    label: "Proceed with the residual scope only"
-    detail: "Drop the stale references and continue with the remainder."
+```toon
+obsolescence_prompt:
+  stale[N]{reference,evidence}:
+    {reference_1},{evidence_1}
+    {reference_2},{evidence_2}
+  options[3]: [refine, close, residual]
 ```
 
-Option ids (`refine`, `close-as-resolved`, `residual-scope`) are the contract surface other code may key off. Do not reword them.
+The **orchestrator** fires the `AskUserQuestion` from the main context, showing the obsolescence report (`{stale_count} stale / {total_count} total`) and offering exactly three options:
 
-## Per-Branch Persistence Contract
+- **refine** — "Refine the lesson into the current code surface": continue plan creation with the obsolescence report attached to `request.md` as a clarifying note.
+- **close** — "Close the lesson as already-resolved": delete the lesson and the plan, aborting.
+- **residual** — "Proceed with the residual scope only": drop the stale references and continue with the remainder.
 
-All branches (including the all-clean fast path) MUST emit exactly one decision-log entry with the prefix `(plan-marshall:phase-1-init:source-premise)`. Use the canonical messages below verbatim — downstream audit tooling pattern-matches on them.
+Option ids (`refine`, `close`, `residual`) are the contract surface other code may key off. Do not reword them.
 
-| Branch | Decision-log message |
-|--------|---------------------|
+## Per-Branch Resolution Contract
+
+The **leaf** emits exactly one decision-log entry with the prefix `(plan-marshall:phase-1-init:source-premise)`, recording only what it *detected* (it does not know the operator's choice — the orchestrator owns the prompt). Use the canonical messages below verbatim — downstream audit tooling pattern-matches on them.
+
+| Leaf outcome | Decision-log message |
+|--------------|----------------------|
 | All clean | `All N references verified — no obsolescence detected.` |
-| Refine | `User chose refine — attaching obsolescence report (N stale of M total) as clarifying note.` |
-| Close as resolved | `User chose close-as-resolved — lesson {lesson_id} deleted, aborting plan creation.` |
-| Residual scope | `User chose residual-scope — dropping N stale references, continuing with M-N valid references.` |
+| Obsolescence detected | `Obsolescence detected (N stale of M total) — surfaced to the orchestrator via obsolescence_prompt.` |
 
-### Refine branch
+The **orchestrator** applies the operator's chosen branch post-init (the leaf continued init with the full lesson body intact):
 
-Compose a markdown section and append it to the body content Step 5.2 writes into `request.md`:
+### Refine branch (orchestrator)
+
+Compose a markdown section and append it to `request.md` (via the `manage-plan-documents request` append flow) under a `## Pre-flight Reference Verification` heading:
 
 ```text
 ## Pre-flight Reference Verification
@@ -103,20 +99,21 @@ The following references cited in the source lesson no longer match the current 
 - `{reference_2}` — {evidence_2}
 ```
 
-No additional script call is needed — the appended section travels into `request.md` via the existing Step 5.2 `Write` flow.
+### Close-as-resolved branch (orchestrator)
 
-### Close-as-resolved branch
-
-Delete the lesson and abort:
+Delete the lesson and the just-created plan, then abort — do not proceed to phase-2-refine:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
   --lesson-id {lesson_id} --reason "Closed as resolved during phase-1-init premise check"
 ```
 
-Return the abort TOON documented in SKILL.md Step 4b.5 — do not proceed to Step 5, do not transition phase, do not create references.
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan \
+  --plan-id {plan_id}
+```
 
-### Residual-scope branch
+### Residual-scope branch (orchestrator)
 
 Emit one work-log entry per dropped reference so the audit trail captures the scope reduction:
 
@@ -126,4 +123,4 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[ARTIFACT] (plan-marshall:phase-1-init:source-premise) Dropped stale reference: {reference} ({evidence})"
 ```
 
-Continue to Step 5 with the residual reference set. The kept references are not logged individually — only drops are recorded, since drops shrink scope and require audit visibility.
+Continue with the residual reference set. The kept references are not logged individually — only drops are recorded, since drops shrink scope and require audit visibility.

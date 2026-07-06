@@ -95,6 +95,7 @@ _asrtp = _load('_analyze_skill_relative_temp_path.py', '_asrtp_fixtures')
 _assub = _load('_analyze_shell_substitution_in_skills.py', '_assub_fixtures')
 _abcs = _load('_analyze_bash_chain_shapes_in_skills.py', '_abcs_fixtures')
 _awdtef = _load('_analyze_workflow_doc_toon_error_field.py', '_awdtef_fixtures')
+_aar = _load('_analyze_askuserquestion_reachability.py', '_aar_fixtures')
 _ahps = _load('_analyze_historical_prose_in_skills.py', '_ahps_fixtures')
 _alis = _load('_analyze_lesson_id_in_skill_prose.py', '_alis_fixtures')
 _aatd = _load('_analyze_allowed_tools_drift.py', '_aatd_fixtures')
@@ -408,6 +409,25 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['WORKFLOW_DOC_TOON_ERROR_FIELD'] = FixtureSpec(
         analyzer=_awdtef.analyze_workflow_doc_toon_error_field,
         files={_PM_SKILL: '# F\n\n```toon\nstatus: error\nerror_type: cat\n```\n'},
+    )
+    # askuserquestion-in-dispatched-workflow: a dispatched-leaf workflow doc
+    # (carries the execution-context ``implements:`` marker, no ``Task:`` dispatch
+    # directive) with an ``AskUserQuestion:`` invocation block — an unreachable
+    # operator prompt.
+    corpus['askuserquestion-in-dispatched-workflow'] = FixtureSpec(
+        analyzer=_aar.analyze_askuserquestion_reachability,
+        files={
+            _PM_SKILL: (
+                '---\n'
+                'implements: plan-marshall:extension-api/standards/'
+                'ext-point-execution-context-workflow\n'
+                '---\n\n'
+                '# F\n\n'
+                'AskUserQuestion:\n'
+                '  questions:\n'
+                '    - question: "pick one"\n'
+            )
+        },
     )
     # A SKILL.md with valid frontmatter but no ``mode:`` key fires skill-missing-mode
     # (reason: mode_missing) and nothing else — _GOOD_SKILL_FM omits the key.

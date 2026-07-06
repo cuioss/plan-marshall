@@ -3,10 +3,12 @@
   "description_reasoning": "source: README.md introduction (What is it section)",
   "extensions_used": [
     "plan-marshall",
+    "pm-documents",
     "pm-plugin-development"
   ],
   "modules": {
     "default": {},
+    "documentation": {},
     "plan-marshall": {},
     "pm-dev-frontend": {},
     "pm-dev-frontend-cui": {},

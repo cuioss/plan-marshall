@@ -4,15 +4,15 @@ This standard defines how to handle existing plans when creating a new plan with
 
 ## Scenario
 
-When `create-or-reference` returns `action: exists`, the user has three options:
+When `create-or-reference` returns `action: exists`, the dispatched phase-1-init leaf cannot prompt (it returns the `plan_exists_prompt` early-return envelope — see SKILL.md Step 3). The **orchestrator** (`plan-marshall/workflow/planning.md` § Action: init) fires the `AskUserQuestion` and resolves one of three options:
 
-1. **Resume** - Continue with the existing plan
-2. **Replace** - Delete existing plan and create new
-3. **Rename** - Use a different plan_id
+1. **Resume** - Continue with the existing plan (no init re-run)
+2. **Replace** - Delete existing plan and re-dispatch a fresh init
+3. **Rename** - Re-dispatch init under a different plan_id
 
 ## Replace Flow
 
-When user selects "Replace", execute the following steps:
+When the orchestrator resolves "Replace", it executes the following steps:
 
 ### Step 1: Delete Existing Plan
 
@@ -32,20 +32,13 @@ path: /path/to/.plan/plans/my-feature
 files_removed: 5
 ```
 
-### Step 2: Re-run Create-or-Reference
+### Step 2: Re-dispatch a Fresh Init
 
-After successful deletion, re-run `create-or-reference`:
+After successful deletion, the orchestrator re-dispatches the **1-Init Phase** dispatch (`plan-marshall/workflow/planning.md` § Action: init). The fresh init's `create-or-reference` now returns `action: created`, so init runs to completion normally.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-files:manage-files create-or-reference \
-  --plan-id {plan_id}
-```
+### Step 3: Resume the Init Flow
 
-This should now return `action: created`.
-
-### Step 3: Continue with Init Flow
-
-Continue with Step 4 (Get Task Content) and subsequent steps.
+The re-dispatched init proceeds through Step 4 (Get Task Content) and the subsequent steps as a first-time run — the orchestrator does NOT feed a resolution input back into the same leaf.
 
 ## Safety Considerations
 

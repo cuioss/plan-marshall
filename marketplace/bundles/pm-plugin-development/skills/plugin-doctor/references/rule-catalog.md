@@ -316,6 +316,32 @@ Forward-looking lint rules.
 
 ---
 
+## Rule Pack: AskUserQuestion reachability
+
+**Activation**: Analyze-surfaced only. Registered in `doctor-marketplace.py::cmd_analyze` (via the runner's marketplace-wide pass), **NOT** in `cmd_quality_gate` — it surfaces findings without failing the build, mirroring the analyze-surfaced agentfile-hygiene backstop rules. The rule is registered NON-gating initially so any remaining unreachable dialogue is visibly surfaced as a finding rather than silently passing green, without exploding the migration scope or breaking the build. The rule flags only the structured `AskUserQuestion:` invocation block (see Detection logic); prose mentions of the tool are never flagged, so a dispatched leaf that already returns a prompt-required envelope (as every `phase-1-init` operator dialogue now does) produces zero findings. The known remaining deferred dialogue is `phase-2-refine` Step 11's in-envelope confidence-loop clarification. Promotion to `quality-gate` (build-failing) is a follow-up once that deferred call site has been migrated to the orchestrator-owned pattern.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `askuserquestion-in-dispatched-workflow` | Flag an `AskUserQuestion:` invocation block inside a dispatched-leaf workflow doc — a doc dispatched as an `execution-context` leaf cannot reach the operator at runtime, so the prompt silently degrades to a default | Only the structured invocation block (a bare `AskUserQuestion:` line introducing `questions:`/`question:`/`options:`) is flagged; prose references ("fire an `AskUserQuestion`", "via `AskUserQuestion`") are never flagged. Main-context orchestrators (docs carrying `Task:` dispatch directives) are excluded, so the orchestrator's own menus never trip the rule | `plugin-doctor-disable: [askuserquestion-in-dispatched-workflow]` frontmatter (Granularity-3), or path-scoped project / shipped-default config |
+
+### askuserquestion-in-dispatched-workflow
+
+**Rule ID**: `askuserquestion-in-dispatched-workflow`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_askuserquestion_reachability.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/*/skills/` across every bundle.
+
+**Intent**: A workflow doc dispatched as an `execution-context` leaf cannot fire `AskUserQuestion` — operator input is unreachable inside a dispatched subagent envelope even though `agents/execution-context.md` frontmatter lists the tool. A leaf that "fires" the prompt silently falls through to a default, so the operator is never asked. The canonical contract — a dispatched leaf returns an escalation/prompt-required envelope for the inline orchestrator to own the prompt — lives at `plan-marshall:ref-workflow-architecture/standards/agents.md` § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope". This rule makes every remaining unreachable dialogue visible.
+
+**Detection logic**: For each markdown doc, the analyzer decides whether it is a dispatched-leaf workflow body (both conditions must hold): (1) it is a declared dispatchable workflow body — carries `implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow` in its frontmatter, OR is a `phase-*/SKILL.md` phase skill; AND (2) it is NOT itself a main-context orchestrator — it carries no `Task:` dispatch directive. The `Task:`-dispatch discriminator is the structural separator: a leaf cannot spawn a subagent, so a doc that drives dispatches (e.g. `plan-marshall/workflow/planning.md`, which carries the `implements:` marker yet dispatches every phase and legitimately prompts in its own list / cleanup / lessons menus) is an orchestrator and is excluded. Inside a qualifying doc, the analyzer flags each `AskUserQuestion:` invocation block — a bare `AskUserQuestion:` line whose next non-blank line is a `questions:` / `question:` / `options:` sub-key. Pure static analysis — no subprocess, no imports of target scripts, no file mutation.
+
+**Recommended fix**: Move the prompt to the inline orchestrator. The leaf computes the prompt's options and recommended default, then returns a prompt-required envelope (a block on its return TOON, as `phase-1-init` does with `recipe_match_prompt` / `posture_prompt`, or as `phase-6-finalize/workflow/automated-review.md` does with `status: escalate_ask`); the main-context orchestrator fires the `AskUserQuestion` and performs any resulting persistence.
+
+**Suppression mechanism**: `plugin-doctor-disable: [askuserquestion-in-dispatched-workflow]` frontmatter (Granularity-3) for a doc where the deferred migration is knowingly accepted, or path-scoped project / shipped-default config (Granularity-2 / Granularity-1). Use sparingly — a suppressed finding is a known unreachable dialogue.
+
+---
+
 ## Rule Pack: Bash chain-shape invariant
 
 **Activation**: Unconditionally active in `doctor-marketplace.py analyze` mode. NOT included in `quality-gate` — the existing marketplace tree pre-dates these rules and contains documented examples of the forbidden patterns inside bash fences; a cleanup sweep is required before these rules can be promoted to quality-gate level. Invoke via `analyze` for explicit drift sweeps; new code written after this plan is checked by the analyze path.

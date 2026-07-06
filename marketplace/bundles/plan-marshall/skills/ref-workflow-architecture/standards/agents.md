@@ -116,6 +116,30 @@ The word "dispatch" is overloaded — guard against reading every `execute-task`
 
 The same note fixes the granularity framing. The phase-5-execute dispatch unit is **budget-bounded** — explicitly NEITHER per-task NOR per-deliverable: one `execution-context` envelope greedily runs the task loop over as many tasks as the per-task budget reserve permits (bundling several small deliverables into one envelope and possibly spanning a single large deliverable across several envelopes), loading `execute-task` in-context per task, and yields to the orchestrator only at a TASK boundary (budget sentinel / `triage_required` / `baseline_drift`). Deliverable boundaries govern the Step 10 per-deliverable commit + focused-build **sub-events**, which fire within OR across envelopes and are **NOT** dispatch boundaries.
 
+### Leaf cannot fire AskUserQuestion — return a prompt-required envelope
+
+A dispatched `execution-context` leaf **cannot fire `AskUserQuestion`**. Operator input is unreachable inside a dispatched envelope at runtime: even though `agents/execution-context.md` frontmatter lists `AskUserQuestion` among the available tools, a dispatched subagent does not actually receive it (independently reproduced across live dispatches — the tool is absent from the leaf's runtime tool set). A leaf that "fires" `AskUserQuestion` silently falls through to a default instead of prompting, so the operator never sees the question and the choice is made without them.
+
+The canonical contract — the direct corollary of the leaf/dispatch-topology invariant above (a leaf cannot spawn a subagent; it likewise cannot reach the operator) — is:
+
+> When a dispatched leaf reaches a point where it would prompt the operator, it MUST NOT call `AskUserQuestion`. Instead it computes everything the prompt needs (the options, the recommended default, any previews) and returns a **prompt-required envelope** — a structured block on its return TOON — for the inline (main-context) orchestrator to own. The orchestrator fires the `AskUserQuestion` and performs any resulting persistence; the leaf performs none of the operator-facing interaction.
+
+This is the same escalation-envelope pattern the marketplace already uses for the other two leaf-cannot-do-it cases (a leaf cannot dispatch, and a leaf cannot reach the operator), generalized from these shipped precedents:
+
+| Dispatched leaf | Prompt-required envelope it returns | Orchestrator that owns the prompt |
+|-----------------|-------------------------------------|-----------------------------------|
+| `phase-6-finalize/workflow/automated-review.md` (re-review timeout) | `status: escalate_ask` with `prompt_options[]` | `phase-6-finalize/SKILL.md` Step 3 (item 7a) |
+| `phase-1-init/SKILL.md` Step 3 (plan already exists) | `status: prompt_required` with a `plan_exists_prompt` block (early return) | `plan-marshall/workflow/planning.md` § Action: init |
+| `phase-1-init/SKILL.md` Step 4b.3 (stale lesson references) | `obsolescence_prompt` block on the return TOON | `plan-marshall/workflow/planning.md` § Action: init |
+| `phase-1-init/SKILL.md` Step 5c propose | `recipe_match_prompt` block on the return TOON | `plan-marshall/workflow/planning.md` § Action: init |
+| `phase-1-init/SKILL.md` Step 7 (ambiguous domain) | `domain_prompt` block on the return TOON | `plan-marshall/workflow/planning.md` § Action: init |
+| `phase-1-init/SKILL.md` Step 8c (sibling-collision) | `sibling_collision_prompt` block on the return TOON | `plan-marshall/workflow/planning.md` § Action: init |
+| `phase-1-init/SKILL.md` Step 8d (`lane_selection: ask`) | `posture_prompt` block on the return TOON | `plan-marshall/workflow/planning.md` § Action: init |
+
+Two envelope shapes appear above, selected by whether the leaf can finish its work before the operator answers. **Persist-and-continue blocks** (`obsolescence_prompt`, `recipe_match_prompt`, `domain_prompt`, `sibling_collision_prompt`, `posture_prompt`) ride back on an otherwise-complete `status: success` return: the leaf finishes init and the orchestrator fires the prompt and applies the resolution post-return (persisting metadata, adjusting references, or deleting the plan on an abort/close choice). The **early-return `prompt_required` envelope** (`plan_exists_prompt`) is returned by a leaf that cannot meaningfully continue until the operator answers — the plan already exists, so the leaf stops and the orchestrator owns the Resume/Replace/Rename branching (proceed with the existing plan, or delete-and-redispatch a fresh init). Neither shape requires the leaf to accept a resolution *input*: the orchestrator resolves Replace/Rename by re-dispatching a fresh init once the collision is cleared, never by feeding the choice back into the same leaf.
+
+**Corollary — main-context workflows are exempt.** A workflow that runs in the main context (loaded via `Skill:`, not dispatched via `Task:`) — e.g. `plan-marshall/workflow/planning.md`'s list / cleanup / lessons menus, `triage.md`, `verification-feedback.md`, and the inline `phase-6-finalize` dispatcher steps — CAN and does fire `AskUserQuestion` directly, because it is not inside a dispatched envelope. The contract binds only the dispatched leaf. **Known exposure:** `phase-2-refine` Step 11's confidence-loop clarification still fires `AskUserQuestion` from inside a dispatched leaf; because it is embedded in an in-envelope loop, migrating it to this pattern requires breaking the loop across dispatch boundaries and is a documented, separately-scoped follow-up rather than an applied fix. Every operator-prompt site in `phase-1-init/SKILL.md` is migrated (the six rows above); phase-2-refine Step 11 is the only remaining in-envelope `AskUserQuestion` in the dispatched-leaf surface.
+
 ---
 
 ## Agent Inventory

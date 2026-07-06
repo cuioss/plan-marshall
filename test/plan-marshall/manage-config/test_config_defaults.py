@@ -30,8 +30,18 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+def _load_module(name: str, filename: str, *, base_dir: Path = _SCRIPTS_DIR, extra_syspath_dirs=()):
+    """Load a module from ``base_dir / filename`` via importlib by explicit path.
+
+    Mirrors the per-file importlib loading used across the manage-config tests so
+    a test does not depend on conftest PYTHONPATH discovery order. ``extra_syspath_dirs``
+    are inserted into ``sys.path`` (if absent) before the module is exec'd, for
+    modules whose own top-level imports resolve against a sibling directory.
+    """
+    for d in extra_syspath_dirs:
+        if str(d) not in sys.path:
+            sys.path.insert(0, str(d))
+    spec = importlib.util.spec_from_file_location(name, base_dir / filename)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
@@ -41,9 +51,7 @@ def _load_module(name: str, filename: str):
 def _load_sensible_number():
     """Load the script-shared sensible_number module by explicit path.
 
-    Mirrors the per-file importlib loading used for the manage-config scripts so
-    the test does not depend on conftest PYTHONPATH discovery order. The module
-    lives under the shared ``script-shared/scripts`` surface.
+    The module lives under the shared ``script-shared/scripts`` surface.
     """
     shared_dir = (
         Path(__file__).parent.parent.parent.parent
@@ -54,13 +62,9 @@ def _load_sensible_number():
         / 'script-shared'
         / 'scripts'
     )
-    spec = importlib.util.spec_from_file_location(
-        '_sensible_number_for_config_defaults_test', shared_dir / 'sensible_number.py'
+    return _load_module(
+        '_sensible_number_for_config_defaults_test', 'sensible_number.py', base_dir=shared_dir
     )
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules['_sensible_number_for_config_defaults_test'] = mod
-    spec.loader.exec_module(mod)
-    return mod
 
 
 _sensible_number_mod = _load_sensible_number()
@@ -563,6 +567,55 @@ def test_validate_cost_size_token_table_rejects_unparseable_magnitude():
         _config_defaults_mod.validate_cost_size_token_table(
             {'XS': '5K', 'S': '25K', 'M': 'sixty-thousand', 'L': '130K', 'XL': '260K', 'XXL': '520K'}
         )
+
+
+def _load_tasks_cost():
+    """Load the manage-tasks ``_tasks_cost.py`` consumer module by explicit path.
+
+    ``_tasks_cost.py`` imports ``from sensible_number import parse_sensible_int``
+    at module top, so the shared ``script-shared/scripts`` surface must be on
+    ``sys.path`` before the module is exec'd.
+    """
+    root = Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles' / 'plan-marshall'
+    shared_dir = root / 'skills' / 'script-shared' / 'scripts'
+    tasks_scripts_dir = root / 'skills' / 'manage-tasks' / 'scripts'
+    return _load_module(
+        '_tasks_cost_for_drift_test',
+        '_tasks_cost.py',
+        base_dir=tasks_scripts_dir,
+        extra_syspath_dirs=(shared_dir, tasks_scripts_dir),
+    )
+
+
+def test_cost_size_token_table_seed_matches_consumer_default():
+    """The config seed cost table must equal the _tasks_cost consumer default (drift guard).
+
+    ``_config_defaults.DEFAULT_PLAN_EXECUTE['cost_size_token_table']`` (the
+    operator-tunable config seed) and ``_tasks_cost.DEFAULT_SIZE_TABLE`` (the pure
+    deriver's canonical default, used when the caller passes no ``size_table``)
+    are two mirrors of the SAME six-size scale. If they diverge — a key added or
+    removed on one side, or a magnitude changed — phase-4-plan cost derivation
+    would silently use one table while the config advertises another. This
+    cross-module drift test fails loud on any such divergence. Both sides are
+    parsed through the shared ``parse_sensible_int`` so the comparison is on
+    integer magnitudes, not string spelling (e.g. ``'130K'`` vs ``'130_000'``).
+    """
+    tasks_cost = _load_tasks_cost()
+    seed = _config_defaults_mod.DEFAULT_PLAN_EXECUTE['cost_size_token_table']
+    consumer = tasks_cost.DEFAULT_SIZE_TABLE
+
+    # Identical six-key set, and it equals the canonical COST_SIZE_LABELS enum.
+    expected_keys = set(_config_defaults_mod.COST_SIZE_LABELS)
+    assert set(seed) == expected_keys, 'config seed keys must be the six-size set'
+    assert set(consumer) == expected_keys, 'consumer default keys must be the six-size set'
+
+    # Identical parsed magnitudes per key.
+    seed_parsed = {k: parse_sensible_int(v) for k, v in seed.items()}
+    consumer_parsed = {k: parse_sensible_int(v) for k, v in consumer.items()}
+    assert seed_parsed == consumer_parsed, (
+        'config seed and _tasks_cost consumer default must carry identical parsed '
+        f'magnitudes; seed={seed_parsed} consumer={consumer_parsed}'
+    )
 
 
 # =============================================================================

@@ -215,6 +215,34 @@ def test_descriptor_modules_are_unique_and_sorted():
     assert modules == sorted(modules), '_DESCRIPTOR_MODULES must stay in sorted order'
 
 
+def test_askuserquestion_reachability_rule_registered_non_gating():
+    """The AskUserQuestion-reachability rule is registered as analyze-only / non-gating.
+
+    Registration-completeness for the new rule: it must appear in the registry
+    with advisory (``warning``) severity, structural category, file-local scope,
+    and — as an analyze-surfaced NON-gating rule — ``opt_in=False`` /
+    ``default_on=True`` / ``has_fixer=False``. Pinning the descriptor closes the
+    dispatch-table gap where a rule is registered but its metadata silently drifts.
+    """
+    reg = _load_registry()
+    matches = [
+        descriptor
+        for descriptor in reg.get_registry()
+        if descriptor.rule_id == 'askuserquestion-in-dispatched-workflow'
+    ]
+    assert len(matches) == 1, (
+        'askuserquestion-in-dispatched-workflow must be registered exactly once '
+        f'in the rule registry; found {len(matches)}'
+    )
+    descriptor = matches[0]
+    assert descriptor.severity == 'warning'
+    assert descriptor.category == 'structural'
+    assert descriptor.scope == 'file-local'
+    assert descriptor.opt_in is False
+    assert descriptor.default_on is True
+    assert descriptor.has_fixer is False
+
+
 # =============================================================================
 # Opt-in derivation — byte-identical to the prior literal
 # =============================================================================
