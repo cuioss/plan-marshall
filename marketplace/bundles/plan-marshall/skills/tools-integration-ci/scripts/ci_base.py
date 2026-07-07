@@ -781,6 +781,29 @@ def build_parser(
         help=f'Readiness-poll interval in seconds (default: {DEFAULT_CI_INTERVAL})',
     )
 
+    # pr merge-queue — enqueue the PR into the platform merge queue (GitHub merge
+    # queue / GitLab merge train) so the platform re-tests-and-merges against the
+    # latest base, serializing a truly-external commit the session-scoped mutex
+    # cannot. Accepts either --pr-number or --head (validated by handler),
+    # optional --strategy — mirrors the shared safe-merge declaration. Registered
+    # once here and consumed by both providers.
+    pr_merge_queue = pr_sub.add_parser(
+        'merge-queue',
+        help='Enqueue the PR into the platform merge queue (GitHub merge queue / GitLab merge train)',
+        allow_abbrev=False,
+    )
+    pr_merge_queue.add_argument('--pr-number', type=int, help='PR number')
+    add_head_arg(pr_merge_queue)
+    pr_merge_queue.add_argument(
+        '--strategy',
+        default='merge',
+        choices=['merge', 'squash', 'rebase'],
+        help='Merge strategy applied when the queue merges (default: merge)',
+    )
+    pr_merge_queue.add_argument(
+        '--delete-branch', action='store_true', help='Delete branch after the queue merges'
+    )
+
     # pr update-branch — accepts either --pr-number or --head (validated by handler)
     pr_update_branch = pr_sub.add_parser(
         'update-branch', help='Update PR branch with base branch changes', allow_abbrev=False

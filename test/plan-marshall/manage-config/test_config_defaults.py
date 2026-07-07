@@ -412,6 +412,72 @@ def test_get_default_config_includes_admin_merge_on_stuck_state():
     assert branch_cleanup['admin_merge_on_stuck_state'] is False
 
 
+# ---------------------------------------------------------------------------
+# D4/D5 new-knob seed assertions — this deliverable (6) is the SINGLE owner of
+# the seed test for the three finalize-flow-hardening knobs declared in
+# default:branch-cleanup's configurable: frontmatter: merge_hold_window and
+# merge_hold_budget_seconds (D4), plus use_merge_queue (D5).
+# ---------------------------------------------------------------------------
+
+
+def test_default_plan_finalize_includes_merge_hold_window():
+    """merge_hold_window nests under default:branch-cleanup with default 'full_window_release_at_waits' (D4)."""
+    config = _config_defaults_mod.get_default_config()
+    branch_cleanup = _params_for(
+        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
+    )
+    assert 'merge_hold_window' in branch_cleanup, (
+        'merge_hold_window must nest under default:branch-cleanup in the seeded steps map'
+    )
+    assert branch_cleanup['merge_hold_window'] == 'full_window_release_at_waits', (
+        "merge_hold_window default must be 'full_window_release_at_waits'"
+    )
+    assert 'merge_hold_window' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE, (
+        'merge_hold_window must not survive as a flat phase-level knob'
+    )
+
+
+def test_default_plan_finalize_includes_merge_hold_budget_seconds():
+    """merge_hold_budget_seconds nests under default:branch-cleanup with default 3600 (D4)."""
+    config = _config_defaults_mod.get_default_config()
+    branch_cleanup = _params_for(
+        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
+    )
+    assert 'merge_hold_budget_seconds' in branch_cleanup, (
+        'merge_hold_budget_seconds must nest under default:branch-cleanup in the seeded steps map'
+    )
+    assert branch_cleanup['merge_hold_budget_seconds'] == 3600, (
+        'merge_hold_budget_seconds default must be 3600 (~60 min, the max merge-hold budget)'
+    )
+    assert 'merge_hold_budget_seconds' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE
+
+
+def test_default_plan_finalize_includes_use_merge_queue():
+    """use_merge_queue nests under default:branch-cleanup with default False (D5)."""
+    config = _config_defaults_mod.get_default_config()
+    branch_cleanup = _params_for(
+        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
+    )
+    assert 'use_merge_queue' in branch_cleanup, (
+        'use_merge_queue must nest under default:branch-cleanup in the seeded steps map'
+    )
+    assert branch_cleanup['use_merge_queue'] is False, (
+        'use_merge_queue default must be False (opt-in platform merge-queue complement)'
+    )
+    assert 'use_merge_queue' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE
+
+
+def test_get_default_config_includes_finalize_flow_hardening_knobs():
+    """get_default_config() surfaces all three finalize-flow-hardening knobs nested together."""
+    config = _config_defaults_mod.get_default_config()
+    branch_cleanup = _params_for(
+        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
+    )
+    assert branch_cleanup['merge_hold_window'] == 'full_window_release_at_waits'
+    assert branch_cleanup['merge_hold_budget_seconds'] == 3600
+    assert branch_cleanup['use_merge_queue'] is False
+
+
 def test_default_plan_execute_omits_retired_per_task_budget_reserve_tokens():
     """DEFAULT_PLAN_EXECUTE must NOT carry the retired per_task_budget_reserve_tokens key.
 
@@ -1357,6 +1423,9 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
         'final_merge_without_asking': False,
         'auto_rebase_threshold': 'no_overlap_only',
         'merge_queue_wait_budget_seconds': 1800,
+        'merge_hold_window': 'full_window_release_at_waits',
+        'merge_hold_budget_seconds': 3600,
+        'use_merge_queue': False,
         'admin_merge_on_stuck_state': False,
     }
 
@@ -1415,6 +1484,9 @@ def test_default_plan_finalize_drops_flat_step_owned_knobs():
         'auto_rebase_threshold',
         'merge_queue_wait_budget_seconds',
         'admin_merge_on_stuck_state',
+        'merge_hold_window',
+        'merge_hold_budget_seconds',
+        'use_merge_queue',
     ):
         assert knob not in finalize, f'flat step-owned knob {knob!r} must not survive'
 

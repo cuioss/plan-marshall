@@ -754,6 +754,51 @@ def _safe_merge_delegate_ns(args: argparse.Namespace) -> argparse.Namespace:
     )
 
 
+def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
+    """Handle 'pr merge-queue' subcommand — enqueue the PR into the GitHub merge queue.
+
+    GitHub's merge queue is engaged by enabling auto-merge on a PR whose target
+    branch has a merge queue configured in branch protection: ``gh pr merge
+    --auto`` adds the PR to the queue, and the platform re-tests-and-merges it
+    against the latest base. This serializes a truly-external commit (e.g. a
+    dependabot merge to the base) that the session-scoped merge mutex cannot,
+    closing the residual staleness gap the mutex leaves open. It composes with
+    the widened mutex: the mutex guards the pre-enqueue rebase/force-push window;
+    the merge queue serializes the merge itself at the platform.
+
+    Returns canonical TOON with ``operation: pr_merge_queue`` and
+    ``enqueued: true`` on success.
+    """
+    is_auth, err = github_ops.check_auth()
+    if not is_auth:
+        return make_error('pr_merge_queue', err)
+
+    identifier, err_dict = github_ops._resolve_pr_identifier(args, 'pr_merge_queue')
+    if err_dict:
+        return err_dict
+    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
+
+    gh_args = ['pr', 'merge', identifier, '--auto', f'--{args.strategy}']
+    if args.delete_branch:
+        gh_args.append('--delete-branch')
+    returncode, _stdout, stderr = github_ops.run_gh(gh_args)
+    if returncode != 0:
+        return make_error(
+            'pr_merge_queue',
+            f'Failed to enqueue PR {identifier} into the merge queue',
+            stderr.strip(),
+        )
+
+    return {
+        'status': 'success',
+        'operation': 'pr_merge_queue',
+        'pr_number': args.pr_number if args.pr_number else identifier,
+        'strategy': args.strategy,
+        'enqueued': True,
+        'delete_branch': args.delete_branch,
+    }
+
+
 def cmd_pr_update_branch(args: argparse.Namespace) -> dict:
     """Handle 'pr update-branch' subcommand - update PR branch with base branch changes."""
     is_auth, err = github_ops.check_auth()

@@ -1,9 +1,126 @@
+---
+lane:
+  class: core
+  cost_size: XS
+name: default:ci-verify
+description: "Deterministic ci-verify executor — classify CI run failures into the multi-failure-mode taxonomy and emit one structured triage finding per failing check (requires: [ci-complete] in consume-failures mode)"
+order: 22
+requires: [ci-complete]
+mutates_source: false
+default_on: true
+presets:
+  - standard
+  - full
+implements: plan-marshall:extension-api/standards/ext-point-finalize-step
+---
+
 # ci-verify Standards
 
-Standards counterpart to [`../workflow/ci-verify.md`](../workflow/ci-verify.md).
-Codifies the multi-failure-mode taxonomy, the build-profile match rule,
-the precondition mode contract, and the eager-fetch persistence
-guarantee.
+Standards for the `default:ci-verify` finalize step — an **inline
+deterministic executor** (`scripts/ci_verify.py`), NOT a dispatched
+execution-context workflow. The CI-check classification is a fixed
+taxonomy-table lookup, so the green pass-through pays no LLM envelope
+and only a genuinely-red CI routes to the LLM `verification-feedback`
+triage. This extends the dispatch-granularity "find the LLM core"
+model (`../extension-api/standards/dispatch-granularity.md` § 5) rather
+than contradicting it — the wrapping step earns no envelope for the
+green pass-through.
+
+The executor is placed on the inline pure-executor roster alongside
+`push` and `branch-cleanup`. The step's `ext-point-finalize-step`
+frontmatter lives HERE (this standards doc carries `name:
+default:ci-verify`, `order: 22`, `default_on: true`), mirroring how
+`branch-cleanup.md` — also a pure executor — carries its finalize-step
+frontmatter in `standards/`.
+
+## Executor contract
+
+The dispatcher runs the executor inline through the executor proxy after
+the `consume-failures` precondition resolves. It threads the settled CI
+verdict from the precondition envelope into the script:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:ci_verify run \
+  --plan-id {plan_id} --pr-number {pr_number} --worktree-path {worktree_path} \
+  --provider {github|gitlab} \
+  --final-status {success|failure|none|timeout} \
+  --wait-outcome {completed|deadline_exceeded} \
+  --head-sha {head_sha}
+```
+
+Field threading from the `consume-failures` precondition envelope
+(`ci_complete_precondition resolve --mode consume-failures`):
+
+- `ci_final_status` → `--final-status` (the dispatcher maps the
+  precondition's `no_checks` to `none`).
+- `wait_outcome` → `--wait-outcome` (constrained to the
+  `{completed, deadline_exceeded}` enum — see the persist guard below).
+- `head_sha` → `--head-sha` (may be empty; the required-field guard then
+  skips artifact persistence for this run).
+
+The executor's steps:
+
+1. **Fetch the full `checks[]` array** via `ci checks status --pr-number`
+   so a green run still records per-job evidence.
+2. **Capture the jobs file** — write the normalized `checks[]` array to
+   `.plan/temp/{plan_id}-ci-jobs-{run_id}.json`; an empty array writes
+   `[]` (a deliberate `jobs_source: empty` manifest).
+3. **Persist artifacts** behind the required-field guard (below).
+4. **Green early return** (`final_status == success` AND no failing
+   checks): mark the step `done` with `--head-at-completion`, ZERO
+   dispatch, and return `outcome: green`.
+5. **Red CI**: file exactly one taxonomy finding per failing check (plus
+   the `ci_no_checks` finding on `final_status == none`) and return
+   `outcome: needs_triage` carrying the distinct per-producer strings.
+   The executor does NOT mark the step `done` on the red path and does
+   NOT dispatch `verification-feedback` itself — it returns the
+   per-producer needs-triage signal and the dispatcher runs
+   `verification-feedback` (the sole LLM step, red-CI only), then records
+   the terminal step outcome.
+
+The green-early-return / no-dispatch bypass is documented BEFORE the
+red-CI triage dispatch it bypasses (steps 4 → 5 above).
+
+### Return shape
+
+```toon
+status: success | error
+final_status: success | failure | none | timeout
+outcome: green | needs_triage
+run_id: <str>
+head_sha: <str>
+persisted: true | false
+persist_skipped_reason: <field>   # present only when persisted == false
+findings_filed: <int>
+producers: [str, ...]             # present only when outcome == needs_triage
+step_marked_done: true | false    # true only on the green path
+```
+
+The canonical argparse surface for the script is published in
+[`../SKILL.md`](../SKILL.md); the script registers its own `run`
+subcommand via `generate_executor.py`.
+
+## Required-field + `--wait-outcome`-enum persist guard
+
+Before invoking `manage-ci-artifacts persist`, the executor verifies ALL
+required flags are non-empty — `--plan-id`, `--run-id`, `--head-sha`,
+`--pr-number`, `--provider` — AND constrains `--wait-outcome` to its
+`{completed, deadline_exceeded}` enum, **never copying `--final-status`'s
+value into `--wait-outcome`**. `run_id` is derived from the checks' run
+URLs; `head_sha` is threaded from the precondition. When any required
+field is empty, the executor skips the persist call for that run (a
+`persist_skipped_reason` names the missing field) and continues — artifact
+persistence is advisory and MUST NOT block the green early return or step
+completion. An out-of-enum `--wait-outcome` value clamps to `completed`
+so the persist flag is always legal.
+
+Moving the persist call to this validated Python site structurally
+eliminates the recurring `manage-ci-artifacts persist` argparse-drift
+class (the flag set and the `--wait-outcome` enum are enforced in code,
+not re-typed per finalize).
+
+`mark-step-done --step` uses the bare manifest key `ci-verify` (NOT a
+`default:`-prefixed key).
 
 ## Placement
 
@@ -42,7 +159,7 @@ two it is the *only* consumer that runs the precondition in
 `consume-failures` mode (Step 3 of [`../SKILL.md`](../SKILL.md) §
 "Precondition resolution"). In this mode the resolver runs the same
 wait loop but threads `final_status ∈ {success, failure, none,
-timeout}` and `failing_checks` through to the step body WITHOUT
+timeout}` and `failing_checks` through to the executor WITHOUT
 short-circuiting the step to `failed`. Existing consumers keep the
 default `strict` mode and observe no behaviour change.
 
@@ -55,6 +172,10 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:ci_complete_preco
 ```
 
 ## Failure-mode taxonomy
+
+This table is the executor's deterministic classification contract. The
+`classify_check` function in `scripts/ci_verify.py` evaluates the rows in
+this order per failing check.
 
 | Row | Failure mode | Detection source | Producer string | Subtype tag | Typical fix path |
 |-----|--------------|------------------|------------------|-------------|------------------|
@@ -80,15 +201,14 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:ci_complete_preco
   quality gate.
 
 - **Build profile membership** (row b vs row c) is determined by the
-  `architecture` skill's per-module build profile. The workflow body
-  calls `architecture resolve --command verify` and checks whether the
-  failing check's `workflow_name` matches any of the architecture-
-  resolved build command names (`verify`, `quality-gate`,
-  `module-tests`, `coverage`). Non-matching workflow names land in row
-  (c). Projects whose CI labels diverge from the architecture-resolved
-  names can override the match rule via configuration (the override
-  hook is documented in the `architecture` skill's standards, not
-  here, so the match rule stays single-sourced).
+  architecture-resolved build-command canonical names (`verify`,
+  `quality-gate`, `module-tests`, `coverage`). A failing check whose
+  `workflow_name` contains one of those tokens produces a
+  `ci-verify-build` finding; non-matching names produce
+  `ci-verify-policy` findings. The match rule is single-sourced in the
+  executor; projects whose CI labels diverge from the
+  architecture-resolved names override the match rule via the
+  `architecture` skill's configuration, not here.
 
 - **Distinct producer strings** are the dispatch keys for the triage
   workflow. Each producer is registered with `ext-triage-{domain}`
@@ -106,9 +226,9 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:ci_complete_preco
 - **One finding per failing check.** A PR with three build-failure
   checks plus one stale check produces four findings (three under
   `ci-verify-build` + one under `ci-verify-stale`), each carrying the
-  appropriate producer + subtype. The triage dispatch is batched: ONE
-  `verification-feedback` invocation per producer string, NOT per
-  finding.
+  appropriate producer + subtype. The executor returns the distinct
+  producer strings; the dispatcher runs ONE `verification-feedback`
+  invocation per producer string, NOT per finding.
 
 ## Eager-fetch and persist contract
 
@@ -122,19 +242,19 @@ is the plan dir's lifetime.
 
 The persist call MUST be handed the full jobs array via `--jobs-file`
 so `manifest.jobs[]` enumerates every job (one row per check) with a
-non-empty `log_path`. The workflow body captures `checks[]` from the
-step-1 `ci status` envelope into a `.plan/temp/` JSON file and passes
+non-empty `log_path`. The executor captures `checks[]` from the
+`ci checks status` envelope into a `.plan/temp/` JSON file and passes
 that path to `manage-ci-artifacts persist --jobs-file …`; the manifest's
 `jobs_source` field labels the outcome (`enumerated` when the array
 was supplied, `empty` otherwise) so a zero-jobs manifest on a green-CI
 run is structurally distinguishable from a genuine no-CI verdict. A
 `jobs_source: empty` value on a green-CI run is a defect signal — not
 the route by which `ci_no_checks` findings get filed (those flow from
-`final_status=none` in step 1's envelope).
+`final_status=none`).
 
 The persistence layer is implemented by the `manage-ci-artifacts`
 skill ([`../../manage-ci-artifacts/SKILL.md`](../../manage-ci-artifacts/SKILL.md)).
-Findings reference per-job log paths via `--source-path` so the
+Findings reference per-job log paths via `--file-path` so the
 triager has direct evidence; the `ci_no_checks` row uses the manifest
 itself as evidence.
 
@@ -164,10 +284,14 @@ the newest instead of returning all rows.
 ## HEAD-dependent re-fire
 
 `ci-verify` is HEAD-dependent: a loop-back commit MUST re-fire it
-against the new HEAD's CI run. This is enforced by adding `ci-verify`
-to `HEAD_DEPENDENT_STEPS` in [`../SKILL.md`](../SKILL.md). On every
-re-fire, a new `run_id` directory is created (idempotence applies
-per `run_id`, not per plan), so the audit trail accumulates.
+against the new HEAD's CI run. This is enforced by `ci-verify`'s
+membership in `HEAD_DEPENDENT_STEPS` in [`../SKILL.md`](../SKILL.md).
+The green early-return marks the step `done` with `--head-at-completion
+{sha}` (the executor resolves the worktree HEAD immediately before the
+`mark-step-done` call) so the dispatcher's HEAD-advance comparison can
+detect a stale `done` record after a future loop-back commit advances
+HEAD. On every re-fire, a new `run_id` directory is created (idempotence
+applies per `run_id`, not per plan), so the audit trail accumulates.
 
 ## Cross-references
 
@@ -179,4 +303,3 @@ per `run_id`, not per plan), so the audit trail accumulates.
   and the row-(a) finding there both reference the same upstream
   defect; the operator triages the row-(c) finding as "duplicate of
   sonar-roundtrip" or accepts via the policy producer.
-- [`../workflow/ci-verify.md`](../workflow/ci-verify.md) — execution workflow that applies these standards.

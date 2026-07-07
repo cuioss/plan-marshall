@@ -459,6 +459,25 @@ def cmd_pr_submit_review(args: argparse.Namespace) -> dict:
     )
 
 
+def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
+    """Handle 'pr merge-queue' subcommand on GitLab.
+
+    GitLab's platform equivalent of a GitHub merge queue is a **merge train** —
+    a Premium/Ultimate-tier feature that must be enabled per-project in the
+    merge-request settings and has no stable ``glab`` CLI surface. Rather than
+    silently falling back to an immediate merge (which would defeat the
+    external-commit serialization the caller asked for), return an explicit
+    unsupported error so cross-provider callers notice the mismatch — mirroring
+    the ``pr submit-review`` GitLab-no-equivalent pattern.
+    """
+    return make_error(
+        'pr_merge_queue',
+        'Not supported on GitLab via this abstraction — the platform equivalent is a '
+        'merge train (Premium/Ultimate, enabled per-project) with no stable glab CLI '
+        'surface. Use pr safe-merge instead, or enable use_merge_queue only on GitHub.',
+    )
+
+
 def cmd_pr_reviews(args: argparse.Namespace) -> dict:
     """Handle 'pr reviews' subcommand (gets MR approvals in GitLab)."""
     # Check auth
@@ -1858,6 +1877,7 @@ def main() -> int:
         ('pr', 'merge'): cmd_pr_merge,
         ('pr', 'auto-merge'): cmd_pr_auto_merge,
         ('pr', 'safe-merge'): cmd_pr_safe_merge,
+        ('pr', 'merge-queue'): cmd_pr_merge_queue,
         ('pr', 'close'): cmd_pr_close,
         ('pr', 'ready'): cmd_pr_ready,
         ('pr', 'edit'): cmd_pr_edit,

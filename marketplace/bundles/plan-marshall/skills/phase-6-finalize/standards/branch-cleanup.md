@@ -23,7 +23,16 @@ configurable:
     description: Gate the pre-rebase auto-proceed decision — no_overlap_only permits auto-rebase only when the rebase would touch a disjoint file set; any overlap defers to the operator.
   - key: merge_queue_wait_budget_seconds
     default: 1800
-    description: Bound (in seconds, ~30 min) the Pre-Merge Gate FIFO merge-queue poll loop — caps how long branch-cleanup waits for its turn at the head of the merge queue before falling back to the last-resort AskUserQuestion.
+    description: Bound (in seconds, ~30 min) the FIFO merge-queue poll loop — caps how long branch-cleanup waits for its turn at the head of the merge queue before falling back to the last-resort AskUserQuestion.
+  - key: merge_hold_window
+    default: full_window_release_at_waits
+    description: Hold-scope mode for the widened merge mutex. full_window_release_at_waits acquires the lock before the pre-merge force-push and holds it through the CI wait, merge, and merge-CI-wait, releasing + FIFO-re-enqueueing at every operator-wait / loop-back boundary and re-validating after re-acquire. pre_merge_only is the legacy narrow hold (acquire only at the Pre-Merge Gate).
+  - key: merge_hold_budget_seconds
+    default: 3600
+    description: Bound (in seconds, ~60 min) the maximum wall-clock the widened merge mutex may be held across the staleness window. When the elapsed-since-acquire exceeds this budget during a legitimate wait, the orchestrator releases + FIFO-re-enqueues the lock and escalates via AskUserQuestion, so a live-but-slow holder can never monopolize the merge critical section.
+  - key: use_merge_queue
+    default: false
+    description: Opt-in complement that routes the final merge through the platform merge queue (GitHub merge queue / GitLab merge train) instead of the immediate pr safe-merge, so the platform re-tests-and-merges against the latest base and serializes a truly-external commit the session-scoped mutex cannot. Default false because engaging the platform merge queue is a repo-level branch-protection change affecting ALL PR workflows. Composes with the widened mutex — the mutex guards the pre-enqueue rebase/force-push window, the queue serializes the merge itself.
   - key: admin_merge_on_stuck_state
     default: false
     description: Gate the GitHub-only stuck-state `--admin` fallback inside `ci pr safe-merge` — false refuses the admin merge and surfaces the stuck PR to the operator; true permits `gh pr merge --admin` only when the PR stays `mergeable_state: blocked` past the poll timeout AND every active ruleset requirement is provably met. Orthogonal to `final_merge_without_asking` (which gates whether the merge is attempted at all).
@@ -70,6 +79,22 @@ Worktree removal is sequenced before branch deletion here at the call site becau
 **Executor regeneration is owned by neither `integrate_into_main` nor this step.** `integrate_into_main` performs the plan-dir move-back only and does NOT regenerate the executor. On-main executor regeneration is performed by the project-level `project:finalize-step-sync-plugin-cache` step (order 85) after the cache sync, in both worktree and no-worktree finalize flows, because the executor is per-tree derived state (generated, never file-moved onto main) per ADR-002.
 
 See `workflow-integration-git/standards/worktree-handling.md` for the worktree-specific application of this rule (path convention, never-edit-main-checkout invariant, cleanup ordering rationale).
+
+## Merge-Mutex Hold Window (widened)
+
+The cross-plan merge mutex (`plan-marshall:manage-locks:merge_lock`) is held across the **full staleness-exposure window**, not just the merge call. Under the default `merge_hold_window == full_window_release_at_waits`, PR-mode branch-cleanup **acquires the lock BEFORE the pre-merge force-push** (see § "Acquire the Merge Mutex" below) and holds it through `rebase → force-push → CI wait → merge → merge-CI-wait`, releasing only **after `switch-and-pull`** has pulled the merge commit into the base branch. This closes the exposure window the previous narrow hold left uncovered: the old flow acquired the lock only at the Pre-Merge Gate, AFTER rebase → force-push → CI wait had already run, so `origin/{base_branch}` could advance under a concurrent plan during the CI wait and the merge would land stale. Both the auto path (`final_merge_without_asking == true`) AND the interactive path acquire the lock — the interactive path previously never locked.
+
+The widened hold obeys four invariants:
+
+1. **Release-and-FIFO-re-enqueue at every operator-wait / loop-back boundary.** The lock is held ONLY across non-interactive spans. Before EVERY `AskUserQuestion` (the Pre-Rebase Confirmation Gate, the re-review-timeout trigger-A gate, the Pre-Merge Confirmation Gate, and the merge-queue budget-exhaustion escalation) and before every loop-back-to-phase-5 boundary, the orchestrator releases the lock **if held** and re-enqueues via the FIFO admission queue (preserving FIFO position). On resume it RE-ACQUIRES through the same FIFO poll loop and **re-validates** — re-runs `baseline-reconcile` and re-rebases when `origin/{base_branch}` advanced during the released window — before merging. Releasing before the interactive wait is what prevents a held lock from blocking every other plan while this plan waits on a human. (At the Pre-Rebase Gate the lock is normally not yet held, so its release is a no-op; the guard is uniform for robustness.)
+
+2. **Bounded hold with the `merge_hold_budget_seconds` knob.** The orchestrator records the wall-clock instant of acquire and tracks elapsed-since-acquire. When a legitimate wait would push the held duration past `merge_hold_budget_seconds` (default 3600s), it releases + FIFO-re-enqueues + escalates via `AskUserQuestion` rather than continuing to hold. `merge_lock.py` is unchanged — its holder-liveness reclaim already bounds a CRASHED holder; this budget bounds a live-but-slow holder at the orchestrator layer.
+
+3. **FIFO fairness preserved** via the existing admission queue (`merge_queue.json`); the serialized-structure-is-front invariant (`merge_lock._fifo_front`) is unchanged, so a release-then-re-enqueue keeps the plan's place in line.
+
+4. **Release-on-abort, provably.** EVERY error / abort path — rebase conflict, force-push rejected (lease violation), `safe-merge` failure, worktree-remove failure, classifier error — releases the lock (if held) before returning. `merge_lock release` is idempotent and foreign-safe, so a release on a path where the lock was never acquired is a safe no-op.
+
+`merge_hold_budget_seconds` and `merge_hold_window` are declared in this step's `configurable:` frontmatter; their seed-into-`marshal.json` assertion is owned by deliverable 6's `test_config_defaults.py` (single test owner). The narrow legacy hold is still available via `merge_hold_window == pre_merge_only` (acquire only at the Pre-Merge Gate, as the pre-widening flow did).
 
 ## Mode Detection
 
@@ -268,6 +293,21 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 Extract `pr_merge_strategy` from the returned `params` object as `{pr_merge_strategy}` (default: `squash`). Valid values: `squash`, `merge`, `rebase`.
 
+### Acquire the Merge Mutex (before the pre-merge force-push)
+
+**Only if `state == open` AND `merge_hold_window == full_window_release_at_waits`** (the default). Read `merge_hold_window`, `merge_hold_budget_seconds`, and `merge_queue_wait_budget_seconds` off the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above. When `merge_hold_window == pre_merge_only`, SKIP this section — the lock is acquired later, at the Pre-Merge Gate, exactly as the legacy narrow flow did.
+
+This is the widened-hold acquire point: it takes the cross-plan merge mutex BEFORE the rebase force-push (the first staleness-creating operation), so the lock spans the entire `force-push → CI wait → merge → merge-CI-wait` window. It runs on BOTH the auto (`final_merge_without_asking == true`) and interactive paths — the interactive path previously never locked. The Pre-Rebase Confirmation Gate has already resolved above (an operator wait that completed while NO lock was held), so acquiring here does not hold the lock across a human prompt.
+
+Acquire via the FIFO admission queue exactly as documented in **Budget-exhaustion escalation** below — the same poll/backoff mechanism, bounded by `merge_queue_wait_budget_seconds`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
+  --plan-id {plan_id}
+```
+
+Follow the **FIFO poll/backoff loop** and **Budget-exhaustion escalation** procedure (see the Pre-Merge Gate section below for the canonical poll-loop body — `acquire` returns immediately, pace polls with a single standalone `sleep {interval}` Bash call, evaluate the `admission` discriminator, fall back to the last-resort `AskUserQuestion` on budget exhaustion). On `admission: admitted`, **record the wall-clock instant of acquire as `{hold_start}`** so the `merge_hold_budget_seconds` bound (see § "Merge-Mutex Hold Window") can be tracked across the held window, then continue to **Rebase Branch onto Base** below. The lock is now held; every operator-wait and abort path from here on obeys the release invariants in § "Merge-Mutex Hold Window".
+
 ### Rebase Branch onto Base
 
 **Only if `state == open`**: Rebase the feature branch onto the latest base branch before merging so the merge lands as a linear-history append. This step is unconditional — it runs every time the PR is still open, regardless of whether the branch was already up to date. A uniform rebase guarantees the merged history is linear and that CI runs against the exact commits that will land on the base branch.
@@ -289,7 +329,7 @@ Parse the returned TOON and branch on `status`:
     work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: worktree-rebase-to onto {base_branch} produced conflicts in {conflicts} — resolve manually in the worktree (rebase is left in progress) and re-run finalize"
   ```
 
-  Do NOT proceed with force-push, merge, or any cleanup. The conflicted rebase state is intentionally preserved so the user can resolve conflicts in the worktree and run `git rebase --continue` or `git rebase --abort` as appropriate.
+  Do NOT proceed with force-push, merge, or any cleanup. The conflicted rebase state is intentionally preserved so the user can resolve conflicts in the worktree and run `git rebase --continue` or `git rebase --abort` as appropriate. **Release-on-abort**: before returning, release the merge mutex if held (`merge_lock release --plan-id {plan_id}`; idempotent + foreign-safe, so a no-op when the widened hold was not acquired) per § "Merge-Mutex Hold Window" invariant 4.
 
 - `status: error` → ABORT cleanup with a fatal error using the returned `error` and `message` fields:
 
@@ -298,7 +338,7 @@ Parse the returned TOON and branch on `status`:
     work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: worktree-rebase-to failed - {error}: {message}"
   ```
 
-  Then return — do NOT proceed with force-push or merge.
+  Then return — do NOT proceed with force-push or merge. **Release-on-abort**: release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4).
 
 On a successful rebase, push the rewritten history to the remote with a lease guard via the `force-push-with-lease` verb (see `workflow-integration-git` Canonical invocations → `force-push-with-lease`):
 
@@ -307,7 +347,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
   force-push-with-lease --plan-id {plan_id}
 ```
 
-Parse the TOON output. On `status: rejected` (lease violation — remote moved since last fetch), ABORT cleanup and surface the error. On `status: error`, ABORT cleanup and return the error TOON verbatim to the dispatcher. On `status: success`, continue to the CI wait below.
+Parse the TOON output. On `status: rejected` (lease violation — remote moved since last fetch), ABORT cleanup and surface the error. On `status: error`, ABORT cleanup and return the error TOON verbatim to the dispatcher. On `status: success`, continue to the CI wait below. **Release-on-abort**: on either the `rejected` or `error` branch, release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4) — a lease violation means `origin/{base_branch}` moved, so holding the lock further would only block the plan that legitimately advanced it.
 
 After the force-push, wait for CI to complete on the rebased branch before proceeding to merge:
 
@@ -393,7 +433,9 @@ Read `re_review_on_branch_cleanup` off the returned `params` object (default: `t
 
 #### On re-review timeout (trigger A)
 
-This sub-block is evaluated ONLY when the `github_re_review re-review` call above returned `timed_out: true` AND `matched: false` — the await budget (`re_review_await_timeout_seconds`) expired before a fresh bot review landed for the rebased HEAD. Trigger A runs **inline in the orchestrator** (not a dispatched leaf), so the timeout branch fires `AskUserQuestion` directly here (mirroring the budget-exhaustion merge-queue and pre-merge confirmation gates in this document) rather than returning `escalate_ask`. Read `re_review_on_timeout` off the same `automated-review` `params` object returned by the `step-params get` call above (default: `ask`) and branch on its value. **Every branch is decision-logged** — a timeout is always an explicit, auditable decision; the `proceed`/"Merge anyway" outcomes log at WARNING naming the unreviewed HEAD SHA.
+This sub-block is evaluated ONLY when the `github_re_review re-review` call above returned `timed_out: true` AND `matched: false` — the await budget (`re_review_await_timeout_seconds`) expired before a fresh bot review landed for the rebased HEAD. Trigger A runs **inline in the orchestrator** (not a dispatched leaf), so the timeout branch fires `AskUserQuestion` directly here (mirroring the budget-exhaustion merge-queue and pre-merge confirmation gates in this document) rather than returning `escalate_ask`.
+
+**Release-before-wait / re-acquire-after (widened hold)**: this trigger-A timeout gate is an operator-wait boundary. Under `merge_hold_window == full_window_release_at_waits`, BEFORE presenting any `AskUserQuestion` below, release the merge mutex if held and FIFO-re-enqueue (`merge_lock release --plan-id {plan_id}`), so the plan does not hold the lock across a human prompt (§ "Merge-Mutex Hold Window" invariant 1). On the "Wait another {re_review_await_timeout_seconds}s" resume and on any path that continues toward the merge, RE-ACQUIRE via the FIFO poll loop and **re-validate** (`baseline-reconcile`; re-rebase when `origin/{base_branch}` advanced during the released window) before proceeding. The `merge_hold_budget_seconds` bound is checked here too: if the elapsed-since-`{hold_start}` already exceeds the budget, escalate rather than silently continuing to hold. Read `re_review_on_timeout` off the same `automated-review` `params` object returned by the `step-params get` call above (default: `ask`) and branch on its value. **Every branch is decision-logged** — a timeout is always an explicit, auditable decision; the `proceed`/"Merge anyway" outcomes log at WARNING naming the unreviewed HEAD SHA.
 
 - **`proceed`** (explicit opt-in to advance the unreviewed HEAD): decision-log at WARNING naming the unreviewed `{head_sha}`, then continue to the **Pre-Merge Confirmation Gate** below (today's silent-proceed, now an explicit, logged choice):
 
@@ -488,9 +530,9 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
   baseline-reconcile --plan-id {plan_id} --no-emit
 ```
 
-Parse the TOON return for refreshed `classification`, `auto_reconciled`, `conflict_count`, `upstream_commit_count` values. These values are surfaced to the operator in the prompt below so the merge decision is anchored to the post-rebase reality, not the pre-rebase snapshot.
+Parse the TOON return for refreshed `classification`, `auto_reconciled`, `conflict_count`, `upstream_commit_count` values. These values are surfaced to the operator in the prompt below so the merge decision is anchored to the post-rebase reality, not the pre-rebase snapshot. Under `merge_hold_window == full_window_release_at_waits` this re-run classifier IS the mandatory post-hold re-validation before the merge (§ "Merge-Mutex Hold Window" invariant 1).
 
-If the script exits non-zero, STOP and return an error TOON to the dispatcher carrying the stderr verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict.
+If the script exits non-zero, STOP and return an error TOON to the dispatcher carrying the stderr verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict. **Release-on-abort**: release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4).
 
 #### Auto-merge bypass (`final_merge_without_asking == true`)
 
@@ -501,9 +543,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: pre-merge auto-proceed (final_merge_without_asking=true), pre-merge confirmation gate bypassed"
 ```
 
-##### Acquire the cross-plan merge-lock (auto path only)
+##### Acquire / confirm the cross-plan merge-lock (canonical FIFO procedure)
 
-The auto path is ALWAYS lock-coordinated: because auto-merge serializes through the unified merge-lock, concurrent plans can never race on the merge-to-main critical section, which is precisely what makes opt-in auto-merge safe under concurrency. BEFORE the merge, this plan takes its turn at the head of the FIFO merge queue. `acquire` is **non-blocking for the queue case** — it FIFO-enqueues `--plan-id` into `merge-queue.json` (idempotently, preserving FIFO position on re-poll), admits ONLY the FIFO-front plan, and returns an `admission` discriminator; the poll/backoff wait is the consumer's job here, NOT an internal `time.sleep` inside the script (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock acquire`). `acquire` returns IMMEDIATELY — the `--timeout` flag is a legacy compatibility no-op (default `0`) and drives no internal backoff. The consumer paces successive polls by issuing a SINGLE standalone `sleep {interval}` Bash call between `acquire` invocations — one command, never a Bash `for`/`while`/`until` loop.
+The merge is ALWAYS lock-coordinated: because the merge-to-main critical section serializes through the unified merge-lock, concurrent plans can never race on it. This section is the **canonical FIFO acquire procedure** referenced both by the early § "Acquire the Merge Mutex" (widened hold) and by the legacy `pre_merge_only` path.
+
+**Under `merge_hold_window == full_window_release_at_waits`** (default): the lock was ALREADY acquired before the force-push (§ "Acquire the Merge Mutex") and — unless a subsequent operator-wait released it — is still held here. In that case do NOT re-run the poll loop; the freshly-re-run classifier above IS the required re-validation, so proceed directly to **Merge PR (if not yet merged)**. Only when a prior operator-wait boundary released the lock (trigger-A timeout, or the interactive Pre-Merge prompt) do you re-enter the poll loop below to RE-ACQUIRE, then re-validate before merging.
+
+**Under `merge_hold_window == pre_merge_only`** (legacy narrow hold): the lock was NOT acquired earlier — acquire it here now via the poll loop below. BEFORE the merge, this plan takes its turn at the head of the FIFO merge queue. `acquire` is **non-blocking for the queue case** — it FIFO-enqueues `--plan-id` into `merge-queue.json` (idempotently, preserving FIFO position on re-poll), admits ONLY the FIFO-front plan, and returns an `admission` discriminator; the poll/backoff wait is the consumer's job here, NOT an internal `time.sleep` inside the script (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock acquire`). `acquire` returns IMMEDIATELY — the `--timeout` flag is a legacy compatibility no-op (default `0`) and drives no internal backoff. The consumer paces successive polls by issuing a SINGLE standalone `sleep {interval}` Bash call between `acquire` invocations — one command, never a Bash `for`/`while`/`until` loop.
 
 ###### Read the wait budget
 
@@ -577,6 +623,8 @@ Once `admission: admitted` is reached, proceed directly to **Merge PR (if not ye
 
 #### Interactive merge prompt (`final_merge_without_asking == false`)
 
+**Release-before-wait / re-acquire-after (widened hold)**: this Pre-Merge Gate is an operator-wait boundary. Under `merge_hold_window == full_window_release_at_waits`, BEFORE presenting the `AskUserQuestion` below, release the merge mutex if held and FIFO-re-enqueue (`merge_lock release --plan-id {plan_id}`), so the plan does not hold the lock across the human confirmation (§ "Merge-Mutex Hold Window" invariant 1). On "Yes, merge", RE-ACQUIRE via the canonical FIFO poll loop above and re-validate (the freshly-re-run classifier is the re-validation; re-rebase if `origin/{base_branch}` advanced during the released window) before issuing the merge. Check the `merge_hold_budget_seconds` bound against elapsed-since-`{hold_start}` and escalate if exceeded.
+
 Present the merge context and ask the operator to confirm. The prompt is anchored to the current (post-rebase, post-CI) head SHA via the freshly-re-run classifier above:
 
 ```text
@@ -620,6 +668,22 @@ Set `{merge_consent} = deferred`. Skip the **Merge PR**, **Wait for Merge CI**, 
 
 **Only if `state == open` AND the pre-merge gate above resolved to `{merge_consent} == explicit_yes`** (the `final_merge_without_asking == true` bypass also sets `{merge_consent} = explicit_yes`):
 
+#### Merge routing (`use_merge_queue`)
+
+Read `use_merge_queue` off the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above (default: `false`). This routing branch is documented BEFORE the merge dispatch it selects (bypass-before-dispatch ordering):
+
+- **`use_merge_queue == false`** (default) → issue the immediate `pr safe-merge` call below. The plan merges the PR itself under the widened mutex.
+- **`use_merge_queue == true`** → route the merge through the platform merge queue via the `pr merge-queue` verb INSTEAD of `pr safe-merge`, so the platform re-tests-and-merges against the latest base and serializes a truly-external commit the session-scoped mutex cannot. The widened D4 mutex still guards the pre-enqueue rebase/force-push window; the two mechanisms compose. All engagement is routed through the `ci` abstraction — NEVER a direct `gh`/`glab` call:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr merge-queue \
+      --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch
+  ```
+
+  Parse the returned TOON. On `status: success` (`enqueued: true`), the PR is on the platform queue — proceed to **Wait for Merge CI** (the queue's own re-test) and the cleanup sections below. On `status: error` (e.g. the GitLab explicit-unsupported merge-train response, or a queue-engagement failure), log the error and abort — do NOT silently fall back to an immediate merge, since the operator opted into queue serialization for a reason. **Release-on-abort**: release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4).
+
+The remainder of this section (the immediate `pr safe-merge` path) applies only when `use_merge_queue == false`.
+
 Issue a single `pr safe-merge` call. It polls the PR's mergeability until ready, then merges (and deletes the remote branch via `--delete-branch`); on GitHub it additionally falls back to an `--admin` merge when the PR stays stuck `mergeable_state: blocked` past the poll timeout AND every active ruleset requirement is provably met. This single verb replaces the former `pr merge` → `pr auto-merge` branch-protection fallback sequence: the poll-then-merge path and the stuck-state admin fallback are both internal to `pr safe-merge`.
 
 The GitHub-only `--admin` fallback is gated by the `{admin_merge_on_stuck_state}` param read from the one-stop `step-params get` call in the **Conflict-Severity Classifier** section above (default: `false`). Resolve `{admin_flag}` from that param: when `{admin_merge_on_stuck_state} == true`, `{admin_flag}` is the literal `--admin-merge-on-stuck-state`; when it is `false` (the default), `{admin_flag}` is the empty string and the flag is omitted entirely (it is `store_true`). On GitLab the flag is accepted but has no effect — there is no admin-merge equivalent, so a stuck MR surfaces as an error rather than force-merging.
@@ -634,6 +698,8 @@ If `safe-merge` fails (poll timeout with the admin fallback disabled or unmet, a
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: PR safe-merge failed - {error}"
 ```
+
+**Release-on-abort**: before returning, release the merge mutex if held (`merge_lock release --plan-id {plan_id}`; idempotent + foreign-safe) per § "Merge-Mutex Hold Window" invariant 4 — a failed merge must never leave the critical section locked against every other plan.
 
 ### Wait for Merge CI
 
@@ -676,7 +742,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: worktree remove failed at {worktree_path} - {error}. Salvage any uncommitted work and run 'git worktree remove --force {worktree_path}' manually."
 ```
 
-Then return — do NOT proceed with branch deletion while the worktree still exists.
+Then return — do NOT proceed with branch deletion while the worktree still exists. **Release-on-abort**: the PR was already merged by this point (the merge-to-main critical section completed), but the terminal release (§ "Release the cross-plan merge-lock") runs only after `switch-and-pull`, which this abort path skips — so release the merge mutex if held here before returning (`merge_lock release --plan-id {plan_id}`; idempotent + foreign-safe) per § "Merge-Mutex Hold Window" invariant 4.
 
 ### Switch to Base Branch, Pull, and Delete Local Branch
 
@@ -707,16 +773,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: switch-and-pull failed - {error_type}: {message}"
 ```
 
-#### Release the cross-plan merge-lock (auto path only)
+#### Release the cross-plan merge-lock (both paths)
 
-**Only if the merge-lock was acquired on the auto path** (`{final_merge_without_asking} == true` and `merge_lock acquire` returned `status: success` / `action: acquired`). The release fires AFTER `switch-and-pull` has pulled the merge commit into the base branch — the merge-to-main critical section is now complete, so the lock file can be freed for the next plan (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock release`):
+**If the merge-lock is held** (acquired either early via § "Acquire the Merge Mutex" under the widened `full_window_release_at_waits` hold, OR at the Pre-Merge Gate under the legacy `pre_merge_only` hold — on EITHER the auto or interactive path). The release fires AFTER `switch-and-pull` has pulled the merge commit into the base branch — the merge-to-main critical section is now complete, so the lock file can be freed for the next plan (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock release`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
   --plan-id {plan_id}
 ```
 
-`release` is idempotent and foreign-safe (`action: noop` when the lock is already free or held by another plan — it never removes a foreign holder's lock), so a re-entry that already released the lock is a safe no-op. The `false`/prompt opt-out path never acquires the lock and therefore never releases it.
+`release` is idempotent and foreign-safe (`action: noop` when the lock is already free or held by another plan — it never removes a foreign holder's lock), so a re-entry that already released the lock is a safe no-op, and a path that never acquired it releases harmlessly. This is the terminal (successful-path) release; the per-operator-wait releases (§ "Merge-Mutex Hold Window" invariant 1) and the release-on-abort paths (invariant 4) are the other release sites, all pointing at the same idempotent verb.
 
 Delete the local feature branch and prune the now-stale remote-tracking ref via `prune-local-and-remote-ref` (see `workflow-integration-git` Canonical invocations → `prune-local-and-remote-ref`). The verb encapsulates the `show-ref` guard and `update-ref -d` so the remote-tracking ref is only deleted when it exists:
 

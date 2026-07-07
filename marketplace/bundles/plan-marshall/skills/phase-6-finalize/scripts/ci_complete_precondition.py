@@ -37,7 +37,13 @@ Outcome semantics:
   (re-entry will re-poll). The ``failing_checks`` and ``wait_outcome``
   fields are forwarded from the underlying ``ci wait`` envelope so
   downstream consumers can route the precondition decision into the correct
-  triage producer string without re-fetching the CI run.
+  triage producer string without re-fetching the CI run. On the
+  ``deadline_exceeded`` / timeout path the resolver ALSO records the measured
+  elapsed-at-deadline (or the provider's ``duration_sec`` when present) via
+  the same ``run_config timeout set --command ci:wait`` call, so the ``ci:wait``
+  ceiling self-corrects UPWARD across finalizes until it exceeds the true CI
+  duration — the starved-ratchet fix (the success path never fired when the
+  ceiling sat below the real CI duration).
 
 The script is invoked via the marketplace executor notation
 ``plan-marshall:phase-6-finalize:ci_complete_precondition`` from the
@@ -80,6 +86,7 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from file_ops import get_executor_path, get_plan_dir
@@ -386,6 +393,7 @@ def resolve(
     git_head_resolver=None,
     timeout_get_runner=None,
     timeout_set_runner=None,
+    monotonic_clock=None,
     mode: str = 'strict',
 ) -> dict:
     """Resolve the ``ci-complete`` precondition for the current HEAD.
@@ -418,6 +426,10 @@ def resolve(
         timeout_set_runner: Optional callable used as a test seam in place
             of :func:`_run_run_config_timeout_set`. Signature:
             ``(duration_seconds) -> None``.
+        monotonic_clock: Optional zero-arg callable used as a test seam in
+            place of :func:`time.monotonic`. Called once immediately before
+            and once immediately after the ``ci wait`` subprocess so the
+            elapsed-at-deadline can be measured deterministically in tests.
 
     Returns:
         Dict matching the return contract documented in the module
@@ -427,6 +439,7 @@ def resolve(
     wait_fn = ci_wait_runner or _run_ci_wait
     timeout_get_fn = timeout_get_runner or _run_run_config_timeout_get
     timeout_set_fn = timeout_set_runner or _run_run_config_timeout_set
+    clock = monotonic_clock or time.monotonic
 
     if mode not in ('strict', 'consume-failures'):
         raise RuntimeError(
@@ -456,8 +469,13 @@ def resolve(
             'ci_final_status': 'success',
         }
 
-    # Cache miss (or stale) → run the bounded wait.
+    # Cache miss (or stale) → run the bounded wait. Measure the wall-clock
+    # elapsed around the wait with a monotonic clock so a deadline_exceeded
+    # outcome can record the elapsed-at-deadline (≥ the current ceiling) and
+    # feed the upward ratchet.
+    wait_started = clock()
     wait_result = wait_fn(plan_id, pr_number, timeout_seconds, worktree_path)
+    elapsed_at_deadline = max(0, int(clock() - wait_started))
 
     # Interpret the wait envelope. The ``failing_checks`` and
     # ``wait_outcome`` fields are forwarded verbatim from ``ci wait`` so
@@ -512,6 +530,31 @@ def resolve(
     # Timeout or any other non-success envelope. ``ci wait`` carries
     # ``wait_outcome: deadline_exceeded`` and ``failing_checks`` enumerating
     # the still-running checks at the deadline.
+    #
+    # Record the elapsed-at-deadline so the ``ci:wait`` ceiling self-corrects
+    # UPWARD. This is the fix for the starved ratchet: when the ceiling is
+    # below the true CI duration, every wait hits ``deadline_exceeded`` before
+    # CI completes, so the success-path record never fires. By feeding the
+    # measured elapsed (which is ``≥`` the current ceiling, because the wait
+    # ran to the deadline) into the SAME ``timeout_set`` call, ``
+    # compute_weighted_timeout`` (HIGHER_WEIGHT 0.80) lifts the persisted
+    # ``ci:wait`` value each finalize and the next ceiling (``persisted ×
+    # SAFETY_MARGIN 1.25``) grows with it, until it exceeds the true CI
+    # duration and a real success records the exact value. When the wait
+    # envelope surfaces the provider's true check-run duration (``duration_sec``)
+    # prefer it — it collapses the geometric ratchet to a single step.
+    provider_duration = wait_result.get('duration_sec')
+    try:
+        provider_duration_int = int(provider_duration)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        provider_duration_int = None
+    if provider_duration_int is not None and provider_duration_int > 0:
+        timeout_set_fn(provider_duration_int)
+    elif elapsed_at_deadline >= timeout_seconds and elapsed_at_deadline > 0:
+        # Only record when the wait actually consumed the full ceiling — a
+        # spurious immediate non-success envelope (e.g. an executor crash)
+        # must NOT pull the ratchet down with a sub-ceiling observation.
+        timeout_set_fn(elapsed_at_deadline)
     return {
         'status': 'wait_failed',
         'head_sha': head_sha,

@@ -81,14 +81,17 @@ verdicts are triaged before the consumer steps that depend on them.
 
 ## Per-producer dispatch fan-out
 
-`ci-verify` is the only built-in step that dispatches the
-`verification-feedback` triage workflow once per producer string
-(seven possible producers: `ci-verify-{build,policy,timeout,cancelled,
-action-required,stale,missing}`). The manifest validator MUST NOT
-double-count the per-producer dispatches — they are an internal detail
-of the `ci-verify` workflow body, not separate manifest entries. The
-manifest contains exactly ONE `ci-verify` row regardless of how many
-producer strings the step fans out into at runtime.
+`ci-verify` is a deterministic finalize-step SCRIPT (`scripts/ci_verify.py`),
+NOT a dispatched workflow: on GREEN CI it marks the step done with ZERO
+dispatch, and only on RED CI does it file one taxonomy finding per failing
+check and return a per-producer needs-triage signal so the dispatcher runs the
+`verification-feedback` triage once per producer string (seven possible
+producers: `ci-verify-{build,policy,timeout,cancelled,action-required,stale,
+missing}`). The manifest validator MUST NOT double-count that red-CI-only
+per-producer fan-out — the producers are a runtime detail of the deterministic
+classifier, not separate manifest entries. The manifest contains exactly ONE
+`ci-verify` row regardless of how many producer strings the step fans out into
+at runtime.
 
 ## Validation
 

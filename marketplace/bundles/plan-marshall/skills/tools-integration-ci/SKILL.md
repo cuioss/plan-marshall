@@ -27,7 +27,7 @@ Unified CI provider abstraction using **static routing** - one script per provid
 ## What This Skill Provides
 
 - Provider detection and health verification
-- PR operations (create, view, merge, auto-merge, close, ready, edit)
+- PR operations (create, view, merge, auto-merge, safe-merge, merge-queue, close, ready, edit)
 - PR review operations (comments, wait-for-comments, reply, resolve-thread, thread-reply, reviews)
 - CI status, wait, rerun, and logs (with automatic failure-log download + error-extraction filtering)
 - Issue operations (create, view, close)
@@ -50,9 +50,11 @@ This skill is a script-only library (not registered in plugin.json). It is consu
 
 ```text
 marshal.json                          Scripts
-ci.commands.pr-create ─────────────► github.py pr create
-ci.commands.ci-status ─────────────► github.py ci status
+ci.commands.pr-create ─────────────► ci.py pr create ──► {provider}_ops.py
+ci.commands.ci-status ─────────────► ci.py checks status ──► {provider}_ops.py
 ```
+
+`ci.py` is the pure passthrough router; the per-provider handler bodies live in `{provider}_ops.py` (`github_ops.py` / `gitlab_ops.py`) in the `workflow-integration-{github,gitlab}` bundles — there is no `github.py` / `gitlab.py` in this skill's `scripts/`.
 
 **Load Reference**: For full architecture details:
 ```text
@@ -72,16 +74,18 @@ tools-integration-ci/
 │   ├── github-impl.md           # GitHub-specific: gh CLI
 │   ├── gitlab-impl.md           # GitLab-specific: glab CLI
 │   ├── health-setup.md          # Provider detection, verification, config persistence
-│   ├── pr-operations.md         # PR create, view, merge, auto-merge, close, ready, edit
+│   ├── pr-operations.md         # PR create, view, merge, auto-merge, safe-merge, merge-queue, close, ready, edit
 │   ├── pr-review-operations.md  # PR comments, reply, resolve-thread, thread-reply, reviews
 │   ├── ci-operations.md         # CI status, wait, rerun, logs
 │   └── issue-operations.md      # Issue create, view, close
 └── scripts/
     ├── ci_health.py             # Detection & verification
-    ├── ci.py                    # Provider-agnostic router
-    ├── github.py                # GitHub operations via gh
-    └── gitlab.py                # GitLab operations via glab
+    ├── ci.py                    # Provider-agnostic passthrough router
+    ├── ci_base.py               # Shared argparse surface (pr/checks/issue/branch sub-verbs)
+    └── _ci_log_filter.py        # Failure-log error-extraction filter
 ```
+
+Provider handler bodies are NOT in this skill — they live in `github_ops.py` / `gitlab_ops.py` under the `workflow-integration-{github,gitlab}` bundles (GitHub PR-merge handlers are further split into `_github_pr.py`; GitLab defines its `pr` handlers inline in `gitlab_ops.py`).
 
 ---
 
@@ -243,7 +247,7 @@ The canonical argparse surface for `ci.py`. The plugin-doctor analyzer (`_analyz
 
 ### pr
 
-Sub-verbs: `view`, `list`, `reply`, `resolve-thread`, `thread-reply`, `reviews`, `comments`, `wait-for-comments`, `merge`, `auto-merge`, `safe-merge`, `update-branch`, `close`, `ready`, `submit-review`, `edit`, `prepare-body`, `prepare-comment`, `create`.
+Sub-verbs: `view`, `list`, `reply`, `resolve-thread`, `thread-reply`, `reviews`, `comments`, `wait-for-comments`, `merge`, `auto-merge`, `safe-merge`, `merge-queue`, `update-branch`, `close`, `ready`, `submit-review`, `edit`, `prepare-body`, `prepare-comment`, `create`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
@@ -257,6 +261,13 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr safe-me
 ```
 
 `pr safe-merge` polls readiness before merging; `--admin-merge-on-stuck-state` (the GitHub-only stuck-state `--admin` fallback) has no effect on GitLab.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge-queue \
+  (--pr-number PR_NUMBER | --head HEAD) [--strategy merge|squash|rebase] [--delete-branch]
+```
+
+`pr merge-queue` enqueues the PR into the platform merge queue so the platform re-tests-and-merges against the latest base, serializing a truly-external commit the session-scoped merge mutex cannot. On GitHub it engages the merge queue via `gh pr merge --auto`; on GitLab the platform equivalent is a Premium-tier merge train with no stable `glab` surface, so the GitLab handler returns an explicit unsupported error rather than silently falling back to an immediate merge.
 
 ### checks
 

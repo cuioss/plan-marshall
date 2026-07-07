@@ -153,8 +153,8 @@ predicted calibration loop that tunes the task table also tunes the lane preview
 
 | size | token magnitude | covers |
 |------|-----------------|--------|
-| **XS** | ~5K | deterministic ≈0-token bookkeeping (push, branch-cleanup, archive, record-metrics, deploy-target, sync-plugin-cache) |
-| **S** | 25K | small agent steps (plugin-doctor, ci-verify) |
+| **XS** | ~5K | deterministic ≈0-token bookkeeping (push, ci-verify, branch-cleanup, archive, record-metrics, deploy-target, sync-plugin-cache) |
+| **S** | 25K | small agent steps (plugin-doctor) |
 | **M** | 60K | medium (init, refine, create-pr, simplify, lessons-capture, review-retrospective) |
 | **L** | 130K | heavy single steps (sonar, self-review, security-audit, automated-review, lessons-housekeeping, plan-retrospective, q-gate) |
 | **XL** | 260K | the planning phases (outline incl. 1st q-gate, plan) |
