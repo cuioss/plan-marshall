@@ -364,7 +364,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-3-outline get --field q_gate_validation --audit-plan-id {plan_id}
 ```
 
-The value is one of `off` \| `once` \| `until_clean` (default `until_clean`; consult the central standard [`../manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) for the enum semantics — do NOT inline-copy them). When the value is `off`, set `qgate_validation_required: false` in the return TOON and skip directly to Step 12 — Q-Gate validation is opted out entirely, so no orchestrator dispatch happens. When the value is `once` or `until_clean`, proceed to the surgical bypass rule below (the `once` vs `until_clean` re-run distinction is applied by the orchestrator's auto-loop, not by this phase).
+The value is one of `off` \| `once` \| `until_clean` (default `once`; consult the central standard [`../manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) for the enum semantics — do NOT inline-copy them). When the value is `off`, set `qgate_validation_required: false` in the return TOON and skip directly to Step 12 — Q-Gate validation is opted out entirely, so no orchestrator dispatch happens. When the value is `once` or `until_clean`, proceed to the surgical bypass rule below (the `once` vs `until_clean` re-run distinction is applied by the orchestrator's auto-loop, not by this phase).
 
 **Step 11 — Q-Gate surgical bypass rule** (evaluated after the knob consult, only when `q_gate_validation != off`, BEFORE signaling the Q-Gate validation requirement):
 

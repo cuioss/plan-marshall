@@ -23,12 +23,10 @@
     },
     "phase-3-outline": {
       "plan_without_asking": false,
-      "q_gate_validation": "until_clean",
       "effort": "level-4"
     },
     "phase-4-plan": {
       "execute_without_asking": true,
-      "q_gate_validation": "until_clean",
       "effort": "level-3"
     },
     "phase-5-execute": {

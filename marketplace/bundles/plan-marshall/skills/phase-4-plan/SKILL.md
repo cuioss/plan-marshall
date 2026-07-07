@@ -864,7 +864,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-4-plan get --field q_gate_validation --audit-plan-id {plan_id}
 ```
 
-The value is one of `off` \| `once` \| `until_clean` (default `until_clean`; the enum semantics live in the central standard [`../manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) — do NOT inline-copy them). When the value is `off`, override `qgate_validation_required` to `false` in the Step 10 return TOON and skip B2 — planning-time Q-Gate validation is opted out entirely, so no orchestrator dispatch happens. When the value is `once` or `until_clean`, proceed to B2 (the `once` vs `until_clean` re-run distinction is applied by the orchestrator's auto-loop, not by this phase). Log the opt-out once when it fires:
+The value is one of `off` \| `once` \| `until_clean` (default `once`; the enum semantics live in the central standard [`../manage-config/standards/data-model.md`](../manage-config/standards/data-model.md) — do NOT inline-copy them). When the value is `off`, override `qgate_validation_required` to `false` in the Step 10 return TOON and skip B2 — planning-time Q-Gate validation is opted out entirely, so no orchestrator dispatch happens. When the value is `once` or `until_clean`, proceed to B2 (the `once` vs `until_clean` re-run distinction is applied by the orchestrator's auto-loop, not by this phase). Log the opt-out once when it fires:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

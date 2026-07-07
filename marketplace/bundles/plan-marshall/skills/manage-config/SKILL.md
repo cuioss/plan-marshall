@@ -526,7 +526,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     },
     "phase-3-outline": {
       "plan_without_asking": false,
-      "q_gate_validation": "until_clean"
+      "q_gate_validation": "once"
     },
     "phase-5-execute": {
       "commit_and_push": true,

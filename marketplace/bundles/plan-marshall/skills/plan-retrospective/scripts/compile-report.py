@@ -128,6 +128,22 @@ def should_emit(section_key: str, trigger_key: str | None, fragments: dict[str, 
     # the fragment claims a present manifest, regardless of finding count.
     if trigger_key == 'manifest-decisions' and fragment.get('manifest_present') is True:
         return True
+    # Routing-decisions is the same shape of special case: the aspect grades the
+    # run's lane/recipe/posture routing and carries verdict/cost/prune facts
+    # (``posture``, ``mis_prune_checks``, ``cost_preview``, and the LLM-synthesized
+    # ``posture_verdict``) rather than a ``findings`` list, so a clean run — which
+    # is the common case and the whole point of the lane feedback loop — has none
+    # of the payload fields checked above. Emit whenever the fragment reports a
+    # present routing-decision analysis (``manifest_present``, set by the
+    # deterministic producer) or carries any of its content fields (the
+    # LLM-synthesized fragment shape).
+    if trigger_key == 'routing-decisions':
+        if fragment.get('manifest_present') is True:
+            return True
+        for key in ('mis_prune_checks', 'cost_preview', 'posture_verdict', 'posture'):
+            value = fragment.get(key)
+            if value not in (None, '', [], {}):
+                return True
     return False
 
 
@@ -206,6 +222,17 @@ def render_section_body(fragment: Any) -> str:
     return summary_text + findings_block + data_block
 
 
+def _heading_from_aspect_key(aspect_key: str) -> str:
+    """Derive a human-readable section heading from an aspect key.
+
+    Hyphenated (or underscored) aspect keys map to title-cased headings for
+    the generic fallback render path — e.g. ``wrapper-tangle`` -> ``Wrapper
+    Tangle``. Used only for registered aspects that have no dedicated
+    ``SECTION_SPEC`` row, so the heading is synthesized rather than looked up.
+    """
+    return aspect_key.replace('-', ' ').replace('_', ' ').title()
+
+
 def build_header(plan_id: str, mode: str, plan_path: Path, session_id: str | None) -> str:
     """Build the document header (title + metadata list)."""
     generated = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -263,6 +290,29 @@ def build_document(
             body = render_dispatch_boundaries_body(fragment)
         else:
             body = render_section_body(fragment)
+        parts.append(f'## {heading}\n\n{body}')
+        written.append(heading)
+
+    # Generic fallback render path (registered ⇒ rendered completeness guard).
+    # collect-fragments accepts domain-contributed aspects (via
+    # ``_registerable_aspect_keys`` = ``valid_aspect_keys()`` ∪
+    # ``_domain_aspect_keys()``) that are NOT in the static SECTION_SPEC — e.g.
+    # ``wrapper-tangle`` from pm-plugin-development. Without this fallback the
+    # SECTION_SPEC loop above never looks them up and compile-report silently
+    # drops their sections. Iterate the bundle for any genuine aspect key that
+    # has no dedicated SECTION_SPEC row and is not a reserved/underscore-prefixed
+    # meta key (``_meta``, ``_executive-summary``), and render each verbatim via
+    # the existing render_section_body. The renderer stays judgment-free — a
+    # domain aspect is surfaced rather than lost. Keys are sorted for a
+    # deterministic section order.
+    spec_keys = {fragment_key for _heading, fragment_key, _trigger in SECTION_SPEC}
+    for aspect_key in sorted(fragments):
+        if aspect_key.startswith('_'):
+            continue
+        if aspect_key in spec_keys:
+            continue
+        heading = _heading_from_aspect_key(aspect_key)
+        body = render_section_body(fragments.get(aspect_key))
         parts.append(f'## {heading}\n\n{body}')
         written.append(heading)
 

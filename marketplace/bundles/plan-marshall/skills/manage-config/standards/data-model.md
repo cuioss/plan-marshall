@@ -49,11 +49,11 @@ JSON structure and field definitions for project configuration.
     },
     "phase-3-outline": {
       "plan_without_asking": false,
-      "q_gate_validation": "until_clean"
+      "q_gate_validation": "once"
     },
     "phase-4-plan": {
       "execute_without_asking": true,
-      "q_gate_validation": "until_clean"
+      "q_gate_validation": "once"
     },
     "phase-5-execute": {
       "commit_and_push": true,
@@ -385,7 +385,7 @@ These fields live directly under `plan`, outside any phase block.
   "plan": {
     "phase-3-outline": {
       "plan_without_asking": false,
-      "q_gate_validation": "until_clean"
+      "q_gate_validation": "once"
     }
   }
 }
@@ -394,7 +394,7 @@ These fields live directly under `plan`, outside any phase block.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `plan_without_asking` | bool | false | Auto-proceed from outline to task creation without user review |
-| `q_gate_validation` | enum(`off`\|`once`\|`until_clean`) | until_clean | Planning-time q-gate validation knob consumed by the deep-lane outline dispatch. `off` skips q-gate validation; `once` runs a single validation pass without re-looping on findings; `until_clean` (default) re-runs validation until it reports no blocking findings. Validated by `validate_q_gate_validation`. Replaces the retired planning-time `qgate` run-at-all gate. |
+| `q_gate_validation` | enum(`off`\|`once`\|`until_clean`) | once | Planning-time q-gate validation knob consumed by the deep-lane outline dispatch. `off` skips q-gate validation; `once` (default) runs a single validation pass without re-looping on findings; `until_clean` re-runs validation until it reports no blocking findings. Validated by `validate_q_gate_validation`. Replaces the retired planning-time `qgate` run-at-all gate. |
 
 ### phase-4-plan
 
@@ -403,7 +403,7 @@ These fields live directly under `plan`, outside any phase block.
   "plan": {
     "phase-4-plan": {
       "execute_without_asking": true,
-      "q_gate_validation": "until_clean"
+      "q_gate_validation": "once"
     }
   }
 }
@@ -412,7 +412,7 @@ These fields live directly under `plan`, outside any phase block.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `execute_without_asking` | bool | true | Auto-continue to execute phase after task creation |
-| `q_gate_validation` | enum(`off`\|`once`\|`until_clean`) | until_clean | Planning-time q-gate validation knob consumed by phase-4-plan over the emerging task plan. `off` skips q-gate validation; `once` runs a single validation pass without re-looping on findings; `until_clean` (default) re-runs validation until it reports no blocking findings. Validated by `validate_q_gate_validation`. |
+| `q_gate_validation` | enum(`off`\|`once`\|`until_clean`) | once | Planning-time q-gate validation knob consumed by phase-4-plan over the emerging task plan. `off` skips q-gate validation; `once` (default) runs a single validation pass without re-looping on findings; `until_clean` re-runs validation until it reports no blocking findings. Validated by `validate_q_gate_validation`. |
 
 ### phase-5-execute
 

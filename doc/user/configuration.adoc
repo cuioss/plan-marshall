@@ -128,8 +128,8 @@ NOTE: The planning-time Q-Gate validation on `plan.phase-3-outline` / `plan.phas
 |===
 | Config key | Default | What it controls
 
-| `plan.phase-3-outline.q_gate_validation` | `until_clean` | How the outline Q-Gate re-runs. `off` skips Q-Gate validation entirely; `once` runs a single validation pass and does not re-loop on findings; `until_clean` (default) re-validates until the outline reports no blocking findings. The first pass always runs; re-runs fire only when the outline content changed since the last pass.
-| `plan.phase-4-plan.q_gate_validation` | `until_clean` | How the task-plan Q-Gate re-runs. Same `off`\|`once`\|`until_clean` semantics as the outline knob, tuned independently over the emerging task plan.
+| `plan.phase-3-outline.q_gate_validation` | `once` | How the outline Q-Gate re-runs. `off` skips Q-Gate validation entirely; `once` (default) runs a single validation pass and does not re-loop on findings; `until_clean` re-validates until the outline reports no blocking findings. The first pass always runs; re-runs fire only when the outline content changed since the last pass.
+| `plan.phase-4-plan.q_gate_validation` | `once` | How the task-plan Q-Gate re-runs. Same `off`\|`once`\|`until_clean` semantics as the outline knob, tuned independently over the emerging task plan.
 |===
 
 The first validation pass always runs unconditionally (it is never gated by confidence); a re-validation is skipped when the outline/plan content is unchanged since the prior pass, so an already-clean outline does not trigger a fresh Q-Gate dispatch. Set either knob via the standard phase `set` verb:

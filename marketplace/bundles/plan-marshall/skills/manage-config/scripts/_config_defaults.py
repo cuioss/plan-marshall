@@ -128,9 +128,9 @@ def validate_run_at_all(value: str, field_name: str) -> None:
 # the planning phases (phase-3-outline, phase-4-plan) run q-gate validation over
 # the emerging plan artifacts:
 #   - 'off':         skip q-gate validation entirely.
-#   - 'once':        run a single validation pass; do not re-loop on findings.
-#   - 'until_clean': re-run validation until it reports no blocking findings
+#   - 'once':        run a single validation pass; do not re-loop on findings
 #                    (default).
+#   - 'until_clean': re-run validation until it reports no blocking findings.
 # This replaces the retired planning-time `qgate` run-at-all gate on the outline
 # step; the finalize-time `qgate` gate is unaffected (it stays a VALID_RUN_AT_ALL
 # gate — see :data:`VALID_RUN_AT_ALL`).
@@ -391,7 +391,7 @@ DEFAULT_PLAN_OUTLINE = {
     # the deep-lane outline dispatch to decide how q-gate validation loops over
     # the emerging outline. Validated by validate_q_gate_validation. Read via
     # `manage-config plan phase-3-outline get --field q_gate_validation`.
-    'q_gate_validation': 'until_clean',
+    'q_gate_validation': 'once',
     # Per-phase effort default (seeded at init; balanced-preset baseline lifts
     # outline analysis to level-4).
     'effort': 'level-4',
@@ -403,7 +403,7 @@ DEFAULT_PLAN_PLAN = {
     # phase-4-plan to decide how q-gate validation loops over the emerging task
     # plan. Validated by validate_q_gate_validation. Read via
     # `manage-config plan phase-4-plan get --field q_gate_validation`.
-    'q_gate_validation': 'until_clean',
+    'q_gate_validation': 'once',
     # Per-phase effort default (seeded at init; balanced-preset baseline).
     'effort': 'level-3',
 }
