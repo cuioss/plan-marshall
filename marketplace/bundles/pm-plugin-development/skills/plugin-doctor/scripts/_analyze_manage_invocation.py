@@ -675,11 +675,16 @@ def _color_suppressed_env() -> dict[str, str]:
     text even when invoked directly. Python 3.14's ``can_colorize()`` consults
     ``PYTHON_COLORS``, then ``NO_COLOR``, then ``FORCE_COLOR``; ``NO_COLOR``
     overrides ``FORCE_COLOR`` and ``PYTHON_COLORS=0`` is the explicit override.
+    ``CLICOLOR``/``CLICOLOR_FORCE``/``PY_COLORS`` pin the broader CLI surface
+    (git/mvn/gradle/npm/pytest) for defense-in-depth, matching the executor.
     """
     env = os.environ.copy()
     env['PYTHON_COLORS'] = '0'
     env['NO_COLOR'] = '1'
     env.pop('FORCE_COLOR', None)
+    env['CLICOLOR'] = '0'
+    env['CLICOLOR_FORCE'] = '0'
+    env['PY_COLORS'] = '0'
     return env
 
 
