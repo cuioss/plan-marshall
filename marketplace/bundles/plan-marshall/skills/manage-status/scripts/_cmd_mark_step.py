@@ -41,6 +41,28 @@ from _status_core import require_status, write_status
 VALID_OUTCOMES = ('done', 'skipped', 'loop_back', 'failed')
 VALID_LOOP_BACK_TARGETS = ('5-execute', '6-finalize')
 
+_DEFAULT_PREFIX = 'default:'
+
+
+def _canonicalize_step_key(step: str) -> str:
+    """Return the canonical (bare) manifest key for a ``--step`` value.
+
+    Strips a leading ``default:`` prefix so the recorded key always equals the
+    bare manifest key the dispatcher reads back. The finalize dispatcher reads
+    step-done state under the bare manifest key (``push``), while callers may
+    pass the optional ``default:``-prefixed form (``default:push``); recording
+    under whichever spelling the caller happened to use produced the
+    ``step_record_mismatched_key`` orphans of lesson ``2026-06-21-00-002`` (a
+    ``default:``-prefixed record the bare-keyed reader never finds). Canonicalizing
+    here — the write-side complement of the read-side key-normalization the
+    manage-execution-manifest id-keyed accessor family applies — guarantees both
+    spellings reconcile to the same bare key. ``project:`` / ``bundle:skill``
+    external step keys carry no ``default:`` prefix and pass through unchanged.
+    """
+    if step.startswith(_DEFAULT_PREFIX):
+        return step[len(_DEFAULT_PREFIX) :]
+    return step
+
 
 def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     """Mark a phase step with an outcome inside status.metadata.phase_steps."""
@@ -58,7 +80,11 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
         }
 
     phase = args.phase
-    step = args.step
+    # Canonicalize the step key at the mark-step-done boundary: strip a leading
+    # ``default:`` prefix so the recorded key always equals the bare manifest key
+    # the dispatcher reads back (lesson 2026-06-21-00-002 — no more
+    # step_record_mismatched_key orphans).
+    step = _canonicalize_step_key(args.step) if args.step else args.step
     if not phase or not step:
         return {
             'status': 'error',

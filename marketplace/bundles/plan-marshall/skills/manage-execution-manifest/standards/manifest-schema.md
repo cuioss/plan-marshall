@@ -60,6 +60,45 @@ A step with no marshal-side params (e.g. a verify step) snapshots as the empty o
 
 **Step-owned run-at-all / escape-hatch knobs.** The three finalize knobs that each map to exactly one owning step — `simplify` (under `default:finalize-step-simplify`), `self_review` and `drop_review_on_scope_gate` (under `project:finalize-step-pre-submission-self-review`) — are step-owned params folded into their owning step's nested param object in marshal.json's `phase-6-finalize.steps` map. They snapshot into `phase_6.step_params[{owning-step}]` alongside the step's other params whenever that step survives selection. The composer's finalize-selection transform reads them at compose time directly from the marshal.json step map (via the owning step's param object), not from a flat phase-level sibling; `qgate` is the one finalize run-at-all gate that remains a flat `plan.phase-6-finalize.qgate` sibling and is NOT a step-owned param.
 
+## Step ownership — `orchestrator-owned` vs `leaf-dispatchable`
+
+Every finalize step carries a declared **owner** classifying which execution
+context may run it. The two values are the closed vocabulary
+`VALID_STEP_OWNERS` in `scripts/_manifest_core.py`:
+
+- **`orchestrator-owned`** — the step sub-dispatches (it issues its own `Task:`
+  dispatches — an LLM cognitive-review pass, a simplify sweep, etc.). A
+  dispatched `execution-context` leaf has NO Task tool and therefore CANNOT run
+  it; the main-context orchestrator MUST own it.
+- **`leaf-dispatchable`** — a self-contained script or inline workflow the
+  orchestrator MAY hand to a dispatched leaf.
+
+The owner is a deterministic property of the step, resolved by `owner_of(step_id)`
+in `_manifest_core.py` against the `ORCHESTRATOR_OWNED_STEPS` registry (the
+sub-dispatching finalize steps: `finalize-step-plugin-doctor`,
+`finalize-step-pre-submission-self-review`, `automated-review`,
+`finalize-step-simplify`). The classifier strips the leading `default:` prefix
+and, for project-local steps, the `project:` prefix before the membership test —
+`project:finalize-step-plugin-doctor` and a bare `finalize-step-plugin-doctor`
+classify identically. Any step not in the registry defaults to
+`DEFAULT_STEP_OWNER` (`leaf-dispatchable`), matching the de-facto
+pre-declaration behaviour.
+
+Declaring the owner makes routing **deterministic instead of
+discovered-by-failure**, and — because the `mark-step-done` obligation travels
+to the ACTUAL owner — closes the recurring omitted-bookkeeping wart where the
+wrong context ran a step and lost its step-done marker.
+
+**Canonicalized mark-step-done key contract.** The `mark-step-done` boundary
+(`manage-status/scripts/_cmd_mark_step.py`) canonicalizes the incoming `--step`
+key by stripping a leading `default:` prefix BEFORE recording it, so the
+recorded key always equals the bare manifest key the dispatcher reads back.
+This is the write-side complement of the key-normalization invariant the id-keyed
+accessor family already applies on the read side (see § "`step_params` — per-step
+param snapshot" above): a `default:`-prefixed and a bare caller record under the
+SAME bare key, eliminating the `step_record_mismatched_key` orphans (both
+`default:push` and `push` reconcile to `push`).
+
 ## Default phase-6 step set
 
 Composed from `DEFAULT_PHASE_6_STEPS` in

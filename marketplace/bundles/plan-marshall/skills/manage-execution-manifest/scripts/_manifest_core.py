@@ -184,6 +184,83 @@ def _role_of(step_id: str, cache: dict[str, str | None]) -> str | None:
 
 
 # =============================================================================
+# Step ownership (orchestrator-owned vs leaf-dispatchable routing)
+# =============================================================================
+
+# The two declared step-owner values. ``orchestrator-owned`` steps sub-dispatch
+# (they issue their own ``Task:`` dispatches — e.g. an LLM cognitive-review pass
+# or a simplify sweep) and therefore CANNOT run inside a dispatched leaf, which
+# has no Task tool; the main-context orchestrator MUST own them. Every other step
+# is ``leaf-dispatchable`` — a self-contained script or inline workflow the
+# orchestrator may hand to a dispatched ``execution-context`` leaf. Declaring the
+# owner makes finalize-step routing deterministic instead of discovered-by-
+# failure, and lets the ``mark-step-done`` obligation travel to the ACTUAL owner
+# (the recurring omitted-bookkeeping wart when the wrong context owned the step).
+VALID_STEP_OWNERS: tuple[str, ...] = ('orchestrator-owned', 'leaf-dispatchable')
+
+# The safe default for an unclassified step. ``leaf-dispatchable`` matches the
+# de-facto pre-declaration behaviour (the orchestrator handed every step to a
+# leaf and only the sub-dispatching ones failed); the registry below names the
+# exceptions that MUST stay in the main context.
+DEFAULT_STEP_OWNER = 'leaf-dispatchable'
+
+# Registry of orchestrator-owned finalize steps — the sub-dispatching steps a
+# dispatched leaf can never run. Keyed by the bare-most step name (both the
+# leading ``default:`` prefix and, for project-local steps, the ``project:``
+# prefix are stripped before the membership test, so ``project:finalize-step-
+# plugin-doctor`` and a bare ``finalize-step-plugin-doctor`` classify
+# identically). Extend this set when a new sub-dispatching finalize step is
+# added — an omission mis-routes the step to a leaf and reproduces the
+# discovered-by-failure wart this declaration exists to eliminate.
+ORCHESTRATOR_OWNED_STEPS: frozenset[str] = frozenset(
+    {
+        'finalize-step-plugin-doctor',
+        'finalize-step-pre-submission-self-review',
+        'automated-review',
+        'finalize-step-simplify',
+    }
+)
+
+
+def _owner_classification_key(step_id: str) -> str:
+    """Return the bare-most name used to classify a step's owner.
+
+    Strips a leading ``default:`` prefix (via :func:`_strip_default_prefix`) and
+    then a leading ``project:`` prefix, so a built-in ``default:``-prefixed step
+    and its bare form — and a ``project:``-prefixed project-local step and its
+    bare form — all reduce to the same key for the ownership membership test.
+    """
+    bare = _strip_default_prefix(step_id)
+    if bare.startswith('project:'):
+        bare = bare[len('project:') :]
+    return bare
+
+
+def owner_of(step_id: str) -> str:
+    """Return the declared owner of ``step_id`` (``orchestrator-owned`` | ``leaf-dispatchable``).
+
+    Deterministic routing predicate: a step whose bare-most name is in
+    :data:`ORCHESTRATOR_OWNED_STEPS` is ``orchestrator-owned`` (must run in the
+    main context); every other step is :data:`DEFAULT_STEP_OWNER`
+    (``leaf-dispatchable``). The dispatcher consults this to guarantee a leaf is
+    never handed a step it cannot run.
+    """
+    if _owner_classification_key(step_id) in ORCHESTRATOR_OWNED_STEPS:
+        return 'orchestrator-owned'
+    return DEFAULT_STEP_OWNER
+
+
+def is_leaf_dispatchable(step_id: str) -> bool:
+    """Return True when ``step_id`` may be dispatched to an ``execution-context`` leaf."""
+    return owner_of(step_id) == 'leaf-dispatchable'
+
+
+def validate_step_owner(owner: str) -> bool:
+    """Return True when ``owner`` is one of the declared :data:`VALID_STEP_OWNERS`."""
+    return owner in VALID_STEP_OWNERS
+
+
+# =============================================================================
 # File Operations
 # =============================================================================
 

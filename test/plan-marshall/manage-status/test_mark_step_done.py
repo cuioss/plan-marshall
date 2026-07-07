@@ -14,6 +14,7 @@ _status_core = load_script_module('plan-marshall', 'manage-status', '_status_cor
 
 cmd_create = _lifecycle.cmd_create
 cmd_mark_step_done = _mark_step.cmd_mark_step_done
+_canonicalize_step_key = _mark_step._canonicalize_step_key
 read_status = _status_core.read_status
 write_status = _status_core.write_status
 
@@ -577,3 +578,70 @@ def test_mark_step_omits_head_at_completion_key_when_flag_absent(plan_context):
     entry = persisted['metadata']['phase_steps']['1-init']['step-a']
     assert entry == {'outcome': 'done', 'display_detail': 'legacy'}
     assert 'head_at_completion' not in entry
+
+
+# =============================================================================
+# Step-key canonicalization (lesson 2026-06-21-00-002)
+# =============================================================================
+
+
+def test_canonicalize_step_key_strips_default_prefix():
+    """The helper strips a leading ``default:`` prefix to the bare manifest key."""
+    assert _canonicalize_step_key('default:push') == 'push'
+    assert _canonicalize_step_key('default:branch-cleanup') == 'branch-cleanup'
+
+
+def test_canonicalize_step_key_passthrough_bare_and_external():
+    """Bare names and external (``project:`` / ``bundle:skill``) keys pass through unchanged."""
+    assert _canonicalize_step_key('push') == 'push'
+    assert _canonicalize_step_key('project:finalize-step-plugin-doctor') == (
+        'project:finalize-step-plugin-doctor'
+    )
+    assert _canonicalize_step_key('plan-marshall:plan-retrospective') == (
+        'plan-marshall:plan-retrospective'
+    )
+
+
+def test_mark_step_default_prefixed_records_under_bare_key(plan_context):
+    """A ``default:``-prefixed --step is recorded under the bare manifest key.
+
+    Regression guard for lesson 2026-06-21-00-002: recording under the caller's
+    ``default:``-prefixed spelling orphaned the record from the bare-keyed
+    dispatcher reader. The canonicalized key MUST be the bare name.
+    """
+    plan_id = 'mark-step-canon-prefixed'
+    _make_plan(plan_id)
+    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'default:push', 'done'))
+
+    assert result['status'] == 'success'
+    # The returned step echoes the canonical bare key, not the prefixed input.
+    assert result['step'] == 'push'
+
+    persisted = read_status(plan_id)
+    phase_steps = persisted['metadata']['phase_steps']['6-finalize']
+    assert phase_steps == {'push': {'outcome': 'done', 'display_detail': None}}
+    assert 'default:push' not in phase_steps
+
+
+def test_mark_step_bare_and_default_prefixed_reconcile_to_same_key(plan_context):
+    """Recording via ``default:push`` then via ``push`` reconciles to ONE bare entry.
+
+    Both spellings resolve to the same bare manifest key, so the second call is a
+    no-op on the same record rather than creating a divergent orphan.
+    """
+    plan_id = 'mark-step-canon-reconcile'
+    _make_plan(plan_id)
+    first = cmd_mark_step_done(_args(plan_id, '6-finalize', 'default:push', 'done'))
+    assert first['status'] == 'success'
+    assert first['changed'] is True
+
+    # Same step, bare spelling, same outcome — idempotent no-op on the SAME entry.
+    second = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done'))
+    assert second['status'] == 'success'
+    assert second['changed'] is False
+    assert second['step'] == 'push'
+
+    persisted = read_status(plan_id)
+    phase_steps = persisted['metadata']['phase_steps']['6-finalize']
+    # Exactly one entry under the bare key — no divergent default:-prefixed orphan.
+    assert list(phase_steps.keys()) == ['push']
