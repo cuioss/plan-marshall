@@ -190,27 +190,46 @@ _PYTEST_SUMMARY_COUNTS: dict[str, re.Pattern[str]] = {
     'skipped': re.compile(r'\b(\d+) skipped\b'),
 }
 
+# Locates the actual pytest summary line before any count is extracted from
+# it. pytest always renders the run duration (`in Ns`) on the summary line
+# itself, so requiring that marker alongside a passed/failed/skipped keyword
+# reliably isolates the summary line from unrelated log content (print
+# statements, tracebacks, or other tool output) that could otherwise match the
+# bare count patterns anywhere in the log and produce a false summary.
+_PYTEST_SUMMARY_LINE_PATTERN = re.compile(
+    r'^.*\b(?:passed|failed|skipped)\b.*\bin\s+[\d.]+s.*$',
+    re.MULTILINE,
+)
+
 
 def _extract_pytest_summary(content: str) -> UnitTestSummary | None:
     """Extract the pytest summary independent of count ordering.
 
     pytest renders its summary counts in a tool-determined order — a passing-
     dominant run shows `10308 passed, 1 failed` while a failing-dominant run can
-    show `1 failed, 10308 passed`. Each count is matched with its own pattern
-    (LAST occurrence wins, mirroring the aggregate-line convention for the
-    shared extractor), so both orderings yield identical counts.
+    show `1 failed, 10308 passed`. To avoid false positives from unrelated log
+    content that happens to contain `passed` / `failed` / `skipped` elsewhere,
+    the actual summary line is located first (identified by its trailing
+    `in Ns` duration marker) and each count is then matched only within that
+    single line, so both count orderings still yield identical results.
 
     Args:
         content: Log file content (already ANSI-stripped by the caller).
 
     Returns:
-        UnitTestSummary if any of passed/failed/skipped is present, else None.
+        UnitTestSummary if a summary line with any of passed/failed/skipped is
+        found, else None.
     """
+    summary_lines = _PYTEST_SUMMARY_LINE_PATTERN.findall(content)
+    if not summary_lines:
+        return None
+    summary_line = summary_lines[-1]
+
     counts: dict[str, int] = {}
     for key, pattern in _PYTEST_SUMMARY_COUNTS.items():
-        matches = pattern.findall(content)
-        if matches:
-            counts[key] = int(matches[-1])
+        match = pattern.search(summary_line)
+        if match:
+            counts[key] = int(match.group(1))
 
     if not counts:
         return None
