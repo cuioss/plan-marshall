@@ -99,7 +99,11 @@ class ParserRegistry:
         Returns:
             Tuple of (issues, test_summary, build_status).
         """
-        content = read_log_text(log_file)
+        try:
+            content = read_log_text(log_file)
+        except OSError as e:
+            logger.warning('Failed to read log file %s: %s', log_file, e)
+            return [], None, 'FAILURE'
         tool_type = self.detect_tool_type(content, command)
 
         # Direct match
