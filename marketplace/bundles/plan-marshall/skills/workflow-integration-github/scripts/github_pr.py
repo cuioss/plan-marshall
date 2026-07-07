@@ -1,30 +1,46 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-GitHub PR workflow operations - producer-side fetch + pre-filter + per-finding store.
+GitHub PR workflow operations - two-verb provider contract: fetch_findings + post_responses.
 
-Producer-side flow: ``comments-stage`` fetches PR review comments, applies the
-keyword pre-filter from ``standards/comment-patterns.json`` to drop obvious
-noise, then writes one ``pr-comment`` finding per surviving comment via
-``manage-findings add`` (direct ``add_finding`` import). LLM consumers query
-via ``manage-findings query --type pr-comment`` — the script-side triage
-batch surface that previously accepted inline JSON has been retired.
+The provider surface is exactly TWO pure, zero-LLM verbs — no triage judgment
+lives here:
+
+- ``fetch_findings`` fetches PR review comments, applies the keyword pre-filter
+  from ``standards/comment-patterns.json`` to drop obvious noise, then files one
+  ``pr-comment`` finding per surviving comment via ``manage-findings add``. The
+  untrusted comment body is quarantined under ``raw_input.{body}`` (never
+  embedded raw in the top-level ``detail``); the batched ``manage-findings
+  ingest`` pass promotes it to top-level only after ``validate_struct``.
+- ``post_responses`` applies already-decided triage dispositions back to the
+  provider — a thread-reply carrying the ``resolution_detail`` then a
+  resolve-thread — keyed by each finding's own ``hash_id`` (no positional
+  pairing). It reads only findings the triage pass already resolved.
+
+Both verbs FAIL LOUD when GitHub is not configured: a typed ``unconfigured``
+status, never a silent ``done`` no-op. LLM consumers query the ledger via
+``manage-findings query --type pr-comment``.
 
 Usage:
     github_pr.py fetch-comments [--pr <number>] [--unresolved-only]
-    github_pr.py comments-stage --pr-number <N> --plan-id <P>
+    github_pr.py fetch_findings --pr-number <N> --plan-id <P>
+    github_pr.py post_responses --pr-number <N> --plan-id <P>
     github_pr.py --help
 
 Subcommands:
     fetch-comments    Fetch PR review comments (raw, no filtering or storage)
-    comments-stage    Producer-side: fetch + pre-filter + store one finding per surviving comment
+    fetch_findings    Producer-side: fetch + pre-filter + file one pr-comment finding per surviving comment
+    post_responses    Apply triaged dispositions (thread-reply + resolve-thread) back to the PR, keyed by hash_id
 
 Examples:
     # Fetch raw comments
     github_pr.py fetch-comments --pr 123
 
-    # Producer-side stage (fetch, filter, store findings)
-    github_pr.py comments-stage --pr-number 123 --plan-id EXAMPLE-PLAN
+    # Find stage (fetch, filter, file findings with quarantined raw_input)
+    github_pr.py fetch_findings --pr-number 123 --plan-id EXAMPLE-PLAN
+
+    # Respond stage (apply already-decided dispositions back to the PR)
+    github_pr.py post_responses --pr-number 123 --plan-id EXAMPLE-PLAN
 """
 
 import re
@@ -32,6 +48,7 @@ import sys
 from typing import Any
 
 import github_ops as _github
+from _github_pr import RESOLVE_THREAD_MUTATION, THREAD_REPLY_MUTATION
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
 from github_re_review import bot_kind_for_author
 from triage_helpers import (
@@ -46,7 +63,12 @@ from triage_helpers import (
 # Register this script's top-level subcommand tokens so that extract_routing_args
 # correctly identifies the subcommand boundary when github_pr.py is the entry
 # point (i.e., does not consume a subcommand-level --plan-id as a router flag).
-register_subcommands({'fetch-comments', 'comments-stage'})
+register_subcommands({'fetch-comments', 'fetch_findings', 'post_responses'})
+
+# Resolutions that are terminal triage dispositions — a pr-comment finding in one
+# of these states has been decided by the triage pass and is eligible for a
+# provider response. `pending` (still awaiting triage) is deliberately excluded.
+_RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_into_account', 'rejected'})
 
 # ============================================================================
 # PRE-FILTER CONFIGURATION (loaded from comment-patterns.json)
@@ -157,12 +179,35 @@ def _is_obvious_noise(body: str) -> bool:
 
 
 # ============================================================================
-# COMMENTS-STAGE SUBCOMMAND (producer-side fetch + filter + store)
+# FAIL-LOUD CONFIG GUARD (shared by fetch_findings + post_responses)
 # ============================================================================
 
-# Matches the ``comment_id: <value>`` line written into every pr-comment
-# finding's ``detail`` block by cmd_comments_stage.
+
+def _unconfigured_result(operation: str, detail: str) -> dict[str, Any]:
+    """Build the typed ``unconfigured`` fail-loud signal (never a silent no-op).
+
+    Both provider verbs return this shape — status ``unconfigured`` — when GitHub
+    is not authenticated/reachable, so a caller can distinguish "provider not
+    set up" from a genuine zero-findings success (lesson 2026-06-22-14-001). A
+    silent ``done``/``success`` on an unconfigured provider is the prohibited
+    anti-pattern.
+    """
+    return {
+        'status': 'unconfigured',
+        'operation': operation,
+        'provider': 'github',
+        'detail': detail,
+    }
+
+
+# ============================================================================
+# FETCH_FINDINGS SUBCOMMAND (producer-side fetch + filter + file to ledger)
+# ============================================================================
+
+# Matches the ``comment_id: <value>`` and ``thread_id: <value>`` lines written
+# into every pr-comment finding's ``detail`` block by cmd_fetch_findings.
 _COMMENT_ID_DETAIL = re.compile(r'^comment_id:\s*(?P<id>.+?)\s*$', re.MULTILINE)
+_THREAD_ID_DETAIL = re.compile(r'^thread_id:\s*(?P<id>.+?)\s*$', re.MULTILINE)
 
 
 def _existing_pr_comment_ids(query_findings, plan_id: str) -> set[str]:
@@ -190,17 +235,24 @@ def _existing_pr_comment_ids(query_findings, plan_id: str) -> set[str]:
     return comment_ids
 
 
-def cmd_comments_stage(args):
-    """Producer-side: fetch + pre-filter + write one finding per surviving comment.
+def cmd_fetch_findings(args):
+    """Producer-side FIND verb: fetch + pre-filter + file one finding per surviving comment.
 
     Pre-filters applied in order (both contribute to ``count_skipped_noise``):
     1. Already-resolved threads — skipped silently; the thread owner addressed them.
     2. Obvious text noise — matched via ``_is_obvious_noise`` (lgtm, bot sigs, etc.).
 
-    Always-on storage: every surviving comment becomes a ``pr-comment`` finding
-    via ``add_finding``. ``count_fetched`` vs ``count_stored`` mismatches are
-    recorded as a ``qgate`` finding with title prefix ``(producer-mismatch)``
-    so the LLM sees them in ``manage-findings qgate list``.
+    Containment: the untrusted comment ``body`` is quarantined under
+    ``raw_input.{body}`` — never embedded raw in the top-level ``detail``. The
+    ``detail`` carries only trusted, producer-built structured metadata
+    (pr_number, kind, author, thread_id, comment_id, path, line) so the triage
+    read surface stays clean-by-construction until the batched
+    ``manage-findings ingest`` pass promotes the validated body.
+
+    Fail-loud: returns a typed ``unconfigured`` status (not a silent success)
+    when GitHub is not authenticated. ``count_fetched`` vs ``count_stored``
+    mismatches are recorded as a ``qgate`` finding with title prefix
+    ``(producer-mismatch)`` so the LLM sees them in ``manage-findings qgate list``.
     """
     from _findings_core import (
         add_finding,
@@ -210,6 +262,12 @@ def cmd_comments_stage(args):
 
     pr_number: int = args.pr_number
     plan_id: str = args.plan_id
+
+    # Fail-loud config guard — an unconfigured provider must NOT report a silent
+    # zero-findings success (lesson 2026-06-22-14-001).
+    is_auth, auth_err = _github.check_auth()
+    if not is_auth:
+        return _unconfigured_result('fetch_findings', auth_err)
 
     fetch_result = fetch_comments(pr_number, unresolved_only=False)
     if fetch_result.get('status') != 'success':
@@ -269,8 +327,10 @@ def cmd_comments_stage(args):
             continue
 
         # Build a stable, deterministic title that disambiguates same-author
-        # comments on the same file. The full body and provider metadata go in
-        # ``detail`` so the LLM consumer can run its own classification later.
+        # comments on the same file. Only trusted, producer-built structured
+        # metadata goes in ``detail``; the untrusted comment body is quarantined
+        # under ``raw_input.{body}`` so the top-level triage read surface never
+        # sees un-validated free-text.
         location_suffix = f' @ {path}:{line}' if path and line else ''
         title = f'PR #{pr_number} {kind} comment by {author}{location_suffix} ({comment_id})'
 
@@ -285,9 +345,6 @@ def cmd_comments_stage(args):
             detail_lines.append(f'path: {path}')
         if line:
             detail_lines.append(f'line: {line}')
-        detail_lines.append('')
-        detail_lines.append('--- body ---')
-        detail_lines.append(body)
         detail = '\n'.join(detail_lines)
 
         # ``line`` may be 0 from the GraphQL fallback for review-body /
@@ -313,6 +370,7 @@ def cmd_comments_stage(args):
             kind=kind,
             reviewed_commit_sha=reviewed_commit_sha or None,
             bot_kind=bot_kind,
+            raw_input={'body': body},
         )
         if add_result.get('status') == 'success':
             stored_hashes.append(add_result.get('hash_id', ''))
@@ -342,13 +400,15 @@ def cmd_comments_stage(args):
             phase='5-execute',
             source='qgate',
             finding_type='pr-comment',
-            title=f'(producer-mismatch) github_pr comments-stage PR #{pr_number}',
+            title=f'(producer-mismatch) github_pr fetch_findings PR #{pr_number}',
             detail=mismatch_detail,
         )
         qgate_hash = qgate_result.get('hash_id')
 
     return {
         'status': 'success',
+        'operation': 'fetch_findings',
+        'provider': 'github',
         'pr_number': pr_number,
         'plan_id': plan_id,
         'count_fetched': count_fetched,
@@ -357,6 +417,84 @@ def cmd_comments_stage(args):
         'count_stored': count_stored,
         'stored_hash_ids': stored_hashes,
         'producer_mismatch_hash_id': qgate_hash,
+    }
+
+
+# ============================================================================
+# POST_RESPONSES SUBCOMMAND (apply triaged dispositions back to the PR)
+# ============================================================================
+
+
+def _thread_id_from_detail(detail: str | None) -> str:
+    """Extract the ``thread_id`` value from a pr-comment finding's detail block."""
+    match = _THREAD_ID_DETAIL.search(detail or '')
+    return match.group('id') if match else ''
+
+
+def cmd_post_responses(args):
+    """RESPOND verb: apply already-decided triage dispositions back to the PR.
+
+    Reads every ``pr-comment`` finding whose ``resolution`` is a terminal triage
+    disposition (``_RESPONDABLE_RESOLUTIONS``) and that carries a ``thread_id``,
+    and — keyed by each finding's own ``hash_id`` (never positional pairing,
+    fixing lesson 2026-06-30-21-001) — posts the finding's ``resolution_detail``
+    as a thread-reply then resolves the thread. This verb makes NO triage
+    decision; it only transmits decisions the triage pass already recorded.
+
+    Fail-loud: returns a typed ``unconfigured`` status when GitHub is not
+    authenticated. A finding without a ``resolution_detail`` or ``thread_id`` is
+    skipped (recorded in ``skipped``), never guessed at.
+    """
+    from _findings_core import query_findings
+
+    pr_number: int = args.pr_number
+    plan_id: str = args.plan_id
+
+    is_auth, auth_err = _github.check_auth()
+    if not is_auth:
+        return _unconfigured_result('post_responses', auth_err)
+
+    findings = query_findings(plan_id, finding_type='pr-comment').get('findings') or []
+
+    responded: list[dict[str, str]] = []
+    skipped: list[dict[str, str]] = []
+    failures: list[dict[str, str]] = []
+
+    for finding in findings:
+        hash_id = finding.get('hash_id', '')
+        if finding.get('resolution') not in _RESPONDABLE_RESOLUTIONS:
+            continue
+
+        thread_id = _thread_id_from_detail(finding.get('detail'))
+        reply_body = finding.get('resolution_detail') or ''
+        if not thread_id or not reply_body:
+            skipped.append({'hash_id': hash_id, 'reason': 'no thread_id or resolution_detail'})
+            continue
+
+        # Reply carrying the recorded disposition, then resolve — keyed by this
+        # finding's own thread_id (relational, not positional).
+        rc, _data, err = _github.run_graphql(THREAD_REPLY_MUTATION, {'threadId': thread_id, 'body': reply_body})
+        if rc != 0:
+            failures.append({'hash_id': hash_id, 'thread_id': thread_id, 'error': f'thread-reply failed: {err}'})
+            continue
+        rc2, _data2, err2 = _github.run_graphql(RESOLVE_THREAD_MUTATION, {'threadId': thread_id})
+        if rc2 != 0:
+            failures.append({'hash_id': hash_id, 'thread_id': thread_id, 'error': f'resolve-thread failed: {err2}'})
+            continue
+        responded.append({'hash_id': hash_id, 'thread_id': thread_id})
+
+    return {
+        'status': 'success',
+        'operation': 'post_responses',
+        'provider': 'github',
+        'pr_number': pr_number,
+        'plan_id': plan_id,
+        'count_responded': len(responded),
+        'count_skipped': len(skipped),
+        'count_failed': len(failures),
+        'responded': responded,
+        'skipped': skipped,
+        'failures': failures,
     }
 
 
@@ -382,7 +520,8 @@ def main():
         epilog="""
 Examples:
   github_pr.py fetch-comments --pr 123
-  github_pr.py comments-stage --pr-number 123 --plan-id EXAMPLE-PLAN
+  github_pr.py fetch_findings --pr-number 123 --plan-id EXAMPLE-PLAN
+  github_pr.py post_responses --pr-number 123 --plan-id EXAMPLE-PLAN
 """,
         subcommands=[
             {
@@ -395,9 +534,18 @@ Examples:
                 ],
             },
             {
-                'name': 'comments-stage',
-                'help': 'Producer-side: fetch + pre-filter + store one pr-comment finding per surviving comment',
-                'handler': cmd_comments_stage,
+                'name': 'fetch_findings',
+                'help': 'FIND: fetch + pre-filter + file one pr-comment finding per surviving comment (body quarantined under raw_input)',
+                'handler': cmd_fetch_findings,
+                'args': [
+                    {'flags': ['--pr-number'], 'dest': 'pr_number', 'type': int, 'required': True, 'help': 'PR number'},
+                    {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
+                ],
+            },
+            {
+                'name': 'post_responses',
+                'help': 'RESPOND: apply triaged dispositions (thread-reply + resolve-thread) back to the PR, keyed by hash_id',
+                'handler': cmd_post_responses,
                 'args': [
                     {'flags': ['--pr-number'], 'dest': 'pr_number', 'type': int, 'required': True, 'help': 'PR number'},
                     {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},

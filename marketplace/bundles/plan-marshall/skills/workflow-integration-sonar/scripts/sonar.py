@@ -1,16 +1,27 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-Sonar workflow operations - producer-side fetch + pre-filter + per-finding store.
+Sonar workflow operations - two-verb provider contract: fetch_findings + post_responses.
 
-Producer-side flow: ``fetch-and-store`` is the single authority on new-code
-issue enumeration. It performs a synchronous bounded in-Python CE-readiness
-wait (poll the Compute-Engine task state until the PR analysis is DONE, or
-until the wait budget expires), then enumerates the PR-scoped new-code issues,
-applies the keyword pre-filter from ``standards/sonar-rules.json`` (drops
-issues already suppressable via NOSONAR / test-acceptable rules) and writes
-one ``sonar-issue`` finding per surviving issue via ``manage-findings add``
-(direct ``add_finding`` import).
+The provider surface is exactly TWO pure, zero-LLM verbs — no triage judgment
+lives here:
+
+- ``fetch_findings`` is the single authority on new-code issue enumeration. It
+  performs a synchronous bounded in-Python CE-readiness wait (poll the
+  Compute-Engine task state until the PR analysis is DONE, or until the wait
+  budget expires), then enumerates the PR-scoped new-code issues, applies the
+  keyword pre-filter from ``standards/sonar-rules.json`` (drops issues already
+  suppressable via NOSONAR / test-acceptable rules) and files one ``sonar-issue``
+  finding per surviving issue. The untrusted Sonar ``message`` is quarantined
+  under ``raw_input.{message}`` — never embedded raw in the top-level ``detail``
+  — and promoted only by the batched ``manage-findings ingest`` pass.
+- ``post_responses`` applies already-decided triage dispositions back to Sonar
+  — a ``do_transition`` dismissal (``wontfix`` for ``suppressed``,
+  ``falsepositive`` for ``rejected``) — keyed by each finding's own ``hash_id``.
+  It makes NO triage decision.
+
+Both verbs FAIL LOUD when Sonar is not configured: a typed ``unconfigured``
+status, never a silent success (lesson 2026-06-22-14-001).
 
 The returned contract carries a verified ``new_code_issue_count`` and a
 ``count_status`` discriminator (``confirmed`` | ``undecidable``): a confirmed
@@ -24,10 +35,12 @@ on undecidable) so an absent file can never be confused with "not checked."
 LLM consumers query findings via ``manage-findings query --type sonar-issue``.
 
 Usage:
-    sonar.py fetch-and-store --plan-id <P> --project <key> [--pr <id>] [--severities <list>] [--types <list>] [--ce-wait-timeout <secs>]
+    sonar.py fetch_findings --plan-id <P> --project <key> [--pr <id>] [--severities <list>] [--types <list>] [--ce-wait-timeout <secs>]
+    sonar.py post_responses --plan-id <P> --project <key>
     sonar.py --help
 """
 
+import re
 import sys
 from datetime import UTC, datetime
 from typing import Any
@@ -48,7 +61,16 @@ from triage_helpers import (
 # Register this script's top-level subcommand tokens so that extract_routing_args
 # correctly identifies the subcommand boundary when sonar.py is the entry point
 # (i.e., does not consume a subcommand-level --plan-id as a router flag).
-register_subcommands({'fetch-and-store'})
+register_subcommands({'fetch_findings', 'post_responses'})
+
+# Sonar skill name used to resolve the credential/config store.
+_SONAR_SKILL = 'workflow-integration-sonar'
+
+# Terminal triage dispositions that map to a Sonar dismissal, and the transition
+# each applies via /api/issues/do_transition. `fixed`/`accepted`/
+# `taken_into_account` intentionally have NO Sonar action — the issue is fixed in
+# code (cleared on the next scan) or accepted, not dismissed.
+_SONAR_DISMISS_TRANSITIONS = {'suppressed': 'wontfix', 'rejected': 'falsepositive'}
 
 # ============================================================================
 # PRE-FILTER CONFIGURATION (loaded from sonar-rules.json)
@@ -346,7 +368,43 @@ def _write_scan_summary(
 
 
 # ============================================================================
-# FETCH-AND-STORE SUBCOMMAND (producer-side fetch + filter + store)
+# FAIL-LOUD CONFIG GUARD (shared by fetch_findings + post_responses)
+# ============================================================================
+
+
+def _sonar_unconfigured(operation: str, detail: str) -> dict[str, Any]:
+    """Build the typed ``unconfigured`` fail-loud signal for a Sonar verb.
+
+    Returned when no Sonar credential is configured, so a caller can distinguish
+    "Sonar not set up" from a genuine zero-findings success (lesson
+    2026-06-22-14-001) instead of a silent no-op.
+    """
+    return {
+        'status': 'unconfigured',
+        'operation': operation,
+        'provider': 'sonar',
+        'detail': detail,
+    }
+
+
+def _sonar_credential_missing() -> str:
+    """Return a fail-loud reason string when no Sonar credential is configured, else ''.
+
+    Never raises — a resolver/import failure is treated as "configured" so the
+    downstream REST call surfaces the real error rather than a false unconfigured.
+    """
+    try:
+        from _providers_core import load_credential
+    except Exception:
+        return ''
+    credential = load_credential(_SONAR_SKILL, 'auto')
+    if not credential:
+        return f'No credentials configured for {_SONAR_SKILL}. Run: credentials configure --skill {_SONAR_SKILL}'
+    return ''
+
+
+# ============================================================================
+# FETCH_FINDINGS SUBCOMMAND (producer-side fetch + filter + file to ledger)
 # ============================================================================
 
 
@@ -403,20 +461,23 @@ def _fetch_issues(project: str, pr: str | None, severities: str | None, types: s
     return {'status': 'success', 'issues': formatted}
 
 
-def cmd_fetch_and_store(args):
-    """Producer-side authority on PR-scoped new-code issue enumeration.
+def cmd_fetch_findings(args):
+    """Producer-side FIND verb: PR-scoped new-code issue enumeration → ledger.
 
     Flow:
     1. Synchronous bounded CE-readiness wait (poll ``ce-status`` until DONE or
        ``ce_wait_timeout_seconds`` expiry) — confirms the server's issue
        set is consistent for the PR before enumerating.
     2. Fetch the PR-scoped new-code issues and pre-filter the suppressable ones.
-    3. Write one ``sonar-issue`` finding per surviving issue.
+    3. File one ``sonar-issue`` finding per surviving issue — the untrusted
+       Sonar ``message`` quarantined under ``raw_input.{message}``, the trusted
+       structured metadata in ``detail``.
     4. Compute the verified ``new_code_issue_count`` and the ``count_status``
        discriminator (``confirmed`` | ``undecidable``).
     5. Write one ``sonar-scan-summary.jsonl`` attestation row (unconditional).
 
-    On CE-timeout OR auth/REST failure the returned dict carries
+    Fail-loud: returns a typed ``unconfigured`` status when no Sonar credential
+    is configured. On CE-timeout OR auth/REST failure the returned dict carries
     ``new_code_issue_count: null`` and ``count_status: undecidable`` with a
     ``count_status_reason`` — NEVER a false ``0``.
     """
@@ -428,6 +489,12 @@ def cmd_fetch_and_store(args):
     plan_id: str = args.plan_id
     project: str = args.project
     pr: str | None = getattr(args, 'pr', None)
+
+    # Fail-loud config guard — an unconfigured provider must NOT report a silent
+    # zero-findings success (lesson 2026-06-22-14-001).
+    missing = _sonar_credential_missing()
+    if missing:
+        return _sonar_unconfigured('fetch_findings', missing)
 
     # Read the default:sonar-roundtrip step's params from the plan-local manifest
     # snapshot in a single one-stop call.
@@ -510,6 +577,10 @@ def cmd_fetch_and_store(args):
 
         title = f'Sonar {rule} in {file_path or "(unknown)"} (key={issue.get("key", "")})'
 
+        # Only trusted, producer-built structured metadata goes in ``detail``;
+        # the untrusted Sonar ``message`` is quarantined under
+        # ``raw_input.{message}`` so the triage read surface never sees
+        # un-validated free-text until the batched ingestion pass promotes it.
         detail_lines = [
             f'key: {issue.get("key", "")}',
             f'rule: {rule}',
@@ -525,9 +596,6 @@ def cmd_fetch_and_store(args):
             detail_lines.append(f'file: {file_path}')
         if line_arg:
             detail_lines.append(f'line: {line_arg}')
-        detail_lines.append('')
-        detail_lines.append('--- message ---')
-        detail_lines.append(issue.get('message', ''))
         detail = '\n'.join(detail_lines)
 
         add_result = add_finding(
@@ -541,6 +609,7 @@ def cmd_fetch_and_store(args):
             module=project,
             rule=rule,
             severity=severity,
+            raw_input={'message': issue.get('message', '')},
         )
         if add_result.get('status') == 'success':
             stored_hashes.append(add_result.get('hash_id', ''))
@@ -564,7 +633,7 @@ def cmd_fetch_and_store(args):
             phase='5-execute',
             source='qgate',
             finding_type='sonar-issue',
-            title=f'(producer-mismatch) sonar fetch-and-store project={project}',
+            title=f'(producer-mismatch) sonar fetch_findings project={project}',
             detail=mismatch_detail,
         )
         qgate_hash = qgate_result.get('hash_id')
@@ -602,6 +671,88 @@ def cmd_fetch_and_store(args):
 
 
 # ============================================================================
+# POST_RESPONSES SUBCOMMAND (apply triaged dispositions back to Sonar)
+# ============================================================================
+
+_ISSUE_KEY_DETAIL = re.compile(r'^key:\s*(?P<key>.+?)\s*$', re.MULTILINE)
+
+
+def _issue_key_from_detail(detail: str | None) -> str:
+    """Extract the Sonar issue ``key`` from a sonar-issue finding's detail block."""
+    match = _ISSUE_KEY_DETAIL.search(detail or '')
+    return match.group('key') if match else ''
+
+
+def cmd_post_responses(args):
+    """RESPOND verb: apply already-decided triage dispositions back to Sonar.
+
+    Reads every ``sonar-issue`` finding whose ``resolution`` maps to a Sonar
+    dismissal (``suppressed`` → ``wontfix``, ``rejected`` → ``falsepositive``)
+    and — keyed by each finding's own issue ``key`` (parsed from its structured
+    ``detail``; relational, never positional) — POSTs ``/api/issues/do_transition``.
+    Findings resolved to ``fixed`` / ``accepted`` / ``taken_into_account`` get NO
+    Sonar action (the issue is fixed in code or accepted). This verb makes NO
+    triage decision.
+
+    Fail-loud: returns a typed ``unconfigured`` status when no Sonar credential
+    is configured.
+    """
+    from _findings_core import query_findings
+
+    plan_id: str = args.plan_id
+
+    missing = _sonar_credential_missing()
+    if missing:
+        return _sonar_unconfigured('post_responses', missing)
+
+    from _providers_core import (
+        RestClientError,
+        get_authenticated_client,
+    )
+
+    findings = query_findings(plan_id, finding_type='sonar-issue').get('findings') or []
+
+    responded: list[dict[str, str]] = []
+    skipped: list[dict[str, str]] = []
+    failures: list[dict[str, str]] = []
+
+    client = get_authenticated_client(_SONAR_SKILL)
+    try:
+        for finding in findings:
+            hash_id = finding.get('hash_id', '')
+            transition = _SONAR_DISMISS_TRANSITIONS.get(finding.get('resolution', ''))
+            if transition is None:
+                continue
+
+            issue_key = _issue_key_from_detail(finding.get('detail'))
+            if not issue_key:
+                skipped.append({'hash_id': hash_id, 'reason': 'no issue key in detail'})
+                continue
+
+            try:
+                client.post('/api/issues/do_transition', body={'issue': issue_key, 'transition': transition})
+            except RestClientError as exc:
+                failures.append({'hash_id': hash_id, 'issue_key': issue_key, 'error': f'HTTP {exc.status}'})
+                continue
+            responded.append({'hash_id': hash_id, 'issue_key': issue_key, 'transition': transition})
+    finally:
+        client.close()
+
+    return {
+        'status': 'success',
+        'operation': 'post_responses',
+        'provider': 'sonar',
+        'plan_id': plan_id,
+        'count_responded': len(responded),
+        'count_skipped': len(skipped),
+        'count_failed': len(failures),
+        'responded': responded,
+        'skipped': skipped,
+        'failures': failures,
+    }
+
+
+# ============================================================================
 # MAIN
 # ============================================================================
 
@@ -623,15 +774,16 @@ def main():
         description='Sonar workflow operations',
         epilog="""
 Examples:
-  sonar.py fetch-and-store --plan-id EXAMPLE-PLAN --project com.example:project
-  sonar.py fetch-and-store --plan-id EXAMPLE-PLAN --project com.example:project --pr 123 --severities BLOCKER,CRITICAL
-  sonar.py fetch-and-store --plan-id EXAMPLE-PLAN --project com.example:project --pr 123 --ce-wait-timeout 300
+  sonar.py fetch_findings --plan-id EXAMPLE-PLAN --project com.example:project
+  sonar.py fetch_findings --plan-id EXAMPLE-PLAN --project com.example:project --pr 123 --severities BLOCKER,CRITICAL
+  sonar.py fetch_findings --plan-id EXAMPLE-PLAN --project com.example:project --pr 123 --ce-wait-timeout 300
+  sonar.py post_responses --plan-id EXAMPLE-PLAN --project com.example:project
 """,
         subcommands=[
             {
-                'name': 'fetch-and-store',
-                'help': 'Producer-side: CE-readiness wait + fetch + pre-filter + store one sonar-issue finding per surviving issue',
-                'handler': cmd_fetch_and_store,
+                'name': 'fetch_findings',
+                'help': 'FIND: CE-readiness wait + fetch + pre-filter + file one sonar-issue finding per surviving issue (message quarantined under raw_input)',
+                'handler': cmd_fetch_findings,
                 'args': [
                     {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
                     {'flags': ['--project'], 'required': True, 'help': 'SonarQube project key'},
@@ -646,6 +798,15 @@ Examples:
                         'manifest step-params snapshot ce_wait_timeout_seconds for '
                         'default:sonar-roundtrip, else 600)',
                     },
+                ],
+            },
+            {
+                'name': 'post_responses',
+                'help': 'RESPOND: apply triaged dismissals (wontfix/falsepositive) back to Sonar, keyed by hash_id',
+                'handler': cmd_post_responses,
+                'args': [
+                    {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
+                    {'flags': ['--project'], 'required': False, 'help': 'SonarQube project key (accepted for API uniformity)'},
                 ],
             },
         ],

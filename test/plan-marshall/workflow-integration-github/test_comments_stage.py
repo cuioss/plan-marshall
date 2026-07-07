@@ -1,16 +1,19 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for workflow-integration-github github_pr.py — producer-side surface.
+"""Tests for workflow-integration-github github_pr.py — two-verb provider contract.
 
-The script's LLM-callable triage / triage-batch flow has been retired. The
-remaining callable surface is:
+The provider surface is exactly two pure verbs (plus the raw ``fetch-comments``):
 
 - ``fetch-comments`` — raw GraphQL fetch (no filtering, no storage)
-- ``comments-stage`` — fetch + pre-filter + persist one ``pr-comment`` finding
-  per surviving comment via ``manage-findings add``
+- ``fetch_findings`` — fetch + pre-filter + file one ``pr-comment`` finding per
+  surviving comment; the untrusted body is quarantined under ``raw_input.{body}``
+- ``post_responses`` — apply already-decided triage dispositions (thread-reply +
+  resolve-thread) back to the PR, keyed by each finding's own ``hash_id``
 
-These tests cover the producer-side classification helper, the comments-stage
-flow with mocked provider data, the ``--project-dir`` plumbing, and the CLI
-surface contract (``triage`` and ``triage-batch`` subcommands MUST be gone).
+These tests cover the producer-side pre-filter helper, the fetch_findings flow
+(with the body quarantined in raw_input and structured metadata in detail), the
+fail-loud unconfigured signal, the hash_id-keyed post_responses respond loop, the
+``--project-dir`` plumbing, and the CLI surface contract (the retired
+``triage`` / ``triage-batch`` / ``comments-stage`` subcommands MUST be gone).
 """
 
 import importlib.util
@@ -39,20 +42,25 @@ _spec.loader.exec_module(github_pr)
 fetch_comments = github_pr.fetch_comments
 get_current_pr_number = github_pr.get_current_pr_number
 _is_obvious_noise = github_pr._is_obvious_noise
-cmd_comments_stage = github_pr.cmd_comments_stage
+cmd_fetch_findings = github_pr.cmd_fetch_findings
+cmd_post_responses = github_pr.cmd_post_responses
 
 
 @pytest.fixture(autouse=True)
-def _stub_pr_head_sha():
-    """Stub the PR HEAD-SHA fetch so comments-stage tests never hit ``gh``.
+def _stub_provider_calls():
+    """Stub the auth check and PR HEAD-SHA fetch so fetch_findings tests never hit ``gh``.
 
-    ``cmd_comments_stage`` resolves the PR HEAD SHA (for ``reviewed_commit_sha``)
-    via ``github_ops.fetch_pr_head_sha`` once per batch. Without this stub the
-    helper would spawn a real ``gh pr view`` subprocess in every comments-stage
-    test. Tests that assert on a specific SHA re-patch the same target inside a
-    ``with`` block, which takes precedence over this default for its duration.
+    ``cmd_fetch_findings`` fails loud when GitHub is unauthenticated, so it calls
+    ``github_ops.check_auth`` first; the default stub returns authenticated so the
+    happy-path tests proceed. It also resolves the PR HEAD SHA (for
+    ``reviewed_commit_sha``) via ``github_ops.fetch_pr_head_sha`` once per batch.
+    Tests that need a specific value (an unauthenticated provider, a specific SHA)
+    re-patch the same target inside a ``with`` block, which takes precedence.
     """
-    with patch('github_pr._github.fetch_pr_head_sha', return_value='stub-head-sha'):
+    with (
+        patch('github_pr._github.check_auth', return_value=(True, '')),
+        patch('github_pr._github.fetch_pr_head_sha', return_value='stub-head-sha'),
+    ):
         yield
 
 
@@ -171,7 +179,7 @@ class TestCommentsStage:
                 'total': len(comments),
                 'unresolved': len(comments),
             }
-            result = cmd_comments_stage(_stage_make_args(123, 'gh-pr-stage-1'))
+            result = cmd_fetch_findings(_stage_make_args(123, 'gh-pr-stage-1'))
 
         assert result['status'] == 'success'
         assert result['count_fetched'] == 2
@@ -188,10 +196,12 @@ class TestCommentsStage:
         assert stored['type'] == 'pr-comment'
         assert stored['file_path'] == 'src/Main.java'
         assert stored['line'] == 42
-        # The detail must carry kind, author, thread_id, comment_id, full body
+        # The detail carries the trusted structured metadata (kind, thread_id, ...).
         assert 'kind: inline' in stored['detail']
         assert 'thread_id: PRRT_a' in stored['detail']
-        assert 'Please fix the null pointer here' in stored['detail']
+        # The untrusted body is quarantined under raw_input.{body}, NOT in detail.
+        assert 'Please fix the null pointer here' not in stored['detail']
+        assert stored['raw_input']['body'] == 'Please fix the null pointer here'
 
     def test_stage_skips_resolved_thread_comments(self, plan_context):
         """Comments on already-resolved threads are dropped by pre-filter 1 before the noise check; each drop increments count_skipped_noise.
@@ -233,7 +243,7 @@ class TestCommentsStage:
                 'total': len(comments),
                 'unresolved': 1,
             }
-            result = cmd_comments_stage(_stage_make_args(127, 'gh-pr-stage-resolved'))
+            result = cmd_fetch_findings(_stage_make_args(127, 'gh-pr-stage-resolved'))
 
         assert result['status'] == 'success'
         assert result['count_fetched'] == 2
@@ -261,7 +271,7 @@ class TestCommentsStage:
                 'total': 0,
                 'unresolved': 0,
             }
-            result = cmd_comments_stage(_stage_make_args(124, 'gh-pr-stage-empty'))
+            result = cmd_fetch_findings(_stage_make_args(124, 'gh-pr-stage-empty'))
 
         assert result['count_fetched'] == 0
         assert result['count_stored'] == 0
@@ -271,7 +281,7 @@ class TestCommentsStage:
         plan_context.plan_dir_for('gh-pr-stage-err')
         with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
             mock_fetch.return_value = {'status': 'error', 'error': 'auth'}
-            result = cmd_comments_stage(_stage_make_args(125, 'gh-pr-stage-err'))
+            result = cmd_fetch_findings(_stage_make_args(125, 'gh-pr-stage-err'))
 
         assert result['status'] == 'error'
 
@@ -319,7 +329,7 @@ class TestCommentsStage:
                     return {'status': 'success', 'hash_id': 'hash-' + str(mock_add.call_count)}
 
                 mock_add.side_effect = _side_effect
-                result = cmd_comments_stage(_stage_make_args(126, 'gh-pr-stage-mismatch'))
+                result = cmd_fetch_findings(_stage_make_args(126, 'gh-pr-stage-mismatch'))
 
         assert result['status'] == 'success'
         assert result['count_fetched'] == 2
@@ -370,10 +380,10 @@ class TestCommentsStage:
                 'unresolved': 1,
             }
             # Iteration 1 — first fetch stores the comment.
-            result_1 = cmd_comments_stage(_stage_make_args(128, 'gh-pr-stage-dedup'))
+            result_1 = cmd_fetch_findings(_stage_make_args(128, 'gh-pr-stage-dedup'))
             # Iteration 2 — HEAD advanced; the identical comment is fetched
             # again but must be deduped, not re-stored.
-            result_2 = cmd_comments_stage(_stage_make_args(128, 'gh-pr-stage-dedup'))
+            result_2 = cmd_fetch_findings(_stage_make_args(128, 'gh-pr-stage-dedup'))
 
         # First pass: stored, no dedup, no producer mismatch.
         assert result_1['status'] == 'success'
@@ -439,7 +449,7 @@ class TestCommentsStage:
                 'total': 1,
                 'unresolved': 1,
             }
-            result_1 = cmd_comments_stage(_stage_make_args(129, 'gh-pr-stage-newid'))
+            result_1 = cmd_fetch_findings(_stage_make_args(129, 'gh-pr-stage-newid'))
 
             # Iteration 2 — both the old comment (deduped) and a brand-new
             # comment (RB2) are fetched. RB2 must be stored.
@@ -450,7 +460,7 @@ class TestCommentsStage:
                 'total': 2,
                 'unresolved': 2,
             }
-            result_2 = cmd_comments_stage(_stage_make_args(129, 'gh-pr-stage-newid'))
+            result_2 = cmd_fetch_findings(_stage_make_args(129, 'gh-pr-stage-newid'))
 
         assert result_1['count_stored'] == 1
         assert result_1['count_skipped_duplicate'] == 0
@@ -520,7 +530,7 @@ class TestCommentsStageAuthorKindFields:
                 'total': len(comments),
                 'unresolved': len(comments),
             }
-            result = cmd_comments_stage(_stage_make_args(130, 'gh-pr-author-field'))
+            result = cmd_fetch_findings(_stage_make_args(130, 'gh-pr-author-field'))
 
         assert result['status'] == 'success'
         assert result['count_stored'] == 1
@@ -573,7 +583,7 @@ class TestCommentsStageAuthorKindFields:
                 'total': len(comments),
                 'unresolved': len(comments),
             }
-            result = cmd_comments_stage(_stage_make_args(131, plan_id))
+            result = cmd_fetch_findings(_stage_make_args(131, plan_id))
 
         assert result['status'] == 'success'
         assert result['count_stored'] == 1
@@ -625,7 +635,7 @@ class TestCommentsStageAuthorKindFields:
                 'total': len(comments),
                 'unresolved': len(comments),
             }
-            result = cmd_comments_stage(_stage_make_args(132, 'gh-pr-kind-query'))
+            result = cmd_fetch_findings(_stage_make_args(132, 'gh-pr-kind-query'))
 
         assert result['status'] == 'success'
         assert result['count_stored'] == 2
@@ -677,7 +687,7 @@ class TestCommentsStageAuthorKindFields:
                 'total': len(comments),
                 'unresolved': len(comments),
             }
-            result = cmd_comments_stage(_stage_make_args(133, 'gh-pr-author-query'))
+            result = cmd_fetch_findings(_stage_make_args(133, 'gh-pr-author-query'))
 
         assert result['status'] == 'success'
         assert result['count_stored'] == 2
@@ -715,7 +725,7 @@ class TestCommentsStageAuthorKindFields:
                 'total': len(comments),
                 'unresolved': len(comments),
             }
-            result = cmd_comments_stage(_stage_make_args(134, 'gh-pr-author-unknown'))
+            result = cmd_fetch_findings(_stage_make_args(134, 'gh-pr-author-unknown'))
 
         assert result['status'] == 'success'
         assert result['count_stored'] == 1
@@ -771,7 +781,7 @@ class TestCommentsStageReviewedShaAndBotKind:
                 'total': len(comments),
                 'unresolved': len(comments),
             }
-            result = cmd_comments_stage(_stage_make_args(140, 'gh-pr-reviewed-sha'))
+            result = cmd_fetch_findings(_stage_make_args(140, 'gh-pr-reviewed-sha'))
 
         assert result['status'] == 'success'
         assert result['count_stored'] == 1
@@ -819,7 +829,7 @@ class TestCommentsStageReviewedShaAndBotKind:
                 'total': len(comments),
                 'unresolved': len(comments),
             }
-            result = cmd_comments_stage(_stage_make_args(141, plan_id))
+            result = cmd_fetch_findings(_stage_make_args(141, plan_id))
 
         assert result['status'] == 'success'
         assert result['count_stored'] == 1
@@ -868,7 +878,7 @@ class TestCommentsStageReviewedShaAndBotKind:
                 'total': len(comments),
                 'unresolved': len(comments),
             }
-            result = cmd_comments_stage(_stage_make_args(142, 'gh-pr-botkind-human'))
+            result = cmd_fetch_findings(_stage_make_args(142, 'gh-pr-botkind-human'))
 
         # No error: the finding is stored successfully.
         assert result['status'] == 'success'
@@ -883,6 +893,128 @@ class TestCommentsStageReviewedShaAndBotKind:
         # author is still recorded; bot_kind is simply absent (not 'unknown').
         assert stored['author'] == 'human-reviewer'
         assert 'bot_kind' not in stored
+
+
+# =============================================================================
+# Fail-loud unconfigured provider (both verbs)
+# =============================================================================
+
+
+class TestFailLoudUnconfigured:
+    """Both verbs return a typed ``unconfigured`` status when GitHub is not authed."""
+
+    def test_fetch_findings_unconfigured_is_not_silent_success(self, plan_context):
+        plan_context.plan_dir_for('gh-unconfigured-fetch')
+        with patch('github_pr._github.check_auth', return_value=(False, 'Not authenticated. Run gh auth login.')):
+            result = cmd_fetch_findings(_stage_make_args(200, 'gh-unconfigured-fetch'))
+
+        assert result['status'] == 'unconfigured'
+        assert result['operation'] == 'fetch_findings'
+        assert result['provider'] == 'github'
+        # No findings were filed on the unconfigured path.
+        from _findings_core import query_findings
+
+        assert query_findings('gh-unconfigured-fetch', finding_type='pr-comment')['filtered_count'] == 0
+
+    def test_post_responses_unconfigured_is_not_silent_success(self, plan_context):
+        plan_context.plan_dir_for('gh-unconfigured-respond')
+        with patch('github_pr._github.check_auth', return_value=(False, 'Not authenticated.')):
+            result = cmd_post_responses(_stage_make_args(200, 'gh-unconfigured-respond'))
+
+        assert result['status'] == 'unconfigured'
+        assert result['operation'] == 'post_responses'
+
+
+# =============================================================================
+# post_responses — hash_id-keyed respond loop
+# =============================================================================
+
+
+class TestPostResponses:
+    """post_responses transmits each finding's disposition to its own thread, keyed by hash_id."""
+
+    def _stage_one_finding(self, plan_id, thread_id, body='A substantive concern about null handling.'):
+        """File one pr-comment finding via fetch_findings and return its hash_id."""
+        comments = [
+            {
+                'id': 'C1',
+                'kind': 'inline',
+                'author': 'reviewer',
+                'body': body,
+                'path': 'src/Main.java',
+                'line': 42,
+                'thread_id': thread_id,
+            },
+        ]
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': 1,
+                'unresolved': 1,
+            }
+            result = cmd_fetch_findings(_stage_make_args(300, plan_id))
+        return result['stored_hash_ids'][0]
+
+    def test_respond_replies_and_resolves_keyed_by_finding_thread(self, plan_context):
+        """A resolved finding drives a thread-reply + resolve-thread on ITS OWN thread_id."""
+        plan_context.plan_dir_for('gh-respond-basic')
+        hash_id = self._stage_one_finding('gh-respond-basic', 'PRRT_x')
+
+        from _findings_core import resolve_finding
+
+        resolve_finding('gh-respond-basic', hash_id, 'fixed', detail='Fixed the null guard in commit abc.')
+
+        calls = []
+
+        def _fake_graphql(mutation, variables):
+            calls.append((mutation, variables))
+            return 0, {}, ''
+
+        with patch('github_pr._github.run_graphql', side_effect=_fake_graphql):
+            result = cmd_post_responses(_stage_make_args(300, 'gh-respond-basic'))
+
+        assert result['status'] == 'success'
+        assert result['count_responded'] == 1
+        assert result['count_failed'] == 0
+        assert result['responded'][0]['hash_id'] == hash_id
+        assert result['responded'][0]['thread_id'] == 'PRRT_x'
+        # Two mutations fired: a thread-reply carrying the resolution_detail, then a resolve.
+        assert len(calls) == 2
+        reply_vars = calls[0][1]
+        assert reply_vars['threadId'] == 'PRRT_x'
+        assert reply_vars['body'] == 'Fixed the null guard in commit abc.'
+        assert calls[1][1]['threadId'] == 'PRRT_x'
+
+    def test_pending_finding_is_not_responded_to(self, plan_context):
+        """A still-pending (un-triaged) finding gets no provider response."""
+        plan_context.plan_dir_for('gh-respond-pending')
+        self._stage_one_finding('gh-respond-pending', 'PRRT_p')  # left pending
+
+        with patch('github_pr._github.run_graphql', return_value=(0, {}, '')) as mock_graphql:
+            result = cmd_post_responses(_stage_make_args(300, 'gh-respond-pending'))
+
+        assert result['status'] == 'success'
+        assert result['count_responded'] == 0
+        mock_graphql.assert_not_called()
+
+    def test_resolved_finding_without_thread_id_is_skipped(self, plan_context):
+        """A terminal-disposition finding with no thread_id is skipped, never guessed at."""
+        plan_context.plan_dir_for('gh-respond-nothread')
+        hash_id = self._stage_one_finding('gh-respond-nothread', '')  # empty thread_id
+
+        from _findings_core import resolve_finding
+
+        resolve_finding('gh-respond-nothread', hash_id, 'suppressed', detail='Suppressed with rationale.')
+
+        with patch('github_pr._github.run_graphql', return_value=(0, {}, '')) as mock_graphql:
+            result = cmd_post_responses(_stage_make_args(300, 'gh-respond-nothread'))
+
+        assert result['status'] == 'success'
+        assert result['count_responded'] == 0
+        assert result['count_skipped'] == 1
+        mock_graphql.assert_not_called()
 
 
 # =============================================================================
@@ -903,8 +1035,10 @@ class TestPRMain:
 
         assert result.returncode == 0
         assert 'fetch-comments' in result.stdout
-        assert 'comments-stage' in result.stdout
+        assert 'fetch_findings' in result.stdout
+        assert 'post_responses' in result.stdout
         # Retired surfaces MUST be absent from the CLI
+        assert 'comments-stage' not in result.stdout
         assert 'triage-batch' not in result.stdout
         assert '--comments ' not in result.stdout
 
@@ -913,6 +1047,7 @@ class TestPRMain:
         [
             pytest.param(['triage', '--comment', '{}'], id='triage-rejected'),
             pytest.param(['triage-batch', '--comments', '[]'], id='triage-batch-rejected'),
+            pytest.param(['comments-stage', '--pr-number', '1', '--plan-id', 'x'], id='comments-stage-rejected'),
         ],
     )
     def test_retired_subcommand_rejected(self, argv):

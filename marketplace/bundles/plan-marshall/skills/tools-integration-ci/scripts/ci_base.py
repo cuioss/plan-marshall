@@ -354,8 +354,9 @@ def extract_project_dir(argv: list[str]) -> tuple[str | None, list[str]]:
 # The token set that _split_at_subcommand uses to locate the subcommand
 # boundary in argv is built lazily from build_parser() and extended by
 # provider scripts that expose top-level subcommand tokens not registered in
-# build_parser (e.g. 'fetch-comments', 'comments-stage' from github_pr.py /
-# gitlab_pr.py). Callers must invoke register_subcommands() before calling
+# build_parser (e.g. 'fetch-comments', 'fetch_findings', 'post_responses' from
+# github_pr.py / gitlab_pr.py, and 'fetch_findings' / 'post_responses' from
+# sonar.py). Callers must invoke register_subcommands() before calling
 # extract_routing_args() for custom tokens to take effect.
 
 _KNOWN_SUBCOMMANDS_CACHE: frozenset[str] | None = None
@@ -389,8 +390,10 @@ def register_subcommands(tokens: frozenset[str] | set[str]) -> None:
     """Extend the known subcommand registry with additional tokens.
 
     Called by provider scripts that expose top-level subcommand tokens not
-    registered in ``build_parser`` (for example ``'fetch-comments'`` and
-    ``'comments-stage'`` from ``github_pr.py`` / ``gitlab_pr.py``).
+    registered in ``build_parser`` (for example ``'fetch-comments'``,
+    ``'fetch_findings'`` and ``'post_responses'`` from ``github_pr.py`` /
+    ``gitlab_pr.py``, and ``'fetch_findings'`` / ``'post_responses'`` from
+    ``sonar.py``).
 
     Safe to call multiple times; each call merges *tokens* into the existing
     registry.  Must be called **before** :func:`extract_routing_args` for the
@@ -399,7 +402,7 @@ def register_subcommands(tokens: frozenset[str] | set[str]) -> None:
     Example (at module level in a provider script)::
 
         from ci_base import register_subcommands
-        register_subcommands({'fetch-comments', 'comments-stage'})
+        register_subcommands({'fetch-comments', 'fetch_findings', 'post_responses'})
     """
     global _KNOWN_SUBCOMMANDS_CACHE
     current = get_known_subcommands()
