@@ -774,16 +774,31 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
             return 1
 
-    result = verify(
-        plan_id=args.plan_id,
-        pr_number=args.pr_number,
-        worktree_path=args.worktree_path,
-        provider=args.provider,
-        final_status=args.final_status,
-        wait_outcome=args.wait_outcome,
-        head_sha=args.head_sha or '',
-        failing_checks=threaded_failing,
-    )
+    try:
+        result = verify(
+            plan_id=args.plan_id,
+            pr_number=args.pr_number,
+            worktree_path=args.worktree_path,
+            provider=args.provider,
+            final_status=args.final_status,
+            wait_outcome=args.wait_outcome,
+            head_sha=args.head_sha or '',
+            failing_checks=threaded_failing,
+        )
+    except OSError as exc:
+        # Guard every I/O boundary inside verify() (jobs-file mkdir/write,
+        # subprocess side effects) so a filesystem failure surfaces as the
+        # documented status:error TOON envelope rather than an uncaught
+        # traceback — mirroring the failing-checks-file read guard above.
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': f'ci-verify I/O failure: {exc}',
+                }
+            )
+        )
+        return 1
     print(serialize_toon(result))
     return 0 if result.get('status') == 'success' else 1
 
