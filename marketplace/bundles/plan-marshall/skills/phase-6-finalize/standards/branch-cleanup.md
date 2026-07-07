@@ -415,14 +415,14 @@ Read `re_review_on_branch_cleanup` off the returned `params` object (default: `t
      --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
    ```
 
-   Read both `matched` AND `timed_out` from the returned TOON. **When `matched: true`**, the fresh review is now on the PR. Re-run the producer + triage pipeline so the rebase commit is reviewed: call `comments-stage` (which re-stamps every finding's `reviewed_commit_sha` to the new HEAD) and re-triage the new findings through the existing per-finding dispatch:
+   Read both `matched` AND `timed_out` from the returned TOON. **When `matched: true`**, the fresh review is now on the PR. Re-run the consolidated FIND → INGEST → TRIAGE → RESPOND pipeline so the rebase commit is reviewed: call the `fetch_findings` verb (which re-stamps every finding's `reviewed_commit_sha` to the new HEAD and quarantines each body under `raw_input`):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
-     comments-stage --pr-number {pr_number} --plan-id {plan_id}
+     fetch_findings --pr-number {pr_number} --plan-id {plan_id}
    ```
 
-   Then enumerate the pending `pr-comment` findings and dispatch the per-finding triage core exactly as documented in [`../workflow/automated-review.md`](../workflow/automated-review.md) § "Consumer: enumerate pending pr-comment findings" and § "Dispatch the per-finding triage core" — this reuses the existing pipeline rather than adding a parallel path. Log the re-review outcome:
+   Then enumerate the pending `pr-comment` findings and dispatch the consolidated `verification-feedback` (`producer=pr-comment`) pass exactly as documented in [`../workflow/automated-review.md`](../workflow/automated-review.md) § "Consumer: enumerate pending pr-comment findings" and § "Dispatch the per-finding triage core" — the dispatch runs the single batched `manage-findings ingest`, the TOP-LEVEL-only triage, and the `post_responses` RESPOND loop for the rebased HEAD, reusing the existing pipeline rather than the retired per-finding dispatch. Log the re-review outcome:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

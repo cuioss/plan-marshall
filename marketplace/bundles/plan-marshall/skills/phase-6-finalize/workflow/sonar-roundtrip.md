@@ -28,7 +28,7 @@ configurable:
 
 # Sonar Roundtrip
 
-Pure executor for the `sonar-roundtrip` finalize step. Drives the consumer-side dispatch for `sonar-issue` findings as defined in [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) — this document owns the step list (producer fetch+store, per-finding decision loop, intra-finalize re-capture, mark-step-done). Refer to [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) for the architecture-level synthesis (producers, store schema, invariant gate, extension contract).
+Pure executor for the `sonar-roundtrip` finalize step. Drives the consumer-side dispatch for `sonar-issue` findings as defined in [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) — this document owns the step list (producer FIND via `fetch_findings`, consolidated ingest → triage → respond dispatch, intra-finalize re-capture, mark-step-done). Refer to [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) for the architecture-level synthesis (producers, store schema, invariant gate, extension contract).
 
 This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `sonar-roundtrip` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
 
@@ -41,7 +41,7 @@ Every `manage-*` script call in this document carries the following exit-code co
 
 ## Timeout Contract
 
-This step runs as inline orchestration (producer fetch + finding enumeration in main context) plus a single `verification-feedback` Task dispatch (`plan-marshall:execution-context-{level}` resolved via `manage-config effort resolve-target --phase phase-6-finalize --role verification-feedback`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget covers the full roundtrip: producer fetch+store, the per-finding triage dispatch with `producer=sonar` (one envelope, smart grouping inside — see `plan-marshall:plan-marshall/workflow/verification-feedback.md`), optional fix-task creation, and (on loop-back) the `manage-status set-phase --phase 5-execute` handoff.
+This step runs as inline orchestration (producer FIND + finding enumeration in main context) plus a single `verification-feedback` Task dispatch (`plan-marshall:execution-context-{level}` resolved via `manage-config effort resolve-target --phase phase-6-finalize --role verification-feedback`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget covers the consolidated pipeline downstream of the FIND: the batched `manage-findings ingest`, the per-finding triage dispatch with `producer=sonar` (one envelope, smart grouping inside — see `plan-marshall:plan-marshall/workflow/verification-feedback.md`), the `sonar post_responses` RESPOND loop, optional fix-task creation, and (on loop-back) the `manage-status set-phase --phase 5-execute` handoff.
 
 **Graceful degradation**: When the wrapper expires:
 
@@ -69,16 +69,16 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
 
 Read `pr_number` from the TOON output. If `ci pr view` returns `status: error` (no PR exists for the branch yet), there is no PR-scoped new-code surface to attest — proceed directly to "Mark Step Complete" Branch C with `Sonar not configured` (no PR scope, nothing to gate).
 
-Then call the producer-side fetch-and-store subcommand once. It performs a synchronous bounded CE-readiness wait, fetches the PR-scoped new-code issues, applies pre-filters (severity floor, file scope, dismissed-status filter), writes one `sonar-issue` finding per surviving issue into the per-plan findings store, and writes one attestation row to the `sonar-scan-summary.jsonl` marker — see `workflow-integration-sonar/SKILL.md` § "Workflow 1: Fetch & Store Issues (Producer-Side)" for the producer contract (CE-wait, verified count, marker artifact); do not inline-copy its decision tables here.
+Then call the producer-side `fetch_findings` verb once (FIND stage). It performs a synchronous bounded CE-readiness wait, fetches the PR-scoped new-code issues, applies pre-filters (severity floor, file scope, dismissed-status filter), files one `sonar-issue` finding per surviving issue into the per-plan findings store with the untrusted Sonar `message` quarantined under `raw_input.{message}`, and writes one attestation row to the `sonar-scan-summary.jsonl` marker — see `workflow-integration-sonar/SKILL.md` § "Workflow 1: Fetch & Store Issues (Producer-Side)" for the producer contract (CE-wait, verified count, marker artifact); do not inline-copy its decision tables here.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar \
-  fetch-and-store --plan-id {plan_id} --project {sonar_project_key} --pr {pr_number}
+  fetch_findings --plan-id {plan_id} --project {sonar_project_key} --pr {pr_number}
 ```
 
-`--project {sonar_project_key}` is required by the `fetch-and-store` argparse surface — it is the SonarQube/SonarCloud project key (e.g. `com.example:project`). Resolve `{sonar_project_key}` from the Sonar provider configuration via the `workflow-integration-sonar` skill (the project key stored alongside the Sonar credentials/host for this repository). `--pr {pr_number}` threads the resolved PR into the producer's CE-status lookup and new-code enumeration, so a reported `0` is a confirmed PR-scoped zero rather than an unscoped total. The `sonar` notation auto-resolves the worktree via `--plan-id {plan_id}` and does NOT accept a `--project-dir` routing flag; `{plan_id}` is the only worktree-binding flag this producer takes.
+`--project {sonar_project_key}` is required by the `fetch_findings` argparse surface — it is the SonarQube/SonarCloud project key (e.g. `com.example:project`). Resolve `{sonar_project_key}` from the Sonar provider configuration via the `workflow-integration-sonar` skill (the project key stored alongside the Sonar credentials/host for this repository). `--pr {pr_number}` threads the resolved PR into the producer's CE-status lookup and new-code enumeration, so a reported `0` is a confirmed PR-scoped zero rather than an unscoped total. The `sonar` notation auto-resolves the worktree via `--plan-id {plan_id}` and does NOT accept a `--project-dir` routing flag; `{plan_id}` is the only worktree-binding flag this producer takes. A `status: unconfigured` return means Sonar is not configured — fail loud (Branch C below), never a silent zero.
 
-The producer is the ONLY surface that fetches and stores `sonar-issue` findings. This document does not classify, decide, or act on issues inline — every consumer-side action below reads from the findings store via `manage-findings list`.
+This is the FIND stage of the consolidated FIND → INGEST → TRIAGE → RESPOND flow. The producer is the ONLY surface that fetches and files `sonar-issue` findings; the downstream INGEST (batched `manage-findings ingest`), TRIAGE (top-level-only), and RESPOND (`sonar post_responses` server-side dismissals) all run inside the single `verification-feedback` dispatch below. This document does not classify, decide, respond to, or act on issues inline — every consumer-side action reads from the findings store via `manage-findings list`.
 
 If the producer reports `status: error` because Sonar is not configured for the project (no SonarQube/SonarCloud credentials, no project key), proceed directly to "Mark Step Complete" Branch C with `Sonar not configured`.
 
@@ -134,7 +134,7 @@ Task: plan-marshall:{target}
     WORKTREE: {worktree_path}
 ```
 
-For Sonar findings, the loaded `ext-triage-{domain}` skill's `severity.md` and `suppression.md` documents are the load-bearing inputs to the per-finding decision (the `pr-comment-disposition.md` table is PR-comment-specific). The triage workflow's "ACCEPT" action body for `sonar-issue` dispatches Sonar dismissal via `workflow-integration-sonar` (per the skill's standards) rather than a PR thread reply.
+For Sonar findings, the loaded `ext-triage-{domain}` skill's `severity.md` and `suppression.md` documents are the load-bearing inputs to the per-finding decision (the `pr-comment-disposition.md` table is PR-comment-specific). Triage RECORDS the disposition (`suppressed` / `accepted` / `rejected`) with a reviewer-ready `resolution_detail`; the server-side Sonar dismissal is transmitted by the single RESPOND loop (`verification-feedback.md` § Step 8) via `sonar post_responses` (mapping `suppressed → wontfix`, `rejected → falsepositive`, keyed by `hash_id`), not inline in triage.
 
 When the subagent returns `status: loop_back` it has created fix tasks (FIX outcomes), filed an overflow envelope, or both — proceed to "Handle findings (loop-back)" with `loop_back_needed = true`. When it returns `status: success` every finding resolved as SUPPRESS / ACCEPT / `taken_into_account` (no FIX, no overflow) — proceed with `loop_back_needed = false`.
 
@@ -195,7 +195,7 @@ message: "pending_findings_blocking_count failed for phase '6-finalize': …"
 The check is the structural enforcer of "no unresolved sonar-issue findings at the next finalize boundary". Loop-back guidance:
 
 1. Read the offending findings via `manage-findings list --type sonar-issue --resolution pending` (or whichever type the `per_type` map names).
-2. For each pending finding, run the per-finding consumer dispatch defined above (load `ext-triage-{domain}`, decide FIX / SUPPRESS / ACCEPT / `AskUserQuestion`, act with the Sonar-specific outcomes — NOSONAR annotation for SUPPRESS, sonar dismiss / comment for ACCEPT — then `manage-findings resolve`). FIX outcomes set `loop_back_needed = true` and re-enter phase-5-execute via the loop-back block in this document; SUPPRESS / ACCEPT / `taken_into_account` resolve in-place without loop-back.
+2. For each pending finding, run the per-finding consumer dispatch defined above (load `ext-triage-{domain}`, decide FIX / SUPPRESS / ACCEPT / `AskUserQuestion`, apply the in-code change — NOSONAR annotation for SUPPRESS — record the disposition via `manage-findings resolve`, and let the dispatch's RESPOND loop transmit the Sonar dismissal via `sonar post_responses`). FIX outcomes set `loop_back_needed = true` and re-enter phase-5-execute via the loop-back block in this document; SUPPRESS / ACCEPT / `taken_into_account` resolve in-place without loop-back.
 3. After every pending finding is resolved, **re-issue the same `phase_handshake findings-check --phase 6-finalize`** call. The boundary is satisfied only when the check returns `status: success`.
 4. Bound the iterations by the existing `sonar-roundtrip` iteration cap (3); on cap exhaustion mark the step `failed` per the dispatcher contract — the boundary remains gated and downstream finalize steps do not run.
 
