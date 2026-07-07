@@ -118,25 +118,6 @@ def _resolve_targets(name: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _version_tuple(version: str) -> tuple[int, ...]:
-    """Parse a dotted ``0.1.N`` version into an int tuple for ordered comparison.
-
-    Comparison is a full int-tuple compare with no zero-padding, so ``0.1.9``
-    sorts below ``0.1.10`` and a future ``0.2`` base bump orders correctly above
-    every ``0.1.N``. An empty / ``unknown`` sentinel yields the empty tuple, the
-    lowest possible version.
-    """
-    if not version or version == 'unknown':
-        return ()
-    parts: list[int] = []
-    for segment in version.split('.'):
-        try:
-            parts.append(int(segment))
-        except ValueError:
-            break
-    return tuple(parts)
-
-
 def _git_output(args: list[str], cwd: Path) -> str | None:
     """Run ``git -C {cwd} {args}`` and return stripped stdout, or ``None`` on failure."""
     try:

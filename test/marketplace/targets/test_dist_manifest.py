@@ -2,7 +2,6 @@
 """Unit tests for the deterministic version + dist-manifest helpers in generate.py.
 
 Covers the pure, git-independent surface:
-- int-tuple version comparison (0.1.9 < 0.1.10 and a 0.2 base bump),
 - changed_at carry-forward vs bump vs first-publish bootstrap,
 - six-field dist-manifest completeness,
 - base-version reading, --version resolution, and bundle plugin.json override.
@@ -29,30 +28,6 @@ def _load_generate():
 
 
 gen = _load_generate()
-
-
-# =============================================================================
-# int-tuple version comparison
-# =============================================================================
-
-
-class TestVersionTuple:
-    def test_orders_numerically_not_lexically(self):
-        # 0.1.9 < 0.1.10 — a lexical compare would wrongly rank '0.1.9' above '0.1.10'
-        assert gen._version_tuple('0.1.9') < gen._version_tuple('0.1.10')
-
-    def test_base_bump_orders_above_every_patch(self):
-        assert gen._version_tuple('0.2') > gen._version_tuple('0.1.5')
-        assert gen._version_tuple('0.2.0') > gen._version_tuple('0.1.99')
-
-    def test_empty_and_unknown_sentinels_are_lowest(self):
-        assert gen._version_tuple('') == ()
-        assert gen._version_tuple('unknown') == ()
-        assert gen._version_tuple('') < gen._version_tuple('0.1.0')
-
-    def test_no_zero_padding_effect(self):
-        # int-tuple compare, so 0.1.10 == parsed (0, 1, 10), not a padded string
-        assert gen._version_tuple('0.1.10') == (0, 1, 10)
 
 
 # =============================================================================
