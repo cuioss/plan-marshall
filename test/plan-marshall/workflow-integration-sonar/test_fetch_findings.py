@@ -1,11 +1,20 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for workflow-integration-sonar sonar.py — producer-side surface.
+"""Tests for workflow-integration-sonar sonar.py — two-verb provider contract.
 
-The triage / triage-batch subcommands have been retired. The remaining
-callable surface is ``fetch-and-store`` which fetches gate-blocking issues,
-applies the suppressable-rules pre-filter, and persists one ``sonar-issue``
-finding per surviving issue via ``manage-findings add``.
+The provider surface is exactly two pure, zero-LLM verbs:
+
+- ``fetch_findings`` — CE-readiness wait + fetch gate-blocking new-code issues +
+  suppressable-rules pre-filter + file one ``sonar-issue`` finding per surviving
+  issue; the untrusted Sonar ``message`` is quarantined under
+  ``raw_input.{message}`` (never embedded raw in the top-level ``detail``)
+- ``post_responses`` — apply already-decided triage dispositions back to Sonar via
+  ``/api/issues/do_transition`` (``suppressed`` → ``wontfix``, ``rejected`` →
+  ``falsepositive``; ``fixed`` / ``accepted`` / ``taken_into_account`` get no
+  action), keyed by each finding's own ``hash_id``
+
+Both verbs FAIL LOUD when no Sonar credential is configured — a typed
+``unconfigured`` status, never a silent success.
 """
 
 import importlib.util
@@ -29,15 +38,31 @@ _spec.loader.exec_module(sonar_mod)
 
 _is_suppressable = sonar_mod._is_suppressable
 _map_severity = sonar_mod._map_severity
-cmd_fetch_and_store = sonar_mod.cmd_fetch_and_store
+cmd_fetch_findings = sonar_mod.cmd_fetch_findings
+cmd_post_responses = sonar_mod.cmd_post_responses
 _wait_for_ce_ready = sonar_mod._wait_for_ce_ready
 _resolve_ce_wait_timeout = sonar_mod._resolve_ce_wait_timeout
 
-# Importing sonar.py (above) runs its module-level ``register_subcommands({'fetch-and-store'})``
+# Importing sonar.py (above) runs its module-level ``register_subcommands({'fetch_findings', 'post_responses'})``
 # call, which extends the shared ci_base subcommand registry. ``extract_routing_args`` is the
 # router-level pre-parser that the bug stripped ``--plan-id`` through; the regression test below
 # exercises it directly.
 from ci_base import extract_routing_args  # noqa: E402,I001
+
+
+@pytest.fixture(autouse=True)
+def _stub_sonar_configured():
+    """Default the fail-loud credential guard to "configured".
+
+    ``cmd_fetch_findings`` / ``cmd_post_responses`` call ``_sonar_credential_missing``
+    first and short-circuit to a typed ``unconfigured`` status when no credential is
+    resolvable. The autouse credentials sandbox means no real credential is present,
+    so without this stub every happy-path test would take the unconfigured branch.
+    Tests that exercise the unconfigured path re-patch the same target inside a
+    ``with`` block, which takes precedence.
+    """
+    with patch('sonar_mod._sonar_credential_missing', return_value=''):
+        yield
 
 
 # =============================================================================
@@ -74,6 +99,20 @@ def _issue(key='ISSUE-1', type_='BUG', severity='MAJOR', file='src/Main.java', l
     }
 
 
+class _FakeSonarClient:
+    """Records ``/api/issues/do_transition`` POSTs for the post_responses tests."""
+
+    def __init__(self):
+        self.posts = []
+
+    def post(self, path, body=None):
+        self.posts.append((path, body))
+        return {}
+
+    def close(self):
+        pass
+
+
 # =============================================================================
 # Pre-filter helpers
 # =============================================================================
@@ -108,14 +147,14 @@ class TestMapSeverity:
 
 
 # =============================================================================
-# fetch-and-store flow
+# fetch_findings flow
 # =============================================================================
 
 
-class TestFetchAndStore:
-    """fetch-and-store writes one sonar-issue finding per surviving issue."""
+class TestFetchFindings:
+    """fetch_findings writes one sonar-issue finding per surviving issue."""
 
-    def test_fetch_and_store_persists_findings(self, plan_context):
+    def test_fetch_findings_persists_findings(self, plan_context):
         issues_payload = [_issue()]
         plan_context.plan_dir_for('sonar-stage-1')
 
@@ -123,7 +162,7 @@ class TestFetchAndStore:
                 patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
-            result = cmd_fetch_and_store(_make_args('sonar-stage-1'))
+            result = cmd_fetch_findings(_make_args('sonar-stage-1'))
 
         assert result['status'] == 'success'
         assert result['count_fetched'] == 1
@@ -139,9 +178,13 @@ class TestFetchAndStore:
         assert stored['rule'] == 'java:S99999'
         assert stored['severity'] == 'error'  # MAJOR → error
         assert stored['module'] == 'com.example:proj'
-        assert 'Possible null dereference' in stored['detail']
+        # The trusted structured metadata lives in detail (rule, key, ...).
+        assert 'rule: java:S99999' in stored['detail']
+        # The untrusted Sonar message is quarantined under raw_input.{message}, NOT in detail.
+        assert 'Possible null dereference' not in stored['detail']
+        assert stored['raw_input']['message'] == 'Possible null dereference'
 
-    def test_fetch_and_store_skips_suppressable(self, plan_context):
+    def test_fetch_findings_skips_suppressable(self, plan_context):
         # First find a rule from the live SUPPRESSABLE_RULES dict to ensure
         # the test exercises real configuration. If the dict is empty the
         # test trivially passes; that is acceptable because the assertion
@@ -159,24 +202,24 @@ class TestFetchAndStore:
                 patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
-            result = cmd_fetch_and_store(_make_args('sonar-stage-skip'))
+            result = cmd_fetch_findings(_make_args('sonar-stage-skip'))
 
         assert result['count_fetched'] == 1
         assert result['count_skipped_suppressable'] == 1
         assert result['count_stored'] == 0
 
-    def test_fetch_and_store_propagates_provider_error(self, plan_context):
+    def test_fetch_findings_propagates_provider_error(self, plan_context):
         plan_context.plan_dir_for('sonar-stage-err')
 
         with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
                 patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'error', 'message': 'HTTP 401'}
-            result = cmd_fetch_and_store(_make_args('sonar-stage-err'))
+            result = cmd_fetch_findings(_make_args('sonar-stage-err'))
 
         assert result['status'] == 'error'
 
-    def test_fetch_and_store_count_mismatch_produces_qgate_finding(self, plan_context):
+    def test_fetch_findings_count_mismatch_produces_qgate_finding(self, plan_context):
         """When count_stored != expected_stored, a (producer-mismatch) Q-Gate
         finding must be recorded with type=sonar-issue and source=qgate."""
         issues_payload = [
@@ -204,7 +247,7 @@ class TestFetchAndStore:
                     return {'status': 'success', 'hash_id': 'h-' + str(mock_add.call_count)}
 
                 mock_add.side_effect = _side_effect
-                result = cmd_fetch_and_store(_make_args('sonar-stage-mismatch'))
+                result = cmd_fetch_findings(_make_args('sonar-stage-mismatch'))
 
         assert result['status'] == 'success'
         assert result['count_fetched'] == 2
@@ -219,6 +262,132 @@ class TestFetchAndStore:
         assert qf['title'].startswith('(producer-mismatch)')
         assert qf['source'] == 'qgate'
         assert qf['type'] == 'sonar-issue'
+
+
+# =============================================================================
+# Fail-loud unconfigured provider (both verbs)
+# =============================================================================
+
+
+class TestFailLoudUnconfigured:
+    """Both verbs return a typed ``unconfigured`` status when no Sonar credential is configured."""
+
+    def test_fetch_findings_unconfigured_is_not_silent_success(self, plan_context):
+        plan_context.plan_dir_for('sonar-unconfigured-fetch')
+        with patch('sonar_mod._sonar_credential_missing', return_value='No credentials configured'):
+            result = cmd_fetch_findings(_make_args('sonar-unconfigured-fetch'))
+
+        assert result['status'] == 'unconfigured'
+        assert result['operation'] == 'fetch_findings'
+        assert result['provider'] == 'sonar'
+        # No findings were filed on the unconfigured path.
+        from _findings_core import query_findings
+
+        assert query_findings('sonar-unconfigured-fetch', finding_type='sonar-issue')['filtered_count'] == 0
+
+    def test_post_responses_unconfigured_is_not_silent_success(self, plan_context):
+        plan_context.plan_dir_for('sonar-unconfigured-respond')
+        with patch('sonar_mod._sonar_credential_missing', return_value='No credentials configured'):
+            result = cmd_post_responses(_make_args('sonar-unconfigured-respond'))
+
+        assert result['status'] == 'unconfigured'
+        assert result['operation'] == 'post_responses'
+        assert result['provider'] == 'sonar'
+
+
+# =============================================================================
+# post_responses — hash_id-keyed dismissal transitions (Sonar do_transition shape)
+# =============================================================================
+
+
+class TestPostResponses:
+    """post_responses maps terminal dispositions to Sonar dismissals, keyed by hash_id."""
+
+    def _stage_one_issue(self, plan_id, issue):
+        """File one sonar-issue finding via fetch_findings and return its hash_id."""
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
+                patch('sonar_mod._fetch_issues') as mock_fetch:
+            mock_wait.return_value = {'count_status': 'confirmed'}
+            mock_fetch.return_value = {'status': 'success', 'issues': [issue]}
+            result = cmd_fetch_findings(_make_args(plan_id))
+        return result['stored_hash_ids'][0]
+
+    def test_suppressed_maps_to_wontfix_keyed_by_issue_key(self, plan_context):
+        plan_context.plan_dir_for('sonar-respond-wontfix')
+        hash_id = self._stage_one_issue('sonar-respond-wontfix', _issue(key='ISSUE-77'))
+
+        from _findings_core import resolve_finding
+
+        resolve_finding('sonar-respond-wontfix', hash_id, 'suppressed', detail='Documented false positive.')
+
+        import _providers_core
+
+        fake = _FakeSonarClient()
+        with patch.object(_providers_core, 'get_authenticated_client', return_value=fake):
+            result = cmd_post_responses(_make_args('sonar-respond-wontfix'))
+
+        assert result['status'] == 'success'
+        assert result['count_responded'] == 1
+        assert result['count_failed'] == 0
+        assert result['responded'][0]['hash_id'] == hash_id
+        assert result['responded'][0]['issue_key'] == 'ISSUE-77'
+        assert result['responded'][0]['transition'] == 'wontfix'
+        # The dismissal is transmitted keyed by the issue key parsed from detail.
+        assert len(fake.posts) == 1
+        path, body = fake.posts[0]
+        assert path == '/api/issues/do_transition'
+        assert body == {'issue': 'ISSUE-77', 'transition': 'wontfix'}
+
+    def test_rejected_maps_to_falsepositive(self, plan_context):
+        plan_context.plan_dir_for('sonar-respond-fp')
+        hash_id = self._stage_one_issue('sonar-respond-fp', _issue(key='ISSUE-88'))
+
+        from _findings_core import resolve_finding
+
+        resolve_finding('sonar-respond-fp', hash_id, 'rejected', detail='Not a real issue.')
+
+        import _providers_core
+
+        fake = _FakeSonarClient()
+        with patch.object(_providers_core, 'get_authenticated_client', return_value=fake):
+            result = cmd_post_responses(_make_args('sonar-respond-fp'))
+
+        assert result['count_responded'] == 1
+        assert fake.posts[0][1] == {'issue': 'ISSUE-88', 'transition': 'falsepositive'}
+
+    def test_fixed_finding_gets_no_sonar_action(self, plan_context):
+        """A finding resolved ``fixed`` is cleared in code, not dismissed — no do_transition."""
+        plan_context.plan_dir_for('sonar-respond-fixed')
+        hash_id = self._stage_one_issue('sonar-respond-fixed', _issue(key='ISSUE-99'))
+
+        from _findings_core import resolve_finding
+
+        resolve_finding('sonar-respond-fixed', hash_id, 'fixed', detail='Fixed in code.')
+
+        import _providers_core
+
+        fake = _FakeSonarClient()
+        with patch.object(_providers_core, 'get_authenticated_client', return_value=fake):
+            result = cmd_post_responses(_make_args('sonar-respond-fixed'))
+
+        assert result['status'] == 'success'
+        assert result['count_responded'] == 0
+        assert fake.posts == []
+
+    def test_pending_finding_is_not_dismissed(self, plan_context):
+        """A still-pending (un-triaged) finding gets no Sonar action."""
+        plan_context.plan_dir_for('sonar-respond-pending')
+        self._stage_one_issue('sonar-respond-pending', _issue(key='ISSUE-55'))  # left pending
+
+        import _providers_core
+
+        fake = _FakeSonarClient()
+        with patch.object(_providers_core, 'get_authenticated_client', return_value=fake):
+            result = cmd_post_responses(_make_args('sonar-respond-pending'))
+
+        assert result['status'] == 'success'
+        assert result['count_responded'] == 0
+        assert fake.posts == []
 
 
 # =============================================================================
@@ -379,7 +548,7 @@ class TestReadManifestSonarParams:
 
 
 class TestVerifiedCount:
-    """fetch-and-store reports a verified new_code_issue_count with a
+    """fetch_findings reports a verified new_code_issue_count with a
     confirmed/undecidable discriminator, and ALWAYS writes one scan-summary
     attestation row (including at count==0 and on undecidable)."""
 
@@ -391,7 +560,7 @@ class TestVerifiedCount:
                 patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
-            result = cmd_fetch_and_store(_make_args('sonar-count-confirmed'))
+            result = cmd_fetch_findings(_make_args('sonar-count-confirmed'))
 
         assert result['count_status'] == 'confirmed'
         assert result['new_code_issue_count'] == 2
@@ -405,7 +574,7 @@ class TestVerifiedCount:
                 patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': []}
-            result = cmd_fetch_and_store(_make_args('sonar-count-zero'))
+            result = cmd_fetch_findings(_make_args('sonar-count-zero'))
 
         assert result['count_status'] == 'confirmed'
         assert result['new_code_issue_count'] == 0
@@ -419,7 +588,7 @@ class TestVerifiedCount:
                 patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': []}
-            result = cmd_fetch_and_store(_make_args('sonar-marker-zero'))
+            result = cmd_fetch_findings(_make_args('sonar-marker-zero'))
 
         rows = _read_scan_summary_rows('sonar-marker-zero')
         assert len(rows) == 1
@@ -439,7 +608,7 @@ class TestVerifiedCount:
                 'count_status': 'undecidable',
                 'count_status_reason': 'CE analysis not DONE within 600s',
             }
-            result = cmd_fetch_and_store(_make_args('sonar-undecidable-timeout'))
+            result = cmd_fetch_findings(_make_args('sonar-undecidable-timeout'))
 
         assert result['count_status'] == 'undecidable'
         assert result['new_code_issue_count'] is None
@@ -461,7 +630,7 @@ class TestVerifiedCount:
                 patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'error', 'message': 'Sonar API error: HTTP 401'}
-            result = cmd_fetch_and_store(_make_args('sonar-undecidable-fetch'))
+            result = cmd_fetch_findings(_make_args('sonar-undecidable-fetch'))
 
         assert result['count_status'] == 'undecidable'
         assert result['new_code_issue_count'] is None
@@ -480,7 +649,7 @@ class TestVerifiedCount:
                 patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': [_issue()]}
-            cmd_fetch_and_store(_make_args('sonar-marker-count'))
+            cmd_fetch_findings(_make_args('sonar-marker-count'))
 
         rows = _read_scan_summary_rows('sonar-marker-count')
         assert len(rows) == 1
@@ -505,7 +674,7 @@ class TestPrScoping:
                 patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': []}
-            result = cmd_fetch_and_store(_make_args('sonar-pr-scope', pr='123'))
+            result = cmd_fetch_findings(_make_args('sonar-pr-scope', pr='123'))
 
         # CE-readiness wait received the pr (2nd positional arg).
         assert mock_wait.call_args.args[1] == '123'
@@ -520,7 +689,7 @@ class TestPrScoping:
                 patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': []}
-            cmd_fetch_and_store(_make_args('sonar-pr-marker', pr='456'))
+            cmd_fetch_findings(_make_args('sonar-pr-marker', pr='456'))
 
         rows = _read_scan_summary_rows('sonar-pr-marker')
         assert rows[0]['pr'] == '456'
@@ -535,7 +704,7 @@ class TestPrScoping:
                 'count_status': 'undecidable',
                 'count_status_reason': 'CE analysis not DONE within 600s',
             }
-            cmd_fetch_and_store(_make_args('sonar-pr-undecidable', pr='789'))
+            cmd_fetch_findings(_make_args('sonar-pr-undecidable', pr='789'))
 
         assert mock_wait.call_args.args[1] == '789'
         rows = _read_scan_summary_rows('sonar-pr-undecidable')
@@ -548,7 +717,7 @@ class TestPrScoping:
                 patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': []}
-            result = cmd_fetch_and_store(_make_args('sonar-no-pr'))
+            result = cmd_fetch_findings(_make_args('sonar-no-pr'))
 
         assert result['pull_request'] == 'none'
         rows = _read_scan_summary_rows('sonar-no-pr')
@@ -561,11 +730,14 @@ class TestPrScoping:
 
 
 class TestSonarMain:
-    def test_help_lists_only_supported_subcommand(self):
+    def test_help_lists_only_supported_subcommands(self):
         result = run_script(SCRIPT_PATH, '--help')
 
         assert result.returncode == 0
-        assert 'fetch-and-store' in result.stdout
+        assert 'fetch_findings' in result.stdout
+        assert 'post_responses' in result.stdout
+        # Retired surfaces MUST be absent from the CLI.
+        assert 'fetch-and-store' not in result.stdout
         assert 'triage-batch' not in result.stdout
 
     @pytest.mark.parametrize(
@@ -573,6 +745,10 @@ class TestSonarMain:
         [
             pytest.param(['triage', '--issue', '{}'], id='triage-rejected'),
             pytest.param(['triage-batch', '--issues', '[]'], id='triage-batch-rejected'),
+            pytest.param(
+                ['fetch-and-store', '--plan-id', 'x', '--project', 'com.example:proj'],
+                id='fetch-and-store-rejected',
+            ),
         ],
     )
     def test_retired_subcommand_rejected(self, argv):
@@ -586,23 +762,19 @@ class TestSonarMain:
 # =============================================================================
 
 
-class TestFetchAndStoreRouting:
-    """Regression for the fetch-and-store routing defect.
+class TestFetchFindingsRouting:
+    """Regression for the subcommand-routing defect (ported from fetch-and-store).
 
-    sonar.py registers ``fetch-and-store`` as a top-level subcommand token (via
-    the module-level ``register_subcommands({'fetch-and-store'})`` call) so that
-    ``extract_routing_args`` locates the subcommand boundary correctly. Without
-    that registration, ``fetch-and-store`` is not in the known-subcommand
-    registry, ``_split_at_subcommand`` treats the whole argv as router-level
-    prefix, and the subcommand-level ``--plan-id`` is consumed (stripped) at the
-    router layer before reaching the subcommand parser — the original bug. These
-    tests assert the post-fix behaviour: the subcommand-level ``--plan-id`` and
-    every other subcommand argument survive in ``remaining_argv`` so the
-    ``fetch-and-store`` subparser can consume them.
-
-    Red/green contract: green against the fixed sonar.py (token registered at
-    import); red against the unfixed version (token absent, ``--plan-id``
-    stripped, so the assertions below fail).
+    sonar.py registers ``fetch_findings`` as a top-level subcommand token (via
+    the module-level ``register_subcommands({'fetch_findings', 'post_responses'})``
+    call) so that ``extract_routing_args`` locates the subcommand boundary
+    correctly. Without that registration, ``fetch_findings`` is not in the
+    known-subcommand registry, ``_split_at_subcommand`` treats the whole argv as
+    router-level prefix, and the subcommand-level ``--plan-id`` is consumed
+    (stripped) at the router layer before reaching the subcommand parser — the
+    original bug. These tests assert the post-fix behaviour: the
+    subcommand-level ``--plan-id`` and every other subcommand argument survive in
+    ``remaining_argv`` so the ``fetch_findings`` subparser can consume them.
     """
 
     def test_plan_id_immediately_after_subcommand_preserves_pairing(self):
@@ -610,17 +782,17 @@ class TestFetchAndStoreRouting:
         # binds the value to the flag (a stray strip of only the value would
         # leave a dangling --plan-id with no argument).
         _resolved, remaining = extract_routing_args(
-            ['fetch-and-store', '--plan-id', 'P-123', '--project', 'com.example:proj']
+            ['fetch_findings', '--plan-id', 'P-123', '--project', 'com.example:proj']
         )
 
         idx = remaining.index('--plan-id')
         assert remaining[idx + 1] == 'P-123'
 
     def test_all_subcommand_args_survive_routing(self):
-        # Every fetch-and-store argument (including optional --pr / --severities)
+        # Every fetch_findings argument (including optional --pr / --severities)
         # must reach the subparser intact, not just --plan-id.
         argv = [
-            'fetch-and-store',
+            'fetch_findings',
             '--plan-id', 'P-456',
             '--project', 'com.example:proj',
             '--pr', '99',
