@@ -19,6 +19,7 @@ Storage:
 Stdlib-only - no external dependencies (except shared modules via PYTHONPATH).
 """
 
+import hashlib
 import json
 from fnmatch import fnmatch
 from pathlib import Path
@@ -28,6 +29,7 @@ from constants import (
     FILE_FINDINGS_DIR,
     FINDING_SEVERITIES,
     FINDING_TYPES,
+    HASH_ID_LENGTH,
     QGATE_PHASES,
     QGATE_SOURCES,
     VALID_CERTAINTIES,
@@ -37,7 +39,6 @@ from input_validation import validate_plan_id
 from jsonl_store import (
     append_jsonl,
     ensure_parent_dir,
-    find_by_title,
     generate_hash_id,
     get_artifact_path,
     read_jsonl,
@@ -58,6 +59,60 @@ PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
 
 # Valid reviewer-bot identity values for pr-comment findings (derived from author).
 BOT_KINDS = ['coderabbit', 'gemini']
+
+# Default per-field byte cap for quarantined raw_input free-text (64 KiB).
+# The `finding_raw_input_max_bytes` config knob (seeded by manage-config) overrides
+# this default; callers thread the resolved value in via `raw_input_max_bytes`.
+DEFAULT_RAW_INPUT_MAX_BYTES = 65536
+
+# Marker appended to a raw_input value that exceeded the per-field byte cap.
+RAW_INPUT_TRUNCATION_MARKER = '[truncated]'
+
+
+# --- Untrusted free-text quarantine ---
+
+
+def _quarantine_raw_input(
+    raw_input: dict[str, Any] | None,
+    max_bytes: int = DEFAULT_RAW_INPUT_MAX_BYTES,
+) -> dict[str, str] | None:
+    """Store untrusted free-text under a quarantined `raw_input.{field}` namespace.
+
+    Each field's value is stringified, UTF-8 encoded, and capped at ``max_bytes``.
+    A value that overflows the cap is truncated to the byte budget (decoding
+    defensively so a multi-byte character split at the boundary never raises) and
+    the ``RAW_INPUT_TRUNCATION_MARKER`` is appended so downstream readers can tell
+    the value was clipped. Returns ``None`` for an empty/absent mapping so callers
+    omit the key entirely.
+    """
+    if not raw_input:
+        return None
+
+    quarantined: dict[str, str] = {}
+    for field, value in raw_input.items():
+        text = value if isinstance(value, str) else str(value)
+        encoded = text.encode('utf-8')
+        if len(encoded) > max_bytes:
+            text = encoded[:max_bytes].decode('utf-8', errors='ignore') + RAW_INPUT_TRUNCATION_MARKER
+        quarantined[field] = text
+    return quarantined
+
+
+def _content_discriminator(
+    detail: str | None,
+    file_path: str | None,
+    rule: str | None,
+) -> str:
+    """Stable content hash over (detail, file_path, rule) used as a dedup discriminator.
+
+    Folded into the Q-Gate dedup key so that a bare title collision alone can NEVER
+    reopen an unrelated resolved finding of the same class (lesson 2026-07-07-00-001),
+    while an intended same-defect merge across iterations (same title AND same
+    discriminator) still collapses. The NUL separator prevents field-boundary
+    ambiguity (e.g. `detail='a', file='b'` vs `detail='a\\x00b', file=''`).
+    """
+    basis = f'{detail or ""}\x00{file_path or ""}\x00{rule or ""}'
+    return hashlib.sha256(basis.encode('utf-8')).hexdigest()[:HASH_ID_LENGTH]
 
 
 # --- Path Helpers ---
@@ -156,8 +211,16 @@ def add_finding(
     kind: str | None = None,
     reviewed_commit_sha: str | None = None,
     bot_kind: str | None = None,
+    raw_input: dict[str, Any] | None = None,
+    raw_input_max_bytes: int = DEFAULT_RAW_INPUT_MAX_BYTES,
 ) -> dict[str, Any]:
-    """Add a finding record."""
+    """Add a finding record.
+
+    Untrusted free-text supplied via ``raw_input`` is stored under a quarantined
+    ``raw_input.{field}`` sub-object (per-field byte cap ``raw_input_max_bytes``);
+    top-level fields stay clean-by-construction until the batched ingestion pass
+    promotes validated values.
+    """
     if finding_type not in FINDING_TYPES:
         return {'status': 'error', 'message': f'Invalid finding type: {finding_type}. Must be one of {FINDING_TYPES}'}
 
@@ -203,6 +266,10 @@ def add_finding(
         record['reviewed_commit_sha'] = reviewed_commit_sha
     if bot_kind:
         record['bot_kind'] = bot_kind
+
+    quarantined = _quarantine_raw_input(raw_input, raw_input_max_bytes)
+    if quarantined:
+        record['raw_input'] = quarantined
 
     append_jsonl(get_findings_path(plan_id, finding_type), record)
 
@@ -351,9 +418,21 @@ def resolve_finding(
     resolution: str,
     detail: str | None = None,
 ) -> dict[str, Any]:
-    """Resolve a finding (locates the per-type file by hash_id)."""
+    """Resolve a finding (locates the per-type file by hash_id).
+
+    Relational integrity backstop (lesson 2026-06-30-21-001): a ``resolution_detail``
+    is only ever written keyed to a ``hash_id`` that resolves to an existing parent
+    record. The parent's existence is asserted BEFORE any write, so a mis-keyed detail
+    can never be attached to — or silently create — a phantom record. The subsequent
+    ``update_jsonl_in_dir`` matches solely on ``hash_id``, so the resolution fields and
+    the detail land on the same first-class record together.
+    """
     if resolution not in RESOLUTIONS:
         return {'status': 'error', 'message': f'Invalid resolution: {resolution}. Must be one of {RESOLUTIONS}'}
+
+    parent = get_finding(plan_id, hash_id)
+    if parent.get('status') != 'success':
+        return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
 
     updates: dict[str, Any] = {'resolution': resolution}
     if detail:
@@ -419,6 +498,24 @@ def promote_finding(
 # --- Q-Gate Findings ---
 
 
+def _find_by_title_and_discriminator(
+    path: Path,
+    title: str,
+    discriminator: str,
+) -> dict[str, Any] | None:
+    """Find a Q-Gate record matching BOTH title AND content discriminator.
+
+    The dedup key is the (title, discriminator) pair — never the title alone — so a
+    same-class-different-subject finding (same bare-``defect_class`` title, different
+    content) is treated as a distinct finding and can never reopen an unrelated
+    resolved record (lesson 2026-07-07-00-001).
+    """
+    for record in read_jsonl(path):
+        if record.get('title') == title and record.get('content_discriminator') == discriminator:
+            return record
+    return None
+
+
 def add_qgate_finding(
     plan_id: str,
     phase: str,
@@ -430,8 +527,19 @@ def add_qgate_finding(
     component: str | None = None,
     severity: str | None = None,
     iteration: int | None = None,
+    rule: str | None = None,
+    raw_input: dict[str, Any] | None = None,
+    raw_input_max_bytes: int = DEFAULT_RAW_INPUT_MAX_BYTES,
 ) -> dict[str, Any]:
-    """Add a Q-Gate finding for a specific phase."""
+    """Add a Q-Gate finding for a specific phase.
+
+    Dedup folds a content discriminator (a stable hash of ``detail`` + ``file_path`` +
+    ``rule``) into the key so a bare-``defect_class`` title collision alone can never
+    reopen an unrelated resolved finding, while an intended same-defect merge across
+    iterations (same title AND same discriminator) still collapses. Untrusted free-text
+    supplied via ``raw_input`` is quarantined under ``raw_input.{field}`` with a per-field
+    byte cap.
+    """
     if phase not in QGATE_PHASES:
         return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
 
@@ -444,14 +552,17 @@ def add_qgate_finding(
     if severity and severity not in SEVERITIES:
         return {'status': 'error', 'message': f'Invalid severity: {severity}. Must be one of {SEVERITIES}'}
 
-    # Semantic dedup by title within phase
+    # Semantic dedup by (title, content discriminator) within phase.
+    discriminator = _content_discriminator(detail, file_path, rule)
     qgate_path = get_qgate_path(plan_id, phase)
-    existing = find_by_title(qgate_path, title)
+    existing = _find_by_title_and_discriminator(qgate_path, title, discriminator)
     if existing:
         if existing['resolution'] == 'pending':
             return {'status': 'deduplicated', 'hash_id': existing['hash_id'], 'phase': phase}
         else:
-            # Resolved but re-detected — reopen
+            # Same title AND same content — a genuine re-detection of the resolved
+            # finding — reopen. A same-title-different-content finding never lands
+            # here (it fails the discriminator match above) and is filed fresh.
             reopen_updates: dict[str, Any] = {
                 'resolution': 'pending',
                 'resolution_detail': None,
@@ -471,6 +582,7 @@ def add_qgate_finding(
         'type': finding_type,
         'title': title,
         'detail': detail,
+        'content_discriminator': discriminator,
         'resolution': 'pending',
         'resolution_detail': None,
         'resolution_timestamp': None,
@@ -484,6 +596,12 @@ def add_qgate_finding(
         record['component'] = component
     if severity:
         record['severity'] = severity
+    if rule:
+        record['rule'] = rule
+
+    quarantined = _quarantine_raw_input(raw_input, raw_input_max_bytes)
+    if quarantined:
+        record['raw_input'] = quarantined
 
     append_jsonl(qgate_path, record)
 

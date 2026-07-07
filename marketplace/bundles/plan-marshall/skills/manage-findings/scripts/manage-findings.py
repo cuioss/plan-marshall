@@ -28,6 +28,7 @@ import argparse
 from _findings_core import (
     BOT_KINDS,
     CERTAINTY_VALUES,
+    DEFAULT_RAW_INPUT_MAX_BYTES,
     FINDING_TYPES,
     PR_COMMENT_KINDS,
     QGATE_PHASES,
@@ -60,8 +61,31 @@ from input_validation import (
 )
 
 
+def _parse_raw_input(pairs: list[str] | None) -> dict[str, str] | None:
+    """Parse repeatable ``--raw-input FIELD=VALUE`` pairs into a mapping.
+
+    Returns the mapping on success, ``None`` when no pairs were supplied, or a
+    canonical ``{'status': 'error', ...}`` dict when a pair is malformed (missing
+    ``=`` or an empty field name) so the CLI surfaces a structured error.
+    """
+    if not pairs:
+        return None
+    result: dict[str, str] = {}
+    for pair in pairs:
+        if '=' not in pair:
+            return {'status': 'error', 'message': f'Invalid --raw-input (expected FIELD=VALUE): {pair}'}
+        field, value = pair.split('=', 1)
+        if not field:
+            return {'status': 'error', 'message': f'Invalid --raw-input (empty field name): {pair}'}
+        result[field] = value
+    return result
+
+
 def cmd_add(args: argparse.Namespace) -> dict:
     """Handle: add"""
+    raw_input = _parse_raw_input(getattr(args, 'raw_input', None))
+    if isinstance(raw_input, dict) and raw_input.get('status') == 'error':
+        return raw_input
     return add_finding(
         plan_id=args.plan_id,
         finding_type=args.type,
@@ -77,6 +101,8 @@ def cmd_add(args: argparse.Namespace) -> dict:
         kind=args.kind,
         reviewed_commit_sha=args.reviewed_commit_sha,
         bot_kind=args.bot_kind,
+        raw_input=raw_input,
+        raw_input_max_bytes=args.raw_input_max_bytes,
     )
 
 
@@ -125,6 +151,9 @@ def cmd_promote(args: argparse.Namespace) -> dict:
 
 def cmd_qgate_add(args: argparse.Namespace) -> dict:
     """Handle: qgate add"""
+    raw_input = _parse_raw_input(getattr(args, 'raw_input', None))
+    if isinstance(raw_input, dict) and raw_input.get('status') == 'error':
+        return raw_input
     return add_qgate_finding(
         plan_id=args.plan_id,
         phase=args.phase,
@@ -136,6 +165,9 @@ def cmd_qgate_add(args: argparse.Namespace) -> dict:
         component=args.component,
         severity=args.severity,
         iteration=args.iteration,
+        rule=args.rule,
+        raw_input=raw_input,
+        raw_input_max_bytes=args.raw_input_max_bytes,
     )
 
 
@@ -237,6 +269,20 @@ def main() -> int:
     add_parser.add_argument(
         '--bot-kind', dest='bot_kind', choices=BOT_KINDS, help='Reviewer-bot identity derived from author'
     )
+    add_parser.add_argument(
+        '--raw-input',
+        action='append',
+        dest='raw_input',
+        metavar='FIELD=VALUE',
+        help='Untrusted free-text to quarantine under raw_input.{field} (repeatable)',
+    )
+    add_parser.add_argument(
+        '--raw-input-max-bytes',
+        type=int,
+        default=DEFAULT_RAW_INPUT_MAX_BYTES,
+        dest='raw_input_max_bytes',
+        help='Per-field byte cap for quarantined raw_input values (default 64 KiB)',
+    )
     add_parser.set_defaults(func=cmd_add)
 
     # query
@@ -298,6 +344,21 @@ def main() -> int:
     add_component_arg(q_add_parser, required=False)
     q_add_parser.add_argument('--severity', choices=SEVERITIES, help='Severity level')
     q_add_parser.add_argument('--iteration', type=int, help='Phase iteration number')
+    q_add_parser.add_argument('--rule', help='Rule ID (folded into the content-discriminator dedup key)')
+    q_add_parser.add_argument(
+        '--raw-input',
+        action='append',
+        dest='raw_input',
+        metavar='FIELD=VALUE',
+        help='Untrusted free-text to quarantine under raw_input.{field} (repeatable)',
+    )
+    q_add_parser.add_argument(
+        '--raw-input-max-bytes',
+        type=int,
+        default=DEFAULT_RAW_INPUT_MAX_BYTES,
+        dest='raw_input_max_bytes',
+        help='Per-field byte cap for quarantined raw_input values (default 64 KiB)',
+    )
     q_add_parser.set_defaults(func=cmd_qgate_add)
 
     # qgate query
