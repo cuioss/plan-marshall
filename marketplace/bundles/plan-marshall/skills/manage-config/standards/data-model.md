@@ -25,6 +25,7 @@ JSON structure and field definitions for project configuration.
   },
   "plan": {
     "open_in_ide": true,
+    "finding_raw_input_max_bytes": 65536,
     "coverage": {
       "thoroughness": "inherit",
       "scope": "inherit"
@@ -331,6 +332,7 @@ These fields live directly under `plan`, outside any phase block.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `open_in_ide` | bool | true | Whether Plan Marshall attempts to open the plan/worktree in the IDE on creation. A missing key is also treated as `true` by `manage-files open-in-ide`. Set `false` to suppress IDE auto-open. |
+| `finding_raw_input_max_bytes` | int | 65536 | Per-field byte cap for quarantined `raw_input.{field}` free-text in the findings ledger. Every producer files untrusted free-text (PR-comment body, Sonar message, …) under the `raw_input.{field}` quarantine sub-namespace; the ledger caps each field at this many bytes and appends a `[truncated]` marker on overflow. The 64 KiB default is corpus-grounded (p99 ≈ 21 KB, max ≈ 68 KB across 399 PR-comment findings), retaining the full body for effectively every real finding while bounding a hostile oversized payload. Callers thread the resolved value into `manage-findings ... --raw-input-max-bytes`. |
 
 (The plan-wide `plan.coverage` two-dial cell is documented under [Coverage cell](#coverage-cell-per-phase--plan-wide) below.)
 
