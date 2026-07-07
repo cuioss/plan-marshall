@@ -54,13 +54,13 @@ There is no internal soft-timeout, polling cap, or partial-progress checkpoint i
 
 ## Inputs
 
-- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All `sonar`, `ci`, and build script invocations below MUST identify the worktree via either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override) for Bucket B notations; the two flags are mutually exclusive. Bucket A `manage-*` scripts (including `manage-findings`) remain cwd-agnostic and do NOT take routing flags. The `sonar fetch-and-store` producer below takes only `--plan-id {plan_id}` (it does not accept `--project-dir`); examples use the `--plan-id {plan_id}` auto-resolution form throughout.
+- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All `sonar`, `ci`, and build script invocations below MUST identify the worktree via either `--plan-id {plan_id}` (preferred — auto-resolves through `manage-status get-worktree-path`) or `--project-dir {worktree_path}` (escape hatch / explicit override) for Bucket B notations; the two flags are mutually exclusive. Bucket A `manage-*` scripts (including `manage-findings`) remain cwd-agnostic and do NOT take routing flags. The `sonar fetch_findings` producer below takes only `--plan-id {plan_id}` (it does not accept `--project-dir`); examples use the `--plan-id {plan_id}` auto-resolution form throughout.
 
 ## Execution
 
 ### Producer: stage Sonar issues as findings (entry-point)
 
-**Resolve the active PR number first.** The producer fetch MUST be PR-decoration-scoped so its `new_code_issue_count` is a confirmed PR-scoped new-code total (see `workflow-integration-sonar/SKILL.md` § "sonar.py fetch-and-store" — `--pr` is what makes the enumeration the single authority on PR-scoped new-code issues). Resolve the PR for the worktree branch via the same `ci pr view` surface the rest of finalize uses:
+**Resolve the active PR number first.** The producer fetch MUST be PR-decoration-scoped so its `new_code_issue_count` is a confirmed PR-scoped new-code total (see `workflow-integration-sonar/SKILL.md` § "sonar.py fetch_findings" — `--pr` is what makes the enumeration the single authority on PR-scoped new-code issues). Resolve the PR for the worktree branch via the same `ci pr view` surface the rest of finalize uses:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \

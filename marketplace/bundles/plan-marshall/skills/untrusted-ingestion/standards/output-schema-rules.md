@@ -17,7 +17,7 @@ Beyond the schema, every URL/domain-bearing field is subject to a **deterministi
 
 ## Schema selectors and field shapes
 
-The validator script takes a `--schema` selector. Three schemas are declared:
+The validator script takes a `--schema` selector. Four schemas are declared:
 
 ### `--schema research`
 
@@ -51,6 +51,20 @@ A candidate narrative parsed from an external GitHub issue body (consumed by `ph
 |-------|------|------------|
 | `narrative` | string | `maxLength` |
 | `references` | array of string (URLs) | `maxItems`; each host domain-allowlist-checked |
+
+### `--schema finding`
+
+The **ledger free-text ingestion** schema, consumed in-process by the batched `manage-findings ingest` pass (`validate_candidate('finding', raw_input)`) — one call per pending finding over its quarantined `raw_input.{field}` sub-object. It declares exactly the untrusted free-text fields a producer may quarantine; `additionalProperties: false` means a `raw_input` field not declared here rejects the whole struct (a fidelity failure the ingestion pass routes to `rejected`), never silently dropping it.
+
+| Field | Type | Constraint |
+|-------|------|------------|
+| `title` | string | `maxLength` |
+| `detail` | string | `maxLength` |
+| `body` | string | `maxLength` |
+| `message` | string | `maxLength` |
+| `summary` | string | `maxLength` |
+
+**Ledger containment invariant.** The `finding` schema IS the ingestion boundary for the findings ledger. A producer files untrusted text under `raw_input.{field}`; the ingestion pass validates it under this schema and promotes only the `status: success` clamped output to the finding's clean top-level field of the same name. `raw_input.*` = un-ingested untrusted quarantine (audit-only); top-level = clean-by-construction. Downstream triage reads the promoted top-level fields ONLY, never `raw_input.*` — statically enforced by the plugin-doctor `triage-reads-top-level-only` rule. See [`../../manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § "`raw_input` quarantine namespace".
 
 ## The single enforcement point
 

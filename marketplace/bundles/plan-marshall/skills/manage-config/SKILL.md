@@ -623,7 +623,7 @@ The lane mechanism's per-element vocabulary (the closed `lane.class` enum, the c
 |-------|------|---------|---------|
 | `touched_file_cleanup` | enum(`new_code_only`\|`touched_files_zero`) | `new_code_only` | Cleanup-scope for the Sonar roundtrip success criterion. `new_code_only` (lean default) anchors success on new-code issues == 0; `touched_files_zero` also sweeps pre-existing issues on touched files. Validated by `validate_sonar_touched_file_cleanup`. |
 | `do_transition` | bool | `false` | Gate for the server-side SonarCloud dismissal path. `false` routes FALSE-POSITIVE / WON'T-FIX dispositions through in-code suppression; `true` re-enables `sonar_rest transition` dismissal. Consumed by triage Step 3c as the fall-through gate. |
-| `ce_wait_timeout_seconds` | int | `600` | Budget (seconds) for the synchronous in-Python CE-readiness wait in `sonar.py fetch-and-store` — sibling of the flat `checks_wait_timeout_seconds`; overridable by `--ce-wait-timeout`. |
+| `ce_wait_timeout_seconds` | int | `600` | Budget (seconds) for the synchronous in-Python CE-readiness wait in `sonar.py fetch_findings` — sibling of the flat `checks_wait_timeout_seconds`; overridable by `--ce-wait-timeout`. |
 
 `default:automated-review`: `review_bot_buffer_seconds` (int, default `180`) — max-wait ceiling for `pr wait-for-comments`. `default:branch-cleanup`: `pr_merge_strategy` (default `squash`), `final_merge_without_asking` (bool, default `false`), `auto_rebase_threshold` (default `no_overlap_only`).
 

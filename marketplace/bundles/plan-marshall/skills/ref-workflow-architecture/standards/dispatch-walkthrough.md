@@ -135,9 +135,9 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
   --plan-id feature-jwt-auth pr wait-for-comments \
   --pr-number 142 --timeout 180
 
-# 2. Producer: stage PR comments as findings into the store
+# 2. Producer: FIND PR comments into the ledger (untrusted body under raw_input)
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
-  comments-stage --pr-number 142 --plan-id feature-jwt-auth
+  fetch_findings --pr-number 142 --plan-id feature-jwt-auth
 
 # 3. Gate-check: count pending findings (NOT content)
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \

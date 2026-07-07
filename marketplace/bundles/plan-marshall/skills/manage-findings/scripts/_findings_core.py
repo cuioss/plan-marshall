@@ -106,7 +106,7 @@ def _content_discriminator(
     """Stable content hash over (detail, file_path, rule) used as a dedup discriminator.
 
     Folded into the Q-Gate dedup key so that a bare title collision alone can NEVER
-    reopen an unrelated resolved finding of the same class (lesson 2026-07-07-00-001),
+    reopen an unrelated resolved finding of the same class,
     while an intended same-defect merge across iterations (same title AND same
     discriminator) still collapses. The NUL separator prevents field-boundary
     ambiguity (e.g. `detail='a', file='b'` vs `detail='a\\x00b', file=''`).
@@ -420,7 +420,7 @@ def resolve_finding(
 ) -> dict[str, Any]:
     """Resolve a finding (locates the per-type file by hash_id).
 
-    Relational integrity backstop (lesson 2026-06-30-21-001): a ``resolution_detail``
+    Relational integrity backstop: a ``resolution_detail``
     is only ever written keyed to a ``hash_id`` that resolves to an existing parent
     record. The parent's existence is asserted BEFORE any write, so a mis-keyed detail
     can never be attached to — or silently create — a phantom record. The subsequent
@@ -508,7 +508,7 @@ def _find_by_title_and_discriminator(
     The dedup key is the (title, discriminator) pair — never the title alone — so a
     same-class-different-subject finding (same bare-``defect_class`` title, different
     content) is treated as a distinct finding and can never reopen an unrelated
-    resolved record (lesson 2026-07-07-00-001).
+    resolved record.
     """
     for record in read_jsonl(path):
         if record.get('title') == title and record.get('content_discriminator') == discriminator:

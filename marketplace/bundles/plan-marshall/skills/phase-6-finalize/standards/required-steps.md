@@ -77,7 +77,7 @@ recording, so the recorded key always equals the bare manifest key the
 dispatcher reads back — both `default:push` and `push` reconcile to `push`. This
 is the write-side complement of the read-side key-normalization the
 `manage-execution-manifest` id-keyed accessor family applies, and eliminates the
-`step_record_mismatched_key` orphans (lesson `2026-06-21-00-002`). Step names in
+`step_record_mismatched_key` orphans. Step names in
 the `## Steps` list above are the bare canonical keys.
 
 ## Loadability Contract

@@ -577,7 +577,7 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
 |-------|------|---------|-------------|
 | `touched_file_cleanup` | enum(`new_code_only`\|`touched_files_zero`) | "new_code_only" | Cleanup-scope for the Sonar roundtrip success criterion. `new_code_only` (default, lean) anchors success on new-code issues == 0; `touched_files_zero` extends the success criterion to also sweep pre-existing issues on the files the plan touched. Consumed by `sonar-roundtrip.md` at the success gate. Validated by `validate_sonar_touched_file_cleanup`. |
 | `do_transition` | bool | false | Gate for the server-side SonarCloud dismissal path. `false` (default) routes FALSE-POSITIVE / WON'T-FIX dispositions through in-code suppression (`@SuppressWarnings` / `// NOSONAR`); `true` re-enables the server-side `sonar_rest transition` dismissal. Consumed by triage Step 3c as the fall-through gate for rule classes that cannot be suppressed in-code. |
-| `ce_wait_timeout_seconds` | int | 600 | Budget (seconds) for the synchronous in-Python CE-readiness wait performed by `sonar.py fetch-and-store` before enumerating new-code issues — the direct sibling of the flat `checks_wait_timeout_seconds`. An explicit `--ce-wait-timeout` flag overrides it. |
+| `ce_wait_timeout_seconds` | int | 600 | Budget (seconds) for the synchronous in-Python CE-readiness wait performed by `sonar.py fetch_findings` before enumerating new-code issues — the direct sibling of the flat `checks_wait_timeout_seconds`. An explicit `--ce-wait-timeout` flag overrides it. |
 
 `default:branch-cleanup`:
 
