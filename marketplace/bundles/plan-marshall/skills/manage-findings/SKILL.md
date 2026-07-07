@@ -109,7 +109,15 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 # Promote finding
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   promote --plan-id {plan_id} --hash-id {hash_id} --promoted-to {promoted_to}
+
+# Ingest quarantined raw_input free-text (one batched validate_struct pass)
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  ingest --plan-id {plan_id}
 ```
+
+#### Batched `raw_input` ingestion (`ingest`)
+
+Producers file untrusted free-text under a quarantined `raw_input.{field}` sub-object; the top-level record fields stay clean-by-construction. The `ingest` verb runs ONE deterministic batched pass over every pending finding (per-plan + per-phase Q-Gate): it validates each finding's `raw_input` mapping through the `validate_struct` `finding` schema (the single containment boundary — additionalProperties:false + per-field `maxLength` clamping + domain allowlist) and, on `status: success`, promotes the clamped values to the top-level fields of the same name (leaving `raw_input.*` in place for audit). A validator rejection resolves the finding as `rejected` (recording the violation in `resolution_detail`) rather than promoting. The invariant: no top-level field is ever populated from an un-validated `raw_input` value, so the top-level surface the triage pass reads is clean-by-construction.
 
 #### Unified read surface (`--include-qgate`)
 
@@ -323,6 +331,13 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings re
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings promote \
   --plan-id PLAN_ID --hash-id HASH_ID --promoted-to TARGET
+```
+
+### ingest
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings ingest \
+  --plan-id PLAN_ID
 ```
 
 ### qgate add

@@ -9,6 +9,7 @@ Usage:
     python3 manage-findings.py get --plan-id <plan_id> --hash-id <hash_id>
     python3 manage-findings.py resolve --plan-id <plan_id> --hash-id <hash_id> --resolution <resolution> [options]
     python3 manage-findings.py promote --plan-id <plan_id> --hash-id <hash_id> --promoted-to <promoted_to>
+    python3 manage-findings.py ingest --plan-id <plan_id>
 
     python3 manage-findings.py qgate add --plan-id <plan_id> --phase <phase> --source <source> --type <type> --title <title> --detail <detail> [options]
     python3 manage-findings.py qgate list --plan-id <plan_id> --phase <phase> [options]
@@ -50,6 +51,7 @@ from _findings_core import (
     resolve_finding,
     resolve_qgate_finding,
 )
+from _findings_ingest import ingest_findings
 from file_ops import output_toon, safe_main
 from input_validation import (
     add_component_arg,
@@ -147,6 +149,11 @@ def cmd_promote(args: argparse.Namespace) -> dict:
         hash_id=args.hash_id,
         promoted_to=args.promoted_to,
     )
+
+
+def cmd_ingest(args: argparse.Namespace) -> dict:
+    """Handle: ingest"""
+    return ingest_findings(plan_id=args.plan_id)
 
 
 def cmd_qgate_add(args: argparse.Namespace) -> dict:
@@ -327,6 +334,15 @@ def main() -> int:
     add_hash_id_arg(promote_parser)
     promote_parser.add_argument('--promoted-to', required=True, dest='promoted_to', help='Target ID or "architecture"')
     promote_parser.set_defaults(func=cmd_promote)
+
+    # ingest — one batched validate_struct pass over quarantined raw_input free-text
+    ingest_parser = subparsers.add_parser(
+        'ingest',
+        help='Batch-validate quarantined raw_input.{field} values and promote them to top-level',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(ingest_parser)
+    ingest_parser.set_defaults(func=cmd_ingest)
 
     # --- Q-Gate commands ---
     qgate_parser = subparsers.add_parser('qgate', help='Manage per-phase Q-Gate findings', allow_abbrev=False)
