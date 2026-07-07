@@ -1,6 +1,6 @@
 # PR Operations
 
-Pull request lifecycle operations: create, view, merge, auto-merge, safe-merge, close, ready, edit. Also covers the `branch delete` leaf, which supports post-merge remote branch cleanup.
+Pull request lifecycle operations: create, view, merge, auto-merge, safe-merge, merge-queue, close, ready, edit. Also covers the `branch delete` leaf, which supports post-merge remote branch cleanup.
 
 ## Branch-Aware Operations: `--head BRANCH`
 
@@ -15,9 +15,10 @@ To handle this, branch-aware operations accept an explicit `--head BRANCH` argum
 | `pr merge` | Branch identifying the PR to merge (alternative to `--pr-number`; glab resolves IID via `mr list --source-branch`) |
 | `pr auto-merge` | Same as `pr merge` |
 | `pr safe-merge` | Same as `pr merge` |
-| `ci status` | Same as `pr merge` |
+| `pr merge-queue` | Same as `pr merge` |
+| `checks status` | Same as `pr merge` |
 
-For `pr merge`, `pr auto-merge`, `pr safe-merge`, and `ci status`, supply **exactly one** of `--pr-number`
+For `pr merge`, `pr auto-merge`, `pr safe-merge`, `pr merge-queue`, and `checks status`, supply **exactly one** of `--pr-number`
 or `--head`. Supplying both returns `status: error` with message `specify exactly one of --pr-number or --head`.
 Supplying neither returns `status: error` with message `specify either --pr-number or --head`.
 
@@ -211,6 +212,38 @@ duration_sec: 0
 ```
 
 `merge_path` is `polled_clean` when the PR became mergeable within the poll window and merged via the normal path, or `admin_fallback` when the GitHub-only stuck-state `--admin` merge was used.
+
+---
+
+## Workflow: Merge-Queue PR
+
+**Pattern**: Provider-Agnostic Router
+
+Enqueue the PR into the **platform merge queue** so the platform re-tests-and-merges it against the latest base branch. Unlike `pr safe-merge` (which merges immediately once the current PR is ready), `pr merge-queue` hands the merge to the platform's serialization mechanism, closing the residual staleness gap a truly-external commit (e.g. a dependabot merge to the base) opens — such a commit never acquires the session-scoped merge mutex, so only the platform queue can serialize against it. It composes with the widened merge mutex: the mutex guards the pre-enqueue rebase/force-push window; the merge queue serializes the merge itself.
+
+On **GitHub**, the verb engages the merge queue via `gh pr merge --auto` (the PR is added to the queue configured on the target branch's protection rules). On **GitLab**, the platform equivalent is a **merge train** — a Premium/Ultimate-tier feature enabled per-project with no stable `glab` CLI surface — so the GitLab handler returns an explicit unsupported error rather than silently falling back to an immediate merge.
+
+### Step 1: Execute
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge-queue \
+    (--pr-number 123 | --head feature/x) [--strategy merge|squash|rebase] [--delete-branch]
+```
+
+Supply exactly one of `--pr-number` or `--head`.
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: pr_merge_queue
+pr_number: 123
+strategy: squash
+enqueued: true
+delete_branch: true
+```
+
+On GitLab the same invocation returns `status: error, operation: pr_merge_queue` with a message naming merge trains as the unsupported platform equivalent — surfaced explicitly (never a silent immediate-merge fallback) so cross-provider callers notice the mismatch.
 
 ---
 

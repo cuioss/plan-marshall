@@ -401,7 +401,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert
 status: success
 plan_id: my-feature
 phase: 6-finalize
-step: ci-verify
+step: automated-review
 recorded: true
 outcome: done
 ```
@@ -411,7 +411,7 @@ outcome: done
 status: success
 plan_id: my-feature
 phase: 6-finalize
-step: ci-verify
+step: automated-review
 recorded: false
 outcome: null
 ```
@@ -422,10 +422,10 @@ status: error
 plan_id: my-feature
 error: step_record_missing
 phase: 6-finalize
-step: ci-verify
+step: automated-review
 recorded: false
 outcome: null
-message: No terminal record for step 'ci-verify' in phase '6-finalize': the dispatched step returned without recording a mark-step-done outcome (expected one of ['done', 'skipped', 'loop_back', 'failed']).
+message: No terminal record for step 'automated-review' in phase '6-finalize': the dispatched step returned without recording a mark-step-done outcome (expected one of ['done', 'skipped', 'loop_back', 'failed']).
 ```
 
 **Output — mismatched key under `--require-terminal`** (TOON): the queried step has no record, but a terminal record exists under a near-miss key in the same phase.

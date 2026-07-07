@@ -140,6 +140,55 @@ class _StubCiWait:
         return self.envelopes.pop(0)
 
 
+class _StubTimeoutSet:
+    """Record every observed CI duration passed to the timeout_set seam.
+
+    Exposes the recorded durations under BOTH ``recorded`` (the D3
+    elapsed-at-deadline ratchet tests) and ``durations`` (the run-config
+    write-back tests) so a single stub serves every assertion style. The
+    two names alias the same append log.
+    """
+
+    def __init__(self) -> None:
+        self.recorded: list[int] = []
+        self.durations: list[int] = self.recorded
+
+    def __call__(self, duration_seconds: int) -> None:
+        self.recorded.append(duration_seconds)
+
+
+class _StubTimeoutGet:
+    """Return canned ci:wait ceilings per successive resolve call."""
+
+    def __init__(self, ceilings: list[int]) -> None:
+        self.ceilings = ceilings
+        self.calls: list[int] = []
+
+    def __call__(self, default_seconds: int) -> int:
+        self.calls.append(default_seconds)
+        if not self.ceilings:
+            return default_seconds
+        return self.ceilings.pop(0)
+
+
+class _StubClock:
+    """Deterministic monotonic-clock stub returning successive tick values.
+
+    ``resolve`` calls the clock exactly twice per invocation (immediately
+    before and after the ``ci wait`` subprocess), so a list of ``[start, end]``
+    ticks yields a measured elapsed of ``end - start``.
+    """
+
+    def __init__(self, ticks: list[float]) -> None:
+        self.ticks = ticks
+        self.calls = 0
+
+    def __call__(self) -> float:
+        value = self.ticks[self.calls]
+        self.calls += 1
+        return value
+
+
 _SHA_A = 'a' * 40
 _SHA_B = 'b' * 40
 _PR = 123
@@ -282,6 +331,7 @@ def test_ci_failure_returns_wait_failed_without_caching(plan_context):
 def test_ci_timeout_returns_wait_failed_with_timeout_reason(plan_context):
     plan_id = 'ci-precond-timeout'
     git_stub = _StubGitHead(_SHA_A)
+    timeout_set_stub = _StubTimeoutSet()
     wait_stub = _StubCiWait(
         [
             {
@@ -290,6 +340,7 @@ def test_ci_timeout_returns_wait_failed_with_timeout_reason(plan_context):
                 'error': 'Timeout waiting for CI',
                 'pr_number': _PR,
                 'duration_sec': 600,
+                'wait_outcome': 'deadline_exceeded',
                 'last_status': 'pending',
             }
         ]
@@ -301,6 +352,7 @@ def test_ci_timeout_returns_wait_failed_with_timeout_reason(plan_context):
         pr_number=_PR,
         ci_wait_runner=wait_stub,
         git_head_resolver=git_stub,
+        timeout_set_runner=timeout_set_stub,
     )
 
     assert result['status'] == 'wait_failed'
@@ -312,6 +364,167 @@ def test_ci_timeout_returns_wait_failed_with_timeout_reason(plan_context):
     cache_path = _cache_path(plan_id)
     assert not cache_path.exists(), (
         'Timeout outcomes must not be cached; re-entry must re-poll'
+    )
+    # The deadline path records the provider's true duration so the ci:wait
+    # ceiling ratchets upward — the starved-ratchet fix.
+    assert timeout_set_stub.recorded == [600], (
+        'A deadline_exceeded envelope carrying duration_sec must record it '
+        'via timeout_set so the ci:wait ceiling can ratchet upward'
+    )
+
+
+# ---------------------------------------------------------------------------
+# Deliverable 3 — the elapsed-at-deadline upward ratchet.
+#
+# When the ci:wait ceiling sits below the true CI duration, every wait hits
+# deadline_exceeded before CI completes, so the success-path record never
+# fires and the ceiling can never grow. The fix records the measured
+# elapsed-at-deadline (>= the current ceiling) via the SAME timeout_set call
+# so compute_weighted_timeout (0.80) + timeout_get (1.25) ratchet the ceiling
+# upward across finalizes until it exceeds the true CI duration.
+# ---------------------------------------------------------------------------
+
+
+def test_deadline_exceeded_records_measured_elapsed_via_timeout_set(plan_context):
+    """A synthetic deadline envelope WITHOUT duration_sec records the
+    measured elapsed-at-deadline (>= the ceiling) via the timeout_set seam.
+    """
+    plan_id = 'ci-precond-elapsed-record'
+    git_stub = _StubGitHead(_SHA_A)
+    timeout_set_stub = _StubTimeoutSet()
+    # No duration_sec — the elapsed fallback drives the record.
+    wait_stub = _StubCiWait(
+        [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
+    )
+    # clock ticks [0, 605] → measured elapsed 605s, >= the 600s ceiling.
+    clock = _StubClock([0.0, 605.0])
+
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        timeout_seconds=600,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+        timeout_set_runner=timeout_set_stub,
+        monotonic_clock=clock,
+    )
+
+    assert result['status'] == 'wait_failed'
+    assert result['ci_final_status'] == 'timeout'
+    assert timeout_set_stub.recorded == [605], (
+        'The measured elapsed-at-deadline must be recorded so the ci:wait '
+        'ceiling ratchets upward'
+    )
+
+
+def test_provider_duration_preferred_over_measured_elapsed(plan_context):
+    """When the timeout envelope surfaces the provider's true check-run
+    duration (duration_sec), it is preferred over the measured elapsed
+    lower-bound — collapsing the geometric ratchet to a single step.
+    """
+    plan_id = 'ci-precond-provider-duration'
+    git_stub = _StubGitHead(_SHA_A)
+    timeout_set_stub = _StubTimeoutSet()
+    wait_stub = _StubCiWait(
+        [
+            {
+                'status': 'error',
+                'wait_outcome': 'deadline_exceeded',
+                'duration_sec': 800,
+            }
+        ]
+    )
+    # Measured elapsed would be 605, but the provider's 800 must win.
+    clock = _StubClock([0.0, 605.0])
+
+    resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        timeout_seconds=600,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+        timeout_set_runner=timeout_set_stub,
+        monotonic_clock=clock,
+    )
+
+    assert timeout_set_stub.recorded == [800], (
+        'Provider duration_sec must be preferred over the measured elapsed'
+    )
+
+
+def test_sub_ceiling_non_success_does_not_record(plan_context):
+    """An immediate non-success envelope that did NOT consume the full wait
+    (elapsed << ceiling, no duration_sec) MUST NOT record — a sub-ceiling
+    observation would pull the ratchet DOWN via compute_weighted_timeout.
+    """
+    plan_id = 'ci-precond-sub-ceiling'
+    git_stub = _StubGitHead(_SHA_A)
+    timeout_set_stub = _StubTimeoutSet()
+    # Executor-crash-style error envelope, no duration_sec.
+    wait_stub = _StubCiWait(
+        [{'status': 'error', 'error': 'executor crashed immediately'}]
+    )
+    # clock ticks [0, 3] → measured elapsed 3s, well below the 600s ceiling.
+    clock = _StubClock([0.0, 3.0])
+
+    resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        timeout_seconds=600,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=git_stub,
+        timeout_set_runner=timeout_set_stub,
+        monotonic_clock=clock,
+    )
+
+    assert timeout_set_stub.recorded == [], (
+        'A sub-ceiling elapsed with no provider duration must not be recorded'
+    )
+
+
+def test_repeated_deadline_exceeded_ratchets_upward(plan_context):
+    """Across finalizes, each deadline_exceeded records its elapsed-at-deadline;
+    as the run-config mechanism grows the ceiling between calls, the recorded
+    observations grow with it — proving resolve feeds the upward ratchet.
+    """
+    git_stub = _StubGitHead(_SHA_A)
+    timeout_set_stub = _StubTimeoutSet()
+
+    # Finalize 1: ceiling 600, elapsed 601 → records 601.
+    resolve(
+        plan_id='ci-precond-ratchet',
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        timeout_seconds=600,
+        ci_wait_runner=_StubCiWait(
+            [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
+        ),
+        git_head_resolver=git_stub,
+        timeout_set_runner=timeout_set_stub,
+        monotonic_clock=_StubClock([0.0, 601.0]),
+    )
+
+    # Finalize 2: the ceiling has grown to 750 (the run-config ratchet);
+    # a fresh deadline at elapsed 751 → records 751.
+    resolve(
+        plan_id='ci-precond-ratchet',
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        timeout_seconds=750,
+        ci_wait_runner=_StubCiWait(
+            [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
+        ),
+        git_head_resolver=git_stub,
+        timeout_set_runner=timeout_set_stub,
+        monotonic_clock=_StubClock([0.0, 751.0]),
+    )
+
+    assert timeout_set_stub.recorded == [601, 751]
+    assert timeout_set_stub.recorded[1] > timeout_set_stub.recorded[0], (
+        'The recorded elapsed observations must grow as the ceiling ratchets up'
     )
 
 
@@ -566,6 +779,7 @@ def test_timeout_forwards_wait_outcome_deadline_exceeded(plan_context):
         pr_number=_PR,
         ci_wait_runner=wait_stub,
         git_head_resolver=git_stub,
+        timeout_set_runner=_StubTimeoutSet(),
     )
 
     assert result['status'] == 'wait_failed'
@@ -848,16 +1062,6 @@ class _StubTimeoutGetMissing:
     def __call__(self, default_seconds: int) -> int:
         self.calls.append(default_seconds)
         return default_seconds
-
-
-class _StubTimeoutSet:
-    """Records the durations written back via ``run_config timeout set``."""
-
-    def __init__(self) -> None:
-        self.durations: list[int] = []
-
-    def __call__(self, duration_seconds: int) -> None:
-        self.durations.append(duration_seconds)
 
 
 def test_resolve_reads_timeout_from_run_config_entry(plan_context):
@@ -1203,12 +1407,17 @@ def _run_fixture_through_resolver(fixture_path, plan_id):
     parsed = _parse_toon(raw)
     runner = _make_fixture_wait_runner(parsed)
     git_stub = _StubGitHead(_SHA_A)
+    # Isolate the timeout-path ratchet write: a fixture carrying a
+    # deadline_exceeded envelope with a duration_sec would otherwise call the
+    # real run-config timeout-set subprocess. The no-op stub keeps the fixture
+    # tests hermetic.
     return resolve(
         plan_id=plan_id,
         worktree_path=_WORKTREE,
         pr_number=_PR,
         ci_wait_runner=runner,
         git_head_resolver=git_stub,
+        timeout_set_runner=_StubTimeoutSet(),
     )
 
 
