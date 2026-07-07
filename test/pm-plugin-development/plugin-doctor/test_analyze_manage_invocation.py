@@ -269,6 +269,58 @@ def _shared_flag_source() -> str:
     ''').lstrip()
 
 
+def _ansi_colored_script_source() -> str:
+    """A ``_flat_script_source`` clone whose ``--help`` emits ANSI SGR codes.
+
+    Mirrors the flat shape exactly (root ``--debug``, subcommands ``foo``
+    [required ``--alpha``, optional ``--beta``] and ``bar`` [``--gamma``]) but
+    overrides ``format_help`` to wrap SGR color escapes around the ``usage:``
+    marker, the subcommand choices, and the ``--flag`` tokens — reproducing
+    Python 3.14's colorized ``argparse --help``. The escapes flow through the
+    executor shim exactly as a real colorized subprocess would emit them.
+
+    The analyzer must strip these escapes to recover the surface: pre-fix, the
+    colored ``usage:`` line defeats ``line.startswith('usage:')`` and the
+    colored option flags defeat ``_OPTION_FLAG_RE``, yielding an EMPTY surface
+    (the ~865-false-finding bug). The ``format_help`` override colorizes the
+    root and every subparser (``add_subparsers`` defaults ``parser_class`` to
+    the root's class), so ``foo``/``bar`` ``--help`` are colored too.
+    """
+    return textwrap.dedent('''
+        import argparse
+
+        _COLOR_TOKENS = (
+            'usage:', '--debug', '--alpha', '--beta', '--gamma', 'foo', 'bar',
+        )
+
+        def _colorize(text):
+            for tok in _COLOR_TOKENS:
+                text = text.replace(tok, '\\x1b[36m' + tok + '\\x1b[0m')
+            return text
+
+        class _ColorParser(argparse.ArgumentParser):
+            def format_help(self):
+                return _colorize(super().format_help())
+
+        def main():
+            parser = _ColorParser(prog='syn')
+            parser.add_argument('--debug', action='store_true')
+            subparsers = parser.add_subparsers(dest='cmd')
+
+            foo = subparsers.add_parser('foo')
+            foo.add_argument('--alpha', required=True)
+            foo.add_argument('--beta')
+
+            bar = subparsers.add_parser('bar')
+            bar.add_argument('--gamma')
+
+            parser.parse_args()
+
+        if __name__ == '__main__':
+            main()
+    ''').lstrip()
+
+
 # ---------------------------------------------------------------------------
 # Synthetic executor — maps {notation} to a synthetic script and dispatches.
 # ---------------------------------------------------------------------------
@@ -589,6 +641,65 @@ class TestDeriveScriptTree:
         executor = _make_executor(tmp_path, {})
         tree = derive_script_tree('plan-marshall:absent:absent', executor)
         assert tree is None
+
+
+class TestAnsiColoredHelp:
+    """ANSI-colored ``--help`` output must yield the same surface as plain text.
+
+    Regression guard for the color-corruption bug: Python 3.14 colorizes
+    ``argparse --help``, and the SGR escapes around ``usage:``, the subcommand
+    choices, and the ``--flag`` tokens defeat the plain-text surface regexes,
+    so surface derivation collapsed to an EMPTY tree and the analyzer emitted
+    ~865 false ``manage-invocation-invalid`` findings. The fix strips ANSI
+    escapes (and runs the probe with a color-suppressed env) before parsing.
+    This test fails against the pre-fix analyzer (colored ``--help`` -> empty
+    surface) and passes against the fixed analyzer.
+    """
+
+    def test_colored_help_matches_plain_surface(self, tmp_path: Path) -> None:
+        # Arrange — a plain flat script and an ANSI-colored clone of the same shape.
+        plain_script = tmp_path / 'syn_plain.py'
+        plain_script.write_text(_flat_script_source(), encoding='utf-8')
+        colored_script = tmp_path / 'syn_colored.py'
+        colored_script.write_text(_ansi_colored_script_source(), encoding='utf-8')
+        plain_notation = 'plan-marshall:manage-plain:manage-plain'
+        colored_notation = 'plan-marshall:manage-colored:manage-colored'
+        executor = _make_executor(
+            tmp_path,
+            {plain_notation: plain_script, colored_notation: colored_script},
+        )
+
+        # Act — derive the surface from each script's live ``--help``.
+        plain_tree = derive_script_tree(plain_notation, executor)
+        colored_tree = derive_script_tree(colored_notation, executor)
+
+        # Assert — the colored surface is non-empty and identical to the plain one.
+        assert plain_tree is not None
+        assert colored_tree is not None
+        assert colored_tree.to_dict() == plain_tree.to_dict()
+
+    def test_colored_help_resolves_full_flag_surface(self, tmp_path: Path) -> None:
+        # Arrange — an ANSI-colored --help script with a known surface.
+        colored_script = tmp_path / 'syn_colored.py'
+        colored_script.write_text(_ansi_colored_script_source(), encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: colored_script})
+
+        # Act — derive the surface (the ANSI-strip + clean-env path).
+        tree = derive_script_tree(_SYN_NOTATION, executor)
+
+        # Assert — subcommands and per-leaf flags survive the colored --help.
+        assert tree is not None
+        assert tree.known_subcommands() == {'foo', 'bar'}
+        assert 'debug' in tree.root.flags
+
+        foo_leaf = tree.get_leaf('foo', None)
+        assert foo_leaf is not None
+        assert foo_leaf.flags == {'alpha', 'beta'}
+        assert foo_leaf.required_flags == {'alpha'}
+
+        bar_leaf = tree.get_leaf('bar', None)
+        assert bar_leaf is not None
+        assert bar_leaf.flags == {'gamma'}
 
 
 class TestLoopRegisteredSubcommands:
