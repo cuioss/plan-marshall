@@ -67,7 +67,7 @@ def _install(monkeypatch, run_gh_stub):
 
 def test_ci_base_parser_accepts_pr_merge_queue():
     # Arrange
-    parser, _pr_sub, _c, _i, _b = ci_base.build_parser()
+    parser, _pr_sub, _c, _i, _b = ci_base.build_parser('test')
     # Act
     args = parser.parse_args(['pr', 'merge-queue', '--pr-number', '42'])
     # Assert
@@ -78,7 +78,7 @@ def test_ci_base_parser_accepts_pr_merge_queue():
 
 def test_ci_base_parser_merge_queue_accepts_head_strategy_delete():
     # Arrange
-    parser, *_ = ci_base.build_parser()
+    parser, *_ = ci_base.build_parser('test')
     # Act
     args = parser.parse_args(
         ['pr', 'merge-queue', '--head', 'feature/x', '--strategy', 'squash', '--delete-branch']
@@ -92,7 +92,7 @@ def test_ci_base_parser_merge_queue_accepts_head_strategy_delete():
 
 def test_ci_base_parser_rejects_illegal_strategy():
     # Arrange
-    parser, *_ = ci_base.build_parser()
+    parser, *_ = ci_base.build_parser('test')
     # Act / Assert
     with pytest.raises(SystemExit):
         parser.parse_args(['pr', 'merge-queue', '--pr-number', '42', '--strategy', 'fast-forward'])

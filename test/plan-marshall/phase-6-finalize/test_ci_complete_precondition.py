@@ -141,10 +141,17 @@ class _StubCiWait:
 
 
 class _StubTimeoutSet:
-    """Record every observed CI duration passed to the timeout_set seam."""
+    """Record every observed CI duration passed to the timeout_set seam.
+
+    Exposes the recorded durations under BOTH ``recorded`` (the D3
+    elapsed-at-deadline ratchet tests) and ``durations`` (the run-config
+    write-back tests) so a single stub serves every assertion style. The
+    two names alias the same append log.
+    """
 
     def __init__(self) -> None:
         self.recorded: list[int] = []
+        self.durations: list[int] = self.recorded
 
     def __call__(self, duration_seconds: int) -> None:
         self.recorded.append(duration_seconds)
@@ -1055,16 +1062,6 @@ class _StubTimeoutGetMissing:
     def __call__(self, default_seconds: int) -> int:
         self.calls.append(default_seconds)
         return default_seconds
-
-
-class _StubTimeoutSet:
-    """Records the durations written back via ``run_config timeout set``."""
-
-    def __init__(self) -> None:
-        self.durations: list[int] = []
-
-    def __call__(self, duration_seconds: int) -> None:
-        self.durations.append(duration_seconds)
 
 
 def test_resolve_reads_timeout_from_run_config_entry(plan_context):

@@ -3,10 +3,11 @@
 # ruff: noqa: I001, E402
 """Tests for the ci-verify finalize step (lesson-2026-05-18-16-001 deliverable 6).
 
-The step body lives in
-``marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/ci-verify.md``
-and is dispatched by the phase-6-finalize SKILL.md Step 3 loop. These
-tests cover the deterministic, script-anchored parts of the contract:
+The step body is the deterministic executor
+``marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/ci_verify.py``
+(the former dispatched ``workflow/ci-verify.md`` body was retired), with the
+contract codified in ``standards/ci-verify.md``. These tests cover the
+deterministic, script-anchored parts of the contract:
 
 1. The ``ci_complete_precondition`` ``consume-failures`` mode threads
    ``failing_checks`` and ``wait_outcome`` through without short-
@@ -52,12 +53,12 @@ _MANIFEST_SCRIPT = (
     / 'scripts'
     / 'manage-execution-manifest.py'
 )
-_WORKFLOW_PATH = (
+_CI_VERIFY_SCRIPT = (
     _BUNDLE_ROOT
     / 'skills'
     / 'phase-6-finalize'
-    / 'workflow'
-    / 'ci-verify.md'
+    / 'scripts'
+    / 'ci_verify.py'
 )
 _STANDARDS_PATH = (
     _BUNDLE_ROOT
@@ -331,44 +332,52 @@ def test_standards_enumerates_all_seven_subtype_tags():
 
 
 # ---------------------------------------------------------------------------
-# 6. Workflow body declares the required precondition mode
+# 6. ci-verify contract declares the required precondition mode
+#
+# The former ``workflow/ci-verify.md`` dispatched body was retired: the
+# execution logic now lives in the deterministic ``scripts/ci_verify.py``
+# executor and the contract is codified in ``standards/ci-verify.md``. These
+# tests assert the same guarantees against those new homes.
 # ---------------------------------------------------------------------------
 
 
-def test_workflow_body_declares_ci_complete_precondition():
-    """The workflow frontmatter must declare ``requires: [ci-complete]``
-    so the dispatcher invokes the precondition resolver.
+def test_standards_declares_ci_complete_precondition():
+    """The ci-verify contract must declare ``requires: [ci-complete]`` so the
+    dispatcher invokes the precondition resolver.
     """
-    content = _WORKFLOW_PATH.read_text(encoding='utf-8')
+    content = _STANDARDS_PATH.read_text(encoding='utf-8')
     assert 'requires: [ci-complete]' in content, (
-        'ci-verify workflow must declare requires: [ci-complete] in frontmatter'
+        'ci-verify standards must declare requires: [ci-complete]'
     )
 
 
-def test_workflow_body_references_consume_failures_mode():
-    """The workflow body documents the ``consume-failures`` precondition
+def test_standards_references_consume_failures_mode():
+    """The ci-verify contract documents the ``consume-failures`` precondition
     mode so future readers understand the contract.
     """
-    content = _WORKFLOW_PATH.read_text(encoding='utf-8')
+    content = _STANDARDS_PATH.read_text(encoding='utf-8')
     assert 'consume-failures' in content, (
-        'ci-verify workflow body must document the consume-failures '
+        'ci-verify standards must document the consume-failures '
         'precondition mode'
     )
 
 
-def test_workflow_body_persists_artifacts_before_classification():
-    """The workflow body must invoke ``manage-ci-artifacts persist``
-    BEFORE classification so findings can reference per-job log paths.
+def test_executor_persists_artifacts_before_classification():
+    """The deterministic executor must invoke the ``manage-ci-artifacts``
+    persist seam BEFORE the taxonomy classification loop so findings can
+    reference per-job log paths.
     """
-    content = _WORKFLOW_PATH.read_text(encoding='utf-8')
-    # Anchor against the executable persist invocation and the
-    # per-check classification step heading so the ordering check
-    # reflects the workflow's executable structure, not its prose
-    # introduction.
-    persist_pos = content.find('manage-ci-artifacts:manage-ci-artifacts')
-    classify_pos = content.find('Per-check classification')
-    assert persist_pos != -1, 'workflow must invoke manage-ci-artifacts persist'
-    assert classify_pos != -1, 'workflow must declare a per-check classification step'
+    content = _CI_VERIFY_SCRIPT.read_text(encoding='utf-8')
+    # Anchor against the persist call site (``persist_fn(``) and the
+    # classification CALL site (``classify_check(check, wait_outcome)``) —
+    # NOT the ``def classify_check(check: dict, ...)`` definition, which is
+    # declared earlier in the module — so the ordering check reflects the
+    # executor's control flow, not source declaration order.
+    persist_pos = content.find('persist_fn(')
+    classify_pos = content.find('classify_check(check, wait_outcome)')
+    assert persist_pos != -1, 'executor must call the persist seam'
+    assert classify_pos != -1, 'executor must call classify_check on each check'
     assert persist_pos < classify_pos, (
-        'manage-ci-artifacts persist must run before per-check classification'
+        'the persist seam must run before the classification loop so findings '
+        'can reference persisted per-job log paths'
     )
