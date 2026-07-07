@@ -145,18 +145,9 @@ VALIDATE_TOON = False  # Set True for strict TOON output validation
 # the running session to an active plan, so the main orchestration tab can
 # render pm:{phase}[:{short_description}] in the terminal title.
 #
-# Binding policy — no-overwrite with stale-slot reclaim. The executor binds
-# the session to a plan on the first plan-scoped invocation, then PROTECTS
-# that binding: a read-only inspection call naming a different plan does NOT
-# steal the slot. The slot is only rewritten when it is unbound, already names
-# the incoming plan, or names a different plan whose live plan dir is gone
-# (archived / deleted → stale → reclaim). This makes read-only inspection
-# calls binding-neutral and delivers release-on-exit implicitly via staleness
-# detection.
-#
-# The write is fire-and-forget: any OSError / ValueError / RuntimeError is
-# silently swallowed; the executor's exit code, stdout, and stderr are
-# unaffected by cache-write outcomes.
+# Binding policy (no-overwrite with stale-slot reclaim) and the fire-and-forget
+# error contract are documented on _write_active_plan below — see its docstring
+# for the full contract.
 _ACTIVE_PLAN_ID_MAX_LEN = 120
 
 
