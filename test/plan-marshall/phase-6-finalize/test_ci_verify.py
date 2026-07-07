@@ -67,6 +67,8 @@ classify_check = _mod.classify_check
 _extract_run_id_from_url = _mod._extract_run_id_from_url
 _normalize_check_entry = _mod._normalize_check_entry
 _matches_build_profile = _mod._matches_build_profile
+_first_missing_required_field = _mod._first_missing_required_field
+_resolve_failing_set = _mod._resolve_failing_set
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +188,17 @@ def _make_check(name: str, conclusion: str, workflow: str, url: str = _RUN_URL) 
         ('action_required', 'verify', 'completed', ('ci-verify-action-required', 'ci_action_required')),
         ('stale', 'verify', 'completed', ('ci-verify-stale', 'ci_stale')),
         ('some_unknown', 'verify', 'completed', ('ci-verify-policy', 'ci_policy_failure')),
+        # A definitive cancelled/action_required/stale conclusion wins over the
+        # run-level deadline_exceeded fallback — it must NOT be misrouted to the
+        # timeout producer.
+        ('cancelled', 'verify', 'deadline_exceeded', ('ci-verify-cancelled', 'ci_cancelled')),
+        ('action_required', 'verify', 'deadline_exceeded', ('ci-verify-action-required', 'ci_action_required')),
+        ('stale', 'verify', 'deadline_exceeded', ('ci-verify-stale', 'ci_stale')),
+        # A build failure also stays a build failure under a wait deadline.
+        ('failure', 'verify / verify', 'deadline_exceeded', ('ci-verify-build', 'ci_build_failure')),
+        # Only a non-definitive (still-pending) conclusion falls through to the
+        # timeout row under deadline_exceeded.
+        ('pending', 'verify', 'deadline_exceeded', ('ci-verify-timeout', 'ci_timeout')),
     ],
 )
 def test_classify_check_taxonomy_rows(conclusion, workflow, wait_outcome, expected):
@@ -614,10 +627,152 @@ def test_jobs_file_written_with_normalized_checks(tmp_path):
     # Assert — the jobs file exists under .plan/temp with the normalized array.
     jobs_file = tmp_path / '.plan' / 'temp' / 'ci-verify-jobsfile-ci-jobs-987654.json'
     assert jobs_file.is_file()
+    # Path.is_file() follows symlinks — assert the materialized path is a real
+    # regular file, not a leftover symlink pointing at a valid file.
+    assert not jobs_file.is_symlink()
     payload = json.loads(jobs_file.read_text(encoding='utf-8'))
     assert isinstance(payload, list)
     assert payload[0]['workflow_name'] == 'verify / verify'
     assert payload[0]['run_url'] == _RUN_URL
+
+
+# ---------------------------------------------------------------------------
+# Fail-closed hardening (PR #849 review) — status_fn error short-circuit,
+# malformed-checks guard, empty-conclusion fail-closed, '0' PR-number catch.
+# ---------------------------------------------------------------------------
+
+
+def test_status_fn_error_envelope_short_circuits_to_empty_checks(tmp_path):
+    """A status_fn error envelope yields an empty checks set, not a crash.
+
+    The green/red partition still runs off the threaded inputs; the error
+    envelope's missing 'checks' key is never read as if it were zero checks.
+    """
+    # Arrange — status_fn returns a synthetic error dict (its own boundary).
+    ci = _StubCiStatus({'status': 'error', 'error': 'subprocess failed: boom'})
+    findings = _StubFindings()
+
+    # Act — a threaded failing check drives the failure partition.
+    result = verify(
+        plan_id='ci-verify-status-error',
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='failure',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        failing_checks=[_make_check('verify', 'failure', 'verify')],
+        ci_status_runner=ci,
+        persist_runner=_StubPersist(),
+        findings_runner=findings,
+        mark_done_runner=_StubMarkDone(),
+        git_head_resolver=_StubGitHead('x'),
+    )
+
+    # Assert — the error envelope did not crash; the threaded check classified.
+    assert result['status'] == 'success'
+    assert result['findings_filed'] == 1
+    assert result['producers'] == ['ci-verify-build']
+    # run_id is empty because the error envelope carried no usable checks.
+    assert result['run_id'] == ''
+
+
+def test_malformed_checks_structure_returns_structured_error(tmp_path):
+    """A non-dict element in checks[] surfaces as status:error, not a traceback."""
+    # Arrange — a corrupt checks array carrying a bare string element.
+    envelope = {'status': 'success', 'overall_status': 'failure', 'checks': ['not-a-dict']}
+
+    # Act
+    result = verify(
+        plan_id='ci-verify-malformed',
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='failure',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        ci_status_runner=_StubCiStatus(envelope),
+        persist_runner=_StubPersist(),
+        findings_runner=_StubFindings(),
+        mark_done_runner=_StubMarkDone(),
+        git_head_resolver=_StubGitHead('x'),
+    )
+
+    # Assert
+    assert result['status'] == 'error'
+    assert 'Malformed checks structure' in result['error']
+    assert result['plan_id'] == 'ci-verify-malformed'
+
+
+def test_empty_conclusion_is_failing_on_completed_path():
+    """An empty/unknown conclusion is NOT passing on the completed path."""
+    # Arrange — a check whose conclusion is the empty string.
+    normalized = [_normalize_check_entry({'name': 'mystery', 'conclusion': '', 'workflow': 'x'})]
+
+    # Act — completed (non-deadline) path.
+    failing = _resolve_failing_set(
+        threaded=None,
+        normalized_all=normalized,
+        final_status='failure',
+        wait_outcome='completed',
+    )
+
+    # Assert — the empty-conclusion check falls through to the failing set.
+    assert len(failing) == 1
+    assert failing[0]['name'] == 'mystery'
+    # And it classifies to the fail-closed policy row.
+    assert classify_check(failing[0], 'completed') == ('ci-verify-policy', 'ci_policy_failure')
+
+
+def test_first_missing_required_field_catches_zero_pr_number():
+    """Both the int 0 and the string '0' PR number are caught as missing."""
+    # Arrange / Act / Assert — int 0 (falsy).
+    assert (
+        _first_missing_required_field(
+            plan_id='p', run_id='r', head_sha='h', pr_number=0, provider='github'
+        )
+        == 'pr_number'
+    )
+    # String '0' (truthy) — must ALSO be caught.
+    assert (
+        _first_missing_required_field(
+            plan_id='p', run_id='r', head_sha='h', pr_number='0', provider='github'
+        )
+        == 'pr_number'
+    )
+    # A legitimate PR number passes the guard (returns None).
+    assert (
+        _first_missing_required_field(
+            plan_id='p', run_id='r', head_sha='h', pr_number=123, provider='github'
+        )
+        is None
+    )
+
+
+def test_persist_non_success_marks_not_persisted(tmp_path):
+    """A persist runner returning non-success sets persisted False + reason."""
+    # Arrange — persist returns a failure envelope.
+    persist = _StubPersist(status='error')
+
+    # Act
+    result = verify(
+        plan_id='ci-verify-persist-fail',
+        pr_number=_PR,
+        worktree_path=str(tmp_path),
+        provider='github',
+        final_status='success',
+        wait_outcome='completed',
+        head_sha=_HEAD_SHA,
+        ci_status_runner=_StubCiStatus(_green_envelope()),
+        persist_runner=persist,
+        findings_runner=_StubFindings(),
+        mark_done_runner=_StubMarkDone(),
+        git_head_resolver=_StubGitHead('x'),
+    )
+
+    # Assert
+    assert result['persisted'] is False
+    assert result['persist_skipped_reason'] == 'persist_failed'
 
 
 # ---------------------------------------------------------------------------

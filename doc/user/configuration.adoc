@@ -296,7 +296,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 | `plan.phase-6-finalize.drop_review_on_scope_gate` | `false` | Flat phase-level escape hatch for the manifest composer's scope-gating pre-filter. `false` keeps the bot-review invariant intact; `true` opts into additionally dropping `automated-review` on scope-gated plans.
 |===
 
-NOTE: `pr_merge_strategy`, `auto_rebase_threshold`, `merge_hold_window`, `merge_hold_budget_seconds`, and `use_merge_queue` are nested under the `default:branch-cleanup` step in the `plan.phase-6-finalize.steps` keyed map, not flat phase-level fields. Read the whole param object in one call with `manage-config plan phase-6-finalize step get --step-id default:branch-cleanup`.
+NOTE: All `default:branch-cleanup` step params — `pr_merge_strategy`, `final_merge_without_asking`, `auto_rebase_threshold`, `merge_queue_wait_budget_seconds`, `merge_hold_window`, `merge_hold_budget_seconds`, `use_merge_queue`, and `admin_merge_on_stuck_state` — are nested under the `default:branch-cleanup` step in the `plan.phase-6-finalize.steps` keyed map, not flat phase-level fields. Read the whole param object in one call with `manage-config plan phase-6-finalize step get --step-id default:branch-cleanup`.
 
 NOTE: The `default:pre-push-quality-gate` finalize step has no dedicated activation key. Its activation is *derived from* `build.map` (see <<build-map>>): the step activates whenever a changed path matches a glob registered in the build_map.
 

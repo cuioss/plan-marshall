@@ -16,9 +16,9 @@ To handle this, branch-aware operations accept an explicit `--head BRANCH` argum
 | `pr auto-merge` | Same as `pr merge` |
 | `pr safe-merge` | Same as `pr merge` |
 | `pr merge-queue` | Same as `pr merge` |
-| `ci status` | Same as `pr merge` |
+| `checks status` | Same as `pr merge` |
 
-For `pr merge`, `pr auto-merge`, `pr safe-merge`, `pr merge-queue`, and `ci status`, supply **exactly one** of `--pr-number`
+For `pr merge`, `pr auto-merge`, `pr safe-merge`, `pr merge-queue`, and `checks status`, supply **exactly one** of `--pr-number`
 or `--head`. Supplying both returns `status: error` with message `specify exactly one of --pr-number or --head`.
 Supplying neither returns `status: error` with message `specify either --pr-number or --head`.
 

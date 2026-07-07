@@ -183,14 +183,24 @@ this order per failing check.
 | b | Build / test / lint / coverage failure | CI check whose `workflow_name` matches a build profile | `ci-verify-build` | `ci_build_failure` | Open fix-task on failing module; loop_back |
 | c | Policy-workflow failure (license/cla, dep-review, codeql) | CI check whose `workflow_name` does NOT match a build profile | `ci-verify-policy` | `ci_policy_failure` | Depends on policy: accept / suppress / fix |
 | d | Explicit `conclusion=failure` | per-check conclusion | (b) or (c) above | (b) or (c) above | per-row |
-| e | Timeout (`conclusion=timed_out` OR wait-deadline) | per-check conclusion / `wait_outcome=deadline_exceeded` | `ci-verify-timeout` | `ci_timeout` | retry / accept (flaky infra) |
-| f | Cancelled (`conclusion=cancelled`) | per-check conclusion | `ci-verify-cancelled` | `ci_cancelled` | accept (manual cancellation) / retry |
-| g | Action required | per-check conclusion | `ci-verify-action-required` | `ci_action_required` | operator approval; accept after approval |
-| h | Stale (`conclusion=stale`) | per-check conclusion | `ci-verify-stale` | `ci_stale` | re-run CI (HEAD advanced past check's commit) |
+| e | Cancelled (`conclusion=cancelled`) | per-check conclusion | `ci-verify-cancelled` | `ci_cancelled` | accept (manual cancellation) / retry |
+| f | Action required | per-check conclusion | `ci-verify-action-required` | `ci_action_required` | operator approval; accept after approval |
+| g | Stale (`conclusion=stale`) | per-check conclusion | `ci-verify-stale` | `ci_stale` | re-run CI (HEAD advanced past check's commit) |
+| h | Timeout (`conclusion=timed_out` OR wait-deadline) | per-check conclusion / `wait_outcome=deadline_exceeded` | `ci-verify-timeout` | `ci_timeout` | retry / accept (flaky infra) |
 | i | No checks reported (`final_status=none`) | zero checks across PR | `ci-verify-missing` | `ci_no_checks` | confirm CI is configured; accept if intentional |
 | j | CI never ran vs CI ran red | distinguished by (i) vs (b..h) | n/a — handled by row choice | n/a | covered by per-row producer split |
 
 ### Notes on the taxonomy
+
+- **Definitive conclusions win over the deadline fallback.** Rows (e)
+  cancelled, (f) action_required, and (g) stale are evaluated BEFORE the
+  (h) timeout row because the timeout row fires on the run-level
+  `wait_outcome=deadline_exceeded` signal in addition to a per-check
+  `timed_out` conclusion. A check that concluded `cancelled` /
+  `action_required` / `stale` before the run hit its wait deadline keeps
+  its own definitive producer; only a check WITHOUT a definitive
+  failure/cancel/action/stale conclusion (e.g. still pending) falls
+  through to the timeout row under `deadline_exceeded`.
 
 - **Row (a) is explicitly excluded** from ci-verify's scope. Sonar's
   quality-gate is fetched by `sonar-roundtrip` from the Sonar API, not

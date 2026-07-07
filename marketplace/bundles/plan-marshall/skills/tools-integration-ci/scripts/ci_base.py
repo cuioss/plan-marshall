@@ -796,9 +796,12 @@ def build_parser(
     add_head_arg(pr_merge_queue)
     pr_merge_queue.add_argument(
         '--strategy',
-        default='merge',
+        default=None,
         choices=['merge', 'squash', 'rebase'],
-        help='Merge strategy applied when the queue merges (default: merge)',
+        help='Merge strategy applied when the queue merges. Unset by default: '
+        'gh pr merge --auto lets the merge queue\'s own branch-protection '
+        'configuration dictate the method — pass --strategy only to force one. '
+        'Forcing a strategy can fail on merge-queue-required branches.',
     )
     pr_merge_queue.add_argument(
         '--delete-branch', action='store_true', help='Delete branch after the queue merges'

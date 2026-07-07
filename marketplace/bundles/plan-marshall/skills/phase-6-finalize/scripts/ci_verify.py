@@ -183,14 +183,18 @@ def classify_check(check: dict, wait_outcome: str) -> tuple[str, str]:
         if _matches_build_profile(check.get('workflow_name') or ''):
             return _PRODUCER_BUILD, 'ci_build_failure'
         return _PRODUCER_POLICY, 'ci_policy_failure'
-    if conclusion in ('timed_out', 'timeout') or wait_outcome == 'deadline_exceeded':
-        return _PRODUCER_TIMEOUT, 'ci_timeout'
+    # A definitive cancelled / action_required / stale conclusion wins over the
+    # run-level deadline_exceeded fallback below: only a check WITHOUT a
+    # definitive failure/cancel/action/stale conclusion (e.g. still pending)
+    # should be routed to the timeout row when the wait hit its deadline.
     if conclusion in ('cancelled', 'canceled'):
         return _PRODUCER_CANCELLED, 'ci_cancelled'
     if conclusion == 'action_required':
         return _PRODUCER_ACTION_REQUIRED, 'ci_action_required'
     if conclusion == 'stale':
         return _PRODUCER_STALE, 'ci_stale'
+    if conclusion in ('timed_out', 'timeout') or wait_outcome == 'deadline_exceeded':
+        return _PRODUCER_TIMEOUT, 'ci_timeout'
     # Defense in depth: an unknown non-success conclusion is a policy failure,
     # never silently accepted as green.
     return _PRODUCER_POLICY, 'ci_policy_failure'
@@ -489,13 +493,17 @@ def _first_missing_required_field(
     """Return the name of the first empty required persist field, else None.
 
     ``pr_number`` is stringified before the emptiness test so a ``0`` PR number
-    (never legal) is caught as an empty value.
+    (never legal) is caught as an empty value — both the falsy int ``0`` and the
+    truthy string ``'0'`` normalize to empty so the guard is consistent.
     """
+    pr_str = str(pr_number or '').strip()
+    if pr_str == '0':
+        pr_str = ''
     values = {
         'plan_id': str(plan_id or '').strip(),
         'run_id': str(run_id or '').strip(),
         'head_sha': str(head_sha or '').strip(),
-        'pr_number': str(pr_number or '').strip(),
+        'pr_number': pr_str,
         'provider': str(provider or '').strip(),
     }
     for field in _REQUIRED_PERSIST_FIELDS:
@@ -569,10 +577,29 @@ def verify(
         wait_outcome = 'completed'
 
     # Fetch the full checks[] array for the jobs file (green + red evidence).
+    # status_fn's own boundary wraps subprocess/parse failures into a synthetic
+    # error dict, so envelope is contractually a dict — no isinstance guard is
+    # needed. A genuine status_fn error carries status == 'error' and no usable
+    # checks; short-circuit to an empty set rather than silently reading a
+    # missing 'checks' key as if the run had legitimately zero checks.
     envelope = status_fn(plan_id, pr_number, worktree_path)
-    raw_checks = envelope.get('checks') if isinstance(envelope, dict) else None
-    raw_checks = raw_checks if isinstance(raw_checks, list) else []
-    normalized_all = [_normalize_check_entry(c) for c in raw_checks]
+    raw_checks: list
+    if envelope.get('status') == 'error':
+        raw_checks = []
+    else:
+        candidate = envelope.get('checks')
+        raw_checks = candidate if isinstance(candidate, list) else []
+    # A partially-corrupt checks entry (non-dict element) would raise inside
+    # _normalize_check_entry — surface it as a structured error instead of an
+    # uncaught traceback.
+    try:
+        normalized_all = [_normalize_check_entry(c) for c in raw_checks]
+    except (TypeError, ValueError, AttributeError) as exc:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': f'Malformed checks structure: {exc}',
+        }
 
     # Resolve run_id from the normalized checks (first non-empty run URL).
     run_id = _derive_run_id(normalized_all)
@@ -604,10 +631,9 @@ def verify(
             jobs_file=jobs_file,
             worktree_path=worktree_path,
         )
-        persisted = (
-            isinstance(persist_result, dict)
-            and persist_result.get('status') == 'success'
-        )
+        # persist_fn shares the same contractually-dict _run_proxy boundary as
+        # status_fn, so no isinstance guard is needed here.
+        persisted = persist_result.get('status') == 'success'
         if not persisted:
             persist_skipped_reason = 'persist_failed'
 
@@ -730,7 +756,9 @@ def _resolve_failing_set(
     if threaded:
         return [_normalize_check_entry(c) for c in threaded]
 
-    passing = {'success', 'skipped', 'neutral', ''}
+    # An empty/unknown conclusion is NOT passing — it must fall through to the
+    # classifier's ci_policy_failure defense-in-depth row (fail-closed).
+    passing = {'success', 'skipped', 'neutral'}
     failing_set: list[dict] = []
     for entry in normalized_all:
         conclusion = (entry.get('conclusion') or '').strip().lower()

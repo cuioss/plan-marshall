@@ -43,7 +43,10 @@ def _capture_run_gh(*, merge_ok: bool = True):
     return run_gh_stub, captured
 
 
-def _mq_ns(*, pr_number=42, head=None, strategy='merge', delete_branch=False):
+def _mq_ns(*, pr_number=42, head=None, strategy=None, delete_branch=False):
+    # strategy defaults to None, mirroring the argparse default — the merge
+    # queue's own branch-protection config dictates the method unless the
+    # operator explicitly passes --strategy.
     return argparse.Namespace(
         pr_number=pr_number,
         head=head,
@@ -70,10 +73,11 @@ def test_ci_base_parser_accepts_pr_merge_queue():
     parser, _pr_sub, _c, _i, _b = ci_base.build_parser('test')
     # Act
     args = parser.parse_args(['pr', 'merge-queue', '--pr-number', '42'])
-    # Assert
+    # Assert — --strategy defaults to a None sentinel (NOT 'merge') so the
+    # handler can tell "unset" from an explicit --strategy merge.
     assert args.pr_command == 'merge-queue'
     assert args.pr_number == 42
-    assert args.strategy == 'merge'
+    assert args.strategy is None
 
 
 def test_ci_base_parser_merge_queue_accepts_head_strategy_delete():
@@ -108,16 +112,32 @@ def test_cmd_pr_merge_queue_enqueues_via_gh_auto(monkeypatch):
     run_gh_stub, captured = _capture_run_gh()
     _install(monkeypatch, run_gh_stub)
 
-    # Act
+    # Act — strategy unset (the default): the merge queue's own config dictates
+    # the method, so NO --strategy flag is forwarded.
     result = github_ops.cmd_pr_merge_queue(_mq_ns())
 
-    # Assert — the enqueue rides on `gh pr merge --auto`.
+    # Assert — the enqueue rides on `gh pr merge --auto` with no strategy flag.
     assert result['status'] == 'success'
     assert result['operation'] == 'pr_merge_queue'
     assert result['enqueued'] is True
     assert result['pr_number'] == 42
     merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
-    assert merge_call == ['pr', 'merge', '42', '--auto', '--merge']
+    assert merge_call == ['pr', 'merge', '42', '--auto']
+
+
+def test_cmd_pr_merge_queue_omits_strategy_when_unset(monkeypatch):
+    # Arrange
+    run_gh_stub, captured = _capture_run_gh()
+    _install(monkeypatch, run_gh_stub)
+
+    # Act — no explicit strategy.
+    github_ops.cmd_pr_merge_queue(_mq_ns(strategy=None))
+
+    # Assert — no --strategy-derived flag is present.
+    merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
+    assert '--merge' not in merge_call
+    assert '--squash' not in merge_call
+    assert '--rebase' not in merge_call
 
 
 def test_cmd_pr_merge_queue_delete_branch_appends_flag(monkeypatch):
@@ -128,10 +148,10 @@ def test_cmd_pr_merge_queue_delete_branch_appends_flag(monkeypatch):
     # Act
     result = github_ops.cmd_pr_merge_queue(_mq_ns(delete_branch=True))
 
-    # Assert
+    # Assert — no strategy flag (unset), but the delete flag rides along.
     assert result['delete_branch'] is True
     merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
-    assert merge_call == ['pr', 'merge', '42', '--auto', '--merge', '--delete-branch']
+    assert merge_call == ['pr', 'merge', '42', '--auto', '--delete-branch']
 
 
 def test_cmd_pr_merge_queue_forwards_strategy(monkeypatch):
@@ -146,6 +166,20 @@ def test_cmd_pr_merge_queue_forwards_strategy(monkeypatch):
     merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
     assert '--squash' in merge_call
     assert '--merge' not in merge_call
+
+
+def test_cmd_pr_merge_queue_forwards_explicit_merge(monkeypatch):
+    # Arrange — an operator explicitly forcing --strategy merge (distinct from
+    # the unset default) MUST still forward the flag.
+    run_gh_stub, captured = _capture_run_gh()
+    _install(monkeypatch, run_gh_stub)
+
+    # Act
+    github_ops.cmd_pr_merge_queue(_mq_ns(strategy='merge'))
+
+    # Assert
+    merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
+    assert merge_call == ['pr', 'merge', '42', '--auto', '--merge']
 
 
 # ---------------------------------------------------------------------------

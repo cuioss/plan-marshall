@@ -95,8 +95,8 @@ Provider handler bodies are NOT in this skill — they live in `github_ops.py` /
 |--------|----------|---------|
 | ci_health | `plan-marshall:tools-integration-ci:ci_health` | Provider detection & verification |
 | ci | `plan-marshall:tools-integration-ci:ci` | Provider-agnostic router |
-| github | `plan-marshall:tools-integration-ci:github` | GitHub operations via gh CLI |
-| gitlab | `plan-marshall:tools-integration-ci:gitlab` | GitLab operations via glab CLI |
+| github_ops | `plan-marshall:workflow-integration-github:github_ops` | GitHub handler bodies via gh CLI (routed to by `ci.py`) |
+| gitlab_ops | `plan-marshall:workflow-integration-gitlab:gitlab_ops` | GitLab handler bodies via glab CLI (routed to by `ci.py`) |
 
 ---
 
