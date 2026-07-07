@@ -25,6 +25,7 @@ Usage:
 import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from _warnings_classify import pattern_match
 from file_ops import base_path
@@ -48,6 +49,52 @@ MODE_STRUCTURED = 'structured'
 
 MODE_ERRORS = 'errors'
 """Only show errors, no warnings."""
+
+
+# =============================================================================
+# ANSI stripping and log reading
+# =============================================================================
+
+# Matches ANSI escape sequences: two-character escapes (ESC followed by a
+# single byte in @-Z, backslash, or _) and CSI sequences (ESC [ ... final byte
+# @-~). This covers SGR colour codes (ESC [ ... m) as well as cursor-movement
+# and other control sequences that build tools emit into captured logs.
+_ANSI_ESCAPE_PATTERN = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+
+def strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences (colour codes, cursor moves) from text.
+
+    Canonical helper shared across every build parser so that a colour-coded
+    log line matches the same plain-text regexes as an uncoloured one. The
+    signature is stable (`strip_ansi(text) -> str`) so sibling plans can import
+    it directly.
+
+    Args:
+        text: Input text that may contain ANSI escape sequences.
+
+    Returns:
+        The text with all ANSI escape sequences removed. Text with no escape
+        sequences is returned unchanged.
+    """
+    return _ANSI_ESCAPE_PATTERN.sub('', text)
+
+
+def read_log_text(log_file: str | Path) -> str:
+    """Read a build log file and strip ANSI escape sequences in one place.
+
+    The single read-and-strip choke point every build-parser log-content read
+    site routes through. Reading and stripping in one helper makes it
+    structurally impossible for a read site to regex-match un-stripped content.
+
+    Args:
+        log_file: Path to the log file (str or Path).
+
+    Returns:
+        The file content with all ANSI escape sequences removed. Undecodable
+        bytes are replaced (`errors='replace'`).
+    """
+    return strip_ansi(Path(log_file).read_text(encoding='utf-8', errors='replace'))
 
 
 # =============================================================================

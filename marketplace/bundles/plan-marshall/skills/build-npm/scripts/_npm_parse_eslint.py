@@ -20,6 +20,7 @@ from _build_parse import (
     Issue,
     UnitTestSummary,
     add_issue_deduped,
+    read_log_text,
 )
 
 # ESLint issue pattern: "  line:col  severity  message  rule-name"
@@ -50,8 +51,7 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
     Raises:
         FileNotFoundError: If log file doesn't exist.
     """
-    path = Path(log_file)
-    content = path.read_text(encoding='utf-8', errors='replace')
+    content = read_log_text(log_file)
 
     issues = _extract_issues(content)
     errors = [i for i in issues if i.severity == SEVERITY_ERROR]

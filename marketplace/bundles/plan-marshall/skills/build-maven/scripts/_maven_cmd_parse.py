@@ -26,6 +26,7 @@ from _build_parse import (
     add_issue_deduped,
     categorize_issue,
     collect_stack_traces,
+    read_log_text,
 )
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
@@ -76,7 +77,7 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
     Raises:
         FileNotFoundError: If log file doesn't exist.
     """
-    content = Path(str(log_file)).read_text(encoding='utf-8', errors='replace')
+    content = read_log_text(log_file)
 
     issues = _extract_issues(content)
     test_summary = _extract_test_summary(content)

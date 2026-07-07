@@ -20,7 +20,7 @@ from _build_parse import (
     add_issue_deduped,
     categorize_issue,
     collect_stack_traces,
-    extract_test_summary,
+    read_log_text,
 )
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
@@ -66,7 +66,7 @@ PYTHON_PATTERNS: CategoryPatterns = {
 
 def _parse_mypy(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
     """Parse mypy type-check output."""
-    content = Path(log_file).read_text(encoding='utf-8', errors='replace')
+    content = read_log_text(log_file)
     issues: list[Issue] = []
     seen: set[str] = set()
 
@@ -99,7 +99,7 @@ def _parse_mypy(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str
 
 def _parse_ruff(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
     """Parse ruff lint output."""
-    content = Path(log_file).read_text(encoding='utf-8', errors='replace')
+    content = read_log_text(log_file)
     issues: list[Issue] = []
     seen: set[str] = set()
 
@@ -128,7 +128,7 @@ def _parse_pytest(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, s
     Extracts file locations from FAILED lines and attempts to find line numbers
     from traceback context in the output.
     """
-    content = Path(log_file).read_text(encoding='utf-8', errors='replace')
+    content = read_log_text(log_file)
     lines = content.split('\n')
     issues: list[Issue] = []
     seen: set[str] = set()
@@ -154,11 +154,7 @@ def _parse_pytest(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, s
     # Attach stack traces to issues
     collect_stack_traces(lines, issues)
 
-    test_summary = extract_test_summary(
-        content,
-        r'(\d+) passed(?:.*?(\d+) failed)?(?:.*?(\d+) skipped)?',
-        group_map={'passed': 1, 'failed': 2, 'skipped': 3},
-    )
+    test_summary = _extract_pytest_summary(content)
 
     status = _detect_build_status_base(
         content,
@@ -182,6 +178,71 @@ def _find_pytest_line_number(content: str, file_path: str, test_name: str) -> in
         # Return last match (closest to the actual failure point)
         return int(matches[-1].group(1))
     return None
+
+
+# Independent per-count patterns for the pytest summary line. Each count is
+# matched on its own so extraction is independent of the order in which pytest
+# renders them (`N passed, M failed` vs `M failed, N passed`). Word boundaries
+# keep `failed` / `passed` from matching inside `xfailed` / `xpassed`.
+_PYTEST_SUMMARY_COUNTS: dict[str, re.Pattern[str]] = {
+    'passed': re.compile(r'\b(\d+) passed\b'),
+    'failed': re.compile(r'\b(\d+) failed\b'),
+    'skipped': re.compile(r'\b(\d+) skipped\b'),
+}
+
+# Locates the actual pytest summary line before any count is extracted from
+# it. pytest always renders the run duration (`in Ns`) on the summary line
+# itself, so requiring that marker alongside a passed/failed/skipped keyword
+# reliably isolates the summary line from unrelated log content (print
+# statements, tracebacks, or other tool output) that could otherwise match the
+# bare count patterns anywhere in the log and produce a false summary.
+_PYTEST_SUMMARY_LINE_PATTERN = re.compile(
+    r'^.*\b(?:passed|failed|skipped)\b.*\bin\s+[\d.]+s.*$',
+    re.MULTILINE,
+)
+
+
+def _extract_pytest_summary(content: str) -> UnitTestSummary | None:
+    """Extract the pytest summary independent of count ordering.
+
+    pytest renders its summary counts in a tool-determined order — a passing-
+    dominant run shows `10308 passed, 1 failed` while a failing-dominant run can
+    show `1 failed, 10308 passed`. To avoid false positives from unrelated log
+    content that happens to contain `passed` / `failed` / `skipped` elsewhere,
+    the actual summary line is located first (identified by its trailing
+    `in Ns` duration marker) and each count is then matched only within that
+    single line, so both count orderings still yield identical results.
+
+    Args:
+        content: Log file content (already ANSI-stripped by the caller).
+
+    Returns:
+        UnitTestSummary if a summary line with any of passed/failed/skipped is
+        found, else None.
+    """
+    summary_lines = _PYTEST_SUMMARY_LINE_PATTERN.findall(content)
+    if not summary_lines:
+        return None
+    summary_line = summary_lines[-1]
+
+    counts: dict[str, int] = {}
+    for key, pattern in _PYTEST_SUMMARY_COUNTS.items():
+        match = pattern.search(summary_line)
+        if match:
+            counts[key] = int(match.group(1))
+
+    if not counts:
+        return None
+
+    passed = counts.get('passed', 0)
+    failed = counts.get('failed', 0)
+    skipped = counts.get('skipped', 0)
+    return UnitTestSummary(
+        passed=passed,
+        failed=failed,
+        skipped=skipped,
+        total=passed + failed + skipped,
+    )
 
 
 # =============================================================================

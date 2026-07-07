@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary, add_issue_deduped
+from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary, add_issue_deduped, read_log_text
 
 # TypeScript error pattern: path(line,col): error TSNNNN: message
 TS_ERROR_PATTERN = re.compile(r'^(.+?)\((\d+),(\d+)\):\s*(error)\s+(TS\d+):\s*(.+)$', re.MULTILINE)
@@ -40,8 +40,7 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
     Raises:
         FileNotFoundError: If log file doesn't exist.
     """
-    path = Path(log_file)
-    content = path.read_text(encoding='utf-8', errors='replace')
+    content = read_log_text(log_file)
 
     issues = _extract_issues(content)
     build_status = 'FAILURE' if issues else 'SUCCESS'
