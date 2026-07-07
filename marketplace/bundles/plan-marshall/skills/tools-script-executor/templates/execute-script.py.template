@@ -139,17 +139,15 @@ _PYTHONPATH = ':'.join(_SCRIPT_DIRS)
 # ============================================================================
 VALIDATE_TOON = False  # Set True for strict TOON output validation
 
-# Session active-plan cache: best-effort writer ----------------------------
+# Session active-plan cache: best-effort binder ----------------------------
 # The per-target terminal-title reader (`session render-title` in platform-runtime)
 # consults ~/.cache/plan-marshall/sessions/{session_id}/active-plan to map
-# the running session to an active plan. The executor populates that cache on
-# every invocation carrying --plan-id / --audit-plan-id so the main
-# orchestration tab can still render pm:{phase}[:{short_description}] in the
-# terminal title.
+# the running session to an active plan, so the main orchestration tab can
+# render pm:{phase}[:{short_description}] in the terminal title.
 #
-# The write is fire-and-forget: any OSError / ValueError / RuntimeError is
-# silently swallowed; the executor's exit code, stdout, and stderr are
-# unaffected by cache-write outcomes.
+# Binding policy (no-overwrite with stale-slot reclaim) and the fire-and-forget
+# error contract are documented on _write_active_plan below — see its docstring
+# for the full contract.
 _ACTIVE_PLAN_ID_MAX_LEN = 120
 
 
@@ -171,8 +169,55 @@ def _validate_active_plan_id(plan_id: str) -> bool:
     return True
 
 
+def _read_active_plan(target: Path) -> str | None:
+    """Return the session's current active-plan binding, or ``None``.
+
+    Best-effort read of the per-session ``active-plan`` cache file. A missing
+    file, an unreadable file, or an empty value is treated as an unbound slot
+    and yields ``None``. Any I/O error also yields ``None`` — the read never
+    raises.
+
+    Args:
+        target: Path to the session's ``active-plan`` cache file.
+
+    Returns:
+        The bound plan id (stripped), or ``None`` when the slot is unbound.
+    """
+    try:
+        if not target.is_file():
+            return None
+        return target.read_text(encoding='utf-8').strip() or None
+    except (OSError, ValueError):
+        return None
+
+
+def _active_plan_dir_exists(plan_id: str) -> bool:
+    """Return True when ``plan_id`` names a live (non-archived) plan dir.
+
+    The live plan dir is ``{PLAN_DIR_NAME}/local/plans/{plan_id}`` resolved
+    relative to the executor's own location — the executor lives inside the
+    tracked ``.plan`` directory, so its parent IS that directory. A binding
+    whose live plan dir no longer exists (the plan was archived or deleted) is
+    a stale slot eligible for reclaim.
+
+    Best-effort: any resolution error yields ``False`` (the slot is then
+    treated as stale and reclaimable).
+
+    Args:
+        plan_id: The bound plan id to test for a live plan dir.
+
+    Returns:
+        True when the live plan dir exists as a directory, else False.
+    """
+    try:
+        plans_root = Path(__file__).resolve().parent / 'local' / 'plans'
+        return (plans_root / plan_id).is_dir()
+    except (OSError, ValueError):
+        return False
+
+
 def _write_active_plan(plan_id: str | None) -> None:
-    """Write ``plan_id`` to the per-session active-plan cache (fire-and-forget).
+    """Bind ``plan_id`` to the per-session active-plan cache (fire-and-forget).
 
     The cache path is
     ``~/.cache/plan-marshall/sessions/{session_id}/active-plan`` where
@@ -184,6 +229,18 @@ def _write_active_plan(plan_id: str | None) -> None:
     * ``$CLAUDE_CODE_SESSION_ID`` is unset or empty,
     * the session id itself fails the same shape validation,
     * any I/O operation raises.
+
+    Binding policy — no-overwrite with stale-slot reclaim. The slot is written
+    only when it is:
+
+    1. unbound (no ``active-plan`` file yet — bind-on-entry), or
+    2. already bound to the incoming ``plan_id`` (idempotent re-bind), or
+    3. bound to a *different* plan whose live plan dir is gone (stale reclaim).
+
+    Otherwise — the slot is bound to a different plan whose live dir still
+    exists — the active binding is PROTECTED and the call is a no-op, so a
+    read-only inspection call naming another plan never steals the session's
+    binding.
 
     Every error path returns silently — the calling script is never disrupted.
     """
@@ -198,6 +255,17 @@ def _write_active_plan(plan_id: str | None) -> None:
         except (OSError, RuntimeError):
             return
         target = home / '.cache' / 'plan-marshall' / 'sessions' / session_id / 'active-plan'
+        # No-overwrite with stale-slot reclaim: protect an active binding that
+        # names a different, still-live plan. A malformed existing value fails
+        # the validator and is treated as reclaimable.
+        existing = _read_active_plan(target)
+        if (
+            existing
+            and existing != plan_id
+            and _validate_active_plan_id(existing)
+            and _active_plan_dir_exists(existing)
+        ):
+            return
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(plan_id, encoding='utf-8')
     except (OSError, ValueError):
