@@ -952,22 +952,150 @@ def test_write_active_plan_swallows_oserror(tmp_path, monkeypatch):
         monkeypatch.setattr(module.Path, 'write_text', real_write_text)
 
 
-def test_write_active_plan_overwrites_on_subsequent_calls(tmp_path, monkeypatch):
-    """Successive calls with different plan ids overwrite the same cache file
-    (no append, no per-call file). This matches the contract the
-    terminal-title reader expects: a single source of truth per session."""
+# --- No-overwrite-with-stale-reclaim binding policy -------------------------
+# The executor binds a session to a plan on the first plan-scoped invocation
+# and then PROTECTS that binding: a read-only inspection call naming a
+# different, still-live plan must NOT steal the slot (the observed
+# mis-attribution defect). The slot is only rewritten when it is unbound,
+# already names the incoming plan, or names a different plan whose live plan
+# dir is gone (stale reclaim). The live plan dir is resolved as
+# ``{executor_dir}/local/plans/{plan_id}`` where ``executor_dir`` is the
+# directory holding the generated executor — i.e. ``Path(__file__).parent``.
+
+
+def _point_executor_at(module, tmp_path, monkeypatch) -> Path:
+    """Point the loaded template module's ``__file__`` at a tmp
+    ``.plan/execute-script.py`` so ``_active_plan_dir_exists`` resolves live
+    plan dirs under ``{tmp_path}/.plan/local/plans``.
+
+    Returns:
+        The plans root (``{tmp_path}/.plan/local/plans``) — create a
+        ``{plan_id}`` subdirectory under it to mark that plan as live.
+    """
+    executor_dir = tmp_path / '.plan'
+    executor_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(module, '__file__', str(executor_dir / 'execute-script.py'))
+    return executor_dir / 'local' / 'plans'
+
+
+def _seed_active_plan(tmp_path, session_id: str, plan_id: str) -> Path:
+    """Seed the session's ``active-plan`` cache file with ``plan_id``.
+
+    Returns the cache file path so the caller can assert on its contents.
+    """
+    cache = tmp_path / '.cache' / 'plan-marshall' / 'sessions' / session_id / 'active-plan'
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(plan_id, encoding='utf-8')
+    return cache
+
+
+def test_write_active_plan_binds_when_slot_unbound(tmp_path, monkeypatch):
+    """Case 1 — the first plan-scoped invocation in an unbound session binds
+    the slot (bind-on-entry), so the title keeps rendering with no
+    orchestrator wiring."""
     module = _load_template_module()
 
     monkeypatch.setenv('HOME', str(tmp_path))
-    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-overwrite')
+    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-bind')
     monkeypatch.setattr(module.Path, 'home', staticmethod(lambda: tmp_path))
+    _point_executor_at(module, tmp_path, monkeypatch)
 
-    module._write_active_plan('first-plan')
-    module._write_active_plan('second-plan')
-    module._write_active_plan('third-plan')
+    module._write_active_plan('plan-a')
 
-    cache_file = tmp_path / '.cache' / 'plan-marshall' / 'sessions' / 'sess-overwrite' / 'active-plan'
-    assert cache_file.read_text(encoding='utf-8') == 'third-plan'
+    cache_file = tmp_path / '.cache' / 'plan-marshall' / 'sessions' / 'sess-bind' / 'active-plan'
+    assert cache_file.read_text(encoding='utf-8') == 'plan-a'
+
+
+def test_write_active_plan_protects_binding_when_other_plan_live(tmp_path, monkeypatch):
+    """Case 2 — a subsequent call naming a DIFFERENT plan whose live plan dir
+    still exists is a no-op: the active binding is preserved. This is the
+    exact mis-attribution scenario the fix closes — a read-only inspection
+    call naming another plan must NOT steal the session's binding."""
+    module = _load_template_module()
+
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-protect')
+    monkeypatch.setattr(module.Path, 'home', staticmethod(lambda: tmp_path))
+    plans_root = _point_executor_at(module, tmp_path, monkeypatch)
+    # 'plan-a' is the bound plan and its live plan dir exists.
+    (plans_root / 'plan-a').mkdir(parents=True, exist_ok=True)
+    cache_file = _seed_active_plan(tmp_path, 'sess-protect', 'plan-a')
+
+    module._write_active_plan('plan-b')
+
+    assert cache_file.read_text(encoding='utf-8') == 'plan-a', (
+        'a differing-plan inspection call must not overwrite a live binding'
+    )
+
+
+def test_write_active_plan_idempotent_for_same_plan(tmp_path, monkeypatch):
+    """Case 3 — a call naming the same plan as the current binding is
+    idempotent (the slot is rewritten with the identical value; no theft, no
+    error)."""
+    module = _load_template_module()
+
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-same')
+    monkeypatch.setattr(module.Path, 'home', staticmethod(lambda: tmp_path))
+    plans_root = _point_executor_at(module, tmp_path, monkeypatch)
+    (plans_root / 'plan-a').mkdir(parents=True, exist_ok=True)
+    cache_file = _seed_active_plan(tmp_path, 'sess-same', 'plan-a')
+
+    module._write_active_plan('plan-a')
+
+    assert cache_file.read_text(encoding='utf-8') == 'plan-a'
+
+
+def test_write_active_plan_reclaims_stale_slot(tmp_path, monkeypatch):
+    """Case 4 — a call naming a DIFFERENT plan whose live plan dir is absent
+    reclaims the slot (stale binding → overwrite). This delivers
+    release-on-exit implicitly: once the bound plan is archived/deleted its
+    live dir is gone, so the next differing-plan invocation rebinds."""
+    module = _load_template_module()
+
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-stale')
+    monkeypatch.setattr(module.Path, 'home', staticmethod(lambda: tmp_path))
+    # Point the executor at a tmp .plan but do NOT create a live dir for
+    # 'gone-plan' — its binding is therefore stale.
+    _point_executor_at(module, tmp_path, monkeypatch)
+    cache_file = _seed_active_plan(tmp_path, 'sess-stale', 'gone-plan')
+
+    module._write_active_plan('new-plan')
+
+    assert cache_file.read_text(encoding='utf-8') == 'new-plan'
+
+
+def test_write_active_plan_noop_when_session_id_absent(tmp_path, monkeypatch):
+    """Case 5 — a missing ``$CLAUDE_CODE_SESSION_ID`` remains a silent no-op
+    under the new binding policy (the session-id guard short-circuits before
+    any read-or-write of the slot)."""
+    module = _load_template_module()
+
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+    monkeypatch.setattr(module.Path, 'home', staticmethod(lambda: tmp_path))
+    _point_executor_at(module, tmp_path, monkeypatch)
+
+    module._write_active_plan('plan-a')
+
+    sessions_dir = tmp_path / '.cache' / 'plan-marshall' / 'sessions'
+    if sessions_dir.exists():
+        children = [p.name for p in sessions_dir.iterdir() if p.is_dir()]
+        assert children == [], f'No per-session dirs should be created, got {children}'
+
+
+def test_active_plan_dir_exists_reports_live_and_absent(tmp_path, monkeypatch):
+    """Focused unit test for the ``_active_plan_dir_exists`` staleness probe:
+    a present ``{executor_dir}/local/plans/{plan_id}`` dir → True; an absent
+    one → False."""
+    module = _load_template_module()
+
+    plans_root = _point_executor_at(module, tmp_path, monkeypatch)
+    (plans_root / 'live-plan').mkdir(parents=True, exist_ok=True)
+
+    assert module._active_plan_dir_exists('live-plan') is True
+    assert module._active_plan_dir_exists('missing-plan') is False
 
 
 # AST subcommand extractor removed (lesson 2026-05-26-09-001 / plan
