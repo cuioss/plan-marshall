@@ -850,19 +850,55 @@ def _resolve_archived_status_json(plan_id: str) -> Path | None:
     return None
 
 
+def _resolve_worktree_status_json(plan_id: str) -> Path | None:
+    """Resolve the phase-5+ worktree ``status.json`` for a plan, or ``None``.
+
+    Once a plan enters phase 5, its plan directory is MOVED into an isolated
+    worktree (ADR-002), so the main-live path
+    ``<_PLAN_DIR_NAME>/local/plans/{plan_id}/status.json`` no longer resolves.
+    The worktree-resident copy lives at
+    ``<_PLAN_DIR_NAME>/local/worktrees/{plan_id}/<_PLAN_DIR_NAME>/local/plans/{plan_id}/status.json``
+    (the outer ``<_PLAN_DIR_NAME>`` is the main checkout's tracked dir; the inner
+    one is the worktree's own).
+
+    Returns that path when it is a regular file, else ``None`` (best-effort, no
+    raise — mirroring :func:`_resolve_archived_status_json`'s guard style).
+    """
+    worktree_path = (
+        Path(_PLAN_DIR_NAME)
+        / "local"
+        / "worktrees"
+        / plan_id
+        / _PLAN_DIR_NAME
+        / "local"
+        / "plans"
+        / plan_id
+        / "status.json"
+    )
+    try:
+        if worktree_path.is_file():
+            return worktree_path
+    except OSError:
+        return None
+    return None
+
+
 def _read_title_state(plan_id: str) -> dict[str, Any] | None:
     """Read the title state for *plan_id* from ``status.json``, or ``None``.
 
-    Reads the live plan dir's ``status.json``
-    (``<_PLAN_DIR_NAME>/local/plans/{plan_id}/status.json``) first; on absence,
-    falls back to the archived ``status.json`` resolved via
+    Resolves ``status.json`` in three locations, in order: the main-live plan
+    dir (``<_PLAN_DIR_NAME>/local/plans/{plan_id}/status.json``); on absence, the
+    phase-5+ worktree copy resolved via :func:`_resolve_worktree_status_json`
+    (once the plan dir is moved into its worktree under ADR-002 the main-live
+    path misses); and finally the archived ``status.json`` resolved via
     :func:`_resolve_archived_status_json`.
 
     Returns a ``{current_phase, short_description, title_token}`` state dict (the
     inputs :func:`manage_terminal_title.compose` consumes), reading
     ``current_phase`` from the top-level field and ``short_description`` /
     ``title_token`` from wherever they live in the status structure. Returns
-    ``None`` when neither the live nor the archived file is present or readable.
+    ``None`` when none of the live, worktree, or archived files is present or
+    readable.
 
     ``current_phase`` is sourced from the status ``current_phase`` field;
     ``short_description`` and ``title_token`` are best-effort (a status.json
@@ -873,7 +909,9 @@ def _read_title_state(plan_id: str) -> dict[str, Any] | None:
     if live_path.is_file():
         status_path: Path | None = live_path
     else:
-        status_path = _resolve_archived_status_json(plan_id)
+        status_path = _resolve_worktree_status_json(plan_id)
+        if status_path is None:
+            status_path = _resolve_archived_status_json(plan_id)
     if status_path is None:
         return None
 

@@ -2711,3 +2711,141 @@ class TestHealthCheck:
 
         result = _parsed(rt.health_check("permissions"))
         assert result["all_healthy"] is False
+
+
+# =============================================================================
+# 4c. _read_title_state three-location search order (main-live -> worktree ->
+#     archived) + _resolve_worktree_status_json probe (phase-5/6 freeze fix)
+# =============================================================================
+
+
+def _titlestate_reader_cwd(tmp_path, monkeypatch):
+    """Pin the reader's ``_PLAN_DIR_NAME`` at ``.plan`` and chdir into tmp_path
+    so the reader's relative ``Path(_PLAN_DIR_NAME)`` resolutions land under the
+    temp tree. Returns the ``claude_runtime`` module."""
+    import claude_runtime as _cr
+
+    monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+    monkeypatch.chdir(tmp_path)
+    return _cr
+
+
+def _titlestate_write_live(tmp_path, plan_id, status):
+    """Write the main-live ``status.json`` for *plan_id*."""
+    d = tmp_path / ".plan" / "local" / "plans" / plan_id
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "status.json").write_text(json.dumps(status), encoding="utf-8")
+
+
+def _titlestate_write_worktree(tmp_path, plan_id, status):
+    """Write the phase-5+ worktree ``status.json`` for *plan_id* at
+    ``.plan/local/worktrees/{plan_id}/.plan/local/plans/{plan_id}/status.json``."""
+    d = (
+        tmp_path
+        / ".plan"
+        / "local"
+        / "worktrees"
+        / plan_id
+        / ".plan"
+        / "local"
+        / "plans"
+        / plan_id
+    )
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "status.json").write_text(json.dumps(status), encoding="utf-8")
+
+
+def _titlestate_write_archived(tmp_path, plan_id, status, date_prefix="2026-05-29"):
+    """Write the archived ``status.json`` for *plan_id*."""
+    d = tmp_path / ".plan" / "local" / "archived-plans" / f"{date_prefix}-{plan_id}"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "status.json").write_text(json.dumps(status), encoding="utf-8")
+
+
+class TestReadTitleStateWorktree:
+    """Regression tests for the three-location ``_read_title_state`` search order
+    (main-live -> worktree -> archived) and the ``_resolve_worktree_status_json``
+    probe added so the title no longer freezes once the plan dir is moved into
+    its worktree during phases 5-6 (ADR-002)."""
+
+    def test_live_present_resolves_live(self, tmp_path, monkeypatch):
+        """Case 1 — a present main-live status.json resolves live even when
+        worktree and archived copies also exist (live wins, unchanged)."""
+        cr = _titlestate_reader_cwd(tmp_path, monkeypatch)
+        _titlestate_write_live(
+            tmp_path, "wt-plan", {"current_phase": "3-outline", "short_description": "live"}
+        )
+        _titlestate_write_worktree(
+            tmp_path, "wt-plan", {"current_phase": "5-execute", "short_description": "wt"}
+        )
+        _titlestate_write_archived(
+            tmp_path, "wt-plan", {"current_phase": "6-finalize", "short_description": "arch"}
+        )
+
+        state = cr._read_title_state("wt-plan")
+
+        assert state == {"current_phase": "3-outline", "short_description": "live"}
+
+    def test_live_absent_worktree_present_resolves_worktree(self, tmp_path, monkeypatch):
+        """Case 2 — with the main-live path absent, the worktree status.json
+        resolves (the phase-5/6 freeze scenario), taking precedence over the
+        archived copy."""
+        cr = _titlestate_reader_cwd(tmp_path, monkeypatch)
+        _titlestate_write_worktree(
+            tmp_path, "wt-plan", {"current_phase": "5-execute", "short_description": "wt"}
+        )
+        _titlestate_write_archived(
+            tmp_path, "wt-plan", {"current_phase": "6-finalize", "short_description": "arch"}
+        )
+
+        state = cr._read_title_state("wt-plan")
+
+        assert state == {"current_phase": "5-execute", "short_description": "wt"}
+
+    def test_live_and_worktree_absent_archived_present_resolves_archived(
+        self, tmp_path, monkeypatch
+    ):
+        """Case 3 — with both live and worktree absent, the archived fallback is
+        preserved unchanged."""
+        cr = _titlestate_reader_cwd(tmp_path, monkeypatch)
+        _titlestate_write_archived(
+            tmp_path, "wt-plan", {"current_phase": "6-finalize", "short_description": "arch"}
+        )
+
+        state = cr._read_title_state("wt-plan")
+
+        assert state == {"current_phase": "6-finalize", "short_description": "arch"}
+
+    def test_none_present_returns_none(self, tmp_path, monkeypatch):
+        """Case 4 — no status.json in any of the three locations returns None."""
+        cr = _titlestate_reader_cwd(tmp_path, monkeypatch)
+
+        assert cr._read_title_state("wt-plan") is None
+
+    def test_resolve_worktree_status_json_present_returns_path(self, tmp_path, monkeypatch):
+        """Focused probe — a present worktree status.json resolves to its path."""
+        cr = _titlestate_reader_cwd(tmp_path, monkeypatch)
+        _titlestate_write_worktree(tmp_path, "wt-plan", {"current_phase": "5-execute"})
+
+        resolved = cr._resolve_worktree_status_json("wt-plan")
+
+        assert resolved is not None
+        expected = (
+            tmp_path
+            / ".plan"
+            / "local"
+            / "worktrees"
+            / "wt-plan"
+            / ".plan"
+            / "local"
+            / "plans"
+            / "wt-plan"
+            / "status.json"
+        )
+        assert resolved.resolve() == expected.resolve()
+
+    def test_resolve_worktree_status_json_absent_returns_none(self, tmp_path, monkeypatch):
+        """Focused probe — an absent worktree status.json resolves to None."""
+        cr = _titlestate_reader_cwd(tmp_path, monkeypatch)
+
+        assert cr._resolve_worktree_status_json("wt-plan") is None
