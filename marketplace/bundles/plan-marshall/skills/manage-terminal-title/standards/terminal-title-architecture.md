@@ -14,7 +14,8 @@ owning exactly one concern:
   vocabulary (including the ✅ terminal override). It performs **no I/O** — it is
   a pure function of the passed state dict and hook event.
 - **`platform-runtime` (resolve + emit)** — resolves session → plan, reads
-  `status.json` (live first, archived fallback), calls `compose()`, and **emits**
+  `status.json` (live first, worktree next, archived fallback), calls
+  `compose()`, and **emits**
   the result per platform (OSC sequence / statusLine / web-desktop sessionTitle,
   plus a direct `/dev/tty` push). The OpenCode runtime is a no-op.
 
@@ -31,8 +32,8 @@ STATE (manage-status)            COMPOSER (manage-terminal-title)   RESOLVE+EMIT
 │ title-token clear        │     │  1. _compose_body(state)     │  │  1. $CLAUDE_CODE_SESSION_ID          │
 │   writes status.title_   │     │     pm:{phase}[:{short}]     │  │  2. session cache → plan_id          │
 │   token (NO rendering)    │     │     pm:Completed[:{short}]   │  │  3. _read_title_state(plan_id):      │
-└────────────┬─────────────┘     │  2. TITLE_TOKEN_GLYPHS[token]│  │     a. live status.json              │
-             │ writes            │     ⏳/🔒 (active phase)      │  │     b. archived status.json glob     │
+└────────────┬─────────────┘     │  2. TITLE_TOKEN_GLYPHS[token]│  │     live → worktree → archived     │
+             │ writes            │     ⏳/🔒 (active phase)      │  │     status.json (first hit wins)   │
              ▼                   │  3. resolve_icon(event,tool) │  │  4. compose(state, event)  ──────────┤
    status.json                  │     ➤/?/⚙/✓, ✅ terminal     │  │  5. emit per platform:               │
    (current_phase,              │        override               │  │     OSC terminalSequence (every event)│
@@ -166,9 +167,17 @@ body format (both live in the composer it imports).
    Claude Code hook environment. Empty → no-op (write nothing, return `""`).
 2. **Resolve session → plan** via the session cache (see Session-Plan Binding
    below). Empty → no-op.
-3. **Read the title state from `status.json`** via `_read_title_state(plan_id)`:
+3. **Read the title state from `status.json`** via `_read_title_state(plan_id)`,
+   resolving three locations in order (first hit wins):
    a. Live path: `.plan/local/plans/{plan_id}/status.json`.
-   b. Archived fallback: when the live path is absent, glob
+   b. Worktree path (`_resolve_worktree_status_json`): when the live path is
+      absent,
+      `.plan/local/worktrees/{plan_id}/.plan/local/plans/{plan_id}/status.json`.
+      This is the phase-5+ location: once the plan dir is moved into its
+      isolated worktree (ADR-002) the main-live path misses, so the reader
+      checks the worktree copy before falling back to the archive — without it
+      the title freezes at its last-rendered state through phases 5-6.
+   c. Archived fallback: when both the live and worktree paths are absent, glob
       `.plan/local/archived-plans/*-{plan_id}/status.json` (archive naming
       `{YYYY-MM-DD}-{plan_id}`, with the parent-name suffix checked to avoid a
       prefix collision) and read the terminal state from there. Absent/unreadable
@@ -206,6 +215,31 @@ The session identifier is bound to a plan through a filesystem cache rooted at
 and returns the contained `plan_id` (or `None`). The `session_id` originates from
 an external hook payload and is validated against the canonical UUID format
 before any filesystem use, to prevent path traversal and glob injection.
+
+#### Binding ownership — bind-on-entry, protect-active, stale-reclaim
+
+The **writer** of the `active-plan` binding is the executor
+(`tools-script-executor`'s generated `execute-script.py`), which calls
+`_write_active_plan(plan_id)` on every plan-scoped invocation — any call carrying
+`--plan-id` / `--audit-plan-id`. The write follows a **no-overwrite-with-stale-reclaim**
+policy so a read-only inspection call can never steal an active session's binding:
+
+- **Bind on entry** — when the session has no `active-plan` slot yet, the first
+  plan-scoped invocation binds it.
+- **Idempotent re-bind** — a call naming the plan already bound rewrites the same
+  value.
+- **Protect the active binding** — a call naming a *different* plan is a no-op
+  while the bound plan's live plan dir (`.plan/local/plans/{bound}/`) still
+  exists. Read-only inspection calls that name another plan therefore no longer
+  overwrite the binding, so the main orchestration tab keeps rendering its own
+  plan's title.
+- **Stale reclaim** — a call naming a different plan whose live plan dir is gone
+  (archived or deleted) reclaims the slot. This delivers release-on-exit
+  implicitly: once a plan is archived its slot becomes reclaimable by the next
+  differing-plan invocation, so no separate `session release` verb is needed.
+
+The write is fully fire-and-forget — every error path is swallowed and the
+executor's exit code, stdout, and stderr are unaffected by cache-write outcomes.
 
 ### Output Channels
 
