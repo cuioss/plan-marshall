@@ -127,7 +127,7 @@ def _git_output(args: list[str], cwd: Path) -> str | None:
             text=True,
             check=False,
         )
-    except OSError:
+    except (OSError, ValueError):
         return None
     if result.returncode != 0:
         return None
@@ -358,6 +358,15 @@ def main(argv: list[str] | None = None) -> int:
     source_sha = _compute_source_sha(marketplace_root)
     previous_manifest = _load_previous_manifest(args.previous_manifest)
 
+    # A partial/fixture marketplace checkout that omits the plan-marshall bundle
+    # (e.g. a minimal test fixture with only a demo bundle) cannot resolve the
+    # fingerprint helpers at all — this is an intentionally-tolerated degraded
+    # mode (see the fixture-marketplace test suites under test/marketplace and
+    # test/finalize-step-deploy-target), not a build-worthy failure. Degrading
+    # to the empty-fingerprint sentinel on ANY computation failure keeps that
+    # mode working; the real robustness gap CodeRabbit flagged is a SILENT
+    # degradation with no diagnostic trail, so the warning below fixes that
+    # gap without regressing the tolerated partial-marketplace path.
     manifest: dict | None = None
     if output_dir is not None:
         try:
@@ -404,9 +413,14 @@ def main(argv: list[str] | None = None) -> int:
         # files and the just-emitted dist-manifest.json) rather than a stale
         # pre-mutation snapshot.
         if per_target_output is not None and manifest is not None:
-            overridden = _override_bundle_plugin_versions(per_target_output, version)
-            _emit_dist_manifest(per_target_output, manifest)
-            target.finalize(per_target_output, marketplace_dir)
+            try:
+                overridden = _override_bundle_plugin_versions(per_target_output, version)
+                _emit_dist_manifest(per_target_output, manifest)
+                target.finalize(per_target_output, marketplace_dir)
+            except Exception as exc:  # noqa: BLE001
+                print(f'error: target {target_name!r} post-generation stamping failed: {exc}', file=sys.stderr)
+                overall_ok = False
+                continue
             print(
                 f'{target_name}: stamped version {version} into {overridden} bundle plugin.json; '
                 f'emitted {_DIST_MANIFEST_FILENAME}'

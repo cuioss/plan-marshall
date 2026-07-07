@@ -2475,6 +2475,18 @@ def test_stamp_provisioning_fields_creates_system_block_when_absent():
     assert 'config_seed_fingerprint' in config['system']
 
 
+def test_stamp_provisioning_fields_recovers_from_non_dict_system(tmp_path):
+    """A malformed marshal.json where 'system' is not a dict (e.g. None or a
+    string) must not raise — the non-dict value is replaced, not mutated."""
+    config: dict = {'system': None}
+
+    _config_defaults_mod.stamp_provisioning_fields(config)
+
+    assert isinstance(config['system'], dict)
+    assert 'provisioned_version' in config['system']
+    assert 'config_seed_fingerprint' in config['system']
+
+
 def test_read_provisioned_version_reads_executor_constant(tmp_path, monkeypatch):
     """read_provisioned_version reads MARSHALL_VERSION from the tracked executor."""
     plan_dir = tmp_path / '.plan'
@@ -2489,6 +2501,18 @@ def test_read_provisioned_version_empty_when_executor_absent(tmp_path, monkeypat
     """read_provisioned_version returns the '' fresh-install sentinel when no executor exists."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+
+    assert _config_defaults_mod.read_provisioned_version() == ''
+
+
+def test_read_provisioned_version_empty_on_undecodable_executor(tmp_path, monkeypatch):
+    """A ValueError/UnicodeDecodeError decoding the executor is treated like an
+    absent executor — the '' sentinel, never an unhandled exception."""
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    # Invalid UTF-8 byte sequence raises UnicodeDecodeError (a ValueError subclass).
+    (plan_dir / 'execute-script.py').write_bytes(b'\xff\xfe not valid utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
     assert _config_defaults_mod.read_provisioned_version() == ''

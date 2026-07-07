@@ -958,7 +958,7 @@ def compute_config_seed_fingerprint() -> str:
         as the executor script-set fingerprint).
     """
     canonical = json.dumps(get_default_config(), sort_keys=True)
-    return hashlib.md5(canonical.encode('utf-8')).hexdigest()[:8]
+    return hashlib.md5(canonical.encode('utf-8'), usedforsecurity=False).hexdigest()[:8]
 
 
 def read_provisioned_version() -> str:
@@ -980,7 +980,7 @@ def read_provisioned_version() -> str:
     executor = get_tracked_config_dir() / 'execute-script.py'
     try:
         text = executor.read_text(encoding='utf-8')
-    except OSError:
+    except (OSError, ValueError):
         return ''
     match = re.search(r"^MARSHALL_VERSION\s*=\s*'([^']*)'", text, re.MULTILINE)
     if match:
@@ -1002,6 +1002,9 @@ def stamp_provisioning_fields(config: dict) -> None:
     Args:
         config: The marshal.json config dict to stamp (mutated in place).
     """
-    system = config.setdefault('system', {})
+    system = config.get('system')
+    if not isinstance(system, dict):
+        system = {}
+        config['system'] = system
     system['provisioned_version'] = read_provisioned_version()
     system['config_seed_fingerprint'] = compute_config_seed_fingerprint()

@@ -106,6 +106,30 @@ class TestBuildDistManifest:
 # =============================================================================
 
 
+class TestGitOutput:
+    """``_git_output`` degrades to ``None`` rather than raising on subprocess failure."""
+
+    def test_returns_none_on_oserror(self, tmp_path, monkeypatch):
+        def _raise(*_args, **_kwargs):
+            raise OSError('git not found')
+
+        monkeypatch.setattr(gen.subprocess, 'run', _raise)
+
+        assert gen._git_output(['rev-parse', 'HEAD'], tmp_path) is None
+
+    def test_returns_none_on_value_error(self, tmp_path, monkeypatch):
+        def _raise(*_args, **_kwargs):
+            raise ValueError('bad encoding')
+
+        monkeypatch.setattr(gen.subprocess, 'run', _raise)
+
+        assert gen._git_output(['rev-parse', 'HEAD'], tmp_path) is None
+
+    def test_returns_none_on_nonzero_exit(self, tmp_path):
+        # A non-repo directory makes 'git -C <dir> rev-parse HEAD' exit non-zero.
+        assert gen._git_output(['rev-parse', 'HEAD'], tmp_path) is None
+
+
 class TestVersionResolution:
     def test_read_base_version_reads_marketplace_metadata(self, tmp_path):
         (tmp_path / '.claude-plugin').mkdir()
@@ -143,6 +167,76 @@ class TestVersionResolution:
 # =============================================================================
 # bundle plugin.json version override
 # =============================================================================
+
+
+class TestMainFingerprintFailureDegradesWithWarning:
+    """A fingerprint-computation failure degrades to the empty-fingerprint
+    sentinel WITH a diagnostic warning on stderr, rather than the prior
+    fully-silent degradation. It must NOT abort the build: a partial/fixture
+    marketplace checkout that omits the plan-marshall bundle (see the
+    fixture-marketplace suites under test/marketplace and
+    test/finalize-step-deploy-target) legitimately cannot resolve the
+    fingerprint helpers and must still emit successfully."""
+
+    @staticmethod
+    def _write_minimal_marketplace(tmp_path):
+        """A minimal marketplace with one bundle, so ``target.generate()``
+        itself succeeds and the test isolates the fingerprint-degradation
+        behavior from an unrelated "no bundles at all" failure."""
+        bundles_dir = tmp_path / 'bundles'
+        bundle = bundles_dir / 'demo'
+        (bundle / '.claude-plugin').mkdir(parents=True)
+        (bundle / '.claude-plugin' / 'plugin.json').write_text(
+            json.dumps(
+                {'name': 'demo', 'version': '0.0.1', 'description': 'demo', 'agents': [], 'commands': [], 'skills': []}
+            ),
+            encoding='utf-8',
+        )
+        (tmp_path / '.claude-plugin').mkdir()
+        (tmp_path / '.claude-plugin' / 'marketplace.json').write_text(
+            json.dumps({'name': 'fake-marketplace', 'plugins': [{'name': 'demo', 'source': './bundles/demo'}]}),
+            encoding='utf-8',
+        )
+        return bundles_dir
+
+    def test_executor_fingerprint_failure_degrades_with_warning(self, tmp_path, monkeypatch, capsys):
+        bundles_dir = self._write_minimal_marketplace(tmp_path)
+
+        def _raise(*_args, **_kwargs):
+            raise RuntimeError('executor fingerprint boom')
+
+        monkeypatch.setattr(gen, '_compute_executor_scripts_fingerprint', _raise)
+        monkeypatch.setattr(gen, '_compute_config_seed_fingerprint', lambda *_a, **_k: 'config-fp')
+
+        exit_code = gen.main(
+            ['--target', 'claude', '--output', str(tmp_path / 'out'), '--marketplace-dir', str(bundles_dir)]
+        )
+        captured_err = capsys.readouterr().err
+
+        assert exit_code == gen.EXIT_OK, captured_err
+        assert 'executor fingerprint boom' in captured_err
+        manifest = json.loads((tmp_path / 'out' / 'dist-manifest.json').read_text())
+        assert manifest['executor_scripts_fingerprint'] == ''
+
+    def test_config_fingerprint_failure_degrades_with_warning(self, tmp_path, monkeypatch, capsys):
+        bundles_dir = self._write_minimal_marketplace(tmp_path)
+
+        monkeypatch.setattr(gen, '_compute_executor_scripts_fingerprint', lambda *_a, **_k: 'exec-fp')
+
+        def _raise(*_args, **_kwargs):
+            raise RuntimeError('config fingerprint boom')
+
+        monkeypatch.setattr(gen, '_compute_config_seed_fingerprint', _raise)
+
+        exit_code = gen.main(
+            ['--target', 'claude', '--output', str(tmp_path / 'out'), '--marketplace-dir', str(bundles_dir)]
+        )
+        captured_err = capsys.readouterr().err
+
+        assert exit_code == gen.EXIT_OK, captured_err
+        assert 'config fingerprint boom' in captured_err
+        manifest = json.loads((tmp_path / 'out' / 'dist-manifest.json').read_text())
+        assert manifest['config_seed_fingerprint'] == ''
 
 
 class TestOverrideBundlePluginVersions:

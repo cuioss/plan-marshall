@@ -262,7 +262,7 @@ Consumer projects ship no `project:` finalize steps, so `missing_project_finaliz
 
 ## Step 6d: Check Executor / Config Staleness
 
-Run the deterministic staleness preflight. It compares the executor's embedded `MARSHALL_VERSION` and `marshal.json`'s `system.provisioned_version` against the installed `dist-manifest.json`, regenerates a stale executor in place (safe derived state, ADR-002), and reports config-seed staleness advisory-only (`marshal.json` is never auto-mutated):
+Run the deterministic staleness preflight. See [SKILL.md § "Executor & Config Staleness Signaling"](../SKILL.md#executor--config-staleness-signaling) for the canonical asymmetric-ownership rules (executor = safe derived state, ADR-002; `marshal.json` = user decisions, never auto-mutated) this check applies:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-staleness

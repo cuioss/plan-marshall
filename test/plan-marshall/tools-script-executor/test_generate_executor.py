@@ -1460,6 +1460,48 @@ def test_generate_uses_empty_sentinel_on_fresh_install(tmp_path, monkeypatch):
     assert "MAPPINGS_FINGERPRINT = ''" in text, 'fresh install must stamp the empty fingerprint sentinel'
 
 
+def test_find_installed_manifest_path_uses_resolved_target(tmp_path, monkeypatch):
+    """The meta-project target-tree fallback looks under target/<target>/, not
+    a hard-coded target/claude/ — so an opencode preflight reads the opencode
+    manifest instead of falling back to (or missing) claude's."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+
+    module = load_module()
+
+    bundles_dir = tmp_path / 'marketplace' / 'bundles'
+    bundles_dir.mkdir(parents=True)
+
+    claude_manifest = tmp_path / 'target' / 'claude' / 'dist-manifest.json'
+    claude_manifest.parent.mkdir(parents=True)
+    claude_manifest.write_text('{"version": "claude-version"}', encoding='utf-8')
+
+    opencode_manifest = tmp_path / 'target' / 'opencode' / 'dist-manifest.json'
+    opencode_manifest.parent.mkdir(parents=True)
+    opencode_manifest.write_text('{"version": "opencode-version"}', encoding='utf-8')
+
+    resolved = module.find_installed_manifest_path(bundles_dir, target='opencode')
+
+    assert resolved == opencode_manifest, 'opencode target must resolve target/opencode/dist-manifest.json'
+
+
+def test_find_installed_manifest_path_defaults_to_claude(tmp_path, monkeypatch):
+    """Omitting ``target`` preserves the pre-existing claude-only behavior."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+
+    module = load_module()
+
+    bundles_dir = tmp_path / 'marketplace' / 'bundles'
+    bundles_dir.mkdir(parents=True)
+
+    claude_manifest = tmp_path / 'target' / 'claude' / 'dist-manifest.json'
+    claude_manifest.parent.mkdir(parents=True)
+    claude_manifest.write_text('{"version": "claude-version"}', encoding='utf-8')
+
+    resolved = module.find_installed_manifest_path(bundles_dir)
+
+    assert resolved == claude_manifest
+
+
 def test_template_declares_version_and_fingerprint_constants():
     """The template carries the MARSHALL_VERSION / MAPPINGS_FINGERPRINT
     placeholder constants beside PLAN_DIR_NAME."""
@@ -1496,6 +1538,20 @@ def _preflight_args():
     import types
 
     return types.SimpleNamespace(marketplace=False, marketplace_root=None, target=None, dry_run=False)
+
+
+def test_read_executor_version_unknown_on_undecodable_executor(tmp_path, monkeypatch):
+    """A ValueError/UnicodeDecodeError decoding the executor is treated like an
+    absent executor — the 'unknown' sentinel, never an unhandled exception."""
+    module = load_module()
+
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    # Invalid UTF-8 byte sequence raises UnicodeDecodeError (a ValueError subclass).
+    (plan_dir / 'execute-script.py').write_bytes(b'\xff\xfe not valid utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+
+    assert module.read_executor_version() == 'unknown'
 
 
 def test_preflight_returns_six_field_toon_on_fresh_install(tmp_path, monkeypatch):
@@ -1604,6 +1660,95 @@ def test_preflight_int_tuple_version_compare_avoids_lexical_bug(tmp_path, monkey
     result = module.cmd_preflight(_preflight_args())
 
     assert result['marshal_status'] == 'stale', '0.1.9 < 0.1.10 under int-tuple compare must be stale'
+
+
+def test_preflight_regenerates_stale_executor_in_place(tmp_path, monkeypatch):
+    """When the embedded MARSHALL_VERSION is older than executor_changed_at_version,
+    preflight regenerates the executor in place and reports the new version.
+
+    ``cmd_generate`` itself is stubbed (its full discovery pipeline is exercised
+    by the dedicated generate-command tests elsewhere in this file); this test
+    isolates the ``cmd_preflight`` regeneration branch: it must invoke the
+    regeneration, treat a ``status: success`` result as ``executor_action:
+    regenerated``, and re-read the freshly stamped version afterward.
+    """
+    import json
+
+    module = load_module()
+
+    manifest = tmp_path / 'dist-manifest.json'
+    manifest.write_text(
+        json.dumps({'version': '0.1.42', 'executor_changed_at_version': '0.1.40'}),
+        encoding='utf-8',
+    )
+    monkeypatch.setenv('PM_DIST_MANIFEST', str(manifest))
+
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    executor = plan_dir / 'execute-script.py'
+    executor.write_text("MARSHALL_VERSION = '0.1.10'\n", encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+    monkeypatch.chdir(tmp_path)
+
+    def _fake_cmd_generate(args):
+        # Simulate a successful in-place regeneration stamping the published version.
+        executor.write_text("MARSHALL_VERSION = '0.1.42'\n", encoding='utf-8')
+        return {'status': 'success'}
+
+    monkeypatch.setattr(module, 'cmd_generate', _fake_cmd_generate)
+
+    result = module.cmd_preflight(_preflight_args())
+
+    assert result['status'] == 'success'
+    assert result['executor_action'] == 'regenerated'
+    assert result['executor_version'] == '0.1.42'
+
+
+def test_preflight_surfaces_error_when_regeneration_fails(tmp_path, monkeypatch):
+    """A failed in-place regeneration surfaces a structured error instead of
+    silently reporting a stale executor as fresh."""
+    import json
+
+    module = load_module()
+
+    manifest = tmp_path / 'dist-manifest.json'
+    manifest.write_text(
+        json.dumps({'version': '0.1.42', 'executor_changed_at_version': '0.1.40'}),
+        encoding='utf-8',
+    )
+    monkeypatch.setenv('PM_DIST_MANIFEST', str(manifest))
+
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    (plan_dir / 'execute-script.py').write_text("MARSHALL_VERSION = '0.1.10'\n", encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+    monkeypatch.chdir(tmp_path)
+
+    monkeypatch.setattr(module, 'cmd_generate', lambda args: {'status': 'error', 'error': 'discovery failed'})
+
+    result = module.cmd_preflight(_preflight_args())
+
+    assert result['status'] == 'error'
+    assert 'discovery failed' in result['error']
+
+
+def test_cmd_generate_returns_error_when_base_path_unresolvable(tmp_path):
+    """cmd_generate returns a structured error (not an unhandled exception)
+    when the marketplace base path cannot be resolved."""
+    import types
+
+    module = load_module()
+    args = types.SimpleNamespace(
+        marketplace=True,
+        marketplace_root=tmp_path / 'does-not-exist',
+        dry_run=False,
+        target=None,
+    )
+
+    result = module.cmd_generate(args)
+
+    assert result['status'] == 'error'
+    assert 'error' in result
 
 
 def test_preflight_subcommand_registered_and_emits_toon(tmp_path):

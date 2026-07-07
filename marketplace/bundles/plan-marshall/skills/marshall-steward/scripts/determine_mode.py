@@ -849,11 +849,17 @@ def run_preflight() -> dict:
     if not script.is_file():
         return {'status': 'error', 'error': f'generate_executor.py not found at {script}'}
 
-    result = subprocess.run(
-        ['python3', str(script), 'preflight'],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ['python3', str(script), 'preflight'],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        return {'status': 'error', 'error': 'preflight timed out'}
+    except (OSError, ValueError) as exc:
+        return {'status': 'error', 'error': f'preflight execution failed: {exc}'}
     if result.returncode != 0:
         return {'status': 'error', 'error': result.stderr.strip() or 'preflight failed'}
 

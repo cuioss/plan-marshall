@@ -15,6 +15,7 @@ paths, so no plan-marshall runtime state is touched.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -523,11 +524,12 @@ def _fake_subprocess(monkeypatch, *, returncode: int, stdout: str = '', stderr: 
     result.stdout = stdout
     result.stderr = stderr
 
-    def _fake_run(cmd, capture_output=False, text=False):
+    def _fake_run(cmd, capture_output=False, text=False, timeout=None):
         calls['cmd'] = cmd
+        calls['timeout'] = timeout
         return result
 
-    monkeypatch.setattr(dm, 'subprocess', types.SimpleNamespace(run=_fake_run))
+    monkeypatch.setattr(dm, 'subprocess', types.SimpleNamespace(run=_fake_run, TimeoutExpired=subprocess.TimeoutExpired))
     return calls
 
 
@@ -578,6 +580,53 @@ def test_run_preflight_error_on_unparseable_output(monkeypatch):
     result = dm.run_preflight()
 
     assert result['status'] == 'error'
+
+
+def test_run_preflight_passes_timeout_to_subprocess(monkeypatch):
+    """run_preflight bounds the subprocess.run call with a finite timeout."""
+    calls = _fake_subprocess(
+        monkeypatch,
+        returncode=0,
+        stdout='status: success\nexecutor_action: fresh\nmarshal_status: fresh\n',
+    )
+
+    dm.run_preflight()
+
+    assert calls['timeout'] == 60
+
+
+def test_run_preflight_error_on_timeout(monkeypatch):
+    """run_preflight returns a structured error instead of hanging when the subprocess times out."""
+    import types
+
+    def _timeout_run(cmd, capture_output=False, text=False, timeout=None):
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
+
+    monkeypatch.setattr(
+        dm, 'subprocess', types.SimpleNamespace(run=_timeout_run, TimeoutExpired=subprocess.TimeoutExpired)
+    )
+
+    result = dm.run_preflight()
+
+    assert result['status'] == 'error'
+    assert 'timed out' in result['error']
+
+
+def test_run_preflight_error_on_subprocess_oserror(monkeypatch):
+    """run_preflight returns a structured error when the subprocess raises OSError."""
+    import types
+
+    def _raising_run(cmd, capture_output=False, text=False, timeout=None):
+        raise OSError('python3 not found')
+
+    monkeypatch.setattr(
+        dm, 'subprocess', types.SimpleNamespace(run=_raising_run, TimeoutExpired=subprocess.TimeoutExpired)
+    )
+
+    result = dm.run_preflight()
+
+    assert result['status'] == 'error'
+    assert 'preflight execution failed' in result['error']
 
 
 def test_cmd_check_staleness_surfaces_preflight_toon(monkeypatch):

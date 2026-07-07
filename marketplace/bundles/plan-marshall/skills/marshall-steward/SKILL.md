@@ -345,8 +345,8 @@ already exist — an already-initialized project re-run/upgrade), it performs a
 four-step remediation pass at **menu-mode entry, before the Main Menu** — a
 sibling entry-time surface to "Branch-Naming Surfacing" and the missing-default
 finalize-step detection above. The pass repairs config drift that accumulated in
-projects initialized before the relevant fixes landed. No version stamp is
-written or read; the pass runs unconditionally on every menu-mode entry and is
+projects initialized before the relevant fixes landed. The pass is not gated by
+any version check; it runs unconditionally on every menu-mode entry and is
 idempotent (an already-clean project is left byte-stable).
 
 Steps (a), (b), and (d) are deterministic silent script calls — they run
@@ -473,9 +473,9 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode ch
 status	success
 executor_action	fresh
 marshal_status	fresh
-installed_version	0.1.42
-executor_version	0.1.42
-marshal_version	0.1.42
+installed_version	<version>
+executor_version	<version>
+marshal_version	<version>
 ```
 
 When `marshal_status` is `stale`, advise the user to run a steward config

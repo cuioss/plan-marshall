@@ -636,7 +636,7 @@ def generate_executor(
     # was generated at, read from the installed dist-manifest.json (emitted by
     # the target generator). A fresh install has no manifest yet — the empty
     # sentinel is substituted, never an error, so the executor still generates.
-    manifest = read_installed_manifest(base_path)
+    manifest = read_installed_manifest(base_path, target=resolved_target)
     generated_version = str(manifest.get('version', '') or '')
     mappings_fingerprint = str(manifest.get('executor_scripts_fingerprint', '') or '')
 
@@ -895,21 +895,24 @@ def check_paths_exist(mappings: dict[str, str]) -> tuple[list, list]:
 # ============================================================================
 
 
-def find_installed_manifest_path(base_path: Path | None = None) -> Path | None:
+def find_installed_manifest_path(base_path: Path | None = None, target: str = 'claude') -> Path | None:
     """Locate the installed ``dist-manifest.json``, or ``None`` when absent.
 
     The manifest is emitted by the target generator at the target output root
-    (meta-project: ``target/claude/``) and rides into the plugin cache on
+    (meta-project: ``target/{target}/``) and rides into the plugin cache on
     install. Search order:
 
     1. ``$PM_DIST_MANIFEST`` — explicit override (tests + alternate installs).
-    2. The meta-project target tree (``<repo>/target/claude/dist-manifest.json``)
+    2. The meta-project target tree (``<repo>/target/{target}/dist-manifest.json``)
        when ``base_path`` points inside a ``marketplace/bundles`` checkout.
     3. ``base_path/dist-manifest.json`` and its parent (cache / target root).
 
     Args:
         base_path: The resolved bundles/cache root, or ``None`` when it could
             not be resolved (fresh install).
+        target: The resolved platform target (``claude`` or ``opencode``) whose
+            manifest to look up under the meta-project target tree. Defaults to
+            ``claude`` for callers that have no resolved target in hand.
 
     Returns:
         Path to an existing manifest file, or ``None``.
@@ -926,7 +929,7 @@ def find_installed_manifest_path(base_path: Path | None = None) -> Path | None:
         idx = base_str.find(marker)
         if idx >= 0:
             repo_root = Path(base_str[:idx])
-            candidates.append(repo_root / 'target' / 'claude' / 'dist-manifest.json')
+            candidates.append(repo_root / 'target' / target / 'dist-manifest.json')
         candidates.append(base_path / 'dist-manifest.json')
         candidates.append(base_path.parent / 'dist-manifest.json')
 
@@ -936,7 +939,7 @@ def find_installed_manifest_path(base_path: Path | None = None) -> Path | None:
     return None
 
 
-def read_installed_manifest(base_path: Path | None = None) -> dict:
+def read_installed_manifest(base_path: Path | None = None, target: str = 'claude') -> dict:
     """Read the installed ``dist-manifest.json``, returning ``{}`` when absent.
 
     A fresh install (and this repo before the first target build) has no
@@ -945,12 +948,13 @@ def read_installed_manifest(base_path: Path | None = None) -> dict:
 
     Args:
         base_path: Forwarded to :func:`find_installed_manifest_path`.
+        target: Forwarded to :func:`find_installed_manifest_path`.
 
     Returns:
         The parsed manifest dict, or ``{}`` when the file is absent or
         unreadable.
     """
-    path = find_installed_manifest_path(base_path)
+    path = find_installed_manifest_path(base_path, target=target)
     if path is None:
         return {}
     try:
@@ -997,7 +1001,7 @@ def read_executor_version() -> str:
         return 'unknown'
     try:
         text = real_executor.read_text(encoding='utf-8')
-    except OSError:
+    except (OSError, ValueError):
         return 'unknown'
     match = re.search(r"^MARSHALL_VERSION\s*=\s*'([^']*)'", text, re.MULTILINE)
     if match and match.group(1):
@@ -1323,7 +1327,13 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
     except FileNotFoundError:
         base_path = None
 
-    manifest = read_installed_manifest(base_path)
+    # Resolve the target the same way cmd_generate does — an explicit --target
+    # flag wins; otherwise fall back to marshal.json — so a stale-executor
+    # regeneration and the manifest lookup below both look at the SAME target's
+    # published dist-manifest.json rather than always defaulting to claude.
+    resolved_target: str = getattr(args, 'target', None) or read_marshal_target()
+
+    manifest = read_installed_manifest(base_path, target=resolved_target)
     installed_version = str(manifest.get('version', '') or 'unknown')
     executor_changed_at = str(manifest.get('executor_changed_at_version', '') or '')
     config_changed_at = str(manifest.get('config_changed_at_version', '') or '')
