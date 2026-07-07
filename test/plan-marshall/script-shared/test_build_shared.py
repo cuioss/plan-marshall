@@ -2,6 +2,7 @@
 """Tests for _build_shared utilities and resolve_project_dir executor resolution."""
 
 import importlib
+import json
 import os
 import sys
 from pathlib import Path
@@ -112,3 +113,83 @@ class TestResolveProjectDirMainCheckoutRoot:
         monkeypatch.setattr(_resolve_project_dir, '_main_checkout_root', lambda: '/tmp/cwd-relative-root')
         resolved = _resolve_project_dir.resolve_project_dir('some-plan', '.', default='.')
         assert resolved == '/tmp/cwd-relative-root'
+
+
+class TestCmdRunCommonSafetyNet:
+    """SAFETY-NET: a failed build whose parser extracts no structured error
+    must still yield exactly one synthetic errors[] row, so status and errors[]
+    can never be mutually contradictory."""
+
+    def test_synthetic_error_row_emitted_when_parser_returns_no_errors(self, tmp_path, capsys):
+        # Arrange: a genuinely failed build (non-zero exit) whose parser finds
+        # nothing structured — the exact contradiction the safety-net closes.
+        log_path = tmp_path / 'build.log'
+        log_path.write_text('colored output that the parser matched nothing in\n', encoding='utf-8')
+        result = {
+            'status': 'error',
+            'exit_code': 1,
+            'duration_seconds': 5,
+            'log_file': str(log_path),
+            'command': './pw module-tests plan-marshall',
+        }
+
+        def _empty_parser(_log_file):
+            # Build FAILED but no structured error was extracted.
+            return [], None, 'FAILURE'
+
+        # Act
+        exit_code = _build_shared.cmd_run_common(
+            result,
+            _empty_parser,
+            tool_name='python',
+            output_format='json',
+        )
+        parsed = json.loads(capsys.readouterr().out)
+
+        # Assert: status is error and exactly one synthetic error row is present.
+        assert exit_code == 0  # status is modeled in the output, not the exit code
+        assert parsed['status'] == 'error'
+        errors = parsed.get('errors', [])
+        assert len(errors) == 1
+        synthetic = errors[0]
+        assert synthetic['file'] == str(log_path)
+        assert synthetic['category'] == 'build_failure'
+        assert synthetic['severity'] == _build_shared.SEVERITY_ERROR
+
+    def test_parsed_errors_are_not_overwritten_by_safety_net(self, tmp_path, capsys):
+        # Arrange: a failed build whose parser DID extract a real error. The
+        # safety-net must not fire — the genuine error is preserved verbatim.
+        log_path = tmp_path / 'build.log'
+        log_path.write_text('real failure content\n', encoding='utf-8')
+        result = {
+            'status': 'error',
+            'exit_code': 1,
+            'duration_seconds': 5,
+            'log_file': str(log_path),
+            'command': './pw module-tests plan-marshall',
+        }
+        real_issue = _build_shared.Issue(
+            file='tests/test_foo.py',
+            line=42,
+            message='assert 1 == 2',
+            severity=_build_shared.SEVERITY_ERROR,
+            category='test_failure',
+        )
+
+        def _real_parser(_log_file):
+            return [real_issue], None, 'FAILURE'
+
+        # Act
+        _build_shared.cmd_run_common(
+            result,
+            _real_parser,
+            tool_name='python',
+            output_format='json',
+        )
+        parsed = json.loads(capsys.readouterr().out)
+
+        # Assert: the single genuine error is kept; no synthetic row is added.
+        errors = parsed.get('errors', [])
+        assert len(errors) == 1
+        assert errors[0]['file'] == 'tests/test_foo.py'
+        assert errors[0]['category'] == 'test_failure'

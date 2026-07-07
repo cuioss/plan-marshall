@@ -527,6 +527,24 @@ def cmd_run_common(
         # Partition issues into errors and warnings
         errors, warnings = partition_issues(issues)
 
+        # SAFETY-NET: this branch is reached only when the build genuinely
+        # failed (non-zero exit → error_result below sets status=error). If the
+        # log parser extracted no structured error, the returned TOON would
+        # carry status=error with an empty errors[] — a self-contradictory
+        # result that hides the failure. Emit exactly one synthetic error row
+        # pointing at the full log so status and errors[] can never contradict
+        # each other, regardless of which tool parser ran.
+        if not errors:
+            errors = [
+                Issue(
+                    file=log_file,
+                    line=None,
+                    message=f'Build failed but no structured errors were parsed; see full log: {log_file}',
+                    severity=SEVERITY_ERROR,
+                    category='build_failure',
+                )
+            ]
+
         # Load acceptable warnings and filter based on mode
         patterns = load_acceptable_warnings(project_dir, tool_name)
         filtered_warnings = filter_warnings(warnings, patterns, mode)

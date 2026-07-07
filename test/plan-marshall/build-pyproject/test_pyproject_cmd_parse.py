@@ -10,16 +10,33 @@ isolation for detailed coverage of mypy/ruff/pytest output patterns.
 """
 
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by conftest)
-from _build_parse import Issue, UnitTestSummary
+from _build_parse import Issue, UnitTestSummary, read_log_text
 
 from conftest import load_script_module
 
 _pyproject_cmd_parse_mod = load_script_module('plan-marshall', 'build-pyproject', '_pyproject_cmd_parse.py', '_pyproject_cmd_parse')
 
 parse_log = _pyproject_cmd_parse_mod.parse_log
+_REGISTRY = _pyproject_cmd_parse_mod._REGISTRY
+_has_pytest_output = _pyproject_cmd_parse_mod._has_pytest_output
+
+
+@contextmanager
+def _temp_log(content: str) -> Iterator[str]:
+    """Write content to a temp .log file, yield its path, and unlink on exit."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
+        f.write(content)
+        f.flush()
+        path = f.name
+    try:
+        yield path
+    finally:
+        Path(path).unlink()
 
 
 def test_parse_mypy_errors():
@@ -185,3 +202,120 @@ def test_parse_issues_are_issue_instances():
 
     for issue in issues:
         assert isinstance(issue, Issue)
+
+
+# =============================================================================
+# End-to-end regression coverage for the confirmed live failure (ANSI colour +
+# failed-before-passed summary ordering), driven through the registry path.
+# =============================================================================
+
+# ANSI SGR escape sequences the confirmed live pytest run emitted into the
+# captured log. Colour wraps the FAILED marker and each summary count.
+_RED = '\x1b[31m'
+_GREEN = '\x1b[32m'
+_BOLD = '\x1b[1m'
+_RESET = '\x1b[0m'
+
+
+def test_colored_live_failure_end_to_end_via_registry():
+    """Reproduces the confirmed live failure end-to-end through the registry.
+
+    An ANSI-coloured log with a coloured FAILED line and a coloured
+    ``1 failed, 10308 passed`` summary (failed-before-passed ordering) must,
+    when parsed end-to-end through the registry path (``parse_log`` ->
+    ``_REGISTRY.parse_multi``): (a) detect the failing tool at the registry
+    content-check under colour, and (b) yield a populated ``errors[]`` row with
+    ``failed=1`` — never the empty-errors / failed=0 contradiction the raw
+    (un-stripped) parser produced.
+    """
+    # Arrange: a coloured FAILED line plus a coloured failed-before-passed summary.
+    colored = (
+        f'{_RED}FAILED{_RESET} test/test_foo.py::test_bar - '
+        'AssertionError: assert 1 == 2\n'
+        f'{_BOLD}==================={_RESET} '
+        f'{_RED}1 failed{_RESET}, {_GREEN}10308 passed{_RESET} '
+        f'{_BOLD}in 45.67s ==================={_RESET}\n'
+    )
+
+    with _temp_log(colored) as path:
+        # Act: registry content-check detection under colour + end-to-end parse.
+        detected_tool = _REGISTRY.detect_tool_type(read_log_text(path), '')
+        issues, test_summary, build_status = parse_log(path)
+
+    # Assert (a): the registry content-check detects pytest under colour.
+    assert detected_tool == 'pytest'
+
+    # Assert (b): a populated errors[] row with the failing test surfaced.
+    assert build_status == 'FAILURE'
+    assert len(issues) >= 1
+    assert all(issue.severity == 'error' for issue in issues)
+    assert any(issue.category == 'test_failure' for issue in issues)
+    assert any(issue.file == 'test/test_foo.py' for issue in issues)
+
+    # Assert (b): failed count is 1 — no status/errors[] contradiction.
+    assert test_summary is not None
+    assert test_summary.failed == 1
+    assert test_summary.passed == 10308
+
+
+def test_registry_read_site_strips_colour_before_detection():
+    """Proves the registry read site (not only the tool parsers) is stripped.
+
+    A coloured FAILED line with no summary line is detectable ONLY once the
+    registry's own read strips the colour: the naive ``_has_pytest_output``
+    content-check returns False against the raw coloured content (the summary
+    fallback cannot fire without a summary line, and ``FAILED `` is broken by
+    the colour reset), so a registry read that skipped stripping would never
+    route to the pytest parser and would leave ``errors[]`` empty. A populated
+    result therefore proves the registry read site itself applied the strip.
+    """
+    # Arrange: a coloured FAILED line only — no pytest summary line.
+    colored = (
+        f'{_RED}FAILED{_RESET} test/test_foo.py::test_bar - '
+        'AssertionError: assert 1 == 2\n'
+    )
+
+    # Assert the raw coloured content defeats the naive content-check, so the
+    # end-to-end result can only succeed if the registry read stripped colour.
+    assert _has_pytest_output(colored) is False
+
+    with _temp_log(colored) as path:
+        # Act: parse end-to-end through the registry path.
+        issues, _, build_status = parse_log(path)
+
+    # Assert: detection + extraction succeeded because the registry read stripped.
+    assert build_status == 'FAILURE'
+    assert len(issues) >= 1
+    assert any(issue.category == 'test_failure' for issue in issues)
+    assert any(issue.file == 'test/test_foo.py' for issue in issues)
+
+
+def test_summary_extraction_is_order_independent():
+    """Both summary count orderings yield identical passed/failed/skipped counts.
+
+    pytest renders its summary counts in a tool-determined order — a
+    passing-dominant run shows ``10308 passed, 1 failed`` while a
+    failing-dominant run shows ``1 failed, 10308 passed``. Extraction must be
+    independent of that ordering.
+    """
+    # Arrange: the same counts rendered in both orderings.
+    passed_first = '=============== 10308 passed, 1 failed in 45.67s ===============\n'
+    failed_first = '=============== 1 failed, 10308 passed in 45.67s ===============\n'
+
+    # Act: parse each ordering end-to-end.
+    with _temp_log(passed_first) as path_a:
+        _, summary_a, _ = parse_log(path_a)
+    with _temp_log(failed_first) as path_b:
+        _, summary_b, _ = parse_log(path_b)
+
+    # Assert: both orderings extracted the same counts.
+    assert summary_a is not None
+    assert summary_b is not None
+    assert summary_a.passed == summary_b.passed == 10308
+    assert summary_a.failed == summary_b.failed == 1
+    assert summary_a.skipped == summary_b.skipped == 0
+    assert (summary_a.passed, summary_a.failed, summary_a.skipped) == (
+        summary_b.passed,
+        summary_b.failed,
+        summary_b.skipped,
+    )

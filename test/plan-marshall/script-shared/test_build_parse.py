@@ -42,6 +42,8 @@ generate_summary_from_issues = _build_parse_mod.generate_summary_from_issues
 is_warning_accepted = _build_parse_mod.is_warning_accepted
 load_acceptable_warnings = _build_parse_mod.load_acceptable_warnings
 partition_issues = _build_parse_mod.partition_issues
+read_log_text = _build_parse_mod.read_log_text
+strip_ansi = _build_parse_mod.strip_ansi
 
 
 def test_severity_constants():
@@ -462,3 +464,73 @@ def test_generate_summary_other_categories():
     assert summary['total_issues'] == 2
     assert summary['total_errors'] == 1
     assert summary['total_warnings'] == 1
+
+
+# =============================================================================
+# STRIP layer: strip_ansi and read_log_text
+# =============================================================================
+
+
+def test_strip_ansi_removes_color_codes():
+    """strip_ansi removes ANSI SGR colour codes, leaving plain text."""
+    # Arrange
+    colored = '\x1b[31mFAILED\x1b[0m tests/test_foo.py::test_bar'
+
+    # Act
+    result = strip_ansi(colored)
+
+    # Assert
+    assert result == 'FAILED tests/test_foo.py::test_bar'
+    assert '\x1b' not in result
+
+
+def test_strip_ansi_removes_summary_line_color():
+    """strip_ansi cleans a colour-coded pytest summary line to plain text."""
+    # Arrange
+    colored = '\x1b[31m1 failed\x1b[0m, \x1b[32m10308 passed\x1b[0m in 42.00s'
+
+    # Act
+    result = strip_ansi(colored)
+
+    # Assert
+    assert result == '1 failed, 10308 passed in 42.00s'
+
+
+def test_strip_ansi_leaves_clean_text_unchanged():
+    """strip_ansi returns text without escape sequences unchanged."""
+    # Arrange
+    clean = '1 failed, 10308 passed in 42.00s'
+
+    # Act
+    result = strip_ansi(clean)
+
+    # Assert
+    assert result == clean
+
+
+def test_read_log_text_strips_ansi_from_file(tmp_path):
+    """read_log_text reads a file AND strips ANSI codes in one call."""
+    # Arrange
+    log = tmp_path / 'colored.log'
+    log.write_text('\x1b[31m1 failed\x1b[0m, \x1b[32m10308 passed\x1b[0m\n', encoding='utf-8')
+
+    # Act
+    content = read_log_text(log)
+
+    # Assert
+    assert content == '1 failed, 10308 passed\n'
+    assert '\x1b' not in content
+
+
+def test_read_log_text_clean_file_unchanged(tmp_path):
+    """read_log_text returns a colour-free log file unchanged."""
+    # Arrange
+    log = tmp_path / 'clean.log'
+    original = 'FAILED tests/test_foo.py::test_bar\n1 failed, 3 passed\n'
+    log.write_text(original, encoding='utf-8')
+
+    # Act
+    content = read_log_text(log)
+
+    # Assert
+    assert content == original

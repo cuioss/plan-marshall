@@ -26,7 +26,7 @@ from typing import NamedTuple
 
 logger = logging.getLogger(__name__)
 
-from _build_parse import Issue, UnitTestSummary  # noqa: E402
+from _build_parse import Issue, UnitTestSummary, read_log_text  # noqa: E402
 
 ParserResult = tuple[list[Issue], UnitTestSummary | None, str]
 ParserFn = Callable[[str], ParserResult]
@@ -99,7 +99,7 @@ class ParserRegistry:
         Returns:
             Tuple of (issues, test_summary, build_status).
         """
-        content = Path(log_file).read_text(encoding='utf-8', errors='replace')
+        content = read_log_text(log_file)
         tool_type = self.detect_tool_type(content, command)
 
         # Direct match
@@ -134,7 +134,7 @@ class ParserRegistry:
             Tuple of (issues, test_summary, build_status).
         """
         try:
-            content = Path(log_file).read_text(encoding='utf-8', errors='replace')
+            content = read_log_text(log_file)
         except OSError as e:
             logger.warning('Failed to read log file %s: %s', log_file, e)
             return [], None, 'FAILURE'

@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary
+from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary, read_log_text
 
 # npm error code pattern: "npm ERR! code XXXXX"
 NPM_ERROR_CODE_PATTERN = re.compile(r'^npm ERR! code (\S+)', re.MULTILINE)
@@ -48,8 +48,7 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
     Raises:
         FileNotFoundError: If log file doesn't exist.
     """
-    path = Path(log_file)
-    content = path.read_text(encoding='utf-8', errors='replace')
+    content = read_log_text(log_file)
 
     issues = _extract_issues(content)
     build_status = 'FAILURE' if issues else 'SUCCESS'
