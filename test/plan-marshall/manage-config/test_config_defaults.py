@@ -2405,3 +2405,90 @@ def test_plan_phase_3_outline_get_q_gate_validation_returns_once_default(plan_co
 
     assert result['status'] == 'success'
     assert result['value'] == 'once'
+
+
+# =============================================================================
+# Config-seed provisioning fingerprint + stamps (this plan, D2)
+# =============================================================================
+#
+# compute_config_seed_fingerprint() hashes the canonical JSON of
+# get_default_config() — the SAME hash the target generator stamps as
+# config_seed_fingerprint in dist-manifest.json. The runtime-only
+# system.provisioned_version / system.config_seed_fingerprint stamps are NOT part
+# of get_default_config(), so the fingerprint is stable under its own stamping.
+
+
+def test_config_seed_fingerprint_stable_across_calls():
+    """compute_config_seed_fingerprint() is deterministic across repeated calls."""
+    fp1 = _config_defaults_mod.compute_config_seed_fingerprint()
+    fp2 = _config_defaults_mod.compute_config_seed_fingerprint()
+
+    assert fp1 == fp2, 'the config-seed fingerprint must be deterministic'
+    assert len(fp1) == 8, f'fingerprint reuses the 8-char checksum width, got {len(fp1)}'
+
+
+def test_provisioning_stamps_absent_from_default_config():
+    """The runtime provisioning stamps must NOT be part of get_default_config().
+
+    Keeping them out of the seed is what makes the fingerprint stable under its
+    own stamping — the seed the fingerprint hashes never contains the stamp.
+    """
+    system = _config_defaults_mod.get_default_config().get('system', {})
+
+    assert 'provisioned_version' not in system, 'provisioned_version must be runtime-only, not seeded'
+    assert 'config_seed_fingerprint' not in system, 'config_seed_fingerprint must be runtime-only, not seeded'
+
+
+def test_config_seed_fingerprint_independent_of_stamped_fields():
+    """Stamping the runtime provisioning fields must not change the seed fingerprint."""
+    fp_before = _config_defaults_mod.compute_config_seed_fingerprint()
+
+    config = _config_defaults_mod.get_default_config()
+    _config_defaults_mod.stamp_provisioning_fields(config)
+    # the stamps are present on the config now ...
+    assert config['system']['config_seed_fingerprint']
+    # ... but the seed fingerprint (a hash of get_default_config(), which excludes
+    # the stamps) is unchanged — the config never "drifts" from being fingerprinted.
+    fp_after = _config_defaults_mod.compute_config_seed_fingerprint()
+
+    assert fp_before == fp_after, 'stamping must not perturb the seed fingerprint'
+
+
+def test_stamp_provisioning_fields_writes_both_fields():
+    """stamp_provisioning_fields writes provisioned_version + config_seed_fingerprint."""
+    config = _config_defaults_mod.get_default_config()
+
+    _config_defaults_mod.stamp_provisioning_fields(config)
+
+    system = config['system']
+    assert 'provisioned_version' in system
+    assert system['config_seed_fingerprint'] == _config_defaults_mod.compute_config_seed_fingerprint()
+
+
+def test_stamp_provisioning_fields_creates_system_block_when_absent():
+    """stamp_provisioning_fields creates the system block when the config lacks one."""
+    config: dict = {}
+
+    _config_defaults_mod.stamp_provisioning_fields(config)
+
+    assert 'provisioned_version' in config['system']
+    assert 'config_seed_fingerprint' in config['system']
+
+
+def test_read_provisioned_version_reads_executor_constant(tmp_path, monkeypatch):
+    """read_provisioned_version reads MARSHALL_VERSION from the tracked executor."""
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    (plan_dir / 'execute-script.py').write_text("MARSHALL_VERSION = '0.1.55'\n", encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+
+    assert _config_defaults_mod.read_provisioned_version() == '0.1.55'
+
+
+def test_read_provisioned_version_empty_when_executor_absent(tmp_path, monkeypatch):
+    """read_provisioned_version returns the '' fresh-install sentinel when no executor exists."""
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+
+    assert _config_defaults_mod.read_provisioned_version() == ''

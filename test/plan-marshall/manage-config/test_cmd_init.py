@@ -35,6 +35,7 @@ def _load_module(name, filename):
 
 
 _cmd_init_mod = _load_module('_cmd_init', '_cmd_init.py')
+_config_defaults_mod = _load_module('_config_defaults_for_init_provisioning_test', '_config_defaults.py')
 
 cmd_init = _cmd_init_mod.cmd_init
 
@@ -293,6 +294,28 @@ def test_cli_init_force_overwrites(plan_context):
     result = run_script(SCRIPT_PATH, 'init', '--force')
 
     assert result.success, f'Init --force should succeed: {result.stderr}'
+
+
+# =============================================================================
+# Provisioning stamps (this plan, D2)
+# =============================================================================
+
+
+def test_init_stamps_provisioning_fields(plan_context):
+    """init stamps system.provisioned_version and system.config_seed_fingerprint.
+
+    The staleness check compares these baselines against the installed
+    dist-manifest, so a freshly-initialized project must carry both stamps.
+    """
+    result = cmd_init(Namespace(force=False))
+    assert result['status'] == 'success'
+
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
+    system = config['system']
+    assert 'provisioned_version' in system, 'init must stamp system.provisioned_version'
+    assert 'config_seed_fingerprint' in system, 'init must stamp system.config_seed_fingerprint'
+    # the stamped seed fingerprint matches the helper's value for the seed config
+    assert system['config_seed_fingerprint'] == _config_defaults_mod.compute_config_seed_fingerprint()
 
 
 # =============================================================================

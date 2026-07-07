@@ -41,6 +41,7 @@ def _load_module(name, filename):
 
 
 _sync_mod = _load_module('_cmd_sync_defaults', '_cmd_sync_defaults.py')
+_config_defaults_mod = _load_module('_config_defaults_for_sync_provisioning_test', '_config_defaults.py')
 
 cmd_sync_defaults = _sync_mod.cmd_sync_defaults
 
@@ -384,3 +385,51 @@ def test_sync_defaults_seeds_auto_route_recipe_knobs_into_legacy_config(plan_con
     assert init_block['auto_route_recipe_threshold'] == 0.6
     assert 'plan.phase-1-init.auto_route_recipe' in result['added']
     assert 'plan.phase-1-init.auto_route_recipe_threshold' in result['added']
+
+
+# =============================================================================
+# Provisioning-stamp refresh on the reconcile path (this plan, D2)
+# =============================================================================
+#
+# sync-defaults is the deep-merge reconcile marshall-steward invokes. Beyond
+# back-filling missing default keys, it REFRESHES the two runtime provisioning
+# stamps (system.provisioned_version / system.config_seed_fingerprint) so a stamp
+# that predates a default-config change is re-derived — the deep-merge alone
+# never touches an already-present key.
+
+
+def test_sync_defaults_stamps_provisioning_fields(plan_context):
+    """sync-defaults stamps the provisioning fields into a config that lacks them."""
+    _write_marshal(plan_context.fixture_dir, {})
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    system = config['system']
+    assert 'provisioned_version' in system, 'sync-defaults must stamp system.provisioned_version'
+    assert 'config_seed_fingerprint' in system, 'sync-defaults must stamp system.config_seed_fingerprint'
+    # the stamped fingerprint matches the current seed fingerprint
+    assert system['config_seed_fingerprint'] == _config_defaults_mod.compute_config_seed_fingerprint()
+
+
+def test_sync_defaults_refreshes_stale_provisioning_fields(plan_context):
+    """sync-defaults REFRESHES a stale config_seed_fingerprint even when it is already present.
+
+    The deep-merge only adds MISSING keys, so a pre-existing (stale) stamp would
+    otherwise survive untouched. The reconcile path re-stamps unconditionally, so
+    a stale fingerprint is re-derived to the current seed hash.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'system': {'provisioned_version': '0.0.0', 'config_seed_fingerprint': 'staaaale'}},
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    system = config['system']
+    # the stale fingerprint is refreshed to the current seed fingerprint
+    assert system['config_seed_fingerprint'] == _config_defaults_mod.compute_config_seed_fingerprint()
+    assert system['config_seed_fingerprint'] != 'staaaale', 'the stale stamp must be refreshed, not preserved'

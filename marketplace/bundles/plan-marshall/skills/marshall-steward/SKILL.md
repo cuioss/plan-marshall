@@ -1,6 +1,6 @@
 ---
 name: marshall-steward
-description: Project configuration wizard for planning system. Manages executor generation, health checks, build systems, and skill domains.
+description: Project configuration wizard for planning system. Manages executor generation, health checks, executor/config staleness signaling, build systems, and skill domains.
 user-invocable: true
 mode: workflow
 ---
@@ -59,7 +59,7 @@ configure · verify · maintain
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `check-working-prefixes` for the project.working_prefixes presence/drift surfacing |
+| determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode; also exposes `check-working-prefixes` (project.working_prefixes presence/drift) and `check-staleness` (health-menu executor/config staleness preflight) |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
 | bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/local/marshall-state.toon` |
 
@@ -342,14 +342,14 @@ missing_keys	working_prefixes
 
 When the steward runs in **menu mode** (both the executor and `marshal.json`
 already exist — an already-initialized project re-run/upgrade), it performs a
-three-step remediation pass at **menu-mode entry, before the Main Menu** — a
+four-step remediation pass at **menu-mode entry, before the Main Menu** — a
 sibling entry-time surface to "Branch-Naming Surfacing" and the missing-default
 finalize-step detection above. The pass repairs config drift that accumulated in
 projects initialized before the relevant fixes landed. No version stamp is
 written or read; the pass runs unconditionally on every menu-mode entry and is
 idempotent (an already-clean project is left byte-stable).
 
-Steps (a) and (b) are deterministic silent script calls — they run
+Steps (a), (b), and (d) are deterministic silent script calls — they run
 unconditionally, surface nothing to the user, and leave an already-normalized
 project unchanged. Step (c) is an LLM-driven Y/N `AskUserQuestion` gate that
 consumes a deterministic diff, mirroring the existing entry-time
@@ -418,7 +418,73 @@ shape. The verb is read-only — it never mutates `marshal.json`. It returns
 
   - **No** → leave the persisted `build.map` untouched.
 
-After the three steps settle, proceed to the Main Menu.
+**(d) Refresh provisioning stamps via `sync-defaults`** (silent, unconditional).
+Run the config deep-merge reconcile. It back-fills any missing default keys AND
+re-stamps the `system.provisioned_version` / `system.config_seed_fingerprint`
+provisioning fields, so a config-seed change made after the project was
+initialized is reflected in `marshal.json`. This is the config-reconcile step
+the `check-staleness` preflight advises the user to run when it reports
+`marshal_status: stale`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-defaults
+```
+
+See the `manage-config` `sync-defaults` command for the deep-merge + re-stamp
+contract. The call is idempotent — an already-current config is left byte-stable
+(it persists only when the merge added a key or a stamp changed). The refreshed
+`system.provisioned_version` is what `determine_mode check-staleness` compares
+against the installed `dist-manifest.json`'s `config_changed_at_version`.
+
+After the four steps settle, proceed to the Main Menu.
+
+## Executor & Config Staleness Signaling
+
+The steward surfaces executor/config staleness against the installed
+`dist-manifest.json` (emitted by the target generator) through the deterministic
+`generate_executor preflight` verb, wrapped by `determine_mode check-staleness`
+so the Health Check menu can run it as one of its checks. The verb applies two
+**asymmetric ownership** rules:
+
+- **The executor is safe derived state (ADR-002).** When the executor's embedded
+  `MARSHALL_VERSION` is older than the manifest's `executor_changed_at_version`,
+  the verb regenerates the executor in place and reports
+  `executor_action: regenerated`; otherwise `executor_action: fresh`.
+  Regeneration is safe because the executor is per-tree derived state, never a
+  user decision.
+- **`marshal.json` holds user decisions and is never auto-mutated.** Config-seed
+  staleness (`system.provisioned_version` older than the manifest's
+  `config_changed_at_version`) is reported advisory-only as
+  `marshal_status: stale`; the steward routes the user to a config reconcile
+  rather than silently rewriting their config.
+
+A fresh install with no manifest resolves both `changed_at` values to the empty
+sentinel, so nothing is stale and the verb is a no-op reporting `fresh`.
+
+**Health-menu entry.** The Health Check menu runs the staleness preflight via:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-staleness
+```
+
+**Output (TOON)** when the executor and config are both current:
+
+```toon
+status	success
+executor_action	fresh
+marshal_status	fresh
+installed_version	0.1.42
+executor_version	0.1.42
+marshal_version	0.1.42
+```
+
+When `marshal_status` is `stale`, advise the user to run a steward config
+reconcile — the **Re-Run Remediation Pass** step (d) above refreshes the
+provisioning stamps via `manage-config sync-defaults`, so re-entering
+`/marshall-steward` in menu mode clears the advisory. When `executor_action` is
+`regenerated`, surface the session-restart guardrail (see "Session Restart
+Required After Executor / Agent Changes" below) because the emitted agent set may
+have changed.
 
 ## Session Restart Required After Executor / Agent Changes
 
@@ -529,6 +595,12 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode ch
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-missing-finalize-steps [--plan-dir PLAN_DIR]
+```
+
+### determine_mode — check-staleness
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-staleness
 ```
 
 ### bootstrap_plugin — get-root

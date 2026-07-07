@@ -13,6 +13,11 @@ Subcommands:
                                   contaminate the main checkout's .plan/execute-script.py
     check-working-prefixes        Detect absence or drift of project.working_prefixes
                                   against the canonical default (non-clobbering)
+    check-missing-finalize-steps  Detect finalize steps absent from an existing
+                                  marshal.json (newly-added built-in defaults and
+                                  dropped project: steps)
+    check-staleness               Run generate_executor preflight and surface its TOON
+                                  (executor/config staleness against the dist-manifest)
 
 Note: check-docs and check-structure overlap with menu-healthcheck steps 2 and 5.
 The healthcheck runs these same checks via the menu path; this script provides
@@ -26,6 +31,8 @@ Usage:
     python3 determine_mode.py check-structure
     python3 determine_mode.py check-worktree-plan-local --repo-root PATH [--scaffold]
     python3 determine_mode.py check-working-prefixes
+    python3 determine_mode.py check-missing-finalize-steps
+    python3 determine_mode.py check-staleness
 
 Output (TOON format):
     mode subcommand:
@@ -85,10 +92,19 @@ Output (TOON format):
         status	missing
         detail	drift
         missing_keys	working_prefixes
+
+    check-staleness subcommand:
+        status	success
+        executor_action	fresh
+        marshal_status	fresh
+        installed_version	0.1.42
+        executor_version	0.1.42
+        marshal_version	0.1.42
 """
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -799,6 +815,70 @@ def cmd_check_working_prefixes(args: argparse.Namespace) -> dict:
     return {'status': 'ok'}
 
 
+def _generate_executor_script() -> Path:
+    """Resolve the sibling ``tools-script-executor`` generator script path.
+
+    ``generate_executor.py`` lives one skill over, at
+    ``<skills>/tools-script-executor/scripts/generate_executor.py``. The
+    ``_SKILLS_DIR`` anchor (resolved from this file via ``resolve_skills_root``)
+    is the shared skills-root both skills hang off, so the path is derived
+    deterministically without a plugin-cache glob.
+    """
+    return _SKILLS_DIR / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
+
+
+def run_preflight() -> dict:
+    """Run ``generate_executor preflight`` and return its parsed TOON dict.
+
+    Invokes the deterministic ``preflight`` verb of the sibling
+    ``tools-script-executor`` generator as a subprocess and parses its
+    single-line TOON output. The verb compares the executor's embedded
+    ``MARSHALL_VERSION`` and ``marshal.json``'s ``system.provisioned_version``
+    against the installed ``dist-manifest.json``, regenerating a stale executor
+    in place (safe derived state, ADR-002) and reporting config-seed staleness
+    advisory-only (``marshal.json`` is never auto-mutated).
+
+    Returns:
+        The parsed preflight TOON dict on success, or an ``{'status': 'error',
+        'error': ...}`` dict when the generator script is missing, exits
+        non-zero, or emits unparseable output.
+    """
+    from toon_parser import parse_toon
+
+    script = _generate_executor_script()
+    if not script.is_file():
+        return {'status': 'error', 'error': f'generate_executor.py not found at {script}'}
+
+    result = subprocess.run(
+        ['python3', str(script), 'preflight'],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return {'status': 'error', 'error': result.stderr.strip() or 'preflight failed'}
+
+    parsed = parse_toon(result.stdout)
+    if not isinstance(parsed, dict) or not parsed:
+        # ``parse_toon('')`` yields an empty dict, which passes the isinstance
+        # check but carries no ``status`` — returning it verbatim makes callers
+        # KeyError on ``result['status']``. Treat an empty parse as unparseable
+        # so preflight surfaces a structured error instead.
+        return {'status': 'error', 'error': 'unparseable preflight output'}
+    return parsed
+
+
+def cmd_check_staleness(args: argparse.Namespace) -> dict:
+    """Handle the 'check-staleness' subcommand.
+
+    The marshall-steward health-menu staleness check: runs the deterministic
+    ``generate_executor preflight`` verb and surfaces its TOON so the health
+    menu can report whether the executor was regenerated (safe derived state)
+    and whether ``marshal.json``'s config seed is stale (advisory — the steward
+    routes the user to a config reconcile, never auto-mutating user config).
+    """
+    return run_preflight()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description='Plan-marshall helper for mode detection and documentation checks',
@@ -894,6 +974,17 @@ def main() -> int:
         help='Directory containing marshal.json (default: .plan)',
     )
 
+    # check-staleness subcommand
+    subparsers.add_parser(
+        'check-staleness',
+        help=(
+            'Health-menu staleness check — run generate_executor preflight and surface '
+            'its TOON (executor auto-regenerates when stale; config-seed staleness is '
+            'advisory, routed to a steward config reconcile).'
+        ),
+        allow_abbrev=False,
+    )
+
     args = parser.parse_args()
 
     if args.command == 'mode':
@@ -910,6 +1001,8 @@ def main() -> int:
         result = cmd_check_missing_finalize_steps(args)
     elif args.command == 'check-working-prefixes':
         result = cmd_check_working_prefixes(args)
+    elif args.command == 'check-staleness':
+        result = cmd_check_staleness(args)
     else:
         parser.print_help()
         return 1

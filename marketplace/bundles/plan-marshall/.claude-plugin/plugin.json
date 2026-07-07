@@ -1,6 +1,6 @@
 {
   "name": "plan-marshall",
-  "version": "0.1-BETA",
+  "version": "0.1",
   "description": "Environment setup, permission management, cross-cutting utilities, and solution-based development workflow from task implementation to PR quality verification",
   "author": {
     "name": "https://github.com/cuioss/plan-marshall",

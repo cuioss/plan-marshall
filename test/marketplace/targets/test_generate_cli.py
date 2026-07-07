@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """CLI smoke tests for marketplace/targets/generate.py."""
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -15,7 +16,10 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         cwd=PROJECT_ROOT,
-        timeout=30,
+        # A full --output run now discovers scripts and materializes the default
+        # config to compute the dist-manifest fingerprints, so the emit path does
+        # more work than the pure equality check — give it generous headroom.
+        timeout=180,
     )
 
 
@@ -71,3 +75,55 @@ class TestGenerateCli:
         )
         assert result.returncode == 2
         assert 'marketplace directory not found' in result.stderr
+
+
+class TestDeterministicVersion:
+    """The deterministic 0.1.N version + dist-manifest emission on the --output path."""
+
+    def test_version_override_stamps_manifest_and_bundle_plugins(self, tmp_path):
+        """--version wins verbatim: it lands in the dist-manifest and every bundle plugin.json."""
+        out = tmp_path / 'claude-out'
+
+        result = _run_cli('--target', 'claude', '--output', str(out), '--version', '0.1.999')
+
+        assert result.returncode == 0, result.stderr
+        manifest = json.loads((out / 'dist-manifest.json').read_text())
+        assert manifest['version'] == '0.1.999'
+        # every target-tree bundle plugin.json is stamped with the override version
+        plugin_jsons = list(out.glob('*/.claude-plugin/plugin.json'))
+        assert plugin_jsons, 'expected bundle plugin.json files in the generated target tree'
+        for plugin_json in plugin_jsons:
+            assert json.loads(plugin_json.read_text())['version'] == '0.1.999'
+
+    def test_same_sha_yields_identical_version(self, tmp_path):
+        """Two runs on the same source sha produce an identical deterministic version."""
+        out1 = tmp_path / 'out1'
+        out2 = tmp_path / 'out2'
+
+        r1 = _run_cli('--target', 'claude', '--output', str(out1))
+        r2 = _run_cli('--target', 'claude', '--output', str(out2))
+
+        assert r1.returncode == 0, r1.stderr
+        assert r2.returncode == 0, r2.stderr
+        v1 = json.loads((out1 / 'dist-manifest.json').read_text())['version']
+        v2 = json.loads((out2 / 'dist-manifest.json').read_text())['version']
+        assert v1 == v2, 'the same source sha must yield an identical version'
+        # the computed version is the deterministic 0.1.N shape
+        assert v1.startswith('0.1.'), f'expected a 0.1.N version, got {v1!r}'
+
+    def test_dist_manifest_carries_all_six_fields(self, tmp_path):
+        """The emitted dist-manifest.json carries the full six-field schema."""
+        out = tmp_path / 'claude-out'
+
+        result = _run_cli('--target', 'claude', '--output', str(out))
+
+        assert result.returncode == 0, result.stderr
+        manifest = json.loads((out / 'dist-manifest.json').read_text())
+        assert set(manifest.keys()) == {
+            'version',
+            'source_sha',
+            'executor_scripts_fingerprint',
+            'executor_changed_at_version',
+            'config_seed_fingerprint',
+            'config_changed_at_version',
+        }

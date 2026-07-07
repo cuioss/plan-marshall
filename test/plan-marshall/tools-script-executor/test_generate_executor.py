@@ -1321,3 +1321,321 @@ def test_template_build_ledger_helpers_loadable_and_predicate_works():
         assert not module._is_build_class_notation(non_build_notation), (
             f'{non_build_notation} must NOT classify as a build-class dispatch'
         )
+
+
+# ============================================================================
+# Deliverable 1: machine-portable script-set fingerprint
+# ============================================================================
+# compute_executor_scripts_fingerprint() relativizes the discover_scripts
+# notation→path mapping before hashing, so the fingerprint is identical across
+# machines/checkouts (absolute prefixes differ) and moves only when a script is
+# added, removed, moved, or renamed — never on a content-only edit. The target
+# generator (marketplace/targets/generate.py) consumes it to stamp
+# executor_scripts_fingerprint into dist-manifest.json.
+
+
+def test_scripts_fingerprint_machine_portable_across_absolute_roots():
+    """Two checkouts with an identical script layout under different absolute
+    roots produce a byte-identical fingerprint (path-relativization)."""
+    module = load_module()
+
+    root_a = Path('/machine-a/home/dev/marketplace/bundles')
+    root_b = Path('/entirely/other/ci-runner/work/marketplace/bundles')
+
+    def _layout(root: Path) -> dict[str, str]:
+        return {
+            'plan-marshall:manage-files:manage-files': str(
+                root / 'plan-marshall/skills/manage-files/scripts/manage-files.py'
+            ),
+            'pm-dev-java:java-core:foo': str(root / 'pm-dev-java/skills/java-core/scripts/foo.py'),
+        }
+
+    fp_a = module.compute_executor_scripts_fingerprint(_layout(root_a), root_a)
+    fp_b = module.compute_executor_scripts_fingerprint(_layout(root_b), root_b)
+
+    assert fp_a == fp_b, f'Fingerprint must be machine-portable: {fp_a} != {fp_b}'
+    assert len(fp_a) == 8, f'Fingerprint reuses the 8-char checksum machinery, got {len(fp_a)}'
+
+
+def test_scripts_fingerprint_insensitive_to_content_only_edits(tmp_path):
+    """Editing a script's body (same notation, same path) leaves the fingerprint
+    unchanged — the hash never reads file content."""
+    module = load_module()
+
+    base = tmp_path / 'bundles'
+    script = base / 'plan-marshall' / 'skills' / 'my-skill' / 'scripts' / 'foo.py'
+    script.parent.mkdir(parents=True)
+    script.write_text('# original body\n')
+    mappings = {'plan-marshall:my-skill:foo': str(script)}
+
+    fp_before = module.compute_executor_scripts_fingerprint(mappings, base)
+    # Heavily rewrite the body — path and notation are unchanged.
+    script.write_text('# a completely rewritten, much longer body\n' * 50)
+    fp_after = module.compute_executor_scripts_fingerprint(mappings, base)
+
+    assert fp_before == fp_after, 'Content-only edit must not change the fingerprint'
+
+
+def test_scripts_fingerprint_changes_on_add_remove_and_move():
+    """Adding, removing, moving, or renaming a script changes the fingerprint."""
+    module = load_module()
+
+    base = Path('/ws/marketplace/bundles')
+    baseline = {'a:b:c': str(base / 'a/skills/b/scripts/c.py')}
+    added = {**baseline, 'd:e:f': str(base / 'd/skills/e/scripts/f.py')}
+    moved = {'a:b:c': str(base / 'a/skills/b/scripts/c_renamed.py')}
+
+    fp_baseline = module.compute_executor_scripts_fingerprint(baseline, base)
+    fp_added = module.compute_executor_scripts_fingerprint(added, base)
+    fp_moved = module.compute_executor_scripts_fingerprint(moved, base)
+
+    assert fp_baseline != fp_added, 'Adding a script must change the fingerprint'
+    assert fp_baseline != fp_moved, 'Moving/renaming a script must change the fingerprint'
+
+
+# ============================================================================
+# Deliverable 1: template version/fingerprint placeholder substitution
+# ============================================================================
+
+
+def test_generate_substitutes_version_and_fingerprint_from_manifest(tmp_path, monkeypatch):
+    """generate_executor resolves {{GENERATED_VERSION}} / {{MAPPINGS_FINGERPRINT}}
+    from the installed dist-manifest.json (via $PM_DIST_MANIFEST)."""
+    import json
+
+    module = load_module()
+
+    manifest = tmp_path / 'dist-manifest.json'
+    manifest.write_text(
+        json.dumps(
+            {
+                'version': '0.1.42',
+                'source_sha': 'abc123',
+                'executor_scripts_fingerprint': 'deadbeef',
+                'executor_changed_at_version': '0.1.40',
+                'config_seed_fingerprint': 'cafef00d',
+                'config_changed_at_version': '0.1.30',
+            }
+        ),
+        encoding='utf-8',
+    )
+    monkeypatch.setenv('PM_DIST_MANIFEST', str(manifest))
+
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+
+    ok = module.generate_executor({}, MARKETPLACE_ROOT, dry_run=False)
+    assert ok, 'generate_executor should succeed with an empty mapping set'
+
+    generated = plan_dir / 'execute-script.py'
+    assert generated.is_file(), f'Expected generated executor at {generated}'
+    text = generated.read_text(encoding='utf-8')
+
+    assert "MARSHALL_VERSION = '0.1.42'" in text, 'MARSHALL_VERSION must be substituted from manifest.version'
+    assert "MAPPINGS_FINGERPRINT = 'deadbeef'" in text, (
+        'MAPPINGS_FINGERPRINT must be substituted from manifest.executor_scripts_fingerprint'
+    )
+    assert '{{GENERATED_VERSION}}' not in text, 'placeholder must be fully substituted'
+    assert '{{MAPPINGS_FINGERPRINT}}' not in text, 'placeholder must be fully substituted'
+
+
+def test_generate_uses_empty_sentinel_on_fresh_install(tmp_path, monkeypatch):
+    """With no installed manifest, the version/fingerprint placeholders resolve
+    to the empty sentinel — no error, executor still generates."""
+    module = load_module()
+
+    # Point PM_DIST_MANIFEST at a non-existent file so no manifest is found.
+    monkeypatch.setenv('PM_DIST_MANIFEST', str(tmp_path / 'absent-dist-manifest.json'))
+
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+
+    ok = module.generate_executor({}, MARKETPLACE_ROOT, dry_run=False)
+    assert ok, 'fresh install (no manifest) must still generate the executor'
+
+    text = (plan_dir / 'execute-script.py').read_text(encoding='utf-8')
+    assert "MARSHALL_VERSION = ''" in text, 'fresh install must stamp the empty version sentinel'
+    assert "MAPPINGS_FINGERPRINT = ''" in text, 'fresh install must stamp the empty fingerprint sentinel'
+
+
+def test_template_declares_version_and_fingerprint_constants():
+    """The template carries the MARSHALL_VERSION / MAPPINGS_FINGERPRINT
+    placeholder constants beside PLAN_DIR_NAME."""
+    source = TEMPLATE_PATH.read_text(encoding='utf-8')
+    assert "MARSHALL_VERSION = '{{GENERATED_VERSION}}'" in source, 'template must declare MARSHALL_VERSION placeholder'
+    assert "MAPPINGS_FINGERPRINT = '{{MAPPINGS_FINGERPRINT}}'" in source, (
+        'template must declare MAPPINGS_FINGERPRINT placeholder'
+    )
+
+
+# ============================================================================
+# Deliverable 1: preflight verb
+# ============================================================================
+# The preflight verb compares the executor's embedded MARSHALL_VERSION and
+# marshal.json's system.provisioned_version against the installed manifest's
+# changed_at versions. The executor is safe derived state (regenerated in place
+# when stale); marshal.json is never auto-mutated (staleness is advisory only).
+
+
+_PREFLIGHT_FIELDS = frozenset(
+    {
+        'status',
+        'executor_action',
+        'marshal_status',
+        'installed_version',
+        'executor_version',
+        'marshal_version',
+    }
+)
+
+
+def _preflight_args():
+    """Build a minimal argparse-style namespace for cmd_preflight."""
+    import types
+
+    return types.SimpleNamespace(marketplace=False, marketplace_root=None, target=None, dry_run=False)
+
+
+def test_preflight_returns_six_field_toon_on_fresh_install(tmp_path, monkeypatch):
+    """With no manifest, preflight is a no-op reporting the full six-field TOON
+    with both surfaces fresh."""
+    module = load_module()
+
+    monkeypatch.setenv('PM_DIST_MANIFEST', str(tmp_path / 'absent.json'))
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
+    (tmp_path / '.plan').mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    result = module.cmd_preflight(_preflight_args())
+
+    assert set(result.keys()) == _PREFLIGHT_FIELDS, f'preflight must return exactly the six fields, got {set(result)}'
+    assert result['status'] == 'success'
+    assert result['executor_action'] == 'fresh'
+    assert result['marshal_status'] == 'fresh'
+    assert result['installed_version'] == 'unknown'
+    assert result['executor_version'] == 'unknown'
+    assert result['marshal_version'] == 'unknown'
+
+
+def test_preflight_reports_executor_fresh_when_embedded_not_older(tmp_path, monkeypatch):
+    """When the embedded MARSHALL_VERSION is not older than the manifest's
+    executor_changed_at_version, the executor is fresh (no regeneration)."""
+    import json
+
+    module = load_module()
+
+    manifest = tmp_path / 'dist-manifest.json'
+    manifest.write_text(
+        json.dumps({'version': '0.1.99', 'executor_changed_at_version': '0.1.5'}),
+        encoding='utf-8',
+    )
+    monkeypatch.setenv('PM_DIST_MANIFEST', str(manifest))
+
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    # Seed an executor stamped at a newer version than the changed_at gate.
+    (plan_dir / 'execute-script.py').write_text("MARSHALL_VERSION = '0.1.99'\n", encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+    monkeypatch.chdir(tmp_path)
+
+    result = module.cmd_preflight(_preflight_args())
+
+    assert result['status'] == 'success'
+    assert result['executor_action'] == 'fresh', 'embedded 0.1.99 >= changed_at 0.1.5 must be fresh (no regen)'
+    assert result['executor_version'] == '0.1.99'
+    assert result['installed_version'] == '0.1.99'
+
+
+def test_preflight_reports_marshal_stale_advisory_without_mutation(tmp_path, monkeypatch):
+    """A provisioned_version older than config_changed_at_version reports
+    marshal_status=stale (advisory) and never mutates marshal.json."""
+    import json
+
+    module = load_module()
+
+    manifest = tmp_path / 'dist-manifest.json'
+    manifest.write_text(
+        json.dumps({'version': '0.1.20', 'config_changed_at_version': '0.1.15'}),
+        encoding='utf-8',
+    )
+    monkeypatch.setenv('PM_DIST_MANIFEST', str(manifest))
+
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    # Seed a stamped, older provisioned_version — must be reported stale, untouched.
+    marshal = plan_dir / 'marshal.json'
+    marshal_body = {'system': {'provisioned_version': '0.1.3'}}
+    marshal.write_text(json.dumps(marshal_body), encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+    monkeypatch.chdir(tmp_path)
+
+    result = module.cmd_preflight(_preflight_args())
+
+    assert result['status'] == 'success'
+    assert result['marshal_status'] == 'stale', 'provisioned 0.1.3 < config_changed_at 0.1.15 must be stale'
+    assert result['marshal_version'] == '0.1.3'
+    # marshal.json must be byte-identical — advisory only, never auto-mutated.
+    assert json.loads(marshal.read_text(encoding='utf-8')) == marshal_body, 'preflight must NOT mutate marshal.json'
+
+
+def test_preflight_int_tuple_version_compare_avoids_lexical_bug(tmp_path, monkeypatch):
+    """Version comparison is int-tuple, not lexical: 0.1.9 < 0.1.10 (a lexical
+    compare would wrongly rank '0.1.9' above '0.1.10')."""
+    import json
+
+    module = load_module()
+
+    manifest = tmp_path / 'dist-manifest.json'
+    manifest.write_text(
+        json.dumps({'version': '0.1.10', 'config_changed_at_version': '0.1.10'}),
+        encoding='utf-8',
+    )
+    monkeypatch.setenv('PM_DIST_MANIFEST', str(manifest))
+
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    marshal = plan_dir / 'marshal.json'
+    marshal.write_text(json.dumps({'system': {'provisioned_version': '0.1.9'}}), encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+    monkeypatch.chdir(tmp_path)
+
+    result = module.cmd_preflight(_preflight_args())
+
+    assert result['marshal_status'] == 'stale', '0.1.9 < 0.1.10 under int-tuple compare must be stale'
+
+
+def test_preflight_subcommand_registered_and_emits_toon(tmp_path):
+    """The preflight subparser is registered and the verb emits a TOON carrying
+    the six documented fields end-to-end."""
+    manifest = tmp_path / 'dist-manifest.json'
+    manifest.write_text('{"version": "0.1.7"}', encoding='utf-8')
+
+    env = _subprocess_env()
+    env['PM_DIST_MANIFEST'] = str(manifest)
+    env['PLAN_BASE_DIR'] = str(tmp_path / '.plan')
+    (tmp_path / '.plan').mkdir()
+
+    result = subprocess.run(
+        ['python3', str(GENERATE_SCRIPT), 'preflight'],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env=env,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, f'preflight failed: {result.stderr}'
+    for field in _PREFLIGHT_FIELDS:
+        assert field in result.stdout, f'preflight TOON must carry {field!r}; got:\n{result.stdout}'
+    assert 'installed_version: 0.1.7' in result.stdout, 'installed_version must reflect the fixture manifest'
+
+
+def test_preflight_help_listed_in_top_level_help():
+    """The preflight verb appears in the top-level --help output."""
+    result = subprocess.run(
+        ['python3', str(GENERATE_SCRIPT), '--help'], capture_output=True, text=True, env=_subprocess_env()
+    )
+    assert result.returncode == 0, f'Script failed: {result.stderr}'
+    assert 'preflight' in result.stdout, "Missing 'preflight' in help"

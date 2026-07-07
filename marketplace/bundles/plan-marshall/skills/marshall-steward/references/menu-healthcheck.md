@@ -260,6 +260,32 @@ Consumer projects ship no `project:` finalize steps, so `missing_project_finaliz
 
 ---
 
+## Step 6d: Check Executor / Config Staleness
+
+Run the deterministic staleness preflight. It compares the executor's embedded `MARSHALL_VERSION` and `marshal.json`'s `system.provisioned_version` against the installed `dist-manifest.json`, regenerates a stale executor in place (safe derived state, ADR-002), and reports config-seed staleness advisory-only (`marshal.json` is never auto-mutated):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-staleness
+```
+
+**Interpret results**:
+
+- `executor_action: fresh` → Executor version current PASS
+- `executor_action: regenerated` → Executor was stale and regenerated in place. Surface the session-restart guardrail (see [SKILL.md](../SKILL.md#session-restart-required-after-executor--agent-changes)) — the emitted agent set may have changed, so the running session must restart before dispatching against it.
+- `marshal_status: fresh` → Config seed current PASS
+- `marshal_status: stale` → The config seed is behind the installed distribution. Advise (non-blocking):
+
+```text
+[INFO] marshal.json config seed is stale relative to the installed distribution.
+       Re-run /marshall-steward (menu mode) to refresh the provisioning stamps via
+       the config reconcile (Re-Run Remediation Pass step d). marshal.json is never
+       auto-mutated.
+```
+
+A fresh install with no manifest reports `executor_action: fresh` / `marshal_status: fresh` (both `changed_at` values resolve to the empty sentinel). Include `staleness` in the Step 7 summary TOON (e.g., `staleness: {executor_action: fresh, marshal_status: fresh}`).
+
+---
+
 ## Step 7: Summary
 
 Output health check summary. Use `status: success` and `overall: HEALTHY` when all checks passed. Use `status: warning` and `overall: DEGRADED` when any check reported issues.

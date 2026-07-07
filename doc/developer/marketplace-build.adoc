@@ -49,6 +49,66 @@ python3 marketplace/targets/generate.py --target opencode --output target/openco
 
 The OpenCode adapter produces output conforming to the OpenCode specification; only the Claude target is validated end-to-end. Adapter implementations register in `TARGET_REGISTRY` (see `marketplace/targets/generate.py`).
 
+== Deterministic Versioning and Staleness Signaling
+
+The generator derives a deterministic, monotonic version from source alone and emits it — together with content fingerprints — into a per-target `dist-manifest.json`. The installed executor and `marshal.json` embed the version and fingerprints they were provisioned at, so a later session can detect when its derived state has fallen behind the published marketplace.
+
+=== The `0.1.N` version scheme
+
+The single base version `0.1` lives only in `marketplace/.claude-plugin/marketplace.json` (`metadata.version`). link:../../marketplace/targets/generate.py[`generate.py`] computes the full version as `{base}.{N}`, where `N` is the first-parent commit count (`git rev-list --count --first-parent HEAD`). The result is deterministic — the same commit yields the same version in CI and locally — and monotonic, since `N` only grows along first-parent history.
+
+Version comparison is a full int-tuple compare with no zero-padding, so `0.1.9` sorts below `0.1.10` and a future `0.2` base bump orders correctly above every `0.1.N`. An empty or `unknown` sentinel parses to the empty tuple — the lowest possible version — so a fresh or unstamped surface is never treated as newer than a real published version.
+
+The source bundle `plugin.json` files keep the static base version; only the generated target tree carries the live per-landing `0.1.N`, which the generator stamps into every target-tree bundle `plugin.json`. An explicit `--version` flag overrides the computed value verbatim — CI uses it to stamp an identical version across both target legs.
+
+=== The `dist-manifest.json` fields
+
+The generator emits one `dist-manifest.json` at each target output root, carrying six fields:
+
+[cols="1,3"]
+|===
+| Field | Meaning
+
+| `version`
+| The deterministic `0.1.N` version this tree was generated at.
+
+| `source_sha`
+| The source commit sha (`git rev-parse HEAD`) the tree was generated from.
+
+| `executor_scripts_fingerprint`
+| Machine-portable fingerprint of the executor's script set — relativized notation-to-path mappings, insensitive to script-body edits, so it moves only when a script is added, removed, moved, or renamed.
+
+| `executor_changed_at_version`
+| The version at which `executor_scripts_fingerprint` last changed.
+
+| `config_seed_fingerprint`
+| Canonical-JSON hash of the default config seed (`get_default_config()`).
+
+| `config_changed_at_version`
+| The version at which `config_seed_fingerprint` last changed.
+|===
+
+The two `changed_at` fields are the staleness signal: a consumer whose embedded version is older than a `changed_at` value knows the corresponding derived state is stale.
+
+=== CI-side `changed_at` derivation
+
+The `changed_at` values are derived entirely CI-side by the link:../../.github/workflows/claude-distribute.yml[`claude-distribute.yml`] distribute workflow — there is no finalize step and no commit back to `main`. On each publish the workflow fetches the previous `dist-manifest.json` from the current dist-branch tip and passes it to the generator via `--previous-manifest`. The generator diffs each fingerprint against that previous manifest:
+
+* an unchanged fingerprint carries the previous `changed_at` forward;
+* a changed fingerprint advances `changed_at` to the current version;
+* a first publish (no previous manifest) bootstraps every `changed_at` to the current version.
+
+The workflow checks out full history (`fetch-depth: 0`, needed for the first-parent count) and serializes its runs per target via a `concurrency` group, so concurrent pushes never race on the orphan-branch publish or the previous-manifest fetch.
+
+=== Executor and config staleness signaling
+
+The installed executor embeds `MARSHALL_VERSION`, and `marshal.json` stamps `system.provisioned_version` / `system.config_seed_fingerprint` at init (refreshed by `manage-config sync-defaults`). The deterministic `generate_executor preflight` verb (see link:../../marketplace/bundles/plan-marshall/skills/tools-script-executor/SKILL.md[`tools-script-executor` SKILL.md] § Canonical invocations) compares these embedded values against the installed `dist-manifest.json` under two asymmetric ownership rules:
+
+* **The executor is safe derived state** (ADR-002, the move-based cwd-pinned model). When its embedded version is older than `executor_changed_at_version`, the verb regenerates it in place and reports `executor_action: regenerated`; otherwise `executor_action: fresh`.
+* **`marshal.json` holds user decisions and is never auto-mutated.** When `system.provisioned_version` is older than `config_changed_at_version`, the verb reports `marshal_status: stale` advisory-only, routing the user to `/marshall-steward` for a config reconcile rather than rewriting their config.
+
+A fresh install with no manifest resolves both `changed_at` values to the empty sentinel, so nothing is stale and the verb is a no-op reporting `fresh`. The verb is surfaced at two sites: the `/plan-marshall` cross-session re-entry preflight and the `/marshall-steward` health menu (via link:../../marketplace/bundles/plan-marshall/skills/marshall-steward/SKILL.md[`marshall-steward` SKILL.md] `determine_mode check-staleness`).
+
 == Open-Standard Alignment
 
 Plan Marshall's component format predates and overlaps with the `SKILL.md` open standard published at https://agentskills.io[agentskills.io]. This section is an informative gap analysis — it records where the two agree, where Plan Marshall extends the spec, and how the adapter system above relates to the standard. It makes no behavioural claims and adds no build steps.

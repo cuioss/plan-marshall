@@ -18,6 +18,14 @@ jobs:
   publish:
     name: Publish ${{ matrix.target_name }}
     runs-on: ubuntu-latest
+    # Serialize distribute runs per target so concurrent pushes never race on
+    # the orphan-branch force-push or the previous-manifest fetch. Runs queue
+    # (cancel-in-progress: false) rather than cancel, preserving monotonic
+    # publishing. Keyed by target so the claude and opencode legs run in
+    # parallel with each other but each serializes against its own re-runs.
+    concurrency:
+      group: claude-distribute-${{ matrix.target_name }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -42,17 +50,48 @@ jobs:
 
       - name: Checkout source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Full history is required for the first-parent commit count that
+          # derives the deterministic 0.1.N version (git rev-list --count
+          # --first-parent HEAD). A shallow checkout would undercount N.
+          fetch-depth: 0
 
       - name: Set up Python 3
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.x'
 
+      - name: Compute deterministic version
+        id: version
+        run: |
+          set -euo pipefail
+          base=$(python3 -c "import json; print(json.load(open('marketplace/.claude-plugin/marketplace.json')).get('metadata', {}).get('version', '0.1'))")
+          count=$(git rev-list --count --first-parent HEAD)
+          version="${base}.${count}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Computed deterministic version: ${version}"
+
+      - name: Fetch previous dist-manifest from dist branch tip
+        run: |
+          set -uo pipefail
+          if git fetch origin "${{ matrix.branch_name }}" 2>/dev/null; then
+            if git cat-file -e "origin/${{ matrix.branch_name }}:dist-manifest.json" 2>/dev/null; then
+              git show "origin/${{ matrix.branch_name }}:dist-manifest.json" > previous-dist-manifest.json
+              echo "Fetched previous dist-manifest from origin/${{ matrix.branch_name }} tip"
+            else
+              echo "No dist-manifest.json on origin/${{ matrix.branch_name }} — first publish for this target"
+            fi
+          else
+            echo "Branch ${{ matrix.branch_name }} does not exist yet — first publish for this target"
+          fi
+
       - name: Regenerate target directory
         run: |
           python3 marketplace/targets/generate.py \
             --target ${{ matrix.generator_target_flag }} \
-            --output ${{ matrix.publish_dir }}
+            --output ${{ matrix.publish_dir }} \
+            --version "${{ steps.version.outputs.version }}" \
+            --previous-manifest previous-dist-manifest.json
 
       - name: Publish to orphan branch (cui-release-bot identity)
         uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0

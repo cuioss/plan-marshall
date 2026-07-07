@@ -172,27 +172,57 @@ class ClaudeTarget(TargetBase):
 
         if not equality.passed:
             # Mirror validate mode: equality failure must propagate so the
-            # CLI returns EXIT_ERROR rather than a silent emit-and-pass.
+            # CLI returns EXIT_ERROR rather than a silent emit-and-pass. The
+            # sentinel is NOT written on this path (``finalize`` is never
+            # reached), so the sync staleness guard refuses on the next sync.
             raise RuntimeError(equality.summary)
 
-        # Sentinel write — LAST step of the successful emit path. If
-        # anything above raises, the sentinel is not written and the
-        # staleness guard will refuse on the next sync (which is the
-        # desired behavior). The fingerprint is computed against the
-        # WORKTREE source tree under ``marketplace/bundles/`` via git's
-        # own ``hash-object`` primitive so uncommitted edits change the
-        # digest. ``repo_root`` is the grandparent of ``marketplace_dir``
-        # (``marketplace_dir`` points at ``marketplace/bundles/``, so the
-        # project root that contains ``marketplace/`` is two levels up).
-        #
-        # When ``marketplace_dir`` is not inside a git work tree (ad-hoc
-        # fixtures, tests with synthetic marketplaces), the fingerprint
-        # cannot be computed deterministically. Write the sentinel with
-        # ``source_tree_fingerprint: null`` so the file's presence is
-        # honest about its missing fingerprint — the sync guard's
-        # missing-fingerprint branch then refuses, which is the correct
-        # behavior for a non-repo emit (it should never feed the host
-        # plugin cache anyway).
+        # Write the emit sentinel over the just-emitted tree so a DIRECT
+        # ``generate`` caller (no CLI post-processing) still gets a complete,
+        # self-describing marker. In the full CLI path ``finalize`` REWRITES it
+        # AFTER the generic post-emit mutations (the deterministic version
+        # override of every bundle ``plugin.json`` and the ``dist-manifest.json``
+        # emission) so the persisted marker's ``file_hashes`` covers those
+        # post-emit artifacts. The equality gate above guards both writes: a
+        # failure raises before either runs, leaving no sentinel and so the
+        # sync staleness guard correctly refuses on the next sync.
+        self._write_emit_marker(output_dir, marketplace_dir)
+        return emitted
+
+    def finalize(self, output_dir: Path, marketplace_dir: Path) -> list[Path]:
+        """Rewrite the emit sentinel over the FINAL published tree.
+
+        Invoked by the CLI (``generate.py``) after the generic post-emit tree
+        mutations — the deterministic ``0.1.N`` version override of every
+        bundle ``plugin.json`` and the ``dist-manifest.json`` emission at the
+        output root — have been applied. :meth:`generate` already wrote a
+        sentinel over the pre-mutation tree (so direct ``generate`` callers get
+        one); this rewrite supersedes it so the persisted marker's
+        ``file_hashes`` covers the version-overridden ``plugin.json`` files and
+        the emitted ``dist-manifest.json``. If the equality gate in
+        :meth:`generate` raised, the CLI never reaches this hook (and no
+        sentinel was written at all), so the sync staleness guard correctly
+        refuses on the next sync.
+        """
+        return [self._write_emit_marker(output_dir, marketplace_dir)]
+
+    def _write_emit_marker(self, output_dir: Path, marketplace_dir: Path) -> Path:
+        """Write the emit sentinel summarizing the emitted tree at ``output_dir``.
+
+        The source-tree fingerprint is computed against the WORKTREE source
+        tree under ``marketplace/bundles/`` via git's own ``hash-object``
+        primitive so uncommitted edits change the digest. ``repo_root`` is the
+        grandparent of ``marketplace_dir`` (``marketplace_dir`` points at
+        ``marketplace/bundles/``, so the project root that contains
+        ``marketplace/`` is two levels up).
+
+        When ``marketplace_dir`` is not inside a git work tree (ad-hoc
+        fixtures, tests with synthetic marketplaces), the fingerprint cannot be
+        computed deterministically. The sentinel is written with
+        ``source_tree_fingerprint: null`` so its presence is honest about the
+        missing fingerprint — the sync guard's missing-fingerprint branch then
+        refuses, which is the correct behavior for a non-repo emit.
+        """
         repo_root = marketplace_dir.parent.parent
         fingerprint: str | None
         try:
@@ -200,17 +230,18 @@ class ClaudeTarget(TargetBase):
         except FingerprintError:
             fingerprint = None
 
-        # Per-file hash manifest of the emitted tree. Computed BEFORE the
-        # marker is written so the walk never observes (and never needs to
-        # exclude) a partially-written sentinel; ``_compute_emit_file_hashes``
-        # excludes the sentinel filename unconditionally as the structural
-        # backstop. The manifest is the source of truth the sync staleness
-        # guard hashes against — every entry pins a live ``target/claude/``
-        # file by its git blob SHA, so a downstream mutation, deletion, or
-        # stray extra file is diagnosable by path without re-deriving a
-        # source counterpart (``target/claude/`` is transformed generator
-        # output, not a raw mirror of ``marketplace/bundles/``). A hashing
-        # fault degrades to an empty manifest rather than aborting the emit.
+        # Per-file hash manifest of whatever tree currently lives at
+        # ``output_dir``. ``_compute_emit_file_hashes`` excludes the sentinel
+        # filename unconditionally. On the full CLI path (the ``finalize``
+        # caller) that tree already carries the version-overridden ``plugin.json``
+        # files and the emitted ``dist-manifest.json`` — both written by the CLI
+        # before ``finalize`` runs — so the sync staleness guard can diagnose a
+        # downstream mutation, deletion, or stray extra file by path without
+        # re-deriving a source counterpart (``target/claude/`` is transformed
+        # generator output, not a raw mirror of ``marketplace/bundles/``). On the
+        # direct-``generate`` path those post-emit artifacts do not exist yet and
+        # the manifest covers only the mirrored tree. A hashing fault degrades to
+        # an empty manifest rather than aborting the emit.
         try:
             file_hashes = _compute_emit_file_hashes(output_dir)
         except FingerprintError:
@@ -225,6 +256,4 @@ class ClaudeTarget(TargetBase):
         marker_path.write_text(
             json.dumps(marker_payload, indent=2) + '\n', encoding='utf-8'
         )
-        emitted.append(marker_path)
-
-        return emitted
+        return marker_path
