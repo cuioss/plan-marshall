@@ -70,7 +70,7 @@ _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_
 
 # Matches the ``thread_id: <value>`` line written into every pr-comment finding's
 # ``detail`` block by cmd_fetch_findings.
-_THREAD_ID_DETAIL = re.compile(r'^thread_id:\s*(?P<id>.+?)\s*$', re.MULTILINE)
+_THREAD_ID_DETAIL = re.compile(r'^thread_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 
 # ============================================================================
 # PRE-FILTER CONFIGURATION (loaded from comment-patterns.json)
