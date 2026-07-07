@@ -86,6 +86,7 @@
   },
   "skills_by_profile_reasoning": "general-dev: cross-cutting baseline; default module covers infra-level tests + adapter without language-specific bundle binding; Batch: marshall-plugin build_system detected; all marketplace bundles host skills/scripts authored under plugin-architecture standards",
   "tips": [
-    "Whole-tree coverage is an orchestrator-tier build (~37min instrumented) that the harness kills, and the build-pyproject per-module coverage wrapper timeout (~123s) is too short for instrumented whole-tree runs. Defer whole-tree coverage to CI verify rather than running it locally. Scope local coverage to a single module when a local run is needed."
+    "Whole-tree coverage is an orchestrator-tier build (~37min instrumented) that the harness kills, and the build-pyproject per-module coverage wrapper timeout (~123s) is too short for instrumented whole-tree runs. Defer whole-tree coverage to CI verify rather than running it locally. Scope local coverage to a single module when a local run is needed.",
+    "Color-suppression env pins are mirrored at two sites: the executor template env-prep block (tools-script-executor/templates/execute-script.py.template) and plugin-doctor's _color_suppressed_env helper (pm-plugin-development .../plugin-doctor/scripts/_analyze_manage_invocation.py). Keep the full variable set synchronized across both, since Python 3.14 argparse colorization poisons downstream text parsers: PYTHON_COLORS=0, NO_COLOR=1, pop FORCE_COLOR, CLICOLOR=0, CLICOLOR_FORCE=0, PY_COLORS=0."
   ]
 }
