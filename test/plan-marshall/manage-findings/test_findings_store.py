@@ -594,14 +594,20 @@ def test_add_qgate_finding_invalid_source(plan_context):
 
 
 def test_qgate_dedup_pending(plan_context):
-    """Test Q-Gate deduplication for pending findings with same title."""
+    """Test Q-Gate deduplication for pending findings with same title AND content.
+
+    Dedup keys on the (title, content-discriminator) pair — a bare title
+    collision alone is no longer enough. A genuine re-detection of the same
+    defect carries the SAME title AND the SAME content (detail/file/rule), so
+    the discriminator matches and the second add collapses onto the first.
+    """
     r1 = add_qgate_finding(
         'store-qgate-dedup',
         '5-execute',
         'qgate',
         'build-error',
         'Same title',
-        'Detail 1',
+        'Same detail',
     )
     assert r1['status'] == 'success'
 
@@ -611,14 +617,20 @@ def test_qgate_dedup_pending(plan_context):
         'qgate',
         'build-error',
         'Same title',
-        'Detail 2',
+        'Same detail',
     )
     assert r2['status'] == 'deduplicated'
     assert r2['hash_id'] == r1['hash_id']
 
 
 def test_qgate_reopen_resolved(plan_context):
-    """Test Q-Gate reopens a resolved finding if re-detected."""
+    """Test Q-Gate reopens a resolved finding when the SAME defect is re-detected.
+
+    Reopen fires only on a genuine re-detection — same title AND same content
+    discriminator (detail/file/rule) as the resolved record. A same-title but
+    different-content finding fails the discriminator match and is filed fresh
+    instead of reopening the unrelated resolved record.
+    """
     r1 = add_qgate_finding(
         'store-qgate-reopen',
         '5-execute',
@@ -635,7 +647,7 @@ def test_qgate_reopen_resolved(plan_context):
         'qgate',
         'build-error',
         'Flaky test',
-        'New detail',
+        'Detail',
     )
     assert r2['status'] == 'reopened'
     assert r2['hash_id'] == r1['hash_id']

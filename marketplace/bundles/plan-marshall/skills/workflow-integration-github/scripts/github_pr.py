@@ -206,8 +206,18 @@ def _unconfigured_result(operation: str, detail: str) -> dict[str, Any]:
 
 # Matches the ``comment_id: <value>`` and ``thread_id: <value>`` lines written
 # into every pr-comment finding's ``detail`` block by cmd_fetch_findings.
-_COMMENT_ID_DETAIL = re.compile(r'^comment_id:\s*(?P<id>.+?)\s*$', re.MULTILINE)
-_THREAD_ID_DETAIL = re.compile(r'^thread_id:\s*(?P<id>.+?)\s*$', re.MULTILINE)
+#
+# The value class requires a leading non-whitespace character (``\S``) and matches
+# only horizontal whitespace around it (``[ \t]``), never ``\s`` (which spans
+# newlines). This is load-bearing for ``thread_id``: a thread_id-less finding is
+# written as the literal line ``thread_id: `` (empty value, trailing space). A
+# newline-spanning ``\s*(?P<id>.+?)`` would capture the *next* detail line (or the
+# trailing space) as a spurious truthy id, so ``post_responses`` would try to
+# resolve a non-existent thread instead of correctly skipping the finding. The
+# ``\S``-anchored, line-bounded value class yields no match for an empty value, so
+# ``_thread_id_from_detail`` returns ``''`` and the finding is skipped.
+_COMMENT_ID_DETAIL = re.compile(r'^comment_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
+_THREAD_ID_DETAIL = re.compile(r'^thread_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 
 
 def _existing_pr_comment_ids(query_findings, plan_id: str) -> set[str]:

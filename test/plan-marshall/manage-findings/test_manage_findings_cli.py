@@ -224,6 +224,9 @@ def test_main_qgate_resolve(plan_context, monkeypatch, capsys):
             component=None,
             severity=None,
             iteration=None,
+            rule=None,
+            raw_input=None,
+            raw_input_max_bytes=_mod.DEFAULT_RAW_INPUT_MAX_BYTES,
         )
     )
     hid = str(seed['hash_id'])

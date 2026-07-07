@@ -63,15 +63,24 @@ from input_validation import (
 )
 
 
-def _parse_raw_input(pairs: list[str] | None) -> dict[str, str] | None:
+def _parse_raw_input(pairs: list[str] | dict[str, object] | None) -> dict[str, str] | None:
     """Parse repeatable ``--raw-input FIELD=VALUE`` pairs into a mapping.
 
-    Returns the mapping on success, ``None`` when no pairs were supplied, or a
-    canonical ``{'status': 'error', ...}`` dict when a pair is malformed (missing
-    ``=`` or an empty field name) so the CLI surfaces a structured error.
+    Accepts either the argparse ``action='append'`` list of ``FIELD=VALUE``
+    strings (the CLI path) or an already-parsed ``{field: value}`` mapping (a
+    programmatic caller that hands ``cmd_add`` / ``cmd_qgate_add`` a namespace
+    whose ``raw_input`` is the resolved dict). A mapping is passed through with
+    its values coerced to ``str`` so the downstream quarantine byte-cap always
+    operates on text.
+
+    Returns the mapping on success, ``None`` when nothing was supplied, or a
+    canonical ``{'status': 'error', ...}`` dict when a string pair is malformed
+    (missing ``=`` or an empty field name) so the CLI surfaces a structured error.
     """
     if not pairs:
         return None
+    if isinstance(pairs, dict):
+        return {str(field): str(value) for field, value in pairs.items()}
     result: dict[str, str] = {}
     for pair in pairs:
         if '=' not in pair:
@@ -104,7 +113,7 @@ def cmd_add(args: argparse.Namespace) -> dict:
         reviewed_commit_sha=args.reviewed_commit_sha,
         bot_kind=args.bot_kind,
         raw_input=raw_input,
-        raw_input_max_bytes=args.raw_input_max_bytes,
+        raw_input_max_bytes=getattr(args, 'raw_input_max_bytes', DEFAULT_RAW_INPUT_MAX_BYTES),
     )
 
 
@@ -174,7 +183,7 @@ def cmd_qgate_add(args: argparse.Namespace) -> dict:
         iteration=args.iteration,
         rule=args.rule,
         raw_input=raw_input,
-        raw_input_max_bytes=args.raw_input_max_bytes,
+        raw_input_max_bytes=getattr(args, 'raw_input_max_bytes', DEFAULT_RAW_INPUT_MAX_BYTES),
     )
 
 

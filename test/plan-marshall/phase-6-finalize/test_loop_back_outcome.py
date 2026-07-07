@@ -220,18 +220,21 @@ _TRIAGE_MD = (
 def test_fix_path_posts_thread_reply_before_terminal_done():
     """Regression-guard the FIX action ordering and the loop-back outcome.
 
-    The FIX action body in ``plan-marshall/workflow/triage.md`` must
-    invoke (in order):
+    Under the consolidated find/ingest/one-triage/one-respond flow, triage
+    RECORDS the disposition; the reviewer-facing transmission (thread-reply +
+    resolve-thread) is owned by the single RESPOND loop (`post_responses`), NOT
+    inline in the FIX body. So the FIX action body in
+    ``plan-marshall/workflow/triage.md`` must invoke (in order):
 
-        prepare-add  →  commit-add  →  prepare-comment  →
-        thread-reply  →  resolve-thread  →  manage-findings resolve
+        prepare-add  →  commit-add  →  manage-findings resolve
 
     and the calling step's Branch C ("loop-back recorded") in
     ``phase-6-finalize/workflow/automated-review.md`` must record
     ``--outcome loop_back``, NOT ``--outcome done``. This test reads
     both files and asserts both invariants. It is a structural
     regression-guard against future edits that accidentally re-order
-    the chain or downgrade Branch C to ``done``.
+    the chain, re-inline the provider transmission into FIX, or downgrade
+    Branch C to ``done``.
     """
     triage_body = _TRIAGE_MD.read_text(encoding='utf-8')
 
@@ -246,13 +249,12 @@ def test_fix_path_posts_thread_reply_before_terminal_done():
     assert suppress_start != -1, 'SUPPRESS marker not found after FIX block'
     fix_block = triage_body[fix_start:suppress_start]
 
-    # The chain must appear in the FIX block in the exact order.
+    # The chain must appear in the FIX block in the exact order. The provider
+    # transmission (thread-reply / resolve-thread) is deliberately absent — it
+    # moved to the RESPOND loop — so it is NOT part of this ordered chain.
     expected_chain = [
         'prepare-add',
         'commit-add',
-        'prepare-comment',
-        'thread-reply',
-        'resolve-thread',
         'manage-findings resolve',
     ]
     cursor = 0
