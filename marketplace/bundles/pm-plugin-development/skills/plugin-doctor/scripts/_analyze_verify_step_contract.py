@@ -12,7 +12,7 @@ implementor whose ``canonicals:`` list is MISSING or EMPTY declares no runnable
 canonical: the discovery query surfaces the doc but seeds nothing, so the step
 silently contributes zero verification coverage.
 
-This analyzer is the static backstop for lesson ``2026-06-25-08-001``: every
+This analyzer is the static backstop enforcing that every
 ``ext-point-build-verify-step`` implementor MUST carry a non-empty ``canonicals:``
 list. It flags an implementor doc whose ``canonicals:`` key is absent, or present
 but resolving to zero non-empty entries.
@@ -178,7 +178,7 @@ def analyze_verify_step_contract(marketplace_root: Path) -> list[dict]:
                     '`implements: ...ext-point-build-verify-step` doc MUST declare a '
                     'non-empty `canonicals:` list, else the discovery query seeds no '
                     'runnable `default:verify:{canonical}` step and the doc contributes '
-                    'zero verification coverage (lesson 2026-06-25-08-001). See '
+                    'zero verification coverage. See '
                     'plan-marshall:extension-api/standards/ext-point-build-verify-step.md.'
                 ),
                 extra={'rule': RULE_NAME, 'snippet': md_path.stem},

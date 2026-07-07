@@ -188,7 +188,7 @@ def _unconfigured_result(operation: str, detail: str) -> dict[str, Any]:
 
     Both provider verbs return this shape — status ``unconfigured`` — when GitHub
     is not authenticated/reachable, so a caller can distinguish "provider not
-    set up" from a genuine zero-findings success (lesson 2026-06-22-14-001). A
+    set up" from a genuine zero-findings success. A
     silent ``done``/``success`` on an unconfigured provider is the prohibited
     anti-pattern.
     """
@@ -264,7 +264,7 @@ def cmd_fetch_findings(args):
     plan_id: str = args.plan_id
 
     # Fail-loud config guard — an unconfigured provider must NOT report a silent
-    # zero-findings success (lesson 2026-06-22-14-001).
+    # zero-findings success.
     is_auth, auth_err = _github.check_auth()
     if not is_auth:
         return _unconfigured_result('fetch_findings', auth_err)
@@ -436,8 +436,8 @@ def cmd_post_responses(args):
 
     Reads every ``pr-comment`` finding whose ``resolution`` is a terminal triage
     disposition (``_RESPONDABLE_RESOLUTIONS``) and that carries a ``thread_id``,
-    and — keyed by each finding's own ``hash_id`` (never positional pairing,
-    fixing lesson 2026-06-30-21-001) — posts the finding's ``resolution_detail``
+    and — keyed by each finding's own ``hash_id`` (never positional pairing) —
+    posts the finding's ``resolution_detail``
     as a thread-reply then resolves the thread. This verb makes NO triage
     decision; it only transmits decisions the triage pass already recorded.
 

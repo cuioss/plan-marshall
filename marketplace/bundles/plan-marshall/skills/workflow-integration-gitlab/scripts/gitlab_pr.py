@@ -17,7 +17,7 @@ lives here:
   triage decision.
 
 Both verbs FAIL LOUD when GitLab is not configured: a typed ``unconfigured``
-status, never a silent no-op (lesson 2026-06-22-14-001). LLM consumers query the
+status, never a silent no-op. LLM consumers query the
 ledger via ``manage-findings query --type pr-comment``.
 
 Usage:
@@ -181,8 +181,7 @@ def _unconfigured_result(operation: str, detail: str) -> dict[str, Any]:
     """Build the typed ``unconfigured`` fail-loud signal (never a silent no-op).
 
     Returned when GitLab is not authenticated, so a caller can distinguish
-    "provider not set up" from a genuine zero-findings success (lesson
-    2026-06-22-14-001).
+    "provider not set up" from a genuine zero-findings success.
     """
     return {
         'status': 'unconfigured',
@@ -332,8 +331,8 @@ def cmd_post_responses(args):
 
     Reads every ``pr-comment`` finding whose ``resolution`` is a terminal triage
     disposition (``_RESPONDABLE_RESOLUTIONS``) and that carries a ``thread_id``,
-    and — keyed by each finding's own ``hash_id`` (relational, never positional,
-    fixing lesson 2026-06-30-21-001) — posts the finding's ``resolution_detail``
+    and — keyed by each finding's own ``hash_id`` (relational, never positional) —
+    posts the finding's ``resolution_detail``
     as a discussion-note reply then resolves the discussion. This verb makes NO
     triage decision.
 

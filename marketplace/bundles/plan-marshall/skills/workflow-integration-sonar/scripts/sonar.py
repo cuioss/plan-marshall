@@ -21,7 +21,7 @@ lives here:
   It makes NO triage decision.
 
 Both verbs FAIL LOUD when Sonar is not configured: a typed ``unconfigured``
-status, never a silent success (lesson 2026-06-22-14-001).
+status, never a silent success.
 
 The returned contract carries a verified ``new_code_issue_count`` and a
 ``count_status`` discriminator (``confirmed`` | ``undecidable``): a confirmed
@@ -376,8 +376,7 @@ def _sonar_unconfigured(operation: str, detail: str) -> dict[str, Any]:
     """Build the typed ``unconfigured`` fail-loud signal for a Sonar verb.
 
     Returned when no Sonar credential is configured, so a caller can distinguish
-    "Sonar not set up" from a genuine zero-findings success (lesson
-    2026-06-22-14-001) instead of a silent no-op.
+    "Sonar not set up" from a genuine zero-findings success instead of a silent no-op.
     """
     return {
         'status': 'unconfigured',
@@ -491,7 +490,7 @@ def cmd_fetch_findings(args):
     pr: str | None = getattr(args, 'pr', None)
 
     # Fail-loud config guard — an unconfigured provider must NOT report a silent
-    # zero-findings success (lesson 2026-06-22-14-001).
+    # zero-findings success.
     missing = _sonar_credential_missing()
     if missing:
         return _sonar_unconfigured('fetch_findings', missing)

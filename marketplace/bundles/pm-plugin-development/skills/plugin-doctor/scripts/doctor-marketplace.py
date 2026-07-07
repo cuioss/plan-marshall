@@ -48,13 +48,13 @@ from _analyze_shared import (
     load_default_suppression_config,
     load_project_suppression_config,
 )
-from _analyze_triage_read_surface import analyze_triage_read_surface
-from _analyze_verify_step_contract import analyze_verify_step_contract
 from _analyze_test_conventions import (
     analyze_subprocess_pythonpath,
     analyze_unique_fixture_basenames,
     analyze_validator_regex_vs_corpus,
 )
+from _analyze_triage_read_surface import analyze_triage_read_surface
+from _analyze_verify_step_contract import analyze_verify_step_contract
 from _cmd_apply import apply_single_fix, load_templates
 from _cmd_extension import validate_extension_contracts
 from _doctor_analysis import analyze_component
@@ -816,8 +816,7 @@ def cmd_quality_gate(args) -> dict:
     #     verification-feedback.md / ext-triage-{domain}) must never read the
     #     `raw_input.*` quarantine namespace — triage reads top-level fields only.
     #   - verify-step-canonicals-required: every ext-point-build-verify-step
-    #     implementor must declare a non-empty `canonicals:` list (lesson
-    #     2026-06-25-08-001).
+    #     implementor must declare a non-empty `canonicals:` list.
     for label, findings in (
         ('analyze_triage_read_surface', analyze_triage_read_surface(marketplace_root)),
         ('analyze_verify_step_contract', analyze_verify_step_contract(marketplace_root)),
