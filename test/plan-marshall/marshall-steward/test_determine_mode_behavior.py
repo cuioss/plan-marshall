@@ -15,6 +15,7 @@ paths, so no plan-marshall runtime state is touched.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -501,6 +502,160 @@ def test_cmd_check_missing_finalize_steps_reports_dropped_project_step(tmp_path:
 
 
 # =============================================================================
+# check-staleness / run_preflight (health-menu staleness preflight)
+# =============================================================================
+
+
+def _fake_subprocess(monkeypatch, *, returncode: int, stdout: str = '', stderr: str = ''):
+    """Replace dm's module-global ``subprocess`` with a call-recording fake.
+
+    Returns the ``calls`` dict; ``calls['cmd']`` holds the argv the code under
+    test passed to ``subprocess.run``.
+    """
+    import types
+
+    calls: dict = {}
+
+    class _Result:
+        pass
+
+    result = _Result()
+    result.returncode = returncode
+    result.stdout = stdout
+    result.stderr = stderr
+
+    def _fake_run(cmd, capture_output=False, text=False, timeout=None):
+        calls['cmd'] = cmd
+        calls['timeout'] = timeout
+        return result
+
+    monkeypatch.setattr(dm, 'subprocess', types.SimpleNamespace(run=_fake_run, TimeoutExpired=subprocess.TimeoutExpired))
+    return calls
+
+
+def test_run_preflight_routes_to_generate_executor_preflight(monkeypatch):
+    """run_preflight invokes the sibling generate_executor.py with the 'preflight' verb."""
+    calls = _fake_subprocess(
+        monkeypatch,
+        returncode=0,
+        stdout='status: success\nexecutor_action: fresh\nmarshal_status: fresh\n',
+    )
+
+    result = dm.run_preflight()
+
+    cmd = calls['cmd']
+    assert cmd[0] == 'python3'
+    assert cmd[-1] == 'preflight'
+    assert cmd[1].endswith('generate_executor.py')
+    assert 'tools-script-executor' in cmd[1]
+    assert result['status'] == 'success'
+    assert result['executor_action'] == 'fresh'
+    assert result['marshal_status'] == 'fresh'
+
+
+def test_run_preflight_error_when_generator_missing(tmp_path: Path, monkeypatch):
+    """run_preflight returns a structured error when generate_executor.py is absent."""
+    monkeypatch.setattr(dm, '_generate_executor_script', lambda: tmp_path / 'nope.py')
+
+    result = dm.run_preflight()
+
+    assert result['status'] == 'error'
+    assert 'not found' in result['error']
+
+
+def test_run_preflight_error_on_nonzero_exit(monkeypatch):
+    """run_preflight surfaces the subprocess stderr when the preflight verb exits non-zero."""
+    _fake_subprocess(monkeypatch, returncode=1, stderr='boom')
+
+    result = dm.run_preflight()
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'boom'
+
+
+def test_run_preflight_error_on_unparseable_output(monkeypatch):
+    """run_preflight returns an error when the preflight output does not parse to a dict."""
+    _fake_subprocess(monkeypatch, returncode=0, stdout='')
+
+    result = dm.run_preflight()
+
+    assert result['status'] == 'error'
+
+
+def test_run_preflight_passes_timeout_to_subprocess(monkeypatch):
+    """run_preflight bounds the subprocess.run call with a finite timeout."""
+    calls = _fake_subprocess(
+        monkeypatch,
+        returncode=0,
+        stdout='status: success\nexecutor_action: fresh\nmarshal_status: fresh\n',
+    )
+
+    dm.run_preflight()
+
+    assert calls['timeout'] == 60
+
+
+def test_run_preflight_error_on_timeout(monkeypatch):
+    """run_preflight returns a structured error instead of hanging when the subprocess times out."""
+    import types
+
+    def _timeout_run(cmd, capture_output=False, text=False, timeout=None):
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
+
+    monkeypatch.setattr(
+        dm, 'subprocess', types.SimpleNamespace(run=_timeout_run, TimeoutExpired=subprocess.TimeoutExpired)
+    )
+
+    result = dm.run_preflight()
+
+    assert result['status'] == 'error'
+    assert 'timed out' in result['error']
+
+
+def test_run_preflight_error_on_subprocess_oserror(monkeypatch):
+    """run_preflight returns a structured error when the subprocess raises OSError."""
+    import types
+
+    def _raising_run(cmd, capture_output=False, text=False, timeout=None):
+        raise OSError('python3 not found')
+
+    monkeypatch.setattr(
+        dm, 'subprocess', types.SimpleNamespace(run=_raising_run, TimeoutExpired=subprocess.TimeoutExpired)
+    )
+
+    result = dm.run_preflight()
+
+    assert result['status'] == 'error'
+    assert 'preflight execution failed' in result['error']
+
+
+def test_cmd_check_staleness_surfaces_preflight_toon(monkeypatch):
+    """cmd_check_staleness surfaces the run_preflight TOON verbatim."""
+    monkeypatch.setattr(
+        dm,
+        'run_preflight',
+        lambda: {'status': 'success', 'executor_action': 'regenerated', 'marshal_status': 'stale'},
+    )
+
+    result = dm.cmd_check_staleness(_ns())
+
+    assert result['status'] == 'success'
+    assert result['executor_action'] == 'regenerated'
+    assert result['marshal_status'] == 'stale'
+
+
+def test_generate_executor_script_path_resolves_to_sibling_skill():
+    """_generate_executor_script points at the tools-script-executor generator."""
+    path = dm._generate_executor_script()
+
+    assert path.name == 'generate_executor.py'
+    assert path.parent.name == 'scripts'
+    assert path.parent.parent.name == 'tools-script-executor'
+    # The generator actually ships at the resolved path in the marketplace tree.
+    assert path.is_file()
+
+
+# =============================================================================
 # main() dispatch
 # =============================================================================
 
@@ -538,6 +693,29 @@ def test_main_check_working_prefixes_dispatch(tmp_path: Path, monkeypatch, capsy
 
     assert rc == 0
     assert 'status: ok' in capsys.readouterr().out
+
+
+def test_main_check_staleness_dispatch(monkeypatch, capsys):
+    """main() registers the 'check-staleness' health-menu option and routes it to the preflight.
+
+    The subparser is present (no argparse rejection) and the command routes to
+    run_preflight, whose TOON is surfaced on stdout. run_preflight is stubbed so
+    the test does not shell out to the real generator.
+    """
+    monkeypatch.setattr(
+        dm,
+        'run_preflight',
+        lambda: {'status': 'success', 'executor_action': 'fresh', 'marshal_status': 'fresh'},
+    )
+    monkeypatch.setattr(sys, 'argv', ['determine_mode', 'check-staleness'])
+
+    rc = dm.main()
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert 'status: success' in out
+    assert 'executor_action: fresh' in out
+    assert 'marshal_status: fresh' in out
 
 
 # =============================================================================

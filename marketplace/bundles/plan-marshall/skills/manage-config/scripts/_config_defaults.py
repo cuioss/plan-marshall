@@ -6,6 +6,9 @@ Contains build system and domain default structures used during
 project initialization and detection.
 """
 
+import hashlib
+import json
+
 # Direct import - PYTHONPATH set by executor. The branch-prefix literals live
 # in constants.py exactly once; this module imports them to build
 # DEFAULT_PROJECT['working_prefixes'] (the fail-closed fallback seed).
@@ -932,3 +935,76 @@ def get_default_config() -> dict:
         },
     }
     return config
+
+
+def compute_config_seed_fingerprint() -> str:
+    """Machine-portable fingerprint of the default config seed.
+
+    Hashes the canonical JSON (``json.dumps(..., sort_keys=True)``) of
+    :func:`get_default_config`. This is the SAME hash the target generator
+    (``marketplace/targets/generate.py``) stamps as ``config_seed_fingerprint``
+    in ``dist-manifest.json``, so the staleness check can compare the config a
+    project was provisioned at against the currently-published default seed.
+
+    The stamped ``system.provisioned_version`` / ``system.config_seed_fingerprint``
+    fields are runtime-only — written into ``marshal.json`` by init / sync-defaults
+    and deliberately NOT part of :func:`get_default_config`. The fingerprint is
+    therefore stable under its own stamping: re-hashing after a project has been
+    stamped yields the same value, so the config never appears to drift merely
+    because it was fingerprinted.
+
+    Returns:
+        8-char hex fingerprint of the canonical default-config JSON (same width
+        as the executor script-set fingerprint).
+    """
+    canonical = json.dumps(get_default_config(), sort_keys=True)
+    return hashlib.md5(canonical.encode('utf-8'), usedforsecurity=False).hexdigest()[:8]
+
+
+def read_provisioned_version() -> str:
+    """Read the installed ``MARSHALL_VERSION`` to stamp as ``system.provisioned_version``.
+
+    The version a project is provisioned at is the generated executor's embedded
+    ``MARSHALL_VERSION`` (itself stamped from the installed ``dist-manifest.json``
+    at generation time). Reads it from the tracked executor at
+    ``.plan/execute-script.py``. Returns the empty string when the executor is
+    absent or unstamped (fresh install) — an empty stamp, never an error.
+
+    Returns:
+        The embedded version string, or ``''`` on a fresh/unstamped install.
+    """
+    import re
+
+    from file_ops import get_tracked_config_dir
+
+    executor = get_tracked_config_dir() / 'execute-script.py'
+    try:
+        text = executor.read_text(encoding='utf-8')
+    except (OSError, ValueError):
+        return ''
+    match = re.search(r"^MARSHALL_VERSION\s*=\s*'([^']*)'", text, re.MULTILINE)
+    if match:
+        return match.group(1)
+    return ''
+
+
+def stamp_provisioning_fields(config: dict) -> None:
+    """Stamp ``system.provisioned_version`` / ``system.config_seed_fingerprint`` in place.
+
+    Writes (or refreshes) the two runtime provisioning stamps into
+    ``config['system']``, creating the ``system`` block if absent. Shared by the
+    init seed path (:func:`_cmd_init.cmd_init`) and the sync-defaults reconcile
+    path (:func:`_cmd_sync_defaults.cmd_sync_defaults`) so both stamp identically.
+
+    The stamps are runtime-only and NOT part of :func:`get_default_config`, so
+    stamping never perturbs :func:`compute_config_seed_fingerprint`.
+
+    Args:
+        config: The marshal.json config dict to stamp (mutated in place).
+    """
+    system = config.get('system')
+    if not isinstance(system, dict):
+        system = {}
+        config['system'] = system
+    system['provisioned_version'] = read_provisioned_version()
+    system['config_seed_fingerprint'] = compute_config_seed_fingerprint()

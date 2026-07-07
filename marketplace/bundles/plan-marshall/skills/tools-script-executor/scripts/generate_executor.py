@@ -632,6 +632,14 @@ def generate_executor(
     all_script_dirs = collect_script_dirs(base_path)
     extra_dirs_code = ', '.join(f"'{d}'" for d in sorted({str(Path(d).resolve()) for d in all_script_dirs}))
 
+    # Provisioning stamps: the version and script-set fingerprint the executor
+    # was generated at, read from the installed dist-manifest.json (emitted by
+    # the target generator). A fresh install has no manifest yet — the empty
+    # sentinel is substituted, never an error, so the executor still generates.
+    manifest = read_installed_manifest(base_path, target=resolved_target)
+    generated_version = str(manifest.get('version', '') or '')
+    mappings_fingerprint = str(manifest.get('executor_scripts_fingerprint', '') or '')
+
     content = template.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
     content = content.replace('{{LOGGING_DIR}}', logging_dir)
     content = content.replace('{{SHARED_MODULE_DIRS}}', shared_module_lines)
@@ -639,6 +647,8 @@ def generate_executor(
     content = content.replace('{{PLAN_DIR_NAME}}', PLAN_DIR_NAME)
     content = content.replace('{{TARGET_AWARE_RESOLVER}}', resolver_code)
     content = content.replace('{{EXECUTOR_TARGET}}', resolved_target)
+    content = content.replace('{{GENERATED_VERSION}}', generated_version)
+    content = content.replace('{{MAPPINGS_FINGERPRINT}}', mappings_fingerprint)
 
     if dry_run:
         print('=== execute-script.py ===')
@@ -656,6 +666,58 @@ def compute_checksum(mappings: dict[str, str]) -> str:
     """Compute checksum of mappings for change detection."""
     content = json.dumps(mappings, sort_keys=True)
     return hashlib.md5(content.encode()).hexdigest()[:8]
+
+
+def _relativize_script_path(abs_path: str, base_resolved: Path) -> str:
+    """Return ``abs_path`` as a base-relative POSIX path (machine-portable).
+
+    Strips the machine-specific absolute prefix so the same script set produces
+    an identical value regardless of where the checkout lives on disk. Falls
+    back to a ``/skills/``-marker strip when the path is not under
+    ``base_resolved`` (e.g. a project-local script), so no absolute prefix ever
+    leaks into the fingerprint.
+    """
+    p = Path(abs_path)
+    try:
+        return p.resolve().relative_to(base_resolved).as_posix()
+    except ValueError:
+        s = p.as_posix()
+        idx = s.rfind('/skills/')
+        if idx >= 0:
+            return s[idx + 1 :]  # 'skills/...'
+        return p.name
+
+
+def compute_executor_scripts_fingerprint(mappings: dict[str, str], base_path: Path) -> str:
+    """Machine-portable fingerprint of the executor's script set.
+
+    Relativizes every ``discover_scripts`` notation→path mapping to a
+    base-relative path before hashing with :func:`compute_checksum`. Two
+    consequences make this the right staleness signal for the dist-manifest:
+
+    - **Machine-portable** — two checkouts with an identical script layout under
+      different absolute roots yield a byte-identical fingerprint, so a
+      per-machine absolute-path leak can never make the fingerprint churn.
+    - **Content-insensitive** — editing a script's body changes neither its
+      notation nor its relative path, so the fingerprint moves only when a
+      script is added, removed, moved, or renamed.
+
+    Consumed by the target generator (``marketplace/targets/generate.py``) to
+    stamp ``executor_scripts_fingerprint`` into ``dist-manifest.json``.
+
+    Args:
+        mappings: notation → absolute path mapping from :func:`discover_scripts`.
+        base_path: The bundles/cache root the paths were discovered under; used
+            as the relativization anchor.
+
+    Returns:
+        8-char hex fingerprint (same machinery as :func:`compute_checksum`).
+    """
+    base_resolved = base_path.resolve()
+    relative: dict[str, str] = {
+        notation: _relativize_script_path(abs_path, base_resolved) for notation, abs_path in mappings.items()
+    }
+    return compute_checksum(relative)
 
 
 def update_state(script_count: int, checksum: str, logs_cleaned: int) -> None:
@@ -826,6 +888,159 @@ def check_paths_exist(mappings: dict[str, str]) -> tuple[list, list]:
             missing.append((notation, path))
 
     return existing, missing
+
+
+# ============================================================================
+# INSTALLED-MANIFEST / VERSION STALENESS
+# ============================================================================
+
+
+def find_installed_manifest_path(base_path: Path | None = None, target: str = 'claude') -> Path | None:
+    """Locate the installed ``dist-manifest.json``, or ``None`` when absent.
+
+    The manifest is emitted by the target generator at the target output root
+    (meta-project: ``target/{target}/``) and rides into the plugin cache on
+    install. Search order:
+
+    1. ``$PM_DIST_MANIFEST`` — explicit override (tests + alternate installs).
+    2. The meta-project target tree (``<repo>/target/{target}/dist-manifest.json``)
+       when ``base_path`` points inside a ``marketplace/bundles`` checkout.
+    3. ``base_path/dist-manifest.json`` and its parent (cache / target root).
+
+    Args:
+        base_path: The resolved bundles/cache root, or ``None`` when it could
+            not be resolved (fresh install).
+        target: The resolved platform target (``claude`` or ``opencode``) whose
+            manifest to look up under the meta-project target tree. Defaults to
+            ``claude`` for callers that have no resolved target in hand.
+
+    Returns:
+        Path to an existing manifest file, or ``None``.
+    """
+    env_manifest = os.environ.get('PM_DIST_MANIFEST')
+    if env_manifest:
+        candidate = Path(env_manifest)
+        return candidate if candidate.is_file() else None
+
+    candidates: list[Path] = []
+    if base_path is not None:
+        marker = '/marketplace/bundles'
+        base_str = str(base_path)
+        idx = base_str.find(marker)
+        if idx >= 0:
+            repo_root = Path(base_str[:idx])
+            candidates.append(repo_root / 'target' / target / 'dist-manifest.json')
+        candidates.append(base_path / 'dist-manifest.json')
+        candidates.append(base_path.parent / 'dist-manifest.json')
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def read_installed_manifest(base_path: Path | None = None, target: str = 'claude') -> dict:
+    """Read the installed ``dist-manifest.json``, returning ``{}`` when absent.
+
+    A fresh install (and this repo before the first target build) has no
+    manifest; callers treat ``{}`` as the ``unknown`` sentinel and proceed
+    without error.
+
+    Args:
+        base_path: Forwarded to :func:`find_installed_manifest_path`.
+        target: Forwarded to :func:`find_installed_manifest_path`.
+
+    Returns:
+        The parsed manifest dict, or ``{}`` when the file is absent or
+        unreadable.
+    """
+    path = find_installed_manifest_path(base_path, target=target)
+    if path is None:
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _version_tuple(version: str) -> tuple[int, ...]:
+    """Parse a dotted ``0.1.N`` version into an int tuple for ordered compare.
+
+    Comparison is a full int-tuple compare (no zero-padding), so ``0.1.9`` sorts
+    below ``0.1.10`` and a future ``0.2`` base bump orders correctly. An empty
+    or ``unknown`` sentinel yields the empty tuple, which compares as the lowest
+    possible version — a fresh/unstamped surface is therefore never treated as
+    newer than a real published version.
+
+    Args:
+        version: A dotted version string, or the empty/``unknown`` sentinel.
+
+    Returns:
+        The int tuple of the leading numeric components.
+    """
+    if not version or version == 'unknown':
+        return ()
+    parts: list[int] = []
+    for segment in version.split('.'):
+        try:
+            parts.append(int(segment))
+        except ValueError:
+            break
+    return tuple(parts)
+
+
+def read_executor_version() -> str:
+    """Read the embedded ``MARSHALL_VERSION`` from the generated executor.
+
+    Returns ``unknown`` when the executor is absent, unreadable, or carries an
+    empty stamp (fresh install / pre-versioning executor).
+    """
+    real_executor = executor_path()
+    if not real_executor.is_file():
+        return 'unknown'
+    try:
+        text = real_executor.read_text(encoding='utf-8')
+    except (OSError, ValueError):
+        return 'unknown'
+    match = re.search(r"^MARSHALL_VERSION\s*=\s*'([^']*)'", text, re.MULTILINE)
+    if match and match.group(1):
+        return match.group(1)
+    return 'unknown'
+
+
+def read_marshal_provisioned_version(cwd: Path | None = None) -> str:
+    """Read ``system.provisioned_version`` from ``.plan/marshal.json``.
+
+    Walks up from ``cwd`` (or ``Path.cwd()``) to the nearest
+    ``.plan/marshal.json`` and extracts the stamped provisioning version.
+    Returns ``unknown`` when the file, the ``system`` block, or the field is
+    absent (fresh install, or config seeded before provisioning stamps
+    existed).
+
+    Args:
+        cwd: Starting directory for the upward walk. Defaults to ``Path.cwd()``.
+
+    Returns:
+        The provisioned version string, or ``unknown``.
+    """
+    if cwd is None:
+        cwd = Path.cwd()
+    for parent in [cwd, *cwd.parents]:
+        candidate = parent / PLAN_DIR_NAME / 'marshal.json'
+        if candidate.is_file():
+            try:
+                data = json.loads(candidate.read_text(encoding='utf-8'))
+                if isinstance(data, dict):
+                    system = data.get('system')
+                    if isinstance(system, dict):
+                        value = system.get('provisioned_version')
+                        if isinstance(value, str) and value:
+                            return value
+            except (OSError, ValueError):
+                pass
+            return 'unknown'
+    return 'unknown'
 
 
 # ============================================================================
@@ -1077,6 +1292,83 @@ def cmd_cleanup(args: argparse.Namespace) -> dict:
     return {'status': 'success', 'deleted': deleted}
 
 
+def cmd_preflight(args: argparse.Namespace) -> dict:
+    """Deterministic executor / config staleness check.
+
+    Compares the executor's embedded ``MARSHALL_VERSION`` and
+    ``marshal.json``'s ``system.provisioned_version`` against the installed
+    ``dist-manifest.json``'s ``changed_at`` versions, and acts per the two
+    asymmetric ownership rules:
+
+    - **Executor is safe derived state (ADR-002).** When it is stale
+      (``executor_version < executor_changed_at_version``) the verb regenerates
+      it in place and reports ``executor_action: regenerated``; otherwise
+      ``executor_action: fresh``.
+    - **``marshal.json`` holds user decisions.** It is never auto-mutated —
+      config-seed staleness (``marshal_version < config_changed_at_version``) is
+      reported advisory-only as ``marshal_status: stale`` for the caller to
+      route the user to ``/marshall-steward``; otherwise ``marshal_status:
+      fresh``.
+
+    A fresh install with no manifest resolves both changed_at values to the
+    empty sentinel, so nothing is stale and the verb is a no-op reporting
+    ``fresh``.
+
+    Returns:
+        A single TOON dict: ``status``, ``executor_action`` (``fresh`` |
+        ``regenerated``), ``marshal_status`` (``fresh`` | ``stale``),
+        ``installed_version``, ``executor_version``, ``marshal_version``.
+    """
+    try:
+        base_path: Path | None = get_base_path(
+            use_marketplace=getattr(args, 'marketplace', False),
+            marketplace_root=getattr(args, 'marketplace_root', None),
+        )
+    except FileNotFoundError:
+        base_path = None
+
+    # Resolve the target the same way cmd_generate does — an explicit --target
+    # flag wins; otherwise fall back to marshal.json — so a stale-executor
+    # regeneration and the manifest lookup below both look at the SAME target's
+    # published dist-manifest.json rather than always defaulting to claude.
+    resolved_target: str = getattr(args, 'target', None) or read_marshal_target()
+
+    manifest = read_installed_manifest(base_path, target=resolved_target)
+    installed_version = str(manifest.get('version', '') or 'unknown')
+    executor_changed_at = str(manifest.get('executor_changed_at_version', '') or '')
+    config_changed_at = str(manifest.get('config_changed_at_version', '') or '')
+
+    executor_version = read_executor_version()
+    marshal_version = read_marshal_provisioned_version()
+
+    # Executor staleness → safe in-place regeneration (derived state per ADR-002).
+    executor_action = 'fresh'
+    if executor_changed_at and _version_tuple(executor_version) < _version_tuple(executor_changed_at):
+        regen = cmd_generate(args)
+        if regen.get('status') != 'success':
+            return {
+                'status': 'error',
+                'error': f'preflight executor regeneration failed: {regen.get("error", "unknown error")}',
+            }
+        executor_action = 'regenerated'
+        # Re-read the freshly stamped version so the report reflects the regen.
+        executor_version = read_executor_version()
+
+    # Config-seed staleness → advisory only (marshal.json is never auto-mutated).
+    marshal_status = 'fresh'
+    if config_changed_at and _version_tuple(marshal_version) < _version_tuple(config_changed_at):
+        marshal_status = 'stale'
+
+    return {
+        'status': 'success',
+        'executor_action': executor_action,
+        'marshal_status': marshal_status,
+        'installed_version': installed_version,
+        'executor_version': executor_version,
+        'marshal_version': marshal_version,
+    }
+
+
 # ============================================================================
 # MAIN
 # ============================================================================
@@ -1154,6 +1446,40 @@ def main() -> int:
     cleanup_parser = subparsers.add_parser('cleanup', help='Clean up old logs', allow_abbrev=False)
     cleanup_parser.add_argument('--max-age-days', type=int, default=7, help='Max age in days (default: 7)')
     cleanup_parser.set_defaults(func=cmd_cleanup)
+
+    # preflight subcommand — deterministic executor/config staleness check.
+    # Regenerates the executor in place when stale (safe derived state, ADR-002)
+    # and reports config-seed staleness advisory-only. The generation flags are
+    # accepted because a stale executor triggers an in-place cmd_generate.
+    preflight_parser = subparsers.add_parser(
+        'preflight',
+        help='Check executor/config staleness against the installed dist-manifest',
+        allow_abbrev=False,
+    )
+    preflight_parser.add_argument(
+        '--marketplace', action='store_true', help='Use marketplace context (development mode) instead of plugin-cache'
+    )
+    preflight_parser.add_argument(
+        '--marketplace-root',
+        type=Path,
+        default=None,
+        metavar='PATH',
+        help=(
+            'Explicit marketplace anchor directory (must contain marketplace/bundles). '
+            'Overrides PM_MARKETPLACE_ROOT, the script-relative walk, and cwd-based discovery.'
+        ),
+    )
+    preflight_parser.add_argument(
+        '--target',
+        default=None,
+        choices=['claude', 'opencode'],
+        metavar='TARGET',
+        help=(
+            'Platform target used when a stale executor is regenerated. '
+            'Overrides the value read from .plan/marshal.json.'
+        ),
+    )
+    preflight_parser.set_defaults(func=cmd_preflight, dry_run=False)
 
     args = parser.parse_args()
     result = args.func(args)

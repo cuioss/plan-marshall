@@ -57,6 +57,28 @@ class TargetBase(ABC):
             empty for validation-only modes.
         """
 
+    def finalize(self, output_dir: Path, marketplace_dir: Path) -> list[Path]:
+        """Post-emit hook invoked by the CLI after the generic tree mutations.
+
+        The CLI (``generate.py``) applies two generic post-emit steps to every
+        target output tree — the deterministic ``0.1.N`` version override of
+        each bundle ``plugin.json`` and the ``dist-manifest.json`` emission at
+        the output root — and then calls this hook. Targets that write a
+        sentinel summarizing the FINAL published tree (e.g. the Claude target's
+        ``.emit-marker.json``) override this so the sentinel observes those
+        mutations rather than a stale pre-mutation snapshot. Runs in emit mode
+        only (a real ``output_dir``).
+
+        Args:
+            output_dir: The emitted target output root.
+            marketplace_dir: Path to ``marketplace/bundles/`` (the source of
+                truth), forwarded so the hook can fingerprint the source tree.
+
+        Returns:
+            The list of files written by the hook. Default: no-op (``[]``).
+        """
+        return []
+
     @abstractmethod
     def supports_agents(self) -> bool:
         """Whether this target emits agents."""

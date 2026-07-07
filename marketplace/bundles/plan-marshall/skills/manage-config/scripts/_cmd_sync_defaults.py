@@ -16,7 +16,7 @@ from _config_core import (
     save_config,
     success_exit,
 )
-from _config_defaults import get_default_config
+from _config_defaults import get_default_config, stamp_provisioning_fields
 
 
 def _deep_merge_missing(live: dict, defaults: dict, prefix: str, added: list[str]) -> dict:
@@ -83,7 +83,25 @@ def cmd_sync_defaults(args) -> dict:
     added: list[str] = []
     merged = _deep_merge_missing(live, defaults, '', added)
 
-    if added:
+    # Refresh the provisioning stamps (system.provisioned_version /
+    # system.config_seed_fingerprint). The deep-merge only ADDS missing keys, so
+    # an already-present stamp would go stale after a default-config change; this
+    # reconcile path (invoked by marshall-steward) re-stamps both unconditionally
+    # and persists when either the merge added keys or a stamp changed.
+    existing_system = merged.get('system')
+    before_stamps = (
+        (existing_system.get('provisioned_version'), existing_system.get('config_seed_fingerprint'))
+        if isinstance(existing_system, dict)
+        else (None, None)
+    )
+    stamp_provisioning_fields(merged)
+    after_system = merged['system']
+    stamps_changed = before_stamps != (
+        after_system['provisioned_version'],
+        after_system['config_seed_fingerprint'],
+    )
+
+    if added or stamps_changed:
         save_config(merged)
 
     return success_exit({'added': sorted(added), 'added_count': len(added)})

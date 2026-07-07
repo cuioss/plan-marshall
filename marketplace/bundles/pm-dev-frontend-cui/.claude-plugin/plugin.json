@@ -1,6 +1,6 @@
 {
   "name": "pm-dev-frontend-cui",
-  "version": "0.1-BETA",
+  "version": "0.1",
   "description": "CUI-specific JavaScript project standards covering Maven integration, Quarkus DevUI, NiFi, and SonarQube",
   "author": {
     "name": "https://github.com/cuioss/plan-marshall",

@@ -293,7 +293,9 @@ System-level infrastructure settings.
       "archived_plans_days": 5,
       "lessons_superseded_days": 0,
       "temp_on_maintenance": true
-    }
+    },
+    "provisioned_version": "0.1.42",
+    "config_seed_fingerprint": "a1b2c3…"
   }
 }
 ```
@@ -306,6 +308,15 @@ System-level infrastructure settings.
 | `archived_plans_days` | int | 5 | Days to keep archived plans |
 | `lessons_superseded_days` | int | 0 | Days to keep superseded lessons before removal (`0` = remove immediately on the next maintenance pass) |
 | `temp_on_maintenance` | bool | true | Clean temp on maintenance |
+
+### Provisioning Fields
+
+Runtime-stamped by `stamp_provisioning_fields()` (in `_config_defaults.py`) at both `init` and `sync-defaults` time — NOT part of `get_default_config()`. They record the marketplace version and default-config-seed fingerprint this `marshal.json` was last provisioned against, so the `generate_executor preflight` verb can signal executor/config staleness against the installed `dist-manifest.json`. Both are re-stamped unconditionally on every `sync-defaults` run (the key-exists preservation in `manage-config/SKILL.md` § "Workflow: Sync Defaults" does not apply to them).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `provisioned_version` | string | The `MARSHALL_VERSION` (`0.1.N`) the executor/config was provisioned at, from the installed `dist-manifest.json`. Compared against `dist-manifest.json`'s `config_changed_at_version` to advise a steward reconcile on config-seed drift. |
+| `config_seed_fingerprint` | string | Canonical-JSON hash of `get_default_config()` at provisioning time (the same hash the target generator stamps as `config_seed_fingerprint` in `dist-manifest.json`). |
 
 ## Section: plan
 

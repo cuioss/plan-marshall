@@ -96,6 +96,21 @@ Once the action is resolved, load the appropriate workflow document and follow i
 
 When `plan` is specified but no `action`, auto-detect from plan phase.
 
+**Step 0 — executor / config staleness preflight (deterministic, runs first).** Before the worktree re-anchor and routing calls below, run the deterministic `generate_executor preflight` verb once. It compares the executor's embedded `MARSHALL_VERSION` and `marshal.json`'s `system.provisioned_version` against the installed `dist-manifest.json`, applying the asymmetric-ownership rules documented canonically in [`marshall-steward` SKILL.md § "Executor & Config Staleness Signaling"](../marshall-steward/SKILL.md#executor--config-staleness-signaling) (executor = safe derived state, ADR-002, regenerated in place when stale; `marshal.json` = user decisions, never auto-mutated). The verb runs from the main checkout using main's present executor (which stays present throughout phase-5+), so it precedes the worktree re-anchor:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor preflight
+```
+
+(See [`tools-script-executor` SKILL.md](../tools-script-executor/SKILL.md) Canonical invocations → `generate_executor — preflight` for the verb's argparse surface and its six-field TOON contract.) Branch on the returned fields:
+
+- **`executor_action == regenerated`** — the executor's embedded version was older than the manifest's `executor_changed_at_version`, so the verb regenerated it inline (safe derived state, ADR-002). Log a `[STATUS]` decision; because a regenerated executor may emit a changed agent set and Claude Code's agent registry is session-pinned at startup, surface the session-restart guardrail (see [`marshall-steward` SKILL.md](../marshall-steward/SKILL.md) § "Session Restart Required After Executor / Agent Changes").
+- **`executor_action == fresh`** — the executor is current; proceed.
+- **`marshal_status == stale`** — `system.provisioned_version` is older than the manifest's `config_changed_at_version`. This is **advisory-only and non-blocking**: NEVER auto-mutate `marshal.json` (it holds user decisions). Instruct the user to run `/marshall-steward`, whose menu-mode config reconcile refreshes the provisioning stamps. Continue routing regardless.
+- **`marshal_status == fresh`** — the config seed is current; proceed.
+
+A fresh install with no manifest resolves both `changed_at` values to the empty sentinel, so nothing is stale and the verb is a no-op reporting `fresh`.
+
 **Cross-session re-entry preflight (re-anchor to worktree).** A fresh session that enters with `plan={plan_id}` from the main checkout may be targeting a phase-5+ plan whose directory was MOVED into its worktree at phase-5 move-in (ADR-002 move-based model). In that state the plan dir is no longer on main, so a `get-routing-context --plan-id {plan_id}` run from main resolves nothing and fails with `plan_not_found`. Before the routing call, resolve where the plan dir currently lives and re-anchor cwd into the worktree when needed:
 
 ```bash

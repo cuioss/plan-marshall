@@ -40,6 +40,15 @@ from pathlib import Path
 # This constant enables consistent path construction across all scripts
 PLAN_DIR_NAME = '{{PLAN_DIR_NAME}}'
 
+# Provisioning stamps - injected at generation time from the installed
+# dist-manifest.json. MARSHALL_VERSION is the deterministic 0.1.N version the
+# executor was generated at; MAPPINGS_FINGERPRINT is the machine-portable
+# script-set fingerprint. Both are the empty sentinel on a fresh install (no
+# manifest yet). The generate_executor preflight verb reads MARSHALL_VERSION to
+# decide whether this executor is stale versus the installed manifest.
+MARSHALL_VERSION = '{{GENERATED_VERSION}}'
+MAPPINGS_FINGERPRINT = '{{MAPPINGS_FINGERPRINT}}'
+
 # Add shared module directories to sys.path so executor-level imports can find them
 # (e.g., plan_logging imports input_validation at module level)
 {{SHARED_MODULE_DIRS}}

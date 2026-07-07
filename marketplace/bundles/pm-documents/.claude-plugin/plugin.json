@@ -1,6 +1,6 @@
 {
   "name": "pm-documents",
-  "version": "0.1-BETA",
+  "version": "0.1",
   "description": "AsciiDoc and documentation standards enforcement for projects",
   "author": {
     "name": "https://github.com/cuioss/plan-marshall",

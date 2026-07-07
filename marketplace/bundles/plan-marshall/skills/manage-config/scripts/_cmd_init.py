@@ -13,7 +13,7 @@ from _config_core import (
     save_config,
     success_exit,
 )
-from _config_defaults import get_default_config
+from _config_defaults import get_default_config, stamp_provisioning_fields
 from _config_detection import detect_domains
 
 
@@ -43,6 +43,12 @@ def cmd_init(args) -> dict:
                 if domain_config:
                     skill_domains[domain_key] = domain_config
         config['skill_domains'] = skill_domains
+
+    # Stamp the provisioning fields (system.provisioned_version /
+    # system.config_seed_fingerprint) so the executor/config staleness check has
+    # a baseline to compare the installed manifest against. Runtime-only stamps —
+    # not part of get_default_config(), so they never perturb the seed fingerprint.
+    stamp_provisioning_fields(config)
 
     save_config(config)
     return success_exit({'created': str(MARSHAL_PATH), 'domains_detected': detected_keys})

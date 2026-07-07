@@ -409,3 +409,12 @@ python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_exe
 python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor cleanup \
   [--max-age-days MAX_AGE_DAYS]
 ```
+
+### generate_executor — preflight
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor preflight \
+  [--marketplace] [--marketplace-root PATH] [--target TARGET]
+```
+
+Deterministic executor/config staleness check against the installed `dist-manifest.json`. Regenerates the executor in place when its embedded `MARSHALL_VERSION` is older than the manifest's `executor_changed_at_version` (safe derived state, ADR-002), and reports config-seed staleness advisory-only (`marshal.json` is never auto-mutated). Returns a six-field TOON: `status`, `executor_action` (`fresh` | `regenerated`), `marshal_status` (`fresh` | `stale`), `installed_version`, `executor_version`, `marshal_version`.
