@@ -673,7 +673,7 @@ def cmd_fetch_findings(args):
 # POST_RESPONSES SUBCOMMAND (apply triaged dispositions back to Sonar)
 # ============================================================================
 
-_ISSUE_KEY_DETAIL = re.compile(r'^key:\s*(?P<key>.+?)\s*$', re.MULTILINE)
+_ISSUE_KEY_DETAIL = re.compile(r'^key:[ \t]*(?P<key>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 
 
 def _issue_key_from_detail(detail: str | None) -> str:
