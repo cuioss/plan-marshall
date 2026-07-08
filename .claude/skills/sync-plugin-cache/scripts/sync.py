@@ -485,7 +485,9 @@ def _copy_dist_manifest(source_root: Path, cache_root: Path) -> bool:
         return False
     try:
         cache_root.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source_manifest, cache_root / DIST_MANIFEST_FILENAME)
+        dest_manifest = cache_root / DIST_MANIFEST_FILENAME
+        dest_manifest.unlink(missing_ok=True)
+        shutil.copyfile(source_manifest, dest_manifest)
     except OSError:
         return False
     return True
