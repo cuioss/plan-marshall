@@ -214,3 +214,95 @@ def test_sync_engine_failure_path_when_rsync_missing(tmp_path: Path, monkeypatch
     # The failed table is captured; one row per failure
     assert 'failed[1]{bundle,error}:' in result.stdout
     assert 'rsync not found on PATH' in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# dist-manifest.json mirrored into the plugin-cache root after a successful sync
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
+def test_sync_engine_copies_dist_manifest_to_cache_root_byte_for_byte(tmp_path: Path):
+    # After a successful sync the top-level target/claude/dist-manifest.json is
+    # mirrored to {cache_root}/dist-manifest.json byte-for-byte, so the
+    # dist-branch versioning feature can resolve the installed version from
+    # base_path/dist-manifest.json in the meta-project's own preflight.
+    target = tmp_path / 'target' / 'claude'
+    cache = tmp_path / 'cache'
+    _make_target(target, {'demo': '0.4.0'})
+    manifest_doc = json.dumps({'version': '0.1.1068', 'bundles': {}}, indent=2) + '\n'
+    _write(target / 'dist-manifest.json', manifest_doc)
+
+    result = _run(
+        '--source-root', str(target),
+        '--cache-root', str(cache),
+        '--skip-staleness-guard',
+    )
+    assert result.returncode == 0, result.stderr
+
+    copied = cache / 'dist-manifest.json'
+    assert copied.is_file(), f'expected manifest copied to {copied}'
+    assert copied.read_bytes() == (target / 'dist-manifest.json').read_bytes()
+
+
+@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
+def test_sync_engine_dist_manifest_lands_at_cache_root_not_versioned_subdir(tmp_path: Path):
+    # The manifest lands at the cache ROOT (alongside the versioned
+    # {bundle}/{version}/ dirs), never inside a per-bundle versioned subdir.
+    target = tmp_path / 'target' / 'claude'
+    cache = tmp_path / 'cache'
+    _make_target(target, {'demo': '0.4.0'})
+    _write(target / 'dist-manifest.json', '{"version": "0.1.1068"}\n')
+
+    result = _run(
+        '--source-root', str(target),
+        '--cache-root', str(cache),
+        '--skip-staleness-guard',
+    )
+    assert result.returncode == 0, result.stderr
+
+    assert (cache / 'dist-manifest.json').is_file()
+    assert not (cache / 'demo' / '0.4.0' / 'dist-manifest.json').exists()
+
+
+@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
+def test_sync_engine_absent_dist_manifest_degrades_to_noop(tmp_path: Path):
+    # An absent source manifest is a best-effort no-op: the sync still reports
+    # success, raises nothing, and leaves no stray file at the cache root.
+    target = tmp_path / 'target' / 'claude'
+    cache = tmp_path / 'cache'
+    _make_target(target, {'demo': '0.4.0'})
+
+    result = _run(
+        '--source-root', str(target),
+        '--cache-root', str(cache),
+        '--skip-staleness-guard',
+    )
+    assert result.returncode == 0, result.stderr
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+    assert not (cache / 'dist-manifest.json').exists()
+
+
+@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
+def test_sync_engine_dist_manifest_copy_does_not_perturb_bundle_sync(tmp_path: Path):
+    # The manifest copy is additive: the per-bundle rsync outcome
+    # (synced_count and the versioned subdir writes) is unchanged.
+    target = tmp_path / 'target' / 'claude'
+    cache = tmp_path / 'cache'
+    _make_target(target, {'demo-a': '0.1.0', 'demo-b': '0.2.0'})
+    _write(target / 'dist-manifest.json', '{"version": "0.1.1068"}\n')
+
+    result = _run(
+        '--source-root', str(target),
+        '--cache-root', str(cache),
+        '--skip-staleness-guard',
+    )
+    assert result.returncode == 0, result.stderr
+
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+    assert int(data['synced_count']) == 2
+    assert int(data['failed_count']) == 0
+    assert (cache / 'demo-a' / '0.1.0' / 'README.md').is_file()
+    assert (cache / 'demo-b' / '0.2.0' / 'README.md').is_file()

@@ -1502,6 +1502,37 @@ def test_find_installed_manifest_path_defaults_to_claude(tmp_path, monkeypatch):
     assert resolved == claude_manifest
 
 
+def test_find_installed_manifest_path_resolves_cache_root_manifest(tmp_path, monkeypatch):
+    """A plugin-cache-root-shaped base_path (no ``/marketplace/bundles`` marker)
+    resolves its own ``base_path/dist-manifest.json`` candidate.
+
+    This is the meta-project's own preflight/executor-regen context: base_path
+    is the plugin-cache root (``~/.claude/plugins/cache/plan-marshall``), which
+    the sync engine populates with a top-level ``dist-manifest.json``. The
+    existing ``uses_resolved_target`` / ``defaults_to_claude`` cases exercise
+    only the ``/marketplace/bundles``-marker target candidate; this pins the
+    ``base_path/dist-manifest.json`` candidate the fix relies on, guarding
+    against its silent removal.
+    """
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+
+    module = load_module()
+
+    # Plugin-cache-root-shaped dir: it does NOT contain '/marketplace/bundles',
+    # so the target-tree candidate never fires and resolution falls to the
+    # base_path/dist-manifest.json candidate.
+    cache_root = tmp_path / 'cache' / 'plan-marshall'
+    cache_root.mkdir(parents=True)
+    assert '/marketplace/bundles' not in str(cache_root)
+
+    manifest = cache_root / 'dist-manifest.json'
+    manifest.write_text('{"version": "0.1.1068"}', encoding='utf-8')
+
+    resolved = module.find_installed_manifest_path(cache_root)
+
+    assert resolved == manifest, 'a plugin-cache-root base_path must resolve base_path/dist-manifest.json'
+
+
 def test_template_declares_version_and_fingerprint_constants():
     """The template carries the MARSHALL_VERSION / MAPPINGS_FINGERPRINT
     placeholder constants beside PLAN_DIR_NAME."""
