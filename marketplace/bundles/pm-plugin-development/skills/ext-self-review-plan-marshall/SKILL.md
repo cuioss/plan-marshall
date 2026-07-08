@@ -10,6 +10,14 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 **Role**: Plan-marshall-domain implementor of the `ext-self-review-{domain}` extension point (see [`../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`](../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md)). Surfaces concrete candidates from the worktree's staged diff so the LLM cognitive review pass in [`../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md`](../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md) can apply the thirteen structural-defect checks (symmetric pair, regex over-fit, wording disambiguation, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check, ordinal-reference re-check) against a bounded surface, not an unbounded read of the whole diff.
 
+## Finding-authoring contract (cognitive review pass)
+
+When the cognitive review pass files a finding for a confirmed structural defect, it MUST honor two rules so the finding flows cleanly through the consolidated find → ingest → one-triage → one-respond pipeline:
+
+1. **Title = defect class + subject, never a bare defect class.** The finding title MUST carry both the defect class AND a content-distinguishing subject (the specific file / symbol / passage the defect is about) — e.g. `symmetric-pair-missing-test: save_state has no test surface`, NOT a bare `symmetric-pair-missing-test`. A bare-class title is a content collision: the discriminator-aware Q-Gate dedup keys on the title plus a content discriminator, and two unrelated same-class defects sharing a bare-class title erode the discriminator's distinguishing power. A class + subject title keeps each distinct defect its own finding and prevents an unrelated resolved same-class finding from being reopened.
+
+2. **File find-only; defer triage.** The cognitive review pass FILES findings (`manage-findings add`) for confirmed defects and STOPS there — it does NOT triage them (no FIX / SUPPRESS / ACCEPT decision, no source edit, no respond). Disposition is owned by the single consolidated triage pass that runs later in finalize (`verification-feedback` → `triage.md`), which reads the promoted top-level fields and decides each finding once. Filing find-only keeps the self-review generator a pure producer on the FIND side of the pipeline.
+
 ## Enforcement
 
 **Execution mode**: Library script; invoked via the standard 3-part executor notation by `plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md` Step 1.

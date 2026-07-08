@@ -136,6 +136,8 @@ _apbr = _load('_analyze_persona_binding_resolves.py', '_apbr_fixtures')
 _aalb = _load('_analyze_agentfile_line_budget.py', '_aalb_fixtures')
 _aadt = _load('_analyze_agentfile_directory_tree.py', '_aadt_fixtures')
 _alf = _load('_analyze_lane_frontmatter.py', '_alf_fixtures')
+_atrrs = _load('_analyze_triage_read_surface.py', '_atrrs_fixtures')
+_avsc = _load('_analyze_verify_step_contract.py', '_avsc_fixtures')
 
 # ---------------------------------------------------------------------------
 # Registered-rule-ID extraction (relocated verbatim from the deleted
@@ -1171,6 +1173,34 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
                 '| Script | Operation | Canonical form |\n'
                 '| --- | --- | --- |\n'
                 '| `ghost` | read | `ghost-unresolvable read --plan-id {id}` |\n'
+            ),
+        },
+    )
+
+    # triage-reads-top-level-only: a triage-surface doc (basename triage.md)
+    # that READS a concrete raw_input field — the prompt-injection-surface
+    # containment violation the analyzer flags.
+    corpus['triage-reads-top-level-only'] = FixtureSpec(
+        analyzer=lambda root: _atrrs.analyze_triage_read_surface(root),
+        files={
+            'plan-marshall/skills/s/workflow/triage.md': (
+                '# Triage\n\n'
+                'Read the finding detail from `raw_input.detail` before deciding.\n'
+            ),
+        },
+    )
+
+    # verify-step-canonicals-required: a build-verify-step implementor whose
+    # frontmatter names the ext-point but declares no `canonicals:` list.
+    corpus['verify-step-canonicals-required'] = FixtureSpec(
+        analyzer=lambda root: _avsc.analyze_verify_step_contract(root),
+        files={
+            'plan-marshall/skills/s/SKILL.md': (
+                '---\n'
+                'name: fixture-verify-step\n'
+                'implements: plan-marshall:extension-api/standards/ext-point-build-verify-step\n'
+                '---\n'
+                '# Fixture\n'
             ),
         },
     )

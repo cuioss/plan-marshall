@@ -20,7 +20,13 @@ It enforces three things deterministically:
                      status: error.
 
 Usage:
-    validate_struct.py validate --schema research|ci-finding|issue-body --struct '<json>'
+    validate_struct.py validate --schema research|ci-finding|issue-body|finding --struct '<json>'
+
+The `finding` schema is the ledger-ingestion schema: the batched
+`manage-findings ingest` pass calls `validate_candidate('finding', raw_input)`
+in-process over every finding's quarantined `raw_input.{field}` sub-object and
+promotes only the `status: success` clamped output to the finding's top-level
+fields. The validator IS the containment boundary for that promotion.
 """
 
 import argparse
@@ -78,6 +84,18 @@ SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
     'issue-body': {
         'narrative': {'type': str, 'max_length': 8000},
         'references': {'type': list, 'max_items': 20, 'url_list': True},
+    },
+    # Ledger free-text ingestion schema. Declares exactly the untrusted free-text
+    # fields a producer may quarantine under raw_input.{field} and that the batched
+    # ingestion pass promotes to top-level. additionalProperties:false means any
+    # raw_input field not declared here rejects the whole struct (a fidelity
+    # failure the ingestion pass routes to `rejected`), never silently dropping it.
+    'finding': {
+        'title': {'type': str, 'max_length': 1000},
+        'detail': {'type': str, 'max_length': 8000},
+        'body': {'type': str, 'max_length': 8000},
+        'message': {'type': str, 'max_length': 8000},
+        'summary': {'type': str, 'max_length': 4000},
     },
 }
 
@@ -221,18 +239,25 @@ def _validate_object(
 # ============================================================================
 
 
-def cmd_validate(args: argparse.Namespace) -> dict[str, Any]:
-    schema = SCHEMAS.get(args.schema)
+def validate_candidate(schema_name: str, candidate: Any) -> dict[str, Any]:
+    """Validate (and clamp) an already-parsed candidate object against a schema.
+
+    This is the programmatic entry point the batched findings-ingestion pass
+    (``manage-findings ingest``) calls in-process, once per finding, over the
+    finding's ``raw_input.{field}`` sub-object. ``cmd_validate`` is the thin CLI
+    wrapper that JSON-parses ``--struct`` and delegates here, so the containment
+    logic lives in exactly one place. The returned dict is the canonical result
+    shape: ``status: success`` carrying the clamped ``struct`` + ``clamped`` list,
+    or a ``status: error`` ``make_error`` struct on a schema or domain-allowlist
+    violation (with ``violations`` / ``rejected_urls`` naming the cause).
+    """
+    schema = SCHEMAS.get(schema_name)
     if schema is None:
         return make_error(
-            f"Unknown schema: {args.schema}",
+            f"Unknown schema: {schema_name}",
             code='invalid_input',
             valid_schemas=sorted(SCHEMAS.keys()),
         )
-
-    candidate, parse_err = parse_json_arg(args.struct, '--struct')
-    if parse_err is not None:
-        return parse_err
 
     if not isinstance(candidate, dict):
         return make_error(
@@ -248,7 +273,7 @@ def cmd_validate(args: argparse.Namespace) -> dict[str, Any]:
         return make_error(
             'Schema validation failed',
             code='schema_violation',
-            schema=args.schema,
+            schema=schema_name,
             violations=errors,
         )
 
@@ -256,16 +281,24 @@ def cmd_validate(args: argparse.Namespace) -> dict[str, Any]:
         return make_error(
             'Domain allowlist check failed',
             code='domain_rejected',
-            schema=args.schema,
+            schema=schema_name,
             rejected_urls=domain_errors,
         )
 
     return {
         'status': 'success',
-        'schema': args.schema,
+        'schema': schema_name,
         'struct': validated,
         'clamped': clamped,
     }
+
+
+def cmd_validate(args: argparse.Namespace) -> dict[str, Any]:
+    candidate, parse_err = parse_json_arg(args.struct, '--struct')
+    if parse_err is not None:
+        return parse_err
+
+    return validate_candidate(args.schema, candidate)
 
 
 def main() -> int:
@@ -282,7 +315,7 @@ Examples:
                 'help': 'Validate (and clamp) a candidate struct against a schema',
                 'handler': cmd_validate,
                 'args': [
-                    {'flags': ['--schema'], 'required': True, 'help': 'Schema selector: research|ci-finding|issue-body'},
+                    {'flags': ['--schema'], 'required': True, 'help': 'Schema selector: research|ci-finding|issue-body|finding'},
                     {'flags': ['--struct'], 'required': True, 'help': 'Candidate struct as a JSON string'},
                 ],
             },

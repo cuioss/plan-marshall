@@ -4,7 +4,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 # Verification-Feedback Workflow
 
-Thin orchestrator that unifies the five LLM-driven feedback flows under a single dispatch shape. Branches on the `producer` runtime input for the producer-side work in Step 1, then hands off to the canonical Steps 1-6 in [`triage.md`](triage.md) for the per-finding FIX / SUPPRESS / ACCEPT / AskUserQuestion loop.
+Thin orchestrator that unifies the LLM-driven feedback flows under a single dispatch shape and enforces the consolidated **FIND → INGEST → TRIAGE → RESPOND** pipeline. Branches on the `producer` runtime input for the producer-side FIND work in Step 1, runs the single batched INGEST pass (Step 1.6) that promotes every quarantined `raw_input.{field}` value to the clean top-level fields, hands off to the canonical Steps 1-6 in [`triage.md`](triage.md) for the per-finding FIX / SUPPRESS / ACCEPT / AskUserQuestion loop (which reads TOP-LEVEL fields only, never `raw_input.*`), then transmits the decided dispositions back to the provider in ONE RESPOND loop (Step 8, `post_responses` / `sonar_rest transition`, keyed by `hash_id`).
 
 Dispatched under the **phase-scoped** `verification-feedback` role key — the resolver bubbles from `<caller-phase>.verification-feedback` to `<caller-phase>.default` to `effort`. Phase-5 dispatches use `--phase phase-5-execute --role verification-feedback`; every phase-6-finalize dispatch (sonar, pr-comment, plugin-doctor, pr-state) uses `--phase phase-6-finalize --role verification-feedback`.
 
@@ -13,8 +13,8 @@ Dispatched under the **phase-scoped** `verification-feedback` role key — the r
 | `producer` | Caller surface | Producer-side work (Step 1) | Pre-flight gate |
 |------------|----------------|-----------------------------|-----------------|
 | `build-runner` | phase-5-execute Step 11 + Step 11b | Build-runner / quality-gate log parse → findings store. **Mechanical, pre-flight** — the orchestrator runs the build, captures findings via `manage-findings add`, dispatches this workflow only when `manage-findings list | count > 0`. Step 1 here is a store-only query. | Count > 0 |
-| `sonar` | phase-6-finalize `sonar-roundtrip` | `workflow-integration-sonar:sonar fetch-and-store`. **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
-| `pr-comment` | phase-6-finalize `automated-review` | `workflow-integration-github:github_pr comments-stage` (or GitLab equivalent). **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
+| `sonar` | phase-6-finalize `sonar-roundtrip` | `workflow-integration-sonar:sonar fetch_findings` — files one `sonar-issue` finding per surviving issue to the ledger with the untrusted message quarantined under `raw_input`. **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
+| `pr-comment` | phase-6-finalize `automated-review` | `workflow-integration-github:github_pr fetch_findings` (or GitLab equivalent) — files one `pr-comment` finding per surviving comment with the untrusted body quarantined under `raw_input`. **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
 | `plugin-doctor` | `project:finalize-step-plugin-doctor` + `/plugin-doctor` slash command | Marketplace static analysis — **LLM-heavy**, runs inside this envelope as Step 1: iterate the plugin-doctor rule catalog in-context, scope-filter, emit one finding per violation to the store. | None — analysis IS the producer step. |
 | `pr-state` | `/workflow-pr-doctor` slash command | Wait for CI checks; fetch build status, PR comments, and Sonar issues sequentially; emit each finding-type to the store. Step 1 here orchestrates the multi-source sweep, then the unified triage in Steps 3-6 processes the aggregated set. | None — the producer always runs; Steps 3-6 short-circuit on zero findings. |
 
@@ -31,14 +31,16 @@ Dispatched under the **phase-scoped** `verification-feedback` role key — the r
 
 Skills the caller MUST forward in `skills[]`:
 
-- `plan-marshall:manage-findings` — store queries and resolutions
+- `plan-marshall:manage-findings` — store queries, batched `ingest`, and disposition resolutions
 - `plan-marshall:manage-tasks` — fix-task allocation
 - `plan-marshall:manage-architecture` — `which-module` for domain detection
 - `plan-marshall:manage-config` — extension resolution
-- `plan-marshall:tools-integration-ci` — PR thread replies / CI wait when `pr_number` is set
+- `plan-marshall:tools-integration-ci` — CI wait when `pr_number` is set (`producer=pr-state`)
 
 Producer-specific additions:
 
+- `producer=pr-comment` — also forward the RESPOND-loop provider `plan-marshall:workflow-integration-github` (or `…-gitlab`) for `post_responses`.
+- `producer=sonar` — also forward `plan-marshall:workflow-integration-sonar` for the RESPOND-loop server-side dismissal (`sonar post_responses`).
 - `producer=pr-state` — also forward `plan-marshall:workflow-integration-git`, `plan-marshall:workflow-integration-github` (or `…-gitlab`), `plan-marshall:workflow-integration-sonar`, `plan-marshall:tools-integration-ci`.
 - `producer=plugin-doctor` — also forward `pm-plugin-development:plugin-doctor` (rule catalog + references) and `pm-plugin-development:tools-marketplace-inventory`.
 
@@ -86,7 +88,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings ad
   --detail "{rule prose + per-violation context}"
 ```
 
-Then fall through to Step 1.5 (optional verify pre-stage), Step 2 (extension load), and Steps 3-6 (per-finding triage). The decision-and-action loop will FIX / SUPPRESS / ACCEPT each emitted finding using the standards in the pm-plugin-development triage extension.
+Then fall through to Step 1.4 (batched ingestion), Step 1.5 (optional verify pre-stage), Step 2 (extension load), and Steps 3-6 (per-finding triage). The decision-and-action loop will FIX / SUPPRESS / ACCEPT each emitted finding using the standards in the pm-plugin-development triage extension.
 
 ### Branch: `producer=pr-state` (multi-source PR sweep)
 
@@ -121,23 +123,23 @@ Walk the producer surfaces sequentially, emitting findings of each type to the s
 
    For each failed check in the output, emit a `test-failure` finding to the store with `rule-id` set to the failing step name and `detail` set to the message + `details_url`.
 
-5. **Fetch PR comments**:
+5. **Fetch PR comments** (FIND — body quarantined under `raw_input`):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
-     comments-stage --pr-number {pr_number} --plan-id {plan_id}
+     fetch_findings --pr-number {pr_number} --plan-id {plan_id}
    ```
 
-   (or `workflow-integration-gitlab:gitlab_pr` equivalent). The producer writes one `pr-comment` finding per surviving comment to the store.
+   (or `workflow-integration-gitlab:gitlab_pr fetch_findings` equivalent). The producer writes one `pr-comment` finding per surviving comment to the store, quarantining the untrusted body under `raw_input.{body}`.
 
-6. **Fetch Sonar issues**:
+6. **Fetch Sonar issues** (FIND — message quarantined under `raw_input`):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar \
-     fetch-and-store --plan-id {plan_id} --project {project_key}
+     fetch_findings --plan-id {plan_id} --project {project_key}
    ```
 
-   The producer writes one `sonar-issue` finding per surviving issue to the store. If Sonar MCP is unavailable, log "Sonar skipped — MCP not connected" and continue.
+   The producer writes one `sonar-issue` finding per surviving issue to the store, quarantining the untrusted message under `raw_input`. If Sonar is unavailable, log "Sonar skipped — not configured" and continue.
 
 After all three producer surfaces have run, query the store for the union — `--include-qgate` merges the pending per-phase Q-Gate findings into the per-plan read so the union is a single unified query (see `manage-findings` Canonical invocations → `list`):
 
@@ -146,7 +148,18 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
   --plan-id {plan_id} --resolution pending --include-qgate
 ```
 
-If empty, return `status: success`, `display_detail: "PR #{pr_number} clean — nothing to triage"`. Otherwise continue to Step 1.5.
+If empty, return `status: success`, `display_detail: "PR #{pr_number} clean — nothing to triage"`. Otherwise continue to Step 1.4.
+
+## Step 1.4: Batched ingestion — promote `raw_input.{field}` to top-level (INGEST)
+
+After the FIND branch (Step 1) has filed the pending findings and BEFORE triage reads them, run the single batched ingestion pass exactly once. It iterates every pending finding, runs the deterministic `validate_struct` validator over each quarantined `raw_input.{field}` value (schema + `maxLength` cap + domain-allowlist), and promotes only the `status: success` clamped output to the clean top-level field name — leaving the `raw_input.*` sub-object un-ingested for audit. A validator rejection resolves the finding (or records a fidelity Q-Gate finding) rather than promoting; top-level therefore becomes clean-by-construction, and triage's TOP-LEVEL-only read (§ Steps 3-6) is safe against the untrusted free-text.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings ingest \
+  --plan-id {plan_id}
+```
+
+This is the single deterministic containment boundary that supersedes the retired per-finding `execution-context-reader` + `validate_struct` Step-2b dispatch hop: containment is now one batched pass, not a per-comment reader dispatch. Run it once per dispatch, after all producers in Step 1 have filed and before Step 1.5 / Step 2. On a loop-back re-entry the pass is idempotent — already-promoted findings re-validate to the same clamped top-level value.
 
 ## Step 1.5: Verify pre-stage (optional, gated on producer `verification_profile`)
 
@@ -203,6 +216,32 @@ This envelope is a leaf — it cannot sub-dispatch. When the per-finding iterati
 ## Step 7: Loop-back signalling
 
 `loop_back_needed: true` when any decision in any group resolved to FIX. The calling manifest step (or slash command body) handles the actual re-fire — this workflow does NOT call `manage-status set-phase` directly.
+
+## Step 8: Respond loop — transmit dispositions to the provider (RESPOND)
+
+Triage (Steps 3-6) RECORDED a disposition and a reviewer-ready `resolution_detail` on each finding via `manage-findings resolve`; it did NOT talk to the provider. This single RESPOND loop transmits those already-decided dispositions back to the provider **once**, after all triage has settled — keyed by each finding's own `hash_id`, never by positional pairing (the store-keyed pairing is the structural fix for the historical positional respond mis-pairing defect). It runs for the PR / Sonar producers only; `test-failure` / `lint-issue` / `plugin-doctor` findings have no external provider surface and skip this step.
+
+The respond verbs are the pure zero-LLM provider surface (D3) — they apply dispositions, they never decide them:
+
+1. **PR providers (`pr-comment`, and `sonar-issue` when `pr_number` is set for thread context)** — one `post_responses` call transmits every terminal-disposition finding that carries a `thread_id` and a `resolution_detail`: it posts the stored `resolution_detail` as a thread-reply, then resolves the thread. Findings without a `thread_id` or `resolution_detail` are skipped, never guessed at:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
+     post_responses --pr-number {pr_number} --plan-id {plan_id}
+   ```
+
+   (or `workflow-integration-gitlab:gitlab_pr post_responses` for GitLab projects — one provider per host).
+
+2. **Sonar server-side dismissals** — one `sonar post_responses` call transmits every terminal `sonar-issue` dismissal keyed by `hash_id`: it maps a `suppressed` resolution to a `wontfix` transition and a `rejected` resolution to a `falsepositive` transition, reading the Sonar issue key from each finding's own record (never a positional pairing). See `workflow-integration-sonar` Canonical invocations → `sonar — post_responses`:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar \
+     post_responses --plan-id {plan_id} --project {project_key}
+   ```
+
+   This RESPOND-side dismissal is gated by the `do_transition` param (owned by the `default:sonar-roundtrip` step; default `false`): the sonar branch of Step 8 runs `sonar post_responses` only when `do_transition == true`. Under the default `do_transition == false`, dispositions are recorded git-visibly as in-code suppressions during triage and NO server-side transition is transmitted.
+
+The respond verbs FAIL LOUD when the provider is not configured (typed `unconfigured`, never a silent no-op). Because the respond loop reads back what triage recorded, a loop-back re-entry that re-runs triage on still-pending findings transmits only the newly-decided dispositions — already-responded findings are terminal and no longer pending.
 
 ## Output
 

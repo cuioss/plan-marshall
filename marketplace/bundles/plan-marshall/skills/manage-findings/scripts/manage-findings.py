@@ -9,6 +9,7 @@ Usage:
     python3 manage-findings.py get --plan-id <plan_id> --hash-id <hash_id>
     python3 manage-findings.py resolve --plan-id <plan_id> --hash-id <hash_id> --resolution <resolution> [options]
     python3 manage-findings.py promote --plan-id <plan_id> --hash-id <hash_id> --promoted-to <promoted_to>
+    python3 manage-findings.py ingest --plan-id <plan_id>
 
     python3 manage-findings.py qgate add --plan-id <plan_id> --phase <phase> --source <source> --type <type> --title <title> --detail <detail> [options]
     python3 manage-findings.py qgate list --plan-id <plan_id> --phase <phase> [options]
@@ -28,6 +29,7 @@ import argparse
 from _findings_core import (
     BOT_KINDS,
     CERTAINTY_VALUES,
+    DEFAULT_RAW_INPUT_MAX_BYTES,
     FINDING_TYPES,
     PR_COMMENT_KINDS,
     QGATE_PHASES,
@@ -49,6 +51,7 @@ from _findings_core import (
     resolve_finding,
     resolve_qgate_finding,
 )
+from _findings_ingest import ingest_findings
 from file_ops import output_toon, safe_main
 from input_validation import (
     add_component_arg,
@@ -60,8 +63,55 @@ from input_validation import (
 )
 
 
+class _RawInputError(dict):
+    """Marker subclass distinguishing a parse-error sentinel from a parsed mapping.
+
+    ``_parse_raw_input`` returns a plain ``dict`` for a successfully-parsed
+    ``{field: value}`` mapping and a ``_RawInputError`` for a malformed pair.
+    Call sites test ``isinstance(raw_input, _RawInputError)`` rather than the
+    ambiguous ``raw_input.get('status') == 'error'`` shape, so a legitimate
+    ``--raw-input status=error`` pair (which parses to a plain dict) is never
+    mistaken for the error sentinel and silently discarded.
+    """
+
+
+def _parse_raw_input(
+    pairs: list[str] | dict[str, object] | None,
+) -> dict[str, str] | _RawInputError | None:
+    """Parse repeatable ``--raw-input FIELD=VALUE`` pairs into a mapping.
+
+    Accepts either the argparse ``action='append'`` list of ``FIELD=VALUE``
+    strings (the CLI path) or an already-parsed ``{field: value}`` mapping (a
+    programmatic caller that hands ``cmd_add`` / ``cmd_qgate_add`` a namespace
+    whose ``raw_input`` is the resolved dict). A mapping is passed through with
+    its values coerced to ``str`` so the downstream quarantine byte-cap always
+    operates on text.
+
+    Returns the mapping on success, ``None`` when nothing was supplied, or a
+    ``_RawInputError`` (a ``dict`` subclass carrying the canonical
+    ``{'status': 'error', ...}`` payload) when a string pair is malformed
+    (missing ``=`` or an empty field name) so the CLI surfaces a structured error.
+    """
+    if not pairs:
+        return None
+    if isinstance(pairs, dict):
+        return {str(field): str(value) for field, value in pairs.items()}
+    result: dict[str, str] = {}
+    for pair in pairs:
+        if '=' not in pair:
+            return _RawInputError({'status': 'error', 'message': f'Invalid --raw-input (expected FIELD=VALUE): {pair}'})
+        field, value = pair.split('=', 1)
+        if not field:
+            return _RawInputError({'status': 'error', 'message': f'Invalid --raw-input (empty field name): {pair}'})
+        result[field] = value
+    return result
+
+
 def cmd_add(args: argparse.Namespace) -> dict:
     """Handle: add"""
+    raw_input = _parse_raw_input(getattr(args, 'raw_input', None))
+    if isinstance(raw_input, _RawInputError):
+        return raw_input
     return add_finding(
         plan_id=args.plan_id,
         finding_type=args.type,
@@ -77,6 +127,8 @@ def cmd_add(args: argparse.Namespace) -> dict:
         kind=args.kind,
         reviewed_commit_sha=args.reviewed_commit_sha,
         bot_kind=args.bot_kind,
+        raw_input=raw_input,
+        raw_input_max_bytes=getattr(args, 'raw_input_max_bytes', DEFAULT_RAW_INPUT_MAX_BYTES),
     )
 
 
@@ -123,8 +175,16 @@ def cmd_promote(args: argparse.Namespace) -> dict:
     )
 
 
+def cmd_ingest(args: argparse.Namespace) -> dict:
+    """Handle: ingest"""
+    return ingest_findings(plan_id=args.plan_id)
+
+
 def cmd_qgate_add(args: argparse.Namespace) -> dict:
     """Handle: qgate add"""
+    raw_input = _parse_raw_input(getattr(args, 'raw_input', None))
+    if isinstance(raw_input, _RawInputError):
+        return raw_input
     return add_qgate_finding(
         plan_id=args.plan_id,
         phase=args.phase,
@@ -136,6 +196,9 @@ def cmd_qgate_add(args: argparse.Namespace) -> dict:
         component=args.component,
         severity=args.severity,
         iteration=args.iteration,
+        rule=args.rule,
+        raw_input=raw_input,
+        raw_input_max_bytes=getattr(args, 'raw_input_max_bytes', DEFAULT_RAW_INPUT_MAX_BYTES),
     )
 
 
@@ -237,6 +300,20 @@ def main() -> int:
     add_parser.add_argument(
         '--bot-kind', dest='bot_kind', choices=BOT_KINDS, help='Reviewer-bot identity derived from author'
     )
+    add_parser.add_argument(
+        '--raw-input',
+        action='append',
+        dest='raw_input',
+        metavar='FIELD=VALUE',
+        help='Untrusted free-text to quarantine under raw_input.{field} (repeatable)',
+    )
+    add_parser.add_argument(
+        '--raw-input-max-bytes',
+        type=int,
+        default=DEFAULT_RAW_INPUT_MAX_BYTES,
+        dest='raw_input_max_bytes',
+        help='Per-field byte cap for quarantined raw_input values (default 64 KiB)',
+    )
     add_parser.set_defaults(func=cmd_add)
 
     # query
@@ -282,6 +359,15 @@ def main() -> int:
     promote_parser.add_argument('--promoted-to', required=True, dest='promoted_to', help='Target ID or "architecture"')
     promote_parser.set_defaults(func=cmd_promote)
 
+    # ingest — one batched validate_struct pass over quarantined raw_input free-text
+    ingest_parser = subparsers.add_parser(
+        'ingest',
+        help='Batch-validate quarantined raw_input.{field} values and promote them to top-level',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(ingest_parser)
+    ingest_parser.set_defaults(func=cmd_ingest)
+
     # --- Q-Gate commands ---
     qgate_parser = subparsers.add_parser('qgate', help='Manage per-phase Q-Gate findings', allow_abbrev=False)
     qgate_sub = qgate_parser.add_subparsers(dest='action', required=True)
@@ -298,6 +384,21 @@ def main() -> int:
     add_component_arg(q_add_parser, required=False)
     q_add_parser.add_argument('--severity', choices=SEVERITIES, help='Severity level')
     q_add_parser.add_argument('--iteration', type=int, help='Phase iteration number')
+    q_add_parser.add_argument('--rule', help='Rule ID (folded into the content-discriminator dedup key)')
+    q_add_parser.add_argument(
+        '--raw-input',
+        action='append',
+        dest='raw_input',
+        metavar='FIELD=VALUE',
+        help='Untrusted free-text to quarantine under raw_input.{field} (repeatable)',
+    )
+    q_add_parser.add_argument(
+        '--raw-input-max-bytes',
+        type=int,
+        default=DEFAULT_RAW_INPUT_MAX_BYTES,
+        dest='raw_input_max_bytes',
+        help='Per-field byte cap for quarantined raw_input values (default 64 KiB)',
+    )
     q_add_parser.set_defaults(func=cmd_qgate_add)
 
     # qgate query

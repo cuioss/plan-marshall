@@ -95,6 +95,26 @@ Each line in a `findings/{type}.jsonl` file is a JSON object:
 
 For `pr-comment` findings, the queryable `author`, `kind`, `reviewed_commit_sha`, and `bot_kind` fields are the source of truth for reviewer identity, comment structure, and re-review matching; the author/kind lines written into the `detail` blob are retained for human readability only. `bot_kind` (the reviewer's identity) is distinct from `kind` (the comment's structure), and `reviewed_commit_sha` together with `bot_kind` are indexed/queryable so the re-review mechanism can match a reviewer to the commit it last saw.
 
+### `raw_input` quarantine namespace + ingestion promotion
+
+Every producer that files untrusted external free-text (a PR-comment body, a Sonar issue message, a build/lint diagnostic) writes that free-text into a quarantined **`raw_input.{field}`** sub-object rather than directly into the clean top-level fields:
+
+```json
+{
+  "hash_id": "a3f2c1",
+  "type": "pr-comment",
+  "title": "Review comment on Validator.java",
+  "resolution": "pending",
+  "raw_input": {
+    "body": "…untrusted reviewer comment text (capped, may end in [truncated])…"
+  }
+}
+```
+
+- **Per-field byte cap.** Each `raw_input.{field}` value is UTF-8 capped at `plan.finding_raw_input_max_bytes` (default 64 KiB — see [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md)). An overflowing value is truncated to the byte budget (decoded defensively so a split multi-byte character never raises) and a `[truncated]` marker is appended so a reader can tell the value was clipped. The cap is threaded in via `manage-findings ... --raw-input-max-bytes`.
+- **Ingestion promotion → top-level.** A single batched `manage-findings ingest` pass runs the deterministic `validate_struct` validator over every pending finding's `raw_input.{field}` values and promotes only the `status: success` clamped output into the clean top-level field of the same name (`title` / `detail` / `message` / `body`). A validator rejection resolves the finding instead of promoting. The `raw_input.*` sub-object is left in place, un-ingested, for audit.
+- **Containment invariant.** `raw_input.*` = un-ingested untrusted quarantine; top-level = clean-by-construction. Triage reads the promoted **top-level** fields only, never `raw_input.*` — reading the quarantine re-opens the prompt-injection surface the ingestion boundary closes. The invariant is statically enforced by the plugin-doctor `triage-reads-top-level-only` rule. See [`untrusted-ingestion/SKILL.md`](../../untrusted-ingestion/SKILL.md) and [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md).
+
 ### Resolution semantics
 
 The `resolution` field carries six values. `pending` is the initial state; the other five represent ways a finding has been *addressed*. Only `pending` contributes to the `pending_findings_blocking_count` invariant that gates phase boundaries (see [`findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md) § Per-phase blocking partition) — every non-`pending` value, including `rejected`, is excluded from the blocking count.
@@ -192,6 +212,7 @@ Each line in `findings/qgate-{phase}.jsonl` is a JSON object:
 |-------|------|-------------|
 | `source` | string | `qgate` (automated verification) or `user_review` (user feedback) |
 | `iteration` | int | Verification cycle number (1 = first build attempt, 2 = after fixes) |
+| `content_discriminator` | string | 6-char stable hash over (`detail`, `file_path`, `rule`) folded into the dedup key (see [Deduplication](#deduplication-q-gate-only)) |
 
 Q-Gate findings do NOT have `promoted`/`promoted_to` fields — they are not promotable.
 
@@ -201,7 +222,7 @@ Some files under `artifacts/findings/` are **producer-written attestation files*
 
 | File | Producer | Write contract |
 |------|----------|----------------|
-| `findings/sonar-scan-summary.jsonl` | `workflow-integration-sonar:sonar fetch-and-store` (`sonar.py:_write_scan_summary`) | One attestation row appended per `fetch-and-store` run — written **unconditionally**, including when `new_code_issue_count == 0` and on `count_status == undecidable`, so an absent file unambiguously means "not checked" and a `confirmed` zero is a positive on-disk fact. Read at the success gate of [`phase-6-finalize/workflow/sonar-roundtrip.md`](../../phase-6-finalize/workflow/sonar-roundtrip.md). |
+| `findings/sonar-scan-summary.jsonl` | `workflow-integration-sonar:sonar fetch_findings` (`sonar.py:_write_scan_summary`) | One attestation row appended per `fetch_findings` run — written **unconditionally**, including when `new_code_issue_count == 0` and on `count_status == undecidable`, so an absent file unambiguously means "not checked" and a `confirmed` zero is a positive on-disk fact. Read at the success gate of [`phase-6-finalize/workflow/sonar-roundtrip.md`](../../phase-6-finalize/workflow/sonar-roundtrip.md). |
 
 ### `sonar-scan-summary.jsonl` row schema
 
@@ -223,17 +244,19 @@ Hash IDs are 6-character hex strings generated using `SHA-256(timestamp + random
 
 - Algorithm: `hashlib.sha256(f'{utc_iso}{secrets.token_hex(8)}'.encode()).hexdigest()[:6]`
 - IDs are unique per record, NOT deterministic from content
-- Deduplication in Q-Gate uses title matching (see below), not hash comparison
+- Q-Gate deduplication uses the `(title, content_discriminator)` pair (see below), not the random `hash_id`
 
 ## Deduplication (Q-Gate Only)
 
-When adding a Q-Gate finding, the system checks for existing findings with the same title in the phase file:
+When adding a Q-Gate finding, the system dedups on the **`(title, content_discriminator)` pair** — never the title alone. The `content_discriminator` is a stable 6-char hash over (`detail`, `file_path`, `rule`); folding it into the dedup key means a bare `defect_class` title collision alone can NEVER reopen an unrelated already-resolved finding of the same class, while the intended same-defect merge across iterations (same title AND same discriminator) still collapses:
 
 | Existing State | Action | Returned Status |
 |----------------|--------|-----------------|
-| No match | Create new record | `success` |
-| Match with `pending` resolution | No change | `deduplicated` |
-| Match with non-pending resolution | Reset to `pending` | `reopened` |
+| No record matching BOTH title AND content_discriminator | Create new record | `success` |
+| Match (title AND discriminator) with `pending` resolution | No change | `deduplicated` |
+| Match (title AND discriminator) with non-pending resolution | Reset to `pending` | `reopened` |
+
+A same-title finding whose `content_discriminator` differs (a different subject / file / rule) is a DISTINCT record — it never reopens the resolved one. Q-Gate dedup tests must use unique `plan_id`s per test (test-isolation constraint) so stale cross-test data cannot perturb the `(title, discriminator)` match.
 
 ## Valid Phases
 

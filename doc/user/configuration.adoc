@@ -338,6 +338,10 @@ Both thresholds mirror the lessons-capture signal thresholds (a recurrence count
 
 `plan.open_in_ide` (default `true`) controls whether Plan Marshall attempts to open the plan/worktree in your IDE on creation. A missing key is treated as `true`. Set to `false` to suppress IDE auto-open.
 
+=== Findings quarantine cap
+
+`plan.finding_raw_input_max_bytes` (default `65536` — 64 KiB) is the per-field byte cap for quarantined `raw_input.{field}` free-text in the findings ledger: each field is capped at this many bytes with a `[truncated]` marker on overflow. See the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] for the corpus-grounded default rationale and tuning guidance.
+
 [#retention-and-ci]
 === Retention and CI wait-policy
 
@@ -352,7 +356,7 @@ Top-level `system.retention` knobs plus the finalize CI-wait policy that project
 | `system.retention.lessons_superseded_days` | `0` | Days to keep superseded lessons before removal (`0` = remove immediately).
 | `system.retention.temp_on_maintenance` | `true` | Whether the maintenance pass clears `.plan/temp/`.
 | `plan.phase-6-finalize.checks_wait_timeout_seconds` | `600` | Flat phase-level ceiling (seconds) the CI-completion polling commands wait for run completion. Overridden by an explicit `--timeout` flag when supplied. A cross-step finalize wait-policy with no single owning step, so it stays flat.
-| `steps['default:sonar-roundtrip'].ce_wait_timeout_seconds` | `600` | Step-owned param of `default:sonar-roundtrip` (prefix-stripped from the old `sonar_ce_wait_timeout_seconds`). Budget (seconds) for the synchronous CE-readiness wait `sonar.py fetch-and-store` performs before enumerating new-code issues — the direct sibling of the flat `checks_wait_timeout_seconds`. Overridden by an explicit `--ce-wait-timeout` flag. Read via `step get` / the manifest `step-params get` (see <<step-configuration>> § Step parameters).
+| `steps['default:sonar-roundtrip'].ce_wait_timeout_seconds` | `600` | Step-owned param of `default:sonar-roundtrip` (prefix-stripped from the old `sonar_ce_wait_timeout_seconds`). Budget (seconds) for the synchronous CE-readiness wait `sonar.py fetch_findings` performs before enumerating new-code issues — the direct sibling of the flat `checks_wait_timeout_seconds`. Overridden by an explicit `--ce-wait-timeout` flag. Read via `step get` / the manifest `step-params get` (see <<step-configuration>> § Step parameters).
 |===
 
 [#project-branch-naming]

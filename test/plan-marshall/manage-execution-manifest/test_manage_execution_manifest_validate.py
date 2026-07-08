@@ -46,6 +46,15 @@ read_manifest = _mem.read_manifest
 DEFAULT_PHASE_5_STEPS = _mem.DEFAULT_PHASE_5_STEPS
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 
+# Step-owner schema primitives live in _manifest_core (loaded directly; the
+# hyphenated entry does not re-export them). See _manifest_core.py § "Step
+# ownership".
+_core = _load_module('_mem_core', '_manifest_core.py')
+VALID_STEP_OWNERS = _core.VALID_STEP_OWNERS
+validate_step_owner = _core.validate_step_owner
+owner_of = _core.owner_of
+ORCHESTRATOR_OWNED_STEPS = _core.ORCHESTRATOR_OWNED_STEPS
+
 # Quiet down the best-effort decision-log subprocess.
 _mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
 
@@ -361,3 +370,45 @@ def test_cli_validate_happy_path(plan_context):
     assert data['status'] == 'success'
     # TOON parser may coerce booleans — accept both shapes defensively.
     assert data['valid'] in (True, 'true', 1)
+
+
+# =============================================================================
+# Per-step owner schema field (orchestrator-owned | leaf-dispatchable)
+# =============================================================================
+
+
+def test_step_owner_schema_vocabulary_is_closed():
+    """The owner schema vocabulary is the closed two-value tuple."""
+    assert VALID_STEP_OWNERS == ('orchestrator-owned', 'leaf-dispatchable')
+
+
+def test_validate_step_owner_is_a_membership_predicate_over_the_schema():
+    """validate_step_owner accepts exactly the declared schema values."""
+    for owner in VALID_STEP_OWNERS:
+        assert validate_step_owner(owner) is True
+    for bogus in ('main-owned', 'ORCHESTRATOR-OWNED', 'leaf', '', 'dispatchable'):
+        assert validate_step_owner(bogus) is False
+
+
+def test_owner_of_yields_a_schema_valid_owner_for_every_step():
+    """owner_of always returns a value that passes the schema validator.
+
+    Schema-integrity invariant: the classifier never emits an owner outside the
+    declared vocabulary, for both registry and non-registry steps.
+    """
+    for step in (
+        *ORCHESTRATOR_OWNED_STEPS,
+        'push',
+        'create-pr',
+        'ci-verify',
+        'verify:quality-gate',
+        'project:finalize-step-plugin-doctor',
+        'default:finalize-step-simplify',
+    ):
+        assert validate_step_owner(owner_of(step)) is True
+
+
+def test_orchestrator_owned_registry_steps_all_resolve_orchestrator_owned():
+    """Every registry member classifies as orchestrator-owned (schema field consistency)."""
+    for step in ORCHESTRATOR_OWNED_STEPS:
+        assert owner_of(step) == 'orchestrator-owned', step

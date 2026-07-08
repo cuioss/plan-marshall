@@ -83,7 +83,9 @@ Load the action-general security identity in-context:
 Skill: plan-marshall:persona-security-expert
 ```
 
-Invoke the shared five-stage engine documented at [`../../recipe-security-audit/standards/audit-engine.md`](../../recipe-security-audit/standards/audit-engine.md), supplying `extra_security_skills = {extra_security_skills}` at stage 3 ONLY (stages 1/2/4/5 run unchanged). The engine reads the in-footprint files, reasons about each against the loaded security knowledge plus the per-domain security skills, applies hardening edits directly to the worktree, and emits findings to the triage pipeline.
+Invoke the shared five-stage engine documented at [`../../recipe-security-audit/standards/audit-engine.md`](../../recipe-security-audit/standards/audit-engine.md), supplying `extra_security_skills = {extra_security_skills}` at stage 3 ONLY (stages 1/2/4/5 run unchanged). The engine reads the in-footprint files, reasons about each against the loaded security knowledge plus the per-domain security skills, applies hardening edits directly to the worktree, and FILES its findings to the ledger **find-only**.
+
+**Find-only; defer triage.** This step is a generator on the FIND side of the consolidated find → ingest → one-triage → one-respond pipeline: it files each security finding to the ledger (with the audited free-text quarantined under `raw_input` where applicable) and STOPS — it does NOT itself decide FIX / SUPPRESS / ACCEPT dispositions on those findings. Disposition is owned by the single consolidated triage pass later in finalize, which reads the promoted top-level fields and dispositions each finding once. The engine's `verification_profile` validity pre-stage (the adversarial-refute pass that closes refuted findings as `rejected` before triage) is unchanged — find-only concerns the disposition step, not the validity step.
 
 Do NOT re-author the engine stages here — follow the engine contract verbatim.
 

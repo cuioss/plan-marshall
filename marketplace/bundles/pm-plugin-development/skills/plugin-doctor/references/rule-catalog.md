@@ -1152,6 +1152,49 @@ Two deterministic rules that are the fast backstop for the cognitive `plan-marsh
 
 ---
 
+## Rule Pack: Find/triage-flow containment guards
+
+Two build-failing quality-gate rules backing the consolidated find → ingest → one-triage → one-respond flow: the triage-reads-top-level-only containment invariant and the build-verify-step canonicals-membership contract.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `triage-reads-top-level-only` | Flag a triage surface (a triage workflow doc or an `ext-triage-{domain}` skill doc) that READS the `raw_input.*` quarantine namespace — triage MUST read the clean top-level fields only (the batched `manage-findings ingest` pass already promoted validated values to top-level). Reading `raw_input.*` re-opens the prompt-injection surface the ingestion boundary closes | Detection matches only concrete ACCESS reads (`raw_input.<field>`, `raw_input[...]`, `['raw_input']`, `.get('raw_input')`); the placeholder/wildcard forms the docs use when documenting the invariant (`raw_input.*`, `raw_input.{field}`, a bare backtick-quoted `raw_input`) never match. Only the two triage workflow docs (`triage.md` / `verification-feedback.md`) and `ext-triage-*` skill dirs are scanned — the `manage-findings` store scripts that legitimately write/ingest `raw_input` are never in scope | None — read the clean top-level field instead of the quarantined `raw_input.*` sub-object |
+| `verify-step-canonicals-required` | Flag an `implements: ...ext-point-build-verify-step` doc whose `canonicals:` frontmatter list is missing or empty — the discovery query expands `canonicals` into `default:verify:{canonical}` step IDs, so an empty list seeds no runnable step and the doc contributes zero verification coverage | Only docs whose `implements:` frontmatter names the build-verify-step ext-point are scanned; a non-implementor doc is never flagged. Both scalar and block-sequence `implements:` forms are recognized; `canonicals:` is read as scalar / inline `[...]` / block sequence | None — declare a non-empty `canonicals:` list |
+
+### triage-reads-top-level-only
+
+**Rule ID**: `triage-reads-top-level-only`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_triage_read_surface.py`
+
+**Scope**: every `.md` file under the bundles root whose basename is `triage.md` or `verification-feedback.md`, or which lives under an `ext-triage-*` directory.
+
+**Intent**: The consolidated find/triage flow quarantines every producer's untrusted free-text under a `raw_input.{field}` sub-namespace, and a single batched `validate_struct` ingestion pass promotes only the cleaned values to the top-level field names. The containment invariant is structural — `raw_input.*` is the un-ingested untrusted quarantine kept solely for audit; top-level is clean-by-construction. Triage reading `raw_input.*` re-opens the prompt-injection surface the ingestion boundary closes.
+
+**Detection logic**: For each triage surface, scan each line for a concrete `raw_input` READ — a dotted access to a lowercase identifier field (`raw_input.detail`), a subscript (`raw_input['detail']`), or a key access of the sub-object itself (`['raw_input']`, `.get('raw_input')`). Emit one finding per matching line. The placeholder forms `raw_input.*` and `raw_input.{field}` never match (neither `.*` nor `.{` satisfies the `.<lowercase-identifier>` shape), so a doc that DOCUMENTS the invariant is not a false positive.
+
+**Recommended fix**: Read the promoted clean top-level field (`title` / `detail` / `message` / `body`) instead of the quarantined `raw_input.*` sub-object.
+
+**Suppression mechanism**: None — this is a safety invariant; resolve by reading top-level.
+
+### verify-step-canonicals-required
+
+**Rule ID**: `verify-step-canonicals-required`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_verify_step_contract.py`
+
+**Scope**: every `.md` file under the bundles root whose `implements:` frontmatter names `plan-marshall:extension-api/standards/ext-point-build-verify-step`.
+
+**Intent**: A build-verify-step doc enumerates the canonical commands it backs through a `canonicals:` list that the discovery query expands into `default:verify:{canonical}` step IDs. An implementor whose `canonicals:` list is missing or empty is surfaced by discovery but seeds no runnable step — it silently contributes zero verification coverage.
+
+**Detection logic**: Parse each `.md` file's leading frontmatter. When `implements:` (scalar or block-sequence) names the build-verify-step ext-point, read `canonicals:` (scalar / inline `[...]` / block sequence). Emit a finding — anchored at line 1 — when the key is absent (`missing required canonicals: list`) or present but resolving to zero non-empty entries (`empty canonicals: list`).
+
+**Recommended fix**: Declare a non-empty `canonicals:` list naming the canonical commands the step backs.
+
+**Suppression mechanism**: None — the non-empty `canonicals:` list is a structural requirement of the ext-point contract.
+
+---
+
 ## Zero-match coverage (test-layer, not a runtime rule)
 
 The zero-match invariant is enforced at the **test layer**, not by a runtime analyzer. There is no `zero-match-rule` finding emitted by any `_analyze_*.py` module, and the invariant is not part of the `analyze` / `quality-gate` registered rule set. The check is the meta-test `test_zero_match_suite_coverage.py`.

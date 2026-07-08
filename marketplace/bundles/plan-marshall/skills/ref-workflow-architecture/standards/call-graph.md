@@ -290,13 +290,13 @@ Each phase envelope runs the workflow doc inside the subagent context, calling i
 │   │                                                                                                       │    │
 │   │    automated-review   ┐                                                                               │    │
 │   │     /ci pr wait-for-comments/                                                                         │    │
-│   │     /github_pr comments-stage/                                                                        │    │
+│   │     /github_pr fetch_findings/                                                                        │    │
 │   │     /manage-findings list/  (count check)                                                             │    │
 │   │       │ pending > 0                                                                                   │    │
 │   │       ╵┄═►  [verification-feedback]   finding_type=pr-comment                                         │    │
 │   │                                                                                                       │    │
 │   │    sonar-roundtrip    ┐                                                                               │    │
-│   │     /sonar fetch-and-store/                                                                           │    │
+│   │     /sonar fetch_findings/                                                                            │    │
 │   │     /manage-findings list/  (count check)                                                             │    │
 │   │       │ pending > 0                                                                                   │    │
 │   │       ╵┄═►  [verification-feedback]   finding_type=sonar-issue                                        │    │

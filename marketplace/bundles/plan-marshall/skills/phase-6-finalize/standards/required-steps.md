@@ -46,6 +46,40 @@ otherwise a manifest pruning would deadlock the phase transition.
 - lessons-capture
 - adr-propose
 
+## Step Ownership Contract
+
+Every finalize step carries a declared **owner** —
+`orchestrator-owned` or `leaf-dispatchable` — that determines which execution
+context may run it. The owner is resolved deterministically by
+`owner_of(step_id)` in
+[`../../manage-execution-manifest/scripts/_manifest_core.py`](../../manage-execution-manifest/scripts/_manifest_core.py)
+against the `ORCHESTRATOR_OWNED_STEPS` registry; the vocabulary and registry are
+documented in
+[`../../manage-execution-manifest/standards/manifest-schema.md`](../../manage-execution-manifest/standards/manifest-schema.md)
+§ "Step ownership".
+
+- **`orchestrator-owned`** steps sub-dispatch (they issue their own `Task:`
+  dispatches — e.g. `finalize-step-plugin-doctor`,
+  `finalize-step-pre-submission-self-review`, `automated-review`,
+  `finalize-step-simplify`). A dispatched `execution-context` leaf has no Task
+  tool and CANNOT run them; the main-context orchestrator MUST own them.
+- **`leaf-dispatchable`** steps are self-contained scripts or inline workflows
+  the orchestrator MAY hand to a dispatched leaf.
+
+Declaring the owner makes routing deterministic instead of
+discovered-by-failure, and guarantees the `mark-step-done` obligation (below)
+travels to the ACTUAL owner rather than being lost when the wrong context ran
+the step.
+
+**Canonicalized `mark-step-done` key.** `manage-status mark-step-done`
+canonicalizes its `--step` value by stripping a leading `default:` prefix before
+recording, so the recorded key always equals the bare manifest key the
+dispatcher reads back — both `default:push` and `push` reconcile to `push`. This
+is the write-side complement of the read-side key-normalization the
+`manage-execution-manifest` id-keyed accessor family applies, and eliminates the
+`step_record_mismatched_key` orphans. Step names in
+the `## Steps` list above are the bare canonical keys.
+
 ## Loadability Contract
 
 Before any step in `manifest.phase_6.steps` is dispatched, `phase-6-finalize`

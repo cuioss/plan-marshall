@@ -7,9 +7,9 @@ mode: workflow
 
 # GitLab CI Integration Workflow Skill
 
-GitLab provider for the findings-pipeline `pr-comment` producer. Mirror of the GitHub producer: fetches MR review comments, applies the pre-filter (`comment-patterns.json`), and writes one finding per surviving comment via `manage-findings add`. Uses the `glab` CLI for all GitLab operations.
+GitLab provider for the findings-pipeline `pr-comment` producer. Mirror of the GitHub provider's two-verb contract: `fetch_findings` (FIND — fetch MR review comments, apply the pre-filter `comment-patterns.json`, and file one `pr-comment` finding per surviving comment, quarantining the untrusted body under `raw_input.{body}`) and `post_responses` (RESPOND — apply already-decided triage dispositions back to the MR, keyed by `hash_id`). Triage is NOT on the provider surface. Uses the `glab` CLI for all GitLab operations.
 
-> **Architectural context**: This SKILL.md owns the producer-side CLI surface. For the producer→store→consumer→gate flow that connects this producer to the unified store, the per-domain `ext-triage` consumer dispatch, and the invariant gate, see [`ref-workflow-architecture/standards/findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md).
+> **Architectural context**: This SKILL.md owns the provider-side CLI surface. For the FIND → INGEST → one-TRIAGE → one-RESPOND flow that connects this provider to the unified ledger, the batched `manage-findings ingest` pass, the per-domain `ext-triage` consolidated triage, and the invariant gate, see [`ref-workflow-architecture/standards/findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md).
 
 ## Enforcement
 
@@ -36,7 +36,7 @@ GitLab provider for the findings-pipeline `pr-comment` producer. Mirror of the G
 ```text
 workflow-integration-gitlab (GitLab MR comment workflow)
   ├─> gitlab_ops.py (GitLab operations via glab CLI)
-  ├─> gitlab_pr.py (producer-side fetch + pre-filter + per-finding store)
+  ├─> gitlab_pr.py (two-verb provider: fetch_findings + post_responses)
   └─> triage_helpers (ref-toon-format) — shared error handling
 ```
 
@@ -45,13 +45,16 @@ This skill is the GitLab provider in the CI provider model. The central dispatch
 ## Usage Examples
 
 ```bash
-# Producer-side: fetch + pre-filter + store one pr-comment finding per surviving comment
-python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr comments-stage --pr-number 123 --plan-id EXAMPLE-PLAN
+# FIND: fetch + pre-filter + file one pr-comment finding per surviving comment (body quarantined under raw_input)
+python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr fetch_findings --pr-number 123 --plan-id EXAMPLE-PLAN
+
+# RESPOND: apply already-decided triage dispositions back to the MR, keyed by hash_id
+python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr post_responses --pr-number 123 --plan-id EXAMPLE-PLAN
 
 # Raw fetch (no filtering, no storage) — for ad-hoc inspection
 python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr fetch-comments --pr 123
 
-# LLM consumer reads stored findings via manage-findings
+# Consumer reads ingested findings via manage-findings (top-level fields only)
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list --plan-id EXAMPLE-PLAN --type pr-comment
 ```
 
@@ -60,19 +63,19 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
 | Script | Notation | Purpose |
 |--------|----------|---------|
 | gitlab_ops | `plan-marshall:workflow-integration-gitlab:gitlab_ops` | GitLab operations via glab CLI |
-| gitlab_pr | `plan-marshall:workflow-integration-gitlab:gitlab_pr` | Producer-side MR review comment fetcher (fetch + pre-filter + store) |
+| gitlab_pr | `plan-marshall:workflow-integration-gitlab:gitlab_pr` | Two-verb provider: `fetch_findings` (FIND — fetch + pre-filter + file) and `post_responses` (RESPOND — apply triaged dispositions, keyed by hash_id) |
 
 ## Workflow: Handle Review (Producer-Side)
 
 **Purpose:** Stage MR review comments into the per-type finding store, then let the LLM consumer drive classification and responses from the stored findings.
 
-**Producer-side flow:** `comments-stage` is the only callable surface. It fetches review comments, applies the `comment-patterns.json` keyword pre-filter to drop obvious noise (bot signatures, "lgtm", etc.), and writes one `pr-comment` finding per surviving comment via `manage-findings add`. The LLM reads the stored findings and decides per-finding action itself.
+**FIND flow:** `fetch_findings` is the producer surface. It fetches review comments, applies the `comment-patterns.json` keyword pre-filter to drop obvious noise (bot signatures, "lgtm", etc.), and files one `pr-comment` finding per surviving comment (the untrusted body quarantined under `raw_input.{body}`). The batched `manage-findings ingest` pass then promotes the validated body to the clean top-level fields; the consolidated triage pass reads those top-level fields and decides dispositions, which `post_responses` transmits back. Triage is not on this provider surface.
 
 **Steps:**
 
-1. **Stage Comments**:
+1. **FIND — file comments to the ledger**:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr comments-stage --pr-number {mr} --plan-id {plan_id}
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr fetch_findings --pr-number {mr} --plan-id {plan_id}
    ```
    Output reports `count_fetched`, `count_skipped_noise`, `count_stored`, and `producer_mismatch_hash_id` (set when count_stored ≠ count_fetched − count_skipped_noise; the mismatch is also persisted as a Q-Gate finding under phase `5-execute` with title prefix `(producer-mismatch)`).
 
@@ -113,10 +116,17 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab
   [--pr PR] [--unresolved-only]
 ```
 
-### comments-stage
+### fetch_findings
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr comments-stage \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr fetch_findings \
+  --pr-number PR_NUMBER --plan-id PLAN_ID
+```
+
+### post_responses
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-gitlab:gitlab_pr post_responses \
   --pr-number PR_NUMBER --plan-id PLAN_ID
 ```
 

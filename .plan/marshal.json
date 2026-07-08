@@ -12,7 +12,14 @@
       "effort": "level-3",
       "init_without_asking": true,
       "deep_lane": "auto",
-      "escalation": "auto"
+      "escalation": "auto",
+      "auto_route_recipe": true,
+      "auto_route_recipe_threshold": 0.6,
+      "lane_selection": "ask",
+      "lane_prune_thresholds": {
+        "confidence_complete": 95,
+        "linear_change_max_deliverables": 1
+      }
     },
     "phase-2-refine": {
       "confidence_threshold": 95,
@@ -23,11 +30,13 @@
     },
     "phase-3-outline": {
       "plan_without_asking": false,
-      "effort": "level-4"
+      "effort": "level-4",
+      "q_gate_validation": "once"
     },
     "phase-4-plan": {
       "execute_without_asking": true,
-      "effort": "level-3"
+      "effort": "level-3",
+      "q_gate_validation": "once"
     },
     "phase-5-execute": {
       "commit_and_push": true,
@@ -45,6 +54,14 @@
       "effort": {
         "default": "level-4",
         "verification-feedback": "level-3"
+      },
+      "cost_size_token_table": {
+        "XS": "5K",
+        "S": "25K",
+        "M": "60K",
+        "L": "130K",
+        "XL": "260K",
+        "XXL": "520K"
       }
     },
     "phase-6-finalize": {
@@ -54,7 +71,9 @@
       "qgate": "auto",
       "checks_wait_timeout_seconds": 600,
       "steps": {
-        "default:finalize-step-sync-baseline": {},
+        "default:finalize-step-sync-baseline": {
+          "auto_rebase_threshold": "no_overlap_only"
+        },
         "default:pre-push-quality-gate": {},
         "project:finalize-step-plugin-doctor": {},
         "project:finalize-step-pre-submission-self-review": {
@@ -78,13 +97,22 @@
           "re_review_on_loopback": false,
           "re_review_on_branch_cleanup": true
         },
-        "default:sonar-roundtrip": {},
+        "default:sonar-roundtrip": {
+          "touched_file_cleanup": "new_code_only",
+          "do_transition": false,
+          "ce_wait_timeout_seconds": 600
+        },
         "project:finalize-step-review-retrospective": {},
         "default:lessons-capture": {},
         "default:branch-cleanup": {
           "pr_merge_strategy": "squash",
           "final_merge_without_asking": true,
-          "auto_rebase_threshold": "no_overlap_only"
+          "auto_rebase_threshold": "no_overlap_only",
+          "merge_queue_wait_budget_seconds": 1800,
+          "merge_hold_window": "full_window_release_at_waits",
+          "merge_hold_budget_seconds": 3600,
+          "use_merge_queue": false,
+          "admin_merge_on_stuck_state": false
         },
         "project:finalize-step-deploy-target": {},
         "project:finalize-step-sync-plugin-cache": {},
@@ -92,7 +120,10 @@
         "project:finalize-step-lessons-housekeeping": {},
         "default:record-metrics": {},
         "default:finalize-step-print-phase-breakdown": {},
-        "default:archive-plan": {}
+        "default:archive-plan": {},
+        "default:finalize-step-preference-emitter": {
+          "preference_min_recurrence": 2
+        }
       },
       "effort": {
         "default": "level-3",
@@ -215,6 +246,8 @@
       "archived_plans_days": 5,
       "lessons_superseded_days": 0,
       "temp_on_maintenance": true
-    }
+    },
+    "provisioned_version": "0.1.1069",
+    "config_seed_fingerprint": "f8015c9e"
   }
 }

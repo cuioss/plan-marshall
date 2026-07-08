@@ -45,6 +45,10 @@ cmd_qgate_resolve = _mod.cmd_qgate_resolve
 # Core query function (direct, bypassing the CLI namespace) for unified-read tests
 query_findings_unified = _mod.query_findings_unified
 
+# Raw-input parse helpers (direct) for the sentinel-collision regression tests
+_parse_raw_input = _mod._parse_raw_input
+_RawInputError = _mod._RawInputError
+
 
 # =============================================================================
 # Namespace Builders
@@ -66,6 +70,8 @@ def _add_ns(
     kind=None,
     reviewed_commit_sha=None,
     bot_kind=None,
+    raw_input=None,
+    raw_input_max_bytes=_mod.DEFAULT_RAW_INPUT_MAX_BYTES,
 ):
     return Namespace(
         plan_id=plan_id,
@@ -82,6 +88,8 @@ def _add_ns(
         kind=kind,
         reviewed_commit_sha=reviewed_commit_sha,
         bot_kind=bot_kind,
+        raw_input=raw_input,
+        raw_input_max_bytes=raw_input_max_bytes,
     )
 
 
@@ -132,6 +140,9 @@ def _qgate_add_ns(
     component=None,
     severity=None,
     iteration=None,
+    rule=None,
+    raw_input=None,
+    raw_input_max_bytes=_mod.DEFAULT_RAW_INPUT_MAX_BYTES,
 ):
     return Namespace(
         plan_id=plan_id,
@@ -144,6 +155,9 @@ def _qgate_add_ns(
         component=component,
         severity=severity,
         iteration=iteration,
+        rule=rule,
+        raw_input=raw_input,
+        raw_input_max_bytes=raw_input_max_bytes,
     )
 
 
@@ -936,7 +950,7 @@ def test_qgate_user_review_source(plan_context):
 
 
 def test_qgate_add_dedup_pending(plan_context):
-    """Test that adding same title twice returns deduplicated, only 1 record."""
+    """Same title AND same content discriminator dedups to a single pending record."""
     result1 = cmd_qgate_add(
         _qgate_add_ns(
             plan_id='qgate-dedup-pend',
@@ -944,12 +958,13 @@ def test_qgate_add_dedup_pending(plan_context):
             source='qgate',
             type='triage',
             title='Missing assessment for helper.py',
-            detail='d1',
+            detail='helper.py is consumer-only',
         )
     )
     assert result1['status'] == 'success'
     original_hash = str(result1['hash_id'])
 
+    # Same title AND same detail/file_path/rule → same discriminator → dedup.
     result2 = cmd_qgate_add(
         _qgate_add_ns(
             plan_id='qgate-dedup-pend',
@@ -957,7 +972,7 @@ def test_qgate_add_dedup_pending(plan_context):
             source='qgate',
             type='triage',
             title='Missing assessment for helper.py',
-            detail='d2',
+            detail='helper.py is consumer-only',
         )
     )
     assert result2['status'] == 'deduplicated'
@@ -973,7 +988,7 @@ def test_qgate_add_dedup_pending(plan_context):
 
 
 def test_qgate_add_reopen_resolved(plan_context):
-    """Test that re-adding a resolved finding reopens it."""
+    """Re-adding a resolved finding with the SAME content discriminator reopens it."""
     add_result = cmd_qgate_add(
         _qgate_add_ns(
             plan_id='qgate-dedup-reopen',
@@ -981,7 +996,7 @@ def test_qgate_add_reopen_resolved(plan_context):
             source='qgate',
             type='triage',
             title='Missing coverage for utils.py',
-            detail='d1',
+            detail='utils.parse() has no test',
         )
     )
     assert add_result['status'] == 'success'
@@ -997,6 +1012,7 @@ def test_qgate_add_reopen_resolved(plan_context):
         )
     )
 
+    # Same title AND same detail → same discriminator → genuine re-detection → reopen.
     reopen_result = cmd_qgate_add(
         _qgate_add_ns(
             plan_id='qgate-dedup-reopen',
@@ -1004,7 +1020,7 @@ def test_qgate_add_reopen_resolved(plan_context):
             source='qgate',
             type='triage',
             title='Missing coverage for utils.py',
-            detail='d2',
+            detail='utils.parse() has no test',
         )
     )
     assert reopen_result['status'] == 'reopened'
@@ -1050,6 +1066,221 @@ def test_qgate_add_different_titles_not_deduped(plan_context):
         )
     )
     assert query_result['total_count'] == 2
+
+
+# =============================================================================
+# Test: Content-discriminator dedup (lesson 2026-07-07-00-001)
+# =============================================================================
+
+
+def test_qgate_same_class_different_subject_not_reopened(plan_context):
+    """A same-title finding with a DIFFERENT content discriminator never reopens a
+    resolved sibling — the core fix for lesson 2026-07-07-00-001.
+    """
+    pid = 'qgate-diff-subject-noreopen'
+    first = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id=pid,
+            phase='5-execute',
+            title='missing-null-check',
+            detail='Foo.java:10 lacks a guard',
+            file_path='Foo.java',
+        )
+    )
+    assert first['status'] == 'success'
+    resolved_hash = str(first['hash_id'])
+    cmd_qgate_resolve(
+        _qgate_resolve_ns(
+            plan_id=pid,
+            hash_id=resolved_hash,
+            resolution='taken_into_account',
+            phase='5-execute',
+            detail='Guarded',
+        )
+    )
+
+    # Same bare defect_class title, DIFFERENT subject (file/detail) → new finding, NOT reopen.
+    second = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id=pid,
+            phase='5-execute',
+            title='missing-null-check',
+            detail='Bar.java:22 lacks a guard',
+            file_path='Bar.java',
+        )
+    )
+    assert second['status'] == 'success'
+    assert str(second['hash_id']) != resolved_hash
+
+    # The originally-resolved finding stays resolved; only the new subject is pending.
+    pending = cmd_qgate_query(_qgate_query_ns(plan_id=pid, phase='5-execute', resolution='pending'))
+    assert pending['filtered_count'] == 1
+    assert pending['findings'][0]['file_path'] == 'Bar.java'
+    resolved = cmd_qgate_query(_qgate_query_ns(plan_id=pid, phase='5-execute', resolution='taken_into_account'))
+    assert resolved['filtered_count'] == 1
+
+
+def test_qgate_same_title_same_discriminator_merges(plan_context):
+    """Same title AND same discriminator across iterations collapses to one record."""
+    pid = 'qgate-same-disc-merge'
+    r1 = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id=pid,
+            phase='5-execute',
+            title='dup-literal',
+            detail='S1192 in Api.java',
+            file_path='Api.java',
+            rule='java:S1192',
+            iteration=1,
+        )
+    )
+    r2 = cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id=pid,
+            phase='5-execute',
+            title='dup-literal',
+            detail='S1192 in Api.java',
+            file_path='Api.java',
+            rule='java:S1192',
+            iteration=2,
+        )
+    )
+    assert r1['status'] == 'success'
+    assert r2['status'] == 'deduplicated'
+    assert str(r2['hash_id']) == str(r1['hash_id'])
+
+    query_result = cmd_qgate_query(_qgate_query_ns(plan_id=pid, phase='5-execute'))
+    assert query_result['total_count'] == 1
+
+
+# =============================================================================
+# Test: raw_input quarantine byte cap
+# =============================================================================
+
+
+def test_raw_input_bytecap_truncation(plan_context):
+    """raw_input free-text over the byte cap is truncated with a [truncated] marker."""
+    pid = 'rawinput-cap'
+    big = 'x' * 200
+    result = cmd_add(
+        _add_ns(
+            plan_id=pid,
+            type='pr-comment',
+            title='big comment',
+            detail='d',
+            raw_input={'body': big},
+            raw_input_max_bytes=50,
+        )
+    )
+    assert result['status'] == 'success'
+
+    query = cmd_query(_query_ns(plan_id=pid, type='pr-comment'))
+    record = query['findings'][0]
+    assert 'raw_input' in record
+    body = record['raw_input']['body']
+    assert body.endswith('[truncated]')
+    assert body[: -len('[truncated]')] == 'x' * 50
+
+
+def test_raw_input_under_cap_stored_verbatim(plan_context):
+    """A raw_input value within the cap is stored verbatim with no marker."""
+    pid = 'rawinput-nocap'
+    result = cmd_add(
+        _add_ns(
+            plan_id=pid,
+            type='pr-comment',
+            title='small comment',
+            detail='d',
+            raw_input={'body': 'short body'},
+        )
+    )
+    assert result['status'] == 'success'
+
+    query = cmd_query(_query_ns(plan_id=pid, type='pr-comment'))
+    record = query['findings'][0]
+    assert record['raw_input']['body'] == 'short body'
+
+
+# =============================================================================
+# Test: raw_input parse-error sentinel collision (PR #852 review)
+# =============================================================================
+
+
+def test_raw_input_status_error_pair_stored_as_data(plan_context):
+    """A legitimate ``--raw-input status=error`` pair is stored as data, not
+    mistaken for the parse-error sentinel and silently discarded.
+    """
+    pid = 'rawinput-status-error'
+    result = cmd_add(
+        _add_ns(
+            plan_id=pid,
+            type='pr-comment',
+            title='status field carries the literal error',
+            detail='d',
+            raw_input=['status=error'],
+        )
+    )
+    assert result['status'] == 'success'
+
+    query = cmd_query(_query_ns(plan_id=pid, type='pr-comment'))
+    record = query['findings'][0]
+    assert record['raw_input']['status'] == 'error'
+
+
+def test_parse_raw_input_success_dict_is_not_error_marker():
+    """A successfully-parsed mapping (incl. a literal ``status=error`` pair) is a
+    plain dict, never a ``_RawInputError`` sentinel.
+    """
+    parsed = _parse_raw_input(['status=error'])
+    assert parsed == {'status': 'error'}
+    assert not isinstance(parsed, _RawInputError)
+
+
+def test_parse_raw_input_malformed_pair_returns_error_marker():
+    """A malformed pair yields a ``_RawInputError`` carrying the canonical error payload."""
+    parsed = _parse_raw_input(['no-equals-sign'])
+    assert isinstance(parsed, _RawInputError)
+    assert parsed['status'] == 'error'
+    assert 'Invalid --raw-input' in parsed['message']
+
+
+def test_parse_raw_input_empty_field_returns_error_marker():
+    """An empty field name yields a ``_RawInputError`` sentinel."""
+    parsed = _parse_raw_input(['=value'])
+    assert isinstance(parsed, _RawInputError)
+    assert parsed['status'] == 'error'
+
+
+# =============================================================================
+# Test: resolution_detail relational integrity (lesson 2026-06-30-21-001)
+# =============================================================================
+
+
+def test_resolution_detail_keyed_to_parent_hash_id(plan_context):
+    """resolution_detail is written keyed to the same hash_id as its parent record."""
+    pid = 'res-detail-integrity'
+    add_result = cmd_add(_add_ns(plan_id=pid, type='bug', title='keyed', detail='d'))
+    hash_id = str(add_result['hash_id'])
+
+    cmd_resolve(_resolve_ns(plan_id=pid, hash_id=hash_id, resolution='fixed', detail='fixed in abc'))
+
+    query = cmd_query(_query_ns(plan_id=pid, type='bug'))
+    record = query['findings'][0]
+    assert record['hash_id'] == hash_id
+    assert record['resolution'] == 'fixed'
+    assert record['resolution_detail'] == 'fixed in abc'
+
+
+def test_resolve_missing_parent_returns_error_and_writes_no_orphan(plan_context):
+    """Resolving a non-existent hash_id fails and never writes an orphan detail."""
+    pid = 'res-detail-orphan'
+    cmd_add(_add_ns(plan_id=pid, type='bug', title='present', detail='d'))
+
+    result = cmd_resolve(_resolve_ns(plan_id=pid, hash_id='deadbeef', resolution='fixed', detail='orphan detail'))
+    assert result['status'] == 'error'
+
+    query = cmd_query(_query_ns(plan_id=pid))
+    assert all(f.get('resolution_detail') != 'orphan detail' for f in query['findings'])
 
 
 # =============================================================================
@@ -1372,6 +1603,52 @@ def test_cli_add_and_query_roundtrip(plan_context):
     assert query_result.success
     query_data = parse_toon(query_result.stdout)
     assert query_data['total_count'] == 1
+
+
+def test_cli_add_raw_input_roundtrip(plan_context):
+    """CLI plumbing: --raw-input FIELD=VALUE quarantines free-text under raw_input.{field}."""
+    pid = 'cli-rawinput-rt'
+    add_result = run_script(
+        SCRIPT_PATH,
+        'add',
+        '--plan-id',
+        pid,
+        '--type',
+        'pr-comment',
+        '--title',
+        'CLI raw comment',
+        '--detail',
+        'd',
+        '--raw-input',
+        'body=untrusted reviewer text',
+    )
+    assert add_result.success, f'Script failed: {add_result.stderr}'
+
+    get_result = run_script(SCRIPT_PATH, 'list', '--plan-id', pid, '--type', 'pr-comment')
+    assert get_result.success, f'Script failed: {get_result.stderr}'
+    data = parse_toon(get_result.stdout)
+    assert data['filtered_count'] == 1
+
+
+def test_cli_add_raw_input_malformed_rejected(plan_context):
+    """CLI plumbing: a --raw-input value with no '=' returns a structured error."""
+    result = run_script(
+        SCRIPT_PATH,
+        'add',
+        '--plan-id',
+        'cli-rawinput-bad',
+        '--type',
+        'bug',
+        '--title',
+        'Bad raw input',
+        '--detail',
+        'd',
+        '--raw-input',
+        'no-equals-sign',
+    )
+    assert result.returncode == 0
+    data = parse_toon(result.stdout)
+    assert data.get('status') == 'error'
 
 
 def test_cli_qgate_add_and_clear_roundtrip(plan_context):

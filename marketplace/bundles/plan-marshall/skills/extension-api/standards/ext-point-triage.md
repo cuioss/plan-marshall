@@ -4,7 +4,7 @@
 
 ## Overview
 
-Triage extensions declare domain-specific decision-making knowledge for the consumer-side dispatch in the [findings pipeline](../../ref-workflow-architecture/standards/findings-pipeline.md). The contract scope covers two finding types: `pr-comment` (raised on a pull request, dispatched by [`phase-6-finalize/workflow/automated-review.md`](../../phase-6-finalize/workflow/automated-review.md)) and `sonar-issue` (raised by SonarQube/SonarCloud, dispatched by [`phase-6-finalize/workflow/sonar-roundtrip.md`](../../phase-6-finalize/workflow/sonar-roundtrip.md)). For each finding, the consumer detects the domain from `file_path`, resolves the per-domain triage skill, loads it, and decides per-finding (FIX / SUPPRESS / ACCEPT / `AskUserQuestion`) using the loaded standards.
+Triage extensions declare domain-specific decision-making knowledge for the **consolidated single triage pass** in the [findings pipeline](../../ref-workflow-architecture/standards/findings-pipeline.md). The contract scope covers two finding types: `pr-comment` (raised on a pull request) and `sonar-issue` (raised by SonarQube/SonarCloud). Under the consolidated FIND → INGEST → one-TRIAGE → one-RESPOND flow, triage runs ONCE per finalize over the whole ingested ledger, **grouped by domain** — sonar + PR + security findings on a Java change collapse to a single `ext-triage-java` load rather than one triage dispatch per producer. Triage is **removed from the provider surface** (the providers expose only the pure `fetch_findings` / `post_responses` verbs). For each finding, the consolidated pass detects the domain from `file_path`, resolves the per-domain triage skill, loads it, and decides (FIX / SUPPRESS / ACCEPT / `AskUserQuestion`) on the clean **top-level** fields only — never the `raw_input.*` quarantine namespace (statically enforced by the plugin-doctor `triage-reads-top-level-only` rule).
 
 Build / test / lint findings are routed through their own producer-side store path (build-* SKILL.mds, `--plan-id` always-on); they currently flow into `manage-findings` directly without per-domain ext-triage dispatch. Future iterations may extend ext-triage scope to those types — at that point the Required Skill Sections table below is the contract surface to update.
 
@@ -50,7 +50,8 @@ class Extension(ExtensionBase):
 
 - Domain is registered in `marshal.json` under `skill_domains.{domain_key}`
 - Triage skill exists and is loadable via `resolve-workflow-skill-extension --domain {domain} --type triage`
-- The producer-side stage has run: PR comments have been fetched + stored as `pr-comment` findings (`workflow-integration-{github,gitlab}:github_pr/gitlab_pr comments-stage`), or Sonar issues have been fetched + stored as `sonar-issue` findings (`workflow-integration-sonar:sonar fetch-and-store`)
+- The FIND stage has run: PR comments have been fetched + filed as `pr-comment` findings (`workflow-integration-{github,gitlab}:github_pr/gitlab_pr fetch_findings`), or Sonar issues have been fetched + filed as `sonar-issue` findings (`workflow-integration-sonar:sonar fetch_findings`), with untrusted free-text quarantined under `raw_input.{field}`
+- The batched INGEST pass (`manage-findings ingest`) has run, promoting the validated `raw_input.{field}` values to the clean top-level fields triage reads
 
 ### Post-Conditions
 
@@ -62,20 +63,25 @@ class Extension(ExtensionBase):
 ### Lifecycle
 
 ```text
-1. Producer stage: fetch upstream items, pre-filter, store as pr-comment / sonar-issue
-   findings via manage-findings add (workflow-integration-{github,gitlab,sonar})
-2. Consumer dispatch: manage-findings list --type {pr-comment|sonar-issue} --resolution pending
-3. For each finding:
+1. FIND: every provider fetch_findings → ledger (untrusted free-text under raw_input.{field});
+   build/lint/test self-file during the build run.
+2. INGEST: one batched manage-findings ingest pass promotes the validated raw_input.{field}
+   values to the clean top-level fields.
+3. ONE TRIAGE PASS over the whole ledger, grouped by domain:
+   manage-findings list --type {pr-comment|sonar-issue} --resolution pending
+   For each finding (reading TOP-LEVEL fields only, never raw_input.*):
    a. Determine domain from the file_path (architecture which-module heuristic)
    b. resolve-workflow-skill-extension --domain {domain} --type triage
    c. If extension exists: load Skill: {bundle}:ext-triage-{domain}
    d. If no extension: use default severity mapping
    e. Decide: FIX | SUPPRESS | ACCEPT | AskUserQuestion (when standards leave the call ambiguous)
-4. Act on the decision (fix-task + loop-back / annotation / pr thread-reply or sonar dismiss)
-5. manage-findings resolve --hash-id H --resolution {fixed|suppressed|accepted|taken_into_account}
+   f. manage-findings resolve --hash-id H --resolution {fixed|suppressed|accepted|taken_into_account}
+4. ONE RESPOND LOOP: post_responses(triaged) → provider (pr thread-reply / resolve-thread /
+   sonar dismiss), keyed by hash_id — the provider acknowledgment is collected here, AFTER triage,
+   not interleaved per finding.
 ```
 
-See [`findings-pipeline.md` § Consumer Dispatch](../../ref-workflow-architecture/standards/findings-pipeline.md#consumer-dispatch) for the full producer→store→consumer→gate flow.
+See [`findings-pipeline.md` § Consumer Dispatch](../../ref-workflow-architecture/standards/findings-pipeline.md#consumer-dispatch) for the full FIND → INGEST → one-TRIAGE → one-RESPOND flow.
 
 ## Hook API
 

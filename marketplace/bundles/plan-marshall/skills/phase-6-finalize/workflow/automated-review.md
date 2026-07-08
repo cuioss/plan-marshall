@@ -49,14 +49,14 @@ Every `manage-*` script call in this document carries the following exit-code co
 
 ## Timeout Contract
 
-This step runs as inline orchestration (producer fetch + finding enumeration in main context) plus a single `verification-feedback` Task dispatch (`plan-marshall:execution-context-{level}` resolved via `manage-config effort resolve-target --phase phase-6-finalize --role verification-feedback`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget is **triage-only**: it covers the review-bot buffer, producer-side comments-stage, per-finding triage dispatch with `producer=pr-comment`, thread replies, and thread resolution. CI wait time is bounded separately by the dispatcher's `ci-complete` precondition resolver (600 s ceiling) — splitting the wait out keeps this triage budget bounded by comment volume rather than CI queue depth.
+This step runs as inline orchestration (producer FIND + finding enumeration in main context) plus a single `verification-feedback` Task dispatch (`plan-marshall:execution-context-{level}` resolved via `manage-config effort resolve-target --phase phase-6-finalize --role verification-feedback`) under a **triage-only 15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget is **triage-only**: it covers the consolidated triage pipeline downstream of the FIND — the review-bot buffer, the batched `manage-findings ingest`, the per-finding triage dispatch with `producer=pr-comment`, and the `post_responses` RESPOND loop (thread replies + thread resolution) — and explicitly excludes CI wait wall-clock. CI wait time is bounded separately by the dispatcher's `ci-complete` precondition resolver (600 s ceiling) — splitting the wait out of the triage-only budget keeps this budget bounded by comment volume rather than CI queue depth.
 
 **Graceful degradation**: When the wrapper expires:
 
 1. The dispatcher logs an ERROR entry at `[ERROR] (plan-marshall:phase-6-finalize) Step default:automated-review timed out after 900s — marking failed and continuing`.
 2. The dispatcher marks this step `failed` via `manage-status mark-step-done … --outcome failed --display-detail "timed out after 900s"`.
 3. The dispatcher continues with the next manifest step. The pipeline does NOT abort; later steps still run.
-4. On the next Phase 6 entry, the resumable re-entry check sees `outcome=failed` and retries this step from scratch (one fresh attempt per invocation).
+4. On the next Phase 6 entry, the resumable re-entry check sees `outcome=failed` and retries this step from scratch (one fresh attempt per invocation). The batched `manage-findings ingest` and the `post_responses` RESPOND loop are both idempotent, so a retry re-validates already-promoted findings to the same top-level value and re-transmits only still-pending dispositions.
 
 There is no internal soft-timeout, polling cap, or partial-progress checkpoint inside this document — the wrapper is the only timeout authority. Standards-internal commands (`pr wait-for-comments`) carry their own short polling intervals but never their own outer ceiling. **Pre-emptive overflow handling** lives in [`triage.md`](../../plan-marshall/workflow/triage.md) § Step 5: the dispatched triage subagent files a `pr-comment-overflow` finding and returns `status: loop_back` when its budget is nearly exhausted, so high comment volume produces a clean loop-back rather than a wrapper timeout.
 
@@ -79,7 +79,7 @@ Read `pr_number` from the TOON output. If `ci pr view` returns `status: error` (
 
 ### Re-review after a loop-back fix commit (trigger B)
 
-This step fires on a **re-entry** of `automated-review` after a phase-5 loop-back: a fix commit produced during the loop-back has advanced the worktree HEAD past the `reviewed_commit_sha` stamped on the staged `pr-comment` findings, so the bot reviews on record are stale for the new tree. It is gated by the `re_review_on_loopback` config knob (default `false`) and reuses the D2 `bot_kind`-keyed re-review registry — it posts an explicit trigger comment for each bot (`@coderabbitai review` for CodeRabbit, `/gemini review` for Gemini), since neither bot's auto-review-on-push is a reliable trigger for the advanced HEAD. The fresh review is then surfaced through the existing `comments-stage` → triage pipeline below — this is NOT a parallel path.
+This step fires on a **re-entry** of `automated-review` after a phase-5 loop-back: a fix commit produced during the loop-back has advanced the worktree HEAD past the `reviewed_commit_sha` stamped on the staged `pr-comment` findings, so the bot reviews on record are stale for the new tree. It is gated by the `re_review_on_loopback` config knob (default `false`) and reuses the D2 `bot_kind`-keyed re-review registry — it posts an explicit trigger comment for each bot (`@coderabbitai review` for CodeRabbit, `/gemini review` for Gemini), since neither bot's auto-review-on-push is a reliable trigger for the advanced HEAD. The fresh review is then surfaced through the existing `fetch_findings` → ingest → triage → respond pipeline below — this is NOT a parallel path.
 
 Read the gate from the plan-local execution-manifest step-params snapshot (the same one-stop call used for `review_bot_buffer_seconds`):
 
@@ -116,7 +116,7 @@ Read `re_review_on_loopback` off the returned `params` object (default: `false`)
      --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
    ```
 
-   Read both `matched` AND `timed_out` from the returned TOON. **When `matched: true`**, the fresh review is now on the PR; proceed to "Wait for review-bot comments" and "Producer: stage PR comments as findings" below, which re-runs `comments-stage` — this re-stamps every finding's `reviewed_commit_sha` to the new HEAD and re-triages the new comments through the existing per-finding dispatch pipeline. The `reviewed_commit_sha` is updated implicitly by that fresh `comments-stage` run; no separate update call is needed. **When `timed_out: true` (and `matched: false`)**, the await budget expired with no fresh bot review for the new HEAD — proceed to "On re-review timeout (trigger B)" below instead of falling through silently.
+   Read both `matched` AND `timed_out` from the returned TOON. **When `matched: true`**, the fresh review is now on the PR; proceed to "Wait for review-bot comments" and "Producer: FIND — file PR comments to the ledger" below, which re-runs `fetch_findings` — this re-stamps every finding's `reviewed_commit_sha` to the new HEAD and re-runs the consolidated ingest → triage → respond pass over the new comments. The `reviewed_commit_sha` is updated implicitly by that fresh `fetch_findings` run; no separate update call is needed. **When `timed_out: true` (and `matched: false`)**, the await budget expired with no fresh bot review for the new HEAD — proceed to "On re-review timeout (trigger B)" below instead of falling through silently.
 
 ### On re-review timeout (trigger B)
 
@@ -165,18 +165,18 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 | `status: success`, `timed_out: true` | No new comment within timeout — proceed to producer-stage anyway (the producer will surface whatever is on the PR) |
 | `status: error` | Treat as warning, log, proceed to producer-stage best-effort |
 
-### Producer: stage PR comments as findings (entry-point)
+### Producer: FIND — file PR comments to the ledger (entry-point)
 
-Call the producer-side comments-stage subcommand once. It fetches PR review comments, applies pre-filters (already-resolved threads, obvious text noise, and cross-iteration duplicate comments), and writes one `pr-comment` finding per surviving comment into the per-plan findings store.
+Call the producer-side `fetch_findings` verb once. It fetches PR review comments, applies pre-filters (already-resolved threads, obvious text noise, and cross-iteration duplicate comments), and files one `pr-comment` finding per surviving comment into the per-plan findings store with the untrusted comment body quarantined under `raw_input.{body}` — the trusted structured metadata (`thread_id`, `comment_id`, `kind`, `author`, `path`, `line`) goes in the finding's `detail`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
-  comments-stage --pr-number {pr_number} --plan-id {plan_id}
+  fetch_findings --pr-number {pr_number} --plan-id {plan_id}
 ```
 
-(For GitLab projects the equivalent producer is `plan-marshall:workflow-integration-gitlab:gitlab_pr comments-stage`. Provider selection is whichever matches `manage-providers` for the plan's host; only one of the two is invoked per finalize run.)
+(For GitLab projects the equivalent producer is `plan-marshall:workflow-integration-gitlab:gitlab_pr fetch_findings`. Provider selection is whichever matches `manage-providers` for the plan's host; only one of the two is invoked per finalize run. A `status: unconfigured` return means the provider is not authenticated — fail loud, never a silent zero-findings success.)
 
-The producer is the ONLY surface that fetches and stores `pr-comment` findings. This document does not classify, decide, or act on comments inline — every consumer-side action below reads from the findings store via `manage-findings list`.
+This is the FIND stage of the consolidated FIND → INGEST → TRIAGE → RESPOND flow. The producer is the ONLY surface that fetches and files `pr-comment` findings; the downstream INGEST (batched `manage-findings ingest`), TRIAGE (top-level-only), and RESPOND (`post_responses` thread-replies) all run inside the single `verification-feedback` dispatch below. This document does not classify, decide, respond to, or act on comments inline — every consumer-side action reads from the findings store via `manage-findings list`.
 
 ### Consumer: enumerate pending pr-comment findings
 
@@ -215,12 +215,14 @@ Task: plan-marshall:{target}
   prompt: |
     name: verification-feedback
     plan_id: {plan_id}
-    skills[5]:
+    skills[7]:
     - plan-marshall:manage-findings
     - plan-marshall:manage-tasks
     - plan-marshall:manage-architecture
     - plan-marshall:manage-config
     - plan-marshall:tools-integration-ci
+    - plan-marshall:workflow-integration-github
+    - plan-marshall:workflow-integration-gitlab
     workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
 
     producer: pr-comment
@@ -248,7 +250,7 @@ This contract lets the orchestrator distinguish between an in-progress triage ru
 
 ### Handle findings (loop-back)
 
-The triage subagent above allocated fix tasks and posted reviewer-facing thread replies inline (see the FIX action body in [`triage.md`](../../plan-marshall/workflow/triage.md)). This section only handles the loop-back bookkeeping.
+The `verification-feedback` dispatch above allocated fix tasks (triage) and transmitted the reviewer-facing thread replies in its single RESPOND loop (`post_responses` — see [`verification-feedback.md`](../../plan-marshall/workflow/verification-feedback.md) § Step 8). This section only handles the loop-back bookkeeping.
 
 **If the triage subagent returned `status: loop_back`** (one or more `pr-comment` findings closed with `--resolution fixed` and a fix-task reference, an overflow envelope was filed, OR all findings were inline-fixable but the calling step needs replay), `loop_back_needed = true`. Read `loop_back_target` from the triage subagent's return TOON (REQUIRED on every `status: loop_back` return per [`triage.md`](../../plan-marshall/workflow/triage.md) § Step 7):
 

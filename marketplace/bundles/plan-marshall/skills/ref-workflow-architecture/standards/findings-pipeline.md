@@ -1,6 +1,6 @@
 # Findings Pipeline Architecture
 
-The plan-marshall findings pipeline routes every quality signal — PR review comments, Sonar issues, build / test / lint failures, and per-phase Q-Gate findings — through a single producer → store → consumer → invariant-gate flow. An optional [verify stage](#validity-verification-ext-point-verify) inserts between store and consumer for producers that declare a `verification_profile` — `producer → store → VERIFY → consumer → invariant-gate` — adversarially refuting candidate findings so false positives close `rejected` before triage ever sees them. This document is the canonical architectural source of truth. Per-skill SKILL.md files and standards documents document their own slice of the contract (CLI surface, step list, plumbing) and cross-reference here for the architecture-level synthesis.
+The plan-marshall findings pipeline routes every quality signal — PR review comments, Sonar issues, build / test / lint failures, and per-phase Q-Gate findings — through a single **FIND → INGEST → VERIFY → one TRIAGE → one RESPOND** flow, gated by the pending-findings invariant. Every producer FINDS (files findings to the `manage-findings` ledger, quarantining untrusted free-text under a `raw_input.{field}` sub-namespace); one batched INGEST pass runs `validate_struct` over every `raw_input.{field}` and promotes the cleaned values to the clean top-level fields; ONE domain-grouped TRIAGE pass then decides dispositions over the whole ledger (reading top-level only, never `raw_input.*`); and ONE RESPOND loop posts the decided dispositions back to the providers. The validity [verify stage](#validity-verification-ext-point-verify) folds into validate-on-file, so triage sees only valid findings. This document is the canonical architectural source of truth. Per-skill SKILL.md files and standards documents document their own slice of the contract (CLI surface, step list, plumbing) and cross-reference here for the architecture-level synthesis.
 
 ## Overview
 
@@ -62,13 +62,40 @@ The plan-marshall findings pipeline routes every quality signal — PR review co
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The diagram shows the per-finding dispatch path. CI completion is resolved as a **dispatcher-side precondition** before the `automated-review` consumer's body runs — consumer steps declare `requires: [ci-complete]` in their YAML frontmatter, and the phase-6-finalize dispatcher invokes `ci_complete_precondition.resolve(plan_id, worktree_path, pr_number)` inline ahead of dispatch. The resolver caches success outcomes per HEAD SHA so subsequent same-HEAD lookups short-circuit. On `wait_failed`, the dispatcher skips the consumer body entirely and records `ci_failure (precondition)` as the consumer step's outcome. The precondition isolates CI wait time from the triage budget without introducing a sibling step:
+The diagram above shows the store-level producer → store → consumer mechanics. The end-to-end **consolidated** flow that phase-6-finalize runs is the FIND → INGEST → one-TRIAGE → one-RESPOND shape:
+
+```text
+ci-complete
+   │
+   ▼
+FIND LOOP      all providers: fetch_findings → ledger, untrusted free-text
+   │           quarantined under raw_input.{field}. build/lint/test self-file
+   │           during the build run; generators (security-audit, self-review) file
+   │           find-only (defer triage).
+   ▼
+INGEST PASS    one batched validate_struct over every raw_input.{field}
+   │           → promote clamped values to the clean TOP-LEVEL fields;
+   │           [truncated] marker on cap overflow; a rejection resolves the finding.
+   ▼
+ONE TRIAGE     one domain-grouped pass over the whole ledger (ext-triage-{domain});
+   │           reads TOP-LEVEL fields only, never raw_input.* (plugin-doctor
+   │           triage-reads-top-level-only guard); disposition self-consistency
+   │           gate folded in.
+   ▼
+ONE RESPOND    post_responses(triaged) → provider (thread-reply / resolve-thread /
+               sonar dismiss), keyed by hash_id. The automated-review fix→re-review
+               loop runs AFTER triage decides dispositions.
+```
+
+Triage is removed from the provider surface: the provider verbs are the two pure zero-LLM `fetch_findings` (FIND) and `post_responses` (RESPOND); the LLM judgment lives only in the single consolidated TRIAGE pass.
+
+CI completion is resolved as a **dispatcher-side precondition** before the `automated-review` consumer's body runs — consumer steps declare `requires: [ci-complete]` in their YAML frontmatter, and the phase-6-finalize dispatcher invokes `ci_complete_precondition.resolve(plan_id, worktree_path, pr_number)` inline ahead of dispatch. The resolver caches success outcomes per HEAD SHA so subsequent same-HEAD lookups short-circuit. On `wait_failed`, the dispatcher skips the consumer body entirely and records `ci_failure (precondition)` as the consumer step's outcome. The precondition isolates CI wait time from the triage budget without introducing a sibling step:
 
 ```text
                                                     automated-review step
                                                     (phase-6-finalize, requires: [ci-complete])
    ┌─────────────────────────────┐                  ┌─────────────────────┐
-   │ dispatcher Step 3:          │── satisfied ────▶│ comments-stage      │
+   │ dispatcher Step 3:          │── satisfied ────▶│ fetch_findings      │
    │ ci_complete_precondition   │   or             │ (producer)          │
    │ .resolve(plan_id,           │   wait_succeeded │       ▼             │
    │   worktree_path,            │                  │ per-finding         │
@@ -83,7 +110,7 @@ The diagram shows the per-finding dispatch path. CI completion is resolved as a 
    └─────────────────────────────┘   on consumer)
 ```
 
-The **`pr-comment-overflow` finding** files when the consumer's 900 s triage budget is nearly exhausted before all `pr-comment` findings are processed. Unlike `pr-comment` (a `findings` record produced by `comments-stage`), `pr-comment-overflow` is filed by the consumer itself — it carries the unprocessed `pr-comment` `hash_id`s in `detail` so the next iteration can prioritise them. The type is non-blocking; the deferred work is handled by `loop_back` re-entry, not by gating the boundary. See [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § `pr-comment-overflow` for the type's full contract.
+The **`pr-comment-overflow` finding** files when the consumer's 900 s triage budget is nearly exhausted before all `pr-comment` findings are processed. Unlike `pr-comment` (a `findings` record produced by `fetch_findings`), `pr-comment-overflow` is filed by the consumer itself — it carries the unprocessed `pr-comment` `hash_id`s in `detail` so the next iteration can prioritise them. The type is non-blocking; the deferred work is handled by `loop_back` re-entry, not by gating the boundary. See [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § `pr-comment-overflow` for the type's full contract.
 
 The pipeline is structurally enforced: producers can never bypass the store (no inline-JSON batch surfaces remain in LLM-callable scope), consumers can never bypass the per-domain decision-grounding knowledge (every triage decision loads `ext-triage-{domain}`), and boundaries can never be crossed with unresolved blocking findings (the invariant raises `BlockingFindingsPresent`).
 
@@ -93,12 +120,14 @@ The pipeline is the canonical finding store for all plan-marshall phases. The tw
 
 Each producer fetches findings from its upstream source, applies any pre-filter to drop obvious noise, then writes one finding per surviving record into the unified store via `manage-findings add` (or, for Q-Gate findings, `manage-findings qgate add`). Producers never return finding payloads over stdout for downstream parsing — payloads live on disk and are queried, not piped.
 
-| Producer | Subcommand | Finding type | Notes |
+Each provider producer exposes exactly two pure zero-LLM verbs — `fetch_findings` (FIND: fetch + pre-filter + file to the ledger, quarantining untrusted free-text under `raw_input.{field}`) and `post_responses` (RESPOND: apply the already-decided dispositions back to the provider, keyed by `hash_id`). Triage is NOT on the provider surface. Both verbs fail loud (a typed `unconfigured` / `unreachable` signal, never a silent no-op) when the provider is not configured.
+
+| Producer | FIND verb | Finding type | Notes |
 |---|---|---|---|
-| `workflow-integration-github` | `comments-stage --pr-number N --plan-id P` | `pr-comment` | Pre-filter: `comment-patterns.json` drops automated/acknowledgment noise. Source-specific metadata (thread_id, author, kind=inline\|review_body) lives in `detail`. |
-| `workflow-integration-gitlab` | `comments-stage --pr-number N --plan-id P` | `pr-comment` | Mirror of GitHub; provider-agnostic schema. |
-| `workflow-integration-sonar` | `fetch-and-store --plan-id P --project K` | `sonar-issue` | Pre-filter: `sonar-rules.json` drops issues already suppressed via NOSONAR. Severity from issue severity; rule from issue rule. |
-| `build-pyproject` / `build-maven` / `build-gradle` / `build-npm` | `run --command-args "…" --plan-id P` (always-on when `--plan-id` is set) | `build-error` / `test-failure` / `lint-issue` | Each parsed log entry becomes one finding. Build tool is the `module` field; issue category becomes `rule`. |
+| `workflow-integration-github` | `github_pr fetch_findings --pr-number N --plan-id P` | `pr-comment` | Pre-filter: `comment-patterns.json` drops automated/acknowledgment noise. Untrusted comment body quarantined under `raw_input.{body}`; source-specific metadata (thread_id, author, kind=inline\|review_body) indexed. |
+| `workflow-integration-gitlab` | `gitlab_pr fetch_findings --pr-number N --plan-id P` | `pr-comment` | Mirror of GitHub; provider-agnostic schema. |
+| `workflow-integration-sonar` | `sonar fetch_findings --plan-id P --project K` | `sonar-issue` | Pre-filter: `sonar-rules.json` drops issues already suppressed via NOSONAR. Untrusted issue message quarantined under `raw_input`; severity/rule from the issue. |
+| `build-pyproject` / `build-maven` / `build-gradle` / `build-npm` | `run --command-args "…" --plan-id P` (always-on when `--plan-id` is set) | `build-error` / `test-failure` / `lint-issue` | Each parsed log entry self-files during the build run (no respond side). Build tool is the `module` field; issue category becomes `rule`. |
 
 For per-producer CLI specifics see each skill's SKILL.md:
 - [`workflow-integration-github/SKILL.md`](../../workflow-integration-github/SKILL.md)
@@ -112,7 +141,9 @@ Every producer reports `count_fetched` vs `count_stored` mismatches as a `qgate`
 
 ## Store
 
-`manage-findings` (`marketplace/bundles/plan-marshall/skills/manage-findings/`) is the unified plan-scoped store. The CLI surface (`add` / `list` / `get` / `resolve` / `promote` / `qgate {add,list,resolve,clear}` / `assessment {add,list,get,clear}`) is the only access path; direct file I/O on the JSONL files is never permitted.
+`manage-findings` (`marketplace/bundles/plan-marshall/skills/manage-findings/`) is the unified plan-scoped store. The CLI surface (`add` / `list` / `get` / `resolve` / `promote` / `ingest` / `qgate {add,list,resolve,clear}` / `assessment {add,list,get,clear}`) is the only access path; direct file I/O on the JSONL files is never permitted.
+
+**Quarantine + ingestion.** Untrusted external free-text (a PR-comment body, a Sonar message) is filed under a quarantined `raw_input.{field}` sub-object, capped per field at `plan.finding_raw_input_max_bytes` (default 64 KiB, `[truncated]` marker on overflow). The `ingest` verb runs one batched `validate_struct` pass over every pending finding's `raw_input.{field}` values and promotes only the validated, clamped output to the clean top-level fields — the containment boundary that keeps triage's read surface clean (`raw_input.*` = audit-only quarantine; top-level = clean-by-construction). See [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § "`raw_input` quarantine namespace" and [`untrusted-ingestion/SKILL.md`](../../untrusted-ingestion/SKILL.md) § "Application to the findings ledger".
 
 Storage layout (under `.plan/plans/{plan_id}/artifacts/findings/`):
 
@@ -146,6 +177,8 @@ The verify stage is inserted by the orchestrator's [`verification-feedback.md`](
 > The verify stage (validity-verification of *findings* before triage) is distinct from `ext-point-build-verify-step` (the phase-5 build/verify *command* step — `quality-gate`, `module-tests`, `coverage`). They are unrelated concerns.
 
 ## Consumer Dispatch
+
+Under the consolidated flow, triage runs as ONE domain-grouped pass over the whole ingested ledger (not per-producer), reading the clean **top-level** fields only — never `raw_input.*`. The decided dispositions are then transmitted back in ONE `post_responses` RESPOND loop, rather than the provider-side acknowledgment being interleaved into the per-finding triage loop. The per-finding decision mechanics below are unchanged; only where they run (one consolidated pass) and where the provider acknowledgment happens (one respond loop, after triage) changed.
 
 Wherever a triage decision needs to be made, the consumer:
 

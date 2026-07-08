@@ -2516,3 +2516,63 @@ def test_read_provisioned_version_empty_on_undecodable_executor(tmp_path, monkey
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
     assert _config_defaults_mod.read_provisioned_version() == ''
+
+
+# =============================================================================
+# finding_raw_input_max_bytes knob (findings quarantine cap)
+# =============================================================================
+
+
+def test_default_finding_raw_input_max_bytes_constant_is_64_kib():
+    """The module constant is the 64 KiB (65536-byte) default."""
+    assert _config_defaults_mod.DEFAULT_FINDING_RAW_INPUT_MAX_BYTES == 65536
+
+
+def test_get_default_config_seeds_finding_raw_input_max_bytes():
+    """get_default_config() seeds plan.finding_raw_input_max_bytes at the 64 KiB default."""
+    config = _config_defaults_mod.get_default_config()
+    assert config['plan']['finding_raw_input_max_bytes'] == 65536
+
+
+def test_finding_raw_input_max_bytes_matches_manage_findings_default():
+    """The seed is byte-identical to manage-findings' DEFAULT_RAW_INPUT_MAX_BYTES.
+
+    The config knob overrides that store-side default; the seed value must not
+    drift from the store default, else a fresh project silently changes the cap.
+    """
+    findings_core_dir = (
+        Path(__file__).parent.parent.parent.parent
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall'
+        / 'skills'
+        / 'manage-findings'
+        / 'scripts'
+    )
+    findings_core = _load_module(
+        '_findings_core_for_raw_input_cap_test',
+        '_findings_core.py',
+        base_dir=findings_core_dir,
+    )
+    assert (
+        _config_defaults_mod.DEFAULT_FINDING_RAW_INPUT_MAX_BYTES
+        == findings_core.DEFAULT_RAW_INPUT_MAX_BYTES
+    )
+
+
+def test_no_per_producer_triage_effort_subkeys_remain():
+    """The effort role groups carry only the unified verification-feedback role.
+
+    The consolidated find/triage flow runs ONE triage pass, so there are no
+    per-producer (sonar / pr-comment / plugin-doctor / pr-state) effort subkeys —
+    the producer is a runtime discriminator, never a config subkey.
+    """
+    config = _config_defaults_mod.get_default_config()
+    p5_effort = config['plan']['phase-5-execute']['effort']
+    p6_effort = config['plan']['phase-6-finalize']['effort']
+    for producer in ('sonar', 'pr-comment', 'plugin-doctor', 'pr-state', 'build-runner'):
+        assert producer not in p5_effort
+        assert producer not in p6_effort
+    # The unified triage role is present.
+    assert 'verification-feedback' in p5_effort
+    assert 'verification-feedback' in p6_effort

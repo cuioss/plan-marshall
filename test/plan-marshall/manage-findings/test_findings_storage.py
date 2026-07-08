@@ -55,6 +55,7 @@ get_finding = _findings_core.get_finding
 get_findings_dir = _findings_core.get_findings_dir
 get_findings_path = _findings_core.get_findings_path
 get_qgate_path = _findings_core.get_qgate_path
+mark_finding_responded = _findings_core.mark_finding_responded
 promote_finding = _findings_core.promote_finding
 query_findings = _findings_core.query_findings
 query_qgate_findings = _findings_core.query_qgate_findings
@@ -409,6 +410,30 @@ def test_resolve_finding_returns_error_when_hash_absent_in_any_file(plan_context
     add_finding('storage-resolve-missing', 'bug', 'Bug', 'Detail')
 
     outcome = resolve_finding('storage-resolve-missing', 'deadbe', 'fixed')
+
+    assert outcome['status'] == 'error'
+    assert 'not found' in outcome['message']
+
+
+def test_mark_finding_responded_stamps_marker_and_timestamp(plan_context):
+    """`mark_finding_responded` writes responded + responded_at to the owning file."""
+    target = add_finding('storage-responded-mark', 'sonar-issue', 'Dismissable', 'Detail')
+
+    outcome = mark_finding_responded('storage-responded-mark', target['hash_id'])
+
+    assert outcome['status'] == 'success'
+    assert outcome['hash_id'] == target['hash_id']
+
+    stored = get_finding('storage-responded-mark', target['hash_id'])
+    assert stored['responded'] is True
+    assert stored['responded_at']
+
+
+def test_mark_finding_responded_returns_error_when_hash_absent(plan_context):
+    """`mark_finding_responded` reports not-found when the hash is in no per-type file."""
+    add_finding('storage-responded-missing', 'sonar-issue', 'Issue', 'Detail')
+
+    outcome = mark_finding_responded('storage-responded-missing', 'deadbe')
 
     assert outcome['status'] == 'error'
     assert 'not found' in outcome['message']

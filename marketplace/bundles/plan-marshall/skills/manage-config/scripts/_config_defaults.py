@@ -98,6 +98,19 @@ DEFAULT_OPEN_IN_IDE = True
 # seeds.
 DEFAULT_PLAN_COVERAGE = {'thoroughness': 'inherit', 'scope': 'inherit'}
 
+# Plan-wide per-field byte cap for quarantined `raw_input.{field}` free-text in the
+# findings ledger (`plan.finding_raw_input_max_bytes` in marshal.json). Every
+# producer files untrusted free-text under the `raw_input.{field}` quarantine
+# sub-namespace; the ledger caps each field at this many bytes and appends a
+# `[truncated]` marker on overflow. 65536 (64 KiB) is corpus-grounded — across 399
+# PR-comment findings p50 ≈ 2 KB, p99 ≈ 21 KB, max ≈ 68 KB — so 64 KiB retains the
+# full body for effectively every real finding while bounding a hostile oversized
+# payload. The seed is byte-identical to `manage-findings`'
+# `DEFAULT_RAW_INPUT_MAX_BYTES`; it exists to make the cap operator-visible and
+# editable in marshal.json (callers thread the resolved value into
+# `manage-findings ... --raw-input-max-bytes`).
+DEFAULT_FINDING_RAW_INPUT_MAX_BYTES = 65536
+
 # Run-at-all gate enum. Each distributed gate knob (deep_lane, escalation,
 # revalidation, self_review, simplify) takes one of these values. `auto` (the
 # default) defers to the owning phase's decision machinery; `always` forces the
@@ -926,6 +939,9 @@ def get_default_config() -> dict:
             'effort': DEFAULT_PLAN_EFFORT,
             'open_in_ide': DEFAULT_OPEN_IN_IDE,
             'coverage': copy.deepcopy(DEFAULT_PLAN_COVERAGE),
+            # Per-field byte cap for quarantined raw_input free-text in the
+            # findings ledger (64 KiB; `[truncated]` marker on overflow).
+            'finding_raw_input_max_bytes': DEFAULT_FINDING_RAW_INPUT_MAX_BYTES,
             'phase-1-init': copy.deepcopy(DEFAULT_PLAN_INIT),
             'phase-2-refine': copy.deepcopy(DEFAULT_PLAN_REFINE),
             'phase-3-outline': copy.deepcopy(DEFAULT_PLAN_OUTLINE),

@@ -58,6 +58,17 @@ VALID_RECORD_PHASES = _mem.VALID_RECORD_PHASES
 VALID_RECORD_OUTCOMES = _mem.VALID_RECORD_OUTCOMES
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 
+# Step-ownership routing primitives live in _manifest_core (loaded directly:
+# the hyphenated entry does not re-export them). See the "Step ownership"
+# section in _manifest_core.py.
+_core = _load_module('_mem_core', '_manifest_core.py')
+owner_of = _core.owner_of
+is_leaf_dispatchable = _core.is_leaf_dispatchable
+validate_step_owner = _core.validate_step_owner
+VALID_STEP_OWNERS = _core.VALID_STEP_OWNERS
+DEFAULT_STEP_OWNER = _core.DEFAULT_STEP_OWNER
+ORCHESTRATOR_OWNED_STEPS = _core.ORCHESTRATOR_OWNED_STEPS
+
 # Quiet down the best-effort decision-log writes so tests don't depend on a
 # running executor / a resolvable plan log dir.
 _mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
@@ -335,6 +346,59 @@ def test_valid_record_enums_are_the_documented_sets(plan_context):
     """Guard the contract constants the record-step subcommand validates against."""
     assert VALID_RECORD_PHASES == ('5-execute', '6-finalize')
     assert VALID_RECORD_OUTCOMES == ('executed', 'skipped', 'error')
+
+
+# =============================================================================
+# Step-ownership routing (orchestrator-owned vs leaf-dispatchable)
+# =============================================================================
+
+
+def test_valid_step_owners_vocabulary():
+    """The declared owner vocabulary is the closed two-value set."""
+    assert VALID_STEP_OWNERS == ('orchestrator-owned', 'leaf-dispatchable')
+    assert DEFAULT_STEP_OWNER == 'leaf-dispatchable'
+
+
+def test_validate_step_owner_accepts_declared_and_rejects_unknown():
+    """validate_step_owner is a membership predicate over VALID_STEP_OWNERS."""
+    assert validate_step_owner('orchestrator-owned') is True
+    assert validate_step_owner('leaf-dispatchable') is True
+    assert validate_step_owner('main-only') is False
+    assert validate_step_owner('') is False
+
+
+def test_owner_of_sub_dispatching_steps_are_orchestrator_owned():
+    """The known sub-dispatching finalize steps resolve to orchestrator-owned."""
+    for step in (
+        'finalize-step-plugin-doctor',
+        'finalize-step-pre-submission-self-review',
+        'automated-review',
+        'finalize-step-simplify',
+    ):
+        assert owner_of(step) == 'orchestrator-owned', step
+        assert step in ORCHESTRATOR_OWNED_STEPS
+
+
+def test_owner_of_strips_default_and_project_prefixes():
+    """default:- and project:-prefixed spellings classify identically to the bare name."""
+    assert owner_of('project:finalize-step-plugin-doctor') == 'orchestrator-owned'
+    assert owner_of('project:finalize-step-pre-submission-self-review') == 'orchestrator-owned'
+    assert owner_of('default:finalize-step-simplify') == 'orchestrator-owned'
+
+
+def test_owner_of_defaults_leaf_dispatchable():
+    """Steps not in the registry default to leaf-dispatchable."""
+    for step in ('push', 'create-pr', 'ci-verify', 'verify:quality-gate', 'archive-plan'):
+        assert owner_of(step) == 'leaf-dispatchable', step
+
+
+def test_is_leaf_dispatchable_rejects_orchestrator_owned_step():
+    """A dispatched leaf must never be handed an orchestrator-owned step."""
+    assert is_leaf_dispatchable('project:finalize-step-plugin-doctor') is False
+    assert is_leaf_dispatchable('automated-review') is False
+    # A leaf-dispatchable step is accepted.
+    assert is_leaf_dispatchable('push') is True
+    assert is_leaf_dispatchable('verify:quality-gate') is True
 
 
 # =============================================================================

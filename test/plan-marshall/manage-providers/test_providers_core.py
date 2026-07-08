@@ -13,6 +13,7 @@ import pytest
 from _providers_core import (
     VALID_AUTH_TYPES,
     RestClient,
+    apply_extra_passthrough,
     get_authenticated_client,
     get_project_name,
     load_credential,
@@ -299,6 +300,70 @@ class TestProviderConfig:
 
         config = read_provider_config('test-skill')
         assert config['url'] == 'https://new.com'
+
+
+class TestApplyExtraPassthroughDenylist:
+    """Tests for apply_extra_passthrough() — the case-normalized secret/reserved denylist.
+
+    Regression for lesson 2026-06-30-16-001 (CWE-178, improper case handling): a
+    caller-controlled ``--extra KEY=VALUE`` key is lower-cased BEFORE the
+    secret/reserved denylist membership test, so a mixed-case variant of a secret
+    key can never smuggle a secret into the git-tracked marshal.json.
+    """
+
+    @pytest.mark.parametrize(
+        'key',
+        [
+            pytest.param('token', id='token-lower'),
+            pytest.param('Token', id='token-title'),
+            pytest.param('TOKEN', id='token-upper'),
+            pytest.param('ToKeN', id='token-mixed'),
+            pytest.param('password', id='password-lower'),
+            pytest.param('PASSWORD', id='password-upper'),
+            pytest.param('username', id='username-lower'),
+            pytest.param('Username', id='username-title'),
+        ],
+    )
+    def test_secret_key_rejected_case_insensitively(self, key):
+        """A secret key in any case variant is rejected — never written to the config."""
+        config: dict = {}
+        applied = apply_extra_passthrough(config, [f'{key}=leaked-secret-value'])
+
+        assert applied == []
+        # The key is absent from the config in EVERY case form.
+        assert key not in config
+        assert key.lower() not in config
+        assert 'leaked-secret-value' not in config.values()
+
+    @pytest.mark.parametrize(
+        'key',
+        [pytest.param('url', id='url-lower'), pytest.param('URL', id='url-upper'), pytest.param('Url', id='url-title')],
+    )
+    def test_reserved_key_rejected_case_insensitively(self, key):
+        """The reserved ``url`` key is rejected in any case variant."""
+        config: dict = {}
+        applied = apply_extra_passthrough(config, [f'{key}=https://evil.example'])
+
+        assert applied == []
+        assert key not in config
+        assert key.lower() not in config
+
+    def test_non_secret_key_is_applied_verbatim(self):
+        """A benign non-secret key is applied with its original casing preserved."""
+        config: dict = {}
+        applied = apply_extra_passthrough(config, ['Organization=my-org', 'projectKey=abc'])
+
+        assert applied == ['Organization', 'projectKey']
+        assert config['Organization'] == 'my-org'
+        assert config['projectKey'] == 'abc'
+
+    def test_mixed_batch_applies_benign_and_rejects_secret(self):
+        """A batch mixing a benign key and a case-variant secret applies only the benign one."""
+        config: dict = {}
+        applied = apply_extra_passthrough(config, ['org=acme', 'TOKEN=leaked'])
+
+        assert applied == ['org']
+        assert config == {'org': 'acme'}
 
 
 class TestLoadDeclaredProviders:

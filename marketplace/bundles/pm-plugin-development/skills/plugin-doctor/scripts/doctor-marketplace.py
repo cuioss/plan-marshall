@@ -53,6 +53,8 @@ from _analyze_test_conventions import (
     analyze_unique_fixture_basenames,
     analyze_validator_regex_vs_corpus,
 )
+from _analyze_triage_read_surface import analyze_triage_read_surface
+from _analyze_verify_step_contract import analyze_verify_step_contract
 from _cmd_apply import apply_single_fix, load_templates
 from _cmd_extension import validate_extension_contracts
 from _doctor_analysis import analyze_component
@@ -805,6 +807,23 @@ def cmd_quality_gate(args) -> dict:
         suppressed=_suppressed,
         scoped_manage_invocation=_scoped_manage_invocation,
     )
+
+    # find/triage-flow containment guards (D7). Wired here rather than inside the
+    # runner so the runner's byte-identical pre-D5 dispatch table stays untouched;
+    # both are file-anchored file-local rules, so `_scoped` produces the correct
+    # --paths subset.
+    #   - triage-reads-top-level-only: a triage surface (triage.md /
+    #     verification-feedback.md / ext-triage-{domain}) must never read the
+    #     `raw_input.*` quarantine namespace — triage reads top-level fields only.
+    #   - verify-step-canonicals-required: every ext-point-build-verify-step
+    #     implementor must declare a non-empty `canonicals:` list.
+    for label, findings in (
+        ('analyze_triage_read_surface', analyze_triage_read_surface(marketplace_root)),
+        ('analyze_verify_step_contract', analyze_verify_step_contract(marketplace_root)),
+    ):
+        scoped_findings = _scoped(findings)
+        all_issues.extend(scoped_findings)
+        rule_summaries.append({'rule': label, 'findings': len(scoped_findings)})
 
     # script-call-drift is intentionally NOT in quality-gate — it probes
     # --help via subprocess for every documented notation/verb pair, which
