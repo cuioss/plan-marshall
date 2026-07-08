@@ -8,7 +8,13 @@ Pipeline:
 
 The script consumes the multi-target generator output at
 ``target/claude/`` (or a worktree-local equivalent) and rsyncs each
-emitted bundle into the host plugin cache.
+emitted bundle into the host plugin cache. After a successful (non-error)
+sync it also mirrors the top-level ``target/claude/dist-manifest.json``
+into the plugin-cache ROOT (``{cache_root}/dist-manifest.json``, alongside
+the versioned ``{bundle}/{version}/`` dirs) so the dist-branch versioning
+feature's ``find_installed_manifest_path`` resolves the installed version
+from ``base_path/dist-manifest.json`` in the meta-project's own
+preflight/executor-regen context.
 
 Staleness guard
 ---------------
@@ -158,6 +164,13 @@ MARKETPLACE_SUBDIR = Path('marketplace') / 'bundles'
 # Sentinel filename written at the end of every successful emit by the
 # Claude target. See ``marketplace/targets/claude/target.py``.
 EMIT_MARKER_FILENAME = '.emit-marker.json'
+
+# Top-level manifest filename mirrored into the plugin-cache ROOT after a
+# successful sync. The dist-branch versioning feature reads the installed
+# version from ``base_path/dist-manifest.json``; for the meta-project's own
+# preflight the base_path IS the cache root, so the manifest must ride into
+# the cache root alongside the versioned ``{bundle}/{version}/`` dirs.
+DIST_MANIFEST_FILENAME = 'dist-manifest.json'
 
 
 def _read_version(plugin_json: Path) -> str:
@@ -444,6 +457,40 @@ def _rsync_bundle(*, bundle: str, source_dir: Path, dest_dir: Path) -> tuple[str
     return 'success', ''
 
 
+def _copy_dist_manifest(source_root: Path, cache_root: Path) -> bool:
+    """Mirror the top-level ``dist-manifest.json`` into the plugin-cache root.
+
+    The dist-branch versioning feature reads the installed version from the
+    resolved ``base_path`` — which for the meta-project's own preflight and
+    executor-regen calls is the plugin-cache root
+    (``~/.claude/plugins/cache/plan-marshall``). The per-bundle rsync only
+    mirrors ``{cache_root}/{bundle}/{version}/`` and never populates the
+    ``base_path/dist-manifest.json`` slot that ``find_installed_manifest_path``
+    resolves, so the manifest must be copied into the cache root explicitly.
+    This mirrors the documented design — the manifest "rides into the plugin
+    cache on install".
+
+    The copy targets the cache ROOT, alongside the versioned
+    ``{bundle}/{version}/`` directories; the per-bundle ``rsync --delete``
+    never touches the root, so the copied sentinel is not clobbered.
+
+    Best-effort: an absent source manifest is a no-op (matching the
+    fresh-install/empty-sentinel discipline elsewhere) and a copy error is
+    swallowed, so a missing or unwritable manifest never converts a
+    successful sync into a failure. Returns ``True`` only when the manifest
+    was copied, ``False`` otherwise.
+    """
+    source_manifest = source_root / DIST_MANIFEST_FILENAME
+    if not source_manifest.is_file():
+        return False
+    try:
+        cache_root.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_manifest, cache_root / DIST_MANIFEST_FILENAME)
+    except OSError:
+        return False
+    return True
+
+
 def _select_bundles(source_root: Path, only: str | None) -> list[Path]:
     if not source_root.is_dir():
         return []
@@ -528,6 +575,12 @@ def main(argv: list[str] | None = None) -> int:
         status = 'partial'
         message = f'{len(synced) - len(failed)} succeeded, {len(failed)} failed'
         exit_code = 0
+
+    # Mirror the top-level dist-manifest.json into the cache root after a
+    # successful (non-error) sync so the meta-project's own preflight can
+    # resolve the installed version from base_path/dist-manifest.json.
+    if status != 'error':
+        _copy_dist_manifest(source_root, args.cache_root)
 
     sys.stdout.write(_emit_toon(status=status, synced=synced, failed=failed, summary_message=message))
     return exit_code
