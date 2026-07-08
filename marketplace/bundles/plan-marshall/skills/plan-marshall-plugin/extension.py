@@ -125,6 +125,14 @@ class Extension(ExtensionBase):
                 'default_change_type': 'tech_debt',
                 'scope': 'codebase_wide',
             },
+            {
+                'key': 'surgical-fix',
+                'name': 'Surgical Fix',
+                'description': 'Micro-lane fast path for a pre-diagnosed surgical fix — a root-cause-known, single-module change composed as a deterministic surgical outline with automated-review force-kept in the loop',
+                'skill': 'plan-marshall:recipe-surgical-fix',
+                'default_change_type': 'bug_fix',
+                'scope': 'module',
+            },
         ]
 
     def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:

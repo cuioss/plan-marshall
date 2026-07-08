@@ -305,6 +305,32 @@ def test_resolve_recipe_resolves_security_audit(plan_context, tmp_path, monkeypa
     assert result['recipe_skill'] == 'plan-marshall:recipe-security-audit'
 
 
+def test_list_recipes_surfaces_surgical_fix_extension_recipe(plan_context, tmp_path, monkeypatch):
+    """list-recipes surfaces the surgical-fix recipe from provides_recipes()."""
+    _make_skills_root(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    result = cmd_list_recipes(Namespace())
+
+    assert result['status'] == 'success'
+    recipe = _recipe_by_key(result['recipes'], 'surgical-fix')
+    assert recipe is not None, 'surgical-fix must surface via list-recipes'
+    assert recipe['skill'] == 'plan-marshall:recipe-surgical-fix'
+    assert recipe['source'] == 'extension'
+
+
+def test_resolve_recipe_resolves_surgical_fix(plan_context, tmp_path, monkeypatch):
+    """resolve-recipe resolves the surgical-fix extension recipe."""
+    _make_skills_root(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    result = cmd_resolve_recipe(Namespace(recipe='surgical-fix'))
+
+    assert result['status'] == 'success'
+    assert result['recipe_key'] == 'surgical-fix'
+    assert result['recipe_skill'] == 'plan-marshall:recipe-surgical-fix'
+
+
 # =============================================================================
 # resolve-recipe Tests (Tier 2 - direct import, isolated fixture)
 # =============================================================================
