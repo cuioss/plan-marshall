@@ -63,7 +63,21 @@ from input_validation import (
 )
 
 
-def _parse_raw_input(pairs: list[str] | dict[str, object] | None) -> dict[str, str] | None:
+class _RawInputError(dict):
+    """Marker subclass distinguishing a parse-error sentinel from a parsed mapping.
+
+    ``_parse_raw_input`` returns a plain ``dict`` for a successfully-parsed
+    ``{field: value}`` mapping and a ``_RawInputError`` for a malformed pair.
+    Call sites test ``isinstance(raw_input, _RawInputError)`` rather than the
+    ambiguous ``raw_input.get('status') == 'error'`` shape, so a legitimate
+    ``--raw-input status=error`` pair (which parses to a plain dict) is never
+    mistaken for the error sentinel and silently discarded.
+    """
+
+
+def _parse_raw_input(
+    pairs: list[str] | dict[str, object] | None,
+) -> dict[str, str] | _RawInputError | None:
     """Parse repeatable ``--raw-input FIELD=VALUE`` pairs into a mapping.
 
     Accepts either the argparse ``action='append'`` list of ``FIELD=VALUE``
@@ -74,7 +88,8 @@ def _parse_raw_input(pairs: list[str] | dict[str, object] | None) -> dict[str, s
     operates on text.
 
     Returns the mapping on success, ``None`` when nothing was supplied, or a
-    canonical ``{'status': 'error', ...}`` dict when a string pair is malformed
+    ``_RawInputError`` (a ``dict`` subclass carrying the canonical
+    ``{'status': 'error', ...}`` payload) when a string pair is malformed
     (missing ``=`` or an empty field name) so the CLI surfaces a structured error.
     """
     if not pairs:
@@ -84,10 +99,10 @@ def _parse_raw_input(pairs: list[str] | dict[str, object] | None) -> dict[str, s
     result: dict[str, str] = {}
     for pair in pairs:
         if '=' not in pair:
-            return {'status': 'error', 'message': f'Invalid --raw-input (expected FIELD=VALUE): {pair}'}
+            return _RawInputError({'status': 'error', 'message': f'Invalid --raw-input (expected FIELD=VALUE): {pair}'})
         field, value = pair.split('=', 1)
         if not field:
-            return {'status': 'error', 'message': f'Invalid --raw-input (empty field name): {pair}'}
+            return _RawInputError({'status': 'error', 'message': f'Invalid --raw-input (empty field name): {pair}'})
         result[field] = value
     return result
 
@@ -95,7 +110,7 @@ def _parse_raw_input(pairs: list[str] | dict[str, object] | None) -> dict[str, s
 def cmd_add(args: argparse.Namespace) -> dict:
     """Handle: add"""
     raw_input = _parse_raw_input(getattr(args, 'raw_input', None))
-    if isinstance(raw_input, dict) and raw_input.get('status') == 'error':
+    if isinstance(raw_input, _RawInputError):
         return raw_input
     return add_finding(
         plan_id=args.plan_id,
@@ -168,7 +183,7 @@ def cmd_ingest(args: argparse.Namespace) -> dict:
 def cmd_qgate_add(args: argparse.Namespace) -> dict:
     """Handle: qgate add"""
     raw_input = _parse_raw_input(getattr(args, 'raw_input', None))
-    if isinstance(raw_input, dict) and raw_input.get('status') == 'error':
+    if isinstance(raw_input, _RawInputError):
         return raw_input
     return add_qgate_finding(
         plan_id=args.plan_id,

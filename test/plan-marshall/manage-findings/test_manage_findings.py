@@ -45,6 +45,10 @@ cmd_qgate_resolve = _mod.cmd_qgate_resolve
 # Core query function (direct, bypassing the CLI namespace) for unified-read tests
 query_findings_unified = _mod.query_findings_unified
 
+# Raw-input parse helpers (direct) for the sentinel-collision regression tests
+_parse_raw_input = _mod._parse_raw_input
+_RawInputError = _mod._RawInputError
+
 
 # =============================================================================
 # Namespace Builders
@@ -1195,6 +1199,56 @@ def test_raw_input_under_cap_stored_verbatim(plan_context):
     query = cmd_query(_query_ns(plan_id=pid, type='pr-comment'))
     record = query['findings'][0]
     assert record['raw_input']['body'] == 'short body'
+
+
+# =============================================================================
+# Test: raw_input parse-error sentinel collision (PR #852 review)
+# =============================================================================
+
+
+def test_raw_input_status_error_pair_stored_as_data(plan_context):
+    """A legitimate ``--raw-input status=error`` pair is stored as data, not
+    mistaken for the parse-error sentinel and silently discarded.
+    """
+    pid = 'rawinput-status-error'
+    result = cmd_add(
+        _add_ns(
+            plan_id=pid,
+            type='pr-comment',
+            title='status field carries the literal error',
+            detail='d',
+            raw_input=['status=error'],
+        )
+    )
+    assert result['status'] == 'success'
+
+    query = cmd_query(_query_ns(plan_id=pid, type='pr-comment'))
+    record = query['findings'][0]
+    assert record['raw_input']['status'] == 'error'
+
+
+def test_parse_raw_input_success_dict_is_not_error_marker():
+    """A successfully-parsed mapping (incl. a literal ``status=error`` pair) is a
+    plain dict, never a ``_RawInputError`` sentinel.
+    """
+    parsed = _parse_raw_input(['status=error'])
+    assert parsed == {'status': 'error'}
+    assert not isinstance(parsed, _RawInputError)
+
+
+def test_parse_raw_input_malformed_pair_returns_error_marker():
+    """A malformed pair yields a ``_RawInputError`` carrying the canonical error payload."""
+    parsed = _parse_raw_input(['no-equals-sign'])
+    assert isinstance(parsed, _RawInputError)
+    assert parsed['status'] == 'error'
+    assert 'Invalid --raw-input' in parsed['message']
+
+
+def test_parse_raw_input_empty_field_returns_error_marker():
+    """An empty field name yields a ``_RawInputError`` sentinel."""
+    parsed = _parse_raw_input(['=value'])
+    assert isinstance(parsed, _RawInputError)
+    assert parsed['status'] == 'error'
 
 
 # =============================================================================

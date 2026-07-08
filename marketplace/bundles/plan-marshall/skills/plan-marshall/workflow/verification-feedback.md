@@ -40,7 +40,7 @@ Skills the caller MUST forward in `skills[]`:
 Producer-specific additions:
 
 - `producer=pr-comment` — also forward the RESPOND-loop provider `plan-marshall:workflow-integration-github` (or `…-gitlab`) for `post_responses`.
-- `producer=sonar` — also forward `plan-marshall:workflow-integration-sonar` for the RESPOND-loop server-side dismissal (`sonar_rest transition`).
+- `producer=sonar` — also forward `plan-marshall:workflow-integration-sonar` for the RESPOND-loop server-side dismissal (`sonar post_responses`).
 - `producer=pr-state` — also forward `plan-marshall:workflow-integration-git`, `plan-marshall:workflow-integration-github` (or `…-gitlab`), `plan-marshall:workflow-integration-sonar`, `plan-marshall:tools-integration-ci`.
 - `producer=plugin-doctor` — also forward `pm-plugin-development:plugin-doctor` (rule catalog + references) and `pm-plugin-development:tools-marketplace-inventory`.
 

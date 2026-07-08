@@ -103,7 +103,7 @@ This skill is consumed by:
 
 **Provider contract:** the provider surface is exactly `fetch_findings` (FIND) and `post_responses` (RESPOND). Neither makes a triage decision — triage judgment lives in the consolidated triage pass, not in the provider. `fetch_findings` fetches review comments, applies the `comment-patterns.json` keyword pre-filter, and files one `pr-comment` finding per surviving comment with the untrusted body quarantined under `raw_input.{body}`. The trusted structured metadata (`thread_id`, `comment_id`, `kind`, `author`, `path`, `line`) goes in the finding's `detail`.
 
-**Containment (supersedes the old per-finding reader-dispatch hop):** the untrusted comment body is quarantined at file time under `raw_input.{body}` and promoted to the top level only by the single batched `manage-findings ingest` pass, which runs `validate_struct` over every `raw_input.{field}` (schema + length-cap + domain-allowlist). Triage then reads the clean top-level fields **only, never `raw_input.*`**. This replaces the retired per-finding `execution-context-reader` + `validate_struct` Step-2b dispatch hop: containment is now one deterministic batched boundary, not a per-comment dispatch.
+**Containment:** the untrusted comment body is quarantined at file time under `raw_input.{body}` and promoted to the top level only by the single batched `manage-findings ingest` pass, which runs `validate_struct` over every `raw_input.{field}` (schema + length-cap + domain-allowlist). Triage then reads the clean top-level fields **only, never `raw_input.*`**. Containment is one deterministic batched boundary.
 
 **GitHub GraphQL ID Format Rules:**
 

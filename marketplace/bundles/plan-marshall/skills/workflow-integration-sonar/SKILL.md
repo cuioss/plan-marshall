@@ -118,13 +118,11 @@ For ad-hoc inspection or non-finding-store integrations, `sonar_rest.py search` 
 
 1b. **Ingest (untrusted message containment)**
 
-   The untrusted Sonar `message` was quarantined under `raw_input.{message}` at file time by `fetch_findings`. Containment is now ONE deterministic batched boundary — the single `manage-findings ingest` pass runs `validate_struct` over every `raw_input.{field}` (schema + length-cap + domain-allowlist) and promotes only the validated value to the top level. This replaces the retired per-finding `execution-context-reader` + `validate_struct` reader-dispatch hop:
+   Run the single batched ingest pass — the same containment boundary described in Workflow 1 step 3 above: it validates and promotes each quarantined `raw_input.{field}` to the clean top-level fields, and triage then reads those top-level fields **only, never `raw_input.*`**.
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings ingest --plan-id {plan_id}
    ```
-
-   Triage then reads the clean top-level fields **only, never `raw_input.*`**.
 
 2. **LLM Decides Per Finding**
    The consolidated triage pass decides fix-vs-suppress per finding from the clean top-level fields promoted by the ingest pass (never the raw un-ingested `raw_input.*`). There is no script-side classification call.

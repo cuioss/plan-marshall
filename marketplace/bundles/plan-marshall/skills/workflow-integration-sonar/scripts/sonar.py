@@ -394,9 +394,10 @@ def _sonar_credential_missing() -> str:
     """
     try:
         from _providers_core import load_credential
+
+        credential = load_credential(_SONAR_SKILL, 'auto')
     except Exception:
         return ''
-    credential = load_credential(_SONAR_SKILL, 'auto')
     if not credential:
         return f'No credentials configured for {_SONAR_SKILL}. Run: credentials configure --skill {_SONAR_SKILL}'
     return ''

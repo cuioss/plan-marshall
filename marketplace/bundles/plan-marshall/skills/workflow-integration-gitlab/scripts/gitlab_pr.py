@@ -374,11 +374,13 @@ def cmd_post_responses(args):
         base = f'projects/{encoded_path}/merge_requests/{pr_number}/discussions/{thread_id}'
         rc, _out, err = _gitlab.run_glab(['api', '-X', 'POST', f'{base}/notes', '-f', f'body={reply_body}'])
         if rc != 0:
-            failures.append({'hash_id': hash_id, 'thread_id': thread_id, 'error': f'note reply failed: {err.strip()}'})
+            err_detail = err.strip() if isinstance(err, str) else ''
+            failures.append({'hash_id': hash_id, 'thread_id': thread_id, 'error': f'note reply failed: {err_detail}'})
             continue
         rc2, _out2, err2 = _gitlab.run_glab(['api', '-X', 'PUT', base, '-f', 'resolved=true'])
         if rc2 != 0:
-            failures.append({'hash_id': hash_id, 'thread_id': thread_id, 'error': f'resolve failed: {err2.strip()}'})
+            err2_detail = err2.strip() if isinstance(err2, str) else ''
+            failures.append({'hash_id': hash_id, 'thread_id': thread_id, 'error': f'resolve failed: {err2_detail}'})
             continue
         responded.append({'hash_id': hash_id, 'thread_id': thread_id})
 

@@ -340,7 +340,7 @@ Both thresholds mirror the lessons-capture signal thresholds (a recurrence count
 
 === Findings quarantine cap
 
-`plan.finding_raw_input_max_bytes` (default `65536` — 64 KiB) is the per-field byte cap for quarantined `raw_input.{field}` free-text in the findings ledger. Every finding producer (PR-comment fetch, Sonar fetch, build/lint/test self-file) files its untrusted free-text under the `raw_input.{field}` quarantine sub-namespace; the ledger caps each field at this many bytes and appends a `[truncated]` marker on overflow. The 64 KiB default is corpus-grounded — across 399 PR-comment findings p50 ≈ 2 KB, p99 ≈ 21 KB, max ≈ 68 KB — so it retains the full body for effectively every real finding while bounding a hostile oversized payload. Raise it only if your review corpus routinely exceeds 64 KiB per comment; lower it to tighten the quarantine budget.
+`plan.finding_raw_input_max_bytes` (default `65536` — 64 KiB) is the per-field byte cap for quarantined `raw_input.{field}` free-text in the findings ledger: each field is capped at this many bytes with a `[truncated]` marker on overflow. See the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] for the corpus-grounded default rationale and tuning guidance.
 
 [#retention-and-ci]
 === Retention and CI wait-policy

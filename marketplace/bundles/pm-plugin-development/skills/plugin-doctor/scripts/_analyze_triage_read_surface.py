@@ -89,7 +89,7 @@ def _is_triage_surface(path: Path) -> bool:
     """Return True when ``path`` is a triage workflow doc or ext-triage skill doc."""
     if path.name in _TRIAGE_DOC_BASENAMES:
         return True
-    return any(part.startswith(_EXT_TRIAGE_DIR_PREFIX) for part in path.parts)
+    return any(parent.name.startswith(_EXT_TRIAGE_DIR_PREFIX) for parent in path.parents)
 
 
 def _reads_raw_input(line: str) -> bool:

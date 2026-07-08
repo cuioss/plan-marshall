@@ -299,7 +299,8 @@ restating the command inline.
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings add \
   --plan-id PLAN_ID --type TYPE --title TEXT --detail TEXT \
   [--file-path PATH] [--line N] [--component COMPONENT] [--module MODULE] \
-  [--rule RULE] [--severity SEVERITY] [--author AUTHOR] [--kind KIND]
+  [--rule RULE] [--severity SEVERITY] [--author AUTHOR] [--kind KIND] \
+  [--raw-input FIELD=VALUE] [--raw-input-max-bytes N]
 ```
 
 ### list
@@ -346,7 +347,8 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings in
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
   --plan-id PLAN_ID --phase PHASE --source SOURCE --type TYPE \
   --title TEXT --detail TEXT \
-  [--file-path PATH] [--component COMPONENT] [--severity SEVERITY] [--iteration N]
+  [--file-path PATH] [--component COMPONENT] [--severity SEVERITY] [--iteration N] \
+  [--rule RULE] [--raw-input FIELD=VALUE] [--raw-input-max-bytes N]
 ```
 
 ### qgate list

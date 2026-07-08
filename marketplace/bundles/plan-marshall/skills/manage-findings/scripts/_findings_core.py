@@ -88,12 +88,18 @@ def _quarantine_raw_input(
     if not raw_input:
         return None
 
+    # Clamp the cap to a non-negative budget: a misconfigured non-positive
+    # `max_bytes` would otherwise make `encoded[:max_bytes]` slice from the end
+    # (Python negative-index semantics) and silently bypass the byte cap. A zero
+    # budget truncates the value to just the marker.
+    safe_max_bytes = max(max_bytes, 0)
+
     quarantined: dict[str, str] = {}
     for field, value in raw_input.items():
         text = value if isinstance(value, str) else str(value)
         encoded = text.encode('utf-8')
-        if len(encoded) > max_bytes:
-            text = encoded[:max_bytes].decode('utf-8', errors='ignore') + RAW_INPUT_TRUNCATION_MARKER
+        if len(encoded) > safe_max_bytes:
+            text = encoded[:safe_max_bytes].decode('utf-8', errors='ignore') + RAW_INPUT_TRUNCATION_MARKER
         quarantined[field] = text
     return quarantined
 
@@ -431,7 +437,7 @@ def resolve_finding(
         return {'status': 'error', 'message': f'Invalid resolution: {resolution}. Must be one of {RESOLUTIONS}'}
 
     parent = get_finding(plan_id, hash_id)
-    if parent.get('status') != 'success':
+    if not parent or parent.get('status') != 'success':
         return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
 
     updates: dict[str, Any] = {'resolution': resolution}

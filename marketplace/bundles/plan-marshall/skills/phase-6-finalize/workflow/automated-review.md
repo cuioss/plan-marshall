@@ -215,13 +215,14 @@ Task: plan-marshall:{target}
   prompt: |
     name: verification-feedback
     plan_id: {plan_id}
-    skills[6]:
+    skills[7]:
     - plan-marshall:manage-findings
     - plan-marshall:manage-tasks
     - plan-marshall:manage-architecture
     - plan-marshall:manage-config
     - plan-marshall:tools-integration-ci
     - plan-marshall:workflow-integration-github
+    - plan-marshall:workflow-integration-gitlab
     workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
 
     producer: pr-comment
