@@ -697,7 +697,7 @@ def cmd_post_responses(args):
     Fail-loud: returns a typed ``unconfigured`` status when no Sonar credential
     is configured.
     """
-    from _findings_core import query_findings
+    from _findings_core import mark_finding_responded, query_findings
 
     plan_id: str = args.plan_id
 
@@ -724,6 +724,13 @@ def cmd_post_responses(args):
             if transition is None:
                 continue
 
+            # Idempotency: a finding that already carries the `responded` marker
+            # had its do_transition POST transmitted on a prior pass. Skip it so a
+            # re-run of post_responses never re-POSTs the same dismissal.
+            if finding.get('responded'):
+                skipped.append({'hash_id': hash_id, 'reason': 'already responded'})
+                continue
+
             issue_key = _issue_key_from_detail(finding.get('detail'))
             if not issue_key:
                 skipped.append({'hash_id': hash_id, 'reason': 'no issue key in detail'})
@@ -734,6 +741,9 @@ def cmd_post_responses(args):
             except RestClientError as exc:
                 failures.append({'hash_id': hash_id, 'issue_key': issue_key, 'error': f'HTTP {exc.status}'})
                 continue
+            # Persist the idempotency marker only after the POST succeeded, so a
+            # failed transmission stays eligible for retry on the next pass.
+            mark_finding_responded(plan_id, hash_id)
             responded.append({'hash_id': hash_id, 'issue_key': issue_key, 'transition': transition})
     finally:
         client.close()

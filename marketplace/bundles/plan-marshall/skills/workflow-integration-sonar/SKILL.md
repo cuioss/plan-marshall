@@ -103,11 +103,13 @@ For ad-hoc inspection or non-finding-store integrations, `sonar_rest.py search` 
 
 ---
 
-### Workflow 2: Fix Issues
+### Workflow 2: Triage & Respond (Consumer-Side)
 
-**Purpose:** Process stored Sonar findings and resolve them.
+**Purpose:** Drive the stored `sonar-issue` findings through the consolidated triage decision core, then transmit the terminal dismissals back to Sonar — the INGEST → TRIAGE → RESPOND tail of the FIND → INGEST → TRIAGE → RESPOND flow whose FIND step is Workflow 1.
 
 **Input:** `sonar-issue` findings already populated in the per-type store via Workflow 1.
+
+**This provider makes NO triage decision.** The fix-vs-suppress-vs-reject decision core is owned by the consolidated triage pass — see [`../plan-marshall/workflow/triage.md`](../plan-marshall/workflow/triage.md) (the per-finding FIX / SUPPRESS / ACCEPT / REJECT core, with smart grouping and the escalation guards) and [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) (the finalize-phase dispatch that drives that core over the finding store). This workflow only stages the findings for that core and transmits the dispositions it already recorded; there is no script-side classification call here.
 
 **Steps:**
 
@@ -116,7 +118,7 @@ For ad-hoc inspection or non-finding-store integrations, `sonar_rest.py search` 
    python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list --plan-id {plan_id} --type sonar-issue
    ```
 
-1b. **Ingest (untrusted message containment)**
+2. **Ingest (untrusted message containment)**
 
    Run the single batched ingest pass — the same containment boundary described in Workflow 1 step 3 above: it validates and promotes each quarantined `raw_input.{field}` to the clean top-level fields, and triage then reads those top-level fields **only, never `raw_input.*`**.
 
@@ -124,31 +126,26 @@ For ad-hoc inspection or non-finding-store integrations, `sonar_rest.py search` 
    python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings ingest --plan-id {plan_id}
    ```
 
-2. **LLM Decides Per Finding**
-   The consolidated triage pass decides fix-vs-suppress per finding from the clean top-level fields promoted by the ingest pass (never the raw un-ingested `raw_input.*`). There is no script-side classification call.
+3. **Triage (decision core — not owned here)**
 
-3. **Execute Actions**
+   The consolidated triage pass reads the clean top-level fields promoted by the ingest pass (never the raw un-ingested `raw_input.*`) and records one terminal `resolution` per finding via `manage-findings resolve`. The decision logic lives in triage.md / verification-feedback.md; this provider contributes no classification. Each finding ends at one of: `fixed` (cleared in code), `suppressed` (dismiss on Sonar as `wontfix`), `rejected` (dismiss on Sonar as `falsepositive`), or `accepted` / `taken_into_account` (no Sonar action). Record the rationale as `resolution_detail` — it is the text the RESPOND step transmits:
 
-   **For fix:**
-   - Read file at issue location
-   - Apply fix using Edit tool
-
-   **For suppress:**
-   - Read file
-   - Add suppression comment at line using Edit (e.g., `// NOSONAR rule - reason`)
-   - Include rule key and reason
-
-4. **Mark Findings Resolved**:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings resolve \
-     --plan-id {plan_id} --hash-id {hash} --resolution fixed|suppressed|accepted
+     --plan-id {plan_id} --hash-id {hash} --resolution fixed|suppressed|rejected|accepted --detail "{rationale}"
    ```
 
-5. **Mark Issues Resolved on Sonar (Optional)**:
+4. **Apply code changes for `fixed` findings**
+
+   For a finding resolved `fixed`, read the file at the issue location and apply the fix with the Edit tool. A `suppressed` / `rejected` finding is dismissed on Sonar in step 5 (not annotated in code); `accepted` / `taken_into_account` needs no action.
+
+5. **RESPOND — transmit dismissals back to Sonar** (keyed by `hash_id`):
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar_rest transition \
-     --issue-key {issue_key} --transition accept
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar post_responses \
+     --plan-id {plan_id} --project {project_key}
    ```
+
+   `post_responses` maps each terminal disposition to its Sonar `do_transition` (`suppressed` → `wontfix`, `rejected` → `falsepositive`); `fixed` / `accepted` / `taken_into_account` get no Sonar action. It is idempotent — a finding whose dismissal was already transmitted carries a `responded` marker and is skipped on a re-run, so re-invoking the verb never re-POSTs the same dismissal. This replaces the retired per-finding `sonar_rest transition` call; the raw REST transition surface remains available only for ad-hoc inspection (see Canonical invocations → `sonar_rest`).
 
 ---
 

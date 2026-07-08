@@ -113,6 +113,25 @@ class _FakeSonarClient:
         pass
 
 
+class _FailingSonarClient:
+    """A Sonar client whose ``do_transition`` POST always raises.
+
+    Records the attempted POST before raising so a test can assert the call was
+    attempted, then failed — exercising the "no marker on failure" retry path.
+    """
+
+    def __init__(self, exc):
+        self.exc = exc
+        self.posts = []
+
+    def post(self, path, body=None):
+        self.posts.append((path, body))
+        raise self.exc
+
+    def close(self):
+        pass
+
+
 # =============================================================================
 # Pre-filter helpers
 # =============================================================================
@@ -388,6 +407,79 @@ class TestPostResponses:
         assert result['status'] == 'success'
         assert result['count_responded'] == 0
         assert fake.posts == []
+
+    def test_responded_marker_persisted_after_successful_post(self, plan_context):
+        """A successful dismissal stamps the finding with responded + responded_at."""
+        plan_context.plan_dir_for('sonar-respond-marker')
+        hash_id = self._stage_one_issue('sonar-respond-marker', _issue(key='ISSUE-11'))
+
+        from _findings_core import get_finding, resolve_finding
+
+        resolve_finding('sonar-respond-marker', hash_id, 'suppressed', detail='Documented false positive.')
+
+        import _providers_core
+
+        fake = _FakeSonarClient()
+        with patch.object(_providers_core, 'get_authenticated_client', return_value=fake):
+            cmd_post_responses(_make_args('sonar-respond-marker'))
+
+        stored = get_finding('sonar-respond-marker', hash_id)
+        assert stored['status'] == 'success'
+        assert stored['responded'] is True
+        assert stored['responded_at']
+
+    def test_rerun_skips_already_responded_finding(self, plan_context):
+        """A second post_responses pass skips the marked finding — no duplicate POST."""
+        plan_context.plan_dir_for('sonar-respond-idempotent')
+        hash_id = self._stage_one_issue('sonar-respond-idempotent', _issue(key='ISSUE-22'))
+
+        from _findings_core import resolve_finding
+
+        resolve_finding('sonar-respond-idempotent', hash_id, 'rejected', detail='Not a real issue.')
+
+        import _providers_core
+
+        first = _FakeSonarClient()
+        with patch.object(_providers_core, 'get_authenticated_client', return_value=first):
+            first_result = cmd_post_responses(_make_args('sonar-respond-idempotent'))
+
+        assert first_result['count_responded'] == 1
+        assert len(first.posts) == 1
+
+        second = _FakeSonarClient()
+        with patch.object(_providers_core, 'get_authenticated_client', return_value=second):
+            second_result = cmd_post_responses(_make_args('sonar-respond-idempotent'))
+
+        assert second_result['count_responded'] == 0
+        assert second_result['count_skipped'] == 1
+        assert second_result['skipped'][0]['hash_id'] == hash_id
+        assert second_result['skipped'][0]['reason'] == 'already responded'
+        # No duplicate transmission on the second pass.
+        assert second.posts == []
+
+    def test_failed_post_does_not_mark_responded(self, plan_context):
+        """A do_transition failure leaves the finding un-marked so it retries next pass."""
+        plan_context.plan_dir_for('sonar-respond-retry')
+        hash_id = self._stage_one_issue('sonar-respond-retry', _issue(key='ISSUE-33'))
+
+        from _findings_core import get_finding, resolve_finding
+
+        resolve_finding('sonar-respond-retry', hash_id, 'suppressed', detail='Documented false positive.')
+
+        import _providers_core
+        from _providers_core import RestClientError
+
+        fake = _FailingSonarClient(RestClientError(500, 'boom'))
+        with patch.object(_providers_core, 'get_authenticated_client', return_value=fake):
+            result = cmd_post_responses(_make_args('sonar-respond-retry'))
+
+        assert result['count_failed'] == 1
+        assert result['count_responded'] == 0
+        # The transmission was attempted but failed — the marker must NOT be set.
+        assert len(fake.posts) == 1
+        stored = get_finding('sonar-respond-retry', hash_id)
+        assert stored['status'] == 'success'
+        assert stored.get('responded') is not True
 
 
 # =============================================================================

@@ -501,6 +501,25 @@ def promote_finding(
     return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
 
 
+def mark_finding_responded(
+    plan_id: str,
+    hash_id: str,
+) -> dict[str, Any]:
+    """Stamp a finding as having had its provider response transmitted.
+
+    Idempotency marker for the RESPOND verb (``sonar.py post_responses``): after a
+    successful ``/api/issues/do_transition`` POST, record ``responded=True`` plus a
+    ``responded_at`` UTC timestamp keyed to the finding's ``hash_id``. A subsequent
+    ``post_responses`` pass observes the marker and skips the finding instead of
+    re-POSTing the same dismissal. Locates the per-type file by ``hash_id``.
+    """
+    updates: dict[str, Any] = {'responded': True, 'responded_at': timestamp()}
+
+    if update_jsonl_in_dir(get_findings_dir(plan_id), hash_id, updates):
+        return {'status': 'success', 'hash_id': hash_id}
+    return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
+
+
 # --- Q-Gate Findings ---
 
 
