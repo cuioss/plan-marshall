@@ -16,6 +16,7 @@ Operating Plan Marshall in a target project. If you are working on Plan Marshall
 * xref:getting-started.adoc[Getting Started] — first-run setup via `/marshall-steward`.
 * xref:commands.adoc[Commands] — `/marshall-steward` and `/plan-marshall`.
 * xref:configuration.adoc[Configuration] — surface map of every configuration file Plan Marshall touches and what governs each.
+* xref:recipes.adoc[Recipes] — the surgical-fix micro-lane fast path for pre-diagnosed fixes: what it skips/keeps, and when (and when not) to use it.
 * xref:efforts.adoc[Efforts] — per-role model selection: wizard presets, polymorphic `marshal.json` shape, worked example, troubleshooting.
 * xref:terminal-title.adoc[Terminal Title] — VS Code and IntelliJ-specific integration for the per-session status indicator.
 * xref:enforcement-hook.adoc[Enforcement Hook] — the optional PreToolUse hook that blocks four hard-rule violation families inside a plan context; how to enable it via `/marshall-steward`.

@@ -1,6 +1,6 @@
 # Extension Point: Recipe
 
-> **Type**: Workflow Skill Extension | **Hook Method**: `provides_recipes()` | **Implementations**: 6 | **Status**: Active
+> **Type**: Workflow Skill Extension | **Hook Method**: `provides_recipes()` | **Implementations**: 8 | **Status**: Active
 
 ## Overview
 
@@ -225,6 +225,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 | plan-marshall | recipe-code-review | code-review |
 | plan-marshall | recipe-refactor-to-profile-standards | refactor-to-profile-standards |
 | plan-marshall | recipe-security-audit | security-audit |
+| plan-marshall | recipe-agentfile-hygiene | agentfile-hygiene |
+| plan-marshall | recipe-surgical-fix | surgical-fix |
 | pm-documents | recipe-doc-verify | doc-verify |
 | pm-documents | recipe-verify-architecture-diagrams | verify-architecture-diagrams |
 | pm-dev-java-cui | recipe-cui-logging-enforce | cui-logging-enforce |
