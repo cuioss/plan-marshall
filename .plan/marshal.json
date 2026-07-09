@@ -9,7 +9,6 @@
     "phase-1-init": {
       "branch_strategy": "feature",
       "use_worktree": true,
-      "effort": "level-3",
       "init_without_asking": true,
       "deep_lane": "auto",
       "escalation": "auto",

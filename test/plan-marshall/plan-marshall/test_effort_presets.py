@@ -89,14 +89,12 @@ def test_get_balanced_returns_balanced_preset() -> None:
     # constant verbatim, so the redundancy against bubbling-resolution
     # semantics is intentional.
     assert set(result['roles'].keys()) == {
-        'phase-1-init',
         'phase-2-refine',
         'phase-3-outline',
         'phase-4-plan',
         'phase-5-execute',
         'phase-6-finalize',
     }
-    assert result['roles']['phase-1-init'] == 'level-3'
     assert result['roles']['phase-2-refine'] == 'level-3'
     assert result['roles']['phase-3-outline'] == 'level-4'
     assert result['roles']['phase-4-plan'] == 'level-3'

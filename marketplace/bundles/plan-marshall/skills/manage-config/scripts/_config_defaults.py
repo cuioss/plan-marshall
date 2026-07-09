@@ -321,11 +321,6 @@ DEFAULT_PLAN_EFFORT = 'level-3'
 DEFAULT_PLAN_INIT = {
     'branch_strategy': 'feature',
     'use_worktree': True,
-    # Per-phase effort default (seeded at init; balanced-preset baseline). The
-    # phase-1-init role group has only the `default` subkey, so a string
-    # shorthand is the canonical on-disk shape. Read via
-    # `manage-config plan phase-1-init get --field effort` / `effort read --role phase-1-init`.
-    'effort': 'level-3',
     # Auto-continue from 1-init to 2-refine. true = no gate (current behaviour);
     # false = stop after init and wait for the user. Mirrors the sibling
     # plan_without_asking / execute_without_asking review-gate pattern.

@@ -49,7 +49,7 @@ Record phase end timestamp with optional token data from Task agent notification
 
 **Idempotency**: Calling `end-phase` multiple times for the same phase replaces the previous end data (does not accumulate).
 
-**Accumulator fallback**: When any of `--total-tokens`, `--tool-uses`, `--duration-ms`, or `--retrospective-tokens` is omitted, `end-phase` reads `work/metrics-accumulator-{phase}.toon` (written by `accumulate-agent-usage`) and uses its running totals for the missing fields. Explicitly passed flags always win over accumulator values. Phases that ran without any agent dispatch (no accumulator file, no flags) are recorded with timestamps only — same behaviour as before. The `retrospective_tokens` field is carried alongside the others: the finalize retrospective step seeds it via `accumulate-agent-usage --retrospective-tokens`, and `end-phase` reads it back here so `[6-finalize].retrospective_tokens` is recorded without an explicit flag at the `end-phase` call site.
+**Accumulator fallback**: When any of `--total-tokens`, `--tool-uses`, `--duration-ms`, or `--retrospective-tokens` is omitted, `end-phase` reads `work/metrics-accumulator-{phase}.toon` (written by `accumulate-agent-usage`) and uses its running totals for the missing fields. Explicitly passed flags always win over accumulator values. Phases that ran without any agent dispatch (no accumulator file, no flags) are recorded with timestamps only — same behaviour as before; this is the inline-phase recording mode documented under `phase-boundary` (a timestamps-only closed row is fully recorded, never `unrecorded`). The `retrospective_tokens` field is carried alongside the others: the finalize retrospective step seeds it via `accumulate-agent-usage --retrospective-tokens`, and `end-phase` reads it back here so `[6-finalize].retrospective_tokens` is recorded without an explicit flag at the `end-phase` call site.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics end-phase \
@@ -206,6 +206,22 @@ whenever the caller knows the exact `prev → next` transition.
 `--retrospective-tokens` are omitted, the closing phase row is filled from
 `work/metrics-accumulator-{prev_phase}.toon` if the file exists. Explicit
 flags always override accumulator values.
+
+**Inline-phase recording mode (omit the `<usage>` flags)**: a phase that runs
+*inline* in the main orchestrator context — rather than as a dispatched
+`execution-context` leaf — produces no agent `<usage>` envelope, so the caller
+OMITS `--total-tokens` / `--duration-ms` / `--tool-uses` (and has no accumulator
+file to fall back on). Omitting them is the sanctioned recording mode for an
+inline phase, NOT an incomplete call: the closing phase's `end_time` is stamped
+unconditionally, and `generate`'s partiality verdict keys a phase's *recorded*
+status solely off that `end_time` marker (see the `generate` "Partiality"
+paragraph). A timestamps-only closed row is therefore treated as fully recorded
+— it is never listed under `unrecorded_phases` and never flips `partial` to
+`true`, preserving the #812 floor-not-truth semantics. This is the path the
+inline **1-init → 2-refine** boundary takes (phase-1-init runs inline in the
+orchestrator, so its close carries no `<usage>` data), and equally the
+recipe-inline **2-refine → 3-outline** / **3-outline → 4-plan** boundaries. The
+same guarantee holds for the standalone `end-phase` close.
 
 ### boundary-status
 

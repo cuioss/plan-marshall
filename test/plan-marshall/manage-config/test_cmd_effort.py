@@ -285,7 +285,6 @@ def test_apply_preset_high_end_overwrites_pre_seeded_block(plan_context):
     seeded = {
         'default': 'level-5',
         'roles': {
-            'phase-1-init': 'level-1',
             'phase-2-refine': 'level-1',
             'phase-3-outline': 'level-1',
             'phase-4-plan': 'level-1',
@@ -311,9 +310,8 @@ def test_apply_preset_high_end_overwrites_pre_seeded_block(plan_context):
     # override level (no longer 'level-1').
     assert on_disk['roles']['phase-6-finalize']['verification-feedback'] == 'level-4'
 
-    # phase-1-init has no overrides in HIGH_END; it is written as the
-    # global default shorthand ('level-3').
-    assert on_disk['roles']['phase-1-init'] == 'level-3'
+    # Every remaining KNOWN_ROLES phase carries an explicit HIGH_END override,
+    # so the full-equality assertion above is the complete overwrite check.
 
 
 # =============================================================================
@@ -629,17 +627,17 @@ def test_set_unknown_phase_rejected(plan_context):
 def test_set_unknown_role_rejected(plan_context):
     create_marshal_json(plan_context.fixture_dir)
 
-    # `phase-1-init` is a valid group but its only sub-key is `default`;
+    # `phase-2-refine` is a valid group but its only sub-key is `default`;
     # `verification-feedback` is not in its schema, so the role is unknown.
     result = cmd_effort_set(
-        Namespace(scope='phase-1-init.verification-feedback', level='level-3')
+        Namespace(scope='phase-2-refine.verification-feedback', level='level-3')
     )
 
     assert result['status'] == 'error'
     assert 'verification-feedback' in result['error']
 
-    # No effort entry was written for phase-1-init.
-    assert _read_phase_effort(plan_context.fixture_dir, 'phase-1-init') is None
+    # No effort entry was written for phase-2-refine.
+    assert _read_phase_effort(plan_context.fixture_dir, 'phase-2-refine') is None
 
 
 def test_set_non_dotted_nested_scope_rejected(plan_context):

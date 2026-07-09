@@ -2131,7 +2131,6 @@ def test_marshal_build_queue_max_retries_override_wins(plan_context, monkeypatch
 
 # The seeded per-phase effort shape (mirrors EffortPresets.BALANCED expanded).
 _EXPECTED_PHASE_EFFORT = {
-    'phase-1-init': 'level-3',
     'phase-2-refine': 'level-3',
     'phase-3-outline': 'level-4',
     'phase-4-plan': 'level-3',
@@ -2148,7 +2147,6 @@ _EXPECTED_PLAN_WIDE_EFFORT = 'level-3'
 def test_default_plan_blocks_carry_per_phase_effort():
     """Each DEFAULT_PLAN_* block must seed an `effort` key matching the balanced baseline."""
     blocks = {
-        'phase-1-init': _config_defaults_mod.DEFAULT_PLAN_INIT,
         'phase-2-refine': _config_defaults_mod.DEFAULT_PLAN_REFINE,
         'phase-3-outline': _config_defaults_mod.DEFAULT_PLAN_OUTLINE,
         'phase-4-plan': _config_defaults_mod.DEFAULT_PLAN_PLAN,
