@@ -87,6 +87,61 @@ gh pr view 123 --json reviews
 
 ---
 
+## Repo Merge-Queue Operations
+
+GitHub's merge queue is configured through a repository **ruleset** carrying a
+rule of `type == "merge_queue"` on the target branch. The `repo merge-queue`
+verbs read and write that state via `gh api`.
+
+### repo merge-queue probe
+
+Resolve the default branch, then read the evaluated rule set for that branch —
+a single flat call that returns every rule applying to the branch.
+
+**CLI Command**:
+```bash
+gh api repos/{owner}/{repo}                        # → .default_branch
+gh api repos/{owner}/{repo}/rules/branches/{branch}  # → [ {type: ...}, ... ]
+```
+
+**Discriminator mapping**:
+| Rules-endpoint result | `eligibility` |
+|-----------------------|---------------|
+| a rule with `type == "merge_queue"` is present | `eligible_configured` |
+| no `merge_queue` rule present | `eligible_unconfigured` |
+| HTTP 404 (rules endpoint unavailable) | `ineligible` |
+| HTTP 401/403 or "must have admin" / "Resource not accessible" | actionable auth-scope error (never a stack trace) |
+
+### repo merge-queue enable
+
+Probe first. On `eligible_configured` the verb is a no-op (`changed: false`). On
+`eligible_unconfigured` it creates an active branch ruleset carrying a
+`merge_queue` rule scoped to the default branch:
+
+**CLI Command**:
+```bash
+gh api -X POST repos/{owner}/{repo}/rulesets --input {payload.json}
+```
+
+The request body (the nested ruleset structure cannot be expressed via `-f`
+field flags, so it is written to a transient file and passed via `--input`):
+
+```json
+{
+  "name": "plan-marshall-merge-queue",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {"ref_name": {"include": ["refs/heads/{branch}"], "exclude": []}},
+  "rules": [{"type": "merge_queue", "parameters": {"merge_method": "MERGE", "grouping_strategy": "ALLGREEN", ...}}]
+}
+```
+
+On an `ineligible` probe the verb refuses with the actionable message naming the
+Administration-scope / org-policy remedy; an auth-scope failure returns the same
+actionable remedy.
+
+---
+
 ## CI Operations
 
 ### ci status

@@ -1780,3 +1780,126 @@ def test_enrich_passes_empty_job_id_when_absent(plan_context):
     )
 
     assert captured == [('322', '')]
+
+
+# =============================================================================
+# repo merge-queue — 3-level parser tree + dispatch routing (deliverable 2)
+# =============================================================================
+#
+# `repo merge-queue {probe|enable}` is a NEW top-level subcommand grouping a
+# `merge-queue` noun with two sub-verbs. dispatch() keys the repo branch on the
+# three-level path (repo, merge-queue, args.merge_queue_command). The shared
+# eligibility vocabulary is exposed as module-level constants both providers
+# consume.
+
+
+def test_build_parser_accepts_repo_merge_queue_probe():
+    """`repo merge-queue probe` round-trips to the three-level namespace."""
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['repo', 'merge-queue', 'probe'])
+    assert args.command == 'repo'
+    assert args.repo_command == 'merge-queue'
+    assert args.merge_queue_command == 'probe'
+
+
+def test_build_parser_accepts_repo_merge_queue_enable():
+    """`repo merge-queue enable` round-trips and accepts the optional --confirm flag."""
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['repo', 'merge-queue', 'enable'])
+    assert args.command == 'repo'
+    assert args.repo_command == 'merge-queue'
+    assert args.merge_queue_command == 'enable'
+    assert args.confirm is False
+
+    args = parser.parse_args(['repo', 'merge-queue', 'enable', '--confirm'])
+    assert args.confirm is True
+
+
+def test_build_parser_repo_requires_merge_queue_noun():
+    """`repo` with no noun must exit (subparser is required)."""
+    parser, _, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(['repo'])
+
+
+def test_build_parser_repo_merge_queue_requires_sub_verb():
+    """`repo merge-queue` with no sub-verb must exit (subparser is required)."""
+    parser, _, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(['repo', 'merge-queue'])
+
+
+def test_build_parser_repo_merge_queue_rejects_unknown_sub_verb():
+    """An out-of-choice sub-verb under merge-queue must exit."""
+    parser, _, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(['repo', 'merge-queue', 'disable'])
+
+
+def test_get_known_subcommands_includes_repo(_reset_subcommand_cache):
+    """The registration-driven boundary set must include the new `repo` token."""
+    tokens = get_known_subcommands()
+    assert 'repo' in tokens
+
+
+def test_dispatch_routes_repo_merge_queue_probe():
+    """dispatch() maps `repo merge-queue probe` to the 3-tuple handler key."""
+    from ci_base import dispatch
+
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['repo', 'merge-queue', 'probe'])
+
+    called: list[str] = []
+
+    def probe_handler(_args):
+        called.append('probe')
+        return {'status': 'success', 'operation': 'repo_merge_queue_probe'}
+
+    handlers = {('repo', 'merge-queue', 'probe'): probe_handler}
+    result = dispatch(args, handlers, parser)
+    assert called == ['probe']
+    assert result['operation'] == 'repo_merge_queue_probe'
+
+
+def test_dispatch_routes_repo_merge_queue_enable():
+    """dispatch() maps `repo merge-queue enable` to the 3-tuple handler key."""
+    from ci_base import dispatch
+
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['repo', 'merge-queue', 'enable'])
+
+    def enable_handler(_args):
+        return {'status': 'success', 'operation': 'repo_merge_queue_enable'}
+
+    handlers = {('repo', 'merge-queue', 'enable'): enable_handler}
+    result = dispatch(args, handlers, parser)
+    assert result['operation'] == 'repo_merge_queue_enable'
+
+
+def test_dispatch_repo_unknown_sub_verb_returns_error():
+    """dispatch() returns an error dict when no handler is registered for the key."""
+    from ci_base import dispatch
+
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['repo', 'merge-queue', 'probe'])
+    # Empty handler map → no match → error dict (not a raise).
+    result = dispatch(args, {}, parser)
+    assert result['status'] == 'error'
+
+
+def test_merge_queue_eligibility_vocabulary_constants():
+    """The shared eligibility discriminators are exposed as module-level constants."""
+    assert ci_base.MERGE_QUEUE_ELIGIBLE_CONFIGURED == 'eligible_configured'
+    assert ci_base.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED == 'eligible_unconfigured'
+    assert ci_base.MERGE_QUEUE_INELIGIBLE == 'ineligible'
+    assert ci_base.MERGE_QUEUE_UNSUPPORTED == 'unsupported'
+
+
+def test_merge_queue_eligible_states_set():
+    """MERGE_QUEUE_ELIGIBLE_STATES is exactly the two eligible-to-enable discriminators."""
+    assert ci_base.MERGE_QUEUE_ELIGIBLE_STATES == frozenset(
+        {'eligible_configured', 'eligible_unconfigured'}
+    )
+    # The ineligible / unsupported values are NOT eligible-to-enable.
+    assert ci_base.MERGE_QUEUE_INELIGIBLE not in ci_base.MERGE_QUEUE_ELIGIBLE_STATES
+    assert ci_base.MERGE_QUEUE_UNSUPPORTED not in ci_base.MERGE_QUEUE_ELIGIBLE_STATES

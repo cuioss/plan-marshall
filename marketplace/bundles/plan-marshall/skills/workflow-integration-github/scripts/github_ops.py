@@ -75,7 +75,9 @@ unchanged.
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 from typing import Any
 from urllib.parse import quote
 
@@ -94,6 +96,9 @@ from _github_checks import (  # noqa: F401 — re-exported for callers and tests
 )
 from ci_base import (
     MAX_ELAPSED_SECONDS,
+    MERGE_QUEUE_ELIGIBLE_CONFIGURED,
+    MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
+    MERGE_QUEUE_INELIGIBLE,
     add_pr_create_args,
     build_parser,
     check_auth_cli,
@@ -708,6 +713,237 @@ def _fetch_issue_state_and_labels(issue_number: int) -> tuple[bool, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Repo-level merge-queue probe / enable (GitHub merge queue via rulesets)
+# ---------------------------------------------------------------------------
+#
+# GitHub's merge queue is configured through a repository ruleset carrying a
+# rule of ``type == "merge_queue"`` on the target branch. The probe reads the
+# evaluated rule set for the default branch via
+# ``GET /repos/{owner}/{repo}/rules/branches/{branch}`` (a single flat call that
+# returns every rule applying to the branch) and maps the result to the shared
+# eligibility vocabulary. The enable path creates a merge-queue ruleset via
+# ``POST /repos/{owner}/{repo}/rulesets`` and is idempotent — an already
+# configured repository is left unchanged.
+
+# Actionable remedy surfaced on an auth-scope failure (D4) — never a stack trace.
+_MERGE_QUEUE_AUTH_SCOPE_HINT = (
+    "the gh token lacks the scope to read/write repository rulesets. Run "
+    "'gh auth refresh -s repo,admin:org' (or grant the fine-grained "
+    "'Administration' repository write permission), then retry."
+)
+
+
+def _is_auth_scope_error(stderr: str) -> bool:
+    """Return True when *stderr* names an auth/permission-scope failure.
+
+    GitHub surfaces scope failures as HTTP 401/403 with a ``must have admin``
+    or ``Resource not accessible`` message. Matching on these markers keeps the
+    actionable-error path from misfiring on unrelated failures.
+    """
+    lowered = stderr.lower()
+    return (
+        'http 403' in lowered
+        or 'http 401' in lowered
+        or 'must have admin' in lowered
+        or 'resource not accessible' in lowered
+        or 'requires authentication' in lowered
+    )
+
+
+def _resolve_default_branch(owner: str, repo: str) -> tuple[str | None, str]:
+    """Resolve the repository default branch. Returns ``(branch, error)``."""
+    returncode, stdout, stderr = run_gh(['api', f'repos/{owner}/{repo}'])
+    if returncode != 0:
+        return None, stderr.strip()
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return None, 'could not parse repository metadata'
+    branch = data.get('default_branch')
+    if not branch:
+        return None, 'repository metadata missing default_branch'
+    return str(branch), ''
+
+
+def _probe_merge_queue_state(owner: str, repo: str, branch: str) -> tuple[str, str, str | None]:
+    """Probe the merge-queue configuration state for ``branch``.
+
+    Returns ``(discriminator, detail, error)`` where ``discriminator`` is one of
+    the ``MERGE_QUEUE_*`` constants and ``error`` is a non-None actionable error
+    string ONLY on an auth-scope failure (the caller converts it to a
+    ``make_error`` result). A 404 on the rules endpoint maps to ``ineligible``.
+    """
+    endpoint = f'repos/{owner}/{repo}/rules/branches/{branch}'
+    returncode, stdout, stderr = run_gh(['api', endpoint])
+    if returncode != 0:
+        if _is_auth_scope_error(stderr):
+            return MERGE_QUEUE_INELIGIBLE, stderr.strip(), _MERGE_QUEUE_AUTH_SCOPE_HINT
+        if 'http 404' in stderr.lower():
+            return MERGE_QUEUE_INELIGIBLE, 'branch rules endpoint not found', None
+        return MERGE_QUEUE_INELIGIBLE, stderr.strip(), None
+    try:
+        rules = json.loads(stdout)
+    except json.JSONDecodeError:
+        return MERGE_QUEUE_INELIGIBLE, 'could not parse branch rules response', None
+    if not isinstance(rules, list):
+        return MERGE_QUEUE_INELIGIBLE, 'branch rules response was not a list', None
+    for rule in rules:
+        if isinstance(rule, dict) and rule.get('type') == 'merge_queue':
+            return MERGE_QUEUE_ELIGIBLE_CONFIGURED, 'merge_queue rule active on branch', None
+    return MERGE_QUEUE_ELIGIBLE_UNCONFIGURED, 'no merge_queue rule on branch', None
+
+
+def build_merge_queue_ruleset_payload(branch: str) -> dict:
+    """Build the ``POST /rulesets`` request body enabling a merge queue on ``branch``.
+
+    Pure function (no I/O) so the payload contract is unit-testable independent
+    of the ``gh`` invocation. Creates an active branch ruleset scoped to the
+    single target branch carrying one ``merge_queue`` rule with GitHub's
+    documented default parameters.
+    """
+    return {
+        'name': 'plan-marshall-merge-queue',
+        'target': 'branch',
+        'enforcement': 'active',
+        'conditions': {
+            'ref_name': {
+                'include': [f'refs/heads/{branch}'],
+                'exclude': [],
+            }
+        },
+        'rules': [
+            {
+                'type': 'merge_queue',
+                'parameters': {
+                    'merge_method': 'MERGE',
+                    'max_entries_to_build': 5,
+                    'min_entries_to_merge': 1,
+                    'max_entries_to_merge': 5,
+                    'min_entries_to_merge_wait_minutes': 5,
+                    'grouping_strategy': 'ALLGREEN',
+                    'check_response_timeout_minutes': 60,
+                },
+            }
+        ],
+    }
+
+
+def cmd_repo_merge_queue_probe(args: argparse.Namespace) -> dict:
+    """Handle 'repo merge-queue probe' — report merge-queue eligibility state.
+
+    Returns a success TOON carrying ``eligibility`` (one of the shared
+    discriminators) on every reachable path. An auth-scope failure returns the
+    actionable error, never a stack trace.
+    """
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('repo_merge_queue_probe', err)
+
+    owner, repo = get_repo_info()
+    if not owner or not repo:
+        return make_error('repo_merge_queue_probe', 'Could not determine repository owner/name')
+
+    branch, branch_err = _resolve_default_branch(owner, repo)
+    if branch is None:
+        if _is_auth_scope_error(branch_err):
+            return make_error('repo_merge_queue_probe', _MERGE_QUEUE_AUTH_SCOPE_HINT, branch_err)
+        return make_error('repo_merge_queue_probe', 'Could not resolve default branch', branch_err)
+
+    discriminator, detail, scope_error = _probe_merge_queue_state(owner, repo, branch)
+    if scope_error is not None:
+        return make_error('repo_merge_queue_probe', scope_error, detail)
+
+    return {
+        'status': 'success',
+        'operation': 'repo_merge_queue_probe',
+        'provider': 'github',
+        'branch': branch,
+        'eligibility': discriminator,
+        'detail': detail,
+    }
+
+
+def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
+    """Handle 'repo merge-queue enable' — configure the merge queue (idempotent).
+
+    Probes first: an already-configured repository returns success without any
+    mutation; an unconfigured-but-eligible repository gets a merge_queue ruleset
+    created; an ineligible repository refuses with the actionable error.
+    """
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('repo_merge_queue_enable', err)
+
+    owner, repo = get_repo_info()
+    if not owner or not repo:
+        return make_error('repo_merge_queue_enable', 'Could not determine repository owner/name')
+
+    branch, branch_err = _resolve_default_branch(owner, repo)
+    if branch is None:
+        if _is_auth_scope_error(branch_err):
+            return make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, branch_err)
+        return make_error('repo_merge_queue_enable', 'Could not resolve default branch', branch_err)
+
+    discriminator, detail, scope_error = _probe_merge_queue_state(owner, repo, branch)
+    if scope_error is not None:
+        return make_error('repo_merge_queue_enable', scope_error, detail)
+
+    if discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED:
+        # Idempotent no-op — the merge queue is already configured.
+        return {
+            'status': 'success',
+            'operation': 'repo_merge_queue_enable',
+            'provider': 'github',
+            'branch': branch,
+            'eligibility': discriminator,
+            'changed': False,
+            'detail': 'merge queue already configured; no change made',
+        }
+
+    if discriminator == MERGE_QUEUE_ELIGIBLE_UNCONFIGURED:
+        payload = build_merge_queue_ruleset_payload(branch)
+        # gh api reads a JSON request body from a file via --input; write the
+        # payload to a transient file so the nested ruleset structure survives
+        # intact (field flags cannot express the nested rules array).
+        tmp = tempfile.NamedTemporaryFile(
+            mode='w', suffix='.json', delete=False, encoding='utf-8'
+        )
+        try:
+            json.dump(payload, tmp)
+            tmp.close()
+            returncode, _stdout, stderr = run_gh(
+                ['api', '-X', 'POST', f'repos/{owner}/{repo}/rulesets', '--input', tmp.name]
+            )
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
+        if returncode != 0:
+            if _is_auth_scope_error(stderr):
+                return make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, stderr.strip())
+            return make_error('repo_merge_queue_enable', 'Failed to create merge-queue ruleset', stderr.strip())
+        return {
+            'status': 'success',
+            'operation': 'repo_merge_queue_enable',
+            'provider': 'github',
+            'branch': branch,
+            'eligibility': MERGE_QUEUE_ELIGIBLE_CONFIGURED,
+            'changed': True,
+            'detail': 'merge_queue ruleset created',
+        }
+
+    # ineligible / unsupported → refuse with the actionable message.
+    return make_error(
+        'repo_merge_queue_enable',
+        'Merge queue is not available for this repository — GitHub reports the '
+        'feature ineligible (an org policy may disallow rulesets, or the token '
+        'lacks Administration access). ' + _MERGE_QUEUE_AUTH_SCOPE_HINT,
+        detail,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Command handlers (bodies live in the co-located domain submodules)
 #
 # These imports sit at the bottom of the file, after every primitive above is
@@ -850,6 +1086,8 @@ def main() -> int:
         ('issue', 'wait-for-close'): cmd_issue_wait_for_close,
         ('issue', 'wait-for-label'): cmd_issue_wait_for_label,
         ('branch', 'delete'): cmd_branch_delete,
+        ('repo', 'merge-queue', 'probe'): cmd_repo_merge_queue_probe,
+        ('repo', 'merge-queue', 'enable'): cmd_repo_merge_queue_enable,
     }
 
     # branch_sub is registered by ci_base.build_parser; acknowledge the returned

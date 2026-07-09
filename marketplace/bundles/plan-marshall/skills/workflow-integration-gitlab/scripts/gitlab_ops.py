@@ -74,6 +74,9 @@ from ci_base import (
     BODY_KIND_PR_REPLY,
     BODY_KIND_PR_THREAD_REPLY,
     MAX_ELAPSED_SECONDS,
+    MERGE_QUEUE_ELIGIBLE_CONFIGURED,
+    MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
+    MERGE_QUEUE_INELIGIBLE,
     add_pr_create_args,
     add_pr_resolve_thread_pr_number,
     build_parser,
@@ -459,23 +462,189 @@ def cmd_pr_submit_review(args: argparse.Namespace) -> dict:
     )
 
 
-def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
-    """Handle 'pr merge-queue' subcommand on GitLab.
+# ---------------------------------------------------------------------------
+# Merge-train (GitLab platform equivalent of a GitHub merge queue)
+# ---------------------------------------------------------------------------
+#
+# GitLab merge trains are a Premium/Ultimate-tier feature enabled per-project.
+# The REST surface is:
+#   * probe:  GET  /projects/:id                     → merge_trains_enabled bool
+#   * enable: PUT  /projects/:id                      → merge_trains_enabled=true
+#   * enqueue:POST /projects/:id/merge_trains/merge_requests/:iid
+# Auth/permission failures return the actionable error, never a stack trace.
 
-    GitLab's platform equivalent of a GitHub merge queue is a **merge train** —
-    a Premium/Ultimate-tier feature that must be enabled per-project in the
-    merge-request settings and has no stable ``glab`` CLI surface. Rather than
-    silently falling back to an immediate merge (which would defeat the
-    external-commit serialization the caller asked for), return an explicit
-    unsupported error so cross-provider callers notice the mismatch — mirroring
-    the ``pr submit-review`` GitLab-no-equivalent pattern.
+# Actionable remedy surfaced when a merge-train call fails on scope/permission.
+_MERGE_TRAIN_AUTH_SCOPE_HINT = (
+    'the glab token lacks the scope/permission to read or update project '
+    'merge-train settings. Ensure the token has at least Maintainer access and '
+    "the 'api' scope, then retry."
+)
+
+# Actionable remedy surfaced when the project/tier does not offer merge trains.
+_MERGE_TRAIN_INELIGIBLE_HINT = (
+    'GitLab merge trains require a Premium/Ultimate tier and must be enabled '
+    'per-project (Settings → Merge requests → Merge trains). This project is '
+    'not eligible or the feature is unavailable on the current tier.'
+)
+
+
+def _is_auth_scope_error(stderr: str) -> bool:
+    """Return True when *stderr* names an auth/permission-scope failure (401/403)."""
+    lowered = stderr.lower()
+    return 'http 401' in lowered or 'http 403' in lowered
+
+
+def _probe_merge_train_state() -> tuple[str, str, str | None]:
+    """Probe the project merge-train configuration state.
+
+    Returns ``(discriminator, detail, error)`` where ``discriminator`` is one of
+    the shared ``MERGE_QUEUE_*`` constants and ``error`` is a non-None actionable
+    string ONLY on an auth-scope failure (the caller converts it to a
+    ``make_error`` result). A missing ``merge_trains_enabled`` field or a
+    non-auth API failure maps to ``ineligible``.
     """
-    return make_error(
-        'pr_merge_queue',
-        'Not supported on GitLab via this abstraction — the platform equivalent is a '
-        'merge train (Premium/Ultimate, enabled per-project) with no stable glab CLI '
-        'surface. Use pr safe-merge instead, or enable use_merge_queue only on GitHub.',
-    )
+    project_path = get_project_path()
+    if not project_path:
+        return MERGE_QUEUE_INELIGIBLE, 'could not determine project path', None
+    project_id = quote(project_path, safe='')
+    returncode, data, err = run_api(f'projects/{project_id}')
+    if returncode != 0:
+        if _is_auth_scope_error(err):
+            return MERGE_QUEUE_INELIGIBLE, err.strip(), _MERGE_TRAIN_AUTH_SCOPE_HINT
+        return MERGE_QUEUE_INELIGIBLE, err.strip(), None
+    if not isinstance(data, dict):
+        return MERGE_QUEUE_INELIGIBLE, 'project response was not an object', None
+    if 'merge_trains_enabled' not in data:
+        # Field absent → the tier/feature does not expose merge trains.
+        return MERGE_QUEUE_INELIGIBLE, 'merge_trains_enabled not present on project', None
+    if data.get('merge_trains_enabled') is True:
+        return MERGE_QUEUE_ELIGIBLE_CONFIGURED, 'merge_trains_enabled=true', None
+    return MERGE_QUEUE_ELIGIBLE_UNCONFIGURED, 'merge_trains_enabled=false', None
+
+
+def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
+    """Handle 'pr merge-queue' on GitLab — enqueue the MR onto the merge train.
+
+    Performs a REAL merge-train enqueue via
+    ``POST /projects/:id/merge_trains/merge_requests/:iid`` rather than silently
+    falling back to an immediate merge (which would defeat the external-commit
+    serialization the caller asked for). When the project/tier does not offer
+    merge trains the handler returns the actionable ineligible error.
+    """
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('pr_merge_queue', err)
+
+    iid, err_dict = _resolve_mr_iid(args, 'pr_merge_queue')
+    if err_dict:
+        return err_dict
+    assert iid is not None  # noqa: S101 — narrowing after err_dict guard
+
+    project_path = get_project_path()
+    if not project_path:
+        return make_error('pr_merge_queue', 'Could not determine project path')
+
+    project_id = quote(project_path, safe='')
+    endpoint = f'projects/{project_id}/merge_trains/merge_requests/{iid}'
+    returncode, stdout, stderr = run_glab(['api', '-X', 'POST', endpoint])
+    if returncode != 0:
+        stderr_text = stderr.strip()
+        if _is_auth_scope_error(stderr_text) or 'http 404' in stderr_text.lower():
+            return make_error('pr_merge_queue', _MERGE_TRAIN_INELIGIBLE_HINT, stderr_text)
+        return make_error('pr_merge_queue', f'Failed to enqueue MR {iid} onto the merge train', stderr_text)
+
+    # Best-effort parse of the returned merge-train car for the position/id.
+    car_id = ''
+    try:
+        data = json.loads(stdout)
+        if isinstance(data, dict):
+            car_id = str(data.get('id', '') or '')
+    except json.JSONDecodeError:
+        pass
+
+    return {
+        'status': 'success',
+        'operation': 'pr_merge_queue',
+        'provider': 'gitlab',
+        'pr_number': args.pr_number if args.pr_number else iid,
+        'enqueued': True,
+        'merge_train_car_id': car_id,
+    }
+
+
+def cmd_repo_merge_queue_probe(args: argparse.Namespace) -> dict:
+    """Handle 'repo merge-queue probe' on GitLab — report merge-train state.
+
+    Returns a success TOON carrying ``eligibility`` (one of the shared
+    discriminators). An auth-scope failure returns the actionable error.
+    """
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('repo_merge_queue_probe', err)
+
+    discriminator, detail, scope_error = _probe_merge_train_state()
+    if scope_error is not None:
+        return make_error('repo_merge_queue_probe', scope_error, detail)
+
+    return {
+        'status': 'success',
+        'operation': 'repo_merge_queue_probe',
+        'provider': 'gitlab',
+        'eligibility': discriminator,
+        'detail': detail,
+    }
+
+
+def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
+    """Handle 'repo merge-queue enable' on GitLab — enable the per-project merge train.
+
+    Probes first: an already-enabled project returns success without mutation;
+    an unconfigured-but-eligible project gets ``merge_trains_enabled=true`` set
+    via ``PUT /projects/:id``; an ineligible project refuses with the actionable
+    error.
+    """
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('repo_merge_queue_enable', err)
+
+    discriminator, detail, scope_error = _probe_merge_train_state()
+    if scope_error is not None:
+        return make_error('repo_merge_queue_enable', scope_error, detail)
+
+    if discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED:
+        return {
+            'status': 'success',
+            'operation': 'repo_merge_queue_enable',
+            'provider': 'gitlab',
+            'eligibility': discriminator,
+            'changed': False,
+            'detail': 'merge trains already enabled; no change made',
+        }
+
+    if discriminator == MERGE_QUEUE_ELIGIBLE_UNCONFIGURED:
+        project_path = get_project_path()
+        if not project_path:
+            return make_error('repo_merge_queue_enable', 'Could not determine project path')
+        project_id = quote(project_path, safe='')
+        returncode, _stdout, stderr = run_glab(
+            ['api', '-X', 'PUT', f'projects/{project_id}', '-f', 'merge_trains_enabled=true']
+        )
+        if returncode != 0:
+            stderr_text = stderr.strip()
+            if _is_auth_scope_error(stderr_text):
+                return make_error('repo_merge_queue_enable', _MERGE_TRAIN_AUTH_SCOPE_HINT, stderr_text)
+            return make_error('repo_merge_queue_enable', 'Failed to enable merge trains', stderr_text)
+        return {
+            'status': 'success',
+            'operation': 'repo_merge_queue_enable',
+            'provider': 'gitlab',
+            'eligibility': MERGE_QUEUE_ELIGIBLE_CONFIGURED,
+            'changed': True,
+            'detail': 'merge_trains_enabled set to true',
+        }
+
+    # ineligible / unsupported → refuse with the actionable message.
+    return make_error('repo_merge_queue_enable', _MERGE_TRAIN_INELIGIBLE_HINT, detail)
 
 
 def cmd_pr_reviews(args: argparse.Namespace) -> dict:
@@ -1893,6 +2062,8 @@ def main() -> int:
         ('issue', 'wait-for-close'): cmd_issue_wait_for_close,
         ('issue', 'wait-for-label'): cmd_issue_wait_for_label,
         ('branch', 'delete'): cmd_branch_delete,
+        ('repo', 'merge-queue', 'probe'): cmd_repo_merge_queue_probe,
+        ('repo', 'merge-queue', 'enable'): cmd_repo_merge_queue_enable,
     }
 
     # branch_sub is registered by ci_base.build_parser; acknowledge the returned
