@@ -1959,7 +1959,10 @@ def _ratcheted_ci_wait_ceiling(repo_root: Path) -> float:
     manage-* dispatch) per the skill's inline-reader rule; degrades to the flat
     ceiling when the config or the ratcheted values are absent.
     """
-    config = read_json(repo_root / ".plan" / "run-configuration.json")
+    try:
+        config = read_json(repo_root / ".plan" / "run-configuration.json")
+    except (OSError, ValueError):
+        return _IMPOSSIBLE_DURATION_SECONDS
     if not isinstance(config, dict):
         return _IMPOSSIBLE_DURATION_SECONDS
     ceilings: list[float] = [_IMPOSSIBLE_DURATION_SECONDS]
@@ -4241,8 +4244,12 @@ def _prior_genuine_runs(repo_root: Path, limit: int) -> list[dict[str, int]]:
     reports_dir = (repo_root / AUDIT_REPORTS_REL).resolve()
     if limit <= 0 or not reports_dir.is_dir():
         return []
+    try:
+        toon_files = list(reports_dir.glob("*.toon"))
+    except OSError:
+        return []
     candidates = sorted(
-        (p for p in reports_dir.glob("*.toon") if _REPORT_STEM_RE.match(p.stem)),
+        (p for p in toon_files if _REPORT_STEM_RE.match(p.stem)),
         key=lambda p: p.stem,
         reverse=True,
     )[:limit]
@@ -5427,14 +5434,15 @@ def _bare_step(step_id: str) -> str:
 
 def check_finalize_flow_conformance(inputs: PlanInputs) -> dict[str, Any]:
     """Per-plan post-#849/#850 finalize-flow conformance."""
-    bare6 = {_bare_step(s) for s in inputs.manifest_phase_6}
+    bare6 = {_bare_step(s) for s in inputs.manifest_phase_6} if inputs.manifest_phase_6 else set()
     has_pr_step = "create-pr" in bare6
     has_ci_verify_step = "ci-verify" in bare6
 
     ci_dir = inputs.plan_dir / "artifacts" / "ci-runs"
-    run_dirs = (
-        sorted(d for d in ci_dir.iterdir() if d.is_dir()) if ci_dir.is_dir() else []
-    )
+    try:
+        run_dirs = sorted(d for d in ci_dir.iterdir() if d.is_dir())
+    except OSError:
+        run_dirs = []
     ci_run_count = len(run_dirs)
     latest_final_status = ""
     wait_timeout = False
@@ -5508,31 +5516,34 @@ def cross_merge_window_accounting(
     # per plan_id → {event_counts, max_waiting}
     acc: dict[str, dict[str, Any]] = {}
     logs_dir = (repo_root / ".plan" / "local" / "logs").resolve()
-    if logs_dir.is_dir():
-        for log_file in sorted(logs_dir.glob("*.log")):
-            try:
-                lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
-            except OSError:
+    try:
+        log_files = sorted(logs_dir.glob("*.log"))
+    except OSError:
+        log_files = []
+    for log_file in log_files:
+        try:
+            lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for idx, raw in enumerate(lines):
+            m = _LOCK_MERGE_RE.search(raw)
+            if not m:
                 continue
-            for idx, raw in enumerate(lines):
-                m = _LOCK_MERGE_RE.search(raw)
-                if not m:
-                    continue
-                lock_id = m.group("lock_id")
-                event = m.group("event")
-                entry = acc.setdefault(
-                    lock_id,
-                    {"acquired": 0, "released": 0, "blocked": 0, "reclaimed": 0, "max_waiting": 0},
-                )
-                entry[event] = entry.get(event, 0) + 1
-                # waiting_count rides on the immediately-following indented lines.
-                for look in lines[idx + 1 : idx + 6]:
-                    wm = _LOCK_WAITING_RE.match(look)
-                    if wm:
-                        entry["max_waiting"] = max(entry["max_waiting"], int(wm.group("n")))
-                        break
-                    if look and not look[:1].isspace():
-                        break
+            lock_id = m.group("lock_id")
+            event = m.group("event")
+            entry = acc.setdefault(
+                lock_id,
+                {"acquired": 0, "released": 0, "blocked": 0, "reclaimed": 0, "max_waiting": 0},
+            )
+            entry[event] = entry.get(event, 0) + 1
+            # waiting_count rides on the immediately-following indented lines.
+            for look in lines[idx + 1 : idx + 6]:
+                wm = _LOCK_WAITING_RE.match(look)
+                if wm:
+                    entry["max_waiting"] = max(entry["max_waiting"], int(wm.group("n")))
+                    break
+                if look and not look[:1].isspace():
+                    break
 
     rows: list[dict[str, Any]] = []
     for lock_id in sorted(acc):
