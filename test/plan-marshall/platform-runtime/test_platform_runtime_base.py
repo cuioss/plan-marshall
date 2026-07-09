@@ -124,7 +124,7 @@ def test_toon_noop_distinct_from_error():
 
 
 class _ConcreteRuntime(Runtime):
-    """Minimal concrete subclass that implements all 18 abstract methods."""
+    """Minimal concrete subclass that implements all 21 abstract methods."""
 
     def project_initial_setup(self, project_dir: str, target: str) -> str:
         return toon_success("project initial-setup")
@@ -149,8 +149,17 @@ class _ConcreteRuntime(Runtime):
     def session_render_title(self, statusline: bool = False) -> str:
         return toon_success("session render-title")
 
-    def session_push_title_token(self, plan_id: str, icon: str) -> str:
+    def session_push_title_token(self, plan_id: str, icon: str | None = None) -> str:
         return toon_success("session push-title-token")
+
+    def session_bind(self, plan_id: str, session_id: str | None = None) -> str:
+        return toon_success("session bind")
+
+    def session_resolve_plan(self, session_id: str | None = None) -> str:
+        return toon_success("session resolve-plan")
+
+    def session_doctor(self, fix: bool = False) -> str:
+        return toon_success("session doctor")
 
     def permission_configure(self, scope: str, permissions: list) -> str:
         return toon_success("permission configure")
@@ -194,6 +203,9 @@ ALL_ABSTRACT_METHODS = [
     "session_capture",
     "session_render_title",
     "session_push_title_token",
+    "session_bind",
+    "session_resolve_plan",
+    "session_doctor",
     "permission_configure",
     "permission_analyze",
     "permission_fix",
@@ -208,16 +220,16 @@ ALL_ABSTRACT_METHODS = [
 ]
 
 
-def test_runtime_has_18_abstract_methods():
-    """Runtime ABC exposes exactly 18 abstract methods."""
+def test_runtime_has_21_abstract_methods():
+    """Runtime ABC exposes exactly 21 abstract methods."""
     abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
-    assert len(abstract_methods) == 18, (
-        f"Expected 18 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
+    assert len(abstract_methods) == 21, (
+        f"Expected 21 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
     )
 
 
 def test_all_expected_methods_are_abstract():
-    """Each of the 18 documented operations is abstract on Runtime."""
+    """Each of the 21 documented operations is abstract on Runtime."""
     abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
     for method in ALL_ABSTRACT_METHODS:
         assert method in abstract_methods, (
@@ -243,7 +255,7 @@ def test_subclass_missing_one_method_raises(missing_method: str):
 
 
 def test_concrete_subclass_can_be_instantiated():
-    """A subclass implementing all 18 methods can be instantiated without error."""
+    """A subclass implementing all 21 methods can be instantiated without error."""
     runtime = _ConcreteRuntime()
     assert isinstance(runtime, Runtime)
 
@@ -265,6 +277,9 @@ def test_concrete_returns_valid_toon_for_each_method():
         runtime.session_capture("my-plan"),
         runtime.session_render_title(),
         runtime.session_push_title_token("my-plan", "⏳"),
+        runtime.session_bind("my-plan"),
+        runtime.session_resolve_plan(),
+        runtime.session_doctor(),
         runtime.permission_configure("project", ["Read(**)"]),
         runtime.permission_analyze("both", ["all"], None),
         runtime.permission_fix("project", "normalize", [], False),
@@ -278,7 +293,7 @@ def test_concrete_returns_valid_toon_for_each_method():
         runtime.health_check("all"),
     ]
 
-    assert len(outputs) == 18, "Expected output for each of the 18 methods"
+    assert len(outputs) == 21, "Expected output for each of the 21 methods"
     for output in outputs:
         result = parse_toon(output)
         assert result.get("status") == "success", (

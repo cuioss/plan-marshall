@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for claude_runtime.py — ClaudeRuntime implementation of all 18 operations.
+"""Tests for claude_runtime.py — ClaudeRuntime implementation of all 21 operations.
 
 Covers every method defined by the Runtime ABC:
   1.  project_initial_setup       — creates dirs, writes marshal.json, installs hook
   2.  session_capture             — reads $CLAUDE_CODE_SESSION_ID, stores via manage-status
   3.  session_render_title        — resolves session → plan → OSC emit
+  4.  session_push_title_token    — live /dev/tty repaint (icon now optional)
+  4b. session_bind / resolve-plan / doctor — the relocated last-driven-wins binding
+      policy (covered in depth by test__claude_runtime_impl.py)
   5.  permission_configure        — overwrites allow list in settings
   6.  permission_analyze          — audits redundant / suspicious / missing-steps
   7.  permission_fix              — normalize / add / remove / ensure / consolidate
@@ -35,6 +38,7 @@ import pytest
 
 # conftest.py sets up PYTHONPATH so cross-skill imports resolve without manual
 # sys.path manipulation.
+import session_binding
 from claude_runtime import (
     _BUILD_WRAPPER_NOTATIONS,
     ClaudeRuntime,
@@ -86,7 +90,7 @@ def rt(tmp_path, monkeypatch):
     """
     import claude_runtime as _cr
 
-    monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+    monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
     monkeypatch.setattr(_cr, "_CLAUDE_PROJECTS_DIR", tmp_path / "projects")
     monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
     return ClaudeRuntime()
@@ -957,7 +961,7 @@ def _redirect_render_env(tmp_path: Path, monkeypatch, session_id: str) -> None:
     """Redirect the renderer's module constants + env at *session_id*."""
     import claude_runtime as _cr
 
-    monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+    monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
     monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
     monkeypatch.chdir(tmp_path)
@@ -1382,7 +1386,7 @@ class TestSessionRenderTitleArchivedFallback:
                 encoding="utf-8",
             )
 
-        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
         monkeypatch.chdir(tmp_path)
@@ -1495,7 +1499,7 @@ class TestSessionRenderTitleArchivedFallback:
         # archived-plans/ exists but contains no matching plan dir.
         (tmp_path / ".plan" / "local" / "archived-plans").mkdir(parents=True)
 
-        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
         monkeypatch.chdir(tmp_path)

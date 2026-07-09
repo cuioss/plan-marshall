@@ -30,6 +30,7 @@ import pytest
 # sys.path manipulation. The ``claude_runtime`` entry re-exports ``ClaudeRuntime``
 # (now defined in ``_claude_runtime_impl.py``), so this import mechanism is
 # unchanged from ``test_claude_runtime.py``.
+import session_binding
 from claude_runtime import ClaudeRuntime
 
 
@@ -43,11 +44,13 @@ def rt(tmp_path, monkeypatch):
     """Return a ClaudeRuntime instance with all filesystem roots redirected.
 
     Monkeypatches the module-level constants that control where marshal.json,
-    session cache, and settings files land so no real files are mutated.
+    session cache, and settings files land so no real files are mutated. The
+    per-session active-plan cache root lives in ``session_binding`` (the read
+    side ``_read_active_plan`` delegates to), so its base is patched there.
     """
     import claude_runtime as _cr
 
-    monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+    monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
     monkeypatch.setattr(_cr, "_CLAUDE_PROJECTS_DIR", tmp_path / "projects")
     monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
     return ClaudeRuntime()
@@ -109,7 +112,7 @@ def _redirect_render_env(tmp_path: Path, monkeypatch, session_id: str) -> None:
     """Redirect the renderer's module constants + env at *session_id*."""
     import claude_runtime as _cr
 
-    monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+    monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
     monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
     monkeypatch.chdir(tmp_path)
@@ -202,9 +205,7 @@ class TestSessionRenderTitleStatusline:
 
     def test_statusline_no_active_plan_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
         """statusline noop: session has no registered plan — nothing written to stdout, empty return."""
-        import claude_runtime as _cr
-
-        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-without-plan")
         capsys.readouterr()
         assert rt.session_render_title(statusline=True) == ""
@@ -220,7 +221,7 @@ class TestSessionRenderTitleStatusline:
         cache_dir.mkdir(parents=True)
         (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
 
-        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
         monkeypatch.chdir(tmp_path)
@@ -238,9 +239,7 @@ class TestSessionRenderTitleStatusline:
 
     def test_hook_mode_no_active_plan_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
         """Hook mode noop (no plan mapping): empty stdout, empty return."""
-        import claude_runtime as _cr
-
-        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-no-plan-mapping")
         capsys.readouterr()
         assert rt.session_render_title(statusline=False) == ""
@@ -256,7 +255,7 @@ class TestSessionRenderTitleStatusline:
         cache_dir.mkdir(parents=True)
         (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
 
-        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
         monkeypatch.chdir(tmp_path)
@@ -471,7 +470,7 @@ def _arrange_render_cell(
     """
     import claude_runtime as _cr
 
-    monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+    monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
     monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
     monkeypatch.chdir(tmp_path)
 
@@ -582,7 +581,7 @@ class TestSessionRenderTitle:
         cell_a = next(c for c in _RENDER_MATRIX if c["id"] == "status-from-plan-hit-session-A")
         cell_b = next(c for c in _RENDER_MATRIX if c["id"] == "status-from-plan-hit-session-B")
 
-        monkeypatch.setattr(_cr, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.chdir(tmp_path)
 
@@ -910,3 +909,161 @@ class TestSessionRenderTitleSessionTitleEmit:
 
         assert returned == ""
         assert captured == ""
+
+
+# =============================================================================
+# session_bind / session_resolve_plan / session_doctor
+# =============================================================================
+
+
+class TestSessionBindResolveDoctor:
+    """Tests for the relocated session-binding verbs on ClaudeRuntime.
+
+    ``session bind`` writes the caller's slot last-driven-wins; ``session
+    resolve-plan`` reads it back; ``session doctor`` scans for conflicts and GCs
+    stale slots. All delegate to the pure ``session_binding`` policy, so the
+    cache root is redirected via ``session_binding._SESSION_CACHE_BASE``.
+    """
+
+    def test_bind_writes_slot_from_env_session(self, rt, tmp_path, monkeypatch):
+        """session bind resolves session id from $CLAUDE_CODE_SESSION_ID and writes the slot."""
+        from toon_parser import parse_toon
+
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-bind-env")
+        parsed = parse_toon(rt.session_bind("plan-1"))
+        assert parsed["status"] == "success"
+        assert parsed["bound"] is True
+        assert session_binding.resolve_plan("sess-bind-env") == "plan-1"
+
+    def test_bind_uses_explicit_session_id_over_env(self, rt, tmp_path, monkeypatch):
+        """An explicit session_id argument takes precedence over the env var."""
+        from toon_parser import parse_toon
+
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-env")
+        parsed = parse_toon(rt.session_bind("plan-2", "sess-explicit"))
+        assert parsed["bound"] is True
+        assert session_binding.resolve_plan("sess-explicit") == "plan-2"
+        assert session_binding.resolve_plan("sess-env") is None
+
+    def test_bind_last_driven_wins(self, rt, tmp_path, monkeypatch):
+        """A second bind to a different plan overwrites — never protects the prior binding."""
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-ldw")
+        rt.session_bind("plan-old")
+        rt.session_bind("plan-new")
+        assert session_binding.resolve_plan("sess-ldw") == "plan-new"
+
+    def test_bind_no_session_id_reports_unbound(self, rt, monkeypatch):
+        """Without a session id, bind reports bound=False with a reason and writes nothing."""
+        from toon_parser import parse_toon
+
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+        parsed = parse_toon(rt.session_bind("plan-1"))
+        assert parsed["bound"] is False
+        assert parsed["reason"] == "no_session_id"
+
+    def test_resolve_plan_returns_bound(self, rt, tmp_path, monkeypatch):
+        """session resolve-plan returns the plan bound to the session."""
+        from toon_parser import parse_toon
+
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-resolve")
+        rt.session_bind("plan-r")
+        parsed = parse_toon(rt.session_resolve_plan())
+        assert parsed["resolved"] is True
+        assert parsed["plan_id"] == "plan-r"
+
+    def test_resolve_plan_unbound_returns_empty(self, rt, monkeypatch):
+        """An unbound session resolves to an empty plan id."""
+        from toon_parser import parse_toon
+
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-unbound")
+        parsed = parse_toon(rt.session_resolve_plan())
+        assert parsed["resolved"] is False
+        assert parsed["plan_id"] == ""
+
+    def test_doctor_reports_conflict(self, rt, tmp_path, monkeypatch):
+        """session doctor reports a two-sessions-one-plan conflict."""
+        from toon_parser import parse_toon
+
+        monkeypatch.setattr(session_binding, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".plan" / "local" / "plans" / "shared-plan").mkdir(parents=True)
+        session_binding.bind("sess-d-a", "shared-plan")
+        session_binding.bind("sess-d-b", "shared-plan")
+        parsed = parse_toon(rt.session_doctor())
+        assert parsed["conflict_count"] == 1
+        assert "shared-plan=" in parsed["conflicts"][0]
+
+    def test_doctor_fix_gcs_stale_slot(self, rt, tmp_path, monkeypatch):
+        """session doctor --fix removes a stale slot whose plan is archived/deleted."""
+        from toon_parser import parse_toon
+
+        monkeypatch.setattr(session_binding, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".plan" / "local" / "plans" / "live-plan").mkdir(parents=True)
+        session_binding.bind("sess-live", "live-plan")
+        session_binding.bind("sess-gone", "gone-plan")
+        parsed = parse_toon(rt.session_doctor(fix=True))
+        assert parsed["gc_removed"] == 1
+        assert session_binding.resolve_plan("sess-gone") is None
+        assert session_binding.resolve_plan("sess-live") == "live-plan"
+
+
+# =============================================================================
+# session_push_title_token — optional icon
+# =============================================================================
+
+
+class TestSessionPushTitleTokenOptionalIcon:
+    """Tests that session_push_title_token accepts an optional icon.
+
+    With an explicit icon the glyph is passed to the composer as an override;
+    with no icon the composer receives ``icon_override=None`` (a plain repaint
+    with the default active icon).
+    """
+
+    def _arrange(self, tmp_path, monkeypatch, plan_id="push-plan"):
+        _write_status_json(
+            tmp_path, session_id="sess-push", plan_id=plan_id,
+            current_phase="5-execute", short_description="push-task",
+        )
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.chdir(tmp_path)
+
+    def test_icon_override_passed_to_composer(self, rt, tmp_path, monkeypatch):
+        """An explicit --icon is forwarded to the composer as icon_override."""
+        import _claude_runtime_impl
+
+        self._arrange(tmp_path, monkeypatch)
+        captured: dict[str, Any] = {}
+
+        def fake_compose(state, process_state, icon_override=None):
+            captured["icon_override"] = icon_override
+            return "TITLE"
+
+        monkeypatch.setattr(_claude_runtime_impl, "compose", fake_compose)
+        rt.session_push_title_token("push-plan", "⏳")
+        assert captured["icon_override"] == "⏳"
+
+    def test_no_icon_passes_none_to_composer(self, rt, tmp_path, monkeypatch):
+        """Omitting --icon forwards icon_override=None (plain repaint)."""
+        import _claude_runtime_impl
+
+        self._arrange(tmp_path, monkeypatch)
+        captured: dict[str, Any] = {}
+
+        def fake_compose(state, process_state, icon_override=None):
+            captured["icon_override"] = icon_override
+            return "TITLE"
+
+        monkeypatch.setattr(_claude_runtime_impl, "compose", fake_compose)
+        rt.session_push_title_token("push-plan")
+        assert captured["icon_override"] is None
+
+    def test_no_title_state_reports_not_pushed(self, rt, tmp_path, monkeypatch):
+        """Missing state is a best-effort no-op (pushed=False), with or without an icon."""
+        from toon_parser import parse_toon
+
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.chdir(tmp_path)
+        parsed = parse_toon(rt.session_push_title_token("no-such-plan"))
+        assert parsed["pushed"] is False
