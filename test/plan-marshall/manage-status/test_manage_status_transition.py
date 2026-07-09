@@ -1329,3 +1329,143 @@ def test_finalize_boundary_pending_actionable_finding_blocks(
     assert result['blocking_count'] == 1
     assert result['blocking_types'] == list(_inv._ACTIONABLE_FINDING_TYPES)
     assert result['per_type']['build-error'] == 1
+
+
+# =============================================================================
+# Regression Tests: persisted-title-state-write drive seam (Defects 1 & 2)
+# =============================================================================
+#
+# Every current_phase write fires the shared _surface_drive seam AFTER
+# write_status — one bind (session->plan, last-driven-wins; Defect 2) plus one
+# repaint (icon-optional title push; Defect 1). cmd_transition is the phase-
+# advance writer covered here; the seam internals (bind+repaint ordering, the
+# no-icon repaint contract, delegation-failure swallowing, and the executor-
+# absent no-op guard) are pinned directly on _status_core.
+
+_core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_status_core_drive')
+
+
+def test_cmd_transition_fires_drive_seam_after_write(plan_context, monkeypatch):
+    """cmd_transition fires _surface_drive exactly once (with the plan_id) on advance."""
+    plan_id = 'drive-seam-transition'
+    _seed_execute_phase_plan(plan_context.plan_dir_for(plan_id), plan_id)
+
+    calls = []
+    monkeypatch.setattr(_lifecycle, '_surface_drive', lambda pid: calls.append(pid))
+
+    result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
+
+    assert result['status'] == 'success'
+    assert calls == [plan_id], (
+        f'cmd_transition must fire the drive seam exactly once with the plan_id '
+        f'after write_status, got {calls!r}.'
+    )
+
+
+def test_cmd_transition_drift_refusal_does_not_fire_drive_seam(
+    plan_context, _stubbed_invariants, _stub_metadata, monkeypatch
+):
+    """A guarded-boundary drift refusal returns BEFORE write_status — the drive
+    seam must NOT fire (no phase advanced, nothing to repaint)."""
+    plan_id = 'drive-seam-no-fire-on-drift'
+    _seed_plan_with_5_execute_capture(plan_id)
+    _stubbed_invariants['main_sha'] = 'drifted-no-fire'
+
+    calls = []
+    monkeypatch.setattr(_lifecycle, '_surface_drive', lambda pid: calls.append(pid))
+
+    result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
+
+    assert result['status'] == 'drift'
+    assert calls == [], (
+        f'The drive seam must not fire when the transition is refused before '
+        f'write_status, got {calls!r}.'
+    )
+
+
+def test_surface_drive_fires_bind_then_repaint(monkeypatch):
+    """_surface_drive fires exactly one bind then one repaint, both with the plan_id."""
+    events = []
+    monkeypatch.setattr(_core, '_drive_bind', lambda pid: events.append(('bind', pid)))
+    monkeypatch.setattr(_core, '_drive_repaint', lambda pid: events.append(('repaint', pid)))
+
+    _core._surface_drive('seam-plan')
+
+    assert events == [('bind', 'seam-plan'), ('repaint', 'seam-plan')], (
+        f'_surface_drive must fire one bind then one repaint, got {events!r}.'
+    )
+
+
+def test_drive_bind_and_repaint_target_correct_verbs(monkeypatch):
+    """_drive_bind -> session bind; _drive_repaint -> session push-title-token (NO --icon)."""
+    calls = []
+    monkeypatch.setattr(_core, '_run_executor', lambda notation, *args: calls.append((notation, args)))
+
+    _core._drive_bind('bind-plan')
+    _core._drive_repaint('paint-plan')
+
+    assert calls[0] == (
+        'plan-marshall:platform-runtime:platform_runtime',
+        ('session', 'bind', '--plan-id', 'bind-plan'),
+    )
+    assert calls[1] == (
+        'plan-marshall:platform-runtime:platform_runtime',
+        ('session', 'push-title-token', '--plan-id', 'paint-plan'),
+    ), 'repaint must push with NO --icon (plain repaint, default active icon)'
+    assert '--icon' not in calls[1][1], 'the repaint seam must never pass --icon (Defect 1 plain repaint)'
+
+
+def test_surface_drive_swallows_delegation_failure(monkeypatch):
+    """A raising primitive is fully swallowed — _surface_drive never propagates."""
+    def _boom(_pid):
+        raise RuntimeError('delegation blew up')
+
+    monkeypatch.setattr(_core, '_drive_bind', _boom)
+
+    # Must NOT raise — the seam is best-effort and self-guarding.
+    _core._surface_drive('seam-plan')
+
+
+def test_run_executor_skips_when_executor_absent(monkeypatch, tmp_path):
+    """_run_executor is a no-op (no subprocess) when the executor is not on disk."""
+    missing = tmp_path / 'execute-script.py'  # deliberately not created
+    monkeypatch.setattr(_core, 'get_executor_path', lambda: missing)
+    spawned = []
+    monkeypatch.setattr(_core.subprocess, 'run', lambda *a, **k: spawned.append(a))
+
+    _core._run_executor('plan-marshall:platform-runtime:platform_runtime', 'session', 'bind', '--plan-id', 'x')
+
+    assert spawned == [], 'an absent executor must skip the subprocess spawn entirely'
+
+
+def test_run_executor_spawns_when_executor_present(monkeypatch, tmp_path):
+    """_run_executor spawns the executor subprocess when the script exists on disk."""
+    present = tmp_path / 'execute-script.py'
+    present.write_text('# stub executor\n', encoding='utf-8')
+    monkeypatch.setattr(_core, 'get_executor_path', lambda: present)
+    captured = []
+    monkeypatch.setattr(_core.subprocess, 'run', lambda cmd, **k: captured.append(cmd))
+
+    _core._run_executor(
+        'plan-marshall:platform-runtime:platform_runtime', 'session', 'push-title-token', '--plan-id', 'x'
+    )
+
+    assert len(captured) == 1, f'exactly one spawn expected, got {captured!r}'
+    cmd = captured[0]
+    assert str(present) in cmd
+    assert cmd[-4:] == ['session', 'push-title-token', '--plan-id', 'x']
+
+
+def test_run_executor_swallows_subprocess_oserror(monkeypatch, tmp_path):
+    """A subprocess OSError is swallowed — _run_executor never propagates."""
+    present = tmp_path / 'execute-script.py'
+    present.write_text('# stub executor\n', encoding='utf-8')
+    monkeypatch.setattr(_core, 'get_executor_path', lambda: present)
+
+    def _explode(*_a, **_k):
+        raise OSError('simulated spawn failure')
+
+    monkeypatch.setattr(_core.subprocess, 'run', _explode)
+
+    # Must NOT raise.
+    _core._run_executor('plan-marshall:platform-runtime:platform_runtime', 'session', 'bind', '--plan-id', 'x')

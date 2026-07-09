@@ -13,6 +13,7 @@ from _handshake_commands import cmd_verify
 from _invariants import _BLOCKING_BOUNDARIES
 from _short_description import derive_short_description
 from _status_core import (
+    _surface_drive,
     get_archive_dir,
     get_status_path,
     log_entry,
@@ -124,6 +125,10 @@ def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
         status['metadata'] = {'use_worktree': False}
 
     write_status(args.plan_id, status)
+    # Persisted-title-state-write drive seam (best-effort, fire-and-forget):
+    # the first-phase seed is a current_phase write, so bind + repaint fire here
+    # too — a delegation failure never changes this command's outcome.
+    _surface_drive(args.plan_id)
 
     result: dict[str, Any] = {
         'status': 'success',
@@ -203,6 +208,10 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
         status['current_phase'] = 'complete'
 
     write_status(args.plan_id, status)
+    # Persisted-title-state-write drive seam (best-effort, fire-and-forget):
+    # a phase advance is a current_phase write, so bind + repaint fire here so
+    # the title reflects the new phase immediately instead of freezing.
+    _surface_drive(args.plan_id)
 
     result: dict[str, Any] = {'status': 'success', 'plan_id': args.plan_id, 'completed_phase': args.completed}
     if next_phase:
