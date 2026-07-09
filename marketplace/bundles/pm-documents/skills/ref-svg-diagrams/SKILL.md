@@ -35,7 +35,7 @@ Load this skill when:
 
 - Adding a new architectural / data-flow / dispatch diagram to `doc/`.
 - Touching an existing diagram under `doc/resources/diagrams/`.
-- Authoring a sequence or state-machine diagram (future diagram-type standards land here).
+- Authoring a sequence diagram (see [`standards/diagram-type-sequence.md`](standards/diagram-type-sequence.md)) or a state-machine diagram (the state type is a future placeholder).
 
 Do not load this skill for:
 
@@ -54,10 +54,10 @@ Do not load this skill for:
 | [`standards/diagram-type-graph.md`](standards/diagram-type-graph.md) | Graph / topology diagram type — hub-and-spoke and radial relationships. The plan-worktree-topology diagram is the reference implementation. |
 | [`standards/diagram-type-flow.md`](standards/diagram-type-flow.md) | Flow diagram type — single- or multi-track directional movement through stages, with junctions and loops. The post-execute-shipping-flow diagram is the reference implementation. |
 | [`standards/diagram-type-stack.md`](standards/diagram-type-stack.md) | Stack diagram type — layered slabs with optional convergence on a consumer. The audit-trail-layers diagram is the reference implementation. |
+| [`standards/diagram-type-sequence.md`](standards/diagram-type-sequence.md) | Sequence diagram type — time-ordered exchanges between actors, with lifelines, request/return arrows, and activation bars. The build-dispatch-sequence diagram is the reference implementation. |
 
 Future per-diagram-type standards (placeholder — not yet authored):
 
-- `standards/diagram-type-sequence.md` — sequence diagrams (LLM dispatch traces, finalize-step chains).
 - `standards/diagram-type-state.md` — state machines (plan phase lifecycle, finding resolution lifecycle).
 
 ## Templates
@@ -68,6 +68,7 @@ Future per-diagram-type standards (placeholder — not yet authored):
 | [`templates/graph-diagram-skeleton.svg`](templates/graph-diagram-skeleton.svg) | `diagram-type-graph.md` | Asymmetric hub-and-spoke scaffold — central hub, single primary node on the left, stack of secondary nodes on the right. |
 | [`templates/flow-diagram-skeleton.svg`](templates/flow-diagram-skeleton.svg) | `diagram-type-flow.md` | Multi-track flow scaffold — two horizontal tracks with a Y-junction, a Bézier loop, and stage waypoints. |
 | [`templates/stack-diagram-skeleton.svg`](templates/stack-diagram-skeleton.svg) | `diagram-type-stack.md` | Three-slab stack scaffold with dashed inter-slab dividers, left-region label gutter, right-region content, and a consumer node on the right with convergent connectors. |
+| [`templates/sequence-diagram-skeleton.svg`](templates/sequence-diagram-skeleton.svg) | `diagram-type-sequence.md` | Three-actor sequence scaffold — header boxes, dashed lifelines, solid request / dashed return arrows, activation bars, and a caller-suspended note. |
 
 Each starter carries the canonical `<style>` block, arrow marker, theme-neutral palette, and placeholder content shaped to the diagram type's geometry. Copy the matching template, rename, fill in.
 
