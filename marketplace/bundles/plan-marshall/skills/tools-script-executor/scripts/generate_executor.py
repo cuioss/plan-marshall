@@ -91,8 +91,16 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent
 _SKILLS_DIR = _SCRIPTS_DIR.parent.parent
 for _lib in ('ref-toon-format', 'tools-file-ops', 'script-shared'):
     _lib_path = str(_SKILLS_DIR / _lib / 'scripts')
-    if _lib_path not in sys.path:
-        sys.path.insert(0, _lib_path)
+    # Unconditionally front-load the generator's OWN (script-relative) lib path:
+    # remove any existing occurrence, then insert at position 0. A plain
+    # "insert only when absent" guard leaves the generator's path behind an
+    # inherited PYTHONPATH entry pointing at an older-version script-shared dir,
+    # which then shadows the generator's own imports. Front-loading unconditionally
+    # makes the generator's own version resolve first regardless of inherited
+    # PYTHONPATH priority.
+    if _lib_path in sys.path:
+        sys.path.remove(_lib_path)
+    sys.path.insert(0, _lib_path)
 
 # ============================================================================
 # CONFIGURATION
