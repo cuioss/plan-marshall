@@ -180,7 +180,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## Step 3: Hand Off to Phase 4 (Surgical Cascade)
 
-Phase-4-plan reads the outline, sees `scope_estimate: surgical`, and applies the `surgical + {change_type}` cascade — for `surgical + bug_fix` it keeps Phase 5 `quality-gate` only and Phase 6 `push` / `create-pr` / `lessons-capture` only, dropping `sonar-roundtrip`. The recipe's `lane:` seed force-keeps `automated-review` in the loop so structural review still runs even on the minimal posture.
+Phase-4-plan reads the outline, sees `scope_estimate: surgical`, and composes the execution manifest through two independent passes. (1) The `surgical + {change_type}` change-type cascade sets `phase_5.verification_steps` to the role-intersected core (for `surgical + bug_fix`, `{quality-gate, module-tests}`) and trims the `phase_6` candidate set (dropping `ci-wait`) — per `manage-execution-manifest/standards/decision-rules.md` Row 5, this cascade NEVER silently suppresses `sonar-roundtrip` / `automated-review`. (2) The separate lane-resolution pass applies the recipe's `minimal` posture, and it is that pass which drops the `prunable` / `tier:auto` finalize elements such as `sonar-roundtrip` (per `ext-point-lane-element.md`). The recipe's `lane:` seed force-keeps `automated-review` in the loop so structural review still runs even on the minimal posture.
 
 This recipe does not invoke phase-4-plan directly — `phase-3-outline` returns control to the orchestrator, which advances to phase-4-plan as usual. The manifest composer reads `scope_estimate` from the outline metadata.
 
