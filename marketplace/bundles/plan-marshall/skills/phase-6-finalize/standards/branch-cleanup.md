@@ -5,6 +5,7 @@ lane:
 name: default:branch-cleanup
 description: Branch cleanup — adapts to PR mode or local-only based on create-pr step presence
 order: 70
+advances_main_via_rebase: true
 default_on: true
 presets:
   - local
@@ -41,6 +42,8 @@ configurable:
 # Branch Cleanup
 
 Pure executor for the `branch-cleanup` finalize step. Switches back to base branch and cleans up after plan completion. Behavior adapts based on whether `create-pr` is in `manifest.phase_6.steps`.
+
+This step's late pre-merge rebase (`order: 70`, onto the newly-fetched `origin/{base_branch}` tip) advances `main` when it is a non-noop, so the step is declared `advances_main_via_rebase: true` in its frontmatter — the fact that arms the dispatcher's **post-rebase step-doc re-resolution contract** (see `phase-6-finalize/SKILL.md` Step 3): every subsequent step's authoritative doc is re-read from the just-rebased `{worktree_path}` at dispatch time rather than trusting the session-start-loaded copy.
 
 ## Exit-code convention for `manage-*` script calls
 

@@ -6,6 +6,7 @@ name: default:finalize-step-sync-baseline
 description: Early baseline rebase — rebase the worktree feature branch onto origin/{base_branch} at the start of finalize
 order: 3
 mutates_source: true
+advances_main_via_rebase: true
 default_on: true
 presets:
   - full
@@ -19,6 +20,8 @@ configurable:
 # Sync Baseline (Early Rebase)
 
 Pure executor for the `sync-baseline` finalize step. Rebases the worktree feature branch onto `origin/{base_branch}` at the very start of the phase-6-finalize pipeline (`order: 3`, before `pre-push-quality-gate` at `order: 5`), so every downstream local quality gate and remote CI run validates the actual to-be-landed tree rather than a tree that predates upstream commits landed during the finalize window. This narrows the stale-tree window: when `origin/{base_branch}` advanced between plan creation and finalize, the local gates now run against the rebased history instead of discovering the divergence only at the late `branch-cleanup` rebase (`order: 70`).
+
+A successful non-noop rebase here advances `main` (the worktree's history is replayed onto the newly-fetched `origin/{base_branch}` tip), so this step is declared `advances_main_via_rebase: true` in its frontmatter — the fact that arms the dispatcher's **post-rebase step-doc re-resolution contract** (see `phase-6-finalize/SKILL.md` Step 3): every subsequent step's authoritative doc is re-read from the just-rebased `{worktree_path}` at dispatch time rather than trusting the session-start-loaded copy.
 
 The step reuses the existing `git-workflow` verbs unchanged — `baseline-reconcile --no-emit` to classify the rebase, and `worktree-rebase-to` to perform it. It introduces NO new git primitive. It performs **NO force-push and NO `ci wait`**: at `order: 3` the feature branch has not yet been pushed (`default:push` is `order: 10`) and no PR exists (`default:create-pr` is `order: 20`), so there is no remote ref to update and no CI to wait on. The late `branch-cleanup` rebase (`order: 70`) remains the correctness backstop: in the common case where no new commits landed during the finalize window, that late rebase degrades to `action: noop`.
 
