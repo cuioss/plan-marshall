@@ -277,16 +277,6 @@ class TestGitignoreSetupEdgeCases:
         assert status['has_plan_dir']
         assert status['has_marshal_exception']
         assert not status['has_architecture_exception']
-        assert not status['has_plugin_doctor_exception']
-        assert not status['has_plan_local_worktrees']
-
-    def test_check_gitignore_status_detects_plugin_doctor_exception(self, tmp_path):
-        """check_gitignore_status flags the plugin-doctor negation when present."""
-        gitignore_path = tmp_path / '.gitignore'
-        gitignore_path.write_text('.plan/*\n!.plan/plugin-doctor.yml\n')
-
-        status = check_gitignore_status(gitignore_path)
-        assert status['has_plugin_doctor_exception']
 
 
 class TestGitignoreConsolidation:

@@ -179,8 +179,6 @@ def check_gitignore_status_from_content(content: str, exists: bool = True) -> di
     has_plan_dir = False
     has_marshal_exception = False
     has_architecture_exception = False
-    has_plugin_doctor_exception = False
-    has_plan_local_worktrees = False
     has_managed_comment = False
     has_local_comment = False
 
@@ -193,11 +191,6 @@ def check_gitignore_status_from_content(content: str, exists: bool = True) -> di
             has_marshal_exception = True
         if stripped == GITIGNORE_ARCHITECTURE_EXCEPTION:
             has_architecture_exception = True
-        if stripped == GITIGNORE_PLUGIN_DOCTOR_EXCEPTION:
-            has_plugin_doctor_exception = True
-        # Accept .plan/local/worktrees/ (preferred) and .plan/local/worktrees (no trailing slash)
-        if stripped in ('.plan/local/worktrees/', '.plan/local/worktrees'):
-            has_plan_local_worktrees = True
         if stripped == GITIGNORE_COMMENT:
             has_managed_comment = True
         if stripped == GITIGNORE_LOCAL_COMMENT:
@@ -208,8 +201,6 @@ def check_gitignore_status_from_content(content: str, exists: bool = True) -> di
         'has_plan_dir': has_plan_dir,
         'has_marshal_exception': has_marshal_exception,
         'has_architecture_exception': has_architecture_exception,
-        'has_plugin_doctor_exception': has_plugin_doctor_exception,
-        'has_plan_local_worktrees': has_plan_local_worktrees,
         'has_managed_comment': has_managed_comment,
         'has_local_comment': has_local_comment,
         'content': content,
@@ -229,7 +220,6 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
         - has_plan_dir: bool
         - has_marshal_exception: bool
         - has_architecture_exception: bool
-        - has_plugin_doctor_exception: bool
         - content: str (if exists)
     """
     exists = gitignore_path.exists()
