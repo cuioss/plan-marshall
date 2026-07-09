@@ -51,7 +51,7 @@ These are the input-health defects that silently FLOOR every downstream check:
 
 | Flag | Fires when | Why it floors downstream checks |
 |------|------------|---------------------------------|
-| `metrics_blind` | Any data-bearing phase (`4-plan`, `5-execute`, `6-finalize`) recorded **zero** tokens. The cell lists the blind phase names (`;`-joined). | A zero-token phase means every token-economics and token-trend number for that phase is under-counted. The **5-execute** case is load-bearing — a blind execute escalates the plan to the `blind` data_confidence bucket. |
+| `metrics_blind` | Any data-bearing phase (`4-plan`, `5-execute`, `6-finalize`) recorded **zero** tokens **that #812's `unrecorded_phases` markers do NOT explain**. The cell lists the genuinely-blind phase names (`;`-joined). | A zero-token phase means every token-economics and token-trend number for that phase is under-counted. The **5-execute** case is load-bearing — a genuinely-blind execute escalates the plan to the `blind` data_confidence bucket. A phase listed in `unrecorded_phases` is recorded-partial by design (see the #812 note below) and is EXCLUDED from this flag. |
 | `incomplete_lifecycle` | The plan never recorded a `5-execute` OR a `6-finalize` section in `metrics.toon`. The cell lists the missing phase names. | The plan did not run to completion through the recorded lifecycle, so completeness-dependent checks (pr-merge-velocity, quality-chain resolution) read a truncated history. |
 | `missing_dispatch_markers` | `logs/work.log` carries no `[DISPATCH] role=phase-N` line. | The sequence-and-build-minimality phase attribution cannot bucket calls into phases — it folds everything into `1-init` (the finalize-fold conflation caveat in that check's sub-doc). |
 
@@ -63,11 +63,25 @@ per-plan rows:
 | Bucket | A plan lands here when |
 |--------|-----------------------|
 | `fully-recorded` | No flag fired: every canonical input present, no blind phase, a complete lifecycle, and dispatch markers present. |
-| `partial` | At least one input absent, or a non-execute zero-token phase / incomplete lifecycle / missing dispatch markers — **but the 5-execute phase DID record tokens** (not blind). |
-| `blind` | The **5-execute** phase recorded zero tokens (`metrics_blind` on the load-bearing phase). Every downstream number for these plans is a FLOOR. |
+| `partial` | At least one input absent, or a non-execute zero-token phase / incomplete lifecycle / missing dispatch markers — **but the 5-execute phase DID record tokens** (not blind); OR the 5-execute phase recorded zero tokens that #812's `unrecorded_phases` markers explain (recorded-partial by design). |
+| `blind` | The **5-execute** phase recorded zero tokens **that the #812 markers do NOT explain** (`metrics_blind` on the load-bearing phase). Every downstream number for these plans is a FLOOR. |
 
-The bucket precedence is `blind` > `partial` > `fully-recorded`: a blind execute
-wins regardless of other inputs.
+The bucket precedence is `blind` > `partial` > `fully-recorded`: a genuinely-blind
+execute wins regardless of other inputs. A #812-marker-explained zero-token
+execute is `partial` (recorded-partial), NEVER `blind` and NEVER the
+false-healthy `fully-recorded`.
+
+### #812 recorded-partiality markers
+
+`manage-metrics` (#812) stamps top-level `partial` / `unrecorded_phases` scalars
+on `metrics.toon`: a canonical phase the recorder KNOWS has no recorded boundary
+is listed in `unrecorded_phases`. This check reads them via
+`parse_metrics_partiality` and consumes the signal instead of inferring blindness
+from zero tokens alone. The distinction is load-bearing for no-false-healthy: a
+zero-token execute the recorder deliberately declared unrecorded is
+**recorded-partial** (bucket `partial`), whereas an UNEXPLAINED zero-token execute
+is genuine **blindness** (bucket `blind`). Plans predating #812 carry no markers,
+so every zero-token phase degrades to the old blindness inference unchanged.
 
 ## Emitted columns
 
@@ -120,11 +134,13 @@ while any plan is `blind` here.
 ## How the orchestrator interprets the rows
 
 - **`data_confidence: blind`** — highest-priority structural signal. The plan's
-  execute phase recorded zero tokens; every downstream token number for it is a
-  floor. Do NOT clear any of the plan's peer-check rows as healthy. If the blind
-  recording recurs across plans created after a metrics-recording fix shipped,
-  that recurrence is the file-worthy signal (the recording defect itself), routed
-  through the three-gate policy.
+  execute phase recorded zero tokens **with no #812 marker to explain it**; every
+  downstream token number for it is a floor. Do NOT clear any of the plan's
+  peer-check rows as healthy. If the blind recording recurs across plans created
+  after a metrics-recording fix shipped, that recurrence is the file-worthy signal
+  (the recording defect itself), routed through the three-gate policy. A
+  marker-explained zero-token execute is NOT here — it is `partial`, and its
+  partiality is a recorded design fact, not a defect to file.
 - **`metrics_blind` (non-execute phase)** — a `4-plan` or `6-finalize` zero-token
   recording. Flags the specific phase as under-counted; the plan stays `partial`
   (not `blind`) because the load-bearing execute phase still recorded data.
@@ -152,9 +168,10 @@ with a cited reason (the `severity: informational` cell, or the
   or re-derive a flag in chat.
 - The data-bearing phase set, the load-bearing execute phase, and the
   dispatch-marker grammar are module constants
-  (`_II_DATA_BEARING_PHASES`, `_II_EXECUTE_PHASE`, `_II_DISPATCH_RE`). If the
-  recorded lifecycle changes, edit `scripts/audit.py` rather than substituting a
-  different reading.
+  (`_II_DATA_BEARING_PHASES`, `_II_EXECUTE_PHASE`, `_II_DISPATCH_RE`). The #812
+  recorded-partiality markers are read by `parse_metrics_partiality` (shared with
+  the `metrics` check). If the recorded lifecycle or the partiality-marker schema
+  changes, edit `scripts/audit.py` rather than substituting a different reading.
 - The cross-check obligation is NOT optional: a peer check that claims "all
   healthy" while this check reports a `blind` plan is producing a false healthy —
   the exact failure mode this check exists to block.

@@ -1,6 +1,6 @@
 ---
 name: audit-archived-plan-retrospectives
-description: Audit archived plans across eighteen retrospective checks — execution-manifest correctness, quality-verification findings, metrics anomalies, cross-plan recurring patterns, token-efficiency trend, scope-estimate accuracy, track-selection-accuracy (actual planning track vs counterfactual correct track), PR-merge velocity, task-count efficiency, global-log analysis, token-economics, quality-chain, sequence-and-build-minimality, input-integrity corpus completeness, task-graph redundancy, architecture-lookup-ratio (information-lookup vs build-lookup), preference-pattern-detector (recurring user gate-dispositions → architecture hints), and cross-check-synthesis facet-completeness — file lessons through the three-gate policy, and dormate reviewed plans
+description: Audit archived plans across twenty-two retrospective checks — execution-manifest correctness, quality-verification findings, metrics anomalies, cross-plan recurring patterns, token-efficiency trend, scope-estimate accuracy, track-selection-accuracy (actual planning track vs counterfactual correct track), PR-merge velocity, task-count efficiency, global-log analysis, token-economics, quality-chain, sequence-and-build-minimality, input-integrity corpus completeness, task-graph redundancy, architecture-lookup-ratio (information-lookup vs build-lookup), preference-pattern-detector (recurring user gate-dispositions → architecture hints), dispatch-topology (leaf/dispatch-topology invariant), finalize-flow-conformance (post-#849 deterministic ci_verify mechanics), merge-window-accounting (widened merge-mutex admission window), lane-lever-effectiveness (checkpoint measurement arm — per-scope-class token spend vs armed targets + lane-lever engagement), and cross-check-synthesis facet-completeness — file lessons through the three-gate policy, and dormate reviewed plans
 user-invocable: true
 mode: workflow
 allowed-tools: Bash, Read, Grep, Write, AskUserQuestion
@@ -8,7 +8,7 @@ allowed-tools: Bash, Read, Grep, Write, AskUserQuestion
 
 # Audit Archived Plan Retrospectives (project-local)
 
-Eighteen-check retrospective auditor over the archived-plan corpus. The skill is
+Twenty-two-check retrospective auditor over the archived-plan corpus. The skill is
 the LLM-driven orchestration narrative; `scripts/audit.py` is the deterministic
 computation core. The orchestrator selects which checks to run, surfaces each
 check's script-computed TOON verbatim, drives lesson filing through the
@@ -101,7 +101,7 @@ workstream 05 lands.
 | `--plan-dir PATH` | optional | Override the default `.plan/local/archived-plans` root. Useful when auditing a vendored snapshot. |
 | `--plan-id ID` | optional | Restrict the scan to one archived plan (its directory basename). |
 | `--include-active` | optional | Additionally scan `.plan/local/plans/` so in-flight plans are reported alongside archived ones. Active plans without a manifest are reported as `incomplete`, not `drift`. |
-| `--check NAME` | optional | Run a single check instead of all. Valid names: `execution-context-manifest`, `quality-verification-report`, `metrics`, `recurring-pattern-detector`, `token-efficiency-trend`, `scope-estimate-accuracy`, `track-selection-accuracy`, `pr-merge-velocity`, `task-count-efficiency`, `global-log-analysis`, `token-economics`, `quality-chain`, `sequence-and-build-minimality`, `input-integrity`, `task-graph-redundancy`, `architecture-lookup-ratio`, `preference-pattern-detector`, `cross-check-synthesis`. Default: run every check. When `--check cross-check-synthesis` is selected, the script still computes the upstream checks it consumes (without emitting their blocks) so the synthesis can fire. |
+| `--check NAME` | optional | Run a single check instead of all. Valid names: `execution-context-manifest`, `quality-verification-report`, `metrics`, `recurring-pattern-detector`, `token-efficiency-trend`, `scope-estimate-accuracy`, `track-selection-accuracy`, `pr-merge-velocity`, `task-count-efficiency`, `global-log-analysis`, `token-economics`, `quality-chain`, `sequence-and-build-minimality`, `input-integrity`, `task-graph-redundancy`, `architecture-lookup-ratio`, `preference-pattern-detector`, `dispatch-topology`, `finalize-flow-conformance`, `merge-window-accounting`, `lane-lever-effectiveness`, `cross-check-synthesis`. Default: run every check. When `--check cross-check-synthesis` is selected, the script still computes the upstream checks it consumes (without emitting their blocks) so the synthesis can fire. |
 | `--dormate ID [ID ...] --confirmed` | optional | Relocate one or more archived plans to `.plan/temp/dormated-plans/{plan_id}/`. Accepts an explicit list of plan IDs; duplicate IDs are deduplicated silently. The whole batch is all-or-nothing — a single grammar violation, missing source, or pre-existing destination refuses the entire batch with nothing moved. Inert (refused, exit 0) without `--confirmed`. The interactive confirmation is owned by the LLM body (Step 5), never delegated to the script. |
 | `--dormate-all --confirmed` | optional | Relocate EVERY archived plan under `.plan/local/archived-plans/` to `.plan/temp/dormated-plans/` in one call. Same all-or-nothing posture as `--dormate`. Inert (refused, exit 0) without `--confirmed`. The body MUST surface the full would-move plan list before confirming (Step 5). |
 | `--dormate-global-logs --confirmed` | optional | Relocate COMPLETE past-date global logs (`{prefix}-YYYY-MM-DD.log`) from `.plan/local/logs/` to `.plan/temp/dormated-plans/global-logs/`. Today's still-active log is never moved. Inert (refused, exit 0) without `--confirmed`; on a destination-name clash the whole move refuses (`status: error`) rather than overwriting. The interactive confirmation is owned by the LLM body (Step 5), never delegated to the script. |
@@ -132,7 +132,51 @@ the rows.
 | Task-graph redundancy | [`checks/task-graph-redundancy.md`](checks/task-graph-redundancy.md) | Per-plan task-graph adjacency over `tasks/TASK-*.json`: `multi_task_file` (a file edited by ≥2 tasks — the primary duplicate-task signal), `dup_substep` (same `(target, intent)` in >1 task), `in_task_build` (a heavy build/verify baked into a task's verification that phase-5/6 already runs), `verif_task_fanout` (>1 module_testing/verification task), and `deliverable_fanout` (a deliverable whose task count exceeds the per-run corpus outlier threshold `max(3, median*2)`). All five sub-checks emit `genuine`. |
 | Architecture-lookup-ratio | [`checks/architecture-lookup-ratio.md`](checks/architecture-lookup-ratio.md) | Per-plan ratio of **information lookup** (architecture orientation/navigation: `find`/`which-module`/`files`/`module`/`info`/`overview`) vs **build lookup** (`resolve`/`derive-verification`), both from `logs/script-execution.log`. Corpus-derived `build_dominated_lookup` flag (build_lookups ≥ corpus-median AND info/build ratio ≤ corpus-p25, with a degenerate-corpus guard) surfaces plans whose architecture use is build-resolution-heavy with little navigation — a PROMPT (not a verdict) to check whether navigation bypassed the structured-query lever (`Read`/raw-bash instead of `architecture find`). A low ratio may simply mean no navigation was needed (recipe/surgical/issue-fix). Discovery verbs (`discover`/`enrich`/`crawl-*`) are counted separately and excluded from the ratio. |
 | Preference-pattern detector | [`checks/preference-pattern-detector.md`](checks/preference-pattern-detector.md) | Cross-plan recurring user gate-dispositions: `(module, finding-class, disposition)` tuples (`suppressed`/`accepted`/`taken_into_account`) appearing in N≥`THRESHOLDS["preference_disposition_occurrences"]` plans, surfaced as candidate preferences. The threshold gate is script-owned; Step 4c routes every surfaced row to `architecture enrich` per the shared `disposition-to-hint-routing.md` contract (generalize, do not log raw dispositions). |
-| Cross-check synthesis | [`checks/cross-check-synthesis.md`](checks/cross-check-synthesis.md) | The **facet-completeness critic** (runs LAST). Joins the OTHER checks' retained structured results into six cross-check couplings single rows miss: `trend_empty_untrustworthy` (empty token-trend regression over blind-execute plans), `churn_explains_walltime` (non_minimal_build/build_churn corroborated by a plan's build wall-clock `total_build_seconds` upper-half — build redundancy wastes wall-clock, not tokens), `qgate_gap_chain` (no_qgate6/auto_review_only correlating with ci_rerun / finalize_heavy), `argparse_signature_cluster` (recurring-pattern argparse signatures correlating with global-log errors and unfiled quality-verification signatures — collapsed to ONE candidate), `scope_underestimate_cost` (scope under-estimation correlating with high tokens/file or a task-count outlier), and `redundant_build_churn` (task-graph-redundancy `in_task_build` correlating with sequence `build_churn`/`phase_reentry`). Each coupling carries its qualifying caveat and the D1 severity column; the block operationalizes the Step-4b completeness gate. |
+| Dispatch topology | [`checks/dispatch-topology.md`](checks/dispatch-topology.md) | Per-plan verification of the roadmap's leaf/dispatch-topology invariant (subagents are LEAVES — only the orchestrator dispatches further subagents). Scans each plan's `logs/work.log` `[DISPATCH] (caller) target=…` lines and flags any whose `(bundle:skill)` caller is NOT an allowed dispatcher (`plan-marshall:plan-marshall` or a `plan-marshall:phase-N-…` phase context) — a leaf that spawned a subagent. The allowlist catches a newly-added leaf by default. |
+| Finalize-flow conformance | [`checks/finalize-flow-conformance.md`](checks/finalize-flow-conformance.md) | Per-plan verification of the post-#849/#850 finalize mechanics (deterministic `ci_verify` gate, adaptive ci-wait ratchet). Reads the `phase_6.steps` roster + `artifacts/ci-runs/*/manifest.toon` and flags `missing_ci_verify` (a PR was created with no ci-verify gate — pre-#849 shape), `ci_wait_timeout` (a recorded `wait_outcome: deadline_exceeded`), and `ci_unresolved` (the latest run's `final_status` never reached `success`). |
+| Merge-window accounting | [`checks/merge-window-accounting.md`](checks/merge-window-accounting.md) | Cross-plan accounting of the #849 widened merge-mutex + FIFO admission-queue window. Buckets the global `[LOCK] (merge:*)` lifecycle lines by `lock_id` (= plan_id) and reports per-plan acquire/release/blocked/reclaim counts + max FIFO `waiting_count`; flags `merge_contention` when a plan waited behind the queue front. Accounts for the merge-window cost the widened mutex trades for fair ordering / parallelism. |
+| Lane-lever effectiveness | [`checks/lane-lever-effectiveness.md`](checks/lane-lever-effectiveness.md) | The **checkpoint measurement arm** of the token-optimization roadmap. Cross-plan measure of whether the cost-reducing lane levers (recipe auto-routing, the light planning lane, the minimal execution posture, the #854 surgical-fix micro-lane) are engaged, and scores each plan's summed `total_tokens` against its scope class's armed checkpoint target (surgical ≤1.2M / single_module ≤1.5M / multi_module ≤2.5M): per-plan `within`/`over`/`unclassed`/`no_metrics` checkpoint verdict (`checkpoint_over` is the genuine overspend signal), corpus lever-engagement counts (recipe routes / light-lane fires / minimal-posture choices), the `posture_not_taken` lever-adoption gap on surgical plans, and an `estimated_avoided_tokens` scope-gated subtraction (an upper bound). |
+| Cross-check synthesis | [`checks/cross-check-synthesis.md`](checks/cross-check-synthesis.md) | The **facet-completeness critic** (runs LAST). Joins the OTHER checks' retained structured results into ten cross-check couplings single rows miss: `trend_empty_untrustworthy` (empty token-trend regression over blind-execute plans), `churn_explains_walltime` (non_minimal_build/build_churn corroborated by a plan's build wall-clock `total_build_seconds` upper-half — build redundancy wastes wall-clock, not tokens), `qgate_gap_chain` (no_qgate6/auto_review_only correlating with ci_rerun / finalize_heavy), `argparse_signature_cluster` (recurring-pattern argparse signatures correlating with global-log errors and unfiled quality-verification signatures — collapsed to ONE candidate), `scope_underestimate_cost` (scope under-estimation correlating with high tokens/file or a task-count outlier), `redundant_build_churn` (task-graph-redundancy `in_task_build` correlating with sequence `build_churn`/`phase_reentry`), `dispatch_topology_reentry` (a leaf-emitted dispatch corroborated by sequence `phase_reentry`), `finalize_gate_gap_ci_rerun` (missing/failed #849 ci_verify gate correlating with sequence `ci_rerun`), `merge_window_ci_rerun` (merge-queue contention correlating with `ci_rerun` / `finalize_heavy`), and `surgical_overpay` (lane-lever-effectiveness `checkpoint_over` correlating with token-economics `big_spend_tiny_footprint` — a lane-lever miss). Each coupling carries its qualifying caveat and the D1 severity column; the block operationalizes the Step-4b completeness gate. |
+
+## Check era model (fixed_since + retire-on-quiet)
+
+Every check carries an **era stamp** and participates in a **retire-on-quiet**
+proposal loop. Both are script-computed in `scripts/audit.py` from the single
+`CHECK_ERA` table and the `THRESHOLDS["retire_on_quiet_runs"]` tunable — the LLM
+half only reads and acts on the surfaced signals, it never recomputes them.
+
+- **`fixed_since` (era stamp).** Each check's block header carries a
+  `fixed_since: {stamp}` line naming the roadmap-era boundary as of which the
+  check's computation is known accurate (e.g. `#849`, `#852`, `#854`, `plan-10`).
+  The stamps live in ONE central `CHECK_ERA` dict in `scripts/audit.py` and are
+  surfaced deterministically on every emitted block — no check inline-duplicates
+  its own boundary. Read the stamp as "this check reflects mechanics as of era
+  X"; when the roadmap advances past X for a check whose semantics that advance
+  touched, the check is a candidate for a semantic refresh.
+
+- **retire-on-quiet (removal PROPOSAL, never a removal).** A check whose
+  `genuine_signal_count` has been zero across at least
+  `THRESHOLDS["retire_on_quiet_runs"]` (default **3**) consecutive recorded runs
+  surfaces a removal proposal in the dedicated `retire-on-quiet` block. Each
+  proposal row names the check, its quiet-run streak, its `fixed_since` stamp,
+  and proposal text. The mechanism is **proposal-only** — the script never
+  removes a check, and the block is emitted on every full sweep (an empty rows
+  table shows the mechanism ran but proposed nothing). The per-run genuine counts
+  are persisted as `genuine__{check}` keys in each report's `summary_metrics`
+  header (under `.plan/local/audit-reports/`), so the streak is read back across
+  runs; a report predating the era model contributes no `genuine__` keys and
+  therefore breaks a streak rather than silently extending it. Treat a surfaced
+  proposal as a prompt to confirm the check is genuinely obsolete (versus quiet
+  because the corpus simply had no offending plans) before any future plan
+  removes it.
+
+**Lifecycle-footer convention for future roadmap plans.** The not-yet-landed
+roadmap plans (plan-5 … plan-8) are not yet era boundaries. When one of them
+ships and changes a check's semantics, add or bump that check's `CHECK_ERA`
+entry to the new boundary in `scripts/audit.py` (never in a per-check emit
+function) as a one-line change, and re-run the audit — the new stamp then rides
+every emitted block for that check automatically. This keeps `CHECK_ERA` the
+single, greppable ledger of which roadmap era each check is aligned to.
 
 ## Usage Examples
 
@@ -224,10 +268,18 @@ sequence-and-build-minimality flag (`build_churn`, `non_minimal_build`,
 `dup_substep`, `in_task_build`, `verif_task_fanout`, `deliverable_fanout` — read
 each against `checks/task-graph-redundancy.md`), an architecture-lookup-ratio flag
 (`build_dominated_lookup` — read against `checks/architecture-lookup-ratio.md`: a
-PROMPT, not a verdict; a low ratio may simply mean no navigation was needed), or a
+PROMPT, not a verdict; a low ratio may simply mean no navigation was needed), a
+dispatch-topology violation (`leaf_dispatch > 0` — a leaf spawned a subagent, read
+against `checks/dispatch-topology.md`), a finalize-flow-conformance flag
+(`missing_ci_verify`, `ci_wait_timeout`, `ci_unresolved` — read against
+`checks/finalize-flow-conformance.md`), a merge-window-accounting flag
+(`merge_contention` — read against `checks/merge-window-accounting.md`), a
+lane-lever-effectiveness flag (`checkpoint_over` — a plan overspent its armed
+checkpoint target, read against `checks/lane-lever-effectiveness.md`), or a
 cross-check-synthesis coupling that FIRED (`trend_empty_untrustworthy`, `churn_explains_walltime`,
 `qgate_gap_chain`, `argparse_signature_cluster`, `scope_underestimate_cost`,
-`redundant_build_churn` — read each against its qualifying caveat in
+`redundant_build_churn`, `dispatch_topology_reentry`, `finalize_gate_gap_ci_rerun`,
+`merge_window_ci_rerun`, `surgical_overpay` — read each against its qualifying caveat in
 `checks/cross-check-synthesis.md`) —
 explicitly state BOTH:
 
@@ -387,11 +439,16 @@ cannot pass the gate while any coupling fired unresolved.
       `missing_dispatch_markers`, a task-graph-redundancy flag —
       `multi_task_file`, `dup_substep`, `in_task_build`, `verif_task_fanout`,
       `deliverable_fanout`, an architecture-lookup-ratio flag —
-      `build_dominated_lookup`, or a FIRED cross-check-synthesis coupling —
+      `build_dominated_lookup`, a dispatch-topology violation (`leaf_dispatch > 0`),
+      a finalize-flow-conformance flag — `missing_ci_verify`, `ci_wait_timeout`,
+      `ci_unresolved`, a merge-window-accounting flag — `merge_contention`, a
+      lane-lever-effectiveness flag — `checkpoint_over`, or a FIRED
+      cross-check-synthesis coupling —
       `trend_empty_untrustworthy`, `churn_explains_walltime`, `qgate_gap_chain`,
       `argparse_signature_cluster`, `scope_underestimate_cost`,
-      `redundant_build_churn`) was adjudicated
-      with a stated verdict AND cited evidence.
+      `redundant_build_churn`, `dispatch_topology_reentry`,
+      `finalize_gate_gap_ci_rerun`, `merge_window_ci_rerun`, `surgical_overpay`)
+      was adjudicated with a stated verdict AND cited evidence.
 - [ ] Every cross-check-synthesis coupling that `fired` (`severity: genuine`) was
       resolved by adjudicating its COUPLED rows together — not in isolation —
       against the coupling's qualifying caveat in
