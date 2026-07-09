@@ -6,12 +6,16 @@ Core functions for manage-status: TypedDicts, path resolution, read/write, and s
 
 import argparse
 import json
+import logging
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
 from constants import DIR_ARCHIVED, DIR_PLANS, FILE_STATUS
 from file_ops import (
     base_path,
+    get_executor_path,
     get_plan_dir,
     now_utc_iso,
     output_toon,
@@ -20,6 +24,8 @@ from file_ops import (
 )
 from input_validation import require_valid_plan_id  # noqa: F401 - re-exported
 from plan_logging import log_entry  # noqa: F401 - re-exported
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # TypedDict Definitions
@@ -77,6 +83,86 @@ def write_status(plan_id: str, status: dict[Any, Any]) -> None:
     """Write status.json for a plan."""
     status['updated'] = now_utc_iso()
     write_json(get_status_path(plan_id), status)
+
+
+# =============================================================================
+# Persisted-title-state-write drive seam (best-effort, executor channel)
+# =============================================================================
+#
+# manage-status is the STATE layer: it writes status.json and composes/emits
+# NOTHING itself. On every persisted ``current_phase`` write the state layer
+# fires two best-effort, fire-and-forget delegations to ``platform-runtime`` —
+# a bind (session→plan, last-driven-wins; Defect 2) and a repaint (icon-optional
+# title push; Defect 1) — exactly mirroring how ``manage-locks/merge_lock.py``
+# delegates its title-token surface. Both are invoked through the executor as a
+# subprocess (the established merge_lock channel, not a fragile file-path import
+# across the multi-module platform-runtime layout) and fully swallow every
+# failure, so a delegation error NEVER alters the status-write outcome or exit
+# code. The single shared ``_surface_drive`` helper is the ONE home both phase
+# writers (``cmd_create`` / ``cmd_transition`` / ``cmd_set_phase``) share.
+
+_PLATFORM_RUNTIME_NOTATION = 'plan-marshall:platform-runtime:platform_runtime'
+
+
+def _run_executor(notation: str, *cli_args: str) -> None:
+    """Best-effort: invoke ``{notation}`` through the executor as a subprocess.
+
+    Fire-and-forget — any failure (executor missing, non-zero exit, OSError) is
+    swallowed at DEBUG. The drive seam is a display affordance and MUST NOT
+    change the status-write outcome. Mirrors ``merge_lock._run_executor``'s
+    best-effort contract (the established D6 executor channel).
+
+    The executor is resolved and existence-checked BEFORE the spawn: when the
+    plan root is unresolvable or no ``execute-script.py`` is on disk (an
+    isolated test fixture, a pre-bootstrap window), there is nothing to delegate
+    to, so the call returns without launching a subprocess. Skipping the spawn
+    keeps the seam a true no-op wherever the executor is absent instead of
+    launching a Python process that would only fail to find the script.
+    """
+    try:
+        executor = get_executor_path()
+    except RuntimeError as exc:
+        logger.debug('drive-seam %s skipped (no plan root): %s', notation, exc)
+        return
+    if not executor.is_file():
+        logger.debug('drive-seam %s skipped (executor absent at %s)', notation, executor)
+        return
+    cmd = [sys.executable, str(executor), notation, *cli_args]
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        logger.debug('drive-seam %s failed: %s', notation, exc)
+
+
+def _drive_bind(plan_id: str) -> None:
+    """Best-effort ``session bind --plan-id {id}`` (last-driven-wins; Defect 2)."""
+    _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'bind', '--plan-id', plan_id)
+
+
+def _drive_repaint(plan_id: str) -> None:
+    """Best-effort ``session push-title-token --plan-id {id}`` (no icon; Defect 1).
+
+    The push runs with no ``--icon`` — a plain repaint of the freshly composed
+    title with the default active icon, so the title bar reflects the new phase
+    immediately instead of freezing at the last-rendered phase.
+    """
+    _run_executor(_PLATFORM_RUNTIME_NOTATION, 'session', 'push-title-token', '--plan-id', plan_id)
+
+
+def _surface_drive(plan_id: str) -> None:
+    """Best-effort: fire one bind + one repaint after a persisted phase-state write.
+
+    Called immediately AFTER ``write_status`` by the three ``current_phase``
+    writers (``cmd_create`` seed / ``cmd_transition`` advance / ``cmd_set_phase``).
+    The single shared home so both call sites share it rather than a per-caller
+    convention. Fully exception-swallowing: a subprocess/delegation failure never
+    changes the command's status or exit code.
+    """
+    try:
+        _drive_bind(plan_id)
+        _drive_repaint(plan_id)
+    except Exception as exc:  # noqa: BLE001 — drive seam is best-effort
+        logger.debug('drive-seam surface for %s failed: %s', plan_id, exc)
 
 
 # Phase routing maps phase names to skills (for route command).

@@ -3,7 +3,7 @@
 """
 Abstract base class and shared TOON helpers for platform-runtime.
 
-Defines the Runtime ABC with all 18 platform operations. Concrete subclasses
+Defines the Runtime ABC with all 21 platform operations. Concrete subclasses
 (ClaudeRuntime, OpenCodeRuntime) implement each operation for their target.
 
 TOON helpers delegate to the canonical toon_parser from ref-toon-format — no
@@ -268,16 +268,22 @@ class Runtime(ABC):
         """
 
     @abstractmethod
-    def session_push_title_token(self, plan_id: str, icon: str) -> str:
+    def session_push_title_token(self, plan_id: str, icon: str | None = None) -> str:
         """Push a live terminal title for *plan_id* directly to ``/dev/tty``.
 
         Resolves the plan's title state from ``status.json``, composes the
-        ``'{icon} {glyph} {body}'`` string via the ``manage-terminal-title``
-        composer (with *icon* as the push-mode icon override), and writes the
+        title string via the ``manage-terminal-title`` composer, and writes the
         OSC escape (``\\x1b]0;{composed}\\x07``) directly to ``/dev/tty``.
 
-        This is push-mode emission for blocking callers (e.g. a lock/build
-        acquire wait) that need the title refreshed without a hook firing.
+        This is the single repaint seam for blocking callers (e.g. a lock/build
+        acquire wait) and for the ``manage-status`` phase-state-write drive seam
+        that need the title refreshed without a hook firing.
+
+        ``icon`` is OPTIONAL. When supplied it overrides the event-resolved icon
+        for non-terminal phases (push-mode glyph, e.g. the lock ⏳/🔒 or build
+        🔨). When omitted (``None``) the composer applies its default active icon,
+        so the push is a plain repaint of the current composed title — the shape
+        every persisted-title-state change fires.
 
         On Claude: best-effort — silent no-op when ``/dev/tty`` is not openable
         (CI / background / no controlling terminal); never raises.
@@ -287,12 +293,86 @@ class Runtime(ABC):
         Args:
             plan_id: Plan identifier whose ``status.json`` supplies the title
                 state.
-            icon: The push-mode icon glyph that overrides the event-resolved
-                icon for non-terminal phases.
+            icon: Optional push-mode icon glyph that overrides the event-resolved
+                icon for non-terminal phases; ``None`` for a plain repaint.
 
         Returns:
             Serialized TOON string (success or no-op) noting whether the push
             reached a TTY.
+        """
+
+    @abstractmethod
+    def session_bind(self, plan_id: str, session_id: str | None = None) -> str:
+        """Bind the running session to *plan_id* (last-driven-wins).
+
+        Writes the caller session's ``active-plan`` cache slot so
+        ``session render-title`` / ``session resolve-plan`` resolve the session
+        to *plan_id*. The policy is last-driven-wins: the caller's own slot is
+        written unconditionally, with NO protect-active, NO stale-slot reclaim,
+        and NO plan-dir-exists check — a session that switches to drive a
+        different live plan rebinds cleanly instead of staying stuck.
+
+        On Claude: resolves ``session_id`` from the *session_id* argument or, when
+        absent, from ``$CLAUDE_CODE_SESSION_ID``, then delegates to the pure
+        ``session_binding`` policy. Best-effort — never raises.
+
+        On OpenCode: returns ``no-op`` (no platform-provided session id).
+
+        Args:
+            plan_id: Plan identifier to bind to the session's slot.
+            session_id: Optional explicit session id; falls back to the platform
+                session-id environment variable when omitted.
+
+        Returns:
+            Serialized TOON string (success or no-op) noting whether the slot
+            was bound.
+        """
+
+    @abstractmethod
+    def session_resolve_plan(self, session_id: str | None = None) -> str:
+        """Resolve the running session's bound plan_id (the read side).
+
+        Reads the caller session's ``active-plan`` cache slot. This is the read
+        counterpart of :meth:`session_bind`; ``session render-title`` resolves
+        the session->plan binding through the same read path.
+
+        On Claude: resolves ``session_id`` from the *session_id* argument or, when
+        absent, from ``$CLAUDE_CODE_SESSION_ID``, then delegates to the pure
+        ``session_binding`` policy.
+
+        On OpenCode: returns ``no-op`` (no platform-provided session id).
+
+        Args:
+            session_id: Optional explicit session id; falls back to the platform
+                session-id environment variable when omitted.
+
+        Returns:
+            Serialized TOON string carrying the resolved ``plan_id`` (empty when
+            unbound), or ``no-op``.
+        """
+
+    @abstractmethod
+    def session_doctor(self, fix: bool = False) -> str:
+        """Scan every per-session active-plan slot and report binding health.
+
+        Builds a plan->sessions reverse index over all
+        ``~/.cache/plan-marshall/sessions/*/active-plan`` slots, flags any plan
+        bound by more than one live session (a conflict), and identifies slots
+        whose plan is archived/deleted (stale slots). When *fix* is True, GCs each
+        stale slot. Keeps NO shared mutable index — the scan-then-GC is per-file
+        and idempotent.
+
+        On Claude: delegates to the pure ``session_binding`` policy.
+
+        On OpenCode: returns ``no-op`` (no platform-provided session id).
+
+        Args:
+            fix: When True, GC (remove) each stale slot whose plan is
+                archived/deleted.
+
+        Returns:
+            Serialized TOON string carrying the conflict / stale report, or
+            ``no-op``.
         """
 
     # ------------------------------------------------------------------

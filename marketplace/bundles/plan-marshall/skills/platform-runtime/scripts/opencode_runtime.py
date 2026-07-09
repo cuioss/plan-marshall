@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-OpenCode implementation of all 15 platform-runtime operations.
+OpenCode implementation of all 21 platform-runtime operations.
 
 OpenCode-specific behaviour:
 - Operations requiring a platform session id (session capture, session
@@ -201,13 +201,40 @@ class OpenCodeRuntime(Runtime):
             "Use OpenCode's built-in TUI status surface for plan visibility",
         )
 
-    def session_push_title_token(self, plan_id: str, icon: str) -> str:
+    def session_push_title_token(self, plan_id: str, icon: str | None = None) -> str:
         """No-op: OpenCode has no plugin-driven terminal-title push channel."""
         return toon_noop(
             "session push-title-token",
             "OpenCode has no plugin-driven terminal-title push channel"
             " (issue anomalyco/opencode#8619)",
             "Use OpenCode's built-in TUI status surface for plan visibility",
+        )
+
+    def session_bind(self, plan_id: str, session_id: str | None = None) -> str:
+        """No-op: OpenCode does not expose a platform session id to bind."""
+        return toon_noop(
+            "session bind",
+            "OpenCode does not expose a platform-provided session id to the shell,"
+            " so there is no per-session slot to bind (issue #9292)",
+            "Use OpenCode's built-in session mechanism for plan visibility",
+        )
+
+    def session_resolve_plan(self, session_id: str | None = None) -> str:
+        """No-op: OpenCode does not expose a platform session id to resolve."""
+        return toon_noop(
+            "session resolve-plan",
+            "OpenCode does not expose a platform-provided session id to the shell,"
+            " so there is no per-session binding to resolve (issue #9292)",
+            "Use OpenCode's built-in session mechanism for plan visibility",
+        )
+
+    def session_doctor(self, fix: bool = False) -> str:
+        """No-op: OpenCode keeps no per-session active-plan cache to scan."""
+        return toon_noop(
+            "session doctor",
+            "OpenCode does not expose a platform-provided session id, so there is"
+            " no per-session active-plan cache to scan (issue #9292)",
+            "Use OpenCode's built-in session mechanism for plan visibility",
         )
 
     # ------------------------------------------------------------------

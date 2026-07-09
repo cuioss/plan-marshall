@@ -37,16 +37,20 @@ for _ancestor in Path(__file__).resolve().parents:
                 sys.path.append(_lib_path)
         break
 
+import session_binding  # noqa: E402
 from manage_terminal_title import _compose_body, compose  # noqa: E402,F401
 from runtime_base import Runtime, toon_error, toon_noop, toon_success  # noqa: E402,F401
 from toon_parser import parse_toon  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Session cache helpers — shared constants
+#
+# The per-session ``active-plan`` read/write/scan policy lives in the pure
+# ``session_binding`` module; ``_read_active_plan`` below delegates the read to
+# it (single home). This module keeps only the transcript-engine roots.
 # ---------------------------------------------------------------------------
 
 _PLAN_DIR_NAME = os.environ.get("PLAN_DIR_NAME", ".plan")
-_SESSION_CACHE_BASE = Path.home() / ".cache" / "plan-marshall" / "sessions"
 _CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
 # Pattern: assistant messages in JSONL with usage data
@@ -805,21 +809,16 @@ def _resolve_cwd() -> str:
 
 
 def _read_active_plan(session_id: str) -> str | None:
-    """Read the active plan_id from the session cache.
+    """Read the active plan_id for *session_id* from the per-session cache.
 
-    ``session_id`` originates from an external hook payload
-    (``$CLAUDE_CODE_SESSION_ID``) and is interpolated into the cache path below,
-    so reject empty values and any path-traversal token (a separator or ``..``)
-    before use — a crafted value must not escape the session-cache root.
+    Thin delegation to the pure :func:`session_binding.resolve_plan` policy — the
+    single home of the session->plan read side. ``session render-title`` resolves
+    its session->plan binding through this function, and ``session resolve-plan``
+    reuses it, so both share the one read path. ``session_id`` originates from an
+    external hook payload (``$CLAUDE_CODE_SESSION_ID``); ``resolve_plan`` validates
+    its shape before any filesystem use and never raises.
     """
-    if not session_id or "/" in session_id or "\\" in session_id or ".." in session_id:
-        return None
-    active_plan_path = _SESSION_CACHE_BASE / session_id / "active-plan"
-    try:
-        raw = active_plan_path.read_text(encoding="utf-8").strip()
-        return raw or None
-    except OSError:
-        return None
+    return session_binding.resolve_plan(session_id)
 
 
 def _resolve_archived_status_json(plan_id: str) -> Path | None:
