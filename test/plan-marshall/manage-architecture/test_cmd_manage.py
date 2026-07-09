@@ -106,7 +106,11 @@ def test_api_init_no_overwrite_when_already_initialised():
 
 
 def test_api_init_reset_blanks_existing():
-    """api_init(reset=True) blanks every module's ``enriched.json`` back to the empty stub."""
+    """api_init(force=True, reset=True) blanks every module's ``enriched.json`` back to the empty stub.
+
+    The destructive blank-all path is gated on ``reset AND force`` (see ``api_init``); ``reset=True``
+    alone (without ``force=True``) is a deliberate no-op, so this test passes both flags.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_project(tmpdir, shape='metadata_rich')
         api_init(tmpdir)

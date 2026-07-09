@@ -349,7 +349,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture d
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture init \
-  [--check] [--force]
+  [--check] [--force] [--reset]
 ```
 
 ### derived
