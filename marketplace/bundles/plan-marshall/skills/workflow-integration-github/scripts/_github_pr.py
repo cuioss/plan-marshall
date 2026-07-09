@@ -18,6 +18,7 @@ copy the binding and defeat the patch.
 
 import argparse
 import json
+import re
 from urllib.parse import quote
 
 import github_ops
@@ -32,6 +33,43 @@ from ci_base import (
     prepare_body,
     read_and_consume_body,
 )
+
+# ---------------------------------------------------------------------------
+# CodeRabbit rate-limit status-notice detection (provider-scoped: GitHub/CodeRabbit)
+# ---------------------------------------------------------------------------
+#
+# When CodeRabbit is rate-limited it posts a status-notice comment in place of a
+# review. The notice carries a narrow, stable heading/marker set. Detection is
+# purely additive — it surfaces a ``rate_limited`` discriminator on the
+# wait-for-comments return and never changes the poll behaviour or any existing
+# field. The marker set is deliberately narrow so an ordinary review comment that
+# merely mentions "rate limit" in prose is not misclassified.
+_CODERABBIT_BOT_LOGINS = frozenset({'coderabbitai', 'coderabbitai[bot]'})
+_CODERABBIT_RATE_LIMIT_MARKERS: tuple[re.Pattern[str], ...] = (
+    re.compile(r'\brate limit exceeded\b', re.IGNORECASE),
+    re.compile(r'exceeded the limit for the number of', re.IGNORECASE),
+)
+
+
+def _detect_coderabbit_rate_limited(comments: list[dict]) -> bool:
+    """Return True when the newest CodeRabbit-bot comment is a rate-limit notice.
+
+    Scans the CodeRabbit-bot-authored comments only, picks the newest by
+    ``created_at``, and matches its body against the narrow rate-limit marker
+    set. Any absent / malformed field degrades to ``False`` — detection is
+    best-effort and never raises into the poll return path.
+    """
+    bot_comments = [
+        c
+        for c in comments
+        if isinstance(c, dict)
+        and str(c.get('author') or '').lower() in _CODERABBIT_BOT_LOGINS
+    ]
+    if not bot_comments:
+        return False
+    newest = max(bot_comments, key=lambda c: str(c.get('created_at') or ''))
+    body = str(newest.get('body') or '')
+    return any(marker.search(body) for marker in _CODERABBIT_RATE_LIMIT_MARKERS)
 
 
 def cmd_pr_create(args: argparse.Namespace) -> dict:
@@ -428,6 +466,15 @@ def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
         )
 
     final_count = int(result['last_data'].get('unresolved', baseline))
+
+    # Additive rate-limit discriminator: after the poll settles, inspect the
+    # newest CodeRabbit-bot comment for a rate-limit status notice. Best-effort —
+    # a failed fetch leaves the default ``False`` and never alters poll behaviour.
+    rate_limited = False
+    post = github_ops.fetch_pr_comments_data(args.pr_number)
+    if post.get('status') == 'success':
+        rate_limited = _detect_coderabbit_rate_limited(post.get('comments') or [])
+
     return {
         'status': 'success',
         'operation': 'pr_wait_for_comments',
@@ -438,6 +485,7 @@ def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
         'baseline_count': baseline,
         'final_count': final_count,
         'new_count': max(final_count - baseline, 0),
+        'rate_limited': rate_limited,
     }
 
 
