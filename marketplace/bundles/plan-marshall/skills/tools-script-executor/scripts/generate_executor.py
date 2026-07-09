@@ -1315,16 +1315,22 @@ def _detect_multi_version_pollution(base_path: Path | None) -> list[str]:
     if base_path is None or not base_path.is_dir():
         return []
     polluted: list[str] = []
-    for bundle_dir in base_path.iterdir():
-        if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
-            continue
-        version_dirs = [
-            d
-            for d in bundle_dir.iterdir()
-            if d.is_dir() and not d.name.startswith('.') and (d / 'skills').is_dir()
-        ]
-        if len(version_dirs) > 1:
-            polluted.append(bundle_dir.name)
+    try:
+        for bundle_dir in base_path.iterdir():
+            if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
+                continue
+            try:
+                version_dirs = [
+                    d
+                    for d in bundle_dir.iterdir()
+                    if d.is_dir() and not d.name.startswith('.') and (d / 'skills').is_dir()
+                ]
+            except OSError:
+                continue
+            if len(version_dirs) > 1:
+                polluted.append(bundle_dir.name)
+    except OSError:
+        pass
     return sorted(polluted)
 
 
