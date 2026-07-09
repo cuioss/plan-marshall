@@ -261,11 +261,9 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
             f'{GITIGNORE_PLAN_DIR}\n'
             f'{GITIGNORE_MARSHAL_EXCEPTION}\n'
             f'{GITIGNORE_ARCHITECTURE_EXCEPTION}\n'
-            f'{GITIGNORE_PLUGIN_DOCTOR_EXCEPTION}\n'
-            f'{GITIGNORE_PLAN_LOCAL_WORKTREES}\n'
         )
         result['status'] = 'created'
-        result['entries_added'] = 5
+        result['entries_added'] = 3
         if not dry_run:
             gitignore_path.write_text(new_content)
         return result
@@ -289,10 +287,6 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
         entries_to_add.append(GITIGNORE_MARSHAL_EXCEPTION)
     if not consolidated_status['has_architecture_exception']:
         entries_to_add.append(GITIGNORE_ARCHITECTURE_EXCEPTION)
-    if not consolidated_status['has_plugin_doctor_exception']:
-        entries_to_add.append(GITIGNORE_PLUGIN_DOCTOR_EXCEPTION)
-    if not consolidated_status['has_plan_local_worktrees']:
-        entries_to_add.append(GITIGNORE_PLAN_LOCAL_WORKTREES)
 
     needs_managed_comment = not consolidated_status['has_managed_comment']
     needs_local_comment = not consolidated_status['has_local_comment']
