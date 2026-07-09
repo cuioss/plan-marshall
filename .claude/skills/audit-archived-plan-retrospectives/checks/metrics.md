@@ -12,6 +12,17 @@ contributes `total_tokens`, `duration_seconds` (wall-clock), `idle_duration_ms`,
 and `agent_duration_seconds` (worked). When `work/metrics.toon` is absent the
 plan is reported as an incomplete recording.
 
+**#812 recorded-partiality markers**: the script ALSO reads the top-level
+`partial` / `unrecorded_phases` scalars `manage-metrics` stamps (parsed by
+`parse_metrics_partiality`). A canonical phase the recorder KNOWS has no recorded
+boundary is listed in `unrecorded_phases`, and `partial` is true whenever that set
+is non-empty. This is the recorded signal that a zero-token phase is partial
+**by design**, not an accidental blindness — the metrics check consumes it so a
+marker-explained zero-token phase is reported as informational partiality rather
+than an incomplete-recording anomaly. Plans predating #812 carry no markers and
+degrade to the old zero-token inference (empty marker set → every zero-token phase
+is treated as before).
+
 ## Anomaly classes
 
 The check detects four anomaly classes:
@@ -19,7 +30,7 @@ The check detects four anomaly classes:
 | Class | Column | Rule |
 |-------|--------|------|
 | Disproportionate token usage | `disproportionate_token` | A single phase consuming ≥ 45% of the plan's total tokens. Reported as `{phase}={share%}`. Computed on **effective** tokens — plan-retrospective spend is excluded from BOTH the per-phase numerator and the plan-total denominator (see below). |
-| Incomplete recordings | `incomplete_recording` | Missing `metrics.toon` (reported as `true`) or one or more zero-token phases that should carry data (reported as the `,`-joined phase names). Uses raw `total_tokens` (not retrospective-excluded). |
+| Incomplete recordings | `incomplete_recording` | Missing `metrics.toon` (reported as `true`) or one or more **unexplained** zero-token phases that should carry data (reported as the `,`-joined phase names). Uses raw `total_tokens` (not retrospective-excluded). A zero-token phase listed in #812's `unrecorded_phases` marker is recorded-partial BY DESIGN and is EXCLUDED from this column — it is surfaced instead as an informational `recorded-partial phases (unrecorded_phases marker): …` anomaly note. Only a zero-token phase the markers do NOT explain fills `incomplete_recording`. |
 | Impossible values | `impossible_value` | A phase whose worked time exceeds wall-clock (`agent_duration_seconds > duration_seconds + 1s`), reported as `{phase}:worked>{wall}s`; or a negative `idle_duration_ms`, reported as `{phase}:negative_idle`. Genuine recording inconsistency (not a token-spend check; retrospective exclusion does not apply). |
 | Optimization signals | `optimization_signal` | A phase whose tokens-per-second ratio is ≥ 3× the median non-zero phase ratio, reported as `{phase}:{ratio}tok/s`. Requires ≥ 3 phases with non-zero duration and effective tokens. Computed on **effective** tokens — a phase whose entire spend is retrospective is excluded from the ratio set and the median. |
 
@@ -74,8 +85,13 @@ rows[N]{plan_id,phases_recorded,disproportionate_token,incomplete_recording,impo
   is computed on retrospective-excluded (effective) tokens, so a finalize phase
   is not flagged merely because the plan-retrospective ran inside it.
 - **`incomplete_recording: true`** — the plan never recorded metrics; distinguish
-  "metrics wrong" from "metrics never written". Zero-token named phases are a
-  recording gap worth investigating in `manage-metrics`.
+  "metrics wrong" from "metrics never written". A zero-token named phase in this
+  column is now an **unexplained** gap (the #812 markers did not account for it) —
+  a genuine recording defect worth investigating in `manage-metrics`. A
+  marker-explained zero-token phase does NOT appear here: it is surfaced as a
+  `recorded-partial phases (unrecorded_phases marker): …` note and read as
+  by-design partiality, not a defect. Do NOT re-flag a recorded-partial phase as a
+  recording gap — the recorder deliberately declared it unrecorded.
 - **`impossible_value`** — a genuine recording inconsistency (worked time cannot
   exceed wall-clock for a single agent; idle cannot be negative). Surface it; a
   recurrence across the corpus is a candidate systemic signal that flows into

@@ -68,10 +68,22 @@ For each parsed line the script:
    so it is still flagged at any level regardless of subcommand.
 4. **Flags slow calls** — a script call whose duration is `>= slow_call_seconds`
    (but below the impossible ceiling).
-5. **Flags impossible / hang durations** — a single deterministic script call
-   recorded at `>= 600s`. This is not a real wall-clock cost: it is clock skew or
-   a hung-then-killed call. Reported separately from *slow* because the
-   **recording itself** is suspect, not merely the cost.
+5. **Flags impossible / hang durations (call-class-aware, #849)** — a single
+   script call recorded at/over its class ceiling. The ceiling is **call-class
+   aware**: a *deterministic per-plan-op* call keeps the flat
+   `_IMPOSSIBLE_DURATION_SECONDS = 600s` bound (not a real wall-clock cost — clock
+   skew or a hung-then-killed call), but a *build / ci-wait / sonar-CE / merge-wait*
+   class call is bounded by the **ratcheted ci-wait ceiling** instead. #849's
+   adaptive ci-wait ratchet grows the ci-wait budget as observed durations rise,
+   so a legitimately-long ratcheted ci-wait used to false-positive against the flat
+   600s ceiling; it now lands in the *slow* band, not the *impossible* one. The
+   ratcheted ceiling is read INLINE from `.plan/run-configuration.json`
+   (`commands.{key}.timeout_seconds` and `build.queue.upper_limit_seconds`, taking
+   the max, never below the 600s floor) — consistent with the skill's
+   inline-reader rule (no `manage-*` dispatch for deterministic work), degrading to
+   the flat ceiling when the config or the ratcheted values are absent. Reported
+   separately from *slow* because for a deterministic call the **recording itself**
+   is suspect, not merely the cost.
 6. **Flags high-frequency callers** — a `notation subcommand` key called
    `>= high_frequency_calls` times across the whole corpus.
 7. **Detects test-fixture leaks** — a line whose body names a synthetic test
@@ -89,7 +101,9 @@ no magic number is re-declared in the check body:
 |--------|--------|---------|
 | Slow call | `THRESHOLDS["slow_call_seconds"]` | `30.0` s |
 | High-frequency caller | `THRESHOLDS["high_frequency_calls"]` | `50` calls |
-| Impossible / hang duration | module constant `_IMPOSSIBLE_DURATION_SECONDS` | `600.0` s |
+| Impossible / hang duration (deterministic per-plan-op call) | module constant `_IMPOSSIBLE_DURATION_SECONDS` | `600.0` s |
+| Impossible / hang duration (build / ci-wait class call, #849) | `_ratcheted_ci_wait_ceiling()` — inline read of `run-configuration.json`, `max(_IMPOSSIBLE_DURATION_SECONDS, ratcheted timeouts)` | ≥ `600.0` s |
+| Build / ci-wait call classifier | `_BUILD_CI_WAIT_KEY_RE` over the `{notation} {subcommand}` key | any match |
 | Fixture leak | `_FIXTURE_LEAK_RE` (no numeric threshold) | any match |
 
 The emitted block echoes the active `slow_ceiling_seconds` and
@@ -138,7 +152,12 @@ context (corpus size, level buckets) so the table stays signal-only.
   dedup, extend) a **source-keyed** lesson naming the exact
   `{notation} {subcommand}` whose surface drifted — not the consuming plan in
   `attributed_plans` (mirrors the recurring-pattern detector's source-keyed
-  rule in SKILL.md Step 4).
+  rule in SKILL.md Step 4). An `impossible-duration` row is now already
+  call-class-filtered by the script: a surviving row is EITHER a deterministic
+  per-plan-op call over 600s (a genuine recording artifact) OR a build/ci-wait
+  call that exceeded even the ratcheted ci-wait ceiling (a real hang past the
+  adaptive budget) — do NOT re-dismiss it as "just a long CI wait", because the
+  #849-aware ceiling already carved those out.
 - **`slow-call`** — a script call over the slow ceiling. Cross-read with the
   caller's `attributed_plans` window; a one-off slow build is usually expected,
   but a *recurring* slow notation across multiple plan windows is a performance
@@ -161,9 +180,11 @@ ONLY with a cited reason.
   aggregation keys, and every threshold. Do not re-grep the logs or re-derive a
   signal in chat.
 - Thresholds live in the `THRESHOLDS` table (`slow_call_seconds`,
-  `high_frequency_calls`); the impossible-duration ceiling and the fixture-leak
-  signatures are module constants. If a threshold changes, edit `scripts/audit.py`
-  rather than substituting a different reading.
+  `high_frequency_calls`); the flat impossible-duration ceiling, the build/ci-wait
+  classifier (`_BUILD_CI_WAIT_KEY_RE`), the ratcheted-ceiling reader
+  (`_ratcheted_ci_wait_ceiling`), and the fixture-leak signatures are module-level
+  constants/helpers. If a threshold or the call-class boundary changes, edit
+  `scripts/audit.py` rather than substituting a different reading.
 - Attribution is best-effort: a plan whose `metrics.toon` carries no parseable
   per-phase window contributes no window, so a line that should attribute to it
   shows `ad-hoc`. Treat `ad-hoc` as "outside every derivable window", not "proven

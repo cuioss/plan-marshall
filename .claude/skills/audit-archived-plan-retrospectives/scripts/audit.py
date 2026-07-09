@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Audit archived plans across eighteen retrospective checks.
+"""Audit archived plans across twenty-one retrospective checks.
 
 Walks `.plan/local/archived-plans/{plan_id}/` directories and, per plan, runs a
 suite of deterministic checks:
@@ -101,6 +101,23 @@ suite of deterministic checks:
   `architecture enrich`) are LLM-orchestration steps documented once in
   `phase-6-finalize/standards/disposition-to-hint-routing.md` and consumed by
   SKILL.md Step 4c.
+- `dispatch-topology` (per-plan) — verifies the roadmap's leaf/dispatch-topology
+  invariant (subagents are LEAVES — only the orchestrator dispatches further
+  subagents). Scans each plan's `logs/work.log` `[DISPATCH] (caller) target=…`
+  lines and flags any whose `(bundle:skill)` caller is not an allowed dispatcher
+  (`plan-marshall:plan-marshall` or a `plan-marshall:phase-N-…` context) — a leaf
+  that spawned a subagent.
+- `finalize-flow-conformance` (per-plan) — verifies the post-#849/#850 finalize
+  mechanics (deterministic `ci_verify` gate, adaptive ci-wait ratchet) from the
+  `phase_6.steps` roster + `artifacts/ci-runs/*/manifest.toon`: flags
+  `missing_ci_verify` (a PR created with no ci-verify gate), `ci_wait_timeout`
+  (`wait_outcome: deadline_exceeded`), and `ci_unresolved` (latest `final_status`
+  not green).
+- `merge-window-accounting` (cross-plan) — accounts for the #849 widened
+  merge-mutex + FIFO admission-queue window by bucketing the global
+  `[LOCK] (merge:*)` lifecycle lines by `lock_id` (= plan_id); reports per-plan
+  acquire/release/blocked/reclaim counts + max FIFO `waiting_count` and flags
+  `merge_contention` when a plan waited behind the queue front.
 - `cross-check-synthesis` (cross-plan, runs LAST) — the facet-completeness
   critic. It consumes the OTHER checks' retained structured results (not their
   emitted strings) and reports the cross-check couplings that single-check rows
@@ -167,6 +184,11 @@ CHECK_NAMES = [
     "task-graph-redundancy",
     "architecture-lookup-ratio",
     "preference-pattern-detector",
+    # Roadmap-mechanics checks (plan-11): verify the roadmap's own mechanics
+    # directly rather than inferring generic symptoms.
+    "dispatch-topology",
+    "finalize-flow-conformance",
+    "merge-window-accounting",
     # cross-check-synthesis is the facet-completeness critic; it consumes the
     # other checks' computed results, so it MUST be last in this list (run_checks
     # dispatches in CHECK_NAMES order and synthesis reads the retained results).
@@ -186,6 +208,11 @@ CROSS_PLAN_CHECKS = {
     "sequence-and-build-minimality",
     "architecture-lookup-ratio",
     "preference-pattern-detector",
+    # merge-window-accounting scans the corpus-wide global `[LOCK]` lifecycle logs
+    # once and buckets by plan_id, so it is cross-plan (like global-log-analysis).
+    # dispatch-topology and finalize-flow-conformance are per-plan (one row per
+    # plan) and are deliberately NOT here.
+    "merge-window-accounting",
     # cross-check-synthesis is cross-plan: it joins the other checks' corpus-level
     # results into coupling verdicts rather than emitting one row per plan.
     "cross-check-synthesis",
@@ -231,6 +258,13 @@ CHECK_ERA: dict[str, str] = {
     "task-graph-redundancy": "plan-10",
     "architecture-lookup-ratio": "plan-10",
     "preference-pattern-detector": "plan-10",
+    # Roadmap-mechanics checks (plan-11) carry the boundary whose mechanics they
+    # verify: dispatch-topology confirms the plan-10 leaf/dispatch invariant;
+    # finalize-flow-conformance and merge-window-accounting verify #849's
+    # deterministic ci_verify / adaptive ci-wait / widened merge-mutex mechanics.
+    "dispatch-topology": "plan-10",
+    "finalize-flow-conformance": "#849",
+    "merge-window-accounting": "#849",
     "cross-check-synthesis": "plan-10",
 }
 
@@ -279,6 +313,92 @@ _LEGACY_BARE_NAME_ROLE: dict[str, str] = {
     "build_verify": "module-tests",
     "coverage_check": "coverage",
 }
+
+# ---------------------------------------------------------------------------
+# Phase-6 finalize step-ownership model (#852 D6)
+# ---------------------------------------------------------------------------
+#
+# #852's D6 step-ownership canonicalization split every phase-6 finalize step
+# into two ownership classes: ORCHESTRATOR-OWNED (inline) steps run synchronously
+# in the main context (pure scripts or trivial orchestration that earn no
+# envelope — push, ci-verify, record-metrics, archive-plan, …) and
+# LEAF-DISPATCHABLE steps are dispatched under `Task: execution-context-{level}`
+# because they carry an LLM core (create-pr, automated-review, sonar-roundtrip,
+# the review/simplify/security-audit sweeps, …). The classification is the single
+# source of truth in `phase-6-finalize/SKILL.md` § "Dispatched workflows vs
+# inline steps"; there is NO persisted per-step `owner` field on the manifest
+# (`execution.toon` records only the bare `phase_6.steps` ID list), so this check
+# DERIVES each step's ownership from that canonical roster rather than reading a
+# persisted counterpart. The derivation mirrors `detect_name_drift`'s in-code
+# role resolution over phase_5 — a built-in step ID the roster no longer
+# recognizes is `owner_drift` (the persisted manifest references a renamed or
+# removed finalize step), exactly as an unresolvable phase_5 role is `name_drift`.
+#
+# The maps below are keyed by the BARE step name (the `default:` prefix stripped);
+# `project:` / `bundle:skill` external steps are classified via the known
+# meta-project map and otherwise resolve to `None` WITHOUT flagging drift (an
+# unknown external step is project-defined, not a canonical-roster fault).
+_ORCHESTRATOR_OWNED_STEPS = frozenset(
+    {
+        "finalize-step-sync-baseline",
+        "push",
+        "ci-verify",
+        "branch-cleanup",
+        "pre-push-quality-gate",
+        "record-metrics",
+        "archive-plan",
+        "finalize-step-print-phase-breakdown",
+    }
+)
+_LEAF_DISPATCHED_STEPS = frozenset(
+    {
+        "pre-submission-self-review",
+        "create-pr",
+        "lessons-capture",
+        "adr-propose",
+        "automated-review",
+        "sonar-roundtrip",
+        "finalize-step-simplify",
+        "finalize-step-security-audit",
+    }
+)
+# `architecture-refresh` is the one hybrid step: Tier-0 discover/diff runs inline
+# and Tier-1 re-enrichment fans out per affected module — it owns both classes.
+_HYBRID_OWNED_STEPS = frozenset({"architecture-refresh"})
+
+# Known meta-project external steps and their ownership. Unknown external steps
+# (absent from this map) resolve to `None` and are NOT flagged as drift.
+_EXTERNAL_STEP_OWNER: dict[str, str] = {
+    "project:finalize-step-deploy-target": "orchestrator",
+    "project:finalize-step-sync-plugin-cache": "orchestrator",
+    "project:finalize-step-plugin-doctor": "leaf",
+}
+
+
+def _resolve_step_owner(step_id: str) -> str | None:
+    """Resolve a phase-6 finalize step ID to its ownership class.
+
+    Returns `orchestrator` (inline), `leaf` (dispatched), `hybrid`
+    (architecture-refresh), or `None` for an unrecognized step. Built-in
+    (`default:`-prefixed or bare) step IDs resolve via the canonical
+    orchestrator/leaf/hybrid sets; `project:` / `bundle:skill` external steps
+    resolve via `_EXTERNAL_STEP_OWNER`. `None` distinguishes an unrecognized
+    BUILT-IN step (a genuine roster drift, per `detect_owner_drift`) from an
+    unrecognized EXTERNAL step (project-defined, never drift).
+    """
+    bare = step_id.strip()
+    if ":" in bare and not bare.startswith("default:"):
+        # External (`project:` / `bundle:skill`) — classified only via the known map.
+        return _EXTERNAL_STEP_OWNER.get(bare)
+    bare = bare[len("default:"):] if bare.startswith("default:") else bare
+    if bare in _ORCHESTRATOR_OWNED_STEPS:
+        return "orchestrator"
+    if bare in _LEAF_DISPATCHED_STEPS:
+        return "leaf"
+    if bare in _HYBRID_OWNED_STEPS:
+        return "hybrid"
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Centralized threshold table
@@ -585,6 +705,26 @@ def parse_toon_scalar(path: Path, key: str) -> str | None:
     return None
 
 
+def parse_metrics_partiality(metrics_path: Path) -> tuple[bool, set[str]]:
+    """Read #812's recorded-partiality markers from `metrics.toon`.
+
+    Returns `(partial, unrecorded_phases)` from the top-level `partial` /
+    `unrecorded_phases` scalars manage-metrics stamps: a canonical phase lacking a
+    recorded boundary (`end_time`) is listed in `unrecorded_phases`, and `partial`
+    is true whenever that set is non-empty. A phase the recorder KNOWS is
+    unrecorded is recorded-partial BY DESIGN — not an accidental zero-token
+    blindness — so the metrics and input-integrity checks consume this signal
+    rather than inferring blindness from zero-token phases alone. Absent markers
+    (a plan predating #812) degrade to `(False, set())`, preserving the old
+    zero-token inference for those plans.
+    """
+    partial_raw = parse_toon_scalar(metrics_path, "partial")
+    partial = str(partial_raw or "").strip().lower() == "true"
+    unrecorded_raw = parse_toon_scalar(metrics_path, "unrecorded_phases")
+    unrecorded = {seg.strip() for seg in (unrecorded_raw or "").split(",") if seg.strip()}
+    return partial, unrecorded
+
+
 # ---------------------------------------------------------------------------
 # Per-plan input collection
 # ---------------------------------------------------------------------------
@@ -831,12 +971,45 @@ def detect_name_drift(inputs: PlanInputs, repo_root: Path, role_cache: dict[str,
     return None
 
 
+def detect_owner_drift(inputs: PlanInputs) -> str | None:
+    """Step-ownership drift over the manifest's phase_6 finalize step roster (#852 D6).
+
+    Derives each phase_6 step's ownership class (orchestrator-owned inline vs
+    leaf-dispatchable) via `_resolve_step_owner` — there is no persisted `owner`
+    field on the manifest, so the class is DERIVED from the canonical finalize
+    roster (`phase-6-finalize/SKILL.md` § "Dispatched workflows vs inline steps").
+    This extends the manifest check's previously role-only re-derivation to cover
+    step-ownership. Genuine `owner_drift` is exactly a BUILT-IN (`default:`-prefixed
+    or bare) phase_6 step ID whose ownership cannot be resolved — the persisted
+    manifest references a finalize step the current roster renamed or removed.
+    External (`project:` / `bundle:skill`) steps are project-defined and never
+    flagged. Returns a describing string on drift, else None.
+    """
+    if not inputs.manifest_phase_6:
+        return None
+    unrecognized: list[str] = []
+    for step_id in inputs.manifest_phase_6:
+        bare = step_id.strip()
+        is_builtin = not (":" in bare and not bare.startswith("default:"))
+        if is_builtin and _resolve_step_owner(step_id) is None:
+            unrecognized.append(
+                bare[len("default:"):] if bare.startswith("default:") else bare
+            )
+    if unrecognized:
+        return (
+            f"phase_6 built-in step(s) {unrecognized} resolve to no ownership class "
+            f"(orchestrator/leaf/hybrid) — roster drift from the canonical finalize steps"
+        )
+    return None
+
+
 def check_execution_manifest(
     inputs: PlanInputs, repo_root: Path, role_cache: dict[str, str | None]
 ) -> dict[str, Any]:
     expected = derive_expected_rule(inputs) if inputs.manifest_present else None
     verdict, reason = verdict_for(inputs)
     name_drift = detect_name_drift(inputs, repo_root, role_cache)
+    owner_drift = detect_owner_drift(inputs)
     return {
         "plan_id": inputs.plan_id,
         "verdict": verdict,
@@ -849,6 +1022,7 @@ def check_execution_manifest(
         "affected": inputs.affected_files_count,
         "modified": inputs.modified_files_count,
         "name_drift": name_drift,
+        "owner_drift": owner_drift,
     }
 
 
@@ -972,6 +1146,9 @@ def check_quality_verification(inputs: PlanInputs, corpus_sigs: list[str]) -> di
 def check_metrics(inputs: PlanInputs) -> dict[str, Any]:
     metrics_path = inputs.plan_dir / "work" / "metrics.toon"
     phases = parse_metrics_toon(metrics_path)
+    # #812 recorded-partiality markers: a phase the recorder KNOWS is unrecorded
+    # is recorded-partial by design, not an accidental zero-token anomaly.
+    _partial, unrecorded_phases = parse_metrics_partiality(metrics_path)
     anomalies: list[str] = []
 
     if not phases:
@@ -1002,12 +1179,23 @@ def check_metrics(inputs: PlanInputs) -> dict[str, Any]:
                 anomalies.append(f"{p.phase} consumed {share:.0%} of total tokens")
                 break
 
-    # (b) Incomplete recordings: zero-token phase that should carry data.
+    # (b) Incomplete recordings: zero-token phase that should carry data — but a
+    # phase listed in #812's `unrecorded_phases` is recorded-partial BY DESIGN,
+    # so it is surfaced as informational partiality, NOT an incomplete-recording
+    # anomaly. Only an UNEXPLAINED zero-token phase (not in the marker set) fills
+    # the `incomplete_recording` column.
     incomplete = ""
     zero_phases = [p.phase for p in phases if p.total_tokens == 0]
-    if zero_phases:
-        incomplete = ",".join(zero_phases)
+    unexplained_zero = [p for p in zero_phases if p not in unrecorded_phases]
+    recorded_partial_zero = [p for p in zero_phases if p in unrecorded_phases]
+    if unexplained_zero:
+        incomplete = ",".join(unexplained_zero)
         anomalies.append(f"zero-token phases: {incomplete}")
+    if recorded_partial_zero:
+        anomalies.append(
+            f"recorded-partial phases (unrecorded_phases marker): "
+            f"{','.join(recorded_partial_zero)}"
+        )
 
     # (c) Impossible values: worked > wall-clock, or negative idle.
     impossible = ""
@@ -1152,6 +1340,19 @@ def _read_marshal_compatibility(repo_root: Path) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _routing_const(routing: Any, name: str) -> frozenset[str] | None:
+    """Read a frozenset constant off the imported router module, or None.
+
+    Used by the #854 era-awareness attribution to reference the router's OWN
+    carve-out constants (`_NARROW_SCOPE_ESTIMATES`, `_DEEP_CHANGE_TYPES`) rather
+    than duplicating the thresholds. Returns None when the attribute is absent (a
+    router revision that renamed the constant) so the caller degrades to a plain,
+    non-era-annotated verdict rather than raising.
+    """
+    value = getattr(routing, name, None)
+    return value if isinstance(value, frozenset) else None
+
+
 def check_track_selection_accuracy(
     inputs: PlanInputs, routing: Any, compatibility: str | None
 ) -> dict[str, Any]:
@@ -1180,6 +1381,7 @@ def check_track_selection_accuracy(
             "actual_track": actual_track,
             "counterfactual_lane": "",
             "verdict": "no_routing_logic",
+            "era": "",
         }
     if not actual_lane and not actual_track:
         # The plan never recorded a planning lane/track — nothing to compare.
@@ -1189,6 +1391,7 @@ def check_track_selection_accuracy(
             "actual_track": "",
             "counterfactual_lane": "",
             "verdict": "not_recorded",
+            "era": "",
         }
 
     # Re-derive S5 request concreteness from the archived request.md body.
@@ -1206,6 +1409,7 @@ def check_track_selection_accuracy(
             "counterfactual_lane": "",
             "verdict": "not_recorded",
             "reason": "missing_request_md",
+            "era": "",
         }
     try:
         body = request_md.read_text(encoding="utf-8")
@@ -1238,12 +1442,35 @@ def check_track_selection_accuracy(
     elif effective_actual_lane == "light" and counterfactual_lane == "deep":
         verdict = "UNDER-TRACKED"
 
+    # Era-awareness around the #854 light-lane carve-out. The imported
+    # `evaluate_signals_pure` is the LIVE post-#854 router, whose narrow-and-concrete
+    # carve-out relaxes a bounded surgical/single_module + concrete request to LIGHT
+    # even when its change_type is generative or its compatibility is breaking (the
+    # S3/S4 co-firing the carve-out suppresses). A plan that ran DEEP under the
+    # pre-#854 router — where that same co-firing forced deep — is scored
+    # OVER-TRACKED here only BECAUSE of the carve-out. That over-tracking is
+    # era-relative: the plan's deep run was consistent with the router in force when
+    # it ran, so the row is annotated (not silently counted as an absolute routing
+    # miss). Attribution is derived from the router's OWN constants (imported, never
+    # duplicated) so no threshold is copied.
+    era = CHECK_ERA.get("track-selection-accuracy", "")
+    carve_out_attributed = False
+    if verdict == "OVER-TRACKED":
+        narrow = _routing_const(routing, "_NARROW_SCOPE_ESTIMATES")
+        deep_change = _routing_const(routing, "_DEEP_CHANGE_TYPES")
+        in_narrow = narrow is not None and inputs.scope_estimate in narrow
+        would_force_deep = (
+            deep_change is not None and inputs.change_type in deep_change
+        ) or compatibility == "breaking"
+        carve_out_attributed = bool(in_narrow and request_concrete and would_force_deep)
+
     return {
         "plan_id": inputs.plan_id,
         "actual_lane": actual_lane,
         "actual_track": actual_track,
         "counterfactual_lane": counterfactual_lane,
         "verdict": verdict,
+        "era": f"{era}:carve_out" if carve_out_attributed else era,
     }
 
 
@@ -1639,12 +1866,78 @@ _LOG_BENIGN_PROBE_SUBCOMMANDS = frozenset(
     {"exists", "read", "get", "list", "find", "search", "resolve"}
 )
 
-# Impossible / hang-shaped duration ceiling (seconds). A single deterministic
-# script call recorded at/over this is not a real wall-clock cost — it is a
-# clock-skew artifact or a hung-then-killed call. Distinct from the
-# `slow_call_seconds` *slow* band: slow is "worth investigating", impossible is
-# "the recording itself is suspect".
+# Impossible / hang-shaped duration ceiling (seconds) for a DETERMINISTIC
+# per-plan-op call. A single such script call recorded at/over this is not a real
+# wall-clock cost — it is a clock-skew artifact or a hung-then-killed call.
+# Distinct from the `slow_call_seconds` *slow* band: slow is "worth
+# investigating", impossible is "the recording itself is suspect".
+#
+# Call-class awareness (#849): the flat 600 s ceiling applies ONLY to
+# deterministic per-plan-op calls. Build and ci-wait class calls legitimately
+# run far longer — #849's adaptive ci-wait ratchet grows the ci-wait budget as
+# observed durations rise — so bounding them at 600 s falsely flagged every
+# ratcheted ci-wait as "impossible". Those calls are instead bounded by the
+# ratcheted ci-wait ceiling read inline from `run-configuration.json` (see
+# `_ratcheted_ci_wait_ceiling`), so a long-but-legitimate ci-wait lands in the
+# *slow* band, not the *impossible* one.
 _IMPOSSIBLE_DURATION_SECONDS = 600.0
+
+# Build / ci-wait / sonar-CE / merge-wait call classifier over the global-log
+# call key (`{notation} {subcommand}`). A call matching this pattern is bounded
+# by the ratcheted ci-wait ceiling rather than the flat deterministic ceiling.
+# Everything else is a deterministic per-plan-op call and keeps the 600 s bound.
+_BUILD_CI_WAIT_KEY_RE = re.compile(
+    r"build-(?:pyproject|maven|gradle|npm)|pyproject_build|:maven\b|:gradle\b|:npm\b"
+    r"|tools-integration-ci|:ci\b|ci[_-]verify|pr_checks"
+    r"|workflow-integration-sonar|sonar"
+    r"|merge[_-]lock|:wait\b|\bwait\b",
+    re.IGNORECASE,
+)
+
+
+def _is_build_or_ci_wait_call(key: str) -> bool:
+    """True when the call key is a build / ci-wait / sonar-CE / merge-wait call.
+
+    These call classes legitimately run long (the ratcheted ci-wait budget), so
+    they are bounded by `_ratcheted_ci_wait_ceiling`, not the flat deterministic
+    `_IMPOSSIBLE_DURATION_SECONDS`.
+    """
+    return bool(_BUILD_CI_WAIT_KEY_RE.search(key))
+
+
+def _ratcheted_ci_wait_ceiling(repo_root: Path) -> float:
+    """Inline-read the ratcheted ci-wait impossible-duration ceiling.
+
+    #849's adaptive ci-wait ratchet persists a per-command timeout under
+    `commands.{key}.timeout_seconds` in `run-configuration.json` that grows as
+    observed ci-wait durations rise; `build.queue.upper_limit_seconds` is the
+    companion ratcheted build-queue ceiling. A build / ci-wait call running near
+    either ratcheted value is legitimate, not an impossible-duration artifact, so
+    the global-log check bounds those calls by the MAX of the persisted ceilings
+    (never below the flat `_IMPOSSIBLE_DURATION_SECONDS` floor). Inline read (no
+    manage-* dispatch) per the skill's inline-reader rule; degrades to the flat
+    ceiling when the config or the ratcheted values are absent.
+    """
+    config = read_json(repo_root / ".plan" / "run-configuration.json")
+    if not isinstance(config, dict):
+        return _IMPOSSIBLE_DURATION_SECONDS
+    ceilings: list[float] = [_IMPOSSIBLE_DURATION_SECONDS]
+    commands = config.get("commands")
+    if isinstance(commands, dict):
+        for key, entry in commands.items():
+            if not (isinstance(entry, dict) and _is_build_or_ci_wait_call(str(key))):
+                continue
+            secs = entry.get("timeout_seconds")
+            if isinstance(secs, (int, float)) and secs > 0:
+                ceilings.append(float(secs))
+    build = config.get("build")
+    if isinstance(build, dict):
+        queue = build.get("queue")
+        if isinstance(queue, dict):
+            secs = queue.get("upper_limit_seconds")
+            if isinstance(secs, (int, float)) and secs > 0:
+                ceilings.append(float(secs))
+    return max(ceilings)
 
 # Test-fixture leak signatures: synthetic bundle / plan ids that exist only
 # inside the test suite's tmp fixtures and must NEVER appear in the shared global
@@ -1730,6 +2023,10 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
     logs_dir = (repo_root / ".plan/local/logs").resolve()
     slow_ceiling = float(THRESHOLDS["slow_call_seconds"])
     high_freq_ceiling = int(THRESHOLDS["high_frequency_calls"])
+    # Call-class-aware impossible-duration ceilings: deterministic per-plan-op
+    # calls keep the flat 600 s bound; build / ci-wait class calls are bounded by
+    # the ratcheted ci-wait ceiling so a legitimately-long ci-wait is not flagged.
+    ci_wait_ceiling = _ratcheted_ci_wait_ceiling(repo_root)
 
     # Correlate against both archived and active plan windows.
     windows = plan_execution_windows(
@@ -1781,7 +2078,16 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
                         seconds = float(dur_m.group(1))
                         call_seconds[key] += seconds
                         total_seconds += seconds
-                        if seconds >= _IMPOSSIBLE_DURATION_SECONDS:
+                        # Deterministic per-plan-op calls keep the flat 600 s
+                        # ceiling; build / ci-wait class calls are bounded by the
+                        # ratcheted ci-wait ceiling (#849), so a legitimately-long
+                        # ratcheted ci-wait lands in the slow band, not impossible.
+                        impossible_ceiling = (
+                            ci_wait_ceiling
+                            if _is_build_or_ci_wait_call(key)
+                            else _IMPOSSIBLE_DURATION_SECONDS
+                        )
+                        if seconds >= impossible_ceiling:
                             impossible_calls.append(
                                 {
                                     "ts": ts_text,
@@ -2607,9 +2913,25 @@ def cross_quality_chain(all_inputs: list[PlanInputs]) -> dict[str, Any]:
 #                          documentation) yet ran a build — buildable-stuff
 #                          violation (the docs-only-build axis).
 #   ci_rerun             — more than one CI run directory under artifacts/ci-runs/
-#                          (the PR round-trip ran CI more than once).
-#   phase_reentry        — a phase-N role was dispatched more than once (a loop-back
-#                          re-entered a phase; redundant phase work).
+#                          (the PR round-trip ran CI more than once). Post-#849/#850
+#                          finalize-flow caveat: a SECOND CI pass is now often the
+#                          EXPECTED shape, not wasteful churn — the early
+#                          baseline-rebase finalize step (`finalize-step-sync-baseline`,
+#                          #786) rebases the branch onto origin/main at finalize start
+#                          and a post-force-push re-review (#742) legitimately re-runs
+#                          CI, and #849's deterministic `ci_verify` + adaptive ci-wait
+#                          ratchet make that re-verification cheap and intentional. The
+#                          flag therefore counts CI passes; the sub-doc interprets ≥2 as
+#                          a rebase/re-review round-trip vs a genuine red→green churn
+#                          loop (correlate with quality-chain `loop_back` volume).
+#   phase_reentry        — a phase-N role was dispatched more than once. Post-#849/#850
+#                          caveat: a 5-execute / 6-finalize re-entry is the EXPECTED
+#                          shape of the finalize triage loop-back (the
+#                          `loop_back_without_asking` inline-replay cycle), not
+#                          necessarily redundant phase work — a loop-back that fixed a
+#                          real finding is correct-by-design. The sub-doc reads a
+#                          6-finalize/5-execute re-entry against the plan's loop_back
+#                          resolutions before calling it redundant.
 #   arch_over_resolution — architecture calls outnumber build calls by a wide
 #                          margin while builds exist (resolution overhead dwarfing
 #                          the work it resolves).
@@ -3053,15 +3375,29 @@ def check_input_integrity(inputs: PlanInputs) -> dict[str, Any]:
     phases = parse_metrics_toon(metrics_path)
     phase_tokens = {p.phase: p.total_tokens for p in phases}
     recorded_phases = set(phase_tokens)
+    # #812 recorded-partiality markers: a phase the recorder KNOWS is unrecorded
+    # is recorded-partial by design, NOT an accidental zero-token blindness. The
+    # check consumes this signal instead of inferring blindness from zero tokens
+    # alone — a marker-explained zero-token phase is `partial`, not `blind`.
+    _partial, unrecorded_phases = parse_metrics_partiality(metrics_path)
 
-    # metrics_blind — any data-bearing phase recorded zero tokens. The execute
-    # phase is the load-bearing case (escalates the bucket to `blind`).
+    # metrics_blind — any data-bearing phase recorded zero tokens that the #812
+    # markers do NOT explain. A zero-token phase listed in `unrecorded_phases` is
+    # recorded-partial by design and is excluded from the blind set.
     blind_phases = [
         ph
         for ph in _II_DATA_BEARING_PHASES
-        if ph in recorded_phases and phase_tokens.get(ph, 0) == 0
+        if ph in recorded_phases
+        and phase_tokens.get(ph, 0) == 0
+        and ph not in unrecorded_phases
     ]
-    execute_blind = phase_tokens.get(_II_EXECUTE_PHASE, None) == 0
+    # execute_blind is a GENUINE (accidental) blind: 5-execute recorded zero
+    # tokens with no recorded-partiality marker to explain it. A marker-explained
+    # zero-token execute is recorded-partial (bucket `partial`), not `blind`.
+    execute_recorded_partial = _II_EXECUTE_PHASE in unrecorded_phases
+    execute_blind = (
+        phase_tokens.get(_II_EXECUTE_PHASE, None) == 0 and not execute_recorded_partial
+    )
     metrics_blind = ";".join(blind_phases)
 
     # incomplete_lifecycle — no 5-execute OR no 6-finalize section recorded.
@@ -3092,7 +3428,9 @@ def check_input_integrity(inputs: PlanInputs) -> dict[str, Any]:
     )
     if execute_blind:
         data_confidence = "blind"
-    elif any_input_missing or any_defect:
+    elif any_input_missing or any_defect or execute_recorded_partial:
+        # A #812-marker-explained zero-token execute is recorded-partial: it is
+        # the `partial` bucket, never the false-healthy `fully-recorded`.
         data_confidence = "partial"
     else:
         data_confidence = "fully-recorded"
@@ -4021,21 +4359,28 @@ def _dedup_pretag(signature: str, corpus_sigs: list[str]) -> str:
 def _manifest_genuine(row: dict[str, Any]) -> bool:
     """Genuine-signal predicate for an execution-context-manifest row.
 
-    Genuine (actionable): a `drift` verdict, or a populated `name_drift` (which,
+    Genuine (actionable): a `drift` verdict, a populated `name_drift` (which,
     post role-resolution, is only ever an unresolvable role or a zero-intersection
-    phase_5). Informational: `incomplete` / `unloggable` verdicts (missing
-    artifacts, not a composition fault) and `ok` rows.
+    phase_5), or a populated `owner_drift` (a phase_6 built-in step the canonical
+    finalize roster no longer recognizes — #852 D6 step-ownership). Informational:
+    `incomplete` / `unloggable` verdicts (missing artifacts, not a composition
+    fault) and `ok` rows.
     """
-    return bool(row["verdict"] == "drift" or row["name_drift"])
+    return bool(
+        row["verdict"] == "drift" or row["name_drift"] or row.get("owner_drift")
+    )
 
 
 def emit_manifest_block(rows: list[dict[str, Any]]) -> str:
     counts = {"ok": 0, "drift": 0, "incomplete": 0, "unloggable": 0}
     name_drift_count = 0
+    owner_drift_count = 0
     for r in rows:
         counts[r["verdict"]] = counts.get(r["verdict"], 0) + 1
         if r["name_drift"]:
             name_drift_count += 1
+        if r.get("owner_drift"):
+            owner_drift_count += 1
     rows, genuine_signal_count = _severity_summary(rows, _manifest_genuine)
     out = ["check: execution-context-manifest", "status: success"]
     out.append(f"plans_scanned: {len(rows)}")
@@ -4044,9 +4389,10 @@ def emit_manifest_block(rows: list[dict[str, Any]]) -> str:
     out.append(f"incomplete_count: {counts['incomplete']}")
     out.append(f"unloggable_count: {counts['unloggable']}")
     out.append(f"name_drift_count: {name_drift_count}")
+    out.append(f"owner_drift_count: {owner_drift_count}")
     out.append(f"genuine_signal_count: {genuine_signal_count}")
     out.append(
-        f"rows[{len(rows)}]{{plan_id,verdict,severity,reason,expected_rule,actual_rule,change_type,scope,recipe,affected,modified,name_drift}}:"
+        f"rows[{len(rows)}]{{plan_id,verdict,severity,reason,expected_rule,actual_rule,change_type,scope,recipe,affected,modified,name_drift,owner_drift}}:"
     )
     for r in rows:
         out.append(
@@ -4066,6 +4412,7 @@ def emit_manifest_block(rows: list[dict[str, Any]]) -> str:
                     r["affected"],
                     r["modified"],
                     r["name_drift"] or "",
+                    r.get("owner_drift") or "",
                 ]
             )
         )
@@ -4940,8 +5287,285 @@ def _syn_build_walltime_outlier_plans(sequence: Any) -> set[str]:
     return {pid for pid, s in pairs if s >= threshold}
 
 
+# ---------------------------------------------------------------------------
+# Check: dispatch-topology (per-plan) — D3
+# ---------------------------------------------------------------------------
+#
+# Directly verifies the roadmap's leaf/dispatch-topology invariant: subagents are
+# LEAVES — only the main-context orchestrator dispatches further subagents (a leaf
+# returns a signal, it never issues a `Task:`/`execution-context` dispatch). The
+# invariant is the canonical contract in
+# `ref-workflow-architecture/standards/agents.md`.
+#
+# Deterministic signal: each `[DISPATCH] (caller) target=... role=...` line in a
+# plan's `logs/work.log` names the DISPATCHER via its `(bundle:skill)` caller
+# prefix. Only the orchestrator (`plan-marshall:plan-marshall`) and the phase
+# workflows the orchestrator uses as caller-phase context
+# (`plan-marshall:phase-N-...`) may legitimately emit a `target=` dispatch. A
+# `target=` dispatch whose caller is ANY other skill is a topology violation — a
+# leaf (execute-task, automated-review, sonar-roundtrip, a verify/finalize leaf,
+# a retrospective aspect, …) spawned a subagent. The allowlist is used rather than
+# a leaf denylist so a newly-added leaf is caught by default.
+
+# A `[DISPATCH]` line carrying a `target=` field, capturing the `(bundle:skill)`
+# caller prefix. The `target=` presence distinguishes a real subagent dispatch
+# from a bare `[DISPATCH] role=phase-N` phase-entry marker (which carries no
+# target and is not itself a spawn record).
+_DISPATCH_TARGET_RE = re.compile(
+    r"\[DISPATCH\]\s*\((?P<caller>[a-z0-9-]+:[a-z0-9_-]+)\)[^\n]*\btarget="
+)
+# Allowed dispatchers: the orchestrator and the phase workflows it drives. Any
+# other caller emitting a `target=` dispatch is a leaf-topology violation.
+_DISPATCH_ALLOWED_CALLER_RE = re.compile(
+    r"^plan-marshall:(plan-marshall|phase-[1-6]-)"
+)
+
+
+def check_dispatch_topology(inputs: PlanInputs) -> dict[str, Any]:
+    """Per-plan leaf/dispatch-topology conformance from `logs/work.log`.
+
+    Scans every `[DISPATCH] ... target=...` line and classifies its `(bundle:skill)`
+    caller against the allowed-dispatcher allowlist. Returns the total dispatch
+    count, the leaf-violation count, and a `;`-joined list of the offending caller
+    skills (the violation detail). A plan with no work.log, or with only bare
+    phase-entry `[DISPATCH] role=...` markers (no `target=`), reports zero of both.
+    """
+    work_log = inputs.plan_dir / "logs" / "work.log"
+    dispatch_count = 0
+    violators: list[str] = []
+    if work_log.is_file():
+        try:
+            text = work_log.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        for m in _DISPATCH_TARGET_RE.finditer(text):
+            dispatch_count += 1
+            caller = m.group("caller")
+            if not _DISPATCH_ALLOWED_CALLER_RE.match(caller):
+                violators.append(caller)
+    leaf_dispatch = len(violators)
+    return {
+        "plan_id": inputs.plan_id,
+        "dispatch_count": dispatch_count,
+        "leaf_dispatch": leaf_dispatch,
+        "violators": ";".join(sorted(set(violators))),
+    }
+
+
+def _dispatch_topology_genuine(row: dict[str, Any]) -> bool:
+    """Genuine (actionable): any leaf-dispatch topology violation."""
+    return int(row.get("leaf_dispatch") or 0) > 0
+
+
+# ---------------------------------------------------------------------------
+# Check: finalize-flow-conformance (per-plan) — D4
+# ---------------------------------------------------------------------------
+#
+# Directly verifies the post-#849/#850 finalize mechanics: the deterministic
+# `ci_verify` gate, the adaptive ci-wait ratchet, and the widened merge mutex.
+# The finalize roster (`execution.toon` `phase_6.steps`) plus the persisted CI
+# artifacts (`artifacts/ci-runs/{run_id}/manifest.toon`, carrying `wait_outcome`
+# and `final_status` per #849's ci_verify) are the deterministic inputs.
+#
+# Conformance flags:
+#   missing_ci_verify — the roster created a PR (`create-pr` step) but carries no
+#                       `ci-verify` step: the #849 deterministic CI gate is absent
+#                       (a pre-#849 finalize shape).
+#   ci_wait_timeout   — a persisted ci-run recorded `wait_outcome: deadline_exceeded`
+#                       — the adaptive ci-wait ratchet hit its budget ceiling.
+#   ci_unresolved     — the LATEST persisted ci-run's `final_status` is not
+#                       `success` (failure / timeout / none): finalize did not reach
+#                       a green CI on the recorded runs.
+
+
+def _bare_step(step_id: str) -> str:
+    """Strip the optional `default:` prefix from a phase-6 step ID (bare name)."""
+    s = step_id.strip()
+    return s[len("default:"):] if s.startswith("default:") else s
+
+
+def check_finalize_flow_conformance(inputs: PlanInputs) -> dict[str, Any]:
+    """Per-plan post-#849/#850 finalize-flow conformance."""
+    bare6 = {_bare_step(s) for s in inputs.manifest_phase_6}
+    has_pr_step = "create-pr" in bare6
+    has_ci_verify_step = "ci-verify" in bare6
+
+    ci_dir = inputs.plan_dir / "artifacts" / "ci-runs"
+    run_dirs = (
+        sorted(d for d in ci_dir.iterdir() if d.is_dir()) if ci_dir.is_dir() else []
+    )
+    ci_run_count = len(run_dirs)
+    latest_final_status = ""
+    wait_timeout = False
+    for d in run_dirs:
+        manifest = d / "manifest.toon"
+        wo = parse_toon_scalar(manifest, "wait_outcome")
+        if (wo or "").strip() == "deadline_exceeded":
+            wait_timeout = True
+        fs = parse_toon_scalar(manifest, "final_status")
+        if fs is not None:
+            latest_final_status = fs.strip()
+
+    flags: list[str] = []
+    if has_pr_step and not has_ci_verify_step:
+        flags.append("missing_ci_verify")
+    if wait_timeout:
+        flags.append("ci_wait_timeout")
+    if ci_run_count > 0 and latest_final_status not in {"success", ""}:
+        flags.append(f"ci_unresolved({latest_final_status})")
+
+    return {
+        "plan_id": inputs.plan_id,
+        "has_pr_step": str(has_pr_step).lower(),
+        "has_ci_verify_step": str(has_ci_verify_step).lower(),
+        "ci_run_count": ci_run_count,
+        "final_status": latest_final_status,
+        "flags": ";".join(flags),
+    }
+
+
+def _finalize_flow_genuine(row: dict[str, Any]) -> bool:
+    """Genuine (actionable): any finalize-flow conformance flag fired."""
+    return bool(row.get("flags"))
+
+
+# ---------------------------------------------------------------------------
+# Check: merge-window-accounting (cross-plan) — D5
+# ---------------------------------------------------------------------------
+#
+# Accounts for the #849 widened merge-mutex + FIFO admission-queue window (fair
+# merge ordering / the parallelism enabler). The deterministic signal is the
+# best-effort `[LOCK] (merge:{event}) {lock_id}` lifecycle lines the merge-lock
+# primitive appends to the main-anchored global logs (`.plan/local/logs/`), each
+# carrying a following indented `waiting_count:` field (the FIFO queue depth). The
+# `{lock_id}` is the plan_id, so the corpus lines bucket per plan. Events:
+# `acquired` / `released` / `blocked` (a non-front plan waiting behind the FIFO
+# front) / `reclaimed`.
+#
+# Per-plan accounting: the acquire/release/blocked/reclaim counts and the max
+# observed `waiting_count`. `merge_contention` fires when the plan was ever
+# `blocked` (it waited in the admission queue) OR the max waiting_count exceeds 1
+# (other plans were queued behind it) — the merge window this plan actually paid.
+
+_LOCK_MERGE_RE = re.compile(
+    r"\[LOCK\]\s*\(merge:(?P<event>[a-z_-]+)\)\s+(?P<lock_id>[A-Za-z0-9._-]+)"
+)
+_LOCK_WAITING_RE = re.compile(r"^\s*waiting_count:\s*(?P<n>\d+)")
+
+
+def cross_merge_window_accounting(
+    all_inputs: list[PlanInputs], repo_root: Path
+) -> dict[str, Any]:
+    """Cross-plan merge-mutex admission-queue accounting from the global logs.
+
+    Scans the `[LOCK] (merge:*)` lifecycle lines across `.plan/local/logs/` and
+    buckets them by `lock_id` (= plan_id). Emits one row per plan in the scanned
+    corpus that recorded any merge-lock event, plus corpus totals. Best-effort: an
+    absent logs dir yields no rows.
+    """
+    corpus_plan_ids = {i.plan_id for i in all_inputs}
+    # per plan_id → {event_counts, max_waiting}
+    acc: dict[str, dict[str, Any]] = {}
+    logs_dir = (repo_root / ".plan" / "local" / "logs").resolve()
+    if logs_dir.is_dir():
+        for log_file in sorted(logs_dir.glob("*.log")):
+            try:
+                lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                continue
+            for idx, raw in enumerate(lines):
+                m = _LOCK_MERGE_RE.search(raw)
+                if not m:
+                    continue
+                lock_id = m.group("lock_id")
+                event = m.group("event")
+                entry = acc.setdefault(
+                    lock_id,
+                    {"acquired": 0, "released": 0, "blocked": 0, "reclaimed": 0, "max_waiting": 0},
+                )
+                entry[event] = entry.get(event, 0) + 1
+                # waiting_count rides on the immediately-following indented lines.
+                for look in lines[idx + 1 : idx + 6]:
+                    wm = _LOCK_WAITING_RE.match(look)
+                    if wm:
+                        entry["max_waiting"] = max(entry["max_waiting"], int(wm.group("n")))
+                        break
+                    if look and not look[:1].isspace():
+                        break
+
+    rows: list[dict[str, Any]] = []
+    for lock_id in sorted(acc):
+        # Attribute only to plans in the scanned corpus (a lock_id for a plan not
+        # in this scan is carried in the corpus totals but not emitted as a row).
+        e = acc[lock_id]
+        blocked = int(e.get("blocked", 0))
+        max_waiting = int(e.get("max_waiting", 0))
+        contention = blocked > 0 or max_waiting > 1
+        rows.append(
+            {
+                "plan_id": lock_id,
+                "in_corpus": str(lock_id in corpus_plan_ids).lower(),
+                "acquired": int(e.get("acquired", 0)),
+                "released": int(e.get("released", 0)),
+                "blocked": blocked,
+                "reclaimed": int(e.get("reclaimed", 0)),
+                "max_waiting": max_waiting,
+                "flags": "merge_contention" if contention else "",
+            }
+        )
+
+    corpus = {
+        "plans_with_merge_events": len(rows),
+        "contended_plans": sum(1 for r in rows if r["flags"]),
+        "total_blocked": sum(int(r["blocked"]) for r in rows),
+        "max_waiting_observed": max((int(r["max_waiting"]) for r in rows), default=0),
+    }
+    return {"rows": rows, "corpus": corpus}
+
+
+def _merge_window_genuine(row: dict[str, Any]) -> bool:
+    """Genuine (actionable): the plan hit merge contention (waited in the queue)."""
+    return bool(row.get("flags"))
+
+
+def emit_merge_window_accounting_block(result: dict[str, Any]) -> str:
+    """Emit the merge-window-accounting block with the D1 severity column."""
+    rows = result["rows"]
+    corpus = result["corpus"]
+    rows, genuine_signal_count = _severity_summary(rows, _merge_window_genuine)
+    out = [
+        "check: merge-window-accounting",
+        "status: success",
+        f"plans_with_merge_events: {corpus['plans_with_merge_events']}",
+        f"contended_plans: {corpus['contended_plans']}",
+        f"total_blocked: {corpus['total_blocked']}",
+        f"max_waiting_observed: {corpus['max_waiting_observed']}",
+        f"genuine_signal_count: {genuine_signal_count}",
+        f"rows[{len(rows)}]{{plan_id,in_corpus,acquired,released,blocked,reclaimed,max_waiting,flags,severity}}:",
+    ]
+    for r in rows:
+        out.append(
+            "  "
+            + ",".join(
+                _cell(c)
+                for c in [
+                    r["plan_id"],
+                    r["in_corpus"],
+                    r["acquired"],
+                    r["released"],
+                    r["blocked"],
+                    r["reclaimed"],
+                    r["max_waiting"],
+                    r["flags"],
+                    r["severity"],
+                ]
+            )
+        )
+    return "\n".join(out) + "\n"
+
+
 def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
-    """Compute the five cross-check couplings from the retained check results.
+    """Compute the cross-check couplings from the retained check results.
 
     `all_results` maps a check name to the structured result that check computed
     (the per-plan row list for per-plan checks, the cross-plan result dict for
@@ -4962,6 +5586,9 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
     scope = all_results.get("scope-estimate-accuracy")
     task_count = all_results.get("task-count-efficiency")
     task_graph = all_results.get("task-graph-redundancy")
+    dispatch_topology = all_results.get("dispatch-topology")
+    finalize_flow = all_results.get("finalize-flow-conformance")
+    merge_window = all_results.get("merge-window-accounting")
 
     rows: list[dict[str, Any]] = []
 
@@ -5172,6 +5799,103 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
         }
     )
 
+    # (g) dispatch_topology_reentry — a plan whose work.log recorded a LEAF-emitted
+    # subagent dispatch (a topology-invariant violation) AND whose runtime sequence
+    # was flagged `phase_reentry`. A leaf that spawns a subagent surfaces the extra
+    # dispatch as an unexpected phase re-entry; the static topology violation and the
+    # observed re-entry corroborate one anomalous dispatch.
+    topo_violation_plans = {
+        str(r.get("plan_id"))
+        for r in (dispatch_topology or [])
+        if isinstance(r, dict) and int(r.get("leaf_dispatch") or 0) > 0
+    }
+    reentry_plans = _syn_flagged_plans(sequence, lambda f: f.startswith("phase_reentry"))
+    g_plans = sorted(topo_violation_plans & reentry_plans)
+    g_fired = bool(g_plans)
+    rows.append(
+        {
+            "coupling": "dispatch_topology_reentry",
+            "fired": g_fired,
+            "detail": (
+                f"{len(g_plans)} plan(s) with a leaf-emitted dispatch AND "
+                f"phase_reentry: {';'.join(g_plans)}"
+                if g_fired
+                else f"topo_violation_plans={len(topo_violation_plans)};reentry_plans={len(reentry_plans)}"
+            ),
+            "caveat": (
+                "a leaf-emitted subagent dispatch VIOLATES the leaf/dispatch-topology "
+                "invariant (subagents are leaves); a co-occurring phase_reentry "
+                "corroborates the extra dispatch as observed rework"
+            ),
+        }
+    )
+
+    # (h) finalize_gate_gap_ci_rerun — a plan whose finalize flow was non-conformant
+    # (missing the #849 deterministic ci_verify gate, or its recorded CI never
+    # resolved green) AND whose runtime sequence re-ran CI. The missing/failed
+    # deterministic gate and the observed CI re-run are two views of the shift-right
+    # tax the post-#849 flow exists to remove.
+    finalize_gap_plans = {
+        str(r.get("plan_id"))
+        for r in (finalize_flow or [])
+        if isinstance(r, dict)
+        and ("missing_ci_verify" in str(r.get("flags") or "") or "ci_unresolved" in str(r.get("flags") or ""))
+    }
+    h_ci_rerun_plans = _syn_flagged_plans(sequence, lambda f: f.startswith("ci_rerun"))
+    h_plans = sorted(finalize_gap_plans & h_ci_rerun_plans)
+    h_fired = bool(h_plans)
+    rows.append(
+        {
+            "coupling": "finalize_gate_gap_ci_rerun",
+            "fired": h_fired,
+            "detail": (
+                f"{len(h_plans)} plan(s) with missing_ci_verify/ci_unresolved AND "
+                f"ci_rerun: {';'.join(h_plans)}"
+                if h_fired
+                else f"finalize_gap_plans={len(finalize_gap_plans)};ci_rerun_plans={len(h_ci_rerun_plans)}"
+            ),
+            "caveat": (
+                "a non-conformant finalize flow (absent #849 ci_verify gate or an "
+                "unresolved CI) co-occurring with a CI re-run is the deterministic-gate "
+                "gap the post-#849 flow removes — confirm both before filing"
+            ),
+        }
+    )
+
+    # (i) merge_window_ci_rerun — a plan that WAITED in the #849 merge admission
+    # queue (merge_contention) AND re-ran CI OR paid a heavy finalize. A plan queued
+    # behind the merge mutex whose HEAD advanced (rebase/re-review) legitimately
+    # re-runs CI; the coupling accounts for the merge-window cost the widened mutex
+    # trades for fairness/parallelism.
+    contended_plans = {
+        str(r.get("plan_id"))
+        for r in (merge_window.get("rows", []) if isinstance(merge_window, dict) else [])
+        if isinstance(r, dict) and r.get("flags")
+    }
+    i_ci_rerun_plans = _syn_flagged_plans(sequence, lambda f: f.startswith("ci_rerun"))
+    i_finalize_heavy_plans = _syn_flagged_plans(
+        economics, lambda f: f.startswith("finalize_heavy")
+    )
+    i_plans = sorted(contended_plans & (i_ci_rerun_plans | i_finalize_heavy_plans))
+    i_fired = bool(i_plans)
+    rows.append(
+        {
+            "coupling": "merge_window_ci_rerun",
+            "fired": i_fired,
+            "detail": (
+                f"{len(i_plans)} plan(s) with merge_contention AND ci_rerun OR "
+                f"finalize_heavy: {';'.join(i_plans)}"
+                if i_fired
+                else f"contended_plans={len(contended_plans)};ci_rerun_plans={len(i_ci_rerun_plans)};finalize_heavy_plans={len(i_finalize_heavy_plans)}"
+            ),
+            "caveat": (
+                "merge-queue contention co-occurring with a CI re-run / heavy finalize "
+                "is the merge-window cost the #849 widened mutex trades for fair "
+                "ordering — it is accounting, not necessarily waste"
+            ),
+        }
+    )
+
     fired_count = sum(1 for r in rows if r["fired"])
     return {
         "couplings_evaluated": len(rows),
@@ -5338,7 +6062,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
         blocks.append(
             emit_table_block(
                 "track-selection-accuracy",
-                ["plan_id", "actual_lane", "actual_track", "counterfactual_lane", "verdict"],
+                ["plan_id", "actual_lane", "actual_track", "counterfactual_lane", "verdict", "era"],
                 rows,
                 lambda r: r["verdict"] in {"OVER-TRACKED", "UNDER-TRACKED"},
             )
@@ -5487,6 +6211,54 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
                 "candidate_count"
             ]
 
+    if "dispatch-topology" in selected or synth_needed:
+        dt_rows = [check_dispatch_topology(i) for i in all_inputs]
+        all_results["dispatch-topology"] = dt_rows
+        if "dispatch-topology" in selected:
+            blocks.append(
+                emit_table_block(
+                    "dispatch-topology",
+                    ["plan_id", "dispatch_count", "leaf_dispatch", "violators"],
+                    dt_rows,
+                    _dispatch_topology_genuine,
+                )
+            )
+            summary_metrics["dispatch-topology_violations"] = sum(
+                int(r["leaf_dispatch"]) for r in dt_rows
+            )
+
+    if "finalize-flow-conformance" in selected or synth_needed:
+        ffc_rows = [check_finalize_flow_conformance(i) for i in all_inputs]
+        all_results["finalize-flow-conformance"] = ffc_rows
+        if "finalize-flow-conformance" in selected:
+            blocks.append(
+                emit_table_block(
+                    "finalize-flow-conformance",
+                    [
+                        "plan_id",
+                        "has_pr_step",
+                        "has_ci_verify_step",
+                        "ci_run_count",
+                        "final_status",
+                        "flags",
+                    ],
+                    ffc_rows,
+                    _finalize_flow_genuine,
+                )
+            )
+            summary_metrics["finalize-flow-conformance_flagged"] = sum(
+                1 for r in ffc_rows if _finalize_flow_genuine(r)
+            )
+
+    if "merge-window-accounting" in selected or synth_needed:
+        mwa_result = cross_merge_window_accounting(all_inputs, repo_root)
+        all_results["merge-window-accounting"] = mwa_result
+        if "merge-window-accounting" in selected:
+            blocks.append(emit_merge_window_accounting_block(mwa_result))
+            summary_metrics["merge-window-accounting_contended"] = mwa_result["corpus"][
+                "contended_plans"
+            ]
+
     # cross-check-synthesis MUST run LAST — it reads every upstream result the
     # blocks above retained into `all_results`.
     if synth_needed:
@@ -5517,7 +6289,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Audit archived plans across eighteen retrospective checks."
+        description="Audit archived plans across twenty-one retrospective checks."
     )
     parser.add_argument(
         "--plan-dir",

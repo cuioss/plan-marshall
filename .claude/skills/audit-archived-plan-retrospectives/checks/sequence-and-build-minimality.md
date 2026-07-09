@@ -96,8 +96,8 @@ value so a flagged row is self-describing:
 | `build_churn` | a build starts within `build_clustering_minutes` (10m) of the previous build | a re-run loop rather than one focused build per change. |
 | `non_minimal_build` | ≥1 heavy (`> build_heavy_seconds`) build ran | a whole-tree verify where a scoped module run sufficed. |
 | `docs_only_build` | the plan touched no `.py` file (or `change_type == documentation`) yet ran a build | buildable-stuff violation (the docs-only-build axis). |
-| `ci_rerun` | more than one CI run directory under `artifacts/ci-runs/` | the PR round-trip ran CI more than once. |
-| `phase_reentry` | a `phase-N` role was dispatched more than once | a loop-back re-entered a phase — redundant phase work. |
+| `ci_rerun` | more than one CI run directory under `artifacts/ci-runs/` | the PR round-trip ran CI more than once. **Post-#849/#850 caveat**: a second CI pass is now often the EXPECTED shape — the early baseline-rebase finalize step (`finalize-step-sync-baseline`, #786) and a post-force-push re-review (#742) legitimately re-run CI, and #849's deterministic `ci_verify` + adaptive ci-wait ratchet make that re-verification cheap and intentional. Read ≥2 as a rebase/re-review round-trip vs a genuine red→green churn loop (see the interpretation section). |
+| `phase_reentry` | a `phase-N` role was dispatched more than once | a loop-back re-entered a phase. **Post-#849/#850 caveat**: a `5-execute` / `6-finalize` re-entry is the EXPECTED shape of the finalize triage loop-back (the `loop_back_without_asking` inline-replay cycle), not necessarily redundant work — a loop-back that fixed a real finding is correct-by-design. |
 | `arch_over_resolution` | `arch_calls ≥ 5 × builds` while builds exist | resolution overhead dwarfing the work it resolves. |
 | `consecutive_dup` | ≥1 back-to-back identical `(notation, subcommand)` call | a mechanical double-call (see caveat 3). |
 
@@ -197,13 +197,26 @@ to the build-minimality lesson axes:
   build-minimality lessons name. Cross-read with the `token-economics` check's
   `5-execute` token share and with `metrics`: a heavy build on a tiny footprint is
   the wasted-wall-time instance.
-- **`build_churn` / `ci_rerun`** — re-run loops. A churn cluster or a multi-run CI
-  round-trip is rework; cross-read with the `quality-chain` check
-  (`build_pending_pile`) to see whether the re-runs were chasing an unresolved
-  build failure.
-- **`phase_reentry`** — a loop-back re-entered a phase. Informational on its own (a
-  loop-back is a legitimate workflow event), but a plan with many reentries plus
-  heavy builds is paying the build tax once per reentry.
+- **`build_churn` / `ci_rerun`** — re-run loops, but read `ci_rerun` against the
+  post-#849/#850 finalize flow before calling it rework. A single extra CI pass
+  (`ci_runs == 2`) is now the EXPECTED shape of a plan that hit the early
+  baseline-rebase (`finalize-step-sync-baseline`, #786) or a post-force-push
+  re-review (#742): the branch was rebased or force-pushed, so CI legitimately
+  re-ran, and #849's deterministic `ci_verify` + adaptive ci-wait made that pass
+  cheap and intentional. Treat `ci_rerun` as genuine churn only when the count is
+  high AND cross-reads with the `quality-chain` check (`build_pending_pile`,
+  `loop_back` volume) show the re-runs were chasing an unresolved red build — a
+  red→green→red loop, not one rebase/re-review round-trip. `build_churn` (a build
+  cluster within the clustering window) remains the local-build rework signal and
+  is unaffected by the finalize-flow change.
+- **`phase_reentry`** — a loop-back re-entered a phase. Post-#849/#850, a
+  `5-execute` / `6-finalize` re-entry is the EXPECTED shape of the finalize triage
+  loop-back (the `loop_back_without_asking` inline-replay cycle) — a loop-back that
+  fixed a real finding is correct-by-design, not redundant. Read a re-entry against
+  the plan's `quality-chain` `loop_back` resolutions before calling it redundant:
+  informational when the re-entry corresponds to a resolved loop-back finding; a
+  cost signal only when a plan pays many reentries plus heavy builds with no
+  corresponding resolved findings (rework, not a productive loop-back).
 - **`arch_over_resolution`** — architecture-resolution overhead dwarfing the build
   work it resolves. Surface it as a resolution-cost signal.
 - **`consecutive_dup`** — apply caveat 3 before treating it as redundancy; confirm
