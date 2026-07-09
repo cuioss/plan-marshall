@@ -10,6 +10,7 @@ Covers the three concerns of the post-merge re-review registry:
        comment per strategy and returns the comment-post time:
          coderabbit: posts ``@coderabbitai review``.
          gemini:     posts ``/gemini review``.
+         sourcery:   posts ``@sourcery-ai review``.
     3. Fresh-review matching — ``_match_review`` / ``await_fresh_review`` identifies
        a review whose reviewed commit SHA matches the pushed HEAD AND whose
        ``submitted_at`` post-dates the trigger time; fail-closed otherwise.
@@ -64,6 +65,20 @@ def test_resolve_strategy_gemini_maps_to_gemini_strategy():
 
     assert strategy is not None
     assert isinstance(strategy, github_re_review._GeminiStrategy)
+
+
+def test_resolve_strategy_sourcery_maps_to_sourcery_strategy():
+    strategy = github_re_review.resolve_strategy('sourcery')
+
+    assert strategy is not None
+    assert isinstance(strategy, github_re_review._SourceryStrategy)
+
+
+def test_sourcery_is_a_valid_bot_kind():
+    """``sourcery`` is a first-class member of the canonical BOT_KINDS enum."""
+    from _findings_core import BOT_KINDS
+
+    assert 'sourcery' in BOT_KINDS
 
 
 def test_resolve_strategy_unknown_bot_kind_returns_none():
@@ -192,6 +207,57 @@ def test_gemini_request_fresh_review_propagates_post_failure(monkeypatch):
 
     strategy = github_re_review.resolve_strategy('gemini')
     result = strategy.request_fresh_review(99, '2026-01-01T00:00:00Z')
+
+    assert result['status'] == 'error'
+    assert result['operation'] == 'request_fresh_review'
+
+
+def test_sourcery_request_fresh_review_posts_trigger_comment(monkeypatch):
+    """Sourcery posts exactly ``@sourcery-ai review`` as the explicit trigger."""
+    post_calls = {'args': []}
+
+    def fake_post(pr_number, body):
+        post_calls['args'].append((pr_number, body))
+        return {'status': 'success', 'operation': 'post_pr_comment', 'pr_number': pr_number}
+
+    monkeypatch.setattr(github_re_review._github, 'post_pr_comment', fake_post)
+
+    strategy = github_re_review.resolve_strategy('sourcery')
+    result = strategy.request_fresh_review(77, '2026-01-01T00:00:00Z')
+
+    assert result['status'] == 'success'
+    # Exactly one comment posted, with the exact trigger literal.
+    assert post_calls['args'] == [(77, github_re_review.SOURCERY_TRIGGER_COMMENT)]
+    assert github_re_review.SOURCERY_TRIGGER_COMMENT == '@sourcery-ai review'
+
+
+def test_sourcery_request_fresh_review_trigger_time_is_post_time_not_push_time(monkeypatch):
+    """Sourcery's trigger time is the comment-post time, never the push time."""
+    monkeypatch.setattr(
+        github_re_review._github,
+        'post_pr_comment',
+        lambda *_a, **_kw: {'status': 'success'},
+    )
+    monkeypatch.setattr(github_re_review, '_now_iso', lambda: '2026-06-01T12:00:00+00:00')
+
+    strategy = github_re_review.resolve_strategy('sourcery')
+    result = strategy.request_fresh_review(77, '2020-01-01T00:00:00Z')
+
+    assert result['trigger_time'] == '2026-06-01T12:00:00+00:00'
+    # The supplied push_time is deliberately discarded.
+    assert result['trigger_time'] != '2020-01-01T00:00:00Z'
+
+
+def test_sourcery_request_fresh_review_propagates_post_failure(monkeypatch):
+    """A failed trigger-comment post surfaces as an error envelope."""
+    monkeypatch.setattr(
+        github_re_review._github,
+        'post_pr_comment',
+        lambda *_a, **_kw: {'status': 'error', 'error': 'comment failed'},
+    )
+
+    strategy = github_re_review.resolve_strategy('sourcery')
+    result = strategy.request_fresh_review(77, '2026-01-01T00:00:00Z')
 
     assert result['status'] == 'error'
     assert result['operation'] == 'request_fresh_review'
@@ -396,6 +462,31 @@ def test_cmd_re_review_gemini_posts_then_awaits(monkeypatch):
     assert post_calls['args'] == [(42, '/gemini review')]
 
 
+def test_cmd_re_review_sourcery_posts_then_awaits(monkeypatch):
+    """sourcery: posts @sourcery-ai review, then awaits a fresh review for HEAD."""
+    _noop_sleep(monkeypatch)
+    post_calls = {'args': []}
+
+    def fake_post(pr_number, body):
+        post_calls['args'].append((pr_number, body))
+        return {'status': 'success'}
+
+    monkeypatch.setattr(github_re_review._github, 'post_pr_comment', fake_post)
+    monkeypatch.setattr(github_re_review, '_now_iso', lambda: '2026-01-01T00:00:00+00:00')
+    monkeypatch.setattr(
+        github_re_review._github,
+        'fetch_pr_reviews_with_commits',
+        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+    )
+
+    result = github_re_review.cmd_re_review(_re_review_args(bot_kind='sourcery'))
+
+    assert result['status'] == 'success'
+    assert result['matched'] is True
+    assert result['bot_kind'] == 'sourcery'
+    assert post_calls['args'] == [(42, '@sourcery-ai review')]
+
+
 def test_cmd_re_review_short_circuits_on_request_failure(monkeypatch):
     """A failed gemini trigger post aborts before await is ever called."""
     _noop_sleep(monkeypatch)
@@ -560,6 +651,16 @@ def test_bot_kind_for_author_known_gemini_login():
     assert github_re_review.bot_kind_for_author('gemini-code-assist') == 'gemini'
 
 
+def test_bot_kind_for_author_known_sourcery_login():
+    """The sourcery bot account login maps to the sourcery bot_kind."""
+    assert github_re_review.bot_kind_for_author('sourcery-ai') == 'sourcery'
+
+
+def test_bot_kind_for_author_sourcery_strips_bot_suffix():
+    """A ``[bot]``-suffixed sourcery login is normalized before lookup."""
+    assert github_re_review.bot_kind_for_author('sourcery-ai[bot]') == 'sourcery'
+
+
 def test_bot_kind_for_author_human_returns_none():
     """A human (non-bot) author login resolves to None."""
     assert github_re_review.bot_kind_for_author('octocat') is None
@@ -611,6 +712,51 @@ def test_main_re_review_wires_args_and_prints_toon(monkeypatch, capsys):
     assert 'success' in out
     assert 'coderabbit' in out
     assert 'headsha' in out
+
+
+def test_main_re_review_accepts_sourcery_bot_kind(monkeypatch, capsys):
+    """main() accepts ``--bot-kind sourcery`` through argparse and posts its trigger.
+
+    Proves sourcery is a valid ``--bot-kind`` argparse choice end-to-end (a value
+    outside ``choices=BOT_KINDS`` would raise SystemExit at parse time).
+    """
+    _noop_sleep(monkeypatch)
+    post_calls = {'args': []}
+
+    def fake_post(pr_number, body):
+        post_calls['args'].append((pr_number, body))
+        return {'status': 'success'}
+
+    monkeypatch.setattr(github_re_review._github, 'post_pr_comment', fake_post)
+    monkeypatch.setattr(
+        github_re_review._github,
+        'fetch_pr_reviews_with_commits',
+        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+    )
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'github_re_review.py',
+            're-review',
+            '--pr-number',
+            '42',
+            '--bot-kind',
+            'sourcery',
+            '--head-sha',
+            'headsha',
+            '--push-time',
+            '2026-01-01T00:00:00Z',
+        ],
+    )
+
+    rc = github_re_review.main()
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert 'success' in out
+    assert 'sourcery' in out
+    assert post_calls['args'] == [(42, '@sourcery-ai review')]
 
 
 def test_main_parses_timeout_flag_and_threads_it(monkeypatch):

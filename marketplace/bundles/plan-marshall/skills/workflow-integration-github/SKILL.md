@@ -143,24 +143,25 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
 
 **Strategy registry:** `github_re_review.py` is a `bot_kind`-keyed registry with a strict two-method contract per strategy (`request_fresh_review`, `await_fresh_review`) and **no speculative extensibility**. The registry is **GitHub-only** — a sibling GitLab registry would be added separately without changing the consumer-side workflow docs. The canonical `bot_kind` list is imported from `manage-findings/_findings_core.BOT_KINDS`; the registry does **not** inline-copy the enum. Downstream consumers that need the enforcement-critical `bot_kind` list MUST reference that canonical source (or query a finding's `bot_kind` field) rather than hard-coding the values.
 
-The two strategies differ **only** in the trigger comment `request_fresh_review` posts — both post an explicit trigger and use the comment-post time as the trigger time:
+The strategies differ **only** in the trigger comment `request_fresh_review` posts — each posts an explicit trigger and uses the comment-post time as the trigger time:
 
 | `bot_kind` | `request_fresh_review` | Trigger time |
 |------------|------------------------|--------------|
 | `coderabbit` | Posts `@coderabbitai review`. CodeRabbit's incremental auto-review on push is not a reliable trigger for the new HEAD (it can be debounced or skipped on a force-push), so the explicit comment is the trigger that guarantees a fresh review lands. | The comment-post time. |
 | `gemini` | Posts `/gemini review` (Gemini does **not** auto-review on push). | The comment-post time. |
+| `sourcery` | Posts `@sourcery-ai review`. | The comment-post time. |
 
-`await_fresh_review` is **identical** for both bots: poll the PR's reviews until one is found whose reviewed commit SHA equals `--head-sha` AND whose `submittedAt` strictly post-dates the trigger time.
+`await_fresh_review` is **identical** for every bot: poll the PR's reviews until one is found whose reviewed commit SHA equals `--head-sha` AND whose `submittedAt` strictly post-dates the trigger time.
 
 **Steps:**
 
 1. **Invoke the registry** for the new HEAD:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|gemini} --head-sha {new HEAD} --push-time {ISO8601 push time} [--timeout {seconds}] --plan-id {plan_id}
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|gemini|sourcery} --head-sha {new HEAD} --push-time {ISO8601 push time} [--timeout {seconds}] --plan-id {plan_id}
    ```
 
-   The subcommand resolves the strategy by `bot_kind`, runs `request_fresh_review` (posts `@coderabbitai review` for CodeRabbit; posts `/gemini review` for Gemini — both use the comment-post time as the trigger time), then awaits the fresh review. The await budget is configurable via `--timeout` (default `DEFAULT_CI_TIMEOUT`); the phase-6-finalize trigger sites pass their `re_review_await_timeout_seconds` step-param value. It emits a TOON envelope with `matched: true|false` AND `timed_out: true|false` plus the matched review's metadata.
+   The subcommand resolves the strategy by `bot_kind`, runs `request_fresh_review` (posts `@coderabbitai review` for CodeRabbit; posts `/gemini review` for Gemini; posts `@sourcery-ai review` for Sourcery — each uses the comment-post time as the trigger time), then awaits the fresh review. The await budget is configurable via `--timeout` (default `DEFAULT_CI_TIMEOUT`); the phase-6-finalize trigger sites pass their `re_review_await_timeout_seconds` step-param value. It emits a TOON envelope with `matched: true|false` AND `timed_out: true|false` plus the matched review's metadata.
 
 2. **Consume the match outcome.** On `matched: true`, re-run `fetch_findings` to file the fresh review's comments, then re-run the consolidated ingest → triage → respond pass (Workflow 2). On `matched: false` / `timed_out: true`, the await budget expired with no fresh review — the consumer decides how to handle the timeout. This registry surfaces `timed_out` and does NOT decide policy itself; the timeout-handling responsibility (the `re_review_on_timeout` ask/defer/proceed branches) lives in the two trigger docs: trigger A in [`phase-6-finalize/standards/branch-cleanup.md`](../phase-6-finalize/standards/branch-cleanup.md) § "On re-review timeout (trigger A)" and trigger B in [`phase-6-finalize/workflow/automated-review.md`](../phase-6-finalize/workflow/automated-review.md) § "On re-review timeout (trigger B)".
 
@@ -436,7 +437,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review \
-  --pr-number N --bot-kind {coderabbit|gemini} --head-sha SHA --push-time ISO8601 \
+  --pr-number N --bot-kind {coderabbit|gemini|sourcery} --head-sha SHA --push-time ISO8601 \
   [--timeout SECONDS] [--plan-id PLAN_ID]
 ```
 

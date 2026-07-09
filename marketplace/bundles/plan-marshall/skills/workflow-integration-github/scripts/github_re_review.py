@@ -13,8 +13,8 @@ strategy — no speculative extensibility:
     request_fresh_review(pr_number, push_time) -> trigger_time
     await_fresh_review(pr_number, head_sha, trigger_time) -> envelope
 
-The two strategies differ ONLY in the trigger comment ``request_fresh_review``
-posts — both post an explicit trigger and return the comment-post time:
+The strategies differ ONLY in the trigger comment ``request_fresh_review``
+posts — each posts an explicit trigger and returns the comment-post time:
 
     coderabbit: Posts ``@coderabbitai review``. CodeRabbit's incremental
                 auto-review on push is not a reliable trigger for the new HEAD
@@ -23,8 +23,10 @@ posts — both post an explicit trigger and return the comment-post time:
                 Returns the comment-post time as the trigger time.
     gemini:     Posts ``/gemini review`` (Gemini does NOT auto-review on push)
                 and returns the comment-post time as the trigger time.
+    sourcery:   Posts ``@sourcery-ai review`` and returns the comment-post time
+                as the trigger time.
 
-``await_fresh_review`` is identical for both bots: poll the PR's reviews until
+``await_fresh_review`` is identical for every bot: poll the PR's reviews until
 one is found whose reviewed commit SHA matches ``head_sha`` AND whose
 ``submittedAt > trigger_time``.
 
@@ -61,6 +63,7 @@ register_subcommands({'re-review'})
 
 GEMINI_TRIGGER_COMMENT = '/gemini review'
 CODERABBIT_TRIGGER_COMMENT = '@coderabbitai review'
+SOURCERY_TRIGGER_COMMENT = '@sourcery-ai review'
 
 
 def _now_iso() -> str:
@@ -202,9 +205,21 @@ class _GeminiStrategy(_ReReviewStrategy):
         return {'status': 'success', 'trigger_time': _now_iso()}
 
 
+class _SourceryStrategy(_ReReviewStrategy):
+    """Sourcery re-review is triggered by posting ``@sourcery-ai review``."""
+
+    def request_fresh_review(self, pr_number: int | str, push_time: str) -> dict:
+        post_result = _github.post_pr_comment(pr_number, SOURCERY_TRIGGER_COMMENT)
+        if post_result.get('status') != 'success':
+            return make_error('request_fresh_review', post_result.get('error', 'failed to post trigger comment'))
+        # Trigger time is the comment-post time, not the push time.
+        return {'status': 'success', 'trigger_time': _now_iso()}
+
+
 _STRATEGIES: dict[str, _ReReviewStrategy] = {
     'coderabbit': _CodeRabbitStrategy(),
     'gemini': _GeminiStrategy(),
+    'sourcery': _SourceryStrategy(),
 }
 
 # Map a GitHub review-author login to its canonical ``bot_kind`` key. The login
@@ -216,6 +231,7 @@ _STRATEGIES: dict[str, _ReReviewStrategy] = {
 _AUTHOR_LOGIN_TO_BOT_KIND: dict[str, str] = {
     'coderabbitai': 'coderabbit',
     'gemini-code-assist': 'gemini',
+    'sourcery-ai': 'sourcery',
 }
 
 

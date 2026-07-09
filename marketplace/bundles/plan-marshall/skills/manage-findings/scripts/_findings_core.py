@@ -58,7 +58,7 @@ CERTAINTY_VALUES = VALID_CERTAINTIES
 PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
 
 # Valid reviewer-bot identity values for pr-comment findings (derived from author).
-BOT_KINDS = ['coderabbit', 'gemini']
+BOT_KINDS = ['coderabbit', 'gemini', 'sourcery']
 
 # Default per-field byte cap for quarantined raw_input free-text (64 KiB).
 # The `finding_raw_input_max_bytes` config knob (seeded by manage-config) overrides
