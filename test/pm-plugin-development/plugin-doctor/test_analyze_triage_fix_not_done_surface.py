@@ -20,6 +20,8 @@ the very doc that correctly states the contract is not a false positive.
 Test layers:
   * A FIX body carrying the full triad + allocation, no inline-done → no finding.
   * A FIX body that marks the task done inline → one finding.
+  * A FIX body whose inline-done call sits on a line that also mentions the
+    "not-done" triad token → one finding (narrowed-prohibition regression guard).
   * A FIX body missing the triad → one finding.
   * A FIX body describing the failure mode in prose (no call shape) → no finding
     (false-positive guard mirroring the real post-D1 triage.md).
@@ -174,6 +176,30 @@ def test_status_done_call_shape_flagged(tmp_path: Path) -> None:
     findings = analyze_triage_fix_not_done_surface(tmp_path)
     assert len(findings) == 1
     assert findings[0]['rule_id'] == RULE_ID
+
+
+def test_inline_done_on_not_done_line_flagged(tmp_path: Path) -> None:
+    # Regression guard for the narrowed prohibition regex: a compliant-looking
+    # line that mentions the triad token "not-done" AND ALSO carries a real inline
+    # done-marking call shape on the SAME line ("... not-done, then run
+    # `mark-step-done` ...") is a genuine violation. The old prohibition regex
+    # matched the bare "not" inside "not-done" and treated the whole line as a
+    # negated/documenting line, silently skipping the inline-done call — a
+    # false-negative in a severity=error safety analyzer. The narrowed regex no
+    # longer treats "not-done" as a prohibition, so the violation is flagged.
+    body = (
+        '# Triage\n\n'
+        '- **FIX** — allocate the fix task via `prepare-add` then `commit-add`.\n\n'
+        '  > **Not-done / STOP contract.** FIX allocates **not-done**, then **STOP**;\n'
+        '  > the `loop_back` re-enters phase-5-execute.\n\n'
+        '  Allocate the fix task not-done, then run `mark-step-done` on it inline.\n\n'
+        '- **SUPPRESS** — annotate the sink.\n'
+    )
+    _write(_triage_doc(tmp_path), body)
+    findings = analyze_triage_fix_not_done_surface(tmp_path)
+    assert len(findings) == 1
+    assert findings[0]['rule_id'] == RULE_ID
+    assert 'done inline' in findings[0]['description']
 
 
 def test_missing_triad_flagged(tmp_path: Path) -> None:

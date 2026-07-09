@@ -116,7 +116,19 @@ _INLINE_DONE_CALL_PATTERNS: tuple[re.Pattern[str], ...] = (
 # ``MUST NOT ... mark ... done``) is DOCUMENTING the contract, not violating it.
 # The inline-done check is negation-aware so a prohibition sentence that quotes
 # the literal CLI tokens is not a false-positive violation (see module docstring).
-_PROHIBITION_RE = re.compile(r"\bnot\b|\bnever\b|n't", re.IGNORECASE)
+#
+# Narrowed to genuine prohibition contexts — an auxiliary/modal + ``not`` (``do
+# not`` / ``does not`` / ``must not`` / ``should not`` / ``will not`` / …),
+# ``never``, or a contraction (``n't``). It deliberately does NOT match a bare
+# ``not``, so the ``not`` inside the required ``not-done`` triad token no longer
+# reads as a prohibition: a compliant FIX line that says ``allocates not-done ...
+# run mark-step-done`` would otherwise be masked as a prohibition, silently
+# skipping a genuine inline done-marking violation on that same line.
+_PROHIBITION_RE = re.compile(
+    r"\b(?:do|does|did|must|should|shall|will|can|could|would)\s+not\b"
+    r"|\bnever\b|n't",
+    re.IGNORECASE,
+)
 
 # The required directive triad tokens. Each token is matched in its SITED form.
 # ``STOP`` is matched case-sensitively (uppercase) so an incidental lowercase
