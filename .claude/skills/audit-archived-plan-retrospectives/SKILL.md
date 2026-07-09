@@ -8,7 +8,7 @@ allowed-tools: Bash, Read, Grep, Write, AskUserQuestion
 
 # Audit Archived Plan Retrospectives (project-local)
 
-Eighteen-check retrospective auditor over the archived-plan corpus. The skill is
+Twenty-two-check retrospective auditor over the archived-plan corpus. The skill is
 the LLM-driven orchestration narrative; `scripts/audit.py` is the deterministic
 computation core. The orchestrator selects which checks to run, surfaces each
 check's script-computed TOON verbatim, drives lesson filing through the
