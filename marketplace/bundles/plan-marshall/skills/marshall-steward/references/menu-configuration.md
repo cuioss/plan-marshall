@@ -13,13 +13,14 @@ Sub-menu for skill domains and project structure configuration.
 - [Configuration: Project Structure](#configuration-project-structure)
 - [Configuration: Terminal Title](#configuration-terminal-title)
 - [Configuration: Enforcement Hook](#configuration-enforcement-hook)
+- [Configuration: Merge Queue](#configuration-merge-queue)
 - [Configuration: Recipes](#configuration-recipes)
 
 ---
 
 ## Configuration Submenu
 
-The Configuration submenu has 10 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a multi-page paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): options are chunked into pages of ≤4, every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`, and the final page exposes a "Back" element returning to the Main Menu without quitting.
+The Configuration submenu has 11 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a multi-page paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): options are chunked into pages of ≤4, every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`, and the final page exposes a "Back" element returning to the Main Menu without quitting.
 
 **Page 1** — first 3 options plus the "More..." continuation:
 
@@ -84,13 +85,16 @@ AskUserQuestion:
       value: "more-3"
 ```
 
-**Page 4** — shown only when the user selects "More..." on Page 3 — the final 2 options plus the "Back" element:
+**Page 4** — shown only when the user selects "More..." on Page 3 — the final 3 options plus the "Back" element:
 
 ```text
 AskUserQuestion:
   question: "What would you like to configure?"
   header: "Configuration (continued)"
   options:
+    - label: "Merge Queue"
+      description: "Probe and enable the platform merge queue (GitHub merge queue / GitLab merge train)"
+      value: "merge-queue"
     - label: "Full Reconfigure"
       description: "Re-run setup wizard from Step 5 onwards (skips bootstrap steps 1-4)"
       value: "wizard"
@@ -115,6 +119,7 @@ AskUserQuestion:
 | enforcement-hook | Load `Read references/menu-enforcement-hook.md` → Execute |
 | recipes | Load `Read references/menu-recipes.md` → Execute "Configuration: Recipes" below |
 | more-3 | Present Configuration Page 4 `AskUserQuestion` |
+| merge-queue | Load `Read references/merge-queue-setup.md` → Execute the provisioning flow |
 | wizard | Load `Read references/wizard-flow.md` — skip to Step 5 (bootstrap already done) |
 | back | Do nothing → Return to the Main Menu |
 
@@ -761,6 +766,23 @@ Load and execute the dedicated reference:
 
 ```text
 Read references/menu-enforcement-hook.md
+```
+
+After completion, return to Main Menu.
+
+---
+
+## Configuration: Merge Queue
+
+Probe and (optionally) enable the platform merge queue — GitHub merge queue or
+GitLab merge train — via the provider-agnostic `ci repo merge-queue` verbs, then
+persist the `use_merge_queue` opt-in. The step is idempotent and non-clobbering:
+an already-configured project surfaces nothing and mutates nothing.
+
+Load and execute the dedicated reference:
+
+```text
+Read references/merge-queue-setup.md
 ```
 
 After completion, return to Main Menu.
