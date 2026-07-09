@@ -111,6 +111,13 @@ _INLINE_DONE_CALL_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r'--status\s+done'),
 )
 
+# A prohibition context on the same line — a line that FORBIDS the inline
+# done-marking (``do NOT call mark-step-done``, ``never ... --outcome done``,
+# ``MUST NOT ... mark ... done``) is DOCUMENTING the contract, not violating it.
+# The inline-done check is negation-aware so a prohibition sentence that quotes
+# the literal CLI tokens is not a false-positive violation (see module docstring).
+_PROHIBITION_RE = re.compile(r"\bnot\b|\bnever\b|n't", re.IGNORECASE)
+
 # The required directive triad tokens. Each token is matched in its SITED form.
 # ``STOP`` is matched case-sensitively (uppercase) so an incidental lowercase
 # "stop" never satisfies the token; ``not-done`` / ``loop_back`` tolerate the
@@ -157,7 +164,15 @@ def _find_fix_region(lines: list[str]) -> tuple[int, int] | None:
 
 
 def _inline_done_line(line: str) -> bool:
-    """Return True when ``line`` carries an inline done-marking call shape."""
+    """Return True when ``line`` carries an inline done-marking call shape.
+
+    Negation-aware: a line that FORBIDS the inline done-marking — a prohibition
+    such as ``do NOT call mark-step-done`` or ``never ... --outcome done`` — is
+    documenting the contract rather than violating it, so it is not flagged even
+    though it quotes the literal done-call tokens.
+    """
+    if _PROHIBITION_RE.search(line):
+        return False
     return any(pattern.search(line) for pattern in _INLINE_DONE_CALL_PATTERNS)
 
 

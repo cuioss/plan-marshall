@@ -102,6 +102,23 @@ def test_prose_failure_mode_description_not_flagged(tmp_path: Path) -> None:
     assert analyze_triage_fix_not_done_surface(tmp_path) == []
 
 
+def test_prohibition_line_quoting_call_tokens_not_flagged(tmp_path: Path) -> None:
+    # A FIX body that PROHIBITS inline done-marking by quoting the literal CLI
+    # tokens on a NEGATED line ("Do NOT call `mark-step-done --outcome done`
+    # inline") is documenting the contract, not violating it — the negation-aware
+    # inline-done check must not raise a false positive.
+    body = (
+        '# Triage\n\n'
+        '- **FIX** — allocate the fix task via `prepare-add` then `commit-add`.\n\n'
+        '  > **Not-done / STOP contract.** FIX allocates **not-done**, then **STOP**;\n'
+        '  > the `loop_back` re-enters phase-5-execute.\n'
+        '  > Do NOT call `mark-step-done --outcome done` inline — it strands the change.\n\n'
+        '- **SUPPRESS** — annotate the sink.\n'
+    )
+    _write(_triage_doc(tmp_path), body)
+    assert analyze_triage_fix_not_done_surface(tmp_path) == []
+
+
 def test_describe_only_doc_without_fix_action_not_flagged(tmp_path: Path) -> None:
     # A triage.md that merely discusses the invariant but has no FIX action body
     # (no allocation signature) is region-skipped and never flagged.

@@ -139,3 +139,24 @@ def test_human_comment_with_rate_limit_prose_not_flagged(monkeypatch):
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
     assert result['rate_limited'] is False
+
+
+def test_bot_review_quoting_rate_limit_prose_not_flagged(monkeypatch):
+    # A GENUINE CodeRabbit review whose body merely QUOTES the phrase "rate limit
+    # exceeded" in prose (not the ``## Rate limit exceeded`` notice heading) must
+    # not be misclassified as a status notice — the markers are anchored to the
+    # notice's heading/body structure, not a bare phrase match.
+    bot_prose = {
+        'author': 'coderabbitai[bot]',
+        'body': (
+            'Actionable comments posted: 1. The handler returns the literal '
+            'string "Rate limit exceeded" when the quota is hit — please add a '
+            'test covering that rate limit exceeded branch.'
+        ),
+        'created_at': '2026-01-02T00:00:00Z',
+    }
+    _wire(monkeypatch, post_comments=[_HUMAN_COMMENT, bot_prose])
+
+    result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
+
+    assert result['rate_limited'] is False

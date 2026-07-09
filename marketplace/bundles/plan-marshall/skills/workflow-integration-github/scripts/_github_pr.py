@@ -39,14 +39,22 @@ from ci_base import (
 # ---------------------------------------------------------------------------
 #
 # When CodeRabbit is rate-limited it posts a status-notice comment in place of a
-# review. The notice carries a narrow, stable heading/marker set. Detection is
-# purely additive — it surfaces a ``rate_limited`` discriminator on the
-# wait-for-comments return and never changes the poll behaviour or any existing
-# field. The marker set is deliberately narrow so an ordinary review comment that
-# merely mentions "rate limit" in prose is not misclassified.
+# review. The notice carries a narrow, stable structure — a ``## Rate limit
+# exceeded`` heading (typically inside a ``> [!WARNING]`` callout) plus the
+# "exceeded the limit for the number of ..." body sentence. Detection is purely
+# additive — it surfaces a ``rate_limited`` discriminator on the wait-for-comments
+# return and never changes the poll behaviour or any existing field. The markers
+# are anchored to that structure (a heading line and a specific body sentence) so
+# an ordinary CodeRabbit review comment that merely mentions "rate limit exceeded"
+# in prose — e.g. quoting a code string or discussing a rate-limit branch — is not
+# misclassified as a status notice.
 _CODERABBIT_BOT_LOGINS = frozenset({'coderabbitai', 'coderabbitai[bot]'})
 _CODERABBIT_RATE_LIMIT_MARKERS: tuple[re.Pattern[str], ...] = (
-    re.compile(r'\brate limit exceeded\b', re.IGNORECASE),
+    # The notice's own heading: ``## Rate limit exceeded``. Anchored to the line
+    # start and the markdown ``#`` heading markers (tolerating a leading ``>``
+    # blockquote from the enclosing callout), so a bare prose mention of the
+    # phrase elsewhere in a genuine review body does not match.
+    re.compile(r'^\s*>?\s*#{1,6}\s+rate limit exceeded\b', re.IGNORECASE | re.MULTILINE),
     re.compile(r'exceeded the limit for the number of', re.IGNORECASE),
 )
 
