@@ -21,6 +21,7 @@ Drives ``audit`` directly by inserting the project-local audit skill's
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -684,11 +685,376 @@ def test_new_checks_registered_and_era_stamped():
 def test_full_sweep_emits_new_blocks_and_couplings(tmp_path):
     inputs = _minimal_corpus(tmp_path)
     output = audit.run_checks(inputs, list(audit.CHECK_NAMES), tmp_path)
-    for c in ("dispatch-topology", "finalize-flow-conformance", "merge-window-accounting"):
+    for c in (
+        "dispatch-topology",
+        "finalize-flow-conformance",
+        "merge-window-accounting",
+        "lane-lever-effectiveness",
+    ):
         assert f"check: {c}\nstatus: success\nfixed_since: {audit.CHECK_ERA[c]}" in output
     for coupling in (
         "dispatch_topology_reentry",
         "finalize_gate_gap_ci_rerun",
         "merge_window_ci_rerun",
+        "surgical_overpay",
     ):
         assert coupling in output
+    # cross-check-synthesis remains the last check block, ahead of the meta blocks.
+    assert output.index("check: lane-lever-effectiveness") < output.index(
+        "check: cross-check-synthesis"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Deliverable 6: lane-lever-effectiveness check (cross-plan)
+# ---------------------------------------------------------------------------
+
+
+def _plan_lane(
+    repo_root: Path,
+    name: str,
+    scope: str,
+    *,
+    total_tokens: int | None = None,
+    planning_lane: str = "deep",
+    execution_profile: str | None = None,
+    plan_source: str | None = None,
+    change_type: str = "feature",
+) -> "audit.PlanInputs":
+    """Materialise a plan carrying the lane-lever-effectiveness inputs.
+
+    ``cross_lane_lever_effectiveness`` reads ``scope_estimate`` (references.json),
+    the summed ``total_tokens`` (work/metrics.toon), and the ``planning_lane`` /
+    ``execution_profile`` / ``plan_source`` metadata (status.json).
+    """
+    pd = repo_root / ".plan" / "local" / "archived-plans" / name
+    (pd / "work").mkdir(parents=True, exist_ok=True)
+    (pd / "references.json").write_text(
+        json.dumps({"scope_estimate": scope}), encoding="utf-8"
+    )
+    md: dict = {"change_type": change_type, "planning_lane": planning_lane}
+    if execution_profile is not None:
+        md["execution_profile"] = execution_profile
+    if plan_source is not None:
+        md["plan_source"] = plan_source
+    (pd / "status.json").write_text(json.dumps({"metadata": md}), encoding="utf-8")
+    if total_tokens is not None:
+        (pd / "work" / "metrics.toon").write_text(
+            f"[5-execute]\ntotal_tokens: {total_tokens}\n", encoding="utf-8"
+        )
+    return audit.collect_inputs(pd)
+
+
+def test_lane_lever_surgical_over_target_is_genuine(tmp_path):
+    # A surgical plan spending 1.5M > the 1.2M armed target is `over` — the
+    # genuine overspend signal — and, being surgical without a minimal posture,
+    # also records posture_not_taken.
+    i = _plan_lane(tmp_path, "surg-over", "surgical", total_tokens=1_500_000)
+    result = audit.cross_lane_lever_effectiveness([i])
+    row = result["rows"][0]
+    assert row["checkpoint_class"] == "surgical"
+    assert row["target"] == 1_200_000
+    assert row["verdict"] == "over"
+    assert row["flags"] == "checkpoint_over"
+    assert row["posture_not_taken"] == "true"
+    assert audit._lane_lever_genuine(row) is True
+    assert result["corpus"]["checkpoint_over_count"] == 1
+    assert result["corpus"]["by_class"]["surgical"]["over"] == 1
+
+
+def test_lane_lever_within_target_with_lever_records_avoided(tmp_path):
+    # A single_module plan under its 1.5M target with the minimal posture engaged
+    # is `within`, informational, and credits the headroom as avoided_tokens.
+    i = _plan_lane(
+        tmp_path, "sm-within", "single_module",
+        total_tokens=1_000_000, execution_profile="minimal",
+    )
+    result = audit.cross_lane_lever_effectiveness([i])
+    row = result["rows"][0]
+    assert row["verdict"] == "within"
+    assert row["lever_engaged"] == "true"
+    assert row["avoided_tokens"] == 500_000
+    assert row["flags"] == ""
+    assert audit._lane_lever_genuine(row) is False
+    assert result["corpus"]["estimated_avoided_tokens"] == 500_000
+    assert result["corpus"]["minimal_posture_chosen"] == 1
+
+
+def test_lane_lever_recipe_and_light_lever_counts(tmp_path):
+    # recipe auto-route (plan_source) and light-lane fire (planning_lane) are the
+    # engagement levers surfaced in the corpus counts.
+    i = _plan_lane(
+        tmp_path, "recipe", "multi_module",
+        total_tokens=2_000_000, planning_lane="light",
+        plan_source="2026-07-09-04-001",
+    )
+    result = audit.cross_lane_lever_effectiveness([i])
+    row = result["rows"][0]
+    assert row["recipe_routed"] == "true"
+    assert row["lane"] == "light"
+    assert row["lever_engaged"] == "true"
+    assert result["corpus"]["recipe_routed_count"] == 1
+    assert result["corpus"]["light_lane_fires"] == 1
+
+
+def test_lane_lever_no_metrics_and_unclassed_scope(tmp_path):
+    # A plan with no recorded tokens is `no_metrics`; a scope outside the armed
+    # set is `unclassed` — neither is a genuine overspend.
+    i1 = _plan_lane(tmp_path, "nom", "surgical", total_tokens=None)
+    i2 = _plan_lane(tmp_path, "broad", "broad", total_tokens=900_000)
+    result = audit.cross_lane_lever_effectiveness([i1, i2])
+    by = {r["plan_id"]: r for r in result["rows"]}
+    assert by["nom"]["verdict"] == "no_metrics"
+    assert by["broad"]["verdict"] == "unclassed"
+    assert by["broad"]["checkpoint_class"] == "unclassed"
+    assert result["corpus"]["plans_measured"] == 1
+
+
+def test_lane_lever_rows_sorted_by_plan_id(tmp_path):
+    # Deterministic row ordering (sorted by plan_id) so the persisted report diff
+    # is stable run-to-run.
+    _plan_lane(tmp_path, "zeta", "single_module", total_tokens=100)
+    _plan_lane(tmp_path, "alpha", "single_module", total_tokens=100)
+    inputs = [
+        audit.collect_inputs(tmp_path / ".plan" / "local" / "archived-plans" / n)
+        for n in ("zeta", "alpha")
+    ]
+    result = audit.cross_lane_lever_effectiveness(inputs)
+    assert [r["plan_id"] for r in result["rows"]] == ["alpha", "zeta"]
+
+
+def test_emit_lane_lever_block_renders_header_and_severity(tmp_path):
+    # The emitted block carries the corpus header scalars, the per-class over
+    # tallies, the genuine_signal_count, and the rows[] column set ending in severity.
+    i = _plan_lane(tmp_path, "surg-over", "surgical", total_tokens=1_500_000)
+    result = audit.cross_lane_lever_effectiveness([i])
+
+    block = audit.emit_lane_lever_effectiveness_block(result)
+
+    assert "check: lane-lever-effectiveness" in block
+    assert "status: success" in block
+    assert "checkpoint_over: 1" in block
+    assert "surgical_over: 1/1 (target 1200000)" in block
+    assert "genuine_signal_count: 1" in block
+    assert (
+        "rows[1]{plan_id,scope,checkpoint_class,target,total_tokens,verdict,"
+        "recipe_routed,lane,posture,posture_not_taken,lever_engaged,"
+        "avoided_tokens,flags,severity}:" in block
+    )
+    genuine_row = next(
+        ln.strip() for ln in block.splitlines() if ln.strip().startswith("surg-over,")
+    )
+    assert genuine_row.endswith(",genuine")
+
+
+# ---------------------------------------------------------------------------
+# Deliverable 6: surgical_overpay cross-check-synthesis coupling (j)
+# ---------------------------------------------------------------------------
+
+
+def test_lane_lever_registered_and_era_stamped():
+    assert "lane-lever-effectiveness" in audit.CHECK_NAMES
+    assert "lane-lever-effectiveness" in audit.CROSS_PLAN_CHECKS
+    assert audit.CHECK_ERA["lane-lever-effectiveness"] == "#854"
+    # cross-check-synthesis stays last after the new registration.
+    assert audit.CHECK_NAMES[-1] == "cross-check-synthesis"
+
+
+def test_surgical_overpay_coupling_fires_on_miss_and_big_spend():
+    # coupling (j): a lane-lever miss (checkpoint_over) AND token-economics
+    # big_spend_tiny_footprint over the same plan.
+    all_results = {
+        "lane-lever-effectiveness": {
+            "rows": [{"plan_id": "p-over", "flags": "checkpoint_over"}]
+        },
+        "token-economics": {
+            "rows": [{"plan_id": "p-over", "flags": ["big_spend_tiny_footprint(2Mtok)"]}]
+        },
+    }
+    result = audit.cross_check_synthesis(all_results)
+    by = {r["coupling"]: r for r in result["rows"]}
+    assert by["surgical_overpay"]["fired"] is True
+    assert "p-over" in by["surgical_overpay"]["detail"]
+    assert result["couplings_evaluated"] == 10
+
+
+def test_surgical_overpay_coupling_unfired_when_facets_disjoint():
+    # The lane-lever miss and the big-spend footprint on DIFFERENT plans do not
+    # couple — the coupling requires the SAME plan on both facets.
+    all_results = {
+        "lane-lever-effectiveness": {
+            "rows": [{"plan_id": "p-over", "flags": "checkpoint_over"}]
+        },
+        "token-economics": {
+            "rows": [{"plan_id": "other", "flags": ["big_spend_tiny_footprint(2Mtok)"]}]
+        },
+    }
+    result = audit.cross_check_synthesis(all_results)
+    by = {r["coupling"]: r for r in result["rows"]}
+    assert by["surgical_overpay"]["fired"] is False
+
+
+def test_synthesis_evaluates_ten_couplings_on_empty_results():
+    # Best-effort degradation: every coupling (now ten) still evaluated, none fired.
+    result = audit.cross_check_synthesis({})
+    assert result["couplings_evaluated"] == 10
+    assert result["couplings_fired"] == 0
+    by = {r["coupling"]: r for r in result["rows"]}
+    assert "surgical_overpay" in by
+
+
+# ---------------------------------------------------------------------------
+# Deliverable 5: merge-window-accounting check (cross-plan)
+# ---------------------------------------------------------------------------
+
+
+def _write_merge_log(repo_root: Path, name: str, lines: str) -> None:
+    """Stage a global log carrying `[LOCK] (merge:*)` lifecycle lines."""
+    logs_dir = repo_root / ".plan" / "local" / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    (logs_dir / name).write_text(lines, encoding="utf-8")
+
+
+def _lock_inputs(repo_root: Path, *plan_ids: str) -> list:
+    """Build a corpus of PlanInputs for the named plan ids (no disk artifacts).
+
+    ``cross_merge_window_accounting`` reads only the corpus plan-id set (for the
+    ``in_corpus`` attribution column) plus the global logs under ``repo_root``, so
+    the inputs are constructed directly rather than materialised on disk.
+    """
+    return [
+        audit.PlanInputs(
+            plan_id=pid,
+            plan_dir=repo_root / ".plan" / "local" / "archived-plans" / pid,
+        )
+        for pid in plan_ids
+    ]
+
+
+def test_merge_window_blocked_plan_flags_contention(tmp_path):
+    # A plan that was `blocked` (waited behind the FIFO front) records
+    # merge_contention and is a genuine signal; its max_waiting rides on the
+    # immediately-following indented waiting_count line.
+    log = (
+        "[2026-07-01T10:00:00Z] [INFO] [a] [LOCK] (merge:blocked) planA\n"
+        "    waiting_count: 2\n"
+        "[2026-07-01T10:05:00Z] [INFO] [b] [LOCK] (merge:acquired) planA\n"
+        "    waiting_count: 0\n"
+        "[2026-07-01T10:10:00Z] [INFO] [c] [LOCK] (merge:released) planA\n"
+    )
+    _write_merge_log(tmp_path, "work-2026-07-01.log", log)
+    result = audit.cross_merge_window_accounting(_lock_inputs(tmp_path, "planA"), tmp_path)
+
+    assert len(result["rows"]) == 1
+    row = result["rows"][0]
+    assert row["plan_id"] == "planA"
+    assert row["in_corpus"] == "true"
+    assert row["blocked"] == 1
+    assert row["acquired"] == 1
+    assert row["released"] == 1
+    assert row["max_waiting"] == 2
+    assert row["flags"] == "merge_contention"
+    assert audit._merge_window_genuine(row) is True
+    assert result["corpus"]["contended_plans"] == 1
+    assert result["corpus"]["total_blocked"] == 1
+    assert result["corpus"]["max_waiting_observed"] == 2
+
+
+def test_merge_window_uncontended_plan_is_clean(tmp_path):
+    # A plain acquire/release with no block and a queue depth of 1 (only this
+    # plan) is uncontended: no flag, informational.
+    log = (
+        "[2026-07-01T11:00:00Z] [INFO] [a] [LOCK] (merge:acquired) planB\n"
+        "    waiting_count: 1\n"
+        "[2026-07-01T11:05:00Z] [INFO] [b] [LOCK] (merge:released) planB\n"
+    )
+    _write_merge_log(tmp_path, "work-2026-07-01.log", log)
+    result = audit.cross_merge_window_accounting(_lock_inputs(tmp_path, "planB"), tmp_path)
+
+    row = result["rows"][0]
+    assert row["blocked"] == 0
+    assert row["max_waiting"] == 1
+    assert row["flags"] == ""
+    assert audit._merge_window_genuine(row) is False
+    assert result["corpus"]["contended_plans"] == 0
+
+
+def test_merge_window_high_waiting_count_flags_contention(tmp_path):
+    # Even without a `blocked` event, a max_waiting > 1 (other plans queued
+    # behind this one) is contention — the plan held the mutex while others waited.
+    log = (
+        "[2026-07-01T12:00:00Z] [INFO] [a] [LOCK] (merge:acquired) planC\n"
+        "    waiting_count: 3\n"
+    )
+    _write_merge_log(tmp_path, "work-2026-07-01.log", log)
+    result = audit.cross_merge_window_accounting(_lock_inputs(tmp_path, "planC"), tmp_path)
+
+    row = result["rows"][0]
+    assert row["blocked"] == 0
+    assert row["max_waiting"] == 3
+    assert row["flags"] == "merge_contention"
+
+
+def test_merge_window_attributes_out_of_corpus_lock(tmp_path):
+    # A lock_id whose plan is NOT in the scanned corpus still emits a row (carried
+    # for corpus totals) but is marked in_corpus=false.
+    log = (
+        "[2026-07-01T13:00:00Z] [INFO] [a] [LOCK] (merge:acquired) foreign-plan\n"
+        "    waiting_count: 0\n"
+    )
+    _write_merge_log(tmp_path, "work-2026-07-01.log", log)
+    result = audit.cross_merge_window_accounting(_lock_inputs(tmp_path, "planA"), tmp_path)
+
+    assert len(result["rows"]) == 1
+    assert result["rows"][0]["plan_id"] == "foreign-plan"
+    assert result["rows"][0]["in_corpus"] == "false"
+
+
+def test_merge_window_no_logs_yields_no_rows(tmp_path):
+    # Best-effort: an absent logs dir yields no rows and zeroed corpus totals.
+    result = audit.cross_merge_window_accounting(_lock_inputs(tmp_path, "planA"), tmp_path)
+    assert result["rows"] == []
+    assert result["corpus"]["plans_with_merge_events"] == 0
+    assert result["corpus"]["max_waiting_observed"] == 0
+
+
+def test_merge_window_reclaimed_event_counted(tmp_path):
+    # The `reclaimed` event (a stale lock reclaimed) is bucketed and counted
+    # per-plan without itself being contention.
+    log = (
+        "[2026-07-01T14:00:00Z] [INFO] [a] [LOCK] (merge:reclaimed) planD\n"
+        "    waiting_count: 0\n"
+    )
+    _write_merge_log(tmp_path, "work-2026-07-01.log", log)
+    result = audit.cross_merge_window_accounting(_lock_inputs(tmp_path, "planD"), tmp_path)
+
+    row = result["rows"][0]
+    assert row["reclaimed"] == 1
+    assert row["flags"] == ""
+
+
+def test_emit_merge_window_block_renders_header_and_severity(tmp_path):
+    # The emitted block carries the corpus header scalars, the genuine_signal_count
+    # summary, and the rows[] column set ending in severity.
+    log = (
+        "[2026-07-01T15:00:00Z] [INFO] [a] [LOCK] (merge:blocked) planE\n"
+        "    waiting_count: 2\n"
+        "[2026-07-01T15:05:00Z] [INFO] [b] [LOCK] (merge:acquired) planE\n"
+    )
+    _write_merge_log(tmp_path, "work-2026-07-01.log", log)
+    result = audit.cross_merge_window_accounting(_lock_inputs(tmp_path, "planE"), tmp_path)
+
+    block = audit.emit_merge_window_accounting_block(result)
+
+    assert "check: merge-window-accounting" in block
+    assert "status: success" in block
+    assert "contended_plans: 1" in block
+    assert "genuine_signal_count: 1" in block
+    assert (
+        "rows[1]{plan_id,in_corpus,acquired,released,blocked,reclaimed,"
+        "max_waiting,flags,severity}:" in block
+    )
+    genuine_row = next(
+        ln.strip() for ln in block.splitlines() if ln.strip().startswith("planE,")
+    )
+    assert genuine_row.endswith(",genuine")

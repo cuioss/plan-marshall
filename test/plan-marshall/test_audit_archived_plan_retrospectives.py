@@ -3614,7 +3614,7 @@ class TestInputIntegrityEmitBlock:
 # =============================================================================
 #
 # ``cross_check_synthesis`` reads the OTHER checks' RETAINED structured results
-# (never their emitted strings) and computes nine cross-facet couplings. The
+# (never their emitted strings) and computes ten cross-facet couplings. The
 # helpers below build the structured per-check result shapes the critic consumes:
 #
 #   token-efficiency-trend        -> {regression: str}
@@ -4021,10 +4021,10 @@ class TestCrossCheckSynthesisEmitBlock:
         # header counts + the rows[] column set ends in severity
         assert 'check: cross-check-synthesis' in block
         assert 'status: success' in block
-        assert 'couplings_evaluated: 9' in block
+        assert 'couplings_evaluated: 10' in block
         assert 'couplings_fired: 1' in block
         assert 'genuine_signal_count: 1' in block
-        assert 'rows[9]{coupling,fired,caveat,detail,severity}:' in block
+        assert 'rows[10]{coupling,fired,caveat,detail,severity}:' in block
 
     def test_fired_coupling_renders_genuine_cell(self):
         # coupling (a) fires
@@ -4070,9 +4070,9 @@ class TestCrossCheckSynthesisEmitBlock:
         block = audit.emit_cross_check_synthesis_block(result)
 
         # every coupling still evaluated, none fired
-        assert result['couplings_evaluated'] == 9
+        assert result['couplings_evaluated'] == 10
         assert result['couplings_fired'] == 0
-        assert 'couplings_evaluated: 9' in block
+        assert 'couplings_evaluated: 10' in block
 
 # =============================================================================
 # D9 — existing-check backfill (current-baseline coverage gap)

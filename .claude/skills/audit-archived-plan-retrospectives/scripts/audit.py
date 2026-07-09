@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Audit archived plans across twenty-one retrospective checks.
+"""Audit archived plans across twenty-two retrospective checks.
 
 Walks `.plan/local/archived-plans/{plan_id}/` directories and, per plan, runs a
 suite of deterministic checks:
@@ -118,6 +118,15 @@ suite of deterministic checks:
   `[LOCK] (merge:*)` lifecycle lines by `lock_id` (= plan_id); reports per-plan
   acquire/release/blocked/reclaim counts + max FIFO `waiting_count` and flags
   `merge_contention` when a plan waited behind the queue front.
+- `lane-lever-effectiveness` (cross-plan) — the CHECKPOINT MEASUREMENT ARM of the
+  token-optimization roadmap. Measures whether the cost-reducing lane levers
+  (recipe auto-routing, the light planning lane, the minimal execution posture,
+  the #854 surgical-fix micro-lane) are engaged, and scores each plan's summed
+  `total_tokens` against its scope class's armed checkpoint target (surgical
+  ≤1.2M / single_module ≤1.5M / multi_module ≤2.5M): emits a per-plan
+  `within`/`over`/`unclassed`/`no_metrics` checkpoint verdict, the corpus lever-
+  engagement counts, and an `estimated_avoided_tokens` scope-gated subtraction.
+  `checkpoint_over` is the genuine overspend signal.
 - `cross-check-synthesis` (cross-plan, runs LAST) — the facet-completeness
   critic. It consumes the OTHER checks' retained structured results (not their
   emitted strings) and reports the cross-check couplings that single-check rows
@@ -131,9 +140,16 @@ suite of deterministic checks:
   correlating with global-log ERROR/argparse-rejection counts and
   quality-verification unfiled signatures (collapsed to ONE candidate); (e)
   scope-estimate under-estimation correlating with task-count and token-per-file;
-  and (f) task-graph-redundancy `in_task_build` correlating with sequence
+  (f) task-graph-redundancy `in_task_build` correlating with sequence
   `build_churn`/`phase_reentry` (one wasted heavy run seen statically and at
-  runtime). Each coupling carries its qualifying caveat and the D1 severity
+  runtime); (g) dispatch-topology leaf-dispatch violations correlating with
+  sequence `phase_reentry`; (h) finalize-flow-conformance
+  `missing_ci_verify`/`ci_unresolved` correlating with sequence `ci_rerun`; (i)
+  merge-window-accounting `merge_contention` correlating with sequence `ci_rerun`
+  or token-economics `finalize_heavy`; and (j) lane-lever-effectiveness
+  `checkpoint_over` correlating with token-economics `big_spend_tiny_footprint`
+  (surgical-overpay: a checkpoint overspend on a plan the cheap lane existed to
+  keep small). Each coupling carries its qualifying caveat and the D1 severity
   column. The block operationalizes the SKILL.md Step-4b completeness critic.
 
 Each check emits one bespoke-TOON block. Intended consumer:
@@ -189,6 +205,7 @@ CHECK_NAMES = [
     "dispatch-topology",
     "finalize-flow-conformance",
     "merge-window-accounting",
+    "lane-lever-effectiveness",
     # cross-check-synthesis is the facet-completeness critic; it consumes the
     # other checks' computed results, so it MUST be last in this list (run_checks
     # dispatches in CHECK_NAMES order and synthesis reads the retained results).
@@ -213,6 +230,9 @@ CROSS_PLAN_CHECKS = {
     # dispatch-topology and finalize-flow-conformance are per-plan (one row per
     # plan) and are deliberately NOT here.
     "merge-window-accounting",
+    # lane-lever-effectiveness aggregates the whole corpus into per-checkpoint-class
+    # spend verdicts + corpus-wide lever-engagement counts, so it is cross-plan.
+    "lane-lever-effectiveness",
     # cross-check-synthesis is cross-plan: it joins the other checks' corpus-level
     # results into coupling verdicts rather than emitting one row per plan.
     "cross-check-synthesis",
@@ -265,6 +285,9 @@ CHECK_ERA: dict[str, str] = {
     "dispatch-topology": "plan-10",
     "finalize-flow-conformance": "#849",
     "merge-window-accounting": "#849",
+    # lane-lever-effectiveness verifies the #854 surgical-fix micro-lane /
+    # light-lane carve-out (the checkpoint measurement arm).
+    "lane-lever-effectiveness": "#854",
     "cross-check-synthesis": "plan-10",
 }
 
@@ -463,6 +486,17 @@ THRESHOLDS: dict[str, Any] = {
     # run plus its immediate predecessors) surfaces a removal PROPOSAL in the
     # `retire-on-quiet` block. Proposal only — the script never removes a check.
     "retire_on_quiet_runs": 3,
+    # Armed per-scope-class total-token checkpoint targets (the roadmap's
+    # optimization checkpoint, `.plan/plan-optimization/HANDOVER.md`). A plan's
+    # scope_estimate maps to its checkpoint class; the plan's summed metrics.toon
+    # total_tokens is measured against the class target. Consumed by
+    # lane-lever-effectiveness (the checkpoint measurement arm). A scope_estimate
+    # outside this map is `unclassed` (no verdict).
+    "checkpoint_token_targets": {
+        "surgical": 1_200_000,
+        "single_module": 1_500_000,
+        "multi_module": 2_500_000,
+    },
 }
 
 # Back-compatible module-level aliases. These name the same values the
@@ -754,6 +788,10 @@ class PlanInputs:
     # plan predates the field or never recorded it.
     planning_lane: str | None = None
     track: str | None = None
+    # lane-lever-effectiveness input: the execution-profile POSTURE the plan ran
+    # under (`status.json::metadata.execution_profile`, one of minimal|auto|full).
+    # None when the plan predates the #811 execution-profile field.
+    execution_profile: str | None = None
 
 
 def collect_inputs(plan_dir: Path) -> PlanInputs:
@@ -785,6 +823,11 @@ def collect_inputs(plan_dir: Path) -> PlanInputs:
     track = refs.get("track")
     if isinstance(track, str) and track.strip():
         inputs.track = track.strip()
+
+    # lane-lever-effectiveness: the execution-profile posture the plan ran under.
+    execution_profile = metadata.get("execution_profile")
+    if isinstance(execution_profile, str) and execution_profile.strip():
+        inputs.execution_profile = execution_profile.strip()
 
     parsed = parse_execution_toon(plan_dir / "execution.toon")
     if parsed is not None:
@@ -5564,6 +5607,184 @@ def emit_merge_window_accounting_block(result: dict[str, Any]) -> str:
     return "\n".join(out) + "\n"
 
 
+# ---------------------------------------------------------------------------
+# Check: lane-lever-effectiveness (cross-plan) — D6
+# ---------------------------------------------------------------------------
+#
+# The CHECKPOINT MEASUREMENT ARM of the token-optimization roadmap
+# (`.plan/plan-optimization/HANDOVER.md`). Measures whether the cost-reducing
+# lane levers the roadmap shipped — recipe auto-routing (#811 lane-selection),
+# the light planning lane, the minimal execution posture, and the #854
+# surgical-fix micro-lane — are actually being ENGAGED, and whether per-scope-class
+# spend stays inside the armed checkpoint targets.
+#
+# Deterministic inputs (all per-plan, no global logs):
+#   scope_estimate         → checkpoint class + armed target (THRESHOLDS)
+#   metrics.toon           → summed total_tokens (the measured spend)
+#   recipe_key/plan_source → recipe auto-route HIT (a plan seeded from a recipe/lesson)
+#   planning_lane          → light-lane fire (lane == "light")
+#   execution_profile      → chosen posture; minimal is the cost-reducing lever
+#
+# Per-plan verdict: the plan's summed total_tokens vs its scope class's armed
+# checkpoint target — `within` / `over` / `unclassed` (scope outside the armed
+# set) / `no_metrics` (no recorded tokens). `checkpoint_over` is the genuine
+# (actionable) overspend signal. `posture_not_taken` (a surgical-scope plan the
+# micro-lane recommends `minimal` for, that ran a non-minimal posture) and
+# `lever_engaged` are informational lever-adoption columns.
+#
+# `avoided_tokens` is a scope-gated subtraction estimate: for a plan where a
+# cost-reducing lever WAS engaged AND that came in under its class target, the
+# headroom kept under target (`target - total_tokens`) — an UPPER-BOUND estimate
+# of the tokens the engaged lever helped avoid. Zero when no lever engaged or the
+# plan overspent. Summed corpus-wide into `estimated_avoided_tokens`.
+
+
+def _plan_total_tokens(inputs: PlanInputs) -> int:
+    """Summed `total_tokens` across a plan's recorded metrics phases (0 if none)."""
+    phases = parse_metrics_toon(inputs.plan_dir / "work" / "metrics.toon")
+    return sum(p.total_tokens for p in phases)
+
+
+def _lane_lever_row(inputs: PlanInputs, targets: dict[str, int]) -> dict[str, Any]:
+    """Compute one plan's lane-lever-effectiveness row (pure over its inputs)."""
+    scope = inputs.scope_estimate or ""
+    checkpoint_class = scope if scope in targets else "unclassed"
+    target = int(targets.get(scope, 0))
+    total = _plan_total_tokens(inputs)
+
+    recipe_routed = bool(inputs.recipe_key)
+    lane = inputs.planning_lane or ""
+    light_lane = lane == "light"
+    posture = inputs.execution_profile or ""
+    posture_minimal = posture == "minimal"
+    # The #854 surgical-fix micro-lane recommends the minimal posture for a
+    # surgical-scope plan; a surgical plan that ran a non-minimal posture did not
+    # take the recommended lever.
+    recommended_minimal = scope == "surgical"
+    posture_not_taken = recommended_minimal and not posture_minimal
+    lever_engaged = recipe_routed or light_lane or posture_minimal
+
+    if total == 0:
+        verdict = "no_metrics"
+    elif checkpoint_class == "unclassed":
+        verdict = "unclassed"
+    elif total <= target:
+        verdict = "within"
+    else:
+        verdict = "over"
+    checkpoint_over = verdict == "over"
+
+    avoided_tokens = (
+        max(0, target - total) if lever_engaged and verdict == "within" else 0
+    )
+
+    return {
+        "plan_id": inputs.plan_id,
+        "scope": scope,
+        "checkpoint_class": checkpoint_class,
+        "target": target,
+        "total_tokens": total,
+        "verdict": verdict,
+        "recipe_routed": str(recipe_routed).lower(),
+        "lane": lane,
+        "posture": posture,
+        "posture_not_taken": str(posture_not_taken).lower(),
+        "lever_engaged": str(lever_engaged).lower(),
+        "avoided_tokens": avoided_tokens,
+        "flags": "checkpoint_over" if checkpoint_over else "",
+    }
+
+
+def _lane_lever_genuine(row: dict[str, Any]) -> bool:
+    """Genuine (actionable): the plan overspent its armed checkpoint target."""
+    return bool(row.get("flags"))
+
+
+def cross_lane_lever_effectiveness(all_inputs: list[PlanInputs]) -> dict[str, Any]:
+    """Cross-plan lane-lever effectiveness + per-class checkpoint verdicts.
+
+    Emits one row per scanned plan (sorted by plan_id) carrying its checkpoint
+    verdict and lever-adoption columns, plus corpus aggregates: the lever-
+    engagement counts (recipe auto-routes, light-lane fires, minimal-posture
+    choices), the per-checkpoint-class over-target tallies, and the corpus-wide
+    `estimated_avoided_tokens`. Best-effort: an empty corpus yields no rows and
+    zeroed aggregates.
+    """
+    targets = cast(dict[str, int], THRESHOLDS["checkpoint_token_targets"])
+    rows = [_lane_lever_row(i, targets) for i in sorted(all_inputs, key=lambda x: x.plan_id)]
+
+    def _class_over(cls: str) -> tuple[int, int]:
+        members = [r for r in rows if r["checkpoint_class"] == cls]
+        return sum(1 for r in members if r["verdict"] == "over"), len(members)
+
+    by_class = {
+        cls: {"over": _class_over(cls)[0], "n": _class_over(cls)[1], "target": int(targets[cls])}
+        for cls in targets
+    }
+    corpus = {
+        "plans_measured": sum(1 for r in rows if int(r["total_tokens"]) > 0),
+        "recipe_routed_count": sum(1 for r in rows if r["recipe_routed"] == "true"),
+        "light_lane_fires": sum(1 for r in rows if r["lane"] == "light"),
+        "minimal_posture_chosen": sum(1 for r in rows if r["posture"] == "minimal"),
+        "posture_not_taken_count": sum(1 for r in rows if r["posture_not_taken"] == "true"),
+        "checkpoint_over_count": sum(1 for r in rows if r["verdict"] == "over"),
+        "estimated_avoided_tokens": sum(int(r["avoided_tokens"]) for r in rows),
+        "by_class": by_class,
+    }
+    return {"rows": rows, "corpus": corpus}
+
+
+def emit_lane_lever_effectiveness_block(result: dict[str, Any]) -> str:
+    """Emit the lane-lever-effectiveness block with the D1 severity column."""
+    rows = result["rows"]
+    corpus = result["corpus"]
+    rows, genuine_signal_count = _severity_summary(rows, _lane_lever_genuine)
+    by_class = corpus["by_class"]
+    out = [
+        "check: lane-lever-effectiveness",
+        "status: success",
+        f"plans_measured: {corpus['plans_measured']}",
+        f"recipe_routed: {corpus['recipe_routed_count']}",
+        f"light_lane_fires: {corpus['light_lane_fires']}",
+        f"minimal_posture_chosen: {corpus['minimal_posture_chosen']}",
+        f"posture_not_taken: {corpus['posture_not_taken_count']}",
+        f"checkpoint_over: {corpus['checkpoint_over_count']}",
+        f"estimated_avoided_tokens: {corpus['estimated_avoided_tokens']}",
+    ]
+    for cls in ("surgical", "single_module", "multi_module"):
+        c = by_class[cls]
+        out.append(f"{cls}_over: {c['over']}/{c['n']} (target {c['target']})")
+    out.append(f"genuine_signal_count: {genuine_signal_count}")
+    out.append(
+        f"rows[{len(rows)}]{{plan_id,scope,checkpoint_class,target,total_tokens,verdict,"
+        f"recipe_routed,lane,posture,posture_not_taken,lever_engaged,avoided_tokens,flags,severity}}:"
+    )
+    for r in rows:
+        out.append(
+            "  "
+            + ",".join(
+                _cell(c)
+                for c in [
+                    r["plan_id"],
+                    r["scope"],
+                    r["checkpoint_class"],
+                    r["target"],
+                    r["total_tokens"],
+                    r["verdict"],
+                    r["recipe_routed"],
+                    r["lane"],
+                    r["posture"],
+                    r["posture_not_taken"],
+                    r["lever_engaged"],
+                    r["avoided_tokens"],
+                    r["flags"],
+                    r["severity"],
+                ]
+            )
+        )
+    return "\n".join(out) + "\n"
+
+
 def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
     """Compute the cross-check couplings from the retained check results.
 
@@ -5589,6 +5810,7 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
     dispatch_topology = all_results.get("dispatch-topology")
     finalize_flow = all_results.get("finalize-flow-conformance")
     merge_window = all_results.get("merge-window-accounting")
+    lane_lever = all_results.get("lane-lever-effectiveness")
 
     rows: list[dict[str, Any]] = []
 
@@ -5892,6 +6114,39 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
                 "merge-queue contention co-occurring with a CI re-run / heavy finalize "
                 "is the merge-window cost the #849 widened mutex trades for fair "
                 "ordering — it is accounting, not necessarily waste"
+            ),
+        }
+    )
+
+    # (j) surgical_overpay — a plan that MISSED the lane lever (spent over its
+    # armed checkpoint target — a genuine lane-lever-effectiveness signal) AND was
+    # independently flagged `big_spend_tiny_footprint` by token-economics. The
+    # checkpoint overspend and the tokens/file inversion are two views of the same
+    # over-spend on a plan the cheap lane existed to keep small.
+    lane_lever_miss_plans = {
+        str(r.get("plan_id"))
+        for r in (lane_lever.get("rows", []) if isinstance(lane_lever, dict) else [])
+        if isinstance(r, dict) and "checkpoint_over" in str(r.get("flags") or "")
+    }
+    big_spend_plans = _syn_flagged_plans(
+        economics, lambda f: f.startswith("big_spend_tiny_footprint")
+    )
+    j_plans = sorted(lane_lever_miss_plans & big_spend_plans)
+    j_fired = bool(j_plans)
+    rows.append(
+        {
+            "coupling": "surgical_overpay",
+            "fired": j_fired,
+            "detail": (
+                f"{len(j_plans)} plan(s) over the armed checkpoint target AND "
+                f"big_spend_tiny_footprint: {';'.join(j_plans)}"
+                if j_fired
+                else f"lane_lever_miss_plans={len(lane_lever_miss_plans)};big_spend_plans={len(big_spend_plans)}"
+            ),
+            "caveat": (
+                "a checkpoint overspend co-occurring with big_spend_tiny_footprint "
+                "is a lane-lever MISS — the cheap lane (recipe/light/minimal) existed "
+                "to keep this plan small; confirm both facets before filing"
             ),
         }
     )
@@ -6259,6 +6514,15 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
                 "contended_plans"
             ]
 
+    if "lane-lever-effectiveness" in selected or synth_needed:
+        lle_result = cross_lane_lever_effectiveness(all_inputs)
+        all_results["lane-lever-effectiveness"] = lle_result
+        if "lane-lever-effectiveness" in selected:
+            blocks.append(emit_lane_lever_effectiveness_block(lle_result))
+            summary_metrics["lane-lever-effectiveness_checkpoint_over"] = lle_result[
+                "corpus"
+            ]["checkpoint_over_count"]
+
     # cross-check-synthesis MUST run LAST — it reads every upstream result the
     # blocks above retained into `all_results`.
     if synth_needed:
@@ -6289,7 +6553,7 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Audit archived plans across twenty-one retrospective checks."
+        description="Audit archived plans across twenty-two retrospective checks."
     )
     parser.add_argument(
         "--plan-dir",

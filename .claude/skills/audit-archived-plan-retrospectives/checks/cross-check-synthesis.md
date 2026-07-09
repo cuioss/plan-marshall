@@ -31,7 +31,7 @@ When the check is invoked alone via `--check cross-check-synthesis`,
 emitting those upstream blocks) so the synthesis can fire. When synthesis is NOT
 selected, the upstream computation/emit path is byte-for-byte unchanged.
 
-## The nine couplings
+## The ten couplings
 
 Each coupling carries a **qualifying caveat** — the condition under which the
 fired coupling is a genuine cross-facet signal rather than a coincidence. A fired
@@ -50,6 +50,7 @@ evaluated.
 | `dispatch_topology_reentry` | A plan whose `dispatch-topology` row recorded a LEAF-emitted subagent dispatch (`leaf_dispatch > 0`) AND whose sequence was flagged `phase_reentry`. | dispatch-topology, sequence-and-build-minimality | A leaf-emitted dispatch VIOLATES the leaf/dispatch-topology invariant; a co-occurring `phase_reentry` corroborates the extra dispatch as observed rework. The topology violation is genuine on its own — this coupling adds the runtime corroboration. |
 | `finalize_gate_gap_ci_rerun` | A plan flagged `finalize-flow-conformance` `missing_ci_verify` / `ci_unresolved` that ALSO carries sequence `ci_rerun`. | finalize-flow-conformance, sequence-and-build-minimality | A non-conformant finalize flow (absent #849 `ci_verify` gate, or an unresolved CI) co-occurring with a CI re-run is the deterministic-gate gap the post-#849 flow removes — confirm both before filing. |
 | `merge_window_ci_rerun` | A plan flagged `merge-window-accounting` `merge_contention` that ALSO carries sequence `ci_rerun` OR token-economics `finalize_heavy`. | merge-window-accounting, sequence-and-build-minimality, token-economics | Merge-queue contention co-occurring with a CI re-run / heavy finalize is the merge-window cost the #849 widened mutex trades for fair ordering — it is **accounting, not necessarily waste**. A plan queued behind the mutex whose HEAD advanced legitimately re-runs CI. |
+| `surgical_overpay` | A plan flagged `lane-lever-effectiveness` `checkpoint_over` (spent over its armed checkpoint target) that ALSO carries token-economics `big_spend_tiny_footprint`. | lane-lever-effectiveness, token-economics | A checkpoint overspend co-occurring with the tokens/file inversion is a lane-lever **MISS** — the cheap lane (recipe / light / minimal) existed to keep this plan small and it overspent anyway. Confirm both facets before filing: the checkpoint verdict and the footprint inversion are two views of the same over-spend. |
 
 ## Emitted columns
 
@@ -62,7 +63,7 @@ rows[N]{coupling,fired,caveat,detail,severity}
 
 | Column | Meaning |
 |--------|---------|
-| `coupling` | The coupling name (one of the nine above). |
+| `coupling` | The coupling name (one of the ten above). |
 | `fired` | `true` when the cross-facet correlation surfaced, else `false`. |
 | `caveat` | The qualifying caveat — the condition under which a fired coupling is genuine. |
 | `detail` | The cross-facet evidence: the plan ids and the per-facet counts the coupling joined. |
@@ -129,6 +130,14 @@ completeness critic:
   (rebase / re-review) legitimately re-runs CI. Read the coupling as the
   merge-window cost the widened mutex trades for fair ordering / parallelism, not
   as a per-plan defect — the caveat is load-bearing here.
+- **`surgical_overpay`** — the named plans overspent their armed checkpoint
+  target AND were independently flagged `big_spend_tiny_footprint` by
+  token-economics. This is a lane-lever MISS: a plan whose scope class had a cheap
+  lane available (recipe / light / minimal) overspent anyway. Read against
+  `checks/lane-lever-effectiveness.md` and the plan's `posture` / `lane` /
+  `recipe_routed` columns to see which lever went un-engaged. The file-worthy
+  signal is a recurring lane-lever adoption gap, not each plan's individual
+  over-spend (which token-economics already covers under its canonical lesson).
 
 Per the SKILL.md Step-3 contract, EVERY emitted row is adjudicated with a stated
 verdict and cited evidence; an `informational` (non-fired) coupling is dismissed
