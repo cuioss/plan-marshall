@@ -1,6 +1,6 @@
 # Platform Runtime TOON Contract
 
-Per-operation TOON schemas for all 18 `platform-runtime` operations. Every operation returns one of three status variants: `success`, `error`, or `no-op`. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
+Per-operation TOON schemas for all 21 `platform-runtime` operations. Every operation returns one of three status variants: `success`, `error`, or `no-op`. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
 
 **Invocation pattern**:
 ```bash
@@ -551,9 +551,9 @@ alternative: Use OpenCode's built-in TUI status surface for plan visibility
 
 ### `session push-title-token`
 
-Parse `--plan-id` and `--icon`, emit the OSC escape sequence directly to `/dev/tty` to push the current title-token state into the terminal title (Claude). No-op on OpenCode. Router-dispatched in `platform_runtime.py`, abstract in `runtime_base.py`, concrete in `claude_runtime.py` (writes OSC sequence to `/dev/tty`) and `opencode_runtime.py` (returns no-op).
+Parse `--plan-id` and an optional `--icon`, emit the OSC escape sequence directly to `/dev/tty` to repaint the current title in the terminal (Claude). No-op on OpenCode. This is the single repaint seam for blocking callers (lock/build acquire waits) and for the `manage-status` phase-state-write drive seam. When `--icon` is supplied it overrides the event-resolved icon for non-terminal phases; when omitted the composer applies its default active icon, so the push is a plain repaint of the current composed title. Router-dispatched in `platform_runtime.py`, abstract in `runtime_base.py`, concrete in `claude_runtime.py` (writes OSC sequence to `/dev/tty`) and `opencode_runtime.py` (returns no-op).
 
-**Arguments**: `--plan-id <id>` (required), `--icon <icon>` (required)
+**Arguments**: `--plan-id <id>` (required), `--icon <icon>` (optional — omit for a plain repaint of the current title)
 
 **Success (Claude — push reached TTY)**:
 ```toon
@@ -577,6 +577,96 @@ reason: no_title_state
 status: no-op
 operation: session push-title-token
 reason: OpenCode has no plugin-driven terminal-title hook; OSC escape push not supported
+alternative: Use OpenCode's built-in TUI status surface for plan visibility
+```
+
+---
+
+### `session bind`
+
+Bind the running session to `--plan-id` (last-driven-wins) so `session render-title` and `session resolve-plan` resolve the session to that plan. The caller's own `active-plan` cache slot is written unconditionally — no protect-active, no stale-slot reclaim, no plan-dir-exists check — so a session that switches to drive a different live plan rebinds cleanly. No-op on OpenCode (no platform-provided session id).
+
+**Arguments**: `--plan-id <id>` (required), `--session-id <id>` (optional — falls back to `$CLAUDE_CODE_SESSION_ID`)
+
+**Success (Claude — slot bound)**:
+```toon
+status: success
+operation: session bind
+plan_id: my-plan
+session_id: abc123def456
+bound: true
+```
+
+**No-op (OpenCode)**:
+```toon
+status: no-op
+operation: session bind
+reason: OpenCode does not expose a platform-provided session id to the shell
+alternative: Use OpenCode's built-in TUI status surface for plan visibility
+```
+
+---
+
+### `session resolve-plan`
+
+Read the running session's bound plan id — the read side of `session bind`. `session render-title` resolves the session→plan binding through the same read path. No-op on OpenCode (no platform-provided session id).
+
+**Arguments**: `--session-id <id>` (optional — falls back to `$CLAUDE_CODE_SESSION_ID`)
+
+**Success (Claude — bound)**:
+```toon
+status: success
+operation: session resolve-plan
+session_id: abc123def456
+resolved: true
+plan_id: my-plan
+```
+
+**Success (Claude — unbound slot)**:
+```toon
+status: success
+operation: session resolve-plan
+session_id: abc123def456
+resolved: false
+plan_id: ""
+```
+
+**No-op (OpenCode)**:
+```toon
+status: no-op
+operation: session resolve-plan
+reason: OpenCode does not expose a platform-provided session id to the shell
+alternative: Use OpenCode's built-in TUI status surface for plan visibility
+```
+
+---
+
+### `session doctor`
+
+Scan every per-session `active-plan` slot, build a plan→sessions reverse index, flag any plan bound by more than one live session (a conflict), and identify slots whose plan is archived/deleted (stale). With `--fix`, GC each stale slot. Keeps NO shared mutable index — the scan-then-GC is per-file and idempotent. No-op on OpenCode (no platform-provided session id).
+
+**Arguments**: `--fix` (optional — GC stale slots whose plan is archived/deleted)
+
+**Success (Claude — report)**:
+```toon
+status: success
+operation: session doctor
+fix: false
+scanned: 12
+conflict_count: 1
+conflicts[1]:
+- my-plan=sid-a,sid-b
+stale_count: 1
+stale[1]:
+- sid-c=archived-plan
+gc_removed: 0
+```
+
+**No-op (OpenCode)**:
+```toon
+status: no-op
+operation: session doctor
+reason: OpenCode does not expose a platform-provided session id to the shell
 alternative: Use OpenCode's built-in TUI status surface for plan visibility
 ```
 
