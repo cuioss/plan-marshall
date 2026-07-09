@@ -321,7 +321,7 @@ def test_is_build_or_ci_wait_call_classifier():
 # ---------------------------------------------------------------------------
 
 
-def _plan_with_metrics(repo_root: Path, body: str) -> "audit.PlanInputs":
+def _plan_with_metrics(repo_root: Path, body: str) -> audit.PlanInputs:
     """Stage a one-plan corpus whose metrics.toon carries `body`; return inputs."""
     plan_dir = repo_root / ".plan" / "local" / "archived-plans" / "sample-plan"
     (plan_dir / "work").mkdir(parents=True, exist_ok=True)
@@ -409,7 +409,7 @@ def test_resolve_step_owner_classes():
     assert _resolve_owner("project:some-unknown-step") is None
 
 
-def _plan_with_phase6(repo_root: Path, steps: list[str]) -> "audit.PlanInputs":
+def _plan_with_phase6(repo_root: Path, steps: list[str]) -> audit.PlanInputs:
     plan_dir = repo_root / ".plan" / "local" / "archived-plans" / "sample-plan"
     plan_dir.mkdir(parents=True, exist_ok=True)
     (plan_dir / "references.json").write_text('{"scope_estimate": "surgical"}', encoding="utf-8")
@@ -467,7 +467,7 @@ def _routing_or_skip():
     return routing
 
 
-def _track_inputs(repo_root: Path, scope: str, change_type: str, lane: str) -> "audit.PlanInputs":
+def _track_inputs(repo_root: Path, scope: str, change_type: str, lane: str) -> audit.PlanInputs:
     plan_dir = repo_root / ".plan" / "local" / "archived-plans" / "track-plan"
     plan_dir.mkdir(parents=True, exist_ok=True)
 
@@ -557,7 +557,7 @@ def test_sequence_ci_rerun_fires_on_multiple_ci_run_dirs(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _plan_with_worklog(repo_root: Path, name: str, lines: str) -> "audit.PlanInputs":
+def _plan_with_worklog(repo_root: Path, name: str, lines: str) -> audit.PlanInputs:
     pd = repo_root / ".plan" / "local" / "archived-plans" / name
     (pd / "logs").mkdir(parents=True, exist_ok=True)
     (pd / "references.json").write_text('{"scope_estimate": "surgical"}', encoding="utf-8")
@@ -614,7 +614,7 @@ def test_dispatch_topology_no_worklog_is_zero(tmp_path):
 
 def _plan_finalize(
     repo_root: Path, name: str, phase6: list[str], ci_runs: dict[str, tuple[str, str]]
-) -> "audit.PlanInputs":
+) -> audit.PlanInputs:
     pd = repo_root / ".plan" / "local" / "archived-plans" / name
     pd.mkdir(parents=True, exist_ok=True)
     (pd / "references.json").write_text('{"scope_estimate": "surgical"}', encoding="utf-8")
@@ -719,7 +719,7 @@ def _plan_lane(
     execution_profile: str | None = None,
     plan_source: str | None = None,
     change_type: str = "feature",
-) -> "audit.PlanInputs":
+) -> audit.PlanInputs:
     """Materialise a plan carrying the lane-lever-effectiveness inputs.
 
     ``cross_lane_lever_effectiveness`` reads ``scope_estimate`` (references.json),
