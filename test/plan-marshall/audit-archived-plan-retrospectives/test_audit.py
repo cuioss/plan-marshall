@@ -470,7 +470,6 @@ def _routing_or_skip():
 def _track_inputs(repo_root: Path, scope: str, change_type: str, lane: str) -> "audit.PlanInputs":
     plan_dir = repo_root / ".plan" / "local" / "archived-plans" / "track-plan"
     plan_dir.mkdir(parents=True, exist_ok=True)
-    import json
 
     (plan_dir / "references.json").write_text(
         json.dumps({"scope_estimate": scope, "track": _lane_track(lane)}), encoding="utf-8"

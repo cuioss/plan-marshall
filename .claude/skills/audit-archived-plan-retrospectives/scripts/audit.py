@@ -413,7 +413,7 @@ def _resolve_step_owner(step_id: str) -> str | None:
     if ":" in bare and not bare.startswith("default:"):
         # External (`project:` / `bundle:skill`) — classified only via the known map.
         return _EXTERNAL_STEP_OWNER.get(bare)
-    bare = bare[len("default:"):] if bare.startswith("default:") else bare
+    bare = _bare_step(bare)
     if bare in _ORCHESTRATOR_OWNED_STEPS:
         return "orchestrator"
     if bare in _LEAF_DISPATCHED_STEPS:
@@ -1035,9 +1035,7 @@ def detect_owner_drift(inputs: PlanInputs) -> str | None:
         bare = step_id.strip()
         is_builtin = not (":" in bare and not bare.startswith("default:"))
         if is_builtin and _resolve_step_owner(step_id) is None:
-            unrecognized.append(
-                bare[len("default:"):] if bare.startswith("default:") else bare
-            )
+            unrecognized.append(_bare_step(bare))
     if unrecognized:
         return (
             f"phase_6 built-in step(s) {unrecognized} resolve to no ownership class "
