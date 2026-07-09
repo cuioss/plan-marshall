@@ -83,6 +83,32 @@ def get_solution_path(plan_id: str) -> Path:
     return cast(Path, base_path('plans', plan_id, SOLUTION_FILE))
 
 
+def _read_solution_or_not_found(plan_id: str) -> tuple[dict[str, Any] | None, str | None]:
+    """Resolve the solution outline path, guarding the ``document_not_found`` case.
+
+    Shared by ``cmd_read`` and ``cmd_get_deliverable``, which both perform the
+    identical guard: resolve the path, return the ``document_not_found`` error
+    dict (with the standard ``suggestions``) when the file is absent, otherwise
+    read and return the file content.
+
+    Returns ``(error_dict, None)`` when the file does not exist, or
+    ``(None, content)`` when it does. Exactly one element is non-``None``.
+    """
+    file_path = get_solution_path(plan_id)
+    if not file_path.exists():
+        return {
+            'status': 'error',
+            'error': 'document_not_found',
+            'plan_id': plan_id,
+            'file': SOLUTION_FILE,
+            'suggestions': [
+                'Use resolve-path to get the target path, then Write tool to create the file',
+                'Check plan_id spelling',
+            ],
+        }, None
+    return None, file_path.read_text(encoding='utf-8')
+
+
 def validate_solution_structure(content: str) -> tuple[list[str], list[str], dict[str, Any]]:
     """Validate solution outline document structure against deliverable contract.
 
@@ -405,21 +431,10 @@ def cmd_read(args: argparse.Namespace) -> dict[str, Any]:
     """Read solution outline."""
     require_valid_plan_id(args)
 
-    file_path = get_solution_path(args.plan_id)
-
-    if not file_path.exists():
-        return {
-            'status': 'error',
-            'error': 'document_not_found',
-            'plan_id': args.plan_id,
-            'file': SOLUTION_FILE,
-            'suggestions': [
-                'Use resolve-path to get the target path, then Write tool to create the file',
-                'Check plan_id spelling',
-            ],
-        }
-
-    content = file_path.read_text(encoding='utf-8')
+    error, content = _read_solution_or_not_found(args.plan_id)
+    if error is not None:
+        return error
+    content = cast(str, content)
 
     # Handle --deliverable-number: read specific deliverable
     deliverable_number = getattr(args, 'deliverable_number', None)
@@ -480,30 +495,19 @@ def cmd_get_deliverable(args: argparse.Namespace) -> dict[str, Any]:
     """Read a single deliverable by number from the solution outline.
 
     Mirrors ``read --deliverable-number`` exactly: performs the same
-    ``document_not_found`` guard ``cmd_read`` uses (identical error dict and
+    ``document_not_found`` guard ``cmd_read`` uses (via the shared
+    ``_read_solution_or_not_found`` helper — identical error dict and
     suggestions), reads the content, then funnels through the shared
     ``_lookup_deliverable`` helper for the ``section_not_found`` /
     ``deliverable_not_found`` / success shapes.
     """
     require_valid_plan_id(args)
 
-    file_path = get_solution_path(args.plan_id)
+    error, content = _read_solution_or_not_found(args.plan_id)
+    if error is not None:
+        return error
 
-    if not file_path.exists():
-        return {
-            'status': 'error',
-            'error': 'document_not_found',
-            'plan_id': args.plan_id,
-            'file': SOLUTION_FILE,
-            'suggestions': [
-                'Use resolve-path to get the target path, then Write tool to create the file',
-                'Check plan_id spelling',
-            ],
-        }
-
-    content = file_path.read_text(encoding='utf-8')
-
-    return _lookup_deliverable(args.plan_id, content, args.deliverable_number)
+    return _lookup_deliverable(args.plan_id, cast(str, content), args.deliverable_number)
 
 
 def cmd_get_field(args: argparse.Namespace) -> dict[str, Any]:

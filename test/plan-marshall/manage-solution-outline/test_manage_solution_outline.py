@@ -975,3 +975,24 @@ def test_cli_get_deliverable_matches_read_deliverable_number(plan_context):
     assert get_result.success, f'get-deliverable failed: {get_result.stderr}'
     assert read_result.success, f'read failed: {read_result.stderr}'
     assert parse_toon(get_result.stdout) == parse_toon(read_result.stdout)
+
+
+def test_cli_get_deliverable_matches_read_deliverable_number_document_not_found(plan_context):
+    """CLI plumbing: get-deliverable and read --deliverable-number agree on the document_not_found shape.
+
+    Uses a plan_id with no solution_outline.md on disk so both subcommands hit
+    the shared ``document_not_found`` guard, confirming the extracted helper
+    keeps the two CLI surfaces identical for the missing-document case.
+    """
+    get_result = run_script(
+        SCRIPT_PATH, 'get-deliverable', '--plan-id', 'cli-get-deliverable-nodoc', '--deliverable-number', '1'
+    )
+    read_result = run_script(
+        SCRIPT_PATH, 'read', '--plan-id', 'cli-get-deliverable-nodoc', '--deliverable-number', '1'
+    )
+    assert get_result.success, f'get-deliverable failed: {get_result.stderr}'
+    assert read_result.success, f'read failed: {read_result.stderr}'
+    get_data = parse_toon(get_result.stdout)
+    read_data = parse_toon(read_result.stdout)
+    assert get_data['error'] == 'document_not_found'
+    assert get_data == read_data
