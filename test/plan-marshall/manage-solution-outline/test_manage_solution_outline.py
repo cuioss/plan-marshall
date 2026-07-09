@@ -30,6 +30,7 @@ cmd_resolve_path = _mod.cmd_resolve_path
 cmd_write = _mod.cmd_write
 cmd_update = _mod.cmd_update
 cmd_get_field = _mod.cmd_get_field
+cmd_get_deliverable = _mod.cmd_get_deliverable
 SCOPE_ESTIMATE_VALUES = _mod.SCOPE_ESTIMATE_VALUES
 
 # Import toon_parser - conftest sets up PYTHONPATH
@@ -198,6 +199,11 @@ def _update_ns(plan_id='test-plan'):
 def _get_field_ns(plan_id='test-plan', field='scope_estimate'):
     """Build Namespace for cmd_get_field."""
     return Namespace(plan_id=plan_id, field=field)
+
+
+def _get_deliverable_ns(plan_id='test-plan', deliverable_number=1):
+    """Build Namespace for cmd_get_deliverable."""
+    return Namespace(plan_id=plan_id, deliverable_number=deliverable_number)
 
 
 # =============================================================================
@@ -450,6 +456,62 @@ def test_read_section_not_found(plan_context):
     assert result['error'] == 'section_not_found'
     assert result['requested_section'] == 'does-not-exist'
     assert 'does-not-exist' in result['message']
+
+
+# =============================================================================
+# Tier 2: Get-Deliverable Command
+# =============================================================================
+
+
+def test_get_deliverable_success(plan_context):
+    """get-deliverable returns the matched deliverable by number."""
+    (plan_context.plan_dir_for('get-deliverable-ok') / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+    result = cmd_get_deliverable(_get_deliverable_ns(plan_id='get-deliverable-ok', deliverable_number=1))
+    assert result['status'] == 'success'
+    assert result['deliverable']['number'] == 1
+    assert 'JwtValidationService' in result['deliverable']['title']
+
+
+def test_get_deliverable_second(plan_context):
+    """get-deliverable returns the second deliverable by number."""
+    (plan_context.plan_dir_for('get-deliverable-second') / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+    result = cmd_get_deliverable(_get_deliverable_ns(plan_id='get-deliverable-second', deliverable_number=2))
+    assert result['status'] == 'success'
+    assert result['deliverable']['number'] == 2
+    assert 'configuration properties' in result['deliverable']['title']
+
+
+def test_get_deliverable_not_found(plan_context):
+    """get-deliverable returns deliverable_not_found with available numbers."""
+    (plan_context.plan_dir_for('get-deliverable-notfound') / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+    result = cmd_get_deliverable(_get_deliverable_ns(plan_id='get-deliverable-notfound', deliverable_number=999))
+    assert result['status'] == 'error'
+    assert result['error'] == 'deliverable_not_found'
+    assert result['available'] == [1, 2, 3]
+
+
+def test_get_deliverable_document_not_found(plan_context):
+    """get-deliverable returns document_not_found when the outline does not exist."""
+    result = cmd_get_deliverable(_get_deliverable_ns(plan_id='get-deliverable-no-doc', deliverable_number=1))
+    assert result['status'] == 'error'
+    assert result['error'] == 'document_not_found'
+
+
+def test_get_deliverable_matches_read_deliverable_number(plan_context):
+    """get-deliverable output is identical in shape to read --deliverable-number for the same input."""
+    (plan_context.plan_dir_for('get-deliverable-parity') / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+    get_result = cmd_get_deliverable(_get_deliverable_ns(plan_id='get-deliverable-parity', deliverable_number=1))
+    read_result = cmd_read(_read_ns(plan_id='get-deliverable-parity', deliverable_number=1))
+    assert get_result == read_result
+
+    # Parity holds for the deliverable_not_found error shape too.
+    get_missing = cmd_get_deliverable(_get_deliverable_ns(plan_id='get-deliverable-parity', deliverable_number=999))
+    read_missing = cmd_read(_read_ns(plan_id='get-deliverable-parity', deliverable_number=999))
+    assert get_missing == read_missing
 
 
 # =============================================================================
@@ -874,3 +936,63 @@ def test_cli_read_section_and_deliverable_mutually_exclusive(plan_context, monke
     )
     # argparse mutually exclusive group errors exit with code 2
     assert not result.success, 'Expected failure when combining --section and --deliverable-number'
+
+
+def test_cli_get_deliverable_success(plan_context):
+    """CLI plumbing: get-deliverable returns the matched deliverable via TOON."""
+    (plan_context.plan_dir_for('cli-get-deliverable') / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+    result = run_script(SCRIPT_PATH, 'get-deliverable', '--plan-id', 'cli-get-deliverable', '--deliverable-number', '1')
+    assert result.success, f'Script failed: {result.stderr}'
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+    assert data['deliverable']['number'] == 1
+
+
+def test_cli_get_deliverable_not_found(plan_context):
+    """CLI plumbing: get-deliverable returns deliverable_not_found with available numbers."""
+    (plan_context.plan_dir_for('cli-get-deliverable-nf') / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+    result = run_script(
+        SCRIPT_PATH, 'get-deliverable', '--plan-id', 'cli-get-deliverable-nf', '--deliverable-number', '999'
+    )
+    assert result.success, f'Script failed: {result.stderr}'
+    data = parse_toon(result.stdout)
+    assert data['error'] == 'deliverable_not_found'
+    assert data['available'] == [1, 2, 3]
+
+
+def test_cli_get_deliverable_matches_read_deliverable_number(plan_context):
+    """CLI plumbing: get-deliverable output matches read --deliverable-number for the same input."""
+    (plan_context.plan_dir_for('cli-get-deliverable-parity') / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+    get_result = run_script(
+        SCRIPT_PATH, 'get-deliverable', '--plan-id', 'cli-get-deliverable-parity', '--deliverable-number', '1'
+    )
+    read_result = run_script(
+        SCRIPT_PATH, 'read', '--plan-id', 'cli-get-deliverable-parity', '--deliverable-number', '1'
+    )
+    assert get_result.success, f'get-deliverable failed: {get_result.stderr}'
+    assert read_result.success, f'read failed: {read_result.stderr}'
+    assert parse_toon(get_result.stdout) == parse_toon(read_result.stdout)
+
+
+def test_cli_get_deliverable_matches_read_deliverable_number_document_not_found(plan_context):
+    """CLI plumbing: get-deliverable and read --deliverable-number agree on the document_not_found shape.
+
+    Uses a plan_id with no solution_outline.md on disk so both subcommands hit
+    the shared ``document_not_found`` guard, confirming the extracted helper
+    keeps the two CLI surfaces identical for the missing-document case.
+    """
+    get_result = run_script(
+        SCRIPT_PATH, 'get-deliverable', '--plan-id', 'cli-get-deliverable-nodoc', '--deliverable-number', '1'
+    )
+    read_result = run_script(
+        SCRIPT_PATH, 'read', '--plan-id', 'cli-get-deliverable-nodoc', '--deliverable-number', '1'
+    )
+    assert get_result.success, f'get-deliverable failed: {get_result.stderr}'
+    assert read_result.success, f'read failed: {read_result.stderr}'
+    get_data = parse_toon(get_result.stdout)
+    read_data = parse_toon(read_result.stdout)
+    assert get_data['error'] == 'document_not_found'
+    assert get_data == read_data
