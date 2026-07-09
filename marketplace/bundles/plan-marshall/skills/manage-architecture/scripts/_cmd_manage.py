@@ -620,16 +620,25 @@ def api_discover(project_dir: str = '.', force: bool = False, regenerate_descrip
     }
 
 
-def api_init(project_dir: str = '.', check: bool = False, force: bool = False) -> dict[str, Any]:
-    """Initialize per-module ``enriched.json`` stubs for every module.
+def api_init(project_dir: str = '.', check: bool = False, force: bool = False, reset: bool = False) -> dict[str, Any]:
+    """Initialize per-module ``enriched.json`` stubs, preserving existing enrichment by default.
 
     With the per-module layout, ``api_discover()`` already seeds empty stubs,
-    but ``api_init`` is preserved as an explicit-reset / repair entry point.
+    so ``api_init`` is a re-seed / repair entry point. By default (and with
+    ``--force``) it writes an empty stub only for modules whose
+    ``enriched.json`` is MISSING, preserving every existing module's curated
+    content byte-for-byte. The destructive blank-all — overwriting every
+    module's ``enriched.json`` back to the empty stub — is gated behind an
+    explicit ``reset`` and is honored together with ``--force`` (the intentional
+    "reset enrichment" call-sites invoke ``init --force --reset``).
 
     Args:
         project_dir: Project directory path
         check: Only report status; do not write
-        force: Overwrite existing per-module ``enriched.json`` stubs
+        force: Re-seed only missing per-module ``enriched.json`` stubs,
+            preserving existing enrichment
+        reset: Blank every module's ``enriched.json`` back to the empty stub
+            (destructive; honored together with ``force``)
 
     Returns:
         Dict with status and file info
@@ -661,10 +670,15 @@ def api_init(project_dir: str = '.', check: bool = False, force: bool = False) -
     except DataNotFoundError as e:
         return {'status': 'error', 'error': str(e)}
 
+    # The destructive blank-all is gated on an explicit --reset and only takes
+    # effect together with --force; a bare init (or plain --force) seeds only
+    # missing stubs and preserves existing enrichment.
+    reset = reset and force
+
     initialised = 0
     for module_name in module_names:
         path = get_module_enriched_path(module_name, project_dir)
-        if path.exists() and not force:
+        if path.exists() and not reset:
             continue
         save_module_enriched(module_name, _empty_module_enrichment(), project_dir)
         initialised += 1
@@ -732,7 +746,7 @@ def cmd_discover(args: argparse.Namespace) -> dict[str, Any]:
 def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for init command."""
     try:
-        return api_init(args.project_dir, args.check, args.force)
+        return api_init(args.project_dir, args.check, args.force, args.reset)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 

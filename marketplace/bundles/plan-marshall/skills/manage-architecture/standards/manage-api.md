@@ -54,17 +54,20 @@ onto the live path so the swap is atomic.
 ### init
 
 Initialize per-module `enriched.json` stubs for every module listed in
-`_project.json`.
+`_project.json`, preserving existing enrichment by default: only modules
+whose stub is MISSING are seeded. The destructive blank-all is gated behind
+`--reset`.
 
 ```bash
-architecture.py init [--check] [--force]
+architecture.py init [--check] [--force] [--reset]
 ```
 
 **Options**:
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `--check` | No | false | Check whether `_project.json` exists and how many per-module `enriched.json` stubs are present; output status only |
-| `--force` | No | false | Overwrite existing per-module `enriched.json` stubs |
+| `--force` | No | false | Re-seed only MISSING per-module `enriched.json` stubs, preserving existing enrichment |
+| `--reset` | No | false | Blank ALL existing per-module `enriched.json` content back to the empty stub (destructive; honored together with `--force`) |
 
 **Output (TOON)** - with `--check`:
 ```toon

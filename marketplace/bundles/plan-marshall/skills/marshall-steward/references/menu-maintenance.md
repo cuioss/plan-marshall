@@ -131,13 +131,9 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture i
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover --force
 ```
 
-**Step 3: Re-initialize enrichment (preserving existing by default)**
+`discover --force` seeds an `enriched.json` stub for every newly-observed module and preserves every existing module's curated enrichment, so no separate re-initialize step is needed.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture init --force
-```
-
-**Step 4: LLM Architectural Analysis (automatic)**
+**Step 3: LLM Architectural Analysis (automatic)**
 
 Invoke the analysis skill to auto-populate enrichment with semantic descriptions:
 
@@ -145,7 +141,7 @@ Invoke the analysis skill to auto-populate enrichment with semantic descriptions
 Skill: plan-marshall:manage-architecture
 ```
 
-This regenerates the per-module architecture layout under `.plan/project-architecture/` from current build file definitions: a refreshed `_project.json` (whose `modules` index is the source of truth for which modules exist) plus an `enriched.json` stub per indexed module. Previously-enriched per-module `enriched.json` files are preserved when the regenerate step opts to keep enrichment. Derived module data is not persisted — it is computed on demand by `crawl_module_derived`.
+This regenerates the per-module architecture layout under `.plan/project-architecture/` from current build file definitions: a refreshed `_project.json` (whose `modules` index is the source of truth for which modules exist) plus an `enriched.json` stub per indexed module. Previously-enriched per-module `enriched.json` files are preserved by the `discover --force` seeding pass, which seeds only missing stubs and never blanks existing curated enrichment. Derived module data is not persisted — it is computed on demand by `crawl_module_derived`.
 
 ---
 

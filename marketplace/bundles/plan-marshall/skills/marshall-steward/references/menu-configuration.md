@@ -595,8 +595,10 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture d
 If user chose "Reset enrichment" or no enrichment existed:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture init --force
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture init --force --reset
 ```
+
+`--reset` is required here because "Reset enrichment" is the intentional blank-all path: it discards existing curated enrichment and re-seeds every module's `enriched.json` as the empty stub. Plain `init --force` (without `--reset`) preserves existing enrichment and would not honor the user's reset choice.
 
 **Step 4: LLM Architectural Analysis (automatic)**
 
