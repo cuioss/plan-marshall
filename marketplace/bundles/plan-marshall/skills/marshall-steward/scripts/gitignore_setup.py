@@ -81,6 +81,9 @@ _MANAGED_RULE_LINES = frozenset({
     '.plan',
     GITIGNORE_MARSHAL_EXCEPTION,
     GITIGNORE_ARCHITECTURE_EXCEPTION,
+    # Legacy rules — no longer emitted by setup_gitignore, but retained here so
+    # the consolidation pass keeps recognizing and preserving them in existing
+    # .gitignore files instead of reclassifying them as user content.
     GITIGNORE_PLUGIN_DOCTOR_EXCEPTION,
     GITIGNORE_PLAN_LOCAL_WORKTREES,
     '.plan/local/worktrees',
