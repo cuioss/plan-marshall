@@ -125,6 +125,7 @@ _DESCRIPTOR_MODULES: tuple[str, ...] = (
     '_analyze_sys_path_bootstrap',
     '_analyze_test_conventions',
     '_analyze_tmp_redirect_in_skills',
+    '_analyze_triage_fix_not_done_surface',
     '_analyze_triage_read_surface',
     '_analyze_verb_chains',
     '_analyze_verify_step_contract',

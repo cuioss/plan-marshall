@@ -53,6 +53,7 @@ from _analyze_test_conventions import (
     analyze_unique_fixture_basenames,
     analyze_validator_regex_vs_corpus,
 )
+from _analyze_triage_fix_not_done_surface import analyze_triage_fix_not_done_surface
 from _analyze_triage_read_surface import analyze_triage_read_surface
 from _analyze_verify_step_contract import analyze_verify_step_contract
 from _cmd_apply import apply_single_fix, load_templates
@@ -817,7 +818,15 @@ def cmd_quality_gate(args) -> dict:
     #     `raw_input.*` quarantine namespace — triage reads top-level fields only.
     #   - verify-step-canonicals-required: every ext-point-build-verify-step
     #     implementor must declare a non-empty `canonicals:` list.
+    #   - triage-fix-not-done-contract: the triage.md Step 3c FIX action body must
+    #     carry the not-done/loop_back/STOP directive triad and must not mark its
+    #     fix task done inline (execution + commit are owned by phase-5-execute
+    #     re-entered by the loop_back).
     for label, findings in (
+        (
+            'analyze_triage_fix_not_done_surface',
+            analyze_triage_fix_not_done_surface(marketplace_root),
+        ),
         ('analyze_triage_read_surface', analyze_triage_read_surface(marketplace_root)),
         ('analyze_verify_step_contract', analyze_verify_step_contract(marketplace_root)),
     ):
