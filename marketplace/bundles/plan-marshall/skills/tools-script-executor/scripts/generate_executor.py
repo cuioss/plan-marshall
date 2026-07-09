@@ -1300,8 +1300,36 @@ def cmd_cleanup(args: argparse.Namespace) -> dict:
     return {'status': 'success', 'deleted': deleted}
 
 
+def _detect_multi_version_pollution(base_path: Path | None) -> list[str]:
+    """Return the bundle names exposing more than one version dir on disk.
+
+    In the plugin-cache layout a bundle resolves as
+    ``{base}/{bundle}/{version}/skills/``. A bundle carrying MORE THAN ONE
+    version dir (each with a ``skills/`` tree) pollutes PYTHONPATH with multiple
+    versions of the same scripts — the exact condition ``collect_script_dirs``'
+    newest-only selection guards against at discovery time. Surfacing the
+    on-disk pollution lets the preflight regenerate the executor (which then
+    embeds only the newest version's paths). Returns the sorted list of polluted
+    bundle names (empty when the tree is clean or ``base_path`` is unresolved).
+    """
+    if base_path is None or not base_path.is_dir():
+        return []
+    polluted: list[str] = []
+    for bundle_dir in base_path.iterdir():
+        if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
+            continue
+        version_dirs = [
+            d
+            for d in bundle_dir.iterdir()
+            if d.is_dir() and not d.name.startswith('.') and (d / 'skills').is_dir()
+        ]
+        if len(version_dirs) > 1:
+            polluted.append(bundle_dir.name)
+    return sorted(polluted)
+
+
 def cmd_preflight(args: argparse.Namespace) -> dict:
-    """Deterministic executor / config staleness check.
+    """Deterministic executor / config staleness + multi-version pollution check.
 
     Compares the executor's embedded ``MARSHALL_VERSION`` and
     ``marshal.json``'s ``system.provisioned_version`` against the installed
@@ -1318,13 +1346,22 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
       route the user to ``/marshall-steward``; otherwise ``marshal_status:
       fresh``.
 
+    - **Multi-version PYTHONPATH pollution is safe derived state too.** When
+      more than one version dir per bundle is discoverable in the plugin-cache
+      context the verb regenerates the executor in place (reported through
+      ``executor_action: regenerated``) — the regenerated executor embeds only
+      the newest version's paths (``collect_script_dirs``' newest-only
+      selection), so a stale version dir left on disk can no longer shadow the
+      current scripts. The regen is skipped when version-staleness already
+      regenerated in the same run.
+
     A fresh install with no manifest resolves both changed_at values to the
     empty sentinel, so nothing is stale and the verb is a no-op reporting
     ``fresh``.
 
     Returns:
-        A single TOON dict: ``status``, ``executor_action`` (``fresh`` |
-        ``regenerated``), ``marshal_status`` (``fresh`` | ``stale``),
+        A single six-field TOON dict: ``status``, ``executor_action`` (``fresh``
+        | ``regenerated``), ``marshal_status`` (``fresh`` | ``stale``),
         ``installed_version``, ``executor_version``, ``marshal_version``.
     """
     try:
@@ -1357,6 +1394,22 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
             return {
                 'status': 'error',
                 'error': f'preflight executor regeneration failed: {regen.get("error", "unknown error")}',
+            }
+        executor_action = 'regenerated'
+        # Re-read the freshly stamped version so the report reflects the regen.
+        executor_version = read_executor_version()
+
+    # Multi-version PYTHONPATH pollution → safe in-place regeneration. Regenerating
+    # re-embeds only the newest version dir's paths (collect_script_dirs' newest-only
+    # selection), so an older version dir left on disk can no longer shadow the
+    # current scripts. Skip the redundant regen when staleness already regenerated.
+    polluted_bundles = _detect_multi_version_pollution(base_path)
+    if polluted_bundles and executor_action != 'regenerated':
+        regen = cmd_generate(args)
+        if regen.get('status') != 'success':
+            return {
+                'status': 'error',
+                'error': f'preflight pollution regeneration failed: {regen.get("error", "unknown error")}',
             }
         executor_action = 'regenerated'
         # Re-read the freshly stamped version so the report reflects the regen.

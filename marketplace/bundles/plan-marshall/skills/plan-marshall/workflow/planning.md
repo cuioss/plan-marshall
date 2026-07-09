@@ -92,6 +92,16 @@ AskUserQuestion:
 
 Create a new plan and automatically continue to 2-refine/3-outline/4-plan phases.
 
+### Step 0 — executor / config staleness + pollution preflight (deterministic, runs first)
+
+Before dispatching the 1-Init Phase, run the deterministic `generate_executor preflight` verb once — the SAME preflight the `plan=` auto-detect path runs. The `task=` / `issue=` init entry MUST run it too, so a stale OR multi-version-polluted executor is caught (and safely regenerated in place — executor = safe derived state, ADR-002) before any init dispatch, not just on the `plan=` re-entry path. The verb runs from the main checkout using main's present executor (phases 1-4 run on the main checkout):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor preflight
+```
+
+Branch on the returned `executor_action` / `marshal_status` fields exactly as documented canonically in [`SKILL.md` § Auto-Detect from Phase → Step 0](../SKILL.md#auto-detect-from-phase) — that is the single home for the preflight branch contract; do NOT inline-copy the branch logic here. (See [`tools-script-executor` SKILL.md](../../tools-script-executor/SKILL.md) Canonical invocations → `generate_executor — preflight` for the verb's argparse surface and its TOON contract.) A fresh install with no manifest reports everything `fresh`, so the verb is a no-op.
+
 ### Inline early-phase path (Tier 1 recipe-match-routed shortcut)
 
 phase-1-init runs the Tier 1 recipe-match routing tier as part of init (registry-wide recipe scoring gated on `auto_route_recipe`, plus request-aspect classification) — see [`plan-marshall:phase-1-init`](../../phase-1-init/SKILL.md) § Step 5c (Tier 1 Recipe-Match Routing) for the recipe-match step logic and the `auto_route_recipe` branching. Do NOT inline-copy that step logic or the auto-route branch here; this section consumes its result.
