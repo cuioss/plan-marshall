@@ -80,6 +80,27 @@ long-running call — see
 [`persona-plan-marshall-agent`](../../persona-plan-marshall-agent/SKILL.md) for
 the normative orchestration requirement.
 
+### Persisted-title-state-write drive seam
+
+Every persisted `current_phase` write fires a single best-effort **drive seam**
+immediately after `write_status`, so the title reflects a phase change the moment
+it is persisted instead of freezing at the last-rendered phase. The three phase
+writers — `cmd_create` (first-phase seed), `cmd_transition` (phase advance), and
+`cmd_set_phase` — call one shared `_surface_drive(plan_id)` helper that fires two
+fire-and-forget delegations to `platform-runtime` through the executor subprocess
+channel (the same channel `manage-locks/merge_lock.py` uses):
+
+- a **repaint** — `session push-title-token --plan-id {id}` with no icon, a plain
+  re-render of the freshly composed title; and
+- a **bind** — `session bind --plan-id {id}`, the last-driven-wins session→plan
+  binding (see Session-Plan Binding below).
+
+The seam is fully exception-swallowing: a delegation failure never changes the
+status-write outcome or the command's exit code. `manage-status` still composes
+and emits nothing itself — it delegates the repaint and the bind to
+`platform-runtime`, preserving the state-layer's render-free contract (exactly as
+`merge_lock.py` delegates its own title-token surface).
+
 ### Archive interaction
 
 `cmd_archive` (in `manage-status`) performs three mutations to `status.json`
@@ -194,13 +215,26 @@ body format (both live in the composer it imports).
 
 ### `session push-title-token` — direct `/dev/tty` push
 
-`session_push_title_token(plan_id, icon)` is the live-push path used by the lock
-coordination machinery. It reads the plan's title state from
-`status.json` via `_read_title_state`, composes via `compose(state, None,
-icon_override=icon)`, and writes the OSC escape (`\x1b]0;{composed}\x07`) directly
-to `/dev/tty`. It is best-effort — a silent no-op (`pushed: false`) when the
-state is absent / unrenderable or when `/dev/tty` is not openable (CI,
-background, no controlling terminal), and it never raises.
+`session_push_title_token(plan_id, icon=None)` is the single canonical **repaint
+seam** — the live-push path shared by every persisted-title-state change. It reads
+the plan's title state from `status.json` via `_read_title_state`, composes via
+`compose(state, None, icon_override=icon)`, and writes the OSC escape
+(`\x1b]0;{composed}\x07`) directly to `/dev/tty`. The `--icon` argument is
+**optional**: a glyph push (⏳/🔒 from the lock machinery) supplies it, while a
+plain repaint omits it (`icon=None`) to re-render the current title with its
+default active icon. Three consumers drive this one seam:
+
+- **`manage-status`'s phase-write drive seam** — an icon-less repaint on every
+  `current_phase` write (see State above);
+- **`manage-locks/merge_lock.py`** — the ⏳/🔒 lock-state pushes on acquire/block,
+  AND a plain icon-less repaint on the release/clear path so the lock glyph
+  disappears live once the lock is released; and
+- the orchestration-layer `build-busy` bracketing (see
+  [`persona-plan-marshall-agent`](../../persona-plan-marshall-agent/SKILL.md)).
+
+It is best-effort — a silent no-op (`pushed: false`) when the state is absent /
+unrenderable or when `/dev/tty` is not openable (CI, background, no controlling
+terminal), and it never raises.
 
 ### Session-Plan Binding
 
@@ -211,35 +245,54 @@ The session identifier is bound to a plan through a filesystem cache rooted at
 ~/.cache/plan-marshall/sessions/{session_id}/active-plan   →   plan_id
 ```
 
-`_read_active_plan(session_id)` reads `{_SESSION_CACHE_BASE}/{session_id}/active-plan`
-and returns the contained `plan_id` (or `None`). The `session_id` originates from
-an external hook payload and is validated against the canonical UUID format
-before any filesystem use, to prevent path traversal and glob injection.
+The binding policy lives in one pure, importable module,
+`platform-runtime/scripts/session_binding.py`, wrapped by three testable
+`platform-runtime` verbs. The `session_id` (and the `plan_id`) originate from an
+external hook payload and are each validated as a safe single path segment
+(traversal-sentinel rejection + 120-char cap) before any filesystem use, to
+prevent path traversal and glob injection.
 
-#### Binding ownership — bind-on-entry, protect-active, stale-reclaim
+| Verb | Policy fn | Role |
+|------|-----------|------|
+| `session bind --plan-id {id} [--session-id {id}]` | `session_binding.bind` | **Last-driven-wins** unconditional write of the caller's OWN slot — NO protect-active, NO stale-slot reclaim, NO plan-dir-exists check. |
+| `session resolve-plan [--session-id {id}]` | `session_binding.resolve_plan` | Read side — returns the bound `plan_id` (or empty). `session render-title` resolves session→plan through it. |
+| `session doctor [--fix]` | `session_binding.doctor` | Reverse-index conflict scan + stale-slot GC (see below). |
 
-The **writer** of the `active-plan` binding is the executor
-(`tools-script-executor`'s generated `execute-script.py`), which calls
-`_write_active_plan(plan_id)` on every plan-scoped invocation — any call carrying
-`--plan-id` / `--audit-plan-id`. The write follows a **no-overwrite-with-stale-reclaim**
-policy so a read-only inspection call can never steal an active session's binding:
+#### Binding ownership — bind-on-drive, last-driven-wins
 
-- **Bind on entry** — when the session has no `active-plan` slot yet, the first
-  plan-scoped invocation binds it.
-- **Idempotent re-bind** — a call naming the plan already bound rewrites the same
-  value.
-- **Protect the active binding** — a call naming a *different* plan is a no-op
-  while the bound plan's live plan dir (`.plan/local/plans/{bound}/`) still
-  exists. Read-only inspection calls that name another plan therefore no longer
-  overwrite the binding, so the main orchestration tab keeps rendering its own
-  plan's title.
-- **Stale reclaim** — a call naming a different plan whose live plan dir is gone
-  (archived or deleted) reclaims the slot. This delivers release-on-exit
-  implicitly: once a plan is archived its slot becomes reclaimable by the next
-  differing-plan invocation, so no separate `session release` verb is needed.
+The **writer** of the `active-plan` binding is `session bind`, fired from the
+`manage-status` phase-state-write drive seam (see Persisted-title-state-write
+drive seam above) on every `current_phase` write. The write is
+**last-driven-wins**: it unconditionally binds the caller's own per-session slot,
+so a session that switches to drive a different live plan immediately rebinds to
+it. Because the cache is per-session (keyed by `session_id`), `bind` touches only
+the caller's slot — there is no cross-session check-then-act window and no shared
+mutable index. Every path is best-effort / no-raise.
 
-The write is fully fire-and-forget — every error path is swallowed and the
-executor's exit code, stdout, and stderr are unaffected by cache-write outcomes.
+This **replaces** the former **no-overwrite / protect-active / stale-reclaim**
+policy that the generated executor template wrote via `_write_active_plan` on
+every plan-scoped invocation. That in-template binder has been **removed outright**
+(clean break): the executor no longer writes any session→plan binding. The old
+protect-active policy stuck a session to its first-bound plan, so a session that
+switched to drive a second live plan stayed pinned to the first (the sticky-binding
+pollution, Defect 2); last-driven-wins fixes it by making the most recent driver
+authoritative.
+
+#### `session doctor` — reverse-index conflict scan + stale GC
+
+`session doctor` walks every `~/.cache/plan-marshall/sessions/*/active-plan` slot,
+builds an **in-memory plan→sessions reverse index**, and reports:
+
+- **conflicts** — any plan bound by more than one session (two sessions driving
+  the same plan); and
+- **stale** slots — a slot whose bound plan is archived or deleted (its live plan
+  dir, on main OR in its phase-5+ worktree, is gone).
+
+With `--fix` it GCs each stale slot (removes its `active-plan` file). The scan
+keeps **NO shared mutable index** (no `index.json`) — it is per-file and
+idempotent, so it introduces no new shared-file TOCTOU hazard. Stale GC delivers
+release-on-exit implicitly: an archived plan's slot becomes GC-eligible, so no
+separate `session release` verb is needed.
 
 ### Output Channels
 
