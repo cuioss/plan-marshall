@@ -165,6 +165,15 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 `--deliverable-number` and `--section` are mutually exclusive.
 
+### get-deliverable
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline get-deliverable \
+  --plan-id PLAN_ID --deliverable-number N
+```
+
+Equivalent to the `read --deliverable-number N` read-verb form: both funnel through the same shared lookup and return byte-identical output. `get-deliverable` shares the `deliverable_not_found` / `document_not_found` error contract with `read --deliverable-number` (no new error code is introduced).
+
 ### exists
 
 ```bash
@@ -264,6 +273,7 @@ See also [standards/solution-outline-standard.md](standards/solution-outline-sta
 | `update` | `--plan-id` | Validate updated solution on disk; sets `action: updated`. Returns `document_not_found` if file doesn't exist — use `write` for initial creation. |
 | `validate` | `--plan-id` | Validate structure |
 | `read` | `--plan-id [--raw] [--deliverable-number N \| --section NAME]` | Read solution, specific deliverable, or a single top-level section |
+| `get-deliverable` | `--plan-id --deliverable-number N` | Read a single deliverable by number (equivalent to `read --deliverable-number`) |
 | `get-field` | `--plan-id --field NAME` | Read a single solution-level metadata field. Currently supported: `scope_estimate`. Returns `field_not_found` when absent. |
 | `list-deliverables` | `--plan-id` | Extract deliverables list |
 | `exists` | `--plan-id` | Check if solution exists |

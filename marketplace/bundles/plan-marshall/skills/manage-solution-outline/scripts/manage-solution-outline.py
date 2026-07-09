@@ -17,6 +17,7 @@ Usage:
     python3 manage-solution-outline.py validate --plan-id EXAMPLE-PLAN
     python3 manage-solution-outline.py list-deliverables --plan-id EXAMPLE-PLAN
     python3 manage-solution-outline.py read --plan-id EXAMPLE-PLAN [--raw | --section summary | --deliverable-number N]
+    python3 manage-solution-outline.py get-deliverable --plan-id EXAMPLE-PLAN --deliverable-number N
     python3 manage-solution-outline.py exists --plan-id EXAMPLE-PLAN
     python3 manage-solution-outline.py get-module-context
 """
@@ -358,6 +359,48 @@ def cmd_list_deliverables(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _lookup_deliverable(plan_id: str, content: str, deliverable_number: int) -> dict[str, Any]:
+    """Look up a single deliverable by number within solution outline content.
+
+    Shared by ``cmd_read`` (``--deliverable-number`` branch) and
+    ``cmd_get_deliverable``. Parses the document sections, guards the missing
+    Deliverables section, iterates the extracted deliverables, and returns the
+    matched deliverable dict on success. The error and success shapes mirror the
+    ``read --deliverable-number`` contract exactly:
+
+    - ``section_not_found`` when the Deliverables section is absent
+    - ``deliverable_not_found`` (with ``available`` numbers) when no deliverable
+      matches ``deliverable_number``
+    - ``success`` (with the ``deliverable`` payload) on match
+    """
+    sections = parse_document_sections(content)
+    if 'deliverables' not in sections:
+        return {
+            'status': 'error',
+            'error': 'section_not_found',
+            'plan_id': plan_id,
+            'message': 'Deliverables section not found',
+        }
+
+    deliverables = extract_deliverables(sections['deliverables'])
+
+    for d in deliverables:
+        if d['number'] == deliverable_number:
+            return {
+                'status': 'success',
+                'plan_id': plan_id,
+                'deliverable': d,
+            }
+
+    return {
+        'status': 'error',
+        'error': 'deliverable_not_found',
+        'plan_id': plan_id,
+        'number': deliverable_number,
+        'available': [d['number'] for d in deliverables],
+    }
+
+
 def cmd_read(args: argparse.Namespace) -> dict[str, Any]:
     """Read solution outline."""
     require_valid_plan_id(args)
@@ -381,32 +424,7 @@ def cmd_read(args: argparse.Namespace) -> dict[str, Any]:
     # Handle --deliverable-number: read specific deliverable
     deliverable_number = getattr(args, 'deliverable_number', None)
     if deliverable_number is not None:
-        sections = parse_document_sections(content)
-        if 'deliverables' not in sections:
-            return {
-                'status': 'error',
-                'error': 'section_not_found',
-                'plan_id': args.plan_id,
-                'message': 'Deliverables section not found',
-            }
-
-        deliverables = extract_deliverables(sections['deliverables'])
-
-        for d in deliverables:
-            if d['number'] == deliverable_number:
-                return {
-                    'status': 'success',
-                    'plan_id': args.plan_id,
-                    'deliverable': d,
-                }
-
-        return {
-            'status': 'error',
-            'error': 'deliverable_not_found',
-            'plan_id': args.plan_id,
-            'number': deliverable_number,
-            'available': [d['number'] for d in deliverables],
-        }
+        return _lookup_deliverable(args.plan_id, content, deliverable_number)
 
     # Handle --section: read specific top-level ## section
     requested_section = getattr(args, 'section', None)
@@ -456,6 +474,36 @@ def cmd_read(args: argparse.Namespace) -> dict[str, Any]:
         if scope_value is not None:
             result['scope_estimate'] = scope_value
         return result
+
+
+def cmd_get_deliverable(args: argparse.Namespace) -> dict[str, Any]:
+    """Read a single deliverable by number from the solution outline.
+
+    Mirrors ``read --deliverable-number`` exactly: performs the same
+    ``document_not_found`` guard ``cmd_read`` uses (identical error dict and
+    suggestions), reads the content, then funnels through the shared
+    ``_lookup_deliverable`` helper for the ``section_not_found`` /
+    ``deliverable_not_found`` / success shapes.
+    """
+    require_valid_plan_id(args)
+
+    file_path = get_solution_path(args.plan_id)
+
+    if not file_path.exists():
+        return {
+            'status': 'error',
+            'error': 'document_not_found',
+            'plan_id': args.plan_id,
+            'file': SOLUTION_FILE,
+            'suggestions': [
+                'Use resolve-path to get the target path, then Write tool to create the file',
+                'Check plan_id spelling',
+            ],
+        }
+
+    content = file_path.read_text(encoding='utf-8')
+
+    return _lookup_deliverable(args.plan_id, content, args.deliverable_number)
 
 
 def cmd_get_field(args: argparse.Namespace) -> dict[str, Any]:
@@ -761,6 +809,19 @@ def main() -> int:
         help='Read a specific top-level ## section by name (case-insensitive, e.g. summary, overview)',
     )
     read_parser.set_defaults(func=cmd_read)
+
+    # get-deliverable
+    get_deliverable_parser = subparsers.add_parser(
+        'get-deliverable', help='Read a single deliverable by number', allow_abbrev=False
+    )
+    add_plan_id_arg(get_deliverable_parser)
+    get_deliverable_parser.add_argument(
+        '--deliverable-number',
+        type=int,
+        required=True,
+        help='Deliverable number to read',
+    )
+    get_deliverable_parser.set_defaults(func=cmd_get_deliverable)
 
     # exists
     exists_parser = subparsers.add_parser('exists', help='Check if solution exists', allow_abbrev=False)
