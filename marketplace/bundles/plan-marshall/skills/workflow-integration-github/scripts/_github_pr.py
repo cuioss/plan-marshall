@@ -43,18 +43,27 @@ from ci_base import (
 # exceeded`` heading (typically inside a ``> [!WARNING]`` callout) plus the
 # "exceeded the limit for the number of ..." body sentence. Detection is purely
 # additive — it surfaces a ``rate_limited`` discriminator on the wait-for-comments
-# return and never changes the poll behaviour or any existing field. The markers
-# are anchored to that structure (a heading line and a specific body sentence) so
-# an ordinary CodeRabbit review comment that merely mentions "rate limit exceeded"
-# in prose — e.g. quoting a code string or discussing a rate-limit branch — is not
+# return and never changes the poll behaviour or any existing field. Detection
+# requires BOTH markers (``all``): the ``## Rate limit exceeded`` heading marker
+# AND the specific body sentence must be present. Requiring both narrows detection
+# to the notice's actual two-part structure, so an ordinary CodeRabbit review
+# comment that merely mentions "rate limit exceeded" in prose — or that merely
+# discusses "exceeded the limit for the number of ..." parameters/lines — is not
 # misclassified as a status notice.
 _CODERABBIT_BOT_LOGINS = frozenset({'coderabbitai', 'coderabbitai[bot]'})
 _CODERABBIT_RATE_LIMIT_MARKERS: tuple[re.Pattern[str], ...] = (
-    # The notice's own heading: ``## Rate limit exceeded``. Anchored to the line
-    # start and the markdown ``#`` heading markers (tolerating a leading ``>``
-    # blockquote from the enclosing callout), so a bare prose mention of the
-    # phrase elsewhere in a genuine review body does not match.
-    re.compile(r'^\s*>?\s*#{1,6}\s+rate limit exceeded\b', re.IGNORECASE | re.MULTILINE),
+    # The notice's own heading: ``## Rate limit exceeded``. Matched by its
+    # markdown ``#`` heading markers rather than a bare phrase, so a prose
+    # mention of "rate limit exceeded" in a genuine review body does not match.
+    #
+    # Deliberately NO ``^``/``re.MULTILINE`` line-start anchor:
+    # ``fetch_pr_comments_data`` (in github_ops.py) flattens every comment body's
+    # newlines to spaces BEFORE this detector runs, collapsing the notice to a
+    # single line. A line-start anchor could therefore only ever match at offset
+    # 0 — never at the ``## Rate limit exceeded`` heading, which sits mid-body
+    # after the ``> [!WARNING]`` callout prefix — so the anchored form never
+    # fired in production. The heading markers are searched unanchored instead.
+    re.compile(r'#{1,6}\s+rate limit exceeded\b', re.IGNORECASE),
     re.compile(r'exceeded the limit for the number of', re.IGNORECASE),
 )
 
@@ -64,8 +73,10 @@ def _detect_coderabbit_rate_limited(comments: list[dict]) -> bool:
 
     Scans the CodeRabbit-bot-authored comments only, picks the newest by
     ``created_at``, and matches its body against the narrow rate-limit marker
-    set. Any absent / malformed field degrades to ``False`` — detection is
-    best-effort and never raises into the poll return path.
+    set. Requires ALL markers to match (the heading marker AND the body
+    sentence), so a genuine review that merely mentions one of them in prose is
+    not misclassified. Any absent / malformed field degrades to ``False`` —
+    detection is best-effort and never raises into the poll return path.
     """
     bot_comments = [
         c
@@ -77,7 +88,7 @@ def _detect_coderabbit_rate_limited(comments: list[dict]) -> bool:
         return False
     newest = max(bot_comments, key=lambda c: str(c.get('created_at') or ''))
     body = str(newest.get('body') or '')
-    return any(marker.search(body) for marker in _CODERABBIT_RATE_LIMIT_MARKERS)
+    return all(marker.search(body) for marker in _CODERABBIT_RATE_LIMIT_MARKERS)
 
 
 def cmd_pr_create(args: argparse.Namespace) -> dict:

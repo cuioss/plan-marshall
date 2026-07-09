@@ -10,9 +10,12 @@ never alter the pre-existing poll fields (``timed_out`` / ``new_count`` / …).
 
 Scope (AAA against fixture comment payloads):
     - newest bot comment is a rate-limit status notice → rate_limited: true
+      (fixture uses the FLATTENED production body shape — see _RATE_LIMIT_NOTICE)
     - newest bot comment is a genuine review          → rate_limited: false
     - no bot comment / empty comment list             → rate_limited: false
     - a newer genuine review supersedes an older notice → rate_limited: false
+    - a bot review carrying only the body sentence (no heading) → rate_limited:
+      false (detection requires BOTH markers via ``all``)
     - the pre-existing timed_out / new_count fields are unchanged
 
 Tests never shell out to the real ``gh`` CLI: ``check_auth``,
@@ -29,12 +32,19 @@ def _ok_auth():
     return True, ''
 
 
-# A CodeRabbit rate-limit status notice (posted in place of a review).
+# A CodeRabbit rate-limit status notice (posted in place of a review), in the
+# FLATTENED shape the detector actually sees. ``fetch_pr_comments_data`` collapses
+# every comment body's newlines to spaces before ``_detect_coderabbit_rate_limited``
+# inspects it, so the ``## Rate limit exceeded`` heading no longer sits at a line
+# start — it appears mid-body after the ``> [!WARNING]`` callout prefix. Using the
+# flattened production shape here proves the heading marker fires WITHOUT relying
+# on a ``^``/``re.MULTILINE`` line-start anchor (which could only match at offset 0
+# on a single-line body and therefore never fired against a real notice).
 _RATE_LIMIT_NOTICE = {
     'author': 'coderabbitai[bot]',
     'body': (
-        '> [!WARNING]\n> ## Rate limit exceeded\n>\n'
-        '> @octocat has exceeded the limit for the number of commits or files '
+        '> [!WARNING] > ## Rate limit exceeded > '
+        '@octocat has exceeded the limit for the number of commits or files '
         'that can be reviewed per hour. Please wait before requesting another review.'
     ),
     'created_at': '2026-01-02T00:00:00Z',
@@ -156,6 +166,28 @@ def test_bot_review_quoting_rate_limit_prose_not_flagged(monkeypatch):
         'created_at': '2026-01-02T00:00:00Z',
     }
     _wire(monkeypatch, post_comments=[_HUMAN_COMMENT, bot_prose])
+
+    result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
+
+    assert result['rate_limited'] is False
+
+
+def test_bot_body_sentence_without_heading_not_flagged(monkeypatch):
+    # gemini-code-assist false-positive guard: a genuine CodeRabbit review whose
+    # flattened body merely contains the "exceeded the limit for the number of"
+    # body sentence (e.g. discussing a parameter/line limit) WITHOUT the
+    # "## Rate limit exceeded" heading must not be flagged. Detection now requires
+    # BOTH markers via ``all`` — the body sentence alone is insufficient.
+    body_only = {
+        'author': 'coderabbitai[bot]',
+        'body': (
+            'Actionable comments posted: 1. This function has exceeded the limit '
+            'for the number of parameters recommended by the style guide; '
+            'consider grouping them into a dataclass.'
+        ),
+        'created_at': '2026-01-02T00:00:00Z',
+    }
+    _wire(monkeypatch, post_comments=[_HUMAN_COMMENT, body_only])
 
     result = github_ops.cmd_pr_wait_for_comments(_wait_comments_args())
 
