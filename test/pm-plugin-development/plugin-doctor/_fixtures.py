@@ -137,6 +137,7 @@ _aalb = _load('_analyze_agentfile_line_budget.py', '_aalb_fixtures')
 _aadt = _load('_analyze_agentfile_directory_tree.py', '_aadt_fixtures')
 _alf = _load('_analyze_lane_frontmatter.py', '_alf_fixtures')
 _atrrs = _load('_analyze_triage_read_surface.py', '_atrrs_fixtures')
+_afnds = _load('_analyze_triage_fix_not_done_surface.py', '_afnds_fixtures')
 _avsc = _load('_analyze_verify_step_contract.py', '_avsc_fixtures')
 
 # ---------------------------------------------------------------------------
@@ -1186,6 +1187,20 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
             'plan-marshall/skills/s/workflow/triage.md': (
                 '# Triage\n\n'
                 'Read the finding detail from `raw_input.detail` before deciding.\n'
+            ),
+        },
+    )
+
+    # triage-fix-not-done-contract: a triage.md Step 3c FIX action body (allocation
+    # signature present via prepare-add/commit-add) that omits the required
+    # not-done/loop_back/STOP directive triad — the contract-missing violation.
+    corpus['triage-fix-not-done-contract'] = FixtureSpec(
+        analyzer=lambda root: _afnds.analyze_triage_fix_not_done_surface(root),
+        files={
+            'plan-marshall/skills/s/workflow/triage.md': (
+                '# Triage\n\n'
+                '- **FIX** — allocate the fix task via `prepare-add` then `commit-add`.\n\n'
+                '- **SUPPRESS** — annotate the sink.\n'
             ),
         },
     )

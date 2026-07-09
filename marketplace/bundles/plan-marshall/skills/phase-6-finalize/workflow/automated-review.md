@@ -30,6 +30,12 @@ configurable:
   - key: re_review_on_timeout
     default: ask
     description: "Timeout policy applied at both re-review triggers (A and B) when the await budget expires with no fresh bot review (timed_out: true, matched: false). One of ask|defer|proceed. ask halts and asks the operator (interactive); defer auto-skips the merge without prompting (safe default-action); proceed is the explicit opt-in to advance the unreviewed HEAD, decision-logged at WARNING."
+  - key: review_rate_window_await
+    default: false
+    description: Opt-in bool (default-off) that, when enabled, awaits a bot rate-window reset instead of proceeding on a rate-limit status-notice. When the pr wait-for-comments return carries rate_limited: true (the discriminator), the step re-polls in a bounded await loop until a non-rate-limited bot review lands or review_rate_window_timeout_seconds is exhausted. When false, a rate-limit notice is treated as an ordinary settle and the step proceeds without awaiting.
+  - key: review_rate_window_timeout_seconds
+    default: 3600
+    description: Await budget (seconds) capping the rate-window await loop, defaulting to 3600 to match CodeRabbit's ~hourly rate-window reset. On exhaustion the step returns escalate_ask with reason rate_window_timeout. Only consulted when review_rate_window_await is true.
 ---
 
 # Automated Review
@@ -164,6 +170,36 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 | `status: success`, `timed_out: false` | New comment(s) detected — proceed to producer-stage |
 | `status: success`, `timed_out: true` | No new comment within timeout — proceed to producer-stage anyway (the producer will surface whatever is on the PR) |
 | `status: error` | Treat as warning, log, proceed to producer-stage best-effort |
+
+The `pr wait-for-comments` return carries a `rate_limited` discriminator: `rate_limited: true` signals the wait ended because the review bot's rate window was exhausted (a rate-limit status-notice was posted) rather than because a genuine review landed or the buffer timed out cleanly. The "Rate-window await" subsection below acts on this discriminator when the opt-in is enabled; when the opt-in is off, `rate_limited: true` is treated as an ordinary settle by the table above.
+
+### Rate-window await (opt-in)
+
+Read `review_rate_window_await` and `review_rate_window_timeout_seconds` off the same `params` object returned by the one-stop `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id automated-review` call used for `review_bot_buffer_seconds` (defaults: `false` and `3600`). **When `review_rate_window_await == false`**, skip this entire subsection and proceed directly to "Producer: FIND" below — a `rate_limited: true` return is treated as an ordinary settle.
+
+**When `review_rate_window_await == true` AND the "Wait for review-bot comments" return carried `rate_limited: true`**, the bot's rate window was exhausted before a review landed. Rather than proceeding on the rate-limit notice, re-poll in a bounded await loop until a non-rate-limited bot review lands OR the `review_rate_window_timeout_seconds` budget is exhausted. The loop is driven across tool calls — **no shell loop**: each poll is exactly one `pr wait-for-comments` Bash call, and pacing between polls is a single standalone `sleep {interval}` Bash call (`{interval}` = 60s). Track elapsed wall-clock against `review_rate_window_timeout_seconds`; stop issuing new polls once the budget would be exceeded.
+
+Each poll:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr wait-for-comments \
+  --pr-number {pr_number} --timeout {review_bot_buffer_seconds}
+```
+
+- **`rate_limited: false` with new comment(s)** (`status: success`, `timed_out: false`) — a non-rate-limited bot review has landed; exit the await loop and proceed to "Producer: FIND" below.
+- **`rate_limited: true` again** — the rate window is still exhausted. If the elapsed budget is not yet spent, pace with a single standalone `sleep` call, then re-poll:
+
+  ```bash
+  sleep 60
+  ```
+
+- **Budget exhausted** (`review_rate_window_timeout_seconds` elapsed with the bot still rate-limited) — return `status: escalate_ask` with `reason: rate_window_timeout` and the three prompt options (see the `escalate_ask` return in "Output" below). Honour the **no-mark invariant**: do NOT call `mark-step-done` before returning `escalate_ask` — the dispatcher's item 7a owns the continuation. Decision-log the exhaustion:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-6-finalize:automated-review) rate-window await: review_rate_window_timeout_seconds={review_rate_window_timeout_seconds} exhausted with bot still rate-limited — returning escalate_ask{reason: rate_window_timeout}; orchestrator will fire AskUserQuestion"
+  ```
 
 ### Producer: FIND — file PR comments to the ledger (entry-point)
 
@@ -390,9 +426,16 @@ fix_tasks_created: {N}
 
 Orchestrator workflow — the LLM core is delegated to `verification-feedback` (`producer=pr-comment`) via the internal sub-dispatch. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded via `mark-step-done --display-detail`. On `loop_back`, the calling step re-fires on the next phase entry per the HEAD-dependent resumability rules above.
 
-### `escalate_ask` return (re-review timeout)
+### `escalate_ask` return (timeout escalations)
 
-When the "On re-review timeout (trigger B)" sub-block fires with `re_review_on_timeout` of `defer` or `ask`, this step returns `status: escalate_ask` instead of `success`/`loop_back`. The dispatched leaf does NOT fire `AskUserQuestion` itself — it returns this envelope and the inline orchestrator (phase-6-finalize SKILL.md Step 3) owns the prompt. The `proceed` policy does NOT return `escalate_ask` — the leaf falls through to "Wait for review-bot comments" and the run terminates normally (`success`/`loop_back`); `proceed` is the documented non-escalating case.
+This step returns `status: escalate_ask` instead of `success`/`loop_back` on two distinct timeout escalations, discriminated by the `reason` field:
+
+- **`reason: re_review_timeout`** — the "On re-review timeout (trigger B)" sub-block fired with `re_review_on_timeout` of `defer` or `ask` (the re-review await budget expired with no fresh bot review). The `proceed` policy does NOT return `escalate_ask` — the leaf falls through to "Wait for review-bot comments" and the run terminates normally (`success`/`loop_back`); `proceed` is the documented non-escalating case.
+- **`reason: rate_window_timeout`** — the "Rate-window await (opt-in)" sub-block fired: with `review_rate_window_await == true`, the bounded await loop exhausted `review_rate_window_timeout_seconds` while the bot was still rate-limited.
+
+In both cases the dispatched leaf does NOT fire `AskUserQuestion` itself — it returns this envelope and the inline orchestrator (phase-6-finalize SKILL.md Step 3 item 7a) owns the prompt.
+
+`reason: re_review_timeout` variant:
 
 ```toon
 status: escalate_ask
@@ -409,11 +452,28 @@ prompt_options[3]:
   - "Defer merge"
 ```
 
+`reason: rate_window_timeout` variant (the rate-window await exhausted its budget with the bot still rate-limited; there is no re-review `head_sha` — the escalation is about an unlanded review, not an unreviewed HEAD):
+
+```toon
+status: escalate_ask
+display_detail: "rate-window timeout — awaiting bot review (pr {pr_number})"
+action: ask
+reason: rate_window_timeout
+timed_out: true
+timeout_seconds: {review_rate_window_timeout_seconds}
+pr_number: {pr_number}
+prompt_options[3]:
+  - "Wait another {review_rate_window_timeout_seconds}s"
+  - "Merge anyway — proceed unreviewed"
+  - "Defer merge"
+```
+
 Field contract:
 
-- `action`: `defer` when policy is `defer` (orchestrator skips the merge directly); `ask` when policy is `ask` (orchestrator fires `AskUserQuestion` with `prompt_options[]`).
-- `reason`: always `re_review_timeout` for this escalation — distinguishes it from any future escalation reasons.
-- `head_sha`: the full worktree HEAD SHA the timed-out re-review was awaiting; the unreviewed commit the operator decision applies to.
+- `action`: `defer` when policy is `defer` (orchestrator skips the merge directly); `ask` when policy is `ask` (orchestrator fires `AskUserQuestion` with `prompt_options[]`). The `rate_window_timeout` variant always uses `action: ask`.
+- `reason`: `re_review_timeout` or `rate_window_timeout` — distinguishes the two escalation triggers so item 7a can route them identically while keeping the audit trail specific.
+- `head_sha`: present only on the `re_review_timeout` variant — the full worktree HEAD SHA the timed-out re-review was awaiting; the unreviewed commit the operator decision applies to. Omitted on the `rate_window_timeout` variant (no HEAD advance is involved).
+- `timeout_seconds`: the exhausted budget — `re_review_await_timeout_seconds` for `re_review_timeout`, `review_rate_window_timeout_seconds` for `rate_window_timeout`.
 - `prompt_options[]`: the three operator choices the orchestrator presents when `action: ask`. "Wait another {timeout_seconds}s" is realized by the orchestrator re-dispatching `automated-review` from scratch with a fresh budget (the harness cannot resume a spawned agent — see [SKILL.md](../SKILL.md) Step 3). Present only when `action: ask`; omitted for `action: defer`.
 
 **No-mark invariant (symmetric with the dispatcher's item-5d carve-out)** — before returning `escalate_ask`, the leaf MUST NOT call `mark-step-done`. The continuation — firing the `AskUserQuestion` for the `ask` policy, or skipping the merge for the `defer` policy — is owned exclusively by the dispatcher's item 7a, not by the leaf. Recording a terminal outcome here would pre-empt that continuation. This no-mark contract is the symmetric counterpart of the dispatcher-side completion-guard carve-out: the leaf does not record terminality, and the post-dispatch completion guard does not assert it for an `escalate_ask` return (see [`../SKILL.md`](../SKILL.md) item 5d, the `escalate_ask`-returning steps skip class). Without both halves, the guard would halt the pipeline with `step_record_missing` before item 7a could run.

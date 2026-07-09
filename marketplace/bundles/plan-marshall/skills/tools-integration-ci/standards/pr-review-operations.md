@@ -219,6 +219,9 @@ polls: 2
 baseline_count: 1
 final_count: 2
 new_count: 1
+rate_limited: false
 ```
 
 `status: success` is returned even when `timed_out: true` — the caller should still proceed to fetch comments (`pr comments --unresolved-only`) and triage whatever did arrive. `status: error` is reserved for fetch/auth failures.
+
+`rate_limited` (GitHub/CodeRabbit-scoped, default `false`) is `true` when the newest CodeRabbit-bot comment on the PR is a rate-limit status notice (CodeRabbit posted a "rate limit exceeded" notice in place of a review) rather than an actual review. It is an additive discriminator — the poll behaviour and every other field are unchanged; a caller that ignores it sees identical semantics. When `true`, the just-observed comment growth is a status notice, not reviewable feedback, so the caller should wait out CodeRabbit's window rather than triaging the notice as a finding.

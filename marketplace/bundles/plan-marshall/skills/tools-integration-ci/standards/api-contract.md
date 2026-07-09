@@ -140,6 +140,7 @@ Every PR subcommand returns the standard envelope: success shape (`status: succe
 | `pr thread-reply` | `--pr-number`, `--thread-id`, `--body` | — | `pr_number`, `thread_id` |
 | `pr reviews` | `--pr-number` | — | `pr_number`, `review_count`, `reviews[N]{user,state,submitted_at}` |
 | `pr comments` | `--pr-number` | `--unresolved-only` | `provider`, `pr_number`, `total`, `unresolved`, `comments[N]{id,author,body,path,line,resolved,created_at}` |
+| `pr wait-for-comments` | `--pr-number` | `--timeout` (default 300), `--interval` (default 30) | `pr_number`, `timed_out`, `duration_sec`, `polls`, `baseline_count`, `final_count`, `new_count`, `rate_limited` |
 | `pr update-branch` | `--pr-number` | — | `pr_number` |
 
 ### Provider Field Mapping
@@ -151,6 +152,7 @@ The PR operations normalize responses from `gh` (JSON) and `glab` (JSON) into th
 - **`pr resolve-thread`**: GitHub uses the GraphQL `resolveReviewThread` mutation with a self-contained thread node id (e.g. `PRRT_kwDO...`), so `--pr-number` is ignored; GitLab uses REST `PUT discussions/:id` and requires both `--pr-number` and the discussion id.
 - **`pr thread-reply`**: GitHub uses GraphQL `addPullRequestReviewComment` with `inReplyTo` set to the comment node id (the PR node id is fetched internally); GitLab uses REST `POST discussions/:id/notes` and does not require a PR node id.
 - **`pr comments` field mapping**: `id` ← `comments.nodes[].id` / `notes[].id`; `author` ← `author.login` / `author.username`; `body` ← `body`; `path` ← `reviewThreads.nodes[].path` / `position.new_path`; `line` ← `reviewThreads.nodes[].line` / `position.new_line`; `resolved` ← `isResolved` / `resolved`.
+- **`pr wait-for-comments` field mapping**: the poll counters (`baseline_count` / `final_count` / `new_count`) are provider-agnostic — derived from the `pr comments --unresolved-only` unresolved count. `rate_limited` is GitHub/CodeRabbit-scoped and additive (default `false`): `true` when the newest CodeRabbit-bot comment (`author.login ∈ {coderabbitai, coderabbitai[bot]}`) is a rate-limit status notice (a "rate limit exceeded" notice CodeRabbit posts in place of a review) rather than actual review feedback. GitLab has no CodeRabbit equivalent, so `rate_limited` is always `false` there.
 
 ---
 
