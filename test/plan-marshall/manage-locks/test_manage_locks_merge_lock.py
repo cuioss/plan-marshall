@@ -80,6 +80,12 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-locks', 'merge_lock.py')
 
 merge_lock = load_script_module('plan-marshall', 'manage-locks', 'merge_lock.py', 'merge_lock_under_test')
 
+# Capture the REAL _push_title_token before the autouse _TokenRecorder stub
+# replaces it, so the canonical-seam CLI-shape test below can exercise the
+# actual icon-optional push wrapper (it resolves _run_executor as a module
+# global, so a monkeypatch on merge_lock._run_executor still takes effect).
+_REAL_PUSH_TITLE_TOKEN = merge_lock._push_title_token
+
 # The shared core owns the [LOCK]-log resolver and the best-effort emission
 # swallow. ``merge_lock`` does ``from _locks_core import log_lock_event``, so the
 # function closes over the _locks_core module that ``merge_lock`` imported — that
@@ -164,7 +170,11 @@ class _TokenRecorder:
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(merge_lock, '_set_title_token', lambda _p, state: self.set_states.append(state))
         monkeypatch.setattr(merge_lock, '_clear_title_token', lambda p: self.cleared.append(p))
-        monkeypatch.setattr(merge_lock, '_push_title_token', lambda _p, icon: self.pushed_icons.append(icon))
+        # icon is optional: a glyph push (acquire) records the icon; a plain
+        # icon-less repaint (the clear path) records None.
+        monkeypatch.setattr(
+            merge_lock, '_push_title_token', lambda _p, icon=None: self.pushed_icons.append(icon)
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -1651,10 +1661,17 @@ class TestTitleTokenSurface:
     ) -> None:
         merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
         _stub_title_tokens.cleared.clear()
+        _stub_title_tokens.pushed_icons.clear()
 
         result = merge_lock.run_release(Namespace(plan_id='plan-a'))
         assert result['action'] == 'released'
         assert _stub_title_tokens.cleared == ['plan-a']
+        # The released path also fires a plain, icon-less repaint through the
+        # canonical seam (icon=None) so the 🔒 glyph disappears LIVE instead of
+        # lingering until the next render event.
+        assert _stub_title_tokens.pushed_icons == [None], (
+            'release must repaint (icon-less push) after clearing the token'
+        )
 
     def test_release_clears_token_on_already_free_noop(
         self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
@@ -1769,6 +1786,46 @@ class TestTitleTokenSurface:
             (i for i, e in enumerate(events) if e.startswith(('set:', 'push'))), len(events)
         )
         assert events.index('atomic_create:ok') < first_token_idx, events
+
+    def test_release_repaint_via_surface_lock_cleared_default(
+        self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
+    ) -> None:
+        """The default (set_title_token=True) _surface_lock_cleared both clears the
+        token AND fires the icon-less repaint — the consolidation of the clear path
+        onto the shared repaint seam."""
+        _stub_title_tokens.pushed_icons.clear()
+        merge_lock._surface_lock_cleared('plan-a')
+        assert _stub_title_tokens.cleared == ['plan-a']
+        assert _stub_title_tokens.pushed_icons == [None]
+
+    def test_surface_lock_cleared_suppressed_fires_neither_clear_nor_repaint(
+        self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
+    ) -> None:
+        """set_title_token=False suppresses the ENTIRE surface — no clear AND no
+        repaint fire (the early return precedes both writes)."""
+        _stub_title_tokens.pushed_icons.clear()
+        merge_lock._surface_lock_cleared('plan-a', set_title_token=False)
+        assert _stub_title_tokens.cleared == []
+        assert _stub_title_tokens.pushed_icons == []
+
+    def test_push_title_token_omits_icon_for_plain_repaint(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The canonical push seam omits --icon for a plain repaint (icon=None) and
+        includes --icon <glyph> when a glyph is supplied. Exercises the REAL
+        _push_title_token wrapper (captured before the autouse stub) with a
+        recording _run_executor."""
+        calls: list[tuple] = []
+        monkeypatch.setattr(merge_lock, '_run_executor', lambda notation, *args: calls.append((notation, args)))
+
+        _REAL_PUSH_TITLE_TOKEN('plan-a')  # plain repaint — no icon
+        _REAL_PUSH_TITLE_TOKEN('plan-b', merge_lock._ICON_LOCK_OWNED)  # glyph push
+
+        assert calls[0][1] == ('session', 'push-title-token', '--plan-id', 'plan-a'), (
+            'plain repaint must call session push-title-token with NO --icon'
+        )
+        assert '--icon' not in calls[0][1]
+        assert calls[1][1] == (
+            'session', 'push-title-token', '--plan-id', 'plan-b', '--icon', merge_lock._ICON_LOCK_OWNED
+        ), 'a glyph push must include --icon <glyph>'
 
     def test_lock_owned_state_maps_to_lock_icon(self) -> None:
         """Guard the glyph contract: the lock-owned/lock-waiting icon constants

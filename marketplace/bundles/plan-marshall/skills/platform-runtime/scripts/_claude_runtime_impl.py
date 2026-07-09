@@ -8,8 +8,8 @@ module-level helper, constant, and monkeypatchable name; this module holds only
 the ``class ClaudeRuntime(Runtime)`` operation implementations.
 
 Correctness contract: the entry module (imported here as ``claude_runtime``) owns
-the monkeypatchable constants (``_CLAUDE_PROJECTS_DIR``, ``_PLAN_DIR_NAME``,
-``_SESSION_CACHE_BASE``) and settings-path functions
+the monkeypatchable constants (``_CLAUDE_PROJECTS_DIR``, ``_PLAN_DIR_NAME``) and
+settings-path functions
 (``_claude_global_settings_path``, ``_claude_project_settings_path``) plus every
 other module-level helper the operations depend on. This module reaches each of
 those names via ATTRIBUTE ACCESS at call time (``claude_runtime.<name>``) — never
@@ -27,12 +27,13 @@ from pathlib import Path
 from typing import Any
 
 import claude_runtime
+import session_binding
 from manage_terminal_title import _compose_body, compose
 from runtime_base import Runtime, toon_error, toon_noop, toon_success
 
 
 class ClaudeRuntime(Runtime):
-    """Claude Code implementation of all 15 platform-runtime operations."""
+    """Claude Code implementation of all 21 platform-runtime operations."""
 
     # ------------------------------------------------------------------
     # Project lifecycle
@@ -428,14 +429,21 @@ class ClaudeRuntime(Runtime):
             pass
         return ""
 
-    def session_push_title_token(self, plan_id: str, icon: str) -> str:
+    def session_push_title_token(self, plan_id: str, icon: str | None = None) -> str:
         """Push a live terminal title for *plan_id* directly to ``/dev/tty``.
 
         Reads the plan's title state from ``status.json`` via
-        :func:`_read_title_state`, composes the ``'{icon} {glyph} {body}'``
-        string via :func:`manage_terminal_title.compose` (with *icon* as the
-        push-mode icon override and ``event=None``), and writes the OSC escape
+        :func:`_read_title_state`, composes the title string via
+        :func:`manage_terminal_title.compose` (with *icon* as the push-mode icon
+        override and ``event=None``), and writes the OSC escape
         (``\\x1b]0;{composed}\\x07``) directly to ``/dev/tty``.
+
+        ``icon`` is optional. When supplied it overrides the event-resolved icon
+        for non-terminal phases (e.g. the lock ⏳/🔒 or build 🔨 glyph). When
+        omitted (``None``) the composer applies its default active icon, so the
+        push is a plain repaint of the current composed title — the shape the
+        ``manage-status`` phase-write drive seam fires on every persisted
+        title-state change.
 
         Best-effort: a silent no-op (``pushed: false``) when the state is
         absent / unrenderable or when ``/dev/tty`` is not openable (CI,
@@ -469,6 +477,92 @@ class ClaudeRuntime(Runtime):
         return toon_success(
             "session push-title-token",
             {"plan_id": plan_id, "pushed": pushed},
+        )
+
+    def session_bind(self, plan_id: str, session_id: str | None = None) -> str:
+        """Bind the running session to *plan_id* (last-driven-wins).
+
+        Resolves ``session_id`` from the *session_id* argument or, when absent,
+        from ``$CLAUDE_CODE_SESSION_ID``, then delegates to the pure
+        :func:`session_binding.bind` policy — an unconditional write of the
+        caller's own slot (no protect-active, no stale reclaim, no
+        plan-dir-exists check). Best-effort: never raises.
+
+        Returns a success TOON carrying ``bound`` (whether the slot was written).
+        A missing session id or a validation/IO failure yields ``bound: False``
+        with a ``reason``.
+        """
+        sid = session_id or os.environ.get("CLAUDE_CODE_SESSION_ID")
+        if not sid:
+            return toon_success(
+                "session bind",
+                {"plan_id": plan_id, "bound": False, "reason": "no_session_id"},
+            )
+        bound = session_binding.bind(sid, plan_id)
+        result: dict[str, Any] = {
+            "plan_id": plan_id,
+            "session_id": sid,
+            "bound": bound,
+        }
+        if not bound:
+            result["reason"] = "invalid_or_io_error"
+        return toon_success("session bind", result)
+
+    def session_resolve_plan(self, session_id: str | None = None) -> str:
+        """Resolve the running session's bound plan_id (the read side).
+
+        Resolves ``session_id`` from the *session_id* argument or, when absent,
+        from ``$CLAUDE_CODE_SESSION_ID``, then reads the binding through
+        :func:`claude_runtime._read_active_plan` (the same read path
+        ``session render-title`` uses). Best-effort: never raises.
+
+        Returns a success TOON carrying ``resolved`` and the resolved ``plan_id``
+        (empty string when unbound).
+        """
+        sid = session_id or os.environ.get("CLAUDE_CODE_SESSION_ID")
+        if not sid:
+            return toon_success(
+                "session resolve-plan",
+                {"resolved": False, "plan_id": "", "reason": "no_session_id"},
+            )
+        plan_id = claude_runtime._read_active_plan(sid)
+        return toon_success(
+            "session resolve-plan",
+            {
+                "session_id": sid,
+                "resolved": bool(plan_id),
+                "plan_id": plan_id or "",
+            },
+        )
+
+    def session_doctor(self, fix: bool = False) -> str:
+        """Scan every per-session active-plan slot and report binding health.
+
+        Delegates to the pure :func:`session_binding.doctor` policy — a
+        reverse-index scan flagging any plan bound by more than one live session,
+        plus (when *fix*) GC of slots whose plan is archived/deleted. The scan
+        keeps no shared mutable index and is idempotent.
+
+        Returns a success TOON carrying the conflict / stale report. Conflicts and
+        stale slots are rendered as flat string rows (``plan_id=sess1,sess2`` and
+        ``session_id=plan_id``) for a uniform TOON surface.
+        """
+        report = session_binding.doctor(fix)
+        conflicts = [
+            f"{c['plan_id']}={','.join(c['sessions'])}" for c in report["conflicts"]
+        ]
+        stale = [f"{s['session_id']}={s['plan_id']}" for s in report["stale"]]
+        return toon_success(
+            "session doctor",
+            {
+                "fix": report["fix"],
+                "scanned": report["scanned"],
+                "conflict_count": len(conflicts),
+                "conflicts": conflicts,
+                "stale_count": len(stale),
+                "stale": stale,
+                "gc_removed": report["gc_removed"],
+            },
         )
 
     # ------------------------------------------------------------------

@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Unit tests for generate_executor.py script."""
 
-import hashlib
 import os
 import shutil
 import subprocess
@@ -764,12 +763,15 @@ def test_pm_marketplace_root_env_var_anchors_discovery(tmp_path, monkeypatch):
         )
 
 
-# These tests exercise the session active-plan cache writer that the executor
-# template emits in main() on every invocation carrying --plan-id or
-# --audit-plan-id. The helper feeds the per-target terminal-title reader
-# (cluster-01 `session render-title`) so the main orchestration tab
-# (cwd = repo root) renders pm:{phase}[:{short_description}] instead of
-# falling through to the active-command segment.
+# The executor template no longer writes any session->plan binding — the
+# in-template active-plan cache writer was removed outright (clean break,
+# compatibility: breaking). The binding policy now lives in platform-runtime's
+# `session bind`, fired from the manage-status phase-state-write drive seam.
+# The removal guard below (test_template_carries_no_session_binding_code) pins
+# that no binding symbol survives in the rendered template AND that the build-
+# class change-ledger boundary's own `_active_plan_id` resolution — independent
+# of the removed binder — is preserved. Mirrors the "removed" precedent in
+# test/plan-marshall/manage-status/test_merge_lock_removed.py.
 
 TEMPLATE_PATH = (
     Path(__file__).parent.parent.parent.parent
@@ -818,284 +820,50 @@ def _load_template_module():
     return module
 
 
-def _seed_session_cache(home_dir: Path, session_id: str, cwd: str) -> None:
-    """Seed the ~/.cache/plan-marshall/sessions/by-cwd/<sha256(cwd)> file.
+def test_template_carries_no_session_binding_code():
+    """Clean-break guard: the rendered executor template carries NO session->plan
+    binding code, and the loaded template module exposes none of the removed
+    binding symbols. Mirrors the "removed" precedent in
+    test/plan-marshall/manage-status/test_merge_lock_removed.py.
 
-    Mirrors what the per-target terminal-title hook writes on
-    UserPromptSubmit. The template's session-id resolver reads exactly
-    this layout.
+    The binding was relocated to platform-runtime's `session bind` (fired from
+    the manage-status phase-state-write drive seam); the executor no longer
+    writes any binding on any call.
     """
-    cache_base = home_dir / '.cache' / 'plan-marshall' / 'sessions' / 'by-cwd'
-    cache_base.mkdir(parents=True, exist_ok=True)
-    cwd_hash = hashlib.sha256(cwd.encode('utf-8')).hexdigest()
-    (cache_base / cwd_hash).write_text(session_id, encoding='utf-8')
-
-
-def test_template_contains_write_active_plan_helper():
-    """Generated executor source string must contain the _write_active_plan
-    helper definition and the main() call site so the runtime executor
-    actually populates the cache."""
     source = TEMPLATE_PATH.read_text(encoding='utf-8')
-    assert 'def _write_active_plan(' in source, '_write_active_plan helper missing from template'
-    assert '_write_active_plan(_active_plan_id)' in source, (
-        'main() must invoke _write_active_plan after extracting plan_id'
-    )
-    # The helper reads session_id from $CLAUDE_CODE_SESSION_ID (populated by the
-    # platform-runtime SessionStart hook).
-    assert 'CLAUDE_CODE_SESSION_ID' in source, (
-        'template must read session id from CLAUDE_CODE_SESSION_ID env var'
-    )
 
+    # No binding helper definitions, constant, or session-env read survive.
+    for needle in (
+        'def _write_active_plan(',
+        'def _read_active_plan(',
+        'def _active_plan_dir_exists(',
+        'def _validate_active_plan_id(',
+        '_ACTIVE_PLAN_ID_MAX_LEN',
+        'CLAUDE_CODE_SESSION_ID',
+        'active-plan',
+    ):
+        assert needle not in source, (
+            f'removed binding artifact {needle!r} still present in the executor template'
+        )
 
-def test_write_active_plan_writes_cache_when_session_resolvable(tmp_path, monkeypatch):
-    """When $CLAUDE_CODE_SESSION_ID is set, the helper writes plan_id to
-    ~/.cache/.../sessions/<session_id>/active-plan."""
-    module = _load_template_module()
-
-    monkeypatch.setenv('HOME', str(tmp_path))
-    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-abc')
-    # Patch Path.home to honour the patched HOME under py3.14 where
-    # Path.home() consults os.path.expanduser via passwd db on some platforms.
-    monkeypatch.setattr(module.Path, 'home', staticmethod(lambda: tmp_path))
-
-    module._write_active_plan('my-plan-id')
-
-    cache_file = tmp_path / '.cache' / 'plan-marshall' / 'sessions' / 'sess-abc' / 'active-plan'
-    assert cache_file.is_file(), f'Expected cache file at {cache_file}'
-    assert cache_file.read_text(encoding='utf-8') == 'my-plan-id'
-
-
-def test_write_active_plan_noop_when_no_session_resolvable(tmp_path, monkeypatch):
-    """When $CLAUDE_CODE_SESSION_ID is unset/empty, the helper is a no-op
-    and writes no file."""
-    module = _load_template_module()
-
-    monkeypatch.setenv('HOME', str(tmp_path))
-    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
-    monkeypatch.setattr(module.Path, 'home', staticmethod(lambda: tmp_path))
-
-    module._write_active_plan('my-plan-id')
-
-    # Nothing should have been written under sessions/.
-    sessions_dir = tmp_path / '.cache' / 'plan-marshall' / 'sessions'
-    if sessions_dir.exists():
-        children = [p.name for p in sessions_dir.iterdir() if p.is_dir()]
-        assert children == [], f'No per-session dirs should be created, got {children}'
-
-
-def test_write_active_plan_noop_on_invalid_plan_id(tmp_path, monkeypatch):
-    """Plan ids containing path separators / ../. / oversize / empty must be
-    rejected silently — no file written."""
-    module = _load_template_module()
-
-    monkeypatch.setenv('HOME', str(tmp_path))
-    fake_cwd = '/Users/test/project'
-    _seed_session_cache(tmp_path, 'sess-eval', fake_cwd)
-
-    class _FakeResult:
-        def __init__(self, returncode, stdout):
-            self.returncode = returncode
-            self.stdout = stdout
-
-    def _fake_run(*_args, **_kwargs):
-        return _FakeResult(0, fake_cwd + '\n')
-
-    monkeypatch.setattr(module.subprocess, 'run', _fake_run)
-
-    bad_values = [
-        '',  # empty
-        None,  # falsy non-string
-        '../escape',  # path traversal
-        'with/slash',  # path separator
-        'with\\backslash',  # win-style path separator
-        '..',  # traversal sentinel
-        '.',  # traversal sentinel
-        'a' * 200,  # oversize (>120)
-    ]
-    for value in bad_values:
-        module._write_active_plan(value)
-
-    cache_file = tmp_path / '.cache' / 'plan-marshall' / 'sessions' / 'sess-eval' / 'active-plan'
-    assert not cache_file.exists(), f'No file should be written for invalid plan_ids; found {cache_file}'
-
-
-def test_write_active_plan_swallows_oserror(tmp_path, monkeypatch):
-    """Any OSError raised during the write path is silently swallowed; the
-    helper never propagates exceptions to the calling script."""
-    module = _load_template_module()
-
-    monkeypatch.setenv('HOME', str(tmp_path))
-    fake_cwd = '/Users/test/project'
-    _seed_session_cache(tmp_path, 'sess-oserr', fake_cwd)
-
-    class _FakeResult:
-        def __init__(self, returncode, stdout):
-            self.returncode = returncode
-            self.stdout = stdout
-
-    def _fake_run(*_args, **_kwargs):
-        return _FakeResult(0, fake_cwd + '\n')
-
-    monkeypatch.setattr(module.subprocess, 'run', _fake_run)
-
-    # Patch Path.write_text on the helper's Path import to raise.
-    real_write_text = module.Path.write_text
-
-    def _raise(*_args, **_kwargs):
-        raise OSError('disk full simulation')
-
-    monkeypatch.setattr(module.Path, 'write_text', _raise)
-    try:
-        # Must not raise.
-        module._write_active_plan('plan-x')
-    finally:
-        monkeypatch.setattr(module.Path, 'write_text', real_write_text)
-
-
-# --- No-overwrite-with-stale-reclaim binding policy -------------------------
-# The executor binds a session to a plan on the first plan-scoped invocation
-# and then PROTECTS that binding: a read-only inspection call naming a
-# different, still-live plan must NOT steal the slot (the observed
-# mis-attribution defect). The slot is only rewritten when it is unbound,
-# already names the incoming plan, or names a different plan whose live plan
-# dir is gone (stale reclaim). The live plan dir is resolved as
-# ``{executor_dir}/local/plans/{plan_id}`` where ``executor_dir`` is the
-# directory holding the generated executor — i.e. ``Path(__file__).parent``.
-
-
-def _point_executor_at(module, tmp_path, monkeypatch) -> Path:
-    """Point the loaded template module's ``__file__`` at a tmp
-    ``.plan/execute-script.py`` so ``_active_plan_dir_exists`` resolves live
-    plan dirs under ``{tmp_path}/.plan/local/plans``.
-
-    Returns:
-        The plans root (``{tmp_path}/.plan/local/plans``) — create a
-        ``{plan_id}`` subdirectory under it to mark that plan as live.
-    """
-    executor_dir = tmp_path / '.plan'
-    executor_dir.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr(module, '__file__', str(executor_dir / 'execute-script.py'))
-    return executor_dir / 'local' / 'plans'
-
-
-def _seed_active_plan(tmp_path, session_id: str, plan_id: str) -> Path:
-    """Seed the session's ``active-plan`` cache file with ``plan_id``.
-
-    Returns the cache file path so the caller can assert on its contents.
-    """
-    cache = tmp_path / '.cache' / 'plan-marshall' / 'sessions' / session_id / 'active-plan'
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(plan_id, encoding='utf-8')
-    return cache
-
-
-def test_write_active_plan_binds_when_slot_unbound(tmp_path, monkeypatch):
-    """Case 1 — the first plan-scoped invocation in an unbound session binds
-    the slot (bind-on-entry), so the title keeps rendering with no
-    orchestrator wiring."""
-    module = _load_template_module()
-
-    monkeypatch.setenv('HOME', str(tmp_path))
-    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-bind')
-    monkeypatch.setattr(module.Path, 'home', staticmethod(lambda: tmp_path))
-    _point_executor_at(module, tmp_path, monkeypatch)
-
-    module._write_active_plan('plan-a')
-
-    cache_file = tmp_path / '.cache' / 'plan-marshall' / 'sessions' / 'sess-bind' / 'active-plan'
-    assert cache_file.read_text(encoding='utf-8') == 'plan-a'
-
-
-def test_write_active_plan_protects_binding_when_other_plan_live(tmp_path, monkeypatch):
-    """Case 2 — a subsequent call naming a DIFFERENT plan whose live plan dir
-    still exists is a no-op: the active binding is preserved. This is the
-    exact mis-attribution scenario the fix closes — a read-only inspection
-    call naming another plan must NOT steal the session's binding."""
-    module = _load_template_module()
-
-    monkeypatch.setenv('HOME', str(tmp_path))
-    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-protect')
-    monkeypatch.setattr(module.Path, 'home', staticmethod(lambda: tmp_path))
-    plans_root = _point_executor_at(module, tmp_path, monkeypatch)
-    # 'plan-a' is the bound plan and its live plan dir exists.
-    (plans_root / 'plan-a').mkdir(parents=True, exist_ok=True)
-    cache_file = _seed_active_plan(tmp_path, 'sess-protect', 'plan-a')
-
-    module._write_active_plan('plan-b')
-
-    assert cache_file.read_text(encoding='utf-8') == 'plan-a', (
-        'a differing-plan inspection call must not overwrite a live binding'
+    # The build-class change-ledger boundary's own _active_plan_id resolution is
+    # PRESERVED (it is independent of the removed binder).
+    assert '_active_plan_id = extract_plan_id(script_args) or audit_plan_id' in source, (
+        'the build-class ledger boundary _active_plan_id resolution must be preserved'
     )
 
-
-def test_write_active_plan_idempotent_for_same_plan(tmp_path, monkeypatch):
-    """Case 3 — a call naming the same plan as the current binding is
-    idempotent (the slot is rewritten with the identical value; no theft, no
-    error)."""
+    # The loaded template module exposes none of the removed binding symbols.
     module = _load_template_module()
-
-    monkeypatch.setenv('HOME', str(tmp_path))
-    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-same')
-    monkeypatch.setattr(module.Path, 'home', staticmethod(lambda: tmp_path))
-    plans_root = _point_executor_at(module, tmp_path, monkeypatch)
-    (plans_root / 'plan-a').mkdir(parents=True, exist_ok=True)
-    cache_file = _seed_active_plan(tmp_path, 'sess-same', 'plan-a')
-
-    module._write_active_plan('plan-a')
-
-    assert cache_file.read_text(encoding='utf-8') == 'plan-a'
-
-
-def test_write_active_plan_reclaims_stale_slot(tmp_path, monkeypatch):
-    """Case 4 — a call naming a DIFFERENT plan whose live plan dir is absent
-    reclaims the slot (stale binding → overwrite). This delivers
-    release-on-exit implicitly: once the bound plan is archived/deleted its
-    live dir is gone, so the next differing-plan invocation rebinds."""
-    module = _load_template_module()
-
-    monkeypatch.setenv('HOME', str(tmp_path))
-    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-stale')
-    monkeypatch.setattr(module.Path, 'home', staticmethod(lambda: tmp_path))
-    # Point the executor at a tmp .plan but do NOT create a live dir for
-    # 'gone-plan' — its binding is therefore stale.
-    _point_executor_at(module, tmp_path, monkeypatch)
-    cache_file = _seed_active_plan(tmp_path, 'sess-stale', 'gone-plan')
-
-    module._write_active_plan('new-plan')
-
-    assert cache_file.read_text(encoding='utf-8') == 'new-plan'
-
-
-def test_write_active_plan_noop_when_session_id_absent(tmp_path, monkeypatch):
-    """Case 5 — a missing ``$CLAUDE_CODE_SESSION_ID`` remains a silent no-op
-    under the new binding policy (the session-id guard short-circuits before
-    any read-or-write of the slot)."""
-    module = _load_template_module()
-
-    monkeypatch.setenv('HOME', str(tmp_path))
-    monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
-    monkeypatch.setattr(module.Path, 'home', staticmethod(lambda: tmp_path))
-    _point_executor_at(module, tmp_path, monkeypatch)
-
-    module._write_active_plan('plan-a')
-
-    sessions_dir = tmp_path / '.cache' / 'plan-marshall' / 'sessions'
-    if sessions_dir.exists():
-        children = [p.name for p in sessions_dir.iterdir() if p.is_dir()]
-        assert children == [], f'No per-session dirs should be created, got {children}'
-
-
-def test_active_plan_dir_exists_reports_live_and_absent(tmp_path, monkeypatch):
-    """Focused unit test for the ``_active_plan_dir_exists`` staleness probe:
-    a present ``{executor_dir}/local/plans/{plan_id}`` dir → True; an absent
-    one → False."""
-    module = _load_template_module()
-
-    plans_root = _point_executor_at(module, tmp_path, monkeypatch)
-    (plans_root / 'live-plan').mkdir(parents=True, exist_ok=True)
-
-    assert module._active_plan_dir_exists('live-plan') is True
-    assert module._active_plan_dir_exists('missing-plan') is False
+    for symbol in (
+        '_write_active_plan',
+        '_read_active_plan',
+        '_active_plan_dir_exists',
+        '_validate_active_plan_id',
+        '_ACTIVE_PLAN_ID_MAX_LEN',
+    ):
+        assert not hasattr(module, symbol), (
+            f'removed binding symbol {symbol!r} must be absent from the rendered template module'
+        )
 
 
 # AST subcommand extractor removed (lesson 2026-05-26-09-001 / plan
@@ -1115,34 +883,6 @@ def test_ast_subcommand_extractor_symbols_removed():
         assert not hasattr(module, symbol), (
             f'AST extractor symbol {symbol!r} must be removed from generate_executor.py'
         )
-
-
-def test_write_active_plan_validate_helper_rejects_unsafe_session_id(tmp_path, monkeypatch):
-    """Even when by-cwd cache contains a malformed session id (e.g.
-    ``../etc``), the helper must reject it via _validate_active_plan_id and
-    never traverse out of the sessions directory."""
-    module = _load_template_module()
-
-    monkeypatch.setenv('HOME', str(tmp_path))
-    fake_cwd = '/Users/test/project'
-    # Seed a path-traversal session id — the validator must reject it.
-    _seed_session_cache(tmp_path, '../etc', fake_cwd)
-
-    class _FakeResult:
-        def __init__(self, returncode, stdout):
-            self.returncode = returncode
-            self.stdout = stdout
-
-    def _fake_run(*_args, **_kwargs):
-        return _FakeResult(0, fake_cwd + '\n')
-
-    monkeypatch.setattr(module.subprocess, 'run', _fake_run)
-
-    module._write_active_plan('my-plan-id')
-
-    # No file under ~/.cache/plan-marshall/etc or similar.
-    escape_dir = tmp_path / '.cache' / 'plan-marshall' / 'etc'
-    assert not escape_dir.exists(), 'Helper must not traverse out of sessions/ via malformed session id'
 
 
 # Executor-guard backstop decision (ADR-002, deliverable 11): under the

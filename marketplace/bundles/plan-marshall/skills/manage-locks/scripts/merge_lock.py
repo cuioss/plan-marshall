@@ -147,7 +147,13 @@ create has already succeeded (the lock is held, so the TOCTOU window is closed),
 and ``lock-waiting`` is set on the ``blocked`` admission return (it never runs
 inside the FIFO mutation or between the holder-read and the re-create). This
 guarantees the token surface does not widen the kernel race the lock's correctness
-depends on.
+depends on. The release path clears the ``lock-owned`` state AND fires a plain,
+icon-less repaint through the SAME canonical ``session push-title-token`` seam
+(``_push_title_token`` with no icon) so the glyph disappears LIVE instead of
+lingering until the next render event; that repaint runs only after the real
+``os.unlink``, so it too stays outside the ``O_EXCL`` window. All three surfaces
+(``_surface_lock_owned`` / ``_surface_lock_waiting`` / ``_surface_lock_cleared``)
+are consumers of that one repaint seam.
 
 **[LOCK] observability (best-effort, OUTSIDE the atomic window).** Each merge-lock
 lifecycle point emits a ``[LOCK]`` event through the shared
@@ -540,26 +546,44 @@ def _clear_title_token(plan_id: str) -> None:
 
 
 def _surface_lock_cleared(plan_id: str, set_title_token: bool = True) -> None:
-    """Best-effort: clear the merge-lock title token for ``plan_id``.
+    """Best-effort: clear the merge-lock title token for ``plan_id`` AND repaint.
 
-    When ``set_title_token`` is False the clear is suppressed entirely — the
+    Clears the persisted ``title_token`` state (manage-status) and then fires a
+    plain, icon-less repaint through the canonical ``session push-title-token``
+    seam so the ⏳/🔒 glyph disappears LIVE instead of lingering until the next
+    render event. Both writes run only AFTER the real ``os.unlink`` (the release
+    branch), so they stay OUTSIDE the ``O_EXCL`` check-then-act window and
+    cannot widen the kernel race.
+
+    When ``set_title_token`` is False the surface is suppressed entirely — the
     move-back merge lock never set a token, so there is nothing to clear and no
-    title write should fire. Mirrors the gating in :func:`_surface_lock_owned` /
+    repaint should fire. Mirrors the gating in :func:`_surface_lock_owned` /
     :func:`_surface_lock_waiting` so all three title surfaces share one
-    suppression contract while the underlying ``_clear_title_token`` seam keeps
-    its single-argument signature.
+    suppression contract.
     """
     if not set_title_token:
         return
     _clear_title_token(plan_id)
+    # Plain, icon-less repaint through the canonical seam so the lock glyph
+    # disappears live once the state has been cleared.
+    _push_title_token(plan_id)
 
 
-def _push_title_token(plan_id: str, icon: str) -> None:
-    """Best-effort ``platform_runtime session push-title-token --icon {icon}``."""
+def _push_title_token(plan_id: str, icon: str | None = None) -> None:
+    """Best-effort push through the canonical ``session push-title-token`` seam.
+
+    The single repaint seam shared by every merge-lock title surface. When
+    ``icon`` is supplied it pushes that glyph (⏳ waiting / 🔒 owned); when
+    ``icon`` is None it is a PLAIN repaint (no ``--icon``) that re-renders the
+    title with the default active icon — the icon-optional push the clear path
+    uses to drop the lock glyph live. Best-effort: any failure is swallowed at
+    DEBUG so it never affects lock acquire/release.
+    """
+    args = ['session', 'push-title-token', '--plan-id', plan_id]
+    if icon is not None:
+        args += ['--icon', icon]
     try:
-        _run_executor(
-            _PUSH_TOKEN_NOTATION, 'session', 'push-title-token', '--plan-id', plan_id, '--icon', icon
-        )
+        _run_executor(_PUSH_TOKEN_NOTATION, *args)
     except Exception as exc:  # noqa: BLE001 — token push is best-effort
         logger.debug('push-title-token(%s) for %s failed: %s', icon, plan_id, exc)
 

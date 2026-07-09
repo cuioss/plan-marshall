@@ -31,7 +31,7 @@ When the check is invoked alone via `--check cross-check-synthesis`,
 emitting those upstream blocks) so the synthesis can fire. When synthesis is NOT
 selected, the upstream computation/emit path is byte-for-byte unchanged.
 
-## The five couplings
+## The ten couplings
 
 Each coupling carries a **qualifying caveat** — the condition under which the
 fired coupling is a genuine cross-facet signal rather than a coincidence. A fired
@@ -46,6 +46,11 @@ evaluated.
 | `qgate_gap_chain` | A plan flagged quality-chain `no_qgate6` / `auto_review_only` that ALSO carries sequence `ci_rerun` OR token-economics `finalize_heavy`. | quality-chain, sequence-and-build-minimality, token-economics | A missing self-review surface co-occurring with a CI re-run / heavy finalize is the **shift-right tax** — the PR round-trip paid for what an earlier gate could have caught. |
 | `argparse_signature_cluster` | recurring-pattern argparse-shaped signatures correlate with global-log ERROR / argparse-rejection counts AND quality-verification unfiled signatures — **collapsed to ONE candidate**. | recurring-pattern-detector, global-log-analysis, quality-verification-report | The three facets are three views of **ONE** source-keyed argparse drift — file ONE source-keyed lesson, not one per facet (per the SKILL.md source-keyed argparse-rejection rule). |
 | `scope_underestimate_cost` | A plan flagged scope-estimate-accuracy under-estimation (`mismatch`) that ALSO sits in the high tokens-per-file tail (≥ corpus-median `tokens_per_file`) OR carries a task-count outlier. | scope-estimate-accuracy, token-economics, task-count-efficiency | An under-estimated scope **predicts** the over-spend — the coupling names the predicted-vs-actual gap, not a fresh finding. |
+| `redundant_build_churn` | A plan whose task graph bakes a HEAVY build into a task's verification (`in_task_build`) AND whose runtime sequence was flagged `build_churn` / `phase_reentry`. | task-graph-redundancy, sequence-and-build-minimality | A heavy build baked into a task's verification is a STATIC redundancy; confirm it co-occurs with the observed runtime `build_churn` before filing — the two views corroborate one waste. |
+| `dispatch_topology_reentry` | A plan whose `dispatch-topology` row recorded a LEAF-emitted subagent dispatch (`leaf_dispatch > 0`) AND whose sequence was flagged `phase_reentry`. | dispatch-topology, sequence-and-build-minimality | A leaf-emitted dispatch VIOLATES the leaf/dispatch-topology invariant; a co-occurring `phase_reentry` corroborates the extra dispatch as observed rework. The topology violation is genuine on its own — this coupling adds the runtime corroboration. |
+| `finalize_gate_gap_ci_rerun` | A plan flagged `finalize-flow-conformance` `missing_ci_verify` / `ci_unresolved` that ALSO carries sequence `ci_rerun`. | finalize-flow-conformance, sequence-and-build-minimality | A non-conformant finalize flow (absent #849 `ci_verify` gate, or an unresolved CI) co-occurring with a CI re-run is the deterministic-gate gap the post-#849 flow removes — confirm both before filing. |
+| `merge_window_ci_rerun` | A plan flagged `merge-window-accounting` `merge_contention` that ALSO carries sequence `ci_rerun` OR token-economics `finalize_heavy`. | merge-window-accounting, sequence-and-build-minimality, token-economics | Merge-queue contention co-occurring with a CI re-run / heavy finalize is the merge-window cost the #849 widened mutex trades for fair ordering — it is **accounting, not necessarily waste**. A plan queued behind the mutex whose HEAD advanced legitimately re-runs CI. |
+| `surgical_overpay` | A plan flagged `lane-lever-effectiveness` `checkpoint_over` (spent over its armed checkpoint target) that ALSO carries token-economics `big_spend_tiny_footprint`. | lane-lever-effectiveness, token-economics | A checkpoint overspend co-occurring with the tokens/file inversion is a lane-lever **MISS** — the cheap lane (recipe / light / minimal) existed to keep this plan small and it overspent anyway. Confirm both facets before filing: the checkpoint verdict and the footprint inversion are two views of the same over-spend. |
 
 ## Emitted columns
 
@@ -58,7 +63,7 @@ rows[N]{coupling,fired,caveat,detail,severity}
 
 | Column | Meaning |
 |--------|---------|
-| `coupling` | The coupling name (one of the five above). |
+| `coupling` | The coupling name (one of the ten above). |
 | `fired` | `true` when the cross-facet correlation surfaced, else `false`. |
 | `caveat` | The qualifying caveat — the condition under which a fired coupling is genuine. |
 | `detail` | The cross-facet evidence: the plan ids and the per-facet counts the coupling joined. |
@@ -105,6 +110,34 @@ completeness critic:
   over-spend. The file-worthy signal is the scope-estimation gap recurring across
   plans, not each plan's individual over-spend (which the token-economics check
   already covers under its canonical lesson).
+- **`redundant_build_churn`** — a heavy build baked into a task's verification
+  (`in_task_build`) corroborated by the observed runtime `build_churn` /
+  `phase_reentry`. Confirm the static redundancy co-occurs with the runtime signal
+  before filing; the two are one waste seen statically and at runtime.
+- **`dispatch_topology_reentry`** — the leaf/dispatch-topology violation is the
+  genuine finding (a subagent spawned a subagent, breaking the invariant); the
+  co-occurring `phase_reentry` is runtime corroboration of the extra dispatch. File
+  the topology violation regardless; the coupling raises its confidence and points
+  at the observed rework.
+- **`finalize_gate_gap_ci_rerun`** — the named plans ran a non-conformant finalize
+  flow (no #849 `ci_verify` deterministic gate, or an unresolved CI) AND re-ran CI.
+  This is the shift-right tax the post-#849 deterministic gate exists to remove:
+  the missing/failed gate forced the extra CI pass. Read against
+  `checks/finalize-flow-conformance.md`.
+- **`merge_window_ci_rerun`** — the named plans waited in the #849 merge admission
+  queue AND re-ran CI / paid a heavy finalize. This is **accounting, not
+  necessarily waste**: a plan queued behind the widened mutex whose HEAD advanced
+  (rebase / re-review) legitimately re-runs CI. Read the coupling as the
+  merge-window cost the widened mutex trades for fair ordering / parallelism, not
+  as a per-plan defect — the caveat is load-bearing here.
+- **`surgical_overpay`** — the named plans overspent their armed checkpoint
+  target AND were independently flagged `big_spend_tiny_footprint` by
+  token-economics. This is a lane-lever MISS: a plan whose scope class had a cheap
+  lane available (recipe / light / minimal) overspent anyway. Read against
+  `checks/lane-lever-effectiveness.md` and the plan's `posture` / `lane` /
+  `recipe_routed` columns to see which lever went un-engaged. The file-worthy
+  signal is a recurring lane-lever adoption gap, not each plan's individual
+  over-spend (which token-economics already covers under its canonical lesson).
 
 Per the SKILL.md Step-3 contract, EVERY emitted row is adjudicated with a stated
 verdict and cited evidence; an `informational` (non-fired) coupling is dismissed

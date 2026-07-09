@@ -9,6 +9,7 @@ from typing import Any
 
 from _status_core import (
     TITLE_TOKEN_STATES,
+    _surface_drive,
     _try_read_status_json,
     get_plans_dir,
     log_entry,
@@ -83,6 +84,11 @@ def cmd_set_phase(args: argparse.Namespace) -> dict[str, Any] | None:
             phase['status'] = PHASE_STATUS_IN_PROGRESS
 
     write_status(args.plan_id, status)
+    # Persisted-title-state-write drive seam (best-effort, fire-and-forget):
+    # cmd_set_phase is a current_phase write, so bind + repaint fire here so the
+    # title reflects the new phase immediately. A delegation failure never
+    # changes this command's status or exit code.
+    _surface_drive(args.plan_id)
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Phase: {previous} -> {args.phase}')
 
     return {'status': 'success', 'plan_id': args.plan_id, 'current_phase': args.phase, 'previous_phase': previous}

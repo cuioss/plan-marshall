@@ -147,5 +147,18 @@ script notation.
 ## Related Skills
 
 - `plan-marshall:platform-runtime` — the one-directional consumer: resolves
-  session→plan, reads `status.json`, calls `compose`, and emits per platform.
+  session→plan, reads `status.json`, calls `compose`, and emits per platform. It
+  owns the single canonical **repaint seam** (`session push-title-token`,
+  `--icon` optional) and the relocated **session→plan binding** (`session bind`
+  last-driven-wins / `session resolve-plan` / `session doctor`, in
+  `session_binding.py`). See
+  [`standards/terminal-title-architecture.md`](standards/terminal-title-architecture.md)
+  for the full state / compose / emit split, the drive seam, and the binding
+  policy.
+- `plan-marshall:manage-status` — fires the repaint + bind drive seam
+  (`_surface_drive`) after every persisted `current_phase` write, so a phase
+  change repaints the title live instead of freezing.
+- `plan-marshall:manage-locks` — `merge_lock.py` drives the SAME repaint seam for
+  the ⏳/🔒 lock-state surface and a plain icon-less repaint on the release/clear
+  path.
 - `plan-marshall:script-shared` — the analogous PYTHONPATH-imported library skill.

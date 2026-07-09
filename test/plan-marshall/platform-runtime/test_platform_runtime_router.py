@@ -8,7 +8,7 @@ Covers:
   - _resolve_target: runtime.target extraction from marshal data
   - _make_runtime: registry lookup and unknown target handling
   - _parse_json_list / _parse_context: JSON helpers
-  - _dispatch: correct routing and argparse for all 18 operations
+  - _dispatch: correct routing and argparse for all 21 operations
   - main: full integration — no args, missing marshal, unknown target, dispatch
 """
 from __future__ import annotations  # noqa: I001
@@ -63,6 +63,9 @@ def _mock_runtime() -> MagicMock:
     rt.session_capture.return_value = toon_success("session capture")
     rt.session_render_title.return_value = toon_success("session render-title")
     rt.session_push_title_token.return_value = toon_success("session push-title-token")
+    rt.session_bind.return_value = toon_success("session bind")
+    rt.session_resolve_plan.return_value = toon_success("session resolve-plan")
+    rt.session_doctor.return_value = toon_success("session doctor")
     rt.permission_configure.return_value = toon_success("permission configure")
     rt.permission_analyze.return_value = toon_success("permission analyze")
     rt.permission_fix.return_value = toon_success("permission fix")
@@ -139,6 +142,9 @@ class TestBuildOperation:
         groups = [
             ("session", "render-title"),
             ("session", "push-title-token"),
+            ("session", "bind"),
+            ("session", "resolve-plan"),
+            ("session", "doctor"),
             ("permission", "configure"),
             ("permission", "analyze"),
             ("permission", "fix"),
@@ -337,7 +343,7 @@ class TestParseContext:
 
 
 # =============================================================================
-# Test: _dispatch — all 18 operations
+# Test: _dispatch — all 21 operations
 # =============================================================================
 
 
@@ -441,6 +447,57 @@ class TestDispatch:
             ["--plan-id", "my-plan", "--icon", "⏳"],
         )
         rt.session_push_title_token.assert_called_once_with("my-plan", "⏳")
+
+    def test_dispatch_session_push_title_token_icon_optional(self, rt):
+        """session push-title-token without --icon forwards icon=None (plain repaint)."""
+        _dispatch(rt, "session push-title-token", ["--plan-id", "my-plan"])
+        rt.session_push_title_token.assert_called_once_with("my-plan", None)
+
+    # ---- session bind ---------------------------------------------------------
+
+    def test_dispatch_session_bind(self, rt):
+        """session bind forwards --plan-id and --session-id to runtime."""
+        _dispatch(
+            rt,
+            "session bind",
+            ["--plan-id", "my-plan", "--session-id", "sess-1"],
+        )
+        rt.session_bind.assert_called_once_with("my-plan", "sess-1")
+
+    def test_dispatch_session_bind_session_id_optional(self, rt):
+        """session bind without --session-id forwards session_id=None (env fallback)."""
+        _dispatch(rt, "session bind", ["--plan-id", "my-plan"])
+        rt.session_bind.assert_called_once_with("my-plan", None)
+
+    def test_dispatch_session_bind_missing_plan_id_rejected(self, rt):
+        """session bind without --plan-id is rejected by argparse (SystemExit)."""
+        with pytest.raises(SystemExit):
+            _dispatch(rt, "session bind", [])
+        rt.session_bind.assert_not_called()
+
+    # ---- session resolve-plan -------------------------------------------------
+
+    def test_dispatch_session_resolve_plan(self, rt):
+        """session resolve-plan forwards --session-id to runtime."""
+        _dispatch(rt, "session resolve-plan", ["--session-id", "sess-1"])
+        rt.session_resolve_plan.assert_called_once_with("sess-1")
+
+    def test_dispatch_session_resolve_plan_session_id_optional(self, rt):
+        """session resolve-plan without --session-id forwards session_id=None."""
+        _dispatch(rt, "session resolve-plan", [])
+        rt.session_resolve_plan.assert_called_once_with(None)
+
+    # ---- session doctor -------------------------------------------------------
+
+    def test_dispatch_session_doctor(self, rt):
+        """session doctor without --fix forwards fix=False."""
+        _dispatch(rt, "session doctor", [])
+        rt.session_doctor.assert_called_once_with(False)
+
+    def test_dispatch_session_doctor_fix(self, rt):
+        """session doctor --fix forwards fix=True."""
+        _dispatch(rt, "session doctor", ["--fix"])
+        rt.session_doctor.assert_called_once_with(True)
 
     # ---- permission configure -------------------------------------------------
 

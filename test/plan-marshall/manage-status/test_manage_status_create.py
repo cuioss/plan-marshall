@@ -297,3 +297,53 @@ def test_cli_create_rejects_removed_worktree_branch_flag(plan_context):
         f'create with the removed --worktree-branch flag must fail (argparse '
         f'exit 2), got success. stdout={result.stdout!r}'
     )
+
+
+# =============================================================================
+# Regression Tests: cmd_create fires the persisted-title-state-write drive seam
+# =============================================================================
+#
+# cmd_create's first-phase seed is a current_phase write, so it fires the shared
+# _surface_drive seam after write_status (bind + repaint). A real delegation
+# failure (a broken executor spawn) is swallowed so create still succeeds.
+
+_core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_status_core_create_drive')
+
+
+def test_cmd_create_fires_drive_seam_after_write(plan_context, monkeypatch):
+    """cmd_create fires the drive seam exactly once with the plan_id after seeding."""
+    calls = []
+    monkeypatch.setattr(_lifecycle, '_surface_drive', lambda pid: calls.append(pid))
+
+    result = cmd_create(
+        Namespace(plan_id='create-drive-seam', title='Create Drive', phases='1-init,2-refine', force=False)
+    )
+
+    assert result['status'] == 'success'
+    assert calls == ['create-drive-seam'], (
+        f'cmd_create must fire the drive seam once with the plan_id, got {calls!r}.'
+    )
+
+
+def test_cmd_create_swallows_delegation_failure_and_succeeds(plan_context, monkeypatch, tmp_path):
+    """A real delegation failure (executor subprocess error) is swallowed — create
+    still returns success and durably persists status.json."""
+    present = tmp_path / 'execute-script.py'
+    present.write_text('# stub executor\n', encoding='utf-8')
+    monkeypatch.setattr(_core, 'get_executor_path', lambda: present)
+
+    def _explode(*_a, **_k):
+        raise OSError('simulated executor spawn failure')
+
+    monkeypatch.setattr(_core.subprocess, 'run', _explode)
+
+    result = cmd_create(
+        Namespace(plan_id='create-swallow', title='Create Swallow', phases='1-init', force=False)
+    )
+
+    assert result['status'] == 'success', (
+        f'A delegation failure must be swallowed — create must still succeed, got {result!r}.'
+    )
+    assert (plan_context.plan_dir_for('create-swallow') / 'status.json').exists(), (
+        'status.json must be durably written despite the drive-seam delegation failure.'
+    )

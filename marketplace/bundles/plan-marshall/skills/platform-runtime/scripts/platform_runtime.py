@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-Platform router for plan-marshall — dispatches 18 operations to the correct
+Platform router for plan-marshall — dispatches 21 operations to the correct
 target implementation based on ``runtime.target`` in ``.plan/marshal.json``.
 
 Usage:
@@ -15,7 +15,10 @@ Operations:
     layout bundle-cache-root (no arguments)
     session capture         --plan-id <id>
     session render-title    (no arguments)
-    session push-title-token --plan-id <id>  --icon <glyph>
+    session push-title-token --plan-id <id>  [--icon <glyph>]
+    session bind            --plan-id <id>  [--session-id <id>]
+    session resolve-plan    [--session-id <id>]
+    session doctor          [--fix]
     permission configure    --scope project|global  --permissions <p1> [<p2> ...]
     permission analyze      --scope global|project|both  --checks <c1>[,<c2>]  [--marshal <path>]
     permission fix          --scope project|global  --operation <op>  [--permissions <p> ...] [--dry-run]
@@ -308,9 +311,42 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     if operation == "session push-title-token":
         p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session push-title-token")
         p.add_argument("--plan-id", required=True)
-        p.add_argument("--icon", required=True)
+        p.add_argument("--icon", default=None,
+                       help="Optional push-mode icon glyph; omit for a plain repaint "
+                            "with the default active icon")
         ns = p.parse_args(remaining)
         return runtime.session_push_title_token(ns.plan_id, ns.icon)
+
+    # ------------------------------------------------------------------
+    # session bind
+    # ------------------------------------------------------------------
+    if operation == "session bind":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session bind")
+        p.add_argument("--plan-id", required=True)
+        p.add_argument("--session-id", default=None,
+                       help="Optional explicit session id; defaults to $CLAUDE_CODE_SESSION_ID")
+        ns = p.parse_args(remaining)
+        return runtime.session_bind(ns.plan_id, ns.session_id)
+
+    # ------------------------------------------------------------------
+    # session resolve-plan
+    # ------------------------------------------------------------------
+    if operation == "session resolve-plan":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session resolve-plan")
+        p.add_argument("--session-id", default=None,
+                       help="Optional explicit session id; defaults to $CLAUDE_CODE_SESSION_ID")
+        ns = p.parse_args(remaining)
+        return runtime.session_resolve_plan(ns.session_id)
+
+    # ------------------------------------------------------------------
+    # session doctor
+    # ------------------------------------------------------------------
+    if operation == "session doctor":
+        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session doctor")
+        p.add_argument("--fix", action="store_true",
+                       help="GC (remove) each stale slot whose plan is archived/deleted")
+        ns = p.parse_args(remaining)
+        return runtime.session_doctor(ns.fix)
 
     # ------------------------------------------------------------------
     # permission configure
@@ -483,6 +519,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         "valid operations: project initial-setup, project install-hook, "
         "layout skill-roots, layout bundle-cache-root, "
         "session capture, session render-title, session push-title-token, "
+        "session bind, session resolve-plan, session doctor, "
         "permission configure, permission analyze, permission fix, "
         "permission ensure-wildcards, permission ensure-steps, "
         "permission web-analyze, permission web-apply, "

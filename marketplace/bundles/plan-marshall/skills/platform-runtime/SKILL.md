@@ -7,7 +7,7 @@ mode: script-executor
 
 # Platform Runtime Skill
 
-Script-based platform abstraction that routes 18 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
+Script-based platform abstraction that routes 21 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
 
 ## Enforcement
 
@@ -27,7 +27,7 @@ Script-based platform abstraction that routes 18 goal-based operations to the co
 
 ## What This Skill Provides
 
-Eighteen operations covering the full platform lifecycle:
+Twenty-one operations covering the full platform lifecycle:
 
 | Operation | Purpose |
 |-----------|---------|
@@ -44,7 +44,10 @@ Eighteen operations covering the full platform lifecycle:
 | `permission web-analyze` | Read-only analysis of WebFetch/webfetch domain permissions |
 | `permission web-apply` | Add or remove web domain permissions |
 | `session render-title` | Emit OSC title sequence from writer artifact; no-op on OpenCode |
-| `session push-title-token` | Parse `--plan-id` and `--icon`, emit OSC escape to `/dev/tty` (Claude); no-op on OpenCode |
+| `session push-title-token` | Parse `--plan-id` and optional `--icon`, emit OSC escape to `/dev/tty` (Claude); no-op on OpenCode. This is the single repaint seam for blocking callers and the `manage-status` phase-state-write drive seam; `--icon` omitted composes a plain repaint of the current title |
+| `session bind` | Bind the running session to `--plan-id` (last-driven-wins) so `render-title` / `resolve-plan` resolve it; no-op on OpenCode |
+| `session resolve-plan` | Read the running session's bound plan id (the read side of `session bind`); no-op on OpenCode |
+| `session doctor` | Scan every per-session active-plan slot, report plan-bound-by-multiple-sessions conflicts, and (with `--fix`) GC stale slots; no-op on OpenCode |
 | `metrics capture` | Record token consumption for a planning phase |
 | `metrics normalized-tokens` | Resolve normalized transcript token totals for the active target |
 | `subagent dispatch` | Return platform-specific subagent invocation parameters |
