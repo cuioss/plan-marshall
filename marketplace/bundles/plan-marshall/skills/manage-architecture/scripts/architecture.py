@@ -72,7 +72,13 @@ def main() -> int:
     init_parser.add_argument(
         '--force',
         action='store_true',
-        help='Overwrite existing per-module enriched.json stubs',
+        help='Re-seed only MISSING per-module enriched.json stubs, preserving existing enrichment',
+    )
+    init_parser.add_argument(
+        '--reset',
+        action='store_true',
+        help='Blank ALL existing per-module enriched.json content back to the empty stub '
+        '(destructive; honored together with --force)',
     )
 
     # =========================================================================

@@ -105,24 +105,50 @@ def test_api_init_no_overwrite_when_already_initialised():
         assert result['modules_initialized'] == 0
 
 
-def test_api_init_force_overwrites_existing():
-    """api_init(force=True) re-initialises every module's ``enriched.json``."""
+def test_api_init_reset_blanks_existing():
+    """api_init(reset=True) blanks every module's ``enriched.json`` back to the empty stub."""
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_project(tmpdir, shape='metadata_rich')
         api_init(tmpdir)
 
-        # Mutate one to detect that force truly overwrites.
-        from _architecture_core import save_module_enriched
-
+        # Mutate one to detect that reset truly overwrites.
         save_module_enriched('module-a', {'responsibility': 'custom'}, tmpdir)
         assert load_module_enriched('module-a', tmpdir)['responsibility'] == 'custom'
 
-        result = api_init(tmpdir, force=True)
+        result = api_init(tmpdir, force=True, reset=True)
         assert result['status'] == 'success'
         assert result['modules_initialized'] == 2
 
         # The mutation has been clobbered back to the empty stub.
         assert load_module_enriched('module-a', tmpdir)['responsibility'] == ''
+
+
+def test_api_init_force_preserves_existing_and_seeds_missing():
+    """api_init(force=True) preserves curated enrichment and re-seeds only missing stubs.
+
+    Regression guard for the enrichment-wipe defect: a plain ``init --force``
+    (no ``--reset``) must NOT clobber an existing module's curated
+    ``enriched.json``. Only modules whose stub is absent are (re-)seeded.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_project(tmpdir, shape='metadata_rich')
+        api_init(tmpdir)
+
+        # Curate module-a, then remove module-b's stub so it is a MISSING module.
+        save_module_enriched('module-a', {'responsibility': 'custom'}, tmpdir)
+        get_module_enriched_path('module-b', tmpdir).unlink()
+        assert not get_module_enriched_path('module-b', tmpdir).exists()
+
+        result = api_init(tmpdir, force=True)
+        assert result['status'] == 'success'
+        # Only the missing module-b is seeded; module-a is preserved.
+        assert result['modules_initialized'] == 1
+
+        # module-a's curated content survived byte-for-byte.
+        assert load_module_enriched('module-a', tmpdir)['responsibility'] == 'custom'
+        # module-b now carries the canonical empty stub.
+        assert get_module_enriched_path('module-b', tmpdir).exists()
+        assert load_module_enriched('module-b', tmpdir)['responsibility'] == ''
 
 
 def test_api_init_missing_project_meta_returns_error():
