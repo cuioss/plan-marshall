@@ -63,8 +63,8 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  │                                                                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  AGENT: execution-context-{level} (role=phase-1-init, workflow=phase-1-init)       │
-│  SKILL: plan-marshall:phase-1-init                                            │
+│  RUNS: inline in the orchestrator context (no execution-context dispatch)   │
+│  SKILL: plan-marshall:phase-1-init                                          │
 │                                                                             │
 │  STEPS:                                                                     │
 │  ──────                                                                     │

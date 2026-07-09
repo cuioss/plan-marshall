@@ -25,8 +25,10 @@ A markdown doc is a dispatched-leaf workflow doc when BOTH hold:
 
 1. It is a *declared dispatchable workflow body* — it carries
    ``implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow``
-   in its frontmatter, OR it is a ``phase-*/SKILL.md`` phase skill (dispatched
-   under a role key).
+   in its frontmatter. The ``implements:`` marker is the sole dispatchability
+   signal: a phase skill that omits it — e.g. ``phase-1-init``, which runs
+   inline in the orchestrator and fires its operator prompts natively — is NOT
+   a dispatched leaf and is not scanned.
 2. It is NOT itself a *main-context orchestrator*. The structural discriminator
    is the presence of a ``Task:`` dispatch directive: a dispatched leaf CANNOT
    spawn a further subagent, so a doc that carries one or more ``Task:`` dispatch
@@ -131,21 +133,19 @@ def _extract_frontmatter(text: str) -> str:
     return match.group(1) if match else ''
 
 
-def _is_phase_skill(path: Path) -> bool:
-    """True when the path is a ``phase-*/SKILL.md`` phase-skill body."""
-    return path.name == 'SKILL.md' and path.parent.name.startswith('phase-')
-
-
 def _is_dispatched_leaf_workflow(path: Path, text: str) -> bool:
     """Decide whether a markdown doc is a dispatched-leaf workflow body.
 
     True when the doc is a declared dispatchable workflow body (carries the
-    execution-context ``implements:`` marker OR is a ``phase-*/SKILL.md``) AND is
-    NOT itself a main-context orchestrator (carries no ``Task:`` dispatch
-    directive). See the module docstring for the full contract.
+    execution-context ``implements:`` marker) AND is NOT itself a main-context
+    orchestrator (carries no ``Task:`` dispatch directive). The ``implements:``
+    marker is the sole dispatchability signal: a phase skill that omits it —
+    e.g. ``phase-1-init``, which runs inline in the orchestrator and fires its
+    operator prompts natively — is NOT a dispatched leaf and is not flagged. See
+    the module docstring for the full contract.
     """
     frontmatter = _extract_frontmatter(text)
-    declares_workflow = bool(_IMPLEMENTS_MARKER_RE.search(frontmatter)) or _is_phase_skill(path)
+    declares_workflow = bool(_IMPLEMENTS_MARKER_RE.search(frontmatter))
     if not declares_workflow:
         return False
     # Orchestrator exclusion: any ``Task:`` dispatch directive marks a
