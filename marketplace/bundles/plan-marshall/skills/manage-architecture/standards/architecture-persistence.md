@@ -296,8 +296,10 @@ The corresponding npm sibling lives at
 Path: `.plan/project-architecture/{module}/enriched.json`
 
 LLM-generated enrichments for one module. Seeded as an empty stub by
-`architecture discover` and populated by `architecture init` and the
-`architecture enrich *` commands.
+`architecture discover` and by `architecture init` — which seeds only
+MISSING stubs and preserves existing enrichment by default, blanking every
+module's enrichment back to the empty stub only under `init --reset` — then
+populated by the `architecture enrich *` commands.
 
 ### Structure
 

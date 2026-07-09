@@ -112,7 +112,7 @@ AskUserQuestion:
 | Choice | Command |
 |--------|---------|
 | Skip | Proceed to Step 4 |
-| Replace | `architecture init --force` |
+| Replace | `architecture init --force --reset` (destructive — blanks all existing enrichment back to the empty stub) |
 
 **If file does not exist**:
 
