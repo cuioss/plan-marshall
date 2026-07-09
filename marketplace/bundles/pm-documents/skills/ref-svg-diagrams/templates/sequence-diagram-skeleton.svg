@@ -27,13 +27,13 @@
     <style>
       .col-header   { font-size: 15px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
       .stroke       { stroke: #6e7681; stroke-width: 1.2; fill: none; }
-      .lifeline     { stroke: #6e7681; stroke-width: 0.6; stroke-dasharray: 3 3; }
+      .sep          { stroke: #6e7681; stroke-width: 0.6; stroke-dasharray: 3 3; }
       .arrow        { stroke: #6e7681; stroke-width: 1.5; fill: none; }
       .arrow-return { stroke: #6e7681; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
       .arrow-fill   { fill: #6e7681; }
       .arrow-lbl    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
       .activation   { stroke: #6e7681; stroke-width: 0.8; fill: #6e7681; opacity: 0.15; }
-      .note         { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .col-sub      { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
       .caption      { font-size: 12px; fill: #6e7681; text-anchor: middle; font-style: italic; }
     </style>
   </defs>
@@ -41,15 +41,15 @@
   <!-- ===================== ACTORS + LIFELINES ===================== -->
   <text x="150" y="30" class="col-header">actor A</text>
   <rect class="stroke" x="90" y="42" width="120" height="36" rx="6" ry="6"/>
-  <line class="lifeline" x1="150" y1="80" x2="150" y2="500"/>
+  <line class="sep" x1="150" y1="80" x2="150" y2="500"/>
 
   <text x="450" y="30" class="col-header">actor B</text>
   <rect class="stroke" x="390" y="42" width="120" height="36" rx="6" ry="6"/>
-  <line class="lifeline" x1="450" y1="80" x2="450" y2="500"/>
+  <line class="sep" x1="450" y1="80" x2="450" y2="500"/>
 
   <text x="750" y="30" class="col-header">actor C</text>
   <rect class="stroke" x="690" y="42" width="120" height="36" rx="6" ry="6"/>
-  <line class="lifeline" x1="750" y1="80" x2="750" y2="500"/>
+  <line class="sep" x1="750" y1="80" x2="750" y2="500"/>
 
   <!-- ===================== ACTIVATION BARS ===================== -->
   <!-- B holds the flow of control from its inbound request to its return -->
@@ -63,7 +63,7 @@
   <text x="298" y="122" class="arrow-lbl">request</text>
 
   <!-- caller A suspended while B works (plain text — emoji glyphs do not theme-adapt) -->
-  <text x="298" y="210" class="note">A suspended</text>
+  <text x="298" y="210" class="col-sub">A suspended</text>
 
   <!-- sub-call B -> C -->
   <line class="arrow" x1="455" y1="180" x2="745" y2="180" marker-end="url(#arrow)"/>
