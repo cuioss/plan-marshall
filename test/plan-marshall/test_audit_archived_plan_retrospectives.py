@@ -5907,12 +5907,29 @@ class TestTrackSelectionAccuracy:
         assert row['actual_track'] == 'complex'
         assert row['verdict'] == 'correct'
 
-    def test_breaking_compatibility_scores_counterfactual_deep(self, tmp_path: Path):
-        # S4 (breaking compatibility) alone scores the counterfactual deep even
-        # with otherwise-light signals — a light plan is then UNDER-TRACKED.
+    def test_breaking_compatibility_carved_out_for_narrow_concrete_plan(self, tmp_path: Path):
+        # S4 (breaking compatibility) is SUPPRESSED under the narrow-and-concrete
+        # carve-out: a surgical, concretely-specified plan is positively bounded,
+        # so breaking compatibility alone no longer scores the counterfactual
+        # deep. A plan that ran light is therefore correct, not UNDER-TRACKED.
         inputs = _write_track_plan(
             tmp_path, 'plan-s4',
             planning_lane='light', track='simple', scope_estimate='surgical',
+        )
+        routing = audit._load_routing_logic(PROJECT_ROOT)
+
+        row = audit.check_track_selection_accuracy(inputs, routing, 'breaking')
+
+        assert row['counterfactual_lane'] == 'light'
+        assert row['verdict'] == 'correct'
+
+    def test_breaking_compatibility_scores_counterfactual_deep_for_broad_plan(self, tmp_path: Path):
+        # Outside the narrow-and-concrete carve-out, S4 (breaking compatibility)
+        # still contributes to a deep counterfactual: a broad-scope plan that ran
+        # light is UNDER-TRACKED (S2 + S4 both score deep).
+        inputs = _write_track_plan(
+            tmp_path, 'plan-s4-broad',
+            planning_lane='light', track='simple', scope_estimate='multi_module',
         )
         routing = audit._load_routing_logic(PROJECT_ROOT)
 

@@ -1,0 +1,57 @@
+= Recipes
+:nofooter:
+:toc: left
+:toc-title: Table of Contents
+:toclevels: 3
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
+
+Recipes are predefined, repeatable transformations whose plan shape is already known, so the lifecycle skips the discovery work the standard pipeline does from scratch. For the concept — why recipes exist, how the lifecycle shortcuts, and the full registry — see xref:../concepts/recipes.adoc[Concepts › Recipes]. This page is the operator-facing guide to the **surgical-fix micro-lane**: the fastest safe path for a change you have already diagnosed.
+
+== Choosing a recipe
+
+Two entry points reach a recipe:
+
+* **Explicit** — `/plan-marshall action=recipe` lists every registered recipe; pick one. You can also name it directly at plan creation with `recipe=surgical-fix`.
+* **Auto-routed** — an informally-described request is scored against the recipe registry at init; a strong match routes into the recipe's path without a prompt. The two knobs that gate auto-routing (`auto_route_recipe`, `auto_route_recipe_threshold`) are documented in xref:configuration.adoc#recipe-routing[Configuration › Recipe-match routing].
+
+[#surgical-fix-micro-lane]
+== The surgical-fix micro-lane
+
+`surgical-fix` is a **micro-lane fast path for a pre-diagnosed fix** — a change whose root cause is already known, whose exact edit is already known, that touches ≤~2 files / ~50 LOC, and that carries no cross-module behavioral delta. Instead of re-discovering scope through the full refine → outline → Q-Gate pipeline, the recipe takes the pre-diagnosed request as its contract and composes a deterministic `surgical`-scope outline directly, then hands off to task planning.
+
+=== What it skips, what it keeps
+
+The micro-lane trims the pipeline to the minimum safe set:
+
+* **Skips** — the phase-2-refine confidence loop (confidence is forced to 100, because the request *is* the contract), the phase-3-outline discovery pass (no hunting for extra call sites or expanding the footprint), and the outline Q-Gate (the recipe path is its own gate). On the finalize side the `surgical + {change_type}` cascade drops the heavier ceremony — for example `sonar-roundtrip` — and runs a `minimal` execution profile.
+* **Keeps** — a real per-deliverable build and the standard verification for the changed module, the commit / push / PR flow, and — deliberately force-kept even on the leanest posture — the **automated PR review**, so structural review still runs on every micro-lane change. Lessons capture and the meta-project derived-state steps also stay in.
+
+The net posture is **light planning + a minimal execution profile with the bot-review safety net retained**. How the recipe's `lane:` seed composes with the `lane_selection` posture dialogue (and why an explicit operator posture always overrides the seed) is documented in xref:configuration.adoc#micro-lane-fast-path[Configuration › Micro-lane fast path].
+
+=== When to use it
+
+Reach for the surgical-fix micro-lane when **all** of these hold:
+
+* The **root cause is already known** and the **exact change is already diagnosed** — this is an application, not an investigation.
+* The change touches **≤~2 files / ~50 LOC**.
+* The change carries **no cross-module behavioral delta** — every affected file resolves to a single module, and no contract other consumers depend on changes.
+
+=== When NOT to use it
+
+Do **not** use the micro-lane — route through the standard planning path instead — when **any** of these hold:
+
+* The fix **crosses a module boundary**, or changes a contract other consumers depend on.
+* The fix is **not already diagnosed** — the request describes a symptom to investigate rather than a change to apply.
+* The change is broad, fans out across many files, or needs a discovery pass to bound its scope.
+
+This is a hard contract, not a preference: the recipe's fit gate checks it deterministically and **aborts with a redirect** rather than force-fitting a non-surgical request onto the micro-lane. A request that fails the gate is sent back to the standard `phase-2-refine → phase-3-outline` pipeline, where its scope is properly discovered.
+
+== Related
+
+* xref:../concepts/recipes.adoc[Concepts › Recipes] — what recipes are and how the lifecycle shortcuts.
+* xref:configuration.adoc#micro-lane-fast-path[Configuration › Micro-lane fast path] — the config surface: auto-route knobs, the lane seed, posture composition.
+* link:../../marketplace/bundles/plan-marshall/skills/recipe-surgical-fix/SKILL.md[`recipe-surgical-fix/SKILL.md`] — the recipe workflow: fit gate, deterministic outline composition, Phase 4 hand-off.
+* link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-recipe.md[`ext-point-recipe.md`] — the recipe extension point and the `lane:` seed contract.

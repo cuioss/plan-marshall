@@ -168,6 +168,16 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 The companion `aspect-classify` step labels a request as analysis, planning, or implementation so the execution-manifest composer can drop build / quality-gate / test verification steps for analysis- and planning-only requests. Its classification uses an independent confidence threshold (`0.7`) that is *not* the recipe-match auto-route floor above — the two thresholds are unrelated and must not be conflated. The `recipe-match` and `aspect-classify` verbs are documented in xref:../../marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md[`manage-config/SKILL.md`] Canonical invocations.
 
+[#micro-lane-fast-path]
+==== Micro-lane fast path (surgical-fix recipe)
+
+The `surgical-fix` recipe is a pre-diagnosed **micro-lane**: a request whose root cause and exact change are already known, bounded to a single module (≤~2 files / ~50 LOC, no cross-module behavioral delta), composed as a deterministic `scope_estimate: surgical` outline that skips the discovery pass and Q-Gate. It introduces no new config knob — it composes entirely from the two surfaces documented on this page:
+
+* **Recipe-match auto-route (<<recipe-routing>>)** — a strong request match auto-routes into the recipe when `plan.phase-1-init.auto_route_recipe` is `true` and the top match clears `auto_route_recipe_threshold`; below the floor the match is proposed rather than auto-selected, exactly like any other recipe.
+* **Lane seed (<<execution-profile-lane-selection>>)** — the recipe declares a `lane:` seed of `profile: minimal` with `automated-review` force-kept at `minimal`, so structural PR review stays in the loop even on the leanest posture. The `surgical` scope estimate also scores the *planning* lane `light` through the `phase-1-init` router (see <<run-at-all-gates,`deep_lane`>> for the separate planning-depth axis). The seed is the **lowest-precedence** posture input (recipe seed < operator posture < coverage-cell adversarial floor): when `lane_selection: ask`, the seed is surfaced as the pre-selected `minimal` recommendation and any explicit operator posture overrides it; when `lane_selection: auto`, the projection is taken silently.
+
+The net effect is light planning plus a minimal execution profile with the bot-review safety net retained — the shortest safe path for a mechanical, pre-diagnosed change. The user-facing when-to-use / when-NOT-to-use contract lives in xref:recipes.adoc[User Guide → Recipes]; the recipe `lane:` seed contract is owned by link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-recipe.md[`ext-point-recipe.md`].
+
 [#execution-profile-lane-selection]
 === Execution-profile lane selection
 

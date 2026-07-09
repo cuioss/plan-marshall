@@ -84,6 +84,17 @@ def test_agentfile_hygiene_recipe_registered():
     assert {'key', 'name', 'description', 'skill', 'default_change_type', 'scope'} <= recipe.keys()
 
 
+def test_surgical_fix_recipe_registered():
+    """recipe-surgical-fix is registered with the expected ext-point-recipe fields."""
+    recipes = _load_extension().provides_recipes()
+    recipe = _recipe_by_key(recipes, 'surgical-fix')
+    assert recipe is not None, 'surgical-fix recipe must be registered'
+    assert recipe['skill'] == 'plan-marshall:recipe-surgical-fix'
+    assert recipe['default_change_type'] == 'bug_fix'
+    assert recipe['scope'] == 'module'
+    assert {'key', 'name', 'description', 'skill', 'default_change_type', 'scope'} <= recipe.keys()
+
+
 def test_discoverable_via_list_recipes(plan_context):
     """The recipe surfaces through list-recipes as a project-local recipe.
 

@@ -112,6 +112,39 @@ class TestCollectScriptDirs:
         result = collect_script_dirs(tmp_path)
         assert str(scripts) in result
 
+    def test_multi_version_selects_newest_only(self, tmp_path):
+        # Two version dirs for the same bundle: only the newest must be scanned,
+        # so an older version cannot pollute PYTHONPATH and shadow the newest.
+        old_scripts = tmp_path / 'bundle-a' / '0.1.100' / 'skills' / 'skill-x' / 'scripts'
+        new_scripts = tmp_path / 'bundle-a' / '0.1.200' / 'skills' / 'skill-x' / 'scripts'
+        old_scripts.mkdir(parents=True)
+        new_scripts.mkdir(parents=True)
+        result = collect_script_dirs(tmp_path)
+        assert str(new_scripts) in result
+        assert str(old_scripts) not in result
+
+    def test_multi_version_numbered_beats_beta(self, tmp_path):
+        # A numbered build (0.1.5 -> (0, 1, 5)) sorts newer than a bare beta
+        # (0.1-BETA -> (0, 1)); the numbered version dir wins.
+        beta_scripts = tmp_path / 'bundle-a' / '0.1-BETA' / 'skills' / 'skill-x' / 'scripts'
+        numbered_scripts = tmp_path / 'bundle-a' / '0.1.5' / 'skills' / 'skill-x' / 'scripts'
+        beta_scripts.mkdir(parents=True)
+        numbered_scripts.mkdir(parents=True)
+        result = collect_script_dirs(tmp_path)
+        assert str(numbered_scripts) in result
+        assert str(beta_scripts) not in result
+
+    def test_multi_version_subdirs_from_newest_only(self, tmp_path):
+        # The newest-only selection also governs the scripts/ subdir expansion:
+        # an older version's scripts subdir must not appear in the result.
+        old_sub = tmp_path / 'bundle-a' / '0.1.100' / 'skills' / 'skill-x' / 'scripts' / 'build'
+        new_sub = tmp_path / 'bundle-a' / '0.1.200' / 'skills' / 'skill-x' / 'scripts' / 'build'
+        old_sub.mkdir(parents=True)
+        new_sub.mkdir(parents=True)
+        result = collect_script_dirs(tmp_path)
+        assert str(new_sub) in result
+        assert str(old_sub) not in result
+
 
 class TestResolveBundlesRoot:
     def test_source_layout(self, tmp_path):

@@ -1594,6 +1594,9 @@ def test_preflight_returns_six_field_toon_on_fresh_install(tmp_path, monkeypatch
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
     (tmp_path / '.plan').mkdir()
     monkeypatch.chdir(tmp_path)
+    # Isolate the orthogonal multi-version-pollution scan (which reads the real
+    # plugin-cache tree) so this version-staleness case stays hermetic.
+    monkeypatch.setattr(module, '_detect_multi_version_pollution', lambda *a, **k: [])
 
     result = module.cmd_preflight(_preflight_args())
 
@@ -1626,6 +1629,9 @@ def test_preflight_reports_executor_fresh_when_embedded_not_older(tmp_path, monk
     (plan_dir / 'execute-script.py').write_text("MARSHALL_VERSION = '0.1.99'\n", encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
     monkeypatch.chdir(tmp_path)
+    # Isolate the orthogonal multi-version-pollution scan (which reads the real
+    # plugin-cache tree) so this version-staleness case stays hermetic.
+    monkeypatch.setattr(module, '_detect_multi_version_pollution', lambda *a, **k: [])
 
     result = module.cmd_preflight(_preflight_args())
 

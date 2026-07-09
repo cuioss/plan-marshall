@@ -13,12 +13,19 @@ The signal set (DQ1 of the planning-lanes solution outline):
 |---|--------|---------------------|-------------|
 | S1 | ``plan_source`` | ``status.metadata.plan_source`` | free-form (absent/unset) **AND** S5 concreteness fails |
 | S2 | ``scope_estimate`` | ``references.scope_estimate`` | ∈ {multi_module, broad, none, unset} |
-| S3 | ``change_type`` | ``status.metadata.change_type`` | ∈ {feature, feature_breaking} |
-| S4 | ``compatibility`` | ``marshal.json plan.phase-2-refine.compatibility`` | == breaking |
+| S3 | ``change_type`` | ``status.metadata.change_type`` | ∈ {feature, feature_breaking} **AND NOT** narrow-and-concrete |
+| S4 | ``compatibility`` | ``marshal.json plan.phase-2-refine.compatibility`` | == breaking **AND NOT** narrow-and-concrete |
 | S5 | request concreteness | regex over ``request.md`` body | NO file path AND NO concrete fix signal |
 | S6 | explicit override | ``status.metadata.planning_lane_override`` | == deep forces deep (one-way) |
 
 ``deep`` IFF (S1 ∨ S2 ∨ S3 ∨ S4 ∨ S5 ∨ S6-deep); otherwise ``light``.
+
+The narrow-and-concrete carve-out: when ``scope_estimate ∈ {surgical,
+single_module}`` AND the request is concrete, S3 (generative change_type) and S4
+(breaking compatibility) are suppressed so they cannot force ``deep`` *alone* for
+a positively-bounded, well-specified request. The carve-out relaxes ONLY this
+co-firing — S1/S2/S5 (the unknown-to-deep defaults) and S6 (explicit override)
+still bias ``deep`` unchanged, so the conservative unknown case is untouched.
 
 ``plan.phase-1-init.deep_lane`` is read BEFORE the signal set and
 short-circuits the evaluation: ``always`` forces deep, ``never`` forces light
@@ -188,26 +195,30 @@ def project_profile_pure(
     adds no discovery and no cognition). It recommends a posture on the
     ``minimal ⊏ auto ⊏ full`` lattice:
 
+    - ``minimal`` — a narrow (surgical / single_module) AND concretely specified
+      change. A mechanical, well-anchored, low-stakes change. This is the same
+      narrow-and-concrete predicate the lane verdict's S3/S4 carve-out uses, so a
+      bounded surgical fix stays ``minimal`` even when its ``change_type`` reads
+      generative or its ``compatibility`` reads breaking — the narrow, concrete
+      bound dominates.
     - ``full`` — a generative change (``change_type ∈ {feature,
       feature_breaking}``) that is also broad (``scope_estimate`` ∈ multi_module
-      / broad) OR clean-slate breaking. These are the correctly-deep features
-      where the adversarial ceremony earns its cost.
-    - ``minimal`` — a non-generative change that is narrow (surgical /
-      single_module) AND concretely specified. A mechanical, well-anchored,
-      low-stakes change.
+      / broad) OR clean-slate breaking, and NOT narrow-and-concrete. These are
+      the correctly-deep features where the adversarial ceremony earns its cost.
     - ``auto`` — everything else (the generic recommendation / default).
 
     The recommendation is exactly that — a default the operator overrides. It is
     independent of the ``deep_lane`` ceremony gate (which governs planning depth,
     not the profile).
     """
+    narrow_and_concrete = scope_estimate in _NARROW_SCOPE_ESTIMATES and request_concrete
+    if narrow_and_concrete:
+        return MINIMAL
     generative = change_type in _DEEP_CHANGE_TYPES
     broad = scope_estimate in _BROAD_SCOPE_ESTIMATES
     breaking = compatibility == 'breaking'
     if generative and (broad or breaking):
         return FULL
-    if not generative and scope_estimate in _NARROW_SCOPE_ESTIMATES and request_concrete:
-        return MINIMAL
     return AUTO
 
 
@@ -229,6 +240,14 @@ def evaluate_signals_pure(
     downstream consumers (e.g. the audit retrospective check) so the routing
     thresholds are never duplicated.
     """
+    # Carve-out — the positively-bounded case. A request that is BOTH narrowly
+    # scoped (scope_estimate ∈ {surgical, single_module}) AND concretely
+    # specified is well-bounded enough that S3 (generative change_type) and S4
+    # (breaking compatibility) firing *alone* must not force deep. The carve-out
+    # relaxes ONLY this co-firing: S1/S2/S5 (the unknown-to-deep defaults) and
+    # S6 (explicit override) are unaffected, so the conservative unknown case
+    # keeps biasing deep unchanged.
+    narrow_and_concrete = scope_estimate in _NARROW_SCOPE_ESTIMATES and request_concrete
     # S5 — vague ask, no anchors → deep.
     s5_deep = not request_concrete
     # S1 — free-form source (absent/unset) AND S5 concreteness fails → deep.
@@ -237,10 +256,12 @@ def evaluate_signals_pure(
     s1_deep = bool(free_form_source and s5_deep)
     # S2 — broad / unknown scope bands → deep.
     s2_deep = scope_estimate in _DEEP_SCOPE_ESTIMATES or scope_estimate is None
-    # S3 — generative change types → deep.
-    s3_deep = change_type in _DEEP_CHANGE_TYPES
-    # S4 — clean-slate breaking changes tend cross-cutting → deep.
-    s4_deep = compatibility == 'breaking'
+    # S3 — generative change types → deep, EXCEPT in the narrow-and-concrete
+    # carve-out where a bounded, well-specified generative change stays light.
+    s3_deep = change_type in _DEEP_CHANGE_TYPES and not narrow_and_concrete
+    # S4 — clean-slate breaking changes tend cross-cutting → deep, EXCEPT in the
+    # narrow-and-concrete carve-out.
+    s4_deep = compatibility == 'breaking' and not narrow_and_concrete
     # S6 — explicit user override to deep is one-way.
     s6_deep = override == DEEP
 

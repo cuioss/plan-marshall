@@ -168,28 +168,39 @@ def test_s2_scope_estimate_absent_forces_deep(plan_context):
     assert 'S2:scope_estimate' in result['fired_signals']
 
 
-def test_s3_change_type_feature_forces_deep(plan_context):
-    """S3 — a generative change_type (feature) forces deep."""
-    # Flip only change_type to feature.
+def test_s3_change_type_feature_suppressed_when_narrow_and_concrete(plan_context):
+    """S3 — a generative change_type is SUPPRESSED under the narrow-and-concrete carve-out.
+
+    The ``_light_setup`` baseline is surgical scope + a concrete request, so a
+    ``feature`` change_type no longer forces deep on its own — the positively
+    bounded case stays light. (S3 firing deep for a broad/unknown scope is
+    covered by ``test_planning_lane_calibration.py``.)
+    """
+    # Flip only change_type to feature; the narrow+concrete baseline carves it out.
     plan_dir = _light_setup(plan_context, 'pl-s3')
     _write_status(plan_dir, metadata={'plan_source': 'lesson', 'change_type': 'feature'})
 
     result = cmd_planning_lane_route(_ns_route('pl-s3'))
 
-    assert result['planning_lane'] == 'deep'
-    assert 'S3:change_type' in result['fired_signals']
+    assert result['planning_lane'] == 'light'
+    assert 'S3:change_type' not in result['fired_signals']
 
 
-def test_s4_compatibility_breaking_forces_deep(plan_context):
-    """S4 — breaking compatibility forces deep."""
-    # Flip only compatibility to breaking.
+def test_s4_compatibility_breaking_suppressed_when_narrow_and_concrete(plan_context):
+    """S4 — breaking compatibility is SUPPRESSED under the narrow-and-concrete carve-out.
+
+    The ``_light_setup`` baseline is surgical scope + a concrete request, so a
+    ``breaking`` compatibility no longer forces deep on its own. (S4 firing deep
+    for a broad/unknown scope is covered by ``test_planning_lane_calibration.py``.)
+    """
+    # Flip only compatibility to breaking; the narrow+concrete baseline carves it out.
     _light_setup(plan_context, 'pl-s4')
     _write_marshal(plan_context.fixture_dir, compatibility='breaking', deep_lane='auto')
 
     result = cmd_planning_lane_route(_ns_route('pl-s4'))
 
-    assert result['planning_lane'] == 'deep'
-    assert 'S4:compatibility' in result['fired_signals']
+    assert result['planning_lane'] == 'light'
+    assert 'S4:compatibility' not in result['fired_signals']
 
 
 def test_s5_vague_request_forces_deep(plan_context):
@@ -512,20 +523,29 @@ def test_pure_s2_absent_scope_estimate_fires_deep():
 
 
 @pytest.mark.parametrize('change_type', ['feature', 'feature_breaking'])
-def test_pure_s3_generative_change_type_fires_deep(change_type):
-    """S3 — each generative change_type fires S3 in isolation."""
+def test_pure_s3_generative_change_type_suppressed_when_narrow_and_concrete(change_type):
+    """S3 — a generative change_type is carved out under the narrow+concrete baseline.
+
+    The all-light baseline is surgical scope + concrete request, so S3 does not
+    fire on its own. S3 firing deep alongside a broad/unknown scope is covered by
+    ``test_planning_lane_calibration.py`` and ``test_pure_multiple_deep_signals``.
+    """
     result = _pure(change_type=change_type)
 
-    assert result['lane'] == 'deep'
-    assert result['fired_signals'] == ['S3:change_type']
+    assert result['lane'] == 'light'
+    assert 'S3:change_type' not in result['fired_signals']
 
 
-def test_pure_s4_breaking_compatibility_fires_deep():
-    """S4 — breaking compatibility fires S4 in isolation."""
+def test_pure_s4_breaking_compatibility_suppressed_when_narrow_and_concrete():
+    """S4 — breaking compatibility is carved out under the narrow+concrete baseline.
+
+    S4 firing deep for a broad/unknown scope is covered by
+    ``test_planning_lane_calibration.py`` and ``test_pure_multiple_deep_signals``.
+    """
     result = _pure(compatibility='breaking')
 
-    assert result['lane'] == 'deep'
-    assert result['fired_signals'] == ['S4:compatibility']
+    assert result['lane'] == 'light'
+    assert 'S4:compatibility' not in result['fired_signals']
 
 
 def test_pure_s5_non_concrete_request_fires_deep():
@@ -691,8 +711,14 @@ def test_profile_generative_broad_change_projects_full(change_type, scope_estima
     assert posture == 'full'
 
 
-def test_profile_generative_breaking_change_projects_full():
-    """A generative clean-slate breaking change projects full even when narrow."""
+def test_profile_narrow_concrete_breaking_change_projects_minimal():
+    """A narrow, concretely-specified breaking generative change projects minimal.
+
+    The narrow-and-concrete predicate dominates: a bounded surgical fix stays
+    ``minimal`` even when its change_type reads generative and its compatibility
+    reads breaking. (A BROAD generative breaking change still projects full — see
+    ``test_profile_generative_broad_change_projects_full``.)
+    """
     posture = project_profile_pure(
         scope_estimate='single_module',
         change_type='feature',
@@ -700,7 +726,7 @@ def test_profile_generative_breaking_change_projects_full():
         request_concrete=True,
     )
 
-    assert posture == 'full'
+    assert posture == 'minimal'
 
 
 @pytest.mark.parametrize('scope_estimate', ['surgical', 'single_module'])
@@ -728,8 +754,13 @@ def test_profile_narrow_nongenerative_but_vague_request_projects_auto():
     assert posture == 'auto'
 
 
-def test_profile_generative_narrow_nonbreaking_change_projects_auto():
-    """A generative but narrow, non-breaking change is the generic auto case."""
+def test_profile_generative_narrow_concrete_change_projects_minimal():
+    """A generative but narrow, concretely-specified change projects minimal.
+
+    Under the narrow-and-concrete carve-out the bounded, well-anchored generative
+    change is recommended ``minimal`` — the narrow, concrete bound dominates the
+    generative signal.
+    """
     posture = project_profile_pure(
         scope_estimate='single_module',
         change_type='feature',
@@ -737,7 +768,7 @@ def test_profile_generative_narrow_nonbreaking_change_projects_auto():
         request_concrete=True,
     )
 
-    assert posture == 'auto'
+    assert posture == 'minimal'
 
 
 def test_profile_projection_is_deterministic_over_the_signal_set():

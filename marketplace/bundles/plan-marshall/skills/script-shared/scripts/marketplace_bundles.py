@@ -56,6 +56,16 @@ def resolve_bundle_path(base_path: Path, bundle_name: str, subpath: str) -> Path
     return bundle_dir / subpath
 
 
+def _version_sort_key(version_name: str) -> tuple[int, ...]:
+    """Parse a version directory name into a comparable integer tuple.
+
+    Extracts each run of digits in document order so the newest version dir
+    sorts highest: ``'0.1.1069'`` -> ``(0, 1, 1069)``, ``'0.1-BETA'`` -> ``(0, 1)``.
+    A name with no digits yields the empty tuple (sorts lowest).
+    """
+    return tuple(int(part) for part in re.findall(r'\d+', version_name))
+
+
 def collect_script_dirs(base_path: Path) -> list[str]:
     """Collect all skill script directories from bundles.
 
@@ -75,13 +85,22 @@ def collect_script_dirs(base_path: Path) -> list[str]:
             continue
 
         # Determine base directories to scan for skills:
-        # versioned (plugin-cache) -> each version subdir; non-versioned -> bundle itself
-        has_version_dirs = any(
-            d.is_dir() and not d.name.startswith('.') and (d / 'skills').is_dir() for d in bundle_dir.iterdir()
-        )
-        scan_roots = []
-        if has_version_dirs:
-            scan_roots = [d for d in bundle_dir.iterdir() if d.is_dir() and not d.name.startswith('.')]
+        # versioned (plugin-cache) -> each version subdir; non-versioned -> bundle itself.
+        # Candidates are the version dirs that actually carry a skills/ tree.
+        try:
+            version_dirs = [
+                d
+                for d in bundle_dir.iterdir()
+                if d.is_dir() and not d.name.startswith('.') and (d / 'skills').is_dir()
+            ]
+        except OSError:
+            version_dirs = []
+        if version_dirs:
+            # Select ONLY the newest version dir per bundle. Scanning every
+            # version dir pollutes PYTHONPATH with multiple versions of the same
+            # script, so an older version can shadow the current one. The newest
+            # is chosen by a numeric version-tuple sort key.
+            scan_roots = [max(version_dirs, key=lambda d: _version_sort_key(d.name))]
         else:
             scan_roots = [bundle_dir]
 
