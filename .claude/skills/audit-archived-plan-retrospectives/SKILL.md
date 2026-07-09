@@ -134,6 +134,46 @@ the rows.
 | Preference-pattern detector | [`checks/preference-pattern-detector.md`](checks/preference-pattern-detector.md) | Cross-plan recurring user gate-dispositions: `(module, finding-class, disposition)` tuples (`suppressed`/`accepted`/`taken_into_account`) appearing in N≥`THRESHOLDS["preference_disposition_occurrences"]` plans, surfaced as candidate preferences. The threshold gate is script-owned; Step 4c routes every surfaced row to `architecture enrich` per the shared `disposition-to-hint-routing.md` contract (generalize, do not log raw dispositions). |
 | Cross-check synthesis | [`checks/cross-check-synthesis.md`](checks/cross-check-synthesis.md) | The **facet-completeness critic** (runs LAST). Joins the OTHER checks' retained structured results into six cross-check couplings single rows miss: `trend_empty_untrustworthy` (empty token-trend regression over blind-execute plans), `churn_explains_walltime` (non_minimal_build/build_churn corroborated by a plan's build wall-clock `total_build_seconds` upper-half — build redundancy wastes wall-clock, not tokens), `qgate_gap_chain` (no_qgate6/auto_review_only correlating with ci_rerun / finalize_heavy), `argparse_signature_cluster` (recurring-pattern argparse signatures correlating with global-log errors and unfiled quality-verification signatures — collapsed to ONE candidate), `scope_underestimate_cost` (scope under-estimation correlating with high tokens/file or a task-count outlier), and `redundant_build_churn` (task-graph-redundancy `in_task_build` correlating with sequence `build_churn`/`phase_reentry`). Each coupling carries its qualifying caveat and the D1 severity column; the block operationalizes the Step-4b completeness gate. |
 
+## Check era model (fixed_since + retire-on-quiet)
+
+Every check carries an **era stamp** and participates in a **retire-on-quiet**
+proposal loop. Both are script-computed in `scripts/audit.py` from the single
+`CHECK_ERA` table and the `THRESHOLDS["retire_on_quiet_runs"]` tunable — the LLM
+half only reads and acts on the surfaced signals, it never recomputes them.
+
+- **`fixed_since` (era stamp).** Each check's block header carries a
+  `fixed_since: {stamp}` line naming the roadmap-era boundary as of which the
+  check's computation is known accurate (e.g. `#849`, `#852`, `#854`, `plan-10`).
+  The stamps live in ONE central `CHECK_ERA` dict in `scripts/audit.py` and are
+  surfaced deterministically on every emitted block — no check inline-duplicates
+  its own boundary. Read the stamp as "this check reflects mechanics as of era
+  X"; when the roadmap advances past X for a check whose semantics that advance
+  touched, the check is a candidate for a semantic refresh.
+
+- **retire-on-quiet (removal PROPOSAL, never a removal).** A check whose
+  `genuine_signal_count` has been zero across at least
+  `THRESHOLDS["retire_on_quiet_runs"]` (default **3**) consecutive recorded runs
+  surfaces a removal proposal in the dedicated `retire-on-quiet` block. Each
+  proposal row names the check, its quiet-run streak, its `fixed_since` stamp,
+  and proposal text. The mechanism is **proposal-only** — the script never
+  removes a check, and the block is emitted on every full sweep (an empty rows
+  table shows the mechanism ran but proposed nothing). The per-run genuine counts
+  are persisted as `genuine__{check}` keys in each report's `summary_metrics`
+  header (under `.plan/local/audit-reports/`), so the streak is read back across
+  runs; a report predating the era model contributes no `genuine__` keys and
+  therefore breaks a streak rather than silently extending it. Treat a surfaced
+  proposal as a prompt to confirm the check is genuinely obsolete (versus quiet
+  because the corpus simply had no offending plans) before any future plan
+  removes it.
+
+**Lifecycle-footer convention for future roadmap plans.** The not-yet-landed
+roadmap plans (plan-5 … plan-8) are not yet era boundaries. When one of them
+ships and changes a check's semantics, add or bump that check's `CHECK_ERA`
+entry to the new boundary in `scripts/audit.py` (never in a per-check emit
+function) as a one-line change, and re-run the audit — the new stamp then rides
+every emitted block for that check automatically. This keeps `CHECK_ERA` the
+single, greppable ledger of which roadmap era each check is aligned to.
+
 ## Usage Examples
 
 ```bash

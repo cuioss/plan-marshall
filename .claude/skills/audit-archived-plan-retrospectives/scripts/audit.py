@@ -191,6 +191,49 @@ CROSS_PLAN_CHECKS = {
     "cross-check-synthesis",
 }
 
+# ---------------------------------------------------------------------------
+# Check era model (fixed_since boundary stamps)
+# ---------------------------------------------------------------------------
+#
+# `CHECK_ERA` is the SINGLE source of truth for each check's `fixed_since`
+# stamp — the roadmap-era boundary as of which the check's computation is known
+# accurate. The stamp is surfaced deterministically on every emitted block header
+# (see `_stamp_era`); no check inline-duplicates its own boundary. When a future
+# roadmap plan changes a check's semantics, bump that check's entry here (never
+# in a per-check emit function) — the one-line lifecycle convention documented in
+# SKILL.md § "Check era model".
+#
+# Stamp vocabulary is the roadmap-plan boundaries this refresh audits against:
+# `#812` (execution-profile lane/partiality markers), `#842`/`#845`/`#849`/`#850`
+# (plan-1..plan-3 execution-loop / routing / finalize-flow / dist), `#852`
+# (find-triage D6 step-ownership), `#854` (surgical-fix micro-lane / light-lane
+# carve-out), and `plan-10` (the roadmap head this plan re-confirms the general
+# checks accurate against). Every key MUST be a member of `CHECK_NAMES`.
+CHECK_ERA: dict[str, str] = {
+    # Roadmap-affected checks carry the specific boundary whose mechanics they
+    # verify (kept in step with the plan-11 semantic updates).
+    "execution-context-manifest": "#852",
+    "metrics": "#812",
+    "track-selection-accuracy": "#854",
+    "global-log-analysis": "#849",
+    "sequence-and-build-minimality": "#849",
+    "input-integrity": "#812",
+    # General checks unaffected by the roadmap: re-confirmed accurate against the
+    # roadmap head (plan-10) by this refresh.
+    "quality-verification-report": "plan-10",
+    "recurring-pattern-detector": "plan-10",
+    "token-efficiency-trend": "plan-10",
+    "scope-estimate-accuracy": "plan-10",
+    "pr-merge-velocity": "plan-10",
+    "task-count-efficiency": "plan-10",
+    "token-economics": "plan-10",
+    "quality-chain": "plan-10",
+    "task-graph-redundancy": "plan-10",
+    "architecture-lookup-ratio": "plan-10",
+    "preference-pattern-detector": "plan-10",
+    "cross-check-synthesis": "plan-10",
+}
+
 # The roles the phase-5 verification steps must resolve to for a manifest to be
 # considered well-composed. A phase-5 step ID is resolved to its matrix `role:`
 # in-code (e.g. `default:verify:quality-gate` → `quality-gate`,
@@ -295,6 +338,11 @@ THRESHOLDS: dict[str, Any] = {
     # band the plan is flagged under- or over-decomposed.
     "tasks_per_deliverable_low": 0.5,
     "tasks_per_deliverable_high": 4.0,
+    # Retire-on-quiet proposal threshold: a check that surfaces zero genuine
+    # signals across at least this many consecutive recorded runs (the current
+    # run plus its immediate predecessors) surfaces a removal PROPOSAL in the
+    # `retire-on-quiet` block. Proposal only — the script never removes a check.
+    "retire_on_quiet_runs": 3,
 }
 
 # Back-compatible module-level aliases. These name the same values the
@@ -3740,6 +3788,174 @@ def _report_diff_block(repo_root: Path, current: dict[str, Any]) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Era model: fixed_since stamping + retire-on-quiet proposal
+# ---------------------------------------------------------------------------
+#
+# Two script-computed era signals ride on top of the emitted blocks:
+#  - `fixed_since` — `_stamp_era` inserts each check's `CHECK_ERA` boundary stamp
+#    into its block header, so every emitted check block carries its era.
+#  - retire-on-quiet — a check whose `genuine_signal_count` has been zero across
+#    `THRESHOLDS["retire_on_quiet_runs"]` consecutive recorded runs surfaces a
+#    removal PROPOSAL in the `retire-on-quiet` block. Proposal only — nothing is
+#    removed. The per-run genuine substrate is persisted as `genuine__{check}`
+#    summary-metric keys so the streak can be read back across runs.
+
+# Uniform per-check genuine-count substrate: the key each run persists into the
+# report's `summary_metrics` header so a later run can read the quiet streak.
+_GENUINE_METRIC_PREFIX = "genuine__"
+
+_CHECK_HEADER_RE = re.compile(r"^check:\s*(\S+)\s*$", re.MULTILINE)
+_GENUINE_COUNT_RE = re.compile(r"^genuine_signal_count:\s*(\d+)\s*$", re.MULTILINE)
+
+
+def _stamp_era(block: str) -> str:
+    """Insert the block's `fixed_since` boundary stamp into its header.
+
+    Reads the block's leading `check: {name}` line and, when the name is a known
+    check with a `CHECK_ERA` entry, inserts a `fixed_since: {stamp}` line
+    immediately after the `status:` line. Non-check meta blocks (`report-diff`,
+    `retire-on-quiet`) carry no era entry and pass through unchanged.
+    """
+    header = _CHECK_HEADER_RE.search(block)
+    if header is None:
+        return block
+    stamp = CHECK_ERA.get(header.group(1))
+    if stamp is None:
+        return block
+    lines = block.split("\n")
+    for i, line in enumerate(lines):
+        if line.startswith("status:"):
+            lines.insert(i + 1, f"fixed_since: {stamp}")
+            break
+    return "\n".join(lines)
+
+
+def _extract_per_check_genuine(blocks: list[str]) -> dict[str, int]:
+    """Map each emitted check block to its `genuine_signal_count`.
+
+    Parses the block text (every `emit_*` block carries both a `check:` header
+    and a `genuine_signal_count:` line) so the substrate is uniform across all
+    checks without threading the count through each emitter. Meta blocks
+    (`report-diff`) whose header is not a known check name are skipped.
+    """
+    out: dict[str, int] = {}
+    for block in blocks:
+        header = _CHECK_HEADER_RE.search(block)
+        if header is None or header.group(1) not in CHECK_NAMES:
+            continue
+        count = _GENUINE_COUNT_RE.search(block)
+        if count is not None:
+            out[header.group(1)] = int(count.group(1))
+    return out
+
+
+def _prior_genuine_runs(repo_root: Path, limit: int) -> list[dict[str, int]]:
+    """Return up to `limit` prior runs' per-check genuine counts, newest first.
+
+    Reads the `genuine__{check}` keys from each recent persisted report's
+    `summary_metrics` header. The current run's report has not been written yet
+    when this is called (the sink runs at the end of `run_checks`), so every
+    returned run is a genuine predecessor. A report predating the era model
+    carries no `genuine__` keys and yields an empty run dict — which breaks any
+    quiet streak (an unknown run is not a confirmed-quiet run).
+    """
+    reports_dir = (repo_root / AUDIT_REPORTS_REL).resolve()
+    if limit <= 0 or not reports_dir.is_dir():
+        return []
+    candidates = sorted(
+        (p for p in reports_dir.glob("*.toon") if _REPORT_STEM_RE.match(p.stem)),
+        key=lambda p: p.stem,
+        reverse=True,
+    )[:limit]
+    runs: list[dict[str, int]] = []
+    for path in candidates:
+        metrics = _parse_report_summary_metrics(path)
+        run = {
+            key[len(_GENUINE_METRIC_PREFIX):]: value
+            for key, value in metrics.items()
+            if key.startswith(_GENUINE_METRIC_PREFIX) and isinstance(value, int)
+        }
+        runs.append(run)
+    return runs
+
+
+def _retire_on_quiet_proposals(
+    repo_root: Path, current_genuine: dict[str, int]
+) -> tuple[list[dict[str, Any]], int]:
+    """Compute retire-on-quiet proposals and the recorded-run count.
+
+    A check's quiet streak is the number of consecutive most-recent recorded runs
+    — the current run first, then each prior report — whose genuine count is
+    exactly zero. A non-zero count OR a run that never recorded the check breaks
+    the streak. A check quiet for at least `THRESHOLDS["retire_on_quiet_runs"]`
+    runs surfaces a removal proposal. Returns `(proposals, runs_recorded)` where
+    `runs_recorded` is 1 (this run) plus the number of prior reports read.
+    """
+    threshold = int(THRESHOLDS["retire_on_quiet_runs"])
+    prior_runs = _prior_genuine_runs(repo_root, threshold)
+    runs = [current_genuine, *prior_runs]
+    proposals: list[dict[str, Any]] = []
+    for check in CHECK_NAMES:
+        streak = 0
+        for run in runs:
+            if run.get(check) == 0:
+                streak += 1
+            else:
+                break
+        if streak >= threshold:
+            proposals.append(
+                {
+                    "check": check,
+                    "quiet_run_count": streak,
+                    "fixed_since": CHECK_ERA.get(check, ""),
+                    "proposal": (
+                        f"retire (quiet for {streak} recorded runs "
+                        f">= {threshold}) — proposal only, no removal"
+                    ),
+                }
+            )
+    return proposals, len(runs)
+
+
+def emit_retire_on_quiet_block(
+    proposals: list[dict[str, Any]], runs_recorded: int
+) -> str:
+    """Emit the `retire-on-quiet` proposal block.
+
+    Meta block (no `fixed_since` stamp of its own) leading with the tunable
+    threshold and the recorded-run count so the reader knows how much history
+    backs the proposals — the mechanism only fires once at least
+    `retire_on_quiet_runs` runs have been recorded. Each row names the check, its
+    quiet-run streak, its `CHECK_ERA` stamp, and the proposal text. The block is
+    always emitted on a full sweep (empty rows show the mechanism ran); it never
+    removes a check.
+    """
+    threshold = int(THRESHOLDS["retire_on_quiet_runs"])
+    out = [
+        "check: retire-on-quiet",
+        "status: success",
+        f"quiet_run_threshold: {threshold}",
+        f"runs_recorded: {runs_recorded}",
+        f"proposal_count: {len(proposals)}",
+        f"rows[{len(proposals)}]{{check,quiet_run_count,fixed_since,proposal}}:",
+    ]
+    for p in proposals:
+        out.append(
+            "  "
+            + ",".join(
+                _cell(c)
+                for c in [
+                    p["check"],
+                    p["quiet_run_count"],
+                    p["fixed_since"],
+                    p["proposal"],
+                ]
+            )
+        )
+    return "\n".join(out) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # TOON emission
 # ---------------------------------------------------------------------------
 
@@ -5279,6 +5495,18 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
         summary_metrics["cross-check-synthesis_fired"] = syn_result["couplings_fired"]
 
     summary_metrics["plans_scanned"] = len(all_inputs)
+
+    # Era model: persist the uniform per-check genuine substrate, stamp each
+    # emitted block with its `fixed_since` boundary, and (on a full sweep) surface
+    # the retire-on-quiet proposals over the recorded-run history.
+    per_check_genuine = _extract_per_check_genuine(blocks)
+    for check_name, genuine_count in per_check_genuine.items():
+        summary_metrics[f"{_GENUINE_METRIC_PREFIX}{check_name}"] = genuine_count
+    blocks = [_stamp_era(block) for block in blocks]
+    if set(selected) == set(CHECK_NAMES):
+        proposals, runs_recorded = _retire_on_quiet_proposals(repo_root, per_check_genuine)
+        blocks.append(emit_retire_on_quiet_block(proposals, runs_recorded))
+
     diff_block = _report_diff_block(repo_root, summary_metrics)
     if diff_block:
         blocks.append(diff_block)
