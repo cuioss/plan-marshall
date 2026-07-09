@@ -127,6 +127,34 @@ def test_api_init_reset_blanks_existing():
         assert load_module_enriched('module-a', tmpdir)['responsibility'] == ''
 
 
+def test_api_init_reset_without_force_is_noop():
+    """api_init(force=False, reset=True) is a deliberate no-op that preserves curated enrichment.
+
+    Guards the ``reset = reset and force`` coercion in ``_cmd_manage.py``:
+    ``reset=True`` without ``force=True`` must NOT blank any module. The run
+    therefore behaves like a plain re-init over already-initialised modules —
+    ``modules_initialized`` stays 0 and curated content is left untouched. This
+    validates the no-op contract at the ``api_init`` level (the sibling
+    ``test_api_init_reset_blanks_existing`` only covers the ``reset AND force``
+    destructive path).
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_project(tmpdir, shape='metadata_rich')
+        api_init(tmpdir)
+
+        # Curate module-a so any accidental reset would be observable.
+        save_module_enriched('module-a', {'responsibility': 'custom'}, tmpdir)
+        assert load_module_enriched('module-a', tmpdir)['responsibility'] == 'custom'
+
+        result = api_init(tmpdir, force=False, reset=True)
+        assert result['status'] == 'success'
+        # reset is coerced off without force, so nothing is (re-)initialised.
+        assert result['modules_initialized'] == 0
+
+        # The curated content survived byte-for-byte — reset was a no-op.
+        assert load_module_enriched('module-a', tmpdir)['responsibility'] == 'custom'
+
+
 def test_api_init_force_preserves_existing_and_seeds_missing():
     """api_init(force=True) preserves curated enrichment and re-seeds only missing stubs.
 
