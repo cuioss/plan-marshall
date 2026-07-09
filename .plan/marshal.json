@@ -95,7 +95,9 @@
           "re_review_await_timeout_seconds": 600,
           "re_review_on_timeout": "ask",
           "re_review_on_loopback": false,
-          "re_review_on_branch_cleanup": true
+          "re_review_on_branch_cleanup": true,
+          "review_rate_window_await": false,
+          "review_rate_window_timeout_seconds": 3600
         },
         "default:sonar-roundtrip": {
           "touched_file_cleanup": "new_code_only",
@@ -130,7 +132,8 @@
         "verification-feedback": "level-3",
         "post-run-review": "level-4"
       }
-    }
+    },
+    "finding_raw_input_max_bytes": 65536
   },
   "build": {
     "queue": {
@@ -247,7 +250,7 @@
       "lessons_superseded_days": 0,
       "temp_on_maintenance": true
     },
-    "provisioned_version": "0.1.1069",
-    "config_seed_fingerprint": "f8015c9e"
+    "provisioned_version": "0.1.1072",
+    "config_seed_fingerprint": "9f5161c2"
   }
 }

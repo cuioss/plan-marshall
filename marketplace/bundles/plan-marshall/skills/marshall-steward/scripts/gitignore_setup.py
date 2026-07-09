@@ -81,6 +81,9 @@ _MANAGED_RULE_LINES = frozenset({
     '.plan',
     GITIGNORE_MARSHAL_EXCEPTION,
     GITIGNORE_ARCHITECTURE_EXCEPTION,
+    # Legacy rules — no longer emitted by setup_gitignore, but retained here so
+    # the consolidation pass keeps recognizing and preserving them in existing
+    # .gitignore files instead of reclassifying them as user content.
     GITIGNORE_PLUGIN_DOCTOR_EXCEPTION,
     GITIGNORE_PLAN_LOCAL_WORKTREES,
     '.plan/local/worktrees',
@@ -176,8 +179,6 @@ def check_gitignore_status_from_content(content: str, exists: bool = True) -> di
     has_plan_dir = False
     has_marshal_exception = False
     has_architecture_exception = False
-    has_plugin_doctor_exception = False
-    has_plan_local_worktrees = False
     has_managed_comment = False
     has_local_comment = False
 
@@ -190,11 +191,6 @@ def check_gitignore_status_from_content(content: str, exists: bool = True) -> di
             has_marshal_exception = True
         if stripped == GITIGNORE_ARCHITECTURE_EXCEPTION:
             has_architecture_exception = True
-        if stripped == GITIGNORE_PLUGIN_DOCTOR_EXCEPTION:
-            has_plugin_doctor_exception = True
-        # Accept .plan/local/worktrees/ (preferred) and .plan/local/worktrees (no trailing slash)
-        if stripped in ('.plan/local/worktrees/', '.plan/local/worktrees'):
-            has_plan_local_worktrees = True
         if stripped == GITIGNORE_COMMENT:
             has_managed_comment = True
         if stripped == GITIGNORE_LOCAL_COMMENT:
@@ -205,8 +201,6 @@ def check_gitignore_status_from_content(content: str, exists: bool = True) -> di
         'has_plan_dir': has_plan_dir,
         'has_marshal_exception': has_marshal_exception,
         'has_architecture_exception': has_architecture_exception,
-        'has_plugin_doctor_exception': has_plugin_doctor_exception,
-        'has_plan_local_worktrees': has_plan_local_worktrees,
         'has_managed_comment': has_managed_comment,
         'has_local_comment': has_local_comment,
         'content': content,
@@ -226,7 +220,6 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
         - has_plan_dir: bool
         - has_marshal_exception: bool
         - has_architecture_exception: bool
-        - has_plugin_doctor_exception: bool
         - content: str (if exists)
     """
     exists = gitignore_path.exists()
@@ -261,11 +254,9 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
             f'{GITIGNORE_PLAN_DIR}\n'
             f'{GITIGNORE_MARSHAL_EXCEPTION}\n'
             f'{GITIGNORE_ARCHITECTURE_EXCEPTION}\n'
-            f'{GITIGNORE_PLUGIN_DOCTOR_EXCEPTION}\n'
-            f'{GITIGNORE_PLAN_LOCAL_WORKTREES}\n'
         )
         result['status'] = 'created'
-        result['entries_added'] = 5
+        result['entries_added'] = 3
         if not dry_run:
             gitignore_path.write_text(new_content)
         return result
@@ -289,10 +280,6 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
         entries_to_add.append(GITIGNORE_MARSHAL_EXCEPTION)
     if not consolidated_status['has_architecture_exception']:
         entries_to_add.append(GITIGNORE_ARCHITECTURE_EXCEPTION)
-    if not consolidated_status['has_plugin_doctor_exception']:
-        entries_to_add.append(GITIGNORE_PLUGIN_DOCTOR_EXCEPTION)
-    if not consolidated_status['has_plan_local_worktrees']:
-        entries_to_add.append(GITIGNORE_PLAN_LOCAL_WORKTREES)
 
     needs_managed_comment = not consolidated_status['has_managed_comment']
     needs_local_comment = not consolidated_status['has_local_comment']
