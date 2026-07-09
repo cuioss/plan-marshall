@@ -35,8 +35,14 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 # Per-session active-plan cache root. Resolved once at import; tests redirect
-# the cache to a tmp dir by monkeypatching this module attribute.
-_SESSION_CACHE_BASE = Path.home() / ".cache" / "plan-marshall" / "sessions"
+# the cache to a tmp dir by monkeypatching this module attribute. Path.home()
+# raises RuntimeError when HOME is unset/inaccessible (minimal containers,
+# restricted CI), so resolve it behind a fallback to keep import side-effect-free.
+try:
+    _CACHE_HOME = Path.home()
+except (RuntimeError, OSError):
+    _CACHE_HOME = Path(os.environ.get("HOME") or "/tmp")
+_SESSION_CACHE_BASE = _CACHE_HOME / ".cache" / "plan-marshall" / "sessions"
 
 # Tracked plan-directory name (mirrors the executor / claude_runtime resolution).
 _PLAN_DIR_NAME = os.environ.get("PLAN_DIR_NAME", ".plan")
@@ -66,6 +72,8 @@ def _valid_segment(value: str) -> bool:
     if not isinstance(value, str):
         return False
     if not value or len(value) > _SEGMENT_MAX_LEN:
+        return False
+    if "\x00" in value:
         return False
     if "/" in value or "\\" in value:
         return False
@@ -197,7 +205,14 @@ def _gc_slot(session_id: str) -> bool:
     if not _valid_session_id(session_id):
         return False
     try:
-        _active_plan_path(session_id).unlink(missing_ok=True)
+        path = _active_plan_path(session_id)
+        path.unlink(missing_ok=True)
+        # Best-effort: prune the now-empty session directory so GC does not
+        # leak empty dirs over time. Non-empty / already-gone → OSError, ignored.
+        try:
+            path.parent.rmdir()
+        except OSError:
+            pass
         return True
     except OSError:
         return False

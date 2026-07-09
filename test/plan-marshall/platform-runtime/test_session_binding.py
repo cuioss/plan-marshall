@@ -67,10 +67,10 @@ class TestValidators:
 
     @pytest.mark.parametrize(
         "bad",
-        ["", "../../etc/passwd", "a/b", "a\\b", "..", ".", "x" * 121],
+        ["", "../../etc/passwd", "a/b", "a\\b", "..", ".", "x" * 121, "a\x00b"],
     )
     def test_valid_session_id_rejects_unsafe(self, bad):
-        """Empty, traversal, separator, and over-length session ids are rejected."""
+        """Empty, traversal, separator, null-byte, and over-length session ids are rejected."""
         assert session_binding._valid_session_id(bad) is False
 
     def test_valid_plan_id_accepts_simple(self):
@@ -79,10 +79,10 @@ class TestValidators:
 
     @pytest.mark.parametrize(
         "bad",
-        ["", "a/b", "a\\b", "..", ".", "x" * 121],
+        ["", "a/b", "a\\b", "..", ".", "x" * 121, "a\x00b"],
     )
     def test_valid_plan_id_rejects_unsafe(self, bad):
-        """Empty, traversal, separator, and over-length plan ids are rejected."""
+        """Empty, traversal, separator, null-byte, and over-length plan ids are rejected."""
         assert session_binding._valid_plan_id(bad) is False
 
 
@@ -207,6 +207,14 @@ class TestDoctor:
         assert report["gc_removed"] == 1
         assert session_binding.resolve_plan(SID_B) is None  # stale slot GC'd
         assert session_binding.resolve_plan(SID_A) == "live-plan"  # live preserved
+
+    def test_fix_prunes_empty_session_dir(self, cache, project):
+        """--fix removes the now-empty session directory, not just the active-plan file."""
+        session_binding.bind(SID_B, "gone-plan")
+        assert (cache / SID_B).is_dir()
+        session_binding.doctor(fix=True)
+        assert not (cache / SID_B / "active-plan").exists()  # slot file gone
+        assert not (cache / SID_B).exists()  # empty parent dir pruned
 
     def test_no_index_json_written(self, cache, project):
         """doctor keeps no shared mutable index — no index.json is ever created."""
