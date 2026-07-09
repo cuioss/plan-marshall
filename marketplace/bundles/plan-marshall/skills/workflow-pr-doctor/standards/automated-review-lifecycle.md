@@ -29,6 +29,8 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-fo
 | `status: success`, `timed_out: true` | No new comment within timeout — proceed to Step 2 anyway (the producer at Step 2 surfaces whatever is on the PR; if nothing, the lifecycle returns `comments_total: 0`) |
 | `status: error` | Treat as warning, log, proceed to Step 2 best-effort |
 
+> **Rate-window await (cross-reference).** The `pr wait-for-comments` return also carries a `rate_limited` discriminator: `rate_limited: true` signals the wait ended because the review bot's rate window was exhausted rather than because a review landed. The `default:automated-review` finalize step exposes an opt-in `review_rate_window_await` knob (with `review_rate_window_timeout_seconds`) that, when enabled, re-polls in a bounded await loop on `rate_limited: true` and escalates via `escalate_ask{reason: rate_window_timeout}` on budget exhaustion. This lifecycle reference does NOT duplicate that behaviour — see [`phase-6-finalize/workflow/automated-review.md`](../../phase-6-finalize/workflow/automated-review.md) § "Rate-window await (opt-in)" for the authoritative await loop and escalation contract.
+
 ### Step 2: FIND — file PR comments to the ledger
 
 Call the producer-side `fetch_findings` verb once. It fetches PR review comments, applies pre-filters, and files one `pr-comment` finding per surviving comment into the per-plan findings store, quarantining the untrusted comment body under `raw_input.{body}` (the trusted structured metadata — `thread_id`, `comment_id`, `kind`, `author`, `path`, `line` — goes in the finding's `detail`). The producer is the ONLY surface that fetches and files `pr-comment` findings — this lifecycle does NOT classify or decide on comments inline.
