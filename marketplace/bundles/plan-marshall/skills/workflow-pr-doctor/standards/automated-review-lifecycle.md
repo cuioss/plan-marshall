@@ -8,7 +8,7 @@ Detailed reference for the Automated Review Lifecycle mode used by phase-6-final
 
 - `plan_id` — for logging, finding storage, and Q-Gate findings
 - `pr_number` — PR number (from phase-6-finalize Step 4 or pr-view)
-- `review_bot_buffer_seconds` — max-wait ceiling (in seconds) passed to `pr wait-for-comments` as `--timeout`. The polling subcommand exits as soon as a new review-bot comment is posted, so this is a cap, not a fixed delay. Sourced from the `plan-marshall:automatic-review` step's params in the plan-local execution-manifest step-params snapshot — read via `manage-execution-manifest step-params get --phase 6-finalize --step-id plan-marshall:automatic-review` (default: 180), NOT from a flat phase-6-finalize config field.
+- `review_bot_buffer_seconds` — max-wait ceiling (in seconds) passed to `pr wait-for-comments` as `--timeout`. The polling subcommand exits as soon as a new review-bot comment is posted, so this is a cap, not a fixed delay. Sourced from the `plan-marshall:automatic-review` step's params in the plan-local execution-manifest step-params snapshot — read via `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review` (default: 180), NOT from a flat phase-6-finalize config field.
 
 ## Step-by-Step Reference
 

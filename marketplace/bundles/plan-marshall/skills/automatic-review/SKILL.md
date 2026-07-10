@@ -283,12 +283,14 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 
 Call the producer-side `fetch_findings` verb once. It fetches PR review comments, applies pre-filters (already-resolved threads, obvious text noise, and cross-iteration duplicate comments), and files one `pr-comment` finding per surviving comment into the per-plan findings store with the untrusted comment body quarantined under `raw_input.{body}` — the trusted structured metadata (`thread_id`, `comment_id`, `kind`, `author`, `path`, `line`) goes in the finding's `detail`.
 
+Read `enabled_bots` off the same execution-manifest step-params snapshot already fetched for `review_bot_buffer_seconds` and the `re_review_*` knobs (`manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review`; default `coderabbit,sourcery,gemini`) and forward it as `--enabled-bots {enabled_bots}` on the `fetch_findings` call. This is what enforces the "never await or triage a bot absent from the `enabled_bots` config list" invariant at the producer boundary: `github_pr fetch_findings` files no `pr-comment` finding for a comment whose derived `bot_kind` is disabled, so a bot dropped from `enabled_bots` never enters the pipeline. Omitting the flag would file findings for every bot regardless of the config.
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
-  fetch_findings --pr-number {pr_number} --plan-id {plan_id}
+  fetch_findings --pr-number {pr_number} --plan-id {plan_id} --enabled-bots {enabled_bots}
 ```
 
-(For GitLab projects the equivalent producer is `plan-marshall:workflow-integration-gitlab:gitlab_pr fetch_findings`. Provider selection is whichever matches `manage-providers` for the plan's host; only one of the two is invoked per finalize run. A `status: unconfigured` return means the provider is not authenticated — fail loud, never a silent zero-findings success.)
+(For GitLab projects the equivalent producer is `plan-marshall:workflow-integration-gitlab:gitlab_pr fetch_findings`. Provider selection is whichever matches `manage-providers` for the plan's host; only one of the two is invoked per finalize run. A `status: unconfigured` return means the provider is not authenticated — fail loud, never a silent zero-findings success. **Provider asymmetry:** `gitlab_pr fetch_findings` does NOT yet declare `--enabled-bots`, so the GitLab call takes only `--pr-number` / `--plan-id` — the `enabled_bots` producer-boundary filter is a GitHub-only capability until the GitLab provider grows the flag.)
 
 This is the FIND stage of the consolidated FIND → INGEST → TRIAGE → RESPOND flow. The producer is the ONLY surface that fetches and files `pr-comment` findings; the downstream INGEST (batched `manage-findings ingest`), TRIAGE (top-level-only), and RESPOND (`post_responses` thread-replies) all run inside the single `verification-feedback` dispatch below. This document does not classify, decide, respond to, or act on comments inline — every consumer-side action reads from the findings store via `manage-findings list`.
 

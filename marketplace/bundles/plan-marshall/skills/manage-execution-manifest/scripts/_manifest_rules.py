@@ -627,7 +627,7 @@ def _bot_enforcement_insert_index(phase_6_steps: list[str]) -> int:
     return len(phase_6_steps)
 
 
-def _validate_automated_review_placement(phase_6_steps: list[str]) -> str | None:
+def _validate_automatic_review_placement(phase_6_steps: list[str]) -> str | None:
     """Compose-time placement check for ``automatic-review`` ordering.
 
     Defense-in-depth complement to ``_apply_bot_enforcement_guard``. The

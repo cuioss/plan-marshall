@@ -103,7 +103,7 @@ from _manifest_rules import (
     _read_marshal_phase_step_map,  # noqa: F401
     _read_step_owned_knob,  # noqa: F401
     _snapshot_step_params,  # noqa: F401
-    _validate_automated_review_placement,  # noqa: F401
+    _validate_automatic_review_placement,  # noqa: F401
     _verb_to_phase_5_step,  # noqa: F401
 )
 from _manifest_validation import (
@@ -1412,7 +1412,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # PR-review bot only after the plan directory has been moved or the
     # branch cleaned up, defeating the bot-enforcement guard's intent. The
     # check runs after the remediation guard so it sees the final ordering.
-    placement_diagnostic = _validate_automated_review_placement(final_phase_6_steps)
+    placement_diagnostic = _validate_automatic_review_placement(final_phase_6_steps)
     if placement_diagnostic is not None:
         _log_bot_enforcement_placement_violation(plan_id, placement_diagnostic)
         return {

@@ -157,7 +157,7 @@ class TestBudgetContract:
             'SKILL.md must document the 15-min (900s) budget for sonar-roundtrip'
         )
 
-    def test_automated_review_15min_budget_documented(self, skill_md_text: str):
+    def test_automatic_review_15min_budget_documented(self, skill_md_text: str):
         assert 'automatic-review' in skill_md_text
         assert '15 min' in skill_md_text or '900' in skill_md_text
 
@@ -236,7 +236,7 @@ class TestHungAgentSimulation:
         for later in steps[sonar_idx + 1 :]:
             assert later in dispatched, f'{later} must still dispatch after sonar timeout (continuation)'
 
-    def test_hung_automated_review_marks_failed_and_continues(self, plan_context):
+    def test_hung_automatic_review_marks_failed_and_continues(self, plan_context):
         cmd_compose(_compose_ns('p6-timeout-review'))
         manifest = read_manifest('p6-timeout-review')
         assert manifest is not None

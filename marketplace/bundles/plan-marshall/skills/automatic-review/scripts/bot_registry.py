@@ -119,14 +119,16 @@ def _parse_block(block: str) -> dict[str, Any]:
             if not sep:
                 continue
             key = key.strip()
-            value = _scalar(rest)
-            if value == '':
-                # Opening a nested block (list or map); its kind is decided by
-                # the first child line encountered below.
+            if not rest.strip():
+                # Empty raw remainder opens a nested block (list or map); its
+                # kind is decided by the first child line encountered below.
+                # Test the raw ``rest`` BEFORE scalar-parsing so a legitimately
+                # quoted empty-string scalar (``key: ""``) stays a scalar rather
+                # than being misclassified as a block opener.
                 data[key] = None
                 current_key = key
             else:
-                data[key] = value
+                data[key] = _scalar(rest)
                 current_key = None
             continue
 
