@@ -50,8 +50,11 @@ This skill implements its **OWN** plan system. You must:
 | `lesson` | optional | Lesson ID to convert to plan. Implies `action=lessons` when no explicit action is given. |
 | `recipe` | optional | Recipe key for creating plan from predefined recipe. Implies `action=recipe` when no explicit action is given. |
 | `plan` | optional | Plan name for specific operations (e.g., `jwt-auth`, not path). When supplied without an explicit action, the action is auto-detected from the plan's current phase. |
+| `base_branch` | optional | Merge-target (base) branch for a new plan. When supplied on an init (`task=` / `issue=`) invocation, it seeds `references.base_branch` at init, overriding the `project.default_base_branch` default — e.g. "merge to a developer branch". Ignored for non-init actions. |
 
 **Note**: The `plan` parameter accepts the plan **name** (plan_id) only, not the full path.
+
+**Note**: `base_branch` is a per-plan override of the project-level `default_base_branch` seed. It applies only to the init action and flows into `references.base_branch`. A plan may also override it after init via `manage-references set --field base_branch`.
 
 ## Workflow
 
@@ -183,6 +186,9 @@ After determining the action and workflow document:
 
 # Create new plan from GitHub issue (action=init implied by issue=)
 /plan-marshall issue="https://github.com/org/repo/issues/42"
+
+# Create new plan targeting a non-default merge base (seeds references.base_branch)
+/plan-marshall task="Add feature X" base_branch="develop"
 
 # Outline specific plan
 /plan-marshall action=outline plan="user-auth"

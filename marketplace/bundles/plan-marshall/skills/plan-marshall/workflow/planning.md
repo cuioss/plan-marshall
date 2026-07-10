@@ -136,7 +136,9 @@ To detect the routed shortcut after init completes inline:
 
 The routed shortcut does NOT bypass the guards below — the post-init self-check and the post-refine contract assertion still run on the inline phases. It changes only the dispatch topology of the refine/outline phases (inline vs per-phase execution-context dispatch), not the phase semantics.
 
-**1-Init Phase (inline)** — run phase-1-init's steps **directly in the orchestrator context**; there is no dispatch. Execute the documented steps of [`plan-marshall:phase-1-init`](../../phase-1-init/SKILL.md) in order, passing the init inputs `source: {source}` and `content: {content}` (or `lesson_id` on the lesson-conversion path in § Action: lessons). Fire each operator `AskUserQuestion` natively at its step site, in step order, exactly as documented in the skill:
+**1-Init Phase (inline)** — run phase-1-init's steps **directly in the orchestrator context**; there is no dispatch. Execute the documented steps of [`plan-marshall:phase-1-init`](../../phase-1-init/SKILL.md) in order, passing the init inputs `source: {source}` and `content: {content}` (or `lesson_id` on the lesson-conversion path in § Action: lessons). When a `base_branch=` parameter was supplied to the command, pass it as an additional init input `base_branch: {base_branch}` alongside `source` / `content`, so phase-1-init Step 6 can consume it when seeding `references.base_branch`. Fire each operator `AskUserQuestion` natively at its step site, in step order, exactly as documented in the skill:
+
+The `base_branch` init input is **optional** and applies only to the init action. When supplied, it flows into `references.base_branch`, overriding the `project.default_base_branch` seed; when omitted, phase-1-init falls back to the existing seed logic (`project.default_base_branch`, then the current git branch). It is ignored on every non-init action.
 
 - Step 3 `action: exists` — Resume / Replace / Rename
 - Step 4b.3 obsolescence — Refine / Close / Residual (lesson source only)
