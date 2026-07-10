@@ -401,7 +401,7 @@ def _resolve_owner(step: str):
 def test_resolve_step_owner_classes():
     assert _resolve_owner("default:push") == "orchestrator"
     assert _resolve_owner("push") == "orchestrator"
-    assert _resolve_owner("default:automated-review") == "leaf"
+    assert _resolve_owner("plan-marshall:automatic-review") == "leaf"
     assert _resolve_owner("default:architecture-refresh") == "hybrid"
     assert _resolve_owner("project:finalize-step-plugin-doctor") == "leaf"
     # Unknown BUILT-IN → None (roster drift); unknown EXTERNAL → None (not drift).

@@ -88,7 +88,7 @@ JSON structure and field definitions for project configuration.
         { "default:finalize-step-simplify": { "simplify": "auto" } },
         "default:push",
         "default:create-pr",
-        { "default:automated-review": { "review_bot_buffer_seconds": 180 } },
+        { "plan-marshall:automatic-review": { "review_bot_buffer_seconds": 180 } },
         {
           "default:sonar-roundtrip": {
             "touched_file_cleanup": "new_code_only",
@@ -508,7 +508,7 @@ plan phase-5-execute remove-field --field steps
 
 ### phase-6-finalize
 
-Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON object keyed by step id: a config-less step maps to `{}`; a param-owning step maps to its nested param object. Step-owned params (`review_bot_buffer_seconds` under `default:automated-review`; `touched_file_cleanup` / `do_transition` / `ce_wait_timeout_seconds` under `default:sonar-roundtrip`; `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold` under `default:branch-cleanup`; `simplify` under `default:finalize-step-simplify`; `self_review` / `drop_review_on_scope_gate` under `project:finalize-step-pre-submission-self-review`) nest inside their owning step's value. Key insertion order is the execution order. The reader consumes the keyed map directly; it is the sole on-disk shape both read and written. The one finalize run-at-all gate that has no single owning step body is `qgate` — it stays a flat phase-level sibling, alongside the other ownerless phase-level knobs (`checks_wait_timeout_seconds`, `max_iterations`, the two automation knobs). The opt-in `project:finalize-step-pre-submission-self-review` step is NOT a built-in candidate, so its `self_review` / `drop_review_on_scope_gate` knobs are only stored under the step when a consumer opts the step into `steps`; their defaults (`auto` / `false`) otherwise apply via the consumer's default-merge.
+Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON object keyed by step id: a config-less step maps to `{}`; a param-owning step maps to its nested param object. Step-owned params (`review_bot_buffer_seconds` under `plan-marshall:automatic-review`; `touched_file_cleanup` / `do_transition` / `ce_wait_timeout_seconds` under `default:sonar-roundtrip`; `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold` under `default:branch-cleanup`; `simplify` under `default:finalize-step-simplify`; `self_review` / `drop_review_on_scope_gate` under `project:finalize-step-pre-submission-self-review`) nest inside their owning step's value. Key insertion order is the execution order. The reader consumes the keyed map directly; it is the sole on-disk shape both read and written. The one finalize run-at-all gate that has no single owning step body is `qgate` — it stays a flat phase-level sibling, alongside the other ownerless phase-level knobs (`checks_wait_timeout_seconds`, `max_iterations`, the two automation knobs). The opt-in `project:finalize-step-pre-submission-self-review` step is NOT a built-in candidate, so its `self_review` / `drop_review_on_scope_gate` knobs are only stored under the step when a consumer opts the step into `steps`; their defaults (`auto` / `false`) otherwise apply via the consumer's default-merge.
 
 ```json
 {
@@ -523,7 +523,7 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
         "default:finalize-step-simplify": { "simplify": "auto" },
         "default:push": {},
         "default:create-pr": {},
-        "default:automated-review": { "review_bot_buffer_seconds": 180 },
+        "plan-marshall:automatic-review": { "review_bot_buffer_seconds": 180 },
         "default:sonar-roundtrip": {
           "touched_file_cleanup": "new_code_only",
           "do_transition": false,
@@ -561,7 +561,7 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
 
 **Step-owned params (nested under their owning step in the `steps` map):**
 
-`default:automated-review`:
+`plan-marshall:automatic-review`:
 
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -598,7 +598,7 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | `self_review` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the pre-submission structural + cognitive self-review (canonical step `default:pre-submission-self-review`). `always` overrides the manifest composer's `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
-| `drop_review_on_scope_gate` | bool | false | Escape hatch for the manifest composer's `scope_gated_finalize` pre-filter. `false` (default) keeps the bot-review invariant intact; `true` opts into additionally dropping `automated-review` on scope-gated (surgical / single_module) plans. The self-review step owns this knob because it is the primary review step the scope gate suppresses. |
+| `drop_review_on_scope_gate` | bool | false | Escape hatch for the manifest composer's `scope_gated_finalize` pre-filter. `false` (default) keeps the bot-review invariant intact; `true` opts into additionally dropping `plan-marshall:automatic-review` on scope-gated (surgical / single_module) plans. The self-review step owns this knob because it is the primary review step the scope gate suppresses. |
 
 **Two-tier source for step params**: the `steps` keyed map in `marshal.json` is the **compose-time default + wizard global-config write target** (read/written via `step get` / `step set`). The **plan-local runtime source** is the execution manifest — the composer snapshots each selected step's resolved params into the manifest body at compose time, and phase-5/6 runtime consumers read params via `manage-execution-manifest step-params get` (plan-local, per-plan overridable via `step-params set`), NOT from `marshal.json`. The execution manifest's `step_params` block is an id-keyed dict — a separate runtime-override surface. See [manage-execution-manifest/standards/manifest-schema.md](../../manage-execution-manifest/standards/manifest-schema.md) § `step_params`.
 
@@ -609,13 +609,13 @@ Managed via (the step verbs operate on the keyed map, preserving key insertion o
 - `plan phase-6-finalize step get --step-id default:branch-cleanup` (returns the step's complete nested param object in one call)
 - `plan phase-6-finalize step set --step-id default:branch-cleanup --param pr_merge_strategy --value rebase` (writes one step-owned param into the step's nested object — the global-config write target)
 
-Default steps: `default:finalize-step-simplify`, `default:push`, `default:create-pr`, `default:automated-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan`. Step types: built-in (`default:` prefix), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
+Default steps: `default:finalize-step-simplify`, `default:push`, `default:create-pr`, `plan-marshall:automatic-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan`. Step types: built-in (`default:` prefix), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
 
 ### Run-at-all gates and finalize automation knobs (phase-local)
 
 The lifecycle run-at-all gates are flat phase-local knobs — each owned by the phase whose decision machinery consumes it, tabled under the owning phase section above. There is no top-level policy block: `deep_lane` / `escalation` under `phase-1-init`, `revalidation` under `phase-2-refine`. Under `phase-6-finalize` only `qgate` stays flat, alongside the two flat automation knobs (`finalize_without_asking` / `loop_back_without_asking`). The two other `phase-6-finalize` run-at-all gates (`simplify`, `self_review`) and the `drop_review_on_scope_gate` escape hatch each own exactly one finalize step, so they are NOT flat — they are step-owned params nested under their owning step in the `steps` map (`simplify` → `default:finalize-step-simplify`; `self_review` / `drop_review_on_scope_gate` → `project:finalize-step-pre-submission-self-review`; `final_merge_without_asking` → `default:branch-cleanup`; see the per-step param sub-tables above). Each gate takes `auto|always|never`, validated by `validate_run_at_all`; the automation knobs are boolean.
 
-The three `phase-6-finalize` run-at-all gates (`self_review` / `qgate` / `simplify`) map one-to-one to finalize steps and are consumed by the manifest composer's finalize selection post-matrix transform — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "plan.phase-6-finalize Selection" for the gate→step map and the `automated-review` carve-out. `deep_lane` / `escalation` are consumed by the phase-1-init lane router, and `revalidation` by the refine revalidation pass. (The planning-time Q-Gate dispatch on `phase-3-outline` / `phase-4-plan` is governed by the distinct `q_gate_validation` knob — `off`/`once`/`until_clean` — not a run-at-all gate; see those phase sections above.)
+The three `phase-6-finalize` run-at-all gates (`self_review` / `qgate` / `simplify`) map one-to-one to finalize steps and are consumed by the manifest composer's finalize selection post-matrix transform — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "plan.phase-6-finalize Selection" for the gate→step map and the `plan-marshall:automatic-review` carve-out. `deep_lane` / `escalation` are consumed by the phase-1-init lane router, and `revalidation` by the refine revalidation pass. (The planning-time Q-Gate dispatch on `phase-3-outline` / `phase-4-plan` is governed by the distinct `q_gate_validation` knob — `off`/`once`/`until_clean` — not a run-at-all gate; see those phase sections above.)
 
 **Access shape.** Read/write the flat phase-local knobs (`qgate` and the two automation knobs) via the standard `manage-config plan <phase> get/set --field <knob>` verb; read/write the step-owned knobs (`simplify` / `self_review` / `drop_review_on_scope_gate`) via the `step get/set --step-id <owning-step>` verb. See [`manage-config/SKILL.md`](../SKILL.md) § "Phase-Local Run-at-all Gates and Automation Knobs".
 

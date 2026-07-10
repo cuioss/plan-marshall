@@ -991,7 +991,7 @@ MARSHAL_KEY_PLAN = 'plan'
 # id-keyed maps: each key is a step id, each value is that step's nested param
 # object (``{}`` when the step owns no params). Key insertion order is the
 # execution order. Step-owned params nest under their owning step — here
-# ``review_bot_buffer_seconds`` nests under ``default:automated-review`` rather
+# ``review_bot_buffer_seconds`` nests under ``plan-marshall:automatic-review`` rather
 # than living as a flat sibling of ``steps``.
 MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
     MARSHAL_KEY_SKILL_DOMAINS: {'system': {}},
@@ -1012,7 +1012,7 @@ MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
             'steps': {
                 'default:push': {},
                 'default:create-pr': {},
-                'default:automated-review': {'review_bot_buffer_seconds': 300},
+                'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 300},
                 'default:sonar-roundtrip': {},
                 'default:lessons-capture': {},
                 'default:branch-cleanup': {},

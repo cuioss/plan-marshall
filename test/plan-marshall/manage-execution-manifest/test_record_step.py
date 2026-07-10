@@ -372,7 +372,7 @@ def test_owner_of_sub_dispatching_steps_are_orchestrator_owned():
     for step in (
         'finalize-step-plugin-doctor',
         'finalize-step-pre-submission-self-review',
-        'automated-review',
+        'automatic-review',
         'finalize-step-simplify',
     ):
         assert owner_of(step) == 'orchestrator-owned', step
@@ -395,7 +395,7 @@ def test_owner_of_defaults_leaf_dispatchable():
 def test_is_leaf_dispatchable_rejects_orchestrator_owned_step():
     """A dispatched leaf must never be handed an orchestrator-owned step."""
     assert is_leaf_dispatchable('project:finalize-step-plugin-doctor') is False
-    assert is_leaf_dispatchable('automated-review') is False
+    assert is_leaf_dispatchable('automatic-review') is False
     # A leaf-dispatchable step is accepted.
     assert is_leaf_dispatchable('push') is True
     assert is_leaf_dispatchable('verify:quality-gate') is True

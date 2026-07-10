@@ -554,7 +554,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "steps": {
         "default:push": {},
         "default:create-pr": {},
-        "default:automated-review": { "review_bot_buffer_seconds": 180 },
+        "plan-marshall:automatic-review": { "review_bot_buffer_seconds": 180 },
         "default:sonar-roundtrip": {
           "touched_file_cleanup": "new_code_only",
           "do_transition": false,
@@ -625,7 +625,7 @@ The lane mechanism's per-element vocabulary (the closed `lane.class` enum, the c
 | `do_transition` | bool | `false` | Gate for the server-side SonarCloud dismissal path. `false` routes FALSE-POSITIVE / WON'T-FIX dispositions through in-code suppression; `true` re-enables `sonar_rest transition` dismissal. Consumed by triage Step 3c as the fall-through gate. |
 | `ce_wait_timeout_seconds` | int | `600` | Budget (seconds) for the synchronous in-Python CE-readiness wait in `sonar.py fetch_findings` — sibling of the flat `checks_wait_timeout_seconds`; overridable by `--ce-wait-timeout`. |
 
-`default:automated-review`: `review_bot_buffer_seconds` (int, default `180`) — max-wait ceiling for `pr wait-for-comments`. `default:branch-cleanup`: `pr_merge_strategy` (default `squash`), `final_merge_without_asking` (bool, default `false`), `auto_rebase_threshold` (default `no_overlap_only`).
+`plan-marshall:automatic-review`: `review_bot_buffer_seconds` (int, default `180`) — max-wait ceiling for `pr wait-for-comments`. `default:branch-cleanup`: `pr_merge_strategy` (default `squash`), `final_merge_without_asking` (bool, default `false`), `auto_rebase_threshold` (default `no_overlap_only`).
 
 **Access shape.** Read/write each FLAT knob through the standard `plan <phase> get/set --field <knob>` verb — e.g. `plan phase-6-finalize get --field qgate`, `plan phase-6-finalize get --field finalize_without_asking`. Read/write each STEP-OWNED param through the one-stop `plan phase-6-finalize step get/set --step-id {step} [--param {k} --value {v}]` verb against the marshal.json keyed-map serial form (the global-config default + wizard write target), or via the plan-local manifest snapshot `manage-execution-manifest step-params get/set` (the per-plan runtime read/override). See [§ Workflow: Phase-Local Run-at-all Gates and Automation Knobs](#workflow-phase-local-run-at-all-gates-and-automation-knobs).
 

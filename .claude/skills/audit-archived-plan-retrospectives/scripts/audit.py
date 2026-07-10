@@ -346,7 +346,7 @@ _LEGACY_BARE_NAME_ROLE: dict[str, str] = {
 # in the main context (pure scripts or trivial orchestration that earn no
 # envelope — push, ci-verify, record-metrics, archive-plan, …) and
 # LEAF-DISPATCHABLE steps are dispatched under `Task: execution-context-{level}`
-# because they carry an LLM core (create-pr, automated-review, sonar-roundtrip,
+# because they carry an LLM core (create-pr, automatic-review, sonar-roundtrip,
 # the review/simplify/security-audit sweeps, …). The classification is the single
 # source of truth in `phase-6-finalize/SKILL.md` § "Dispatched workflows vs
 # inline steps"; there is NO persisted per-step `owner` field on the manifest
@@ -379,7 +379,7 @@ _LEAF_DISPATCHED_STEPS = frozenset(
         "create-pr",
         "lessons-capture",
         "adr-propose",
-        "automated-review",
+        "automatic-review",
         "sonar-roundtrip",
         "finalize-step-simplify",
         "finalize-step-security-audit",
@@ -395,6 +395,11 @@ _EXTERNAL_STEP_OWNER: dict[str, str] = {
     "project:finalize-step-deploy-target": "orchestrator",
     "project:finalize-step-sync-plugin-cache": "orchestrator",
     "project:finalize-step-plugin-doctor": "leaf",
+    # Promoted built-in-equivalent bundle finalize step: its dispatched form is a
+    # leaf. A composed manifest normalizes it to the bare ``automatic-review`` id
+    # (classified via `_LEAF_DISPATCHED_STEPS` above); the bundle-prefixed id is
+    # classified here for manifests / rosters that carry the un-normalized form.
+    "plan-marshall:automatic-review": "leaf",
 }
 
 
@@ -5351,7 +5356,7 @@ def _syn_build_walltime_outlier_plans(sequence: Any) -> set[str]:
 # workflows the orchestrator uses as caller-phase context
 # (`plan-marshall:phase-N-...`) may legitimately emit a `target=` dispatch. A
 # `target=` dispatch whose caller is ANY other skill is a topology violation — a
-# leaf (execute-task, automated-review, sonar-roundtrip, a verify/finalize leaf,
+# leaf (execute-task, automatic-review, sonar-roundtrip, a verify/finalize leaf,
 # a retrospective aspect, …) spawned a subagent. The allowlist is used rather than
 # a leaf denylist so a newly-added leaf is caught by default.
 

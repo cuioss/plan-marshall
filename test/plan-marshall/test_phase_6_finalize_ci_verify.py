@@ -14,7 +14,7 @@ deterministic, script-anchored parts of the contract:
    circuiting (the strict-mode tests in
    ``test_ci_complete_precondition.py`` cover the opposite behaviour).
 2. The default manifest composer includes ``ci-verify`` between
-   ``create-pr`` and ``automated-review``.
+   ``create-pr`` and ``automatic-review``.
 3. The phase-6-finalize required-steps list contains ``ci-verify`` at
    the canonical position.
 4. The HEAD_DEPENDENT_STEPS membership for ``ci-verify`` is declared in
@@ -249,10 +249,10 @@ def test_ci_verify_positioned_between_create_pr_and_automated_review():
     steps = list(manifest_mod.DEFAULT_PHASE_6_STEPS)
     create_pr_idx = steps.index('create-pr')
     ci_verify_idx = steps.index('ci-verify')
-    automated_review_idx = steps.index('automated-review')
+    automated_review_idx = steps.index('automatic-review')
     assert create_pr_idx < ci_verify_idx < automated_review_idx, (
         f'ci-verify must sit between create-pr ({create_pr_idx}) and '
-        f'automated-review ({automated_review_idx}); got ci-verify at '
+        f'automatic-review ({automated_review_idx}); got ci-verify at '
         f'{ci_verify_idx}'
     )
 
@@ -271,10 +271,10 @@ def test_required_steps_order_anchors_ci_verify_after_create_pr():
     content = _REQUIRED_STEPS_PATH.read_text(encoding='utf-8')
     create_pr_pos = content.find('- create-pr')
     ci_verify_pos = content.find('- ci-verify')
-    automated_review_pos = content.find('- automated-review')
+    automated_review_pos = content.find('- automatic-review')
     assert (
         0 < create_pr_pos < ci_verify_pos < automated_review_pos
-    ), 'required-steps.md must list ci-verify between create-pr and automated-review'
+    ), 'required-steps.md must list ci-verify between create-pr and automatic-review'
 
 
 # ---------------------------------------------------------------------------

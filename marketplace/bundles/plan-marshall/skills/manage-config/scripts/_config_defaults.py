@@ -704,7 +704,7 @@ def validate_sonar_touched_file_cleanup(value: str) -> None:
 # Param ownership (for reference; the declarations themselves are authoritative):
 #   - default:sonar-roundtrip       → touched_file_cleanup, do_transition,
 #                                      ce_wait_timeout_seconds
-#   - default:automated-review      → review_bot_buffer_seconds
+#   - plan-marshall:automatic-review      → review_bot_buffer_seconds
 #   - default:branch-cleanup        → pr_merge_strategy, final_merge_without_asking,
 #                                      auto_rebase_threshold,
 #                                      merge_queue_wait_budget_seconds,
@@ -815,7 +815,7 @@ DEFAULT_PLAN_FINALIZE = {
     # `{step_id: {params}}` whose key insertion order is the execution order. A
     # config-less (ownerless) step carries an empty `{}` param object.
     # Step-owned params (sonar params under `default:sonar-roundtrip`;
-    # `review_bot_buffer_seconds` under `default:automated-review`;
+    # `review_bot_buffer_seconds` under `plan-marshall:automatic-review`;
     # `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold`
     # under `default:branch-cleanup`; `simplify` under
     # `default:finalize-step-simplify`) live in the owning step's nested param

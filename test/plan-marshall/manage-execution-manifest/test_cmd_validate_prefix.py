@@ -178,7 +178,7 @@ def test_compose_then_validate_succeeds_with_prefixed_marshal_steps(plan_context
     prefixed_phase_6 = [
         'default:push',
         'default:create-pr',
-        'default:automated-review',
+        'plan-marshall:automatic-review',
         'default:lessons-capture',
         'default:archive-plan',
     ]

@@ -30,6 +30,7 @@
     "./commands/tools-sync-agents-file.md"
   ],
   "skills": [
+    "./skills/automatic-review",
     "./skills/build-gradle",
     "./skills/build-maven",
     "./skills/build-npm",

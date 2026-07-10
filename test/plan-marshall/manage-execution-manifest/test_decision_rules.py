@@ -307,11 +307,11 @@ class TestPrePushQualityGateInactive:
 
 
 class TestBotEnforcementGuard:
-    """Composition-time guard remediates `automated-review` for GitHub/GitLab when missing.
+    """Composition-time guard remediates `automatic-review` for GitHub/GitLab when missing.
 
     Lesson 2026-04-28-10-001 converted the guard from assertion to remediation.
-    On GitHub/GitLab plans where `automated-review` is dropped (e.g., by a
-    pre-filter or future row), the guard appends `default:automated-review`
+    On GitHub/GitLab plans where `automatic-review` is dropped (e.g., by a
+    pre-filter or future row), the guard appends `plan-marshall:automatic-review`
     back into `phase_6.steps` and emits a `bot-enforcement guard remediated`
     decision-log line; composition continues normally — no error TOON. The
     `bot_enforcement_violation` error branch is retained as a safety net for
@@ -322,23 +322,23 @@ class TestBotEnforcementGuard:
         _seed_marshal(ci_provider='github')
         _stub_footprint(['some/file.py'])
 
-        # Compose a candidate set that EXCLUDES automated-review.
-        phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automated-review')
+        # Compose a candidate set that EXCLUDES automatic-review.
+        phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automatic-review')
         ns = _compose_ns(plan_id='qg-bot-github', phase_6_steps=phase_6)
         result = cmd_compose(ns)
 
         assert result is not None
         assert result['status'] == 'success'
         steps = result_phase_6_steps(result)
-        # Guard appends `default:automated-review` (canonical prefixed form).
+        # Guard appends `plan-marshall:automatic-review` (canonical prefixed form).
         bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
-        assert 'automated-review' in bare_step_names
+        assert 'automatic-review' in bare_step_names
 
     def test_remediates_for_gitlab_when_automated_review_missing(self, plan_context):
         _seed_marshal(ci_provider='gitlab')
         _stub_footprint(['some/file.py'])
 
-        phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automated-review')
+        phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automatic-review')
         ns = _compose_ns(plan_id='qg-bot-gitlab', phase_6_steps=phase_6)
         result = cmd_compose(ns)
 
@@ -346,7 +346,7 @@ class TestBotEnforcementGuard:
         assert result['status'] == 'success'
         steps = result_phase_6_steps(result)
         bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
-        assert 'automated-review' in bare_step_names
+        assert 'automatic-review' in bare_step_names
 
     def test_no_op_when_automated_review_present(self, plan_context):
         _seed_marshal(ci_provider='github')
@@ -357,21 +357,21 @@ class TestBotEnforcementGuard:
 
         assert result is not None
         assert result['status'] == 'success'
-        assert 'automated-review' in result_phase_6_steps(result)
+        assert 'automatic-review' in result_phase_6_steps(result)
 
     def test_no_op_for_non_github_non_gitlab(self, plan_context):
         _seed_marshal(ci_provider=None)
         _stub_footprint(['some/file.py'])
 
-        phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automated-review')
+        phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automatic-review')
         ns = _compose_ns(plan_id='qg-bot-other', phase_6_steps=phase_6)
         result = cmd_compose(ns)
 
         assert result is not None
         assert result['status'] == 'success'
-        # No CI provider configured → guard is a no-op; automated-review
+        # No CI provider configured → guard is a no-op; automatic-review
         # stays dropped and no error is raised.
-        assert 'automated-review' not in result_phase_6_steps(result)
+        assert 'automatic-review' not in result_phase_6_steps(result)
 
 
 # =============================================================================

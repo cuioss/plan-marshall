@@ -277,20 +277,20 @@ class TestCiVerifyRegistration:
     finalize-step set so that ``marshall-steward`` seeds it into new
     projects and the phase-6-finalize dispatcher can resolve it. Position
     is load-bearing: ``ci-verify`` consumes the completed-CI signal and
-    classifies failures BEFORE ``automated-review`` consumes PR-comment
+    classifies failures BEFORE ``automatic-review`` consumes PR-comment
     findings, so it must sit immediately after ``default:create-pr``; the
     reactivated order-25 ``architecture-refresh`` step now sits between
-    ``default:ci-verify`` and ``default:automated-review``."""
+    ``default:ci-verify`` and ``plan-marshall:automatic-review``."""
 
     def test_ci_verify_in_built_in_finalize_steps(self) -> None:
         """The default-on built-in seed MUST contain ``'default:ci-verify'``
         immediately after ``'default:create-pr'`` — the canonical position
         declared by ``standards/ci-verify.md`` § Placement (order 22, between
-        create-pr at 20 and automated-review at 30). The seed is discovered via
+        create-pr at 20 and automatic-review at 30). The seed is discovered via
         find_implementors, not a constant. ``architecture-refresh`` is now
         ``default_on: true`` (order 25), so it enters the seed BETWEEN
-        ``ci-verify`` (22) and ``automated-review`` (30): the canonical tail is
-        ``ci-verify → architecture-refresh → automated-review``."""
+        ``ci-verify`` (22) and ``automatic-review`` (30): the canonical tail is
+        ``ci-verify → architecture-refresh → automatic-review``."""
         steps = _discovered_seed_step_ids()
         assert 'default:ci-verify' in steps, (
             "the default-on seed must contain 'default:ci-verify'"
@@ -301,7 +301,7 @@ class TestCiVerifyRegistration:
         create_pr_idx = steps.index('default:create-pr')
         ci_verify_idx = steps.index('default:ci-verify')
         architecture_refresh_idx = steps.index('default:architecture-refresh')
-        automated_review_idx = steps.index('default:automated-review')
+        automated_review_idx = steps.index('plan-marshall:automatic-review')
         assert ci_verify_idx == create_pr_idx + 1, (
             "'default:ci-verify' must sit immediately after "
             "'default:create-pr' in the default-on seed"
@@ -311,7 +311,7 @@ class TestCiVerifyRegistration:
             "after 'default:ci-verify' (order 22) in the default-on seed"
         )
         assert automated_review_idx == ci_verify_idx + 2, (
-            "'default:automated-review' must sit two positions after "
+            "'plan-marshall:automatic-review' must sit two positions after "
             "'default:ci-verify' — 'architecture-refresh' is now between them"
         )
 
@@ -357,7 +357,7 @@ class TestFinalizeStepDescriptionDrift:
         ``requires: [ci-complete]`` so the precondition is visible in the
         wizard / ``list-finalize-steps`` surface, mirroring the shape
         already used by ``default:ci-verify`` and
-        ``default:automated-review``."""
+        ``plan-marshall:automatic-review``."""
         descriptions = _discovered_descriptions()
         text = descriptions['default:sonar-roundtrip']
         assert 'requires: [ci-complete]' in text, (

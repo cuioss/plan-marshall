@@ -102,12 +102,12 @@ def test_mark_step_failed_happy_path(plan_context):
 
     Regression guard for PR #338 review (gemini-code-assist findings 0d1782 and
     f9c054): the phase-6-finalize dispatcher's graceful timeout degradation
-    path uses ``--outcome failed`` (see SKILL.md and automated-review.md
+    path uses ``--outcome failed`` (see SKILL.md and automatic-review.md
     Timeout Contract), so ``failed`` MUST be a valid persisted outcome.
     """
     plan_id = 'mark-step-failed'
     _make_plan(plan_id)
-    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'automated-review', 'failed'))
+    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'automatic-review', 'failed'))
 
     assert result['status'] == 'success'
     assert result['changed'] is True
@@ -115,7 +115,7 @@ def test_mark_step_failed_happy_path(plan_context):
     assert result['display_detail'] is None
 
     persisted = read_status(plan_id)
-    assert persisted['metadata']['phase_steps']['6-finalize']['automated-review'] == {
+    assert persisted['metadata']['phase_steps']['6-finalize']['automatic-review'] == {
         'outcome': 'failed',
         'display_detail': None,
     }
@@ -129,7 +129,7 @@ def test_mark_step_failed_with_display_detail(plan_context):
         _args(
             plan_id,
             '6-finalize',
-            'automated-review',
+            'automatic-review',
             'failed',
             display_detail='timeout after 1800s',
         )
@@ -140,7 +140,7 @@ def test_mark_step_failed_with_display_detail(plan_context):
     assert result['display_detail'] == 'timeout after 1800s'
 
     persisted = read_status(plan_id)
-    assert persisted['metadata']['phase_steps']['6-finalize']['automated-review'] == {
+    assert persisted['metadata']['phase_steps']['6-finalize']['automatic-review'] == {
         'outcome': 'failed',
         'display_detail': 'timeout after 1800s',
     }
@@ -360,11 +360,11 @@ def test_mark_step_failed_idempotent(plan_context):
     plan_id = 'mark-step-failed-idempotent'
     _make_plan(plan_id)
     cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'automated-review', 'failed', display_detail='timeout')
+        _args(plan_id, '6-finalize', 'automatic-review', 'failed', display_detail='timeout')
     )
 
     second = cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'automated-review', 'failed', display_detail='timeout')
+        _args(plan_id, '6-finalize', 'automatic-review', 'failed', display_detail='timeout')
     )
 
     assert second['status'] == 'success'
@@ -377,12 +377,12 @@ def test_mark_step_failed_then_done_with_force(plan_context):
     plan_id = 'mark-step-failed-then-done'
     _make_plan(plan_id)
     cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'automated-review', 'failed', display_detail='timeout')
+        _args(plan_id, '6-finalize', 'automatic-review', 'failed', display_detail='timeout')
     )
 
     # Without --force, a different outcome on an existing step is a conflict.
     conflict = cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'automated-review', 'done', display_detail='retry green')
+        _args(plan_id, '6-finalize', 'automatic-review', 'done', display_detail='retry green')
     )
     assert conflict['status'] == 'error'
     assert conflict['error'] == 'conflict'
@@ -394,7 +394,7 @@ def test_mark_step_failed_then_done_with_force(plan_context):
         _args(
             plan_id,
             '6-finalize',
-            'automated-review',
+            'automatic-review',
             'done',
             force=True,
             display_detail='retry green',
@@ -406,7 +406,7 @@ def test_mark_step_failed_then_done_with_force(plan_context):
     assert retry['previous_outcome'] == 'failed'
 
     persisted = read_status(plan_id)
-    assert persisted['metadata']['phase_steps']['6-finalize']['automated-review'] == {
+    assert persisted['metadata']['phase_steps']['6-finalize']['automatic-review'] == {
         'outcome': 'done',
         'display_detail': 'retry green',
     }

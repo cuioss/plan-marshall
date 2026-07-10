@@ -1139,6 +1139,15 @@ def add_pr_create_args(
         'checkout than the worktree containing the source branch — e.g., when phase-6-finalize runs '
         'from the main checkout against a worktree-isolated plan branch.',
     )
+    pr_create.add_argument(
+        '--label',
+        action='append',
+        dest='label',
+        metavar='LABEL',
+        help='Label to apply to the created PR (repeatable). Passed through verbatim to '
+        '`gh pr create --label`. The create-pr finalize step applies `--label skip-bot-review` '
+        'when the enabled_bots set is empty (all reviewer bots disabled for this plan).',
+    )
 
 
 def add_head_arg(subparser: argparse.ArgumentParser) -> None:

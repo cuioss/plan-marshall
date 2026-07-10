@@ -101,7 +101,7 @@ DEFAULT_PHASE_6_STEPS = (
     'push',
     'create-pr',
     'ci-verify',
-    'automated-review',
+    'automatic-review',
     'sonar-roundtrip',
     'lessons-capture',
     'adr-propose',
@@ -111,8 +111,30 @@ DEFAULT_PHASE_6_STEPS = (
 )
 
 
+# Promoted built-in-equivalent bundle finalize steps: their ``{bundle}:{skill}``
+# id boundary-normalizes to a bare name exactly like a ``default:`` step. These
+# skills were promoted out of a former ``phase-6-finalize`` built-in doc into a
+# top-level bundle skill (``default_on: true``, seeded into the default finalize
+# set), so the composer, snapshot, lane, owner, and step-params machinery must
+# treat the bundle-prefixed id and its bare form identically. Genuinely opt-in
+# ``{bundle}:{skill}`` steps (e.g. ``plan-marshall:plan-retrospective``) are NOT
+# listed here and keep their prefix verbatim so the dispatcher routes them as
+# typed SKILL steps.
+PROMOTED_BUILTIN_STEP_IDS: dict[str, str] = {
+    'plan-marshall:automatic-review': 'automatic-review',
+}
+
+
 def _strip_default_prefix(step: str) -> str:
-    """Return the bare step name regardless of the optional ``default:`` prefix."""
+    """Return the bare step name for a ``default:``-prefixed or promoted step id.
+
+    Boundary-normalizer for finalize/verify step ids: strips a leading
+    ``default:`` prefix, and maps a promoted built-in-equivalent bundle step id
+    (:data:`PROMOTED_BUILTIN_STEP_IDS`) to its bare name. Every other prefix
+    (``project:``, other ``{bundle}:{skill}``) is preserved verbatim.
+    """
+    if step in PROMOTED_BUILTIN_STEP_IDS:
+        return PROMOTED_BUILTIN_STEP_IDS[step]
     return step[len('default:') :] if step.startswith('default:') else step
 
 
@@ -216,7 +238,7 @@ ORCHESTRATOR_OWNED_STEPS: frozenset[str] = frozenset(
     {
         'finalize-step-plugin-doctor',
         'finalize-step-pre-submission-self-review',
-        'automated-review',
+        'automatic-review',
         'finalize-step-simplify',
     }
 )

@@ -349,7 +349,7 @@ def test_finalize_add_step(plan_context, monkeypatch):
         lambda phase: [
             {'name': 'default:push', 'order': 10},
             {'name': 'default:create-pr', 'order': 20},
-            {'name': 'default:automated-review', 'order': 30},
+            {'name': 'plan-marshall:automatic-review', 'order': 30},
             {'name': 'default:sonar-roundtrip', 'order': 40},
             {'name': 'default:lessons-capture', 'order': 50},
             {'name': 'default:branch-cleanup', 'order': 70},
@@ -391,7 +391,7 @@ def test_finalize_add_step_sorts_by_order(plan_context, monkeypatch):
             {'name': 'project:finalize-step-custom', 'order': 1},
             {'name': 'default:push', 'order': 10},
             {'name': 'default:create-pr', 'order': 20},
-            {'name': 'default:automated-review', 'order': 30},
+            {'name': 'plan-marshall:automatic-review', 'order': 30},
             {'name': 'default:sonar-roundtrip', 'order': 40},
             {'name': 'default:lessons-capture', 'order': 50},
             {'name': 'default:branch-cleanup', 'order': 70},
@@ -958,7 +958,7 @@ def test_phase_2_refine_set_compatibility(plan_context):
 
 
 def test_finalize_step_get_returns_complete_param_object(plan_context):
-    """`step get --step-id default:automated-review` returns the full nested param object in one call."""
+    """`step get --step-id plan-marshall:automatic-review` returns the full nested param object in one call."""
     create_marshal_json(plan_context.fixture_dir)
 
     result = cmd_plan(
@@ -966,12 +966,12 @@ def test_finalize_step_get_returns_complete_param_object(plan_context):
             sub_noun='phase-6-finalize',
             verb='step',
             step_verb='get',
-            step_id='default:automated-review',
+            step_id='plan-marshall:automatic-review',
         )
     )
 
     assert result['status'] == 'success'
-    assert result['step_id'] == 'default:automated-review'
+    assert result['step_id'] == 'plan-marshall:automatic-review'
     # the complete param object is returned in a single call
     assert result['params'] == {'review_bot_buffer_seconds': 300}
 
@@ -1019,7 +1019,7 @@ def test_finalize_step_set_writes_single_param_and_round_trips(plan_context):
             sub_noun='phase-6-finalize',
             verb='step',
             step_verb='set',
-            step_id='default:automated-review',
+            step_id='plan-marshall:automatic-review',
             param='review_bot_buffer_seconds',
             value='240',
         )
@@ -1035,14 +1035,14 @@ def test_finalize_step_set_writes_single_param_and_round_trips(plan_context):
             sub_noun='phase-6-finalize',
             verb='step',
             step_verb='get',
-            step_id='default:automated-review',
+            step_id='plan-marshall:automatic-review',
         )
     )
     assert get_result['params']['review_bot_buffer_seconds'] == 240
 
     # persisted on disk inside the keyed-map step structure (nested param object)
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
-    persisted = _params_for(config['plan']['phase-6-finalize']['steps'], 'default:automated-review')
+    persisted = _params_for(config['plan']['phase-6-finalize']['steps'], 'plan-marshall:automatic-review')
     assert persisted['review_bot_buffer_seconds'] == 240
 
 
@@ -1230,13 +1230,13 @@ def test_steps_map_normalizes_config_less_and_param_bearing_values():
     result = _cmd_quality_phases._steps_map(
         {
             'default:push': {},
-            'default:automated-review': {'review_bot_buffer_seconds': 300},
+            'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 300},
         }
     )
 
     assert result == {
         'default:push': {},
-        'default:automated-review': {'review_bot_buffer_seconds': 300},
+        'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 300},
     }
 
 
@@ -1268,8 +1268,8 @@ def test_steps_map_single_entry_keyed_map():
         'default:push': {}
     }
     assert _cmd_quality_phases._steps_map(
-        {'default:automated-review': {'review_bot_buffer_seconds': 300}}
-    ) == {'default:automated-review': {'review_bot_buffer_seconds': 300}}
+        {'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 300}}
+    ) == {'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 300}}
 
 
 def test_steps_map_null_value_coerces_to_empty():
@@ -1360,7 +1360,7 @@ def test_finalize_remove_step_persists_keyed_map_and_is_idempotent(plan_context)
     assert isinstance(steps_after_first, dict)
     assert 'default:lessons-capture' not in _step_ids(steps_after_first)
     # The param-bearing step keeps its nested object in the keyed map.
-    assert _params_for(steps_after_first, 'default:automated-review') == {
+    assert _params_for(steps_after_first, 'plan-marshall:automatic-review') == {
         'review_bot_buffer_seconds': 300
     }
 
@@ -1376,7 +1376,7 @@ def test_finalize_remove_step_persists_keyed_map_and_is_idempotent(plan_context)
     assert isinstance(steps_after_second, dict)
     assert 'default:sonar-roundtrip' not in _step_ids(steps_after_second)
     # The param-bearing step still survives with its nested object.
-    assert _params_for(steps_after_second, 'default:automated-review') == {
+    assert _params_for(steps_after_second, 'plan-marshall:automatic-review') == {
         'review_bot_buffer_seconds': 300
     }
 
@@ -1432,7 +1432,7 @@ def test_set_steps_against_keyed_map_preserves_params(plan_context):
         Namespace(
             sub_noun='phase-6-finalize',
             verb='set-steps',
-            steps='default:automated-review,default:push,default:create-pr',
+            steps='plan-marshall:automatic-review,default:push,default:create-pr',
         )
     )
 
@@ -1442,7 +1442,7 @@ def test_set_steps_against_keyed_map_preserves_params(plan_context):
     persisted = after['plan']['phase-6-finalize']['steps']
     assert isinstance(persisted, dict)
     # The retained param-bearing step keeps its params.
-    assert _params_for(persisted, 'default:automated-review') == {
+    assert _params_for(persisted, 'plan-marshall:automatic-review') == {
         'review_bot_buffer_seconds': 300
     }
 

@@ -8,7 +8,7 @@ phase-6-finalize step list under three named profiles:
   Commits and pushes, captures lessons, cleans the branch, records metrics,
   and archives the plan.
 - ``standard`` — the ``local`` set plus the PR + CI flow (``create-pr``,
-  ``ci-verify``, ``automated-review``); still no Sonar roundtrip.
+  ``ci-verify``, ``automatic-review``); still no Sonar roundtrip.
 - ``full`` — the ``standard`` set plus the Sonar roundtrip, the
   pre-push quality gate, and the opt-in ``plan-marshall:plan-retrospective``
   bundle step.
@@ -105,7 +105,7 @@ class FinalizeStepPresets:
         ),
         'standard': (
             'Standard hosted-CI flow — the local set plus create-pr, '
-            'ci-verify, and automated-review. No Sonar roundtrip.'
+            'ci-verify, and automatic-review. No Sonar roundtrip.'
         ),
         'full': (
             'Full quality stack — the standard set plus finalize-step-simplify, '

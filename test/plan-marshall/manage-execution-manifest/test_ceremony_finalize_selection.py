@@ -11,7 +11,7 @@ The transform applies the three ``plan.phase-6-finalize`` run-at-all gates
 - ``always`` force-includes the gate's finalize step, re-adding it even when the
   ``scope_gated_finalize`` pre-filter dropped it.
 
-The transform NEVER touches ``automated-review`` — the bot-review invariant
+The transform NEVER touches ``automatic-review`` — the bot-review invariant
 (``bot_enforcement_guard``) is orthogonal and preserved.
 
 Configuration homes differ by gate. ``qgate`` stays a flat phase-local knob read
@@ -368,8 +368,8 @@ class TestCeremonyFinalizeNever:
 
         assert result is not None
         assert result['status'] == 'success'
-        # The bot-review invariant is orthogonal — automated-review stays.
-        assert 'automated-review' in _bare(_manifest_phase_6_steps(result))
+        # The bot-review invariant is orthogonal — automatic-review stays.
+        assert 'automatic-review' in _bare(_manifest_phase_6_steps(result))
 
 
 # =============================================================================

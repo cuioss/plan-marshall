@@ -53,25 +53,62 @@ def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTE
 # =============================================================================
 
 
-def test_resolve_strategy_coderabbit_maps_to_coderabbit_strategy():
+def test_resolve_strategy_coderabbit_is_generic_with_coderabbit_trigger():
+    """coderabbit resolves to the ONE generic strategy carrying its trigger comment."""
     strategy = github_re_review.resolve_strategy('coderabbit')
 
     assert strategy is not None
-    assert isinstance(strategy, github_re_review._CodeRabbitStrategy)
+    assert isinstance(strategy, github_re_review._ReReviewStrategy)
+    assert strategy.trigger_comment == '@coderabbitai review'
 
 
-def test_resolve_strategy_gemini_maps_to_gemini_strategy():
+def test_resolve_strategy_gemini_is_generic_with_gemini_trigger():
+    """gemini resolves to the same generic strategy class, carrying its own trigger."""
     strategy = github_re_review.resolve_strategy('gemini')
 
     assert strategy is not None
-    assert isinstance(strategy, github_re_review._GeminiStrategy)
+    assert isinstance(strategy, github_re_review._ReReviewStrategy)
+    assert strategy.trigger_comment == '/gemini review'
 
 
-def test_resolve_strategy_sourcery_maps_to_sourcery_strategy():
+def test_resolve_strategy_sourcery_is_generic_with_sourcery_trigger():
+    """sourcery resolves to the same generic strategy class, carrying its own trigger."""
     strategy = github_re_review.resolve_strategy('sourcery')
 
     assert strategy is not None
-    assert isinstance(strategy, github_re_review._SourceryStrategy)
+    assert isinstance(strategy, github_re_review._ReReviewStrategy)
+    assert strategy.trigger_comment == '@sourcery-ai review'
+
+
+def test_no_bot_specific_strategy_classes_remain():
+    """The refactor removed every per-bot strategy subclass — only the generic one exists."""
+    assert not hasattr(github_re_review, '_CodeRabbitStrategy')
+    assert not hasattr(github_re_review, '_GeminiStrategy')
+    assert not hasattr(github_re_review, '_SourceryStrategy')
+
+
+def test_no_hardcoded_trigger_constants_remain():
+    """The per-bot trigger constants were collapsed into registry-loaded data."""
+    assert not hasattr(github_re_review, 'CODERABBIT_TRIGGER_COMMENT')
+    assert not hasattr(github_re_review, 'GEMINI_TRIGGER_COMMENT')
+    assert not hasattr(github_re_review, 'SOURCERY_TRIGGER_COMMENT')
+
+
+def test_strategy_triggers_derive_from_bot_registry():
+    """Every strategy's trigger equals the registry-declared trigger for its bot."""
+    import bot_registry
+
+    for bot_kind in bot_registry.bot_kinds():
+        strategy = github_re_review.resolve_strategy(bot_kind)
+        assert strategy is not None
+        assert strategy.trigger_comment == bot_registry.trigger_comment(bot_kind)
+
+
+def test_author_login_map_derives_from_bot_registry():
+    """The login->bot_kind map is derived from the registry, not inline-copied."""
+    import bot_registry
+
+    assert github_re_review._AUTHOR_LOGIN_TO_BOT_KIND == bot_registry.login_to_bot_kind()
 
 
 def test_sourcery_is_a_valid_bot_kind():
@@ -124,9 +161,10 @@ def test_coderabbit_request_fresh_review_posts_trigger_comment(monkeypatch):
     result = strategy.request_fresh_review(42, '2026-01-01T00:00:00Z')
 
     assert result['status'] == 'success'
-    # Exactly one comment posted, with the exact trigger literal.
-    assert post_calls['args'] == [(42, github_re_review.CODERABBIT_TRIGGER_COMMENT)]
-    assert github_re_review.CODERABBIT_TRIGGER_COMMENT == '@coderabbitai review'
+    # Exactly one comment posted, with the exact trigger literal (the strategy's
+    # trigger comes from the registry data block, not a hard-coded constant).
+    assert post_calls['args'] == [(42, strategy.trigger_comment)]
+    assert strategy.trigger_comment == '@coderabbitai review'
 
 
 def test_coderabbit_request_fresh_review_trigger_time_is_post_time_not_push_time(monkeypatch):
@@ -175,9 +213,9 @@ def test_gemini_request_fresh_review_posts_trigger_comment(monkeypatch):
     result = strategy.request_fresh_review(99, '2026-01-01T00:00:00Z')
 
     assert result['status'] == 'success'
-    # Exactly one comment posted, with the exact trigger literal.
-    assert post_calls['args'] == [(99, github_re_review.GEMINI_TRIGGER_COMMENT)]
-    assert github_re_review.GEMINI_TRIGGER_COMMENT == '/gemini review'
+    # Exactly one comment posted, with the exact trigger literal (registry-derived).
+    assert post_calls['args'] == [(99, strategy.trigger_comment)]
+    assert strategy.trigger_comment == '/gemini review'
 
 
 def test_gemini_request_fresh_review_trigger_time_is_post_time_not_push_time(monkeypatch):
@@ -226,9 +264,9 @@ def test_sourcery_request_fresh_review_posts_trigger_comment(monkeypatch):
     result = strategy.request_fresh_review(77, '2026-01-01T00:00:00Z')
 
     assert result['status'] == 'success'
-    # Exactly one comment posted, with the exact trigger literal.
-    assert post_calls['args'] == [(77, github_re_review.SOURCERY_TRIGGER_COMMENT)]
-    assert github_re_review.SOURCERY_TRIGGER_COMMENT == '@sourcery-ai review'
+    # Exactly one comment posted, with the exact trigger literal (registry-derived).
+    assert post_calls['args'] == [(77, strategy.trigger_comment)]
+    assert strategy.trigger_comment == '@sourcery-ai review'
 
 
 def test_sourcery_request_fresh_review_trigger_time_is_post_time_not_push_time(monkeypatch):

@@ -191,7 +191,7 @@ def test_early_terminate_analysis_falls_through_when_task_queue_pending(plan_con
 def test_recipe_path_retains_review_gates_drops_only_legacy_ci_wait(plan_context):
     """Row 2 — recipe_key present → ONLY defensively drop legacy 'ci-wait'.
 
-    Review gates (automated-review, sonar-roundtrip) are NEVER silently
+    Review gates (automatic-review, sonar-roundtrip) are NEVER silently
     suppressed by the planner — the recipe label is exactly the case
     where the bots' job is to catch what humans miss. CI completion is
     now a dispatcher-resolved precondition declared via requires:
@@ -215,7 +215,7 @@ def test_recipe_path_retains_review_gates_drops_only_legacy_ci_wait(plan_context
     manifest = read_manifest('matrix-recipe')
     assert manifest is not None
     # Review gates RETAINED — never silently suppressed.
-    assert 'automated-review' in manifest['phase_6']['steps']
+    assert 'automatic-review' in manifest['phase_6']['steps']
     assert 'sonar-roundtrip' in manifest['phase_6']['steps']
     # Legacy ci-wait still defensively narrowed out.
     assert 'ci-wait' not in manifest['phase_6']['steps']
@@ -225,7 +225,7 @@ def test_recipe_path_retains_review_gates_drops_only_legacy_ci_wait(plan_context
 def test_docs_only_skips_phase_5_verification_retains_review_gates(plan_context):
     """Row 3 — docs-only signal: no module-tests/coverage in candidates → empty Phase 5 list.
 
-    Review gates (automated-review, sonar-roundtrip) are RETAINED — a
+    Review gates (automatic-review, sonar-roundtrip) are RETAINED — a
     docs-only label is exactly the case where the bots' job is to catch
     what humans miss. Only the legacy 'ci-wait' step ID is defensively
     narrowed out (against project marshal.json files that still list it).
@@ -248,7 +248,7 @@ def test_docs_only_skips_phase_5_verification_retains_review_gates(plan_context)
     manifest = read_manifest('matrix-docs')
     assert manifest is not None
     # Review gates RETAINED.
-    assert 'automated-review' in manifest['phase_6']['steps']
+    assert 'automatic-review' in manifest['phase_6']['steps']
     assert 'sonar-roundtrip' in manifest['phase_6']['steps']
     # Legacy ci-wait still defensively narrowed out.
     assert 'ci-wait' not in manifest['phase_6']['steps']
@@ -305,7 +305,7 @@ def test_surgical_bug_fix_retains_review_gates(plan_context):
     manifest = read_manifest('matrix-bug')
     assert manifest is not None
     # Review gates RETAINED.
-    for retained in ('automated-review', 'sonar-roundtrip'):
+    for retained in ('automatic-review', 'sonar-roundtrip'):
         assert retained in manifest['phase_6']['steps']
     # Legacy ci-wait dropped defensively.
     assert 'ci-wait' not in manifest['phase_6']['steps']
@@ -337,7 +337,7 @@ def test_surgical_tech_debt_retains_review_gates(plan_context):
     assert manifest is not None
     assert 'push' in manifest['phase_6']['steps']
     # Review gates RETAINED.
-    for retained in ('automated-review', 'sonar-roundtrip'):
+    for retained in ('automatic-review', 'sonar-roundtrip'):
         assert retained in manifest['phase_6']['steps']
     # Legacy ci-wait dropped defensively.
     assert 'ci-wait' not in manifest['phase_6']['steps']
@@ -368,7 +368,7 @@ _PREFIXED_PHASE_6 = (
     'default:pre-push-quality-gate',
     'default:push',
     'default:create-pr',
-    'default:automated-review',
+    'plan-marshall:automatic-review',
     'default:lessons-capture',
     'default:branch-cleanup',
     'default:archive-plan',
@@ -395,7 +395,7 @@ def test_rule_1_early_terminate_analysis_with_prefixed_candidates(plan_context):
     # No `default:`-prefixed entries survive anywhere in the manifest.
     assert not any(s.startswith('default:') for s in steps)
     # Heavy steps that would have leaked through pre-fix are absent.
-    for excluded in ('push', 'create-pr', 'automated-review', 'pre-push-quality-gate', 'branch-cleanup'):
+    for excluded in ('push', 'create-pr', 'automatic-review', 'pre-push-quality-gate', 'branch-cleanup'):
         assert excluded not in steps
 
 
@@ -422,7 +422,7 @@ def test_rule_2_recipe_with_prefixed_candidates(plan_context):
     # No `default:` prefix in output — boundary-normalized at intake.
     assert not any(s.startswith('default:') for s in steps)
     # Review gates RETAINED — never silently suppressed.
-    for retained in ('automated-review', 'sonar-roundtrip'):
+    for retained in ('automatic-review', 'sonar-roundtrip'):
         assert retained in steps
     # Legacy ci-wait dropped defensively.
     assert 'ci-wait' not in steps
@@ -455,7 +455,7 @@ def test_rule_3_docs_only_with_prefixed_candidates(plan_context):
     steps = manifest['phase_6']['steps']
     assert not any(s.startswith('default:') for s in steps)
     # Review gates RETAINED.
-    for retained in ('sonar-roundtrip', 'automated-review'):
+    for retained in ('sonar-roundtrip', 'automatic-review'):
         assert retained in steps
     # Legacy ci-wait dropped defensively.
     assert 'ci-wait' not in steps
@@ -485,7 +485,7 @@ def test_rule_5_surgical_bug_fix_with_prefixed_candidates(plan_context):
     steps = manifest['phase_6']['steps']
     assert not any(s.startswith('default:') for s in steps)
     # Review gates RETAINED.
-    for retained in ('automated-review', 'sonar-roundtrip'):
+    for retained in ('automatic-review', 'sonar-roundtrip'):
         assert retained in steps
     # Legacy ci-wait dropped defensively.
     assert 'ci-wait' not in steps
@@ -517,7 +517,7 @@ def test_rule_5_surgical_tech_debt_with_prefixed_candidates(plan_context):
     steps = manifest['phase_6']['steps']
     assert not any(s.startswith('default:') for s in steps)
     # Review gates RETAINED.
-    for retained in ('automated-review', 'sonar-roundtrip'):
+    for retained in ('automatic-review', 'sonar-roundtrip'):
         assert retained in steps
     # Legacy ci-wait dropped defensively.
     assert 'ci-wait' not in steps
@@ -542,7 +542,7 @@ def test_rule_6_verification_no_files_with_prefixed_candidates(plan_context):
     # Boundary normalization strips `default:` at intake — output is bare.
     assert set(steps) == {'lessons-capture', 'archive-plan'}
     assert not any(s.startswith('default:') for s in steps)
-    for excluded in ('push', 'create-pr', 'automated-review', 'pre-push-quality-gate', 'branch-cleanup'):
+    for excluded in ('push', 'create-pr', 'automatic-review', 'pre-push-quality-gate', 'branch-cleanup'):
         assert excluded not in steps
 
 
@@ -560,7 +560,7 @@ def test_prefix_normalization_no_op_for_bare_candidates(plan_context):
     bare = (
         'push',
         'create-pr',
-        'automated-review',
+        'automatic-review',
         'sonar-roundtrip',
         'ci-wait',  # legacy; should be defensively narrowed out.
         'lessons-capture',
@@ -581,7 +581,7 @@ def test_prefix_normalization_no_op_for_bare_candidates(plan_context):
     assert manifest is not None
     steps = manifest['phase_6']['steps']
     # Review gates RETAINED.
-    for retained in ('automated-review', 'sonar-roundtrip'):
+    for retained in ('automatic-review', 'sonar-roundtrip'):
         assert retained in steps
     # Legacy ci-wait dropped defensively.
     assert 'ci-wait' not in steps
@@ -621,7 +621,7 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_
         # Prefixed default entries.
         'default:push',
         'default:create-pr',
-        'default:automated-review',
+        'plan-marshall:automatic-review',
         # Bare default entries (no prefix to strip).
         'lessons-capture',
         # Typed-step entry (project: prefix is preserved verbatim).
@@ -672,7 +672,7 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_
     for bare_default in (
         'push',
         'create-pr',
-        'automated-review',
+        'automatic-review',
         'lessons-capture',
         'branch-cleanup',
         'archive-plan',
@@ -1362,7 +1362,7 @@ def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_pus
         'default:pre-push-quality-gate',
         'default:push',
         'default:create-pr',
-        'default:automated-review',
+        'plan-marshall:automatic-review',
         'default:lessons-capture',
         'default:branch-cleanup',
         'default:archive-plan',
@@ -1397,7 +1397,7 @@ def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_pus
     # Other steps from the input survive as bare strings.
     for kept in (
         'create-pr',
-        'automated-review',
+        'automatic-review',
         'lessons-capture',
         'branch-cleanup',
         'archive-plan',
@@ -2326,16 +2326,16 @@ def test_security_audit_inactive_no_decision_log_on_kept_branch(plan_context):
 # =============================================================================
 # Bot-Enforcement Guard — Remediation behavior (lesson 2026-04-28-10-001)
 #
-# When the resolved CI provider is github or gitlab AND `automated-review` is missing from
+# When the resolved CI provider is github or gitlab AND `automatic-review` is missing from
 # the assembled phase_6.steps (e.g., dropped by Row 5 surgical_bug_fix /
-# surgical_tech_debt), the guard appends `default:automated-review` back into
+# surgical_tech_debt), the guard appends `plan-marshall:automatic-review` back into
 # the list and emits a decision-log entry. The composition continues normally;
 # no `bot_enforcement_violation` error is raised. Row 5's other subtractions
 # (`sonar-roundtrip`) stay dropped — the guard remediates
-# only `automated-review`.
+# only `automatic-review`.
 #
 # Row 5 + no CI provider configured remains the baseline: the guard is a
-# no-op and `automated-review` stays dropped. The existing
+# no-op and `automatic-review` stays dropped. The existing
 # test_surgical_bug_fix_trims_heavy_review_steps and
 # test_surgical_tech_debt_trims_heavy_review_steps cover that path.
 # =============================================================================
@@ -2362,7 +2362,7 @@ def _write_marshal_with_ci(fixture_dir: Path, *, provider: str) -> None:
 
 _REMEDIATION_LINE_TEMPLATE = (
     '(plan-marshall:manage-execution-manifest:compose) bot-enforcement guard remediated — '
-    'ci_provider={provider}, automated-review re-added to phase_6.steps'
+    'ci_provider={provider}, automatic-review re-added to phase_6.steps'
 )
 
 
@@ -2485,30 +2485,30 @@ class TestBotEnforcementGuardRemediation:
         assert manifest is not None
         steps = manifest['phase_6']['steps']
 
-        # (b) automated-review is in phase_6.steps. Under the new
+        # (b) automatic-review is in phase_6.steps. Under the new
         #     precondition-resolver model (lesson 2026-05-15-14-002),
-        #     Row 5 no longer drops review gates — so automated-review
+        #     Row 5 no longer drops review gates — so automatic-review
         #     is present whether or not the remediation guard fired.
-        #     The guard's membership check ('automated-review' in steps)
+        #     The guard's membership check ('automatic-review' in steps)
         #     therefore short-circuits as a no-op on Row 5; remediation
         #     becomes a backstop against future drift rather than the
         #     primary mechanism.
         bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
-        assert 'automated-review' in bare_step_names
+        assert 'automatic-review' in bare_step_names
 
         # (c) sonar-roundtrip is also retained — review gates are never
         #     silently suppressed by the planner under the new contract.
         assert 'sonar-roundtrip' in bare_step_names
 
         # (d) Under the new precondition-resolver model the guard is a
-        #     no-op on Row 5 (automated-review is already present), so
+        #     no-op on Row 5 (automatic-review is already present), so
         #     the remediation decision log is NOT written. The guard
         #     remains in place as defense-in-depth against future rule
         #     drift, but on the current rule matrix it never fires.
         remediations = self._remediation_messages(captured, provider)
         assert len(remediations) == 0, (
             f'expected NO remediation log entries for {provider} under '
-            f'the new contract (guard is a no-op when automated-review '
+            f'the new contract (guard is a no-op when automatic-review '
             f'is already retained); got {len(remediations)}: '
             f'{[m for _, m in captured]!r}'
         )
@@ -2541,10 +2541,10 @@ class TestBotEnforcementGuardRemediation:
         """Row 5 surgical_tech_debt + provider=github (default:-prefixed candidates) → remediation."""
         self._assert_remediation(plan_context, 'github', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=True)
 
-    # --- Guard is a no-op when automated-review already present ---
+    # --- Guard is a no-op when automatic-review already present ---
 
     def test_github_default_rule_no_remediation_when_automated_review_present(self, plan_context):
-        """Guard is a no-op on the default rule (Row 7) — automated-review survives untouched."""
+        """Guard is a no-op on the default rule (Row 7) — automatic-review survives untouched."""
         plan_id = 'guard-noop-github-default'
         _write_marshal_with_ci(plan_context.fixture_dir, provider='github')
 
@@ -2565,19 +2565,19 @@ class TestBotEnforcementGuardRemediation:
         assert result['status'] == 'success'
         assert result['rule_fired'] == 'default'
 
-        # automated-review is in the default candidate set and Row 7 keeps
+        # automatic-review is in the default candidate set and Row 7 keeps
         # the candidates as-is, so it's already present and the guard is
         # a no-op (no remediation log entry).
         manifest = read_manifest(plan_id)
         assert manifest is not None
-        assert 'automated-review' in manifest['phase_6']['steps']
+        assert 'automatic-review' in manifest['phase_6']['steps']
         assert self._remediation_messages(captured, 'github') == []
 
     def test_github_default_rule_with_prefixed_candidates_keeps_automated_review_bare_without_violation(self, plan_context):
         """Regression: prefixed phase_6 candidates on GitHub CI must not trip the guard.
 
         Lesson ``2026-04-28-10-001`` originally reported that prefixed inputs
-        (``default:automated-review`` and friends) raised
+        (``plan-marshall:automatic-review`` and friends) raised
         ``bot_enforcement_violation`` because the guard's bare-name membership
         check at line 829 of ``manage-execution-manifest.py`` did not see the
         prefixed entry. The defect was fixed by two upstream changes:
@@ -2589,24 +2589,24 @@ class TestBotEnforcementGuardRemediation:
         2. PR #305 (``a5231b8b``) added boundary normalization at
            ``cmd_compose`` lines 976-977 — every leading ``default:`` is
            stripped from ``phase_6_candidates`` once at intake, so by the time
-           the guard's ``'automated-review' in phase_6_steps`` membership
+           the guard's ``'automatic-review' in phase_6_steps`` membership
            check runs, every entry is already bare.
 
         This test pins both fixes by feeding a fully-prefixed candidate list
         (``_PREFIXED_PHASE_6`` — every entry carries ``default:``, including
-        ``default:automated-review``) on a GitHub-CI plan with a Row 7
+        ``plan-marshall:automatic-review``) on a GitHub-CI plan with a Row 7
         (default) shape. Row 7 preserves the candidates verbatim modulo
         boundary normalization, so any regression of either fix shows up here:
 
         - If boundary normalization at lines 976-977 is removed, the guard's
-          bare-name membership check fails to find ``automated-review``, the
+          bare-name membership check fails to find ``automatic-review``, the
           guard appends a duplicate, and the `assert exactly-one` below trips.
         - If ``_strip_default_prefix`` at line 118 is neutered, the same
           duplicate-append path fires.
         - If a future contributor reverts the guard from remediation back to
           assertion, ``status`` becomes ``error`` and the
           ``bot_enforcement_violation`` assertion below trips.
-        - If ``automated-review`` is mispositioned (e.g., after
+        - If ``automatic-review`` is mispositioned (e.g., after
           ``archive-plan``), the placement validator emits its own
           ``bot_enforcement_violation`` and the same assertion catches it.
         """
@@ -2650,25 +2650,25 @@ class TestBotEnforcementGuardRemediation:
             f'phase_6 leaked `default:`-prefixed entry: {steps!r}'
         )
 
-        # (c) Exactly one bare ``automated-review`` entry — the guard's
+        # (c) Exactly one bare ``automatic-review`` entry — the guard's
         #     membership check did not double-add it.
-        assert steps.count('automated-review') == 1, (
-            f'expected exactly one automated-review entry, '
-            f'got {steps.count("automated-review")}: {steps!r}'
+        assert steps.count('automatic-review') == 1, (
+            f'expected exactly one automatic-review entry, '
+            f'got {steps.count("automatic-review")}: {steps!r}'
         )
 
-        # (d) ``automated-review`` precedes every plan-mutating anchor.
+        # (d) ``automatic-review`` precedes every plan-mutating anchor.
         #     Mirrors ``_validate_automated_review_placement``'s contract.
-        review_index = steps.index('automated-review')
+        review_index = steps.index('automatic-review')
         for anchor in ('archive-plan', 'record-metrics', 'branch-cleanup'):
             if anchor in steps:
                 assert steps.index(anchor) > review_index, (
-                    f'automated-review (index {review_index}) must precede '
+                    f'automatic-review (index {review_index}) must precede '
                     f'plan-mutating anchor {anchor!r} (index {steps.index(anchor)}): '
                     f'{steps!r}'
                 )
 
-        # (e) Guard did not need to remediate — automated-review was
+        # (e) Guard did not need to remediate — automatic-review was
         #     present after boundary normalization, so no remediation log.
         assert self._remediation_messages(captured, 'github') == [], (
             f'expected no remediation log entries, got: '
@@ -2679,7 +2679,7 @@ class TestBotEnforcementGuardRemediation:
 # =============================================================================
 # Compose-time placement validator (lesson 2026-04-28-13-002)
 #
-# The remediation guard guarantees ``automated-review`` is *present* on
+# The remediation guard guarantees ``automatic-review`` is *present* on
 # GitHub/GitLab plans, but a future pre-filter or recipe interaction could
 # leave it *misplaced* — sitting at an index later than a plan-mutating step
 # (``archive-plan``, ``record-metrics``, ``branch-cleanup``, or
@@ -2689,9 +2689,9 @@ class TestBotEnforcementGuardRemediation:
 # names so downstream auditing can pinpoint the ordering breach.
 #
 # Construction trick: the bot-enforcement remediation guard returns early on
-# its membership check (``'automated-review' in phase_6_steps``) and therefore
+# its membership check (``'automatic-review' in phase_6_steps``) and therefore
 # does NOT reposition a misplaced occurrence. To exercise the validator we
-# pass an explicit ``--phase-6-steps`` candidate list where ``automated-review``
+# pass an explicit ``--phase-6-steps`` candidate list where ``automatic-review``
 # is already present in the wrong position; Row 7 (default) preserves the
 # candidate ordering verbatim, the guard is a no-op, and the misplacement
 # survives to the validator.
@@ -2699,23 +2699,23 @@ class TestBotEnforcementGuardRemediation:
 
 
 class TestAutomatedReviewPlacement:
-    """Compose-time validator rejects ``automated-review`` after plan-mutating anchors."""
+    """Compose-time validator rejects ``automatic-review`` after plan-mutating anchors."""
 
     @staticmethod
     def _candidates_with_review_after(anchor: str) -> str:
-        """Build a phase_6 candidate CSV where ``automated-review`` follows ``anchor``.
+        """Build a phase_6 candidate CSV where ``automatic-review`` follows ``anchor``.
 
         The candidate list mirrors the canonical ordering for the steps that
         always remain (push, create-pr, lessons-capture) so the manifest
-        is otherwise plausible; only the ``automated-review`` / ``anchor`` pair
+        is otherwise plausible; only the ``automatic-review`` / ``anchor`` pair
         is deliberately misordered. The anchor is inserted before
-        ``automated-review`` so the validator's earliest-anchor scan returns
+        ``automatic-review`` so the validator's earliest-anchor scan returns
         precisely the parametrized name.
         """
-        return ','.join(['push', 'create-pr', 'lessons-capture', anchor, 'automated-review'])
+        return ','.join(['push', 'create-pr', 'lessons-capture', anchor, 'automatic-review'])
 
     def test_compose_rejects_automated_review_after_archive_plan(self, plan_context):
-        """Misplaced ``automated-review`` after ``archive-plan`` → bot_enforcement_violation."""
+        """Misplaced ``automatic-review`` after ``archive-plan`` → bot_enforcement_violation."""
         plan_id = 'placement-archive-plan'
         # GitHub provider so the existing remediation guard runs but
         # short-circuits on the membership check (line 845), leaving the
@@ -2737,7 +2737,7 @@ class TestAutomatedReviewPlacement:
         assert result['error'] == 'bot_enforcement_violation'
         # Diagnostic must name BOTH step identifiers so downstream auditing
         # can pinpoint the ordering breach without re-deriving it.
-        assert 'automated-review' in result['message']
+        assert 'automatic-review' in result['message']
         assert 'archive-plan' in result['message']
         # No manifest is persisted on rejection — read_manifest returns None.
         assert read_manifest(plan_id) is None
@@ -2747,7 +2747,7 @@ class TestAutomatedReviewPlacement:
         ['record-metrics', 'branch-cleanup', 'plan-marshall:plan-retrospective'],
     )
     def test_compose_rejects_automated_review_after_other_plan_mutating_steps(self, plan_context, anchor: str):
-        """Misplaced ``automated-review`` after each remaining anchor → bot_enforcement_violation.
+        """Misplaced ``automatic-review`` after each remaining anchor → bot_enforcement_violation.
 
         Parametrized over the three plan-mutating anchors NOT covered by the
         ``archive-plan`` test above. Together these cover the full anchor set
@@ -2774,7 +2774,7 @@ class TestAutomatedReviewPlacement:
         assert result is not None
         assert result['status'] == 'error', f'expected error status for anchor={anchor!r}, got {result!r}'
         assert result['error'] == 'bot_enforcement_violation'
-        assert 'automated-review' in result['message']
+        assert 'automatic-review' in result['message']
         assert anchor in result['message']
         assert read_manifest(plan_id) is None
 
@@ -2868,7 +2868,7 @@ def test_marshal_json_preferred_over_csv_preserves_project_prefixes(plan_context
         'project:finalize-step-deploy-target',
         'project:finalize-step-sync-plugin-cache',
         'default:create-pr',
-        'default:automated-review',
+        'plan-marshall:automatic-review',
         'default:lessons-capture',
         'project:finalize-step-plugin-doctor',
         'default:branch-cleanup',
@@ -2883,7 +2883,7 @@ def test_marshal_json_preferred_over_csv_preserves_project_prefixes(plan_context
             'deploy-target',
             'sync-plugin-cache',
             'create-pr',
-            'automated-review',
+            'automatic-review',
             'lessons-capture',
             'plugin-doctor',
             'branch-cleanup',
@@ -2960,7 +2960,7 @@ def test_compose_snapshots_resolved_step_params_from_keyed_map(plan_context):
     phase_6_map = {
         'default:push': {},
         'default:create-pr': {},
-        'default:automated-review': {'review_bot_buffer_seconds': 240},
+        'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 240},
         'default:sonar-roundtrip': {
             'touched_file_cleanup': 'touched_files_zero',
             'do_transition': True,
@@ -3003,7 +3003,7 @@ def test_compose_snapshots_resolved_step_params_from_keyed_map(plan_context):
         'do_transition': True,
         'ce_wait_timeout_seconds': 720,
     }
-    assert step_params['automated-review'] == {'review_bot_buffer_seconds': 240}
+    assert step_params['automatic-review'] == {'review_bot_buffer_seconds': 240}
     # an ownerless selected step snapshots as the empty param object
     assert step_params['push'] == {}
     # every in-manifest step has a snapshot entry
@@ -3071,7 +3071,7 @@ def test_compose_snapshots_step_params_from_keyed_map(plan_context):
     phase_6_map = {
         'default:push': {},
         'default:create-pr': {},
-        'default:automated-review': {'review_bot_buffer_seconds': 240},
+        'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 240},
         'default:sonar-roundtrip': {
             'touched_file_cleanup': 'touched_files_zero',
             'do_transition': True,
@@ -3113,7 +3113,7 @@ def test_compose_snapshots_step_params_from_keyed_map(plan_context):
         'do_transition': True,
         'ce_wait_timeout_seconds': 720,
     }
-    assert step_params['automated-review'] == {'review_bot_buffer_seconds': 240}
+    assert step_params['automatic-review'] == {'review_bot_buffer_seconds': 240}
     # a config-less selected step snapshots as the empty param object
     assert step_params['push'] == {}
     # every in-manifest step has a snapshot entry
@@ -3411,7 +3411,7 @@ class TestDecisionLogShapePreserved:
 def test_marshal_json_phase_5_steps_also_preferred(plan_context):
     """The marshal.json source-of-truth path applies to phase-5 steps as well as phase-6."""
     custom_phase_5 = ['quality-gate', 'module-tests']
-    full_phase_6 = ['default:push', 'default:create-pr', 'default:automated-review', 'default:archive-plan']
+    full_phase_6 = ['default:push', 'default:create-pr', 'plan-marshall:automatic-review', 'default:archive-plan']
     _write_full_marshal(
         plan_context.fixture_dir,
         phase_5_steps=custom_phase_5,
@@ -3652,9 +3652,9 @@ def test_duplicate_orchestrator_routings_are_deduped(plan_context, monkeypatch):
 #
 # Deliverable 2: the composer drops heavyweight phase-6 review/audit steps by
 # scope. surgical drops the three non-guarded steps (plan-retrospective,
-# pre-submission-self-review, plugin-doctor) but RETAINS automated-review by
+# pre-submission-self-review, plugin-doctor) but RETAINS automatic-review by
 # default (the bot-enforcement guard re-adds it on GitHub/GitLab plans);
-# drop_review_on_scope_gate=true additionally drops automated-review;
+# drop_review_on_scope_gate=true additionally drops automatic-review;
 # single_module drops only plan-retrospective. multi_module/broad retain the
 # full set. One decision-log line is emitted per subtraction.
 # =============================================================================
@@ -3668,7 +3668,7 @@ def test_duplicate_orchestrator_routings_are_deduped(plan_context, monkeypatch):
 _SCOPE_GATE_PHASE_6 = (
     'push',
     'create-pr',
-    'automated-review',
+    'automatic-review',
     'sonar-roundtrip',
     'project:finalize-step-pre-submission-self-review',
     'project:finalize-step-plugin-doctor',
@@ -3709,7 +3709,7 @@ class TestScopeGatedFinalizePreFilter:
 
     def test_surgical_drops_three_non_guarded_steps_retains_automated_review(self, plan_context):
         """surgical scope drops plan-retrospective, pre-submission-self-review,
-        and plugin-doctor — but RETAINS automated-review by default."""
+        and plugin-doctor — but RETAINS automatic-review by default."""
         # Use change_type=feature so the surgical row matrix does not pre-empt
         # the candidate list; the scope gate runs before the matrix regardless.
         result = cmd_compose(
@@ -3730,8 +3730,8 @@ class TestScopeGatedFinalizePreFilter:
         assert 'plan-marshall:plan-retrospective' not in steps
         assert 'project:finalize-step-pre-submission-self-review' not in steps
         assert 'project:finalize-step-plugin-doctor' not in steps
-        # automated-review RETAINED by default (no override).
-        assert 'automated-review' in steps
+        # automatic-review RETAINED by default (no override).
+        assert 'automatic-review' in steps
         # Baseline steps survive.
         assert 'push' in steps
         assert 'lessons-capture' in steps
@@ -3769,7 +3769,7 @@ class TestScopeGatedFinalizePreFilter:
         assert 'push' in steps
 
     def test_drop_review_additionally_drops_automated_review(self, plan_context):
-        """drop_review_on_scope_gate=true additionally drops automated-review."""
+        """drop_review_on_scope_gate=true additionally drops automatic-review."""
         _write_drop_review_marshal(plan_context.fixture_dir, override=True)
         result = cmd_compose(
             _compose_ns(
@@ -3785,8 +3785,8 @@ class TestScopeGatedFinalizePreFilter:
         manifest = read_manifest('scope-surgical-override')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
-        # automated-review dropped under the explicit override.
-        assert 'automated-review' not in steps
+        # automatic-review dropped under the explicit override.
+        assert 'automatic-review' not in steps
         # Three non-guarded steps still dropped.
         assert 'plan-marshall:plan-retrospective' not in steps
         assert 'project:finalize-step-pre-submission-self-review' not in steps
@@ -3794,7 +3794,7 @@ class TestScopeGatedFinalizePreFilter:
 
     def test_drop_review_inert_on_non_scope_gated(self, plan_context):
         """drop_review_on_scope_gate=true is INERT on a non-scope-gated plan:
-        automated-review is retained on multi_module scope even with the
+        automatic-review is retained on multi_module scope even with the
         override set, so flipping the project-wide knob cannot silently disable
         bot review on a large plan (PR #551 reviewer finding)."""
         _write_drop_review_marshal(plan_context.fixture_dir, override=True)
@@ -3812,8 +3812,8 @@ class TestScopeGatedFinalizePreFilter:
         manifest = read_manifest('scope-multi-override')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
-        # Override is inert at multi_module scope — automated-review RETAINED.
-        assert 'automated-review' in steps
+        # Override is inert at multi_module scope — automatic-review RETAINED.
+        assert 'automatic-review' in steps
         # No scope subtraction at multi_module — full set survives.
         assert 'plan-marshall:plan-retrospective' in steps
         assert 'project:finalize-step-pre-submission-self-review' in steps
@@ -3821,7 +3821,7 @@ class TestScopeGatedFinalizePreFilter:
 
     def test_single_module_drops_only_plan_retrospective(self, plan_context):
         """single_module scope drops only plan-retrospective; the other two
-        non-guarded steps and automated-review are retained."""
+        non-guarded steps and automatic-review are retained."""
         result = cmd_compose(
             _compose_ns(
                 plan_id='scope-single-module',
@@ -3841,7 +3841,7 @@ class TestScopeGatedFinalizePreFilter:
         # The other two non-guarded steps survive at single_module.
         assert 'project:finalize-step-pre-submission-self-review' in steps
         assert 'project:finalize-step-plugin-doctor' in steps
-        assert 'automated-review' in steps
+        assert 'automatic-review' in steps
 
     def test_multi_module_retains_full_set(self, plan_context):
         """multi_module scope retains the full candidate set (no scope subtraction)."""
@@ -3863,7 +3863,7 @@ class TestScopeGatedFinalizePreFilter:
         assert 'plan-marshall:plan-retrospective' in steps
         assert 'project:finalize-step-pre-submission-self-review' in steps
         assert 'project:finalize-step-plugin-doctor' in steps
-        assert 'automated-review' in steps
+        assert 'automatic-review' in steps
 
     def test_surgical_emits_one_decision_log_per_subtraction(self, plan_context):
         """surgical scope emits one decision-log line per dropped step."""
@@ -3916,8 +3916,8 @@ class TestScopeGatedFinalizePreFilter:
         assert 'plan-marshall:plan-retrospective' in dropped
         assert 'project:finalize-step-pre-submission-self-review' in dropped
         assert 'project:finalize-step-plugin-doctor' in dropped
-        # automated-review NOT in the dropped set without the override.
-        assert 'automated-review' not in dropped
+        # automatic-review NOT in the dropped set without the override.
+        assert 'automatic-review' not in dropped
 
 
 # =============================================================================

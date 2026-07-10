@@ -463,7 +463,7 @@ def _log_bot_enforcement_guard_fired(plan_id: str, provider: str) -> None:
     """
     message = (
         '(plan-marshall:manage-execution-manifest:compose) bot-enforcement guard fired — '
-        f'ci_provider={provider}, automated-review missing from phase_6.steps'
+        f'ci_provider={provider}, automatic-review missing from phase_6.steps'
     )
     _emit_decision_log(plan_id, message)
 
@@ -471,13 +471,13 @@ def _log_bot_enforcement_guard_fired(plan_id: str, provider: str) -> None:
 def _log_bot_enforcement_guard_remediated(plan_id: str, provider: str) -> None:
     """Emit the decision-log entry for the ``bot_enforcement_guard`` remediation.
 
-    Logged whenever the guard appends ``automated-review`` back into
+    Logged whenever the guard appends ``automatic-review`` back into
     ``phase_6.steps`` so the manifest's reconstruction-from-rules-alone
     remains auditable.
     """
     message = (
         '(plan-marshall:manage-execution-manifest:compose) bot-enforcement guard remediated — '
-        f'ci_provider={provider}, automated-review re-added to phase_6.steps'
+        f'ci_provider={provider}, automatic-review re-added to phase_6.steps'
     )
     _emit_decision_log(plan_id, message)
 
@@ -486,7 +486,7 @@ def _log_bot_enforcement_placement_violation(plan_id: str, diagnostic: str) -> N
     """Emit the decision-log entry for the placement-validator rejection.
 
     Logged whenever the compose-time placement validator detects that
-    ``automated-review`` sits at an index later than at least one
+    ``automatic-review`` sits at an index later than at least one
     plan-mutating step (``archive-plan``, ``record-metrics``, ``branch-cleanup``,
     or ``plan-marshall:plan-retrospective``). The diagnostic string carries
     both step names and indexes for downstream auditing.
@@ -686,7 +686,7 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # matrix time, `always` re-adds it even when that pre-filter dropped it, and
 # `never` forces it out.
 #
-# The transform NEVER touches `automated-review`: the bot-review invariant
+# The transform NEVER touches `automatic-review`: the bot-review invariant
 # (enforced by `_apply_bot_enforcement_guard`) is orthogonal and is preserved
 # verbatim — the four finalize gates are the only
 # finalize steps this transform may add or drop. Run-at-all values are validated
@@ -720,26 +720,26 @@ def _log_ceremony_finalize_selection(
 
 
 def _apply_bot_enforcement_guard(phase_6_steps: list[str], plan_id: str) -> str | None:
-    """Composition-time defense-in-depth: keep ``automated-review`` on GitHub/GitLab plans.
+    """Composition-time defense-in-depth: keep ``automatic-review`` on GitHub/GitLab plans.
 
     PR-review bots are effectively mandatory whenever the plan finalizes
     through GitHub or GitLab. If the seven-row matrix or any pre-filter has
-    dropped ``automated-review`` AND the project's CI provider is GitHub or
-    GitLab, this guard remediates by appending ``automated-review`` back into
+    dropped ``automatic-review`` AND the project's CI provider is GitHub or
+    GitLab, this guard remediates by appending ``automatic-review`` back into
     ``phase_6_steps`` (in-place) and emits a decision-log entry so the
     manifest's reconstruction-from-rules-alone remains auditable. The guard is
     remediation rather than assertion because Row 5 of the seven-row matrix
-    legitimately drops ``automated-review`` for ``surgical+{bug_fix,
+    legitimately drops ``automatic-review`` for ``surgical+{bug_fix,
     tech_debt}`` plans, and an assertion-style guard would deadlock
     every such plan that finalizes through GitHub or GitLab.
 
     The guard is retained after the deadlock fix as defense-in-depth: any
     future pre-filter, rule addition, or recipe interaction that drops
-    ``automated-review`` on a GitHub/GitLab plan will be caught and
+    ``automatic-review`` on a GitHub/GitLab plan will be caught and
     remediated by the same code path.
 
     Returns ``None`` for the no-op path (non-GitHub/GitLab CI) and for the
-    remediated path (``automated-review`` was missing and has been re-added).
+    remediated path (``automatic-review`` was missing and has been re-added).
     Returns the offending CI provider identifier (``github`` or ``gitlab``)
     only on a non-remediable violation — currently unreachable; retained as
     a safety net for future logic that may detect a violation it cannot
@@ -752,10 +752,10 @@ def _apply_bot_enforcement_guard(phase_6_steps: list[str], plan_id: str) -> str 
     # ``phase_6_steps`` is the matrix output. Its entries are bare names —
     # ``cmd_compose`` boundary-normalized the candidate list before the matrix
     # ran. Compare bare strings without per-site stripping.
-    if 'automated-review' in phase_6_steps:
+    if 'automatic-review' in phase_6_steps:
         return None
     insert_index = _bot_enforcement_insert_index(phase_6_steps)
-    phase_6_steps.insert(insert_index, 'automated-review')
+    phase_6_steps.insert(insert_index, 'automatic-review')
     _log_bot_enforcement_guard_remediated(plan_id, provider)
     return None
 
@@ -1197,7 +1197,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     #   4b. security_audit_inactive — drop finalize-step-security-audit on the
     #      same change_type + affected_files_count gate as simplify_inactive.
     #   5. scope_gated_finalize — drop heavyweight phase-6 review/audit steps by
-    #      scope_estimate; automated-review suppressed ONLY via the explicit
+    #      scope_estimate; automatic-review suppressed ONLY via the explicit
     #      drop_review_on_scope_gate opt-in.
     # Each pre-filter returns (filtered_candidates, fired_flag); we log a
     # dedicated decision-log line per fired pre-filter in addition to the row
@@ -1237,9 +1237,9 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # Pre-filter 5 (scope_gated_finalize) drops heavyweight phase-6 review/audit
     # steps by scope: surgical drops the three non-guarded steps, single_module
     # drops only plan-retrospective, and the drop_review_on_scope_gate escape
-    # hatch additionally drops automated-review. It runs after the other
+    # hatch additionally drops automatic-review. It runs after the other
     # pre-filters and before the seven-row matrix and the bot-enforcement guard,
-    # so it only ever narrows the candidate list. automated-review is dropped
+    # so it only ever narrows the candidate list. automatic-review is dropped
     # ONLY via the explicit override — never by the implicit scope gate — so the
     # bot-enforcement invariant stays intact by default. See
     # standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
@@ -1352,7 +1352,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # machinery on `auto` (the default). `always` is the only path that can
     # re-add a step the scope_gated_finalize pre-filter dropped — which is the
     # point: the operator-set `always` overrides the implicit scope gate. The
-    # transform never touches `automated-review`, so running it before the
+    # transform never touches `automatic-review`, so running it before the
     # bot-enforcement guard leaves the bot-review invariant intact. The gate
     # values are flat phase-local knobs read directly from
     # `plan.phase-6-finalize.<gate>`. See
@@ -1374,7 +1374,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # weakening ``off`` override of a derived-state / core floor element is
     # honored but emits a correctness warning (§5 — minimal must NOT SILENTLY drop
     # required derived state). Running before the bot-enforcement guard means a
-    # ``minimal`` posture that drops ``automated-review`` is still re-added for
+    # ``minimal`` posture that drops ``automatic-review`` is still re-added for
     # GitHub/GitLab plans (the §4.9 adversarial-floor / bot-review invariant). The
     # q-gate is never a phase-6 finalize step, so it is never lane-pruned here.
     execution_profile = _read_execution_profile(plan_id)
@@ -1384,7 +1384,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     body['phase_6']['steps'] = lane_kept
 
     # Bot-enforcement guard runs AFTER the seven-row matrix and BEFORE manifest
-    # persistence. On GitHub/GitLab plans where `automated-review` is missing
+    # persistence. On GitHub/GitLab plans where `automatic-review` is missing
     # from `phase_6.steps`, the guard remediates in-place (appends the step and
     # emits a decision-log line) and returns None. The error branch below is
     # retained as a safety net for any future logic that detects a non-
@@ -1398,14 +1398,14 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'plan_id': plan_id,
             'error': 'bot_enforcement_violation',
             'message': (
-                'automated-review must remain in the manifest for GitHub/GitLab plans — '
+                'automatic-review must remain in the manifest for GitHub/GitLab plans — '
                 'guard could not auto-remediate; investigate manifest composition'
             ),
             'ci_provider': bot_guard_fired_provider,
         }
 
     # Compose-time placement validator (defense-in-depth): even when
-    # ``automated-review`` is present, reject the manifest if it sits at an
+    # ``automatic-review`` is present, reject the manifest if it sits at an
     # index later than any plan-mutating
     # step (``archive-plan``, ``record-metrics``, ``branch-cleanup``,
     # ``plan-marshall:plan-retrospective``). Such a layout would dispatch the

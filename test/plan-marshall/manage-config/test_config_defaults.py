@@ -1408,9 +1408,10 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
     # no sonar_-prefixed key survives inside the scoped object
     assert not any(k.startswith('sonar_') for k in sonar)
 
-    # review buffer + re-review gates + re-review timeout + rate-window await knobs
-    # nest under default:automated-review
-    assert _params_for(steps, 'default:automated-review') == {
+    # enabled-bots list + review buffer + re-review gates + re-review timeout +
+    # rate-window await knobs nest under plan-marshall:automatic-review
+    assert _params_for(steps, 'plan-marshall:automatic-review') == {
+        'enabled_bots': 'coderabbit,sourcery,gemini',
         'review_bot_buffer_seconds': 180,
         're_review_on_loopback': False,
         're_review_on_branch_cleanup': True,
@@ -1448,7 +1449,7 @@ def test_default_plan_finalize_config_less_steps_map_to_empty_dict():
 
     param_owning = {
         'default:sonar-roundtrip',
-        'default:automated-review',
+        'plan-marshall:automatic-review',
         'default:branch-cleanup',
         # default:finalize-step-sync-baseline owns the `auto_rebase_threshold`
         # conflict-gate knob (default no_overlap_only), shared with branch-cleanup

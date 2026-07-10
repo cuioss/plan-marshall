@@ -523,7 +523,7 @@ class TestCheckSeedMode:
                 'phase-6-finalize': {
                     'steps': [
                         'default:push',
-                        {'default:automated-review': {'review_bot_buffer_seconds': 300}},
+                        {'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 300}},
                     ]
                 }
             }

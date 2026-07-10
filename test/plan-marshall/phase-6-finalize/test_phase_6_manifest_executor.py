@@ -180,7 +180,7 @@ class TestExecutorDispatchScenarios:
 
         Under the new precondition-resolver model (lesson 2026-05-15-14-002),
         Row 5 surgical_bug_fix RETAINS the review gates — the legacy
-        ``ci-wait`` step is dropped defensively, but ``automated-review``
+        ``ci-wait`` step is dropped defensively, but ``automatic-review``
         and ``sonar-roundtrip`` are kept. ``knowledge-capture`` is unrelated
         to this lesson's contract; it stays out of the candidate list here.
         """
@@ -201,8 +201,8 @@ class TestExecutorDispatchScenarios:
         assert manifest is not None
         steps = manifest['phase_6']['steps']
         # Row 5 retains the review gates under the new contract.
-        assert 'automated-review' in steps, (
-            'surgical bug_fix MUST retain automated-review under the new '
+        assert 'automatic-review' in steps, (
+            'surgical bug_fix MUST retain automatic-review under the new '
             'precondition-resolver contract'
         )
         assert 'sonar-roundtrip' in steps, (
@@ -218,14 +218,14 @@ class TestExecutorDispatchScenarios:
         # Retained steps DO appear.
         assert 'push' in dispatched
         assert 'lessons-capture' in dispatched
-        assert 'automated-review' in dispatched
+        assert 'automatic-review' in dispatched
         assert 'sonar-roundtrip' in dispatched
 
     def test_recipe_path_dispatches_only_recipe_steps(self, plan_context):
         """Recipe-driven manifest must yield a slim dispatch list.
 
         Under the new precondition-resolver contract (lesson 2026-05-15-14-002)
-        Row 2 (recipe) RETAINS review gates — ``automated-review`` and
+        Row 2 (recipe) RETAINS review gates — ``automatic-review`` and
         ``sonar-roundtrip`` survive. Only the legacy ``ci-wait`` step ID is
         defensively narrowed out when present in the candidate list.
         """
@@ -245,8 +245,8 @@ class TestExecutorDispatchScenarios:
         assert manifest is not None
         steps = manifest['phase_6']['steps']
         # Review gates RETAINED under the new contract.
-        assert 'automated-review' in steps, (
-            'recipe row MUST retain automated-review under the new contract'
+        assert 'automatic-review' in steps, (
+            'recipe row MUST retain automatic-review under the new contract'
         )
         assert 'sonar-roundtrip' in steps, (
             'recipe row MUST retain sonar-roundtrip under the new contract'
@@ -351,7 +351,7 @@ class TestLessonsCaptureUnconditional:
         assert 'lessons-capture' in dispatched
 
     def test_lessons_capture_fires_even_when_other_steps_failed(self, plan_context):
-        """A failed sonar-roundtrip or automated-review must NOT prevent
+        """A failed sonar-roundtrip or automatic-review must NOT prevent
         lessons-capture from firing — it is dispatched independently."""
         plan_context.plan_dir_for('p6-lessons-with-failures')
         cmd_compose(_compose_ns('p6-lessons-with-failures'))
@@ -360,7 +360,7 @@ class TestLessonsCaptureUnconditional:
 
         state = {
             'sonar-roundtrip': {'outcome': 'failed', 'display_detail': 'gate failed'},
-            'automated-review': {'outcome': 'failed', 'display_detail': 'timed out'},
+            'automatic-review': {'outcome': 'failed', 'display_detail': 'timed out'},
         }
         dispatched = _derive_executor_dispatch(manifest, state)
         assert 'lessons-capture' in dispatched, 'lessons-capture must dispatch even when prior steps failed'
@@ -436,11 +436,11 @@ class TestSkillMdManifestNarrative:
 # ===========================================================================
 # CI-precondition contract tests — replace the obsolete sibling-step model.
 # CI completion is now a dispatcher-resolved precondition declared via
-# requires: [ci-complete] on consumer step frontmatters (automated-review,
+# requires: [ci-complete] on consumer step frontmatters (automatic-review,
 # sonar-roundtrip). These tests assert (1) ci-wait is absent from the
-# default candidate list, (2) automated-review and sonar-roundtrip carry
+# default candidate list, (2) automatic-review and sonar-roundtrip carry
 # the requires: [ci-complete] declaration in frontmatter, (3) the composer
-# does not emit ci-wait before automated-review, (4) Rules 2/3/5 retain
+# does not emit ci-wait before automatic-review, (4) Rules 2/3/5 retain
 # both review gates rather than silently dropping them with ci-wait.
 # ===========================================================================
 
@@ -449,9 +449,8 @@ _AUTOMATED_REVIEW_FRONTMATTER = (
     MARKETPLACE_ROOT
     / 'plan-marshall'
     / 'skills'
-    / 'phase-6-finalize'
-    / 'workflow'
-    / 'automated-review.md'
+    / 'automatic-review'
+    / 'SKILL.md'
 )
 _SONAR_ROUNDTRIP_FRONTMATTER = (
     MARKETPLACE_ROOT
@@ -476,7 +475,7 @@ class TestCIPreconditionContract:
         )
 
     def test_automated_review_declares_requires_ci_complete(self):
-        """``automated-review.md`` frontmatter MUST declare
+        """``automatic-review.md`` frontmatter MUST declare
         ``requires: [ci-complete]`` so the dispatcher resolves the
         precondition before invoking the consumer body.
         """
@@ -486,10 +485,10 @@ class TestCIPreconditionContract:
         # head is "---\nname: ..."; the second --- is the closing fence we
         # captured via sep. Inspect head for the requires: line.
         assert sep == '\n---\n', (
-            'automated-review.md must start with a YAML frontmatter block'
+            'automatic-review.md must start with a YAML frontmatter block'
         )
         assert 'requires: [ci-complete]' in head, (
-            'automated-review.md frontmatter MUST declare requires: '
+            'automatic-review.md frontmatter MUST declare requires: '
             '[ci-complete]; got head=\n' + head
         )
 
@@ -527,14 +526,14 @@ class TestCIPreconditionContract:
         assert 'ci-wait' not in steps, (
             f'default-row composer MUST NOT emit ci-wait; got steps {steps}'
         )
-        assert 'automated-review' in steps, (
-            'default-row composer must still include automated-review'
+        assert 'automatic-review' in steps, (
+            'default-row composer must still include automatic-review'
         )
 
     def test_recipe_path_retains_review_gates(self, plan_context):
         """Row 2 (recipe) — review gates RETAINED. The legacy ``ci-wait``
         step ID is defensively narrowed out when present in the candidate
-        list, but ``automated-review`` and ``sonar-roundtrip`` are never
+        list, but ``automatic-review`` and ``sonar-roundtrip`` are never
         silently suppressed by the planner.
         """
         plan_context.plan_dir_for('p6-precond-recipe')
@@ -553,8 +552,8 @@ class TestCIPreconditionContract:
         manifest = read_manifest('p6-precond-recipe')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
-        assert 'automated-review' in steps, (
-            'recipe row MUST retain automated-review — review gates are '
+        assert 'automatic-review' in steps, (
+            'recipe row MUST retain automatic-review — review gates are '
             'never silently suppressed'
         )
         assert 'sonar-roundtrip' in steps, (
@@ -584,8 +583,8 @@ class TestCIPreconditionContract:
         manifest = read_manifest('p6-precond-docs')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
-        assert 'automated-review' in steps, (
-            'docs_only row MUST retain automated-review'
+        assert 'automatic-review' in steps, (
+            'docs_only row MUST retain automatic-review'
         )
         assert 'sonar-roundtrip' in steps, (
             'docs_only row MUST retain sonar-roundtrip'
@@ -613,8 +612,8 @@ class TestCIPreconditionContract:
         manifest = read_manifest('p6-precond-surgical-bug')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
-        assert 'automated-review' in steps, (
-            'surgical_bug_fix row MUST retain automated-review'
+        assert 'automatic-review' in steps, (
+            'surgical_bug_fix row MUST retain automatic-review'
         )
         assert 'sonar-roundtrip' in steps, (
             'surgical_bug_fix row MUST retain sonar-roundtrip'
@@ -624,7 +623,7 @@ class TestCIPreconditionContract:
         )
 
     def test_automated_review_md_does_not_read_ci_wait_outcome(self):
-        """The ``automated-review.md`` body MUST NOT include the legacy
+        """The ``automatic-review.md`` body MUST NOT include the legacy
         sibling-step prose that read the ``phase_steps["6-finalize"]["ci-wait"].outcome``
         signal from ``manage-status``. CI completion is now a precondition
         guaranteed by the dispatcher before the body executes.
@@ -632,19 +631,19 @@ class TestCIPreconditionContract:
         text = _AUTOMATED_REVIEW_FRONTMATTER.read_text(encoding='utf-8')
         # The "Read completed-CI signal" section header must be gone.
         assert '### Read completed-CI signal' not in text, (
-            'automated-review.md MUST NOT carry a "Read completed-CI signal" '
+            'automatic-review.md MUST NOT carry a "Read completed-CI signal" '
             'section — that contract is now owned by the dispatcher precondition'
         )
         # The specific phase_steps signal lookup string must be gone.
         assert 'phase_steps["6-finalize"]["ci-wait"]' not in text, (
-            'automated-review.md MUST NOT read phase_steps["6-finalize"]["ci-wait"] '
+            'automatic-review.md MUST NOT read phase_steps["6-finalize"]["ci-wait"] '
             'outcome record — that signal model has been retired'
         )
 
 
 # ===========================================================================
 # Automated-review precondition declaration + overflow handling tests —
-# pin the documented contract: ``automated-review`` declares
+# pin the documented contract: ``automatic-review`` declares
 # ``requires: [ci-complete]`` in its YAML frontmatter so the phase-6-finalize
 # dispatcher resolves the precondition before the body runs (no inline CI
 # poll, no manage-status signal hand-off). When per-iteration budget would
@@ -659,9 +658,8 @@ _AUTOMATED_REVIEW_MD = (
     MARKETPLACE_ROOT
     / 'plan-marshall'
     / 'skills'
-    / 'phase-6-finalize'
-    / 'workflow'
-    / 'automated-review.md'
+    / 'automatic-review'
+    / 'SKILL.md'
 )
 _JSONL_FORMAT_MD = (
     MARKETPLACE_ROOT
@@ -682,7 +680,7 @@ _TRIAGE_MD = (
 
 
 class TestAutomatedReviewCiSignalAndOverflow:
-    """Pin the documented contract: ``automated-review`` declares
+    """Pin the documented contract: ``automatic-review`` declares
     ``requires: [ci-complete]`` in its frontmatter so the dispatcher resolves
     the precondition before the body runs (no inline CI poll, no
     manage-status signal hand-off). On near-budget exhaustion the triage
@@ -690,7 +688,7 @@ class TestAutomatedReviewCiSignalAndOverflow:
     ``--outcome loop_back``.
 
     These are narrative-pinning tests on the standards docs because the
-    automated-review step body is markdown-driven (no Python entry point); the
+    automatic-review step body is markdown-driven (no Python entry point); the
     contract is enforced at agent dispatch time, and the standards doc IS the
     source of truth. If a future edit removes any of these contract markers,
     the documented overflow + precondition contract has been silently
@@ -714,49 +712,49 @@ class TestAutomatedReviewCiSignalAndOverflow:
     def test_automated_review_declares_requires_ci_complete_in_frontmatter(
         self, automated_review_text: str
     ):
-        """``automated-review.md`` MUST declare ``requires: [ci-complete]``
+        """``automatic-review.md`` MUST declare ``requires: [ci-complete]``
         in its YAML frontmatter so the dispatcher invokes the precondition
         resolver before the body runs.
         """
         head, sep, _rest = automated_review_text.partition('\n---\n')
         assert sep == '\n---\n', (
-            'automated-review.md must start with a YAML frontmatter block'
+            'automatic-review.md must start with a YAML frontmatter block'
         )
         assert 'requires: [ci-complete]' in head, (
-            'automated-review.md frontmatter MUST declare requires: [ci-complete]'
+            'automatic-review.md frontmatter MUST declare requires: [ci-complete]'
         )
 
     def test_automated_review_does_not_poll_ci_inline(
         self, automated_review_text: str
     ):
         """The legacy ``ci wait --pr-number`` polling primitive MUST NOT
-        appear in the automated-review step body — that responsibility is
+        appear in the automatic-review step body — that responsibility is
         owned by the dispatcher's precondition resolver. A reappearance
         would mean the consumer is double-polling CI.
         """
         assert 'ci wait \\\n  --pr-number' not in automated_review_text, (
-            'automated-review.md must not invoke `ci wait --pr-number` inline; '
+            'automatic-review.md must not invoke `ci wait --pr-number` inline; '
             'the precondition resolver owns that primitive'
         )
         # The legacy section headings MUST be gone.
         assert '### Wait for CI' not in automated_review_text, (
-            'automated-review.md must not have a "Wait for CI" subsection'
+            'automatic-review.md must not have a "Wait for CI" subsection'
         )
         assert '### Read completed-CI signal' not in automated_review_text, (
-            'automated-review.md must not have a "Read completed-CI signal" '
+            'automatic-review.md must not have a "Read completed-CI signal" '
             'subsection — CI completion is now a dispatcher-resolved precondition'
         )
 
     def test_automated_review_does_not_read_ci_wait_outcome_record(
         self, automated_review_text: str
     ):
-        """``automated-review.md`` MUST NOT read the legacy
+        """``automatic-review.md`` MUST NOT read the legacy
         ``phase_steps["6-finalize"]["ci-wait"]`` outcome record. The
         precondition resolver runs ahead of the body and surfaces
         ``wait_failed`` to the dispatcher, not to the body.
         """
         assert 'phase_steps["6-finalize"]["ci-wait"]' not in automated_review_text, (
-            'automated-review.md must not read the legacy ci-wait outcome record'
+            'automatic-review.md must not read the legacy ci-wait outcome record'
         )
 
     def test_timeout_contract_describes_precondition_split(
@@ -783,7 +781,7 @@ class TestAutomatedReviewCiSignalAndOverflow:
     ):
         """The overflow handling section MUST exist in the shared triage
         workflow so the contract is reachable from every call site that
-        dispatches `cross.triage` (automated-review, sonar-roundtrip,
+        dispatches `cross.triage` (automatic-review, sonar-roundtrip,
         phase-5-execute verification/quality-gate triage, pr-doctor)."""
         # The triage workflow numbers its steps; overflow lives at Step 5.
         assert 'Overflow' in triage_text and 'timeout' in triage_text.lower(), (
@@ -797,7 +795,7 @@ class TestAutomatedReviewCiSignalAndOverflow:
         workflow MUST file exactly one ``{finding_type}-overflow`` envelope
         finding (via ``manage-findings add``) carrying the unprocessed
         hash_ids in ``detail``. The pr-comment-specific shape (used by
-        automated-review) is named explicitly in the documentation."""
+        automatic-review) is named explicitly in the documentation."""
         text = triage_text
         assert 'pr-comment-overflow' in text, (
             'triage.md must reference the pr-comment-overflow finding type by name'
@@ -815,7 +813,7 @@ class TestAutomatedReviewCiSignalAndOverflow:
         self, triage_text: str
     ):
         """The overflow path MUST return ``outcome: loop_back`` so the
-        calling manifest step (automated-review / sonar-roundtrip /
+        calling manifest step (automatic-review / sonar-roundtrip /
         phase-5-execute Step 11) re-fires the dispatch on the next phase entry."""
         text = triage_text
         # Locate the overflow section (between Step 5 header and Step 6).

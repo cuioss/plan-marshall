@@ -118,7 +118,7 @@ There is **no parallel glob and no second discovery structure**. The `find_imple
 
 ## Current Implementations
 
-Every step doc that declares the finalize-step interface. Built-in steps live under `phase-6-finalize/{workflow,standards}/`; the opt-in bundle step ships under its bundle's `skills/`; project steps are meta-project-local under `.claude/skills/`.
+Every step doc that declares the finalize-step interface. Built-in steps live under `phase-6-finalize/{workflow,standards}/`; bundle steps ship under their bundle's `skills/`; project steps are meta-project-local under `.claude/skills/`.
 
 | Name | Source | Order | default_on | presets |
 |------|--------|-------|:----------:|---------|
@@ -130,7 +130,6 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 | `default:create-pr` | built-in | 20 | true | `[standard, full]` |
 | `default:ci-verify` | built-in | 22 | true | `[standard, full]` |
 | `default:architecture-refresh` | built-in | 25 | false | `[]` |
-| `default:automated-review` | built-in | 30 | true | `[standard, full]` |
 | `default:sonar-roundtrip` | built-in | 40 | true | `[full]` |
 | `default:lessons-capture` | built-in | 60 | true | `[local, standard, full]` |
 | `default:adr-propose` | built-in | 62 | false | `[]` |
@@ -140,6 +139,7 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 | `default:record-metrics` | built-in | 998 | true | `[local, standard, full]` |
 | `default:finalize-step-print-phase-breakdown` | built-in | 999 | true | `[]` |
 | `default:archive-plan` | built-in | 1000 | true | `[local, standard, full]` |
+| `plan-marshall:automatic-review` | bundle | 30 | true | `[standard, full]` |
 | `plan-marshall:plan-retrospective` | bundle-optional | 995 | false | `[full]` |
 | `project:finalize-step-plugin-doctor` | project | 6 | false | `[]` |
 | `project:finalize-step-pre-submission-self-review` | project | 7 | false | `[]` |
@@ -148,7 +148,7 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 | `project:finalize-step-sync-plugin-cache` | project | 85 | false | `[]` |
 | `project:finalize-step-lessons-housekeeping` | project | 996 | false | `[]` |
 
-Project steps carry `default_on: false` and `presets: []` because they are hand-registered in the meta-project's `phase-6-finalize.steps` array (presets ship to consumer projects, which do not have the meta-project's project-local finalize-step skills). The bundle-optional `plan-marshall:plan-retrospective` step is opt-in (`default_on: false`) and a member of the `full` preset only.
+Project steps carry `default_on: false` and `presets: []` because they are hand-registered in the meta-project's `phase-6-finalize.steps` array (presets ship to consumer projects, which do not have the meta-project's project-local finalize-step skills). The `plan-marshall:automatic-review` step is a default-on bundle step (`default_on: true`, member of the `standard` and `full` presets). The bundle-optional `plan-marshall:plan-retrospective` step is opt-in (`default_on: false`) and a member of the `full` preset only.
 
 ## Related Specifications
 
