@@ -759,6 +759,8 @@ def _resolve_default_branch(owner: str, repo: str) -> tuple[str | None, str]:
         data = json.loads(stdout)
     except json.JSONDecodeError:
         return None, 'could not parse repository metadata'
+    if not isinstance(data, dict):
+        return None, 'repository metadata response was not an object'
     branch = data.get('default_branch')
     if not branch:
         return None, 'repository metadata missing default_branch'
