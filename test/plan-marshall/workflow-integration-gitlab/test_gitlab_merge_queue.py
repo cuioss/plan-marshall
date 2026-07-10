@@ -162,6 +162,32 @@ def test_repo_merge_queue_probe_auth_scope_error(monkeypatch):
     assert 'scope' in message or 'permission' in message
 
 
+def test_repo_merge_queue_probe_generic_api_error_is_error_not_ineligible(monkeypatch):
+    # A non-auth run_api failure (transient HTTP 500) must surface as a real
+    # error result — NOT be folded into the 'ineligible' discriminator, which
+    # would wrongly tell the operator the platform lacks the feature.
+    _install_common(monkeypatch)
+    monkeypatch.setattr(
+        gitlab_ops, 'run_api', lambda ep: (1, None, 'HTTP 500 Internal Server Error')
+    )
+
+    result = gitlab_ops.cmd_repo_merge_queue_probe(argparse.Namespace())
+    assert result['status'] == 'error'
+    assert result['operation'] == 'repo_merge_queue_probe'
+    assert result.get('eligibility') != 'ineligible'
+
+
+def test_repo_merge_queue_probe_malformed_response_is_error_not_ineligible(monkeypatch):
+    # A well-formed HTTP 200 whose body is not a JSON object is an unexpected API
+    # shape, not a feature-availability verdict — it must surface as an error.
+    _install_common(monkeypatch)
+    monkeypatch.setattr(gitlab_ops, 'run_api', lambda ep: (0, ['not', 'an', 'object'], ''))
+
+    result = gitlab_ops.cmd_repo_merge_queue_probe(argparse.Namespace())
+    assert result['status'] == 'error'
+    assert result.get('eligibility') != 'ineligible'
+
+
 def test_repo_merge_queue_probe_auth_failure(monkeypatch):
     monkeypatch.setattr(gitlab_ops, 'check_auth', lambda: (False, 'not authed'))
     result = gitlab_ops.cmd_repo_merge_queue_probe(argparse.Namespace())

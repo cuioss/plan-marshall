@@ -94,6 +94,53 @@ def test_probe_auth_scope_error(monkeypatch):
     assert 'scope' in message or 'admin' in message or 'permission' in message
 
 
+def test_probe_generic_api_error_is_error_not_ineligible(monkeypatch):
+    # A non-404, non-auth gh failure (transient HTTP 500) must surface as a real
+    # error result — NOT be folded into the 'ineligible' discriminator, which
+    # would wrongly tell the operator the platform lacks the feature.
+    stub, _ = _make_run_gh(rules_rc=1, rules_err='HTTP 500 Internal Server Error')
+    _install(monkeypatch, stub)
+
+    result = github_ops.cmd_repo_merge_queue_probe(argparse.Namespace())
+    assert result['status'] == 'error'
+    assert result['operation'] == 'repo_merge_queue_probe'
+    assert result.get('eligibility') != 'ineligible'
+
+
+def test_probe_unparseable_rules_is_error_not_ineligible(monkeypatch):
+    # A malformed (non-JSON) rules response is an API/transport anomaly, not a
+    # feature-availability verdict — it must surface as an error, not ineligible.
+    def stub(args, capture_json=False, timeout=60):
+        if args == ['api', 'repos/owner/repo']:
+            return 0, '{"default_branch": "main"}', ''
+        if args == ['api', 'repos/owner/repo/rules/branches/main']:
+            return 0, 'not-json{', ''
+        return 0, '', ''
+
+    _install(monkeypatch, stub)
+
+    result = github_ops.cmd_repo_merge_queue_probe(argparse.Namespace())
+    assert result['status'] == 'error'
+    assert result.get('eligibility') != 'ineligible'
+
+
+def test_probe_non_list_rules_is_error_not_ineligible(monkeypatch):
+    # A well-formed but non-list rules response is an unexpected API shape, not a
+    # feature-availability verdict — it must surface as an error, not ineligible.
+    def stub(args, capture_json=False, timeout=60):
+        if args == ['api', 'repos/owner/repo']:
+            return 0, '{"default_branch": "main"}', ''
+        if args == ['api', 'repos/owner/repo/rules/branches/main']:
+            return 0, '{"unexpected": "object"}', ''
+        return 0, '', ''
+
+    _install(monkeypatch, stub)
+
+    result = github_ops.cmd_repo_merge_queue_probe(argparse.Namespace())
+    assert result['status'] == 'error'
+    assert result.get('eligibility') != 'ineligible'
+
+
 def test_probe_default_branch_resolution_failure(monkeypatch):
     stub, _ = _make_run_gh(repo_rc=1, repo_err='HTTP 500 boom')
     _install(monkeypatch, stub)

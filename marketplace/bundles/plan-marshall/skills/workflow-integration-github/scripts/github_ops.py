@@ -99,6 +99,7 @@ from ci_base import (
     MERGE_QUEUE_ELIGIBLE_CONFIGURED,
     MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
     MERGE_QUEUE_INELIGIBLE,
+    MERGE_QUEUE_UNSUPPORTED,
     add_pr_create_args,
     build_parser,
     check_auth_cli,
@@ -771,9 +772,16 @@ def _probe_merge_queue_state(owner: str, repo: str, branch: str) -> tuple[str, s
     """Probe the merge-queue configuration state for ``branch``.
 
     Returns ``(discriminator, detail, error)`` where ``discriminator`` is one of
-    the ``MERGE_QUEUE_*`` constants and ``error`` is a non-None actionable error
-    string ONLY on an auth-scope failure (the caller converts it to a
-    ``make_error`` result). A 404 on the rules endpoint maps to ``ineligible``.
+    the ``MERGE_QUEUE_*`` constants. ``error`` is a non-None actionable error
+    string (the caller converts it to a ``make_error`` result) on every failure
+    that is NOT a confirmed feature-availability verdict — an auth-scope failure,
+    a non-404 ``gh api`` error, or an unparseable / malformed rules response.
+    Only two verdicts carry ``error=None``: a confirmed HTTP 404 on the rules
+    endpoint (mapped to ``ineligible`` — the genuine "this repo does not offer
+    the feature" signal) and the two eligible outcomes. A transient HTTP 500 /
+    timeout / malformed response therefore surfaces as a real, retryable
+    ``unsupported`` error rather than being folded into a permanent ``ineligible``
+    refusal.
     """
     endpoint = f'repos/{owner}/{repo}/rules/branches/{branch}'
     returncode, stdout, stderr = run_gh(['api', endpoint])
@@ -782,13 +790,16 @@ def _probe_merge_queue_state(owner: str, repo: str, branch: str) -> tuple[str, s
             return MERGE_QUEUE_INELIGIBLE, stderr.strip(), _MERGE_QUEUE_AUTH_SCOPE_HINT
         if 'http 404' in stderr.lower():
             return MERGE_QUEUE_INELIGIBLE, 'branch rules endpoint not found', None
-        return MERGE_QUEUE_INELIGIBLE, stderr.strip(), None
+        detail = stderr.strip() or 'branch rules probe failed'
+        return MERGE_QUEUE_UNSUPPORTED, detail, detail
     try:
         rules = json.loads(stdout)
     except json.JSONDecodeError:
-        return MERGE_QUEUE_INELIGIBLE, 'could not parse branch rules response', None
+        detail = 'could not parse branch rules response'
+        return MERGE_QUEUE_UNSUPPORTED, detail, detail
     if not isinstance(rules, list):
-        return MERGE_QUEUE_INELIGIBLE, 'branch rules response was not a list', None
+        detail = 'branch rules response was not a list'
+        return MERGE_QUEUE_UNSUPPORTED, detail, detail
     for rule in rules:
         if isinstance(rule, dict) and rule.get('type') == 'merge_queue':
             return MERGE_QUEUE_ELIGIBLE_CONFIGURED, 'merge_queue rule active on branch', None

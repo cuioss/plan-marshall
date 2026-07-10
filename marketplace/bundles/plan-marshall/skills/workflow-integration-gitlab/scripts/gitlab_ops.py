@@ -77,6 +77,7 @@ from ci_base import (
     MERGE_QUEUE_ELIGIBLE_CONFIGURED,
     MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
     MERGE_QUEUE_INELIGIBLE,
+    MERGE_QUEUE_UNSUPPORTED,
     add_pr_create_args,
     add_pr_resolve_thread_pr_number,
     build_parser,
@@ -498,10 +499,15 @@ def _probe_merge_train_state() -> tuple[str, str, str | None]:
     """Probe the project merge-train configuration state.
 
     Returns ``(discriminator, detail, error)`` where ``discriminator`` is one of
-    the shared ``MERGE_QUEUE_*`` constants and ``error`` is a non-None actionable
-    string ONLY on an auth-scope failure (the caller converts it to a
-    ``make_error`` result). A missing ``merge_trains_enabled`` field or a
-    non-auth API failure maps to ``ineligible``.
+    the shared ``MERGE_QUEUE_*`` constants. ``error`` is a non-None actionable
+    string (the caller converts it to a ``make_error`` result) on every failure
+    that is NOT a confirmed feature-availability verdict — an auth-scope failure,
+    a generic non-auth ``run_api`` failure, or a malformed (non-object) project
+    response. Only the genuine feature/tier-absence verdicts carry ``error=None``:
+    an unresolvable project path and an absent ``merge_trains_enabled`` field
+    (both mapped to ``ineligible``), plus the two eligible outcomes. A
+    transient/API failure therefore surfaces as a real, retryable ``unsupported``
+    error rather than being folded into a permanent ``ineligible`` refusal.
     """
     project_path = get_project_path()
     if not project_path:
@@ -511,9 +517,11 @@ def _probe_merge_train_state() -> tuple[str, str, str | None]:
     if returncode != 0:
         if _is_auth_scope_error(err):
             return MERGE_QUEUE_INELIGIBLE, err.strip(), _MERGE_TRAIN_AUTH_SCOPE_HINT
-        return MERGE_QUEUE_INELIGIBLE, err.strip(), None
+        detail = err.strip() or 'project merge-train probe failed'
+        return MERGE_QUEUE_UNSUPPORTED, detail, detail
     if not isinstance(data, dict):
-        return MERGE_QUEUE_INELIGIBLE, 'project response was not an object', None
+        detail = 'project response was not an object'
+        return MERGE_QUEUE_UNSUPPORTED, detail, detail
     if 'merge_trains_enabled' not in data:
         # Field absent → the tier/feature does not expose merge trains.
         return MERGE_QUEUE_INELIGIBLE, 'merge_trains_enabled not present on project', None
