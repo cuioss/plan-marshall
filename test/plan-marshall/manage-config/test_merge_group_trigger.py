@@ -47,14 +47,26 @@ def _parse_on_section() -> dict:
 
 
 def _merge_group_present_via_regex() -> bool:
-    """Regex fallback: detect a top-level ``merge_group:`` key in the on: block.
+    """Regex fallback: detect a ``merge_group:`` event key inside the on: block.
 
-    Anchors on a two-space-indented ``merge_group:`` key (the on:-block event
-    level in this workflow) so a deeper nested or commented occurrence is not a
-    false positive.
+    Scopes the search to the ``on:`` block only — from the top-level ``on:`` key
+    (bare or quoted) up to but not including the next column-0 key (or end of
+    file) — then anchors on a two-space-indented ``merge_group:`` key within that
+    block. Without the block scoping, a two-space-indented ``merge_group:`` key
+    living under some other top-level section (e.g. a ``jobs:`` entry literally
+    named ``merge_group``) would false-positive-match, defeating the guard.
+    Mirrors the ``push:``-block-anchored fallback in
+    ``test_branch_prefix_allowlist.py::_parse_push_branches``.
     """
     text = _WORKFLOW_PATH.read_text(encoding='utf-8')
-    return re.search(r'^\s{2}merge_group:', text, re.MULTILINE) is not None
+    on_block = re.search(
+        r'^(?:on|["\']on["\']):[^\n]*\n(.*?)(?=^\S|\Z)',
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    if on_block is None:
+        return False
+    return re.search(r'^\s{2}merge_group:', on_block.group(1), re.MULTILINE) is not None
 
 
 def test_on_block_declares_merge_group_trigger():
