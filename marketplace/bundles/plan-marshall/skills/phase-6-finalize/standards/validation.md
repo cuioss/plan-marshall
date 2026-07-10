@@ -39,7 +39,7 @@ The pure-push-barrier contract (clean-tree assertion, freshness gate, push-witho
 
 ## Automated Review (when `plan-marshall:automatic-review` is in the manifest)
 
-- Monitor CI status via workflow-integration-github
+- CI completion is a dispatcher-resolved precondition (`requires: [ci-complete]`) checked before the step body runs — the step does not poll CI itself
 - Address review comments (iterative - may require looping back to execute)
 - Create fix tasks and loop back to 5-execute if issues found (max 3 iterations)
 - Per-agent timeout 15 min — on expiry, dispatcher records `outcome=failed` and continues
