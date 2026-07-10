@@ -22,6 +22,7 @@ import argparse
 import time
 from pathlib import Path
 
+import _github_ci
 import ci_base
 import github_ops
 
@@ -631,3 +632,205 @@ def test_ci_wait_success_path_failing_checks_empty(monkeypatch, plan_context):
     assert result['final_status'] == 'success'
     assert result['failing_checks'] == []
     assert fetch_calls['run_ids'] == []
+
+
+# =============================================================================
+# p50-seeded first sleep + terminal-state watch-verb tail (deliverable 3)
+# =============================================================================
+#
+# These drive the reworked cmd_ci_wait: a p50 first-sleep seed then a
+# ``gh run watch`` terminal-state tail. The p50 read / record seams, the sleep
+# seam, the watch-verb seam, and the monotonic clock all live in ``_github_ci``
+# and are monkeypatched there (cmd_ci_wait resolves them in its own module
+# namespace); ``check_auth`` / ``run_gh`` remain patched on ``github_ops``.
+
+
+def _check_row(name, state, run_id, *, workflow='verify'):
+    """Build a single ``gh pr checks --json`` row with a run-id-bearing link.
+
+    ``state`` drives the canonical partition: ``IN_PROGRESS`` (wait),
+    ``SUCCESS`` (non-failing), ``FAILURE`` (failing).
+    """
+    bucket = {'SUCCESS': 'pass', 'FAILURE': 'fail', 'IN_PROGRESS': 'pending'}.get(state, 'pending')
+    return {
+        'name': name,
+        'state': state,
+        'bucket': bucket,
+        'link': f'https://github.com/o/r/actions/runs/{run_id}/job/9',
+        'startedAt': '2026-01-01T00:00:00Z',
+        'completedAt': '2026-01-01T00:05:00Z',
+        'workflow': workflow,
+    }
+
+
+class _RunGhStub:
+    """Stateful ``run_gh`` seam: ``pr checks`` returns ``pending_rows`` until the
+    watch verb flips ``watched`` True, then ``terminal_rows``; ``pr view --json``
+    answers with a stable head SHA. Any other invocation is an error."""
+
+    def __init__(self, pending_rows, terminal_rows):
+        self.pending_rows = pending_rows
+        self.terminal_rows = terminal_rows
+        self.watched = False
+        self.checks_calls = 0
+
+    def __call__(self, args, capture_json=False, timeout=60):
+        import json
+
+        if 'checks' in args:
+            self.checks_calls += 1
+            rows = self.terminal_rows if self.watched else self.pending_rows
+            return 0, json.dumps(rows), ''
+        if 'view' in args and '--json' in args:
+            return 0, json.dumps({'headRefOid': 'deadbeefcafe'}), ''
+        return 1, '', 'unexpected gh invocation'
+
+
+def _make_incrementing_clock(step=60.0):
+    """Return a monotonic-clock stand-in that advances ``step`` per call, so the
+    recorded wall-clock duration is a positive, deterministic value in tests."""
+    state = {'t': 0.0}
+
+    def clock():
+        state['t'] += step
+        return state['t']
+
+    return clock
+
+
+def _p50_wait_args(*, pr_number=77, plan_id, timeout=600, interval=0):
+    return argparse.Namespace(
+        pr_number=pr_number,
+        head=None,
+        router_plan_id=plan_id,
+        error_style='generic',
+        timeout=timeout,
+        interval=interval,
+    )
+
+
+def test_ci_wait_p50_seed_applied_then_watch_maps_success(monkeypatch, plan_context):
+    """p50 seed is slept once (bounded by --timeout), the watch verb is invoked
+    for the in-progress run, and its terminal SUCCESS maps to final_status."""
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    _noop_sleep(monkeypatch)
+
+    stub = _RunGhStub(
+        pending_rows=[_check_row('verify / verify', 'IN_PROGRESS', 1001)],
+        terminal_rows=[_check_row('verify / verify', 'SUCCESS', 1001)],
+    )
+    monkeypatch.setattr(github_ops, 'run_gh', stub)
+
+    monkeypatch.setattr(_github_ci, '_read_ci_wait_p50_seed', lambda: 120)
+    seed_sleeps: list[int] = []
+    monkeypatch.setattr(_github_ci, '_sleep_seed', lambda s: seed_sleeps.append(s))
+    monkeypatch.setattr(_github_ci, '_monotonic', _make_incrementing_clock())
+
+    watch_calls: list[tuple] = []
+
+    def fake_watch(run_id, timeout):
+        watch_calls.append((run_id, timeout))
+        stub.watched = True
+        return 0, '', ''
+
+    monkeypatch.setattr(_github_ci, '_watch_run', fake_watch)
+    recorded: list[int] = []
+    monkeypatch.setattr(_github_ci, '_record_ci_wait_duration', lambda d: recorded.append(d))
+
+    result = github_ops.cmd_ci_wait(_p50_wait_args(plan_id=plan_context.plan_id, timeout=600))
+
+    assert result['status'] == 'success'
+    assert result['final_status'] == 'success'
+    assert result['wait_outcome'] == 'completed'
+    assert result['run_id'] == '1001'
+    # p50 seed applied exactly once, bounded by --timeout (120 <= 600).
+    assert seed_sleeps == [120]
+    # The terminal-state watch verb was invoked for the in-progress run.
+    assert watch_calls and watch_calls[0][0] == '1001'
+    # Observed wall-clock duration recorded back into the p50 window on success.
+    assert len(recorded) == 1 and recorded[0] > 0
+
+
+def test_ci_wait_p50_seed_skipped_on_empty_window(monkeypatch, plan_context):
+    """An empty p50 window (None) skips the first-sleep seed entirely; an
+    already-terminal snapshot needs no watch."""
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    _noop_sleep(monkeypatch)
+
+    stub = _RunGhStub(
+        pending_rows=[_check_row('verify / verify', 'SUCCESS', 1001)],
+        terminal_rows=[_check_row('verify / verify', 'SUCCESS', 1001)],
+    )
+    monkeypatch.setattr(github_ops, 'run_gh', stub)
+
+    monkeypatch.setattr(_github_ci, '_read_ci_wait_p50_seed', lambda: None)
+    seed_sleeps: list[int] = []
+    monkeypatch.setattr(_github_ci, '_sleep_seed', lambda s: seed_sleeps.append(s))
+
+    watch_calls: list[str] = []
+
+    def fake_watch(run_id, timeout):
+        watch_calls.append(run_id)
+        return 0, '', ''
+
+    monkeypatch.setattr(_github_ci, '_watch_run', fake_watch)
+
+    result = github_ops.cmd_ci_wait(_p50_wait_args(plan_id=plan_context.plan_id))
+
+    assert result['final_status'] == 'success'
+    assert seed_sleeps == []
+    assert watch_calls == []
+
+
+def test_ci_wait_p50_seed_bounded_by_timeout(monkeypatch, plan_context):
+    """A p50 seed larger than --timeout is clamped to --timeout before sleeping."""
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    _noop_sleep(monkeypatch)
+
+    stub = _RunGhStub(
+        pending_rows=[_check_row('verify / verify', 'SUCCESS', 1001)],
+        terminal_rows=[_check_row('verify / verify', 'SUCCESS', 1001)],
+    )
+    monkeypatch.setattr(github_ops, 'run_gh', stub)
+
+    monkeypatch.setattr(_github_ci, '_read_ci_wait_p50_seed', lambda: 900)
+    seed_sleeps: list[int] = []
+    monkeypatch.setattr(_github_ci, '_sleep_seed', lambda s: seed_sleeps.append(s))
+
+    result = github_ops.cmd_ci_wait(_p50_wait_args(plan_id=plan_context.plan_id, timeout=300))
+
+    assert result['final_status'] == 'success'
+    assert seed_sleeps == [300]
+
+
+def test_ci_wait_deadline_exceeded_preserved_when_still_pending(monkeypatch, plan_context):
+    """A check that never leaves the wait partition (even after the watch tail)
+    yields the deadline_exceeded timeout envelope, and no duration is recorded."""
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    _noop_sleep(monkeypatch)
+
+    pending = [_check_row('verify / verify', 'IN_PROGRESS', 1001)]
+    # terminal_rows also pending → the run never terminates.
+    stub = _RunGhStub(pending_rows=pending, terminal_rows=pending)
+    monkeypatch.setattr(github_ops, 'run_gh', stub)
+
+    monkeypatch.setattr(_github_ci, '_read_ci_wait_p50_seed', lambda: None)
+    monkeypatch.setattr(_github_ci, '_sleep_seed', lambda s: None)
+
+    def fake_watch(run_id, timeout):
+        stub.watched = True
+        return 0, '', ''
+
+    monkeypatch.setattr(_github_ci, '_watch_run', fake_watch)
+    recorded: list[int] = []
+    monkeypatch.setattr(_github_ci, '_record_ci_wait_duration', lambda d: recorded.append(d))
+
+    result = github_ops.cmd_ci_wait(_p50_wait_args(plan_id=plan_context.plan_id))
+
+    assert result['status'] == 'error'
+    assert result['operation'] == 'ci_wait'
+    assert result['wait_outcome'] == 'deadline_exceeded'
+    assert 'failing_checks' in result
+    assert result['run_id'] == '1001'
+    # A non-success (timeout) completion never records into the p50 window.
+    assert recorded == []

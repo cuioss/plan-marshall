@@ -906,3 +906,139 @@ class TestBuildQueueLimitMainAnchoring:
         main_config = main_base / 'run-configuration.json'
         assert json.loads(main_config.read_text())['build']['queue']['upper_limit_seconds'] == 3600
         assert not (worktree / '.plan' / 'local' / 'run-configuration.json').exists()
+
+
+# =============================================================================
+# CI-Duration Subcommand Tests
+# =============================================================================
+
+
+def _read_run_config(plan_context) -> dict:
+    """Read the fixture's persisted run-configuration.json as a dict."""
+    return json.loads((plan_context.fixture_dir / 'run-configuration.json').read_text())
+
+
+def test_ci_duration_record_creates_window(plan_context):
+    """record appends the first observed duration under ci_durations.{key}."""
+    result = run_script(SCRIPT_PATH, 'ci-duration', 'record', '--command', 'ci:wait', '--duration', '420')
+
+    assert result.success, f'Should succeed: {result.stderr}'
+    data = result.toon()
+    assert data.get('status') == 'success'
+    assert data.get('action') == 'recorded'
+    assert data.get('window_size') == 1
+
+    config = _read_run_config(plan_context)
+    assert config['ci_durations']['ci:wait'] == [420]
+
+
+def test_ci_duration_record_appends_newest_last(plan_context):
+    """Successive records append newest-last within the window."""
+    for dur in ('300', '420', '360'):
+        run_script(SCRIPT_PATH, 'ci-duration', 'record', '--command', 'ci:wait', '--duration', dur)
+
+    config = _read_run_config(plan_context)
+    assert config['ci_durations']['ci:wait'] == [300, 420, 360]
+
+
+def test_ci_duration_record_bounds_window_evicting_oldest(plan_context):
+    """record bounds the window at N=5, evicting the oldest on overflow."""
+    for dur in ('1', '2', '3', '4', '5', '6', '7'):
+        run_script(SCRIPT_PATH, 'ci-duration', 'record', '--command', 'ci:wait', '--duration', dur)
+
+    config = _read_run_config(plan_context)
+    # Only the newest 5 survive; the two oldest (1, 2) are evicted.
+    assert config['ci_durations']['ci:wait'] == [3, 4, 5, 6, 7]
+
+
+def test_ci_duration_record_returns_bounded_window(plan_context):
+    """The record TOON reports the bounded window and its size on overflow."""
+    result = None
+    for dur in ('10', '20', '30', '40', '50', '60'):
+        result = run_script(SCRIPT_PATH, 'ci-duration', 'record', '--command', 'ci:wait', '--duration', dur)
+
+    assert result is not None and result.success, 'Final record should succeed'
+    data = result.toon()
+    assert data.get('window_size') == 5
+    assert data.get('window') == [20, 30, 40, 50, 60]
+
+
+def test_ci_duration_keyed_isolation(plan_context):
+    """Distinct command keys hold independent windows."""
+    run_script(SCRIPT_PATH, 'ci-duration', 'record', '--command', 'ci:wait', '--duration', '420')
+    run_script(SCRIPT_PATH, 'ci-duration', 'record', '--command', 'ci:merge', '--duration', '90')
+
+    config = _read_run_config(plan_context)
+    assert config['ci_durations']['ci:wait'] == [420]
+    assert config['ci_durations']['ci:merge'] == [90]
+
+
+def test_ci_duration_p50_odd_window_via_cli(plan_context):
+    """p50 over an odd-sized window is the middle observed value."""
+    for dur in ('300', '420', '360'):
+        run_script(SCRIPT_PATH, 'ci-duration', 'record', '--command', 'ci:wait', '--duration', dur)
+
+    result = run_script(SCRIPT_PATH, 'ci-duration', 'p50', '--command', 'ci:wait')
+
+    assert result.success, f'Should succeed: {result.stderr}'
+    data = result.toon()
+    assert data.get('status') == 'success'
+    assert data.get('window_size') == 3
+    # median(300, 420, 360) = 360
+    assert data.get('p50_seconds') == 360
+
+
+def test_ci_duration_p50_empty_window_via_cli(plan_context):
+    """p50 on an absent window reports window_size 0 (the empty signal)."""
+    result = run_script(SCRIPT_PATH, 'ci-duration', 'p50', '--command', 'ci:never-seen')
+
+    assert result.success, f'Should succeed: {result.stderr}'
+    data = result.toon()
+    assert data.get('status') == 'success'
+    assert data.get('window_size') == 0
+
+
+def test_ci_duration_does_not_perturb_commands(plan_context):
+    """Recording a ci-duration leaves the commands/timeout section intact."""
+    run_script(SCRIPT_PATH, 'timeout', 'set', '--command', 'ci:pr_checks', '--duration', '180')
+    run_script(SCRIPT_PATH, 'ci-duration', 'record', '--command', 'ci:wait', '--duration', '420')
+
+    config = _read_run_config(plan_context)
+    # Both sections coexist; neither clobbers the other.
+    assert config['commands']['ci:pr_checks']['timeout_seconds'] == 180
+    assert config['ci_durations']['ci:wait'] == [420]
+
+    # The existing timeout get still reads the persisted value with safety margin.
+    result = run_script(SCRIPT_PATH, 'timeout', 'get', '--command', 'ci:pr_checks', '--default', '300')
+    data = result.toon()
+    # 180 * 1.25 = 225
+    assert data['timeout_seconds'] == 225
+
+
+def test_ci_duration_p50_of_odd_window():
+    """_p50_of returns the middle value for an odd window, order-independent."""
+    assert run_config._p50_of([360, 300, 420]) == 360
+
+
+def test_ci_duration_p50_of_even_window():
+    """_p50_of returns the mean of the two middle values for an even window."""
+    assert run_config._p50_of([300, 360, 400, 420]) == 380.0
+
+
+def test_ci_duration_p50_of_empty_window_returns_none():
+    """_p50_of returns None for an empty window (the documented empty signal)."""
+    assert run_config._p50_of([]) is None
+
+
+def test_ci_duration_window_size_constant():
+    """The window bound is the documented default of 5 (guards silent drift)."""
+    assert run_config.CI_DURATION_WINDOW_SIZE == 5
+
+
+def test_ci_duration_help():
+    """ci-duration subcommand shows its sub-verbs."""
+    result = run_script(SCRIPT_PATH, 'ci-duration', '--help')
+
+    assert result.success, f'Should succeed: {result.stderr}'
+    assert 'record' in result.stdout
+    assert 'p50' in result.stdout

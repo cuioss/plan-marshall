@@ -1136,67 +1136,209 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
     return result
 
 
+#: Run-configuration command key under which the observed ``ci wait`` durations
+#: are recorded (the p50 seed source for the adaptive first sleep). Mirrors the
+#: ``ci:wait`` key ``ci_complete_precondition`` uses for the timeout ceiling and
+#: the GitHub provider's ``_CI_WAIT_DURATION_KEY``.
+_CI_WAIT_DURATION_KEY = 'ci:wait'
+
+
+def _monotonic() -> float:
+    """Monotonic wall-clock seam. Isolated so tests can supply a deterministic
+    clock and observe the recorded wait duration in constant time."""
+    import time
+
+    return time.monotonic()
+
+
+def _sleep_seed(seconds: int) -> None:
+    """Sleep the p50-seeded first wait exactly once.
+
+    Isolated as a seam so tests neutralise the sleep and run in constant time.
+    A non-positive value is a no-op.
+    """
+    if seconds > 0:
+        import time
+
+        time.sleep(seconds)
+
+
+def _read_ci_wait_p50_seed() -> int | float | None:
+    """Read the p50 (median) seed for the ``ci:wait`` duration window.
+
+    Private seam over the run-configuration ci-duration API so ``cmd_ci_wait``
+    can seed its first sleep from history. Returns ``None`` on an empty/absent
+    window or any failure, so the caller simply skips the seed. Test-mockable.
+    """
+    try:
+        import run_config
+
+        return run_config._p50_of(run_config._read_ci_duration_window(_CI_WAIT_DURATION_KEY))
+    except Exception:
+        return None
+
+
+def _record_ci_wait_duration(duration: int) -> None:
+    """Record an observed successful ``ci:wait`` duration into the p50 window.
+
+    Private seam over the run-configuration ci-duration record API; best-effort —
+    a failure never aborts the wait result. Test-mockable.
+    """
+    try:
+        import run_config
+
+        run_config._record_ci_duration(_CI_WAIT_DURATION_KEY, duration)
+    except Exception:
+        pass
+
+
+def _watch_pipeline(pipeline_id: str, timeout: int) -> tuple[int, str, str]:
+    """Private subprocess seam over ``glab ci status --wait``.
+
+    Blocks until the checked-out branch's pipeline reaches a terminal state — the
+    purpose-built terminal-state watch verb, never a hand-rolled sleep loop.
+    Test-mockable via monkeypatch. ``pipeline_id`` is accepted for symmetry /
+    telemetry; ``glab ci status`` resolves the pipeline from the branch. Returns
+    ``(returncode, stdout, stderr)``.
+    """
+    try:
+        result = subprocess.run(
+            ['glab', 'ci', 'status', '--wait'],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=get_default_cwd(),
+        )
+    except Exception:
+        return 1, '', 'glab ci status --wait failed'
+    return result.returncode, result.stdout, result.stderr
+
+
+def _fetch_mr_jobs(pr_number: int | str) -> tuple[bool, dict]:
+    """Fetch the MR's pipeline jobs via ``glab mr view`` + ``glab ci view``.
+
+    Returns ``(True, {'jobs', 'pipeline_id', 'pipeline_status'})`` on success, or
+    ``(False, {'error', 'context'})`` on a fetch / parse failure — the same shape
+    the retained ``poll_until`` fallback consumes.
+    """
+    returncode, stdout, stderr = run_glab(['mr', 'view', str(pr_number), '--output', 'json'])
+    if returncode != 0:
+        return False, {'error': f'Failed to get MR {pr_number}', 'context': stderr.strip()}
+    try:
+        data = json.loads(stdout)
+        pipeline = data.get('pipeline', {})
+        pipeline_status = pipeline.get('status', 'unknown')
+        pipeline_id = pipeline.get('id', 'unknown')
+    except json.JSONDecodeError:
+        return False, {'error': 'Failed to parse glab output', 'context': stdout[:100]}
+
+    jobs: list[dict] = []
+    if pipeline_id and pipeline_id != 'unknown':
+        rc, out, _ = run_glab(['ci', 'view', str(pipeline_id), '--output', 'json'])
+        if rc == 0:
+            try:
+                ci_data = json.loads(out)
+                jobs = ci_data.get('jobs', [])
+            except json.JSONDecodeError:
+                pass
+    return True, {'jobs': jobs, 'pipeline_id': pipeline_id, 'pipeline_status': pipeline_status}
+
+
 def cmd_ci_wait(args: argparse.Namespace) -> dict:
-    """Handle 'ci wait' subcommand (waits for pipeline in GitLab)."""
+    """Handle 'ci wait' — p50-seeded first sleep, then terminal-state watch tail.
+
+    GitLab counterpart to the GitHub ``cmd_ci_wait`` rework. Replaces the
+    fixed-interval ``poll_until`` re-fetch of the MR pipeline with a two-stage,
+    detach-friendly wait:
+
+    1. **p50-seeded first sleep** — sleep once for the historical p50 (median) of
+       observed ``ci:wait`` durations (bounded by ``--timeout``, skipped on an
+       empty window), so the known-busy window is not polled from second zero.
+    2. **terminal-state watch tail** — delegate the tail to ``glab ci status
+       --wait`` (the purpose-built watch verb, never a hand-rolled sleep loop),
+       then re-snapshot the pipeline jobs once.
+
+    On a natural (non-timeout) SUCCESS completion the observed wall-clock
+    duration is recorded back into the p50 window, closing the adaptive loop. The
+    external return contract is preserved verbatim: ``final_status``,
+    ``duration_sec``, ``failing_checks``, ``wait_outcome``, ``run_id``,
+    ``head_sha``, plus the ``deadline_exceeded`` timeout envelope.
+
+    The retained ``poll_until`` fallback covers the edge where the pipeline has
+    not yet materialised any watchable jobs (empty jobs, or no resolvable
+    pipeline id) — preserving the pre-change "keep waiting until jobs appear,
+    then time out" behaviour.
+    """
     is_auth, err = check_auth()
     if not is_auth:
         return make_error('ci_wait', err)
 
-    def check_fn() -> tuple[bool, dict]:
-        returncode, stdout, stderr = run_glab(['mr', 'view', str(args.pr_number), '--output', 'json'])
-        if returncode != 0:
-            return False, {'error': f'Failed to get MR {args.pr_number}', 'context': stderr.strip()}
-        try:
-            data = json.loads(stdout)
-            pipeline = data.get('pipeline', {})
-            pipeline_status = pipeline.get('status', 'unknown')
-            pipeline_id = pipeline.get('id', 'unknown')
-        except json.JSONDecodeError:
-            return False, {'error': 'Failed to parse glab output', 'context': stdout[:100]}
+    start = _monotonic()
+    deadline = start + args.timeout
 
-        # Fetch pipeline jobs for enriched output
-        jobs: list[dict] = []
-        if pipeline_id and pipeline_id != 'unknown':
-            rc, out, _ = run_glab(['ci', 'view', str(pipeline_id), '--output', 'json'])
-            if rc == 0:
-                try:
-                    ci_data = json.loads(out)
-                    jobs = ci_data.get('jobs', [])
-                except json.JSONDecodeError:
-                    pass
+    # 1. p50-seeded first sleep (once, bounded by --timeout, skipped when empty).
+    seed = _read_ci_wait_p50_seed()
+    if seed is not None:
+        _sleep_seed(min(int(seed), args.timeout))
 
-        return True, {'pipeline_status': pipeline_status, 'jobs': jobs, 'pipeline_id': pipeline_id}
+    # 2. Snapshot the pipeline jobs after the seed sleep.
+    ok, data = _fetch_mr_jobs(args.pr_number)
+    if not ok:
+        return make_error('ci_wait', data['error'], data.get('context', ''))
+    jobs = data['jobs']
+    pipeline_id = data.get('pipeline_id', '')
 
-    def is_complete_fn(data: dict) -> bool:
-        jobs = data.get('jobs', [])
-        if not jobs:
-            # Fall back to pipeline_status when the jobs list is empty —
-            # some GitLab states (manual-only, no-op pipelines) report a
-            # terminal pipeline status with zero job rows.
-            return data.get('pipeline_status', 'unknown') in {'success', 'failed', 'canceled', 'skipped'}
-        _failing, wait, _non_failing = _classify_check_buckets(jobs)
-        return not wait
+    # 3. Terminal-state tail. When the pipeline has watchable jobs still running,
+    #    delegate the wait to ``glab ci status --wait`` (a single blocking call —
+    #    NOT a hand-rolled sleep loop) and re-snapshot. Otherwise fall back to the
+    #    sanctioned ``poll_until`` framework for the remaining budget.
+    _f, wait_rows, _nf = _classify_check_buckets(jobs)
+    if wait_rows and pipeline_id and pipeline_id != 'unknown':
+        remaining = int(deadline - _monotonic())
+        if remaining > 0:
+            _watch_pipeline(str(pipeline_id), remaining)
+        ok, data = _fetch_mr_jobs(args.pr_number)
+        if not ok:
+            return make_error('ci_wait', data['error'], data.get('context', ''))
+        jobs = data['jobs']
+        pipeline_id = data.get('pipeline_id', pipeline_id)
+    elif not jobs or wait_rows:
+        # No watchable jobs yet (empty jobs, or no resolvable pipeline id).
+        # Preserve the pre-change wait-for-jobs behaviour via poll_until.
+        def _check_fn() -> tuple[bool, dict]:
+            return _fetch_mr_jobs(args.pr_number)
 
-    result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
+        def _is_complete_fn(inner: dict) -> bool:
+            rows = inner.get('jobs', [])
+            if not rows:
+                # Empty jobs → defer to the terminal pipeline_status (manual-only
+                # or no-op pipelines report a terminal status with zero jobs).
+                return inner.get('pipeline_status', 'unknown') in {'success', 'failed', 'canceled', 'skipped'}
+            _fail, waiting, _nonfail = _classify_check_buckets(rows)
+            return not waiting
 
-    if 'error' in result:
-        return make_error('ci_wait', result['error'], result['last_data'].get('context', ''))
+        remaining = max(1, int(deadline - _monotonic()))
+        poll_result = poll_until(_check_fn, _is_complete_fn, timeout=remaining, interval=args.interval)
+        if 'error' in poll_result:
+            return make_error('ci_wait', poll_result['error'], poll_result['last_data'].get('context', ''))
+        last_data = poll_result['last_data']
+        jobs = last_data.get('jobs', [])
+        pipeline_id = last_data.get('pipeline_id', pipeline_id)
 
-    last_data = result['last_data']
-    jobs = last_data.get('jobs', [])
-    pipeline_id = last_data.get('pipeline_id', '')
-    # ci_wait already tracks its own poll duration — use it as the clamp ceiling
-    # so an out-of-range aggregate is substituted with the actual poll time.
-    check_dicts, total_elapsed = format_checks_toon(jobs, duration_ceiling=result['duration_sec'])
+    duration_sec = max(0, int(_monotonic() - start))
     head_sha = _fetch_mr_head_sha(args.pr_number)
+    # ci_wait tracks its own wall-clock duration — use it as the clamp ceiling
+    # so an out-of-range aggregate is substituted with the actual wait time.
+    check_dicts, total_elapsed = format_checks_toon(jobs, duration_ceiling=duration_sec)
 
-    if result['timed_out']:
-        # Wait-deadline exhaustion: at least one job is still in the wait
-        # partition. Enumerate every wait-state job as a ``failing_checks``
-        # entry so deliverables 6 and 7 can route the timeout into the
-        # ``ci-verify-timeout`` producer.
-        _f, wait_rows, _nf = _classify_check_buckets(jobs)
-        wait_entries = [_build_failing_check_entry(c) for c in wait_rows]
+    _run_id = str(pipeline_id) if pipeline_id and pipeline_id != 'unknown' else ''
+
+    # A remaining wait partition after the tail is a timeout: enumerate every
+    # still-waiting job as a ``failing_checks`` entry so deliverables 6 and 7 can
+    # route the timeout into the ``ci-verify-timeout`` producer.
+    _f2, wait_rows2, _nf2 = _classify_check_buckets(jobs)
+    if wait_rows2:
+        wait_entries = [_build_failing_check_entry(c) for c in wait_rows2]
         wait_entries = _enrich_failing_checks(
             wait_entries,
             plan_id=getattr(args, 'router_plan_id', None),
@@ -1209,11 +1351,11 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
             'operation': 'ci_wait',
             'error': 'Timeout waiting for CI',
             'pr_number': args.pr_number,
-            'duration_sec': result['duration_sec'],
+            'duration_sec': duration_sec,
             'last_status': 'pending',
             'wait_outcome': 'deadline_exceeded',
             'failing_checks': wait_entries,
-            'run_id': str(pipeline_id) if pipeline_id and pipeline_id != 'unknown' else '',
+            'run_id': _run_id,
             'head_sha': head_sha,
         }
         if check_dicts:
@@ -1221,9 +1363,8 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
             error_data['checks'] = check_dicts
         return error_data
 
-    # Wait loop terminated naturally — every job reached a terminal status.
-    # Partition and derive the final status; the ``mixed`` outcome no longer
-    # exists.
+    # Natural completion — every job reached a terminal status. Partition and
+    # derive the final status; the ``mixed`` outcome no longer exists.
     final_status, failing_rows, _wait_rows = _derive_overall_status(jobs)
     failing_checks_entries = [_build_failing_check_entry(c) for c in failing_rows]
     if final_status == 'failure':
@@ -1235,18 +1376,22 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
             pr_number=args.pr_number,
         )
 
+    # Record the observed wall-clock duration into the p50 window only on a
+    # natural SUCCESS completion — the window seeds the next wait's first sleep.
+    if final_status == 'success' and duration_sec > 0:
+        _record_ci_wait_duration(duration_sec)
+
     return {
         'status': 'success',
         'operation': 'ci_wait',
         'pr_number': args.pr_number,
         'final_status': final_status,
-        'duration_sec': result['duration_sec'],
-        'polls': result['polls'],
+        'duration_sec': duration_sec,
         'elapsed_sec': total_elapsed,
         'checks': check_dicts,
         'failing_checks': failing_checks_entries,
         'wait_outcome': 'completed',
-        'run_id': str(pipeline_id) if pipeline_id and pipeline_id != 'unknown' else '',
+        'run_id': _run_id,
         'head_sha': head_sha,
     }
 

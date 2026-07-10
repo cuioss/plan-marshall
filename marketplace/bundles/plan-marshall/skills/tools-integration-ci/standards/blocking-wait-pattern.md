@@ -98,3 +98,23 @@ Callers that need a different ceiling pass `--timeout` explicitly. For example, 
 | `issue wait-for-label` | Automation gates on a label being added or removed (e.g., `ready-for-review`, `blocked`). | Review-gate automations that watch label state |
 
 All four subcommands follow the recipe in section 3 and honour the timeout/interval contract in section 4.
+
+---
+
+## 6. The seed-then-watch CI-run wait (distinct from the `poll_until` snapshot-diff waits)
+
+The `ci wait` handler (`cmd_ci_wait`, GitHub `_github_ci.py` / GitLab `gitlab_ops.py`) waits for a whole CI run to reach a terminal conclusion. That is a **different shape** from the section-3 snapshot-diff waits: those block until a single scalar snapshot *changes* (unresolved-comment count grows, status flips), and a fixed-interval `poll_until` re-fetch is the right tool. A CI run instead has a **known-busy window** — it will be running for roughly as long as it ran last time — so polling `pr checks` every 30 s from second zero burns API quota during a window where the answer cannot yet be "done". `cmd_ci_wait` therefore uses a two-stage **seed-then-watch** wait instead of the fixed-interval loop:
+
+1. **p50 first-sleep seed.** Before doing anything, read the historical p50 (median) of the last N observed successful `ci:wait` durations via `run_config ci-duration p50 --command ci:wait` (see [`manage-run-config` SKILL.md](../../manage-run-config/SKILL.md) § "ci-duration record / p50") and sleep that seed **once**, bounded by `--timeout`. The seed is skipped when the window is empty (a `null` p50). This front-loads the wait through the window where CI is known to still be busy, with a single sleep rather than a series of polls.
+
+2. **Terminal-state watch-verb tail.** Delegate the tail to the provider's **purpose-built terminal-state watch verb** — `gh run watch --exit-status` (GitHub) / `glab ci status --wait` (GitLab) — which blocks on the provider's own ETag/304-conditional signal until the run concludes. This is **never a hand-rolled sleep loop** (Claude Code issue #65985): the watch verb owns the waiting, so there is no `while not done: sleep` in the handler. Each provider isolates the watch verb behind a private, test-mockable subprocess seam (`_watch_run` / `_watch_pipeline`).
+
+3. **Record back into the window.** On a natural (non-timeout) **success** completion, record the observed wall-clock `duration_sec` into the p50 window via `run_config ci-duration record --command ci:wait`, closing the adaptive loop so the next wait's seed tracks real CI durations.
+
+**Fallback.** When CI has not yet registered a watchable run (empty checks, or wait-state checks whose links carry no resolvable run id), the handler falls back to the section-3 `poll_until` framework for the remaining budget — preserving the "keep waiting until checks appear, then time out" behaviour. `poll_until` remains the sanctioned framework; the watch verb is the primary tail for the common case where the run is already present.
+
+**Return contract is unchanged.** `cmd_ci_wait` preserves `final_status`, `duration_sec`, `failing_checks`, `wait_outcome`, `run_id`, `head_sha`, and the `deadline_exceeded` timeout envelope, so `ci_complete_precondition.py` consumes it without modification.
+
+**Detach behind the `await-long-running` seam.** The orchestrator does not block synchronously on the whole CI wait: it detaches the `ci wait` call behind the shared [`await-long-running`](../../plan-marshall/workflow/await-long-running.md) detach-and-notify seam (the remote-CI-wait consumer), backgrounding it and waking on the completion notification. The p50 seed + watch-verb tail described here is the wait's *internal* mechanism; the seam is how the orchestrator *consumes* it without babysitting.
+
+This pattern is intentionally **not** added to the section-5 subcommand catalog: it is the internal mechanism of the existing `ci wait` verb, not a new `wait-for-*` subcommand. The section-2 "when to add a new subcommand" test does not apply — no new verb is minted.

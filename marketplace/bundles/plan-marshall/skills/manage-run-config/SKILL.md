@@ -20,6 +20,7 @@ Run configuration handling for persistent command configuration storage.
 - Cleanup operations use `cleanup` and `cleanup-status` subcommands
 - Architecture-refresh operations use the noun-verb pattern (`architecture-refresh get-tier-0`, `architecture-refresh set-tier-0`, etc.)
 - Build-queue-limit operations use the noun-verb pattern (`build-queue-limit get`, `build-queue-limit set`)
+- CI-duration operations use the noun-verb pattern (`ci-duration record`, `ci-duration p50`)
 
 ## Run Configuration Structure
 
@@ -49,6 +50,9 @@ Run configuration handling for persistent command configuration storage.
       "upper_limit_seconds": 600
     }
   },
+  "ci_durations": {
+    "<command-name>": [420, 380, 455]
+  },
   "ci": {
     "authenticated_tools": [],
     "verified_at": null
@@ -77,6 +81,8 @@ See [standards/run-config-standard.md](standards/run-config-standard.md) for com
 | architecture-refresh set-tier-1 | `plan-marshall:manage-run-config:run_config architecture-refresh set-tier-1` |
 | build-queue-limit get | `plan-marshall:manage-run-config:run_config build-queue-limit get` |
 | build-queue-limit set | `plan-marshall:manage-run-config:run_config build-queue-limit set` |
+| ci-duration record | `plan-marshall:manage-run-config:run_config ci-duration record` |
+| ci-duration p50 | `plan-marshall:manage-run-config:run_config ci-duration p50` |
 | cleanup | `plan-marshall:manage-run-config:run_config cleanup` |
 | cleanup-status | `plan-marshall:manage-run-config:run_config cleanup-status` |
 
@@ -189,6 +195,22 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config build
 
 A non-positive `--value` surfaces the standard `status: error, error: invalid_value` contract; a value outside `[600, 3600]` is clamped (not rejected) on write.
 
+### ci-duration record / p50
+
+Manage the bounded rolling window of observed successful CI-run durations that seeds the adaptive CI-wait first-sleep. Durations are persisted per command key under the top-level `ci_durations` map (mirroring the `commands` keyed shape) in the main-anchored `run-configuration.json`, so reads/writes resolve against the main checkout regardless of caller cwd. `record` appends the observed duration and bounds the window to the newest `CI_DURATION_WINDOW_SIZE` (default 5) entries, evicting the oldest. `p50` returns the median of the window as the first-sleep seed — `p50_seconds: null` when the window is empty or absent (the consumer skips the seed on a null signal).
+
+```bash
+# Record an observed successful CI-run duration (seconds) into the key's window
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ci-duration record \
+  --command ci:wait --duration 420
+
+# Get the p50 (median) seed for the key (p50_seconds: null on an empty window)
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ci-duration p50 \
+  --command ci:wait
+```
+
+For an odd-sized window `p50_seconds` is the middle observed duration; for an even-sized window it is the mean of the two middle values.
+
 ### cleanup / cleanup-status
 
 Directory cleanup using retention settings from marshal.json.
@@ -228,6 +250,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 | Build skills | timeout set | Update timeouts after command execution |
 | Build skills | warning add | Register acceptable warning patterns |
 | `manage-locks` `build_queue` release | build-queue-limit set | Persist the clamped adaptive upper limit from the released entry's held duration |
+| CI-wait handlers (`_github_ci`, `gitlab_ops`) | ci-duration record | Record an observed successful CI-run duration into the p50 window on natural completion |
 
 ### Consumers
 
@@ -237,6 +260,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 | Build skills | warning list | Filter build warnings against accepted patterns |
 | `phase-6-finalize` architecture-refresh step | architecture-refresh get-tier-0/1 | Read tier knobs to decide deterministic refresh / LLM re-enrichment behaviour |
 | `manage-locks` `build_queue` acquire/release | build-queue-limit get | Read the adaptive upper limit to compute the `2 ×` stale-reclaim threshold |
+| CI-wait handlers (`_github_ci`, `gitlab_ops`) | ci-duration p50 | Read the p50 seed for the adaptive CI-wait first-sleep (skip on a null window) |
 
 ---
 
@@ -310,6 +334,18 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config build
 
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config build-queue-limit set \
   --value VALUE
+```
+
+### ci-duration
+
+`ci-duration` carries the nested sub-verbs `record` and `p50`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ci-duration record \
+  --command COMMAND --duration DURATION
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ci-duration p50 \
+  --command COMMAND
 ```
 
 ### cleanup

@@ -603,3 +603,199 @@ def test_ci_wait_success_path_failing_checks_empty(monkeypatch, plan_context):
     assert result['final_status'] == 'success'
     assert result['failing_checks'] == []
     assert fetch_calls['run_ids'] == []
+
+
+# =============================================================================
+# p50-seeded first sleep + terminal-state watch-verb tail (deliverable 3)
+# =============================================================================
+#
+# GitLab counterpart to the GitHub p50-seed tests. Drives the reworked
+# cmd_ci_wait: a p50 first-sleep seed then a ``glab ci status --wait``
+# terminal-state tail. The p50 read / record seams, the sleep seam, the
+# watch-pipeline seam, and the monotonic clock all live in ``gitlab_ops`` and
+# are monkeypatched there; ``check_auth`` / ``run_glab`` remain patched too.
+
+
+def _job_row(name, status, *, pipeline_id=5005):
+    """Build a single GitLab job row.
+
+    ``status`` drives the canonical partition: ``running`` (wait), ``success``
+    (non-failing), ``failed`` (failing).
+    """
+    return {
+        'name': name,
+        'status': status,
+        'stage': 'test',
+        'pipeline_id': pipeline_id,
+        'web_url': f'https://gitlab.example.com/o/r/-/jobs/{name}',
+    }
+
+
+class _GlStub:
+    """Stateful ``run_glab`` seam: ``mr view`` returns a pipeline envelope, ``ci
+    view`` returns ``pending_jobs`` until the watch verb flips ``watched`` True,
+    then ``terminal_jobs``. Any other call returns an empty JSON object."""
+
+    def __init__(self, pending_jobs, terminal_jobs, *, pipeline_id=5005):
+        self.pending_jobs = pending_jobs
+        self.terminal_jobs = terminal_jobs
+        self.pipeline_id = pipeline_id
+        self.watched = False
+
+    def __call__(self, args):
+        if args[:2] == ['mr', 'view']:
+            status = 'success' if self.watched else 'running'
+            return 0, json.dumps({'pipeline': {'id': self.pipeline_id, 'status': status}, 'sha': 'feedface'}), ''
+        if args[:2] == ['ci', 'view']:
+            jobs = self.terminal_jobs if self.watched else self.pending_jobs
+            return 0, json.dumps({'jobs': jobs}), ''
+        return 0, json.dumps({}), ''
+
+
+def _make_incrementing_clock(step=60.0):
+    """Monotonic-clock stand-in advancing ``step`` per call, so the recorded
+    wall-clock duration is a positive, deterministic value in tests."""
+    state = {'t': 0.0}
+
+    def clock():
+        state['t'] += step
+        return state['t']
+
+    return clock
+
+
+def _gl_p50_wait_args(*, pr_number=88, plan_id, timeout=600, interval=0):
+    return argparse.Namespace(
+        pr_number=pr_number,
+        head=None,
+        router_plan_id=plan_id,
+        error_style='generic',
+        timeout=timeout,
+        interval=interval,
+    )
+
+
+def test_ci_wait_p50_seed_applied_then_watch_maps_success(monkeypatch, plan_context):
+    """p50 seed is slept once (bounded by --timeout), ``glab ci status --wait``
+    is invoked for the running pipeline, and its terminal SUCCESS maps to
+    final_status; the observed duration is recorded on success."""
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    _noop_sleep(monkeypatch)
+
+    stub = _GlStub(
+        pending_jobs=[_job_row('verify', 'running')],
+        terminal_jobs=[_job_row('verify', 'success')],
+    )
+    monkeypatch.setattr(gitlab_ops, 'run_glab', stub)
+
+    monkeypatch.setattr(gitlab_ops, '_read_ci_wait_p50_seed', lambda: 120)
+    seed_sleeps: list[int] = []
+    monkeypatch.setattr(gitlab_ops, '_sleep_seed', lambda s: seed_sleeps.append(s))
+    monkeypatch.setattr(gitlab_ops, '_monotonic', _make_incrementing_clock())
+
+    watch_calls: list[tuple] = []
+
+    def fake_watch(pipeline_id, timeout):
+        watch_calls.append((pipeline_id, timeout))
+        stub.watched = True
+        return 0, '', ''
+
+    monkeypatch.setattr(gitlab_ops, '_watch_pipeline', fake_watch)
+    recorded: list[int] = []
+    monkeypatch.setattr(gitlab_ops, '_record_ci_wait_duration', lambda d: recorded.append(d))
+
+    result = gitlab_ops.cmd_ci_wait(_gl_p50_wait_args(plan_id=plan_context.plan_id, timeout=600))
+
+    assert result['status'] == 'success'
+    assert result['final_status'] == 'success'
+    assert result['wait_outcome'] == 'completed'
+    assert result['run_id'] == '5005'
+    assert seed_sleeps == [120]
+    assert watch_calls and watch_calls[0][0] == '5005'
+    assert len(recorded) == 1 and recorded[0] > 0
+
+
+def test_ci_wait_p50_seed_skipped_on_empty_window(monkeypatch, plan_context):
+    """An empty p50 window (None) skips the first-sleep seed; an already-terminal
+    pipeline needs no watch."""
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    _noop_sleep(monkeypatch)
+
+    stub = _GlStub(
+        pending_jobs=[_job_row('verify', 'success')],
+        terminal_jobs=[_job_row('verify', 'success')],
+    )
+    monkeypatch.setattr(gitlab_ops, 'run_glab', stub)
+
+    monkeypatch.setattr(gitlab_ops, '_read_ci_wait_p50_seed', lambda: None)
+    seed_sleeps: list[int] = []
+    monkeypatch.setattr(gitlab_ops, '_sleep_seed', lambda s: seed_sleeps.append(s))
+    monkeypatch.setattr(gitlab_ops, '_record_ci_wait_duration', lambda d: None)
+
+    watch_calls: list[str] = []
+
+    def fake_watch(pipeline_id, timeout):
+        watch_calls.append(pipeline_id)
+        return 0, '', ''
+
+    monkeypatch.setattr(gitlab_ops, '_watch_pipeline', fake_watch)
+
+    result = gitlab_ops.cmd_ci_wait(_gl_p50_wait_args(plan_id=plan_context.plan_id))
+
+    assert result['final_status'] == 'success'
+    assert seed_sleeps == []
+    assert watch_calls == []
+
+
+def test_ci_wait_p50_seed_bounded_by_timeout(monkeypatch, plan_context):
+    """A p50 seed larger than --timeout is clamped to --timeout before sleeping."""
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    _noop_sleep(monkeypatch)
+
+    stub = _GlStub(
+        pending_jobs=[_job_row('verify', 'success')],
+        terminal_jobs=[_job_row('verify', 'success')],
+    )
+    monkeypatch.setattr(gitlab_ops, 'run_glab', stub)
+
+    monkeypatch.setattr(gitlab_ops, '_read_ci_wait_p50_seed', lambda: 900)
+    seed_sleeps: list[int] = []
+    monkeypatch.setattr(gitlab_ops, '_sleep_seed', lambda s: seed_sleeps.append(s))
+    monkeypatch.setattr(gitlab_ops, '_record_ci_wait_duration', lambda d: None)
+
+    result = gitlab_ops.cmd_ci_wait(_gl_p50_wait_args(plan_id=plan_context.plan_id, timeout=300))
+
+    assert result['final_status'] == 'success'
+    assert seed_sleeps == [300]
+
+
+def test_ci_wait_deadline_exceeded_preserved_when_still_pending(monkeypatch, plan_context):
+    """A pipeline that never leaves the wait partition (even after the watch tail)
+    yields the deadline_exceeded timeout envelope, and no duration is recorded."""
+    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+    _noop_sleep(monkeypatch)
+
+    running = [_job_row('verify', 'running')]
+    stub = _GlStub(pending_jobs=running, terminal_jobs=running)
+    monkeypatch.setattr(gitlab_ops, 'run_glab', stub)
+
+    monkeypatch.setattr(gitlab_ops, '_read_ci_wait_p50_seed', lambda: None)
+    monkeypatch.setattr(gitlab_ops, '_sleep_seed', lambda s: None)
+    monkeypatch.setattr(gitlab_ops, '_fetch_failed_job_trace', lambda run_id, job_id='': None)
+
+    def fake_watch(pipeline_id, timeout):
+        stub.watched = True
+        return 0, '', ''
+
+    monkeypatch.setattr(gitlab_ops, '_watch_pipeline', fake_watch)
+    recorded: list[int] = []
+    monkeypatch.setattr(gitlab_ops, '_record_ci_wait_duration', lambda d: recorded.append(d))
+
+    result = gitlab_ops.cmd_ci_wait(_gl_p50_wait_args(plan_id=plan_context.plan_id))
+
+    assert result['status'] == 'error'
+    assert result['operation'] == 'ci_wait'
+    assert result['wait_outcome'] == 'deadline_exceeded'
+    assert 'failing_checks' in result
+    assert result['run_id'] == '5005'
+    assert recorded == []
