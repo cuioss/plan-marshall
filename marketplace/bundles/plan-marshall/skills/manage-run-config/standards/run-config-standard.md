@@ -41,6 +41,9 @@ The run configuration file stores:
   "architecture_refresh": {
     "tier_0": "enabled",
     "tier_1": "prompt"
+  },
+  "ci_durations": {
+    "<command-name>": [420, 380, 455]
   }
 }
 ```
@@ -58,6 +61,7 @@ The run configuration file stores:
 |---------|---------|
 | maven | Maven build configurations |
 | architecture_refresh | Tier knobs consumed by the `phase-6-finalize` `architecture-refresh` step |
+| ci_durations | Bounded rolling window of observed successful CI-run durations (keyed by command) seeding the adaptive CI-wait first-sleep via `p50` |
 
 ---
 
@@ -165,6 +169,29 @@ Notes:
 | `architecture-refresh set-tier-1 --value VALUE` | Persist `tier_1` after enum validation |
 
 Invalid `--value` arguments produce the standard `invalid_value` error response with an `allowed: [...]` list.
+
+---
+
+## CI-Duration Section
+
+The `ci_durations` section holds a bounded rolling window of observed **successful** CI-run durations, keyed by command (mirroring the `commands` keyed shape). It seeds the adaptive CI-wait first-sleep: the median (`p50`) of a key's window is how many seconds the CI-wait sleeps before it begins polling, so a run whose CI historically takes ~7 min does not poll from second zero. The section is optional — a missing or empty window yields a `null` seed and the consumer skips the sleep. Durations are persisted in the main-anchored `run-configuration.json`, so reads/writes resolve against the main checkout regardless of caller cwd.
+
+### Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ci_durations.<command>` | array[int] | Bounded rolling window (newest last) of observed successful CI-run durations in seconds for the command key. Bounded to the newest `CI_DURATION_WINDOW_SIZE` (default 5) entries; `record` evicts the oldest on overflow. |
+
+### Operations
+
+| Subcommand | Purpose |
+|------------|---------|
+| `ci-duration record --command KEY --duration SECONDS` | Append an observed successful CI-run duration to the key's window, evicting the oldest beyond `CI_DURATION_WINDOW_SIZE` |
+| `ci-duration p50 --command KEY` | Return the median of the key's window as `p50_seconds` (the first-sleep seed); `p50_seconds: null` when the window is empty or absent |
+
+For an odd-sized window `p50_seconds` is the middle observed duration; for an even-sized window it is the mean of the two middle values. `CI_DURATION_WINDOW_SIZE` is defined in `run_config.py`; see the script source for the exact value.
+
+Producer: the CI-wait handlers (`_github_ci`, `gitlab_ops`) record a duration on natural (non-timeout) completion. Consumer: the same handlers read `p50` to seed the CI-wait first-sleep.
 
 ---
 
@@ -552,6 +579,9 @@ Retention defaults are defined in `manage-config/standards/data-model.md` under 
   "architecture_refresh": {
     "tier_0": "enabled",
     "tier_1": "prompt"
+  },
+  "ci_durations": {
+    "ci:wait": [420, 380, 455]
   }
 }
 ```
