@@ -32,7 +32,7 @@ Skill: plan-marshall:persona-plan-marshall-agent
 - Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
 - Never skip the phase transition — use `manage-status transition`
 - Never improvise script subcommands — use only those documented below
-- **Never write or edit source files outside `.plan/local/plans/{plan_id}/**`.** Phase-1-init's contract is plan-structure creation only (request.md, references.json, status.json under the plan directory). Even when the task description is detailed — naming specific files, functions, or paths — that is request material to record verbatim in `request.md`, NOT a directive to implement: the more prescriptive and implementation-ready the `content`, the stronger (and more wrong) the pull to "just do it." Source edits against `marketplace/bundles/**`, production code, or test fixtures are the responsibility of phase-5-execute task bodies, never phase-1-init. The recurring anti-pattern is phase-1-init reaching for `Edit` / `Write` against a production path because the request narrative read like an implementation brief. **Return-contract obligation**: this phase's contract output is `plan_id` + `domains` (+ `next_phase`) and nothing else of substance. A return that omits `plan_id`, or carries a `pr_url`, a `branch`, or a "patched N files" detail, is a contract violation — the orchestrator's post-init assertion (`plan-marshall:plan-marshall/workflow/planning.md` § Action: init → **Post-init contract assertion**) treats any such signal as an error and refuses to advance to phase-2-refine.
+- **Never write or edit source files outside `.plan/local/plans/{plan_id}/**`.** Phase-1-init's contract is plan-structure creation only (request.md, references.json, status.json under the plan directory). Even when the task description is detailed — naming specific files, functions, or paths — that is request material to record verbatim in `request.md`, NOT a directive to implement: the more prescriptive and implementation-ready the `content`, the stronger (and more wrong) the pull to "just do it." Source edits against `marketplace/bundles/**`, production code, or test fixtures are the responsibility of phase-5-execute task bodies, never phase-1-init. The recurring anti-pattern is phase-1-init reaching for `Edit` / `Write` against a production path because the request narrative read like an implementation brief. **Return-contract obligation**: Step 12 is the single canonical schema for this phase's output (`plan_id`, `domain`, `next_phase`, `use_worktree`, `planning_lane`, `source`, `artifacts`) — see that step for the authoritative shape. A return that omits `plan_id`, or carries a `pr_url`, a `branch`, or a "patched N files" detail, is a contract violation — the orchestrator's post-init assertion (`plan-marshall:plan-marshall/workflow/planning.md` § Action: init → **Post-init contract assertion**) treats any such signal as an error and refuses to advance to phase-2-refine.
 
 **Constraints:**
 - Strictly comply with all rules from persona-plan-marshall-agent, especially tool usage and workflow step discipline
@@ -949,7 +949,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 12: Complete Init and Yield to the Refine Phase
 
-Init runs inline in the orchestrator context, so there is no dispatched-leaf return envelope. All six operator prompts have already fired natively at their sites (Step 3 `action: exists`, Step 4b.3 obsolescence, Step 5c recipe-match propose, Step 7 ambiguous domain, Step 8c sibling collision, Step 8d posture), and their resolutions were applied and persisted in-context. Init has persisted `request.md`, `status.json`, and `references.json`, and the orchestrator now holds the resolved values needed to dispatch phase-2-refine.
+Init runs inline in the orchestrator context, so there is no dispatched-leaf return envelope. Any applicable operator prompts have already fired natively at their sites (Step 3 `action: exists`, Step 4b.3 obsolescence, Step 5c recipe-match propose, Step 7 ambiguous domain, Step 8c sibling collision, Step 8d posture — several are branch-dependent and do not fire on every run), and their resolutions were applied and persisted in-context. Init has persisted `request.md`, `status.json`, and `references.json`, and the orchestrator now holds the resolved values needed to dispatch phase-2-refine.
 
 The values carried forward into the orchestrator context are:
 
@@ -962,7 +962,7 @@ use_worktree: {true|false}
 planning_lane: {light|deep}
 
 source:
-  type: {description|lesson|issue}
+  type: {description|lesson|issue|recipe}
   id: {source_id}
 
 artifacts:
@@ -981,7 +981,7 @@ artifacts:
 
 Init runs inline, so it does not return a dispatched-agent envelope — Step 12 (above) is the single source of truth for the values it yields into the orchestrator context. The orchestrator's post-init contract assertion checks that init produced a `plan_id` + `domain` and no rogue source-mutation signal (`pr_url` / `branch` / files-patched); a short human-readable completion summary of the shape `"plan {plan_id} created, domain {domain}"` (e.g. `"plan 2026-05-11-15-007 created, domain plan-marshall"`) is the natural rendering for logs.
 
-All values (`plan_id`, `domain`, `next_phase`, `use_worktree`, `planning_lane`, `source`, `artifacts`) are documented in Step 12 above. The six operator prompts fire inline at their step sites and their resolutions are persisted in-context — there are no prompt-required return blocks.
+All values (`plan_id`, `domain`, `next_phase`, `use_worktree`, `planning_lane`, `source`, `artifacts`) are documented in Step 12 above. Any applicable operator prompts fire inline at their step sites and their resolutions are persisted in-context — there are no prompt-required return blocks.
 
 ---
 

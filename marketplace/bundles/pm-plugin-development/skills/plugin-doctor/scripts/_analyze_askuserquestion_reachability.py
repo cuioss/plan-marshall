@@ -133,7 +133,7 @@ def _extract_frontmatter(text: str) -> str:
     return match.group(1) if match else ''
 
 
-def _is_dispatched_leaf_workflow(path: Path, text: str) -> bool:
+def _is_dispatched_leaf_workflow(text: str) -> bool:
     """Decide whether a markdown doc is a dispatched-leaf workflow body.
 
     True when the doc is a declared dispatchable workflow body (carries the
@@ -201,7 +201,7 @@ def _scan_file(path: Path) -> list[dict]:
             ).to_dict()
         ]
 
-    if not _is_dispatched_leaf_workflow(path, text):
+    if not _is_dispatched_leaf_workflow(text):
         return []
 
     lines = text.splitlines()

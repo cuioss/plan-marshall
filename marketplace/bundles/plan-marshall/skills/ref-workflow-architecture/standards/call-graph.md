@@ -95,11 +95,11 @@ Each dispatched phase envelope (phases 2–6) runs the workflow doc inside the s
 │                                                                                    │
 │    /manage-architecture snapshot/        (script)                                  │
 │    /manage-references init/              (script)                                  │
-│    /manage-lessons lesson-auto-suggest/  (script)                                  │
-│      │                                                                             │
-│      │  ambiguous (no recipe match)                                                │
-│      ╵┄═►  execution-context  (LLM fallback — uses effort,                         │
-│                                no role key)                                        │
+│    /manage-config recipe-match/          (script — Tier 1 recipe-match, inline)    │
+│    /manage-config aspect-classify/       (script — request-aspect classify)        │
+│      (both heuristic-first, zero-LLM on the common path; bounded LLM               │
+│       fallback fires inline only on an ambiguous match — no role key,              │
+│       no dispatch)                                                                 │
 │                                                                                    │
 │    /manage-config domain-detect/         (script)                                  │
 │      │                                                                             │
@@ -390,7 +390,7 @@ The phase-scoped resolver bubbles every dispatch up from the caller phase's sub-
 
 ---
 
-## 4. The 6-group phase-scoped role registry — overlay
+## 4. The 5-group phase-scoped role registry — overlay
 
 The hierarchical role registry (`marshal.json` `models.roles`) groups every dispatch site under one of 5 phase groups (phases 2–6; phase-1-init runs inline and has no dispatch role). Every group is polymorphic — its value may be a string (single-level shorthand for the entire phase) or an object whose recognised sub-keys are listed below. The resolver bubbles up from the deepest match, then the variant emitter pins the `(model, effort)` primitive that ends up baked into the dispatched `execution-context-{level}` variant frontmatter.
 
@@ -419,7 +419,7 @@ The hierarchical role registry (`marshal.json` `models.roles`) groups every disp
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**6 top-level groups; zero mandatory keys.** A minimal config is `{}` — every dispatch resolves via `effort` → `inherit`.
+**5 top-level groups; zero mandatory keys.** A minimal config is `{}` — every dispatch resolves via `effort` → `inherit`.
 
 The resolver accepts four lookup forms:
 - `--phase phase-6-finalize`                            — bare group (walks the bubbling chain)

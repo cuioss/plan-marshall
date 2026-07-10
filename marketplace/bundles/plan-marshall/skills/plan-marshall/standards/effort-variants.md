@@ -44,9 +44,9 @@ Sub-key whitelist per phase (validated at wizard save time; unknown keys are acc
 
 | Group | Whitelisted sub-keys |
 |-------|----------------------|
-| `phase-2-refine` … `phase-4-plan` | `default`, `research` |
-| `phase-5-execute` | `default`, `verification-feedback`, `research` |
-| `phase-6-finalize` | `default`, `verification-feedback`, `post-run-review`, `research` |
+| `phase-2-refine` … `phase-4-plan` | `default` |
+| `phase-5-execute` | `default`, `verification-feedback` |
+| `phase-6-finalize` | `default`, `verification-feedback`, `post-run-review` |
 
 The plan-wide `plan.effort` is a single string.
 
