@@ -283,7 +283,7 @@ detail: no merge_queue rule on branch
 ### Step 2: Enable (idempotent)
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci repo merge-queue enable [--confirm]
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci repo merge-queue enable
 ```
 
 ```toon
