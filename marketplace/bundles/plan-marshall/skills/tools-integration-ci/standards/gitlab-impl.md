@@ -132,6 +132,7 @@ glab api projects/{id}     # → reads the merge_trains_enabled boolean
 ```
 
 **Discriminator mapping**:
+
 | Projects-API result | `eligibility` |
 |---------------------|---------------|
 | `merge_trains_enabled: true` | `eligible_configured` |

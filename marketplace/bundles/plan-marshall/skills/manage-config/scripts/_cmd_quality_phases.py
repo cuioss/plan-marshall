@@ -221,9 +221,9 @@ def _run_merge_queue_probe() -> dict:
     import subprocess
     import sys
 
-    from toon_parser import parse_toon
-
     try:
+        from toon_parser import parse_toon
+
         result = subprocess.run(
             [
                 sys.executable,
@@ -237,7 +237,7 @@ def _run_merge_queue_probe() -> dict:
             text=True,
             timeout=60,
         )
-    except Exception as exc:  # subprocess spawn / timeout — degrade to an error dict.
+    except Exception as exc:  # import / subprocess spawn / timeout — degrade to an error dict.
         return {'status': 'error', 'error': str(exc)}
     if result.returncode != 0:
         return {'status': 'error', 'error': result.stderr.strip() or 'probe failed'}

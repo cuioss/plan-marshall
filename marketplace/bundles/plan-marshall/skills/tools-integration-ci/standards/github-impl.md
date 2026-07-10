@@ -105,6 +105,7 @@ gh api repos/{owner}/{repo}/rules/branches/{branch}  # → [ {type: ...}, ... ]
 ```
 
 **Discriminator mapping**:
+
 | Rules-endpoint result | `eligibility` |
 |-----------------------|---------------|
 | a rule with `type == "merge_queue"` is present | `eligible_configured` |
