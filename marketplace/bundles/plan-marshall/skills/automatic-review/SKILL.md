@@ -526,7 +526,7 @@ timed_out: true
 head_sha: {full HEAD SHA the timed-out re-review targeted}
 timeout_seconds: {re_review_await_timeout_seconds}
 pr_number: {pr_number}
-prompt_options[3]:
+prompt_options[3]:              # present only when action: ask — omitted for action: defer
   - "Wait another {timeout_seconds}s"
   - "Merge anyway — proceed unreviewed"
   - "Defer merge"
