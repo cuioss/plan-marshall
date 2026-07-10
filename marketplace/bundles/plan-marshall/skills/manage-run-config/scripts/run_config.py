@@ -11,6 +11,7 @@ Output: TOON to stdout with operation results.
 
 import argparse
 import json
+import statistics
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +40,13 @@ ARCHITECTURE_REFRESH_TIER_1_DEFAULT = 'prompt'
 # tops out at 7200 s (2 h).
 _BUILD_QUEUE_UPPER_LIMIT_FLOOR_SECONDS = 600
 _BUILD_QUEUE_UPPER_LIMIT_CEILING_SECONDS = 3600
+
+# CI-run duration rolling-window bound. The adaptive CI-wait first-sleep seed is
+# the p50 (median) of the last N observed successful CI-run durations, persisted
+# per command key under the top-level ``ci_durations`` map (mirroring the
+# ``commands`` keyed shape). The window is bounded to the newest N entries — the
+# oldest is evicted on append once the window is full.
+CI_DURATION_WINDOW_SIZE = 5
 
 DEFAULT_STRUCTURE = {
     'version': 1,
@@ -535,6 +543,94 @@ def cmd_build_queue_limit_set(args: argparse.Namespace) -> dict:
 
 
 # =============================================================================
+# CI-Duration Subcommands
+# =============================================================================
+
+
+def _coerce_int_window(value: Any) -> list[int]:
+    """Coerce a stored window value into a clean list of ints.
+
+    Non-list values and non-int (or bool) entries are dropped, so a corrupt or
+    partially-written ``ci_durations`` entry degrades to an empty/partial window
+    rather than raising.
+    """
+    if not isinstance(value, list):
+        return []
+    return [v for v in value if isinstance(v, int) and not isinstance(v, bool)]
+
+
+def _read_ci_duration_window(command_key: str) -> list[int]:
+    """Read the bounded rolling window of observed CI-run durations for a key.
+
+    Returns an empty list when the ``ci_durations`` section or the command key
+    is absent (or holds a non-list / non-int value).
+    """
+    config = read_run_config(get_run_config_path())
+    section = config.get('ci_durations')
+    if not isinstance(section, dict):
+        return []
+    return _coerce_int_window(section.get(command_key))
+
+
+def _record_ci_duration(command_key: str, duration: int) -> list[int]:
+    """Append ``duration`` to the key's window, evict oldest beyond N, persist.
+
+    Returns the resulting bounded window (newest-last).
+    """
+    config_path = get_run_config_path()
+    config = read_run_config(config_path)
+    section = config.setdefault('ci_durations', {})
+    window = _coerce_int_window(section.get(command_key))
+    window.append(duration)
+    # Bound to the newest CI_DURATION_WINDOW_SIZE entries (evict oldest first).
+    window = window[-CI_DURATION_WINDOW_SIZE:]
+    section[command_key] = window
+    _write_json_file(config_path, config)
+    return window
+
+
+def _p50_of(window: list[int]) -> int | float | None:
+    """Return the p50 (median) of ``window``, or ``None`` for an empty window.
+
+    ``statistics.median`` sorts internally, so window insertion order does not
+    matter; it returns the middle element for an odd-sized window and the mean of
+    the two middle elements for an even-sized window.
+    """
+    if not window:
+        return None
+    return statistics.median(window)
+
+
+def cmd_ci_duration_record(args: argparse.Namespace) -> dict:
+    """Append an observed successful CI-run duration to the key's rolling window."""
+    try:
+        window = _record_ci_duration(args.command, args.duration)
+        return _output_success(
+            'recorded',
+            command=args.command,
+            duration=args.duration,
+            window=window,
+            window_size=len(window),
+        )
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_ci_duration_p50(args: argparse.Namespace) -> dict:
+    """Return the p50 (median) of the key's window, or null on an empty window."""
+    try:
+        window = _read_ci_duration_window(args.command)
+        return {
+            'status': 'success',
+            'command': args.command,
+            'p50_seconds': _p50_of(window),
+            'window_size': len(window),
+        }
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
 # Cleanup Subcommands (delegates to cleanup.py functions)
 # =============================================================================
 
@@ -609,6 +705,12 @@ Examples:
 
   # Set the build-queue adaptive upper limit (clamped to [600, 3600])
   %(prog)s build-queue-limit set --value 1800
+
+  # Record an observed successful CI-run duration into the p50 window
+  %(prog)s ci-duration record --command "ci:wait" --duration 420
+
+  # Get the p50 (median) seed of the CI-run duration window
+  %(prog)s ci-duration p50 --command "ci:wait"
 
   # Clean .plan directories based on retention settings
   %(prog)s cleanup
@@ -753,6 +855,33 @@ Examples:
     )
     p_bql_set.set_defaults(func=cmd_build_queue_limit_set)
 
+    # ci-duration command with subcommands
+    p_cid = subparsers.add_parser(
+        'ci-duration',
+        help='Manage the observed CI-run duration rolling window (p50 seed source)',
+        allow_abbrev=False,
+    )
+    cid_subparsers = p_cid.add_subparsers(
+        dest='ci_duration_command', required=True, help='CI-duration operation'
+    )
+
+    # ci-duration record
+    p_cid_record = cid_subparsers.add_parser(
+        'record', help='Append an observed CI-run duration to the rolling window', allow_abbrev=False
+    )
+    p_cid_record.add_argument('--command', required=True, help='Command identifier (e.g., "ci:wait")')
+    p_cid_record.add_argument(
+        '--duration', type=int, required=True, help='Observed CI-run duration in seconds'
+    )
+    p_cid_record.set_defaults(func=cmd_ci_duration_record)
+
+    # ci-duration p50
+    p_cid_p50 = cid_subparsers.add_parser(
+        'p50', help='Get the p50 (median) of the CI-run duration window', allow_abbrev=False
+    )
+    p_cid_p50.add_argument('--command', required=True, help='Command identifier (e.g., "ci:wait")')
+    p_cid_p50.set_defaults(func=cmd_ci_duration_p50)
+
     # cleanup command
     p_cleanup = subparsers.add_parser(
         'cleanup', help='Clean .plan directories based on retention settings', allow_abbrev=False
@@ -800,6 +929,12 @@ Examples:
     if args.command == 'build-queue-limit':
         if not args.build_queue_limit_command:
             p_bql.print_help()
+            return 1
+
+    # Handle ci-duration subcommand
+    if args.command == 'ci-duration':
+        if not args.ci_duration_command:
+            p_cid.print_help()
             return 1
 
     result = args.func(args)
