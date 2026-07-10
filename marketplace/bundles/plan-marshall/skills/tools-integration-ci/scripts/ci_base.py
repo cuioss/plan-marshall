@@ -1107,17 +1107,11 @@ def build_parser(
     )
 
     # repo merge-queue enable — configure the platform merge queue. Idempotent:
-    # an already-configured project is left unchanged. Accepts an optional
-    # confirmation flag for callers that want an explicit affirmative gate.
-    mq_enable = mq_sub.add_parser(
+    # an already-configured project is left unchanged.
+    mq_sub.add_parser(
         'enable',
         help='Enable/configure the platform merge queue (idempotent)',
         allow_abbrev=False,
-    )
-    mq_enable.add_argument(
-        '--confirm',
-        action='store_true',
-        help='Explicit confirmation flag (optional; enable is safe/idempotent without it)',
     )
 
     return parser, pr_sub, checks_sub, issue_sub, branch_sub

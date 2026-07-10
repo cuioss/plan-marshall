@@ -99,7 +99,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Do NOT set `use_merge_queue=true` on an `ineligible` / `unsupported` probe — the
 `manage-config` set-time validation would reject it anyway (see
-`manage-config` § use_merge_queue validation).
+[`manage-config` api-reference.md § Probe-backed set-time validation (`use_merge_queue`)](../../manage-config/standards/api-reference.md#probe-backed-set-time-validation-use_merge_queue)).
 
 ## Idempotence and non-clobbering
 

@@ -1803,16 +1803,12 @@ def test_build_parser_accepts_repo_merge_queue_probe():
 
 
 def test_build_parser_accepts_repo_merge_queue_enable():
-    """`repo merge-queue enable` round-trips and accepts the optional --confirm flag."""
+    """`repo merge-queue enable` round-trips (no args — enable is idempotent)."""
     parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(['repo', 'merge-queue', 'enable'])
     assert args.command == 'repo'
     assert args.repo_command == 'merge-queue'
     assert args.merge_queue_command == 'enable'
-    assert args.confirm is False
-
-    args = parser.parse_args(['repo', 'merge-queue', 'enable', '--confirm'])
-    assert args.confirm is True
 
 
 def test_build_parser_repo_requires_merge_queue_noun():
