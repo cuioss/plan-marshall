@@ -85,7 +85,7 @@ AskUserQuestion:
       value: "more-3"
 ```
 
-**Page 4** — shown only when the user selects "More..." on Page 3 — the final 3 options plus the "Back" element:
+**Page 4** — shown only when the user selects "More..." on Page 3 — the final 2 options plus the "Back" element:
 
 ```text
 AskUserQuestion:
