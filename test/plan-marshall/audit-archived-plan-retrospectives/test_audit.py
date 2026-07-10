@@ -854,7 +854,7 @@ def test_emit_lane_lever_block_renders_header_and_severity(tmp_path):
 def test_lane_lever_registered_and_era_stamped():
     assert "lane-lever-effectiveness" in audit.CHECK_NAMES
     assert "lane-lever-effectiveness" in audit.CROSS_PLAN_CHECKS
-    assert audit.CHECK_ERA["lane-lever-effectiveness"] == "#854"
+    assert audit.CHECK_ERA["lane-lever-effectiveness"] == "#862"
     # cross-check-synthesis stays last after the new registration.
     assert audit.CHECK_NAMES[-1] == "cross-check-synthesis"
 

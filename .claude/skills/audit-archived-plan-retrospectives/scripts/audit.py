@@ -253,15 +253,16 @@ CROSS_PLAN_CHECKS = {
 # Stamp vocabulary is the roadmap-plan boundaries this refresh audits against:
 # `#812` (execution-profile lane/partiality markers), `#842`/`#845`/`#849`/`#850`
 # (plan-1..plan-3 execution-loop / routing / finalize-flow / dist), `#852`
-# (find-triage D6 step-ownership), `#854` (surgical-fix micro-lane / light-lane
-# carve-out), and `plan-10` (the roadmap head this plan re-confirms the general
-# checks accurate against). Every key MUST be a member of `CHECK_NAMES`.
+# (find-triage D6 step-ownership), `#862` (inline phase-1-init dispatch /
+# routing-order fix), `#863` (merge-queue enablement via marshall-steward), and
+# `plan-10` (the roadmap head this plan re-confirms the general checks accurate
+# against). Every key MUST be a member of `CHECK_NAMES`.
 CHECK_ERA: dict[str, str] = {
     # Roadmap-affected checks carry the specific boundary whose mechanics they
     # verify (kept in step with the plan-11 semantic updates).
     "execution-context-manifest": "#852",
     "metrics": "#812",
-    "track-selection-accuracy": "#854",
+    "track-selection-accuracy": "#862",
     "global-log-analysis": "#849",
     "sequence-and-build-minimality": "#849",
     "input-integrity": "#812",
@@ -280,14 +281,15 @@ CHECK_ERA: dict[str, str] = {
     "preference-pattern-detector": "plan-10",
     # Roadmap-mechanics checks (plan-11) carry the boundary whose mechanics they
     # verify: dispatch-topology confirms the plan-10 leaf/dispatch invariant;
-    # finalize-flow-conformance and merge-window-accounting verify #849's
-    # deterministic ci_verify / adaptive ci-wait / widened merge-mutex mechanics.
+    # finalize-flow-conformance verifies #849's deterministic ci_verify / adaptive
+    # ci-wait mechanics; merge-window-accounting verifies #863's merge-queue
+    # enablement / widened merge-mutex admission-window mechanics.
     "dispatch-topology": "plan-10",
     "finalize-flow-conformance": "#849",
-    "merge-window-accounting": "#849",
-    # lane-lever-effectiveness verifies the #854 surgical-fix micro-lane /
-    # light-lane carve-out (the checkpoint measurement arm).
-    "lane-lever-effectiveness": "#854",
+    "merge-window-accounting": "#863",
+    # lane-lever-effectiveness verifies the #862 checkpoint re-arm — per-scope-class
+    # token spend vs armed targets (the checkpoint measurement arm).
+    "lane-lever-effectiveness": "#862",
     "cross-check-synthesis": "plan-10",
 }
 
