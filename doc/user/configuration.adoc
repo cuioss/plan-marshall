@@ -337,7 +337,7 @@ There is *no static per-provider capability flag* recording whether the merge qu
 
 The two provider paths carry different verification postures:
 
-* *GitHub — live-verified.* The GitHub merge-queue probe/enable path is exercised against the live provider.
+* *GitHub — fixture-tested verbs, live-eligible target.* The probe/enable verbs are unit-tested against API-shape-faithful fixtures (not the live `gh` CLI). GitHub merge queue is GA and this repository was confirmed eligible by a live platform probe, so — unlike GitLab — a real, accessible target exists: the steward provisioning exercises the verbs against the live GitHub API the first time it runs on this repo.
 * *GitLab — fixture-verified only.* The GitLab merge-train probe/enable/enqueue path is verified against *API-shape-faithful fixtures only* (no live-GitLab-consumer verification is implied). The fixtures mirror the real Projects-API and merge-train response shapes so the handler logic is validated without a live GitLab instance.
 
 [#automated-review]
