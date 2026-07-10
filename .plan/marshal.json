@@ -112,7 +112,7 @@
           "merge_queue_wait_budget_seconds": 1800,
           "merge_hold_window": "full_window_release_at_waits",
           "merge_hold_budget_seconds": 3600,
-          "use_merge_queue": false,
+          "use_merge_queue": true,
           "admin_merge_on_stuck_state": false
         },
         "project:finalize-step-deploy-target": {},
@@ -249,7 +249,7 @@
       "lessons_superseded_days": 0,
       "temp_on_maintenance": true
     },
-    "provisioned_version": "0.1.1072",
-    "config_seed_fingerprint": "9f5161c2"
+    "provisioned_version": "0.1.1080",
+    "config_seed_fingerprint": "0acf5eb5"
   }
 }

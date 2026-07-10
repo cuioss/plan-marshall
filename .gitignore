@@ -36,13 +36,13 @@ target/
 
 # Workflow artifacts (plans, lessons, memory, run-config)
 # Use .plan/* instead of .plan/ to allow exceptions below
+# Planning system (managed by /marshall-steward)
+# Runtime state (plans, run-configuration, lessons-learned, memory, logs — managed by plan-marshall)
 .plan/*
-
-# Planning system (managed by /marshall-steward)
 !.plan/marshal.json
-
-# Planning system (managed by /marshall-steward)
 !.plan/project-architecture/
+
+
 
 # Pyprojectx (tool installations, downloaded on demand)
 .pyprojectx/
