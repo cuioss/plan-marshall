@@ -828,6 +828,37 @@ def build_merge_queue_ruleset_payload(branch: str) -> dict:
     }
 
 
+def _resolve_repo_branch_and_probe(
+    operation: str,
+) -> tuple[dict | None, str, str, str, str, str]:
+    """Resolve repo owner/name + default branch, then probe merge-queue state.
+
+    Shared by ``cmd_repo_merge_queue_probe`` and ``cmd_repo_merge_queue_enable``,
+    which differ only in what they do with the resolved discriminator. Returns
+    ``(error, owner, repo, branch, discriminator, detail)``: on any failure
+    ``error`` is a ready-to-return ``make_error`` dict (remaining fields empty);
+    on success ``error`` is ``None``.
+    """
+    owner, repo = get_repo_info()
+    if not owner or not repo:
+        error = make_error(operation, 'Could not determine repository owner/name')
+        return error, '', '', '', '', ''
+
+    branch, branch_err = _resolve_default_branch(owner, repo)
+    if branch is None:
+        if _is_auth_scope_error(branch_err):
+            error = make_error(operation, _MERGE_QUEUE_AUTH_SCOPE_HINT, branch_err)
+        else:
+            error = make_error(operation, 'Could not resolve default branch', branch_err)
+        return error, '', '', '', '', ''
+
+    discriminator, detail, scope_error = _probe_merge_queue_state(owner, repo, branch)
+    if scope_error is not None:
+        return make_error(operation, scope_error, detail), '', '', '', '', ''
+
+    return None, owner, repo, branch, discriminator, detail
+
+
 def cmd_repo_merge_queue_probe(args: argparse.Namespace) -> dict:
     """Handle 'repo merge-queue probe' — report merge-queue eligibility state.
 
@@ -839,19 +870,11 @@ def cmd_repo_merge_queue_probe(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('repo_merge_queue_probe', err)
 
-    owner, repo = get_repo_info()
-    if not owner or not repo:
-        return make_error('repo_merge_queue_probe', 'Could not determine repository owner/name')
-
-    branch, branch_err = _resolve_default_branch(owner, repo)
-    if branch is None:
-        if _is_auth_scope_error(branch_err):
-            return make_error('repo_merge_queue_probe', _MERGE_QUEUE_AUTH_SCOPE_HINT, branch_err)
-        return make_error('repo_merge_queue_probe', 'Could not resolve default branch', branch_err)
-
-    discriminator, detail, scope_error = _probe_merge_queue_state(owner, repo, branch)
-    if scope_error is not None:
-        return make_error('repo_merge_queue_probe', scope_error, detail)
+    error, _owner, _repo, branch, discriminator, detail = _resolve_repo_branch_and_probe(
+        'repo_merge_queue_probe'
+    )
+    if error is not None:
+        return error
 
     return {
         'status': 'success',
@@ -874,19 +897,11 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('repo_merge_queue_enable', err)
 
-    owner, repo = get_repo_info()
-    if not owner or not repo:
-        return make_error('repo_merge_queue_enable', 'Could not determine repository owner/name')
-
-    branch, branch_err = _resolve_default_branch(owner, repo)
-    if branch is None:
-        if _is_auth_scope_error(branch_err):
-            return make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, branch_err)
-        return make_error('repo_merge_queue_enable', 'Could not resolve default branch', branch_err)
-
-    discriminator, detail, scope_error = _probe_merge_queue_state(owner, repo, branch)
-    if scope_error is not None:
-        return make_error('repo_merge_queue_enable', scope_error, detail)
+    error, owner, repo, branch, discriminator, detail = _resolve_repo_branch_and_probe(
+        'repo_merge_queue_enable'
+    )
+    if error is not None:
+        return error
 
     if discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED:
         # Idempotent no-op — the merge queue is already configured.
