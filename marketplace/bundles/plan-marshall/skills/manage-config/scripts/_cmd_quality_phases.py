@@ -219,13 +219,14 @@ def _run_merge_queue_probe() -> dict:
     ``{'status': 'error', ...}`` dict — never raises.
     """
     import subprocess
+    import sys
 
     from toon_parser import parse_toon
 
     try:
         result = subprocess.run(
             [
-                'python3',
+                sys.executable,
                 '.plan/execute-script.py',
                 'plan-marshall:tools-integration-ci:ci',
                 'repo',
