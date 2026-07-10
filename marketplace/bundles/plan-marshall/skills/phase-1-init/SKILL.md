@@ -1070,9 +1070,8 @@ Apart from the Step 3b bootstrap `start-phase` call, this skill does not invoke
 use the fused `manage-metrics phase-boundary --prev-phase 1-init --next-phase
 2-refine` call with the `<usage>`-derived flags (`--total-tokens` /
 `--duration-ms` / `--tool-uses`) OMITTED — the inline-phase (timestamps-only)
-recording mode. See
-`marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
-`phase-boundary` for the API. `1-init` is the only phase that self-records its
+recording mode. See `manage-metrics` Canonical invocations → `phase-boundary`
+for the API. `1-init` is the only phase that self-records its
 own `start_time` (Step 3b); all other phases inherit it from the prior fused
 `phase-boundary` call.
 
