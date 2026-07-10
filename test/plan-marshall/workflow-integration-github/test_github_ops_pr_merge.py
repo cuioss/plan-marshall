@@ -19,9 +19,8 @@ through the REST leaf, never through local git.
 import argparse
 import json
 
-import pytest
-
 import github_ops  # noqa: E402
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
