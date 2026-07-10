@@ -37,7 +37,7 @@ Canonical level → primitive binding: link:../../marketplace/bundles/plan-marsh
 [#what-you-can-tune]
 == What you can tune
 
-Plan Marshall's role registry is **phase-scoped**: six groups, named after each SKILL.md (`phase-1-init` … `phase-6-finalize`). Inside each group, you can either set a single level (applies to every workflow under that phase) or set per-workflow sub-keys.
+Plan Marshall's role registry is **phase-scoped**: five groups, named after each SKILL.md (`phase-2-refine` … `phase-6-finalize`). (phase-1-init runs inline in the orchestrator context, not as a dispatched envelope, so it has no effort role.) Inside each group, you can either set a single level (applies to every workflow under that phase) or set per-workflow sub-keys.
 
 Sub-keys recognised per phase:
 
@@ -45,9 +45,9 @@ Sub-keys recognised per phase:
 |===
 | Group | Recognised sub-keys
 
-| `phase-1-init` … `phase-4-plan` | `default`, `research`
-| `phase-5-execute` | `default`, `verification-feedback`, `research`
-| `phase-6-finalize` | `default`, `verification-feedback`, `post-run-review`, `research`
+| `phase-2-refine` … `phase-4-plan` | `default`
+| `phase-5-execute` | `default`, `verification-feedback`
+| `phase-6-finalize` | `default`, `verification-feedback`, `post-run-review`
 |===
 
 Plus the plan-wide fallback `plan.effort` (a single string applied to anything no phase pinned).
@@ -148,7 +148,7 @@ After saving:
 * `--phase phase-5-execute --role verification-feedback` dispatches hit `execution-context-level-3`.
 * `--phase phase-6-finalize --role verification-feedback` dispatches hit `execution-context-level-3`.
 * Other phase-6-finalize dispatches (create-pr, pre-submission-self-review, post-run-review) hit `execution-context-level-2` via the phase-6 `default` slot.
-* Everything else (phase-1-init, phase-2-refine, phase-5-execute body) hits `execution-context-level-2` via the plan-wide fallback.
+* Everything else (phase-2-refine, phase-5-execute body) hits `execution-context-level-2` via the plan-wide fallback.
 
 [#research-tier]
 == Research-tier note

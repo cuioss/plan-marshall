@@ -54,7 +54,7 @@ Legend (used in every diagram below):
 │   │  • Reads manage-status / manage-architecture state                  │              │
 │   │  • Resolves the target via                                          │              │
 │   │      manage-config effort resolve-target --role <role-key>          │              │
-│   │  • Dispatches each phase as:                                        │              │
+│   │  • Dispatches each dispatched phase (2-6) as:                       │              │
 │   │      Task: plan-marshall:execution-context                          │              │
 │   │      prompt body = name + plan_id + skills[] + workflow + WORKTREE  │              │
 │   │  • Marks step done via                                              │              │
@@ -63,7 +63,7 @@ Legend (used in every diagram below):
 │   │      manage-status transition                                       │              │
 │   └─────────────────────────────────────────────────────────────────────┘              │
 │    │                                                                                   │
-│    ╞══► execution-context   role=phase-1-init   workflow=phase-1-init/SKILL.md         │
+│    ┄┄►  phase-1-init runs INLINE in orchestrator (no dispatch; fires prompts natively) │
 │    ╞══► execution-context   role=phase-2-refine   workflow=phase-2-refine/SKILL.md     │
 │    ╞══► execution-context   role=phase-3-outline   workflow=phase-3-outline/SKILL.md   │
 │    ╞══► execution-context   role=phase-4-plan   workflow=phase-4-plan/SKILL.md         │
@@ -82,32 +82,32 @@ The orchestrator never spawns a raw `Task: general-purpose`. Every subagent disp
 
 ## 2. Per-phase detail
 
-Each phase envelope runs the workflow doc inside the subagent context, calling inline scripts and sometimes sub-dispatching cross-phase cores.
+Each dispatched phase envelope (phases 2–6) runs the workflow doc inside the subagent context, calling inline scripts and sometimes sub-dispatching cross-phase cores. phase-1-init is the exception: it runs inline in the orchestrator's own context (§ 2.1), firing its operator prompts natively.
 
 ### 2.1 phase-1-init
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────────────┐
-│  PHASE-1 ENVELOPE          execution-context    role=phase-1-init                  │
+│  PHASE-1 (INLINE)   runs in orchestrator main context   phase-1-init/SKILL.md      │
 │  ════════════════                                                                  │
 │                                                                                    │
-│  Inside the dispatch:                                                              │
+│  Inline in the orchestrator context:                                               │
 │                                                                                    │
 │    /manage-architecture snapshot/        (script)                                  │
 │    /manage-references init/              (script)                                  │
-│    /manage-lessons lesson-auto-suggest/  (script)                                  │
-│      │                                                                             │
-│      │  ambiguous (no recipe match)                                                │
-│      ╵┄═►  execution-context  (LLM fallback — uses effort,                         │
-│                                no role key)                                        │
+│    /manage-config recipe-match/          (script — Tier 1 recipe-match, inline)    │
+│    /manage-config aspect-classify/       (script — request-aspect classify)        │
+│      (both heuristic-first, zero-LLM on the common path; bounded LLM               │
+│       fallback fires inline only on an ambiguous match — no role key,              │
+│       no dispatch)                                                                 │
 │                                                                                    │
 │    /manage-config domain-detect/         (script)                                  │
 │      │                                                                             │
 │      │  ambiguous (multi-domain or zero match)                                     │
 │      ╵┄┄►  ?AskUserQuestion?            (human-input territory)                    │
 │                                                                                    │
-│    LLM judgement inside the envelope: pre-flight reference verification            │
-│    (Step 4b — bundles into this envelope, shares manage-architecture               │
+│    LLM judgement inline in the orchestrator: pre-flight reference verification     │
+│    (Step 4b — runs in the same inline phase, shares manage-architecture            │
 │     / manage-references context with the rest of the phase)                        │
 │                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────┘
@@ -390,9 +390,9 @@ The phase-scoped resolver bubbles every dispatch up from the caller phase's sub-
 
 ---
 
-## 4. The 6-group phase-scoped role registry — overlay
+## 4. The 5-group phase-scoped role registry — overlay
 
-The hierarchical role registry (`marshal.json` `models.roles`) groups every dispatch site under one of 6 phase groups. Every group is polymorphic — its value may be a string (single-level shorthand for the entire phase) or an object whose recognised sub-keys are listed below. The resolver bubbles up from the deepest match, then the variant emitter pins the `(model, effort)` primitive that ends up baked into the dispatched `execution-context-{level}` variant frontmatter.
+The hierarchical role registry (`marshal.json` `models.roles`) groups every dispatch site under one of 5 phase groups (phases 2–6; phase-1-init runs inline and has no dispatch role). Every group is polymorphic — its value may be a string (single-level shorthand for the entire phase) or an object whose recognised sub-keys are listed below. The resolver bubbles up from the deepest match, then the variant emitter pins the `(model, effort)` primitive that ends up baked into the dispatched `execution-context-{level}` variant frontmatter.
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -400,7 +400,6 @@ The hierarchical role registry (`marshal.json` `models.roles`) groups every disp
 │  ═══════════════════════════════                                                       │
 │                                                                                        │
 │   models.roles                                                                         │
-│     ├── phase-1-init            (string OR { default?, research? })                    │
 │     ├── phase-2-refine            (string OR { default?, research? })                  │
 │     ├── phase-3-outline            (string OR { default?, research? })                 │
 │     ├── phase-4-plan            (string OR { default?, research? })                    │
@@ -420,7 +419,7 @@ The hierarchical role registry (`marshal.json` `models.roles`) groups every disp
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**6 top-level groups; zero mandatory keys.** A minimal config is `{}` — every dispatch resolves via `effort` → `inherit`.
+**5 top-level groups; zero mandatory keys.** A minimal config is `{}` — every dispatch resolves via `effort` → `inherit`.
 
 The resolver accepts four lookup forms:
 - `--phase phase-6-finalize`                            — bare group (walks the bubbling chain)

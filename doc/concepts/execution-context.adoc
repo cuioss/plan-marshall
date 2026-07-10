@@ -14,7 +14,7 @@ Each subagent dispatch in a stock Claude Code session is a fresh ad-hoc inventio
 * `name` — human label for logging and `mark-step-done`
 * `plan_id` — plan identifier (or the sentinel `none` for free-standing dispatches)
 * `skills[]` — caller-loaded skills, in load order
-* `workflow` — bundle-prefixed notation for the workflow doc to run (e.g. `plan-marshall:phase-1-init/SKILL.md`, `plan-marshall:plan-marshall/workflow/triage.md`)
+* `workflow` — bundle-prefixed notation for the workflow doc to run (e.g. `plan-marshall:phase-3-outline/SKILL.md`, `plan-marshall:plan-marshall/workflow/triage.md`)
 * `WORKTREE` — repo-relative working directory (`.` for main checkout)
 
 The dispatcher loads `persona-plan-marshall-agent` implicitly, then the caller-specified `skills[]`, then reads the resolved workflow path and follows it. Workflow-specific runtime inputs (`finding_type`, `track`, `scope`, etc.) flow through additional prompt-body fields the workflow doc declares.

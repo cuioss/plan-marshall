@@ -4,9 +4,9 @@
 
 ## Overview
 
-A **role** is a stable key that identifies a class of subagent dispatch (e.g., `phase-1-init`, `phase-6-finalize.verification-feedback`). The role key sits at the LLM-judgement-workflow layer, NOT at the manifest-step / call-site layer — multiple call sites that dispatch the same LLM-judgement workflow from the same phase share one role key.
+A **role** is a stable key that identifies a class of subagent dispatch (e.g., `phase-2-refine`, `phase-6-finalize.verification-feedback`). The role key sits at the LLM-judgement-workflow layer, NOT at the manifest-step / call-site layer — multiple call sites that dispatch the same LLM-judgement workflow from the same phase share one role key. (phase-1-init is NOT a role: it runs inline in the orchestrator context, not as a dispatched envelope, so it has no dispatch level to resolve.)
 
-The registry is **phase-scoped**: every role key sits under a `phase-N-{suffix}` group whose name matches the SKILL.md it identifies (`phase-1-init`, `phase-2-refine`, `phase-3-outline`, `phase-4-plan`, `phase-5-execute`, `phase-6-finalize`). Workflows that fire from multiple phases inherit the calling phase's level via bubbling resolution (`plan.<phase>.effort.<subkey>` → `plan.<phase>.effort.default` → `plan.effort` → `inherit`). The calling phase is supplied by the dispatch site via `--phase phase-N-{suffix}`.
+The registry is **phase-scoped**: every role key sits under a `phase-N-{suffix}` group whose name matches the SKILL.md it identifies (`phase-2-refine`, `phase-3-outline`, `phase-4-plan`, `phase-5-execute`, `phase-6-finalize`). Workflows that fire from multiple phases inherit the calling phase's level via bubbling resolution (`plan.<phase>.effort.<subkey>` → `plan.<phase>.effort.default` → `plan.effort` → `inherit`). The calling phase is supplied by the dispatch site via `--phase phase-N-{suffix}`.
 
 Research dispatches do NOT get their own sub-key — they inherit the calling phase's default (or use `--default` for standalone `/research` outside any plan).
 
@@ -18,7 +18,6 @@ Per-phase effort config lives **inside the matching `plan.<phase>` entry** under
 {
   "plan": {
     "effort": "<level>",                                                       // plan-wide fallback (single string)
-    "phase-1-init":     { /* other knobs */, "effort": "<level>" },           // string OR { default? }
     "phase-2-refine":   { /* other knobs */, "effort": "<level>" },           // string OR { default? }
     "phase-3-outline":  { /* other knobs */, "effort": "<level>" },           // string OR { default? }
     "phase-4-plan":     { /* other knobs */, "effort": "<level>" },           // string OR { default? }
@@ -35,13 +34,12 @@ Per-phase effort config lives **inside the matching `plan.<phase>` entry** under
 }
 ```
 
-Total: **6 top-level role groups**. Every group is polymorphic — its `effort` value may be a string (single-level shorthand for the entire phase) or an object whose sub-keys are listed below. **Zero mandatory keys**: a minimal config is `{}` and every dispatch resolves via `plan.effort` → `inherit`.
+Total: **5 top-level role groups**. Every group is polymorphic — its `effort` value may be a string (single-level shorthand for the entire phase) or an object whose sub-keys are listed below. **Zero mandatory keys**: a minimal config is `{}` and every dispatch resolves via `plan.effort` → `inherit`.
 
 ## Groups
 
 | Group | SKILL it matches | Workflow shape |
 |-------|------------------|----------------|
-| `phase-1-init` | `plan-marshall:phase-1-init` | Single primary workflow (init body). Dispatched on phase-1-init entry by the planning workflow. |
 | `phase-2-refine` | `plan-marshall:phase-2-refine` | Single primary workflow (refine-analyze; confidence loop bundled). Dispatched on phase-2-refine entry. |
 | `phase-3-outline` | `plan-marshall:phase-3-outline` | Single primary workflow (outline; `track={simple|complex}` is a runtime input). Dispatched on phase-3-outline entry. |
 | `phase-4-plan` | `plan-marshall:phase-4-plan` | Single primary workflow (plan-all-tasks; Steps 5+6+7 bundled). Dispatched on phase-4-plan entry. |
@@ -52,7 +50,6 @@ Total: **6 top-level role groups**. Every group is polymorphic — its `effort` 
 
 | Group | Sub-keys |
 |-------|----------|
-| `phase-1-init`     | `default` |
 | `phase-2-refine`   | `default` |
 | `phase-3-outline`  | `default` |
 | `phase-4-plan`     | `default` |
@@ -71,7 +68,6 @@ Every dispatch site computes the level via `manage-config effort read --phase <c
 
 | LLM workflow | Caller phase | Resolver lookup |
 |--------------|--------------|-----------------|
-| phase-1-init body | phase-1-init | `plan.phase-1-init.effort.default` → `plan.phase-1-init.effort` (string) → `plan.effort` |
 | phase-2-refine body | phase-2-refine | `plan.phase-2-refine.effort.default` → `plan.phase-2-refine.effort` → `plan.effort` |
 | phase-3-outline body | phase-3-outline | `plan.phase-3-outline.effort.default` → `plan.phase-3-outline.effort` → `plan.effort` |
 | phase-4-plan body | phase-4-plan | `plan.phase-4-plan.effort.default` → `plan.phase-4-plan.effort` → `plan.effort` |

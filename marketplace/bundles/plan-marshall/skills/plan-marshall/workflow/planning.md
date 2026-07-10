@@ -106,9 +106,9 @@ Branch on the returned `executor_action` / `marshal_status` fields exactly as do
 
 phase-1-init runs the Tier 1 recipe-match routing tier as part of init (registry-wide recipe scoring gated on `auto_route_recipe`, plus request-aspect classification) — see [`plan-marshall:phase-1-init`](../../phase-1-init/SKILL.md) § Step 5c (Tier 1 Recipe-Match Routing) for the recipe-match step logic and the `auto_route_recipe` branching. Do NOT inline-copy that step logic or the auto-route branch here; this section consumes its result.
 
-When the `auto_route_recipe` config key is `true` AND the init agent's return signals that a high-confidence recipe match auto-routed the request (the agent persisted `status.metadata.recipe_key` during Step 5c-recipe-match), the orchestrator takes the **inline early-phase path**: it runs the init / refine / outline phases inline in its own context (no per-phase execution-context dispatch) and reserves an `execution-context` envelope dispatch for **phase-5-execute only**. This is the single-envelope token / wall-time win of a routed shortcut — the orchestrator skips the per-phase dispatch overhead for the planning phases when the recipe path short-circuits onto a known transformation.
+Init always runs inline (see the **1-Init Phase (inline)** block below). When the `auto_route_recipe` config key is `true` AND init's inline Step 5c-recipe-match auto-routed the request (it persisted `status.metadata.recipe_key`), the orchestrator additionally takes the **inline early-phase path** for the *following* phases: it runs the refine / outline phases inline in its own context too (no per-phase execution-context dispatch) and reserves an `execution-context` envelope dispatch for **phase-5-execute only**. This is the single-envelope token / wall-time win of a routed shortcut — the orchestrator skips the per-phase dispatch overhead for the planning phases when the recipe path short-circuits onto a known transformation.
 
-To detect the routed shortcut after the init dispatch returns:
+To detect the routed shortcut after init completes inline:
 
 1. Read the `auto_route_recipe` gate:
 
@@ -134,318 +134,41 @@ To detect the routed shortcut after the init dispatch returns:
 
    When `auto_route_recipe == false` OR `recipe_key` is empty, fall through to the standard per-phase dispatch chain documented below (no shortcut).
 
-The routed shortcut does NOT bypass the contract assertions below — the post-init / post-refine contract assertions still run on the inline phases. It changes only the dispatch topology (inline vs per-phase execution-context dispatch), not the phase semantics.
+The routed shortcut does NOT bypass the guards below — the post-init self-check and the post-refine contract assertion still run on the inline phases. It changes only the dispatch topology of the refine/outline phases (inline vs per-phase execution-context dispatch), not the phase semantics.
 
-**1-Init Phase** uses a single agent.
+**1-Init Phase (inline)** — run phase-1-init's steps **directly in the orchestrator context**; there is no dispatch. Execute the documented steps of [`plan-marshall:phase-1-init`](../../phase-1-init/SKILL.md) in order, passing the init inputs `source: {source}` and `content: {content}` (or `lesson_id` on the lesson-conversion path in § Action: lessons). Fire each operator `AskUserQuestion` natively at its step site, in step order, exactly as documented in the skill:
 
-Compute the dispatch target via the role resolver:
+- Step 3 `action: exists` — Resume / Replace / Rename
+- Step 4b.3 obsolescence — Refine / Close / Residual (lesson source only)
+- Step 5c recipe-match propose — recipe options / No recipe
+- Step 7 ambiguous domain — candidate domains
+- Step 8c sibling collision — Proceed / Rename / Abort
+- Step 8d posture — minimal / auto / full
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --role phase-1-init
-```
+Because init runs inline, the six prompts fire and resolve in-context in step order — the Tier 1 recipe-match prompt (Step 5c) resolves BEFORE the Tier 2 planning-lane router (Step 8b), so the router consumes the recipe's lane seed instead of an unset `change_type`/`scope_estimate`. Init persists `request.md`, `status.json`, and `references.json` under `.plan/local/plans/{plan_id}/`, and the orchestrator holds `plan_id`, `domain`, and `planning_lane` in-context on completion. The `recipe_key`, `request_aspect`, and `execution_profile` metadata resolved by the inline prompts are persisted to `status.metadata` by the steps themselves.
 
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
-
-Emit the standardized pre-dispatch attempt log line and the post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id none --level INFO \
-  --message "[ATTEMPT] (plan-marshall:plan-marshall) dispatching target={target} role=phase-1-init"
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id none --level INFO \
-  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-1-init workflow=plan-marshall:phase-1-init/SKILL.md plan_id=none"
-```
-
-Dispatch:
-
-```text
-Task: plan-marshall:{target}
-  prompt: |
-    name: phase-1-init
-    plan_id: none
-    skills[1]:
-    - plan-marshall:phase-1-init
-    workflow: plan-marshall:phase-1-init/SKILL.md
-    WORKTREE: .
-
-    source: {source}
-    content: {content}
-```
-
-The agent returns `plan_id` and `domains` in its TOON.
-
-**Early-return handling — `plan_exists_prompt`**: When the init return carries `status: prompt_required` with a `plan_exists_prompt` block (Step 3 detected the plan directory already exists), the leaf did NO init work and cannot continue — handle it BEFORE the post-init contract assertions below (those assertions assume a freshly-created plan). Fire the `AskUserQuestion` in main context using the block's three options, then resolve:
-
-```text
-AskUserQuestion:
-  questions:
-    - question: "A plan with id '{plan_id}' already exists. How would you like to proceed?"
-      header: "Plan exists"
-      options:
-        - label: "Resume"
-          description: "Continue with the existing plan as-is"
-        - label: "Replace"
-          description: "Delete the existing plan and create a fresh one"
-        - label: "Rename"
-          description: "Create the plan under a different plan_id"
-      multiSelect: false
-```
-
-- **Resume** → do NOT re-dispatch init. The existing plan stands; route to it via the auto-detect-from-phase path (see [`SKILL.md`](../SKILL.md#auto-detect-from-phase)) so the orchestrator continues from the plan's current phase. Skip the post-init assertions and the Metrics fused-call below (no new init ran).
-- **Replace** → delete the existing plan, then re-dispatch the **1-Init Phase** dispatch above verbatim (a fresh init now returns `action: created`):
-
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan \
-    --plan-id {plan_id}
-  ```
-
-- **Rename** → re-dispatch the **1-Init Phase** dispatch above with a new `plan_id` (append `-2`, `-3`, … or a fresh slug) so the collision clears.
-
-On Replace/Rename, the re-dispatched init returns a normal `status: success`, and control resumes at the post-init contract assertion below. A `plan_exists_prompt` return NEVER carries a `pr_url` / `branch` / patched-files payload, so it is not a contract violation — it is the sanctioned early-return escalation shape.
-
-**Post-init contract assertion**: phase-1-init's contract is plan-structure creation only — it writes `request.md`, `references.json`, and `status.json` under `.plan/local/plans/{plan_id}/**` and returns `plan_id` + `domains` (+ `next_phase`) and nothing else of substance (see `plan-marshall:phase-1-init` § Enforcement). When the `content` it receives reads like a ready-to-apply implementation spec, the agent treats it as a work order — editing source files, switching the checkout onto a `fix/`/`feature/` branch, and returning a payload that omits `plan_id` and carries a `pr_url` instead. This is the same failure class as the post-refine violation one phase later (see `feedback_phase2_refine_never_implements`), and it silently advances the orchestrator into phase-2-refine with main-checkout drift. Assert structurally that the init was contract-clean before advancing.
-
-**Return-shape check**: assert the phase-1-init return TOON carries a non-empty `plan_id` AND does NOT carry a `pr_url`, a `branch`, or a "patched N files" / files-patched `display_detail`. Any of those is a rogue-implementation signal — phase-1-init never opens a PR, never reports a branch, and never reports files patched.
-
-**Main-checkout cleanliness check**: assert the main checkout is clean and was not switched onto a feature branch. Keep the two checks as separate single-command Bash blocks (one command per call):
-
-```bash
-git -C . status --porcelain
-```
-
-```bash
-git -C . branch --show-current
-```
-
-Assert the first command's output is empty and the second command's output equals the base branch (the checkout was not switched onto a `fix/`/`feature/` branch).
-
-**Success branch** — the return-shape check passes (non-empty `plan_id`, no rogue payload field), the porcelain output is empty, and the current branch equals the base branch:
+**Post-init self-check (inline)**: init ran in the orchestrator's own context — there is no dispatched leaf to police, so the rogue-leaf return-shape and main-checkout-drift assertions no longer apply (a phase running inline cannot "dispatch edits to the main checkout" as a rogue leaf would). Perform only a lightweight self-check: confirm init produced a non-empty `plan_id` and wrote the three plan-structure artifacts under `.plan/local/plans/{plan_id}/`. On success:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[STATUS] (plan-marshall:plan-marshall) Post-init main-checkout assertion passed (clean, plan_id present)"
+  --message "[STATUS] (plan-marshall:plan-marshall) Post-init self-check passed (plan_id present, plan-structure artifacts written)"
 ```
 
-Continue to the **Metrics** fused-call below.
+If `plan_id` is empty or an artifact is missing, emit a `[CRITICAL]` work-log entry and STOP — do not advance to phase-2-refine.
 
-**Violation branch** — any of the checks fails: the return TOON omits `plan_id` or carries a `pr_url` / `branch` / patched-files `display_detail`, OR the porcelain output is non-empty, OR the current branch differs from the base branch. The orchestrator MUST emit a `[CRITICAL]` work-log entry naming the offending signal (dirty files / switched branch / missing plan_id / rogue payload field), return the structured error TOON, and refuse to advance to phase-2-refine.
+The plan-existence, obsolescence, recipe-match, domain, sibling-collision, and posture dialogues all fire inline as native `AskUserQuestion` calls inside the phase-1-init steps above — there are no prompt-required return blocks for the orchestrator to consume. A dialogue whose resolution deletes the plan (obsolescence → Close, sibling-collision → Abort) STOPS the pipeline inline; the orchestrator does not advance to phase-2-refine.
 
-`{offending_signal}` names the specific violation: the joined non-empty lines of the `git -C . status --porcelain` output for a dirty tree, the resolved branch name for a switched checkout, `missing plan_id` when the return omits `plan_id`, or the rogue field name (`pr_url` / `branch` / files-patched `display_detail`) when the return shape is wrong.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id:-none} --level ERROR \
-  --message "[CRITICAL] (plan-marshall:plan-marshall) Init contract violation — phase-1-init dispatched edits to the main checkout: {offending_signal}"
-```
-
-Return:
-
-```toon
-status: error
-error: init_contract_violation
-display_detail: "init dispatched edits to main checkout"
-plan_id: {plan_id}
-offending_signal: {offending_signal}
-```
-
-Do NOT call the **Metrics** fused-call. Do NOT capture the phase handshake. Do NOT continue to 2-refine. The orchestrator stops here; recovery requires the user to inspect the offending files, revert them or move them into `.plan/local/plans/{plan_id}/**`, and run `git -C . checkout {base_branch}` if the checkout was switched onto a `fix/`/`feature/` branch.
-
-**Cross-references**:
-- `plan-marshall:phase-1-init` § Enforcement — the prohibition this assertion enforces
-- `feedback_phase2_refine_never_implements` — driving failure history for the symmetric post-refine guard
-
-**Orchestrator-owned operator prompts**: `phase-1-init` runs as a dispatched `execution-context` leaf, where `AskUserQuestion` is unreachable at runtime (see [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). Every init-phase operator dialogue therefore comes back as an optional prompt-required block on the init return TOON — `obsolescence_prompt` (Step 4b.3 stale lesson references), `recipe_match_prompt` (Step 5c propose branch), `domain_prompt` (Step 7 ambiguous domain), `sibling_collision_prompt` (Step 8c collision), and `posture_prompt` (Step 8d `lane_selection: ask`). (The sixth, `plan_exists_prompt`, is the early-return envelope already handled above, before these assertions.) The orchestrator owns every `AskUserQuestion` here, after the post-init contract assertions pass and BEFORE the inline-early-phase-path detection and the automatic-continuation decision below (the inline early-phase path reads `status.metadata.recipe_key`, so the recipe prompt must resolve and persist first). Consume the blocks in phase order — `obsolescence_prompt`, `recipe_match_prompt`, `domain_prompt`, `sibling_collision_prompt`, `posture_prompt`. Each block is present only when its branch fired; when a block is absent, skip its prompt entirely. A block whose resolution deletes the plan (`obsolescence_prompt` → Close, `sibling_collision_prompt` → Abort) STOPS the orchestrator — do not proceed to the remaining prompts or to phase-2-refine.
-
-**Consume `obsolescence_prompt` (conditional)**: When the init return carries an `obsolescence_prompt` block (a lesson-source plan with stale cited references), fire the `AskUserQuestion` in main context, listing the `stale[]` references and offering the three options:
-
-```text
-AskUserQuestion:
-  questions:
-    - question: "This lesson cites references that no longer exist in the tree. How should the plan proceed?"
-      header: "Stale refs"
-      options:
-        - label: "Refine"
-          description: "Adapt scope — attach the obsolescence report to the request as a clarifying note"
-        - label: "Close as resolved"
-          description: "The problem no longer exists — delete both the lesson and the just-created plan, then abort"
-        - label: "Residual scope"
-          description: "Keep only the still-valid references; drop the stale ones"
-      multiSelect: false
-```
-
-Apply the operator's choice post-init (the leaf left the request/references intact):
-
-- **Refine** — append the obsolescence report (each stale reference + evidence from the block) to `request.md` under a `## Pre-flight Reference Verification` heading via `manage-plan-documents request` append, then continue.
-- **Close as resolved** — delete the lesson and the plan, then STOP:
-
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons remove \
-    --lesson-id {lesson_id} --reason "Closed as resolved during phase-1-init premise check"
-  ```
-
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan \
-    --plan-id {plan_id}
-  ```
-
-- **Residual scope** — work-log each dropped stale reference for downstream scope audit, then continue.
-
-Log the choice:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:planning) Obsolescence prompt resolved: {selection}"
-```
-
-When the init return carries NO `obsolescence_prompt` block, skip this prompt — all cited references verified clean (or the source was not a lesson).
-
-**Consume `recipe_match_prompt` (conditional)**: When the init return carries a `recipe_match_prompt` block, fire the `AskUserQuestion` in main context, offering each `options[]` entry (`name` + `confidence`) as a selectable choice plus the `no_recipe_option` label:
-
-```text
-AskUserQuestion:
-  questions:
-    - question: "A project recipe matched this request below the auto-route threshold. Route through it, or proceed with the standard pipeline?"
-      header: "Recipe"
-      options:
-        # For each recipe_match_prompt.options[] entry (dynamic):
-        - label: "{name} ({confidence})"
-          description: "Route this plan through the {key} recipe"
-        - label: "No recipe"
-          description: "Proceed with the standard refine/outline pipeline"
-      multiSelect: false
-```
-
-On a recipe selection, persist the chosen recipe key (the orchestrator, not the leaf, owns this write):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} --set --field recipe_key --value {selected_key}
-```
-
-On the "No recipe" option, persist nothing. Either way, log the choice:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:planning) Recipe-match prompt resolved: {selection}"
-```
-
-When the init return carries NO `recipe_match_prompt` block (auto-routed, or no match), skip this prompt — `recipe_key` is either already persisted by init's auto-route branch or intentionally unset.
-
-**Consume `domain_prompt` (conditional)**: When the init return carries a `domain_prompt` block (Step 7 resolved the domain as ambiguous, and the return's `domain` is `unresolved`), fire the `AskUserQuestion` in main context, offering the `candidates[]` list:
-
-```text
-AskUserQuestion:
-  questions:
-    - question: "The plan's domain could not be resolved unambiguously. Which domain applies?"
-      header: "Domain"
-      options:
-        # For each domain_prompt.candidates[] entry (dynamic):
-        - label: "{candidate}"
-          description: "Use the {candidate} domain for this plan"
-      multiSelect: false
-```
-
-Persist the operator's chosen domain to `references.json` (the leaf stored none for the ambiguous case), then use it as `{domain}` for the rest of Action: init:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set-list \
-  --plan-id {plan_id} --field domains --values {chosen_domain}
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:planning) Domain prompt resolved: {chosen_domain}"
-```
-
-When the init return carries NO `domain_prompt` block, skip this prompt — the domain was resolved unambiguously and stored by init's Step 9.
-
-**Consume `sibling_collision_prompt` (conditional)**: When the init return carries a `sibling_collision_prompt` block (Step 8c detected a duplication collision), fire the `AskUserQuestion` in main context, naming the `colliding_siblings[]` and `collision_classes[]`:
-
-```text
-AskUserQuestion:
-  questions:
-    - question: "This plan collides with active sibling plan(s) ({colliding_siblings}). How should it proceed?"
-      header: "Sibling collision"
-      options:
-        - label: "Proceed"
-          description: "The plans are intentionally distinct despite the shared source / files"
-        - label: "Rename"
-          description: "Delete this plan and re-create it with updated source/files"
-        - label: "Abort"
-          description: "This plan duplicates an active sibling — delete it and stop"
-      multiSelect: false
-```
-
-Apply the operator's choice post-init:
-
-- **Proceed** — continue with this plan as-is.
-- **Rename** — delete this plan (`manage-status delete-plan --plan-id {plan_id}`) and re-dispatch the **1-Init Phase** dispatch above with updated source/files (and a new `plan_id` if needed).
-- **Abort** — delete this plan (`manage-status delete-plan --plan-id {plan_id}`) and STOP; do not proceed to the remaining prompts or to phase-2-refine.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level WARNING \
-  --message "(plan-marshall:planning) Sibling-collision prompt resolved: {selection}"
-```
-
-When the init return carries NO `sibling_collision_prompt` block, skip this prompt — the sibling-collision check was clean.
-
-**Consume `posture_prompt` (conditional)**: When the init return carries a `posture_prompt` block, fire the `AskUserQuestion` in main context, pre-selecting `posture_prompt.projected` and labeling each `options[]` entry with its concrete consequences (step count + summed token estimate):
-
-```text
-AskUserQuestion:
-  questions:
-    - question: "Choose the execution-profile posture for this plan (governs which phase-6 finalize steps run)."
-      header: "Posture"
-      options:
-        # For each posture_prompt.options[] entry (minimal / auto / full):
-        - label: "{posture} · {phase_6_steps_count} steps · ≈{cost_sum_tokens} tok"
-          description: "{summary}"
-      multiSelect: false
-```
-
-Persist the operator's chosen posture, overwriting Step 8b's projection (the orchestrator owns this write):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} --set --field execution_profile --value {chosen_posture}
-```
-
-Log the choice:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:planning) Execution-profile posture prompt resolved: {chosen_posture} (projected={projected})"
-```
-
-When the init return carries NO `posture_prompt` block (`lane_selection: auto`), skip this prompt — the projected posture Step 8b persisted stands.
-
-**Metrics**: After the init agent completes and `plan_id` is known, record the
-`1-init → 2-refine` boundary in a single fused call (forwarding the agent's
-`<usage>` data to the closing phase). The fused command persists the same
-state as the prior `end-phase` + `start-phase` + `generate` sequence:
+**Metrics**: After init completes and `plan_id` is known, record the `1-init → 2-refine` boundary in a single fused call. Because init ran **inline** (no dispatched agent, hence no `<usage>` envelope), OMIT the `<usage>`-derived flags (`--total-tokens` / `--duration-ms` / `--tool-uses`) — this is the inline-phase (timestamps-only) recording mode:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
-  --plan-id {plan_id} --prev-phase 1-init --next-phase 2-refine \
-  --total-tokens {total_tokens from <usage>} \
-  --duration-ms {duration_ms from <usage>} \
-  --tool-uses {tool_uses from <usage>}
+  --plan-id {plan_id} --prev-phase 1-init --next-phase 2-refine
 ```
 
-phase-1-init Step 3a records `1-init.start_time` via `manage-metrics
-start-phase` as soon as the plan directory exists, so the fused
-`phase-boundary` call above closes 1-init using a real agent-side timestamp
-and computes `duration_seconds = end_time - start_time` against it. The
+phase-1-init Step 3b records `1-init.start_time` via `manage-metrics
+start-phase` as soon as `status.json` exists, so the fused `phase-boundary`
+call above closes 1-init using a real start timestamp and computes
+`duration_seconds = end_time - start_time` against it. The
 `_read_status_created` backfill in `manage-metrics.py` is retained only as a
 safety net for plans materialised under older orchestrator versions; current
 plans never exercise that path.
@@ -816,7 +539,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 3: Orphan-dir cleanup
 
-Prune orphan plan directories — entries under `.plan/plans/` that have no readable `status.json`. These typically result from interrupted plan creation, aborted `phase-1-init` dispatches, or stale worktree-only artifacts. The archived-plans directory is excluded by `manage-status list-orphans`.
+Prune orphan plan directories — entries under `.plan/plans/` that have no readable `status.json`. These typically result from interrupted plan creation, aborted `phase-1-init` runs, or stale worktree-only artifacts. The archived-plans directory is excluded by `manage-status list-orphans`.
 
 **3a — Enumerate orphan directories:**
 
@@ -981,90 +704,52 @@ If the user selects "Aggregate aggressively", route to `Action: lessons-aggregat
 
 ### Convert lesson to plan
 
-When a specific lesson is selected, convert it to a plan via a `lesson_id` reference. Compute the dispatch target via the role resolver, then dispatch:
+When a specific lesson is selected, convert it to a plan by running phase-1-init **inline** with a `lesson_id` reference (no dispatch). Execute the documented steps of [`plan-marshall:phase-1-init`](../../phase-1-init/SKILL.md) in order in the orchestrator context, supplying the input `lesson_id: {lesson_id}` (never `source=lesson, content={verbatim lesson text}` — see the anti-pattern below). Fire the init operator prompts natively at their step sites exactly as in § Action: init's **1-Init Phase (inline)** block.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --role phase-1-init
-```
+Supplying `lesson_id` triggers `phase-1-init` Step 4 ("From Lesson") to resolve the lesson body from `lessons-learned/` and Step 5b ("Move Lesson File Into Plan Directory") to relocate the lesson file into the new plan directory via `manage-lessons convert-to-plan`. Both side effects are automatic — the caller only supplies `lesson_id`. On completion the orchestrator holds `plan_id` and `domain` in-context.
 
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
+**Anti-pattern (prohibited):** Never run the lesson conversion as `source=lesson, content={verbatim lesson text}`. Inline `content` is the `description` source path and causes `phase-1-init` to treat the input as a free-form description — Step 5b is skipped and the original lesson file is orphaned in `lessons-learned/` instead of being archived inside the plan directory. Always reference the lesson by `lesson_id`; never paste its body.
 
-Emit the standardized pre-dispatch attempt log line and the post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
+#### Post-init self-check (lesson-sourced, inline)
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id none --level INFO \
-  --message "[ATTEMPT] (plan-marshall:plan-marshall) dispatching target={target} role=phase-1-init (lesson conversion)"
-```
+Because init runs inline, the agent-id-leak failure mode (a dispatched leaf mis-registering its **own agent id** as the `plan_id` when Step 2a's slug derivation fell through) can no longer occur — there is no dispatched agent id to leak. What remains worth a lightweight inline self-check is that the lesson-source path actually ran: that Step 4 recorded `source: lesson` and that Step 5b placed the plan-dir lesson copy. Run these two checks after init completes and BEFORE the pipeline advances to phase-2-refine.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id none --level INFO \
-  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-1-init workflow=plan-marshall:phase-1-init/SKILL.md plan_id=none"
-```
-
-```text
-Task: plan-marshall:{target}
-  prompt: |
-    name: phase-1-init
-    plan_id: none
-    skills[1]:
-    - plan-marshall:phase-1-init
-    workflow: plan-marshall:phase-1-init/SKILL.md
-    WORKTREE: .
-
-    lesson_id: {lesson_id}
-```
-
-The agent returns `plan_id` and `domain` in its TOON. Passing `lesson_id` triggers `phase-1-init` Step 4 ("From Lesson") to resolve the lesson body from `lessons-learned/` and Step 5b ("Move Lesson File Into Plan Directory") to relocate the lesson file into the new plan directory via `manage-lessons convert-to-plan`. Both side effects are automatic — the caller only supplies `lesson_id`.
-
-**Anti-pattern (prohibited):** Never dispatch the lesson conversion with `source=lesson, content={verbatim lesson text}` in the prompt body. Inline `content` is the `description` source path and causes `phase-1-init` to treat the input as a free-form description — Step 5b is skipped and the original lesson file is orphaned in `lessons-learned/` instead of being archived inside the plan directory. Always reference the lesson by `lesson_id`; never paste its body.
-
-#### Post-init contract assertion (lesson-sourced)
-
-phase-1-init's generic post-init assertion (see **Action: init** § Post-init contract assertion) is a necessary-but-insufficient gate for a lesson-sourced dispatch: it asserts only that `plan_id` is non-empty and no rogue `pr_url` / `branch` / files-patched payload is present. It does NOT verify that the lesson-source path actually ran. The failure class this guard catches: the dispatch silently ignores `lesson_id`, falls back to its **own agent id** as the `plan_id` (Step 2a's slug derivation never ran), records `source: description` instead of `source: lesson`, and runs `convert-to-plan` (removing the lesson from the corpus) WITHOUT placing the Step 5b plan-dir copy — yet returns a plausible `status: success` TOON that passes the generic assertion. Net effect: a phantom plan whose `request.md` holds the plan_id instead of the lesson body, and a lesson silently gone from the corpus with no plan-dir copy.
-
-Because this dispatch always carries `lesson_id`, the orchestrator MUST run the three additional lesson-source assertions below — after the dispatch returns and BEFORE the auto-continued pipeline advances to phase-2-refine. Capture the dispatched agent's id as `{agent_id}` (the `Task` tool surfaces it on the dispatch) for assertion (b).
-
-**Assertion (a) — `source == lesson`**: read the new plan's `request.md` and assert the recorded `source` is `lesson` (not `description`). A `description` source is the structural tell that the lesson-source path was skipped:
+**Check (a) — `source == lesson`**: read the new plan's `request.md` and confirm the recorded `source` is `lesson` (not `description`). A `description` source is the structural tell that the lesson-source path was skipped:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
   --plan-id {plan_id}
 ```
 
-Parse the `source` field from the returned `content`. Assertion (a) fails when `source != lesson`.
+Parse the `source` field from the returned `content`. Check (a) fails when `source != lesson`.
 
-**Assertion (b) — `plan_id` is not an agent-id pattern**: a real lesson plan_id is a title-derived kebab slug; an agent-id-shaped value (hex-only, no hyphens or word segments — matching `^[0-9a-f]{12,}$`) means Step 2a's slug derivation fell through and the agent mis-registered its own id as the plan. Assertion (b) fails when `plan_id` matches `^[0-9a-f]{12,}$` OR `plan_id == {agent_id}`.
-
-**Assertion (c) — Step 5b post-condition file exists**: the lesson file MUST have been relocated into the plan directory by `convert-to-plan`. Assert it exists on disk via the managed API:
+**Check (b) — Step 5b post-condition file exists**: the lesson file MUST have been relocated into the plan directory by `convert-to-plan`. Confirm it exists on disk via the managed API:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files exists \
   --plan-id {plan_id} --file lesson-{lesson_id}.md
 ```
 
-Parse `exists` from the output. Assertion (c) fails when `exists: false` — the lesson was removed from the corpus but no plan-dir copy was placed (the orphaning failure mode).
+Parse `exists` from the output. Check (b) fails when `exists: false` — the lesson was removed from the corpus but no plan-dir copy was placed (the orphaning failure mode).
 
-**Success branch** — all three assertions pass (`source == lesson`, `plan_id` is a non-agent-id slug, the plan-dir lesson file exists):
+**Success branch** — both checks pass (`source == lesson`, the plan-dir lesson file exists):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[STATUS] (plan-marshall:plan-marshall) Post-init lesson-source assertion passed (source=lesson, slug plan_id, plan-dir lesson file present)"
+  --message "[STATUS] (plan-marshall:plan-marshall) Post-init lesson-source self-check passed (source=lesson, plan-dir lesson file present)"
 ```
 
 Continue to the auto-continued planning pipeline (2-refine etc.).
 
-**Violation branch** — any of the three assertions fails. The orchestrator MUST emit a `[CRITICAL]` work-log entry naming the violated condition, return the structured error TOON, and refuse to advance to phase-2-refine.
+**Violation branch** — either check fails. The orchestrator MUST emit a `[CRITICAL]` work-log entry naming the violated condition, return the structured error TOON, and refuse to advance to phase-2-refine.
 
-`{offending_signal}` names the specific violation: `source=description (expected lesson)` for assertion (a), `agent-id-shaped plan_id: {plan_id}` for assertion (b), or `missing plan-dir lesson file: lesson-{lesson_id}.md` for assertion (c).
+`{offending_signal}` names the specific violation: `source=description (expected lesson)` for check (a), or `missing plan-dir lesson file: lesson-{lesson_id}.md` for check (b).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id:-none} --level ERROR \
-  --message "[CRITICAL] (plan-marshall:plan-marshall) Lesson-conversion contract violation — phase-1-init silently ignored lesson_id: {offending_signal}"
+  --message "[CRITICAL] (plan-marshall:plan-marshall) Lesson-conversion self-check failed — phase-1-init did not run the lesson-source path: {offending_signal}"
 ```
 
 Return:
@@ -1072,16 +757,16 @@ Return:
 ```toon
 status: error
 error: init_contract_violation
-display_detail: "lesson conversion silently ignored lesson_id"
+display_detail: "lesson conversion did not run lesson-source path"
 plan_id: {plan_id}
 offending_signal: {offending_signal}
 ```
 
-Do NOT continue to phase-2-refine. The orchestrator stops here; recovery requires restoring the lesson body to the corpus under a fresh id (`manage-lessons add` + `set-body --file`), deleting the phantom plan (`manage-status delete-plan`), and re-dispatching the conversion with explicit `plan_id` (title slug) and `domain` overrides.
+Do NOT continue to phase-2-refine. The orchestrator stops here; recovery requires restoring the lesson body to the corpus under a fresh id (`manage-lessons add` + `set-body --file`), deleting the phantom plan (`manage-status delete-plan`), and re-running the conversion with an explicit `plan_id` (title slug) and `domain`.
 
 **Cross-references**:
-- `plan-marshall:phase-1-init` § Enforcement / Step 2a (plan-id derivation guard) and Step 5b (convert-to-plan post-condition abort) — the skill-level complements to this orchestrator-boundary assertion
-- **Action: init** § Post-init contract assertion — the generic post-init guard this lesson-source guard layers on top of
+- `plan-marshall:phase-1-init` § Enforcement / Step 2a (plan-id derivation guard) and Step 5b (convert-to-plan post-condition abort) — the skill-level complements to this self-check
+- **Action: init** § Post-init self-check — the generic inline self-check this lesson-source check layers on top of
 
 ### Analyze all lessons
 

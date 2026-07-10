@@ -75,7 +75,6 @@ RESERVED_LEVELS: tuple[str, ...] = ()
 #   --phase <group> --role <subkey> (two-flag form, equivalent to dotted)
 #   --phase <group>                 (two-flag bare group; same as --role <group>)
 KNOWN_ROLES: dict[str, tuple[str, ...]] = {
-    'phase-1-init':     ('default',),
     'phase-2-refine':   ('default',),
     'phase-3-outline':  ('default',),
     'phase-4-plan':     ('default',),

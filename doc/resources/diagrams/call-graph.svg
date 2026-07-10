@@ -4,8 +4,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660"
      role="img" aria-labelledby="title desc"
      font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
-  <title id="title">Plan Marshall dispatch call graph — orchestrator, six phase envelopes, shared workflow envelopes</title>
-  <desc  id="desc">Tree-shaped call graph from the plan-marshall orchestrator. The orchestrator dispatches one execution-context envelope per phase (phase-1-init through phase-6-finalize). Three workflow bodies are shared across multiple phases: q-gate-validation fires from phase-2-refine (lesson plans only), phase-3-outline (bypassable), and phase-4-plan (always); verification-feedback fires from phase-5-execute (on verify failure) and phase-6-finalize (when pending findings exist); enrich-module fires from phase-6-finalize architecture-refresh Tier-1 once per affected module in parallel.</desc>
+  <title id="title">Plan Marshall dispatch call graph — orchestrator, inline phase-1-init, five dispatched phase envelopes, shared workflow envelopes</title>
+  <desc  id="desc">Tree-shaped call graph from the plan-marshall orchestrator. The orchestrator runs phase-1-init inline in its own context and dispatches one execution-context envelope per phase for phases 2-refine through 6-finalize. Three workflow bodies are shared across multiple phases: q-gate-validation fires from phase-2-refine (lesson plans only), phase-3-outline (bypassable), and phase-4-plan (always); verification-feedback fires from phase-5-execute (on verify failure) and phase-6-finalize (when pending findings exist); enrich-module fires from phase-6-finalize architecture-refresh Tier-1 once per affected module in parallel.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
@@ -29,14 +29,14 @@
   <text x="600" y="97"  class="mono">plan-marshall</text>
 
   <!-- Dispatch label trunk -->
-  <text x="600" y="140" class="arrow-lbl">Task: execution-context — one dispatch per phase</text>
+  <text x="600" y="140" class="arrow-lbl">Task: execution-context — one dispatch per dispatched phase (2–6)</text>
 
   <!-- ============= Layer 2 — Six phase envelopes ============= -->
   <!-- Phase node centers: 130, 310, 490, 670, 850, 1030; y 230-290 -->
 
   <rect class="stroke" x="70"  y="230" width="120" height="60" rx="8" ry="8"/>
   <text x="130"  y="258" class="col-header">phase-1-init</text>
-  <text x="130"  y="277" class="col-sub">capture request</text>
+  <text x="130"  y="277" class="col-sub">inline · capture request</text>
 
   <rect class="stroke" x="250" y="230" width="120" height="60" rx="8" ry="8"/>
   <text x="310"  y="258" class="col-header">phase-2-refine</text>
@@ -61,7 +61,8 @@
   <!-- ============= Fan-out arrows: orchestrator → each phase ============= -->
   <!-- Source: bottom-center of orchestrator (x=600, y=110). Target: top-center of each phase (y=230, -2 for marker offset). -->
 
-  <line class="arrow" x1="600" y1="110" x2="130"  y2="226" marker-end="url(#arrow)"/>
+  <line class="stroke" stroke-dasharray="4 3" x1="600" y1="110" x2="130"  y2="226"/>
+  <text x="330" y="180" class="arrow-lbl">inline (no dispatch)</text>
   <line class="arrow" x1="600" y1="110" x2="310"  y2="226" marker-end="url(#arrow)"/>
   <line class="arrow" x1="600" y1="110" x2="490"  y2="226" marker-end="url(#arrow)"/>
   <line class="arrow" x1="600" y1="110" x2="670"  y2="226" marker-end="url(#arrow)"/>
@@ -121,7 +122,7 @@
   <text x="1085" y="385" class="arrow-lbl">(× N parallel)</text>
 
   <!-- ============= Footer caption ============= -->
-  <text x="600" y="595" class="col-sub">Every arrow is a `Task: execution-context-{level}` dispatch. The level is resolved per call site against `marshal.json` `models.roles`.</text>
+  <text x="600" y="595" class="col-sub">Every solid arrow is a `Task: execution-context-{level}` dispatch; phase-1-init (dashed) runs inline in the orchestrator. The level is resolved per call site against `marshal.json` `models.roles`.</text>
   <text x="600" y="612" class="col-sub">Shared envelopes are the same workflow doc invoked from multiple phases; the level rebinds under the caller phase.</text>
 
 </svg>

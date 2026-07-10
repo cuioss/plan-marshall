@@ -5,12 +5,13 @@
 Covers the askuserquestion-in-dispatched-workflow analyzer:
 
 - Flags an ``AskUserQuestion:`` invocation block inside a dispatched-leaf
-  workflow doc (declared via the execution-context ``implements:`` marker or a
-  ``phase-*/SKILL.md``)
+  workflow doc (declared via the execution-context ``implements:`` marker)
 - Does NOT flag a prose-only mention of the tool
 - Does NOT flag a main-context (non-dispatched) workflow — a doc carrying a
   ``Task:`` dispatch directive
-- Does NOT flag a non-workflow doc (no ``implements:`` marker, not a phase skill)
+- Does NOT flag an inline phase skill that omits the ``implements:`` marker
+  (e.g. phase-1-init, which fires its prompts natively in the orchestrator)
+- Does NOT flag a non-workflow doc (no ``implements:`` marker)
 - Does NOT flag a bare ``AskUserQuestion:`` header with no invocation-block body
 - Finding shape: all required fields present and correctly typed
 - Clean baseline: an empty tree produces no findings
@@ -107,10 +108,9 @@ class TestFlagsDispatchedLeaf:
         assert len(findings) == 1
         assert findings[0]['rule_id'] == RULE_ID
 
-    def test_block_in_phase_skill_flagged(self, tmp_path):
-        # A phase-*/SKILL.md is a dispatched-leaf even without the implements
-        # frontmatter marker.
-        content = '# Phase Skill\n\n' + _ASKUSER_BLOCK
+    def test_block_in_marked_phase_skill_flagged(self, tmp_path):
+        # A phase-*/SKILL.md carrying the implements marker is a dispatched leaf.
+        content = _IMPLEMENTS_FM + '\n# Phase Skill\n\n' + _ASKUSER_BLOCK
         _make_workflow_doc(tmp_path, content, skill='phase-2-refine')
         findings = analyze_askuserquestion_reachability(tmp_path)
         assert len(findings) == 1
@@ -180,6 +180,15 @@ class TestDoesNotFlag:
             + _ASKUSER_BLOCK
         )
         _make_workflow_doc(tmp_path, content)
+        findings = analyze_askuserquestion_reachability(tmp_path)
+        assert findings == []
+
+    def test_unmarked_phase_skill_not_flagged(self, tmp_path):
+        # A phase-*/SKILL.md that omits the implements marker runs inline in the
+        # orchestrator (e.g. phase-1-init) and fires its prompts natively — it is
+        # NOT a dispatched leaf, so its AskUserQuestion blocks are not flagged.
+        content = '# Inline Phase Skill\n\n' + _ASKUSER_BLOCK
+        _make_workflow_doc(tmp_path, content, skill='phase-1-init')
         findings = analyze_askuserquestion_reachability(tmp_path)
         assert findings == []
 

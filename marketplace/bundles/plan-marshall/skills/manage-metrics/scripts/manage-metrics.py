@@ -351,6 +351,10 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
         data['phases'][phase] = {}
 
     phase_data = data['phases'][phase]
+    # Stamp end_time unconditionally: it is the sole "recorded" marker
+    # cmd_generate reads. An inline phase closes here with the usage flags
+    # omitted (no agent <usage> envelope) and is still a fully recorded,
+    # timestamps-only row — never listed under unrecorded_phases.
     phase_data['end_time'] = now
 
     # Compute duration from start/end if available
@@ -915,6 +919,19 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
     `end-phase` step. If the previous phase has not yet been started (no
     matching `start-phase`), it is recorded with end metadata only — same
     behaviour as the standalone `end-phase` command.
+
+    Inline-phase recording mode: a phase that runs *inline* in the main
+    orchestrator context (rather than as a dispatched `execution-context`
+    leaf) produces no agent `<usage>` envelope, so the caller OMITS the
+    `--total-tokens` / `--duration-ms` / `--tool-uses` flags. Omitting them is
+    the sanctioned inline recording mode — NOT an incomplete call. The
+    previous phase's `end_time` is stamped unconditionally below (independent
+    of any usage flag), and `cmd_generate`'s partiality verdict keys a phase's
+    "recorded" status solely off that `end_time` marker. A timestamps-only
+    closed row is therefore treated as fully recorded: it is never listed under
+    `unrecorded_phases` and never flips `partial` to true. This is the path the
+    inline 1-init → 2-refine boundary and the recipe-inline (refine/outline)
+    boundaries take; it preserves the #812 floor-not-truth semantics unchanged.
     """
     plan_id = require_valid_plan_id(args)
     prev_phase = args.prev_phase
@@ -944,6 +961,10 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
     if prev_phase not in data['phases']:
         data['phases'][prev_phase] = {}
     prev_data = data['phases'][prev_phase]
+    # Stamp end_time unconditionally — this is the sole "recorded" marker
+    # cmd_generate's partiality verdict reads. Stamping it independent of any
+    # usage flag is what makes the inline-phase (omit-usage) close a fully
+    # recorded, timestamps-only row rather than an unrecorded one.
     prev_data['end_time'] = end_now
 
     # 1-init structural backfill: when transitioning out of 1-init for the

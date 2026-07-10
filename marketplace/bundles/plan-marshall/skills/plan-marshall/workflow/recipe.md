@@ -83,42 +83,13 @@ The audit recipe family — `recipe-code-review` (key `code-review`) and `recipe
 
 When either audit recipe is selected with one of these parameters, carry the value through to the recipe skill at runtime. Both parameters are optional; the default behavior (no parameter supplied) audits the full current-branch-vs-base diff. The recipes' finding types and cognitive procedures are owned by their own SKILL.md files (`plan-marshall:recipe-code-review`, `plan-marshall:recipe-security-audit`) and are not restated here.
 
-### Step 2: Create Plan via Init Agent
+### Step 2: Create Plan via Inline Init
 
-Use the selected recipe to create a plan. Compute the dispatch target via the role resolver:
+Use the selected recipe to create a plan by running phase-1-init **inline** in the orchestrator context (no dispatch). Execute the documented steps of [`plan-marshall:phase-1-init`](../../phase-1-init/SKILL.md) in order, supplying the init inputs `source: recipe` and `content: {recipe_key}`, and firing the init operator prompts natively at their step sites exactly as in [`planning.md`](planning.md) § Action: init's **1-Init Phase (inline)** block.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --role phase-1-init
-```
+**Built-in-recipe `plan_id` override.** For the built-in "Refactor to Profile Standards" recipe, run init with the profile-suffixed `plan_id` override `refactor-to-profile-standards-{profile}` (derived in the selection flow's Step B3) — phase-1-init Step 2 accepts an explicit `plan_id` override, so two parallel recipe runs for distinct profiles yield distinct, non-colliding plans (and distinct `feature/{plan_id}` branches). For all other recipes, let phase-1-init auto-generate the `plan_id` (no override).
 
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
-
-Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id none --level INFO \
-  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-1-init workflow=plan-marshall:phase-1-init/SKILL.md plan_id=none"
-```
-
-Dispatch. **For the built-in "Refactor to Profile Standards" recipe**, pass the profile-suffixed `plan_id` override (`refactor-to-profile-standards-{profile}`, derived in the selection flow's Step B3) as the `plan_id` prompt-body field — phase-1-init Step 2 already accepts an explicit `plan_id` override, so two parallel recipe runs for distinct profiles yield distinct, non-colliding plans (and distinct `feature/{plan_id}` branches). **For all other recipes**, pass `plan_id: none` (phase-1-init auto-generates the id):
-
-```text
-Task: plan-marshall:{target}
-  prompt: |
-    name: phase-1-init
-    plan_id: {profile_suffixed_plan_id_for_builtin_else_none}
-    skills[1]:
-    - plan-marshall:phase-1-init
-    workflow: plan-marshall:phase-1-init/SKILL.md
-    WORKTREE: .
-
-    source: recipe
-    content: {recipe_key}
-```
-
-Substitute `{profile_suffixed_plan_id_for_builtin_else_none}` with `refactor-to-profile-standards-{profile}` on the built-in path (the value derived in the selection flow's Step B3) and `none` on every other path. The agent returns `plan_id` and `domains` in its TOON.
+On completion the orchestrator holds `plan_id` and `domain` in-context.
 
 ### Step 3: Store Recipe Metadata
 

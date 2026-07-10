@@ -325,11 +325,11 @@ def test_string_at_flat_group_with_any_subkey_resolves_to_same(plan_context):
     """Flat group with a string value: any subkey lookup resolves to the same string."""
     _write_marshal_with_models(
         plan_context.fixture_dir,
-        {'default': 'level-1', 'roles': {'phase-1-init': 'level-3'}},
+        {'default': 'level-1', 'roles': {'phase-2-refine': 'level-3'}},
     )
 
     # Bare-group lookup returns the string.
-    result_bare = cmd_effort(_ns(role='phase-1-init'))
+    result_bare = cmd_effort(_ns(role='phase-2-refine'))
     assert result_bare['status'] == 'success'
     assert result_bare['level'] == 'level-3'
 
@@ -343,7 +343,7 @@ def test_default_flag_returns_models_default(plan_context):
     """`--default` returns effort without role lookup."""
     _write_marshal_with_models(
         plan_context.fixture_dir,
-        {'default': 'level-3', 'roles': {'phase-1-init': 'level-1'}},
+        {'default': 'level-3', 'roles': {'phase-2-refine': 'level-1'}},
     )
 
     result = cmd_effort(_ns(default=True))
@@ -387,7 +387,7 @@ def test_resolve_target_inherit_returns_canonical(plan_context):
     """resolve-target returns canonical `execution-context` when level is inherit."""
     _write_marshal_with_models(plan_context.fixture_dir, {})
 
-    result = cmd_effort_resolve_target(_ns(role='phase-1-init'))
+    result = cmd_effort_resolve_target(_ns(role='phase-2-refine'))
 
     assert result['status'] == 'success'
     assert result['level'] == 'inherit'

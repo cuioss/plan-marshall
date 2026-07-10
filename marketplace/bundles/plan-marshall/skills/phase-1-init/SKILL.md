@@ -3,15 +3,14 @@ lane:
   class: core
   cost_size: M
 name: phase-1-init
-description: Init phase skill. Creates plan directory, request.md, references, and status, runs the Tier 1 recipe-match routing tier (registry-wide recipe scoring + request-aspect classification) ahead of planning-lane routing. Complete initialization in a single agent call.
+description: Init phase skill. Creates plan directory, request.md, references, and status, runs the Tier 1 recipe-match routing tier (registry-wide recipe scoring + request-aspect classification) ahead of planning-lane routing. Runs inline in the orchestrator context to complete initialization.
 user-invocable: false
 mode: workflow
-implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
 ---
 
 # Phase Init Skill
 
-**Role**: Complete init phase. Creates plan directory, request.md, detects domain, and creates configuration. Single-agent initialization pattern.
+**Role**: Complete init phase. Creates plan directory, request.md, detects domain, and creates configuration. Inline initialization pattern (runs in the orchestrator context).
 
 **Key Pattern**: Complete initialization. Creates request.md, status.json, and references.json (with domains). Does NOT create goals (that's the refine phase via decompose).
 
@@ -33,27 +32,29 @@ Skill: plan-marshall:persona-plan-marshall-agent
 - Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
 - Never skip the phase transition — use `manage-status transition`
 - Never improvise script subcommands — use only those documented below
-- **Never write or edit source files outside `.plan/local/plans/{plan_id}/**`.** Phase-1-init's contract is plan-structure creation only (request.md, references.json, status.json under the plan directory). Even when the task description is detailed — naming specific files, functions, or paths — that is request material to record verbatim in `request.md`, NOT a directive to implement: the more prescriptive and implementation-ready the `content`, the stronger (and more wrong) the pull to "just do it." Source edits against `marketplace/bundles/**`, production code, or test fixtures are the responsibility of phase-5-execute task bodies, never phase-1-init. The recurring anti-pattern is phase-1-init reaching for `Edit` / `Write` against a production path because the request narrative read like an implementation brief. **Return-contract obligation**: this phase's contract output is `plan_id` + `domains` (+ `next_phase`) and nothing else of substance. A return that omits `plan_id`, or carries a `pr_url`, a `branch`, or a "patched N files" detail, is a contract violation — the orchestrator's post-init assertion (`plan-marshall:plan-marshall/workflow/planning.md` § Action: init → **Post-init contract assertion**) treats any such signal as an error and refuses to advance to phase-2-refine.
+- **Never write or edit source files outside `.plan/local/plans/{plan_id}/**`.** Phase-1-init's contract is plan-structure creation only (request.md, references.json, status.json under the plan directory). Even when the task description is detailed — naming specific files, functions, or paths — that is request material to record verbatim in `request.md`, NOT a directive to implement: the more prescriptive and implementation-ready the `content`, the stronger (and more wrong) the pull to "just do it." Source edits against `marketplace/bundles/**`, production code, or test fixtures are the responsibility of phase-5-execute task bodies, never phase-1-init. The recurring anti-pattern is phase-1-init reaching for `Edit` / `Write` against a production path because the request narrative read like an implementation brief. **Return-contract obligation**: Step 12 is the single canonical schema for this phase's output (`plan_id`, `domain`, `next_phase`, `use_worktree`, `planning_lane`, `source`, `artifacts`) — see that step for the authoritative shape. A return that omits `plan_id`, or carries a `pr_url`, a `branch`, or a "patched N files" detail, is a contract violation — the orchestrator's post-init assertion (`plan-marshall:plan-marshall/workflow/planning.md` § Action: init → **Post-init contract assertion**) treats any such signal as an error and refuses to advance to phase-2-refine.
 
 **Constraints:**
 - Strictly comply with all rules from persona-plan-marshall-agent, especially tool usage and workflow step discipline
 
-## Dispatched workflows vs inline steps
+## Inline execution in the orchestrator context
 
-This phase dispatches under one role key: **`phase-1-init`** (flat — single workflow). Step 4b reference verification bundles into the `phase-1-init` envelope (it shares the same `manage-architecture` / `manage-references` context the rest of the phase needs). Mechanical sub-procedures stay inline as scripts: Step 5c recipe-match (Tier 1) is registry-wide for every source — it calls `manage-config recipe-match` and `manage-config aspect-classify` (heuristic-first, zero LLM call inside the scripts; the bounded LLM fallback for ambiguous matches is orchestrator-driven and fires only when the heuristic is ambiguous, preserving the zero-token property), and retains the lesson-only doc-shaped predicate path; Step 6 references initialization and Step 7 domain detection (`manage-config:domain-detect`) are pure scripts. Tier 1 recipe-match (Step 5c) is sequenced ahead of Tier 2 planning-lane routing (Step 8b). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2 (Heuristic 1 — script over dispatch).
+Phase-1-init runs **inline in the main (orchestrator) context** — it is NOT a dispatched `execution-context` leaf. The orchestrator (`plan-marshall/workflow/planning.md` § Action: init and § Action: lessons convert, and `recipe.md` Step 2) executes these steps directly in its own context, so every operator prompt fires **natively via `AskUserQuestion`** at its step site, in step order, with the resolution applied in-context. There is no `phase-1-init` dispatch, no `WORKTREE:` header, no leaf-returns-signal / orchestrator-consumes prompt-required envelope indirection. Firing the prompts inline in step order also fixes the routing-order dependency: the Tier 1 recipe-match prompt (Step 5c) resolves BEFORE the Tier 2 planning-lane router (Step 8b) runs, so the router consumes the recipe's lane seed instead of routing on an unset `change_type`/`scope_estimate`.
+
+Mechanical sub-procedures stay inline as scripts: Step 5c recipe-match (Tier 1) is registry-wide for every source — it calls `manage-config recipe-match` and `manage-config aspect-classify` (heuristic-first, zero LLM call inside the scripts; the bounded LLM fallback for ambiguous matches fires only when the heuristic is ambiguous, preserving the zero-token property), and retains the lesson-only doc-shaped predicate path; Step 6 references initialization and Step 7 domain detection (`manage-config:domain-detect`) are pure scripts. Tier 1 recipe-match (Step 5c) is sequenced ahead of Tier 2 planning-lane routing (Step 8b). For the script-over-dispatch rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2 (Heuristic 1 — script over dispatch).
 
 ## When to Activate This Skill
 
 Activate when:
 - Starting a new plan (no existing plan_id)
 - User provides task via description, lesson_id, or issue URL
-- Dispatched via `plan-marshall:execution-context-{level}` with `workflow: plan-marshall:phase-1-init/SKILL.md`
+- Run inline by the orchestrator (`plan-marshall/workflow/planning.md` § Action: init / § Action: lessons convert, or `recipe.md` Step 2) as the init step of the planning pipeline
 
 ---
 
 ## Phase-Entry Worktree Assertion
 
-Phase 1-init has no preceding phase, so the Phase Entry Protocol's `phase_handshake verify` step is skipped (per [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#q-gate-check-phases-2-6) Q-Gate / handshake checks are scoped to phases 2-6). Phase-1-init persists only `metadata.use_worktree` into `status.json`. It does NOT create the worktree directory, and it records neither the feature branch nor a `worktree_path`: phase-5-execute Step 2.5 creates the worktree on first task execution, derives the feature branch `feature/{plan_id}`, and back-fills both `metadata.worktree_branch` and the resolved `metadata.worktree_path` at that point. The writer-chain detail lives in Step 8's **Writer-chain contract**.
+Phase 1-init has no preceding phase, so the Phase Entry Protocol's `phase_handshake verify` step is skipped (per [`ref-workflow-architecture/standards/phase-lifecycle.md`](../ref-workflow-architecture/standards/phase-lifecycle.md#q-gate-check-phases-2-6) Q-Gate / handshake checks are scoped to phases 2-6). Phase-1-init persists only `metadata.use_worktree` into `status.json`. It does NOT create the worktree directory, and it records neither the feature branch nor a `worktree_path`: phase-5-execute Step 2.5 creates the worktree on first task execution, derives the feature branch `feature/{plan_id}`, and back-fills both `metadata.worktree_branch` and the resolved `metadata.worktree_path` at that point. The writer-chain detail lives in Step 3a's **Writer-chain contract**.
 
 ---
 
@@ -204,8 +205,8 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files create-o
 ```
 
 Parse the TOON output. The `action` field indicates:
-- `action: created` - New plan directory was created, log phase start and continue to Step 4
-- `action: exists` - Plan already exists; a dispatched leaf cannot fire `AskUserQuestion`, so return the `plan_exists_prompt` early-return envelope for the orchestrator to own (see the `action: exists` handling below)
+- `action: created` - New plan directory was created, log phase start and continue to Step 3a
+- `action: exists` - Plan already exists; fire the inline `AskUserQuestion` documented below and apply the operator's choice in-context
 
 **On successful creation**, log the phase start (directory now exists):
 
@@ -214,31 +215,76 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-1-init) Starting init phase"
 ```
 
-### Step 3a: Seed Metrics Start-Time
+**If `action: exists`** — the plan directory already exists from a prior run. Because init runs inline in the orchestrator context, fire an `AskUserQuestion` natively at this site and apply the choice in-context:
 
-Immediately after Step 3 creates the plan directory and emits the `[STATUS] Starting init phase` log line, self-record `1-init.start_time` so the downstream fused `phase-boundary --prev-phase 1-init --next-phase 2-refine` call in `plan-marshall/workflow/planning.md` sees a real start timestamp rather than falling back to the structural `status.json.created` backfill:
+```text
+AskUserQuestion:
+  question: "A plan with id '{plan_id}' already exists. How should I proceed?"
+  options:
+    - label: "Resume"  description: "Continue with the existing plan as-is (proceed to refine)"
+    - label: "Replace" description: "Delete the existing plan and create a fresh one"
+    - label: "Rename"  description: "Create the plan under a different plan_id"
+```
+
+Apply the resolution in-context:
+
+- **Resume** — do NOT re-run init; the existing plan stands. Skip the remaining init steps and proceed straight to phase-2-refine with the existing `plan_id`.
+- **Replace** — delete the existing plan and create a fresh one, then continue init normally from Step 3a:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan \
+    --plan-id {plan_id}
+  ```
+
+  Re-run Step 3's `create-or-reference` (which now returns `action: created`), then continue. See `standards/plan-overwrite.md` for the overwrite details applied on Replace.
+- **Rename** — restart init from Step 2 with a new `plan_id` (an explicit `--plan-id` override or a fresh derivation) so the collision is cleared.
+
+### Step 3a: Create Status
+
+Create `status.json` NOW — before any metadata write — so that every subsequent `manage-status metadata --set` and `manage-metrics start-phase` call has a real `status.json` to write into. Creating it late (after the Step 5c recipe/aspect writes) is the ordering bug this early placement fixes: a `manage-status metadata --set` issued before `status.json` exists writes into a phantom/partial file that the later create then clobbers.
+
+Read the `use_worktree` and `branch_strategy` flags from the phase-1-init config to decide the `--use-worktree` seed:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init get --audit-plan-id {plan_id}
+```
+
+Extract `branch_strategy` (default: `feature`) and `use_worktree` (default: `true`). The title is the `{derived_title}` resolved in Step 2 — identical to the `--title` passed to `request create` in Step 5.1, so `status.json` and `request.md` carry the same title.
+
+**When `branch_strategy == "feature"` AND `use_worktree == true`** (the default) — create status with `--use-worktree` so `metadata.use_worktree: true` is seeded:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create \
+  --plan-id {plan_id} \
+  --title "{derived_title}" \
+  --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize \
+  --use-worktree
+```
+
+**Otherwise** (the `use_worktree == false` opt-out, or `branch_strategy == "direct"`) — omit `--use-worktree` so `manage_status create` writes the explicit `metadata.use_worktree=false` marker:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create \
+  --plan-id {plan_id} \
+  --title "{derived_title}" \
+  --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize
+```
+
+**Note**: Domain information is stored in `references.json` (as a `domains` list), not in `status.json`. All plans use the standard 6-phase model (verification is integrated into phase-5-execute).
+
+**Writer-chain contract**: this `manage_status create` is the sole writer of `metadata.use_worktree` in phase-1-init — it writes neither `metadata.worktree_branch` nor `metadata.worktree_path`. Phase-5-execute Step 2.5 is the sole writer of both `metadata.worktree_branch` (derived as `feature/{plan_id}`) and the resolved `metadata.worktree_path` absolute value: it materializes the worktree on first task execution and persists both then. See `workflow-integration-git/standards/worktree-handling.md` for the canonical worktree contract.
+
+### Step 3b: Seed Metrics Start-Time
+
+Now that `status.json` exists (Step 3a), self-record `1-init.start_time` so the downstream fused `phase-boundary --prev-phase 1-init --next-phase 2-refine` call in `plan-marshall/workflow/planning.md` sees a real start timestamp rather than falling back to the structural `status.json.created` backfill:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics \
   start-phase --plan-id {plan_id} --phase 1-init
 ```
 
-**Rationale**: Bootstrap phase has no preceding `phase-boundary` call to stamp `start_time` (the call requires a `plan_id`, which doesn't exist until Step 3 returns). Recording the start as early as the plan directory permits makes the subsequent fused `phase-boundary --prev-phase 1-init` call (in `plan-marshall/workflow/planning.md`) compute a wall duration that bounds the agent's `<usage>` duration — restoring the `Worked <= Wall` invariant. The `_read_status_created` backfill in `manage-metrics.py` is a safety net for plans materialised under older orchestrator versions; the start-time recorded here is authoritative for current plans.
-
-**If `action: exists`** — the plan directory already exists from a prior run. This step runs inside a dispatched `execution-context` envelope, where operator input is unreachable — a dispatched leaf cannot fire `AskUserQuestion` (see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). The leaf also cannot meaningfully continue: Resume, Replace, and Rename branch the entire phase differently. So **do NOT create, delete, or modify anything** — return the early-return prompt-required envelope and STOP, handing the decision to the orchestrator:
-
-```toon
-status: prompt_required
-plan_id: {plan_id}
-plan_exists_prompt:
-  plan_id: {plan_id}
-  options[3]{choice,summary}:
-    resume,"Continue with the existing plan as-is (proceed to refine)"
-    replace,"Delete the existing plan and create a fresh one"
-    rename,"Create the plan under a different plan_id"
-```
-
-The orchestrator (`plan-marshall/workflow/planning.md` § Action: init) fires the `AskUserQuestion` and owns the resolution — **Resume** proceeds to phase-2-refine with the existing plan (no init re-run), **Replace** deletes the existing plan via `manage-status delete-plan --plan-id {plan_id}` and re-dispatches a fresh init (which then returns `action: created`), and **Rename** re-dispatches init with a new `plan_id`. The leaf accepts no resolution input — Replace and Rename are resolved by re-dispatching a fresh init once the collision is cleared. See `standards/plan-overwrite.md` for the overwrite details the orchestrator applies on Replace.
+**Rationale**: Bootstrap phase has no preceding `phase-boundary` call to stamp `start_time` (the call requires a `plan_id`, which doesn't exist until Step 3 returns). Recording the start immediately after `status.json` is created makes the subsequent fused `phase-boundary --prev-phase 1-init` call (in `plan-marshall/workflow/planning.md`) compute a wall duration that bounds the phase duration — restoring the `Worked <= Wall` invariant. This call MUST follow Step 3a: recording the start before `status.json` exists is the ordering bug corrected here. The `_read_status_created` backfill in `manage-metrics.py` is a safety net for plans materialised under older orchestrator versions; the start-time recorded here is authoritative for current plans.
 
 ### Step 4: Get Task Content
 
@@ -310,19 +356,30 @@ For each extracted reference:
 
 Record each `(reference, status, evidence)` triple in an in-memory obsolescence report.
 
-**Sub-step 4b.3 — Surface obsolescence to the orchestrator**:
+**Sub-step 4b.3 — Surface obsolescence via a native prompt**:
 
-This step runs inside a dispatched `execution-context` envelope, where operator input is unreachable — a dispatched leaf cannot fire `AskUserQuestion` (see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). If ANY reference is stale, do **NOT** fire `AskUserQuestion` and do **NOT** drop or adapt references here — instead carry an `obsolescence_prompt` block (the stale/valid reference report plus the 3 options defined in `lesson-source-premise-check.md`) in the Step 12 return TOON, and continue init normally with **all references intact**. The main-context orchestrator (`plan-marshall/workflow/planning.md` § Action: init) fires the prompt after init returns and applies the resolution post-init:
+If ANY reference is stale, fire an `AskUserQuestion` natively at this site (the three options are defined in `lesson-source-premise-check.md`) and apply the choice in-context:
 
-1. **Refine** — the orchestrator attaches the obsolescence report to `request.md` as a clarifying note and proceeds.
-2. **Close as resolved** — the lesson describes a problem that no longer exists; the orchestrator deletes the lesson and the just-created plan, aborting.
-3. **Residual scope** — the orchestrator drops the stale references (keeping the still-valid ones) and proceeds.
+```text
+AskUserQuestion:
+  question: "Some code references cited by this lesson are stale: {stale_reference_summary}. How should I proceed?"
+  options:
+    - label: "Refine"   description: "Attach the obsolescence report to request.md as a clarifying note and proceed"
+    - label: "Close"    description: "The problem no longer exists — delete the lesson and this plan, and abort"
+    - label: "Residual" description: "Drop the stale references, keep the still-valid ones, and proceed"
+```
 
-If ALL references verify cleanly, emit no `obsolescence_prompt` block, log the success, and continue to Step 5 — no prompt is surfaced.
+Apply the resolution in-context:
 
-**Sub-step 4b.4 — Log the detection**:
+1. **Refine** — append the obsolescence report to `request.md` under a `## Pre-flight Reference Verification` heading (via the `Write`/`Edit` tool against the plan-scoped `request.md`) so downstream phases see it as part of the request scope, then continue to Step 5.
+2. **Close as resolved** — the lesson describes a problem that no longer exists; delete the lesson (`manage-lessons remove --lesson-id {lesson_id}`) and the just-created plan (`manage-status delete-plan --plan-id {plan_id}`), and abort init.
+3. **Residual scope** — work-log each dropped stale reference for downstream scope audit and continue to Step 5 with the reduced reference set.
 
-The leaf records only what it *detected* — it does NOT know or apply the operator's choice, because the orchestrator owns the prompt. Emit one decision-log entry with the `(plan-marshall:phase-1-init:source-premise)` prefix:
+If ALL references verify cleanly, fire no prompt, log the success, and continue to Step 5.
+
+**Sub-step 4b.4 — Log the decision**:
+
+Emit one decision-log entry with the `(plan-marshall:phase-1-init:source-premise)` prefix, recording both what was detected and the resolution applied:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -333,15 +390,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 Where `{decision_summary}` is one of:
 
 - `All N references verified — no obsolescence detected.`
-- `Obsolescence detected (N stale of M total) — surfaced to the orchestrator via obsolescence_prompt.`
+- `Obsolescence detected (N stale of M total) — operator chose {refine|close|residual}.`
 
-**Sub-step 4b.5 — Emit the prompt block and continue**:
-
-- **All-clean** (no stale references): emit no `obsolescence_prompt` block and continue to Step 5 with the full reference set.
-- **Obsolescence detected** (at least one stale reference): carry an `obsolescence_prompt` block in the Step 12 return TOON (see Step 12), then continue to Step 5 writing `request.md` with the **full** lesson body intact — the leaf drops nothing and aborts nothing here. The block carries, per stale reference, its path/name and the verification evidence, plus the three option labels (`refine` / `close` / `residual`). The main-context orchestrator (`plan-marshall/workflow/planning.md` § Action: init) fires the `AskUserQuestion` after init returns and applies the chosen branch post-init:
-  - **Refine** — the orchestrator appends the obsolescence report to `request.md` under a `## Pre-flight Reference Verification` heading so downstream phases see it as part of the request scope.
-  - **Close as resolved** — the orchestrator deletes the lesson (`manage-lessons remove --lesson-id {lesson_id}`) and the just-created plan, aborting.
-  - **Residual scope** — the orchestrator work-logs each dropped stale reference for downstream scope audit and proceeds with the reduced set.
+Note: on the **Close** resolution the plan directory is deleted, so emit this decision-log line BEFORE the delete (or skip it — the abort is self-evident from the delete).
 
 ### Step 5: Write request.md
 
@@ -492,12 +543,23 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
     --message "(plan-marshall:phase-1-init) Tier 1 recipe-match auto-routed: recipe_key={top_match_key} (confidence={top_match_confidence} >= auto_route_recipe_threshold)"
   ```
 
-- **Propose** — when `auto_route_recipe == false`, OR `top_match.confidence < auto_route_recipe_threshold` (a match exists but does not clear the auto-route floor): **do NOT fire `AskUserQuestion` here.** This step runs inside a dispatched `execution-context` envelope, where operator input is unreachable — a dispatched leaf cannot fire `AskUserQuestion` and MUST hand the prompt back to the inline orchestrator via an escalation/prompt-required envelope (see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). Instead, compute the ranked `matches[]` preview and carry it out as a `recipe_match_prompt` block in the Step 12 return TOON so the main-context orchestrator (`plan-marshall/workflow/planning.md` § Action: init) owns the prompt. The block enumerates each match (`key`, `name`, `confidence`) as a selectable option plus a "No recipe — proceed with the standard refine/outline pipeline" option. **Persist nothing here** — the orchestrator persists `status.metadata.recipe_key` after the operator selects a recipe (and persists nothing on the no-recipe option). Emit a decision-log entry recording that the propose branch was surfaced for orchestrator-owned prompting:
+- **Propose** — when `auto_route_recipe == false`, OR `top_match.confidence < auto_route_recipe_threshold` (a match exists but does not clear the auto-route floor): fire an `AskUserQuestion` natively at this site, enumerating each ranked match (`key`, `name`, `confidence`) as a selectable option plus a "No recipe" option:
+
+  ```text
+  AskUserQuestion:
+    question: "This request may match a predefined recipe. Which should I use?"
+    options:
+      - label: "{match_1_name}" description: "confidence {match_1_confidence} — {match_1_key}"
+      - label: "{match_2_name}" description: "confidence {match_2_confidence} — {match_2_key}"
+      - label: "No recipe"      description: "Proceed with the standard refine/outline pipeline"
+  ```
+
+  Apply the choice in-context: on a recipe selection, persist `status.metadata.recipe_key = {selected_key}` (`manage-status metadata --set --plan-id {plan_id} --field recipe_key --value {selected_key}`); on "No recipe", persist nothing. Emit a decision-log entry recording the resolution:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level INFO \
-    --message "(plan-marshall:phase-1-init) Tier 1 recipe-match proposed {match_count} matches below the auto-route floor — returning recipe_match_prompt for the orchestrator to own the AskUserQuestion"
+    --message "(plan-marshall:phase-1-init) Tier 1 recipe-match proposed {match_count} matches below the auto-route floor — operator chose {selected_key|no_recipe}"
   ```
 
 When `matches[]` is empty, log the no-match decision and skip routing:
@@ -647,7 +709,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --value {project_base_branch}
 ```
 
-2. **Carry `use_worktree` forward to Step 8**: hold the `use_worktree` flag (from marshal.json — `true` or `false`) in the orchestrator's local context and pass it as `--use-worktree` (or omit for the opt-out) into Step 8's `manage_status create` invocation. The feature branch is NOT recorded here — phase-5-execute derives `feature/{plan_id}` at materialization. Step 8 is the sole writer of `metadata.use_worktree` in phase-1-init.
+2. **`use_worktree` was already consumed at Step 3a**: `metadata.use_worktree` is seeded by the `manage_status create` call in Step 3a (the sole writer of that field in phase-1-init), so nothing is carried forward here. The feature branch is NOT recorded here either — phase-5-execute derives `feature/{plan_id}` at materialization.
 
 3. Log the decision:
 ```bash
@@ -665,7 +727,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 7: Detect Domain
 
-Run the deterministic detector; on the ambiguous branch surface a `domain_prompt` block for the orchestrator (a dispatched leaf cannot fire `AskUserQuestion` — see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). There is no LLM dispatch on this code path — multi-match cases are genuinely human-input territory, owned by the main-context orchestrator.
+Run the deterministic detector; on the ambiguous branch fire a native `AskUserQuestion` inline. There is no LLM dispatch on this code path — multi-match cases are genuinely human-input territory, resolved in-context.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -677,7 +739,18 @@ The script reads `request.md` (clarified_request → original_input fallback; le
 - **Single-domain auto-select** (`source=single_domain_configured`): only one non-system domain is configured → that domain wins regardless of narrative.
 - **Unambiguous narrative match** (`source` = lesson body or request section): exactly one domain's alias set intersects the narrative tokens.
 - **Explicit override** (`source=cli_override`): `--domain-override` resolved to a known domain.
-- **Ambiguous** (`ambiguous: true`): multi-match OR zero-match. The leaf MUST NOT fire `AskUserQuestion` and MUST NOT auto-select. Instead it carries a `domain_prompt` block (the `candidates` list, when present) in the Step 12 return TOON and leaves the domain **unresolved** — Step 9 stores no domain for the ambiguous case, and the Step 12 return carries `domain: unresolved`. The main-context orchestrator fires the prompt after init returns and persists the operator's chosen domain to `references.json` (`manage-references set-list --field domains`) post-init, before dispatching phase-2-refine.
+- **Ambiguous** (`ambiguous: true`): multi-match OR zero-match. Do NOT auto-select. Fire a native `AskUserQuestion` at this site, offering the `candidates` list (when present) as the options:
+
+  ```text
+  AskUserQuestion:
+    question: "The domain for this plan is ambiguous. Which domain applies?"
+    options:
+      - label: "{candidate_1}" description: "Detected candidate domain"
+      - label: "{candidate_2}" description: "Detected candidate domain"
+      # ... one option per candidate; when zero-match, offer the configured non-system domains
+  ```
+
+  Persist the operator's chosen domain in-context via Step 9's `manage-references set-list --field domains` and carry it forward as `{domain}` for the rest of the phase. On this branch the resolved domain comes from the operator's answer, not the detector.
 
 **After resolving the domain** (any non-ambiguous branch), log the decision:
 
@@ -686,39 +759,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-1-init) Detected domain: {domain} - {reasoning}"
 ```
 
-### Step 8: Create Status
+### Step 8: Resolve Session, Lane, Sibling & Posture
 
-Create status.json with phases (6-phase model). When Step 6 recorded worktree intent (the `branch_strategy == "feature" AND use_worktree == true` branch ran), pass `--use-worktree` so `metadata.use_worktree: true` is seeded. No branch or path flag is passed — phase-5-execute Step 2.5 derives `feature/{plan_id}` and persists `worktree_branch` / `worktree_path` at materialization.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create \
-  --plan-id {plan_id} \
-  --title "{title_from_task_md}" \
-  --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize \
-  --use-worktree
-```
-
-When Step 6 did NOT record worktree intent (the `use_worktree == false` opt-out branch, or the `branch_strategy == "direct"` branch), omit the `--use-worktree` flag so `manage_status create` writes the explicit `metadata.use_worktree=false` marker:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create \
-  --plan-id {plan_id} \
-  --title "{title_from_task_md}" \
-  --phases 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize
-```
-
-**Note**: Domain information is stored in `references.json` (as a `domains` list), not in `status.json`. All plans use the standard 6-phase model (verification is integrated into phase-5-execute).
-
-**Writer-chain contract**: `manage_status create` is the sole writer of `metadata.use_worktree` in phase-1-init — it writes neither `metadata.worktree_branch` nor `metadata.worktree_path`. Phase-5-execute Step 2.5 is the sole writer of both `metadata.worktree_branch` (derived as `feature/{plan_id}`) and the resolved `metadata.worktree_path` absolute value: it materializes the worktree on first task execution and persists both then. See `workflow-integration-git/standards/worktree-handling.md` for the canonical worktree contract.
+`status.json` was already created at Step 3a, so this step performs no create. It runs the remaining status-dependent resolutions in order: the session_id early-warning check (8a), the planning-lane routing (8b), the sibling-dedup collision gate (8c), and the execution-profile posture dialogue (8d).
 
 ### Step 8a: session_id Early-Warning Check
 
-Immediately after `manage_status create` writes `status.json`, verify that `status.metadata.session_id` was captured. The platform-runtime `SessionStart` hook (`session capture`) normally writes this field at plan-init time, but if the hook never ran or stored nothing, the gap stays invisible until phase-6-finalize aborts with an opaque hard-block. This sub-step surfaces the gap early — it does NOT abort init.
+Verify that `status.metadata.session_id` was captured when `status.json` was created (Step 3a). The platform-runtime `SessionStart` hook (`session capture`) normally writes this field at plan-init time, but if the hook never ran or stored nothing, the gap stays invisible until phase-6-finalize aborts with an opaque hard-block. This sub-step surfaces the gap early — it does NOT abort init.
 
 Read the field back:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} --get --field session_id
 ```
 
@@ -767,19 +819,28 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:phase-1-init) Sibling-collision check clean: no source-origin or file-overlap match against {active_sibling_count} active sibling(s)"
 ```
 
-**Collision detected** (`collision_detected == true`): this step runs inside a dispatched `execution-context` envelope, where operator input is unreachable — a dispatched leaf cannot fire `AskUserQuestion` (see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). Do **NOT** fire `AskUserQuestion`, do **NOT** delete the plan, and do **NOT** abort here. Instead carry a `sibling_collision_prompt` block (the colliding sibling plan ids and the collision class(es), plus the three option labels `proceed` / `rename` / `abort`) in the Step 12 return TOON, and continue init through Step 8d and Step 9 normally. Log the detection (not a user choice):
+**Collision detected** (`collision_detected == true`): fire a native `AskUserQuestion` at this site and apply the choice in-context. Log the detection first:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level WARNING \
-  --message "(plan-marshall:phase-1-init) Sibling-collision detected against {comma_separated_sibling_ids} — surfaced to the orchestrator via sibling_collision_prompt"
+  --message "(plan-marshall:phase-1-init) Sibling-collision detected against {comma_separated_sibling_ids}"
 ```
 
-The main-context orchestrator (`plan-marshall/workflow/planning.md` § Action: init) fires the `AskUserQuestion` after init returns and applies the chosen branch post-init:
+```text
+AskUserQuestion:
+  question: "This plan collides with active sibling(s) {comma_separated_sibling_ids} ({collision_classes}). How should I proceed?"
+  options:
+    - label: "Proceed" description: "Accept the overlap — the sibling and this plan are intentionally distinct"
+    - label: "Rename"  description: "Delete this plan and re-create it with updated source/files (and a new plan_id if needed)"
+    - label: "Abort"   description: "This plan duplicates an active sibling — delete it and stop plan creation"
+```
 
-- **Proceed** — accept the overlap; the sibling and this plan are intentionally distinct despite the shared source / files. Proceed to phase-2-refine.
-- **Rename** — the orchestrator deletes this plan (`manage-status delete-plan --plan-id {plan_id}`) and re-dispatches init with updated source/files (and a new `plan_id` if needed) so the sibling-collision check passes.
-- **Abort** — this plan duplicates an already-active sibling and should not exist; the orchestrator deletes it (`manage-status delete-plan --plan-id {plan_id}`) and stops plan creation.
+Apply the resolution in-context:
+
+- **Proceed** — accept the overlap; continue init through Step 8d and Step 9 normally.
+- **Rename** — delete this plan (`manage-status delete-plan --plan-id {plan_id}`) and restart init from Step 2 with updated source/files (and a new `plan_id` if needed) so the sibling-collision check passes.
+- **Abort** — delete this plan (`manage-status delete-plan --plan-id {plan_id}`) and stop plan creation.
 
 ### Step 8d: Execution-Profile Posture Dialogue
 
@@ -800,17 +861,35 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 Parse `lanes.{minimal,auto,full}.phase_6_steps`, `phase_6_steps_count`, and `cost_sum_tokens`. The recipe lane seed (when Tier 1 recipe-match surfaced a `lane_seed` in Step 5c) is the lowest-precedence default — the recommended posture from Step 8b's projection already composes with it; an explicit operator choice here overrides both.
 
-**When `lane_selection: ask`** — **do NOT fire `AskUserQuestion` here.** This step runs inside a dispatched `execution-context` envelope, where operator input is unreachable — a dispatched leaf cannot fire `AskUserQuestion` and MUST hand the prompt back to the inline orchestrator via an escalation/prompt-required envelope (see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). Step 8b's `planning-lane route --persist` has ALREADY persisted the projected posture into `status.metadata.execution_profile`, so no persistence is needed here — instead, carry the three-posture preview out as a `posture_prompt` block in the Step 12 return TOON so the main-context orchestrator (`plan-marshall/workflow/planning.md` § Action: init) owns the prompt. The block carries the projected recommendation (pre-selected) plus the three per-posture previews resolved from `lanes preview` above — each labeled with its concrete consequences: the kept/dropped step set and the summed token estimate (e.g. *"full · 14 steps · ≈0.96M tok"*, *"auto · 12 steps · ≈0.70M tok (skips sonar / lessons-housekeeping)"*, *"minimal · 6 steps · ≈0.03M tok — no security audit, no retrospectives — appropriate for docs / mechanical changes"*). The orchestrator persists the operator's chosen posture into `status.metadata.execution_profile` (overwriting the projection) after the prompt resolves. Emit one decision-log line recording that the posture dialogue was surfaced for orchestrator-owned prompting:
+**When `lane_selection: ask`** — fire a native `AskUserQuestion` at this site. Step 8b's `planning-lane route --persist` has ALREADY persisted the projected posture into `status.metadata.execution_profile`, so the projection is the pre-selected default; the three options are the per-posture previews resolved from `lanes preview` above, each labeled with its concrete consequences (the kept/dropped step set and the summed token estimate):
+
+```text
+AskUserQuestion:
+  question: "Which execution posture should this plan use? (recommended: {projected_posture})"
+  options:
+    - label: "full"    description: "{full_count} steps · ≈{full_tokens} tok — full security audit + retrospectives"
+    - label: "auto"    description: "{auto_count} steps · ≈{auto_tokens} tok — skips sonar / lessons-housekeeping"
+    - label: "minimal" description: "{minimal_count} steps · ≈{minimal_tokens} tok — no security audit, no retrospectives; appropriate for docs / mechanical changes"
+```
+
+Persist the operator's choice in-context, overwriting Step 8b's projection:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --set --plan-id {plan_id} --field execution_profile --value {chosen_posture}
+```
+
+Emit one decision-log line recording the resolution:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-1-init) Execution-profile posture dialogue surfaced (projected={projected_posture}, lane_selection=ask) — returning posture_prompt for the orchestrator to own the AskUserQuestion"
+  --message "(plan-marshall:phase-1-init) Execution-profile posture: {chosen_posture} (projected={projected_posture}, lane_selection=ask)"
 ```
 
-**Surgical-class recommendation.** When the classified request fits the **surgical class** — narrow scope with concrete anchors, the same narrow-and-concrete predicate `project_profile_pure` applies in [`../manage-status/scripts/_cmd_planning_lane.py`](../manage-status/scripts/_cmd_planning_lane.py) — AND Step 5c auto-routed no recipe, the recommended (pre-selected) posture in the `posture_prompt` block is `minimal` rather than `auto`. This is not a separate computation here: Step 8b's `planning-lane route --persist` already projected `minimal` for the surgical class via `project_profile_pure` and persisted it into `status.metadata.execution_profile`, so the pre-selected recommendation the block carries IS that projection. When Step 5c DID auto-route a recipe, the recipe's `lane_seed` supplies the lowest-precedence default instead (per the recipe-lane-seed note above), so the surgical-class `minimal` pre-selection applies only in the no-recipe case. **Operator override wins** — the pre-selection is only the default surfaced in the prompt; the operator's explicit posture choice overrides it, and the orchestrator persists that choice into `status.metadata.execution_profile` (overwriting the projection) after the prompt resolves. The lane lattice and the class→default-tier table stay owned by [`../extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md) and are not restated here.
+**Surgical-class recommendation.** When the classified request fits the **surgical class** — narrow scope with concrete anchors, the same narrow-and-concrete predicate `project_profile_pure` applies in [`../manage-status/scripts/_cmd_planning_lane.py`](../manage-status/scripts/_cmd_planning_lane.py) — AND Step 5c auto-routed no recipe, the recommended (pre-selected) posture is `minimal` rather than `auto`. This is not a separate computation here: Step 8b's `planning-lane route --persist` already projected `minimal` for the surgical class via `project_profile_pure` and persisted it into `status.metadata.execution_profile`, so the pre-selected recommendation IS that projection. When Step 5c DID auto-route a recipe, the recipe's `lane_seed` supplies the lowest-precedence default instead (per the recipe-lane-seed note above), so the surgical-class `minimal` pre-selection applies only in the no-recipe case. **Operator override wins** — the pre-selection is only the default surfaced in the prompt; the operator's explicit posture choice overrides it and is persisted above. The lane lattice and the class→default-tier table stay owned by [`../extension-api/standards/ext-point-lane-element.md`](../extension-api/standards/ext-point-lane-element.md) and are not restated here.
 
-**When `lane_selection: auto`** — take the projection silently. Step 8b already persisted the projected posture into `status.metadata.execution_profile`; do NOT prompt and return NO `posture_prompt` block. Emit one decision-log line recording the silent projection:
+**When `lane_selection: auto`** — take the projection silently. Step 8b already persisted the projected posture into `status.metadata.execution_profile`; do NOT prompt. Emit one decision-log line recording the silent projection:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -831,7 +910,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --values {domain}
 ```
 
-**Ambiguous-domain case**: when Step 7 resolved `ambiguous: true` (and therefore deferred to a `domain_prompt` block, leaving the domain unresolved), SKIP this store — do not write a placeholder domain. The main-context orchestrator persists the operator's chosen domain to `references.json` (`manage-references set-list --field domains`) after init returns and before dispatching phase-2-refine. Every non-ambiguous branch stores the resolved domain here as normal.
+**Ambiguous-domain case**: when Step 7 resolved `ambiguous: true`, the operator's chosen domain (from the inline `AskUserQuestion`) is the `{domain}` stored here — this write is the persistence point for that choice. Every non-ambiguous branch stores the detector-resolved domain here as normal.
 
 Project-level settings (compatibility, commit_and_push, branch_strategy, verification steps, finalize steps) are read directly from `marshal.json` by each phase skill at runtime.
 
@@ -868,9 +947,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   separator --plan-id {plan_id} --type work
 ```
 
-### Step 12: Return Result
+### Step 12: Complete Init and Yield to the Refine Phase
 
-**Output**:
+Init runs inline in the orchestrator context, so there is no dispatched-leaf return envelope. Any applicable operator prompts have already fired natively at their sites (Step 3 `action: exists`, Step 4b.3 obsolescence, Step 5c recipe-match propose, Step 7 ambiguous domain, Step 8c sibling collision, Step 8d posture — several are branch-dependent and do not fire on every run), and their resolutions were applied and persisted in-context. Init has persisted `request.md`, `status.json`, and `references.json`, and the orchestrator now holds the resolved values needed to dispatch phase-2-refine.
+
+The values carried forward into the orchestrator context are:
 
 ```toon
 status: success
@@ -881,103 +962,26 @@ use_worktree: {true|false}
 planning_lane: {light|deep}
 
 source:
-  type: {description|lesson|issue}
+  type: {description|lesson|issue|recipe}
   id: {source_id}
 
 artifacts:
   request_md: request.md
   status: status.json
   references: references.json
-
-# Optional — present ONLY when Step 4b.3 detected a stale lesson reference (lesson
-# source only). Absent when all references verified clean. The orchestrator fires the
-# AskUserQuestion and applies Refine (append report to request.md) / Close (delete lesson
-# + plan, abort) / Residual (log dropped refs) post-init.
-obsolescence_prompt:
-  stale[N]{reference,evidence}:
-    {reference},{evidence}
-  options[3]: [refine, close, residual]
-
-# Optional — present ONLY when the Step 5c propose branch fired (a recipe matched
-# below the auto-route floor). Absent on auto-route and on no-match. The orchestrator
-# fires the AskUserQuestion in main context and persists status.metadata.recipe_key
-# on a recipe selection (nothing on the "No recipe" option).
-recipe_match_prompt:
-  match_count: {N}
-  options[N]{key,name,confidence}:
-    {key},{name},{confidence}
-  no_recipe_option: "No recipe — proceed with the standard refine/outline pipeline"
-
-# Optional — present ONLY when Step 7 resolved ambiguous (multi-match or zero-match).
-# Absent on any unambiguous domain resolution. When present, `domain` above is
-# `unresolved`. The orchestrator fires the AskUserQuestion and persists the chosen
-# domain to references.json (set-list --field domains) post-init.
-domain_prompt:
-  candidates[N]: [{domain}, ...]
-
-# Optional — present ONLY when Step 8c detected a sibling-collision. Absent when the
-# collision check was clean. The orchestrator fires the AskUserQuestion and applies
-# Proceed (continue) / Rename (delete + redispatch) / Abort (delete plan) post-init.
-sibling_collision_prompt:
-  colliding_siblings[N]: [{sibling_plan_id}, ...]
-  collision_classes[M]: [source_origin, file_overlap]
-  options[3]: [proceed, rename, abort]
-
-# Optional — present ONLY when Step 8d ran with lane_selection: ask. Absent when
-# lane_selection: auto (the projected posture was taken silently). The orchestrator
-# fires the AskUserQuestion in main context and persists status.metadata.execution_profile
-# with the chosen posture (overwriting Step 8b's projection).
-posture_prompt:
-  projected: {minimal|auto|full}
-  options[3]{posture,phase_6_steps_count,cost_sum_tokens,summary}:
-    minimal,{count},{tokens},{summary}
-    auto,{count},{tokens},{summary}
-    full,{count},{tokens},{summary}
 ```
 
-**Early-return variant** — when Step 3 detected `action: exists`, the phase does NOT return the `status: success` shape above. It returns the early-return prompt-required envelope instead and performs no further init work:
+`domain` is the domain persisted at Step 9 (from the detector, or from the operator's inline `AskUserQuestion` answer on the ambiguous branch — never `unresolved`, since the prompt resolved it in-context). `planning_lane` is the value resolved by Step 8b's `manage-status planning-lane route`; the orchestrator dispatches the planning pipeline by this lane. The `recipe_key`, `request_aspect`, and `execution_profile` metadata resolved inline are already persisted to `status.metadata`, so no return block re-carries them.
 
-```toon
-status: prompt_required
-plan_id: {plan_id}
-plan_exists_prompt:
-  plan_id: {plan_id}
-  options[3]{choice,summary}:
-    resume,"Continue with the existing plan as-is (proceed to refine)"
-    replace,"Delete the existing plan and create a fresh one"
-    rename,"Create the plan under a different plan_id"
-```
-
-`planning_lane` is the value resolved by Step 8b's `manage-status planning-lane route`. The orchestrator dispatches the planning pipeline by this lane.
-
-**Optional operator-prompt blocks** — this phase is a dispatched `execution-context` leaf that cannot fire `AskUserQuestion` (see [`../ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope"). Every operator dialogue therefore comes back as a prompt-required envelope for the main-context orchestrator to own. Five are **persist-and-continue** blocks on the `status: success` return above (init completes; the orchestrator fires the prompt and applies the resolution post-return); each is present ONLY on the branch that would have prompted:
-
-- `obsolescence_prompt` — emitted by Step 4b.3 (lesson source) when a cited reference is stale. Carries the `stale[]` report (reference + evidence). The orchestrator applies Refine (append the report to `request.md`), Close (delete the lesson + plan, abort), or Residual (log dropped refs). Absent when all references verify clean.
-- `recipe_match_prompt` — emitted by the Step 5c **propose** branch (a recipe matched but did not clear the auto-route floor). Carries the ranked `options[]` (each `key`/`name`/`confidence`) plus the `no_recipe_option` label. Absent on the auto-route branch (which silently persists `recipe_key`) and on no-match. The orchestrator fires the prompt and persists `status.metadata.recipe_key` on a recipe selection.
-- `domain_prompt` — emitted by Step 7 when domain detection is ambiguous (multi-match or zero-match). Carries the `candidates[]` list; `domain` is `unresolved` on this branch. The orchestrator fires the prompt and persists the chosen domain to `references.json` post-init. Absent on any unambiguous resolution.
-- `sibling_collision_prompt` — emitted by Step 8c when a duplication collision is detected. Carries the `colliding_siblings[]` and `collision_classes[]`. The orchestrator applies Proceed (continue), Rename (delete + re-dispatch), or Abort (delete plan). Absent when the collision check is clean.
-- `posture_prompt` — emitted by Step 8d when `lane_selection: ask`. Carries the `projected` posture (pre-selected) and the three `options[]` previews from `lanes preview` (per-posture step count + summed cost estimate). Absent when `lane_selection: auto` (the projection is taken silently). The orchestrator fires the prompt and persists `status.metadata.execution_profile` with the chosen posture, overwriting Step 8b's projection.
-
-The sixth, `plan_exists_prompt`, is the **early-return** variant documented in the TOON block above: Step 3's `action: exists` branch returns `status: prompt_required` (NOT `success`) and stops, and the orchestrator owns the Resume/Replace/Rename resolution.
-
-None of the five success-return blocks appears when its branch did not fire; the orchestrator treats an absent block as "no prompt required" and proceeds with the already-persisted projection / silent route.
-
-**Always append the current-checkout cwd directive from Step 6 point 4 verbatim after the TOON output.** Phases 2-4 run on the current working tree because worktree materialization is deferred to phase-5-execute Step 2.5. The orchestrating LLM uses the directive to decide, per call, whether a `.plan/execute-script.py` invocation is Bucket A (cwd-agnostic, no routing flags) or Bucket B (pass `--plan-id {plan_id}`, which auto-resolves the current working tree now and the materialized worktree once phase-5 creates it).
+**Current-checkout cwd directive.** Phases 2-4 run on the current working tree because worktree materialization is deferred to phase-5-execute Step 2.5. Carry the Step 6 point 4 directive forward so the orchestrating LLM decides, per call, whether a `.plan/execute-script.py` invocation is Bucket A (cwd-agnostic, no routing flags) or Bucket B (pass `--plan-id {plan_id}`, which auto-resolves the current working tree now and the materialized worktree once phase-5 creates it).
 
 ---
 
 ## Output
 
-Step 12 (above) is the single source of truth for the return TOON. The summary of the contract — the two fields every workflow doc that implements `ext-point-execution-context-workflow` MUST return — is:
+Init runs inline, so it does not return a dispatched-agent envelope — Step 12 (above) is the single source of truth for the values it yields into the orchestrator context. The orchestrator's post-init contract assertion checks that init produced a `plan_id` + `domain` and no rogue source-mutation signal (`pr_url` / `branch` / files-patched); a short human-readable completion summary of the shape `"plan {plan_id} created, domain {domain}"` (e.g. `"plan 2026-05-11-15-007 created, domain plan-marshall"`) is the natural rendering for logs.
 
-```toon
-status: success | error
-display_detail: "<plan {plan_id} created, domain {domain}>"
-```
-
-`display_detail` shape on success: `"plan {plan_id} created, domain {domain}"` (e.g. `"plan 2026-05-11-15-007 created, domain plan-marshall"`); ≤80 chars, ASCII, no trailing period. On error, `display_detail` carries the short error label (see § Error Handling for the structured envelope).
-
-All other fields (`plan_id`, `domain`, `next_phase`, `use_worktree`, `planning_lane`, `source`, `artifacts`) are documented in Step 12 above and form the rest of the return payload. The six optional prompt-required envelopes (the five persist-and-continue blocks `obsolescence_prompt`, `recipe_match_prompt`, `domain_prompt`, `sibling_collision_prompt`, `posture_prompt`, plus the early-return `plan_exists_prompt`) are also documented in Step 12 — each is present only on the branch that would have prompted, and the inline orchestrator owns the `AskUserQuestion` and the resulting persistence.
+All values (`plan_id`, `domain`, `next_phase`, `use_worktree`, `planning_lane`, `source`, `artifacts`) are documented in Step 12 above. Any applicable operator prompts fire inline at their step sites and their resolutions are persisted in-context — there are no prompt-required return blocks.
 
 ---
 
@@ -1044,13 +1048,13 @@ The orchestrator's post-init contract assertion (`plan-marshall:plan-marshall/wo
 
 ## Integration
 
-### Agent Integration
+### Orchestrator Integration
 
-This skill is dispatched as the workflow body of `plan-marshall:execution-context-{level}` with `workflow: plan-marshall:phase-1-init/SKILL.md`. The dispatched agent completes the full init phase in a single call.
+This skill runs **inline in the orchestrator context** — the orchestrator (`plan-marshall/workflow/planning.md` § Action: init and § Action: lessons convert, and `recipe.md` Step 2) executes these steps directly, completing the full init phase in-context and firing every operator prompt natively via `AskUserQuestion`. It is not dispatched as an `execution-context` workflow body.
 
 ### Command Integration
 
-- **/plan-marshall action=init** - Orchestrates the init agent
+- **/plan-marshall action=init** - Orchestrates the init phase inline
 
 ### Related Skills
 
@@ -1059,14 +1063,16 @@ This skill is dispatched as the workflow body of `plan-marshall:execution-contex
 
 ### Phase-boundary metric bookkeeping
 
-Apart from the Step 3a bootstrap `start-phase` call, this skill does not invoke
+Apart from the Step 3b bootstrap `start-phase` call, this skill does not invoke
 `manage-metrics` — phase boundary metric recording happens in the orchestrator
-(`plan-marshall:plan-marshall` workflows). When the orchestrator transitions
-out of `1-init`, it MUST use the fused `manage-metrics phase-boundary
---prev-phase 1-init --next-phase 2-refine` call. See
-`marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
-`phase-boundary` for the API. `1-init` is the only phase that self-records its
-own `start_time` (Step 3a); all other phases inherit it from the prior fused
+(`plan-marshall:plan-marshall` workflows). Because init runs inline (no agent
+`<usage>` envelope), when the orchestrator transitions out of `1-init` it MUST
+use the fused `manage-metrics phase-boundary --prev-phase 1-init --next-phase
+2-refine` call with the `<usage>`-derived flags (`--total-tokens` /
+`--duration-ms` / `--tool-uses`) OMITTED — the inline-phase (timestamps-only)
+recording mode. See `manage-metrics` Canonical invocations → `phase-boundary`
+for the API. `1-init` is the only phase that self-records its
+own `start_time` (Step 3b); all other phases inherit it from the prior fused
 `phase-boundary` call.
 
 ---

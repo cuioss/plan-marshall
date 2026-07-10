@@ -43,7 +43,7 @@ The ``RESERVED_LEVELS`` tuple is currently empty; a self-check
 :class:`ValueError` if any preset references an unknown effort level.
 
 Hierarchical shape: a preset's ``roles`` block carries a top-level entry
-per phase group (``phase-1-init`` … ``phase-6-finalize``). The value is
+per phase group (``phase-2-refine`` … ``phase-6-finalize``). The value is
 either a string (single-level shorthand applied to every workflow under
 that phase) or a nested dict with optional sub-keys (``default``,
 ``verification-feedback``, ``post-run-review`` — see ``KNOWN_ROLES`` in
@@ -103,7 +103,6 @@ class EffortPresets:
     ECONOMIC: dict = {
         'default': 'level-2',
         'roles': {
-            'phase-1-init': 'level-2',
             'phase-2-refine': 'level-3',
             'phase-3-outline': 'level-3',
             'phase-4-plan': 'level-3',
@@ -132,7 +131,6 @@ class EffortPresets:
     BALANCED: dict = {
         'default': 'level-3',
         'roles': {
-            'phase-1-init': 'level-3',
             'phase-2-refine': 'level-3',
             'phase-3-outline': 'level-4',
             'phase-4-plan': 'level-3',
@@ -159,7 +157,6 @@ class EffortPresets:
     HIGH_END: dict = {
         'default': 'level-3',
         'roles': {
-            'phase-1-init': 'level-3',
             'phase-2-refine': 'level-4',
             'phase-3-outline': 'level-4',
             'phase-4-plan': 'level-4',
