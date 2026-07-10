@@ -55,6 +55,14 @@ validate_step_owner = _core.validate_step_owner
 owner_of = _core.owner_of
 ORCHESTRATOR_OWNED_STEPS = _core.ORCHESTRATOR_OWNED_STEPS
 
+# Ascending-order barrier primitives live in _manifest_validation (loaded
+# directly following the _manifest_core convention above). _check_ascending_order
+# asserts the composed phase_6.steps hold non-decreasing frontmatter order;
+# _resolve_step_order yields a step's frontmatter order (or None when unresolvable).
+_validation = _load_module('_mem_validation', '_manifest_validation.py')
+_check_ascending_order = _validation._check_ascending_order
+_resolve_step_order = _validation._resolve_step_order
+
 # Quiet down the best-effort decision-log subprocess.
 _mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
 
@@ -412,3 +420,134 @@ def test_orchestrator_owned_registry_steps_all_resolve_orchestrator_owned():
     """Every registry member classifies as orchestrator-owned (schema field consistency)."""
     for step in ORCHESTRATOR_OWNED_STEPS:
         assert owner_of(step) == 'orchestrator-owned', step
+
+
+# =============================================================================
+# Ascending-order barrier invariant (general regression, order-independent)
+#
+# Distinct verification scope from Deliverable 1's single-case reproduction
+# (test_manage_execution_manifest_compose.py :: test_compose_sorts_phase_6_steps
+# _by_frontmatter_order, which pins one archive-plan/preference-emitter pair):
+# this drives cmd_compose across SEVERAL shuffled seed orderings of the SAME
+# order-resolvable candidate set and asserts the barrier invariant holds for
+# EVERY seed regardless of input order. The invariant is checked structurally via
+# _check_ascending_order + _resolve_step_order — no order magnitudes are hardcoded
+# beyond archive-plan being the highest-order finalize step.
+# =============================================================================
+
+# Order-resolvable phase-6 steps spanning the full frontmatter-order range, from
+# the earliest finalize step to the archive-plan barrier. Every entry resolves to
+# a non-None frontmatter order, so all participate in the ascending assertion.
+_ORDER_RESOLVABLE_CANDIDATES = [
+    'finalize-step-sync-baseline',  # order 3
+    'push',  # order 10
+    'ci-verify',  # order 22
+    'architecture-refresh',  # order 25
+    'branch-cleanup',  # order 70
+    'finalize-step-preference-emitter',  # order 80
+    'record-metrics',  # order 998
+    'finalize-step-print-phase-breakdown',  # order 999
+    'archive-plan',  # order 1000 — the plan-mutating barrier, highest order
+]
+
+# Several arbitrary/shuffled seed orderings of the SAME candidate set. Each is a
+# permutation of _ORDER_RESOLVABLE_CANDIDATES (self-checked in the test body).
+# Includes orders that place archive-plan early and orders that interleave
+# multiple order-resolvable steps around it.
+_SHUFFLED_SEED_ORDERINGS = [
+    # archive-plan placed FIRST (the extreme early-placement case).
+    [
+        'archive-plan',
+        'finalize-step-preference-emitter',
+        'push',
+        'record-metrics',
+        'ci-verify',
+        'finalize-step-print-phase-breakdown',
+        'architecture-refresh',
+        'finalize-step-sync-baseline',
+        'branch-cleanup',
+    ],
+    # Fully reverse-sorted: archive-plan first, every step in descending order.
+    [
+        'archive-plan',
+        'finalize-step-print-phase-breakdown',
+        'record-metrics',
+        'finalize-step-preference-emitter',
+        'branch-cleanup',
+        'architecture-refresh',
+        'ci-verify',
+        'push',
+        'finalize-step-sync-baseline',
+    ],
+    # High/low interleave: archive-plan mid-list, high-order steps scattered
+    # among low-order ones.
+    [
+        'record-metrics',
+        'push',
+        'archive-plan',
+        'ci-verify',
+        'finalize-step-print-phase-breakdown',
+        'architecture-refresh',
+        'finalize-step-preference-emitter',
+        'finalize-step-sync-baseline',
+        'branch-cleanup',
+    ],
+    # Another arbitrary shuffle with archive-plan near the front.
+    [
+        'branch-cleanup',
+        'archive-plan',
+        'finalize-step-sync-baseline',
+        'finalize-step-print-phase-breakdown',
+        'push',
+        'finalize-step-preference-emitter',
+        'record-metrics',
+        'ci-verify',
+        'architecture-refresh',
+    ],
+]
+
+
+def test_composed_phase_6_steps_hold_ascending_order_barrier_for_every_seed(plan_context):
+    """The ascending-order barrier holds for every shuffled seed of the same set.
+
+    General invariant regression (order-independent): whatever order the candidate
+    steps are fed to cmd_compose, the composed phase_6.steps must (a) survive
+    _check_ascending_order with no inversion, and (b) place no order-resolvable
+    step whose resolved order is below archive-plan's after archive-plan. Because
+    archive-plan carries the highest resolvable order among finalize steps, this
+    is the plan-mutating barrier: nothing order-resolvable may follow it.
+    """
+    archive_order = _resolve_step_order('archive-plan')
+    assert archive_order is not None, 'archive-plan must resolve to a frontmatter order'
+
+    for seed_index, seed in enumerate(_SHUFFLED_SEED_ORDERINGS):
+        # Self-check: every seed is a permutation of the same candidate set, so
+        # differences in the composed output are attributable to compose-time
+        # sorting alone, not to a differing input set.
+        assert sorted(seed) == sorted(_ORDER_RESOLVABLE_CANDIDATES), (
+            f'seed {seed_index} is not a permutation of the candidate set'
+        )
+
+        plan_id = f'order-barrier-seed-{seed_index}'
+        result = cmd_compose(_compose_ns(plan_id=plan_id, phase_6_steps=','.join(seed)))
+        assert result is not None and result['status'] == 'success', (
+            f'compose failed for seed {seed_index}: {result}'
+        )
+
+        manifest = read_manifest(plan_id)
+        assert manifest is not None
+        composed = manifest['phase_6']['steps']
+
+        # (a) No inversion survives — the resolvable subsequence is non-decreasing.
+        assert _check_ascending_order(composed) is None, (
+            f'inversion survived for seed {seed_index}: {composed}'
+        )
+
+        # (b) No order-resolvable step below archive-plan's order appears after it.
+        archive_idx = composed.index('archive-plan')
+        for later in composed[archive_idx + 1 :]:
+            later_order = _resolve_step_order(later)
+            assert not (later_order is not None and later_order < archive_order), (
+                f'seed {seed_index}: `{later}` (order={later_order}) follows '
+                f'archive-plan (order={archive_order}) — barrier violated in {composed}'
+            )

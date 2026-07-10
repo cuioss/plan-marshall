@@ -120,6 +120,7 @@ from _manifest_validation import (
     _render_standards_rel_path,  # noqa: F401
     _resolve_standards_path,  # noqa: F401
     _resolve_step_order,  # noqa: F401
+    _sort_steps_by_frontmatter_order,  # noqa: F401
     cmd_step_params_get,  # noqa: F401
     cmd_step_params_set,  # noqa: F401
     cmd_validate,  # noqa: F401
@@ -1403,6 +1404,22 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             ),
             'ci_provider': bot_guard_fired_provider,
         }
+
+    # Enforce ascending frontmatter-order emission on the FINAL phase_6.steps.
+    # cmd_compose never re-sorted the marshal.json ``phase_6.steps`` map by
+    # frontmatter order, so ``manage-config sync-defaults`` back-filling a
+    # missing default-on step by APPENDING it landed the new step after
+    # ``archive-plan`` (order 1000) regardless of its own order (e.g.
+    # ``finalize-step-preference-emitter``, order 80). Sorting here makes
+    # ``archive-plan`` sort last among order-resolvable steps automatically —
+    # every finalize step's order is below 1000 (nearest tail: record-metrics
+    # 998, finalize-step-print-phase-breakdown 999). Steps whose order resolves
+    # to ``None`` (external ``bundle:skill`` steps) keep their original index.
+    # Runs AFTER the bot-enforcement guard (so a re-added ``automatic-review`` is
+    # included in the sort) and BEFORE the placement validator (which then
+    # validates the final, sorted layout). Rebind ``final_phase_6_steps``.
+    body['phase_6']['steps'] = _sort_steps_by_frontmatter_order(final_phase_6_steps)
+    final_phase_6_steps = body['phase_6']['steps']
 
     # Compose-time placement validator (defense-in-depth): even when
     # ``automatic-review`` is present, reject the manifest if it sits at an

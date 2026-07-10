@@ -1195,6 +1195,59 @@ def test_compose_default_phase_6_steps_when_csv_omitted(plan_context):
 
 
 # =============================================================================
+# Ascending frontmatter-order emission (archive-order barrier fix)
+#
+# cmd_compose never re-sorted the marshal.json ``phase_6.steps`` map by
+# frontmatter order, so ``manage-config sync-defaults`` back-filling a missing
+# default-on step by APPENDING it landed the new step after ``archive-plan``
+# (order 1000) regardless of its own order. cmd_compose now sorts the FINAL
+# ``phase_6.steps`` by resolved frontmatter order before persistence, so
+# ``archive-plan`` sorts last among order-resolvable steps automatically.
+# =============================================================================
+
+
+def test_compose_sorts_phase_6_steps_by_frontmatter_order(plan_context):
+    """Regression: a candidate list placing ``archive-plan`` BEFORE a lower-order
+    step emits the lower-order step first in the composed manifest.
+
+    Reproduces the live bug: ``finalize-step-preference-emitter`` (order 80) was
+    appended AFTER ``archive-plan`` (order 1000) by ``manage-config
+    sync-defaults``. cmd_compose now sorts ``phase_6.steps`` by resolved
+    frontmatter order, so the preference-emitter (80) is emitted strictly before
+    ``archive-plan`` (1000), which sorts last among order-resolvable steps.
+    """
+    # Bug-reproducing candidate order: archive-plan (order 1000) precedes the
+    # lower-order preference-emitter (order 80) — exactly the layout
+    # sync-defaults produced by appending the back-filled default-on step.
+    candidates = [
+        'push',
+        'create-pr',
+        'lessons-capture',
+        'archive-plan',  # order 1000
+        'finalize-step-preference-emitter',  # order 80 — appended AFTER archive-plan
+    ]
+    result = cmd_compose(
+        _compose_ns(
+            plan_id='order-barrier-fix',
+            change_type='feature',
+            scope_estimate='multi_module',
+            affected_files_count=5,
+            phase_6_steps=','.join(candidates),
+        )
+    )
+    assert result is not None and result['status'] == 'success'
+    manifest = read_manifest('order-barrier-fix')
+    assert manifest is not None
+    steps = manifest['phase_6']['steps']
+    assert 'archive-plan' in steps and 'finalize-step-preference-emitter' in steps
+    # The composer sorted by frontmatter order: the low-order step now precedes
+    # archive-plan even though the input placed it after.
+    assert steps.index('finalize-step-preference-emitter') < steps.index('archive-plan')
+    # archive-plan (order 1000, the highest) sorts last among order-resolvable steps.
+    assert steps[-1] == 'archive-plan'
+
+
+# =============================================================================
 # commit_and_push pre-filter tests
 # =============================================================================
 
@@ -2677,29 +2730,33 @@ class TestBotEnforcementGuardRemediation:
 
 
 # =============================================================================
-# Compose-time placement validator (lesson 2026-04-28-13-002)
+# Compose-time frontmatter-order sort (lesson 2026-04-28-13-002)
 #
 # The remediation guard guarantees ``automatic-review`` is *present* on
 # GitHub/GitLab plans, but a future pre-filter or recipe interaction could
 # leave it *misplaced* — sitting at an index later than a plan-mutating step
 # (``archive-plan``, ``record-metrics``, ``branch-cleanup``, or
-# ``plan-marshall:plan-retrospective``). The new ``_validate_automated_review_placement``
-# check rejects such manifests with ``status='error'`` and
-# ``error='bot_enforcement_violation'``. The diagnostic carries both step
-# names so downstream auditing can pinpoint the ordering breach.
+# ``plan-marshall:plan-retrospective``). The ``_sort_steps_by_frontmatter_order``
+# choke-point (this plan's D1) now runs BEFORE the
+# ``_validate_automated_review_placement`` check, so a misordered candidate
+# list is sorted back into frontmatter ``order:`` sequence — ``automatic-review``
+# (order 30) lands strictly before every plan-mutating anchor — and compose
+# succeeds (``status='success'``). The placement validator remains in the
+# source as defense-in-depth, but it no longer observes a misplacement because
+# the sort corrected it first.
 #
 # Construction trick: the bot-enforcement remediation guard returns early on
 # its membership check (``'automatic-review' in phase_6_steps``) and therefore
-# does NOT reposition a misplaced occurrence. To exercise the validator we
-# pass an explicit ``--phase-6-steps`` candidate list where ``automatic-review``
-# is already present in the wrong position; Row 7 (default) preserves the
-# candidate ordering verbatim, the guard is a no-op, and the misplacement
-# survives to the validator.
+# does NOT reposition a misplaced occurrence. We pass an explicit
+# ``--phase-6-steps`` candidate list where ``automatic-review`` is already
+# present in the wrong position; Row 7 (default) preserves the candidate
+# ordering verbatim and the guard is a no-op, so the misplacement reaches the
+# sort choke-point, which reorders it ahead of the anchor.
 # =============================================================================
 
 
 class TestAutomatedReviewPlacement:
-    """Compose-time validator rejects ``automatic-review`` after plan-mutating anchors."""
+    """Compose-time frontmatter-order sort places ``automatic-review`` before plan-mutating anchors."""
 
     @staticmethod
     def _candidates_with_review_after(anchor: str) -> str:
@@ -2714,12 +2771,12 @@ class TestAutomatedReviewPlacement:
         """
         return ','.join(['push', 'create-pr', 'lessons-capture', anchor, 'automatic-review'])
 
-    def test_compose_rejects_automated_review_after_archive_plan(self, plan_context):
-        """Misplaced ``automatic-review`` after ``archive-plan`` → bot_enforcement_violation."""
+    def test_compose_sorts_automated_review_before_archive_plan(self, plan_context):
+        """Misplaced ``automatic-review`` after ``archive-plan`` → sorted before it, compose succeeds."""
         plan_id = 'placement-archive-plan'
         # GitHub provider so the existing remediation guard runs but
         # short-circuits on the membership check (line 845), leaving the
-        # misplacement intact for the new validator to catch.
+        # misplacement intact for the sort choke-point to correct.
         _write_marshal_with_ci(plan_context.fixture_dir, provider='github')
 
         result = cmd_compose(
@@ -2733,21 +2790,26 @@ class TestAutomatedReviewPlacement:
         )
 
         assert result is not None
-        assert result['status'] == 'error', f'expected error status, got {result!r}'
-        assert result['error'] == 'bot_enforcement_violation'
-        # Diagnostic must name BOTH step identifiers so downstream auditing
-        # can pinpoint the ordering breach without re-deriving it.
-        assert 'automatic-review' in result['message']
-        assert 'archive-plan' in result['message']
-        # No manifest is persisted on rejection — read_manifest returns None.
-        assert read_manifest(plan_id) is None
+        # The D1 sort choke-point corrects the misplacement before the placement
+        # validator runs, so compose now succeeds.
+        assert result['status'] == 'success', f'expected success status, got {result!r}'
+        # The persisted manifest sorts ``automatic-review`` strictly before the
+        # ``archive-plan`` anchor.
+        manifest = read_manifest(plan_id)
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        assert 'automatic-review' in steps
+        assert 'archive-plan' in steps
+        assert steps.index('automatic-review') < steps.index('archive-plan'), (
+            f'automatic-review must sort before archive-plan: {steps!r}'
+        )
 
     @pytest.mark.parametrize(
         'anchor',
         ['record-metrics', 'branch-cleanup', 'plan-marshall:plan-retrospective'],
     )
-    def test_compose_rejects_automated_review_after_other_plan_mutating_steps(self, plan_context, anchor: str):
-        """Misplaced ``automatic-review`` after each remaining anchor → bot_enforcement_violation.
+    def test_compose_sorts_automated_review_before_other_plan_mutating_steps(self, plan_context, anchor: str):
+        """Misplaced ``automatic-review`` after each remaining anchor → sorted before it, compose succeeds.
 
         Parametrized over the three plan-mutating anchors NOT covered by the
         ``archive-plan`` test above. Together these cover the full anchor set
@@ -2772,11 +2834,19 @@ class TestAutomatedReviewPlacement:
         )
 
         assert result is not None
-        assert result['status'] == 'error', f'expected error status for anchor={anchor!r}, got {result!r}'
-        assert result['error'] == 'bot_enforcement_violation'
-        assert 'automatic-review' in result['message']
-        assert anchor in result['message']
-        assert read_manifest(plan_id) is None
+        # The D1 sort choke-point corrects the misplacement before the placement
+        # validator runs, so compose now succeeds for every anchor.
+        assert result['status'] == 'success', f'expected success status for anchor={anchor!r}, got {result!r}'
+        # The persisted manifest sorts ``automatic-review`` strictly before the
+        # parametrized anchor.
+        manifest = read_manifest(plan_id)
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        assert 'automatic-review' in steps
+        assert anchor in steps
+        assert steps.index('automatic-review') < steps.index(anchor), (
+            f'automatic-review must sort before anchor={anchor!r}: {steps!r}'
+        )
 
 
 # =============================================================================
@@ -4312,7 +4382,9 @@ def test_compose_minimal_profile_prunes_phase_6_to_floor(plan_context, monkeypat
     assert result is not None
     assert result['execution_profile'] == 'minimal'
     manifest = read_manifest(plan_id)
-    assert manifest['phase_6']['steps'] == ['push', 'archive-plan', 'project:finalize-step-deploy-target']
+    # The D1 sort choke-point places archive-plan (order 1000) terminal among
+    # the order-resolvable steps, so it now trails deploy-target.
+    assert manifest['phase_6']['steps'] == ['push', 'project:finalize-step-deploy-target', 'archive-plan']
     assert set(result['lane_dropped']) == {
         'sonar-roundtrip', 'finalize-step-security-audit', 'plan-marshall:plan-retrospective',
     }
