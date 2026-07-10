@@ -21,7 +21,7 @@ Run the plugin-doctor `quality-gate` invariant rule set (argparse safety, argume
 
 The wrapper runs in one of three mutually-exclusive modes, selected deterministically (see Step 2.5 for the precedence): it runs **whole-tree** (no `--paths`) when the changed set touches a plugin-doctor / plan-doctor analyzer or rule script — a rule change re-classifies skills the diff never touched, so only a full marketplace pass catches the breakage (the **F1 trigger**); it runs **whole-tree** when the `affected_files` read is indeterminate (broken, not empty); and otherwise it **scopes** the gate to the changed skill directories (the common case).
 
-Ordered at `order: 6` so it slots between `default:finalize-step-pre-push-quality-gate` (order 5) and `project:finalize-step-pre-submission-self-review` (order 7) — structural lint gates before the commit is pushed, not after CI.
+Ordered at `order: 6` so it slots between `default:finalize-step-pre-push-quality-gate` (order 5) and `default:pre-submission-self-review` (order 7) — structural lint gates before the commit is pushed, not after CI.
 
 When the plan runs in an isolated worktree, the gate first regenerates a worktree-bound executor so the `manage-invocation-invalid` rule probes each script's `--help` against the worktree's TRUE argparse surface. Without this step, the worktree's `.plan/execute-script.py` is a symlink to the main checkout's executor, whose embedded mappings resolve every `manage-*` notation to the main-checkout (pre-plan) script — making a newly added subcommand read as a false-positive "unregistered" and a newly required flag read as a false-negative that masks the real CI finding.
 

@@ -70,9 +70,10 @@ def test_skill_frontmatter_has_canonical_fields():
     fm = _parse_frontmatter(_SKILL_MD)
     assert fm.get('name') == 'finalize-step-deploy-target'
     assert fm.get('description'), 'description must be non-empty'
-    assert fm.get('order') == '80', (
-        'deploy-target order must be 80 (post-merge: after branch-cleanup=70, '
-        'before sync-plugin-cache=85)'
+    assert fm.get('order') == '81', (
+        'deploy-target order must be 81 (post-merge: after branch-cleanup=70, '
+        'before sync-plugin-cache=85; bumped 80->81 to deconflict with the '
+        'consumer-shipped built-in default:finalize-step-preference-emitter at order 80)'
     )
 
 

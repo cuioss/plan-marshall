@@ -90,7 +90,7 @@ def test_required_steps_parser_accepts_prefixed_ids(tmp_path: Path) -> None:
     required.write_text(
         '# Required steps\n'
         '\n'
-        '- project:finalize-step-pre-submission-self-review\n'
+        '- default:pre-submission-self-review\n'
         '- push\n'
         '- create-pr\n'
         '- default:archive-plan\n',
@@ -100,7 +100,7 @@ def test_required_steps_parser_accepts_prefixed_ids(tmp_path: Path) -> None:
     parsed = inv._parse_required_steps(required)
 
     assert parsed == [
-        'project:finalize-step-pre-submission-self-review',
+        'default:pre-submission-self-review',
         'push',
         'create-pr',
         'default:archive-plan',
@@ -122,7 +122,7 @@ def test_phase_steps_complete_matches_manifest_id_when_recorded_prefixed(
     """
     required = tmp_path / 'required-steps.md'
     required.write_text(
-        '- project:finalize-step-pre-submission-self-review\n'
+        '- default:pre-submission-self-review\n'
         '- push\n',
         encoding='utf-8',
     )
@@ -131,7 +131,7 @@ def test_phase_steps_complete_matches_manifest_id_when_recorded_prefixed(
     metadata = {
         'phase_steps': {
             '6-finalize': {
-                'project:finalize-step-pre-submission-self-review': {
+                'default:pre-submission-self-review': {
                     'outcome': 'done',
                     'display_detail': 'self-review clean',
                 },
@@ -179,7 +179,7 @@ def test_phase_steps_complete_fails_when_required_prefixed_but_recorded_bare(
     """
     required = tmp_path / 'required-steps.md'
     required.write_text(
-        '- project:finalize-step-pre-submission-self-review\n',
+        '- default:pre-submission-self-review\n',
         encoding='utf-8',
     )
     monkeypatch.setattr(inv, '_resolve_required_steps_path', lambda _p: required)
@@ -198,7 +198,7 @@ def test_phase_steps_complete_fails_when_required_prefixed_but_recorded_bare(
     with pytest.raises(inv.PhaseStepsIncomplete) as excinfo:
         inv._capture_phase_steps_complete('pid', metadata, '6-finalize')
 
-    assert excinfo.value.missing == ['project:finalize-step-pre-submission-self-review']
+    assert excinfo.value.missing == ['default:pre-submission-self-review']
     assert excinfo.value.not_done == []
     assert excinfo.value.legacy_format == []
 
@@ -311,7 +311,7 @@ def test_finalize_step_wrappers_mark_step_done_calls_present() -> None:
         ),
         (
             _PRE_SUBMISSION_WORKFLOW,
-            'project:finalize-step-pre-submission-self-review',
+            'default:pre-submission-self-review',
         ),
     ]
 

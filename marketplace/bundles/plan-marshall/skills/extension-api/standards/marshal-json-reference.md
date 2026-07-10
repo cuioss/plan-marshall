@@ -104,10 +104,10 @@ The lifecycle run-at-all gates and the two flat finalize automation knobs are fl
 | `plan.phase-2-refine.revalidation` | User config | light lane + deep refine | - |
 | `plan.phase-3-outline.q_gate_validation` (`off`\|`once`\|`until_clean` re-run knob, NOT a run-at-all gate) | User config | deep-lane outline dispatch + planning-outline q-gate auto-loop | - |
 | `plan.phase-4-plan.q_gate_validation` (`off`\|`once`\|`until_clean` re-run knob, NOT a run-at-all gate) | User config | phase-4-plan q-gate signaling + planning-outline q-gate auto-loop | - |
-| `plan.phase-6-finalize.steps['project:finalize-step-pre-submission-self-review'].self_review` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | manage-execution-manifest (finalize selection) | - |
+| `plan.phase-6-finalize.steps['default:pre-submission-self-review'].self_review` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | manage-execution-manifest (finalize selection) | - |
 | `plan.phase-6-finalize.qgate` | User config | manage-execution-manifest (finalize selection) | - |
 | `plan.phase-6-finalize.steps['default:finalize-step-simplify'].simplify` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | manage-execution-manifest (finalize selection) | - |
-| `plan.phase-6-finalize.steps['project:finalize-step-pre-submission-self-review'].drop_review_on_scope_gate` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | manage-execution-manifest (scope-gated review drop) | - |
+| `plan.phase-6-finalize.steps['default:pre-submission-self-review'].drop_review_on_scope_gate` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | manage-execution-manifest (scope-gated review drop) | - |
 | `plan.phase-6-finalize.finalize_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-6-finalize.loop_back_without_asking` | User config | phase-6-finalize, plan-marshall orchestrator | - |
 | `plan.phase-6-finalize.steps['default:branch-cleanup'].final_merge_without_asking` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | phase-6-finalize (branch-cleanup pre-merge gate) | - |

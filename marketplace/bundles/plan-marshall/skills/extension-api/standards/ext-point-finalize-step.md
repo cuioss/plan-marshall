@@ -1,6 +1,6 @@
 # Extension Point: Finalize Step
 
-> **Type**: Phase-6 Step Doc Extension | **Hook Method**: `implements:` frontmatter on each step doc | **Implementations**: 25 | **Status**: Active
+> **Type**: Phase-6 Step Doc Extension | **Hook Method**: `implements:` frontmatter on each step doc | **Implementations**: 24 | **Status**: Active
 
 ## Overview
 
@@ -133,7 +133,7 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 | `default:sonar-roundtrip` | built-in | 40 | true | `[full]` |
 | `default:lessons-capture` | built-in | 60 | true | `[local, standard, full]` |
 | `default:adr-propose` | built-in | 62 | false | `[]` |
-| `default:pre-submission-self-review` | built-in | 7 | false | `[]` |
+| `default:pre-submission-self-review` | built-in | 7 | true | `[]` |
 | `default:branch-cleanup` | built-in | 70 | true | `[local, standard, full]` |
 | `default:finalize-step-preference-emitter` | built-in | 80 | true | `[]` |
 | `default:record-metrics` | built-in | 998 | true | `[local, standard, full]` |
@@ -142,9 +142,8 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 | `plan-marshall:automatic-review` | bundle | 30 | true | `[standard, full]` |
 | `plan-marshall:plan-retrospective` | bundle-optional | 995 | false | `[full]` |
 | `project:finalize-step-plugin-doctor` | project | 6 | false | `[]` |
-| `project:finalize-step-pre-submission-self-review` | project | 7 | false | `[]` |
 | `project:finalize-step-review-retrospective` | project | 50 | false | `[]` |
-| `project:finalize-step-deploy-target` | project | 80 | false | `[]` |
+| `project:finalize-step-deploy-target` | project | 81 | false | `[]` |
 | `project:finalize-step-sync-plugin-cache` | project | 85 | false | `[]` |
 | `project:finalize-step-lessons-housekeeping` | project | 996 | false | `[]` |
 

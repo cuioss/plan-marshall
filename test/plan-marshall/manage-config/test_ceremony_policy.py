@@ -94,23 +94,16 @@ _DISTRIBUTED_GATES = (
 
 # The finalize run-at-all / escape-hatch knobs that fold under their owning
 # finalize step's nested param object (no longer flat phase-level siblings).
-# `default:finalize-step-simplify` is a BUILT-IN finalize step (discovered with
-# `default_on: true`), so its `simplify` default is materialized in
-# get_default_config()['plan']['phase-6-finalize']['steps'].
-# `project:finalize-step-pre-submission-self-review` is an OPT-IN project step
-# (discovered with `default_on: false`, so absent from the default-on seed), so
-# its `self_review` / `drop_review_on_scope_gate` defaults are declared in that
-# step's `configurable:` frontmatter and resolved via the configurable_contract
-# parser (the reader supplies them via default-merge when the step is absent on
-# disk).
+# `default:finalize-step-simplify` and `default:pre-submission-self-review` are
+# both BUILT-IN finalize steps (discovered with `default_on: true`), so their
+# folded defaults (`simplify`; `self_review` / `drop_review_on_scope_gate`) are
+# materialized in get_default_config()['plan']['phase-6-finalize']['steps'].
 _SEEDED_FOLDED_KNOBS = (
     ('default:finalize-step-simplify', 'simplify', 'auto'),
+    ('default:pre-submission-self-review', 'self_review', 'auto'),
+    ('default:pre-submission-self-review', 'drop_review_on_scope_gate', False),
 )
-_OPT_IN_FOLDED_KNOBS = (
-    ('project:finalize-step-pre-submission-self-review', 'self_review', 'auto'),
-    ('project:finalize-step-pre-submission-self-review', 'drop_review_on_scope_gate', False),
-)
-_ALL_FOLDED_KNOBS = _SEEDED_FOLDED_KNOBS + _OPT_IN_FOLDED_KNOBS
+_ALL_FOLDED_KNOBS = _SEEDED_FOLDED_KNOBS
 
 
 # =============================================================================
@@ -215,24 +208,6 @@ def test_seeded_folded_knob_materializes_under_owning_built_in_step(owner_step, 
 
     assert owner_step in _step_ids(steps), f'{owner_step} must be a seeded built-in finalize step'
     assert _params_for(steps, owner_step)[knob] == default
-
-
-@pytest.mark.parametrize('owner_step,knob,default', _OPT_IN_FOLDED_KNOBS)
-def test_opt_in_folded_knob_absent_from_default_seed(owner_step, knob, default):
-    """A folded knob on an OPT-IN project step is NOT seeded in the default config.
-
-    `project:finalize-step-pre-submission-self-review` is not a built-in finalize
-    step, so the default seed does not include it; its `self_review` /
-    `drop_review_on_scope_gate` defaults are supplied by the reader's
-    default-merge only when a consumer opts the step in. The default seed leaves a
-    fresh project's candidate list unchanged.
-    """
-    config = _config_defaults_mod.get_default_config()
-    steps = config['plan']['phase-6-finalize']['steps']
-
-    assert owner_step not in _step_ids(steps), (
-        f'{owner_step} is an opt-in project step and must NOT be in the default seed'
-    )
 
 
 # =============================================================================

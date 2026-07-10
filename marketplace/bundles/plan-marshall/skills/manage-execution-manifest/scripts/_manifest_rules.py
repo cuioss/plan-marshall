@@ -276,8 +276,6 @@ _SCOPE_GATED_SURGICAL_DROP = frozenset(
         'plan-retrospective',
         'plan-marshall:plan-retrospective',
         'pre-submission-self-review',
-        'finalize-step-pre-submission-self-review',
-        'project:finalize-step-pre-submission-self-review',
         'finalize-step-plugin-doctor',
         'project:finalize-step-plugin-doctor',
     }
@@ -298,7 +296,7 @@ _SCOPE_GATED_OVERRIDE_DROP = frozenset({'automatic-review', 'plan-marshall:autom
 # the one finalize run-at-all gate that stays a flat phase-level sibling.
 _SIMPLIFY_OWNER_STEP = 'default:finalize-step-simplify'
 _SECURITY_AUDIT_OWNER_STEP = 'default:finalize-step-security-audit'
-_PRE_SUBMISSION_SELF_REVIEW_STEP = 'project:finalize-step-pre-submission-self-review'
+_PRE_SUBMISSION_SELF_REVIEW_STEP = 'default:pre-submission-self-review'
 
 
 def _read_step_owned_knob(owner_step_id: str, knob: str) -> object | None:
@@ -333,7 +331,7 @@ def _read_drop_review_on_scope_gate() -> bool:
     """Read ``drop_review_on_scope_gate`` from its owning finalize step's params.
 
     The knob is folded under
-    ``phase-6-finalize.steps['project:finalize-step-pre-submission-self-review']
+    ``phase-6-finalize.steps['default:pre-submission-self-review']
     .drop_review_on_scope_gate`` in marshal.json (its former flat-sibling
     location is gone). Returns ``False`` when the file is missing, the owning step
     is absent, the knob is absent, or the value is not a boolean ``True``. The
@@ -410,8 +408,6 @@ _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
             {
                 'pre-submission-self-review',
                 'default:pre-submission-self-review',
-                'finalize-step-pre-submission-self-review',
-                'project:finalize-step-pre-submission-self-review',
             }
         ),
         'default:pre-submission-self-review',
@@ -449,7 +445,7 @@ def _read_finalize_gates() -> dict[str, str]:
     - ``simplify``, ``self_review``, and ``security_audit`` are folded under their
       owning finalize step's nested param object in ``phase-6-finalize.steps``
       (``simplify`` → ``default:finalize-step-simplify``; ``self_review`` →
-      ``project:finalize-step-pre-submission-self-review``; ``security_audit`` →
+      ``default:pre-submission-self-review``; ``security_audit`` →
       ``default:finalize-step-security-audit``). They are read via
       :func:`_read_step_owned_knob`.
 

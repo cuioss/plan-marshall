@@ -912,6 +912,31 @@ def test_find_implementors_project_step_record():
     assert doctor['presets'] == []
 
 
+def test_find_implementors_promoted_self_review_replaces_project_wrapper():
+    """The promoted self-review step is a default-on built-in; the wrapper is gone.
+
+    Regression guard for the pre-submission-self-review promotion: the built-in
+    ``default:pre-submission-self-review`` (its workflow-body frontmatter flipped
+    to ``default_on: true``) must surface, and the deleted
+    ``project:finalize-step-pre-submission-self-review`` wrapper must NOT surface
+    from any discovery surface (guarding against a stale plugin-cache path that
+    still finds the deleted wrapper).
+    """
+    by_name = _finalize_implementors()
+
+    assert 'default:pre-submission-self-review' in by_name, (
+        'the promoted built-in self-review step must be discovered'
+    )
+    self_review = by_name['default:pre-submission-self-review']
+    assert self_review['source'] == 'built-in'
+    assert self_review['default_on'] is True
+    assert self_review['order'] == 7
+
+    assert 'project:finalize-step-pre-submission-self-review' not in by_name, (
+        'the retired project self-review wrapper must not surface after deletion'
+    )
+
+
 def test_find_implementors_empty_for_unknown_ext_point():
     """find_implementors returns an empty list for an ext-point no doc declares."""
     records = _discovery.find_implementors('plan-marshall:extension-api/standards/ext-point-nonexistent')

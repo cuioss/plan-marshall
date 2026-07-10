@@ -5,7 +5,7 @@ lane:
 name: finalize-step-deploy-target
 description: Generate Claude Code target output via the multi-target generator
 mode: script-executor
-order: 80
+order: 81
 default_on: false
 presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step

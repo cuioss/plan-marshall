@@ -181,8 +181,7 @@ Skill: {step_reference}
   Arguments: --plan-id {plan_id} --iteration {iteration} [--session-id {session_id}]
 ```
 
-**DISPATCHED external steps** (e.g., `project:finalize-step-pre-submission-self-review`,
-`project:finalize-step-plugin-doctor`) do NOT use the `Skill:` template above —
+**DISPATCHED external steps** (e.g., `project:finalize-step-plugin-doctor`) do NOT use the `Skill:` template above —
 they dispatch under `Task: execution-context-{level}` with the step's own SKILL.md
 as the `workflow` prompt-body field. Their input contract is the 5-field
 prompt-body shape (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`) plus any
@@ -812,8 +811,7 @@ FOR each step_id in manifest.phase_6.steps:
      - PROJECT/SKILL: Branch on the dispatched-vs-inline classification from the
        "Dispatched workflows vs inline steps" section. A `project:` / `bundle:skill`
        step is DISPATCHED when that section lists it as dispatched
-       (`project:finalize-step-pre-submission-self-review`,
-       `project:finalize-step-plugin-doctor`, and any external step that section
+       (`project:finalize-step-plugin-doctor`, and any external step that section
        marks dispatched); every other external step is INLINE.
 
        **DISPATCHED project/skill step** — route through the generic
@@ -826,8 +824,7 @@ FOR each step_id in manifest.phase_6.steps:
              effort resolve-target --phase phase-6-finalize [--role <subkey>]
            ```text
            Use the step's resolved role from the "Dispatched workflows vs inline steps"
-           section (`project:finalize-step-pre-submission-self-review` → `phase-6-finalize`,
-           no `--role`; `project:finalize-step-plugin-doctor` → `phase-6-finalize --role
+           section (`project:finalize-step-plugin-doctor` → `phase-6-finalize --role
            verification-feedback` with `producer=plugin-doctor` runtime input).
        (2) Emit the standardized `[DISPATCH]` work-log line (see
            [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md)

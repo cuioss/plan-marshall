@@ -60,7 +60,7 @@ documented in
 
 - **`orchestrator-owned`** steps sub-dispatch (they issue their own `Task:`
   dispatches — e.g. `finalize-step-plugin-doctor`,
-  `finalize-step-pre-submission-self-review`, `automatic-review`,
+  `default:pre-submission-self-review`, `automatic-review`,
   `finalize-step-simplify`). A dispatched `execution-context` leaf has no Task
   tool and CANNOT run them; the main-context orchestrator MUST own them.
 - **`leaf-dispatchable`** steps are self-contained scripts or inline workflows

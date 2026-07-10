@@ -21,7 +21,7 @@ To create a new self-review surfacing implementor:
 3. Add `implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacing` to the skill's `SKILL.md` frontmatter.
 4. Register the script via the standard executor mapping (`{bundle}:ext-self-review-{domain}:self_review`).
 
-The consumer dispatch ([`pre-submission-self-review.md`](../../phase-6-finalize/workflow/pre-submission-self-review.md) Step 1) calls the implementor's `surface` subcommand by its fixed notation directly — there is no registration step. For the plan-marshall domain the canonical implementor notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`; a consumer-domain implementor is wired in by the consumer's own dispatch using the implementor's executor notation.
+The consumer dispatch ([`pre-submission-self-review.md`](../../phase-6-finalize/workflow/pre-submission-self-review.md) Step 1) discovers surfacing implementors via `find_implementors(ext-point-self-review-surfacing)` (`extension_discovery implementors --ext-point plan-marshall:extension-api/standards/ext-point-self-review-surfacing`) and invokes the first implementor whose `self_review` script notation resolves in the current executor. For the plan-marshall domain the resolvable implementor notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`, preserving current behavior bit-for-bit. When NO implementor resolves — a consumer project shipping no domain self-review surfacer — the consumer takes the **zero-generator fallback**: an empty candidate envelope, no LLM cognitive dispatch, and a clean `done` outcome. This discovery-routing + zero-generator fallback is what lets the promoted `default_on: true` step ship safely to consumers without a domain surfacer.
 
 ### Implementor Frontmatter
 
@@ -176,6 +176,7 @@ The `ext-self-review-plan-marshall` implementor's detection heuristics are docum
 
 | Condition | Output |
 |-----------|--------|
+| No domain implementor resolved (consumer dispatch, no surfacer in the executor) | Zero-candidate clean run — the consumer step succeeds without dispatching the LLM cognitive phase (`outcome=done`, empty candidate envelope) |
 | Live footprint empty (no `{base}...HEAD` ∪ porcelain changes) | `status: success` with empty candidate lists (no diff scope) |
 | Git unavailable or wrong cwd | `status: error\nerror: git_unavailable\nmessage: ...` (exit 1) |
 | Base branch not found | `status: error\nerror: base_branch_not_found\nbase_branch: {base}` (exit 1) |

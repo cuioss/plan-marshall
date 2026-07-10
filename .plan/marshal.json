@@ -75,7 +75,7 @@
         },
         "default:pre-push-quality-gate": {},
         "project:finalize-step-plugin-doctor": {},
-        "project:finalize-step-pre-submission-self-review": {
+        "default:pre-submission-self-review": {
           "self_review": "auto",
           "drop_review_on_scope_gate": false
         },
@@ -116,16 +116,16 @@
           "use_merge_queue": true,
           "admin_merge_on_stuck_state": false
         },
+        "default:finalize-step-preference-emitter": {
+          "preference_min_recurrence": 2
+        },
         "project:finalize-step-deploy-target": {},
         "project:finalize-step-sync-plugin-cache": {},
         "plan-marshall:plan-retrospective": {},
         "project:finalize-step-lessons-housekeeping": {},
         "default:record-metrics": {},
         "default:finalize-step-print-phase-breakdown": {},
-        "default:archive-plan": {},
-        "default:finalize-step-preference-emitter": {
-          "preference_min_recurrence": 2
-        }
+        "default:archive-plan": {}
       },
       "effort": {
         "default": "level-3",
