@@ -579,7 +579,13 @@ def _record_ci_duration(command_key: str, duration: int) -> list[int]:
     """
     config_path = get_run_config_path()
     config = read_run_config(config_path)
-    section = config.setdefault('ci_durations', {})
+    section = config.get('ci_durations')
+    if not isinstance(section, dict):
+        # A corrupt / hand-edited non-dict value would make section.get() below
+        # raise AttributeError; reset to an empty dict (mirrors the guard in
+        # _read_ci_duration_window).
+        section = {}
+        config['ci_durations'] = section
     window = _coerce_int_window(section.get(command_key))
     window.append(duration)
     # Bound to the newest CI_DURATION_WINDOW_SIZE entries (evict oldest first).

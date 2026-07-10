@@ -209,8 +209,17 @@ def _watch_run(run_id: str, timeout: int) -> tuple[int, str, str]:
     is handled by ``gh`` itself, never a hand-rolled sleep loop. Exits non-zero
     when the run concludes in failure. Test-mockable via monkeypatch. Returns
     ``(returncode, stdout, stderr)``.
+
+    A ``subprocess.TimeoutExpired`` (or any other watch failure) is caught and
+    mapped to a non-zero return rather than propagating: the caller
+    (``cmd_ci_wait``) treats a non-zero watch as "not terminal yet" and falls
+    through to a fresh checks fetch, so a watch that hits its budget resolves to
+    the ``deadline_exceeded`` envelope instead of crashing the command.
     """
-    return github_ops.run_gh(['run', 'watch', str(run_id), '--exit-status', '--compact'], timeout=timeout)
+    try:
+        return github_ops.run_gh(['run', 'watch', str(run_id), '--exit-status', '--compact'], timeout=timeout)
+    except Exception as exc:  # noqa: BLE001 — any watch failure degrades to the checks-fetch fallback
+        return 1, '', f'gh run watch failed or timed out: {exc}'
 
 
 def _fetch_pr_checks(pr_number: int | str) -> tuple[bool, dict]:
