@@ -683,7 +683,14 @@ Read `use_merge_queue` off the same one-stop `step-params get` `params` object r
       --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch
   ```
 
-  Parse the returned TOON. On `status: success` (`enqueued: true`), the PR is on the platform queue — proceed to **Wait for Merge CI** (the queue's own re-test) and the cleanup sections below. On `status: error` (e.g. the GitLab explicit-unsupported merge-train response, or a queue-engagement failure), log the error and abort — do NOT silently fall back to an immediate merge, since the operator opted into queue serialization for a reason. **Release-on-abort**: release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4).
+  Parse the returned TOON. On `status: success` (`enqueued: true`), the PR is on the platform queue — proceed to **Wait for Merge CI** (the queue's own re-test) and the cleanup sections below. On `status: error` (e.g. a GitLab merge-train-ineligible project, or a queue-engagement / auth-scope failure), log the **actionable** error and abort — do NOT silently fall back to an immediate merge, since the operator opted into queue serialization for a reason. The abort message MUST name BOTH remedies so the operator is never left with a bare error: (a) **disable `use_merge_queue`** (set it back to `false` via `manage-config … step set --step-id default:branch-cleanup --param use_merge_queue --value false`) to merge immediately via `pr safe-merge`, or (b) **run the marshall-steward merge-queue provisioning step** (Configuration → Merge Queue) to configure the platform merge queue so the enqueue succeeds:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: pr merge-queue enqueue failed - {error}. Remedies: (a) disable use_merge_queue to merge immediately via pr safe-merge, or (b) run /marshall-steward → Configuration → Merge Queue to provision the platform merge queue, then re-run finalize."
+  ```
+
+  **Release-on-abort**: release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4).
 
 The remainder of this section (the immediate `pr safe-merge` path) applies only when `use_merge_queue == false`.
 

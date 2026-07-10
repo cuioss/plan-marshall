@@ -112,6 +112,17 @@ Source: [issue-operations.md](issue-operations.md)
 
 ---
 
+## repo — Repository Operations
+
+Source: [pr-operations.md](pr-operations.md)
+
+| Subcommand | Required Flags | Optional Flags | Purpose |
+|------------|----------------|----------------|---------|
+| `repo merge-queue probe` | _(none)_ | — | Probe platform merge-queue eligibility/state; returns one of `eligible_configured` / `eligible_unconfigured` / `ineligible` / `unsupported` (GitHub merge queue / GitLab merge train). |
+| `repo merge-queue enable` | _(none)_ | — | Enable/configure the platform merge queue (idempotent — an already-configured project is left unchanged). |
+
+---
+
 ## Common Anti-Patterns
 
 These specific mistakes have been observed when transferring `gh`/`glab` flag names from memory:

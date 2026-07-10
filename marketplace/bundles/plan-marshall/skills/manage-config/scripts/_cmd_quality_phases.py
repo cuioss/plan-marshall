@@ -197,6 +197,83 @@ def _steps_map(raw) -> dict:
 
 
 
+# Actionable remedy pair surfaced when a use_merge_queue set is rejected. Both
+# remedies are named so the operator is never left with a bare rejection.
+_MERGE_QUEUE_BOTH_REMEDIES = (
+    'Either disable use_merge_queue, or run the marshall-steward merge-queue '
+    'provisioning step (Configuration → Merge Queue) to configure the platform '
+    'merge queue first.'
+)
+
+# The two probe discriminators that permit enabling use_merge_queue. Mirrors
+# ci_base.MERGE_QUEUE_ELIGIBLE_STATES (kept as literals here because ci_base is
+# not on manage-config's import path; the vocabulary is the shared contract).
+_MERGE_QUEUE_ELIGIBLE_STATES = frozenset({'eligible_configured', 'eligible_unconfigured'})
+
+
+def _run_merge_queue_probe() -> dict:
+    """Run ``ci repo merge-queue probe`` via the executor; return the parsed TOON dict.
+
+    Isolated as a module-level function so tests can monkeypatch the probe result
+    without shelling out. On any subprocess/parse failure returns a synthetic
+    ``{'status': 'error', ...}`` dict — never raises.
+    """
+    import subprocess
+    import sys
+
+    try:
+        from toon_parser import parse_toon
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                '.plan/execute-script.py',
+                'plan-marshall:tools-integration-ci:ci',
+                'repo',
+                'merge-queue',
+                'probe',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except Exception as exc:  # import / subprocess spawn / timeout — degrade to an error dict.
+        return {'status': 'error', 'error': str(exc)}
+    if result.returncode != 0:
+        return {'status': 'error', 'error': result.stderr.strip() or 'probe failed'}
+    try:
+        return parse_toon(result.stdout)
+    except Exception:
+        return {'status': 'error', 'error': 'could not parse probe output'}
+
+
+def _validate_use_merge_queue(value) -> str | None:
+    """Return ``None`` when the ``use_merge_queue`` set is permitted, else an error message.
+
+    Only enabling (``value is True``) is validated — disabling is always allowed.
+    Runs a live probe: permit on ``eligible_configured`` / ``eligible_unconfigured``;
+    reject (actionable, naming both remedies) on ``ineligible`` / ``unsupported``.
+    An auth-scope or otherwise-failed probe returns the actionable error, never a
+    stack trace.
+    """
+    if value is not True:
+        return None
+    probe = _run_merge_queue_probe()
+    if probe.get('status') != 'success':
+        detail = probe.get('display_detail') or probe.get('error') or 'probe did not succeed'
+        return (
+            f'Cannot enable use_merge_queue — the merge-queue probe failed: {detail}. '
+            f'{_MERGE_QUEUE_BOTH_REMEDIES}'
+        )
+    eligibility = probe.get('eligibility')
+    if eligibility in _MERGE_QUEUE_ELIGIBLE_STATES:
+        return None
+    return (
+        f"Cannot enable use_merge_queue — the platform merge queue is '{eligibility}'. "
+        f'{_MERGE_QUEUE_BOTH_REMEDIES}'
+    )
+
+
 def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config: dict) -> dict:
     """Handle the one-stop ``step get`` / ``step set`` verb.
 
@@ -230,6 +307,13 @@ def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config
             return error_exit(f"Step '{step_id}' not found in {phase_section}")
         param = args.param
         value = _coerce_value(args.value)
+        # Probe-backed set-time validation: enabling use_merge_queue requires an
+        # eligible platform merge queue. Reject with the actionable both-remedies
+        # message when the live probe reports ineligible/unsupported (or fails).
+        if param == 'use_merge_queue':
+            merge_queue_error = _validate_use_merge_queue(value)
+            if merge_queue_error:
+                return error_exit(merge_queue_error)
         params = dict(steps[step_id])
         params[param] = value
         steps[step_id] = params

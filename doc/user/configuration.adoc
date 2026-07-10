@@ -310,6 +310,36 @@ NOTE: All `default:branch-cleanup` step params — `pr_merge_strategy`, `final_m
 
 NOTE: The `default:pre-push-quality-gate` finalize step has no dedicated activation key. Its activation is *derived from* `build.map` (see <<build-map>>): the step activates whenever a changed path matches a glob registered in the build_map.
 
+[#merge-queue]
+=== Platform merge queue (both providers)
+
+The `use_merge_queue` opt-in (see the `default:branch-cleanup` param table above) routes the final merge through the *platform merge queue* so the platform re-tests-and-merges the PR against the latest base branch, serializing a truly-external commit (a manual `gh`/`glab` merge, a dependabot merge, a parallel remediation PR) that the session-scoped merge mutex cannot serialize on its own. It is supported on *both* providers:
+
+* *GitHub* — the platform merge queue, configured as a `merge_queue` rule in a repository ruleset on the default branch. `pr merge-queue` engages it via `gh pr merge --auto`.
+* *GitLab* — a *merge train* (a Premium/Ultimate-tier feature enabled per-project). `pr merge-queue` performs a real merge-train enqueue via `POST /projects/:id/merge_trains/merge_requests/:iid`.
+
+==== Provisioning via `/marshall-steward`
+
+Rather than hand-configuring the platform, use the steward's *Merge Queue* provisioning step (first-run wizard Step 13.5, or Configuration → Merge Queue in the maintenance menu). It follows a *probe → ask → configure-or-refuse* pattern and is idempotent (a re-run against an already-configured project surfaces nothing and mutates nothing):
+
+. *Probe* the platform via `ci repo merge-queue probe`, which returns one of the shared eligibility discriminators: `eligible_configured`, `eligible_unconfigured`, `ineligible`, or `unsupported`.
+. On `eligible_configured` — report and return silently; no change.
+. On `eligible_unconfigured` — ask *once* whether to enable it; on *yes*, run `ci repo merge-queue enable` and persist `use_merge_queue=true`.
+. On `ineligible`/`unsupported` — refuse with an actionable message naming the remedy (GitLab tier / GitHub Administration-scope or org policy), never a stack trace.
+
+Setting `use_merge_queue=true` directly (via `step set`) is *probe-validated at set time*: enabling it is rejected with an actionable both-remedies message when a live probe reports `ineligible`/`unsupported`. At finalize time, a merge-queue enqueue failure aborts branch-cleanup with an actionable error naming both remedies (disable `use_merge_queue`, or run the steward provisioning step) — it never silently falls back to an immediate merge.
+
+==== Eligibility is always probed live
+
+There is *no static per-provider capability flag* recording whether the merge queue is available — eligibility is *always* probed live against the actual repository/project state at set time and at provisioning time. The `required_status_checks` "require branches to be up to date before merging" branch-protection setting is left as an *operator choice* (recorded in the steward prompt), not forced by the provisioning step.
+
+==== Verification posture (fixture-vs-live)
+
+The two provider paths carry different verification postures:
+
+* *GitHub — fixture-tested verbs, live-eligible target.* The probe/enable verbs are unit-tested against API-shape-faithful fixtures (not the live `gh` CLI). GitHub merge queue is GA and this repository was confirmed eligible by a live platform probe, so — unlike GitLab — a real, accessible target exists: the steward provisioning exercises the verbs against the live GitHub API the first time it runs on this repo.
+* *GitLab — fixture-verified only.* The GitLab merge-train probe/enable/enqueue path is verified against *API-shape-faithful fixtures only* (no live-GitLab-consumer verification is implied). The fixtures mirror the real Projects-API and merge-train response shapes so the handler logic is validated without a live GitLab instance.
+
 [#automated-review]
 === Automated PR review and post-branch-update re-review
 

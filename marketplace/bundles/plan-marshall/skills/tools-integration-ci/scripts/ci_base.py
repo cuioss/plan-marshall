@@ -38,6 +38,36 @@ from toon_parser import parse_toon, serialize_toon  # noqa: F401
 EXIT_SUCCESS = 0
 
 # ---------------------------------------------------------------------------
+# Merge-queue eligibility vocabulary (shared across providers)
+# ---------------------------------------------------------------------------
+# The `repo merge-queue probe` verb returns exactly one of these discriminators
+# so the marshall-steward provisioning step (D3) and the manage-config set-time
+# validation (D4) can branch on a provider-independent value:
+#
+#   eligible_configured   — the platform merge queue is available AND already
+#                           configured on the target branch/project (a re-run is
+#                           a no-op).
+#   eligible_unconfigured — available but NOT yet configured; `enable` will
+#                           configure it.
+#   ineligible            — the platform gates the feature off for this repo /
+#                           project (e.g. GitLab merge trains require Premium /
+#                           Ultimate, or a GitHub org policy disallows it).
+#   unsupported           — the provider abstraction cannot probe/enable the
+#                           feature at all (reserved; probe never silently
+#                           degrades to this without an explicit reason).
+MERGE_QUEUE_ELIGIBLE_CONFIGURED = 'eligible_configured'
+MERGE_QUEUE_ELIGIBLE_UNCONFIGURED = 'eligible_unconfigured'
+MERGE_QUEUE_INELIGIBLE = 'ineligible'
+MERGE_QUEUE_UNSUPPORTED = 'unsupported'
+
+# The two probe outcomes that permit enabling `use_merge_queue`. The set-time
+# validation (D4) rejects the config set when the probe returns a value OUTSIDE
+# this set.
+MERGE_QUEUE_ELIGIBLE_STATES = frozenset(
+    {MERGE_QUEUE_ELIGIBLE_CONFIGURED, MERGE_QUEUE_ELIGIBLE_UNCONFIGURED}
+)
+
+# ---------------------------------------------------------------------------
 # Body store (path-allocate pattern for PR/issue/comment bodies)
 # ---------------------------------------------------------------------------
 
@@ -1048,6 +1078,42 @@ def build_parser(
         help='Branch name to delete from the remote',
     )
 
+    # -- repo ---------------------------------------------------------
+    # Repository-level (not PR-level) operations. Currently carries a single
+    # `merge-queue` noun grouping two sub-verbs `probe` / `enable`, giving the
+    # 3-level `repo merge-queue probe` / `repo merge-queue enable` shape.
+    # dispatch() keys the repo branch on the three-level path
+    # (repo, merge-queue, args.merge_queue_command).
+    repo_parser = subparsers.add_parser(
+        'repo',
+        help='Repository-level operations (merge-queue probe/enable)',
+        allow_abbrev=False,
+    )
+    repo_sub = repo_parser.add_subparsers(dest='repo_command', required=True)
+
+    merge_queue_parser = repo_sub.add_parser(
+        'merge-queue',
+        help='Platform merge-queue (GitHub merge queue / GitLab merge train) probe and enable',
+        allow_abbrev=False,
+    )
+    mq_sub = merge_queue_parser.add_subparsers(dest='merge_queue_command', required=True)
+
+    # repo merge-queue probe — no required args; returns the shared eligibility
+    # discriminator for the current repository/project.
+    mq_sub.add_parser(
+        'probe',
+        help='Probe platform merge-queue eligibility and configuration state',
+        allow_abbrev=False,
+    )
+
+    # repo merge-queue enable — configure the platform merge queue. Idempotent:
+    # an already-configured project is left unchanged.
+    mq_sub.add_parser(
+        'enable',
+        help='Enable/configure the platform merge queue (idempotent)',
+        allow_abbrev=False,
+    )
+
     return parser, pr_sub, checks_sub, issue_sub, branch_sub
 
 
@@ -1527,8 +1593,10 @@ def _load_log_filter():
 # Command dispatch
 # ---------------------------------------------------------------------------
 
-# Handler map type: maps (command, subcommand) -> handler function
-HandlerMap = dict[tuple[str, str], Any]
+# Handler map type: maps a command-path tuple -> handler function. Most keys are
+# 2-tuples ``(command, subcommand)``; the ``repo merge-queue`` verbs use a
+# 3-tuple ``(repo, merge-queue, sub_verb)`` key, so the arity is variadic.
+HandlerMap = dict[tuple[str, ...], Any]
 
 
 def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.ArgumentParser) -> dict:
@@ -1544,6 +1612,7 @@ def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.Ar
     """
     command = args.command
 
+    key: tuple[str, ...]
     if command == 'pr':
         key = ('pr', args.pr_command)
     elif command == 'checks':
@@ -1552,6 +1621,11 @@ def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.Ar
         key = ('issue', args.issue_command)
     elif command == 'branch':
         key = ('branch', args.branch_command)
+    elif command == 'repo':
+        # Three-level path: `repo merge-queue {probe|enable}`. args.repo_command
+        # is always 'merge-queue' today (the only registered noun), and
+        # args.merge_queue_command is the sub-verb.
+        key = ('repo', args.repo_command, args.merge_queue_command)
     else:
         parser.print_help()
         return make_error('dispatch', 'Unknown command')

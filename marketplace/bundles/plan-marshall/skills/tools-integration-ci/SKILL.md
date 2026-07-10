@@ -1,6 +1,6 @@
 ---
 name: tools-integration-ci
-description: CI provider abstraction with unified API for GitHub and GitLab operations (PR, issues, CI status)
+description: CI provider abstraction with unified API for GitHub and GitLab operations (PR, issues, CI status, repo merge-queue)
 user-invocable: false
 mode: script-executor
 ---
@@ -31,6 +31,7 @@ Unified CI provider abstraction using **static routing** - one script per provid
 - PR review operations (comments, wait-for-comments, reply, resolve-thread, thread-reply, reviews)
 - CI status, wait, rerun, and logs (with automatic failure-log download + error-extraction filtering)
 - Issue operations (create, view, close)
+- Repo operations (merge-queue probe/enable — platform merge queue / merge train)
 - Unified TOON output format across providers
 
 ## Consumers
@@ -81,7 +82,7 @@ tools-integration-ci/
 └── scripts/
     ├── ci_health.py             # Detection & verification
     ├── ci.py                    # Provider-agnostic passthrough router
-    ├── ci_base.py               # Shared argparse surface (pr/checks/issue/branch sub-verbs)
+    ├── ci_base.py               # Shared argparse surface (pr/checks/issue/branch/repo sub-verbs)
     └── _ci_log_filter.py        # Failure-log error-extraction filter
 ```
 
@@ -267,7 +268,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge-q
   (--pr-number PR_NUMBER | --head HEAD) [--strategy merge|squash|rebase] [--delete-branch]
 ```
 
-`pr merge-queue` enqueues the PR into the platform merge queue so the platform re-tests-and-merges against the latest base, serializing a truly-external commit the session-scoped merge mutex cannot. On GitHub it engages the merge queue via `gh pr merge --auto`; on GitLab the platform equivalent is a Premium-tier merge train with no stable `glab` surface, so the GitLab handler returns an explicit unsupported error rather than silently falling back to an immediate merge.
+`pr merge-queue` enqueues the PR into the platform merge queue so the platform re-tests-and-merges against the latest base, serializing a truly-external commit the session-scoped merge mutex cannot. On GitHub it engages the merge queue via `gh pr merge --auto`; on GitLab it performs a real merge-train enqueue via `POST /projects/:id/merge_trains/merge_requests/:iid`. On GitLab the merge train is a Premium/Ultimate-tier feature enabled per-project — when the project/tier does not offer it the handler returns the actionable ineligible error rather than silently falling back to an immediate merge.
 
 ### checks
 
@@ -304,6 +305,28 @@ Sub-verb: `delete`.
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci branch delete \
   --remote-only --branch BRANCH
 ```
+
+### repo
+
+A `merge-queue` noun grouping two sub-verbs: `probe`, `enable` (the 3-level
+`repo merge-queue probe` / `repo merge-queue enable` shape).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci repo merge-queue probe
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci repo merge-queue enable
+```
+
+`repo merge-queue probe` reports the platform merge-queue eligibility as one of
+the shared discriminators — `eligible_configured`, `eligible_unconfigured`,
+`ineligible`, or `unsupported`. `repo merge-queue enable` configures the platform
+merge queue (GitHub: a `merge_queue` ruleset on the default branch; GitLab: the
+per-project `merge_trains_enabled` setting) and is idempotent — an
+already-configured repo is left unchanged. Both verbs return the actionable error
+(never a stack trace) on an auth-scope failure, and `enable` refuses with the
+actionable ineligible message when the platform gates the feature off.
 
 ## References
 

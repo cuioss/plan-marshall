@@ -467,6 +467,19 @@ See [provider-setup.md](provider-setup.md#ci-provider-detection-step-13) for CI 
 
 ---
 
+## Step 13.5: Merge-Queue Provisioning (Optional)
+
+Probe the platform merge queue and, on an eligible-but-unconfigured project, ask
+once and configure it — an idempotent probe→ask→configure step that runs after
+CI provider detection (it requires an authenticated `gh` / `glab`). It introduces
+no provider branching of its own — it calls the provider-agnostic `ci repo
+merge-queue probe` / `ci repo merge-queue enable` verbs and persists the
+`use_merge_queue` opt-in via `manage-config`.
+
+See [merge-queue-setup.md](merge-queue-setup.md) for the full provisioning flow.
+
+---
+
 ## Step 14: Permission Setup (Optional)
 
 ```text

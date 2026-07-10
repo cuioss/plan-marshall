@@ -1,6 +1,6 @@
 # PR Operations
 
-Pull request lifecycle operations: create, view, merge, auto-merge, safe-merge, merge-queue, close, ready, edit. Also covers the `branch delete` leaf, which supports post-merge remote branch cleanup.
+Pull request lifecycle operations: create, view, merge, auto-merge, safe-merge, merge-queue, close, ready, edit. Also covers the `branch delete` leaf, which supports post-merge remote branch cleanup, and the repo-level `repo merge-queue probe` / `repo merge-queue enable` provisioning verbs.
 
 ## Branch-Aware Operations: `--head BRANCH`
 
@@ -221,7 +221,7 @@ duration_sec: 0
 
 Enqueue the PR into the **platform merge queue** so the platform re-tests-and-merges it against the latest base branch. Unlike `pr safe-merge` (which merges immediately once the current PR is ready), `pr merge-queue` hands the merge to the platform's serialization mechanism, closing the residual staleness gap a truly-external commit (e.g. a dependabot merge to the base) opens — such a commit never acquires the session-scoped merge mutex, so only the platform queue can serialize against it. It composes with the widened merge mutex: the mutex guards the pre-enqueue rebase/force-push window; the merge queue serializes the merge itself.
 
-On **GitHub**, the verb engages the merge queue via `gh pr merge --auto` (the PR is added to the queue configured on the target branch's protection rules). On **GitLab**, the platform equivalent is a **merge train** — a Premium/Ultimate-tier feature enabled per-project with no stable `glab` CLI surface — so the GitLab handler returns an explicit unsupported error rather than silently falling back to an immediate merge.
+On **GitHub**, the verb engages the merge queue via `gh pr merge --auto` (the PR is added to the queue configured on the target branch's protection rules). On **GitLab**, the verb performs a real **merge-train** enqueue via `POST /projects/:id/merge_trains/merge_requests/:iid`. The merge train is a Premium/Ultimate-tier feature enabled per-project; when the project/tier does not offer it (HTTP 403/404 from the merge-train API) the GitLab handler returns the actionable ineligible error rather than silently falling back to an immediate merge.
 
 ### Step 1: Execute
 
@@ -243,7 +243,64 @@ enqueued: true
 delete_branch: true
 ```
 
-On GitLab the same invocation returns `status: error, operation: pr_merge_queue` with a message naming merge trains as the unsupported platform equivalent — surfaced explicitly (never a silent immediate-merge fallback) so cross-provider callers notice the mismatch.
+On GitLab a successful enqueue returns the same `enqueued: true` envelope (plus a `merge_train_car_id` when the API surfaces the train car id). When the project/tier is not merge-train-eligible the invocation returns `status: error, operation: pr_merge_queue` with the actionable ineligible message — surfaced explicitly (never a silent immediate-merge fallback) so cross-provider callers notice the mismatch.
+
+---
+
+## Workflow: Repo Merge-Queue Probe / Enable
+
+**Pattern**: Provider-Agnostic Router
+
+Probe and configure the **platform merge queue** at the repository/project level
+(distinct from `pr merge-queue`, which enqueues a specific PR). These verbs back
+the `marshall-steward` merge-queue provisioning step and the `use_merge_queue`
+set-time validation: `probe` reports whether the platform merge queue is
+available and already configured, and `enable` configures it idempotently.
+
+### Step 1: Probe eligibility
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci repo merge-queue probe
+```
+
+```toon
+status: success
+operation: repo_merge_queue_probe
+provider: github
+eligibility: eligible_unconfigured
+detail: no merge_queue rule on branch
+```
+
+`eligibility` is one of the shared discriminators:
+
+| Value | Meaning |
+|-------|---------|
+| `eligible_configured` | The platform merge queue is available AND already configured (a re-run of `enable` is a no-op). |
+| `eligible_unconfigured` | Available but not yet configured — `enable` will configure it. |
+| `ineligible` | The platform gates the feature off (GitLab merge trains need Premium/Ultimate; a GitHub org policy or missing Administration scope disallows it). |
+| `unsupported` | Reserved — the abstraction cannot probe/enable the feature. |
+
+### Step 2: Enable (idempotent)
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci repo merge-queue enable
+```
+
+```toon
+status: success
+operation: repo_merge_queue_enable
+provider: github
+eligibility: eligible_configured
+changed: true
+detail: merge_queue ruleset created
+```
+
+`changed: false` indicates an already-configured repo (idempotent no-op). On
+GitHub, `enable` creates a `merge_queue` ruleset on the default branch; on
+GitLab it sets the per-project `merge_trains_enabled` flag. On an `ineligible`
+probe `enable` refuses with the actionable ineligible error; on an auth-scope
+failure both verbs return the actionable remedy (naming the required
+scope/permission), never a stack trace.
 
 ---
 

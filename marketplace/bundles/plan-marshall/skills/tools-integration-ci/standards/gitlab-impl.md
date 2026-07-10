@@ -98,6 +98,62 @@ glab api projects/:id/merge_requests/123/approvals
 | approved | APPROVED |
 | comment (not approved) | COMMENTED |
 
+### pr merge-queue (merge train enqueue)
+
+GitLab's platform equivalent of a GitHub merge queue is a **merge train** — a
+Premium/Ultimate-tier feature enabled per-project. `pr merge-queue` performs a
+real enqueue via the merge-train API rather than any silent immediate-merge
+fallback.
+
+**CLI Command**:
+```bash
+glab api -X POST projects/{id}/merge_trains/merge_requests/{iid}
+```
+
+- `{id}` is the URL-encoded `namespace/project` path.
+- `{iid}` is the MR internal id (resolved from `--pr-number` or `--head`).
+- Success returns the merge-train **car** object; the handler surfaces
+  `enqueued: true` and a `merge_train_car_id` (best-effort from the response `id`).
+- HTTP 403/404 from the merge-train endpoint → the project/tier is not
+  merge-train-eligible → the handler returns the actionable ineligible error.
+
+---
+
+## Repo Merge-Queue Operations
+
+The `repo merge-queue` verbs probe and configure the per-project merge-train
+setting via the Projects API.
+
+### repo merge-queue probe
+
+**CLI Command**:
+```bash
+glab api projects/{id}     # → reads the merge_trains_enabled boolean
+```
+
+**Discriminator mapping**:
+
+| Projects-API result | `eligibility` |
+|---------------------|---------------|
+| `merge_trains_enabled: true` | `eligible_configured` |
+| `merge_trains_enabled: false` | `eligible_unconfigured` |
+| `merge_trains_enabled` absent (tier/feature does not expose it) | `ineligible` |
+| HTTP 401/403 | actionable auth-scope error (never a stack trace) |
+
+### repo merge-queue enable
+
+Probe first. On `eligible_configured` the verb is a no-op (`changed: false`). On
+`eligible_unconfigured` it sets the per-project flag:
+
+**CLI Command**:
+```bash
+glab api -X PUT projects/{id} -f merge_trains_enabled=true
+```
+
+On an `ineligible` probe the verb refuses with the actionable message naming the
+Premium/Ultimate tier + per-project enablement remedy; an auth-scope failure
+returns the actionable scope/permission remedy.
+
 ---
 
 ## CI Operations
