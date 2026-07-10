@@ -93,11 +93,12 @@ The pre-filters run in this order:
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by any pre-filter that ran before the row matrix.
 
-After the seven-row matrix runs, three post-matrix transforms inspect the matrix output before the manifest is persisted, in this order:
+After the seven-row matrix runs, four post-matrix transforms inspect the matrix output before the manifest is persisted, in this order:
 
 1. **`ceremony_finalize_selection`** — applies the four `plan.phase-6-finalize` run-at-all gates (`self_review` / `qgate` / `simplify` / `security_audit`, each `always|never|auto`) to the final `phase_6.steps`, forcing each gate's step in (`always`), out (`never`), or deferring (`auto`). It NEVER touches `plan-marshall:automatic-review`. Documented in its own subsection below.
-2. **`bot_enforcement_guard`** — on GitHub/GitLab plans where `plan-marshall:automatic-review` is missing from the final `phase_6.steps`, the guard remediates in-place by appending it back to the list (defense-in-depth, not assertion). The guard is documented in its own subsection below the pre-filter sections.
-3. **`frontmatter_order_sort`** — reorders the final `phase_6.steps` into ascending frontmatter `order` (stable sort via `_sort_steps_by_frontmatter_order`; order-unresolvable entries stay pinned at their original index), so `archive-plan` (order 1000) is the terminal barrier regardless of seed order. Runs after the bot-enforcement guard and before the compose-time placement validator. Documented in its own subsection below.
+2. **Execution-profile lane resolution** — applies the `minimal ⊏ auto ⊏ full` posture cutoff from `status.metadata.execution_profile` to the lane-participating steps, dropping every element whose effective tier exceeds the posture. Documented in its own subsection below.
+3. **`bot_enforcement_guard`** — on GitHub/GitLab plans where `plan-marshall:automatic-review` is missing from the final `phase_6.steps`, the guard remediates in-place by appending it back to the list (defense-in-depth, not assertion). The guard is documented in its own subsection below the pre-filter sections.
+4. **`frontmatter_order_sort`** — reorders the final `phase_6.steps` into ascending frontmatter `order` (stable sort via `_sort_steps_by_frontmatter_order`; order-unresolvable entries stay pinned at their original index), so `archive-plan` (order 1000) is the terminal barrier regardless of seed order. Runs after the bot-enforcement guard and before the compose-time placement validator. Documented in its own subsection below.
 
 ### Pre-Filter: `commit_push_disabled`
 
