@@ -249,7 +249,7 @@
       "lessons_superseded_days": 0,
       "temp_on_maintenance": true
     },
-    "provisioned_version": "0.1.1080",
+    "provisioned_version": "0.1.1082",
     "config_seed_fingerprint": "0acf5eb5"
   }
 }
