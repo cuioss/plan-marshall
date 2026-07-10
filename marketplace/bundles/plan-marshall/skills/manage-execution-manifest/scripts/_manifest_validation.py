@@ -313,6 +313,42 @@ def _resolve_step_order(step_id: str) -> int | None:
     return _read_frontmatter_order(_resolve_standards_path(step_id))
 
 
+def _sort_steps_by_frontmatter_order(steps: list[Any]) -> list[Any]:
+    """Reorder ``steps`` into ascending frontmatter ``order`` at compose time.
+
+    Every entry whose ``_resolve_step_order`` is not ``None`` is sorted into
+    ascending resolved-order position; Python's stable sort preserves the
+    relative order of entries sharing an equal ``order`` value (they were
+    gathered in list-position order). Entries whose order resolves to ``None``
+    — non-string entries and external ``bundle:skill`` steps with no resolvable
+    source file — keep their exact original index, acting as fixed pins that the
+    sortable entries flow around.
+
+    This is the compose-time companion to :func:`_check_ascending_order`: the
+    composer sorts so the barrier invariant holds, the validator asserts the
+    sort held. Returns a new list; the input is not mutated.
+    """
+    sortable: list[tuple[int, Any]] = []
+    pinned_positions: set[int] = set()
+    for index, entry in enumerate(steps):
+        order = _resolve_step_order(entry) if isinstance(entry, str) else None
+        if order is None:
+            pinned_positions.add(index)
+        else:
+            sortable.append((order, entry))
+    # Stable sort by resolved order alone — equal orders keep their original
+    # relative sequence because ``sortable`` was built in list-position order.
+    sortable.sort(key=lambda pair: pair[0])
+    sortable_iter = iter(sortable)
+    result: list[Any] = []
+    for index, entry in enumerate(steps):
+        if index in pinned_positions:
+            result.append(entry)
+        else:
+            result.append(next(sortable_iter)[1])
+    return result
+
+
 def _check_ascending_order(steps: list[Any]) -> str | None:
     """Assert ``steps`` resolve to non-decreasing frontmatter ``order`` values.
 
