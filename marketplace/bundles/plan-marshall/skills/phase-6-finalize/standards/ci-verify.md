@@ -305,7 +305,7 @@ applies per `run_id`, not per plan), so the audit trail accumulates.
 
 ## Cross-references
 
-- [`automated-review.md`](../workflow/automated-review.md) — sibling consumer
+- [`automatic-review`](../../automatic-review/SKILL.md) — sibling consumer
   that uses the precondition in `strict` mode; ci-verify's
   `consume-failures` mode is the only divergence.
 - [`sonar-roundtrip.md`](../workflow/sonar-roundtrip.md) — owns row (a). If a
