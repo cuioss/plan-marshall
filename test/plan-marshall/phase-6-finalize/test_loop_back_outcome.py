@@ -6,13 +6,13 @@ These tests pin the four invariants documented in the lesson-2026-05-05-23-002
 deliverable:
 
 1. The producer-consumer FIX path records ``--outcome loop_back`` (not
-   ``done``) on the ``automated-review`` step, and the persisted shape on
+   ``done``) on the ``automatic-review`` step, and the persisted shape on
    disk matches the contract.
 2. The phase-6-finalize Step 3 dispatcher table treats a pre-seeded
    ``loop_back`` record as a re-fire (not a skip). Since the dispatcher
    logic lives in markdown, we validate the contract by exercising
    ``manage-status`` directly and verifying the persisted record.
-3. The FIX action body in ``automated-review.md`` posts the
+3. The FIX action body in ``automatic-review.md`` posts the
    ``prepare-add → commit-add → prepare-comment → thread-reply →
    resolve-thread → manage-findings resolve`` chain (regression-guard
    against future re-orderings) and Branch C still records
@@ -54,7 +54,7 @@ _PHASE_6_SKILL_MD = (
 )
 _AUTOMATED_REVIEW_MD = (
     _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall'
-    / 'skills' / 'phase-6-finalize' / 'workflow' / 'automated-review.md'
+    / 'skills' / 'automatic-review' / 'SKILL.md'
 )
 
 
@@ -99,12 +99,12 @@ def _args(
 def test_iteration_1_fix_records_loop_back_outcome(plan_context):
     """Driving the FIX-disposition path records ``loop_back`` on disk.
 
-    The producer-consumer flow (see automated-review.md "Mark Step Complete"
+    The producer-consumer flow (see automatic-review.md "Mark Step Complete"
     Branch C) calls ``manage-status mark-step-done`` with ``--outcome loop_back``
     when one or more pr-comment findings resolve to FIX. The simplest way to
     validate this contract is to invoke the underlying ``cmd_mark_step_done``
     with the same arguments Branch C documents and assert that
-    ``phase_steps["6-finalize"]["automated-review"].outcome`` on disk is
+    ``phase_steps["6-finalize"]["automatic-review"].outcome`` on disk is
     ``loop_back`` — not ``done``.
     """
     plan_id = 'loop-back-fix-iter1'
@@ -113,7 +113,7 @@ def test_iteration_1_fix_records_loop_back_outcome(plan_context):
         _args(
             plan_id,
             '6-finalize',
-            'automated-review',
+            'automatic-review',
             'loop_back',
             display_detail='loop-back iteration 1 (target=5-execute)',
             loop_back_target='5-execute',
@@ -130,7 +130,7 @@ def test_iteration_1_fix_records_loop_back_outcome(plan_context):
     assert result['loop_back_target'] == '5-execute'
 
     persisted = read_status(plan_id)
-    entry = persisted['metadata']['phase_steps']['6-finalize']['automated-review']
+    entry = persisted['metadata']['phase_steps']['6-finalize']['automatic-review']
     # On-disk contract: outcome is loop_back, NOT done; loop_back_target is
     # persisted alongside outcome and display_detail.
     assert entry['outcome'] == 'loop_back', (
@@ -171,7 +171,7 @@ def test_dispatcher_re_fires_on_loop_back(plan_context):
         _args(
             plan_id,
             '6-finalize',
-            'automated-review',
+            'automatic-review',
             'loop_back',
             display_detail='loop-back iteration 2 (target=5-execute)',
             loop_back_target='5-execute',
@@ -179,7 +179,7 @@ def test_dispatcher_re_fires_on_loop_back(plan_context):
     )
 
     persisted = read_status(plan_id)
-    entry = persisted['metadata']['phase_steps']['6-finalize']['automated-review']
+    entry = persisted['metadata']['phase_steps']['6-finalize']['automatic-review']
     assert entry['outcome'] == 'loop_back'
     assert entry['loop_back_target'] == '5-execute'
 
@@ -229,7 +229,7 @@ def test_fix_path_posts_thread_reply_before_terminal_done():
         prepare-add  →  commit-add  →  manage-findings resolve
 
     and the calling step's Branch C ("loop-back recorded") in
-    ``phase-6-finalize/workflow/automated-review.md`` must record
+    ``phase-6-finalize/workflow/automatic-review.md`` must record
     ``--outcome loop_back``, NOT ``--outcome done``. This test reads
     both files and asserts both invariants. It is a structural
     regression-guard against future edits that accidentally re-order
@@ -266,12 +266,12 @@ def test_fix_path_posts_thread_reply_before_terminal_done():
         )
         cursor = idx + len(token)
 
-    # The calling site's Branch C is in automated-review.md. It must use
+    # The calling site's Branch C is in automatic-review.md. It must use
     # --outcome loop_back, not --outcome done.
     auto_body = _AUTOMATED_REVIEW_MD.read_text(encoding='utf-8')
     branch_c_marker = '**Branch C'
     branch_c_start = auto_body.find(branch_c_marker)
-    assert branch_c_start != -1, 'Branch C section not found in automated-review.md'
+    assert branch_c_start != -1, 'Branch C section not found in automatic-review.md'
     branch_c_block = auto_body[branch_c_start:]
     assert '--outcome loop_back' in branch_c_block, (
         'Branch C must record `--outcome loop_back` (not `done`).'

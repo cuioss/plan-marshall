@@ -281,6 +281,22 @@ def test_add_finding_invalid_bot_kind(plan_context):
     assert 'Invalid bot_kind' in result['message']
 
 
+def test_add_finding_accepts_sourcery_bot_kind(plan_context):
+    """``sourcery`` is a first-class bot_kind accepted by add_finding."""
+    add_finding(
+        'store-prc-sourcery',
+        'pr-comment',
+        'Sourcery comment',
+        'Detail',
+        author='sourcery-ai[bot]',
+        bot_kind='sourcery',
+    )
+
+    result = query_findings('store-prc-sourcery', bot_kind='sourcery')
+    assert result['filtered_count'] == 1
+    assert result['findings'][0]['bot_kind'] == 'sourcery'
+
+
 def test_query_findings_by_bot_kind(plan_context):
     """query_findings filters by exact bot_kind match."""
     add_finding('store-prc-bybotkind', 'pr-comment', 'C1', 'd', author='coderabbitai[bot]', bot_kind='coderabbit')

@@ -156,7 +156,7 @@ def test_capture_at_finalize_boundary_blocks_when_actionable_pending(
 def test_capture_blocks_automated_review_to_branch_cleanup_boundary(
     plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
-    """automated-review → branch-cleanup boundary is guarded via re-capture."""
+    """automatic-review → branch-cleanup boundary is guarded via re-capture."""
     stub_query_counts['sonar-issue'] = 2
 
     result = cmds.cmd_capture(_ns(plan_id='pf-block-autoreview', phase='6-finalize'))
@@ -578,7 +578,7 @@ def test_pending_pr_comment_blocks_automated_review_to_branch_cleanup(
     stub_query_counts,
     stub_qgate_count,
 ) -> None:
-    """automated-review → branch-cleanup intra-finalize re-capture."""
+    """automatic-review → branch-cleanup intra-finalize re-capture."""
     stub_query_counts['pr-comment'] = 2
 
     result = cmds.cmd_capture(_ns(plan_id='pf-intra-autoreview', phase='6-finalize'))

@@ -940,9 +940,23 @@ def _scan_skills_roots_for_implementors(ext_point: str) -> list[dict[str, Any]]:
                 if ext_point not in read_implements_field(skill_md):
                     continue
                 seen_step_ids.add(step_id)
-                records.append(
-                    _build_implementor_record(skill_md, 'bundle-optional', name_override=step_id)
+                record = _build_implementor_record(
+                    skill_md, 'bundle-optional', name_override=step_id
                 )
+                # A bundle finalize-step skill that declares ``default_on: true``
+                # is a promoted built-in-equivalent: it seeds into the default
+                # finalize set exactly like a phase-6 built-in step doc. Classify
+                # it ``built-in`` (keeping its ``{bundle}:{skill}`` step id) so the
+                # seed filters (``default_on and source == 'built-in'``) and the
+                # marshall-steward default-step detection treat it as a shipped
+                # default. Opt-in bundle steps (``default_on: false``, e.g.
+                # ``plan-marshall:plan-retrospective``) stay ``bundle-optional``
+                # and are never seeded. ``default_on`` is a finalize-step-only
+                # frontmatter field, so this promotion never touches verify-step
+                # discovery.
+                if record.get('default_on'):
+                    record['source'] = 'built-in'
+                records.append(record)
 
     return records
 

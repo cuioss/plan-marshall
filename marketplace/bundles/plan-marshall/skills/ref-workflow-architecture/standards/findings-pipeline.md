@@ -50,7 +50,7 @@ The plan-marshall findings pipeline routes every quality signal — PR review co
 │                          │  Guarded boundary:           │                   │
 │                          │   6-finalize entry  +        │                   │
 │                          │   intra-finalize re-issues   │                   │
-│                          │   (automated-review →        │                   │
+│                          │   (automatic-review →        │                   │
 │                          │    branch-cleanup;           │                   │
 │                          │    sonar-roundtrip → next)   │                   │
 │                          │                              │                   │
@@ -83,16 +83,16 @@ ONE TRIAGE     one domain-grouped pass over the whole ledger (ext-triage-{domain
    │           gate folded in.
    ▼
 ONE RESPOND    post_responses(triaged) → provider (thread-reply / resolve-thread /
-               sonar dismiss), keyed by hash_id. The automated-review fix→re-review
+               sonar dismiss), keyed by hash_id. The plan-marshall:automatic-review fix→re-review
                loop runs AFTER triage decides dispositions.
 ```
 
 Triage is removed from the provider surface: the provider verbs are the two pure zero-LLM `fetch_findings` (FIND) and `post_responses` (RESPOND); the LLM judgment lives only in the single consolidated TRIAGE pass.
 
-CI completion is resolved as a **dispatcher-side precondition** before the `automated-review` consumer's body runs — consumer steps declare `requires: [ci-complete]` in their YAML frontmatter, and the phase-6-finalize dispatcher invokes `ci_complete_precondition.resolve(plan_id, worktree_path, pr_number)` inline ahead of dispatch. The resolver caches success outcomes per HEAD SHA so subsequent same-HEAD lookups short-circuit. On `wait_failed`, the dispatcher skips the consumer body entirely and records `ci_failure (precondition)` as the consumer step's outcome. The precondition isolates CI wait time from the triage budget without introducing a sibling step:
+CI completion is resolved as a **dispatcher-side precondition** before the `plan-marshall:automatic-review` consumer's body runs — consumer steps declare `requires: [ci-complete]` in their YAML frontmatter, and the phase-6-finalize dispatcher invokes `ci_complete_precondition.resolve(plan_id, worktree_path, pr_number)` inline ahead of dispatch. The resolver caches success outcomes per HEAD SHA so subsequent same-HEAD lookups short-circuit. On `wait_failed`, the dispatcher skips the consumer body entirely and records `ci_failure (precondition)` as the consumer step's outcome. The precondition isolates CI wait time from the triage budget without introducing a sibling step:
 
 ```text
-                                                    automated-review step
+                                                    plan-marshall:automatic-review step
                                                     (phase-6-finalize, requires: [ci-complete])
    ┌─────────────────────────────┐                  ┌─────────────────────┐
    │ dispatcher Step 3:          │── satisfied ────▶│ fetch_findings      │
@@ -207,7 +207,7 @@ Wherever a triage decision needs to be made, the consumer:
    ```
 
 The orchestration is identical across consumers (PR review GitHub, PR review GitLab, Sonar). For the per-consumer step lists:
-- [`phase-6-finalize/workflow/automated-review.md`](../../phase-6-finalize/workflow/automated-review.md) — PR review consumer dispatch.
+- [`automatic-review/SKILL.md`](../../automatic-review/SKILL.md) — PR review consumer dispatch.
 - [`phase-6-finalize/workflow/sonar-roundtrip.md`](../../phase-6-finalize/workflow/sonar-roundtrip.md) — Sonar consumer dispatch.
 - [`workflow-pr-doctor/standards/automated-review-lifecycle.md`](../../workflow-pr-doctor/standards/automated-review-lifecycle.md) — pr-doctor's automated-review lifecycle pointer.
 
@@ -245,7 +245,7 @@ This is **not** a naive "any pending finding blocks" rule: knowledge types are e
 | Boundary | How the gate fires |
 |---|---|
 | `5-execute → 6-finalize` | `phase_handshake capture --phase 6-finalize` issued by the Phase Entry Protocol on entry to `6-finalize` |
-| `automated-review → branch-cleanup` (intra-finalize) | `automated-review.md` re-issues `phase_handshake capture --phase 6-finalize` between the consumer dispatch loop and `mark-step-done` |
+| `plan-marshall:automatic-review → branch-cleanup` (intra-finalize) | `automatic-review/SKILL.md` re-issues `phase_handshake capture --phase 6-finalize` between the consumer dispatch loop and `mark-step-done` |
 | `sonar-roundtrip → next` (intra-finalize) | `sonar-roundtrip.md` re-issues `phase_handshake capture --phase 6-finalize` between the consumer dispatch loop and `mark-step-done` |
 
 Every other phase capture reads the `pending_findings_blocking_count` row passively (so retrospective analysis sees the queue at every boundary) but does NOT raise.
@@ -287,7 +287,7 @@ For the formal extension contract, the resolver path, and the implementation pat
 | Storage tree, CLI surface, dedup semantics | [`manage-findings/SKILL.md`](../../manage-findings/SKILL.md) |
 | JSONL schema, type taxonomy, severity values, resolution model | [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) |
 | Per-producer CLI surface | [`workflow-integration-github/SKILL.md`](../../workflow-integration-github/SKILL.md), [`workflow-integration-gitlab/SKILL.md`](../../workflow-integration-gitlab/SKILL.md), [`workflow-integration-sonar/SKILL.md`](../../workflow-integration-sonar/SKILL.md), [`build-pyproject/SKILL.md`](../../build-pyproject/SKILL.md), [`build-maven/SKILL.md`](../../build-maven/SKILL.md), [`build-gradle/SKILL.md`](../../build-gradle/SKILL.md), [`build-npm/SKILL.md`](../../build-npm/SKILL.md) |
-| Per-consumer step list | [`phase-6-finalize/workflow/automated-review.md`](../../phase-6-finalize/workflow/automated-review.md), [`phase-6-finalize/workflow/sonar-roundtrip.md`](../../phase-6-finalize/workflow/sonar-roundtrip.md), [`workflow-pr-doctor/standards/automated-review-lifecycle.md`](../../workflow-pr-doctor/standards/automated-review-lifecycle.md) |
+| Per-consumer step list | [`automatic-review/SKILL.md`](../../automatic-review/SKILL.md), [`phase-6-finalize/workflow/sonar-roundtrip.md`](../../phase-6-finalize/workflow/sonar-roundtrip.md), [`workflow-pr-doctor/standards/automated-review-lifecycle.md`](../../workflow-pr-doctor/standards/automated-review-lifecycle.md) |
 | Invariant capture / verify plumbing, row schema, structured error envelope | [`plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md) |
 | Extension contract, implementor list, resolver | [`extension-api/standards/ext-point-triage.md`](../../extension-api/standards/ext-point-triage.md) |
 | Verify-stage contract (producer `verification_profile`, `rejected` resolution, lifecycle) | [`extension-api/standards/ext-point-verify.md`](../../extension-api/standards/ext-point-verify.md) |

@@ -58,7 +58,7 @@ Three structural rules define the serial form:
     "phase-6-finalize": {
       "steps": {
         "default:push": {},
-        "default:automated-review": {
+        "plan-marshall:automatic-review": {
           "review_bot_buffer_seconds": 180
         },
         "default:sonar-roundtrip": {
@@ -80,7 +80,7 @@ Three structural rules define the serial form:
 Notes on the example:
 
 - `default:push` and the two `verify:*` steps own no params, so each maps to an empty `{}` object.
-- `default:automated-review`, `default:sonar-roundtrip`, and `default:branch-cleanup` own params, so each maps to its nested param object. For `default:sonar-roundtrip` the `sonar_` prefix is dropped inside the scoped object.
+- `plan-marshall:automatic-review`, `default:sonar-roundtrip`, and `default:branch-cleanup` own params, so each maps to its nested param object. For `default:sonar-roundtrip` the `sonar_` prefix is dropped inside the scoped object.
 - Param **defaults** are NOT held in any centralized constant. Each param-owning step declares its own params (`key`, `default`, `description`) in the `configurable:` block of its body-doc frontmatter; the parser (`plan-marshall:extension-api:configurable_contract`) materializes them. See [`manage-config/SKILL.md` § Phase-Local Run-at-all Gates and Automation Knobs](../../manage-config/SKILL.md) and [`extension-api/SKILL.md` § Configurable step-param contract](../SKILL.md#configurable-step-param-contract).
 
 ### Reader
@@ -111,7 +111,7 @@ The lifecycle run-at-all gates and the two flat finalize automation knobs are fl
 | `plan.phase-6-finalize.finalize_without_asking` | User config | plan-marshall orchestrator | - |
 | `plan.phase-6-finalize.loop_back_without_asking` | User config | phase-6-finalize, plan-marshall orchestrator | - |
 | `plan.phase-6-finalize.steps['default:branch-cleanup'].final_merge_without_asking` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | phase-6-finalize (branch-cleanup pre-merge gate) | - |
-| `plan.phase-6-finalize.steps['default:automated-review'].review_bot_buffer_seconds` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | phase-6-finalize / workflow-pr-doctor (review-bot comment wait) | - |
+| `plan.phase-6-finalize.steps['plan-marshall:automatic-review'].review_bot_buffer_seconds` (step-owned param; read via `manage-execution-manifest step-params get`) | User config | phase-6-finalize / workflow-pr-doctor (review-bot comment wait) | - |
 
 ## Project Configuration (marshal.json)
 

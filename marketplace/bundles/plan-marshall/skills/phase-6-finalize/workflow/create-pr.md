@@ -144,15 +144,33 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 
 Bind `{pr_title}` ← the returned `value`. An empty or missing `pr_title` here is an error — the `pr_title_present` phase-handshake invariant should already have blocked the `2-refine`+ boundary, so reaching this step with no title means the invariant was bypassed. STOP and return an error TOON rather than improvising a title.
 
+#### Step 3.6: Resolve the `enabled_bots` skip-label
+
+Read the `enabled_bots` knob — the config gate that governs which reviewer bots participate on this plan's PR. It is a `configurable:` param owned by the `plan-marshall:automatic-review` finalize step (its single source-of-truth seed lives in that skill's frontmatter, `default: "coderabbit,sourcery,gemini"`), read here from the plan-local execution-manifest step-params snapshot:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review
+```
+
+Read `enabled_bots` off the returned `params` object (default: `"coderabbit,sourcery,gemini"`). It is a comma-joined string split at read time — bind `{enabled_bots_set}` to the non-empty, whitespace-trimmed tokens. When the `plan-marshall:automatic-review` step is not present in the manifest (e.g. a plan whose preset excludes it), treat `enabled_bots` as its default (a non-empty set) — the skip-label is applied ONLY on an explicit empty set.
+
+- **`{enabled_bots_set}` is non-empty** (the common case — at least one bot enabled): do NOT apply the skip-label. Bind `{label_args}` to the empty string.
+- **`{enabled_bots_set}` is empty** (all reviewer bots disabled for this plan/flow): bind `{label_args}` to `--label skip-bot-review`. This applies the shared `skip-bot-review` label on the created PR as a best-effort suppression signal.
+
+**Honoring asymmetry (why the label is necessary-but-not-sufficient):** `enabled_bots` is the REAL gate — a disabled bot files no findings through the producer's `--enabled-bots` filter (D3), so its review is suppressed at the source regardless of any label. The `skip-bot-review` label is only a secondary, best-effort signal to the bots' own PR-level suppression, and the bots honor it asymmetrically: CodeRabbit honors it centrally, Sourcery only via a per-repo `.sourcery.yaml`, and Gemini cannot honor it at all. The label therefore cannot be relied upon on its own — it layers on top of the authoritative producer gate, never replaces it. Applying a remote PR label is not a source mutation, so this step's `mutates_source` stays `false`.
+
 #### Step 4: Create PR via CI abstraction
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr create \
-  --title "{pr_title}" --plan-id {plan_id} --base {base_branch}
+  --title "{pr_title}" --plan-id {plan_id} --base {base_branch} {label_args}
 ```
 
 The `pr create` subcommand reads the body from the prepared scratch file, creates
-the PR, and deletes the scratch on success.
+the PR, and deletes the scratch on success. `{label_args}` is either empty or the
+`--label skip-bot-review` fragment resolved in Step 3.6; the `--label` flag is a
+repeatable passthrough to `gh pr create --label`.
 
 Read `pr_number` and `pr_url` from the TOON output.
 

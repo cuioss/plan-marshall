@@ -72,7 +72,7 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
                     'steps': {
                         'default:push': {},
                         'default:create-pr': {},
-                        'default:automated-review': {'review_bot_buffer_seconds': 300},
+                        'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 300},
                         'default:sonar-roundtrip': {},
                         'default:lessons-capture': {},
                         'default:branch-cleanup': {
@@ -174,7 +174,7 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                 'steps': {
                     'default:push': {},
                     'default:create-pr': {},
-                    'default:automated-review': {'review_bot_buffer_seconds': 300},
+                    'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 300},
                     'default:sonar-roundtrip': {},
                     'default:lessons-capture': {},
                     'default:branch-cleanup': {},

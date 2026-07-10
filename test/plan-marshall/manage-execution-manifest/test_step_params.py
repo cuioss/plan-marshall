@@ -94,7 +94,7 @@ def _seed_marshal_with_branch_cleanup_params(fixture_dir: Path) -> None:
                 'steps': {
                     'default:push': {},
                     'default:create-pr': {},
-                    'default:automated-review': {'review_bot_buffer_seconds': 240},
+                    'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 240},
                     'default:sonar-roundtrip': {
                         'touched_file_cleanup': 'new_code_only',
                         'do_transition': False,

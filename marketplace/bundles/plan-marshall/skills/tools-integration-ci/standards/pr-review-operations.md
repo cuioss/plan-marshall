@@ -204,7 +204,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-fo
 | Flag | Required | Default | Description |
 |------|----------|---------|-------------|
 | `--pr-number` | yes | — | PR number |
-| `--timeout` | no | 300 (caller usually passes `review_bot_buffer_seconds`, sourced from the `default:automated-review` step's params in the manifest step-params snapshot) | Max wait time in seconds |
+| `--timeout` | no | 300 (caller usually passes `review_bot_buffer_seconds`, sourced from the `plan-marshall:automatic-review` step's params in the manifest step-params snapshot) | Max wait time in seconds |
 | `--interval` | no | 30 | Poll interval in seconds |
 
 ### Step 2: Process Result

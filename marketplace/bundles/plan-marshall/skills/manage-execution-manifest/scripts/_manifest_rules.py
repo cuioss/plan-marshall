@@ -266,10 +266,10 @@ def _apply_security_audit_inactive(
 # prefixes are preserved verbatim, so the surgical set lists both forms. See
 # standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
 #
-# ``automated-review`` is deliberately NOT in either implicit set: the
+# ``automatic-review`` is deliberately NOT in either implicit set: the
 # bot-enforcement guard re-adds it on GitHub/GitLab plans, so dropping it via
 # the implicit scope gate would be a silently-undone no-op. The only path that
-# suppresses ``automated-review`` is the explicit ``drop_review_on_scope_gate``
+# suppresses ``automatic-review`` is the explicit ``drop_review_on_scope_gate``
 # opt-in (see ``_apply_scope_gated_finalize``).
 _SCOPE_GATED_SURGICAL_DROP = frozenset(
     {
@@ -288,7 +288,7 @@ _SCOPE_GATED_SINGLE_MODULE_DROP = frozenset(
         'plan-marshall:plan-retrospective',
     }
 )
-_SCOPE_GATED_OVERRIDE_DROP = frozenset({'automated-review', 'default:automated-review'})
+_SCOPE_GATED_OVERRIDE_DROP = frozenset({'automatic-review', 'plan-marshall:automatic-review'})
 
 
 # Owning finalize step ids for the step-folded run-at-all / escape-hatch knobs.
@@ -338,7 +338,7 @@ def _read_drop_review_on_scope_gate() -> bool:
     location is gone). Returns ``False`` when the file is missing, the owning step
     is absent, the knob is absent, or the value is not a boolean ``True``. The
     escape hatch defaults to off: only an explicit ``true`` activates the
-    additional ``automated-review`` suppression in the scope_gated_finalize
+    additional ``automatic-review`` suppression in the scope_gated_finalize
     pre-filter.
     """
     return _read_step_owned_knob(_PRE_SUBMISSION_SELF_REVIEW_STEP, 'drop_review_on_scope_gate') is True
@@ -361,11 +361,11 @@ def _apply_scope_gated_finalize(
       ``plan-marshall:plan-retrospective``.
     - Any other scope value → no implicit subtraction.
 
-    ``automated-review`` is NEVER subtracted by the implicit scope gate (the
+    ``automatic-review`` is NEVER subtracted by the implicit scope gate (the
     bot-enforcement guard would re-add it, making the subtraction a no-op).
     When ``drop_review_on_scope_gate`` is ``True`` AND the plan is itself
     scope-gated (``scope_estimate in ('surgical', 'single_module')``), the gate
-    additionally drops ``automated-review`` — the only path that suppresses the
+    additionally drops ``automatic-review`` — the only path that suppresses the
     bot-review gate, explicitly opted into via marshal.json. The override is
     scoped, not global: on non-scope-gated plans (``multi_module`` / ``broad`` /
     ``none``) the override is inert, so flipping the project-wide knob can never
@@ -526,7 +526,7 @@ def _apply_ceremony_finalize_selection(
       is already present).
     - any other value (``auto`` / malformed) → defer (no-op).
 
-    ``automated-review`` is NEVER touched — the gate map contains only the three
+    ``automatic-review`` is NEVER touched — the gate map contains only the three
     ceremony finalize steps, so the bot-review invariant is structurally
     preserved.
 
@@ -596,9 +596,9 @@ def _read_ci_provider() -> str | None:
 
 
 def _bot_enforcement_insert_index(phase_6_steps: list[str]) -> int:
-    """Resolve the canonical insertion position for ``automated-review``.
+    """Resolve the canonical insertion position for ``automatic-review``.
 
-    The remediation must place ``automated-review`` somewhere it can run before
+    The remediation must place ``automatic-review`` somewhere it can run before
     plan-mutating steps (notably ``archive-plan``, which moves the plan
     directory). ``phase_6_steps`` carries boundary-normalized bare default
     names (plus possibly the project-prefixed early sync step), so anchor
@@ -627,11 +627,11 @@ def _bot_enforcement_insert_index(phase_6_steps: list[str]) -> int:
     return len(phase_6_steps)
 
 
-def _validate_automated_review_placement(phase_6_steps: list[str]) -> str | None:
-    """Compose-time placement check for ``automated-review`` ordering.
+def _validate_automatic_review_placement(phase_6_steps: list[str]) -> str | None:
+    """Compose-time placement check for ``automatic-review`` ordering.
 
     Defense-in-depth complement to ``_apply_bot_enforcement_guard``. The
-    remediation guard ensures ``automated-review`` is *present* on
+    remediation guard ensures ``automatic-review`` is *present* on
     GitHub/GitLab plans, but a future pre-filter, recipe interaction, or
     candidate ordering glitch could leave it *misplaced* — sitting at an
     index later than a plan-mutating step (``archive-plan``,
@@ -643,14 +643,14 @@ def _validate_automated_review_placement(phase_6_steps: list[str]) -> str | None
     Comparison runs against bare names: by the time this validator is
     invoked, ``cmd_compose`` has already boundary-normalized
     ``phase_6_candidates`` and the matrix output preserves the same shape.
-    Both the bare ``automated-review`` name and its
-    ``default:automated-review`` form are detected so future callers cannot
+    Both the bare ``automatic-review`` name and its
+    ``plan-marshall:automatic-review`` form are detected so future callers cannot
     silently slip past the check by re-prefixing.
 
     Returns a diagnostic string naming both the offending
-    ``automated-review`` index and the first plan-mutating anchor that
+    ``automatic-review`` index and the first plan-mutating anchor that
     precedes it. Returns ``None`` when the order is valid (or when
-    ``automated-review`` is absent — the remediation guard is responsible
+    ``automatic-review`` is absent — the remediation guard is responsible
     for presence; this validator is concerned only with ordering).
     """
     plan_mutating = {
@@ -662,7 +662,7 @@ def _validate_automated_review_placement(phase_6_steps: list[str]) -> str | None
 
     review_index: int | None = None
     for index, step in enumerate(phase_6_steps):
-        if step in {'automated-review', 'default:automated-review'}:
+        if step in {'automatic-review', 'plan-marshall:automatic-review'}:
             review_index = index
             break
     if review_index is None:
@@ -677,7 +677,7 @@ def _validate_automated_review_placement(phase_6_steps: list[str]) -> str | None
         if index >= review_index:
             break
         if step in plan_mutating:
-            return f'automated-review at index {review_index} must precede {step} at index {index}'
+            return f'automatic-review at index {review_index} must precede {step} at index {index}'
     return None
 
 

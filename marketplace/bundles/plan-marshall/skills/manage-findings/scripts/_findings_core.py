@@ -25,6 +25,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
+from bot_registry import bot_kinds as _registry_bot_kinds
 from constants import (
     FILE_FINDINGS_DIR,
     FINDING_SEVERITIES,
@@ -58,7 +59,14 @@ CERTAINTY_VALUES = VALID_CERTAINTIES
 PR_COMMENT_KINDS = ['inline', 'review_body', 'issue_comment']
 
 # Valid reviewer-bot identity values for pr-comment findings (derived from author).
-BOT_KINDS = ['coderabbit', 'gemini']
+#
+# Data-not-code: the bot-kind set is DERIVED at import time from the per-bot
+# registry docs (``automatic-review/standards/{bot_kind}.md``) via
+# ``bot_registry.bot_kinds()`` rather than hard-coded here. ``BOT_KINDS`` stays a
+# stable importable module-level name — ``manage-findings.py`` uses it as an
+# argparse ``choices=`` list and ``add_finding`` validates ``bot_kind`` against
+# it — so adding a bot is a pure standards-doc edit with no change to this file.
+BOT_KINDS = _registry_bot_kinds()
 
 # Default per-field byte cap for quarantined raw_input free-text (64 KiB).
 # The `finding_raw_input_max_bytes` config knob (seeded by manage-config) overrides

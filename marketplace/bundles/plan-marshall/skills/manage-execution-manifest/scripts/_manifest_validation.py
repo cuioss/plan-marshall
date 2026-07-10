@@ -187,6 +187,13 @@ _PHASE_6_SKILL_DIR = resolve_skills_root(Path(__file__)) / 'phase-6-finalize'
 _PHASE_6_WORKFLOW_DIR = _PHASE_6_SKILL_DIR / 'workflow'
 _PHASE_6_STANDARDS_DIR = _PHASE_6_SKILL_DIR / 'standards'
 
+# The promoted built-in-equivalent ``automatic-review`` step was moved out of
+# ``phase-6-finalize/workflow/automatic-review.md`` into its own top-level bundle
+# skill. In the composed manifest it is the boundary-normalized bare
+# ``automatic-review`` id, so the loadability / order resolvers below must point
+# at the bundle SKILL.md rather than the deleted phase-6 body doc.
+_AUTOMATIC_REVIEW_SKILL_MD = resolve_skills_root(Path(__file__)) / 'automatic-review' / 'SKILL.md'
+
 # Repository-root anchor used to render the standards path as a project-relative
 # string in the script output. ``resolve_bundles_root`` identity-walks to the
 # ``marketplace/bundles`` root (no index arithmetic); its grandparent is the
@@ -215,6 +222,10 @@ def _resolve_standards_path(step_id: str) -> Path:
     file error message reports the preferred location).
     """
     bare = _strip_default_prefix(step_id)
+    # The promoted ``automatic-review`` step lives in its bundle SKILL.md, not a
+    # phase-6 body doc (which was deleted at promotion).
+    if bare == 'automatic-review':
+        return _AUTOMATIC_REVIEW_SKILL_MD
     workflow_path = _PHASE_6_WORKFLOW_DIR / f'{bare}.md'
     if workflow_path.is_file():
         return workflow_path

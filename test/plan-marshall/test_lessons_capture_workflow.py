@@ -3,7 +3,7 @@
 """Regression tests for the dispatcher-level lessons-capture Signal Gate (B4).
 
 The deterministic three-signal Signal Gate (pending Q-Gate findings,
-``automated-review`` step outcome, script-failure clusters) was relocated
+``automatic-review`` step outcome, script-failure clusters) was relocated
 from the body of
 ``marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/lessons-capture.md``
 into the phase-6-finalize SKILL.md dispatcher (Step 3 item 4b). When all
@@ -141,15 +141,15 @@ class TestDispatcherGateSourcesNamed:
         )
 
     def test_automated_review_signal_named(self) -> None:
-        """Signal 2 — ``automated-review`` step outcome via
+        """Signal 2 — ``automatic-review`` step outcome via
         ``manage-status read``."""
         body = _read_dispatcher()
-        assert 'automated-review' in body, (
-            'Dispatcher Signal Gate must name the "automated-review" '
+        assert 'automatic-review' in body, (
+            'Dispatcher Signal Gate must name the "automatic-review" '
             'step as a signal source'
         )
         assert 'manage-status' in body and 'read' in body, (
-            'Dispatcher Signal Gate must read the automated-review '
+            'Dispatcher Signal Gate must read the automatic-review '
             'step outcome via manage-status read'
         )
 
@@ -175,7 +175,7 @@ class TestRemediatedInRunSignalsNamed:
     detected-and-remediated a defect (the highest-value lesson class)."""
 
     def test_signal_2_names_resolution_fixed_pr_comment(self) -> None:
-        """Signal 2 (automated-review) MUST count fixed-in-run review-bot
+        """Signal 2 (automatic-review) MUST count fixed-in-run review-bot
         findings via ``manage-findings list --type pr-comment
         --resolution fixed``."""
         body = _read_dispatcher()

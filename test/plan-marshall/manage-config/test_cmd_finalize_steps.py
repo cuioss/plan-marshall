@@ -156,12 +156,12 @@ def test_apply_preset_preserves_sibling_phase6_knobs(plan_context):
 
     # Sanity: the fixture carries a flat phase-level knob and a nested step param
     # we expect to survive. review_bot_buffer_seconds now nests under
-    # default:automated-review inside the keyed-map steps structure.
+    # plan-marshall:automatic-review inside the keyed-map steps structure.
     before = _read_finalize_section(plan_context.fixture_dir)
     assert before['max_iterations'] == 3
     # The seed is the keyed map (dict); the param-bearing step nests its
     # params under the step id.
-    assert before['steps']['default:automated-review']['review_bot_buffer_seconds'] == 300
+    assert before['steps']['plan-marshall:automatic-review']['review_bot_buffer_seconds'] == 300
 
     cmd_finalize_steps_apply_preset(Namespace(preset='standard'))
 
@@ -173,7 +173,7 @@ def test_apply_preset_preserves_sibling_phase6_knobs(plan_context):
     # The nested step param is preserved across the keyed-map rewrite (the
     # writer reads existing per-step params through `_steps_map` and carries
     # them over for steps the preset keeps).
-    assert _params_for(after['steps'], 'default:automated-review') == {
+    assert _params_for(after['steps'], 'plan-marshall:automatic-review') == {
         'review_bot_buffer_seconds': 300
     }
 

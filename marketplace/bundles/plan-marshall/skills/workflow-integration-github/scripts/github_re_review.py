@@ -7,30 +7,31 @@ phase-6-finalize (branch-cleanup rebase/force-push, or a phase-5 loop-back fix
 commit) leaves new commits unreviewed by automated bots, this registry requests
 a fresh bot review for the new HEAD and polls until a review lands for it.
 
-The registry is ``bot_kind``-keyed with a strict two-method contract per
-strategy — no speculative extensibility:
+The registry is ``bot_kind``-keyed with a strict two-method contract — no
+speculative extensibility:
 
     request_fresh_review(pr_number, push_time) -> trigger_time
     await_fresh_review(pr_number, head_sha, trigger_time) -> envelope
 
-The two strategies differ ONLY in the trigger comment ``request_fresh_review``
-posts — both post an explicit trigger and return the comment-post time:
+Data-not-code: there is ONE generic strategy, parameterized by the per-bot
+trigger comment loaded from the registry (``bot_registry.trigger_comment``).
+``request_fresh_review`` posts that bot's explicit trigger comment and returns
+the comment-post time; the trigger comment is the only thing that varies between
+bots, and it is data (each bot's ``trigger_comment`` in
+``automatic-review/standards/{bot_kind}.md``), not a per-bot subclass. The
+explicit comment is the reliable trigger for the new HEAD — a bot's incremental
+auto-review on push can be debounced or skipped on a force-push and does not
+auto-fire at all for some bots.
 
-    coderabbit: Posts ``@coderabbitai review``. CodeRabbit's incremental
-                auto-review on push is not a reliable trigger for the new HEAD
-                (it can be debounced or skipped on a force-push), so the explicit
-                comment is the trigger that guarantees a fresh review lands.
-                Returns the comment-post time as the trigger time.
-    gemini:     Posts ``/gemini review`` (Gemini does NOT auto-review on push)
-                and returns the comment-post time as the trigger time.
-
-``await_fresh_review`` is identical for both bots: poll the PR's reviews until
+``await_fresh_review`` is identical for every bot: poll the PR's reviews until
 one is found whose reviewed commit SHA matches ``head_sha`` AND whose
 ``submittedAt > trigger_time``.
 
-The canonical bot_kind list lives in ``manage-findings/_findings_core.BOT_KINDS``
-— this registry imports it rather than inline-copying the enum, so a new
-bot_kind is added in one place.
+The bot-kind set, the login->bot_kind map, and each trigger comment are all
+DERIVED from the registry (``bot_registry``), whose data source is the per-bot
+standards docs. ``BOT_KINDS`` (imported from ``_findings_core``, itself derived
+from the same registry) remains the argparse ``choices=`` surface, so a new bot
+is added by dropping a ``standards/{bot_kind}.md`` doc — no code change here.
 
 Usage:
     github_re_review.py re-review --pr-number N --bot-kind coderabbit \
@@ -43,6 +44,7 @@ import argparse
 import sys
 from datetime import UTC, datetime
 
+import bot_registry
 import github_ops as _github
 from _findings_core import BOT_KINDS
 from ci_base import (
@@ -58,9 +60,6 @@ from ci_base import (
 )
 
 register_subcommands({'re-review'})
-
-GEMINI_TRIGGER_COMMENT = '/gemini review'
-CODERABBIT_TRIGGER_COMMENT = '@coderabbitai review'
 
 
 def _now_iso() -> str:
@@ -88,21 +87,35 @@ def _parse_iso(value: str) -> datetime | None:
 
 
 # ---------------------------------------------------------------------------
-# Strategy registry — two methods per strategy, keyed by bot_kind
+# Strategy registry — one generic strategy parameterized by the trigger comment
 # ---------------------------------------------------------------------------
 
 
 class _ReReviewStrategy:
-    """Base strategy: shared ``await_fresh_review``; subclasses set the request."""
+    """Generic re-review strategy parameterized by a bot's trigger comment.
+
+    A single class serves every bot: ``request_fresh_review`` posts the
+    ``trigger_comment`` this instance was built with (the bot's data-driven
+    trigger from the registry) and returns the comment-post time;
+    ``await_fresh_review`` is bot-independent. No per-bot subclass exists — the
+    only thing that differs between bots is the trigger string, which is data.
+    """
+
+    def __init__(self, trigger_comment: str) -> None:
+        self.trigger_comment = trigger_comment
 
     def request_fresh_review(self, pr_number: int | str, push_time: str) -> dict:
-        """Request a fresh review. Returns ``{status, trigger_time}``.
+        """Post this bot's explicit trigger comment; return ``{status, trigger_time}``.
 
-        Overridden per bot. The returned ``trigger_time`` is the lower bound a
-        fresh review's ``submittedAt`` must exceed for ``await_fresh_review`` to
-        match.
+        The returned ``trigger_time`` is the comment-post time — the lower bound
+        a fresh review's ``submittedAt`` must exceed for ``await_fresh_review``
+        to match. ``push_time`` is unused (retained for routing uniformity): the
+        trigger time is always the comment-post time, never the push time.
         """
-        raise NotImplementedError
+        post_result = _github.post_pr_comment(pr_number, self.trigger_comment)
+        if post_result.get('status') != 'success':
+            return make_error('request_fresh_review', post_result.get('error', 'failed to post trigger comment'))
+        return {'status': 'success', 'trigger_time': _now_iso()}
 
     def await_fresh_review(
         self,
@@ -175,48 +188,22 @@ class _ReReviewStrategy:
         return None
 
 
-class _CodeRabbitStrategy(_ReReviewStrategy):
-    """CodeRabbit re-review is triggered by posting ``@coderabbitai review``."""
-
-    def request_fresh_review(self, pr_number: int | str, push_time: str) -> dict:
-        # Post the explicit ``@coderabbitai review`` trigger comment. CodeRabbit's
-        # incremental auto-review on push is not a reliable trigger for the new
-        # HEAD (it can be debounced or skipped on a force-push), so the explicit
-        # comment is the trigger that guarantees a fresh review lands. The
-        # ``push_time`` argument is unused for CodeRabbit — the trigger time is the
-        # comment-post time, exactly as for Gemini.
-        post_result = _github.post_pr_comment(pr_number, CODERABBIT_TRIGGER_COMMENT)
-        if post_result.get('status') != 'success':
-            return make_error('request_fresh_review', post_result.get('error', 'failed to post trigger comment'))
-        return {'status': 'success', 'trigger_time': _now_iso()}
-
-
-class _GeminiStrategy(_ReReviewStrategy):
-    """Gemini does NOT auto-review on push — post ``/gemini review`` explicitly."""
-
-    def request_fresh_review(self, pr_number: int | str, push_time: str) -> dict:
-        post_result = _github.post_pr_comment(pr_number, GEMINI_TRIGGER_COMMENT)
-        if post_result.get('status') != 'success':
-            return make_error('request_fresh_review', post_result.get('error', 'failed to post trigger comment'))
-        # Trigger time is the comment-post time, not the push time.
-        return {'status': 'success', 'trigger_time': _now_iso()}
-
-
+# One generic strategy instance per registered bot_kind, each parameterized by
+# that bot's trigger comment loaded from the registry. Built from data — there is
+# no per-bot class and no hard-coded bot list.
 _STRATEGIES: dict[str, _ReReviewStrategy] = {
-    'coderabbit': _CodeRabbitStrategy(),
-    'gemini': _GeminiStrategy(),
+    bot_kind: _ReReviewStrategy(bot_registry.trigger_comment(bot_kind))
+    for bot_kind in bot_registry.bot_kinds()
 }
 
-# Map a GitHub review-author login to its canonical ``bot_kind`` key. The login
-# is the bot's account name (e.g. ``coderabbitai``, ``gemini-code-assist``);
-# the ``bot_kind`` is the registry key those accounts resolve to. This is the
-# single source of truth for the login -> bot_kind correspondence — producers
+# Map a GitHub review-author login to its canonical ``bot_kind`` key, DERIVED
+# from the registry (each bot's ``author_login`` in its standards doc). The login
+# is the bot's account name (e.g. ``coderabbitai``, ``gemini-code-assist``); the
+# ``bot_kind`` is the registry key those accounts resolve to. This is the single
+# source of truth for the login -> bot_kind correspondence — producers
 # (``github_pr.py`` comments-stage) import ``bot_kind_for_author`` rather than
 # inline-copying the mapping.
-_AUTHOR_LOGIN_TO_BOT_KIND: dict[str, str] = {
-    'coderabbitai': 'coderabbit',
-    'gemini-code-assist': 'gemini',
-}
+_AUTHOR_LOGIN_TO_BOT_KIND: dict[str, str] = bot_registry.login_to_bot_kind()
 
 
 def resolve_strategy(bot_kind: str) -> _ReReviewStrategy | None:

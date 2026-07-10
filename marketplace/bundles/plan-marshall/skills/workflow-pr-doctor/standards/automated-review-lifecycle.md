@@ -8,7 +8,7 @@ Detailed reference for the Automated Review Lifecycle mode used by phase-6-final
 
 - `plan_id` — for logging, finding storage, and Q-Gate findings
 - `pr_number` — PR number (from phase-6-finalize Step 4 or pr-view)
-- `review_bot_buffer_seconds` — max-wait ceiling (in seconds) passed to `pr wait-for-comments` as `--timeout`. The polling subcommand exits as soon as a new review-bot comment is posted, so this is a cap, not a fixed delay. Sourced from the `default:automated-review` step's params in the plan-local execution-manifest step-params snapshot — read via `manage-execution-manifest step-params get --phase 6-finalize --step-id default:automated-review` (default: 180), NOT from a flat phase-6-finalize config field.
+- `review_bot_buffer_seconds` — max-wait ceiling (in seconds) passed to `pr wait-for-comments` as `--timeout`. The polling subcommand exits as soon as a new review-bot comment is posted, so this is a cap, not a fixed delay. Sourced from the `plan-marshall:automatic-review` step's params in the plan-local execution-manifest step-params snapshot — read via `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review` (default: 180), NOT from a flat phase-6-finalize config field.
 
 ## Step-by-Step Reference
 
@@ -29,7 +29,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-fo
 | `status: success`, `timed_out: true` | No new comment within timeout — proceed to Step 2 anyway (the producer at Step 2 surfaces whatever is on the PR; if nothing, the lifecycle returns `comments_total: 0`) |
 | `status: error` | Treat as warning, log, proceed to Step 2 best-effort |
 
-> **Rate-window await (cross-reference).** The `pr wait-for-comments` return also carries a `rate_limited` discriminator: `rate_limited: true` signals the wait ended because the review bot's rate window was exhausted rather than because a review landed. The `default:automated-review` finalize step exposes an opt-in `review_rate_window_await` knob (with `review_rate_window_timeout_seconds`) that, when enabled, re-polls in a bounded await loop on `rate_limited: true` and escalates via `escalate_ask{reason: rate_window_timeout}` on budget exhaustion. This lifecycle reference does NOT duplicate that behaviour — see [`phase-6-finalize/workflow/automated-review.md`](../../phase-6-finalize/workflow/automated-review.md) § "Rate-window await (opt-in)" for the authoritative await loop and escalation contract.
+> **Rate-window await (cross-reference).** The `pr wait-for-comments` return also carries a `rate_limited` discriminator: `rate_limited: true` signals the wait ended because the review bot's rate window was exhausted rather than because a review landed. The `plan-marshall:automatic-review` finalize step exposes an opt-in `review_rate_window_await` knob (with `review_rate_window_timeout_seconds`) that, when enabled, re-polls in a bounded await loop on `rate_limited: true` and escalates via `escalate_ask{reason: rate_window_timeout}` on budget exhaustion. This lifecycle reference does NOT duplicate that behaviour — see [`automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § "Rate-window await (opt-in)" for the authoritative await loop and escalation contract.
 
 ### Step 2: FIND — file PR comments to the ledger
 
@@ -136,7 +136,7 @@ loop_back_needed: {true|false}
 `loop_back_needed` is `true` under either of two conditions:
 
 1. **FIX disposition fired** — at least one `pr-comment` finding resolved to `fixed` during this iteration's per-finding loop, allocating a fix task. When this is the trigger, phase-6-finalize creates the fix tasks and loops back to phase-5-execute.
-2. **Overflow capture fired** — the per-iteration triage budget (900 s) was nearly exhausted before all `pr-comment` findings could be processed. The Step 5 loop captures the unprocessed comment IDs as a single `pr-comment-overflow` finding (see [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § `pr-comment-overflow`) and breaks early. The next phase-6-finalize entry's `automated-review` invocation reads the pending `pr-comment-overflow` finding to know which comments are outstanding.
+2. **Overflow capture fired** — the per-iteration triage budget (900 s) was nearly exhausted before all `pr-comment` findings could be processed. The Step 5 loop captures the unprocessed comment IDs as a single `pr-comment-overflow` finding (see [`manage-findings/standards/jsonl-format.md`](../../manage-findings/standards/jsonl-format.md) § `pr-comment-overflow`) and breaks early. The next phase-6-finalize entry's `plan-marshall:automatic-review` invocation reads the pending `pr-comment-overflow` finding to know which comments are outstanding.
 
 The two paths are not mutually exclusive — a single iteration can both allocate fix tasks for some comments AND defer others to overflow. In that case, `loop_back_needed: true` covers both, and the overflow finding is filed alongside the fix-task allocations. The 3-iteration loop-back ceiling applies uniformly regardless of which trigger fired.
 

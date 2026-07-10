@@ -51,7 +51,7 @@ class TestTriageGranularityClassification:
 
     def test_triage_md_documents_loop_back_target_field(self) -> None:
         """`triage.md` MUST mention `loop_back_target` by name in Step 7
-        so that downstream call sites (automated-review.md,
+        so that downstream call sites (automatic-review.md,
         sonar-roundtrip.md) know the field is part of the workflow's
         return contract."""
         text = _TRIAGE_MD.read_text(encoding='utf-8')
@@ -103,7 +103,7 @@ class TestTriageGranularityClassification:
     def test_triage_md_output_block_declares_loop_back_target(self) -> None:
         """The Output TOON block in triage.md MUST declare
         `loop_back_target` as a field on `status: loop_back` returns —
-        downstream callers (automated-review.md / sonar-roundtrip.md) MUST
+        downstream callers (automatic-review.md / sonar-roundtrip.md) MUST
         be able to read the field from the workflow's return TOON."""
         text = _TRIAGE_MD.read_text(encoding='utf-8')
         # Locate the Output section.
@@ -136,12 +136,12 @@ class TestTriageGranularityClassification:
 
 
 class TestTriageGranularityCallSiteAlignment:
-    """Cross-file alignment — automated-review.md and sonar-roundtrip.md
+    """Cross-file alignment — automatic-review.md and sonar-roundtrip.md
     MUST forward `loop_back_target` to mark-step-done so the dispatcher
     hook can route on it."""
 
     def test_automated_review_forwards_loop_back_target(self) -> None:
-        """`automated-review.md` Branch C / "Handle findings (loop-back)"
+        """`automatic-review.md` Branch C / "Handle findings (loop-back)"
         MUST forward `loop_back_target` to `mark-step-done --loop-back-target`."""
         path = (
             Path(__file__).parent.parent.parent
@@ -149,13 +149,12 @@ class TestTriageGranularityCallSiteAlignment:
             / 'bundles'
             / 'plan-marshall'
             / 'skills'
-            / 'phase-6-finalize'
-            / 'workflow'
-            / 'automated-review.md'
+            / 'automatic-review'
+            / 'SKILL.md'
         )
         text = path.read_text(encoding='utf-8')
         assert '--loop-back-target' in text, (
-            'automated-review.md must forward --loop-back-target to '
+            'automatic-review.md must forward --loop-back-target to '
             'mark-step-done on every loop_back outcome.'
         )
 

@@ -896,6 +896,128 @@ class TestCommentsStageReviewedShaAndBotKind:
 
 
 # =============================================================================
+# Per-bot ignore pre-filter (registry-driven, shared-plus-per-bot)
+# =============================================================================
+
+
+class TestPerBotIgnoreFilter:
+    """The producer noise pre-filter layers shared regexes with per-bot registry markers.
+
+    The shared ``ignore`` regexes from comment-patterns.json apply to every
+    comment; each bot's ``ignore_patterns`` from its registry doc are literal
+    whole-comment markers that apply ONLY to that bot's own comments. A marker
+    for one bot must never drop another bot's (or a human's) comment.
+    """
+
+    def test_shared_noise_drops_regardless_of_bot_kind(self):
+        """A shared acknowledgment (``lgtm``) is noise for every author."""
+        assert _is_obvious_noise('lgtm', 'coderabbit')
+        assert _is_obvious_noise('lgtm', None)
+
+    def test_per_bot_marker_drops_only_its_own_bot(self):
+        """CodeRabbit's ``## Walkthrough`` marker drops a coderabbit comment only."""
+        body = '## Walkthrough\n\nThis PR changes a few files.'
+        # Dropped for the owning bot.
+        assert _is_obvious_noise(body, 'coderabbit')
+        # NOT dropped for a different bot or a human — the marker is bot-scoped.
+        assert not _is_obvious_noise(body, 'gemini')
+        assert not _is_obvious_noise(body, None)
+
+    def test_gemini_sunset_marker_drops_only_gemini(self):
+        """Gemini's ``being sunset`` banner marker drops a gemini comment only."""
+        body = 'This reviewer is being sunset on 2026-07-17.'
+        assert _is_obvious_noise(body, 'gemini')
+        assert not _is_obvious_noise(body, 'coderabbit')
+
+    def test_substantive_bot_comment_is_not_noise(self):
+        """A real finding from a bot survives the pre-filter."""
+        body = 'This null dereference needs a guard before the call on line 42.'
+        assert not _is_obvious_noise(body, 'coderabbit')
+
+    def test_fetch_findings_drops_per_bot_walkthrough_keeps_substantive(self, plan_context):
+        """End-to-end: a coderabbit walkthrough is dropped; a substantive one is stored."""
+        comments = [
+            {
+                'id': 'W1',
+                'kind': 'issue_comment',
+                'author': 'coderabbitai',
+                'body': '## Walkthrough\n\nThis PR touches three files and adds a helper.',
+                'path': '',
+                'line': 0,
+                'thread_id': '',
+            },
+            {
+                'id': 'W2',
+                'kind': 'inline',
+                'author': 'coderabbitai',
+                'body': 'This off-by-one indexes past the end of the array; guard the bound.',
+                'path': 'src/Idx.java',
+                'line': 12,
+                'thread_id': 'PRRT_w2',
+            },
+        ]
+
+        plan_context.plan_dir_for('gh-pr-perbot-walkthrough')
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': len(comments),
+                'unresolved': len(comments),
+            }
+            result = cmd_fetch_findings(_stage_make_args(150, 'gh-pr-perbot-walkthrough'))
+
+        assert result['status'] == 'success'
+        # The walkthrough is dropped as noise; only the substantive finding is stored.
+        assert result['count_stored'] == 1
+        assert result['count_skipped_noise'] == 1
+        # count_stored == expected_stored, so no producer-mismatch Q-Gate fires.
+        assert result['producer_mismatch_hash_id'] is None
+
+        from _findings_core import query_findings
+
+        q = query_findings('gh-pr-perbot-walkthrough', finding_type='pr-comment')
+        assert q['filtered_count'] == 1
+        # The surviving finding is the substantive comment (W2), not the walkthrough (W1).
+        assert 'comment_id: W2' in q['findings'][0]['detail']
+
+    def test_fetch_findings_does_not_apply_one_bots_marker_to_another(self, plan_context):
+        """A gemini comment carrying CodeRabbit's ``## Walkthrough`` text is NOT dropped.
+
+        Proves the per-bot layer is scoped to the authoring bot: the walkthrough
+        marker belongs to coderabbit's registry entry, so a gemini-authored
+        comment with the same heading survives and becomes a finding.
+        """
+        comments = [
+            {
+                'id': 'G1',
+                'kind': 'issue_comment',
+                'author': 'gemini-code-assist',
+                'body': '## Walkthrough\n\nGemini would not normally emit this, but it must not be cross-dropped.',
+                'path': '',
+                'line': 0,
+                'thread_id': '',
+            },
+        ]
+
+        plan_context.plan_dir_for('gh-pr-perbot-crossbot')
+        with patch('github_pr._github.fetch_pr_comments_data') as mock_fetch:
+            mock_fetch.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'comments': comments,
+                'total': len(comments),
+                'unresolved': len(comments),
+            }
+            result = cmd_fetch_findings(_stage_make_args(151, 'gh-pr-perbot-crossbot'))
+
+        assert result['status'] == 'success'
+        assert result['count_stored'] == 1
+        assert result['count_skipped_noise'] == 0
+
+
+# =============================================================================
 # Fail-loud unconfigured provider (both verbs)
 # =============================================================================
 

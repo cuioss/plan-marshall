@@ -251,7 +251,7 @@ def _seed_keyed_map_marshal(fixture_dir: Path) -> None:
                 'steps': {
                     'default:push': {},
                     'default:create-pr': {},
-                    'default:automated-review': {'review_bot_buffer_seconds': 240},
+                    'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 240},
                     'default:sonar-roundtrip': {},
                     'default:lessons-capture': {},
                     'default:branch-cleanup': {

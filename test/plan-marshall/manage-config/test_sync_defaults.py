@@ -268,7 +268,7 @@ def test_sync_defaults_backfills_verification_steps_as_keyed_map(plan_context):
 def test_sync_defaults_backfills_finalize_steps_as_keyed_map_form(plan_context):
     """Syncing an empty marshal.json back-fills finalize steps as the keyed-map form.
 
-    Param-owning steps (sonar-roundtrip / automated-review / branch-cleanup /
+    Param-owning steps (sonar-roundtrip / automatic-review / branch-cleanup /
     finalize-step-sync-baseline / finalize-step-simplify /
     finalize-step-security-audit / finalize-step-preference-emitter) land with a
     non-empty nested param object; the remaining config-less steps map to {}.
@@ -284,7 +284,7 @@ def test_sync_defaults_backfills_finalize_steps_as_keyed_map_form(plan_context):
 
     param_owning = {
         'default:sonar-roundtrip',
-        'default:automated-review',
+        'plan-marshall:automatic-review',
         'default:branch-cleanup',
         # default:finalize-step-sync-baseline owns the `auto_rebase_threshold`
         # conflict-gate knob (default no_overlap_only)

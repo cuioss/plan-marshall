@@ -84,7 +84,7 @@ Defaults come from `ci_base.py:224-225`:
 
 Register both `--timeout` and `--interval` on the subcommand's argparse parser with these defaults (see `ci_base.py:475` for the `pr wait-for-comments` registration as a template). **Never hard-code a timeout or interval inside the handler body** — the handler must pass `timeout=args.timeout, interval=args.interval` straight through to `poll_until`.
 
-Callers that need a different ceiling pass `--timeout` explicitly. For example, `workflow-pr-doctor` supplies the `review_bot_buffer_seconds` value it reads from the `default:automated-review` step's params in the plan-local manifest step-params snapshot, instead of the default 300, so review bots have the full buffered window to respond. The `--timeout` pass-through contract is unchanged — the value is just sourced from the manifest step-params snapshot rather than a flat config field. Callers that need faster feedback for local iteration can shrink `--interval`, but the default stays at 30 seconds to keep API quota pressure predictable.
+Callers that need a different ceiling pass `--timeout` explicitly. For example, `workflow-pr-doctor` supplies the `review_bot_buffer_seconds` value it reads from the `plan-marshall:automatic-review` step's params in the plan-local manifest step-params snapshot, instead of the default 300, so review bots have the full buffered window to respond. The `--timeout` pass-through contract is unchanged — the value is just sourced from the manifest step-params snapshot rather than a flat config field. Callers that need faster feedback for local iteration can shrink `--interval`, but the default stays at 30 seconds to keep API quota pressure predictable.
 
 ---
 

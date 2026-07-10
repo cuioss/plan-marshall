@@ -316,7 +316,7 @@ AskUserQuestion:
       description: "Push the converged branch to remote"
     - label: "default:create-pr"
       description: "Create pull request"
-    - label: "default:automated-review"
+    - label: "plan-marshall:automatic-review"
       description: "CI automated review (CI completion is a dispatcher-resolved precondition declared via requires: [ci-complete] on this step; triage-only 900 s budget)"
     - label: "default:lessons-capture (Recommended)"
       description: "Record lessons learned"

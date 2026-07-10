@@ -3,7 +3,7 @@
 """
 Regression tests for the phase-6-finalize per-agent timeout wrapper contract.
 
-Each agent-suitable finalize step (sonar-roundtrip, automated-review,
+Each agent-suitable finalize step (sonar-roundtrip, automatic-review,
 lessons-capture) runs under a per-agent timeout enforced by the SKILL.md
 Step 3 dispatch loop. When the wrapper expires, the dispatcher MUST:
 
@@ -14,7 +14,7 @@ Step 3 dispatch loop. When the wrapper expires, the dispatcher MUST:
 These tests pin the timeout contract:
 
   * The budgeted steps and their budgets are documented in SKILL.md.
-  * automated-review.md and sonar-roundtrip.md document the timeout contract
+  * automatic-review.md and sonar-roundtrip.md document the timeout contract
     (15-minute budget, graceful degradation).
   * A simulated hung agent yields outcome=failed and the dispatcher continues.
   * lessons-capture (5-minute budget) is unconditional whenever it is in the
@@ -60,7 +60,7 @@ _mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
 
 _PHASE_6_SKILL_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'SKILL.md'
 _AUTOMATED_REVIEW_MD = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'automated-review.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'automatic-review' / 'SKILL.md'
 )
 _SONAR_ROUNDTRIP_MD = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'sonar-roundtrip.md'
@@ -90,7 +90,7 @@ def _compose_ns(plan_id: str) -> Namespace:
 
 PER_AGENT_BUDGET_SECONDS = {
     'sonar-roundtrip': 900,
-    'automated-review': 900,
+    'automatic-review': 900,
     'lessons-capture': 300,
 }
 
@@ -157,8 +157,8 @@ class TestBudgetContract:
             'SKILL.md must document the 15-min (900s) budget for sonar-roundtrip'
         )
 
-    def test_automated_review_15min_budget_documented(self, skill_md_text: str):
-        assert 'automated-review' in skill_md_text
+    def test_automatic_review_15min_budget_documented(self, skill_md_text: str):
+        assert 'automatic-review' in skill_md_text
         assert '15 min' in skill_md_text or '900' in skill_md_text
 
     def test_lessons_capture_5min_budget_documented(self, skill_md_text: str):
@@ -236,20 +236,20 @@ class TestHungAgentSimulation:
         for later in steps[sonar_idx + 1 :]:
             assert later in dispatched, f'{later} must still dispatch after sonar timeout (continuation)'
 
-    def test_hung_automated_review_marks_failed_and_continues(self, plan_context):
+    def test_hung_automatic_review_marks_failed_and_continues(self, plan_context):
         cmd_compose(_compose_ns('p6-timeout-review'))
         manifest = read_manifest('p6-timeout-review')
         assert manifest is not None
 
-        durations = {'automated-review': 1500}
+        durations = {'automatic-review': 1500}
         dispatched, final_state = _simulate_dispatch_with_timeout(
             manifest,
             durations,
         )
 
-        assert final_state['automated-review']['outcome'] == 'failed'
+        assert final_state['automatic-review']['outcome'] == 'failed'
         steps = manifest['phase_6']['steps']
-        ar_idx = steps.index('automated-review')
+        ar_idx = steps.index('automatic-review')
         # All later steps still fire.
         for later in steps[ar_idx + 1 :]:
             assert later in dispatched
@@ -281,7 +281,7 @@ class TestHungAgentSimulation:
 
         durations = {
             'sonar-roundtrip': 100,
-            'automated-review': 200,
+            'automatic-review': 200,
             'lessons-capture': 30,
         }
         _, final_state = _simulate_dispatch_with_timeout(

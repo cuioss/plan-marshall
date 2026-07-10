@@ -112,7 +112,7 @@ def test_missing_default_steps_are_surfaced(tmp_path: Path):
 
     # Every built-in not in minimal_steps surfaces.
     assert 'default:create-pr' in missing
-    assert 'default:automated-review' in missing
+    assert 'plan-marshall:automatic-review' in missing
     assert 'default:lessons-capture' in missing
     assert 'default:record-metrics' in missing
     # Dropped entries do NOT surface (they're already present).

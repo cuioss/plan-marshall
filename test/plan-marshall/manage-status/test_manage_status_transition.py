@@ -1142,7 +1142,7 @@ class TestLoopBackTargetValidation:
             _mark_step_args(
                 plan_id,
                 '6-finalize',
-                'automated-review',
+                'automatic-review',
                 'loop_back',
                 display_detail='loop-back without target',
                 loop_back_target=None,
@@ -1185,7 +1185,7 @@ class TestLoopBackTargetValidation:
             _mark_step_args(
                 plan_id,
                 '6-finalize',
-                'automated-review',
+                'automatic-review',
                 'loop_back',
                 display_detail='loop-back iter 1 (target=6-finalize)',
                 loop_back_target='6-finalize',
@@ -1196,7 +1196,7 @@ class TestLoopBackTargetValidation:
         assert result['loop_back_target'] == '6-finalize'
 
         status = json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
-        entry = status['metadata']['phase_steps']['6-finalize']['automated-review']
+        entry = status['metadata']['phase_steps']['6-finalize']['automatic-review']
         assert entry['outcome'] == 'loop_back'
         assert entry['loop_back_target'] == '6-finalize', (
             'Persisted phase_steps record must carry loop_back_target=6-finalize'
@@ -1214,7 +1214,7 @@ class TestLoopBackTargetValidation:
             '--phase',
             '6-finalize',
             '--step',
-            'automated-review',
+            'automatic-review',
             '--outcome',
             'loop_back',
             '--loop-back-target',
@@ -1253,7 +1253,7 @@ class TestLoopBackTargetValidation:
             _mark_step_args(
                 plan_id,
                 '6-finalize',
-                'automated-review',
+                'automatic-review',
                 'loop_back',
                 display_detail='loop-back invalid api target',
                 loop_back_target='not-a-real-phase',

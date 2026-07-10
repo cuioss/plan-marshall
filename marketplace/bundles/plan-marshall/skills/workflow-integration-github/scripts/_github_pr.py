@@ -111,6 +111,12 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
         gh_args.append('--draft')
     if getattr(args, 'head', None):
         gh_args.extend(['--head', args.head])
+    # Optional --label passthrough (repeatable). create-pr applies
+    # `--label skip-bot-review` when the enabled_bots set is empty; the label is
+    # a best-effort suppression signal layered on top of the real gate (the
+    # producer enabled_bots filter that files no findings for disabled bots).
+    for label in getattr(args, 'label', None) or []:
+        gh_args.extend(['--label', label])
 
     # Execute
     returncode, stdout, stderr = github_ops.run_gh(gh_args)

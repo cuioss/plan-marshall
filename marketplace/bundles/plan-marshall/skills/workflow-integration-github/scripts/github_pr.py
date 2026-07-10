@@ -47,6 +47,7 @@ import re
 import sys
 from typing import Any
 
+import bot_registry
 import github_ops as _github
 from _github_pr import RESOLVE_THREAD_MUTATION, THREAD_REPLY_MUTATION
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
@@ -71,23 +72,35 @@ register_subcommands({'fetch-comments', 'fetch_findings', 'post_responses'})
 _RESPONDABLE_RESOLUTIONS = frozenset({'fixed', 'suppressed', 'accepted', 'taken_into_account', 'rejected'})
 
 # ============================================================================
-# PRE-FILTER CONFIGURATION (loaded from comment-patterns.json)
+# PRE-FILTER CONFIGURATION (shared defaults + per-bot additions)
 # ============================================================================
 #
-# comment-patterns.json is a PRE-FILTER for noise removal only. It used to
-# carry the LLM decision authority (full keyword classification), but the
-# producer-side migration moves the decision to the LLM consumer, which
-# loads each surviving finding from the per-type store. The keyword data is
-# kept here verbatim so we can still drop obvious automated/acknowledgment
-# noise (e.g., "lgtm", "thanks!", bot signatures) before the finding store
-# is populated. A surviving comment becomes a ``pr-comment`` finding.
+# The producer noise pre-filter is a two-layer, data-not-code composition:
+#
+#   1. SHARED / DEFAULT layer — the ``ignore`` category in comment-patterns.json.
+#      These are bot-agnostic acknowledgment/automation regexes (lgtm, approved,
+#      ``[bot]`` signatures, …) matched case-insensitively against the lowered
+#      comment body. comment-patterns.json used to carry the LLM decision
+#      authority (full keyword classification); the producer-side migration moved
+#      that to the LLM consumer, so this file now holds only the shared noise
+#      baseline. Its ``code_change`` / ``explain`` categories are retained as
+#      historical documentation and are NOT consulted by this script.
+#
+#   2. PER-BOT layer — each enabled bot's ``ignore_patterns`` from the registry
+#      (``automatic-review/standards/{bot_kind}.md``). These are literal
+#      whole-comment markers (a walkthrough heading, a marketing footer, a no-op
+#      review line, …) that only apply to that bot's own comments. They are
+#      sourced from the registry at runtime, so adding/adjusting a bot's noise
+#      drops is a pure standards-doc edit — no change here.
+#
+# A surviving comment (matched by neither layer) becomes a ``pr-comment`` finding.
 
 PATTERNS: dict[str, Any] = load_skill_config(__file__, 'comment-patterns.json')
 
-# Pre-compile only the ``ignore`` category — that's what the pre-filter uses.
-# Other categories (``code_change``, ``explain``) are no longer consulted by
-# this script; the LLM decides classification downstream from the finding
-# detail.
+# Compile the SHARED ``ignore`` regexes — the bot-agnostic default layer. The
+# per-bot layer is resolved separately at match time from the registry (literal
+# substring markers, not regexes), so a bot-specific marker only ever drops that
+# bot's comments.
 _COMPILED_IGNORE: list[re.Pattern] = []
 for _priority, _pattern_list in PATTERNS.get('ignore', {}).items():
     _COMPILED_IGNORE.extend(
@@ -163,19 +176,34 @@ def cmd_fetch_comments(args):
 # ============================================================================
 
 
-def _is_obvious_noise(body: str) -> bool:
-    """Pre-filter: True if the comment body matches an ``ignore`` keyword.
+def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
+    """Pre-filter: True if the comment body is shared or per-bot noise.
 
-    Used by ``comments-stage`` to drop obvious automated/acknowledgment noise
-    (e.g., "lgtm", "thanks!", bot signatures) before each surviving comment is
-    persisted as a ``pr-comment`` finding. This is intentionally permissive —
-    the goal is only to skip the most obvious noise, not to make the final
-    classification decision (that belongs to the LLM consumer).
+    Two layers (see PRE-FILTER CONFIGURATION above):
+
+    1. SHARED — the bot-agnostic ``ignore`` regexes (lgtm, approved, ``[bot]``
+       signatures, …) matched case-insensitively against the lowered body.
+    2. PER-BOT — when ``bot_kind`` is a known reviewer bot, that bot's registry
+       ``ignore_patterns`` (literal whole-comment markers) matched as
+       case-sensitive substrings against the raw body. These markers are exact
+       fragments the bot emits (a walkthrough heading, a marketing footer, a
+       no-op review line), so only that bot's own comments are dropped.
+
+    Used by ``fetch_findings`` to drop obvious automated/acknowledgment noise
+    before each surviving comment is persisted as a ``pr-comment`` finding. This
+    is intentionally permissive — the goal is only to skip the most obvious
+    noise, not to make the final classification decision (that belongs to the LLM
+    consumer). Human comments (``bot_kind is None``) are checked against the
+    shared layer only.
     """
     if not body:
         return True
     body_lower = body.lower()
-    return any(p.search(body_lower) for p in _COMPILED_IGNORE)
+    if any(p.search(body_lower) for p in _COMPILED_IGNORE):
+        return True
+    if bot_kind:
+        return any(marker in body for marker in bot_registry.ignore_patterns(bot_kind))
+    return False
 
 
 # ============================================================================
@@ -220,29 +248,37 @@ _COMMENT_ID_DETAIL = re.compile(r'^comment_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', r
 _THREAD_ID_DETAIL = re.compile(r'^thread_id:[ \t]*(?P<id>\S[^\n]*?)[ \t]*$', re.MULTILINE)
 
 
-def _existing_pr_comment_ids(query_findings, plan_id: str) -> set[str]:
-    """Return the set of comment_id values already stored as pr-comment findings.
+def _existing_pr_comment_keys(query_findings, plan_id: str) -> set[tuple[str, str]]:
+    """Return the set of ``(bot_kind, comment_id)`` keys already stored as pr-comment findings.
 
     Each pr-comment finding embeds its source ``comment_id`` on a
-    ``comment_id: <value>`` line inside its ``detail`` block. Reconstructing the
-    set from the persisted findings (across all resolution states) lets the
-    producer skip a thread_id-less comment that was already staged in a prior
-    finalize iteration, closing the cross-iteration phantom loop.
+    ``comment_id: <value>`` line inside its ``detail`` block and carries the
+    resolved ``bot_kind`` as a top-level field. Reconstructing the set of
+    ``(bot_kind, comment_id)`` pairs from the persisted findings (across all
+    resolution states) lets the producer skip any comment — thread-bearing or
+    thread_id-less, from any bot kind — that was already staged in a prior
+    finalize iteration, closing the cross-iteration phantom loop for all bots.
+
+    Keying on ``(bot_kind, comment_id)`` rather than ``comment_id`` alone avoids
+    a collision between two distinct bots that happen to reuse the same numeric
+    comment id. A human-authored finding (``bot_kind`` unset) contributes
+    ``('', comment_id)``.
 
     Args:
         query_findings: The ``_findings_core.query_findings`` callable.
         plan_id: Plan identifier whose findings store is queried.
 
     Returns:
-        Set of comment_id strings already present in the pr-comment store.
+        Set of ``(bot_kind, comment_id)`` tuples already present in the
+        pr-comment store.
     """
     result = query_findings(plan_id, finding_type='pr-comment')
-    comment_ids: set[str] = set()
+    keys: set[tuple[str, str]] = set()
     for finding in result.get('findings') or []:
         match = _COMMENT_ID_DETAIL.search(finding.get('detail') or '')
         if match:
-            comment_ids.add(match.group('id'))
-    return comment_ids
+            keys.add((finding.get('bot_kind') or '', match.group('id')))
+    return keys
 
 
 def cmd_fetch_findings(args):
@@ -273,6 +309,18 @@ def cmd_fetch_findings(args):
     pr_number: int = args.pr_number
     plan_id: str = args.plan_id
 
+    # enabled-bots producer filter: --enabled-bots carries a comma-joined set of
+    # enabled bot_kinds, split at read time. When the flag is omitted the value
+    # is None and the filter is disabled (every comment is considered). When
+    # supplied — even as an empty string, which yields an empty enabled set and
+    # thus disables ALL bots — a comment whose derived bot_kind is non-empty and
+    # NOT in the set files no finding. Human comments (bot_kind is None) are
+    # never filtered; the gate is bot-scoped.
+    enabled_bots_raw = getattr(args, 'enabled_bots', None)
+    enabled_bots_set: set[str] | None = None
+    if enabled_bots_raw is not None:
+        enabled_bots_set = {b.strip() for b in enabled_bots_raw.split(',') if b.strip()}
+
     # Fail-loud config guard — an unconfigured provider must NOT report a silent
     # zero-findings success.
     is_auth, auth_err = _github.check_auth()
@@ -286,15 +334,16 @@ def cmd_fetch_findings(args):
     raw_comments: list[dict] = fetch_result.get('comments') or []
     count_fetched = len(raw_comments)
 
-    # Cross-iteration phantom-loop guard: ``review_body`` comments carry no
-    # ``thread_id``, so a resolution from a prior finalize iteration cannot be
-    # matched back to the comment on the next fetch. Without a ``comment_id``
-    # dedup the resolved comment re-enters as a fresh pending finding every
-    # time HEAD advances, producing an endless finalize loop. Build the set of
-    # ``comment_id`` values already recorded as ``pr-comment`` findings
-    # (regardless of resolution state) and skip any thread_id-less comment
-    # whose id is already present.
-    existing_comment_ids = _existing_pr_comment_ids(query_findings, plan_id)
+    # Cross-iteration phantom-loop guard: a resolution from a prior finalize
+    # iteration cannot always be matched back to the comment on the next fetch
+    # (``review_body`` comments carry no ``thread_id``, and even thread-bearing
+    # bot comments can re-surface when HEAD advances). Without a dedup the
+    # resolved comment re-enters as a fresh pending finding every time HEAD
+    # advances, producing an endless finalize loop. Build the set of
+    # ``(bot_kind, comment_id)`` keys already recorded as ``pr-comment``
+    # findings (regardless of resolution state) and skip any comment — from any
+    # bot kind, thread-bearing or not — whose key is already present.
+    existing_comment_keys = _existing_pr_comment_keys(query_findings, plan_id)
 
     # Stamp every finding with the PR HEAD SHA at ingestion time so re-review
     # matching can tell whether HEAD has advanced past the reviewed commit.
@@ -305,6 +354,7 @@ def cmd_fetch_findings(args):
     stored_hashes: list[str] = []
     skipped_noise = 0
     skipped_duplicate = 0
+    skipped_disabled = 0
     store_failures: list[str] = []
 
     for comment in raw_comments:
@@ -314,25 +364,47 @@ def cmd_fetch_findings(args):
             skipped_noise += 1
             continue
 
+        author = comment.get('author') or 'unknown'
+
+        # Derive bot_kind from the comment author login (coderabbitai ->
+        # coderabbit, gemini-code-assist -> gemini); a human author resolves to
+        # None. Computed BEFORE the noise pre-filter (so per-bot ignore patterns
+        # apply) AND before the dedup check (so the cross-iteration guard can key
+        # on (bot_kind, comment_id)).
+        bot_kind = bot_kind_for_author(author)
+
+        # Pre-filter 2: obvious noise — the shared acknowledgment/automation
+        # regexes plus, for a known reviewer bot, that bot's per-registry literal
+        # ignore markers (walkthrough headings, marketing footers, no-op reviews).
         body = comment.get('body') or ''
-        if _is_obvious_noise(body):
+        if _is_obvious_noise(body, bot_kind):
             skipped_noise += 1
             continue
 
         kind = comment.get('kind') or 'inline'
         thread_id = comment.get('thread_id') or ''
-        author = comment.get('author') or 'unknown'
         path = comment.get('path') or None
         line = comment.get('line') or None
         comment_id = comment.get('id') or 'unknown'
 
-        # Pre-filter 3: cross-iteration dedup for thread_id-less comments
-        # (``review_body`` / issue-comment kinds). A comment_id already
-        # staged in a prior iteration MUST NOT re-surface as a new pending
-        # finding when HEAD advances. Comments that carry a thread_id are
-        # matched back via their thread on the next fetch, so they do not
-        # need this guard.
-        if not thread_id and comment_id in existing_comment_ids:
+        # Pre-filter 2b: enabled-bots producer filter. When --enabled-bots was
+        # supplied, a comment whose bot_kind is non-empty and NOT in the enabled
+        # set files no finding (its bot is disabled for this plan/flow). Human
+        # comments (bot_kind is None) always pass — the gate is bot-scoped. A
+        # disabled bot files nothing, so its re-review is transitively
+        # suppressed (no findings -> no re-review trigger).
+        if enabled_bots_set is not None and bot_kind and bot_kind not in enabled_bots_set:
+            skipped_disabled += 1
+            continue
+
+        # Pre-filter 3: cross-iteration dedup keyed on (bot_kind, comment_id)
+        # for ALL bot kinds, thread-bearing and thread_id-less alike. A comment
+        # already staged in a prior iteration MUST NOT re-surface as a new
+        # pending finding when HEAD advances. Dropping the earlier
+        # ``not thread_id`` restriction closes the same phantom loop for
+        # thread-bearing bot comments, and pairing the id with bot_kind avoids a
+        # collision between two distinct bots reusing a numeric comment id.
+        if (bot_kind or '', comment_id) in existing_comment_keys:
             skipped_duplicate += 1
             continue
 
@@ -364,11 +436,6 @@ def cmd_fetch_findings(args):
         if isinstance(line, int) and line > 0:
             line_arg = line
 
-        # Derive bot_kind from the comment author login (coderabbitai ->
-        # coderabbit, gemini-code-assist -> gemini); a human author resolves to
-        # None and leaves bot_kind unset on the finding.
-        bot_kind = bot_kind_for_author(author)
-
         add_result = add_finding(
             plan_id=plan_id,
             finding_type='pr-comment',
@@ -388,10 +455,11 @@ def cmd_fetch_findings(args):
             store_failures.append(comment_id)
 
     count_stored = len(stored_hashes)
-    # Duplicates skipped by the cross-iteration guard are legitimate non-stores,
-    # so they drop out of expected_stored alongside the noise skips — otherwise
-    # every deduped comment would spuriously trip the producer-mismatch Q-Gate.
-    expected_stored = count_fetched - skipped_noise - skipped_duplicate
+    # Duplicates skipped by the cross-iteration guard and comments skipped by the
+    # enabled-bots filter are both legitimate non-stores, so they drop out of
+    # expected_stored alongside the noise skips — otherwise every deduped or
+    # disabled-bot comment would spuriously trip the producer-mismatch Q-Gate.
+    expected_stored = count_fetched - skipped_noise - skipped_duplicate - skipped_disabled
 
     qgate_hash: str | None = None
     if count_stored != expected_stored:
@@ -424,6 +492,7 @@ def cmd_fetch_findings(args):
         'count_fetched': count_fetched,
         'count_skipped_noise': skipped_noise,
         'count_skipped_duplicate': skipped_duplicate,
+        'count_skipped_disabled': skipped_disabled,
         'count_stored': count_stored,
         'stored_hash_ids': stored_hashes,
         'producer_mismatch_hash_id': qgate_hash,
@@ -550,6 +619,17 @@ Examples:
                 'args': [
                     {'flags': ['--pr-number'], 'dest': 'pr_number', 'type': int, 'required': True, 'help': 'PR number'},
                     {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
+                    {
+                        'flags': ['--enabled-bots'],
+                        'dest': 'enabled_bots',
+                        'help': (
+                            'Comma-joined enabled bot_kinds (e.g. "coderabbit,sourcery,gemini"). When '
+                            'supplied, a comment whose derived bot_kind is non-empty and NOT in this set '
+                            'files no finding — its bot is disabled for this plan/flow, so its re-review is '
+                            'transitively suppressed. Human comments (bot_kind is None) always pass. Omit '
+                            'the flag to disable the filter entirely (all comments considered).'
+                        ),
+                    },
                 ],
             },
             {

@@ -10,6 +10,7 @@ Covers the three concerns of the post-merge re-review registry:
        comment per strategy and returns the comment-post time:
          coderabbit: posts ``@coderabbitai review``.
          gemini:     posts ``/gemini review``.
+         sourcery:   posts ``@sourcery-ai review``.
     3. Fresh-review matching — ``_match_review`` / ``await_fresh_review`` identifies
        a review whose reviewed commit SHA matches the pushed HEAD AND whose
        ``submitted_at`` post-dates the trigger time; fail-closed otherwise.
@@ -52,18 +53,69 @@ def _review(commit_sha, submitted_at, *, user='coderabbit[bot]', state='COMMENTE
 # =============================================================================
 
 
-def test_resolve_strategy_coderabbit_maps_to_coderabbit_strategy():
+def test_resolve_strategy_coderabbit_is_generic_with_coderabbit_trigger():
+    """coderabbit resolves to the ONE generic strategy carrying its trigger comment."""
     strategy = github_re_review.resolve_strategy('coderabbit')
 
     assert strategy is not None
-    assert isinstance(strategy, github_re_review._CodeRabbitStrategy)
+    assert isinstance(strategy, github_re_review._ReReviewStrategy)
+    assert strategy.trigger_comment == '@coderabbitai review'
 
 
-def test_resolve_strategy_gemini_maps_to_gemini_strategy():
+def test_resolve_strategy_gemini_is_generic_with_gemini_trigger():
+    """gemini resolves to the same generic strategy class, carrying its own trigger."""
     strategy = github_re_review.resolve_strategy('gemini')
 
     assert strategy is not None
-    assert isinstance(strategy, github_re_review._GeminiStrategy)
+    assert isinstance(strategy, github_re_review._ReReviewStrategy)
+    assert strategy.trigger_comment == '/gemini review'
+
+
+def test_resolve_strategy_sourcery_is_generic_with_sourcery_trigger():
+    """sourcery resolves to the same generic strategy class, carrying its own trigger."""
+    strategy = github_re_review.resolve_strategy('sourcery')
+
+    assert strategy is not None
+    assert isinstance(strategy, github_re_review._ReReviewStrategy)
+    assert strategy.trigger_comment == '@sourcery-ai review'
+
+
+def test_no_bot_specific_strategy_classes_remain():
+    """The refactor removed every per-bot strategy subclass — only the generic one exists."""
+    assert not hasattr(github_re_review, '_CodeRabbitStrategy')
+    assert not hasattr(github_re_review, '_GeminiStrategy')
+    assert not hasattr(github_re_review, '_SourceryStrategy')
+
+
+def test_no_hardcoded_trigger_constants_remain():
+    """The per-bot trigger constants were collapsed into registry-loaded data."""
+    assert not hasattr(github_re_review, 'CODERABBIT_TRIGGER_COMMENT')
+    assert not hasattr(github_re_review, 'GEMINI_TRIGGER_COMMENT')
+    assert not hasattr(github_re_review, 'SOURCERY_TRIGGER_COMMENT')
+
+
+def test_strategy_triggers_derive_from_bot_registry():
+    """Every strategy's trigger equals the registry-declared trigger for its bot."""
+    import bot_registry
+
+    for bot_kind in bot_registry.bot_kinds():
+        strategy = github_re_review.resolve_strategy(bot_kind)
+        assert strategy is not None
+        assert strategy.trigger_comment == bot_registry.trigger_comment(bot_kind)
+
+
+def test_author_login_map_derives_from_bot_registry():
+    """The login->bot_kind map is derived from the registry, not inline-copied."""
+    import bot_registry
+
+    assert github_re_review._AUTHOR_LOGIN_TO_BOT_KIND == bot_registry.login_to_bot_kind()
+
+
+def test_sourcery_is_a_valid_bot_kind():
+    """``sourcery`` is a first-class member of the canonical BOT_KINDS enum."""
+    from _findings_core import BOT_KINDS
+
+    assert 'sourcery' in BOT_KINDS
 
 
 def test_resolve_strategy_unknown_bot_kind_returns_none():
@@ -109,9 +161,10 @@ def test_coderabbit_request_fresh_review_posts_trigger_comment(monkeypatch):
     result = strategy.request_fresh_review(42, '2026-01-01T00:00:00Z')
 
     assert result['status'] == 'success'
-    # Exactly one comment posted, with the exact trigger literal.
-    assert post_calls['args'] == [(42, github_re_review.CODERABBIT_TRIGGER_COMMENT)]
-    assert github_re_review.CODERABBIT_TRIGGER_COMMENT == '@coderabbitai review'
+    # Exactly one comment posted, with the exact trigger literal (the strategy's
+    # trigger comes from the registry data block, not a hard-coded constant).
+    assert post_calls['args'] == [(42, strategy.trigger_comment)]
+    assert strategy.trigger_comment == '@coderabbitai review'
 
 
 def test_coderabbit_request_fresh_review_trigger_time_is_post_time_not_push_time(monkeypatch):
@@ -160,9 +213,9 @@ def test_gemini_request_fresh_review_posts_trigger_comment(monkeypatch):
     result = strategy.request_fresh_review(99, '2026-01-01T00:00:00Z')
 
     assert result['status'] == 'success'
-    # Exactly one comment posted, with the exact trigger literal.
-    assert post_calls['args'] == [(99, github_re_review.GEMINI_TRIGGER_COMMENT)]
-    assert github_re_review.GEMINI_TRIGGER_COMMENT == '/gemini review'
+    # Exactly one comment posted, with the exact trigger literal (registry-derived).
+    assert post_calls['args'] == [(99, strategy.trigger_comment)]
+    assert strategy.trigger_comment == '/gemini review'
 
 
 def test_gemini_request_fresh_review_trigger_time_is_post_time_not_push_time(monkeypatch):
@@ -192,6 +245,57 @@ def test_gemini_request_fresh_review_propagates_post_failure(monkeypatch):
 
     strategy = github_re_review.resolve_strategy('gemini')
     result = strategy.request_fresh_review(99, '2026-01-01T00:00:00Z')
+
+    assert result['status'] == 'error'
+    assert result['operation'] == 'request_fresh_review'
+
+
+def test_sourcery_request_fresh_review_posts_trigger_comment(monkeypatch):
+    """Sourcery posts exactly ``@sourcery-ai review`` as the explicit trigger."""
+    post_calls = {'args': []}
+
+    def fake_post(pr_number, body):
+        post_calls['args'].append((pr_number, body))
+        return {'status': 'success', 'operation': 'post_pr_comment', 'pr_number': pr_number}
+
+    monkeypatch.setattr(github_re_review._github, 'post_pr_comment', fake_post)
+
+    strategy = github_re_review.resolve_strategy('sourcery')
+    result = strategy.request_fresh_review(77, '2026-01-01T00:00:00Z')
+
+    assert result['status'] == 'success'
+    # Exactly one comment posted, with the exact trigger literal (registry-derived).
+    assert post_calls['args'] == [(77, strategy.trigger_comment)]
+    assert strategy.trigger_comment == '@sourcery-ai review'
+
+
+def test_sourcery_request_fresh_review_trigger_time_is_post_time_not_push_time(monkeypatch):
+    """Sourcery's trigger time is the comment-post time, never the push time."""
+    monkeypatch.setattr(
+        github_re_review._github,
+        'post_pr_comment',
+        lambda *_a, **_kw: {'status': 'success'},
+    )
+    monkeypatch.setattr(github_re_review, '_now_iso', lambda: '2026-06-01T12:00:00+00:00')
+
+    strategy = github_re_review.resolve_strategy('sourcery')
+    result = strategy.request_fresh_review(77, '2020-01-01T00:00:00Z')
+
+    assert result['trigger_time'] == '2026-06-01T12:00:00+00:00'
+    # The supplied push_time is deliberately discarded.
+    assert result['trigger_time'] != '2020-01-01T00:00:00Z'
+
+
+def test_sourcery_request_fresh_review_propagates_post_failure(monkeypatch):
+    """A failed trigger-comment post surfaces as an error envelope."""
+    monkeypatch.setattr(
+        github_re_review._github,
+        'post_pr_comment',
+        lambda *_a, **_kw: {'status': 'error', 'error': 'comment failed'},
+    )
+
+    strategy = github_re_review.resolve_strategy('sourcery')
+    result = strategy.request_fresh_review(77, '2026-01-01T00:00:00Z')
 
     assert result['status'] == 'error'
     assert result['operation'] == 'request_fresh_review'
@@ -396,6 +500,31 @@ def test_cmd_re_review_gemini_posts_then_awaits(monkeypatch):
     assert post_calls['args'] == [(42, '/gemini review')]
 
 
+def test_cmd_re_review_sourcery_posts_then_awaits(monkeypatch):
+    """sourcery: posts @sourcery-ai review, then awaits a fresh review for HEAD."""
+    _noop_sleep(monkeypatch)
+    post_calls = {'args': []}
+
+    def fake_post(pr_number, body):
+        post_calls['args'].append((pr_number, body))
+        return {'status': 'success'}
+
+    monkeypatch.setattr(github_re_review._github, 'post_pr_comment', fake_post)
+    monkeypatch.setattr(github_re_review, '_now_iso', lambda: '2026-01-01T00:00:00+00:00')
+    monkeypatch.setattr(
+        github_re_review._github,
+        'fetch_pr_reviews_with_commits',
+        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+    )
+
+    result = github_re_review.cmd_re_review(_re_review_args(bot_kind='sourcery'))
+
+    assert result['status'] == 'success'
+    assert result['matched'] is True
+    assert result['bot_kind'] == 'sourcery'
+    assert post_calls['args'] == [(42, '@sourcery-ai review')]
+
+
 def test_cmd_re_review_short_circuits_on_request_failure(monkeypatch):
     """A failed gemini trigger post aborts before await is ever called."""
     _noop_sleep(monkeypatch)
@@ -560,6 +689,16 @@ def test_bot_kind_for_author_known_gemini_login():
     assert github_re_review.bot_kind_for_author('gemini-code-assist') == 'gemini'
 
 
+def test_bot_kind_for_author_known_sourcery_login():
+    """The sourcery bot account login maps to the sourcery bot_kind."""
+    assert github_re_review.bot_kind_for_author('sourcery-ai') == 'sourcery'
+
+
+def test_bot_kind_for_author_sourcery_strips_bot_suffix():
+    """A ``[bot]``-suffixed sourcery login is normalized before lookup."""
+    assert github_re_review.bot_kind_for_author('sourcery-ai[bot]') == 'sourcery'
+
+
 def test_bot_kind_for_author_human_returns_none():
     """A human (non-bot) author login resolves to None."""
     assert github_re_review.bot_kind_for_author('octocat') is None
@@ -611,6 +750,51 @@ def test_main_re_review_wires_args_and_prints_toon(monkeypatch, capsys):
     assert 'success' in out
     assert 'coderabbit' in out
     assert 'headsha' in out
+
+
+def test_main_re_review_accepts_sourcery_bot_kind(monkeypatch, capsys):
+    """main() accepts ``--bot-kind sourcery`` through argparse and posts its trigger.
+
+    Proves sourcery is a valid ``--bot-kind`` argparse choice end-to-end (a value
+    outside ``choices=BOT_KINDS`` would raise SystemExit at parse time).
+    """
+    _noop_sleep(monkeypatch)
+    post_calls = {'args': []}
+
+    def fake_post(pr_number, body):
+        post_calls['args'].append((pr_number, body))
+        return {'status': 'success'}
+
+    monkeypatch.setattr(github_re_review._github, 'post_pr_comment', fake_post)
+    monkeypatch.setattr(
+        github_re_review._github,
+        'fetch_pr_reviews_with_commits',
+        lambda pr_number: {'status': 'success', 'reviews': [_review('headsha', '2026-01-01T00:05:00Z')]},
+    )
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'github_re_review.py',
+            're-review',
+            '--pr-number',
+            '42',
+            '--bot-kind',
+            'sourcery',
+            '--head-sha',
+            'headsha',
+            '--push-time',
+            '2026-01-01T00:00:00Z',
+        ],
+    )
+
+    rc = github_re_review.main()
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert 'success' in out
+    assert 'sourcery' in out
+    assert post_calls['args'] == [(42, '@sourcery-ai review')]
 
 
 def test_main_parses_timeout_flag_and_threads_it(monkeypatch):

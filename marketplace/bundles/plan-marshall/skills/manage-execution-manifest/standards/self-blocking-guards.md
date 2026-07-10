@@ -33,16 +33,16 @@ The bot-enforcement guard surfaced two failure modes in close succession; both
 are characteristic of self-blocking guards in general.
 
 **Missing-prefix failure** — the guard inserts a remediation step into the
-manifest using a name shape (`automated-review`) that is correct against the
+manifest using a name shape (`automatic-review`) that is correct against the
 boundary-normalized representation, but stale callers compared against the
-project-prefixed shape (`default:automated-review`) and silently skipped the
+project-prefixed shape (`plan-marshall:automatic-review`) and silently skipped the
 remediation. The guard logs success while the manifest is still missing the
 remediation entry, so the violation is invisible until finalize fails.
 
 **Wrong-position failure** — the guard inserts the remediation step at a
 positionally-incorrect index (e.g., at the end of the list or between two
 plan-mutating steps). The step is present, the guard log says "remediated",
-but `automated-review` runs after `archive-plan` has already moved the plan
+but `automatic-review` runs after `archive-plan` has already moved the plan
 directory or `branch-cleanup` has already deleted the branch. The bot review
 either fails to find its inputs or runs against an artifact that no longer
 matches the merged state.

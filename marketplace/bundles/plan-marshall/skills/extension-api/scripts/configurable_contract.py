@@ -132,6 +132,16 @@ def resolve_step_doc_path(step_id: str) -> Path:
         candidate = skills_root / bare / 'SKILL.md'
         return _guard_within(candidate, skills_root, step_id)
 
+    # Promoted built-in-equivalent bundle finalize step: it was promoted out of a
+    # former ``phase-6-finalize/workflow/`` body doc into a top-level bundle
+    # skill, so its configurable block lives in ``skills/automatic-review/
+    # SKILL.md``. Both the bundle-prefixed id (the marshal seed key) and its
+    # boundary-normalized bare form resolve here.
+    if step_id in ('plan-marshall:automatic-review', 'automatic-review'):
+        skills_root = resolve_skills_root(Path(__file__))
+        candidate = skills_root / 'automatic-review' / 'SKILL.md'
+        return _guard_within(candidate, skills_root, step_id)
+
     skill_dir = _phase_6_skill_dir()
     bare = _strip_default_prefix(step_id)
     workflow_path = _guard_within(skill_dir / 'workflow' / f'{bare}.md', skill_dir, step_id)

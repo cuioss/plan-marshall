@@ -387,7 +387,7 @@ class TestLessonKindMapping:
 #
 #   Phase 5: quality-gate (and module-tests when present in the candidates)
 #   Phase 6: push, create-pr, lessons-capture, branch-cleanup, archive-plan
-#            (drops automated-review, sonar-roundtrip)
+#            (drops automatic-review, sonar-roundtrip)
 #
 # When ``recipe_key`` is set, the recipe rule (rule 2) fires for ALL three
 # derived change_types — bug_fix / enhancement / tech_debt — because the
@@ -412,7 +412,7 @@ class TestRecipePathEndToEnd:
         """End-to-end: recipe inputs → manifest with the documented shape.
 
         Under the new precondition-resolver contract (lesson 2026-05-15-14-002),
-        Row 2 (recipe) RETAINS review gates — ``automated-review`` and
+        Row 2 (recipe) RETAINS review gates — ``automatic-review`` and
         ``sonar-roundtrip`` are present in the composed manifest. Only the
         legacy ``ci-wait`` step ID is defensively narrowed out when present
         in the candidate list. The recipe contract still produces a slim
@@ -452,7 +452,7 @@ class TestRecipePathEndToEnd:
 
         # Phase 6 RETAINS review gates under the new contract.
         phase_6 = manifest['phase_6']['steps']
-        for retained in ('automated-review', 'sonar-roundtrip'):
+        for retained in ('automatic-review', 'sonar-roundtrip'):
             assert retained in phase_6, (
                 f'recipe path MUST retain {retained!r} under the new contract '
                 f'(lesson_kind={lesson_kind})'
@@ -517,7 +517,7 @@ class TestRecipePathEndToEnd:
         manifest = read_manifest('recipe-surgical-failsafe')
         assert manifest is not None
         # Review gates RETAINED under the new contract.
-        for retained in ('automated-review', 'sonar-roundtrip'):
+        for retained in ('automatic-review', 'sonar-roundtrip'):
             assert retained in manifest['phase_6']['steps']
         # Legacy ci-wait defensively dropped.
         assert 'ci-wait' not in manifest['phase_6']['steps']
@@ -550,7 +550,7 @@ class TestRecipePathEndToEnd:
         manifest = read_manifest('recipe-surgical-failsafe-td')
         assert manifest is not None
         # Review gates RETAINED under the new contract.
-        for retained in ('automated-review', 'sonar-roundtrip'):
+        for retained in ('automatic-review', 'sonar-roundtrip'):
             assert retained in manifest['phase_6']['steps']
         # Legacy ci-wait defensively dropped.
         assert 'ci-wait' not in manifest['phase_6']['steps']
