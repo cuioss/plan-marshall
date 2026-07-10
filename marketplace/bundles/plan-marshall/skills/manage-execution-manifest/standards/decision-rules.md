@@ -93,10 +93,11 @@ The pre-filters run in this order:
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by any pre-filter that ran before the row matrix.
 
-After the seven-row matrix runs, two post-matrix transforms inspect the matrix output before the manifest is persisted, in this order:
+After the seven-row matrix runs, three post-matrix transforms inspect the matrix output before the manifest is persisted, in this order:
 
 1. **`ceremony_finalize_selection`** — applies the four `plan.phase-6-finalize` run-at-all gates (`self_review` / `qgate` / `simplify` / `security_audit`, each `always|never|auto`) to the final `phase_6.steps`, forcing each gate's step in (`always`), out (`never`), or deferring (`auto`). It NEVER touches `plan-marshall:automatic-review`. Documented in its own subsection below.
 2. **`bot_enforcement_guard`** — on GitHub/GitLab plans where `plan-marshall:automatic-review` is missing from the final `phase_6.steps`, the guard remediates in-place by appending it back to the list (defense-in-depth, not assertion). The guard is documented in its own subsection below the pre-filter sections.
+3. **`frontmatter_order_sort`** — reorders the final `phase_6.steps` into ascending frontmatter `order` (stable sort via `_sort_steps_by_frontmatter_order`; order-unresolvable entries stay pinned at their original index), so `archive-plan` (order 1000) is the terminal barrier regardless of seed order. Runs after the bot-enforcement guard and before the compose-time placement validator. Documented in its own subsection below.
 
 ### Pre-Filter: `commit_push_disabled`
 
@@ -333,6 +334,24 @@ When the posture is `full` (or no lane-participating element is above the cutoff
 When `ci_provider` is neither `github` nor `gitlab`, OR `plan-marshall:automatic-review` is already present in `phase_6.steps`, the guard is a no-op and emits no log entry.
 
 **Safety-net error path**: The function still has a non-`None` return contract (`str | None`) and the caller (`cmd_compose`) still translates a non-`None` return into a `bot_enforcement_violation` error TOON. In current code this branch is unreachable — the guard either no-ops (returns `None`) or remediates and returns `None`. The branch is retained as a hook for any future logic that detects a non-remediable violation (e.g., a malformed `phase_6_steps` list), so the legacy `bot-enforcement guard fired` log line and error TOON shape remain documented in the codebase even though they are not exercised by the current control flow.
+
+## Frontmatter-Order Sort
+
+**Type**: Composition-time post-matrix transform (NOT a pre-filter, NOT an assertion). Runs *after* the `bot_enforcement_guard` (so a guard-re-added `plan-marshall:automatic-review` participates in the sort) and *before* the compose-time placement validator (`_validate_automatic_review_placement`) and manifest persistence, so the validator asserts against the final, sorted layout.
+
+**Condition**: unconditional — the transform runs on every compose. It is a no-op (identity reorder) when the list is already in ascending frontmatter `order`.
+
+**Effect**: `phase_6.steps` is reordered into ascending frontmatter `order` via `_sort_steps_by_frontmatter_order` (`_manifest_validation.py`):
+
+- Every entry whose `_resolve_step_order` is not `None` is sorted into ascending resolved-order position; the stable sort preserves the relative sequence of entries sharing an equal `order` value.
+- Entries whose order resolves to `None` — non-string entries and external `bundle:skill` steps with no resolvable source file — keep their exact original index, acting as fixed pins that the sortable entries flow around (the same "skipped, does not participate" convention as `_check_ascending_order`).
+- Because every finalize step's declared `order` is below `archive-plan`'s 1000 (nearest tail: `record-metrics` 998, `finalize-step-print-phase-breakdown` 999), the sort makes `archive-plan` the terminal barrier by construction — no order-resolvable step follows it unless its own frontmatter documents a post-archive `order >= 1000` (currently none do).
+
+**Why**: the composer treats the marshal.json `phase_6.steps` id-keyed map (or the default candidate list) as authoritative for execution order, and `manage-config sync-defaults` back-fills a missing default-on step by dict assignment — appending the new key at the END of the map regardless of its frontmatter `order`. That landed e.g. `finalize-step-preference-emitter` (order 80) after `archive-plan` (order 1000), a layout that fails at dispatch time because archive moves the plan directory. The sort is the single terminal choke-point correcting any upstream seed or insertion misordering (sync-defaults appends, manual marshal.json edits, forced insertions). It is the compose-time companion of the `_check_ascending_order` validator: the composer sorts so the barrier invariant holds; the validator asserts the sort held.
+
+**Interaction with anchor-based insertion helpers**: the ceremony-finalize and bot-enforcement insertion helpers anchor before the plan-mutating tail, and `plan-marshall:automatic-review` (order 30) sorts below that tail, so the sort preserves — rather than competes with — those placement intents. The placement validator sees the sorted list and passes by construction for order-resolvable steps; it remains defense-in-depth for order-unresolvable ones.
+
+**Decision log line**: none — the transform is deterministic, unconditional, and emits no dedicated log entry; the composed `phase_6.steps` in the rule's own decision-log line reflects the sorted order.
 
 ## execution_tier Routing
 

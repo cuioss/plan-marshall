@@ -533,6 +533,10 @@ An element with no `lane:` block is not lane-participating and is always kept. A
 
 **Twice-compose timing.** `compose` runs twice (lane design §4.5): once at **init** (`phase-1-init`, provisional `auto` footprint prunes) and once at **end-of-phase-4** (idempotent re-compose with firm signals). The posture and the `minimal`/`full` shapes are fixed at init and never change on the second call; only `auto`'s footprint-gated prunes can move (in the safe, more-validation direction), and that refinement is **logged, never re-prompted**.
 
+### Frontmatter-order sort (`frontmatter_order_sort`)
+
+After the bot-enforcement guard and before the compose-time placement validator, the composer reorders the final `phase_6.steps` into ascending frontmatter `order` via `_sort_steps_by_frontmatter_order` (`_manifest_validation.py`). The stable sort reorders every order-resolvable step while entries whose `_resolve_step_order` is `None` (external `bundle:skill` steps, non-string entries) keep their original index, so `archive-plan` (order 1000) is the terminal barrier regardless of the marshal.json seed order — the single choke-point correcting the sync-defaults append misordering and any other upstream seed corruption. The transform is unconditional, emits no dedicated `decision.log` line, and is the compose-time companion of the `_check_ascending_order` validator. The full rule (pin semantics, barrier consequence, insertion-helper interaction) is documented in [standards/decision-rules.md](standards/decision-rules.md) § "Frontmatter-Order Sort".
+
 ---
 
 ## Integration
