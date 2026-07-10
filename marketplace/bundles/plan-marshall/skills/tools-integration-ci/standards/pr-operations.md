@@ -189,6 +189,21 @@ Poll the PR's mergeability until it is ready, then merge — hardening the merge
 
 On **GitHub only**, when readiness stays `blocked` past the poll timeout AND `--admin-merge-on-stuck-state` is set AND every active ruleset requirement is provably met (required checks all SUCCESS on the head SHA, branch not behind base, required approving reviews met, no required unresolved conversations), the verb falls back to `gh pr merge --admin`. The stuck-state gate fails closed: any unmet or unverifiable requirement refuses the admin merge. On **GitLab** there is no admin equivalent — `--admin-merge-on-stuck-state` is accepted for API uniformity but ignored, and a stuck-past-timeout MR returns an error rather than force-merging.
 
+### Base-branch merge-queue preflight (GitHub-only)
+
+Before polling readiness, `safe-merge` probes the PR's **own base branch** for platform-merge-queue eligibility. The base branch is read from the PR view (`baseRefName`), so a PR merging into a developer branch is evaluated against **that** branch, not the repository default. The probe reuses the shared merge-queue eligibility discriminators (see *Workflow: Repo Merge-Queue Probe / Enable* above):
+
+- **`eligible_configured`** — the base branch **requires** the platform merge queue. An immediate merge here would close the PR unmerged rather than merging it (the PR #866 failure mode), so `safe-merge` **refuses immediately** with an actionable error that names the base branch and both remedies: route the PR through the queue via `ci pr merge-queue`, or reconcile the plan's `use_merge_queue` step param via `/marshall-steward`. It does **not** attempt the immediate merge.
+- **`eligible_unconfigured` / `ineligible` / `unsupported`** — no required queue on the base branch; `safe-merge` proceeds unchanged.
+
+The preflight **fails closed**: an unresolvable base branch (empty `baseRefName`, or a `pr view` that does not succeed), an inability to resolve the repository owner/name, or a probe failure (missing auth scope, a non-404 API error, or a malformed rules response) all return `status: error` rather than falling back to an immediate merge.
+
+This preflight is **GitHub-only** — it shares the GitHub-only scope of the `--admin-merge-on-stuck-state` fallback above; GitLab has no equivalent.
+
+### Closed-without-merge guard
+
+In the `polled_clean` path, after the delegated merge reports success, `safe-merge` re-verifies the PR state. A PR that ends **closed without having merged** is reported as `status: error` rather than a false success — this is the residual PR #866 signature, where GitHub accepts the merge call on a merge-queue-required base branch but closes the PR unmerged. The error advises routing the PR via `ci pr merge-queue` instead of an immediate merge.
+
 ### Step 1: Execute
 
 ```bash

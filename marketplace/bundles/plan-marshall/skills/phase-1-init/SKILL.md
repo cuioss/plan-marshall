@@ -69,6 +69,7 @@ Phase 1-init has no preceding phase, so the Phase Entry Protocol's `phase_handsh
 **Optional**:
 - `plan_id`: Override auto-generated plan_id
 - `domain`: Override auto-detection (java, javascript, plan-marshall-plugin-dev, generic)
+- `base_branch`: Override the seeded merge-target branch for `references.base_branch` (default: `project.default_base_branch`, falling back to the current git branch).
 
 ### Step 1: Validate Input
 
@@ -689,14 +690,18 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --value feature/{plan_id}
 ```
 
-`references.base_branch` is the per-plan override — operators MAY override per-plan via `manage-references set --field base_branch` after init. The seed source is `project.default_base_branch` (project-level setting, populated by marshall-steward first-run wizard at Step 5a). Read the project's default base branch:
+`references.base_branch` is the per-plan override — operators MAY override per-plan via `manage-references set --field base_branch` after init. Resolve `{resolved_base_branch}` by the following precedence.
+
+**Precedence — operator `base_branch` init input wins.** When a `base_branch` init input was supplied to init (forwarded from the `/plan-marshall base_branch=` command parameter — see [`plan-marshall/workflow/planning.md`](../plan-marshall/workflow/planning.md) § Action: init → **1-Init Phase (inline)**), use it verbatim as `{resolved_base_branch}`, SKIP the `project.default_base_branch` read below, and set the base-branch source to `operator_param`. Otherwise apply the existing seed logic below.
+
+The seed source is `project.default_base_branch` (project-level setting, populated by marshall-steward first-run wizard at Step 5a). Read the project's default base branch:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   project get --field default_base_branch
 ```
 
-Parse the `value` field and capture it as `{project_base_branch}`. On `field_not_found` (legacy marshal.json that predates the `project.default_base_branch` field — the operator has not yet run `marshall-steward` to seed the new field), fall back to the current git branch (`{branch_name}` resolved from `git branch --show-current` above), preserving the legacy behaviour. Otherwise use `{project_base_branch}` verbatim.
+Parse the `value` field and capture it as `{resolved_base_branch}` (base-branch source `project_default`). On `field_not_found` (legacy marshal.json that predates the `project.default_base_branch` field — the operator has not yet run `marshall-steward` to seed the new field), fall back to the current git branch (`{branch_name}` resolved from `git branch --show-current` above), preserving the legacy behaviour (base-branch source `git_fallback`). Otherwise use the `project.default_base_branch` value verbatim.
 
 Out-of-scope reminder: aligning `_cmd_baseline_reconcile.py:_resolve_base_branch` (which currently reads from `marshal.json plan.phase-2-refine.base_branch`) to read from `references.json` is a separate plumbing concern, not part of this change.
 
@@ -706,7 +711,7 @@ Write the resolved value to `references.base_branch`:
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
   --plan-id {plan_id} \
   --field base_branch \
-  --value {project_base_branch}
+  --value {resolved_base_branch}
 ```
 
 2. **`use_worktree` was already consumed at Step 3a**: `metadata.use_worktree` is seeded by the `manage_status create` call in Step 3a (the sole writer of that field in phase-1-init), so nothing is carried forward here. The feature branch is NOT recorded here either — phase-5-execute derives `feature/{plan_id}` at materialization.
@@ -714,7 +719,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 3. Log the decision:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-1-init) Recorded feature branch intent: feature/{plan_id} (base: {project_base_branch}, use_worktree={use_worktree}) — materialization deferred to phase-5-execute Step 2.5"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-1-init) Recorded feature branch intent: feature/{plan_id} (base: {resolved_base_branch}, base_branch_source={operator_param|project_default|git_fallback}, use_worktree={use_worktree}) — materialization deferred to phase-5-execute Step 2.5"
 ```
 
 4. **Current-checkout cwd directive for subsequent phases**: Emit the following Bucket A/B-aware instruction verbatim in the phase completion output (see Step 12). It reflects that materialization is deferred, so phases 2-4 run on the current branch / main checkout:

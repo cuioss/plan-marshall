@@ -27,6 +27,7 @@ from ci_base import (
     BODY_KIND_PR_EDIT,
     BODY_KIND_PR_REPLY,
     BODY_KIND_PR_THREAD_REPLY,
+    MERGE_QUEUE_ELIGIBLE_CONFIGURED,
     delete_consumed_body,
     make_error,
     make_pr_number_handler,
@@ -703,6 +704,51 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
         return err_dict
     assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
 
+    # Base-branch-scoped merge-queue preflight (guards the #866 signature: an
+    # immediate merge on a branch with a REQUIRED platform merge queue closes
+    # the PR unmerged instead of merging it). Probe the PR's OWN base branch —
+    # not the repository default branch — because a PR may target a non-default
+    # base whose merge-queue configuration differs. Fail closed: any resolution
+    # failure refuses the merge rather than polling or merging blind.
+    preflight_view = github_ops.view_pr_data(head=identifier)
+    if preflight_view.get('status') != 'success':
+        return make_error(
+            'pr_safe_merge',
+            f'Could not resolve base branch for merge-queue preflight of PR {identifier}',
+            preflight_view.get('error', 'pr_view failed'),
+        )
+    base_branch = preflight_view.get('base_branch') or ''
+    if not base_branch:
+        return make_error(
+            'pr_safe_merge',
+            f'PR {identifier} view returned an empty base branch; refusing the merge-queue preflight',
+        )
+
+    owner, repo = github_ops.get_repo_info()
+    if not owner or not repo:
+        return make_error(
+            'pr_safe_merge',
+            'Could not determine repository owner/name for the merge-queue preflight',
+        )
+
+    mq_discriminator, mq_detail, mq_error = github_ops._probe_merge_queue_state(owner, repo, base_branch)
+    if mq_error is not None:
+        # Auth-scope failure, non-404 gh api error, or malformed rules response.
+        return make_error('pr_safe_merge', mq_error, mq_detail)
+    if mq_discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED:
+        # A merge queue is required on the PR's base branch — an immediate merge
+        # would close the PR unmerged (#866). Refuse and name BOTH remedies.
+        return make_error(
+            'pr_safe_merge',
+            f'PR {identifier} targets base branch {base_branch!r}, which has a required platform '
+            f'merge queue — an immediate merge would close the PR unmerged (#866). Route the PR '
+            f'through the merge queue via "ci pr merge-queue", or reconcile the plan\'s '
+            f'use_merge_queue step param via /marshall-steward.',
+            mq_detail,
+        )
+    # MERGE_QUEUE_ELIGIBLE_UNCONFIGURED / MERGE_QUEUE_INELIGIBLE /
+    # MERGE_QUEUE_UNSUPPORTED all fall through to the existing behaviour.
+
     # Layer 1 — poll readiness via the shared poll_until helper.
     def check_fn() -> tuple[bool, dict]:
         data = github_ops.view_pr_data(head=identifier)
@@ -739,6 +785,19 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
                 'pr_safe_merge',
                 merge_result.get('error', f'Failed to merge PR {identifier}'),
                 merge_result.get('context', ''),
+            )
+        # Post-merge verification: the merge CLI reported success, but on a
+        # merge-queue-required base branch GitHub closes the PR unmerged rather
+        # than merging it (the #866 signature). Re-fetch and require the PR to
+        # be actually merged before trusting the reported success.
+        post_merge_view = github_ops.view_pr_data(head=identifier)
+        if post_merge_view.get('status') == 'success' and post_merge_view.get('state') == 'closed':
+            return make_error(
+                'pr_safe_merge',
+                f'PR {identifier} was closed WITHOUT merging — the merge reported success but the '
+                f'PR state is closed-unmerged (#866). This base branch likely requires the platform '
+                f'merge queue; route the PR via "ci pr merge-queue" instead of an immediate merge.',
+                'post_merge_state=closed',
             )
         merge_result['operation'] = 'pr_safe_merge'
         merge_result['merge_path'] = 'polled_clean'
