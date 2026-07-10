@@ -129,18 +129,36 @@ class TestPhase1InitBaseBranchSeeding:
             'so legacy marshal.json files still produce a valid base_branch seed.'
         )
 
-    def test_skill_writes_project_base_branch_to_references(self):
-        """SKILL.md MUST write the resolved value to references.base_branch."""
+    def test_skill_documents_base_branch_precedence_contract(self):
+        """SKILL.md MUST write the resolved value to references.base_branch and
+        document the three-source precedence contract.
+
+        TASK-004's Step 6 rewrite replaced the retired single-source
+        {project_base_branch} placeholder with a unified {resolved_base_branch}
+        placeholder threaded through all three precedence branches
+        (operator_param > project_default > git_fallback). The value is written
+        via {resolved_base_branch} regardless of which precedence branch supplied
+        it, so the doc-contract coverage is the presence of every precedence
+        source, not a single origin-specific placeholder name.
+        """
         text = self._skill_md_text()
 
         # the orchestration writes through manage-references set
-        # with --field base_branch carrying the project-resolved value.
+        # with --field base_branch carrying the precedence-resolved value.
         assert '--field base_branch' in text
-        assert 'project_base_branch' in text, (
-            'phase-1-init SKILL.md must use the {project_base_branch} '
-            'placeholder when seeding references.base_branch, signalling that '
-            'the value originates from project.default_base_branch.'
-        )
+
+        # the doc must document all three precedence sources so the
+        # operator_param > project_default > git_fallback contract is fully
+        # specified (all three literal strings appear in SKILL.md Step 6,
+        # e.g. the base_branch_source={operator_param|project_default|git_fallback}
+        # decision-log line and the surrounding precedence prose).
+        for source in ('operator_param', 'project_default', 'git_fallback'):
+            assert source in text, (
+                'phase-1-init SKILL.md must document the '
+                f"'{source}' base_branch precedence source so the "
+                'operator_param > project_default > git_fallback contract '
+                'is fully specified.'
+            )
 
 
 if __name__ == '__main__':
