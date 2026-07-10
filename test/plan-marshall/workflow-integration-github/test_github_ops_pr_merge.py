@@ -19,6 +19,8 @@ through the REST leaf, never through local git.
 import argparse
 import json
 
+import pytest
+
 import github_ops  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -42,6 +44,38 @@ def _install_common(monkeypatch):
         'get_repo_info',
         lambda: ('octo', 'repo'),
     )
+
+
+def _install_probe(
+    monkeypatch,
+    *,
+    discriminator: str | None = None,
+    detail: str = 'no merge_queue rule on branch',
+    error: str | None = None,
+) -> dict:
+    """Stub ``github_ops._probe_merge_queue_state`` for the safe-merge preflight.
+
+    Returns a capture dict recording the ``(owner, repo, branch)`` the probe was
+    called with plus a call count, so tests can assert base-branch specificity.
+    The three-tuple return shape ``(discriminator, detail, error)`` mirrors the
+    production ``_probe_merge_queue_state`` signature exactly (lesson
+    2026-07-09-14-001: fixtures must mirror the production data shape). By
+    default the probe reports ``eligible_unconfigured`` so the preflight proceeds
+    to the normal merge path unchanged.
+    """
+    if discriminator is None:
+        discriminator = github_ops.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED
+    captured: dict = {'owner': None, 'repo': None, 'branch': None, 'calls': 0}
+
+    def probe_stub(owner, repo, branch):
+        captured['owner'] = owner
+        captured['repo'] = repo
+        captured['branch'] = branch
+        captured['calls'] += 1
+        return discriminator, detail, error
+
+    monkeypatch.setattr(github_ops, '_probe_merge_queue_state', probe_stub)
+    return captured
 
 
 def _pr_view_success_payload() -> dict:
@@ -457,25 +491,38 @@ def _safe_merge_ns(
     )
 
 
-def _pr_view_payload(merge_state: str) -> dict:
-    """A ``view_pr_data`` success payload with the given ``merge_state``."""
+def _pr_view_payload(merge_state: str, *, state: str | None = None) -> dict:
+    """A ``view_pr_data`` success payload with the given ``merge_state``.
+
+    ``state`` overrides the PR lifecycle state (``open`` / ``merged`` /
+    ``closed``) so tests can mirror post-merge reality — a merge-queue-required
+    base branch closes the PR unmerged (``state: closed``) while a normal merge
+    yields ``state: merged``.
+    """
     payload = _pr_view_success_payload()
     payload['merge_state'] = merge_state
+    if state is not None:
+        payload['state'] = state
     return payload
 
 
 def _sequenced_view_pr_data(states: list[str]):
     """Build a stateful ``view_pr_data`` stub returning ``states`` in order.
 
-    The final state is repeated for any extra calls (e.g. the head-branch
-    resolution that ``cmd_pr_merge`` issues for ``--delete-branch``).
+    Once the sequence is exhausted the stub returns a ``state: merged`` payload
+    (repeating the final ``merge_state``), mirroring post-merge reality: the
+    safe-merge preflight consumes the first call for ``base_branch``, the
+    readiness poll walks the sequence, and the post-merge re-fetch sees a merged
+    PR.
     """
     calls = {'i': 0}
 
     def stub(head=None):
-        idx = min(calls['i'], len(states) - 1)
+        idx = calls['i']
         calls['i'] += 1
-        return _pr_view_payload(states[idx])
+        if idx < len(states):
+            return _pr_view_payload(states[idx])
+        return _pr_view_payload(states[-1], state='merged')
 
     return stub, calls
 
@@ -494,9 +541,15 @@ def _stuck_gate_fail(_identifier):
 def test_safe_merge_clean_on_first_poll(monkeypatch):
     """A PR already ``clean`` merges on the first poll via the normal path."""
     _install_common(monkeypatch)
+    _install_probe(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
-    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_payload('clean'))
+    # A single payload serves all three view_pr_data calls: preflight reads
+    # base_branch, the poll reads merge_state='clean', and the post-merge
+    # re-fetch reads state='merged'.
+    monkeypatch.setattr(
+        github_ops, 'view_pr_data', lambda head=None: _pr_view_payload('clean', state='merged')
+    )
 
     result = github_ops.cmd_pr_safe_merge(_safe_merge_ns())
 
@@ -518,6 +571,7 @@ def test_safe_merge_clean_on_first_poll(monkeypatch):
 def test_safe_merge_blocked_then_clean(monkeypatch):
     """A PR that is ``blocked`` then ``clean`` keeps polling, then merges."""
     _install_common(monkeypatch)
+    _install_probe(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
     view_stub, view_calls = _sequenced_view_pr_data(['blocked', 'blocked', 'clean'])
@@ -527,7 +581,8 @@ def test_safe_merge_blocked_then_clean(monkeypatch):
 
     assert result['status'] == 'success', result
     assert result['merge_path'] == 'polled_clean'
-    # The loop ran at least three readiness polls before reaching clean.
+    # The preflight consumed the first view; the poll then walked blocked→clean;
+    # the post-merge re-fetch consumed one more — at least three calls total.
     assert view_calls['i'] >= 3, view_calls
     # No admin fallback was needed.
     merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
@@ -540,6 +595,8 @@ def test_safe_merge_blocked_then_clean(monkeypatch):
 def test_safe_merge_stuck_blocked_no_admin_returns_error(monkeypatch):
     """Timed-out while blocked, admin fallback NOT enabled → error, no merge."""
     _install_common(monkeypatch)
+    _install_probe(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
     # Drive the timeout deterministically: poll_until returns timed_out while
@@ -571,6 +628,8 @@ def test_safe_merge_stuck_blocked_no_admin_returns_error(monkeypatch):
 def test_safe_merge_admin_fallback_on_stuck_blocked(monkeypatch):
     """Stuck blocked + knob on + gate provably met → admin merge fallback."""
     _install_common(monkeypatch)
+    _install_probe(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
     monkeypatch.setattr(
@@ -603,6 +662,8 @@ def test_safe_merge_admin_fallback_on_stuck_blocked(monkeypatch):
 def test_safe_merge_admin_fallback_blocked_by_unmet_gate(monkeypatch):
     """Stuck blocked + knob on but ruleset NOT provably met → refuse, no merge."""
     _install_common(monkeypatch)
+    _install_probe(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
     monkeypatch.setattr(
@@ -630,6 +691,8 @@ def test_safe_merge_admin_fallback_blocked_by_unmet_gate(monkeypatch):
 def test_safe_merge_admin_fallback_only_for_blocked_state(monkeypatch):
     """Timed out while NOT blocked (e.g. behind) → admin fallback does not apply."""
     _install_common(monkeypatch)
+    _install_probe(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
     monkeypatch.setattr(
@@ -668,6 +731,7 @@ def test_safe_merge_admin_fallback_deletes_branch(monkeypatch):
     )
     monkeypatch.setattr(github_ops, '_safe_merge_stuck_state_gate', _stuck_gate_ok)
     monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+    _install_probe(monkeypatch)
 
     result = github_ops.cmd_pr_safe_merge(
         _safe_merge_ns(admin_merge_on_stuck_state=True, delete_branch=True)
@@ -690,6 +754,8 @@ def test_safe_merge_admin_fallback_deletes_branch(monkeypatch):
 def test_safe_merge_poll_failure_propagates(monkeypatch):
     """A check_fn failure during the readiness poll is surfaced as an error."""
     _install_common(monkeypatch)
+    _install_probe(monkeypatch)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
     monkeypatch.setattr(
@@ -710,6 +776,207 @@ def test_safe_merge_poll_failure_propagates(monkeypatch):
     assert 'Readiness poll failed' in result['error'], result
     merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
     assert merge_calls == [], merge_calls
+
+
+# ---------------------------------------------------------------------------
+# (g) base-branch-scoped merge-queue preflight + closed-without-merge guard
+# ---------------------------------------------------------------------------
+#
+# Before any readiness poll, cmd_pr_safe_merge probes the merge-queue state of
+# the PR's OWN base branch. A configured (required) queue refuses the immediate
+# merge (which would otherwise close the PR unmerged — the #866 signature); a
+# probe error fails closed; unconfigured / ineligible / unsupported proceed.
+# In the polled-clean path a post-merge re-fetch converts a false success (PR
+# closed unmerged despite a success-reporting merge) into an error.
+
+
+def _counting_view(payload: dict):
+    """A ``view_pr_data`` stub returning ``payload`` and counting invocations."""
+    calls = {'i': 0}
+
+    def stub(head=None):
+        calls['i'] += 1
+        return payload
+
+    return stub, calls
+
+
+def test_safe_merge_preflight_refuses_when_merge_queue_required(monkeypatch):
+    """A required merge queue on the PR's base branch refuses the immediate merge."""
+    _install_common(monkeypatch)
+    _install_probe(
+        monkeypatch,
+        discriminator=github_ops.MERGE_QUEUE_ELIGIBLE_CONFIGURED,
+        detail='merge_queue rule active on branch',
+    )
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    view_stub, view_calls = _counting_view(_pr_view_success_payload())
+    monkeypatch.setattr(github_ops, 'view_pr_data', view_stub)
+
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns())
+
+    assert result['status'] == 'error', result
+    assert result['operation'] == 'pr_safe_merge'
+    # The message names the PR's base branch and BOTH remedies.
+    assert 'main' in result['error'], result
+    assert 'ci pr merge-queue' in result['error'], result
+    assert '/marshall-steward' in result['error'], result
+    assert 'use_merge_queue' in result['error'], result
+    # No merge attempted, and the readiness poll never ran — the preflight is
+    # the only view_pr_data consumer on the refusal path.
+    merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
+    assert merge_calls == [], merge_calls
+    assert view_calls['i'] == 1, view_calls
+
+
+def test_safe_merge_preflight_probe_error_fails_closed(monkeypatch):
+    """A probe error (auth scope / malformed rules) refuses the merge, fail-closed."""
+    _install_common(monkeypatch)
+    _install_probe(
+        monkeypatch,
+        discriminator=github_ops.MERGE_QUEUE_INELIGIBLE,
+        detail='branch rules endpoint unreachable',
+        error='the gh token lacks the scope to read repository rulesets',
+    )
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
+
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns())
+
+    assert result['status'] == 'error', result
+    assert 'scope' in result['error'], result
+    merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
+    assert merge_calls == [], merge_calls
+
+
+@pytest.mark.parametrize(
+    'discriminator',
+    [
+        github_ops.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
+        github_ops.MERGE_QUEUE_INELIGIBLE,
+        github_ops.MERGE_QUEUE_UNSUPPORTED,
+    ],
+)
+def test_safe_merge_preflight_proceeds_for_non_configured(monkeypatch, discriminator):
+    """unconfigured / ineligible / unsupported all proceed to the normal merge."""
+    _install_common(monkeypatch)
+    _install_probe(monkeypatch, discriminator=discriminator)
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    monkeypatch.setattr(
+        github_ops, 'view_pr_data', lambda head=None: _pr_view_payload('clean', state='merged')
+    )
+
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns())
+
+    assert result['status'] == 'success', result
+    assert result['merge_path'] == 'polled_clean', result
+    merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
+    assert '--admin' not in merge_call, merge_call
+
+
+def test_safe_merge_preflight_probes_pr_own_base_branch(monkeypatch):
+    """The preflight probes the PR's OWN base branch, not the repo default."""
+    _install_common(monkeypatch)
+    probe = _install_probe(monkeypatch, discriminator=github_ops.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED)
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    develop_payload = _pr_view_payload('clean', state='merged')
+    develop_payload['base_branch'] = 'develop'
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: develop_payload)
+
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns())
+
+    assert result['status'] == 'success', result
+    # The probe was driven with the PR's non-default base branch, not 'main'.
+    assert probe['branch'] == 'develop', probe
+    assert probe['calls'] == 1, probe
+
+
+def test_safe_merge_preflight_empty_base_branch_fails_closed(monkeypatch):
+    """An empty base branch in the PR view refuses the merge, fail-closed."""
+    _install_common(monkeypatch)
+    _install_probe(monkeypatch)
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    empty_base = _pr_view_success_payload()
+    empty_base['base_branch'] = ''
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: empty_base)
+
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns())
+
+    assert result['status'] == 'error', result
+    assert 'base branch' in result['error'], result
+    merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
+    assert merge_calls == [], merge_calls
+
+
+def test_safe_merge_preflight_view_failure_fails_closed(monkeypatch):
+    """A failed PR view during the preflight refuses the merge, fail-closed."""
+    _install_common(monkeypatch)
+    _install_probe(monkeypatch)
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    monkeypatch.setattr(
+        github_ops,
+        'view_pr_data',
+        lambda head=None: {'status': 'error', 'operation': 'pr_view', 'error': 'No PR found'},
+    )
+
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns())
+
+    assert result['status'] == 'error', result
+    merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
+    assert merge_calls == [], merge_calls
+
+
+def test_safe_merge_polled_clean_closed_without_merge_is_error(monkeypatch):
+    """Merge reports success but the PR is closed unmerged (#866) → error."""
+    _install_common(monkeypatch)
+    _install_probe(monkeypatch)
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    calls = {'i': 0}
+
+    def view_stub(head=None):
+        calls['i'] += 1
+        # Preflight (1) + readiness poll (2) see a clean, mergeable PR.
+        if calls['i'] <= 2:
+            return _pr_view_payload('clean')
+        # Post-merge re-fetch (3): the merge reported success but GitHub closed
+        # the PR unmerged — the merge-queue-required base-branch signature.
+        return _pr_view_payload('clean', state='closed')
+
+    monkeypatch.setattr(github_ops, 'view_pr_data', view_stub)
+
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns())
+
+    assert result['status'] == 'error', result
+    assert result['operation'] == 'pr_safe_merge'
+    assert 'closed' in result['error'].lower(), result
+    assert '#866' in result['error'], result
+    # A merge WAS attempted (the false success), but the result is converted.
+    merge_calls = [c for c in captured if c[:2] == ['pr', 'merge']]
+    assert len(merge_calls) == 1, merge_calls
+
+
+def test_safe_merge_polled_clean_merged_refetch_succeeds(monkeypatch):
+    """Merge reports success and the re-fetch confirms merged → success shape."""
+    _install_common(monkeypatch)
+    _install_probe(monkeypatch)
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+    monkeypatch.setattr(
+        github_ops, 'view_pr_data', lambda head=None: _pr_view_payload('clean', state='merged')
+    )
+
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns())
+
+    assert result['status'] == 'success', result
+    assert result['merge_path'] == 'polled_clean', result
 
 
 # --- (f) existing cmd_pr_merge / cmd_pr_auto_merge tests unaffected ----------
