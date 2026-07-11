@@ -517,15 +517,10 @@ marshal_version	<version>
 ```
 
 When `marshal_status` is `stale`, advise the user to run a steward config
-reconcile — the **Re-Run Remediation Pass** step (e) above refreshes the
-provisioning stamps via `manage-config sync-defaults`, preceded by the step-(d)
-executor-freshness `generate_executor preflight` that guarantees sync-defaults
-resolves through the current-version script and sees the current config seed.
-Re-entering `/marshall-steward` in menu mode therefore runs the reconcile behind
-that executor-freshness preflight and clears the advisory; and if the advisory
-would otherwise persist after a clean-looking sync-defaults (`added_count: 0`
-with `marshal_status` still `stale`), the step-(e) detect/warn conditional
-surfaces a warning instead of silently reporting a clean pass. When
+reconcile — the **Re-Run Remediation Pass** steps (d)-(e) above refresh the
+executor and provisioning stamps (see those steps and their detect/warn
+conditional for the sequencing rationale and warning mechanics), so
+re-entering `/marshall-steward` in menu mode clears the advisory. When
 `executor_action` is `regenerated`, surface the session-restart guardrail (see
 "Session Restart Required After Executor / Agent Changes" below) because the
 emitted agent set may have changed.
