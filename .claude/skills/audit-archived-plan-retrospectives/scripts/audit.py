@@ -255,7 +255,9 @@ CROSS_PLAN_CHECKS = {
 # (plan-1..plan-3 execution-loop / routing / finalize-flow / dist), `#852`
 # (find-triage D6 step-ownership), `#862` (inline phase-1-init dispatch /
 # routing-order fix), `#863` (merge-queue enablement via marshall-steward), `#872`
-# (self-review promoted to a default finalize step), and
+# (self-review promoted to a default finalize step), `#875` (this plan's own
+# boundary — the three checks this plan reworks: `metrics`,
+# `track-selection-accuracy`, and `lane-lever-effectiveness`), and
 # `plan-10` (the roadmap head this plan re-confirms the general checks accurate
 # against). Every key MUST be a member of `CHECK_NAMES`.
 CHECK_ERA: dict[str, str] = {
@@ -264,8 +266,13 @@ CHECK_ERA: dict[str, str] = {
     # Bumped to #872: the finalize-step-id surface this check re-derives now carries
     # default:pre-submission-self-review (self-review promoted to a default step).
     "execution-context-manifest": "#872",
-    "metrics": "#812",
-    "track-selection-accuracy": "#862",
+    # #875 — this plan (plan-13) reworks these two checks' mechanics, so their era
+    # boundary IS this plan's own PR. `metrics` verifies inline phase-1-init
+    # main-context token recording (the n=6/6 total_tokens surfacing);
+    # `track-selection-accuracy` verifies the classify-before-route lane signals
+    # (change_type + scope_estimate pre-classified before the router runs).
+    "metrics": "#875",
+    "track-selection-accuracy": "#875",
     "global-log-analysis": "#849",
     "sequence-and-build-minimality": "#849",
     "input-integrity": "#812",
@@ -290,9 +297,12 @@ CHECK_ERA: dict[str, str] = {
     "dispatch-topology": "plan-10",
     "finalize-flow-conformance": "#849",
     "merge-window-accounting": "#863",
-    # lane-lever-effectiveness verifies the #862 checkpoint re-arm — per-scope-class
-    # token spend vs armed targets (the checkpoint measurement arm).
-    "lane-lever-effectiveness": "#862",
+    # lane-lever-effectiveness — #875 (this plan's boundary): the Tier-1
+    # recipe-match floor fix + the classify-before-route change this plan ships
+    # alter which plans engage the light planning lane and the minimal execution
+    # posture, so the checkpoint measurement arm (per-scope-class token spend vs
+    # armed targets) re-arms at this plan's PR.
+    "lane-lever-effectiveness": "#875",
     "cross-check-synthesis": "plan-10",
 }
 

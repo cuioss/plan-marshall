@@ -54,7 +54,7 @@ from _cmd_classification_validate import run_classification_validation
 from _plan_parsing import parse_document_sections
 from _status_core import read_status, write_status
 from constants import FILE_MARSHAL
-from file_ops import base_path, get_plan_dir, read_json
+from file_ops import base_path, get_plan_dir, read_json, write_json
 from plan_logging import log_entry
 
 LIGHT = 'light'
@@ -92,6 +92,34 @@ _PATH_RE = re.compile(r'[\w./-]+/[\w.-]+\.[A-Za-z0-9]+')
 _FENCE_RE = re.compile(r'```')
 _CLI_RE = re.compile(r'python3\s+\.plan/execute-script\.py')
 _NOTATION_RE = re.compile(r'\bmanage-[a-z-]+\b')
+
+
+def _distinct_paths(body: str) -> set[str]:
+    """Return the DISTINCT repo-relative file paths ``_PATH_RE`` extracts from ``body``.
+
+    The single source of the distinct-path extraction shared by
+    ``scope_estimate_from_request_pure`` and ``cmd_scope_estimate_heuristic``.
+    Callers guard the empty-``body`` case themselves and layer their own
+    downstream ``sorted()`` / ``len()`` on the returned set.
+    """
+    return {m.group(0) for m in _PATH_RE.finditer(body)}
+
+
+# --- Pre-route scope_estimate heuristic --------------------------------------
+# Coarse scope bands the pre-route heuristic emits (the two narrow bands the
+# light lane cares about). This is a pre-route GUESS from cheap request signals,
+# never the authoritative scope — the deep-lane refine Step 9 module-mapping
+# derivation overwrites it with the accurate band (multi_module / broad) when
+# the deep lane runs.
+SURGICAL = 'surgical'
+SINGLE_MODULE = 'single_module'
+# At most this many distinct file-path references still reads as a surgical,
+# tightly-bounded change.
+_SURGICAL_MAX_PATHS = 3
+# A glob / pattern fan-out marker (``**``, ``/*``, ``*/``, ``*.ext``) disqualifies
+# the surgical band even with few explicit paths — a pattern implies fan-out
+# across an unbounded file set.
+_GLOB_RE = re.compile(r'\*\*|/\*|\*/|\*\.[A-Za-z0-9]+')
 
 
 def _read_request_body(plan_id: str) -> str:
@@ -181,6 +209,36 @@ def _read_deep_lane_gate() -> str:
                 if value in ('auto', 'always', 'never'):
                     return str(value)
     return 'auto'
+
+
+def scope_estimate_from_request_pure(body: str | None) -> str:
+    """Classify a coarse ``scope_estimate`` from the request body — pure, I/O-free.
+
+    Counts the DISTINCT repo-relative file-path references ``_PATH_RE`` extracts
+    from the body and classifies with ZERO architecture queries (the same
+    zero-discovery invariant the lane router itself preserves):
+
+    - ``surgical`` — between one and three distinct file paths AND no glob /
+      pattern fan-out marker (``**``, ``/*``, ``*.ext``). A tightly-bounded,
+      explicitly-named change.
+    - ``single_module`` — everything else: no explicit path (an ambiguous ask), a
+      glob/pattern present (unbounded fan-out), or more than three distinct
+      paths. This is the coarse default; the deep-lane refine Step 9
+      module-mapping derivation overwrites it with the accurate band
+      (``multi_module`` / ``broad``) when the deep lane runs.
+
+    The vocabulary is deliberately limited to the two narrow bands the light
+    lane cares about — the heuristic is a cheap pre-route guess, not the
+    authoritative scope estimate.
+    """
+    if not body:
+        return SINGLE_MODULE
+    if _GLOB_RE.search(body):
+        return SINGLE_MODULE
+    distinct_paths = _distinct_paths(body)
+    if 1 <= len(distinct_paths) <= _SURGICAL_MAX_PATHS:
+        return SURGICAL
+    return SINGLE_MODULE
 
 
 def project_profile_pure(
@@ -448,6 +506,65 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
             'mismatches': classification_validation.get('mismatches', []),
             'findings_emitted': classification_validation.get('findings_emitted', 0),
         },
+    }
+
+
+def cmd_scope_estimate_heuristic(args: argparse.Namespace) -> dict[str, Any]:
+    """Classify a coarse ``scope_estimate`` from the request and persist it.
+
+    Reads the clarified-request (or original-input) narrative, classifies it via
+    ``scope_estimate_from_request_pure`` (distinct-file-path count, ZERO
+    architecture queries), and with ``--persist`` writes it to
+    ``references.json``'s ``scope_estimate`` field — the same field
+    ``_read_scope_estimate`` (the router's S2 signal source) reads. Run at
+    phase-1-init BEFORE the planning-lane route so the router reads a real
+    ``scope_estimate`` instead of ``None``. The deep-lane refine Step 9
+    module-mapping derivation later overwrites the coarse guess when the deep
+    lane runs, so no accuracy is lost.
+    """
+    plan_id: str = args.plan_id
+    persist: bool = bool(getattr(args, 'persist', False))
+
+    plan_dir = get_plan_dir(plan_id)
+    if not plan_dir.exists():
+        return {
+            'status': 'error',
+            'error': 'plan_dir_not_found',
+            'message': f'Plan directory not found: {plan_dir}',
+        }
+
+    body = _read_request_body(plan_id)
+    scope_estimate = scope_estimate_from_request_pure(body)
+    distinct_paths = sorted(_distinct_paths(body)) if body else []
+
+    persisted = False
+    if persist:
+        references_path = get_plan_dir(plan_id) / 'references.json'
+        references = read_json(references_path, default={})
+        if not isinstance(references, dict):
+            references = {}
+        references['scope_estimate'] = scope_estimate
+        write_json(references_path, references)
+        persisted = True
+        log_entry(
+            'decision',
+            plan_id,
+            'INFO',
+            (
+                f'(plan-marshall:manage-status:scope-estimate-heuristic) '
+                f'Classified scope_estimate={scope_estimate} '
+                f'(distinct_paths={len(distinct_paths)}, glob={bool(_GLOB_RE.search(body))}) '
+                f'— pre-route coarse guess, deep-lane Step 9 may overwrite'
+            ),
+        )
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'scope_estimate': scope_estimate,
+        'distinct_path_count': len(distinct_paths),
+        'distinct_paths': distinct_paths,
+        'persisted': persisted,
     }
 
 

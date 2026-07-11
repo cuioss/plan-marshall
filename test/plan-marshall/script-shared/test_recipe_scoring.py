@@ -23,6 +23,13 @@ Coverage:
   alignments boost confidence, a misaligned scope does not;
 * ``score_recipe`` invariants — confidence stays within ``[0.0, 1.0]``, the
   blend weights are honoured, the breakdown structure is complete;
+* ``score_recipe`` pre-diagnosed-change SHAPE arm (surgical-fix recipe only) —
+  a stated root cause co-occurring with an exact-change / file anchor lifts the
+  ``recipe-surgical-fix`` recipe above the keyword-only ceiling, a
+  discovery-demand narrative is vetoed, and the shape arm never perturbs any
+  other recipe. Fixtures are the REAL archived request strings of the
+  pre-diagnosed surgical plans (#860/#866/#869/#871) and the broad
+  structural-review plan (#856), per lesson ``2026-07-09-14-001``;
 * ``load_registry`` — returns ``[]`` when the discovery helper is absent and
   tolerates discovery exceptions / non-list returns without raising.
 """
@@ -35,6 +42,8 @@ import pytest
 
 from recipe_scoring import (
     MIN_CONFIDENCE,
+    _is_surgical_fix_recipe,
+    _score_prediagnosed_shape,
     load_registry,
     score_recipe,
     tokenize,
@@ -322,3 +331,214 @@ def test_load_registry_returns_discovered_list(monkeypatch):
 
     monkeypatch.setattr(builtins, '__import__', _fake_import)
     assert load_registry() == recipes
+
+
+# =============================================================================
+# Pre-diagnosed-change SHAPE arm (surgical-fix recipe only)
+# =============================================================================
+#
+# The fixtures below are the ACTUAL archived "Original Input" request strings of
+# the pre-diagnosed surgical plans (must MATCH) and the broad
+# structural-review/consolidation plan (must NOT match). Per lesson
+# 2026-07-09-14-001 the scorer is only trustworthy against the real corpus it
+# will see in production, so these are verbatim excerpts of the real requests,
+# NOT synthetic prose.
+
+# PR #866 — fix-check-era-stamps (root cause + exact change known, single file).
+_REQ_CHECK_ERA_STAMPS = (
+    'Fix the owed CHECK_ERA era stamps in the audit skill (root cause known, '
+    'exact change known, single file): in '
+    '`.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` update '
+    "the CHECK_ERA registry — `lane-lever-effectiveness` and "
+    "`track-selection-accuracy` from `'#854'` to `'#862'` (plan-5's "
+    "routing-order/light-lane fix boundary), `merge-window-accounting` from "
+    "`'#849'` to `'#863'` (plan-12's external-merge-traffic boundary) — and "
+    'update the adjacent registry comments to match. The '
+    '`set(CHECK_ERA) == set(CHECK_NAMES)` invariant test must stay green. '
+    'Bounded footprint, no behavior change beyond era attribution.'
+)
+
+# PR #860 — fix-missing-get-deliverable-subcommand (root cause known, exact change).
+_REQ_GET_DELIVERABLE = (
+    'Fix the missing get-deliverable subcommand in manage-solution-outline '
+    '(plan-marshall bundle): root cause known — the argparse choices lack the '
+    'verb and four plans independently invented it (lesson 2026-07-06-17-001). '
+    'Exact change: add get-deliverable --plan-id --number returning the single '
+    'deliverable block, plus a unit test and the SKILL.md verb row. Single '
+    'module, bounded footprint.'
+)
+
+# PR #869 — fix-manifest-composer-archive-order (root cause known, 2 recurrences).
+_REQ_MANIFEST_ORDER = (
+    'Fix the manifest composer emitting finalize steps after archive-plan in '
+    'defiance of their frontmatter order (root cause known, 2 recurrences: #860 '
+    'and #866 both composed finalize-step-preference-emitter, frontmatter order: '
+    '80, AFTER archive-plan — running it as-listed fails because archive moves '
+    'the plan dir; both runs reordered manually and logged a [WARNING]). Fix in '
+    'manage-execution-manifest compose: steps must be emitted in frontmatter '
+    'order with archive-plan as the terminal barrier. Single module, bounded '
+    'footprint.'
+)
+
+# PR #871 — fix-pr-safe-merge-queue-required (root cause known, two halves).
+_REQ_SAFE_MERGE = (
+    'Fix pr safe-merge closing PRs without merging when the platform merge queue '
+    'is required but use_merge_queue=false (observed on PR #866: safe-merge '
+    'reported success, PR was closed unmerged, ~30-min manual recovery). Root '
+    'cause known, two halves: 1. safe-merge does not preflight the branch\'s '
+    'queue-required state — it must consult the existing `ci repo merge-queue '
+    'probe` verb (shipped #863) before an immediate merge. 2. safe-merge\'s '
+    'success detection must treat state=closed-without-merge as FAILURE, never '
+    'success. Surface: workflow-integration-github/_github_pr.py safe-merge. '
+    'Single bundle, bounded footprint.'
+)
+
+# PR #856 — fix-terminal-title-repaint-binding: a BROAD consolidation /
+# full-structural-review request. Diagnosis is complete AND file paths are
+# named, but the request demands a discovery-driven structural review, so it is
+# NOT a pre-diagnosed surgical change and MUST be vetoed.
+_REQ_TERMINAL_TITLE = (
+    'Fix two independent defects in terminal-title handling and '
+    'refactor/consolidate the title-handling surface into a coherent structure. '
+    'This is a meta-project (plan-marshall bundle) change. Diagnosis is complete '
+    'and evidence-backed — this plan implements the fixes plus the '
+    'consolidation. The plan MUST include a full structural review of the '
+    'current title-handling surface and refactor it toward coherence.'
+)
+
+_SURGICAL_MATCH_REQUESTS = (
+    _REQ_CHECK_ERA_STAMPS,
+    _REQ_GET_DELIVERABLE,
+    _REQ_MANIFEST_ORDER,
+    _REQ_SAFE_MERGE,
+)
+
+_SURGICAL_RECIPE = {
+    'key': 'surgical-fix',
+    'name': 'recipe-surgical-fix',
+    'skill': 'plan-marshall:recipe-surgical-fix',
+    'description': 'Micro-lane recipe for a pre-diagnosed surgical fix bounded to a single module',
+    'domain': 'plan-marshall-plugin-dev',
+    'scope': 'module',
+}
+
+
+# --- _score_prediagnosed_shape (pure) ----------------------------------------
+
+
+@pytest.mark.parametrize('request_text', _SURGICAL_MATCH_REQUESTS)
+def test_shape_strong_for_prediagnosed_surgical_requests(request_text):
+    """Each real pre-diagnosed surgical request scores the strong shape band."""
+    assert _score_prediagnosed_shape(request_text) == 0.75
+
+
+def test_shape_vetoed_for_broad_structural_review_request():
+    """A structural-review / consolidation request is vetoed to zero shape."""
+    assert _score_prediagnosed_shape(_REQ_TERMINAL_TITLE) == 0.0
+
+
+def test_shape_zero_for_empty_or_none():
+    """Empty / None narrative yields a zero shape (no raise)."""
+    assert _score_prediagnosed_shape('') == 0.0
+    assert _score_prediagnosed_shape(None) == 0.0
+
+
+def test_shape_zero_without_concrete_anchor():
+    """A stated root cause with NO file/notation/CLI/fence anchor scores zero."""
+    narrative = 'The root cause is a stale cache; the exact change is known but no anchor is named here.'
+    # No path (``x.y``), no ``manage-*`` notation, no fenced block, no CLI call.
+    assert _score_prediagnosed_shape(narrative) == 0.0
+
+
+def test_shape_floor_band_root_cause_plus_anchor_only():
+    """A generic root cause + anchor (no exact-change marker) clears only the floor."""
+    narrative = 'The root cause lives in marketplace/pkg/module.py and needs a small tweak.'
+    assert _score_prediagnosed_shape(narrative) == 0.45
+
+
+def test_shape_auto_route_band_exact_change_without_root_cause_phrase():
+    """An exact-change marker + anchor (no literal 'root cause') sits at the auto-route band."""
+    narrative = 'Exact change: patch marketplace/pkg/module.py to add the missing guard.'
+    assert _score_prediagnosed_shape(narrative) == 0.6
+
+
+# --- _is_surgical_fix_recipe -------------------------------------------------
+
+
+def test_is_surgical_fix_recipe_matches_identity_variants():
+    """The surgical-fix identity resolves across skill / name / key spellings."""
+    assert _is_surgical_fix_recipe({'name': 'recipe-surgical-fix'})
+    assert _is_surgical_fix_recipe({'skill': 'plan-marshall:recipe-surgical-fix'})
+    assert _is_surgical_fix_recipe({'key': 'surgical-fix'})
+
+
+def test_is_surgical_fix_recipe_false_for_other_recipes():
+    """A non-surgical recipe identity is not treated as surgical-fix."""
+    assert not _is_surgical_fix_recipe(_DOC_RECIPE)
+    assert not _is_surgical_fix_recipe({'name': 'recipe-simplify-codebase'})
+
+
+# --- score_recipe SHAPE blend (surgical-fix only) ----------------------------
+
+
+@pytest.mark.parametrize('request_text', _SURGICAL_MATCH_REQUESTS)
+def test_score_recipe_shape_lifts_surgical_fix_above_auto_route(request_text):
+    """The shape arm lifts surgical-fix confidence to the strong band for real requests.
+
+    These requests describe the bug, not the recipe's vocabulary, so their
+    keyword overlap alone would floor below MIN_CONFIDENCE; the shape arm is what
+    clears both the floor and the 0.6 auto-route threshold.
+    """
+    confidence, breakdown = score_recipe(
+        _SURGICAL_RECIPE, tokenize(request_text), None, None, narrative_text=request_text
+    )
+    assert breakdown['shape_score'] == 0.75
+    assert confidence == 0.75
+    assert confidence >= 0.6
+    assert confidence >= MIN_CONFIDENCE
+
+
+def test_score_recipe_shape_does_not_rescue_broad_request():
+    """The broad structural-review request stays below the floor for surgical-fix."""
+    confidence, breakdown = score_recipe(
+        _SURGICAL_RECIPE, tokenize(_REQ_TERMINAL_TITLE), None, None, narrative_text=_REQ_TERMINAL_TITLE
+    )
+    assert breakdown['shape_score'] == 0.0
+    assert confidence < MIN_CONFIDENCE
+
+
+def test_score_recipe_shape_only_for_surgical_fix_recipe():
+    """A non-surgical recipe is unaffected by narrative_text — no shape key, same score."""
+    narrative = _REQ_CHECK_ERA_STAMPS
+    tokens = tokenize(narrative)
+    without_text, breakdown_without = score_recipe(_DOC_RECIPE, tokens, None, None)
+    with_text, breakdown_with = score_recipe(_DOC_RECIPE, tokens, None, None, narrative_text=narrative)
+    # Byte-identical confidence and no shape_score key for a non-surgical recipe.
+    assert with_text == without_text
+    assert 'shape_score' not in breakdown_with
+    assert set(breakdown_with) == set(breakdown_without) == {
+        'keyword_score', 'domain_score', 'scope_score', 'matched_keywords'
+    }
+
+
+def test_score_recipe_omitting_narrative_text_is_backward_compatible():
+    """Without narrative_text the surgical-fix recipe scores the pure keyword blend."""
+    narrative = _REQ_CHECK_ERA_STAMPS
+    tokens = tokenize(narrative)
+    confidence, breakdown = score_recipe(_SURGICAL_RECIPE, tokens, None, None)
+    # No shape arm engaged: breakdown carries no shape_score, confidence is the
+    # keyword-only blend (below the floor for this bug-narrative request).
+    assert 'shape_score' not in breakdown
+    assert confidence == round(0.6 * breakdown['keyword_score'], 3)
+
+
+def test_score_recipe_shape_never_lowers_a_strong_keyword_match():
+    """When keyword blend already exceeds the shape score, the blend max wins."""
+    # A request that echoes the surgical recipe's own description tokens has a
+    # high keyword score; a weak/absent shape must not pull the confidence down.
+    narrative = 'micro-lane pre-diagnosed surgical fix bounded single module'
+    tokens = tokenize(narrative)
+    kw_only, _ = score_recipe(_SURGICAL_RECIPE, tokens, None, None)
+    blended, breakdown = score_recipe(_SURGICAL_RECIPE, tokens, None, None, narrative_text=narrative)
+    assert blended >= kw_only
+    assert blended == max(kw_only, breakdown['shape_score'])

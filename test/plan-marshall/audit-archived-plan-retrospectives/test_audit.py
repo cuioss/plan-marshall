@@ -107,6 +107,15 @@ def test_check_era_covers_exactly_all_checks():
     assert set(audit.CHECK_ERA) == set(audit.CHECK_NAMES)
 
 
+def test_reworked_checks_carry_this_plan_boundary():
+    # This plan (plan-13) reworks three checks' mechanics — inline-init metrics
+    # recording, the classify-before-route lane signals, and the Tier-1 recipe
+    # floor that re-arms the checkpoint measurement — so their era boundary is
+    # this plan's own PR (#875), kept in lock-step with the audit.py mirror.
+    for check in ("metrics", "track-selection-accuracy", "lane-lever-effectiveness"):
+        assert audit.CHECK_ERA[check] == "#875", check
+
+
 def test_stamp_era_inserts_fixed_since_after_status():
     # Arrange: a synthetic check block for a known check.
     block = "check: metrics\nstatus: success\ngenuine_signal_count: 0\nrows[0]{a}:\n"
@@ -866,7 +875,8 @@ def test_emit_lane_lever_block_renders_header_and_severity(tmp_path):
 def test_lane_lever_registered_and_era_stamped():
     assert "lane-lever-effectiveness" in audit.CHECK_NAMES
     assert "lane-lever-effectiveness" in audit.CROSS_PLAN_CHECKS
-    assert audit.CHECK_ERA["lane-lever-effectiveness"] == "#862"
+    # Era bumped to this plan's own PR boundary (#875).
+    assert audit.CHECK_ERA["lane-lever-effectiveness"] == "#875"
     # cross-check-synthesis stays last after the new registration.
     assert audit.CHECK_NAMES[-1] == "cross-check-synthesis"
 

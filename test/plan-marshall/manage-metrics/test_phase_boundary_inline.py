@@ -10,14 +10,22 @@ NOT an incomplete call: the closing phase's `end_time` is stamped
 unconditionally and `generate`'s partiality verdict keys a phase's *recorded*
 status solely off that `end_time` marker.
 
-These tests lock in that contract for the topology this plan ships:
-  - the inline **1-init → 2-refine** boundary (phase-1-init runs inline), and
-  - the recipe-inline **2-refine → 3-outline** / **3-outline → 4-plan**
-    boundaries,
-all closing with the usage flags omitted, must record as *recorded* — never
-listed under `unrecorded_phases` and never flipping `partial` to true —
-preserving the #812 floor-not-truth semantics unchanged for a fully-recorded
-six-phase plan.
+The omission is at the boundary *write* only — it is NOT a permanent token gap.
+The finalize-phase `manage-metrics enrich` pass attributes the parent-window
+`message.usage` four-field data to each inline window and derives `total_tokens`
+from that attribution, so an inline phase DOES count toward the breakdown Tokens
+column and the report reads `n=6/6` (not `n=5/6`). These tests drive the REAL
+enrich production path (with a fixture that mirrors the runtime's
+post-normalization per-phase bucket shape, per lesson `2026-07-09-14-001`) and
+lock that contract:
+  - the inline **1-init** window and the recipe-inline **2-refine** / **3-outline**
+    windows, closed usage-free, carry a real `total_tokens` after enrich;
+  - a dispatched phase's `<usage>`-sourced `total_tokens` is never overwritten
+    (explicit-wins);
+  - a fully-recorded six-phase plan reports `partial: false` with every phase
+    carrying token data (`n=6/6`).
+The negative control (an unclosed phase still flips `partial`) keeps the verdict
+non-vacuous.
 """
 
 import importlib.util
@@ -39,6 +47,55 @@ cmd_phase_boundary = manage_metrics.cmd_phase_boundary
 cmd_start_phase = manage_metrics.cmd_start_phase
 cmd_end_phase = manage_metrics.cmd_end_phase
 cmd_generate = manage_metrics.cmd_generate
+cmd_enrich = manage_metrics.cmd_enrich
+
+# Production-shaped per-phase enrich buckets — the exact shape the runtime's
+# ``metrics normalized-tokens`` op returns for the three inline phases (the
+# canonical ``message.usage`` four-field keys plus the billing-weighted total),
+# NOT a synthetic pre-normalization transcript shape (lesson 2026-07-09-14-001).
+_INLINE_ENRICH_BUCKETS = {
+    '1-init': {
+        'input_tokens': 8000,
+        'output_tokens': 2000,
+        'cache_read_input_tokens': 40000,
+        'cache_creation_input_tokens': 5000,
+        'billing_weighted_total': 12000,
+    },
+    '2-refine': {
+        'input_tokens': 6000,
+        'output_tokens': 1500,
+        'cache_read_input_tokens': 30000,
+        'cache_creation_input_tokens': 0,
+        'billing_weighted_total': 9000,
+    },
+    '3-outline': {
+        'input_tokens': 5000,
+        'output_tokens': 1200,
+        'cache_read_input_tokens': 20000,
+        'cache_creation_input_tokens': 0,
+        'billing_weighted_total': 7000,
+    },
+}
+# The four-field sum enrich derives into total_tokens for the inline 1-init row.
+_INIT_FOUR_FIELD_TOTAL = 8000 + 2000 + 40000 + 5000
+
+
+def _run_inline_enrich(plan_id: str, monkeypatch, buckets: dict | None = None) -> dict:
+    """Drive the real cmd_enrich with the runtime op stubbed to inline buckets.
+
+    ``cmd_enrich`` hands the phase windows to the platform-runtime transcript
+    engine over a subprocess boundary; the unit test replaces that one seam with
+    a production-shaped return so the rest of enrich (four-field write + the D3
+    total_tokens derivation) runs for real.
+    """
+    resolved = _INLINE_ENRICH_BUCKETS if buckets is None else buckets
+
+    def _fake_op(session_id, windows):
+        counters = {'message_count': 42, 'four_field_phases_attributed': len(resolved)}
+        return dict(resolved), counters, 'success'
+
+    monkeypatch.setattr(manage_metrics, '_run_normalized_tokens_op', _fake_op)
+    return cmd_enrich(Namespace(plan_id=plan_id, session_id='sess-inline'))
 
 
 # =============================================================================
@@ -184,9 +241,18 @@ def test_inline_init_refine_boundary_records_not_partial(plan_context):
     assert result['unrecorded_phases'] == []
 
 
-def test_inline_init_phase_is_recorded_without_token_data(plan_context):
-    """The inline-closed 1-init row carries end_time (recorded) but no token data."""
+def test_inline_init_phase_carries_total_tokens_after_enrich(plan_context, monkeypatch):
+    """After enrich, the inline-closed 1-init row carries a real derived total_tokens.
+
+    The boundary close omitted --total-tokens (no inline `<usage>`), so before
+    enrich the row has no total_tokens. The finalize enrich attributes the
+    parent-window `message.usage` four-field data to the window, and the D3
+    derivation surfaces their sum into total_tokens so the phase counts toward
+    the breakdown Tokens column.
+    """
     _drive_full_six_phase_plan('inline-init-row')
+    enrich_result = _run_inline_enrich('inline-init-row', monkeypatch)
+    assert enrich_result['enriched'] is True
     cmd_generate(_ns_generate('inline-init-row'))
 
     content = (plan_context.plan_dir_for('inline-init-row') / 'work' / 'metrics.toon').read_text()
@@ -194,9 +260,13 @@ def test_inline_init_phase_is_recorded_without_token_data(plan_context):
 
     # Recorded: end_time stamped by the inline boundary.
     assert _field(init_block, 'end_time') is not None
-    # Inline mode: no <usage>-derived fields written for the closing phase.
-    assert _field(init_block, 'total_tokens') is None
-    assert _field(init_block, 'tool_uses') is None
+    # The four-field attribution landed ...
+    assert _field(init_block, 'input_tokens') == '8000'
+    assert _field(init_block, 'output_tokens') == '2000'
+    # ... and total_tokens is now the four-field sum (no longer '-').
+    total = _field(init_block, 'total_tokens')
+    assert total is not None
+    assert int(total) == _INIT_FOUR_FIELD_TOTAL
 
 
 def test_inline_init_phase_absent_from_unrecorded_list(plan_context):
@@ -211,9 +281,10 @@ def test_inline_init_phase_absent_from_unrecorded_list(plan_context):
     assert 'unrecorded_phases:' in content
 
 
-def test_recipe_inline_refine_outline_boundaries_are_recorded(plan_context):
-    """The recipe-inline 2-refine and 3-outline phases (closed usage-free) are recorded."""
+def test_recipe_inline_refine_outline_carry_total_tokens_after_enrich(plan_context, monkeypatch):
+    """The recipe-inline 2-refine / 3-outline phases carry a derived total_tokens after enrich."""
     _drive_full_six_phase_plan('inline-recipe')
+    _run_inline_enrich('inline-recipe', monkeypatch)
     result = cmd_generate(_ns_generate('inline-recipe'))
 
     assert result['partial'] is False
@@ -224,8 +295,46 @@ def test_recipe_inline_refine_outline_boundaries_are_recorded(plan_context):
     for phase in ('2-refine', '3-outline'):
         block = _phase_block(content, phase)
         assert _field(block, 'end_time') is not None
-        # Recipe-inline close carries no token data either.
-        assert _field(block, 'total_tokens') is None
+        # After enrich the recipe-inline close carries a real derived total_tokens.
+        total = _field(block, 'total_tokens')
+        assert total is not None
+        assert int(total) > 0
+
+
+def test_report_is_n_six_of_six_after_inline_enrich(plan_context, monkeypatch):
+    """Every one of the six phases carries token data after inline enrich (n=6/6)."""
+    _drive_full_six_phase_plan('inline-n6')
+    _run_inline_enrich('inline-n6', monkeypatch)
+    result = cmd_generate(_ns_generate('inline-n6'))
+
+    assert result['partial'] is False
+    content = (plan_context.plan_dir_for('inline-n6') / 'work' / 'metrics.toon').read_text()
+    # All six canonical phases now carry a truthy total_tokens — the tokens
+    # column completeness is 6/6, so the breakdown Total is a plain sum with no
+    # (n=k/6) shortfall marker on the tokens column.
+    for phase in manage_metrics.PHASE_NAMES:
+        block = _phase_block(content, phase)
+        total = _field(block, 'total_tokens')
+        assert total is not None and int(total) > 0, f'{phase} is missing total_tokens'
+
+
+def test_enrich_does_not_overwrite_dispatched_phase_total(plan_context, monkeypatch):
+    """Explicit-wins: a dispatched phase's <usage> total_tokens is never clobbered by enrich.
+
+    Even when enrich attributes four-field data to a phase that already carries a
+    dispatched `<usage>` total, the derivation only fills an ABSENT total_tokens,
+    so the dispatched value is preserved byte-for-byte.
+    """
+    _drive_full_six_phase_plan('inline-explicit-wins')
+    # 4-plan closed with total_tokens=42000 (dispatched). Feed enrich a tiny
+    # four-field bucket for it; the derivation must NOT overwrite the real total.
+    buckets = {'4-plan': {'input_tokens': 1, 'output_tokens': 1, 'billing_weighted_total': 2}}
+    _run_inline_enrich('inline-explicit-wins', monkeypatch, buckets=buckets)
+    cmd_generate(_ns_generate('inline-explicit-wins'))
+
+    content = (plan_context.plan_dir_for('inline-explicit-wins') / 'work' / 'metrics.toon').read_text()
+    plan_block = _phase_block(content, '4-plan')
+    assert int(_field(plan_block, 'total_tokens')) == 42000
 
 
 # =============================================================================

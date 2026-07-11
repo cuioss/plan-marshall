@@ -1496,6 +1496,31 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
             phase_row['subagent_duration_ms'] = bucket.get('subagent_duration_ms', 0)
             phase_row['subagent_samples'] = bucket.get('subagent_samples', 0)
 
+        # Surface an inline phase's main-context tokens into total_tokens. A phase
+        # that ran inline in the main context (phase-1-init, and the recipe-inline
+        # refine/outline phases) produces no agent `<usage>` envelope and no
+        # accumulator, so its closing phase-boundary omitted --total-tokens and the
+        # row carries no total_tokens — yet enrich has just attributed the
+        # parent-window `message.usage` four-field data to it. Derive total_tokens
+        # from that four-field sum so the phase counts toward the breakdown Tokens
+        # column and the n=k/6 completeness total instead of rendering '-'.
+        # Explicit-wins: a total_tokens already set by a dispatched phase's
+        # `<usage>` / accumulator is truthy here and is never overwritten, so this
+        # fires only on the inline-phase signature (no prior total).
+        if not phase_row.get('total_tokens'):
+            four_field_total = sum(
+                int(phase_row[field])
+                for field in (
+                    'input_tokens',
+                    'output_tokens',
+                    'cache_read_input_tokens',
+                    'cache_creation_input_tokens',
+                )
+                if isinstance(phase_row.get(field), (int, float))
+            )
+            if four_field_total:
+                phase_row['total_tokens'] = four_field_total
+
     write_metrics(plan_id, data)
 
     return {

@@ -97,6 +97,49 @@ def _seed_full_overlap_recipe(skills_dir: Path) -> None:
     )
 
 
+def _seed_surgical_fix_recipe(skills_dir: Path) -> None:
+    """Seed the ``recipe-surgical-fix`` recipe with a realistic description.
+
+    The description deliberately shares almost no vocabulary with a real
+    pre-diagnosed request narrative (which describes the *bug*, not the recipe),
+    so a keyword-only score floors below MIN_CONFIDENCE — the shape arm is what
+    lifts it above the auto-route threshold.
+    """
+    _write_recipe(
+        skills_dir,
+        'recipe-surgical-fix',
+        frontmatter={
+            'name': 'recipe-surgical-fix',
+            'description': 'Micro-lane recipe for a pre-diagnosed surgical fix bounded to a single module',
+            'recipe_domain': 'plan-marshall-plugin-dev',
+        },
+        body='# Surgical Fix\n',
+    )
+
+
+# Real archived request narratives (lesson 2026-07-09-14-001) — a pre-diagnosed
+# surgical request (PR #866, must MATCH) and a broad structural-review request
+# (PR #856, must NOT match).
+_REQ_PREDIAGNOSED_SURGICAL = (
+    'Fix the owed CHECK_ERA era stamps in the audit skill (root cause known, '
+    'exact change known, single file): in '
+    '`.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` update '
+    "the CHECK_ERA registry — `lane-lever-effectiveness` and "
+    "`track-selection-accuracy` from `'#854'` to `'#862'`, "
+    "`merge-window-accounting` from `'#849'` to `'#863'` — and update the "
+    'adjacent registry comments to match. Bounded footprint, no behavior change '
+    'beyond era attribution.'
+)
+
+_REQ_BROAD_STRUCTURAL_REVIEW = (
+    'Fix two independent defects in terminal-title handling and '
+    'refactor/consolidate the title-handling surface into a coherent structure. '
+    'Diagnosis is complete and evidence-backed. The plan MUST include a full '
+    'structural review of the current title-handling surface and refactor it '
+    'toward coherence.'
+)
+
+
 def _ns(request_text: str, threshold: float = 0.6) -> Namespace:
     return Namespace(request_text=request_text, threshold=threshold)
 
@@ -336,6 +379,75 @@ def test_cli_recipe_match_missing_request_text_rejected(plan_context, tmp_path):
 
     # argparse rejects the missing required flag with exit code 2.
     assert result.returncode == 2
+
+
+# =============================================================================
+# Pre-diagnosed-change SHAPE arm — surgical-fix auto-routing (end-to-end)
+# =============================================================================
+
+
+def test_prediagnosed_surgical_request_auto_routes_to_surgical_fix(plan_context, tmp_path, monkeypatch):
+    """A real pre-diagnosed surgical request auto-routes to recipe-surgical-fix.
+
+    The request narrates the bug (low keyword overlap with the recipe), so only
+    the pre-diagnosed-change SHAPE arm can lift it — proving the arm flows
+    through cmd_recipe_match into meets_auto_route_threshold and top_match.
+    """
+    skills_dir = _make_skills_root(tmp_path)
+    _seed_surgical_fix_recipe(skills_dir)
+    monkeypatch.chdir(tmp_path)
+
+    result = cmd_recipe_match(_ns(_REQ_PREDIAGNOSED_SURGICAL))
+
+    assert result['status'] == 'success'
+    top = result['top_match']
+    assert top is not None
+    assert top['key'] == 'surgical-fix'
+    assert result['meets_auto_route_threshold'] is True
+    assert top['confidence'] >= 0.6
+    assert top['breakdown']['shape_score'] == 0.75
+
+
+def test_broad_structural_review_request_does_not_auto_route(plan_context, tmp_path, monkeypatch):
+    """A broad structural-review request does NOT auto-route to surgical-fix.
+
+    The discovery-demand veto forces the shape score to zero, and the low
+    keyword overlap leaves the recipe below the auto-route threshold (typically
+    below the MIN_CONFIDENCE floor entirely).
+    """
+    skills_dir = _make_skills_root(tmp_path)
+    _seed_surgical_fix_recipe(skills_dir)
+    monkeypatch.chdir(tmp_path)
+
+    result = cmd_recipe_match(_ns(_REQ_BROAD_STRUCTURAL_REVIEW))
+
+    assert result['status'] == 'success'
+    assert result['meets_auto_route_threshold'] is False
+    surgical = next((m for m in result['matches'] if m['key'] == 'surgical-fix'), None)
+    if surgical is not None:
+        assert surgical['breakdown']['shape_score'] == 0.0
+
+
+def test_keyword_arm_unaffected_by_shape_for_non_surgical_recipe(plan_context, tmp_path, monkeypatch):
+    """A non-surgical recipe still auto-routes purely on keyword overlap.
+
+    The shape arm is surgical-fix-specific: a distinct keyword-matching recipe
+    keeps its keyword-only score and lane-seed contract unchanged even when a
+    surgical-fix recipe is also present in the registry.
+    """
+    skills_dir = _make_skills_root(tmp_path)
+    _seed_surgical_fix_recipe(skills_dir)
+    _seed_full_overlap_recipe(skills_dir)
+    monkeypatch.chdir(tmp_path)
+
+    result = cmd_recipe_match(_ns('hummingbird zephyr quokka recipe-hummingbird'))
+
+    top = result['top_match']
+    assert top is not None
+    assert top['key'] == 'hummingbird'
+    assert top['confidence'] == 0.6
+    # A non-surgical recipe carries the pure 4-key breakdown (no shape_score).
+    assert 'shape_score' not in top['breakdown']
 
 
 # =============================================================================
