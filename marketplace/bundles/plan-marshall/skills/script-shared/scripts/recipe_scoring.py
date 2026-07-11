@@ -278,11 +278,21 @@ def _recipe_skill_dir_candidates(recipe: dict[str, Any]) -> list[str]:
     project discovery), so try the ``skill`` field, the ``name``, and
     ``recipe-{key}`` — each in both hyphen and underscore spellings — and keep
     only ``recipe-``-prefixed candidates in first-seen order.
+
+    The ``skill`` field carries a notation prefix that varies by source — a
+    bundle-notation ``{bundle}:{skill}`` for extension-registered recipes (e.g.
+    ``plan-marshall:recipe-surgical-fix``) or a ``project:{skill}`` for
+    project-discovered ones — so its final ``:``-delimited segment is taken as
+    the candidate skill-directory name. A bare (unprefixed) skill name is
+    unchanged.
     """
     raw: list[str] = []
     skill = recipe.get('skill')
     if isinstance(skill, str) and skill:
-        raw.append(skill[len('project:') :] if skill.startswith('project:') else skill)
+        # Drop ANY leading ``{prefix}:`` notation segment (bundle- or project-
+        # notation) so the bare ``recipe-*`` directory name survives the
+        # ``recipe-``-prefix filter below.
+        raw.append(skill.rsplit(':', 1)[-1])
     name = recipe.get('name')
     if isinstance(name, str) and name:
         raw.append(name)
