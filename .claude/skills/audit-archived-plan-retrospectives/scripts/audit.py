@@ -254,16 +254,16 @@ CROSS_PLAN_CHECKS = {
 # `#812` (execution-profile lane/partiality markers), `#842`/`#845`/`#849`/`#850`
 # (plan-1..plan-3 execution-loop / routing / finalize-flow / dist), `#852`
 # (find-triage D6 step-ownership), `#862` (inline phase-1-init dispatch /
-# routing-order fix), `#863` (merge-queue enablement via marshall-steward), `#868`
+# routing-order fix), `#863` (merge-queue enablement via marshall-steward), `#872`
 # (self-review promoted to a default finalize step), and
 # `plan-10` (the roadmap head this plan re-confirms the general checks accurate
 # against). Every key MUST be a member of `CHECK_NAMES`.
 CHECK_ERA: dict[str, str] = {
     # Roadmap-affected checks carry the specific boundary whose mechanics they
     # verify (kept in step with the plan-11 semantic updates).
-    # Bumped to #868: the finalize-step-id surface this check re-derives now carries
+    # Bumped to #872: the finalize-step-id surface this check re-derives now carries
     # default:pre-submission-self-review (self-review promoted to a default step).
-    "execution-context-manifest": "#868",
+    "execution-context-manifest": "#872",
     "metrics": "#812",
     "track-selection-accuracy": "#862",
     "global-log-analysis": "#849",
