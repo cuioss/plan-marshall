@@ -93,6 +93,18 @@ _FENCE_RE = re.compile(r'```')
 _CLI_RE = re.compile(r'python3\s+\.plan/execute-script\.py')
 _NOTATION_RE = re.compile(r'\bmanage-[a-z-]+\b')
 
+
+def _distinct_paths(body: str) -> set[str]:
+    """Return the DISTINCT repo-relative file paths ``_PATH_RE`` extracts from ``body``.
+
+    The single source of the distinct-path extraction shared by
+    ``scope_estimate_from_request_pure`` and ``cmd_scope_estimate_heuristic``.
+    Callers guard the empty-``body`` case themselves and layer their own
+    downstream ``sorted()`` / ``len()`` on the returned set.
+    """
+    return {m.group(0) for m in _PATH_RE.finditer(body)}
+
+
 # --- Pre-route scope_estimate heuristic --------------------------------------
 # Coarse scope bands the pre-route heuristic emits (the two narrow bands the
 # light lane cares about). This is a pre-route GUESS from cheap request signals,
@@ -223,7 +235,7 @@ def scope_estimate_from_request_pure(body: str | None) -> str:
         return SINGLE_MODULE
     if _GLOB_RE.search(body):
         return SINGLE_MODULE
-    distinct_paths = {m.group(0) for m in _PATH_RE.finditer(body)}
+    distinct_paths = _distinct_paths(body)
     if 1 <= len(distinct_paths) <= _SURGICAL_MAX_PATHS:
         return SURGICAL
     return SINGLE_MODULE
@@ -523,7 +535,7 @@ def cmd_scope_estimate_heuristic(args: argparse.Namespace) -> dict[str, Any]:
 
     body = _read_request_body(plan_id)
     scope_estimate = scope_estimate_from_request_pure(body)
-    distinct_paths = sorted({m.group(0) for m in _PATH_RE.finditer(body)}) if body else []
+    distinct_paths = sorted(_distinct_paths(body)) if body else []
 
     persisted = False
     if persist:
