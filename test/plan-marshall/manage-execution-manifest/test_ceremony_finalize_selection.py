@@ -19,7 +19,7 @@ directly from ``plan.phase-6-finalize.qgate``. The other two gates fold under
 their owning finalize step's nested param object in
 ``plan.phase-6-finalize.steps``: ``simplify`` →
 ``default:finalize-step-simplify``; ``self_review`` →
-``project:finalize-step-pre-submission-self-review`` (which also owns the
+``default:pre-submission-self-review`` (which also owns the
 ``drop_review_on_scope_gate`` escape hatch). The ``ceremony_policy`` block (and
 its condition-scoped ``overrides[]`` rows) was dissolved; the internal transform
 name retains the ``ceremony_finalize`` prefix for continuity.
@@ -85,7 +85,7 @@ _mem._log_execution_tier_routing = lambda *a, **kw: None  # type: ignore[attr-de
 # `default:` prefix at intake but preserves `project:` prefixes verbatim.
 _CEREMONY_FINALIZE_STEPS = [
     'pre-push-quality-gate',
-    'project:finalize-step-pre-submission-self-review',
+    'default:pre-submission-self-review',
 ]
 
 
@@ -124,8 +124,8 @@ def _compose_ns(
 _GATE_OWNER_STEP = {
     'simplify': 'default:finalize-step-simplify',
     'security_audit': 'default:finalize-step-security-audit',
-    'self_review': 'project:finalize-step-pre-submission-self-review',
-    'drop_review_on_scope_gate': 'project:finalize-step-pre-submission-self-review',
+    'self_review': 'default:pre-submission-self-review',
+    'drop_review_on_scope_gate': 'default:pre-submission-self-review',
 }
 
 
@@ -305,12 +305,11 @@ class TestCeremonyFinalizeAuto:
         assert result['ceremony_finalize_forced_in'] == []
         assert result['ceremony_finalize_forced_out'] == []
         # On a multi_module feature plan (Row 7 default, no scope gate), the
-        # ceremony steps survive the matrix untouched. The original
-        # project:-prefixed candidate survives (auto does not re-insert the
-        # canonical default: form), so its bare form is the
-        # finalize-step-pre-submission-self-review variant.
+        # ceremony steps survive the matrix untouched. The default:-prefixed
+        # candidate survives and is normalized to its bare
+        # pre-submission-self-review form.
         bare = _bare(_manifest_phase_6_steps(result))
-        assert 'finalize-step-pre-submission-self-review' in bare
+        assert 'pre-submission-self-review' in bare
         assert 'pre-push-quality-gate' in bare
 
 
@@ -333,17 +332,16 @@ class TestCeremonyFinalizeNever:
         assert result is not None
         assert result['status'] == 'success'
         bare = _bare(_manifest_phase_6_steps(result))
-        assert 'finalize-step-pre-submission-self-review' not in bare
         assert 'pre-submission-self-review' not in bare
         assert 'pre-push-quality-gate' not in bare
         forced_out = set(result['ceremony_finalize_forced_out'])
-        assert 'project:finalize-step-pre-submission-self-review' in forced_out
+        assert 'pre-submission-self-review' in forced_out
         assert 'pre-push-quality-gate' in forced_out
 
     def test_never_is_no_op_when_step_already_absent(self, plan_context):
         # Candidate set EXCLUDES self_review; never self_review is a no-op.
         candidates = [s for s in _phase_6_with_ceremony_steps().split(',')
-                      if s != 'project:finalize-step-pre-submission-self-review']
+                      if s != 'default:pre-submission-self-review']
         # The seeded steps map IS the candidate list, so it must match the
         # composed candidate set (self_review owner excluded).
         _seed_marshal(finalize_gates={'self_review': 'never'}, candidates=candidates)
@@ -427,7 +425,7 @@ class TestCeremonyFinalizeAlways:
         assert result is not None
         assert result['status'] == 'success'
         assert result['ceremony_finalize_forced_in'] == []
-        assert 'finalize-step-pre-submission-self-review' in _bare(_manifest_phase_6_steps(result))
+        assert 'pre-submission-self-review' in _bare(_manifest_phase_6_steps(result))
 
     def test_always_inserts_before_plan_mutating_tail(self, plan_context):
         _seed_marshal(finalize_gates={'self_review': 'always'})
@@ -466,15 +464,13 @@ class TestCeremonyFinalizeGenericSelfReviewForm:
     """
 
     def _generic_candidates(self) -> list[str]:
-        # The generic consuming-project self-review form, plus the fixed
-        # self_review knob-owner step. The ``self_review`` gate value is read from
-        # the fixed ``project:finalize-step-pre-submission-self-review`` owner
-        # (regardless of which self-review CANDIDATE form is listed), so the owner
-        # must be present in the seeded steps map for the gate to be active.
+        # The generic consuming-project self-review form. The ``self_review`` gate
+        # value is read from the ``default:pre-submission-self-review`` owner —
+        # which IS this generic form — so listing it once serves as both the
+        # candidate and the knob owner in the seeded steps map.
         return list(DEFAULT_PHASE_6_STEPS) + [
             'pre-push-quality-gate',
             'default:pre-submission-self-review',
-            'project:finalize-step-pre-submission-self-review',
         ]
 
     def test_never_drops_generic_default_form(self, plan_context):

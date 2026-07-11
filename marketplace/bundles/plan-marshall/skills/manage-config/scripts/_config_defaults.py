@@ -712,12 +712,10 @@ def validate_sonar_touched_file_cleanup(value: str) -> None:
 #   - default:finalize-step-simplify → simplify (run-at-all gate)
 #   - default:finalize-step-preference-emitter → preference_min_recurrence
 #                                      (per-plan disposition recurrence threshold)
-#   - project:finalize-step-pre-submission-self-review → self_review,
-#                                      drop_review_on_scope_gate (NOT a built-in
-#                                      step, so the seed does not include it; its
-#                                      defaults are supplied by the reader's
-#                                      default-merge when the project step is
-#                                      absent from marshal.json)
+#   - default:pre-submission-self-review → self_review,
+#                                      drop_review_on_scope_gate (a default-on
+#                                      built-in step, so the seed DOES include it
+#                                      and its params — auto / false — directly)
 # Phase-level knobs with no single owning step (checks_wait_timeout_seconds,
 # max_iterations, finalize_without_asking, loop_back_without_asking, qgate,
 # effort, …) stay flat siblings of `steps`.
@@ -821,12 +819,12 @@ DEFAULT_PLAN_FINALIZE = {
     # `default:finalize-step-simplify`) live in the owning step's nested param
     # object. Each step's params are declared self-describingly in the step's
     # body-doc `configurable:` frontmatter and read by `configurable_contract.py`;
-    # the `self_review` / `drop_review_on_scope_gate` knobs own the opt-in
-    # `project:finalize-step-pre-submission-self-review` step, which is NOT a
-    # default-on built-in candidate (its step doc declares `default_on: false`),
-    # so the default seed does NOT include it — a fresh project's candidate list is
-    # unchanged. Their defaults (`auto` / `False`) are supplied by the reader's
-    # default-merge when the project step is absent from marshal.json. The reader
+    # the `self_review` / `drop_review_on_scope_gate` knobs own the
+    # `default:pre-submission-self-review` step, which IS a default-on built-in
+    # candidate (its step doc declares `default_on: true`), so the default seed
+    # DOES include it with its params (`self_review: auto` /
+    # `drop_review_on_scope_gate: false`) — a fresh project's candidate list carries
+    # the step directly. The reader
     # (`_steps_map` / `_read_marshal_phase_step_map`) consumes this keyed map
     # directly — it is the sole on-disk shape both read and written.
     #

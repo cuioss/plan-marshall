@@ -53,7 +53,6 @@ discover_shipped_project_finalize_steps = _dm.discover_shipped_project_finalize_
 # =============================================================================
 
 _PROJECT_STEPS = (
-    'pre-submission-self-review',
     'plugin-doctor',
     'deploy-target',
     'sync-plugin-cache',
@@ -193,7 +192,7 @@ def test_keyed_map_dropped_project_step_is_surfaced(tmp_path: Path):
     _ship_project_finalize_skills(project_root, _PROJECT_STEPS)
     # Keyed-map with two shipped project steps dropped.
     present = {
-        'project:finalize-step-pre-submission-self-review': {},
+        'default:pre-submission-self-review': {},
         'project:finalize-step-sync-plugin-cache': {},
         'default:push': {},
     }
@@ -223,7 +222,7 @@ def test_keyed_map_and_list_parity_project(tmp_path: Path):
     project_root = tmp_path / 'repo'
     _ship_project_finalize_skills(project_root, _PROJECT_STEPS)
     step_ids = [
-        'project:finalize-step-pre-submission-self-review',
+        'default:pre-submission-self-review',
         'project:finalize-step-plugin-doctor',
         'default:push',
     ]

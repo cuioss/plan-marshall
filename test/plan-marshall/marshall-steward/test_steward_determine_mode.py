@@ -180,7 +180,6 @@ def test_cli_ok_on_main_checkout(tmp_path: Path):
 # hand-maintained project-local step.
 
 _PROJECT_STEPS = (
-    'pre-submission-self-review',
     'plugin-doctor',
     'deploy-target',
     'sync-plugin-cache',
@@ -245,7 +244,7 @@ def test_dropped_project_step_is_reported(tmp_path: Path):
     _ship_project_finalize_skills(project_root, _PROJECT_STEPS)
     # Drop plugin-doctor + deploy-target from the configured steps.
     steps = [
-        'project:finalize-step-pre-submission-self-review',
+        'default:pre-submission-self-review',
         'project:finalize-step-sync-plugin-cache',
         'default:push',
     ]

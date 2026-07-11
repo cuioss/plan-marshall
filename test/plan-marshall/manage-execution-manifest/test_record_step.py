@@ -371,7 +371,7 @@ def test_owner_of_sub_dispatching_steps_are_orchestrator_owned():
     """The known sub-dispatching finalize steps resolve to orchestrator-owned."""
     for step in (
         'finalize-step-plugin-doctor',
-        'finalize-step-pre-submission-self-review',
+        'pre-submission-self-review',
         'automatic-review',
         'finalize-step-simplify',
     ):
@@ -382,7 +382,7 @@ def test_owner_of_sub_dispatching_steps_are_orchestrator_owned():
 def test_owner_of_strips_default_and_project_prefixes():
     """default:- and project:-prefixed spellings classify identically to the bare name."""
     assert owner_of('project:finalize-step-plugin-doctor') == 'orchestrator-owned'
-    assert owner_of('project:finalize-step-pre-submission-self-review') == 'orchestrator-owned'
+    assert owner_of('default:pre-submission-self-review') == 'orchestrator-owned'
     assert owner_of('default:finalize-step-simplify') == 'orchestrator-owned'
 
 

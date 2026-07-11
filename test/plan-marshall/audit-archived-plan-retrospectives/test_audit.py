@@ -128,6 +128,18 @@ def test_stamp_era_leaves_meta_blocks_untouched():
     assert audit._stamp_era(meta) == meta
 
 
+def test_execution_context_manifest_era_stamped_to_promotion_boundary():
+    # The self-review promotion (default:pre-submission-self-review) bumped the
+    # finalize-step-id surface this check re-derives, so its era stamp moves to #872.
+    assert audit.CHECK_ERA["execution-context-manifest"] == "#872"
+    block = "check: execution-context-manifest\nstatus: success\nrows[0]{a}:\n"
+    stamped = audit._stamp_era(block)
+    lines = stamped.split("\n")
+    assert lines[0] == "check: execution-context-manifest"
+    assert lines[1] == "status: success"
+    assert lines[2] == "fixed_since: #872"
+
+
 def test_full_run_stamps_every_check_block(tmp_path):
     # Arrange
     inputs = _minimal_corpus(tmp_path)

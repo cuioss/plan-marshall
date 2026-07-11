@@ -276,10 +276,10 @@ The lifecycle run-at-all gates and automation knobs are flat knobs under their o
 | `finalize_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field finalize_without_asking` |
 | `loop_back_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field loop_back_without_asking` |
 | `final_merge_without_asking` | `plan.phase-6-finalize.steps['default:branch-cleanup']` (step-owned param) | `plan phase-6-finalize step get --step-id default:branch-cleanup` (read `final_merge_without_asking` off `params`) |
-| `self_review` | `plan.phase-6-finalize.steps['project:finalize-step-pre-submission-self-review']` (step-owned param) | `plan phase-6-finalize step get --step-id project:finalize-step-pre-submission-self-review` (read `self_review` off `params`) |
+| `self_review` | `plan.phase-6-finalize.steps['default:pre-submission-self-review']` (step-owned param) | `plan phase-6-finalize step get --step-id default:pre-submission-self-review` (read `self_review` off `params`) |
 | `qgate` (finalize) | `plan.phase-6-finalize` | `plan phase-6-finalize get --field qgate` |
 | `simplify` | `plan.phase-6-finalize.steps['default:finalize-step-simplify']` (step-owned param) | `plan phase-6-finalize step get --step-id default:finalize-step-simplify` (read `simplify` off `params`) |
-| `drop_review_on_scope_gate` | `plan.phase-6-finalize.steps['project:finalize-step-pre-submission-self-review']` (step-owned param) | `plan phase-6-finalize step get --step-id project:finalize-step-pre-submission-self-review` (read `drop_review_on_scope_gate` off `params`) |
+| `drop_review_on_scope_gate` | `plan.phase-6-finalize.steps['default:pre-submission-self-review']` (step-owned param) | `plan phase-6-finalize step get --step-id default:pre-submission-self-review` (read `drop_review_on_scope_gate` off `params`) |
 
 ### Read an automation knob
 

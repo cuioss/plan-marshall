@@ -323,8 +323,13 @@ class TestArrayAuthorityContract:
         assert len(result['results']) == 3
 
     def test_project_step_order_resolves_from_project_local_skill_md(self):
-        """project: step order is read from .claude/skills/{name}/SKILL.md frontmatter."""
-        assert _mem._resolve_step_order('project:finalize-step-deploy-target') == 80
+        """project: step order is read from .claude/skills/{name}/SKILL.md frontmatter.
+
+        deploy-target sits at order 81 (bumped from 80 to deconflict with the
+        consumer-shipped built-in default:finalize-step-preference-emitter, which
+        occupies order 80), giving the intended preference-emitter (80) ->
+        deploy-target (81) -> sync-plugin-cache (85) finalize ordering."""
+        assert _mem._resolve_step_order('project:finalize-step-deploy-target') == 81
         assert _mem._resolve_step_order('project:finalize-step-sync-plugin-cache') == 85
 
     def test_builtin_step_order_resolves_from_standards_frontmatter(self):
@@ -574,7 +579,7 @@ _TOKEN_CONSUMING_FINALIZE_STEPS: list[str] = [
     'project:finalize-step-sync-plugin-cache',
     'project:finalize-step-lessons-housekeeping',
     'project:finalize-step-plugin-doctor',
-    'project:finalize-step-pre-submission-self-review',
+    'default:pre-submission-self-review',
 ]
 
 

@@ -6,11 +6,18 @@ name: default:pre-submission-self-review
 description: Pre-submission structural self-review (symmetric pairs, regex over-fit, wording, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check, ordinal-reference re-check) before push
 order: 7
 mutates_source: false
-default_on: false
+default_on: true
 presets: []
 implements:
   - plan-marshall:extension-api/standards/ext-point-execution-context-workflow
   - plan-marshall:extension-api/standards/ext-point-finalize-step
+configurable:
+  - key: self_review
+    default: auto
+    description: Run-at-all gate (auto|always|never) for the pre-submission self-review step — auto defers to the decision machinery; always/never force the step in/out.
+  - key: drop_review_on_scope_gate
+    default: false
+    description: Escape hatch for the manifest composer's scope_gated_finalize pre-filter — false keeps the bot-review invariant intact; true additionally drops automated-review on scope-gated (surgical / single_module) plans.
 ---
 
 # Pre-Submission Self-Review
@@ -32,7 +39,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Domain-Aware Candidate Surfacing
 
-The deterministic surfacer is pluggable via the `ext-self-review-{domain}` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the eighteen candidate sub-lists below as TOON. The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Step 1 calls this implementor directly — the plan-marshall surfacer notation is the single canonical implementor, so no `get-extensions` registration lookup is needed.
+The deterministic surfacer is pluggable via the `plan-marshall:extension-api/standards/ext-point-self-review-surfacing` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract; `ext-self-review-{domain}` is the implementor skill naming pattern, not the extension point itself. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the eighteen candidate sub-lists below as TOON — thirteen of which are the line-level heuristic lists that sum into the `counts.total` gate contract Step 1b consumes; the remaining five (`contract_sources`, `schema_bearing_files`, `count_prose`, `advertised_form_help_strings`, and the derived `protected_identifiers` index) are review-anchor/index lists excluded from that count (see Step 1b below for the full exclusion list). The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Because this step now ships `default_on: true` to consumer projects that may not carry a domain surfacer, Step 1 discovers the surfacing implementors via `find_implementors(ext-point-self-review-surfacing)` and invokes the resolvable domain implementor (in the meta-project, `pm-plugin-development:ext-self-review-plan-marshall:self_review`, preserving current behavior bit-for-bit). When NO implementor resolves in the current executor, Step 1 takes the **zero-generator fallback** — an empty candidate set, no LLM dispatch, and a clean `done` outcome.
 
 ## Inputs (inline step — Step 1)
 
@@ -89,20 +96,29 @@ Capture `{cov_scope}` and `{cov_instruction}` (when absent, treat as `inherit`).
 
 ### Step 1: Deterministic surface (inline)
 
-Invoke the plan-marshall-domain surfacer's `surface` subcommand directly. The implementor derives the plan footprint live from the worktree (`{base}...HEAD` ∪ porcelain), computes the staged diff against the worktree's base branch, and emits the eighteen candidate sub-lists in a single TOON document on stdout.
-
-The implementor notation is fixed — `pm-plugin-development:ext-self-review-plan-marshall:self_review` — so it is called directly with no registration lookup. Forward `--contract-radius {N}` derived from `{cov_scope}` (`change-set` → `1`; `artifact`/`inherit` → `3`; `component`/`module`/`overall` → `5`):
+Because this step ships `default_on: true` to consumer projects that may carry no domain self-review surfacer, Step 1 discovers the surfacing implementors rather than calling a fixed notation. Discover them via the `ext-point-self-review-surfacing` extension point:
 
 ```bash
-python3 .plan/execute-script.py pm-plugin-development:ext-self-review-plan-marshall:self_review \
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery implementors \
+  --ext-point plan-marshall:extension-api/standards/ext-point-self-review-surfacing
+```
+
+Parse the discovered implementors' `self_review` script notations from the returned TOON. Select the first implementor whose notation **resolves in the current executor** (in the meta-project this is `pm-plugin-development:ext-self-review-plan-marshall:self_review`, preserving current behavior bit-for-bit).
+
+**Resolvable implementor path**: invoke the resolved implementor's `surface` subcommand exactly as today. The implementor derives the plan footprint live from the worktree (`{base}...HEAD` ∪ porcelain), computes the staged diff against the worktree's base branch, and emits the eighteen candidate sub-lists in a single TOON document on stdout. Forward `--contract-radius {N}` derived from `{cov_scope}` (`change-set` → `1`; `artifact`/`inherit` → `3`; `component`/`module`/`overall` → `5`):
+
+```bash
+python3 .plan/execute-script.py {resolved_implementor_notation} \
   surface --plan-id {plan_id} --contract-radius {N}
 ```
 
-(Auto-resolves the worktree from `--plan-id`. Add `--project-dir {worktree_path}` only when the explicit override is required. The `inherit`/default radius of `3` reproduces today's surfacer breadth.)
+`{resolved_implementor_notation}` is the notation selected above — in the meta-project this resolves to `pm-plugin-development:ext-self-review-plan-marshall:self_review`, preserving current behavior bit-for-bit; a consumer project resolving a different domain implementor invokes that implementor's notation instead. Auto-resolves the worktree from `--plan-id`. Add `--project-dir {worktree_path}` only when the explicit override is required. The `inherit`/default radius of `3` reproduces today's surfacer breadth.
 
-If the helper exits non-zero, halt and proceed to **Step 4 — Mark Step Complete (Failure)**, surfacing the helper error in the `display_detail` payload. Do NOT dispatch the LLM cognitive phase below.
+If the resolved implementor exits non-zero, halt and proceed to **Step 4 — Mark Step Complete (Failure)**, surfacing the helper error in the `display_detail` payload. Do NOT dispatch the LLM cognitive phase below.
 
 Capture the helper's TOON output as `{candidates_toon}` for forwarding to the cognitive-phase dispatch.
+
+**Zero-generator fallback path**: when NO discovered implementor resolves in the current executor (a consumer project shipping no domain self-review surfacer), treat the candidate set as empty — skip the LLM cognitive dispatch (Steps 1b–3) entirely and proceed directly to **Step 4 — Mark Step Complete**, recording `--outcome done` with a clean `display_detail` of `"self-review clean: 0 candidates examined"`. This zero-candidate clean run lets the promoted default step ship safely to consumers without a domain surfacer.
 
 ### Step 1b: Candidate-count gate (inline vs dispatch) — B5
 
@@ -252,7 +268,7 @@ Record the outcome on the live plan so the `phase_steps_complete` handshake inva
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-pre-submission-self-review --outcome done \
+  --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome done \
   --display-detail "{display_detail_from_workflow}"
 ```
 
@@ -271,7 +287,7 @@ Then record the failed outcome:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-pre-submission-self-review --outcome failed \
+  --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome failed \
   --display-detail "{display_detail_from_workflow}"
 ```
 

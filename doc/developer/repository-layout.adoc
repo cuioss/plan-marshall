@@ -103,7 +103,7 @@ All access to `.plan/` from inside a workflow goes through `python3 .plan/execut
 Project-level Claude Code configuration committed to the repository:
 
 * `.claude/settings.json` — team-shared permission allow-list. Narrow by design (see xref:../concepts/security.adoc[Security]).
-* `.claude/skills/` — project-local skills (the meta-project only — `finalize-step-deploy-target/`, `finalize-step-plugin-doctor/`, `finalize-step-pre-submission-self-review/`, `finalize-step-sync-plugin-cache/`, `recipe-plugin-compliance/`, `sync-plugin-cache/`). Consumer projects of Plan Marshall do not get these.
+* `.claude/skills/` — project-local skills (the meta-project only — `finalize-step-deploy-target/`, `finalize-step-plugin-doctor/`, `finalize-step-sync-plugin-cache/`, `recipe-plugin-compliance/`, `sync-plugin-cache/`). Consumer projects of Plan Marshall do not get these.
 * `.claude/commands/` — project-local slash commands (today: `build-fix-commit.md`).
 
 `.claude/settings.local.json` (per-developer, gitignored) sits alongside but is never committed.

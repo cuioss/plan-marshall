@@ -281,15 +281,12 @@ def test_default_plan_finalize_carries_all_finalize_gates():
     config = _config_defaults_mod.get_default_config()
     seeded_steps = config['plan']['phase-6-finalize']['steps']
     assert _params_for(seeded_steps, 'default:finalize-step-simplify')['simplify'] == 'auto'
-    # self_review is owned by the project-only pre-submission-self-review step,
-    # which is NOT a built-in candidate, so it is absent from the seed; its
-    # default resolves directly via the configurable_contract parser.
-    from configurable_contract import resolve_step_defaults
-
-    self_review_defaults = resolve_step_defaults(
-        'project:finalize-step-pre-submission-self-review'
-    )
-    assert self_review_defaults['self_review'] == 'auto'
+    # self_review / drop_review_on_scope_gate fold under the default-on built-in
+    # pre-submission-self-review step, so they are materialized in the seeded
+    # keyed-map `steps` form.
+    self_review_params = _params_for(seeded_steps, 'default:pre-submission-self-review')
+    assert self_review_params['self_review'] == 'auto'
+    assert self_review_params['drop_review_on_scope_gate'] is False
 
 
 def test_validate_run_at_all_accepts_simplify_run_at_all_values():
@@ -1317,23 +1314,29 @@ def test_built_in_finalize_steps_places_simplify_before_push():
     (order 10), so simplify precedes push. The canonical head order is
     default:finalize-step-sync-baseline (index 0, order 3 — the early baseline
     rebase that runs before the local quality gates),
-    default:pre-push-quality-gate (index 1), default:finalize-step-simplify
-    (index 2), default:finalize-step-security-audit (index 3), then default:push
-    (index 4) — matching the plain `order:` values (no special placement
-    invariant). The seed is discovered via find_implementors, not a constant.
+    default:pre-push-quality-gate (index 1, order 5),
+    default:pre-submission-self-review (index 2, order 7 — the default-on
+    built-in structural self-review that runs between the pre-push quality gate
+    and the simplify pass), default:finalize-step-simplify (index 3, order 8),
+    default:finalize-step-security-audit (index 4, order 9), then default:push
+    (index 5, order 10) — matching the plain `order:` values (no special
+    placement invariant). The seed is discovered via find_implementors, not a
+    constant.
     """
     steps = _discovered_seed_step_ids()
 
-    # presence and relative head order (security-audit, order 9, sits between
-    # simplify (8) and push (10))
+    # presence and relative head order (self-review order 7 nests between the
+    # pre-push quality gate (5) and simplify (8); security-audit, order 9, sits
+    # between simplify (8) and push (10))
     assert 'default:finalize-step-simplify' in steps, (
         'default:finalize-step-simplify must be discovered into the default-on seed'
     )
     assert steps[0] == 'default:finalize-step-sync-baseline'
     assert steps[1] == 'default:pre-push-quality-gate'
-    assert steps[2] == 'default:finalize-step-simplify'
-    assert steps[3] == 'default:finalize-step-security-audit'
-    assert steps[4] == 'default:push'
+    assert steps[2] == 'default:pre-submission-self-review'
+    assert steps[3] == 'default:finalize-step-simplify'
+    assert steps[4] == 'default:finalize-step-security-audit'
+    assert steps[5] == 'default:push'
 
 
 def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
@@ -1456,6 +1459,10 @@ def test_default_plan_finalize_config_less_steps_map_to_empty_dict():
         'default:finalize-step-sync-baseline',
         # default:finalize-step-simplify owns the folded `simplify` run-at-all gate
         'default:finalize-step-simplify',
+        # default:pre-submission-self-review (the promoted default-on built-in,
+        # order 7) owns the folded `self_review` run-at-all gate plus the
+        # `drop_review_on_scope_gate` scope-gate toggle
+        'default:pre-submission-self-review',
         # default:finalize-step-security-audit owns the folded `security_audit`
         # run-at-all gate (auto|always|never), read via _read_step_owned_knob —
         # the symmetric peer of `simplify`
