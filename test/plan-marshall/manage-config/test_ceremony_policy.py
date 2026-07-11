@@ -103,7 +103,6 @@ _SEEDED_FOLDED_KNOBS = (
     ('default:pre-submission-self-review', 'self_review', 'auto'),
     ('default:pre-submission-self-review', 'drop_review_on_scope_gate', False),
 )
-_ALL_FOLDED_KNOBS = _SEEDED_FOLDED_KNOBS
 
 
 # =============================================================================
@@ -176,7 +175,7 @@ def test_distributed_gates_not_in_other_phases():
     assert 'deep_lane' not in config['plan']['phase-6-finalize']
 
 
-@pytest.mark.parametrize('owner_step,knob,default', _ALL_FOLDED_KNOBS)
+@pytest.mark.parametrize('owner_step,knob,default', _SEEDED_FOLDED_KNOBS)
 def test_folded_finalize_knob_is_not_a_flat_sibling(owner_step, knob, default):
     """simplify / self_review / drop_review_on_scope_gate are no longer flat siblings.
 
