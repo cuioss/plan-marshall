@@ -161,11 +161,13 @@ If `plan_id` is empty or an artifact is missing, emit a `[CRITICAL]` work-log en
 
 The plan-existence, obsolescence, recipe-match, domain, sibling-collision, and posture dialogues all fire inline as native `AskUserQuestion` calls inside the phase-1-init steps above — there are no prompt-required return blocks for the orchestrator to consume. A dialogue whose resolution deletes the plan (obsolescence → Close, sibling-collision → Abort) STOPS the pipeline inline; the orchestrator does not advance to phase-2-refine.
 
-**Metrics**: After init completes and `plan_id` is known, record the `1-init → 2-refine` boundary in a single fused call. Because init ran **inline** (no dispatched agent, hence no `<usage>` envelope), OMIT the `<usage>`-derived flags (`--total-tokens` / `--duration-ms` / `--tool-uses`) — this is the inline-phase (timestamps-only) recording mode:
+**Metrics**: After init completes and `plan_id` is known, record the `1-init → 2-refine` boundary in a single fused call. Because init ran **inline** (no dispatched agent, hence no `<usage>` envelope), OMIT the `<usage>`-derived flags (`--total-tokens` / `--duration-ms` / `--tool-uses`) at the boundary call — there is no inline `<usage>` total to forward here:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics phase-boundary \
   --plan-id {plan_id} --prev-phase 1-init --next-phase 2-refine
 ```
+
+Omitting the flags at the boundary write does NOT mean 1-init is permanently token-less. This is the timestamps-only recording *moment*, not a permanent omission: the finalize-phase `manage-metrics enrich` pass (see `record-metrics.md`) later attributes the parent-window `message.usage` four-field data to the inline 1-init window and surfaces it into `total_tokens`, so the phase DOES count toward the breakdown Tokens column and the report reads `n=6/6` (not `n=5/6`). The same enrich surfacing applies to the recipe-inline refine/outline phases that also close usage-free.
 
 phase-1-init Step 3b records `1-init.start_time` via `manage-metrics
 start-phase` as soon as `status.json` exists, so the fused `phase-boundary`
