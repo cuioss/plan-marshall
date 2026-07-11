@@ -84,35 +84,29 @@ JSON structure and field definitions for project configuration.
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
       "qgate": "auto",
-      "steps": [
-        { "default:finalize-step-simplify": { "simplify": "auto" } },
-        "default:push",
-        "default:create-pr",
-        { "plan-marshall:automatic-review": { "review_bot_buffer_seconds": 180 } },
-        {
-          "default:sonar-roundtrip": {
-            "touched_file_cleanup": "new_code_only",
-            "do_transition": false,
-            "ce_wait_timeout_seconds": 600
-          }
+      "steps": {
+        "default:pre-submission-self-review": {
+          "self_review": "auto",
+          "drop_review_on_scope_gate": false
         },
-        "default:lessons-capture",
-        {
-          "default:branch-cleanup": {
-            "pr_merge_strategy": "squash",
-            "final_merge_without_asking": false,
-            "auto_rebase_threshold": "no_overlap_only"
-          }
+        "default:finalize-step-simplify": { "simplify": "auto" },
+        "default:push": {},
+        "default:create-pr": {},
+        "plan-marshall:automatic-review": { "review_bot_buffer_seconds": 180 },
+        "default:sonar-roundtrip": {
+          "touched_file_cleanup": "new_code_only",
+          "do_transition": false,
+          "ce_wait_timeout_seconds": 600
         },
-        "default:record-metrics",
-        "default:archive-plan",
-        {
-          "default:pre-submission-self-review": {
-            "self_review": "auto",
-            "drop_review_on_scope_gate": false
-          }
-        }
-      ]
+        "default:lessons-capture": {},
+        "default:branch-cleanup": {
+          "pr_merge_strategy": "squash",
+          "final_merge_without_asking": false,
+          "auto_rebase_threshold": "no_overlap_only"
+        },
+        "default:record-metrics": {},
+        "default:archive-plan": {}
+      }
     }
   },
   "build": {
@@ -520,6 +514,10 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
       "loop_back_without_asking": false,
       "qgate": "auto",
       "steps": {
+        "default:pre-submission-self-review": {
+          "self_review": "auto",
+          "drop_review_on_scope_gate": false
+        },
         "default:finalize-step-simplify": { "simplify": "auto" },
         "default:push": {},
         "default:create-pr": {},
@@ -536,11 +534,7 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
           "auto_rebase_threshold": "no_overlap_only"
         },
         "default:record-metrics": {},
-        "default:archive-plan": {},
-        "default:pre-submission-self-review": {
-          "self_review": "auto",
-          "drop_review_on_scope_gate": false
-        }
+        "default:archive-plan": {}
       }
     }
   }
@@ -609,7 +603,7 @@ Managed via (the step verbs operate on the keyed map, preserving key insertion o
 - `plan phase-6-finalize step get --step-id default:branch-cleanup` (returns the step's complete nested param object in one call)
 - `plan phase-6-finalize step set --step-id default:branch-cleanup --param pr_merge_strategy --value rebase` (writes one step-owned param into the step's nested object — the global-config write target)
 
-Default steps: `default:finalize-step-simplify`, `default:push`, `default:create-pr`, `plan-marshall:automatic-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan`. Step types: built-in (`default:` prefix), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
+Default steps (execution order): `default:pre-submission-self-review`, `default:finalize-step-simplify`, `default:push`, `default:create-pr`, `plan-marshall:automatic-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan`. Step types: built-in (`default:` prefix), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
 
 ### Run-at-all gates and finalize automation knobs (phase-local)
 

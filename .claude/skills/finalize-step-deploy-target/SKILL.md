@@ -53,11 +53,11 @@ The canonical Phase 6 ordering surrounding this step is:
 
 ```
 default:branch-cleanup (70) →
-project:finalize-step-deploy-target (80) →
+project:finalize-step-deploy-target (81) →
 project:finalize-step-sync-plugin-cache (85)
 ```
 
-`order: 80` places this step immediately after `default:branch-cleanup`
+`order: 81` places this step immediately after `default:branch-cleanup`
 and before `project:finalize-step-sync-plugin-cache`. The generator must
 run on the post-merge main checkout so the cache sync that follows mirrors
 the just-regenerated `target/claude/` content. On-main executor regeneration
