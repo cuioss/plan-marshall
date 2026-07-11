@@ -113,7 +113,7 @@ def test_reworked_checks_carry_pr_pending_placeholder():
     # floor that re-arms the checkpoint measurement — so their era boundary is
     # this plan's own PR. At phase-5 that PR number is unknowable, so the stamp is
     # a provably-invalid PR-PENDING placeholder, finalize-corrected to #{n} from
-    # status.json in lock-step with this mirror (lesson 2026-07-11-09-001).
+    # status.json in lock-step with this mirror.
     for check in ("metrics", "track-selection-accuracy", "lane-lever-effectiveness"):
         assert audit.CHECK_ERA[check] == "PR-PENDING", check
 
@@ -878,7 +878,7 @@ def test_lane_lever_registered_and_era_stamped():
     assert "lane-lever-effectiveness" in audit.CHECK_NAMES
     assert "lane-lever-effectiveness" in audit.CROSS_PLAN_CHECKS
     # Era bumped to this plan's boundary — the finalize-resolved PR-PENDING
-    # placeholder (corrected to #{n} after create-pr, lesson 2026-07-11-09-001).
+    # placeholder (corrected to #{n} after create-pr).
     assert audit.CHECK_ERA["lane-lever-effectiveness"] == "PR-PENDING"
     # cross-check-synthesis stays last after the new registration.
     assert audit.CHECK_NAMES[-1] == "cross-check-synthesis"

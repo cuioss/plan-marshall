@@ -258,7 +258,7 @@ CROSS_PLAN_CHECKS = {
 # (self-review promoted to a default finalize step), `PR-PENDING` (this plan's own
 # boundary — a finalize-resolved placeholder for the three checks this plan reworks:
 # `metrics`, `track-selection-accuracy`, and `lane-lever-effectiveness`; corrected
-# to the concrete #{n} after create-pr, lesson 2026-07-11-09-001), and
+# to the concrete #{n} after create-pr), and
 # `plan-10` (the roadmap head this plan re-confirms the general checks accurate
 # against). Every key MUST be a member of `CHECK_NAMES`.
 CHECK_ERA: dict[str, str] = {
@@ -275,7 +275,8 @@ CHECK_ERA: dict[str, str] = {
     # concrete #{n} is a documented finalize-time correction that reads the real
     # PR number from status.json after create-pr and rewrites the constant AND its
     # test_audit.py mirror in lock-step. PR-PENDING is a provably-invalid PR token
-    # that fails loudly if the correction is ever forgotten (lesson 2026-07-11-09-001).
+    # that fails loudly if the correction is ever forgotten — never guess this
+    # plan's PR number at phase-5.
     "metrics": "PR-PENDING",
     "track-selection-accuracy": "PR-PENDING",
     "global-log-analysis": "#849",
@@ -307,7 +308,7 @@ CHECK_ERA: dict[str, str] = {
     # alter which plans engage the light planning lane and the minimal execution
     # posture, so the checkpoint measurement arm (per-scope-class token spend vs
     # armed targets) re-arms at this plan's PR. Finalize-corrected to #{n} from
-    # status.json in lock-step with its test mirror (lesson 2026-07-11-09-001).
+    # status.json in lock-step with its test mirror.
     "lane-lever-effectiveness": "PR-PENDING",
     "cross-check-synthesis": "plan-10",
 }
