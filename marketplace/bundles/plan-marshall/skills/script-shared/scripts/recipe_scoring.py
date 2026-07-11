@@ -54,6 +54,122 @@ _STOP_WORDS: frozenset[str] = frozenset({
 
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z_-]+")
 
+# =============================================================================
+# Pre-diagnosed-change SHAPE signal (surgical-fix recipe only)
+# =============================================================================
+# A recipe request whose narrative describes a *pre-diagnosed surgical change*
+# — a stated root cause co-occurring with an exact-change / file-path anchor —
+# should clear the confidence floor for the ``recipe-surgical-fix`` recipe even
+# when its keyword density is low (a request that narrates the *bug* rarely
+# repeats the recipe's own vocabulary). This SHAPE signal is scored by
+# ``_score_prediagnosed_shape`` and blended into ``score_recipe`` ONLY for the
+# surgical-fix recipe; it never alters scoring for any other recipe.
+#
+# The concreteness anchors mirror ``_cmd_planning_lane``'s S5 machinery (a
+# repo-relative file-path anchor, a fenced code block, a
+# ``python3 .plan/execute-script.py`` CLI invocation, or an inline ``manage-*``
+# notation) — defined locally so this shared core stays self-contained.
+_SHAPE_PATH_RE = re.compile(r'[\w./-]+/[\w.-]+\.[A-Za-z0-9]+')
+_SHAPE_FENCE_RE = re.compile(r'```')
+_SHAPE_CLI_RE = re.compile(r'python3\s+\.plan/execute-script\.py')
+_SHAPE_NOTATION_RE = re.compile(r'\bmanage-[a-z-]+\b')
+
+# A stated root cause — the diagnosis half of the pre-diagnosed shape.
+_SHAPE_ROOT_CAUSE_RE = re.compile(r'\broot[\s-]cause\b', re.IGNORECASE)
+# An exact-change / completed-diagnosis marker — the request states the change
+# is already known, not something to discover.
+_SHAPE_PREDIAGNOSED_RE = re.compile(
+    r'\broot[\s-]cause\s+known\b'
+    r'|\bexact\s+change(?:\s+known)?\b'
+    r'|\bexact\s+edit\b'
+    r'|\bdiagnosis\s+is\s+complete\b'
+    r'|\bthe\s+fix\s+is\b',
+    re.IGNORECASE,
+)
+# Discovery-demand veto — a request that asks to REVIEW / RESTRUCTURE / INVESTIGATE
+# a whole surface is not a pre-diagnosed surgical change, however well its root
+# cause is stated. Any veto hit forces the shape score to zero so a broad
+# consolidation/analysis request never auto-routes to the surgical micro-lane.
+_SHAPE_DISCOVERY_VETO_RE = re.compile(
+    r'\b(?:full\s+)?structural\s+review\b'
+    r'|\bconsolidat(?:e|es|ed|ing|ion)\b'
+    r'|\binto\s+a\s+coherent\b'
+    r'|\banaly[sz]e\s+why\b'
+    r'|\binvestigate\b'
+    r'|\bfigure\s+out\s+why\b'
+    r'|\bdiagnose\s+why\b'
+    r'|\breview\s+the\s+(?:current\s+)?[\w-]+\s+surface\b',
+    re.IGNORECASE,
+)
+
+# Shape-score bands. A strong pre-diagnosed shape (root cause AND an exact-change
+# marker, with a concreteness anchor) clears the auto-route threshold; an
+# exact-change-only shape sits at the threshold; a generic root-cause-plus-anchor
+# shape clears only the minimum-confidence floor.
+_SHAPE_STRONG = 0.75
+_SHAPE_AUTO_ROUTE = 0.6
+_SHAPE_FLOOR = 0.45
+
+
+def _has_concrete_anchor(narrative: str) -> bool:
+    """Return True when the narrative carries an exact-change / file anchor.
+
+    Mirrors ``_cmd_planning_lane``'s S5 concreteness check: a repo-relative path,
+    a fenced code block, a plan-marshall CLI invocation, or a ``manage-*``
+    notation. Any one is sufficient.
+    """
+    return bool(
+        _SHAPE_PATH_RE.search(narrative)
+        or _SHAPE_FENCE_RE.search(narrative)
+        or _SHAPE_CLI_RE.search(narrative)
+        or _SHAPE_NOTATION_RE.search(narrative)
+    )
+
+
+def _score_prediagnosed_shape(narrative: str | None) -> float:
+    """Score the pre-diagnosed-change SHAPE of a request narrative in ``[0, 1]``.
+
+    The shape is a stated root cause co-occurring with an exact-change / file
+    anchor. A request that instead demands discovery — a structural review,
+    consolidation, or investigation of a whole surface — is vetoed to ``0.0``
+    however well its root cause is stated, because it is not a pre-diagnosed
+    surgical change. Returns:
+
+    - ``0.0`` — no narrative, a discovery-demand veto hit, no concreteness
+      anchor, or no diagnosis signal at all;
+    - ``0.45`` — a generic root-cause statement plus an anchor (clears the
+      minimum-confidence floor, below the auto-route threshold);
+    - ``0.6`` — an exact-change marker plus an anchor (at the auto-route floor);
+    - ``0.75`` — a stated root cause AND an exact-change marker plus an anchor
+      (a strong pre-diagnosed shape, clears the auto-route floor).
+    """
+    if not narrative:
+        return 0.0
+    if _SHAPE_DISCOVERY_VETO_RE.search(narrative):
+        return 0.0
+    if not _has_concrete_anchor(narrative):
+        return 0.0
+    root_cause = bool(_SHAPE_ROOT_CAUSE_RE.search(narrative))
+    prediagnosed = bool(_SHAPE_PREDIAGNOSED_RE.search(narrative))
+    if not (root_cause or prediagnosed):
+        return 0.0
+    if root_cause and prediagnosed:
+        return _SHAPE_STRONG
+    if prediagnosed:
+        return _SHAPE_AUTO_ROUTE
+    return _SHAPE_FLOOR
+
+
+def _is_surgical_fix_recipe(recipe: dict[str, Any]) -> bool:
+    """Return True when the recipe's registry identity is ``recipe-surgical-fix``.
+
+    Reuses ``_recipe_skill_dir_candidates`` (which normalizes the ``skill`` /
+    ``name`` / ``key`` identity across registry sources into ``recipe-*``
+    directory-name candidates) so the shape signal is keyed to the surgical-fix
+    recipe regardless of which identity field the registry populated.
+    """
+    return 'recipe-surgical-fix' in _recipe_skill_dir_candidates(recipe)
+
 
 def tokenize(text: str | None) -> set[str]:
     """Return the lower-cased, stop-word-filtered token set of ``text``.
@@ -248,6 +364,7 @@ def score_recipe(
     narrative_tokens: set[str],
     plan_domain: str | None,
     plan_scope: str | None,
+    narrative_text: str | None = None,
 ) -> tuple[float, dict[str, Any]]:
     """Return ``(confidence, breakdown)`` for one recipe.
 
@@ -261,8 +378,19 @@ def score_recipe(
         ``module`` recipe; ``broad`` plan ↔ ``codebase_wide`` recipe);
         0.0 otherwise.
 
+    For the ``recipe-surgical-fix`` recipe ONLY, the raw ``narrative_text`` (when
+    supplied) is additionally scored for the pre-diagnosed-change SHAPE
+    (``_score_prediagnosed_shape``) and blended as ``max(keyword-blend,
+    shape-score)`` — so a textbook pre-diagnosed surgical request whose narrative
+    describes the *bug* rather than repeating the recipe's own vocabulary still
+    clears the confidence floor (and, for a strong shape match, the auto-route
+    threshold) independent of keyword density. The shape signal is
+    surgical-fix-specific and NEVER alters scoring for any other recipe; when
+    ``narrative_text`` is omitted the behavior is byte-identical to the pure blend.
+
     The breakdown dict records the matched tokens so the caller can
-    surface them in findings / logs.
+    surface them in findings / logs; for the surgical-fix recipe it additionally
+    carries the ``shape_score``.
     """
     description = str(recipe.get('description', '')) + ' ' + str(recipe.get('name', ''))
     recipe_tokens = tokenize(description)
@@ -294,4 +422,15 @@ def score_recipe(
         'scope_score': scope_score,
         'matched_keywords': sorted(matched),
     }
+
+    # Surgical-fix-specific SHAPE arm: blend the pre-diagnosed-change shape score
+    # as max(keyword-blend, shape-score). Applied ONLY for the surgical-fix
+    # recipe, so scoring for every other recipe is byte-identical to the pure
+    # blend above.
+    if narrative_text is not None and _is_surgical_fix_recipe(recipe):
+        shape_score = _score_prediagnosed_shape(narrative_text)
+        breakdown['shape_score'] = round(shape_score, 3)
+        if shape_score > confidence:
+            confidence = round(shape_score, 3)
+
     return confidence, breakdown

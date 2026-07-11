@@ -14,8 +14,13 @@ read. The bounded LLM fallback for ambiguous matches is the orchestrator's
 responsibility (phase-1-init), mirroring how ``change-type-heuristic`` and
 ``planning-lane route`` keep the LLM out of the script body. Because the
 request is free-form (no plan domain/scope available), keyword overlap is the
-sole scoring signal — ``plan_domain`` and ``plan_scope`` are passed as
-``None``.
+primary scoring signal — ``plan_domain`` and ``plan_scope`` are passed as
+``None``. The one exception is the ``recipe-surgical-fix`` recipe: the raw
+``request_text`` is also passed to ``score_recipe`` so its pre-diagnosed-change
+SHAPE arm can lift a textbook surgical request above the keyword-only ceiling
+(``0.6``) when the narrative describes the bug rather than repeating the
+recipe's own vocabulary. The shape arm is surgical-fix-specific and leaves every
+other recipe's keyword-only score unchanged.
 """
 
 from __future__ import annotations
@@ -57,8 +62,12 @@ def cmd_recipe_match(args) -> dict[str, Any]:
     scored: list[tuple[float, dict[str, Any], dict[str, Any]]] = []
     for recipe in recipes:
         # Free-form request text — no plan domain/scope available, so keyword
-        # overlap is the sole signal (pass None for both).
-        confidence, breakdown = score_recipe(recipe, narrative_tokens, None, None)
+        # overlap is the primary signal (pass None for both). The raw
+        # request_text is forwarded so the surgical-fix recipe's pre-diagnosed
+        # SHAPE arm can fire; it is inert for every other recipe.
+        confidence, breakdown = score_recipe(
+            recipe, narrative_tokens, None, None, narrative_text=request_text
+        )
         if confidence < MIN_CONFIDENCE:
             continue
         scored.append((confidence, recipe, breakdown))
