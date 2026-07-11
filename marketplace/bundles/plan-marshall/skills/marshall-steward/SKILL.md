@@ -343,14 +343,14 @@ missing_keys	working_prefixes
 
 When the steward runs in **menu mode** (both the executor and `marshal.json`
 already exist — an already-initialized project re-run/upgrade), it performs a
-four-step remediation pass at **menu-mode entry, before the Main Menu** — a
+five-step remediation pass at **menu-mode entry, before the Main Menu** — a
 sibling entry-time surface to "Branch-Naming Surfacing" and the missing-default
 finalize-step detection above. The pass repairs config drift that accumulated in
 projects initialized before the relevant fixes landed. The pass is not gated by
 any version check; it runs unconditionally on every menu-mode entry and is
 idempotent (an already-clean project is left byte-stable).
 
-Steps (a), (b), and (d) are deterministic silent script calls — they run
+Steps (a), (b), (d), and (e) are deterministic silent script calls — they run
 unconditionally, surface nothing to the user, and leave an already-normalized
 project unchanged. Step (c) is an LLM-driven Y/N `AskUserQuestion` gate that
 consumes a deterministic diff, mirroring the existing entry-time
@@ -419,7 +419,29 @@ shape. The verb is read-only — it never mutates `marshal.json`. It returns
 
   - **No** → leave the persisted `build.map` untouched.
 
-**(d) Refresh provisioning stamps via `sync-defaults`** (silent, unconditional).
+**(d) Refresh the generated executor via `generate_executor preflight`** (silent,
+unconditional). Run the executor-freshness preflight FIRST, before the
+`sync-defaults` reconcile below. When the executor's embedded `MARSHALL_VERSION`
+is older than the installed manifest's `executor_changed_at_version`, this
+regenerates the executor in place; otherwise it is a no-op reporting
+`executor_action: fresh`. Sequencing it ahead of sync-defaults is load-bearing:
+a version-stale executor resolves `manage-config sync-defaults` to a stale
+`_cmd_sync_defaults.py`, making the reconcile a silent no-op that never sees the
+current config seed. Regenerating the executor first guarantees the subsequent
+sync-defaults call — a fresh subprocess through `.plan/execute-script.py` —
+resolves through the current-version script:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor preflight
+```
+
+Regeneration is safe because the executor is per-tree derived state (ADR-002),
+never a user decision. When preflight reports `executor_action: regenerated`, the
+"Session Restart Required After Executor / Agent Changes" guardrail below applies
+— surface the session-restart warning because the emitted agent set may have
+changed.
+
+**(e) Refresh provisioning stamps via `sync-defaults`** (silent, unconditional).
 Run the config deep-merge reconcile. It back-fills any missing default keys AND
 re-stamps the `system.provisioned_version` / `system.config_seed_fingerprint`
 provisioning fields, so a config-seed change made after the project was
@@ -437,7 +459,22 @@ contract. The call is idempotent — an already-current config is left byte-stab
 `system.provisioned_version` is what `determine_mode check-staleness` compares
 against the installed `dist-manifest.json`'s `config_changed_at_version`.
 
-After the four steps settle, proceed to the Main Menu.
+**Detect/warn after (e)** — because step (d) already guaranteed a current-version
+executor, a `sync-defaults` that reports `added_count: 0` while the config is
+still stale is now anomalous rather than expected. Immediately after step (e),
+compare its `added_count` against a fresh `determine_mode check-staleness`
+`marshal_status`:
+
+- **`added_count: 0` AND `marshal_status: stale`** → surface a warning telling the
+  user the reconcile could not see the current config seed even after the
+  executor-freshness preflight, and advise a manual executor regeneration
+  (Maintenance → Regenerate Executor) followed by a fresh `/marshall-steward`
+  menu-mode entry. Do NOT report a clean pass in this case.
+- **`added_count > 0`, OR `marshal_status: fresh`** → the normal path; continue
+  silently to the Main Menu, preserving the idempotent silent-on-clean behavior
+  of steps (a)–(e).
+
+After the five steps settle, proceed to the Main Menu.
 
 ## Executor & Config Staleness Signaling
 
@@ -480,12 +517,18 @@ marshal_version	<version>
 ```
 
 When `marshal_status` is `stale`, advise the user to run a steward config
-reconcile — the **Re-Run Remediation Pass** step (d) above refreshes the
-provisioning stamps via `manage-config sync-defaults`, so re-entering
-`/marshall-steward` in menu mode clears the advisory. When `executor_action` is
-`regenerated`, surface the session-restart guardrail (see "Session Restart
-Required After Executor / Agent Changes" below) because the emitted agent set may
-have changed.
+reconcile — the **Re-Run Remediation Pass** step (e) above refreshes the
+provisioning stamps via `manage-config sync-defaults`, preceded by the step-(d)
+executor-freshness `generate_executor preflight` that guarantees sync-defaults
+resolves through the current-version script and sees the current config seed.
+Re-entering `/marshall-steward` in menu mode therefore runs the reconcile behind
+that executor-freshness preflight and clears the advisory; and if the advisory
+would otherwise persist after a clean-looking sync-defaults (`added_count: 0`
+with `marshal_status` still `stale`), the step-(e) detect/warn conditional
+surfaces a warning instead of silently reporting a clean pass. When
+`executor_action` is `regenerated`, surface the session-restart guardrail (see
+"Session Restart Required After Executor / Agent Changes" below) because the
+emitted agent set may have changed.
 
 ## Session Restart Required After Executor / Agent Changes
 
