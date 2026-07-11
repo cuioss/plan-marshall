@@ -350,11 +350,14 @@ projects initialized before the relevant fixes landed. The pass is not gated by
 any version check; it runs unconditionally on every menu-mode entry and is
 idempotent (an already-clean project is left byte-stable).
 
-Steps (a), (b), (d), and (e) are deterministic silent script calls — they run
-unconditionally, surface nothing to the user, and leave an already-normalized
-project unchanged. Step (c) is an LLM-driven Y/N `AskUserQuestion` gate that
-consumes a deterministic diff, mirroring the existing entry-time
-`check-working-prefixes` / missing-default surfacing.
+Steps (a), (b), (d), and (e) are deterministic script calls that are silent by
+default — they run unconditionally and leave an already-normalized project
+unchanged. They surface nothing to the user EXCEPT for the documented warning
+conditions of steps (d) and (e): step (d)'s session-restart warning when it
+regenerates the executor, and step (e)'s detect/warn advisory when the reconcile
+could not see the current config seed. Step (c) is an LLM-driven Y/N
+`AskUserQuestion` gate that consumes a deterministic diff, mirroring the existing
+entry-time `check-working-prefixes` / missing-default surfacing.
 
 **(a) Normalize `marshal.json` top-level key order** (silent, unconditional).
 Re-write `marshal.json` with the canonical `save_config` key order. Pre-fix
@@ -463,7 +466,15 @@ against the installed `dist-manifest.json`'s `config_changed_at_version`.
 executor, a `sync-defaults` that reports `added_count: 0` while the config is
 still stale is now anomalous rather than expected. Immediately after step (e),
 compare its `added_count` against a fresh `determine_mode check-staleness`
-`marshal_status`:
+`marshal_status`.
+
+First gate on call success: the comparison below is evaluated ONLY when BOTH the
+`sync-defaults` call AND the fresh `check-staleness` call return
+`status: success`. A non-success status from either call must surface the failure
+to the user and skip the clean-pass path entirely — never infer success from
+`marshal_status: fresh` alone, because an error path does not guarantee a
+well-formed `added_count` field. Only once both calls have returned
+`status: success` do the two cases below apply:
 
 - **`added_count: 0` AND `marshal_status: stale`** → surface a warning telling the
   user the reconcile could not see the current config seed even after the
@@ -520,10 +531,14 @@ When `marshal_status` is `stale`, advise the user to run a steward config
 reconcile — the **Re-Run Remediation Pass** steps (d)-(e) above refresh the
 executor and provisioning stamps (see those steps and their detect/warn
 conditional for the sequencing rationale and warning mechanics), so
-re-entering `/marshall-steward` in menu mode clears the advisory. When
-`executor_action` is `regenerated`, surface the session-restart guardrail (see
-"Session Restart Required After Executor / Agent Changes" below) because the
-emitted agent set may have changed.
+re-entering `/marshall-steward` in menu mode normally clears the advisory. The
+exception is the detect/warn path (`added_count: 0` AND `marshal_status: stale`),
+where the reconcile could not see the current config seed even after the
+executor-freshness preflight — there, a manual executor regeneration
+(Maintenance → Regenerate Executor) is required before a fresh menu-mode entry
+clears it. When `executor_action` is `regenerated`, surface the session-restart
+guardrail (see "Session Restart Required After Executor / Agent Changes" below)
+because the emitted agent set may have changed.
 
 ## Session Restart Required After Executor / Agent Changes
 
