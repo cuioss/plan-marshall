@@ -44,6 +44,7 @@ from _cmd_mark_step import VALID_LOOP_BACK_TARGETS, cmd_mark_step_done
 from _cmd_planning_lane import (
     cmd_planning_lane_escalate,
     cmd_planning_lane_route,
+    cmd_scope_estimate_heuristic,
 )
 from _cmd_routing import cmd_get_routing_context, cmd_route, cmd_self_test
 from _cmd_sibling_collision import cmd_sibling_collision
@@ -381,6 +382,31 @@ def main() -> int:
         help='Persist the resolved change_type to status.metadata.change_type when not ambiguous.',
     )
     change_type_parser.set_defaults(func=cmd_change_type_heuristic)
+
+    # scope-estimate-heuristic
+    scope_estimate_parser = subparsers.add_parser(
+        'scope-estimate-heuristic',
+        help='Deterministic pre-route scope_estimate classifier for phase-1-init (no LLM, no architecture calls)',
+        description=(
+            "Classify a coarse scope_estimate (surgical | single_module) from the "
+            "plan's request narrative by counting distinct file-path references, "
+            "with ZERO architecture queries. Run BEFORE the planning-lane route at "
+            "phase-1-init so the router reads a real scope_estimate instead of None. "
+            "Use --persist to write the result to references.json's scope_estimate "
+            "field (the S2 signal source). The deep-lane refine Step 9 module-mapping "
+            "derivation overwrites the coarse guess when the deep lane runs, so no "
+            "accuracy is lost."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(scope_estimate_parser)
+    scope_estimate_parser.add_argument(
+        '--persist',
+        action='store_true',
+        help='Persist the resolved scope_estimate to references.json.scope_estimate.',
+    )
+    scope_estimate_parser.set_defaults(func=cmd_scope_estimate_heuristic)
 
     # aggregate-confidence — weighted-math aggregator for phase-2-refine Step 10.
     aggregate_confidence_parser = subparsers.add_parser(

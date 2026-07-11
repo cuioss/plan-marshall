@@ -766,7 +766,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 8: Resolve Session, Lane, Sibling & Posture
 
-`status.json` was already created at Step 3a, so this step performs no create. It runs the remaining status-dependent resolutions in order: the session_id early-warning check (8a), the planning-lane routing (8b), the sibling-dedup collision gate (8c), and the execution-profile posture dialogue (8d).
+`status.json` was already created at Step 3a, so this step performs no create. It runs the remaining status-dependent resolutions in order: the session_id early-warning check (8a), the pre-route change_type/scope_estimate classification (8a.5), the planning-lane routing (8b), the sibling-dedup collision gate (8c), and the execution-profile posture dialogue (8d).
 
 ### Step 8a: session_id Early-Warning Check
 
@@ -786,11 +786,33 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-1-init) session_id not captured at plan-init — phase-6-finalize will attempt a late session capture before its hard-block abort"
 ```
 
-If `value` is present and non-empty, no log entry is required — continue to Step 8b. This check only surfaces the gap; it never aborts the phase and never renumbers existing steps.
+If `value` is present and non-empty, no log entry is required — continue to Step 8a.5. This check only surfaces the gap; it never aborts the phase and never renumbers existing steps.
+
+### Step 8a.5: Pre-Route Classification
+
+Classify `change_type` and `scope_estimate` from the request narrative BEFORE the Step 8b planning-lane route, so the router reads real signals instead of `None`. Both classifiers are deterministic, heuristic-first, and run with **zero codebase discovery** (no `architecture` calls) — the same cheap-read contract the router itself honours.
+
+Run the change-type classifier first:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status change-type-heuristic \
+  --plan-id {plan_id} --persist
+```
+
+It writes `status.metadata.change_type` when the classification resolves (it self-skips the persist in the ambiguous branch, leaving the LLM `detect-change-type` workflow as the single writer there).
+
+Then run the scope-estimate classifier:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status scope-estimate-heuristic \
+  --plan-id {plan_id} --persist
+```
+
+It counts distinct file-path references in the request and writes a coarse `references.json.scope_estimate` (`surgical` / `single_module`). This is a pre-route guess, not the authoritative scope: on the deep lane, the refine Step 9 module-mapping derivation overwrites it with the accurate band (`multi_module` / `broad`), so no accuracy is lost. Neither call aborts the phase; a classifier that cannot resolve leaves its field unset and the router falls back to its deep-biasing default per the DQ1 signal set.
 
 ### Step 8b: Route Planning Lane
 
-Invoke the deterministic planning-lane router (D4) to resolve `planning_lane ∈ {light, deep}` and persist it into `status.metadata.planning_lane`. The router runs with **zero codebase discovery** — every signal is a cheap field read (`status.metadata`, `references.json`, a `request.md` regex) plus the `plan.phase-1-init.deep_lane` short-circuit. It reads the signal proxies available at init (`change_type` / `scope_estimate` may still be unset this early — the router treats an unknown signal as its deep-biasing default per the DQ1 signal set, biasing the first-pass routing conservatively toward deep; the light lane is confirmed once the orchestrator re-routes with the full signal set):
+Invoke the deterministic planning-lane router (D4) to resolve `planning_lane ∈ {light, deep}` and persist it into `status.metadata.planning_lane`. The router runs with **zero codebase discovery** — every signal is a cheap field read (`status.metadata`, `references.json`, a `request.md` regex) plus the `plan.phase-1-init.deep_lane` short-circuit. It reads the signals classified at Step 8a.5 (`change_type` / `scope_estimate` are now pre-classified pre-route, so the router routes on real signals; when a classifier left its field unset — an ambiguous change_type, or a request the scope heuristic could not narrow — the router treats that unknown signal as its deep-biasing default per the DQ1 signal set, and the deep lane's later refine re-route confirms the verdict with the full signal set):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status planning-lane route \
