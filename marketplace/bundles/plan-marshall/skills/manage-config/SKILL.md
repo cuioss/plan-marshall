@@ -461,7 +461,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `get-skills-by-profile` | `--domain` (skills organized by profile) |
 | `ext-defaults` | get, set, set-default, list, remove |
 | `system` | retention get, retention set |
-| `project` | `get/set` (`default_base_branch`, `working_prefixes`) |
+| `project` | `get/set` (`default_base_branch`, `working_prefixes`, `pr_strategy`, `pr_compact_max_changed_files`), `pr-decision --changed-files N` (resolve the two PR-batching knobs into a `ride`\|`split` verdict) |
 | `plan` | `{phase} get/set` (incl. run-at-all gates + flat finalize automation knobs), `{phase} step get/set` (one-stop keyed-map step-param read/write), set-steps, add-step, remove-step, set-max-iterations |
 | `effort` | `read` (role/phase/`--default` resolver), `resolve-target` (`execution-context-{level}` variant name), `apply-preset --preset` (whole-tree writer), `set --scope {phase}.{role}\|plan --level` (surgical per-scope writer) |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
@@ -874,6 +874,44 @@ Scalar fields (e.g. `default_base_branch`) take a plain value; the list-valued
 field `working_prefixes` takes a JSON array of strings that round-trips through
 `get`. A non-array value (or an array containing a non-string item) is rejected
 with `error_type: invalid_type`.
+
+The two PR-batching knobs are scalar fields: `pr_strategy` (enum `compact`\|`distinct`,
+default `compact`) is rejected with `error_type: invalid_value` when the value is
+outside the enum; `pr_compact_max_changed_files` (int `>= 0`, default `150`) is
+rejected with `error_type: invalid_value` when the value is a bool, a non-int, or
+negative.
+
+### project pr-decision
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config project pr-decision \
+  --changed-files N
+```
+
+Resolves the two PR-batching knobs — `project.pr_strategy` and
+`project.pr_compact_max_changed_files` (falling back to their `DEFAULT_PROJECT`
+defaults when absent, exactly like `get`) — into a `ride`\|`split` verdict for a
+change with `N` changed files. This is the documented single consult surface every
+PR-opening guidance references (D2 create-pr, D3 ad-hoc full-PR-flow, D4
+marshall-steward landing-cycle); consult it rather than re-deriving the
+strategy/ceiling comparison in prose. Semantics: `distinct` ⇒ always `split`;
+`compact` ⇒ `ride` when `changed_files <= max` else `split`. `--changed-files` is a
+required int `>= 0`; a negative or non-int value returns `status: error`.
+
+Output TOON shape:
+
+```toon
+status: success
+decision: ride | split
+strategy: compact | distinct
+changed_files: N
+max: 150
+threshold: 151
+```
+
+`max` is the resolved compact ceiling (`pr_compact_max_changed_files`); `threshold`
+is the first changed-file count that forces a split under the compact strategy
+(`max + 1`).
 
 ### plan {phase} get
 

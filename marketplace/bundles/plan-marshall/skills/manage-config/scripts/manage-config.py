@@ -258,6 +258,19 @@ def main() -> int:
     add_field_arg(proj_set)
     proj_set.add_argument('--value', required=True, help='Field value')
 
+    proj_decision = proj_sub.add_parser(
+        'pr-decision',
+        help='Resolve pr_strategy + pr_compact_max_changed_files into a ride|split verdict',
+        allow_abbrev=False,
+    )
+    proj_decision.add_argument(
+        '--changed-files',
+        dest='changed_files',
+        required=True,
+        type=int,
+        help="The change's changed-file count (int >= 0)",
+    )
+
     # --- plan (phase-based sub-nouns) ---
     p_plan = subparsers.add_parser('plan', help='Manage plan settings', allow_abbrev=False)
     plan_sub = p_plan.add_subparsers(dest='sub_noun', required=True, help='Phase sub-noun')

@@ -2585,3 +2585,266 @@ def test_no_per_producer_triage_effort_subkeys_remain():
     # The unified triage role is present.
     assert 'verification-feedback' in p5_effort
     assert 'verification-feedback' in p6_effort
+
+
+# =============================================================================
+# project.pr_strategy / project.pr_compact_max_changed_files PR-batching knobs
+# =============================================================================
+#
+# Two project-level policy knobs governing whether follow-up / config-migration /
+# ad-hoc changes ride an already-pending related PR (compact, within the ceiling)
+# or open a separate PR (distinct, or over-ceiling). The `pr-decision` CLI verb is
+# the documented single consult surface — the ceiling-boundary test below drives
+# it through the cmd_project handler, not only the internal helper.
+
+
+def test_default_project_pr_strategy_is_compact():
+    """DEFAULT_PROJECT must declare pr_strategy == 'compact'."""
+    project_defaults = _config_defaults_mod.DEFAULT_PROJECT
+
+    assert 'pr_strategy' in project_defaults
+    assert project_defaults['pr_strategy'] == 'compact'
+
+
+def test_default_project_pr_compact_max_changed_files_is_150():
+    """DEFAULT_PROJECT must declare pr_compact_max_changed_files == 150."""
+    project_defaults = _config_defaults_mod.DEFAULT_PROJECT
+
+    assert 'pr_compact_max_changed_files' in project_defaults
+    assert project_defaults['pr_compact_max_changed_files'] == 150
+
+
+def test_get_default_config_includes_pr_strategy_and_ceiling():
+    """get_default_config()['project'] must carry the two PR-batching knobs at their defaults."""
+    config = _config_defaults_mod.get_default_config()
+
+    assert config['project'].get('pr_strategy') == 'compact'
+    assert config['project'].get('pr_compact_max_changed_files') == 150
+
+
+def test_valid_pr_strategy_enumerates_compact_and_distinct():
+    """VALID_PR_STRATEGY must enumerate exactly ('compact', 'distinct')."""
+    assert _config_defaults_mod.VALID_PR_STRATEGY == ('compact', 'distinct')
+    # the seeded default must be a member of the enum
+    assert (
+        _config_defaults_mod.DEFAULT_PROJECT['pr_strategy']
+        in _config_defaults_mod.VALID_PR_STRATEGY
+    )
+
+
+def test_validate_pr_strategy_accepts_allowed_values():
+    """validate_pr_strategy must accept every value in VALID_PR_STRATEGY."""
+    for value in _config_defaults_mod.VALID_PR_STRATEGY:
+        _config_defaults_mod.validate_pr_strategy(value)
+
+
+def test_validate_pr_strategy_rejects_unknown_value():
+    """validate_pr_strategy must raise ValueError for a value outside the enum."""
+    import pytest
+
+    with pytest.raises(ValueError, match='Invalid pr_strategy'):
+        _config_defaults_mod.validate_pr_strategy('sloppy')
+
+
+def test_validate_pr_compact_max_changed_files_accepts_valid_ints():
+    """validate_pr_compact_max_changed_files must accept int >= 0 (151 and 0 boundaries)."""
+    _config_defaults_mod.validate_pr_compact_max_changed_files(151)
+    _config_defaults_mod.validate_pr_compact_max_changed_files(0)
+    # the seeded default must validate
+    _config_defaults_mod.validate_pr_compact_max_changed_files(
+        _config_defaults_mod.DEFAULT_PROJECT['pr_compact_max_changed_files']
+    )
+
+
+def test_validate_pr_compact_max_changed_files_rejects_negative():
+    """validate_pr_compact_max_changed_files must reject a negative int."""
+    import pytest
+
+    with pytest.raises(ValueError, match='pr_compact_max_changed_files'):
+        _config_defaults_mod.validate_pr_compact_max_changed_files(-1)
+
+
+def test_validate_pr_compact_max_changed_files_rejects_bool():
+    """validate_pr_compact_max_changed_files must reject a bool (bool is an int subclass)."""
+    import pytest
+
+    with pytest.raises(ValueError, match='pr_compact_max_changed_files'):
+        _config_defaults_mod.validate_pr_compact_max_changed_files(True)
+
+
+def test_pr_compact_rides_existing_pr_helper_semantics():
+    """pr_compact_rides_existing_pr: compact rides within ceiling; distinct never rides."""
+    # compact strategy: rides when changed_file_count <= max
+    assert _config_defaults_mod.pr_compact_rides_existing_pr('compact', 150, 150) is True
+    assert _config_defaults_mod.pr_compact_rides_existing_pr('compact', 149, 150) is True
+    assert _config_defaults_mod.pr_compact_rides_existing_pr('compact', 151, 150) is False
+    # distinct strategy: always splits regardless of count
+    assert _config_defaults_mod.pr_compact_rides_existing_pr('distinct', 1, 150) is False
+    assert _config_defaults_mod.pr_compact_rides_existing_pr('distinct', 0, 150) is False
+
+
+def test_project_set_then_get_roundtrip_pr_strategy(plan_context):
+    """`project set --field pr_strategy --value distinct` must round-trip via get."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    set_args = Namespace(verb='set', field='pr_strategy', value='distinct')
+    set_result = _cmd_system_plan_mod.cmd_project(set_args)
+    assert set_result['status'] == 'success'
+
+    get_args = Namespace(verb='get', field='pr_strategy')
+    get_result = _cmd_system_plan_mod.cmd_project(get_args)
+
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == 'distinct'
+
+
+def test_project_set_then_get_roundtrip_pr_compact_max_changed_files(plan_context):
+    """`project set --field pr_compact_max_changed_files --value 151` must round-trip via get."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    set_args = Namespace(verb='set', field='pr_compact_max_changed_files', value='151')
+    set_result = _cmd_system_plan_mod.cmd_project(set_args)
+    assert set_result['status'] == 'success'
+
+    get_args = Namespace(verb='get', field='pr_compact_max_changed_files')
+    get_result = _cmd_system_plan_mod.cmd_project(get_args)
+
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == 151
+
+
+def test_project_set_pr_strategy_rejects_invalid_value(plan_context):
+    """`project set --field pr_strategy --value sloppy` must return status: error."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    set_args = Namespace(verb='set', field='pr_strategy', value='sloppy')
+    result = _cmd_system_plan_mod.cmd_project(set_args)
+
+    assert result['status'] == 'error'
+    assert result.get('error_type') == 'invalid_value'
+
+
+def test_project_set_pr_compact_max_changed_files_rejects_negative(plan_context):
+    """`project set --field pr_compact_max_changed_files --value -1` must return status: error."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    set_args = Namespace(verb='set', field='pr_compact_max_changed_files', value='-1')
+    result = _cmd_system_plan_mod.cmd_project(set_args)
+
+    assert result['status'] == 'error'
+    assert result.get('error_type') == 'invalid_value'
+
+
+def test_project_get_pr_strategy_returns_default_when_absent(plan_context):
+    """A fresh marshal.json without pr_strategy returns the 'compact' default."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    config.get('project', {}).pop('pr_strategy', None)
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+    args = Namespace(verb='get', field='pr_strategy')
+    result = _cmd_system_plan_mod.cmd_project(args)
+
+    assert result['status'] == 'success'
+    assert result['value'] == 'compact'
+
+
+def test_project_pr_decision_ceiling_boundary_through_handler(plan_context):
+    """`project pr-decision` proves the 150 → ride / 151 → split boundary at the callable surface.
+
+    With the default compact/150 config, --changed-files 150 returns decision: ride
+    and --changed-files 151 returns decision: split. Assert on the verb's returned
+    `decision` field so the boundary is proven through cmd_project, not only the
+    internal helper.
+    """
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    ride_result = _cmd_system_plan_mod.cmd_project(
+        Namespace(verb='pr-decision', changed_files=150)
+    )
+    assert ride_result['status'] == 'success'
+    assert ride_result['decision'] == 'ride'
+    assert ride_result['strategy'] == 'compact'
+    assert ride_result['changed_files'] == 150
+    assert ride_result['max'] == 150
+    assert ride_result['threshold'] == 151
+
+    split_result = _cmd_system_plan_mod.cmd_project(
+        Namespace(verb='pr-decision', changed_files=151)
+    )
+    assert split_result['status'] == 'success'
+    assert split_result['decision'] == 'split'
+
+
+def test_project_pr_decision_distinct_always_splits(plan_context):
+    """With pr_strategy == distinct, `project pr-decision` splits for any changed-file count."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    set_result = _cmd_system_plan_mod.cmd_project(
+        Namespace(verb='set', field='pr_strategy', value='distinct')
+    )
+    assert set_result['status'] == 'success'
+
+    result = _cmd_system_plan_mod.cmd_project(
+        Namespace(verb='pr-decision', changed_files=1)
+    )
+    assert result['status'] == 'success'
+    assert result['decision'] == 'split'
+    assert result['strategy'] == 'distinct'
+
+
+def test_project_pr_decision_rejects_negative_changed_files(plan_context):
+    """`project pr-decision --changed-files -1` must return status: error."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    result = _cmd_system_plan_mod.cmd_project(
+        Namespace(verb='pr-decision', changed_files=-1)
+    )
+    assert result['status'] == 'error'
+    assert result.get('error_type') == 'invalid_value'
+
+
+def test_project_pr_decision_rejects_corrupt_pr_strategy(plan_context):
+    """`project pr-decision` must fail loud on a hand-corrupted pr_strategy.
+
+    The knobs are re-validated at the pr-decision READ boundary (mirroring the
+    `set` verb), so a marshal.json hand-edited to an out-of-enum pr_strategy
+    produces a clear `status: error` / `error_type: invalid_value` here rather
+    than a silent wrong verdict or an opaque crash inside
+    pr_compact_rides_existing_pr.
+    """
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    config.setdefault('project', {})['pr_strategy'] = 'sloppy'
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+    result = _cmd_system_plan_mod.cmd_project(
+        Namespace(verb='pr-decision', changed_files=10)
+    )
+
+    assert result['status'] == 'error'
+    assert result.get('error_type') == 'invalid_value'
+
+
+def test_project_pr_decision_rejects_corrupt_pr_compact_max_changed_files(plan_context):
+    """`project pr-decision` must fail loud on a hand-corrupted ceiling value.
+
+    A marshal.json hand-edited to a negative pr_compact_max_changed_files is
+    caught by the read-boundary validation before the ride/split rule runs,
+    returning a clear `status: error` / `error_type: invalid_value` rather than
+    an opaque TypeError deep inside the comparison.
+    """
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    config.setdefault('project', {})['pr_compact_max_changed_files'] = -5
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+    result = _cmd_system_plan_mod.cmd_project(
+        Namespace(verb='pr-decision', changed_files=10)
+    )
+
+    assert result['status'] == 'error'
+    assert result.get('error_type') == 'invalid_value'

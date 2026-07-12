@@ -20,7 +20,12 @@ from _config_core import (
     save_config,
     success_exit,
 )
-from _config_defaults import DEFAULT_PROJECT
+from _config_defaults import (
+    DEFAULT_PROJECT,
+    pr_compact_rides_existing_pr,
+    validate_pr_compact_max_changed_files,
+    validate_pr_strategy,
+)
 
 # Project fields whose value is a list serialized as JSON on the
 # `manage-config project set` command line. _coerce_value only handles scalar
@@ -131,10 +136,57 @@ def cmd_project(args) -> dict:
         else:
             value = _coerce_value(args.value)
 
+        # Validate the two PR-batching knobs at this system boundary so an
+        # invalid value returns a status: error rather than persisting garbage.
+        if field == 'pr_strategy':
+            try:
+                validate_pr_strategy(value)
+            except ValueError as e:
+                return error_exit(str(e), error_type='invalid_value')
+        elif field == 'pr_compact_max_changed_files':
+            try:
+                validate_pr_compact_max_changed_files(value)
+            except ValueError as e:
+                return error_exit(str(e), error_type='invalid_value')
+
         project_config[field] = value
         config['project'] = project_config
         save_config(config)
         return success_exit({'field': field, 'value': value})
+
+    elif args.verb == 'pr-decision':
+        # Resolve the two knobs (falling back to DEFAULT_PROJECT when absent,
+        # exactly like `get`) and return a ride|split verdict. `max` is the
+        # resolved compact ceiling; `threshold` is the first changed-file count
+        # that forces a split under the compact strategy (max + 1).
+        changed_files = args.changed_files
+        if changed_files < 0:
+            return error_exit(
+                f"--changed-files must be an int >= 0, got {changed_files}",
+                error_type='invalid_value',
+            )
+        strategy = project_config.get('pr_strategy', DEFAULT_PROJECT['pr_strategy'])
+        max_changed_files = project_config.get(
+            'pr_compact_max_changed_files',
+            DEFAULT_PROJECT['pr_compact_max_changed_files'],
+        )
+        # Re-validate the resolved knobs at this read boundary — mirroring the
+        # sibling `set` verb — so a hand-corrupted marshal.json fails loud with a
+        # clear message here rather than silently producing a wrong verdict or
+        # crashing with an opaque TypeError inside pr_compact_rides_existing_pr.
+        try:
+            validate_pr_strategy(strategy)
+            validate_pr_compact_max_changed_files(max_changed_files)
+        except ValueError as e:
+            return error_exit(str(e), error_type='invalid_value')
+        rides = pr_compact_rides_existing_pr(strategy, changed_files, max_changed_files)
+        return success_exit({
+            'decision': 'ride' if rides else 'split',
+            'strategy': strategy,
+            'changed_files': changed_files,
+            'max': max_changed_files,
+            'threshold': max_changed_files + 1,
+        })
 
     return error_exit('Unknown project verb')
 
