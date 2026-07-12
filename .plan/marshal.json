@@ -87,6 +87,7 @@
         },
         "default:push": {},
         "default:create-pr": {},
+        "project:finalize-step-era-stamp-fill": {},
         "default:ci-verify": {},
         "default:architecture-refresh": {},
         "plan-marshall:automatic-review": {
