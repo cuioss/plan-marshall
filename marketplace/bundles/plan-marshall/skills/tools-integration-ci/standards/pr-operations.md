@@ -242,10 +242,10 @@ On **GitHub**, the verb engages the merge queue via `gh pr merge --auto` (the PR
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge-queue \
-    (--pr-number 123 | --head feature/x) [--strategy merge|squash|rebase] [--delete-branch]
+    (--pr-number 123 | --head feature/x)
 ```
 
-Supply exactly one of `--pr-number` or `--head`.
+Supply exactly one of `--pr-number` or `--head`. `pr merge-queue` takes **no** `--strategy` or `--delete-branch` flag: the merge queue's own branch-protection configuration dictates the merge method, GitHub rejects `--delete-branch` when a merge queue is enabled, and the platform auto-deletes the head branch after the queue merge.
 
 ### Step 2: Process Result
 
@@ -253,9 +253,7 @@ Supply exactly one of `--pr-number` or `--head`.
 status: success
 operation: pr_merge_queue
 pr_number: 123
-strategy: squash
 enqueued: true
-delete_branch: true
 ```
 
 On GitLab a successful enqueue returns the same `enqueued: true` envelope (plus a `merge_train_car_id` when the API surfaces the train car id). When the project/tier is not merge-train-eligible the invocation returns `status: error, operation: pr_merge_queue` with the actionable ineligible message — surfaced explicitly (never a silent immediate-merge fallback) so cross-provider callers notice the mismatch.

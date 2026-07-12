@@ -30,9 +30,13 @@ Two primitives live here:
   `admission: blocked` — a structured re-poll signal, NOT an internal wait (the
   consumer's poll/backoff loop owns the wait). `O_EXCL` atomicity guarantees
   exactly one holder; plan-liveness reclamation (across main + worktree) frees a
-  crashed holder's lock AND prunes a crashed waiter's FIFO entry; a `blocked` +
-  `blocking_plan_id` admission payload (distinct from a hard error) drives the
-  Pre-Merge Gate's poll loop and last-resort orchestrator escalation.
+  crashed holder's lock AND prunes a crashed waiter's FIFO entry — but a
+  live-worktree guard refuses the automatic reclaim on a mid-recovery holder
+  (plan-dir-dead but its worktree directory still present), returning a
+  `stale_holder_live_worktree` blocked signal for operator confirmation instead of
+  force-releasing it; a `blocked` + `blocking_plan_id` admission payload (distinct
+  from a hard error) drives the Pre-Merge Gate's poll loop and last-resort
+  orchestrator escalation.
 - **The build-queue limiter** (`scripts/build_queue.py`, notation
   `plan-marshall:manage-locks:build_queue`) — a bounded-`k`-slot admitter with a
   FIFO waiting queue, persisted in the main-anchored `build-queue.json`. It caps
@@ -93,7 +97,20 @@ consumer. It exposes:
   corrupt lock is reclaimable); resolution failures propagate loudly. Checking
   both paths is load-bearing — an actively-executing holder's plan dir has been
   MOVED into the worktree (ADR-002), so a main-only check would wrongly declare it
-  dead and let a concurrent acquirer steal the lock.
+  dead and let a concurrent acquirer steal the lock. Its FIFO-prune contract
+  (dropping a crashed waiter's queue entry) is unchanged.
+- `holder_has_live_worktree(holder)` — a STRONGER presence/heartbeat liveness
+  signal that gates automatic stale-reclaim. It returns True when the holder's
+  git worktree directory `<main>/.plan/local/worktrees/{holder}` is still present
+  (the directory ITSELF, not the plan dir that lives inside it — the check
+  `holder_is_dead` consults). A holder judged dead-by-plan-dir-absence may still
+  be MID-RECOVERY — its worktree is on disk but the plan dir has been moved out
+  (an interrupted finalize move-back). The `merge_lock` acquire path evaluates
+  this guard BEFORE the auto-reclaim branch and REFUSES to reclaim a
+  plan-dir-dead-but-live-worktree holder (see the `stale_holder_live_worktree`
+  blocked payload below); the FIFO prune retains such a waiter rather than
+  dropping it. Anchored at main (cwd-independent) exactly like `holder_is_dead`;
+  an empty/malformed holder → False.
 - `rmw_json(path, mutate)` — the TOCTOU-safe main-anchored read-modify-write
   helper for JSON state files. It serializes the mutation (an `O_EXCL` guard /
   atomic temp-file replace) so two sessions cannot both observe the same
@@ -157,6 +174,16 @@ call-site compatibility but no longer drives an internal wait. Output carries an
   `waiting_count`. The consumer re-polls (preserving FIFO position) until
   `admission: admitted` or its wait budget is exhausted, then fires the last-resort
   `AskUserQuestion`.
+  - **`stale_holder_live_worktree: true`** — a distinct blocked sub-case (present
+    ONLY on this path; the ordinary non-front / foreign-live-holder blocked payload
+    omits the field). It is the refuse-auto-reclaim signal a
+    plan-dir-dead-but-live-worktree holder produces: acquire found the holder dead
+    by plan-dir absence but its worktree directory is still on disk
+    (`holder_has_live_worktree` True), so it REFUSES to force-release a possibly
+    mid-recovery holder and returns this discriminator instead. The existing
+    branch-cleanup budget-exhaustion escalation surfaces it to the operator for
+    explicit confirmation. No new force-release CLI verb exists — the acquire
+    surface is unchanged apart from this added discriminator.
 
 ### merge_lock — check
 

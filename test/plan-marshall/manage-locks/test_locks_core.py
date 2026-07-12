@@ -39,6 +39,7 @@ from conftest import load_script_module
 _mod = load_script_module('plan-marshall', 'manage-locks', '_locks_core.py', '_locks_core_under_test')
 
 holder_is_dead = _mod.holder_is_dead
+holder_has_live_worktree = _mod.holder_has_live_worktree
 rmw_json = _mod.rmw_json
 _read_json_or_empty = _mod._read_json_or_empty
 _acquire_guard = _mod._acquire_guard
@@ -93,6 +94,86 @@ def test_holder_is_dead_false_when_worktree_plan_dir_exists(plan_context):
 def test_holder_is_dead_true_when_neither_path_exists(plan_context):
     # No main plan dir and no worktree plan dir → the holder is dead.
     assert holder_is_dead('lc-no-such-holder') is True
+
+
+# =============================================================================
+# holder_has_live_worktree — worktree-directory presence heartbeat (D3)
+# =============================================================================
+#
+# A STRONGER presence signal than holder_is_dead: it looks for the WORKTREE
+# DIRECTORY itself (<main>/.plan/local/worktrees/{holder}), not the plan dir that
+# lives inside it. The merge_lock acquire path gates the automatic stale-reclaim
+# on this being False, so a plan-dir-dead-but-live-worktree holder (mid-recovery)
+# is not force-released.
+
+
+def test_holder_has_live_worktree_true_when_worktree_dir_exists(plan_context):
+    # The bare worktree directory is present → live-worktree heartbeat True.
+    base = plan_context.fixture_dir
+    (base / 'worktrees' / 'lc-live-wt-dir').mkdir(parents=True, exist_ok=True)
+
+    assert holder_has_live_worktree('lc-live-wt-dir') is True
+
+
+def test_holder_has_live_worktree_false_when_worktree_dir_absent(plan_context):
+    # No worktree directory on disk → False.
+    assert holder_has_live_worktree('lc-no-worktree-dir') is False
+
+
+def test_holder_has_live_worktree_empty_string_is_false(plan_context):
+    # An empty holder has no worktree → False (distinct from holder_is_dead('')
+    # which is True — the two predicates answer different questions).
+    assert holder_has_live_worktree('') is False
+
+
+def test_holder_has_live_worktree_whitespace_only_is_false(plan_context):
+    # Whitespace is stripped to empty → no worktree → False.
+    assert holder_has_live_worktree('   ') is False
+
+
+def test_mid_recovery_holder_is_dead_by_plan_dir_but_has_live_worktree(plan_context):
+    # The guard scenario: an interrupted finalize move-back leaves the worktree
+    # DIRECTORY on disk but the plan dir has been moved out of BOTH main and the
+    # worktree's .plan. holder_is_dead is True (plan-dir absent everywhere) while
+    # holder_has_live_worktree is True (the worktree directory is still present).
+    base = plan_context.fixture_dir
+    (base / 'worktrees' / 'lc-mid-recovery').mkdir(parents=True, exist_ok=True)
+
+    assert holder_is_dead('lc-mid-recovery') is True
+    assert holder_has_live_worktree('lc-mid-recovery') is True
+
+
+@pytest.mark.parametrize(
+    'malicious_holder',
+    [
+        '../evil',
+        '../../evil',
+        'a/../evil',
+        'sub/evil',
+        'sub\\evil',
+        '..',
+        'foo\x00bar',
+    ],
+)
+def test_holder_has_live_worktree_rejects_traversal_holder(plan_context, malicious_holder):
+    # holder is a plan-id joined DIRECTLY onto the worktrees root to build a
+    # filesystem path. A holder bearing a path separator, a `..` parent segment,
+    # or an embedded NUL must be rejected as having no live worktree BEFORE the
+    # path is constructed — otherwise a crafted holder could escape the worktrees
+    # root, resolve to an unrelated existing dir, and permanently block lock
+    # reclamation (a DoS).
+    assert holder_has_live_worktree(malicious_holder) is False
+
+
+def test_holder_has_live_worktree_traversal_does_not_escape_worktrees_root(plan_context):
+    # Concrete escape scenario: `../evil` would resolve `worktrees/../evil` to a
+    # sibling dir of the worktrees root. Stage that sibling so, absent the guard,
+    # the predicate would report the holder "alive". The guard must reject the
+    # traversal and return False rather than resolving the escaped path.
+    base = plan_context.fixture_dir
+    (base / 'evil').mkdir(parents=True, exist_ok=True)  # worktrees/../evil target
+
+    assert holder_has_live_worktree('../evil') is False
 
 
 # =============================================================================

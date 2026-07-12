@@ -112,13 +112,21 @@ def test_resolver_returns_fallback_on_malformed_json(fresh_marshal):
     assert timeout == 600
 
 
-def test_checks_wait_argparse_default_uses_resolver():
-    """``checks wait --pr-number 1`` defaults --timeout to DEFAULT_CI_TIMEOUT."""
+def test_checks_wait_argparse_default_is_none_sentinel():
+    """``checks wait --pr-number 1`` leaves --timeout as the None sentinel.
+
+    Since the adaptive ci:wait budget landed, the ``checks wait`` subparser
+    defaults --timeout to ``None`` so the runtime ``_run_checks_wait`` wrapper can
+    tell an omitted ceiling from an explicit one: an omitted ceiling resolves to
+    :data:`DEFAULT_CI_TIMEOUT` (non-adaptive) or the persisted ``ci:wait`` seed
+    (``--adaptive``). The default resolution therefore moved out of argparse and
+    into the wrapper — see ``test_run_checks_wait_*`` in ``test_ci_base.py``.
+    """
     parser, _, _, _, _ = ci_base.build_parser('test')
 
     args = parser.parse_args(['checks', 'wait', '--pr-number', '1'])
 
-    assert args.timeout == ci_base.DEFAULT_CI_TIMEOUT
+    assert args.timeout is None
 
 
 def test_pr_wait_for_comments_argparse_default_uses_resolver():

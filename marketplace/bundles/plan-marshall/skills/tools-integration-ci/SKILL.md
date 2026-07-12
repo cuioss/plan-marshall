@@ -267,10 +267,10 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr safe-me
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge-queue \
-  (--pr-number PR_NUMBER | --head HEAD) [--strategy merge|squash|rebase] [--delete-branch]
+  (--pr-number PR_NUMBER | --head HEAD)
 ```
 
-`pr merge-queue` enqueues the PR into the platform merge queue so the platform re-tests-and-merges against the latest base, serializing a truly-external commit the session-scoped merge mutex cannot. On GitHub it engages the merge queue via `gh pr merge --auto`; on GitLab it performs a real merge-train enqueue via `POST /projects/:id/merge_trains/merge_requests/:iid`. On GitLab the merge train is a Premium/Ultimate-tier feature enabled per-project — when the project/tier does not offer it the handler returns the actionable ineligible error rather than silently falling back to an immediate merge.
+`pr merge-queue` enqueues the PR into the platform merge queue so the platform re-tests-and-merges against the latest base, serializing a truly-external commit the session-scoped merge mutex cannot. It takes no `--strategy` or `--delete-branch` flag: the merge queue's own branch-protection configuration dictates the merge method, GitHub rejects `--delete-branch` when a merge queue is enabled, and the platform auto-deletes the head branch after the queue merge. On GitHub it engages the merge queue via `gh pr merge --auto`; on GitLab it performs a real merge-train enqueue via `POST /projects/:id/merge_trains/merge_requests/:iid`. On GitLab the merge train is a Premium/Ultimate-tier feature enabled per-project — when the project/tier does not offer it the handler returns the actionable ineligible error rather than silently falling back to an immediate merge.
 
 ### checks
 

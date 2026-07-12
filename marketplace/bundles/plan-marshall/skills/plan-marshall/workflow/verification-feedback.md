@@ -105,14 +105,14 @@ Walk the producer surfaces sequentially, emitting findings of each type to the s
 
    Read `pr_number` from the TOON output. If no PR exists, return `status: success`, `display_detail: "no PR available — nothing to triage"`.
 
-3. **Wait for CI** (when `wait=true`, default):
+3. **Wait for CI** (when `wait=true`, default). Pass `--adaptive` so this wait seeds its ceiling from — and records its observed duration back into — the persisted `ci:wait` budget (the same #849 ratchet `ci_complete_precondition` drives), instead of the fixed `DEFAULT_CI_TIMEOUT`:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
-     --project-dir {worktree} checks wait --pr-number {pr_number}
+     --project-dir {worktree} checks wait --pr-number {pr_number} --adaptive
    ```
 
-   Bash tool timeout: 1800000 ms (30 min). On timeout, `AskUserQuestion` (continue / skip / abort).
+   Bash tool timeout: 1800000 ms (30 min) — the outer ceiling; `--adaptive` seeds the inner `ci:wait` ceiling from the persisted budget so the wait converges on observed CI durations rather than the fixed baseline. On timeout, `AskUserQuestion` (continue / skip / abort).
 
 4. **Fetch build status**:
 

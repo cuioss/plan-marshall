@@ -595,28 +595,29 @@ def _apply_pre_push_quality_gate_inactive(phase_6_candidates: list[str], plan_id
 
 
 def _apply_pre_submission_self_review_inactive(phase_6_candidates: list[str], plan_id: str) -> tuple[list[str], bool]:
-    """Pre-filter: drop ``pre-submission-self-review`` when activation conditions fail.
+    """Pre-filter: keep ``pre-submission-self-review`` through compose; self-gate at run time.
 
-    Activation requires the live plan footprint to be non-empty. Unlike
-    ``pre-push-quality-gate`` (which gates on the ``build.map``
-    globs), this step has no glob gate — the four cognitive checks it targets
-    (symmetric pairs, regex over-fit, wording, duplication) apply to any code or
-    doc change. During early compose (phase-4-plan, before the worktree is
-    materialised) the footprint is empty, so the step is omitted; it is
-    re-evaluated against the live footprint on any later re-compose.
+    Unlike ``pre-push-quality-gate`` (which gates on the ``build.map`` globs),
+    this step has no glob gate — the four cognitive checks it targets (symmetric
+    pairs, regex over-fit, wording, duplication) apply to any code or doc change.
 
-    The pre-filter is a no-op when ``pre-submission-self-review`` is already
-    absent (e.g., already filtered by ``_apply_commit_push_disabled``).
-    Returns the filtered list plus a flag indicating whether the pre-filter
-    fired.
+    Safety against compose-time emptiness (mirroring
+    ``_apply_canonical_verify_inactive``): during early compose (phase-4-plan,
+    before the worktree is materialised) the live footprint is empty. An empty
+    compose-time footprint is NOT evidence the step is inactive — it only means
+    the worktree is not yet materialised — so the step SURVIVES phase-4 compose
+    and self-gates at run time against the live footprint via the surfacing
+    implementor's own empty-candidate success path. A non-empty footprint keeps
+    the step too (there is no glob gate to fail), so this pre-filter never drops
+    the step on footprint grounds and always reports ``omitted=False``.
+
+    The step is still dropped upstream by ``_apply_commit_push_disabled`` when
+    ``commit_and_push`` is false (this pre-filter is then a no-op because the
+    step is already absent — that path is unaffected).
+
+    Returns the candidate list unchanged plus ``False`` (the pre-filter never
+    fires).
     """
-    if 'pre-submission-self-review' not in phase_6_candidates:
-        return phase_6_candidates, False
-
-    footprint = _resolve_footprint(plan_id)
-    if not footprint:
-        return [s for s in phase_6_candidates if s != 'pre-submission-self-review'], True
-
     return phase_6_candidates, False
 
 

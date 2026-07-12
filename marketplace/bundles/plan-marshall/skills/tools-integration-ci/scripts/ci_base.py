@@ -312,6 +312,12 @@ DEFAULT_CI_TIMEOUT = _resolve_ci_timeout()  # seconds, see resolver above
 DEFAULT_CI_INTERVAL = 30  # seconds
 CI_LOG_TRUNCATE_LINES = 200
 
+#: run-configuration.json command key under which the adaptive CI-wait budget is
+#: persisted. The ``checks wait --adaptive`` path seeds its ceiling from — and
+#: records observed durations back into — this key via ``manage-run-config``'s
+#: ``timeout get/set``, the SAME ratchet ``ci_complete_precondition`` drives.
+CI_WAIT_TIMEOUT_KEY = 'ci:wait'
+
 
 # ---------------------------------------------------------------------------
 # CLI execution
@@ -817,9 +823,11 @@ def build_parser(
     # pr merge-queue — enqueue the PR into the platform merge queue (GitHub merge
     # queue / GitLab merge train) so the platform re-tests-and-merges against the
     # latest base, serializing a truly-external commit the session-scoped mutex
-    # cannot. Accepts either --pr-number or --head (validated by handler),
-    # optional --strategy — mirrors the shared safe-merge declaration. Registered
-    # once here and consumed by both providers.
+    # cannot. Accepts either --pr-number or --head (validated by handler). No
+    # --strategy or --delete-branch: the merge queue's own branch-protection
+    # configuration dictates the merge method, GitHub rejects --delete-branch when
+    # a merge queue is enabled, and the platform auto-deletes the head branch
+    # after the queue merge. Registered once here and consumed by both providers.
     pr_merge_queue = pr_sub.add_parser(
         'merge-queue',
         help='Enqueue the PR into the platform merge queue (GitHub merge queue / GitLab merge train)',
@@ -827,18 +835,6 @@ def build_parser(
     )
     pr_merge_queue.add_argument('--pr-number', type=int, help='PR number')
     add_head_arg(pr_merge_queue)
-    pr_merge_queue.add_argument(
-        '--strategy',
-        default=None,
-        choices=['merge', 'squash', 'rebase'],
-        help='Merge strategy applied when the queue merges. Unset by default: '
-        'gh pr merge --auto lets the merge queue\'s own branch-protection '
-        'configuration dictate the method — pass --strategy only to force one. '
-        'Forcing a strategy can fail on merge-queue-required branches.',
-    )
-    pr_merge_queue.add_argument(
-        '--delete-branch', action='store_true', help='Delete branch after the queue merges'
-    )
 
     # pr update-branch — accepts either --pr-number or --head (validated by handler)
     pr_update_branch = pr_sub.add_parser(
@@ -888,10 +884,19 @@ def build_parser(
     ci_wait.add_argument(
         '--timeout',
         type=int,
-        default=DEFAULT_CI_TIMEOUT,
-        help=f'Max wait time in seconds (default: {DEFAULT_CI_TIMEOUT})',
+        default=None,
+        help=f'Max wait time in seconds. When omitted, defaults to {DEFAULT_CI_TIMEOUT}; '
+        f'with --adaptive it is seeded from the persisted {CI_WAIT_TIMEOUT_KEY!r} budget instead.',
     )
     ci_wait.add_argument('--interval', type=int, default=30, help='Poll interval in seconds (default: 30)')
+    ci_wait.add_argument(
+        '--adaptive',
+        action='store_true',
+        help='Seed --timeout from the persisted ci:wait budget (only when --timeout is omitted) and '
+        'record the observed wait duration back into that budget so it converges on real CI '
+        'durations. Opt-in: ci_complete_precondition manages its own read+record around a '
+        'non-adaptive wait and MUST NOT pass --adaptive (double-record guard).',
+    )
 
     # checks rerun
     ci_rerun = checks_sub.add_parser('rerun', help='Rerun a workflow/pipeline', allow_abbrev=False)
@@ -1664,6 +1669,78 @@ def _load_log_filter():
 HandlerMap = dict[tuple[str | None, ...], Any]
 
 
+def _adaptive_wait_timeout_get(default_seconds: int) -> int:
+    """Read the persisted ``ci:wait`` budget as the adaptive ``checks wait`` seed.
+
+    Reuses ``manage-run-config``'s ``timeout_get`` — the same ratchet
+    ``ci_complete_precondition`` drives — via a lazy sibling import so a missing
+    run-config module never breaks ``ci_base`` import. Any failure degrades to
+    ``default_seconds``: seeding from run-configuration.json is an optimisation,
+    never a hard dependency.
+    """
+    try:
+        import run_config  # lazy sibling import (mirrors _load_persist)
+
+        return int(run_config.timeout_get(CI_WAIT_TIMEOUT_KEY, default_seconds))
+    except Exception:
+        return default_seconds
+
+
+def _adaptive_wait_timeout_set(duration_seconds: int) -> None:
+    """Record an observed ``checks wait`` duration into the ``ci:wait`` budget.
+
+    Best-effort telemetry via ``manage-run-config``'s adaptive ``timeout_set``
+    (favours the higher value, so a short success never craters the ceiling and
+    a timeout ratchets it up). Failures are swallowed — recording is never a hard
+    dependency of the wait.
+    """
+    try:
+        import run_config  # lazy sibling import
+
+        run_config.timeout_set(CI_WAIT_TIMEOUT_KEY, duration_seconds)
+    except Exception:
+        return
+
+
+def _run_checks_wait(args: argparse.Namespace, handler: Any) -> dict:
+    """Run the ``checks wait`` handler, applying the opt-in adaptive budget.
+
+    Resolution of ``args.timeout`` (a ``None`` sentinel means the operator did
+    NOT pass an explicit ``--timeout``):
+
+    * ``--adaptive`` set  → seed the omitted ceiling from the persisted
+      ``ci:wait`` budget (falling back to :data:`DEFAULT_CI_TIMEOUT`), run the
+      handler, then record the observed ``duration_sec`` back into the budget so
+      it converges on real CI durations.
+    * ``--adaptive`` unset → an omitted ceiling falls back to the fixed
+      :data:`DEFAULT_CI_TIMEOUT`; NO record is made (the double-record guard —
+      ``ci_complete_precondition`` drives its own read+record around this
+      non-adaptive path).
+
+    An explicit ``--timeout`` always wins over the seed; recording still fires
+    on the adaptive path so an explicit-ceiling adaptive wait still teaches the
+    budget.
+    """
+    adaptive = bool(getattr(args, 'adaptive', False))
+    if args.timeout is None:
+        args.timeout = _adaptive_wait_timeout_get(DEFAULT_CI_TIMEOUT) if adaptive else DEFAULT_CI_TIMEOUT
+
+    result: dict = handler(args)
+
+    if adaptive:
+        observed = result.get('duration_sec')
+        observed_int: int | None = None
+        if observed is not None:
+            try:
+                observed_int = int(observed)
+            except (TypeError, ValueError):
+                observed_int = None
+        if observed_int is not None and observed_int > 0:
+            _adaptive_wait_timeout_set(observed_int)
+
+    return result
+
+
 def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.ArgumentParser) -> dict:
     """Route parsed args to the correct handler function.
 
@@ -1709,6 +1786,11 @@ def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.Ar
 
     handler = handlers.get(key)
     if handler:
+        # The checks-wait verb carries the opt-in adaptive ci:wait budget
+        # (seed on an omitted --timeout, record on completion). All other
+        # verbs run their handler directly.
+        if key == ('checks', 'wait'):
+            return _run_checks_wait(args, handler)
         result: dict = handler(args)
         return result
 
