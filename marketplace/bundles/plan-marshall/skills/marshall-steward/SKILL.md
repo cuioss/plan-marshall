@@ -567,6 +567,17 @@ because the emitted agent set may have changed.
 > `ext-point-dynamic-level-executor.md` — and MUST stay convergent
 > across all four surfaces.
 
+## Artifact Landing Cycle
+
+When a plan's deliverables touch marshall-steward-owned artifacts — executor regeneration (`.plan/execute-script.py`), `marshal.json` migrations, or the plugin-cache sync — those changes already commit to the governing plan's feature branch and ship as part of its normal `phase-6-finalize` PR. Whether they ride that PR or split into their own is decided by the same project-wide `pr_strategy` policy every PR-opening surface consults. Call the decision verb with the landing cycle's changed-file count and branch on its verdict:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config project pr-decision \
+  --changed-files N
+```
+
+Ride the plan's finalize PR on `decision: ride`; split into a separate PR on `decision: split`. Reference the verb by its canonical invocation (see `manage-config` Canonical invocations → `project pr-decision`) rather than restating the ceiling comparison. This documents already-implicit behaviour — steward artifacts already land on the plan's feature branch — now decided through the verb. For the ad-hoc (non-plan) counterpart of this rule, see [`persona-plan-marshall-agent` agent-behavior-rules.md § "Ad-hoc changes still get the full PR flow"](../persona-plan-marshall-agent/standards/agent-behavior-rules.md).
+
 ## Architecture Refresh Tier Knobs
 
 The wizard and the maintenance Configuration submenu both expose two `architecture_refresh` tier knobs that drive the `phase-6-finalize` `architecture-refresh` step. The canonical schema, defaults, and value contract are owned by `plan-marshall:manage-run-config` (see `manage-run-config/standards/run-config-standard.md` and the `architecture-refresh get-tier-0/get-tier-1/set-tier-0/set-tier-1` subcommands documented in `manage-run-config/SKILL.md`).

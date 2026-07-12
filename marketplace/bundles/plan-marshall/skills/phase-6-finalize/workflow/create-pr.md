@@ -160,6 +160,22 @@ Read `enabled_bots` off the returned `params` object (default: `"coderabbit,sour
 
 **Honoring asymmetry (why the label is necessary-but-not-sufficient):** `enabled_bots` is the REAL gate — a disabled bot files no findings through the producer's `--enabled-bots` filter (D3), so its review is suppressed at the source regardless of any label. The `skip-bot-review` label is only a secondary, best-effort signal to the bots' own PR-level suppression, and the bots honor it asymmetrically: CodeRabbit honors it centrally, Sourcery only via a per-repo `.sourcery.yaml`, and Gemini cannot honor it at all. The label therefore cannot be relied upon on its own — it layers on top of the authoritative producer gate, never replaces it. Applying a remote PR label is not a source mutation, so this step's `mutates_source` stays `false`.
 
+#### Step 3.7: Consult `pr_strategy` for ride-vs-split
+
+marshall-steward-owned artifact changes (executor regeneration, marshal.json migrations) and in-plan follow-up work produced during this plan **ride THIS PR** rather than opening a separate one when the `pr_strategy` policy says so. Consult the first-class decision verb to resolve the ride-vs-split verdict against the `{changed_files}` set already resolved in Step 1:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config project pr-decision \
+  --changed-files {N} --audit-plan-id {plan_id}
+```
+
+`{N}` is the total changed-file count of `{changed_files}`. Read `decision` off the returned TOON:
+
+- **`decision: ride`** — the steward artifacts and in-plan follow-up work ride THIS PR; do not open a separate one.
+- **`decision: split`** — the `pr_strategy` is `distinct`, or the changed-file count exceeds the compact ceiling; those changes belong in their own separate PR.
+
+Reference the verb by its canonical invocation (see `manage-config` Canonical invocations → `project pr-decision`) rather than restating the strategy/ceiling comparison here. This is a read-only consultation note — the step still always creates the plan's own PR — so `mutates_source` stays `false`.
+
 #### Step 4: Create PR via CI abstraction
 
 ```bash

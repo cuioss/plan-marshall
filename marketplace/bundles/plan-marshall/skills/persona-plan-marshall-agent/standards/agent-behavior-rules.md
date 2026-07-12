@@ -25,6 +25,7 @@ A plain-English index of the rules below. Each line is a memory hook that links 
 | Reuse existing documents; never create one without approval. | [Principle 5: Don't Proliferate Documents](#principle-5-dont-proliferate-documents) |
 | Never add a dependency without approval. | [Principle 6: Never Add Dependencies Without User Approval](#principle-6-never-add-dependencies-without-user-approval) |
 | Build the minimum, not the maximum. | [Principle 7: Implement the Minimum, Not the Maximum](#principle-7-implement-the-minimum-not-the-maximum) |
+| Ad-hoc changes still ship through the full PR flow. | [Ad-hoc changes still get the full PR flow](#ad-hoc-changes-still-get-the-full-pr-flow) |
 | Obey each skill's declared `mode`. | [Skill mode: comply with the declared archetype](#skill-mode-comply-with-the-declared-archetype) |
 | Ask the architecture inventory before reaching for Glob/Grep. | [Structured queries first](#structured-queries-first) |
 
@@ -246,6 +247,19 @@ These rules apply to ALL development work in plan-marshall-governed repositories
 - **No unconstrained generic subagents inside plan-marshall phase work** — Never spawn an unconstrained generic subagent (e.g. `Task: general-purpose`) for any work inside a phase (1-init through 6-finalize). Use `plan-marshall:execution-context-{level}` with a `workflow:` notation pointing at the workflow doc, or inline main-context execution. A generic subagent has no plan-marshall enforcement context, inherits broad tool access, and will violate workflow hard rules. Subagent rules propagate through the agent definition, not through the caller's prompt.
 
 - **A newly-authored index/summary table must enumerate every member of the set it indexes** — When you author or extend a table, card, or list whose purpose is to *index* a set — a rules card over the document's rules, a command table over a script's subcommands, a candidate-list summary over a detector's outputs, a step-dispatch table over a workflow's steps — it MUST carry one row per member of the indexed set, with no omissions. An index that lists only a subset silently misrepresents the set as smaller than it is, and the omission is invisible at the index site (the table reads as complete). When you add a member to the indexed set, add its index row in the SAME change; when you author the index, cross-check it against the authoritative set and confirm the cardinality matches before considering it done. This is the index-completeness counterpart to the count-prose-staleness discipline: a count claim and an index table are two faces of the same "describe the set accurately" obligation.
+
+### Ad-hoc changes still get the full PR flow
+
+**Rule:** An ad-hoc (non-plan) change still gets the full `branch → commit → PR → checks → review → squash-merge → pull` flow — the same shipping discipline a plan's finalize phase applies. A direct-to-`main` commit, or a merge that skips checks or review, is never acceptable merely because the change did not originate from a plan.
+
+When an already-pending related PR exists, do NOT reflexively open a separate PR. Consult the first-class decision verb with the ad-hoc change's changed-file count and branch on its verdict:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config project pr-decision \
+  --changed-files N
+```
+
+Ride the pending related PR on `decision: ride`; open your own PR on `decision: split`. Reference the verb by its canonical invocation (see `manage-config` Canonical invocations → `project pr-decision`) rather than reading the raw `pr_strategy` / `pr_compact_max_changed_files` knobs and eyeballing the comparison — the verb owns the ride-vs-split boundary.
 
 ### Skill mode: comply with the declared archetype
 

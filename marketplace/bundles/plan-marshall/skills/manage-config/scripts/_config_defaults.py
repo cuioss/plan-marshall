@@ -80,10 +80,90 @@ DEFAULT_SYSTEM_RETENTION = {
 # constants.py (DEFAULT_BRANCH_PREFIX_WORKING) as the fail-closed fallback; this
 # block is the only place that materialises them into the default marshal.json
 # config.
+#
+# `pr_strategy` (`compact` | `distinct`, default `compact`) and
+# `pr_compact_max_changed_files` (int, default 150) are the PR-batching policy
+# knobs. They govern whether follow-up / config-migration / ad-hoc changes ride
+# an already-pending related PR (compact, when the changed-file count stays
+# within the ceiling) or open a separate PR (distinct, or over-ceiling). The
+# `manage-config project pr-decision --changed-files N` verb reads both knobs and
+# returns a `ride|split` verdict; it is the documented consult surface every
+# PR-opening guidance references. Both keys are seeded on `init` and back-filled
+# into existing projects by `sync-defaults`' non-destructive deep-merge (the same
+# mechanism `working_prefixes` relies on).
 DEFAULT_PROJECT = {
     'default_base_branch': 'main',
     'working_prefixes': list(DEFAULT_BRANCH_PREFIX_WORKING),
+    'pr_strategy': 'compact',
+    'pr_compact_max_changed_files': 150,
 }
+
+
+# PR-batching strategy enum (`project.pr_strategy` in marshal.json).
+#   - 'compact'  (default): ride an already-pending related PR when the changed-
+#                           file count stays within pr_compact_max_changed_files.
+#   - 'distinct':           always open a separate PR.
+VALID_PR_STRATEGY = ('compact', 'distinct')
+
+
+def validate_pr_strategy(value: object, field_name: str = 'pr_strategy') -> None:
+    """Validate `pr_strategy` (``compact|distinct``).
+
+    Args:
+        value: The candidate strategy value.
+        field_name: The ``project.pr_strategy`` path, used in the error message so
+            a rejected value names the offending knob.
+
+    Raises:
+        ValueError: If ``value`` is not in :data:`VALID_PR_STRATEGY`.
+    """
+    if value not in VALID_PR_STRATEGY:
+        raise ValueError(
+            f"Invalid {field_name} '{value}'. Allowed: {list(VALID_PR_STRATEGY)}"
+        )
+
+
+def validate_pr_compact_max_changed_files(
+    value: object, field_name: str = 'pr_compact_max_changed_files'
+) -> None:
+    """Validate `pr_compact_max_changed_files` (int ``>= 0``).
+
+    Booleans are rejected even though ``bool`` is an ``int`` subclass, mirroring
+    the sibling numeric validators (:func:`validate_lane_prune_thresholds`).
+
+    Args:
+        value: The candidate ceiling value.
+        field_name: The ``project.pr_compact_max_changed_files`` path, used in the
+            error message so a rejected value names the offending knob.
+
+    Raises:
+        ValueError: If ``value`` is a bool, is not an int, or is negative.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(
+            f"Invalid {field_name} {value!r}: expected an int >= 0."
+        )
+
+
+def pr_compact_rides_existing_pr(
+    strategy: str, changed_file_count: int, max_changed_files: int
+) -> bool:
+    """Return whether a change rides an existing PR under the compact policy.
+
+    This is an implementation detail backing the ``project pr-decision`` CLI verb,
+    NOT the documented consult surface (that is the verb). A change rides an
+    existing PR only under the ``compact`` strategy when its changed-file count
+    stays within the ceiling; ``distinct`` always splits.
+
+    Args:
+        strategy: The resolved ``pr_strategy`` value.
+        changed_file_count: The change's changed-file count.
+        max_changed_files: The resolved ``pr_compact_max_changed_files`` ceiling.
+
+    Returns:
+        ``True`` when the change rides the existing PR; ``False`` when it splits.
+    """
+    return strategy == 'compact' and changed_file_count <= max_changed_files
 
 # open-in-ide gate default (`plan.open_in_ide` in marshal.json — flat bool).
 # Default `true` preserves the current always-attempt-to-open behaviour.
@@ -899,6 +979,10 @@ def get_default_config() -> dict:
     # default shape fails loud at seed time rather than at first read.
     validate_per_deliverable_build(DEFAULT_PLAN_EXECUTE['per_deliverable_build'])
     validate_cost_size_token_table(DEFAULT_PLAN_EXECUTE['cost_size_token_table'])
+    # Self-validate the seeded project PR-batching knobs so a malformed default
+    # fails loud at seed time rather than at first read.
+    validate_pr_strategy(DEFAULT_PROJECT['pr_strategy'])
+    validate_pr_compact_max_changed_files(DEFAULT_PROJECT['pr_compact_max_changed_files'])
     # Self-validate the seeded lane prune-threshold dict so a malformed default
     # fails loud at seed time rather than at first read. (`lane_selection` is an
     # enum string validated from the set path, mirroring validate_run_at_all /

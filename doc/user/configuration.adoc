@@ -410,6 +410,8 @@ The top-level `project` section holds the project's base branch and the closed b
 
 | `project.default_base_branch` | `main` | The project's canonical base branch. `phase-1-init` seeds `references.base_branch` from it; per-plan overrides via `manage-references set --field base_branch`.
 | `project.working_prefixes` | `["feature/", "fix/", "chore/"]` | The closed set of allowed working-branch prefixes. `manage-status create` validates `--worktree-branch` against this set. A structural test asserts every prefix is covered by a `.github/workflows/python-verify.yml` push trigger, so a dropped prefix that would make a PR unmergeable fails CI.
+| `project.pr_strategy` | `compact` | PR-consolidation policy (`compact` or `distinct`). Under `compact`, follow-up / config-migration / ad-hoc changes ride an already-pending related PR when the changed-file count stays within `project.pr_compact_max_changed_files`; under `distinct`, every such change opens its own separate PR. The `manage-config project pr-decision --changed-files N` verb applies this knob (with `pr_compact_max_changed_files`) and returns a `ride|split` decision — it is the consult surface every PR-opening flow uses. See link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] for the canonical per-key reference.
+| `project.pr_compact_max_changed_files` | `150` | The compact-strategy ceiling (int). Under `project.pr_strategy: compact`, a change riding an existing PR splits into its own PR once the changed-file count exceeds this value. Resolved together with `pr_strategy` by the `manage-config project pr-decision --changed-files N` consult verb.
 |===
 
 [#build-systems]

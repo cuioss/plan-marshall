@@ -21,7 +21,9 @@ JSON structure and field definitions for project configuration.
   ],
   "project": {
     "default_base_branch": "main",
-    "working_prefixes": ["feature/", "fix/", "chore/"]
+    "working_prefixes": ["feature/", "fix/", "chore/"],
+    "pr_strategy": "compact",
+    "pr_compact_max_changed_files": 150
   },
   "plan": {
     "open_in_ide": true,
@@ -175,7 +177,9 @@ Project-level settings (committed, shared via git). Seeded on `init` and back-fi
 {
   "project": {
     "default_base_branch": "main",
-    "working_prefixes": ["feature/", "fix/", "chore/"]
+    "working_prefixes": ["feature/", "fix/", "chore/"],
+    "pr_strategy": "compact",
+    "pr_compact_max_changed_files": 150
   }
 }
 ```
@@ -186,6 +190,8 @@ Project-level settings (committed, shared via git). Seeded on `init` and back-fi
 |-------|------|---------|-------------|
 | `default_base_branch` | string | "main" | The project's canonical base branch. `phase-1-init` seeds `references.base_branch` from it; the wizard derives the suggestion from `origin/HEAD`, falling back to `main`. Per-plan overrides via `manage-references set --field base_branch`. |
 | `working_prefixes` | list[string] | `["feature/", "fix/", "chore/"]` | The closed set of allowed working-branch prefixes. `manage-status create` validates `--worktree-branch` against this set. The literals live in `constants.py` (`DEFAULT_BRANCH_PREFIX_WORKING`) as the fail-closed fallback. A structural test (`test_branch_prefix_allowlist.py`) asserts every prefix is covered by a `.github/workflows/python-verify.yml` push trigger, so a dropped prefix that would make a PR unmergeable fails CI. |
+| `pr_strategy` | string | `"compact"` | PR-consolidation policy. `compact` ⇒ follow-up / config-migration / ad-hoc changes ride an already-pending related PR when the changed-file count stays within `pr_compact_max_changed_files`; `distinct` ⇒ always open a separate PR. The `manage-config project pr-decision --changed-files N` verb resolves this knob (with `pr_compact_max_changed_files`) into a `ride|split` decision — see `manage-config` Canonical invocations → `project pr-decision`; it is the consult surface every PR-opening guidance references rather than re-deriving the comparison. |
+| `pr_compact_max_changed_files` | int | `150` | The compact-strategy ceiling: under `pr_strategy: compact`, a change riding an existing PR splits into its own PR once the changed-file count exceeds this value. Resolved together with `pr_strategy` by the `manage-config project pr-decision --changed-files N` consult verb (see `manage-config` Canonical invocations → `project pr-decision`). |
 
 ## Section: credentials_config
 
