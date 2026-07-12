@@ -63,6 +63,42 @@ def test_holder_is_dead_whitespace_only_is_dead(plan_context):
     assert holder_is_dead('   ') is True
 
 
+@pytest.mark.parametrize(
+    'malicious_holder',
+    [
+        '../evil',
+        '../../evil',
+        'a/../evil',
+        'sub/evil',
+        'sub\\evil',
+        '..',
+        'foo\x00bar',
+    ],
+)
+def test_holder_is_dead_rejects_traversal_holder(plan_context, malicious_holder):
+    # holder is a plan-id joined DIRECTLY onto the anchored .plan/local base to
+    # build the main-checkout (main_plan) and worktree (worktree_plan) plan-dir
+    # paths. A holder bearing a path separator, a `..` parent segment, or an
+    # embedded NUL must be classified dead (True) BEFORE the path is constructed
+    # — otherwise a crafted holder could escape the base, resolve to an unrelated
+    # existing dir, report a truly-dead holder "alive", and permanently block
+    # lock reclamation (a DoS). Inverse polarity to the sibling
+    # holder_has_live_worktree guard (which returns False for the same corpus).
+    assert holder_is_dead(malicious_holder) is True
+
+
+def test_holder_is_dead_traversal_does_not_escape_base(plan_context):
+    # Concrete escape scenario: `../evil` would resolve `plans/../evil` to a
+    # sibling dir of the plans root (i.e. base/evil). Stage that sibling so,
+    # absent the guard, main_plan.exists() would be True and the predicate would
+    # report the holder "alive" (False). The guard must reject the traversal and
+    # return True (dead) rather than resolving the escaped path.
+    base = plan_context.fixture_dir
+    (base / 'evil').mkdir(parents=True, exist_ok=True)  # plans/../evil target
+
+    assert holder_is_dead('../evil') is True
+
+
 # =============================================================================
 # holder_is_dead — liveness via main checkout
 # =============================================================================
