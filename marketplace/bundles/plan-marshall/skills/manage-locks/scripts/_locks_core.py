@@ -61,6 +61,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from input_validation import is_valid_plan_id
 from marketplace_paths import (
     PLAN_DIR_NAME,
     resolve_main_anchored_path,
@@ -153,11 +154,15 @@ def holder_has_live_worktree(holder: str) -> bool:
     path separator, a ``..`` parent-dir segment, or an embedded NUL byte could
     escape the worktrees root and resolve to an unrelated existing directory —
     reporting a dead holder "alive" and permanently blocking lock reclamation
-    (a DoS). Any such holder is rejected as having no live worktree BEFORE the
-    path is constructed, mirroring the plan-id shape enforced elsewhere.
+    (a DoS). The shape check is the SAME canonical kebab-case validator
+    (:func:`input_validation.is_valid_plan_id`) enforced at every ``--plan-id``
+    CLI boundary elsewhere in the marketplace — its allowlist regex
+    (``^[a-z][a-z0-9-]*$``) already excludes every traversal character, so any
+    such holder is rejected as having no live worktree BEFORE the path is
+    constructed.
     """
     holder = holder.strip()
-    if not holder or '/' in holder or '\\' in holder or '..' in holder or '\x00' in holder:
+    if not is_valid_plan_id(holder):
         return False
     base = _main_plan_local_base()
     worktree_dir = base / 'worktrees' / holder
