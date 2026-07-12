@@ -131,7 +131,7 @@ Capture the following into in-memory state (no work file is written):
 2. **Deliverables list** — from the solution outline.
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage_solution_outline read \
+   python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline read \
      --plan-id {plan_id}
    ```
 
