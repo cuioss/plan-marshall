@@ -286,6 +286,31 @@ This pattern enables:
 - Caching for fast subsequent lookups
 - Version-agnostic paths via glob
 
+### Version-aware bundle-path resolution
+
+The glob patterns above resolve a script path across a single *unknown* version
+segment. `resolve_bundle_path` (in `script-shared/scripts/marketplace_bundles.py`)
+is the version-*aware* counterpart used inside scripts that must pick ONE version
+dir when several coexist in the plugin cache. It selects the **newest** version dir
+that carries the requested subpath — parsing each version-dir name into a comparable
+integer tuple (`0.1.1069` → `(0, 1, 1069)`) via `_version_sort_key` and taking the
+`max` — then falls back to the non-versioned (marketplace) layout when no version
+dir matches.
+
+Selecting the newest match — rather than the lexically-first `iterdir` result — is
+load-bearing: a stale older version dir (e.g. `1.0.0` alongside `1.0.10`) would
+otherwise shadow the current one on the cross-skill import path. This is the same
+silent-stale multi-version-pollution class `collect_script_dirs` guards against with
+its own `max()` sort, and that the executor-staleness check surfaces via
+`_detect_multi_version_pollution`.
+
+> **Worked example — pre-merge source-edit contract.** Documenting this version-aware
+> resolution in its governing skill is a worked example of the
+> [pre-merge source-edit-pushability contract](../phase-6-finalize/standards/source-edit-pushability.md):
+> a source (or source-doc) edit belongs in the branch that merges it, so the edit is
+> pushable and rides the PR — never deferred to an unpushable post-merge finalize
+> step.
+
 ## Broken Executor Recovery (Generated but Unrunnable)
 
 This case is distinct from the [Bootstrap Pattern](#bootstrap-pattern-before-executor-exists) above. Bootstrap covers the **first-run** state where `.plan/execute-script.py` does **not yet exist**. This section covers the state where the generated executor **exists on disk but fails to run** — for example, a template import-surface change makes the embedded preamble import a symbol the runtime no longer exports, so every `python3 .plan/execute-script.py …` call aborts before reaching any script body. Because the executor itself is broken, the normal `/marshall-steward` and `/sync-plugin-cache` regeneration paths — which route through the executor — cannot be used to repair it.
