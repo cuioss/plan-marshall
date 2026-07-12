@@ -15,6 +15,8 @@ leaves untouched.
 import types
 from pathlib import Path
 
+import pytest
+
 from conftest import load_script_module
 
 # Unique module_name so the in-process load is distinct from the existing
@@ -340,6 +342,40 @@ def test_detect_notation_drift_empty_when_reference_registered(tmp_path):
     registered = {'b:s:manage-status': '/path/manage-status.py'}
 
     assert _gen._detect_notation_drift(registered, tmp_path) == []
+
+
+def test_notation_drift_zero_against_clean_marketplace_source():
+    """The clean marketplace SOURCE tree carries zero caller-notation drift.
+
+    Regression pin for the drift-detector self-catalog fix: resolve the
+    production ``--marketplace`` base (``get_base_path(use_marketplace=True)``
+    forces the marketplace tree, ignoring the plugin-cache / auto-detected
+    context), build the filename-derived registered mapping with the pure
+    ``discover_scripts_fallback`` glob walk (no subprocess, deterministic), and
+    assert ``_detect_notation_drift`` finds nothing over the real source.
+
+    Any future underscore-form third-segment reference whose hyphen-form is
+    registered (a half-done entrypoint rename that silently changes a public
+    notation) re-fails this test, and the assertion message names the offending
+    ``(referenced_notation, registered_notation)`` pairs so the drift is
+    identified at failure time.
+    """
+    try:
+        base = _gen.get_base_path(use_marketplace=True)
+    except FileNotFoundError:
+        pytest.skip(
+            'marketplace source tree (marketplace/bundles) is not present in '
+            'this checkout — caller-notation drift detection requires the '
+            'marketplace source and cannot run against a deployed plugin cache'
+        )
+    registered = _gen.discover_scripts_fallback(base)
+
+    drift = _gen._detect_notation_drift(registered, base)
+
+    assert drift == [], (
+        'caller-notation drift detected in marketplace source — '
+        f'offending (referenced, registered) pairs: {drift}'
+    )
 
 
 # =============================================================================
