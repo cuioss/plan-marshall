@@ -433,6 +433,15 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   --pr-number N --plan-id PLAN_ID
 ```
 
+### github_pr bot_completion
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr bot_completion \
+  --pr-number N --bot-kind {coderabbit|gemini|sourcery}
+```
+
+Pure provider read — reports the bot's registry `completion_check_name` check-run state as `{status, in_progress, completed}` for the PR HEAD. A bot with an empty `completion_check_name` reports status `no_check_name` (the caller falls back to the `review_bot_buffer_seconds` wait); the `automatic-review` completion-aware poll consumes this verb.
+
 ### github_re_review re-review
 
 ```bash

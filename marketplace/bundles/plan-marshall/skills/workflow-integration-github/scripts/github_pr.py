@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-GitHub PR workflow operations - two-verb provider contract: fetch_findings + post_responses.
+GitHub PR workflow operations - two-verb findings contract (fetch_findings + post_responses) plus a bot_completion read verb.
 
-The provider surface is exactly TWO pure, zero-LLM verbs — no triage judgment
+The findings contract is exactly TWO pure, zero-LLM verbs — no triage judgment
 lives here:
 
 - ``fetch_findings`` fetches PR review comments, applies the keyword pre-filter
@@ -17,7 +17,14 @@ lives here:
   resolve-thread — keyed by each finding's own ``hash_id`` (no positional
   pairing). It reads only findings the triage pass already resolved.
 
-Both verbs FAIL LOUD when GitHub is not configured: a typed ``unconfigured``
+Beside the findings contract sits one auxiliary provider read:
+
+- ``bot_completion`` reports a named bot's check-run completion state
+  (``{status, in_progress, completed}``) for the PR HEAD, so the
+  ``automatic-review`` wait step can await a slow bot's IN_PROGRESS check to
+  completion instead of racing a fixed buffer. Pure read — files no finding.
+
+All verbs FAIL LOUD when GitHub is not configured: a typed ``unconfigured``
 status, never a silent ``done`` no-op. LLM consumers query the ledger via
 ``manage-findings query --type pr-comment``.
 
@@ -25,12 +32,14 @@ Usage:
     github_pr.py fetch-comments [--pr <number>] [--unresolved-only]
     github_pr.py fetch_findings --pr-number <N> --plan-id <P>
     github_pr.py post_responses --pr-number <N> --plan-id <P>
+    github_pr.py bot_completion --pr-number <N> --bot-kind <kind>
     github_pr.py --help
 
 Subcommands:
     fetch-comments    Fetch PR review comments (raw, no filtering or storage)
     fetch_findings    Producer-side: fetch + pre-filter + file one pr-comment finding per surviving comment
     post_responses    Apply triaged dispositions (thread-reply + resolve-thread) back to the PR, keyed by hash_id
+    bot_completion    Read a named bot's check-run completion state ({status, in_progress, completed}) for the PR HEAD
 
 Examples:
     # Fetch raw comments
@@ -43,6 +52,7 @@ Examples:
     github_pr.py post_responses --pr-number 123 --plan-id EXAMPLE-PLAN
 """
 
+import json
 import re
 import sys
 from typing import Any
@@ -64,7 +74,7 @@ from triage_helpers import (
 # Register this script's top-level subcommand tokens so that extract_routing_args
 # correctly identifies the subcommand boundary when github_pr.py is the entry
 # point (i.e., does not consume a subcommand-level --plan-id as a router flag).
-register_subcommands({'fetch-comments', 'fetch_findings', 'post_responses'})
+register_subcommands({'fetch-comments', 'fetch_findings', 'post_responses', 'bot_completion'})
 
 # Resolutions that are terminal triage dispositions — a pr-comment finding in one
 # of these states has been decided by the triage pass and is eligible for a
@@ -500,6 +510,113 @@ def cmd_fetch_findings(args):
 
 
 # ============================================================================
+# BOT_COMPLETION SUBCOMMAND (read a named bot's check-run completion state)
+# ============================================================================
+
+# Check states gh reports for an in-flight (not-yet-concluded) check-run. A check
+# whose state is none of these — and whose bucket is not 'pending' — has reached a
+# terminal conclusion (SUCCESS / FAILURE / …), so the bot's review pass is done.
+_IN_PROGRESS_CHECK_STATES = frozenset({'IN_PROGRESS', 'QUEUED', 'PENDING', 'WAITING', 'REQUESTED'})
+
+
+def cmd_bot_completion(args):
+    """Read the named bot's most-recent check-run completion state for the PR HEAD.
+
+    Pure provider read — no triage, no LLM. Given ``--pr-number`` and
+    ``--bot-kind``, it resolves the bot's ``completion_check_name`` from the
+    registry, then queries the PR's checks and reports whether that check is
+    still running or has concluded — so the ``automatic-review`` wait step can
+    await a slow bot instead of racing a fixed buffer.
+
+    Returns ``{status, in_progress, completed}``:
+
+    - ``completed: true`` — the named check exists AND has a terminal conclusion.
+    - ``in_progress: true`` — the named check exists AND is still running/queued.
+    - A bot whose registry ``completion_check_name`` is empty/absent (declares no
+      completion check-run) yields status ``no_check_name`` with both flags
+      ``false`` — the caller falls back to the ``review_bot_buffer_seconds`` wait.
+    - A check name absent from the PR's checks (not posted yet, or no checks at
+      all) yields status ``not_found`` with both flags ``false`` — the caller
+      keeps polling within its bound.
+
+    Fail-loud: returns a typed ``unconfigured`` status when GitHub is not
+    authenticated.
+    """
+    pr_number: int = args.pr_number
+    bot_kind: str = getattr(args, 'bot_kind', '') or ''
+    check_name: str = bot_registry.completion_check_name(bot_kind)
+
+    is_auth, auth_err = _github.check_auth()
+    if not is_auth:
+        return _unconfigured_result('bot_completion', auth_err)
+
+    # A bot with no completion check-run has an empty registry marker. Report
+    # neither flag so the caller does not spin polling a check that never appears
+    # — it falls back to the review_bot_buffer_seconds wait instead.
+    if not check_name:
+        return {
+            'status': 'no_check_name',
+            'operation': 'bot_completion',
+            'provider': 'github',
+            'pr_number': pr_number,
+            'bot_kind': bot_kind,
+            'check_name': '',
+            'in_progress': False,
+            'completed': False,
+        }
+
+    _rc, stdout, _stderr = _github.run_gh(['pr', 'checks', str(pr_number), '--json', 'name,state,bucket'])
+
+    # gh emits the JSON array whenever checks exist (regardless of the rollup
+    # exit code it also sets for pending/failing checks), and empty output when
+    # the PR has no checks at all. Parse whatever JSON is present; empty output
+    # leaves the check list empty, so the named check resolves to ``not_found``.
+    checks: list = []
+    stdout_stripped = stdout.strip()
+    if stdout_stripped:
+        try:
+            parsed = json.loads(stdout_stripped)
+        except json.JSONDecodeError:
+            return make_error(
+                f'could not parse gh pr checks output: {stdout_stripped[:100]}',
+                code=ErrorCode.FETCH_FAILURE,
+            )
+        if isinstance(parsed, list):
+            checks = parsed
+
+    matched = next(
+        (c for c in checks if isinstance(c, dict) and c.get('name') == check_name),
+        None,
+    )
+    if matched is None:
+        return {
+            'status': 'not_found',
+            'operation': 'bot_completion',
+            'provider': 'github',
+            'pr_number': pr_number,
+            'bot_kind': bot_kind,
+            'check_name': check_name,
+            'in_progress': False,
+            'completed': False,
+        }
+
+    state = (matched.get('state') or '').upper()
+    bucket = (matched.get('bucket') or '').lower()
+    in_progress = bucket == 'pending' or state in _IN_PROGRESS_CHECK_STATES
+    completed = not in_progress
+    return {
+        'status': state.lower() or bucket or 'unknown',
+        'operation': 'bot_completion',
+        'provider': 'github',
+        'pr_number': pr_number,
+        'bot_kind': bot_kind,
+        'check_name': check_name,
+        'in_progress': in_progress,
+        'completed': completed,
+    }
+
+
+# ============================================================================
 # POST_RESPONSES SUBCOMMAND (apply triaged dispositions back to the PR)
 # ============================================================================
 
@@ -639,6 +756,24 @@ Examples:
                 'args': [
                     {'flags': ['--pr-number'], 'dest': 'pr_number', 'type': int, 'required': True, 'help': 'PR number'},
                     {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
+                ],
+            },
+            {
+                'name': 'bot_completion',
+                'help': "READ: report a bot's check-run completion state ({status, in_progress, completed}) for the PR HEAD",
+                'handler': cmd_bot_completion,
+                'args': [
+                    {'flags': ['--pr-number'], 'dest': 'pr_number', 'type': int, 'required': True, 'help': 'PR number'},
+                    {
+                        'flags': ['--bot-kind'],
+                        'dest': 'bot_kind',
+                        'required': True,
+                        'help': (
+                            'Reviewer bot_kind (e.g. coderabbit). Its registry completion_check_name is '
+                            'resolved internally; a bot with an empty completion_check_name reports status '
+                            'no_check_name so the caller falls back to the review_bot_buffer_seconds wait.'
+                        ),
+                    },
                 ],
             },
         ],

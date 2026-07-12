@@ -227,6 +227,19 @@ class BotRegistry:
         value = self._by_kind.get(bot_kind, {}).get('trigger_comment', '')
         return value if isinstance(value, str) else ''
 
+    def completion_check_name(self, bot_kind: str) -> str:
+        """Return the completion check-run name for ``bot_kind`` (``''`` if unknown/absent).
+
+        Bots that publish an in-progress check-run (e.g. CodeRabbit) name it here
+        so the ``automatic-review`` wait step can poll that check to completion
+        instead of racing a fixed buffer. Bots with no completion check-run leave
+        the field empty/absent and fall back to the ``review_bot_buffer_seconds``
+        wait — the empty string is the fallback signal, so there is no per-bot
+        branch here.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('completion_check_name', '')
+        return value if isinstance(value, str) else ''
+
     def honors_skip_label(self, bot_kind: str) -> bool:
         """Return whether ``bot_kind`` honors the shared skip-bot-review label."""
         return bool(self._by_kind.get(bot_kind, {}).get('honors_skip_label', False))
@@ -261,6 +274,11 @@ def login_to_bot_kind() -> dict[str, str]:
 def trigger_comment(bot_kind: str) -> str:
     """The re-review trigger comment for ``bot_kind`` (``''`` if unknown)."""
     return REGISTRY.trigger_comment(bot_kind)
+
+
+def completion_check_name(bot_kind: str) -> str:
+    """The completion check-run name for ``bot_kind`` (``''`` if unknown/absent)."""
+    return REGISTRY.completion_check_name(bot_kind)
 
 
 def honors_skip_label(bot_kind: str) -> bool:

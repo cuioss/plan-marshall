@@ -784,10 +784,12 @@ def validate_sonar_touched_file_cleanup(value: str) -> None:
 # Param ownership (for reference; the declarations themselves are authoritative):
 #   - default:sonar-roundtrip       → touched_file_cleanup, do_transition,
 #                                      ce_wait_timeout_seconds
-#   - plan-marshall:automatic-review      → review_bot_buffer_seconds
+#   - plan-marshall:automatic-review      → review_bot_buffer_seconds,
+#                                      review_completion_poll_timeout_seconds
 #   - default:branch-cleanup        → pr_merge_strategy, final_merge_without_asking,
 #                                      auto_rebase_threshold,
 #                                      merge_queue_wait_budget_seconds,
+#                                      pre_merge_comment_barrier,
 #                                      admin_merge_on_stuck_state
 #   - default:finalize-step-simplify → simplify (run-at-all gate)
 #   - default:finalize-step-preference-emitter → preference_min_recurrence

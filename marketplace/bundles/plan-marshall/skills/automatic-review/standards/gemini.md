@@ -14,13 +14,15 @@ present in the step's `enabled_bots`.
 ## Registry data block
 
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter.
-Consumers read `bot_kind`, `author_login`, `trigger_comment`, `honors_skip_label`,
-`ignore_patterns`, and `severity_map` from it; the prose sections carry the rationale.
+Consumers read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`,
+`honors_skip_label`, `ignore_patterns`, and `severity_map` from it; the prose sections carry the
+rationale.
 
 ```yaml
 bot_kind: gemini
 author_login: gemini-code-assist
 trigger_comment: "/gemini review"
+completion_check_name: ""        # no completion check-run — falls back to the review_bot_buffer_seconds wait
 honors_skip_label: false         # no label-based skip; only code_review.disable / severity threshold / ignore_patterns
 ignore_patterns:
   - "being sunset"                                  # sunset banner blockquote
