@@ -3819,7 +3819,7 @@ class TestScopeGatedFinalizePreFilter:
                 change_type='feature',
                 scope_estimate='surgical',
                 affected_files_count=2,
-                phase_5_steps='quality_check,build_verify',
+                phase_5_steps='verify:quality-gate,verify:module-tests',
                 phase_6_steps=','.join(candidates),
             )
         )
