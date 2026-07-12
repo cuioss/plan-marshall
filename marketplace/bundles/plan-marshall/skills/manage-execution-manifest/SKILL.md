@@ -143,6 +143,30 @@ ceremony_finalize_forced_in[0]:
 ceremony_finalize_forced_out[0]:
 ```
 
+#### Compose-time step-resolution gate
+
+As its final gate — after the frontmatter-order sort and the `automated-review` placement validator, over the FINAL emitted `phase_5.verification_steps` and `phase_6.steps` — `compose` resolves every emitted step id and **fails loud** on the first one that does not resolve. This closes the gap left by `validate-loadable`, which only checks built-in standards-file presence and short-circuits every external (`project:` / `bundle:skill`) step to `loadable: true`: a never-existed `bundle:skill` key, a renamed/removed `project:` skill, or a built-in doc deleted without sweeping `marshal.json` would otherwise compose silently and fail only much later at dispatch time.
+
+Resolution is keyed on the step-id shape and the phase:
+
+- **`project:`** step (either phase) resolves iff its project-local `{bare}/SKILL.md` exists under the repo root.
+- **phase-5 canonical-verify** step (bare `{canonical}` or `verify:{canonical}`) resolves iff `{canonical}` is in the verify-canonicals universe — the composer's `_CANONICAL_TO_ROLE` keys unioned with every `ext-point-build-verify-step` implementor's declared `canonicals`.
+- **phase-5 external `bundle:skill`** verify step resolves iff its (normalized) id is a discovered `ext-point-build-verify-step` implementor name.
+- **phase-6 external `bundle:skill`** step resolves iff its (normalized) id is a discovered `ext-point-finalize-step` implementor name (the same `extension_discovery.find_implementors` query the finalize/verify seed and discovery surfaces use — the SOLE discovery path).
+- **phase-6 built-in** step (bare / `default:`) keeps the existing standards/workflow file check.
+
+On the first unresolvable id, `compose` returns `status: error`, `error: unresolvable_step`, and a `message` naming the offending **original `marshal.json` key** (mapped back from the boundary-normalized emitted id via `marshal_phase_{5,6}_map`) and the phase — plus `phase`, `step_id`, and `marshal_key` fields — and emits one `decision.log` line. The gate never writes a partial manifest: the error returns before the step-params snapshot and `write_manifest`.
+
+```toon
+status: error
+plan_id: EXAMPLE-PLAN
+error: unresolvable_step
+message: "phase_6 step `plan-marshall:ghost-review` in marshal.json is unresolvable: step `plan-marshall:ghost-review` referenced by `marshal.json` is not a discovered ext-point-finalize-step implementor — the id resolves to no built-in finalize step, project-local skill, or bundle discovery-registry entry"
+phase: phase_6
+step_id: "plan-marshall:ghost-review"
+marshal_key: "plan-marshall:ghost-review"
+```
+
 ### read
 
 Read the manifest as TOON.
@@ -387,6 +411,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 | `invalid_phase` | `record-step` --phase not `5-execute` or `6-finalize` |
 | `invalid_outcome` | `record-step` --outcome not `executed`, `skipped`, or `error` |
 | `invalid_manifest` | Manifest schema invalid or step IDs unknown; or `step-params set` target section malformed |
+| `unresolvable_step` | `compose` — a FINAL emitted phase-5/6 step id resolves to no built-in doc, project-local skill, or bundle discovery-registry entry (fail-loud; names the offending `marshal.json` key and phase) |
 | `invalid_arguments` | `validate-loadable` invoked without exactly one of `--step-id` / `--all` |
 | `step_not_found` | `step-params get`/`set` `--step-id` has no snapshotted params in the manifest for the given phase |
 
