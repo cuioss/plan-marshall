@@ -10,7 +10,11 @@ the ``gh`` argv the handler constructs and assert:
 
 - the idempotent ``label create ... --force`` form is used (the ``--force`` flag
   IS the create-if-missing / no-op-on-existing mechanism);
-- optional ``--color`` / ``--description`` pass through when supplied;
+- ``--color`` is ALWAYS present — an omitted color falls back to the stable
+  ``_DEFAULT_LABEL_COLOR``, so a color-less re-run cannot reset an existing
+  label's color to whatever ``gh``'s own default happens to be; an explicit
+  ``--color`` is preserved verbatim;
+- optional ``--description`` passes through when supplied;
 - a genuine ``gh`` failure surfaces as a structured error.
 
 The GitHub provider surface (``check_auth``, ``run_gh``) is monkeypatched so no
@@ -44,8 +48,14 @@ def _make_args(**overrides):
     return argparse.Namespace(**base)
 
 
-def test_ensure_uses_idempotent_force_create(monkeypatch):
-    """The handler builds ``gh label create {name} --force`` — the idempotent form."""
+def test_ensure_uses_idempotent_force_create_with_default_color(monkeypatch):
+    """The handler builds ``gh label create {name} --force --color {default}``.
+
+    ``--force`` IS the create-if-missing / no-op-on-existing mechanism. ``--color``
+    is always present — an omitted color falls back to the stable
+    ``_DEFAULT_LABEL_COLOR`` so a color-less re-run cannot reset an existing
+    label's color to whatever ``gh``'s own default happens to be.
+    """
     captured: list = []
     _patch(monkeypatch, captured)
 
@@ -54,16 +64,18 @@ def test_ensure_uses_idempotent_force_create(monkeypatch):
     assert result['status'] == 'success'
     assert result['label'] == 'skip-bot-review'
     assert result['ensured'] is True
-    assert captured == [['label', 'create', 'skip-bot-review', '--force']]
+    assert captured == [
+        ['label', 'create', 'skip-bot-review', '--force', '--color', _github_pr._DEFAULT_LABEL_COLOR]
+    ]
 
 
-def test_ensure_passes_color_and_description(monkeypatch):
-    """Optional --color / --description pass through to gh label create."""
+def test_ensure_passes_explicit_color_and_description(monkeypatch):
+    """An explicit --color overrides the default; --description passes through when supplied."""
     captured: list = []
     _patch(monkeypatch, captured)
 
     result = _github_pr.cmd_repo_label_ensure(
-        _make_args(color='ededed', description='Suppress bot review')
+        _make_args(color='0e8a16', description='Suppress bot review')
     )
 
     assert result['status'] == 'success'
@@ -73,7 +85,7 @@ def test_ensure_passes_color_and_description(monkeypatch):
         'skip-bot-review',
         '--force',
         '--color',
-        'ededed',
+        '0e8a16',
         '--description',
         'Suppress bot review',
     ]

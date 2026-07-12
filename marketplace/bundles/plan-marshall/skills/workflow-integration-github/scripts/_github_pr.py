@@ -987,21 +987,33 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
     }
 
 
+# Stable fallback label color (GitHub's own default gray) applied when the
+# caller omits --color. Without a stable default, `gh label create --force`
+# passes no --color at all, and `gh`'s own provider default is not guaranteed
+# to match a color a prior `ensure` call (or a manually-created label) already
+# set — so a bare re-run of `ensure` is not a true no-op on color. Pinning a
+# stable value here (rather than relying on `gh`'s default) keeps `ensure`
+# idempotent on every field, not just presence.
+_DEFAULT_LABEL_COLOR = 'ededed'
+
+
 def cmd_repo_label_ensure(args: argparse.Namespace) -> dict:
     """Handle 'repo label ensure' — ensure a repository label exists (idempotent).
 
     Uses ``gh label create {name} --force``: ``--force`` makes the create
     UPDATE an existing label in place instead of erroring, so a re-run against an
     already-present label is a no-op success (create-if-missing semantics).
-    Optional ``--color`` / ``--description`` are passed through when supplied.
+    ``--color`` always has a value — an explicitly supplied color is preserved,
+    otherwise the stable ``_DEFAULT_LABEL_COLOR`` fallback is sent so a color-less
+    re-run cannot reset an existing label's color to whatever `gh` defaults to.
+    Optional ``--description`` is passed through when supplied.
     """
     is_auth, err = github_ops.check_auth()
     if not is_auth:
         return make_error('repo_label_ensure', err)
 
-    gh_args = ['label', 'create', args.label, '--force']
-    if getattr(args, 'color', None):
-        gh_args.extend(['--color', args.color])
+    color = getattr(args, 'color', None) or _DEFAULT_LABEL_COLOR
+    gh_args = ['label', 'create', args.label, '--force', '--color', color]
     if getattr(args, 'description', None):
         gh_args.extend(['--description', args.description])
 

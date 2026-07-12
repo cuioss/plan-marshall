@@ -534,8 +534,8 @@ leaves uncommitted are always to tracked plan-marshall artifacts, but the check
 itself is unscoped over the whole working tree. The full procedure — diff detection, the land/leave `AskUserQuestion`
 gate, base-branch-conditional branch selection (create `chore/{slug}` on a base
 branch; confirm reuse of a non-base working branch), commit → push →
-`skip-bot-review`-labelled plan-less PR → merge-queue-aware merge → switch-to-main
-→ pull, and the bot skip-label honoring matrix — is documented in
+`skip-bot-review`-labelled plan-less PR → merge-queue-aware merge → switch to
+the base branch → pull, and the bot skip-label honoring matrix — is documented in
 [`references/landing-cycle.md`](references/landing-cycle.md). Load and execute that
 reference when the hook fires.
 
