@@ -61,12 +61,20 @@ def test_ci_subcommand_help():
 
 
 def test_pr_create_help():
-    """Test pr create help shows required arguments."""
+    """Test pr create help shows the two mutually-exclusive body sources.
+
+    The body comes from EXACTLY ONE of --plan-id (plan-bound body store) or
+    --body-file (plan-less body file); both must appear in help. The legacy inline
+    --body flag is asserted absent at the parser level by test_ci_base.py
+    (test_pr_create_parser_rejects_body_and_body_file), not here — ``--body-file``
+    legitimately contains the substring ``--body`` so a bare substring check would
+    false-positive.
+    """
     result = run_script(SCRIPT_PATH, 'pr', 'create', '--help')
     assert result.success, f'pr create --help failed: {result.stderr}'
     assert '--title' in result.stdout
     assert '--plan-id' in result.stdout
-    assert '--body' not in result.stdout
+    assert '--body-file' in result.stdout
 
 
 def test_pr_create_missing_required():

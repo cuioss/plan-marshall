@@ -111,10 +111,12 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
         return make_error('pr_create', err)
 
     # Resolve the body from exactly one source. Validate the mutual-exclusion
-    # contract before any network call. Both flags are always registered on the
-    # subparser (default None), so plain attribute access is safe.
+    # contract before any network call. ``--plan-id`` is always present on a
+    # parser-built namespace; ``body_file`` is read defensively via getattr so a
+    # direct-Namespace caller that predates the --body-file flag defaults cleanly
+    # to the plan-bound path instead of raising AttributeError.
     plan_id = args.plan_id
-    body_file = args.body_file
+    body_file = getattr(args, 'body_file', None)
     if plan_id and body_file:
         return make_error(
             'pr_create',

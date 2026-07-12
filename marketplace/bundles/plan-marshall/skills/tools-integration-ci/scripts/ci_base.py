@@ -1162,22 +1162,28 @@ def add_pr_create_args(
     """
     pr_create = pr_subparsers.add_parser('create', help='Create a pull request', allow_abbrev=False)
     pr_create.add_argument('--title', required=True, help='PR title')
-    pr_create.add_argument(
+    # Body source: EXACTLY ONE of --plan-id (plan-bound body store) or --body-file
+    # (plan-less body file). A required mutually-exclusive group enforces the
+    # "exactly one" contract at the parser level — supplying neither raises (group
+    # required), supplying both raises (mutually exclusive). The handler
+    # re-validates for direct-Namespace callers that bypass the parser.
+    body_source = pr_create.add_mutually_exclusive_group(required=True)
+    body_source.add_argument(
         '--plan-id',
         help='Plan identifier bound to the prepared body file (plan-bound body source; '
         'mutually exclusive with --body-file)',
     )
-    pr_create.add_argument(
-        '--slot',
-        default=None,
-        help='Optional body slot identifier matching the prior prepare-body call (default: "default")',
-    )
-    pr_create.add_argument(
+    body_source.add_argument(
         '--body-file',
         dest='body_file',
         metavar='PATH',
         help='Path to a file containing the PR body (plan-less body source; mutually '
         'exclusive with --plan-id). Used by the steward landing cycle, which has no plan dir.',
+    )
+    pr_create.add_argument(
+        '--slot',
+        default=None,
+        help='Optional body slot identifier matching the prior prepare-body call (default: "default")',
     )
     pr_create.add_argument('--base', help='Base/target branch (default: repo default)')
     pr_create.add_argument('--draft', action='store_true', help='Create as draft PR')
