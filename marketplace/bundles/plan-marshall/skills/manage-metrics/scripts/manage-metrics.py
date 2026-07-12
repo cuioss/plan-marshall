@@ -1501,25 +1501,31 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         # refine/outline phases) produces no agent `<usage>` envelope and no
         # accumulator, so its closing phase-boundary omitted --total-tokens and the
         # row carries no total_tokens — yet enrich has just attributed the
-        # parent-window `message.usage` four-field data to it. Derive total_tokens
-        # from that four-field sum so the phase counts toward the breakdown Tokens
-        # column and the n=k/6 completeness total instead of rendering '-'.
-        # Explicit-wins: a total_tokens already set by a dispatched phase's
-        # `<usage>` / accumulator is truthy here and is never overwritten, so this
-        # fires only on the inline-phase signature (no prior total).
+        # parent-window `message.usage` data to it. Derive total_tokens from
+        # input_tokens + output_tokens + cache_creation_input_tokens ONLY —
+        # cache_read_input_tokens is EXCLUDED so an inline phase's total_tokens
+        # matches the dispatched-phase `<usage>` total definition, which is fed via
+        # end-phase --total-tokens and excludes cache reads. Including cache_read
+        # (which runs two orders of magnitude larger — plan-13 archive: 1-init
+        # 11.16M dominated by 11.09M cache_read) would over-count the inline row by
+        # ~100x versus comparable dispatched rows. The four raw usage fields stay
+        # persisted on the row above for billing analysis; only the derived
+        # total_tokens narrows. Explicit-wins: a total_tokens already set by a
+        # dispatched phase's `<usage>` / accumulator is truthy here and is never
+        # overwritten, so this fires only on the inline-phase signature (no prior
+        # total).
         if not phase_row.get('total_tokens'):
-            four_field_total = sum(
+            inline_total = sum(
                 int(phase_row[field])
                 for field in (
                     'input_tokens',
                     'output_tokens',
-                    'cache_read_input_tokens',
                     'cache_creation_input_tokens',
                 )
                 if isinstance(phase_row.get(field), (int, float))
             )
-            if four_field_total:
-                phase_row['total_tokens'] = four_field_total
+            if inline_total:
+                phase_row['total_tokens'] = inline_total
 
     write_metrics(plan_id, data)
 
