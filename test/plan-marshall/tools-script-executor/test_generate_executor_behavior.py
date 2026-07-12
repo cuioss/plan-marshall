@@ -15,6 +15,8 @@ leaves untouched.
 import types
 from pathlib import Path
 
+import pytest
+
 from conftest import load_script_module
 
 # Unique module_name so the in-process load is distinct from the existing
@@ -358,7 +360,14 @@ def test_notation_drift_zero_against_clean_marketplace_source():
     ``(referenced_notation, registered_notation)`` pairs so the drift is
     identified at failure time.
     """
-    base = _gen.get_base_path(use_marketplace=True)
+    try:
+        base = _gen.get_base_path(use_marketplace=True)
+    except FileNotFoundError:
+        pytest.skip(
+            'marketplace source tree (marketplace/bundles) is not present in '
+            'this checkout — caller-notation drift detection requires the '
+            'marketplace source and cannot run against a deployed plugin cache'
+        )
     registered = _gen.discover_scripts_fallback(base)
 
     drift = _gen._detect_notation_drift(registered, base)
