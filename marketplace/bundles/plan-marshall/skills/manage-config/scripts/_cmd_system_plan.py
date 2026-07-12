@@ -170,6 +170,15 @@ def cmd_project(args) -> dict:
             'pr_compact_max_changed_files',
             DEFAULT_PROJECT['pr_compact_max_changed_files'],
         )
+        # Re-validate the resolved knobs at this read boundary — mirroring the
+        # sibling `set` verb — so a hand-corrupted marshal.json fails loud with a
+        # clear message here rather than silently producing a wrong verdict or
+        # crashing with an opaque TypeError inside pr_compact_rides_existing_pr.
+        try:
+            validate_pr_strategy(strategy)
+            validate_pr_compact_max_changed_files(max_changed_files)
+        except ValueError as e:
+            return error_exit(str(e), error_type='invalid_value')
         rides = pr_compact_rides_existing_pr(strategy, changed_files, max_changed_files)
         return success_exit({
             'decision': 'ride' if rides else 'split',

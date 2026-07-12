@@ -2803,3 +2803,48 @@ def test_project_pr_decision_rejects_negative_changed_files(plan_context):
     )
     assert result['status'] == 'error'
     assert result.get('error_type') == 'invalid_value'
+
+
+def test_project_pr_decision_rejects_corrupt_pr_strategy(plan_context):
+    """`project pr-decision` must fail loud on a hand-corrupted pr_strategy.
+
+    The knobs are re-validated at the pr-decision READ boundary (mirroring the
+    `set` verb), so a marshal.json hand-edited to an out-of-enum pr_strategy
+    produces a clear `status: error` / `error_type: invalid_value` here rather
+    than a silent wrong verdict or an opaque crash inside
+    pr_compact_rides_existing_pr.
+    """
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    config.setdefault('project', {})['pr_strategy'] = 'sloppy'
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+    result = _cmd_system_plan_mod.cmd_project(
+        Namespace(verb='pr-decision', changed_files=10)
+    )
+
+    assert result['status'] == 'error'
+    assert result.get('error_type') == 'invalid_value'
+
+
+def test_project_pr_decision_rejects_corrupt_pr_compact_max_changed_files(plan_context):
+    """`project pr-decision` must fail loud on a hand-corrupted ceiling value.
+
+    A marshal.json hand-edited to a negative pr_compact_max_changed_files is
+    caught by the read-boundary validation before the ride/split rule runs,
+    returning a clear `status: error` / `error_type: invalid_value` rather than
+    an opaque TypeError deep inside the comparison.
+    """
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    config.setdefault('project', {})['pr_compact_max_changed_files'] = -5
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+    result = _cmd_system_plan_mod.cmd_project(
+        Namespace(verb='pr-decision', changed_files=10)
+    )
+
+    assert result['status'] == 'error'
+    assert result.get('error_type') == 'invalid_value'

@@ -166,7 +166,7 @@ marshall-steward-owned artifact changes (executor regeneration, marshal.json mig
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config project pr-decision \
-  --changed-files {N} --audit-plan-id {plan_id}
+  --changed-files {N}
 ```
 
 `{N}` is the total changed-file count of `{changed_files}`. Read `decision` off the returned TOON:
