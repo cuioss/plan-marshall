@@ -689,10 +689,14 @@ class TestNarrativeContract:
             'Standard must spell out the per-module iteration in the auto '
             'branch — the batch `enrich --modules {csv}` shape is gone.'
         )
-        # All three registered enrich subcommands must be cited.
-        assert 'architecture enrich module' in standard_text
-        assert 'architecture enrich package' in standard_text
-        assert 'architecture enrich skills-by-profile' in standard_text
+        # All three registered enrich subcommands must be cited. The top-level
+        # `--project-dir {worktree_path}` flag is interposed between the
+        # `architecture` script token and the subcommand (top-level flags
+        # precede the subcommand — lesson 2026-07-07-20-001), so pin the
+        # subcommand tokens rather than an `architecture <subcommand>` adjacency.
+        assert 'enrich module' in standard_text
+        assert 'enrich package' in standard_text
+        assert 'enrich skills-by-profile' in standard_text
         # The legacy batch literal MUST NOT reappear in the standard — it
         # named a verb that was never registered and prompted at least one
         # historical mis-execution. Guard against re-introduction.
