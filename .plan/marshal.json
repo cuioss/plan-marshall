@@ -188,7 +188,9 @@
       "feature/",
       "fix/",
       "chore/"
-    ]
+    ],
+    "pr_strategy": "compact",
+    "pr_compact_max_changed_files": 150
   },
   "providers": [
     {
@@ -250,7 +252,7 @@
       "lessons_superseded_days": 0,
       "temp_on_maintenance": true
     },
-    "provisioned_version": "0.1.1082",
-    "config_seed_fingerprint": "0acf5eb5"
+    "provisioned_version": "0.1.1096",
+    "config_seed_fingerprint": "dc978cd2"
   }
 }
