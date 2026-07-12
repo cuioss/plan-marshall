@@ -18,6 +18,80 @@ from _config_core import (
 )
 from _config_defaults import get_default_config, stamp_provisioning_fields
 
+# Retired step keys and their canonical replacements. Each entry maps a step id
+# that a prior release emitted (and which live consumer configs may still carry)
+# to the canonical id in use today. The table is the single, explicit, extensible
+# rename set: future renames add rows here. The first (and currently only) rename
+# collapses both the built-in-prefixed and bare legacy forms of the review step to
+# the promoted bundle:skill canonical.
+RETIRED_STEP_KEY_RENAMES: dict[str, str] = {
+    'default:automated-review': 'plan-marshall:automatic-review',
+    'automated-review': 'plan-marshall:automatic-review',
+}
+
+# The two keyed-map step containers a rename pass walks: (phase key, map key).
+_STEP_MAP_LOCATIONS: tuple[tuple[str, str], ...] = (
+    ('phase-5-execute', 'verification_steps'),
+    ('phase-6-finalize', 'steps'),
+)
+
+
+def _rename_in_map(steps_map: dict, prefix: str, renamed: list[str]) -> dict:
+    """Rebuild a keyed-map steps object with retired keys migrated to canonicals.
+
+    Semantics (idempotent):
+    - A retired key whose canonical is ABSENT from the map is renamed in place:
+      the canonical takes the retired key's position and its knob block verbatim,
+      so surrounding insertion order and the nested params are preserved.
+    - A retired key whose canonical is already PRESENT (anywhere in the original
+      map, or already emitted by an earlier retired form) is dropped as a
+      duplicate — the canonical's own knob block wins; no double step is produced.
+    - A non-retired key is copied through unchanged.
+
+    Each migrated retired key is reported as a human-readable dotted-path string in
+    ``renamed``.
+    """
+    original_keys = set(steps_map)
+    new_map: dict = {}
+    for step_id, params in steps_map.items():
+        canonical = RETIRED_STEP_KEY_RENAMES.get(step_id)
+        if canonical is None:
+            new_map[step_id] = params
+            continue
+        if canonical in original_keys or canonical in new_map:
+            # canonical already present -> drop the retired duplicate
+            renamed.append(f'{prefix}.{step_id} (dropped duplicate of {canonical})')
+            continue
+        # rename in place, preserving the knob block and position
+        new_map[canonical] = params
+        renamed.append(f'{prefix}.{step_id} -> {canonical}')
+    return new_map
+
+
+def _migrate_retired_step_keys(live: dict, renamed: list[str]) -> dict:
+    """Migrate retired step keys to their canonicals across the keyed-map containers.
+
+    Walks ``plan.phase-5-execute.verification_steps`` and
+    ``plan.phase-6-finalize.steps``, applying :func:`_rename_in_map` to each. Runs
+    BEFORE the deep-merge so the canonical is already present when the merge
+    inspects the map — the merge then never re-adds a default canonical alongside a
+    surviving retired key (which would produce a double review step). Mutates
+    ``live`` in place and returns it.
+    """
+    plan = live.get('plan')
+    if not isinstance(plan, dict):
+        return live
+    for phase_key, map_key in _STEP_MAP_LOCATIONS:
+        phase = plan.get(phase_key)
+        if not isinstance(phase, dict):
+            continue
+        steps_map = phase.get(map_key)
+        if not isinstance(steps_map, dict):
+            continue
+        prefix = f'plan.{phase_key}.{map_key}'
+        phase[map_key] = _rename_in_map(steps_map, prefix, renamed)
+    return live
+
 
 def _deep_merge_missing(live: dict, defaults: dict, prefix: str, added: list[str]) -> dict:
     """Recursively add keys present in ``defaults`` but absent from ``live``.
@@ -64,9 +138,16 @@ def _deep_merge_missing(live: dict, defaults: dict, prefix: str, added: list[str
 def cmd_sync_defaults(args) -> dict:
     """Handle sync-defaults command.
 
-    Reads the live marshal.json, deep-merges any missing keys from
-    ``get_default_config()`` into it (preserving every existing value), writes
-    the merged config back, and reports the added keys grouped by dotted path.
+    Reads the live marshal.json, migrates any retired step keys to their
+    canonicals (see :data:`RETIRED_STEP_KEY_RENAMES`), deep-merges any missing keys
+    from ``get_default_config()`` into it (preserving every existing value), writes
+    the merged config back, and reports the added and renamed keys.
+
+    The retired-key migration runs BEFORE the deep-merge: renaming a retired key to
+    its canonical first means the deep-merge sees the canonical already present and
+    does not re-add it, so no duplicate (double-review) step is produced. The
+    migration preserves each step's nested knob block byte-identically and its
+    insertion order, and is idempotent (a re-run reports no renames).
 
     ``get_default_config()`` does NOT seed ``build.map`` — the
     build_map is materialized only by the wizard's explicit build-map seed
@@ -79,6 +160,9 @@ def cmd_sync_defaults(args) -> dict:
 
     live = load_config()
     defaults = get_default_config()
+
+    renamed: list[str] = []
+    _migrate_retired_step_keys(live, renamed)
 
     added: list[str] = []
     merged = _deep_merge_missing(live, defaults, '', added)
@@ -101,7 +185,14 @@ def cmd_sync_defaults(args) -> dict:
         after_system['config_seed_fingerprint'],
     )
 
-    if added or stamps_changed:
+    if added or stamps_changed or renamed:
         save_config(merged)
 
-    return success_exit({'added': sorted(added), 'added_count': len(added)})
+    return success_exit(
+        {
+            'added': sorted(added),
+            'added_count': len(added),
+            'renamed': sorted(renamed),
+            'renamed_count': len(renamed),
+        }
+    )

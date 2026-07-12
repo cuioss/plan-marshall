@@ -71,6 +71,30 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-d
   seeded from defaults.
 - The merge is idempotent — re-running immediately produces an empty `added[]`.
 
+**Retired-step-key migration** (runs BEFORE the deep-merge):
+
+`sync-defaults` first migrates any *retired* step key in the two keyed-map step
+containers — `plan.phase-5-execute.verification_steps` and
+`plan.phase-6-finalize.steps` — to its canonical id via the explicit
+`RETIRED_STEP_KEY_RENAMES` table. The table is the single, extensible rename set;
+its first (and currently only) entry maps both the built-in-prefixed and the bare
+legacy review-step forms — `default:automated-review` and `automated-review` — to
+the promoted `bundle:skill` canonical `plan-marshall:automatic-review`. Future
+renames add rows to the same table.
+
+Migration semantics (idempotent, knob-preserving):
+
+- **Rename in place** when the canonical is absent: the canonical takes the retired
+  key's position and its nested knob block byte-identically, so both the params and
+  the surrounding insertion order are preserved.
+- **Drop the retired duplicate** when the canonical is already present: the
+  canonical's own knob block wins; no duplicate (double-review) step is produced.
+- A second run reports no renames (idempotent).
+
+Running the migration *before* the deep-merge is load-bearing: with the canonical
+already present, the deep-merge does not re-add the default canonical alongside a
+surviving retired key, so a stale-key config never yields a double review step.
+
 **Output** (TOON):
 
 ```toon
@@ -80,11 +104,19 @@ added[3]:
   - plan.phase-6-finalize.steps.default:branch-cleanup.auto_rebase_threshold
   - project.default_base_branch
 added_count: 3
+renamed[1]:
+  - plan.phase-6-finalize.steps.default:automated-review -> plan-marshall:automatic-review
+renamed_count: 1
 ```
 
 `added[]` lists the dotted paths of every newly-added key; `added_count` is its
 length. An empty `added[]` (with `added_count: 0`) means the live config already
-carried every default.
+carried every default. `renamed[]` lists each migrated retired key as a
+human-readable dotted-path string (`... -> {canonical}` for a rename in place, or
+`... (dropped duplicate of {canonical})` for a dropped duplicate); `renamed_count`
+is its length, and an empty `renamed[]` means no retired key was present. The
+config is persisted whenever `added[]`, `renamed[]`, or the provisioning stamps
+changed.
 
 ---
 
