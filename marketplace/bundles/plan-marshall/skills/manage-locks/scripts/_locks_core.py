@@ -147,9 +147,17 @@ def holder_has_live_worktree(holder: str) -> bool:
     which worktree the acquiring caller is pinned to. An empty/malformed holder has
     no worktree → False. Resolution failures propagate loudly (a real bug), never
     swallowed as "no live worktree".
+
+    Path-traversal defense: ``holder`` is a plan-id that is joined directly onto
+    the worktrees root to build a filesystem path. A crafted holder bearing a
+    path separator, a ``..`` parent-dir segment, or an embedded NUL byte could
+    escape the worktrees root and resolve to an unrelated existing directory —
+    reporting a dead holder "alive" and permanently blocking lock reclamation
+    (a DoS). Any such holder is rejected as having no live worktree BEFORE the
+    path is constructed, mirroring the plan-id shape enforced elsewhere.
     """
     holder = holder.strip()
-    if not holder:
+    if not holder or '/' in holder or '\\' in holder or '..' in holder or '\x00' in holder:
         return False
     base = _main_plan_local_base()
     worktree_dir = base / 'worktrees' / holder

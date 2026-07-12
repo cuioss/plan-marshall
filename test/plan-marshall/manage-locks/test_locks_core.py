@@ -143,6 +143,39 @@ def test_mid_recovery_holder_is_dead_by_plan_dir_but_has_live_worktree(plan_cont
     assert holder_has_live_worktree('lc-mid-recovery') is True
 
 
+@pytest.mark.parametrize(
+    'malicious_holder',
+    [
+        '../evil',
+        '../../evil',
+        'a/../evil',
+        'sub/evil',
+        'sub\\evil',
+        '..',
+        'foo\x00bar',
+    ],
+)
+def test_holder_has_live_worktree_rejects_traversal_holder(plan_context, malicious_holder):
+    # holder is a plan-id joined DIRECTLY onto the worktrees root to build a
+    # filesystem path. A holder bearing a path separator, a `..` parent segment,
+    # or an embedded NUL must be rejected as having no live worktree BEFORE the
+    # path is constructed — otherwise a crafted holder could escape the worktrees
+    # root, resolve to an unrelated existing dir, and permanently block lock
+    # reclamation (a DoS).
+    assert holder_has_live_worktree(malicious_holder) is False
+
+
+def test_holder_has_live_worktree_traversal_does_not_escape_worktrees_root(plan_context):
+    # Concrete escape scenario: `../evil` would resolve `worktrees/../evil` to a
+    # sibling dir of the worktrees root. Stage that sibling so, absent the guard,
+    # the predicate would report the holder "alive". The guard must reject the
+    # traversal and return False rather than resolving the escaped path.
+    base = plan_context.fixture_dir
+    (base / 'evil').mkdir(parents=True, exist_ok=True)  # worktrees/../evil target
+
+    assert holder_has_live_worktree('../evil') is False
+
+
 # =============================================================================
 # _read_json_or_empty — missing / corrupt / non-dict / valid
 # =============================================================================
