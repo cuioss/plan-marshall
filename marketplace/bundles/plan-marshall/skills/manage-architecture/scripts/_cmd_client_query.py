@@ -463,6 +463,8 @@ def detect_stale_skills_by_profile(
     without a real bundle tree. Returns an empty list when the map is present
     and every notation resolves.
     """
+    if not isinstance(skills_by_profile, dict):
+        return [f"module '{module_name}': skills_by_profile is malformed (expected a dictionary)"]
     if not skills_by_profile:
         return [f"module '{module_name}': skills_by_profile is missing or empty"]
     stale = sorted({n for n in _iter_skill_notations(skills_by_profile) if not is_live(n)})
