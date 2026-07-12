@@ -230,6 +230,7 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `menu-terminal-title.md` | Two-action sub-menu: install render-hook wiring; override active-plan for the current session | Linked from `menu-configuration.md` (Terminal Title) |
 | `menu-enforcement-hook.md` | Detect→confirm→install sub-menu for the conditional PreToolUse enforcement hook (orthogonal `--enforcement` install) | Linked from `menu-configuration.md` (Enforcement Hook) |
 | `merge-queue-setup.md` | Idempotent probe→ask→configure provisioning of the platform merge queue (GitHub merge queue / GitLab merge train) via the `ci repo merge-queue` verbs | Linked from `wizard-flow.md` Step 13.5 and `menu-configuration.md` (Merge Queue) |
+| `landing-cycle.md` | End-of-run landing cycle: detect uncommitted plan-marshall artifact diff → offer to commit → push → `skip-bot-review`-labelled plan-less PR → merge-queue-aware merge → switch-to-main → pull; base-branch-conditional branch selection + bot skip-label honoring matrix | Linked from the "End-of-Run Landing Cycle" hook (menu-mode Quit path + `wizard-flow.md` end) |
 | `error-handling.md` | Error types and recovery | On error conditions |
 
 ---
@@ -343,15 +344,15 @@ missing_keys	working_prefixes
 
 When the steward runs in **menu mode** (both the executor and `marshal.json`
 already exist — an already-initialized project re-run/upgrade), it performs a
-five-step remediation pass at **menu-mode entry, before the Main Menu** — a
+six-step remediation pass at **menu-mode entry, before the Main Menu** — a
 sibling entry-time surface to "Branch-Naming Surfacing" and the missing-default
 finalize-step detection above. The pass repairs config drift that accumulated in
 projects initialized before the relevant fixes landed. The pass is not gated by
 any version check; it runs unconditionally on every menu-mode entry and is
 idempotent (an already-clean project is left byte-stable).
 
-Steps (a), (b), (d), and (e) are deterministic script calls that are silent by
-default — they run unconditionally and leave an already-normalized project
+Steps (a), (b), (d), (e), and (f) are deterministic script calls that are silent
+by default — they run unconditionally and leave an already-normalized project
 unchanged. They surface nothing to the user EXCEPT for the documented warning
 conditions of steps (d) and (e): step (d)'s session-restart warning when it
 regenerates the executor, and step (e)'s detect/warn advisory when the reconcile
@@ -486,7 +487,55 @@ well-formed `added_count` field. Only once both calls have returned
   silently to the Main Menu, preserving the idempotent silent-on-clean behavior
   of steps (a)–(e).
 
-After the five steps settle, proceed to the Main Menu.
+**(f) Sort `phase-6-finalize.steps` into frontmatter order** (silent,
+unconditional). Re-sort the on-disk `plan.phase-6-finalize.steps` keyed-map into
+ascending frontmatter `order`. `sync-defaults` (step (e)) deep-merges any
+newly-added finalize step by appending it, so the operator-visible `marshal.json`
+drifts out of frontmatter order over time; this step restores the canonical order
+on disk, reusing the manifest composer's sort choke-point (no duplicated order
+table). It is sequenced LAST — after step (e)'s `sync-defaults` may have appended
+a step — so it corrects any freshly-appended step, and its potential reorder diff
+is picked up by the End-of-Run Landing Cycle's uncommitted-artifact detection:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config steps-sort
+```
+
+See the `manage-config` Canonical invocations (`steps-sort`) for the verb shape.
+The call is idempotent — an already-sorted map is left byte-stable (it persists
+only when the key order actually changed), and per-step values are preserved
+byte-identically. `phase-5-execute.verification_steps` is out of scope.
+
+After the six steps settle, proceed to the Main Menu.
+
+## End-of-Run Landing Cycle
+
+A steward run can leave uncommitted changes to plan-marshall artifacts — the
+Re-Run Remediation Pass alone may rewrite `marshal.json` (steps (a) normalize-keys,
+(e) sync-defaults, (f) steps-sort), and interactive configuration edits touch it
+too. The **End-of-Run Landing Cycle** is a single, uniform end-of-run hook that
+offers to land those changes so a steward pass does not silently leave the working
+tree dirty.
+
+**Uniform firing point.** The hook fires at the natural END of every steward
+mode:
+
+- **Menu mode** — on the "Quit" path (Main Menu option 5), AFTER "Good bye!" is
+  emitted and BEFORE the skill stops.
+- **Wizard mode** — at the end of the wizard flow (see
+  [`references/wizard-flow.md`](references/wizard-flow.md)), after the final
+  configuration step completes.
+
+**Trigger.** The hook runs the landing-cycle procedure only when an uncommitted
+plan-marshall artifact diff is present (`git status --porcelain` is non-empty for
+tracked plan-marshall paths); with no diff it is a silent no-op and the run ends
+normally. The full procedure — diff detection, the land/leave `AskUserQuestion`
+gate, base-branch-conditional branch selection (create `chore/{slug}` on a base
+branch; confirm reuse of a non-base working branch), commit → push →
+`skip-bot-review`-labelled plan-less PR → merge-queue-aware merge → switch-to-main
+→ pull, and the bot skip-label honoring matrix — is documented in
+[`references/landing-cycle.md`](references/landing-cycle.md). Load and execute that
+reference when the hook fires.
 
 ## Executor & Config Staleness Signaling
 

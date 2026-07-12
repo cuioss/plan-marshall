@@ -1031,6 +1031,7 @@ from _github_pr import (  # noqa: E402 — bottom import: primitives must be def
     cmd_pr_update_branch,
     cmd_pr_view,
     cmd_pr_wait_for_comments,
+    cmd_repo_label_ensure,
     fetch_pr_reviews_with_commits,
     post_pr_comment,
 )
@@ -1116,6 +1117,7 @@ def main() -> int:
         ('branch', 'delete'): cmd_branch_delete,
         ('repo', 'merge-queue', 'probe'): cmd_repo_merge_queue_probe,
         ('repo', 'merge-queue', 'enable'): cmd_repo_merge_queue_enable,
+        ('repo', 'label', 'ensure'): cmd_repo_label_ensure,
     }
 
     # branch_sub is registered by ci_base.build_parser; acknowledge the returned

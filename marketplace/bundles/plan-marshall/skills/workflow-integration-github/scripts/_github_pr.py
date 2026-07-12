@@ -19,6 +19,7 @@ copy the binding and defeat the patch.
 import argparse
 import json
 import re
+from pathlib import Path
 from urllib.parse import quote
 
 import github_ops
@@ -93,16 +94,56 @@ def _detect_coderabbit_rate_limited(comments: list[dict]) -> bool:
 
 
 def cmd_pr_create(args: argparse.Namespace) -> dict:
-    """Handle 'pr create' subcommand."""
+    """Handle 'pr create' subcommand.
+
+    The PR body comes from exactly ONE of two mutually-exclusive sources:
+
+    - ``--plan-id`` [+ ``--slot``]: the plan-bound body store (a prepared scratch
+      file consumed here and deleted on success).
+    - ``--body-file PATH``: an explicit file read directly (the plan-less /
+      steward path — no plan directory exists to hold a scratch body).
+
+    Supplying neither, or both, is rejected.
+    """
     # Check auth
     is_auth, err = github_ops.check_auth()
     if not is_auth:
         return make_error('pr_create', err)
 
-    # Resolve body via the path-allocate body store
-    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
-    if err_dict:
-        return make_error('pr_create', err_dict.get('message', 'body not prepared'))
+    # Resolve the body from exactly one source. Validate the mutual-exclusion
+    # contract before any network call. Both flags are always registered on the
+    # subparser (default None), so plain attribute access is safe.
+    plan_id = args.plan_id
+    body_file = args.body_file
+    if plan_id and body_file:
+        return make_error(
+            'pr_create',
+            '--plan-id and --body-file are mutually exclusive; supply exactly one body source',
+        )
+    if not plan_id and not body_file:
+        return make_error(
+            'pr_create',
+            'A PR body source is required: supply either --plan-id (plan-bound body '
+            'store) or --body-file PATH (plan-less body file)',
+        )
+
+    consumed_from_store = False
+    if body_file:
+        # Plan-less path: read the body directly from the explicit file. Fail
+        # loud on a missing / unreadable / empty file.
+        try:
+            body = Path(body_file).read_text(encoding='utf-8')
+        except OSError as exc:
+            return make_error('pr_create', f'Could not read --body-file {body_file}', str(exc))
+        if not body.strip():
+            return make_error('pr_create', f'--body-file is empty: {body_file}')
+    else:
+        # Plan-bound path: consume the prepared scratch body from the body store.
+        store_body, err_dict = read_and_consume_body(plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
+        if err_dict or store_body is None:
+            return make_error('pr_create', (err_dict or {}).get('message', 'body not prepared'))
+        body = store_body
+        consumed_from_store = True
 
     # Build command
     gh_args = ['pr', 'create', '--title', args.title, '--body', body]
@@ -124,8 +165,10 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
     if returncode != 0:
         return make_error('pr_create', 'Failed to create PR', stderr.strip())
 
-    # Delete the consumed scratch body — success only
-    delete_consumed_body(args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
+    # Delete the consumed scratch body — success only, and only when the body
+    # came from the plan-bound store (the plan-less --body-file is caller-owned).
+    if consumed_from_store:
+        delete_consumed_body(plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
 
     # Parse the URL from output (gh pr create outputs the URL)
     pr_url = stdout.strip()
@@ -935,6 +978,36 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
         'strategy': args.strategy,
         'enqueued': True,
         'delete_branch': args.delete_branch,
+    }
+
+
+def cmd_repo_label_ensure(args: argparse.Namespace) -> dict:
+    """Handle 'repo label ensure' — ensure a repository label exists (idempotent).
+
+    Uses ``gh label create {name} --force``: ``--force`` makes the create
+    UPDATE an existing label in place instead of erroring, so a re-run against an
+    already-present label is a no-op success (create-if-missing semantics).
+    Optional ``--color`` / ``--description`` are passed through when supplied.
+    """
+    is_auth, err = github_ops.check_auth()
+    if not is_auth:
+        return make_error('repo_label_ensure', err)
+
+    gh_args = ['label', 'create', args.label, '--force']
+    if getattr(args, 'color', None):
+        gh_args.extend(['--color', args.color])
+    if getattr(args, 'description', None):
+        gh_args.extend(['--description', args.description])
+
+    returncode, _stdout, stderr = github_ops.run_gh(gh_args)
+    if returncode != 0:
+        return make_error('repo_label_ensure', f'Failed to ensure label {args.label!r}', stderr.strip())
+
+    return {
+        'status': 'success',
+        'operation': 'repo_label_ensure',
+        'label': args.label,
+        'ensured': True,
     }
 
 
