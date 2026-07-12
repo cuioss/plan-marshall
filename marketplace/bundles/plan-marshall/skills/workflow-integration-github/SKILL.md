@@ -1,16 +1,17 @@
 ---
 name: workflow-integration-github
-description: GitHub provider for PR review workflows — two pure verbs (fetch_findings files comments to the ledger, post_responses transmits triaged dispositions) via gh CLI
+description: GitHub provider for PR review workflows — three pure verbs (fetch_findings files comments to the ledger, post_responses transmits triaged dispositions, bot_completion reports a review bot's completion state) via gh CLI
 user-invocable: false
 mode: workflow
 ---
 
 # GitHub CI Integration Workflow Skill
 
-GitHub provider for the findings-pipeline `pr-comment` producer. The provider surface is exactly TWO pure, zero-LLM verbs — no triage judgment lives here:
+GitHub provider for the findings-pipeline `pr-comment` producer. The provider surface is exactly THREE pure, zero-LLM verbs — no triage judgment lives here:
 
 - **`fetch_findings`** — fetch PR review comments, apply the pre-filter (`comment-patterns.json`), and file one `pr-comment` finding per surviving comment via `manage-findings add`. The untrusted comment body is quarantined under `raw_input.{body}` (never embedded raw in the top-level `detail`); the batched `manage-findings ingest` pass promotes it to top-level only after `validate_struct`.
 - **`post_responses`** — apply already-decided triage dispositions back to the PR (a thread-reply carrying the `resolution_detail`, then a resolve-thread), keyed by each finding's own `hash_id`.
+- **`bot_completion`** — report a review bot's registry `completion_check_name` check-run state (`{status, in_progress, completed}`) for the PR HEAD, so the `automatic-review` completion-aware poll can wait for a slow bot to finish before fetching; a bot with no completion check-run reports `no_check_name` and the caller falls back to the `review_bot_buffer_seconds` wait.
 
 Both verbs FAIL LOUD when GitHub is not configured (a typed `unconfigured` status, never a silent no-op). Uses the `gh` CLI for all GitHub operations.
 
@@ -18,7 +19,7 @@ Both verbs FAIL LOUD when GitHub is not configured (a typed `unconfigured` statu
 
 ## Enforcement
 
-**Execution mode**: Two pure provider verbs — `fetch_findings` files PR review comments to the ledger (untrusted body quarantined under `raw_input`); `post_responses` transmits already-decided triage dispositions back to the PR. Triage judgment lives in the consolidated triage pass, NOT in this provider.
+**Execution mode**: Three pure provider verbs — `fetch_findings` files PR review comments to the ledger (untrusted body quarantined under `raw_input`); `post_responses` transmits already-decided triage dispositions back to the PR; `bot_completion` reports a review bot's completion-check state for the completion-aware poll. Triage judgment lives in the consolidated triage pass, NOT in this provider.
 
 **Prohibited actions:**
 - Never call `gh` directly from LLM context; all operations go through script API
