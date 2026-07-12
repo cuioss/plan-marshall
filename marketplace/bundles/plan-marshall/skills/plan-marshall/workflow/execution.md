@@ -514,7 +514,7 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 Then re-read `status.metadata.session_id`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id {plan_id} --get --field session_id
 ```
 

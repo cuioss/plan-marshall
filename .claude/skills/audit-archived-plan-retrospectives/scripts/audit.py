@@ -255,11 +255,13 @@ CROSS_PLAN_CHECKS = {
 # (plan-1..plan-3 execution-loop / routing / finalize-flow / dist), `#852`
 # (find-triage D6 step-ownership), `#862` (inline phase-1-init dispatch /
 # routing-order fix), `#863` (merge-queue enablement via marshall-steward), `#872`
-# (self-review promoted to a default finalize step), `#875` (this plan's own
-# boundary — the three checks this plan reworks: `metrics`,
-# `track-selection-accuracy`, and `lane-lever-effectiveness`), and
-# `plan-10` (the roadmap head this plan re-confirms the general checks accurate
-# against). Every key MUST be a member of `CHECK_NAMES`.
+# (self-review promoted to a default finalize step), `#875` (the three checks
+# reworked earlier: `metrics`, `track-selection-accuracy`, and
+# `lane-lever-effectiveness`), `#PLAN15-PR` (this plan's own boundary — the
+# `architecture-lookup-ratio` check this plan bumps; the placeholder is resolved
+# to the real `#NNN` at finalize), and `plan-10` (the roadmap head this plan
+# re-confirms the general checks accurate against). Every key MUST be a member of
+# `CHECK_NAMES`.
 CHECK_ERA: dict[str, str] = {
     # Roadmap-affected checks carry the specific boundary whose mechanics they
     # verify (kept in step with the plan-11 semantic updates).
@@ -287,8 +289,12 @@ CHECK_ERA: dict[str, str] = {
     "token-economics": "plan-10",
     "quality-chain": "plan-10",
     "task-graph-redundancy": "plan-10",
-    "architecture-lookup-ratio": "plan-10",
     "preference-pattern-detector": "plan-10",
+    # architecture-lookup-ratio — #PLAN15-PR (this plan's boundary): this plan
+    # reworks the information-vs-build lookup-ratio mechanics, so its era boundary
+    # IS this plan's own PR. The `#PLAN15-PR` placeholder is resolved to the real
+    # `#NNN` by the finalize era-stamp resolution.
+    "architecture-lookup-ratio": "#PLAN15-PR",
     # Roadmap-mechanics checks (plan-11) carry the boundary whose mechanics they
     # verify: dispatch-topology confirms the plan-10 leaf/dispatch invariant;
     # finalize-flow-conformance verifies #849's deterministic ci_verify / adaptive

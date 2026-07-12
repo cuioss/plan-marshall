@@ -9,7 +9,44 @@
   "purpose_reasoning": "",
   "responsibility": "",
   "responsibility_reasoning": "",
-  "skills_by_profile": {},
-  "skills_by_profile_reasoning": "",
+  "skills_by_profile": {
+    "implementation": {
+      "defaults": [
+        {
+          "description": "Documentation work identity \u2014 authoring and reshaping technical documentation",
+          "skill": "plan-marshall:persona-documenter"
+        },
+        {
+          "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
+          "skill": "plan-marshall:persona-plan-marshall-agent"
+        },
+        {
+          "description": "AsciiDoc formatting, validation, link verification, and template creation",
+          "skill": "pm-documents:ref-asciidoc"
+        },
+        {
+          "description": "Content quality, tone analysis, and organization standards for technical docs",
+          "skill": "pm-documents:ref-documentation"
+        },
+        {
+          "description": "Narrative styles for technical documentation \u2014 tone, voice, structural arc",
+          "skill": "pm-documents:ref-narrative-styles"
+        },
+        {
+          "description": "SVG technical diagram authoring standards \u2014 uniform visual language, theming",
+          "skill": "pm-documents:ref-svg-diagrams"
+        },
+        {
+          "description": "Architectural Decision Record CRUD, numbering, and AsciiDoc formatting",
+          "skill": "plan-marshall:manage-adr"
+        },
+        {
+          "description": "Interface specification management",
+          "skill": "pm-documents:manage-interface"
+        }
+      ]
+    }
+  },
+  "skills_by_profile_reasoning": "documentation domain \u2014 persona-documenter is the doc-authoring work identity, plus the doc skills its composition resolves (ref-asciidoc, ref-documentation, ref-narrative-styles, ref-svg-diagrams, manage-adr, manage-interface) and the foundational agent rules. Operator-curated per plan-15",
   "tips": []
 }

@@ -31,11 +31,11 @@
       "defaults": [
         {
           "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
-          "skill": "plan-marshall:dev-agent-behavior-rules"
+          "skill": "plan-marshall:persona-plan-marshall-agent"
         },
         {
           "description": "Language-agnostic code quality, refactoring, and documentation principles",
-          "skill": "plan-marshall:dev-general-code-quality"
+          "skill": "plan-marshall:ref-code-quality"
         },
         {
           "description": "Core Python patterns \u2014 types, data structures, error handling, naming",
@@ -47,15 +47,15 @@
       "defaults": [
         {
           "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
-          "skill": "plan-marshall:dev-agent-behavior-rules"
+          "skill": "plan-marshall:persona-plan-marshall-agent"
         },
         {
           "description": "Language-agnostic code quality principles (SRP, CQS, complexity, error handling)",
-          "skill": "plan-marshall:dev-general-code-quality"
+          "skill": "plan-marshall:ref-code-quality"
         },
         {
           "description": "Language-agnostic testing methodology (AAA, coverage, reliability, determinism)",
-          "skill": "plan-marshall:dev-general-module-testing"
+          "skill": "plan-marshall:persona-module-tester"
         },
         {
           "description": "Core Python patterns \u2014 types, data structures, error handling, naming",
@@ -71,11 +71,11 @@
       "defaults": [
         {
           "description": "Foundational agent behavior rules (user interaction, tool usage, research, dependency management)",
-          "skill": "plan-marshall:dev-agent-behavior-rules"
+          "skill": "plan-marshall:persona-plan-marshall-agent"
         },
         {
           "description": "Language-agnostic code quality, refactoring, and documentation principles",
-          "skill": "plan-marshall:dev-general-code-quality"
+          "skill": "plan-marshall:ref-code-quality"
         },
         {
           "description": "Core Python patterns \u2014 types, data structures, error handling, naming",

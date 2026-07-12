@@ -60,6 +60,23 @@ def test_resolve_bundle_path(plan_context):
     assert result.name == 'SKILL.md'
 
 
+def test_resolve_bundle_path_selects_newest_version(plan_context):
+    """resolve_bundle_path must return the newest version dir, not the first."""
+    mock_root = plan_context.fixture_dir / 'multi-version-cache'
+    subpath = 'skills/test-skill/SKILL.md'
+    old = mock_root / 'test-bundle' / '1.0.0' / 'skills' / 'test-skill' / 'SKILL.md'
+    new = mock_root / 'test-bundle' / '1.0.10' / 'skills' / 'test-skill' / 'SKILL.md'
+    old.parent.mkdir(parents=True)
+    new.parent.mkdir(parents=True)
+    old.write_text('# old')
+    new.write_text('# new')
+
+    result = resolve_bundle_path(mock_root, 'test-bundle', subpath)
+    # '1.0.10' -> (1, 0, 10) sorts newer than '1.0.0' -> (1, 0, 0), so the newest
+    # version dir wins over the lexically-first '1.0.0'.
+    assert result == new
+
+
 def test_resolve_bundle_path_not_found(plan_context):
     """Test resolve_bundle_path returns None for missing path."""
     mock_root = plan_context.fixture_dir / 'empty-cache'

@@ -132,7 +132,7 @@ Tier 0 regenerates the descriptor with `architecture discover --force`, diffs it
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  discover --force --project-dir {worktree_path}
+  --project-dir {worktree_path} discover --force
 ```
 
 The `--force` flag instructs `manage-architecture` to bypass any freshness checks and rewrite `_project.json` plus the per-module `enriched.json` stubs. `derived.json` is not persisted, so `--force` does not rewrite per-module derived files; the call is an idempotent refresh of the module index and a re-seed of empty enrichment stubs for newly-discovered modules.
@@ -141,7 +141,7 @@ The `--force` flag instructs `manage-architecture` to bypass any freshness check
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  diff-modules --pre {baseline_dir} --project-dir {worktree_path}
+  --project-dir {worktree_path} diff-modules --pre {baseline_dir}
 ```
 
 Capture the four buckets from the TOON output: `added`, `removed`, `changed`, `unchanged`. **Against a derived-less git baseline the `changed` bucket is noise.** `origin/main` commits `_project.json` + `enriched.json` only — `derived.json` is ephemeral and never committed — so the snapshot side has no per-module `derived.json` sha and EVERY common module classifies as `changed`. The reliable drift signal is therefore the index-derived buckets only:
@@ -174,7 +174,7 @@ When `git status --porcelain .plan/project-architecture` is non-empty there is a
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  descriptor-regression-check --pre {baseline_dir} --project-dir {worktree_path}
+  --project-dir {worktree_path} descriptor-regression-check --pre {baseline_dir}
 ```
 
 Parse `status`, `regressive` (bool), and `violations[]` from the TOON output. `{baseline_dir}` is the same extracted-baseline directory Step 3b passed to `diff-modules`.
@@ -323,26 +323,23 @@ Re-run the LLM enrichment pass against the affected modules. There is no batch v
 for each module M in affected_modules_csv:
     # Step 6 — write responsibility + purpose
     python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-      enrich module --name M \
+      --project-dir {worktree_path} enrich module --name M \
       --responsibility "{1-3 sentence description}" \
       --responsibility-reasoning "{source}" \
       --purpose {purpose-value} \
-      --purpose-reasoning "{signal}" \
-      --project-dir {worktree_path}
+      --purpose-reasoning "{signal}"
 
     # Step 7 — write 2-4 key packages (one call per package)
     for each architecturally significant package P of M:
         python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-          enrich package --module M --package P \
-          --description "{1-2 sentence description}" \
-          --project-dir {worktree_path}
+          --project-dir {worktree_path} enrich package --module M --package P \
+          --description "{1-2 sentence description}"
 
     # Step 8 — refresh skills-by-profile
     python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-      enrich skills-by-profile --module M \
+      --project-dir {worktree_path} enrich skills-by-profile --module M \
       --skills-json '{"<profile>": ["<bundle:skill>", ...]}' \
-      --reasoning "{why these profiles/skills apply}" \
-      --project-dir {worktree_path}
+      --reasoning "{why these profiles/skills apply}"
 ```
 
 There is no batch form of the enrich verb that accepts a comma-separated module list — only the per-module triplet (`enrich module` / `enrich package` / `enrich skills-by-profile`) is registered, and it rewrites `enriched.json` for one named module per call without touching `derived.json`. Follow the per-module signal analysis documented in `manage-architecture/SKILL.md` Steps 5–8 (purpose-value table, key-package selection, skills-by-profile resolution) to determine each command's arguments.
@@ -505,8 +502,8 @@ else:
             return
     tar -xf {baseline_tar} -C {baseline_root}     # baseline_dir := {baseline_root}/.plan/project-architecture
 
-    architecture discover --force --project-dir {worktree_path}
-    diff := architecture diff-modules --pre {baseline_dir} --project-dir {worktree_path}
+    architecture --project-dir {worktree_path} discover --force
+    diff := architecture --project-dir {worktree_path} diff-modules --pre {baseline_dir}
         → on error snapshot_not_found:
             log: "skipped — no committed origin/main architecture baseline"
             mark-step-done outcome=done detail="skipped — no committed origin/main architecture baseline"
@@ -519,7 +516,7 @@ else:
         log: "Tier 0 — clean after discover, no commit needed"
         # fall through to Tier 1 with affected as computed
     else:
-        reg := architecture descriptor-regression-check --pre {baseline_dir} --project-dir {worktree_path}
+        reg := architecture --project-dir {worktree_path} descriptor-regression-check --pre {baseline_dir}
         if reg.regressive:
             log ERROR: "Regressive descriptor delta refused — {fields}"
             mark-step-done outcome=failed detail="regressive descriptor delta refused — {fields}"
@@ -556,10 +553,10 @@ switch tier_1:
     case "auto":
         for each module M in affected:
             # manage-architecture/SKILL.md Steps 5-8, per module
-            architecture enrich module --name M --responsibility ... --purpose ... --project-dir {worktree_path}
+            architecture --project-dir {worktree_path} enrich module --name M --responsibility ... --purpose ...
             for each architecturally significant package P of M:
-                architecture enrich package --module M --package P --description ... --project-dir {worktree_path}
-            architecture enrich skills-by-profile --module M --reasoning ... --project-dir {worktree_path}
+                architecture --project-dir {worktree_path} enrich package --module M --package P --description ...
+            architecture --project-dir {worktree_path} enrich skills-by-profile --module M --reasoning ...
         git -C {worktree_path} add .plan/project-architecture
         git -C {worktree_path} commit -m "chore(architecture): re-enrich affected modules after {plan-title}"
         git -C {worktree_path} push

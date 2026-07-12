@@ -13,8 +13,10 @@ status solely off that `end_time` marker.
 The omission is at the boundary *write* only — it is NOT a permanent token gap.
 The finalize-phase `manage-metrics enrich` pass attributes the parent-window
 `message.usage` four-field data to each inline window and derives `total_tokens`
-from that attribution, so an inline phase DOES count toward the breakdown Tokens
-column and the report reads `n=6/6` (not `n=5/6`). These tests drive the REAL
+from input + output + cache_creation ONLY (cache_read EXCLUDED, so the inline
+row matches the dispatched-phase `<usage>` total definition), so an inline phase
+DOES count toward the breakdown Tokens column and the report reads `n=6/6` (not
+`n=5/6`). These tests drive the REAL
 enrich production path (with a fixture that mirrors the runtime's
 post-normalization per-phase bucket shape, per lesson `2026-07-09-14-001`) and
 lock that contract:
@@ -54,10 +56,13 @@ cmd_enrich = manage_metrics.cmd_enrich
 # canonical ``message.usage`` four-field keys plus the billing-weighted total),
 # NOT a synthetic pre-normalization transcript shape (lesson 2026-07-09-14-001).
 _INLINE_ENRICH_BUCKETS = {
+    # cache_read DOMINATES 1-init (11M) — two orders above the comparable
+    # input+output+cache_creation (60K). enrich's inline total_tokens EXCLUDES
+    # cache_read, so it must surface ~60K, not the ~11M four-field sum.
     '1-init': {
-        'input_tokens': 8000,
-        'output_tokens': 2000,
-        'cache_read_input_tokens': 40000,
+        'input_tokens': 40000,
+        'output_tokens': 15000,
+        'cache_read_input_tokens': 11000000,
         'cache_creation_input_tokens': 5000,
         'billing_weighted_total': 12000,
     },
@@ -76,8 +81,11 @@ _INLINE_ENRICH_BUCKETS = {
         'billing_weighted_total': 7000,
     },
 }
-# The four-field sum enrich derives into total_tokens for the inline 1-init row.
-_INIT_FOUR_FIELD_TOTAL = 8000 + 2000 + 40000 + 5000
+# The three-field sum enrich derives into total_tokens for the inline 1-init row
+# (input + output + cache_creation — cache_read EXCLUDED). ~60K, not ~11M.
+_INIT_INLINE_TOTAL = 40000 + 15000 + 5000
+# The cache_read magnitude the derived total must NOT reach.
+_INIT_CACHE_READ = 11000000
 
 
 def _run_inline_enrich(plan_id: str, monkeypatch, buckets: dict | None = None) -> dict:
@@ -85,8 +93,8 @@ def _run_inline_enrich(plan_id: str, monkeypatch, buckets: dict | None = None) -
 
     ``cmd_enrich`` hands the phase windows to the platform-runtime transcript
     engine over a subprocess boundary; the unit test replaces that one seam with
-    a production-shaped return so the rest of enrich (four-field write + the D3
-    total_tokens derivation) runs for real.
+    a production-shaped return so the rest of enrich (four-field raw write + the
+    three-field inline total_tokens derivation) runs for real.
     """
     resolved = _INLINE_ENRICH_BUCKETS if buckets is None else buckets
 
@@ -246,9 +254,11 @@ def test_inline_init_phase_carries_total_tokens_after_enrich(plan_context, monke
 
     The boundary close omitted --total-tokens (no inline `<usage>`), so before
     enrich the row has no total_tokens. The finalize enrich attributes the
-    parent-window `message.usage` four-field data to the window, and the D3
-    derivation surfaces their sum into total_tokens so the phase counts toward
-    the breakdown Tokens column.
+    parent-window `message.usage` data to the window and derives total_tokens
+    from input + output + cache_creation ONLY — cache_read is EXCLUDED so the
+    inline row matches the dispatched-phase `<usage>` total definition. Under
+    the cache-read-dominated fixture (cache_read ~11M) the surfaced total must
+    be ~60K, NOT ~11M.
     """
     _drive_full_six_phase_plan('inline-init-row')
     enrich_result = _run_inline_enrich('inline-init-row', monkeypatch)
@@ -260,13 +270,16 @@ def test_inline_init_phase_carries_total_tokens_after_enrich(plan_context, monke
 
     # Recorded: end_time stamped by the inline boundary.
     assert _field(init_block, 'end_time') is not None
-    # The four-field attribution landed ...
-    assert _field(init_block, 'input_tokens') == '8000'
-    assert _field(init_block, 'output_tokens') == '2000'
-    # ... and total_tokens is now the four-field sum (no longer '-').
+    # The four raw usage fields all land on the row (kept for billing analysis) ...
+    assert _field(init_block, 'input_tokens') == '40000'
+    assert _field(init_block, 'output_tokens') == '15000'
+    assert _field(init_block, 'cache_read_input_tokens') == str(_INIT_CACHE_READ)
+    # ... but total_tokens is the three-field sum (cache_read EXCLUDED): ~60K.
     total = _field(init_block, 'total_tokens')
     assert total is not None
-    assert int(total) == _INIT_FOUR_FIELD_TOTAL
+    assert int(total) == _INIT_INLINE_TOTAL
+    # The cache-read magnitude must NOT leak into the derived total.
+    assert int(total) < _INIT_CACHE_READ
 
 
 def test_inline_init_phase_absent_from_unrecorded_list(plan_context):

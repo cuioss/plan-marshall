@@ -50,7 +50,7 @@ for _ancestor in Path(__file__).resolve().parents:
             sys.path.insert(0, _shared_scripts)
         break
 
-from marketplace_bundles import resolve_skills_root  # noqa: E402
+from marketplace_bundles import _version_sort_key, resolve_skills_root  # noqa: E402
 
 _SKILLS_DIR = resolve_skills_root(Path(__file__))
 for _lib in ('ref-toon-format', 'tools-file-ops'):
@@ -279,12 +279,18 @@ def resolve_bundle_path(plugin_root: Path, bundle: str, relative_path: str) -> P
     if not bundle_dir.exists():
         return None
 
-    # Find versioned directory (usually 1.0.0)
-    for version_dir in bundle_dir.iterdir():
-        if version_dir.is_dir():
-            resolved = version_dir / relative_path
-            if resolved.exists():
-                return resolved
+    # Select the NEWEST versioned directory that carries relative_path. The old
+    # iterdir loop returned the lexically-first match, letting an older version
+    # (e.g. '1.0.0') shadow the current one ('1.0.10'); mirror the newest-version
+    # selection collect_script_dirs already uses via _version_sort_key.
+    candidates = [
+        version_dir
+        for version_dir in bundle_dir.iterdir()
+        if version_dir.is_dir() and (version_dir / relative_path).exists()
+    ]
+    if candidates:
+        newest = max(candidates, key=lambda d: _version_sort_key(d.name))
+        return newest / relative_path
 
     return None
 
