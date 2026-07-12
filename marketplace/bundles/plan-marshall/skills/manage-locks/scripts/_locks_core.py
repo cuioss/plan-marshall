@@ -119,9 +119,23 @@ def holder_is_dead(holder: str) -> bool:
     treated as dead so a corrupt lock file is reclaimable; resolution failures
     propagate loudly (a real bug, not transient unavailability) rather than being
     swallowed as "dead".
+
+    Path-traversal defense: ``holder`` is a plan-id joined directly onto the
+    anchored ``.plan/local`` base to build both the main-checkout
+    (``main_plan``) and worktree (``worktree_plan``) plan-dir paths. A crafted
+    holder bearing a path separator, a ``..`` parent-dir segment, or an embedded
+    NUL byte could escape the anchored base and resolve to an unrelated existing
+    directory — whose presence would report a truly-dead holder "alive" and
+    permanently block lock reclamation (a DoS). The shape check is the SAME
+    canonical kebab-case validator (:func:`input_validation.is_valid_plan_id`)
+    enforced at every ``--plan-id`` CLI boundary elsewhere in the marketplace —
+    its allowlist regex (``^[a-z][a-z0-9-]*$``) already excludes every traversal
+    character AND subsumes the prior empty/whitespace check, so any empty or
+    malformed holder is classified dead (the corrupt-lock-file-reclaimable
+    intent is preserved and strengthened) BEFORE the path is constructed.
     """
     holder = holder.strip()
-    if not holder:
+    if not is_valid_plan_id(holder):
         return True
     base = _main_plan_local_base()
     main_plan = base / 'plans' / holder
