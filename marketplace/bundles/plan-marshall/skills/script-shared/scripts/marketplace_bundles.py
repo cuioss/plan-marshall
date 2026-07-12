@@ -47,11 +47,20 @@ def resolve_bundle_path(base_path: Path, bundle_name: str, subpath: str) -> Path
     bundle_dir = base_path / bundle_name
 
     if bundle_dir.is_dir():
-        for version_dir in bundle_dir.iterdir():
-            if version_dir.is_dir() and not version_dir.name.startswith('.'):
-                versioned = version_dir / subpath
-                if versioned.exists():
-                    return versioned
+        # Select the NEWEST version dir that carries the subpath. Returning the
+        # lexically-first match (the old iterdir loop) let an older version dir
+        # (e.g. '1.0.0') shadow the current one ('1.0.10'), the same silent-stale
+        # class collect_script_dirs already guards against with its max() sort.
+        candidates = [
+            version_dir
+            for version_dir in bundle_dir.iterdir()
+            if version_dir.is_dir()
+            and not version_dir.name.startswith('.')
+            and (version_dir / subpath).exists()
+        ]
+        if candidates:
+            newest = max(candidates, key=lambda d: _version_sort_key(d.name))
+            return newest / subpath
 
     return bundle_dir / subpath
 

@@ -82,6 +82,18 @@ class TestResolveBundlePath:
         result = resolve_bundle_path(tmp_path, 'missing', 'some/path')
         assert result == tmp_path / 'missing' / 'some' / 'path'
 
+    def test_multi_version_selects_newest(self, tmp_path):
+        # Two cache version dirs carry the same subpath: the resolver must return
+        # the NEWEST ('1.0.10' -> (1, 0, 10)), not the lexically-first ('1.0.0').
+        old = tmp_path / 'plan-marshall' / '1.0.0' / 'skills' / 'foo' / 'bar.py'
+        new = tmp_path / 'plan-marshall' / '1.0.10' / 'skills' / 'foo' / 'bar.py'
+        old.parent.mkdir(parents=True)
+        new.parent.mkdir(parents=True)
+        old.write_text('old')
+        new.write_text('new')
+        result = resolve_bundle_path(tmp_path, 'plan-marshall', 'skills/foo/bar.py')
+        assert result == new
+
 
 class TestCollectScriptDirs:
     def test_marketplace_structure(self, tmp_path):
