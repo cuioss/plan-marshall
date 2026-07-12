@@ -910,16 +910,13 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
         return err_dict
     assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
 
-    # Only forward --strategy when the operator explicitly passed it (the
-    # argparse default is a None sentinel). gh pr merge --auto on a
-    # merge-queue-required branch does not need an explicit merge-strategy
-    # flag — the merge queue's own branch-protection configuration dictates
-    # the method, and forcing --strategy can fail on those branches.
+    # The enqueue command is exactly ``gh pr merge --auto``. Neither --strategy
+    # nor --delete-branch is forwarded: the merge queue's own branch-protection
+    # configuration dictates the merge method, and GitHub rejects
+    # --delete-branch when a merge queue is enabled ("Cannot use --delete-branch
+    # when merge queue enabled") — the platform auto-deletes the head branch
+    # after the queue merge, so the flag is both rejected and redundant.
     gh_args = ['pr', 'merge', identifier, '--auto']
-    if args.strategy is not None:
-        gh_args.append(f'--{args.strategy}')
-    if args.delete_branch:
-        gh_args.append('--delete-branch')
     returncode, _stdout, stderr = github_ops.run_gh(gh_args)
     if returncode != 0:
         return make_error(
@@ -932,9 +929,7 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
         'status': 'success',
         'operation': 'pr_merge_queue',
         'pr_number': args.pr_number if args.pr_number else identifier,
-        'strategy': args.strategy,
         'enqueued': True,
-        'delete_branch': args.delete_branch,
     }
 
 

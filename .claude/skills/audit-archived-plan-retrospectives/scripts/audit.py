@@ -255,11 +255,14 @@ CROSS_PLAN_CHECKS = {
 # (plan-1..plan-3 execution-loop / routing / finalize-flow / dist), `#852`
 # (find-triage D6 step-ownership), `#862` (inline phase-1-init dispatch /
 # routing-order fix), `#863` (merge-queue enablement via marshall-steward), `#872`
-# (self-review promoted to a default finalize step), `#875` (the three checks
-# reworked earlier: `metrics`, `track-selection-accuracy`, and
-# `lane-lever-effectiveness`), `#PLAN15-PR` (this plan's own boundary — the
-# `architecture-lookup-ratio` check this plan bumps; the placeholder is resolved
-# to the real `#NNN` at finalize), and `plan-10` (the roadmap head this plan
+# (self-review promoted to a default finalize step), `#875` (plan-13's boundary —
+# `metrics`, `track-selection-accuracy`, and `lane-lever-effectiveness`),
+# `#PLAN15-PR` (plan-15's boundary — the `architecture-lookup-ratio` check plan-15
+# bumps; resolved to the real `#NNN` at that plan's finalize), `PR-PENDING` (this
+# plan's own boundary — a finalize-resolved placeholder for the check this plan
+# reworks: `merge-window-accounting`, whose accounting this plan's D1 merge-queue
+# enqueue-path rework and D3 merge-lock stale-holder liveness fix alter; corrected
+# to the concrete #{n} after create-pr), and `plan-10` (the roadmap head this plan
 # re-confirms the general checks accurate against). Every key MUST be a member of
 # `CHECK_NAMES`.
 CHECK_ERA: dict[str, str] = {
@@ -298,11 +301,21 @@ CHECK_ERA: dict[str, str] = {
     # Roadmap-mechanics checks (plan-11) carry the boundary whose mechanics they
     # verify: dispatch-topology confirms the plan-10 leaf/dispatch invariant;
     # finalize-flow-conformance verifies #849's deterministic ci_verify / adaptive
-    # ci-wait mechanics; merge-window-accounting verifies #863's merge-queue
-    # enablement / widened merge-mutex admission-window mechanics.
+    # ci-wait mechanics.
     "dispatch-topology": "plan-10",
     "finalize-flow-conformance": "#849",
-    "merge-window-accounting": "#863",
+    # PR-PENDING — this plan (plan-14) reworks the merge-window-accounting
+    # mechanics, so its era boundary IS this plan's own PR (bumped from #863):
+    # D1 strips --delete-branch/--strategy from the pr merge-queue enqueue path and
+    # D3 fixes the merge-lock stale-holder liveness (the live-worktree guard) —
+    # both surfaces this check accounts for (the `[LOCK] (merge:*)` lifecycle
+    # bucketing + the widened merge-mutex admission window). The concrete #{n} is a
+    # documented finalize-time correction that reads the real PR number from
+    # status.json after create-pr and rewrites the constant AND its test_audit.py
+    # mirror in lock-step. PR-PENDING is a provably-invalid PR token that fails
+    # loudly if the correction is ever forgotten — never guess this plan's PR
+    # number at phase-5.
+    "merge-window-accounting": "PR-PENDING",
     # lane-lever-effectiveness — #875 (this plan's boundary): the Tier-1
     # recipe-match floor fix + the classify-before-route change this plan ships
     # alter which plans engage the light planning lane and the minimal execution

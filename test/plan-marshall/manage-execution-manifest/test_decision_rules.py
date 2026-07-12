@@ -158,9 +158,14 @@ def _restore_footprint_resolver():
 
 
 class TestPreSubmissionSelfReviewInactive:
-    """Pre-filter drops the step when the live footprint is empty; no-op otherwise."""
+    """Pre-filter keeps the step through compose (self-gates at run time); commit_and_push=false strips it upstream."""
 
-    def test_drops_step_when_footprint_empty(self, plan_context):
+    def test_keeps_step_when_footprint_empty(self, plan_context):
+        # An empty compose-time footprint (phase-4-plan, before the worktree is
+        # materialised) is NOT evidence the step is inactive — it only means the
+        # worktree is not yet materialised. The step survives compose and
+        # self-gates at run time (mirroring _apply_canonical_verify_inactive's
+        # compose-time safety), so it is KEPT and reports omitted=False.
         _seed_marshal(ci_provider=None)
         _stub_footprint([])
 
@@ -169,8 +174,8 @@ class TestPreSubmissionSelfReviewInactive:
 
         assert result is not None
         assert result['status'] == 'success'
-        assert result['pre_submission_self_review_omitted'] is True
-        assert 'pre-submission-self-review' not in result_phase_6_steps(result)
+        assert result['pre_submission_self_review_omitted'] is False
+        assert 'pre-submission-self-review' in result_phase_6_steps(result)
 
     def test_keeps_step_when_footprint_non_empty(self, plan_context):
         _seed_marshal(ci_provider=None)

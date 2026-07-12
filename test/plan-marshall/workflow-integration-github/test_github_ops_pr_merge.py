@@ -1257,3 +1257,112 @@ def test_behind_by_zero_compare_missing_field_fails_closed(monkeypatch):
 
     assert ok is False
     assert 'missing behind_by' in reason
+
+
+# ---------------------------------------------------------------------------
+# cmd_pr_merge_queue — enqueue path is exactly ``gh pr merge <id> --auto``
+# ---------------------------------------------------------------------------
+#
+# The merge queue is engaged by ``gh pr merge --auto`` on a branch whose
+# protection has a merge queue configured. Neither ``--strategy`` nor
+# ``--delete-branch`` may be forwarded: the queue's own branch-protection
+# configuration dictates the merge method, and GitHub REJECTS ``--delete-branch``
+# when a merge queue is enabled ("Cannot use --delete-branch when merge queue
+# enabled") — the platform auto-deletes the head branch after the queue merge.
+
+
+def _merge_queue_ns(*, pr_number: int | None = 42, head: str | None = None):
+    """Build the argparse.Namespace cmd_pr_merge_queue expects.
+
+    Mirrors the post-fix argparse surface: ``merge-queue`` declares ONLY
+    ``--pr-number`` / ``--head`` — no ``--strategy``, no ``--delete-branch`` —
+    so the Namespace carries exactly those two attributes.
+    """
+    return argparse.Namespace(pr_number=pr_number, head=head)
+
+
+def test_pr_merge_queue_enqueues_auto_only(monkeypatch):
+    """The enqueue command is exactly ``['pr', 'merge', <id>, '--auto']``.
+
+    No ``--strategy`` and no ``--delete-branch`` are forwarded, and the return
+    envelope omits the removed ``strategy`` / ``delete_branch`` keys.
+    """
+    _install_common(monkeypatch)
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.cmd_pr_merge_queue(_merge_queue_ns(pr_number=42))
+
+    assert result['status'] == 'success', result
+    assert result['operation'] == 'pr_merge_queue'
+    assert result['enqueued'] is True
+    assert result['pr_number'] == 42
+    # The removed keys must NOT reappear in the envelope.
+    assert 'strategy' not in result, result
+    assert 'delete_branch' not in result, result
+
+    # Exactly one gh call, and it is exactly ``pr merge <id> --auto``.
+    assert len(captured) == 1, captured
+    merge_call = captured[0]
+    assert merge_call == ['pr', 'merge', '42', '--auto'], merge_call
+    assert '--delete-branch' not in merge_call, merge_call
+    assert '--strategy' not in merge_call, merge_call
+    # None of the strategy method flags leak either.
+    for method_flag in ('--merge', '--squash', '--rebase'):
+        assert method_flag not in merge_call, merge_call
+
+
+def test_pr_merge_queue_never_sends_flag_gh_would_reject(monkeypatch):
+    """Fixture mirrors the real ``gh`` rejection: ``--delete-branch`` with a
+    merge queue enabled fails with "Cannot use --delete-branch when merge queue
+    enabled". The handler never sends the flag, so the enqueue succeeds.
+    """
+    _install_common(monkeypatch)
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        # Mirror the real gh rejection shape: reject if --delete-branch (or an
+        # explicit strategy flag) ever reaches the merge-queue enqueue call.
+        if '--delete-branch' in args:
+            return 1, '', 'Cannot use --delete-branch when merge queue enabled'
+        for method_flag in ('--merge', '--squash', '--rebase'):
+            if method_flag in args:
+                return 1, '', f'unexpected strategy flag {method_flag} on merge-queue enqueue'
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.cmd_pr_merge_queue(_merge_queue_ns(pr_number=42))
+
+    # Because the flags are never sent, the rejection never fires.
+    assert result['status'] == 'success', result
+    assert result['enqueued'] is True
+    merge_call = captured[0]
+    assert merge_call == ['pr', 'merge', '42', '--auto'], merge_call
+
+
+def test_pr_merge_queue_head_identifier(monkeypatch):
+    """A ``--head`` identifier still enqueues via ``pr merge <branch> --auto``."""
+    _install_common(monkeypatch)
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.cmd_pr_merge_queue(_merge_queue_ns(pr_number=None, head='feature/x'))
+
+    assert result['status'] == 'success', result
+    assert result['enqueued'] is True
+    merge_call = captured[0]
+    assert merge_call == ['pr', 'merge', 'feature/x', '--auto'], merge_call
+    assert '--delete-branch' not in merge_call, merge_call
+    assert '--strategy' not in merge_call, merge_call

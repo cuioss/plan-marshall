@@ -352,14 +352,14 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 Parse the TOON output. On `status: rejected` (lease violation — remote moved since last fetch), ABORT cleanup and surface the error. On `status: error`, ABORT cleanup and return the error TOON verbatim to the dispatcher. On `status: success`, continue to the CI wait below. **Release-on-abort**: on either the `rejected` or `error` branch, release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4) — a lease violation means `origin/{base_branch}` moved, so holding the lock further would only block the plan that legitimately advanced it.
 
-After the force-push, wait for CI to complete on the rebased branch before proceeding to merge:
+After the force-push, wait for CI to complete on the rebased branch before proceeding to merge. Pass `--adaptive` so this wait seeds its ceiling from — and records its observed duration back into — the persisted `ci:wait` budget (the same #849 ratchet `ci_complete_precondition` drives), instead of the fixed `DEFAULT_CI_TIMEOUT`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} checks wait \
-    --pr-number {pr_number}
+    --pr-number {pr_number} --adaptive
 ```
 
-**Bash tool timeout**: 1800000ms (30-minute safety net).
+**Bash tool timeout**: 1800000ms (30-minute safety net — the outer ceiling; `--adaptive` seeds the inner `ci:wait` ceiling from the persisted budget so the wait converges on observed CI durations rather than the fixed baseline).
 
 If CI fails after the rebase → log warning but continue to the merge attempt (the merge itself may still succeed if branch protection allows it):
 ```bash
@@ -676,12 +676,14 @@ Set `{merge_consent} = deferred`. Skip the **Merge PR**, **Wait for Merge CI**, 
 Read `use_merge_queue` off the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above (default: `false`). This routing branch is documented BEFORE the merge dispatch it selects (bypass-before-dispatch ordering):
 
 - **`use_merge_queue == false`** (default) → issue the immediate `pr safe-merge` call below. The plan merges the PR itself under the widened mutex.
-- **`use_merge_queue == true`** → route the merge through the platform merge queue via the `pr merge-queue` verb INSTEAD of `pr safe-merge`, so the platform re-tests-and-merges against the latest base and serializes a truly-external commit the session-scoped mutex cannot. The widened D4 mutex still guards the pre-enqueue rebase/force-push window; the two mechanisms compose. All engagement is routed through the `ci` abstraction — NEVER a direct `gh`/`glab` call:
+- **`use_merge_queue == true`** → route the merge through the platform merge queue via the `pr merge-queue` verb INSTEAD of `pr safe-merge`, so the platform re-tests-and-merges against the latest base and serializes a truly-external commit the session-scoped mutex cannot. The widened D4 mutex still guards the pre-enqueue rebase/force-push window; the two mechanisms compose. The enqueue takes no `--strategy` or `--delete-branch` flag: the merge queue's own branch-protection configuration dictates the merge method, GitHub rejects `--delete-branch` when a merge queue is enabled, and the platform auto-deletes the head branch after the queue merge. All engagement is routed through the `ci` abstraction — NEVER a direct `gh`/`glab` call:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr merge-queue \
-      --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch
+      --pr-number {pr_number}
   ```
+
+  Because the platform auto-deletes the remote head branch after the queue merge, no `--delete-branch` follow-up is needed; the later `prune-local-and-remote-ref` tail accounts for the local-branch prune either way — it deletes the local feature branch and, via its internal `show-ref` guard, produces a `status: partial` no-op when the remote-tracking ref is already gone (the platform already deleted the remote branch) or deletes the stale ref when it is still present.
 
   Parse the returned TOON. On `status: success` (`enqueued: true`), the PR is on the platform queue — proceed to **Wait for Merge CI** (the queue's own re-test) and the cleanup sections below. On `status: error` (e.g. a GitLab merge-train-ineligible project, or a queue-engagement / auth-scope failure), log the **actionable** error and abort — do NOT silently fall back to an immediate merge, since the operator opted into queue serialization for a reason. The abort message MUST name BOTH remedies so the operator is never left with a bare error: (a) **disable `use_merge_queue`** (set it back to `false` via `manage-config … step set --step-id default:branch-cleanup --param use_merge_queue --value false`) to merge immediately via `pr safe-merge`, or (b) **run the marshall-steward merge-queue provisioning step** (Configuration → Merge Queue) to configure the platform merge queue so the enqueue succeeds:
 
@@ -713,14 +715,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Wait for Merge CI
 
-**Only if PR was just merged** (state was open):
+**Only if PR was just merged** (state was open). Pass `--adaptive` so this post-merge wait also seeds from — and records into — the persisted `ci:wait` budget (the same #849 ratchet), rather than the fixed `DEFAULT_CI_TIMEOUT`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} checks wait \
-    --pr-number {pr_number}
+    --pr-number {pr_number} --adaptive
 ```
 
-**Bash tool timeout**: 1800000ms (30-minute safety net).
+**Bash tool timeout**: 1800000ms (30-minute safety net — the outer ceiling; `--adaptive` seeds the inner `ci:wait` ceiling from the persisted budget so the wait converges on observed CI durations rather than the fixed baseline).
 
 If CI fails → log warning but continue (PR is already merged):
 ```bash

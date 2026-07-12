@@ -3882,20 +3882,18 @@ class TestScopeGatedFinalizePreFilter:
         # No scope subtraction at multi_module — the scope-gated steps survive.
         assert 'plan-marshall:plan-retrospective' in steps
         assert 'project:finalize-step-plugin-doctor' in steps
-        # pre-submission-self-review is nonetheless dropped by the upstream
-        # pre_submission_self_review_inactive footprint pre-filter (empty
-        # footprint on a fresh compose), which is orthogonal to the inert scope
-        # gate — the promoted default-on self-review step is footprint-gated.
-        assert 'pre-submission-self-review' not in steps
+        # pre-submission-self-review SURVIVES: the pre_submission_self_review_inactive
+        # pre-filter no longer drops on empty compose-time footprint (it self-gates at
+        # run time), and the inert multi_module scope gate makes no subtraction.
+        assert 'pre-submission-self-review' in steps
 
     def test_single_module_drops_only_plan_retrospective(self, plan_context):
         """single_module SCOPE gate drops only plan-retrospective; plugin-doctor
         and automatic-review are retained by the scope gate.
 
-        pre-submission-self-review is also absent from the composed steps, but it
-        is dropped upstream by the pre_submission_self_review_inactive pre-filter
-        (the promoted default-on self-review step is footprint-gated and the fresh
-        compose has an empty footprint), NOT by the single_module scope gate."""
+        pre-submission-self-review SURVIVES: the pre_submission_self_review_inactive
+        pre-filter no longer drops on an empty compose-time footprint (it self-gates
+        at run time), and the single_module scope gate does not drop it."""
         result = cmd_compose(
             _compose_ns(
                 plan_id='scope-single-module',
@@ -3912,9 +3910,9 @@ class TestScopeGatedFinalizePreFilter:
         steps = manifest['phase_6']['steps']
         # Only plan-retrospective is dropped by the single_module scope gate.
         assert 'plan-marshall:plan-retrospective' not in steps
-        # pre-submission-self-review is dropped upstream by the empty-footprint
-        # pre-filter, independent of the single_module scope gate.
-        assert 'pre-submission-self-review' not in steps
+        # pre-submission-self-review survives — the pre-filter no longer drops on an
+        # empty compose-time footprint, and the single_module scope gate keeps it.
+        assert 'pre-submission-self-review' in steps
         # plugin-doctor + automatic-review survive the single_module scope gate.
         assert 'project:finalize-step-plugin-doctor' in steps
         assert 'automatic-review' in steps
@@ -3923,9 +3921,9 @@ class TestScopeGatedFinalizePreFilter:
         """multi_module SCOPE gate makes no subtraction — the scope-gated steps
         and automatic-review are retained by the scope gate.
 
-        pre-submission-self-review is nonetheless absent: it is dropped upstream
-        by the pre_submission_self_review_inactive footprint pre-filter (empty
-        footprint on a fresh compose), a gate orthogonal to the scope gate."""
+        pre-submission-self-review SURVIVES too: the pre_submission_self_review_inactive
+        pre-filter no longer drops on an empty compose-time footprint (it self-gates at
+        run time), and the inert multi_module scope gate makes no subtraction."""
         result = cmd_compose(
             _compose_ns(
                 plan_id='scope-multi-module',
@@ -3945,18 +3943,18 @@ class TestScopeGatedFinalizePreFilter:
         assert 'plan-marshall:plan-retrospective' in steps
         assert 'project:finalize-step-plugin-doctor' in steps
         assert 'automatic-review' in steps
-        # pre-submission-self-review is dropped by the upstream footprint
-        # pre-filter, not by the (inert) multi_module scope gate.
-        assert 'pre-submission-self-review' not in steps
+        # pre-submission-self-review survives — the pre-filter no longer drops on an
+        # empty compose-time footprint, and the multi_module scope gate is inert.
+        assert 'pre-submission-self-review' in steps
 
     def test_surgical_emits_one_decision_log_per_subtraction(self, plan_context):
         """surgical scope emits one decision-log line per SCOPE-GATE-dropped step.
 
-        pre-submission-self-review is dropped upstream by the
-        pre_submission_self_review_inactive footprint pre-filter (empty footprint
-        on a fresh compose), so it never reaches the surgical scope gate — only
-        the two remaining non-guarded candidates (plan-retrospective +
-        plugin-doctor) are subtracted by the scope gate."""
+        The pre_submission_self_review_inactive pre-filter no longer drops on an
+        empty compose-time footprint, so pre-submission-self-review now reaches the
+        surgical scope gate and is subtracted there alongside the two other
+        non-guarded candidates (plan-retrospective + plugin-doctor) — three
+        scope-gate subtractions in total."""
         captured: list[tuple[str, str]] = []
         original = _mem._emit_decision_log
 
@@ -3981,11 +3979,11 @@ class TestScopeGatedFinalizePreFilter:
         subtraction_entries = [
             (pid, msg) for pid, msg in captured if 'scope_gated_finalize subtraction' in msg
         ]
-        # Two non-guarded steps still present as candidates (plan-retrospective +
-        # plugin-doctor) are dropped by the surgical scope gate → two decision-log
-        # lines. pre-submission-self-review is dropped upstream by the footprint
-        # pre-filter, so it emits no scope_gated subtraction line.
-        assert len(subtraction_entries) == 2
+        # All three non-guarded steps (plan-retrospective + plugin-doctor +
+        # pre-submission-self-review) reach the surgical scope gate and are dropped
+        # there → three decision-log lines. pre-submission-self-review now survives
+        # the footprint pre-filter, so it too emits a scope_gated subtraction line.
+        assert len(subtraction_entries) == 3
         for pid, msg in subtraction_entries:
             assert pid == 'scope-surgical-log'
             assert 'scope_estimate=surgical' in msg
@@ -4008,11 +4006,10 @@ class TestScopeGatedFinalizePreFilter:
         dropped = result['scope_gated_finalize_dropped']
         assert 'plan-marshall:plan-retrospective' in dropped
         assert 'project:finalize-step-plugin-doctor' in dropped
-        # pre-submission-self-review is dropped upstream by the footprint
-        # pre-filter (empty footprint), so it never reaches the scope gate and is
-        # NOT reported in the scope-gate's dropped set — the scope gate observes
-        # only candidates still present when it runs.
-        assert 'pre-submission-self-review' not in dropped
+        # pre-submission-self-review now survives the footprint pre-filter and
+        # reaches the surgical scope gate, which drops it — so it IS reported in the
+        # scope-gate's dropped set alongside the other two non-guarded steps.
+        assert 'pre-submission-self-review' in dropped
         # automatic-review NOT in the dropped set without the override.
         assert 'automatic-review' not in dropped
 

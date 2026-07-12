@@ -1899,3 +1899,270 @@ def test_merge_queue_eligible_states_set():
     # The ineligible / unsupported values are NOT eligible-to-enable.
     assert ci_base.MERGE_QUEUE_INELIGIBLE not in ci_base.MERGE_QUEUE_ELIGIBLE_STATES
     assert ci_base.MERGE_QUEUE_UNSUPPORTED not in ci_base.MERGE_QUEUE_ELIGIBLE_STATES
+
+
+# =============================================================================
+# checks wait — opt-in adaptive ci:wait budget (deliverable 2)
+# =============================================================================
+#
+# ``checks wait --adaptive`` wires the branch-cleanup / verification-feedback CI
+# waits into the SAME adaptive ci:wait ratchet ci_complete_precondition already
+# drives (manage-run-config timeout get/set --command ci:wait). The flag is
+# opt-in so ci_complete_precondition (which manages its own read+record around a
+# non-adaptive wait) never double-records.
+#
+# The seed/record are exercised at the ``_run_checks_wait`` orchestration seam
+# with stubbed timeout get/set functions and a stub wait handler — no live
+# run-configuration.json and no live CI provider.
+
+
+def _mq_wait_ns(*, adaptive: bool, timeout):
+    """Build the minimal namespace ``_run_checks_wait`` reads (adaptive, timeout)."""
+    return argparse.Namespace(adaptive=adaptive, timeout=timeout)
+
+
+def test_ci_wait_parser_registers_adaptive_flag_default_false():
+    """`checks wait` registers --adaptive (store_true, default False)."""
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['checks', 'wait', '--pr-number', '42'])
+    assert args.adaptive is False
+
+
+def test_ci_wait_parser_adaptive_flag_sets_true():
+    """Passing --adaptive flips the namespace flag True."""
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['checks', 'wait', '--pr-number', '42', '--adaptive'])
+    assert args.adaptive is True
+
+
+def test_ci_wait_parser_timeout_default_is_none_sentinel():
+    """`checks wait --timeout` now defaults to a None sentinel (was DEFAULT_CI_TIMEOUT).
+
+    The sentinel is how ``_run_checks_wait`` detects that the operator did NOT
+    pass an explicit --timeout, so it can seed the ceiling from the adaptive
+    budget instead of the fixed default.
+    """
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['checks', 'wait', '--pr-number', '42'])
+    assert args.timeout is None
+
+
+def test_ci_wait_parser_explicit_timeout_preserved():
+    """An explicit --timeout survives as the integer the operator passed."""
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['checks', 'wait', '--pr-number', '42', '--timeout', '900'])
+    assert args.timeout == 900
+
+
+def test_run_checks_wait_adaptive_seeds_timeout_when_omitted(monkeypatch):
+    """--adaptive with an omitted --timeout seeds the ceiling from the ci:wait budget."""
+    seed_calls: list[int] = []
+
+    def stub_get(default_seconds: int) -> int:
+        seed_calls.append(default_seconds)
+        return 720
+
+    monkeypatch.setattr(ci_base, '_adaptive_wait_timeout_get', stub_get)
+    monkeypatch.setattr(ci_base, '_adaptive_wait_timeout_set', lambda _d: None)
+
+    seen_timeout: list[int] = []
+
+    def handler(args):
+        seen_timeout.append(args.timeout)
+        return {'status': 'success', 'final_status': 'success', 'duration_sec': 300}
+
+    result = ci_base._run_checks_wait(_mq_wait_ns(adaptive=True, timeout=None), handler)
+
+    # The handler ran against the seeded ceiling, not the fixed default.
+    assert seen_timeout == [720]
+    assert seed_calls == [ci_base.DEFAULT_CI_TIMEOUT]  # fallback default forwarded
+    assert result['status'] == 'success'
+
+
+def test_run_checks_wait_adaptive_records_observed_duration(monkeypatch):
+    """--adaptive records the handler's observed duration_sec into the ci:wait budget."""
+    monkeypatch.setattr(ci_base, '_adaptive_wait_timeout_get', lambda _d: 600)
+    recorded: list[int] = []
+    monkeypatch.setattr(ci_base, '_adaptive_wait_timeout_set', lambda d: recorded.append(d))
+
+    def handler(_args):
+        return {'status': 'success', 'final_status': 'success', 'duration_sec': 415}
+
+    ci_base._run_checks_wait(_mq_wait_ns(adaptive=True, timeout=None), handler)
+
+    assert recorded == [415]
+
+
+def test_run_checks_wait_non_adaptive_does_not_record(monkeypatch):
+    """Without --adaptive, no record is made (the double-record guard)."""
+    monkeypatch.setattr(
+        ci_base,
+        '_adaptive_wait_timeout_get',
+        lambda _d: (_ for _ in ()).throw(AssertionError('seed must not run when non-adaptive')),
+    )
+    recorded: list[int] = []
+    monkeypatch.setattr(ci_base, '_adaptive_wait_timeout_set', lambda d: recorded.append(d))
+
+    seen_timeout: list[int] = []
+
+    def handler(args):
+        seen_timeout.append(args.timeout)
+        return {'status': 'success', 'final_status': 'success', 'duration_sec': 415}
+
+    ci_base._run_checks_wait(_mq_wait_ns(adaptive=False, timeout=None), handler)
+
+    # An omitted --timeout falls back to the fixed default (NOT the budget seed).
+    assert seen_timeout == [ci_base.DEFAULT_CI_TIMEOUT]
+    # And nothing was recorded — ci_complete_precondition owns the record here.
+    assert recorded == []
+
+
+def test_run_checks_wait_explicit_timeout_not_reseeded_but_still_records(monkeypatch):
+    """An explicit --timeout wins over the seed, yet the adaptive record still fires."""
+    monkeypatch.setattr(
+        ci_base,
+        '_adaptive_wait_timeout_get',
+        lambda _d: (_ for _ in ()).throw(AssertionError('seed must not run when --timeout is explicit')),
+    )
+    recorded: list[int] = []
+    monkeypatch.setattr(ci_base, '_adaptive_wait_timeout_set', lambda d: recorded.append(d))
+
+    seen_timeout: list[int] = []
+
+    def handler(args):
+        seen_timeout.append(args.timeout)
+        return {'status': 'success', 'final_status': 'success', 'duration_sec': 200}
+
+    ci_base._run_checks_wait(_mq_wait_ns(adaptive=True, timeout=900), handler)
+
+    assert seen_timeout == [900]  # explicit ceiling preserved, no re-seed
+    assert recorded == [200]  # observed duration still teaches the budget
+
+
+def test_run_checks_wait_adaptive_skips_record_when_no_duration(monkeypatch):
+    """A wait envelope without a positive duration_sec records nothing."""
+    monkeypatch.setattr(ci_base, '_adaptive_wait_timeout_get', lambda _d: 600)
+    recorded: list[int] = []
+    monkeypatch.setattr(ci_base, '_adaptive_wait_timeout_set', lambda d: recorded.append(d))
+
+    def handler_missing(_args):
+        return {'status': 'success', 'final_status': 'success'}  # no duration_sec
+
+    def handler_zero(_args):
+        return {'status': 'timeout', 'duration_sec': 0}
+
+    ci_base._run_checks_wait(_mq_wait_ns(adaptive=True, timeout=None), handler_missing)
+    ci_base._run_checks_wait(_mq_wait_ns(adaptive=True, timeout=None), handler_zero)
+
+    assert recorded == []
+
+
+def test_dispatch_routes_checks_wait_through_adaptive(monkeypatch):
+    """dispatch() routes `checks wait --adaptive` through the seed/record wrapper."""
+    from ci_base import dispatch
+
+    monkeypatch.setattr(ci_base, '_adaptive_wait_timeout_get', lambda _d: 480)
+    recorded: list[int] = []
+    monkeypatch.setattr(ci_base, '_adaptive_wait_timeout_set', lambda d: recorded.append(d))
+
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['checks', 'wait', '--pr-number', '42', '--adaptive'])
+
+    seen_timeout: list[int] = []
+
+    def wait_handler(a):
+        seen_timeout.append(a.timeout)
+        return {'status': 'success', 'final_status': 'success', 'duration_sec': 333}
+
+    handlers = {('checks', 'wait'): wait_handler}
+    result = dispatch(args, handlers, parser)
+
+    assert seen_timeout == [480]  # seeded via the adaptive budget
+    assert recorded == [333]  # observed duration recorded
+    assert result['status'] == 'success'
+
+
+def test_dispatch_checks_wait_non_adaptive_unwrapped(monkeypatch):
+    """`checks wait` without --adaptive still resolves the None timeout to the default."""
+    from ci_base import dispatch
+
+    monkeypatch.setattr(
+        ci_base,
+        '_adaptive_wait_timeout_get',
+        lambda _d: (_ for _ in ()).throw(AssertionError('seed must not run without --adaptive')),
+    )
+    recorded: list[int] = []
+    monkeypatch.setattr(ci_base, '_adaptive_wait_timeout_set', lambda d: recorded.append(d))
+
+    parser, _, _, _, _ = build_parser('test')
+    args = parser.parse_args(['checks', 'wait', '--pr-number', '42'])
+
+    seen_timeout: list[int] = []
+
+    def wait_handler(a):
+        seen_timeout.append(a.timeout)
+        return {'status': 'success', 'final_status': 'success', 'duration_sec': 333}
+
+    handlers = {('checks', 'wait'): wait_handler}
+    dispatch(args, handlers, parser)
+
+    assert seen_timeout == [ci_base.DEFAULT_CI_TIMEOUT]
+    assert recorded == []
+
+
+def test_adaptive_wait_timeout_get_delegates_to_run_config(monkeypatch):
+    """_adaptive_wait_timeout_get reads the persisted ci:wait budget via run_config."""
+    import run_config
+
+    seen: list[tuple[str, int]] = []
+
+    def stub_timeout_get(command_key, default):
+        seen.append((command_key, default))
+        return 842
+
+    monkeypatch.setattr(run_config, 'timeout_get', stub_timeout_get)
+
+    value = ci_base._adaptive_wait_timeout_get(600)
+
+    assert value == 842
+    assert seen == [(ci_base.CI_WAIT_TIMEOUT_KEY, 600)]
+    assert ci_base.CI_WAIT_TIMEOUT_KEY == 'ci:wait'
+
+
+def test_adaptive_wait_timeout_get_degrades_to_default_on_failure(monkeypatch):
+    """A failing run_config.timeout_get degrades to the supplied default."""
+    import run_config
+
+    def boom(_command_key, _default):
+        raise RuntimeError('run-configuration.json unreadable')
+
+    monkeypatch.setattr(run_config, 'timeout_get', boom)
+
+    assert ci_base._adaptive_wait_timeout_get(600) == 600
+
+
+def test_adaptive_wait_timeout_set_delegates_to_run_config(monkeypatch):
+    """_adaptive_wait_timeout_set records the observed duration via run_config."""
+    import run_config
+
+    seen: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        run_config, 'timeout_set', lambda command_key, duration: seen.append((command_key, duration))
+    )
+
+    ci_base._adaptive_wait_timeout_set(415)
+
+    assert seen == [(ci_base.CI_WAIT_TIMEOUT_KEY, 415)]
+
+
+def test_adaptive_wait_timeout_set_swallows_failure(monkeypatch):
+    """A failing run_config.timeout_set is swallowed (best-effort telemetry)."""
+    import run_config
+
+    def boom(_command_key, _duration):
+        raise RuntimeError('write failed')
+
+    monkeypatch.setattr(run_config, 'timeout_set', boom)
+
+    # Must not raise.
+    ci_base._adaptive_wait_timeout_set(415)

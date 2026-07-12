@@ -128,6 +128,34 @@ def holder_is_dead(holder: str) -> bool:
     return not (main_plan.exists() or worktree_plan.exists())
 
 
+def holder_has_live_worktree(holder: str) -> bool:
+    """Return True when ``holder``'s git worktree directory still exists on disk.
+
+    A presence/heartbeat signal STRONGER than the plan-dir check
+    :func:`holder_is_dead` consults: it looks for the WORKTREE DIRECTORY itself
+    (``<main>/.plan/local/worktrees/{holder}``), not the plan dir that lives
+    inside it. A holder judged dead-by-plan-dir-absence (its plan dir is in
+    NEITHER the main checkout NOR its worktree's ``.plan``) may still be
+    MID-RECOVERY — its worktree is on disk but the plan dir has been moved out
+    (e.g. an interrupted finalize move-back). Auto-reclaiming such a holder would
+    steal the lock from a live recovery, so the acquire path gates the automatic
+    stale-reclaim on this predicate being False (see ``merge_lock.run_acquire``),
+    and the FIFO prune retains a waiter whose worktree is still present.
+
+    Anchored at the main checkout (:func:`_main_plan_local_base`, cwd-independent)
+    exactly like :func:`holder_is_dead`, so the judgement is correct regardless of
+    which worktree the acquiring caller is pinned to. An empty/malformed holder has
+    no worktree → False. Resolution failures propagate loudly (a real bug), never
+    swallowed as "no live worktree".
+    """
+    holder = holder.strip()
+    if not holder:
+        return False
+    base = _main_plan_local_base()
+    worktree_dir = base / 'worktrees' / holder
+    return worktree_dir.exists()
+
+
 # ---------------------------------------------------------------------------
 # TOCTOU-safe main-anchored read-modify-write for JSON state files
 # ---------------------------------------------------------------------------

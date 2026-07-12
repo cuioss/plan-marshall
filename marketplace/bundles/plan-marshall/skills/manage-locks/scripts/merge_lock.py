@@ -194,7 +194,7 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-from _locks_core import holder_is_dead, log_lock_event, rmw_json
+from _locks_core import holder_has_live_worktree, holder_is_dead, log_lock_event, rmw_json
 from file_ops import get_executor_path
 from manage_terminal_title import TITLE_TOKEN_GLYPHS
 from marketplace_paths import (
@@ -304,16 +304,27 @@ def _queue_waiting(state: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _prune_dead_waiting(waiting: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Drop FIFO entries whose holder plan is dead (crashed waiter reclaim).
+    """Drop FIFO entries whose holder plan is dead AND has no live worktree.
 
-    A waiter is dead when its plan dir lives in NEITHER the main checkout NOR its
-    worktree (the shared :func:`_locks_core.holder_is_dead` predicate). Pruning
-    dead waiters before selecting the FIFO front frees the queue from a crashed
-    session that would otherwise wedge the front indefinitely — its entry is never
-    released (the crash skipped the release), so without this prune it would block
-    every live waiter behind it forever.
+    A waiter is dead-by-plan-dir when its plan dir lives in NEITHER the main
+    checkout NOR its worktree (the shared :func:`_locks_core.holder_is_dead`
+    predicate). Pruning such waiters before selecting the FIFO front frees the
+    queue from a crashed session that would otherwise wedge the front indefinitely
+    — its entry is never released (the crash skipped the release), so without this
+    prune it would block every live waiter behind it forever.
+
+    The live-worktree guard (:func:`_locks_core.holder_has_live_worktree`) narrows
+    the prune: a waiter judged dead-by-plan-dir but whose worktree directory is
+    still on disk may be MID-RECOVERY (an interrupted finalize move-back moved the
+    plan dir out but left the worktree), so it is RETAINED rather than silently
+    pruned. Only a waiter that is both plan-dir-dead AND worktree-absent is
+    genuinely gone and dropped.
     """
-    return [e for e in waiting if not holder_is_dead(e.get('plan_id', ''))]
+    return [
+        e
+        for e in waiting
+        if not holder_is_dead(e.get('plan_id', '')) or holder_has_live_worktree(e.get('plan_id', ''))
+    ]
 
 
 def _fifo_front(waiting: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -640,7 +651,12 @@ def _admitted_result(
 
 
 def _blocked_result(
-    plan_id: str, blocking_plan_id: str | None, lock_path: Path, waiting_count: int
+    plan_id: str,
+    blocking_plan_id: str | None,
+    lock_path: Path,
+    waiting_count: int,
+    *,
+    stale_holder_live_worktree: bool = False,
 ) -> dict[str, Any]:
     """Build the ``admission: blocked`` structured re-poll payload (NOT an error).
 
@@ -649,8 +665,16 @@ def _blocked_result(
     loop re-polls (idempotently preserving FIFO position) against this signal until
     admitted or its wait budget is exhausted, then fires the Pre-Merge Gate's
     last-resort ``AskUserQuestion`` carrying ``blocking_plan_id``.
+
+    ``stale_holder_live_worktree`` (default False) adds the refuse-auto-reclaim
+    discriminator to the payload — set True ONLY on the live-worktree guard path
+    (holder dead by plan-dir absence but its worktree directory is still on disk),
+    so the existing branch-cleanup budget-exhaustion escalation can ask the
+    operator to confirm rather than the primitive force-releasing a mid-recovery
+    holder. The ordinary non-front / foreign-live-holder blocked payload omits the
+    field entirely.
     """
-    return {
+    result: dict[str, Any] = {
         'status': 'blocked',
         'plan_id': plan_id,
         'admission': 'blocked',
@@ -658,6 +682,9 @@ def _blocked_result(
         'lock_path': str(lock_path),
         'waiting_count': waiting_count,
     }
+    if stale_holder_live_worktree:
+        result['stale_holder_live_worktree'] = True
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -749,6 +776,27 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
     # The lock exists — inspect the holder. A dead holder is reclaimed atomically
     # (evict the SPECIFIC observed stale file → re-confirm dead → O_EXCL recreate).
     holder = _read_holder(lock_path)
+
+    # Live-worktree guard (evaluated BEFORE the auto-reclaim branch, so it never
+    # widens the O_EXCL / sidecar-reclaim window — no new grant path is opened).
+    # A holder judged dead by plan-dir absence may still be MID-RECOVERY: its
+    # worktree directory is on disk (an interrupted finalize move-back moved the
+    # plan dir out but left the worktree). Refuse to auto-reclaim such a holder;
+    # return a structured `blocked` signal carrying `stale_holder_live_worktree`
+    # so the EXISTING branch-cleanup budget-exhaustion escalation asks the operator
+    # to confirm, rather than the primitive force-releasing a mid-recovery holder.
+    # No new force-release CLI verb is introduced.
+    if holder_is_dead(holder) and holder_has_live_worktree(holder):
+        _surface_lock_waiting(plan_id, set_title_token)
+        log_lock_event(
+            'merge', 'blocked', lock_id=plan_id, lock_file=_LOCK_FILENAME,
+            holder=holder or None, waiter=plan_id, waiting_count=waiting_count,
+            stale_holder_live_worktree=True,
+        )
+        return _blocked_result(
+            plan_id, holder or None, lock_path, waiting_count, stale_holder_live_worktree=True
+        )
+
     if holder_is_dead(holder):
         reclaimed_from = holder
         if _reclaim_stale_lock(lock_path, reclaimed_from, plan_id):

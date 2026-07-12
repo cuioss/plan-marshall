@@ -2170,3 +2170,116 @@ class TestLockEventEmission:
         assert result['status'] == 'success'
         assert result['action'] == 'released'
         assert not isolated_base['lock_path'].exists()
+
+
+# =============================================================================
+# Live-worktree guard (D3) — refuse auto-reclaim of a mid-recovery holder
+# =============================================================================
+#
+# A holder judged dead-by-plan-dir-absence (its plan dir is in NEITHER main NOR
+# its worktree's .plan) may still be MID-RECOVERY — its worktree DIRECTORY is on
+# disk (an interrupted finalize move-back moved the plan dir out but left the
+# worktree). The acquire path evaluates the `holder_has_live_worktree` guard
+# BEFORE the auto-reclaim branch and REFUSES to reclaim such a holder, returning
+# a `blocked` payload carrying `stale_holder_live_worktree: true` so the existing
+# branch-cleanup budget-exhaustion escalation asks the operator to confirm rather
+# than the primitive force-releasing a mid-recovery holder. No new grant path is
+# opened — the reclaim is refused, not attempted.
+
+
+class TestLiveWorktreeGuard:
+    def test_plan_dir_dead_but_live_worktree_holder_is_not_reclaimed(self, isolated_base: dict) -> None:
+        """A plan-dir-dead holder whose worktree DIRECTORY is still on disk is
+        NOT auto-reclaimed: acquire returns `blocked` with the
+        `stale_holder_live_worktree` discriminator and leaves the lock intact."""
+        base = isolated_base['base']
+        # 'mid-recovery' holds the lock. Its plan dir exists in NEITHER main NOR
+        # its worktree's .plan (holder_is_dead True), but its worktree DIRECTORY
+        # is present (an interrupted move-back) → holder_has_live_worktree True.
+        merge_lock.run_acquire(Namespace(plan_id='mid-recovery', timeout=5.0))
+        # Drop it from the FIFO queue so 'plan-b' becomes the genuine front and
+        # reaches the holder-inspection / guard code below.
+        merge_lock._dequeue_fifo('mid-recovery')
+        (base / 'worktrees' / 'mid-recovery').mkdir(parents=True, exist_ok=True)
+
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
+
+        assert result['status'] == 'blocked'
+        assert result['admission'] == 'blocked'
+        assert result['stale_holder_live_worktree'] is True
+        assert result['blocking_plan_id'] == 'mid-recovery'
+        # The lock file was NOT reclaimed/recreated — it still records the
+        # original mid-recovery holder (no new grant path opened).
+        assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'mid-recovery'
+
+    def test_plan_dir_dead_and_worktree_absent_still_reclaims(self, isolated_base: dict) -> None:
+        """Guard boundary: a GENUINELY-dead holder (plan dir AND worktree both
+        absent) is still reclaimed exactly as before — the guard does not block
+        the ordinary reclaim path, and the discriminator is absent."""
+        merge_lock.run_acquire(Namespace(plan_id='fully-dead', timeout=5.0))
+        merge_lock._dequeue_fifo('fully-dead')
+        # No worktree directory for 'fully-dead' → holder_has_live_worktree False.
+
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
+
+        assert result['status'] == 'success'
+        assert result['action'] == 'acquired'
+        assert result['reclaimed'] is True
+        assert 'stale_holder_live_worktree' not in result
+        assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'plan-b'
+
+    def test_ordinary_foreign_live_holder_block_omits_discriminator(self, isolated_base: dict) -> None:
+        """A normal foreign-live-holder block (the holder's plan dir exists) must
+        NOT carry the guard discriminator — the field is present ONLY on the
+        refuse-auto-reclaim path."""
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        _make_live_plan(isolated_base['base'], 'plan-a')
+
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=0.3))
+
+        assert result['status'] == 'blocked'
+        assert result['blocking_plan_id'] == 'plan-a'
+        assert 'stale_holder_live_worktree' not in result
+
+    def test_prune_retains_live_worktree_waiter(self, isolated_base: dict) -> None:
+        """`_prune_dead_waiting` retains a dead-by-plan-dir waiter whose worktree
+        directory is still on disk (mid-recovery), while still dropping a waiter
+        that is both plan-dir-dead AND worktree-absent."""
+        base = isolated_base['base']
+        _make_live_plan(base, 'live')  # alive by plan dir
+        (base / 'worktrees' / 'mid-recovery').mkdir(parents=True, exist_ok=True)  # live worktree only
+
+        waiting = [
+            {'plan_id': 'live', 'ts': 1.0},
+            {'plan_id': 'mid-recovery', 'ts': 2.0},
+            {'plan_id': 'fully-dead', 'ts': 3.0},
+        ]
+
+        pruned_ids = [e['plan_id'] for e in merge_lock._prune_dead_waiting(waiting)]
+
+        assert 'live' in pruned_ids
+        # Retained despite being plan-dir-dead — its worktree is still present.
+        assert 'mid-recovery' in pruned_ids
+        # Genuinely gone (plan dir AND worktree absent) → pruned.
+        assert 'fully-dead' not in pruned_ids
+
+    def test_live_worktree_waiter_not_pruned_from_fifo_front(self, isolated_base: dict) -> None:
+        """End-to-end: a mid-recovery waiter (plan-dir-dead, live worktree) at the
+        FIFO front is NOT pruned during an acquire, so a later live waiter behind
+        it does not jump the queue."""
+        base = isolated_base['base']
+        (base / 'worktrees' / 'mid-recovery').mkdir(parents=True, exist_ok=True)
+        _make_live_plan(base, 'behind')
+        isolated_base['queue_path'].write_text(
+            json.dumps({'waiting': [
+                {'plan_id': 'mid-recovery', 'ts': 1.0},
+                {'plan_id': 'behind', 'ts': 2.0},
+            ]}),
+            encoding='utf-8',
+        )
+
+        # 'behind' polls: the mid-recovery front is RETAINED (live worktree), so
+        # 'behind' stays non-front → blocked, and the front is unchanged.
+        result = merge_lock.run_acquire(Namespace(plan_id='behind', timeout=5.0))
+        assert result['admission'] == 'blocked'
+        assert _waiting_plan_ids(isolated_base['queue_path']) == ['mid-recovery', 'behind']
