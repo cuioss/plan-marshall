@@ -257,12 +257,10 @@ CROSS_PLAN_CHECKS = {
 # routing-order fix), `#863` (merge-queue enablement via marshall-steward), `#872`
 # (self-review promoted to a default finalize step), `#875` (plan-13's boundary —
 # `metrics`, `track-selection-accuracy`, and `lane-lever-effectiveness`),
-# `#PLAN15-PR` (plan-15's boundary — the `architecture-lookup-ratio` check plan-15
-# bumps; resolved to the real `#NNN` at that plan's finalize), `PR-PENDING` (this
-# plan's own boundary — a finalize-resolved placeholder for the check this plan
-# reworks: `merge-window-accounting`, whose accounting this plan's D1 merge-queue
-# enqueue-path rework and D3 merge-lock stale-holder liveness fix alter; corrected
-# to the concrete #{n} after create-pr), and `plan-10` (the roadmap head this plan
+# `#876` (plan-15's boundary — the `architecture-lookup-ratio` check plan-15
+# bumps), `#877` (plan-14's boundary — the `merge-window-accounting` check plan-14
+# reworks, whose accounting plan-14's D1 merge-queue enqueue-path rework and D3
+# merge-lock stale-holder liveness fix alter), and `plan-10` (the roadmap head this plan
 # re-confirms the general checks accurate against). Every key MUST be a member of
 # `CHECK_NAMES`.
 CHECK_ERA: dict[str, str] = {
@@ -293,29 +291,23 @@ CHECK_ERA: dict[str, str] = {
     "quality-chain": "plan-10",
     "task-graph-redundancy": "plan-10",
     "preference-pattern-detector": "plan-10",
-    # architecture-lookup-ratio — #PLAN15-PR (this plan's boundary): this plan
-    # reworks the information-vs-build lookup-ratio mechanics, so its era boundary
-    # IS this plan's own PR. The `#PLAN15-PR` placeholder is resolved to the real
-    # `#NNN` by the finalize era-stamp resolution.
-    "architecture-lookup-ratio": "#PLAN15-PR",
+    # architecture-lookup-ratio — #876 (plan-15's boundary): plan-15 reworked the
+    # information-vs-build lookup-ratio mechanics, so its era boundary is plan-15's
+    # PR (#876).
+    "architecture-lookup-ratio": "#876",
     # Roadmap-mechanics checks (plan-11) carry the boundary whose mechanics they
     # verify: dispatch-topology confirms the plan-10 leaf/dispatch invariant;
     # finalize-flow-conformance verifies #849's deterministic ci_verify / adaptive
     # ci-wait mechanics.
     "dispatch-topology": "plan-10",
     "finalize-flow-conformance": "#849",
-    # PR-PENDING — this plan (plan-14) reworks the merge-window-accounting
-    # mechanics, so its era boundary IS this plan's own PR (bumped from #863):
-    # D1 strips --delete-branch/--strategy from the pr merge-queue enqueue path and
-    # D3 fixes the merge-lock stale-holder liveness (the live-worktree guard) —
-    # both surfaces this check accounts for (the `[LOCK] (merge:*)` lifecycle
-    # bucketing + the widened merge-mutex admission window). The concrete #{n} is a
-    # documented finalize-time correction that reads the real PR number from
-    # status.json after create-pr and rewrites the constant AND its test_audit.py
-    # mirror in lock-step. PR-PENDING is a provably-invalid PR token that fails
-    # loudly if the correction is ever forgotten — never guess this plan's PR
-    # number at phase-5.
-    "merge-window-accounting": "PR-PENDING",
+    # merge-window-accounting — #877 (plan-14's boundary, bumped from #863): plan-14
+    # reworked the merge-window-accounting mechanics, so its era boundary is plan-14's
+    # PR (#877). D1 strips --delete-branch/--strategy from the pr merge-queue enqueue
+    # path and D3 fixes the merge-lock stale-holder liveness (the live-worktree guard)
+    # — both surfaces this check accounts for (the `[LOCK] (merge:*)` lifecycle
+    # bucketing + the widened merge-mutex admission window).
+    "merge-window-accounting": "#877",
     # lane-lever-effectiveness — #875 (this plan's boundary): the Tier-1
     # recipe-match floor fix + the classify-before-route change this plan ships
     # alter which plans engage the light planning lane and the minimal execution

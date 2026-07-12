@@ -116,14 +116,12 @@ def test_reworked_checks_carry_this_plan_boundary():
         assert audit.CHECK_ERA[check] == "#875", check
 
 
-def test_merge_window_accounting_carries_this_plan_pr_placeholder():
-    # This plan (plan-14) reworks the merge-window-accounting mechanics — D1 strips
+def test_merge_window_accounting_carries_this_plan_pr_boundary():
+    # Plan-14 reworked the merge-window-accounting mechanics — D1 strips
     # --delete-branch/--strategy from the pr merge-queue enqueue path and D3 fixes the
     # merge-lock stale-holder liveness — both surfaces this check accounts for, so its
-    # era boundary is this plan's own PR (bumped from #863). At phase-5 that is the
-    # PR-PENDING placeholder, resolved to the concrete #NNN at finalize in lock-step
-    # with the audit.py mirror.
-    assert audit.CHECK_ERA["merge-window-accounting"] == "PR-PENDING"
+    # era boundary is plan-14's PR (#877, bumped from #863).
+    assert audit.CHECK_ERA["merge-window-accounting"] == "#877"
 
 
 def test_stamp_era_inserts_fixed_since_after_status():
