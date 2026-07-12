@@ -111,11 +111,11 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
         return make_error('pr_create', err)
 
     # Resolve the body from exactly one source. Validate the mutual-exclusion
-    # contract before any network call. ``--plan-id`` is always present on a
-    # parser-built namespace; ``body_file`` is read defensively via getattr so a
-    # direct-Namespace caller that predates the --body-file flag defaults cleanly
-    # to the plan-bound path instead of raising AttributeError.
-    plan_id = args.plan_id
+    # contract before any network call. Both ``plan_id`` and ``body_file`` are
+    # read defensively via getattr so a direct-Namespace caller that bypasses the
+    # argparse parser and omits either flag falls through to the "no body source"
+    # error instead of raising AttributeError.
+    plan_id = getattr(args, 'plan_id', None)
     body_file = getattr(args, 'body_file', None)
     if plan_id and body_file:
         return make_error(
@@ -141,6 +141,9 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
             return make_error('pr_create', f'--body-file is empty: {body_file}')
     else:
         # Plan-bound path: consume the prepared scratch body from the body store.
+        # plan_id is non-None here — the mutual-exclusion guard above returned
+        # early when both sources were falsy, and body_file is falsy in this branch.
+        assert plan_id is not None  # noqa: S101 — narrowing after the mutual-exclusion guard
         store_body, err_dict = read_and_consume_body(plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
         if err_dict or store_body is None:
             return make_error('pr_create', (err_dict or {}).get('message', 'body not prepared'))
@@ -170,6 +173,7 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
     # Delete the consumed scratch body — success only, and only when the body
     # came from the plan-bound store (the plan-less --body-file is caller-owned).
     if consumed_from_store:
+        assert plan_id is not None  # noqa: S101 — consumed_from_store is set only on the plan-bound path
         delete_consumed_body(plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
 
     # Parse the URL from output (gh pr create outputs the URL)
@@ -1008,6 +1012,7 @@ def cmd_repo_label_ensure(args: argparse.Namespace) -> dict:
     return {
         'status': 'success',
         'operation': 'repo_label_ensure',
+        'provider': 'github',
         'label': args.label,
         'ensured': True,
     }

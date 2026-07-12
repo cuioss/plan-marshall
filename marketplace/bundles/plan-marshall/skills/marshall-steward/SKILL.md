@@ -526,10 +526,12 @@ mode:
   [`references/wizard-flow.md`](references/wizard-flow.md)), after the final
   configuration step completes.
 
-**Trigger.** The hook runs the landing-cycle procedure only when an uncommitted
-plan-marshall artifact diff is present (`git status --porcelain` is non-empty for
-tracked plan-marshall paths); with no diff it is a silent no-op and the run ends
-normally. The full procedure — diff detection, the land/leave `AskUserQuestion`
+**Trigger.** The hook runs the landing-cycle procedure only when the working tree
+carries an uncommitted diff — the Step 1 check is a plain whole-tree
+`git -C {repo_root} status --porcelain` that is NOT path-filtered; with no diff it
+is a silent no-op and the run ends normally. In practice the changes a steward run
+leaves uncommitted are always to tracked plan-marshall artifacts, but the check
+itself is unscoped over the whole working tree. The full procedure — diff detection, the land/leave `AskUserQuestion`
 gate, base-branch-conditional branch selection (create `chore/{slug}` on a base
 branch; confirm reuse of a non-base working branch), commit → push →
 `skip-bot-review`-labelled plan-less PR → merge-queue-aware merge → switch-to-main

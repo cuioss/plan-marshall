@@ -56,8 +56,13 @@ def cmd_steps_sort(args) -> dict:
         return error_exit(str(e))
 
     config = load_config()
-    plan_config = config.get('plan', {})
-    section = plan_config.get(_TARGET_PHASE, {})
+    # Guard each retrieved level: a hand-edited marshal.json may carry a non-dict
+    # `plan` or `phase-6-finalize` value. Default to {} so the subsequent `.get()`
+    # fails gracefully (nothing on disk to re-sort) instead of raising AttributeError.
+    raw_plan = config.get('plan', {})
+    plan_config = raw_plan if isinstance(raw_plan, dict) else {}
+    raw_section = plan_config.get(_TARGET_PHASE, {})
+    section = raw_section if isinstance(raw_section, dict) else {}
     raw = section.get(_STEP_KEY)
 
     # Only a persisted keyed-map is sortable. An absent / non-dict value means

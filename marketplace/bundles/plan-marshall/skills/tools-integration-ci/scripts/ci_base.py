@@ -1079,14 +1079,15 @@ def build_parser(
     )
 
     # -- repo ---------------------------------------------------------
-    # Repository-level (not PR-level) operations. Currently carries a single
-    # `merge-queue` noun grouping two sub-verbs `probe` / `enable`, giving the
-    # 3-level `repo merge-queue probe` / `repo merge-queue enable` shape.
-    # dispatch() keys the repo branch on the three-level path
-    # (repo, merge-queue, args.merge_queue_command).
+    # Repository-level (not PR-level) operations. Carries two sub-nouns:
+    # `merge-queue` (sub-verbs `probe` / `enable`) and `label` (sub-verb
+    # `ensure`), each giving a 3-level shape — `repo merge-queue probe` /
+    # `repo label ensure`. dispatch() keys the repo branch on the three-level
+    # path, reading the third element from the matching sub-noun dest
+    # (args.merge_queue_command or args.label_command).
     repo_parser = subparsers.add_parser(
         'repo',
-        help='Repository-level operations (merge-queue probe/enable)',
+        help='Repository-level operations (merge-queue probe/enable, label ensure)',
         allow_abbrev=False,
     )
     repo_sub = repo_parser.add_subparsers(dest='repo_command', required=True)
@@ -1660,7 +1661,7 @@ def _load_log_filter():
 # 2-tuples ``(command, subcommand)``; the ``repo merge-queue`` and ``repo label``
 # verbs use a 3-tuple key (``(repo, merge-queue, sub_verb)`` /
 # ``(repo, label, sub_verb)``), so the arity is variadic.
-HandlerMap = dict[tuple[str, ...], Any]
+HandlerMap = dict[tuple[str | None, ...], Any]
 
 
 def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.ArgumentParser) -> dict:
@@ -1676,7 +1677,9 @@ def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.Ar
     """
     command = args.command
 
-    key: tuple[str, ...]
+    # The third key element may be None on the `repo` branch: a getattr-defensive
+    # read of an absent sub-verb dest, or the unrecognised-sub-noun fall-through.
+    key: tuple[str | None, ...]
     if command == 'pr':
         key = ('pr', args.pr_command)
     elif command == 'checks':
@@ -1691,9 +1694,15 @@ def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.Ar
         # attribute: `repo merge-queue {probe|enable}` uses args.merge_queue_command;
         # `repo label {ensure}` uses args.label_command.
         if args.repo_command == 'label':
-            key = ('repo', 'label', args.label_command)
+            key = ('repo', 'label', getattr(args, 'label_command', None))
+        elif args.repo_command == 'merge-queue':
+            key = ('repo', 'merge-queue', getattr(args, 'merge_queue_command', None))
         else:
-            key = ('repo', args.repo_command, args.merge_queue_command)
+            # Unrecognised repo sub-noun: resolve the third key element to None so
+            # the handler lookup misses cleanly and falls through to the
+            # "Unknown subcommand" error, rather than raising AttributeError on an
+            # absent sub-verb dest.
+            key = ('repo', args.repo_command, None)
     else:
         parser.print_help()
         return make_error('dispatch', 'Unknown command')

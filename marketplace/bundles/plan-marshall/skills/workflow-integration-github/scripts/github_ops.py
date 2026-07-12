@@ -100,6 +100,7 @@ from ci_base import (
     MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
     MERGE_QUEUE_INELIGIBLE,
     MERGE_QUEUE_UNSUPPORTED,
+    HandlerMap,
     add_pr_create_args,
     build_parser,
     check_auth_cli,
@@ -1080,7 +1081,7 @@ def main() -> int:
     # enrich_failing_checks_with_logs without re-parsing argv.
     args.router_plan_id = router_plan_id
 
-    handlers = {
+    handlers: HandlerMap = {
         ('pr', 'prepare-body'): _cmd_pr_prepare_body,
         ('pr', 'prepare-comment'): _cmd_pr_prepare_comment,
         ('issue', 'prepare-body'): _cmd_issue_prepare_body,
