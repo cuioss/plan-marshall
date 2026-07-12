@@ -44,6 +44,7 @@ from _cmd_skill_resolution import (
     cmd_resolve_recipe,
     cmd_resolve_workflow_skill_extension,
 )
+from _cmd_steps_sort import cmd_steps_sort
 from _cmd_sync_defaults import cmd_sync_defaults
 from _cmd_system_plan import cmd_plan, cmd_project, cmd_system
 from _config_core import normalize_keys
@@ -364,6 +365,14 @@ def main() -> int:
     subparsers.add_parser(
         'normalize-keys',
         help='Re-write marshal.json with the canonical top-level key order (silent, idempotent)',
+        allow_abbrev=False,
+    )
+
+    # --- steps-sort ---
+    subparsers.add_parser(
+        'steps-sort',
+        help='Re-sort plan.phase-6-finalize.steps into ascending frontmatter order '
+        '(silent, idempotent, values byte-identical)',
         allow_abbrev=False,
     )
 
@@ -754,6 +763,8 @@ def main() -> int:
             result = {'status': 'success', **outcome}
         except Exception as e:
             result = {'status': 'error', 'error': str(e)}
+    elif args.noun == 'steps-sort':
+        result = cmd_steps_sort(args)
     elif args.noun == 'sync-defaults':
         result = cmd_sync_defaults(args)
     elif args.noun == 'effort':

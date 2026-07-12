@@ -1079,14 +1079,15 @@ def build_parser(
     )
 
     # -- repo ---------------------------------------------------------
-    # Repository-level (not PR-level) operations. Currently carries a single
-    # `merge-queue` noun grouping two sub-verbs `probe` / `enable`, giving the
-    # 3-level `repo merge-queue probe` / `repo merge-queue enable` shape.
-    # dispatch() keys the repo branch on the three-level path
-    # (repo, merge-queue, args.merge_queue_command).
+    # Repository-level (not PR-level) operations. Carries two sub-nouns:
+    # `merge-queue` (sub-verbs `probe` / `enable`) and `label` (sub-verb
+    # `ensure`), each giving a 3-level shape — `repo merge-queue probe` /
+    # `repo label ensure`. dispatch() keys the repo branch on the three-level
+    # path, reading the third element from the matching sub-noun dest
+    # (args.merge_queue_command or args.label_command).
     repo_parser = subparsers.add_parser(
         'repo',
-        help='Repository-level operations (merge-queue probe/enable)',
+        help='Repository-level operations (merge-queue probe/enable, label ensure)',
         allow_abbrev=False,
     )
     repo_sub = repo_parser.add_subparsers(dest='repo_command', required=True)
@@ -1114,6 +1115,30 @@ def build_parser(
         allow_abbrev=False,
     )
 
+    # repo label — repository label operations. Currently a single `ensure`
+    # sub-verb that creates the label if missing (idempotent — an existing label
+    # is a no-op success), giving the 3-level `repo label ensure` shape.
+    # dispatch() keys the repo branch on the three-level path
+    # (repo, label, args.label_command), mirroring `repo merge-queue`.
+    label_parser = repo_sub.add_parser(
+        'label',
+        help='Repository label operations (ensure a label exists)',
+        allow_abbrev=False,
+    )
+    label_sub = label_parser.add_subparsers(dest='label_command', required=True)
+
+    label_ensure = label_sub.add_parser(
+        'ensure',
+        help='Ensure a repository label exists (create-if-missing; idempotent)',
+        allow_abbrev=False,
+    )
+    label_ensure.add_argument('--label', required=True, help='Label name to ensure exists')
+    label_ensure.add_argument(
+        '--color',
+        help='Label color as a 6-hex-digit RGB string (no leading #); provider default when omitted',
+    )
+    label_ensure.add_argument('--description', help='Label description text')
+
     return parser, pr_sub, checks_sub, issue_sub, branch_sub
 
 
@@ -1122,15 +1147,45 @@ def add_pr_create_args(
 ) -> None:
     """Add 'pr create' sub-parser.
 
-    The PR body is supplied via the path-allocate pattern: callers first run
-    ``pr prepare-body --plan-id {id}`` to allocate a scratch path, write the
-    body content to that path with their native Write/Edit tools, then invoke
-    ``pr create --plan-id {id}``. No multi-line body content crosses the
-    shell boundary.
+    The PR body comes from exactly ONE of two mutually-exclusive sources:
+
+    - **Plan-bound body store** (``--plan-id`` [+ ``--slot``]): callers first run
+      ``pr prepare-body --plan-id {id}`` to allocate a scratch path, write the
+      body content to that path with their native Write/Edit tools, then invoke
+      ``pr create --plan-id {id}``.
+    - **Plan-less body file** (``--body-file PATH``): the body is read directly
+      from an explicit file path — the plan-less / steward path that has no plan
+      directory. No multi-line body content crosses the shell boundary in either
+      case.
+
+    ``--plan-id`` is NO LONGER forced ``required=True`` here; the handler
+    (``cmd_pr_create``) validates that exactly one body source is supplied.
     """
     pr_create = pr_subparsers.add_parser('create', help='Create a pull request', allow_abbrev=False)
     pr_create.add_argument('--title', required=True, help='PR title')
-    add_body_consumer_args(pr_create)
+    # Body source: EXACTLY ONE of --plan-id (plan-bound body store) or --body-file
+    # (plan-less body file). A required mutually-exclusive group enforces the
+    # "exactly one" contract at the parser level — supplying neither raises (group
+    # required), supplying both raises (mutually exclusive). The handler
+    # re-validates for direct-Namespace callers that bypass the parser.
+    body_source = pr_create.add_mutually_exclusive_group(required=True)
+    body_source.add_argument(
+        '--plan-id',
+        help='Plan identifier bound to the prepared body file (plan-bound body source; '
+        'mutually exclusive with --body-file)',
+    )
+    body_source.add_argument(
+        '--body-file',
+        dest='body_file',
+        metavar='PATH',
+        help='Path to a file containing the PR body (plan-less body source; mutually '
+        'exclusive with --plan-id). Used by the steward landing cycle, which has no plan dir.',
+    )
+    pr_create.add_argument(
+        '--slot',
+        default=None,
+        help='Optional body slot identifier matching the prior prepare-body call (default: "default")',
+    )
     pr_create.add_argument('--base', help='Base/target branch (default: repo default)')
     pr_create.add_argument('--draft', action='store_true', help='Create as draft PR')
     pr_create.add_argument(
@@ -1603,9 +1658,10 @@ def _load_log_filter():
 # ---------------------------------------------------------------------------
 
 # Handler map type: maps a command-path tuple -> handler function. Most keys are
-# 2-tuples ``(command, subcommand)``; the ``repo merge-queue`` verbs use a
-# 3-tuple ``(repo, merge-queue, sub_verb)`` key, so the arity is variadic.
-HandlerMap = dict[tuple[str, ...], Any]
+# 2-tuples ``(command, subcommand)``; the ``repo merge-queue`` and ``repo label``
+# verbs use a 3-tuple key (``(repo, merge-queue, sub_verb)`` /
+# ``(repo, label, sub_verb)``), so the arity is variadic.
+HandlerMap = dict[tuple[str | None, ...], Any]
 
 
 def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.ArgumentParser) -> dict:
@@ -1621,7 +1677,9 @@ def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.Ar
     """
     command = args.command
 
-    key: tuple[str, ...]
+    # The third key element may be None on the `repo` branch: a getattr-defensive
+    # read of an absent sub-verb dest, or the unrecognised-sub-noun fall-through.
+    key: tuple[str | None, ...]
     if command == 'pr':
         key = ('pr', args.pr_command)
     elif command == 'checks':
@@ -1631,10 +1689,20 @@ def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.Ar
     elif command == 'branch':
         key = ('branch', args.branch_command)
     elif command == 'repo':
-        # Three-level path: `repo merge-queue {probe|enable}`. args.repo_command
-        # is always 'merge-queue' today (the only registered noun), and
-        # args.merge_queue_command is the sub-verb.
-        key = ('repo', args.repo_command, args.merge_queue_command)
+        # Three-level path under the `repo` noun. Each sub-noun carries its own
+        # sub-verb dest, so the key's third element is read from the matching
+        # attribute: `repo merge-queue {probe|enable}` uses args.merge_queue_command;
+        # `repo label {ensure}` uses args.label_command.
+        if args.repo_command == 'label':
+            key = ('repo', 'label', getattr(args, 'label_command', None))
+        elif args.repo_command == 'merge-queue':
+            key = ('repo', 'merge-queue', getattr(args, 'merge_queue_command', None))
+        else:
+            # Unrecognised repo sub-noun: resolve the third key element to None so
+            # the handler lookup misses cleanly and falls through to the
+            # "Unknown subcommand" error, rather than raising AttributeError on an
+            # absent sub-verb dest.
+            key = ('repo', args.repo_command, None)
     else:
         parser.print_help()
         return make_error('dispatch', 'Unknown command')

@@ -393,20 +393,31 @@ def test_pr_create_parser_accepts_head_flag():
 
 
 def test_pr_create_parser_rejects_body_and_body_file():
-    """add_pr_create_args must NOT register the legacy body flags — they are deleted."""
+    """pr create rejects the legacy inline --body flag and forbids two body sources at once.
+
+    The body comes from EXACTLY ONE of --plan-id or --body-file (a required
+    mutually-exclusive group). The legacy inline ``--body`` flag is never
+    registered (unknown arg), and supplying BOTH --plan-id and --body-file is a
+    mutually-exclusive violation. Both raise SystemExit at parse time.
+    """
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest='cmd')
     add_pr_create_args(sub)
 
-    # Legacy body flags must raise SystemExit (unknown arg → argparse error)
+    # Legacy inline --body flag is unknown → argparse error.
     with pytest.raises(SystemExit):
         parser.parse_args(['create', '--title', 'T', '--plan-id', 'p', '--body', 'X'])
+    # --plan-id and --body-file are mutually exclusive → argparse error.
     with pytest.raises(SystemExit):
         parser.parse_args(['create', '--title', 'T', '--plan-id', 'p', '--body-file', '/tmp/x'])
 
 
 def test_pr_create_parser_requires_plan_id():
-    """add_pr_create_args must require --plan-id for body consumer args."""
+    """pr create requires exactly one body source — omitting both --plan-id and --body-file fails.
+
+    The body-source mutually-exclusive group is ``required=True``, so a ``pr
+    create`` with neither --plan-id nor --body-file is rejected at parse time.
+    """
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest='cmd')
     add_pr_create_args(sub)

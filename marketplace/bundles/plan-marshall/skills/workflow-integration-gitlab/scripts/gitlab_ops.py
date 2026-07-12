@@ -63,6 +63,7 @@ import argparse
 import json
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
@@ -78,6 +79,7 @@ from ci_base import (
     MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
     MERGE_QUEUE_INELIGIBLE,
     MERGE_QUEUE_UNSUPPORTED,
+    HandlerMap,
     add_pr_create_args,
     add_pr_resolve_thread_pr_number,
     build_parser,
@@ -199,15 +201,56 @@ def _resolve_mr_iid(args: argparse.Namespace, operation: str) -> tuple[str | Non
 
 
 def cmd_pr_create(args: argparse.Namespace) -> dict:
-    """Handle 'pr create' subcommand (creates MR in GitLab)."""
+    """Handle 'pr create' subcommand (creates MR in GitLab).
+
+    The MR body comes from exactly ONE of two mutually-exclusive sources: the
+    plan-bound body store (``--plan-id`` [+ ``--slot``]) or an explicit
+    ``--body-file PATH`` (the plan-less / steward path). Supplying neither, or
+    both, is rejected.
+    """
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
         return make_error('pr_create', err)
 
-    body, err_dict = read_and_consume_body(args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
-    if err_dict:
-        return make_error('pr_create', err_dict.get('message', 'body not prepared'))
+    # Resolve the body from exactly one source before any network call. Both
+    # ``plan_id`` and ``body_file`` are read defensively via getattr so a
+    # direct-Namespace caller that bypasses the argparse parser and omits either
+    # flag falls through to the "no body source" error instead of raising
+    # AttributeError.
+    plan_id = getattr(args, 'plan_id', None)
+    body_file = getattr(args, 'body_file', None)
+    if plan_id and body_file:
+        return make_error(
+            'pr_create',
+            '--plan-id and --body-file are mutually exclusive; supply exactly one body source',
+        )
+    if not plan_id and not body_file:
+        return make_error(
+            'pr_create',
+            'A MR body source is required: supply either --plan-id (plan-bound body '
+            'store) or --body-file PATH (plan-less body file)',
+        )
+
+    consumed_from_store = False
+    if body_file:
+        # Plan-less path: read the body directly from the explicit file.
+        try:
+            body = Path(body_file).read_text(encoding='utf-8')
+        except OSError as exc:
+            return make_error('pr_create', f'Could not read --body-file {body_file}', str(exc))
+        if not body.strip():
+            return make_error('pr_create', f'--body-file is empty: {body_file}')
+    else:
+        # Plan-bound path: plan_id is non-None here — the mutual-exclusion guard
+        # above returned early when both sources were falsy, and body_file is
+        # falsy in this branch.
+        assert plan_id is not None  # noqa: S101 — narrowing after the mutual-exclusion guard
+        store_body, err_dict = read_and_consume_body(plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
+        if err_dict or store_body is None:
+            return make_error('pr_create', (err_dict or {}).get('message', 'body not prepared'))
+        body = store_body
+        consumed_from_store = True
 
     # Build command - glab uses 'mr' for merge requests
     glab_args = ['mr', 'create', '--title', args.title, '--description', body]
@@ -217,13 +260,22 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
         glab_args.append('--draft')
     if getattr(args, 'head', None):
         glab_args.extend(['--source-branch', args.head])
+    # Optional --label passthrough (repeatable), mirroring the GitHub provider's
+    # cmd_pr_create. create-pr applies `--label skip-bot-review` when the
+    # enabled_bots set is empty; without this forward the label would be silently
+    # dropped on GitLab MRs.
+    for label in getattr(args, 'label', None) or []:
+        glab_args.extend(['--label', label])
 
     # Execute
     returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
         return make_error('pr_create', 'Failed to create MR', stderr.strip())
 
-    delete_consumed_body(args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
+    # Delete the consumed scratch body — only when it came from the plan store.
+    if consumed_from_store:
+        assert plan_id is not None  # noqa: S101 — consumed_from_store is set only on the plan-bound path
+        delete_consumed_body(plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None))
 
     # Parse the URL from output (glab mr create outputs the URL)
     mr_url = stdout.strip()
@@ -653,6 +705,55 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
 
     # ineligible / unsupported → refuse with the actionable message.
     return make_error('repo_merge_queue_enable', _MERGE_TRAIN_INELIGIBLE_HINT, detail)
+
+
+def cmd_repo_label_ensure(args: argparse.Namespace) -> dict:
+    """Handle 'repo label ensure' on GitLab — ensure a project label exists (idempotent).
+
+    ``glab label create`` errors when the label already exists, so an
+    "already exists" (HTTP 409) failure is treated as a no-op success —
+    create-if-missing semantics matching the GitHub provider. Optional
+    ``--color`` / ``--description`` are passed through; GitLab expects a
+    ``#``-prefixed hex color, so a bare 6-hex ``--color`` is prefixed here.
+    """
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('repo_label_ensure', err)
+
+    glab_args = ['label', 'create', '--name', args.label]
+    color = getattr(args, 'color', None)
+    if color:
+        glab_args.extend(['--color', color if color.startswith('#') else f'#{color}'])
+    if getattr(args, 'description', None):
+        glab_args.extend(['--description', args.description])
+
+    returncode, _stdout, stderr = run_glab(glab_args)
+    if returncode != 0:
+        stderr_text = stderr.strip()
+        stderr_lower = stderr_text.lower()
+        # Idempotent: a duplicate create (GitLab "already exists" / HTTP 409) is a
+        # no-op success, mirroring GitHub's `gh label create --force` semantics.
+        # Both substrings are matched against the lower-cased stderr so a
+        # lower-case "http 409" response is not missed.
+        if 'already exist' in stderr_lower or 'http 409' in stderr_lower:
+            return {
+                'status': 'success',
+                'operation': 'repo_label_ensure',
+                'provider': 'gitlab',
+                'label': args.label,
+                'ensured': True,
+                'already_present': True,
+            }
+        return make_error('repo_label_ensure', f'Failed to ensure label {args.label!r}', stderr_text)
+
+    return {
+        'status': 'success',
+        'operation': 'repo_label_ensure',
+        'provider': 'gitlab',
+        'label': args.label,
+        'ensured': True,
+        'already_present': False,
+    }
 
 
 def cmd_pr_reviews(args: argparse.Namespace) -> dict:
@@ -2182,7 +2283,7 @@ def main() -> int:
     # enrich_failing_checks_with_logs without re-parsing argv.
     args.router_plan_id = router_plan_id
 
-    handlers = {
+    handlers: HandlerMap = {
         ('pr', 'prepare-body'): _cmd_pr_prepare_body,
         ('pr', 'prepare-comment'): _cmd_pr_prepare_comment,
         ('issue', 'prepare-body'): _cmd_issue_prepare_body,
@@ -2217,6 +2318,7 @@ def main() -> int:
         ('branch', 'delete'): cmd_branch_delete,
         ('repo', 'merge-queue', 'probe'): cmd_repo_merge_queue_probe,
         ('repo', 'merge-queue', 'enable'): cmd_repo_merge_queue_enable,
+        ('repo', 'label', 'ensure'): cmd_repo_label_ensure,
     }
 
     # branch_sub is registered by ci_base.build_parser; acknowledge the returned

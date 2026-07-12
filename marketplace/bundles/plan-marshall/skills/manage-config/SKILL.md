@@ -88,6 +88,60 @@ carried every default.
 
 ---
 
+## Workflow: Sort Finalize Steps
+
+**Pattern**: Script Automation
+
+Physically re-sort the on-disk `plan.phase-6-finalize.steps` keyed-map into
+ascending frontmatter `order` sequence. `sync-defaults` deep-merges newly-added
+steps by appending them, so the operator-visible `marshal.json` drifts out of
+frontmatter order over time; the manifest composer already corrects this inside
+the plan-local manifest (`_sort_steps_by_frontmatter_order`) but never on disk.
+`steps-sort` closes that gap by REUSING that same composer choke-point — no order
+table is duplicated.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config steps-sort
+```
+
+**Contract:**
+
+- **Reuse, no duplication** — order comes exclusively from the composer's
+  `_sort_steps_by_frontmatter_order` / `_resolve_step_order` helpers
+  (`manage-execution-manifest`), imported via the executor's shared PYTHONPATH.
+- **Scope fixed to `phase-6-finalize.steps`** — `phase-5-execute.verification_steps`
+  is NOT sorted (it is already composer-ordered and carries no per-step
+  frontmatter-order doc).
+- **Values byte-identical** — only key order changes; each step's nested param
+  object is carried over unchanged.
+- **Idempotent** — persists ONLY when the key order actually changed. A re-run on
+  an already-sorted map is a no-op that produces zero diff (`reordered: false`).
+- **Unresolvable-order pin** — a step whose `_resolve_step_order` returns `None`
+  (external `bundle:skill` entries, non-string keys) is pinned at its original
+  index — the deterministic fallback the reused helper already implements.
+
+**Output** (TOON):
+
+```toon
+status: success
+phase: phase-6-finalize
+reordered: true
+before[3]:
+  - default:create-pr
+  - default:push
+  - default:archive-plan
+after[3]:
+  - default:push
+  - default:create-pr
+  - default:archive-plan
+```
+
+`reordered` is `true` when the on-disk key order changed (and was persisted),
+`false` when the map was already in ascending frontmatter order (no write).
+`before` / `after` are the ordered step-id lists.
+
+---
+
 ## Workflow: Query Skill Domains
 
 **Pattern**: Read-Process-Write
@@ -469,6 +523,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `build-decision` | `--command --plan-id` (centralized build-necessity verdict: `build` / `not_necessary`; `not_necessary` carries a log-friendly `reason`) |
 | `init` | Initialize marshal.json (with optional `--force`) |
 | `normalize-keys` | Re-write `marshal.json` with the canonical top-level key order (silent, idempotent; reuses the `save_config` key-order writer) |
+| `steps-sort` | Re-sort `plan.phase-6-finalize.steps` into ascending frontmatter `order` (silent, idempotent, values byte-identical; reuses the manifest composer's `_sort_steps_by_frontmatter_order` choke-point; `phase-5-execute.verification_steps` is out of scope; unresolvable-order steps pinned at their original index) |
 | `domain-detect` | `--plan-id [--domain-override]` (deterministic detector for phase-1-init Step 7; walks `request.md` clarified narrative for explicit mentions of configured `skill_domains` and their bundle aliases; returns `domain` + `ambiguous` boolean. Single-domain projects auto-select; multi-match or zero-match returns `ambiguous=true` so the caller raises `AskUserQuestion` — no LLM dispatch fallback applies.) |
 | `recipe-match` | `--request-text [--threshold 0.6]` (Tier 1 recipe-match for phase-1-init; scores free-form request text against the live recipe registry via the shared `recipe_scoring` core; returns ranked `matches[]` + `top_match` + `meets_auto_route_threshold`. Heuristic-first, zero LLM call inside the script — the bounded LLM fallback is orchestrator-driven.) |
 | `aspect-classify` | `--request-text [--threshold 0.7]` (request-aspect classifier for phase-1-init; scores free-form request text against fixed analysis/planning/implementation keyword tables via `recipe_scoring.tokenize`; returns `aspect` + `confidence` + `drops_build_steps` + per-aspect `breakdown`. A winning analysis/planning aspect is accepted only when its `_overlap_score` confidence clears `>= --threshold` (default `0.7`, NO `0.6` cap) AND beats the implementation overlap; below threshold the safe `implementation` fallback keeps build/quality-gate/test gates. Heuristic-first, zero LLM call inside the script — the bounded LLM fallback is orchestrator-driven.) |
@@ -1224,6 +1279,14 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config normal
 ```
 
 Re-writes `marshal.json` with the canonical top-level key order (reuses the `save_config` writer). Silent and idempotent — an already-canonical file is left byte-stable.
+
+### steps-sort
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config steps-sort
+```
+
+Re-sorts `plan.phase-6-finalize.steps` into ascending frontmatter `order`, reusing the manifest composer's `_sort_steps_by_frontmatter_order` choke-point (no duplicated order table). Values are preserved byte-identically; only key order changes. Silent and idempotent — persists only when the order changed, so a re-run on an already-sorted map yields `reordered: false` and zero diff. `phase-5-execute.verification_steps` is out of scope; steps whose frontmatter order is unresolvable are pinned at their original index.
 
 ### build-decision
 

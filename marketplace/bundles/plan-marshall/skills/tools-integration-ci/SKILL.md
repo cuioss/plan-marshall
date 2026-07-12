@@ -31,7 +31,7 @@ Unified CI provider abstraction using **static routing** - one script per provid
 - PR review operations (comments, wait-for-comments, reply, resolve-thread, thread-reply, reviews)
 - CI status, wait, rerun, and logs (with automatic failure-log download + error-extraction filtering)
 - Issue operations (create, view, close)
-- Repo operations (merge-queue probe/enable — platform merge queue / merge train)
+- Repo operations (merge-queue probe/enable — platform merge queue / merge train; label ensure — idempotent create-if-missing)
 - Unified TOON output format across providers
 
 ## Consumers
@@ -252,8 +252,10 @@ Sub-verbs: `view`, `list`, `reply`, `resolve-thread`, `thread-reply`, `reviews`,
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
-  --title TITLE --plan-id PLAN_ID [--slot SLOT] [--base BASE] [--draft] [--head HEAD]
+  --title TITLE (--plan-id PLAN_ID [--slot SLOT] | --body-file PATH) [--base BASE] [--draft] [--head HEAD] [--label LABEL ...]
 ```
+
+`pr create` takes the PR body from exactly ONE of two mutually-exclusive sources: the **plan-bound body store** (`--plan-id` [+ `--slot`], consuming a prepared `pr prepare-body` scratch file) OR an explicit **plan-less body file** (`--body-file PATH`, read directly — the steward landing-cycle path that has no plan directory). Supplying neither, or both, is rejected. `--label` is repeatable and passes through to the created PR (e.g. `--label skip-bot-review`).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr safe-merge \
@@ -308,8 +310,10 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci branch del
 
 ### repo
 
-A `merge-queue` noun grouping two sub-verbs: `probe`, `enable` (the 3-level
-`repo merge-queue probe` / `repo merge-queue enable` shape).
+Two nouns, each grouping its own sub-verbs (the 3-level `repo {noun} {sub-verb}` shape):
+
+- `merge-queue` → `probe`, `enable`
+- `label` → `ensure`
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci repo merge-queue probe
@@ -327,6 +331,19 @@ per-project `merge_trains_enabled` setting) and is idempotent — an
 already-configured repo is left unchanged. Both verbs return the actionable error
 (never a stack trace) on an auth-scope failure, and `enable` refuses with the
 actionable ineligible message when the platform gates the feature off.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci repo label ensure \
+  --label LABEL [--color HEX] [--description TEXT]
+```
+
+`repo label ensure` guarantees the named repository label exists — create-if-missing
+and **idempotent** (an existing label is a no-op success). On GitHub it uses
+`gh label create --force` (which updates in place rather than erroring on a
+duplicate); on GitLab it treats an "already exists" / HTTP 409 as a no-op success.
+`--color` is a 6-hex-digit RGB string (no leading `#`; the GitLab handler prefixes
+`#` as that platform requires). The steward landing cycle calls this to ensure the
+`skip-bot-review` label exists before creating a `--label skip-bot-review` PR.
 
 ## References
 

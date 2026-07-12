@@ -100,6 +100,7 @@ from ci_base import (
     MERGE_QUEUE_ELIGIBLE_UNCONFIGURED,
     MERGE_QUEUE_INELIGIBLE,
     MERGE_QUEUE_UNSUPPORTED,
+    HandlerMap,
     add_pr_create_args,
     build_parser,
     check_auth_cli,
@@ -1031,6 +1032,7 @@ from _github_pr import (  # noqa: E402 — bottom import: primitives must be def
     cmd_pr_update_branch,
     cmd_pr_view,
     cmd_pr_wait_for_comments,
+    cmd_repo_label_ensure,
     fetch_pr_reviews_with_commits,
     post_pr_comment,
 )
@@ -1079,7 +1081,7 @@ def main() -> int:
     # enrich_failing_checks_with_logs without re-parsing argv.
     args.router_plan_id = router_plan_id
 
-    handlers = {
+    handlers: HandlerMap = {
         ('pr', 'prepare-body'): _cmd_pr_prepare_body,
         ('pr', 'prepare-comment'): _cmd_pr_prepare_comment,
         ('issue', 'prepare-body'): _cmd_issue_prepare_body,
@@ -1116,6 +1118,7 @@ def main() -> int:
         ('branch', 'delete'): cmd_branch_delete,
         ('repo', 'merge-queue', 'probe'): cmd_repo_merge_queue_probe,
         ('repo', 'merge-queue', 'enable'): cmd_repo_merge_queue_enable,
+        ('repo', 'label', 'ensure'): cmd_repo_label_ensure,
     }
 
     # branch_sub is registered by ci_base.build_parser; acknowledge the returned

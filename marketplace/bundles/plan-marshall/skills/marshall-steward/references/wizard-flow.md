@@ -534,4 +534,38 @@ next_steps:
   - Use /marshall-steward for maintenance tasks
 ```
 
-After summary output, wizard is complete. Exit skill execution.
+## Step 16: Step-Ordering + End-of-Run Landing Cycle
+
+After the summary, run the deterministic step-ordering pass, then invoke the
+shared End-of-Run Landing Cycle hook — the SAME behaviour as menu mode — so a
+first-run wizard also offers to land the steward-created artifacts (a freshly
+seeded `marshal.json`, the executor, `.gitignore`) rather than leaving the working
+tree dirty.
+
+**(a) Sort `phase-6-finalize.steps` into frontmatter order** (silent, idempotent).
+The wizard seeds `phase-6-finalize.steps` in seed/discovery order; this restores
+the canonical ascending frontmatter `order` on disk, reusing the manifest
+composer's sort choke-point (no duplicated order table). Its potential reorder
+diff feeds the landing-cycle detection below:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config steps-sort
+```
+
+See the `manage-config` Canonical invocations (`steps-sort`) for the verb shape.
+The call is idempotent and value-preserving; `phase-5-execute.verification_steps`
+is out of scope.
+
+**(b) Invoke the End-of-Run Landing Cycle hook.** When an uncommitted
+plan-marshall artifact diff is present, offer to land it. Load and execute the
+shared procedure:
+
+```text
+Read references/landing-cycle.md
+```
+
+The hook is the same one the menu-mode Quit path fires — see [`../SKILL.md` §
+"End-of-Run Landing Cycle"](../SKILL.md#end-of-run-landing-cycle). With no
+uncommitted plan-marshall diff it is a silent no-op.
+
+After the landing-cycle hook settles, the wizard is complete. Exit skill execution.
