@@ -13,6 +13,7 @@ object the enrichment helpers read.
 """
 
 from collections import deque
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -413,6 +414,107 @@ def get_module_graph(
     }
 
 
+# =============================================================================
+# skills_by_profile staleness guard (read-path, non-blocking WARNING)
+# =============================================================================
+#
+# The enriched ``skills_by_profile`` map can drift out of sync with the live
+# skill registry: a skill can be renamed or retired while a module's
+# enriched.json still references the old ``bundle:skill`` notation, or a module
+# can carry no ``skills_by_profile`` at all. Neither case is fatal — task
+# planning still runs — so the guard surfaces a non-blocking WARNING on the
+# module read path rather than raising. Registry resolution is deferred and
+# fail-safe: when the bundle root cannot be located (e.g. a unit test running
+# outside a bundle tree) the stale-notation check is skipped, but the
+# missing/empty check still fires because it needs no registry.
+
+
+def _iter_skill_notations(skills_by_profile: dict[str, Any]) -> list[str]:
+    """Collect every ``bundle:skill`` notation referenced by a skills_by_profile map."""
+    notations: list[str] = []
+    for profile_data in skills_by_profile.values():
+        if not isinstance(profile_data, dict):
+            continue
+        for section in ('defaults', 'optionals'):
+            for entry in profile_data.get(section, []):
+                if isinstance(entry, dict):
+                    skill = entry.get('skill', '')
+                elif isinstance(entry, str):
+                    skill = entry
+                else:
+                    skill = ''
+                if skill:
+                    notations.append(skill)
+    return notations
+
+
+def detect_stale_skills_by_profile(
+    module_name: str, skills_by_profile: dict[str, Any], is_live: Callable[[str], bool]
+) -> list[str]:
+    """Return non-blocking WARNING messages for a stale or missing skills_by_profile map.
+
+    Two independent signals are surfaced:
+
+    * The map is missing entirely or empty.
+    * The map references one or more skill notations that ``is_live`` reports as
+      absent from the live registry (retired / renamed IDs).
+
+    ``is_live`` is injected so the check is deterministic and unit-testable
+    without a real bundle tree. Returns an empty list when the map is present
+    and every notation resolves.
+    """
+    if not skills_by_profile:
+        return [f"module '{module_name}': skills_by_profile is missing or empty"]
+    stale = sorted({n for n in _iter_skill_notations(skills_by_profile) if not is_live(n)})
+    if stale:
+        return [
+            f"module '{module_name}': skills_by_profile references skill notations "
+            f'absent from the live registry: {", ".join(stale)}'
+        ]
+    return []
+
+
+def _skill_notation_is_live(notation: str, bundles_root: Path) -> bool:
+    """Whether a ``bundle:skill`` notation resolves to a real SKILL.md under ``bundles_root``."""
+    bundle, sep, skill = notation.partition(':')
+    if not sep or not bundle or not skill:
+        return False
+    try:
+        from marketplace_bundles import resolve_bundle_path
+
+        return resolve_bundle_path(bundles_root, bundle, f'skills/{skill}/SKILL.md').exists()
+    except Exception:
+        return False
+
+
+def _emit_skills_by_profile_staleness_warning(module_name: str, merged: dict[str, Any]) -> None:
+    """Emit a non-blocking WARNING when ``merged``'s skills_by_profile is stale or missing."""
+    skills_by_profile = merged.get('skills_by_profile', {})
+
+    if skills_by_profile:
+        try:
+            from marketplace_bundles import resolve_bundles_root
+
+            bundles_root = resolve_bundles_root(Path(__file__))
+        except Exception:
+            return  # registry root unresolvable — skip the stale-notation check (fail-safe)
+
+        def is_live(notation: str) -> bool:
+            return _skill_notation_is_live(notation, bundles_root)
+    else:
+
+        def is_live(notation: str) -> bool:
+            return True  # unused: an empty map warns without a registry lookup
+
+    for message in detect_stale_skills_by_profile(module_name, skills_by_profile, is_live):
+        try:
+            from plan_logging import log_entry
+
+            log_entry('script', None, 'WARNING', f'[STALENESS] {message}')
+        except Exception:
+            pass
+
+
 def get_module_info(module_name: str | None = None, full: bool = False, project_dir: str = '.') -> dict[str, Any]:
     """Get module information merged from derived + enriched data."""
     if not module_name:
@@ -426,6 +528,10 @@ def get_module_info(module_name: str | None = None, full: bool = False, project_
         raise ModuleNotFoundInProjectError(f'Module not found: {module_name}', available)
 
     merged = merge_module_data(module_name, project_dir)
+
+    # Read-path staleness guard: non-blocking WARNING when skills_by_profile is
+    # stale (retired notations) or missing entirely. Never raises.
+    _emit_skills_by_profile_staleness_warning(module_name, merged)
 
     if not full:
         reasoning_fields = [
