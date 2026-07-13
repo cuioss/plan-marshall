@@ -12,8 +12,10 @@ Project configuration wizard for the planning system.
 ## Usage
 
 ```text
-/marshall-steward           # Interactive menu or first-run wizard
-/marshall-steward --wizard  # Force first-run wizard
+/marshall-steward                        # Interactive menu or first-run wizard
+/marshall-steward --wizard               # Force first-run wizard
+/marshall-steward upgrade                # Post-change reconciliation — asks before each stage
+/marshall-steward upgrade integrate=true # Post-change reconciliation — runs all four stages end-to-end
 ```
 
 ## Banner
@@ -138,6 +140,18 @@ Read references/wizard-flow.md
 ```
 Execute the wizard flow from that file.
 
+### Check for `upgrade` Verb
+
+If the invocation carries the `upgrade` verb argument (optionally with
+`integrate=true`), bypass both the mode routing and the Main Menu entirely and
+run the upgrade flow directly:
+```text
+Read references/upgrade-flow.md
+```
+Execute the upgrade flow from that file, passing the `integrate` value
+(`true` when `integrate=true` was given, otherwise `false`). Follow that
+reference's end-of-flow behavior when it completes.
+
 ---
 
 ## Interactive Menu (Returning User)
@@ -146,7 +160,7 @@ Display menu when both executor and marshal.json exist.
 
 ### Main Menu
 
-The Main Menu has 5 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): each page presents at most 4 options, and every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`.
+The Main Menu has 6 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): each page presents at most 4 options, and every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`.
 
 **Page 1** — first 3 options plus the "More..." continuation:
 
@@ -175,7 +189,9 @@ AskUserQuestion:
   options:
     - label: "4. Effort"
       description: "Configure per-role model levels (variant routing)"
-    - label: "5. Quit"
+    - label: "5. Upgrade"
+      description: "Post-change reconciliation: regenerate, reconcile, verify, land"
+    - label: "6. Quit"
       description: "Exit plan-marshall"
   multiSelect: false
 ```
@@ -189,7 +205,8 @@ AskUserQuestion:
 | "3. Configuration" | Load: `Read references/menu-configuration.md` → Execute |
 | "More..." | Present Main Menu Page 2 `AskUserQuestion` |
 | "4. Effort" | Load: `Read standards/effort-menu.md` → Execute |
-| "5. Quit" | Output "Good bye!" → STOP |
+| "5. Upgrade" | Load: `Read references/upgrade-flow.md` → Execute |
+| "6. Quit" | Output "Good bye!" → STOP |
 
 After any menu option completes, return to Main Menu Page 1 (except Quit).
 
@@ -231,6 +248,7 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `menu-enforcement-hook.md` | Detect→confirm→install sub-menu for the conditional PreToolUse enforcement hook (orthogonal `--enforcement` install) | Linked from `menu-configuration.md` (Enforcement Hook) |
 | `merge-queue-setup.md` | Idempotent probe→ask→configure provisioning of the platform merge queue (GitHub merge queue / GitLab merge train) via the `ci repo merge-queue` verbs | Linked from `wizard-flow.md` Step 13.5 and `menu-configuration.md` (Merge Queue) |
 | `landing-cycle.md` | End-of-run landing cycle: detect uncommitted plan-marshall artifact diff → offer to commit → push → `skip-bot-review`-labelled plan-less PR → merge-queue-aware merge → switch-to-main → pull; base-branch-conditional branch selection + bot skip-label honoring matrix | Linked from the "End-of-Run Landing Cycle" hook (menu-mode Quit path + `wizard-flow.md` end) |
+| `upgrade-flow.md` | Post-change `upgrade` verb: four-stage reconciliation (regenerate `target/claude` + executor → reconcile `marshal.json` → verify via executor preflight + content-drift report → run the landing cycle), consuming the `upgrade.py plan` stage plan and honoring its per-stage gate dispositions | Main Menu option 5, or the `upgrade` early verb check |
 | `error-handling.md` | Error types and recovery | On error conditions |
 
 ---
@@ -682,7 +700,7 @@ Apply the recovery guidance for the specific error type.
 
 ## Canonical invocations
 
-The canonical argparse surface for the three entry-point scripts this skill registers: `determine_mode.py`, `bootstrap_plugin.py`, and `gitignore_setup.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for the four entry-point scripts this skill registers: `determine_mode.py`, `bootstrap_plugin.py`, `gitignore_setup.py`, and `upgrade.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### determine_mode — mode
 
@@ -736,5 +754,11 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:bootstrap_plugin 
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-steward:gitignore_setup [--project-root PROJECT_ROOT] [--dry-run]
+```
+
+### upgrade — plan
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade plan [--integrate {true|false}]
 ```
 
