@@ -656,7 +656,7 @@ def cmd_skill_domains(args) -> dict:
 
     elif args.verb == 'set-inclusion':
         domain = args.domain
-        if domain not in skill_domains:
+        if domain not in skill_domains or not isinstance(skill_domains[domain], dict):
             return error_exit(f'Unknown domain: {domain}')
         domain_config = skill_domains[domain]
 
