@@ -134,7 +134,17 @@ def find_marketplace_root(marketplace_root_override: str | None = None) -> Path 
 
 
 def find_bundles(base_path: Path, bundle_filter: set[str] | None = None) -> list[Path]:
-    """Find all bundle directories by locating plugin.json files."""
+    """Find all bundle directories by locating plugin.json files.
+
+    Exemption note — this resolver is intentionally NOT the versioned-cache
+    ``script-shared::find_bundles``: it rglobs ``.claude-plugin/plugin.json`` over
+    the *source* ``marketplace/bundles`` tree, where each bundle is a single
+    unversioned directory. It carries no version-dir detection, no ``.orphaned_at``
+    marker handling, and no three-tier precedence, so it does NOT share the
+    all-versions-orphaned contribute-zero bug fixed in ``script-shared::find_bundles``
+    (there are no version dirs to orphan, hence nothing to degrade-fallback for). It
+    is therefore left structurally unchanged. No behavior change.
+    """
     bundles = []
     for plugin_json in base_path.rglob('.claude-plugin/plugin.json'):
         bundle_dir = plugin_json.parent.parent

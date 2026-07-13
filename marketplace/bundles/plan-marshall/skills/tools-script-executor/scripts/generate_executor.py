@@ -413,17 +413,33 @@ _CLAUDE_RESOLVER_TEMPLATE = '''\
 def _resolve_notation_by_target(notation: str) -> str | None:
     """Claude target: resolve notation via plugin-cache glob.
 
-    Walks ``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``
-    and returns the first match as an absolute path.  The ``bundle`` component of
-    the notation is not used for path construction (the Claude plugin cache is a
-    flat, single-bundle install) but may be useful for logging.
+    Walks ``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``,
+    collects EVERY version dir that carries the candidate script, and returns the
+    NEWEST one by numeric version-tuple.  Returning the newest (rather than the
+    first ``iterdir`` match) stops a stale, lexically-earlier version dir left on
+    disk from shadowing the current scripts — the same multi-version-pollution
+    class ``collect_script_dirs`` and ``resolve_bundle_path`` guard against with
+    their newest-only ``max()`` selection.  When the currently-pinned version dir
+    is pruned, a later invocation re-resolves at runtime to the newest surviving
+    version dir.  The ``bundle`` component of the notation is not used for path
+    construction (the Claude plugin cache is a flat, single-bundle install) but
+    may be useful for logging.
 
     Args:
         notation: Three-part notation ``{bundle}:{skill}:{script}``.
 
     Returns:
-        Absolute path string, or ``None`` when no match is found.
+        Absolute path string of the newest version dir's script, or ``None``
+        when no match is found.
     """
+    import re
+
+    def _version_key(name: str) -> tuple[int, ...]:
+        # Same digit-run semantics as marketplace_bundles._version_sort_key:
+        # '0.1.1069' -> (0, 1, 1069); '0.1-BETA' -> (0, 1).  A name with no
+        # digits yields the empty tuple (sorts lowest).
+        return tuple(int(part) for part in re.findall(r'\\d+', name))
+
     parts = notation.split(':')
     if len(parts) != 3:
         return None
@@ -432,12 +448,16 @@ def _resolve_notation_by_target(notation: str) -> str | None:
         cache_root = Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
         if not cache_root.is_dir():
             return None
+        candidates = []
         for version_dir in cache_root.iterdir():
             if not version_dir.is_dir() or version_dir.name.startswith('.'):
                 continue
             candidate = version_dir / 'skills' / skill / 'scripts' / f'{script}.py'
             if candidate.is_file():
-                return str(candidate.resolve())
+                candidates.append((version_dir.name, candidate))
+        if candidates:
+            _name, newest = max(candidates, key=lambda pair: _version_key(pair[0]))
+            return str(newest.resolve())
     except (OSError, ValueError):
         pass
     return None

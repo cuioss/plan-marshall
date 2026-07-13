@@ -9,23 +9,36 @@ scan-marketplace-inventory.py, and other scripts that work with bundles.
 
 import os
 import re
+import sys
 from pathlib import Path
 
 
 def find_bundles(base_path: Path) -> list[Path]:
-    """Find bundle directories, selecting the newest non-orphaned version per bundle.
+    """Find bundle directories, selecting one version dir per bundle by precedence.
 
     Locates ``.claude-plugin/plugin.json`` files, then reduces each bundle to a
     single directory:
 
     - In the versioned plugin-cache layout (``.../plan-marshall/0.1-BETA/``), a
       directory whose name matches ``^\\d+\\.\\d+`` is a version directory. Version
-      directories sharing a parent belong to the same bundle; the newest
-      non-orphaned one wins, selected via ``_version_sort_key`` (the same helper
-      ``resolve_bundle_path`` and ``collect_script_dirs`` use). A version directory
-      carrying a ``.orphaned_at`` marker is skipped even when it is the numerically
-      newest, so a stale/orphaned directory can never shadow the current one. A
-      bundle whose every version directory is orphaned contributes nothing.
+      directories sharing a parent belong to the same bundle and are reduced by a
+      three-tier precedence (a ``.orphaned_at`` marker is the currency signal — an
+      unmarked version dir is a live/current one, a marked one is stale):
+
+      1. the newest live (non-orphaned) version dir — this is the manifest-current
+         dir whenever the current version is live, since a live current version is
+         by construction the numerically-newest unmarked dir;
+      2. when the current version is orphaned but an older one is still live, the
+         newest remaining live dir (an orphaned dir can never shadow a live one);
+      3. when *every* version dir is orphaned, a degraded fallback selects the
+         newest-on-disk dir regardless of the orphan marker and emits a stderr log
+         line naming the bundle. This guarantees a bundle with any version dir on
+         disk never contributes zero — the silent-break the fallback closes.
+
+      Tiers 1 and 2 both select ``max(live)``; the numeric ordering (via
+      ``_version_sort_key``, the same helper ``resolve_bundle_path`` and
+      ``collect_script_dirs`` use) makes the current-when-live case fall out of the
+      newest-live selection.
     - In the non-versioned marketplace layout, each bundle directory forms its own
       singleton group and passes through unchanged — even when its name happens to
       match the version-dir digit pattern (e.g. ``1.0-my-bundle``). The version-dir
@@ -51,7 +64,20 @@ def find_bundles(base_path: Path) -> list[Path]:
     for version_dirs in versioned_groups.values():
         live = [d for d in version_dirs if not (d / '.orphaned_at').exists()]
         if live:
+            # Tiers 1 & 2: newest live (non-orphaned) version dir.
             selected.append(max(live, key=lambda d: _version_sort_key(d.name)))
+        else:
+            # Tier 3: every version dir is orphaned. Degraded fallback — select the
+            # newest-on-disk dir regardless of the orphan marker so the bundle is
+            # never silently dropped, and log the degradation naming the bundle.
+            newest = max(version_dirs, key=lambda d: _version_sort_key(d.name))
+            print(
+                f"marketplace_bundles.find_bundles: degraded fallback for bundle "
+                f"'{newest.parent.name}' — every version dir is orphaned; selecting "
+                f"newest-on-disk '{newest.name}' regardless of the orphan marker",
+                file=sys.stderr,
+            )
+            selected.append(newest)
     return sorted(selected)
 
 
