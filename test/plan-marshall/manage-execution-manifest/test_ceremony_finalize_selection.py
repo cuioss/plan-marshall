@@ -2,27 +2,31 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``ceremony_finalize_selection`` post-matrix transform.
 
-The transform applies the three ``plan.phase-6-finalize`` run-at-all gates
-(``self_review`` / ``qgate`` / ``simplify``, each
-``always|never|auto``) to the matrix-produced ``phase_6.steps``:
+The transform applies the four finalize ceremony gates (``self_review`` /
+``qgate`` / ``simplify`` / ``security_audit``) to the matrix-produced
+``phase_6.steps``. Each gate is governed by its owning finalize step's
+per-element ``lane`` override (``steps[<owner>].lane`` ∈ ``off``/``minimal``/
+``auto``), which ``_read_finalize_gates`` maps to the run-at-all decision the
+transform consumes:
 
-- ``auto`` (the default) defers to the existing machinery — no-op.
-- ``never`` drops the gate's finalize step.
-- ``always`` force-includes the gate's finalize step, re-adding it even when the
-  ``scope_gated_finalize`` pre-filter dropped it.
+- lane ``auto`` (or absent) → ``auto`` (the default) defers to the existing
+  machinery — no-op.
+- lane ``off`` → ``never`` drops the gate's finalize step.
+- lane ``minimal`` → ``always`` force-includes the gate's finalize step, re-adding
+  it even when the ``scope_gated_finalize`` pre-filter dropped it.
 
-The transform NEVER touches ``automatic-review`` — the bot-review invariant
-(``bot_enforcement_guard``) is orthogonal and preserved.
+The transform NEVER touches ``automatic-review`` — the bot-review invariant is
+orthogonal and preserved.
 
-Configuration homes differ by gate. ``qgate`` stays a flat phase-local knob read
-directly from ``plan.phase-6-finalize.qgate``. The other two gates fold under
-their owning finalize step's nested param object in
-``plan.phase-6-finalize.steps``: ``simplify`` →
-``default:finalize-step-simplify``; ``self_review`` →
+Every ceremony gate's ``lane`` override folds under its owning finalize step's
+nested param object in ``plan.phase-6-finalize.steps``: ``qgate`` →
+``default:pre-push-quality-gate``; ``self_review`` →
 ``default:pre-submission-self-review`` (which also owns the
-``drop_review_on_scope_gate`` escape hatch). The ``ceremony_policy`` block (and
-its condition-scoped ``overrides[]`` rows) was dissolved; the internal transform
-name retains the ``ceremony_finalize`` prefix for continuity.
+``drop_review_on_scope_gate`` escape hatch); ``simplify`` →
+``default:finalize-step-simplify``; ``security_audit`` →
+``default:finalize-step-security-audit``. There is no flat phase-level ``qgate``
+sibling. The internal transform name retains the ``ceremony_finalize`` prefix for
+continuity.
 """
 
 import importlib.util
@@ -119,14 +123,21 @@ def _compose_ns(
     )
 
 
-# Owning finalize step id for each step-folded knob. ``qgate`` is absent here
-# because it stays a flat phase-level sibling (no owning step).
+# Owning finalize step id for each step-folded knob. Every ceremony gate is
+# owned — ``qgate`` now rides ``default:pre-push-quality-gate``'s ``lane`` override
+# (there is no flat phase-level ``qgate`` sibling).
 _GATE_OWNER_STEP = {
+    'qgate': 'default:pre-push-quality-gate',
     'simplify': 'default:finalize-step-simplify',
     'security_audit': 'default:finalize-step-security-audit',
     'self_review': 'default:pre-submission-self-review',
     'drop_review_on_scope_gate': 'default:pre-submission-self-review',
 }
+
+# The four ceremony gates whose value is written as the owning step's ``lane``
+# override (``off``/``minimal``/``auto``). Every other step-folded knob (e.g.
+# ``drop_review_on_scope_gate``) is written under its own param key verbatim.
+_CEREMONY_LANE_GATES = frozenset({'qgate', 'self_review', 'simplify', 'security_audit'})
 
 
 def _seed_marshal(
@@ -136,10 +147,13 @@ def _seed_marshal(
 ) -> Path:
     """Write a marshal.json carrying the phase-6-finalize gates at their homes.
 
-    ``qgate`` stays a flat field under ``plan.phase-6-finalize``. ``simplify`` /
-    ``self_review`` / ``drop_review_on_scope_gate`` fold under their owning
-    finalize step's nested param object in ``plan.phase-6-finalize.steps`` (the
-    id-keyed map the new reader consumes via ``_read_step_owned_knob``).
+    Every ceremony gate (``qgate`` / ``self_review`` / ``simplify`` /
+    ``security_audit``) is written as its owning finalize step's ``lane`` override
+    (``off``/``minimal``/``auto``) nested under the step's param object in
+    ``plan.phase-6-finalize.steps`` (the id-keyed map the reader consumes via
+    ``_read_step_owned_knob``); ``drop_review_on_scope_gate`` writes under its own
+    param key. There is no flat phase-level ``qgate`` sibling. Callers pass
+    ``finalize_gates`` values in the ``lane`` vocabulary.
 
     Because the composer treats a marshal.json ``steps`` map as the AUTHORITATIVE
     phase-6 candidate list (preferred over the ``--phase-6-steps`` CSV), the
@@ -160,9 +174,10 @@ def _seed_marshal(
     phase_6: dict = {}
     if finalize_gates is not None:
         # Resolve each step-folded gate to its owning step's FULL-prefixed id and
-        # collect the nested knob params. ``qgate`` (ownerless) stays a flat
-        # sibling. A gate whose owner is absent from the candidate list is a no-op
-        # (mirrors the runtime: an absent step owns no params to read).
+        # collect the nested knob params. A ceremony gate writes its value under the
+        # owning step's ``lane`` param; any other knob writes under its own key. A
+        # gate whose owner is absent from the candidate list is a no-op (mirrors the
+        # runtime: an absent step owns no params to read).
         owned_params: dict[str, dict] = {}
         stripped_candidates = {_strip_default(c) for c in candidates}
         for gate, value in finalize_gates.items():
@@ -172,7 +187,8 @@ def _seed_marshal(
                 continue
             if _strip_default(owner) not in stripped_candidates:
                 continue
-            owned_params.setdefault(owner, {})[gate] = value
+            param_key = 'lane' if gate in _CEREMONY_LANE_GATES else gate
+            owned_params.setdefault(owner, {})[param_key] = value
 
         # Build the FULL candidate keyed-map IN ORDER so the composer's candidate
         # list AND its execution order are unchanged. A candidate that owns nested
@@ -323,7 +339,7 @@ class TestCeremonyFinalizeNever:
 
     def test_never_drops_each_gate_step(self, plan_context):
         _seed_marshal(
-            finalize_gates={'self_review': 'never', 'qgate': 'never'}
+            finalize_gates={'self_review': 'off', 'qgate': 'off'}
         )
         _stub_footprint(_FOOTPRINT)
 
@@ -344,7 +360,7 @@ class TestCeremonyFinalizeNever:
                       if s != 'default:pre-submission-self-review']
         # The seeded steps map IS the candidate list, so it must match the
         # composed candidate set (self_review owner excluded).
-        _seed_marshal(finalize_gates={'self_review': 'never'}, candidates=candidates)
+        _seed_marshal(finalize_gates={'self_review': 'off'}, candidates=candidates)
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -357,7 +373,7 @@ class TestCeremonyFinalizeNever:
 
     def test_never_preserves_automated_review(self, plan_context):
         _seed_marshal(
-            finalize_gates={'self_review': 'never', 'qgate': 'never'},
+            finalize_gates={'self_review': 'off', 'qgate': 'off'},
             ci_provider='github',
         )
         _stub_footprint(_FOOTPRINT)
@@ -383,7 +399,7 @@ class TestCeremonyFinalizeAlways:
         # (and plan-retrospective). `always` must re-add it via the canonical
         # default:pre-submission-self-review insertion form.
         _seed_marshal(
-            finalize_gates={'self_review': 'always'}
+            finalize_gates={'self_review': 'minimal'}
         )
         _stub_footprint(_FOOTPRINT)
 
@@ -405,7 +421,7 @@ class TestCeremonyFinalizeAlways:
     def test_always_readds_qgate_dropped_by_inactive_prefilter(self, plan_context):
         # Empty footprint → pre_push_quality_gate_inactive drops the qgate step.
         # `always` re-adds it regardless.
-        _seed_marshal(finalize_gates={'qgate': 'always'})
+        _seed_marshal(finalize_gates={'qgate': 'minimal'})
         _stub_footprint([])
 
         result = cmd_compose(_compose_ns(plan_id='ceremony-always-qgate'))
@@ -416,7 +432,7 @@ class TestCeremonyFinalizeAlways:
         assert 'pre-push-quality-gate' in result['ceremony_finalize_forced_in']
 
     def test_always_is_no_op_when_step_already_present(self, plan_context):
-        _seed_marshal(finalize_gates={'self_review': 'always'})
+        _seed_marshal(finalize_gates={'self_review': 'minimal'})
         _stub_footprint(_FOOTPRINT)
 
         # multi_module feature → self_review survives the matrix already present.
@@ -428,7 +444,7 @@ class TestCeremonyFinalizeAlways:
         assert 'pre-submission-self-review' in _bare(_manifest_phase_6_steps(result))
 
     def test_always_inserts_before_plan_mutating_tail(self, plan_context):
-        _seed_marshal(finalize_gates={'self_review': 'always'})
+        _seed_marshal(finalize_gates={'self_review': 'minimal'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -475,7 +491,7 @@ class TestCeremonyFinalizeGenericSelfReviewForm:
 
     def test_never_drops_generic_default_form(self, plan_context):
         candidates = self._generic_candidates()
-        _seed_marshal(finalize_gates={'self_review': 'never'}, candidates=candidates)
+        _seed_marshal(finalize_gates={'self_review': 'off'}, candidates=candidates)
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -492,7 +508,7 @@ class TestCeremonyFinalizeGenericSelfReviewForm:
 
     def test_always_does_not_duplicate_generic_default_form(self, plan_context):
         candidates = self._generic_candidates()
-        _seed_marshal(finalize_gates={'self_review': 'always'}, candidates=candidates)
+        _seed_marshal(finalize_gates={'self_review': 'minimal'}, candidates=candidates)
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -568,7 +584,7 @@ class TestCeremonyFinalizeSimplify:
 
     def test_never_drops_simplify_step(self, plan_context):
         # Baseline keeps the step (feature + files>0); never must drop it.
-        _seed_marshal(finalize_gates={'simplify': 'never'})
+        _seed_marshal(finalize_gates={'simplify': 'off'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(_compose_ns(plan_id='ceremony-simplify-never'))
@@ -581,7 +597,7 @@ class TestCeremonyFinalizeSimplify:
     def test_never_is_no_op_when_already_dropped_by_prefilter(self, plan_context):
         # enhancement change_type → simplify_inactive already dropped the step;
         # never simplify is then a no-op (no double-drop, no forced_out entry).
-        _seed_marshal(finalize_gates={'simplify': 'never'})
+        _seed_marshal(finalize_gates={'simplify': 'off'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -596,7 +612,7 @@ class TestCeremonyFinalizeSimplify:
     def test_always_readds_simplify_dropped_by_prefilter(self, plan_context):
         # enhancement change_type → simplify_inactive drops the step; always
         # must re-add it regardless, overriding the pre-filter.
-        _seed_marshal(finalize_gates={'simplify': 'always'})
+        _seed_marshal(finalize_gates={'simplify': 'minimal'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -610,7 +626,7 @@ class TestCeremonyFinalizeSimplify:
 
     def test_always_is_no_op_when_step_already_present(self, plan_context):
         # feature + files>0 → the step survives the matrix; always is a no-op.
-        _seed_marshal(finalize_gates={'simplify': 'always'})
+        _seed_marshal(finalize_gates={'simplify': 'minimal'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(_compose_ns(plan_id='ceremony-simplify-always-present'))
@@ -623,7 +639,7 @@ class TestCeremonyFinalizeSimplify:
     def test_always_inserts_before_plan_mutating_tail(self, plan_context):
         # enhancement drops the step; always re-adds it before the
         # plan-mutating tail.
-        _seed_marshal(finalize_gates={'simplify': 'always'})
+        _seed_marshal(finalize_gates={'simplify': 'minimal'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -692,7 +708,7 @@ class TestCeremonyFinalizeSecurityAudit:
 
     def test_never_drops_security_audit_step(self, plan_context):
         # Baseline keeps the step (feature + files>0); never must drop it.
-        _seed_marshal(finalize_gates={'security_audit': 'never'})
+        _seed_marshal(finalize_gates={'security_audit': 'off'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(_compose_ns(plan_id='ceremony-secaudit-never'))
@@ -706,7 +722,7 @@ class TestCeremonyFinalizeSecurityAudit:
         # enhancement change_type → security_audit_inactive already dropped the
         # step; never security_audit is then a no-op (no double-drop, no
         # forced_out entry).
-        _seed_marshal(finalize_gates={'security_audit': 'never'})
+        _seed_marshal(finalize_gates={'security_audit': 'off'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -723,7 +739,7 @@ class TestCeremonyFinalizeSecurityAudit:
     def test_always_readds_security_audit_dropped_by_prefilter(self, plan_context):
         # enhancement change_type → security_audit_inactive drops the step; always
         # must re-add it regardless, overriding the pre-filter.
-        _seed_marshal(finalize_gates={'security_audit': 'always'})
+        _seed_marshal(finalize_gates={'security_audit': 'minimal'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -739,7 +755,7 @@ class TestCeremonyFinalizeSecurityAudit:
 
     def test_always_is_no_op_when_step_already_present(self, plan_context):
         # feature + files>0 → the step survives the matrix; always is a no-op.
-        _seed_marshal(finalize_gates={'security_audit': 'always'})
+        _seed_marshal(finalize_gates={'security_audit': 'minimal'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(_compose_ns(plan_id='ceremony-secaudit-always-present'))
@@ -752,7 +768,7 @@ class TestCeremonyFinalizeSecurityAudit:
     def test_always_inserts_before_plan_mutating_tail(self, plan_context):
         # enhancement drops the step; always re-adds it before the
         # plan-mutating tail.
-        _seed_marshal(finalize_gates={'security_audit': 'always'})
+        _seed_marshal(finalize_gates={'security_audit': 'minimal'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -779,7 +795,7 @@ class TestCeremonyFinalizeDeterminism:
 
     def test_repeated_compose_is_deterministic(self, plan_context):
         _seed_marshal(
-            finalize_gates={'self_review': 'always', 'qgate': 'never', 'simplify': 'auto'}
+            finalize_gates={'self_review': 'minimal', 'qgate': 'off', 'simplify': 'auto'}
         )
         _stub_footprint(_FOOTPRINT)
 
@@ -848,7 +864,7 @@ class TestCeremonyFinalizeAdrPropose:
         """Setting every ceremony gate to ``never`` drops only the ceremony
         steps — adr-propose is not a ceremony gate, so it survives."""
         _seed_marshal(
-            finalize_gates={'self_review': 'never', 'qgate': 'never', 'simplify': 'never'}
+            finalize_gates={'self_review': 'off', 'qgate': 'off', 'simplify': 'off'}
         )
         _stub_footprint(_FOOTPRINT)
 

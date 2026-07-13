@@ -672,13 +672,15 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 
 
 # =============================================================================
-# plan.phase-6-finalize run-at-all selection (post-matrix transform)
+# plan.phase-6-finalize ceremony-gate selection (post-matrix transform)
 # =============================================================================
 #
-# The four finalize run-at-all gates (`plan.phase-6-finalize.<gate>`) drive
-# a post-matrix transform that forces each gate's finalize step in (`always`),
-# out (`never`), or defers to the existing decision machinery (`auto`, the
-# default no-op). Each gate maps to exactly one finalize step ID:
+# The four finalize ceremony gates drive a post-matrix transform that forces each
+# gate's finalize step in (`always`), out (`never`), or defers to the existing
+# decision machinery (`auto`, the default no-op). Each gate's effective decision
+# is derived from its owning step's per-element `lane` override
+# (`steps[<owner>].lane` — `off`→`never`, `minimal`→`always`, `auto`/absent→`auto`),
+# NOT from a flat run-at-all sibling. Each gate maps to exactly one finalize step:
 #
 #   self_review    → default:pre-submission-self-review
 #   qgate          → pre-push-quality-gate (the finalize blocking-findings re-capture)
@@ -690,11 +692,10 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # matrix time, `always` re-adds it even when that pre-filter dropped it, and
 # `never` forces it out.
 #
-# The transform NEVER touches `automatic-review`: the bot-review invariant
-# (enforced by `_apply_bot_enforcement_guard`) is orthogonal and is preserved
-# verbatim — the four finalize gates are the only
-# finalize steps this transform may add or drop. Run-at-all values are validated
-# at set time by `manage-config`'s `validate_run_at_all`; the composer
+# The transform NEVER touches `automatic-review`: the four ceremony gates are the
+# only finalize steps this transform may add or drop. The `lane` override is
+# validated at set time by `manage-config`'s `validate_lane_override`, and
+# `_read_finalize_gates` maps it to the ceremony decision; the composer
 # defensively treats any non-`{always,never}` value (including `auto` and a
 # malformed value) as defer.
 #
@@ -1467,17 +1468,17 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     body['phase_5']['step_execution_tier'] = step_execution_tier
     _log_step_execution_tier_stamping(plan_id, step_execution_tier)
 
-    # plan.phase-6-finalize run-at-all selection runs AFTER the seven-row
-    # matrix (and execution_tier routing) and BEFORE the bot-enforcement guard.
-    # It forces each of the three finalize gates' steps in (`always`) or out
-    # (`never`) on the matrix-produced `phase_6.steps`, deferring to the existing
-    # machinery on `auto` (the default). `always` is the only path that can
-    # re-add a step the scope_gated_finalize pre-filter dropped — which is the
-    # point: the operator-set `always` overrides the implicit scope gate. The
-    # transform never touches `automatic-review`, so running it before the
-    # bot-enforcement guard leaves the bot-review invariant intact. The gate
-    # values are flat phase-local knobs read directly from
-    # `plan.phase-6-finalize.<gate>`. See
+    # plan.phase-6-finalize ceremony-gate selection runs AFTER the seven-row
+    # matrix (and execution_tier routing). It forces each of the four finalize
+    # ceremony gates' steps in (`always`) or out (`never`) on the matrix-produced
+    # `phase_6.steps`, deferring to the existing machinery on `auto` (the
+    # default). `always` is the only path that can re-add a step the
+    # scope_gated_finalize pre-filter dropped — which is the point: the
+    # operator-set `always` overrides the implicit scope gate. The transform never
+    # touches `automatic-review`, leaving the bot-review invariant intact. Each
+    # gate's decision is derived from its owning step's per-element `lane` override
+    # (`steps[<owner>].lane` — `off`→`never`, `minimal`→`always`, `auto`/absent→
+    # `auto`), not a flat phase-level sibling. See
     # standards/decision-rules.md § plan.phase-6-finalize Selection.
     ceremony_finalize_gates = _read_finalize_gates()
     ceremony_forced_in, ceremony_forced_out = _apply_ceremony_finalize_selection(

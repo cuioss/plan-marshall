@@ -289,11 +289,14 @@ _SCOPE_GATED_SINGLE_MODULE_DROP = frozenset(
 _SCOPE_GATED_OVERRIDE_DROP = frozenset({'automatic-review', 'plan-marshall:automatic-review'})
 
 
-# Owning finalize step ids for the step-folded run-at-all / escape-hatch knobs.
-# The three knobs that each map to exactly one finalize step are stored nested
-# under their owning step's param object in marshal.json's ``phase-6-finalize.steps``
-# keyed map (folded there from their former flat-sibling location). ``qgate`` is
-# the one finalize run-at-all gate that stays a flat phase-level sibling.
+# Owning finalize step ids for the four ceremony gates and the escape-hatch knob.
+# Each ceremony gate is governed by its owning step's per-element ``lane`` override
+# (``off``/``minimal``/``auto``) stored nested under the owning step's param object
+# in marshal.json's ``phase-6-finalize.steps`` keyed map. There is no flat
+# phase-level ``qgate`` sibling — every ceremony gate rides its owning step's
+# ``lane``. ``drop_review_on_scope_gate`` remains a step-owned escape hatch under
+# the self-review step.
+_QGATE_OWNER_STEP = 'default:pre-push-quality-gate'
 _SIMPLIFY_OWNER_STEP = 'default:finalize-step-simplify'
 _SECURITY_AUDIT_OWNER_STEP = 'default:finalize-step-security-audit'
 _PRE_SUBMISSION_SELF_REVIEW_STEP = 'default:pre-submission-self-review'
@@ -302,10 +305,11 @@ _PRE_SUBMISSION_SELF_REVIEW_STEP = 'default:pre-submission-self-review'
 def _read_step_owned_knob(owner_step_id: str, knob: str) -> object | None:
     """Read a step-owned knob from ``phase-6-finalize.steps`` in marshal.json.
 
-    The step-folded knobs (``simplify`` / ``self_review`` /
-    ``drop_review_on_scope_gate``) live nested under their owning finalize step's
-    param object in the ``phase-6-finalize.steps`` keyed map. This reads
-    ``steps[owner_step_id][knob]`` via :func:`_read_marshal_phase_step_map` (which
+    The step-owned knobs (each ceremony gate's ``lane`` override, plus the
+    ``drop_review_on_scope_gate`` escape hatch) live nested under their owning
+    finalize step's param object in the ``phase-6-finalize.steps`` keyed map. This
+    reads ``steps[owner_step_id][knob]`` via :func:`_read_marshal_phase_step_map`
+    (which
     preserves the full ``default:`` / ``project:`` step-id prefixes), returning
     ``None`` when the marshal file is missing, the owning step is absent from the
     map, or the knob is absent from the step's param object. The caller supplies
@@ -426,62 +430,62 @@ _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
     ),
 }
 
-# The run-at-all gate fields for the finalize section, in canonical order.
+# The four finalize ceremony gates, in canonical order.
 _CEREMONY_FINALIZE_GATES = ('self_review', 'qgate', 'simplify', 'security_audit')
 
 # Canonical default for every finalize gate when marshal.json omits the block.
 _CEREMONY_FINALIZE_DEFAULT = 'auto'
 
+# Owning finalize step id for each ceremony gate's ``lane`` override. The gate's
+# effective run-at-all decision is derived from its owning step's per-element
+# ``lane`` value in ``phase-6-finalize.steps`` — there is no flat phase-level
+# ``qgate`` sibling anymore.
+_CEREMONY_GATE_OWNER_STEP: dict[str, str] = {
+    'qgate': _QGATE_OWNER_STEP,
+    'self_review': _PRE_SUBMISSION_SELF_REVIEW_STEP,
+    'simplify': _SIMPLIFY_OWNER_STEP,
+    'security_audit': _SECURITY_AUDIT_OWNER_STEP,
+}
+
+# Per-element ``lane`` override → ceremony run-at-all decision. ``off`` forces the
+# ceremony step out (``never``); ``minimal`` force-keeps it in (``always``);
+# every other value (``auto`` / ``full`` / ``ask`` / absent / malformed) defers
+# to the pre-filter machinery (``auto``).
+_LANE_TO_CEREMONY_VALUE: dict[str, str] = {
+    'off': 'never',
+    'minimal': 'always',
+}
+
 
 def _read_finalize_gates() -> dict[str, str]:
-    """Resolve the four ``plan.phase-6-finalize`` run-at-all gate values.
+    """Resolve the four finalize ceremony gate values from the ``lane`` channel.
 
-    Each gate reads from its canonical home and merges the ``auto`` default
-    under an absent value:
+    Each of the four ceremony gates (``qgate`` / ``self_review`` / ``simplify`` /
+    ``security_audit``) is governed by its owning finalize step's per-element
+    ``lane`` override (``steps[<owner>].lane``) in ``phase-6-finalize.steps``,
+    read via :func:`_read_step_owned_knob`. The owning steps are:
 
-    - ``qgate`` stays a flat phase-local knob, read from
-      ``plan.phase-6-finalize.qgate`` directly (it is consumed as a phase-level
-      run-at-all gate, not a param the owning step body reads).
-    - ``simplify``, ``self_review``, and ``security_audit`` are folded under their
-      owning finalize step's nested param object in ``phase-6-finalize.steps``
-      (``simplify`` → ``default:finalize-step-simplify``; ``self_review`` →
-      ``default:pre-submission-self-review``; ``security_audit`` →
-      ``default:finalize-step-security-audit``). They are read via
-      :func:`_read_step_owned_knob`.
+    - ``qgate`` → ``default:pre-push-quality-gate``
+    - ``self_review`` → ``default:pre-submission-self-review``
+    - ``simplify`` → ``default:finalize-step-simplify``
+    - ``security_audit`` → ``default:finalize-step-security-audit``
 
-    Returns a ``{gate: value}`` dict for the four finalize gates; values are
-    always one of the configured values (or the ``auto`` default). The caller
-    treats any value other than ``always`` / ``never`` as defer.
+    The ``lane`` value maps to the run-at-all decision the ceremony transform
+    consumes: ``off`` → ``never`` (force out), ``minimal`` → ``always`` (force
+    in), and every other value (``auto`` / ``full`` / ``ask`` / absent) → ``auto``
+    (defer to the pre-filter machinery).
+
+    Returns a ``{gate: value}`` dict for the four finalize gates; values are one
+    of ``always`` / ``never`` / ``auto``. The caller treats any value other than
+    ``always`` / ``never`` as defer.
     """
     resolved: dict[str, str] = dict.fromkeys(_CEREMONY_FINALIZE_GATES, _CEREMONY_FINALIZE_DEFAULT)
 
-    # qgate stays a flat phase-level sibling.
-    marshal_path = get_marshal_path()
-    if marshal_path is not None and marshal_path.exists():
-        try:
-            data = read_json(marshal_path, default={})
-        except (OSError, ValueError):
-            data = {}
-        if isinstance(data, dict):
-            plan_block = data.get('plan')
-            if isinstance(plan_block, dict):
-                finalize = plan_block.get('phase-6-finalize')
-                if isinstance(finalize, dict):
-                    qgate_value = finalize.get('qgate')
-                    if isinstance(qgate_value, str) and qgate_value:
-                        resolved['qgate'] = qgate_value
-
-    # simplify / self_review / security_audit are folded under their owning
-    # step's param object.
-    simplify_value = _read_step_owned_knob(_SIMPLIFY_OWNER_STEP, 'simplify')
-    if isinstance(simplify_value, str) and simplify_value:
-        resolved['simplify'] = simplify_value
-    self_review_value = _read_step_owned_knob(_PRE_SUBMISSION_SELF_REVIEW_STEP, 'self_review')
-    if isinstance(self_review_value, str) and self_review_value:
-        resolved['self_review'] = self_review_value
-    security_audit_value = _read_step_owned_knob(_SECURITY_AUDIT_OWNER_STEP, 'security_audit')
-    if isinstance(security_audit_value, str) and security_audit_value:
-        resolved['security_audit'] = security_audit_value
+    for gate in _CEREMONY_FINALIZE_GATES:
+        owner_step = _CEREMONY_GATE_OWNER_STEP[gate]
+        lane_value = _read_step_owned_knob(owner_step, 'lane')
+        if isinstance(lane_value, str) and lane_value in _LANE_TO_CEREMONY_VALUE:
+            resolved[gate] = _LANE_TO_CEREMONY_VALUE[lane_value]
 
     return resolved
 
