@@ -266,10 +266,10 @@ CROSS_PLAN_CHECKS = {
 # completion-aware polling alter), `plan-10` (the roadmap head this plan
 # re-confirms the general checks accurate against), and `PR-PENDING` (this plan's
 # own boundary, a placeholder resolved to the real PR at finalize — the
-# `sequence-and-build-minimality` and `token-economics` checks this plan reworks,
-# whose per-deliverable module-scoped build resolution (D1) and
-# per-task-vs-per-deliverable build-cost model (D1/D2) this plan alters). Every
-# key MUST be a member of `CHECK_NAMES`.
+# `dispatch-topology` check this plan reworks, whose leaf/dispatch-topology
+# enforcement this plan's D6 compose-time execution_tier structural guard changes
+# from a prose-only rule into a manifest fact). Every key MUST be a member of
+# `CHECK_NAMES`.
 CHECK_ERA: dict[str, str] = {
     # Roadmap-affected checks carry the specific boundary whose mechanics they
     # verify (kept in step with the plan-11 semantic updates).
@@ -309,9 +309,13 @@ CHECK_ERA: dict[str, str] = {
     # information-vs-build lookup-ratio mechanics, so its era boundary is plan-15's
     # PR (#876).
     "architecture-lookup-ratio": "#876",
-    # Roadmap-mechanics checks (plan-11) carry the boundary whose mechanics they
-    # verify: dispatch-topology confirms the plan-10 leaf/dispatch invariant.
-    "dispatch-topology": "plan-10",
+    # dispatch-topology — PR-PENDING (this plan's boundary, a placeholder resolved
+    # to the real PR at finalize by project:finalize-step-era-stamp-fill AFTER
+    # create-pr): this plan's D6 compose-time execution_tier structural guard
+    # changes how the leaf/dispatch-topology invariant (leaf cannot reap a
+    # backgrounded build) is ENFORCED — from a prose-only rule to a manifest fact —
+    # so this check's era boundary is this plan's own PR. (bumped from plan-10.)
+    "dispatch-topology": "PR-PENDING",
     # finalize-flow-conformance — #884 (this plan's boundary, bumped from #849):
     # this plan's D1 pre-merge comment barrier and D2 completion-aware polling
     # rework the finalize merge-completeness mechanics this check accounts for, so

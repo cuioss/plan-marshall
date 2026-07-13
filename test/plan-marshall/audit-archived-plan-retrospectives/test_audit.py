@@ -144,6 +144,19 @@ def test_reworked_build_cost_checks_carry_this_plan_boundary():
         assert audit.CHECK_ERA[check] == "#887", check
 
 
+def test_dispatch_topology_carries_this_plan_pr_boundary():
+    # This plan reworks the dispatch-topology check's boundary: D6's compose-time
+    # execution_tier structural guard changes how the leaf/dispatch-topology
+    # invariant (a leaf cannot reap a backgrounded build) is ENFORCED — from a
+    # prose-only rule into a manifest fact — so its era boundary is this plan's own
+    # PR, carried as the PR-PENDING placeholder (bumped from plan-10) until
+    # project:finalize-step-era-stamp-fill resolves it to the real PR at finalize.
+    # This is the co-changing mirror of the audit.py CHECK_ERA constant — the pair
+    # changes together and is the designated acceptance for era-fill firing from a
+    # composed manifest.
+    assert audit.CHECK_ERA["dispatch-topology"] == "PR-PENDING"
+
+
 def test_stamp_era_inserts_fixed_since_after_status():
     # Arrange: a synthetic check block for a known check.
     block = "check: metrics\nstatus: success\ngenuine_signal_count: 0\nrows[0]{a}:\n"
