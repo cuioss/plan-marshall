@@ -21,6 +21,7 @@ from _config_core import (
 )
 from _config_defaults import (
     get_default_config,
+    validate_gate_mode,
     validate_per_deliverable_build,
     validate_q_gate_validation,
 )
@@ -45,6 +46,16 @@ STEP_KEYS = {
 
 # Phases with simple scalar fields only
 SCALAR_PHASES = {'phase-1-init', 'phase-2-refine', 'phase-3-outline', 'phase-4-plan'}
+
+# The three planning gates governed by the gate_mode enum (auto|always|never),
+# keyed by their owning phase section. Their set boundary routes the value
+# through validate_gate_mode before persisting — the validation these gates
+# previously lacked. The four finalize ceremony gates are NOT here (they ride the
+# per-element `steps.<step>.lane` override, not gate_mode).
+GATE_MODE_FIELDS = {
+    'phase-1-init': {'deep_lane', 'escalation'},
+    'phase-2-refine': {'revalidation'},
+}
 
 # Canonical-verify step prefixes. Every step ID of the shape
 # ``default:verify:{canonical}`` (and its legacy ``verify:{canonical}`` form) is
@@ -387,6 +398,17 @@ def cmd_phase(args, phase_section: str) -> dict:
             value = _coerce_value(args.value)
             try:
                 validate_q_gate_validation(str(value), f'plan.{phase_section}.q_gate_validation')
+            except ValueError as e:
+                return error_exit(str(e))
+        elif field in GATE_MODE_FIELDS.get(phase_section, set()):
+            # gate_mode planning gates (deep_lane / escalation on phase-1-init;
+            # revalidation on phase-2-refine). Route the value through
+            # validate_gate_mode at this set boundary so a malformed value is
+            # rejected before it persists — NEW validation these three gates
+            # previously lacked. Mirrors the q_gate_validation branch above.
+            value = _coerce_value(args.value)
+            try:
+                validate_gate_mode(str(value), f'plan.{phase_section}.{field}')
             except ValueError as e:
                 return error_exit(str(e))
         else:

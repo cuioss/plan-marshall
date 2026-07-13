@@ -220,20 +220,22 @@ DEFAULT_PLAN_COVERAGE = {'thoroughness': 'inherit', 'scope': 'inherit'}
 # `manage-findings ... --raw-input-max-bytes`).
 DEFAULT_FINDING_RAW_INPUT_MAX_BYTES = 65536
 
-# Run-at-all gate enum. Each distributed gate knob (deep_lane, escalation,
-# revalidation, self_review, simplify) takes one of these values. `auto` (the
+# Gate-mode enum. Governs ONLY the three planning gates `deep_lane` /
+# `escalation` (phase-1-init) and `revalidation` (phase-2-refine): `auto` (the
 # default) defers to the owning phase's decision machinery; `always` forces the
-# gate's step/lane in; `never` forces it out. Note: `qgate` governs ONLY the
-# phase-6-finalize pre-push-quality-gate run-at-all gate; the retired
-# planning-time outline `qgate` gate has been replaced by the distinct
-# `q_gate_validation` knob (see :data:`VALID_Q_GATE_VALIDATION` below), which
-# now governs planning-time q-gate validation on phase-3-outline and
-# phase-4-plan.
-VALID_RUN_AT_ALL = ('auto', 'always', 'never')
+# gate's decision in; `never` forces it out. The four finalize ceremony gates
+# (`qgate`, `self_review`, `simplify`, `security_audit`) do NOT ride this enum —
+# each is governed by its owning step's `steps.<step>.lane` override
+# (`off`/`minimal`/`auto`). Planning-time q-gate validation is governed by the
+# distinct `q_gate_validation` knob (see :data:`VALID_Q_GATE_VALIDATION` below).
+VALID_GATE_MODE = ('auto', 'always', 'never')
 
 
-def validate_run_at_all(value: str, field_name: str) -> None:
-    """Validate a run-at-all gate value (``auto|always|never``).
+def validate_gate_mode(value: str, field_name: str) -> None:
+    """Validate a gate_mode value (``auto|always|never``).
+
+    Scoped to the three planning gates `deep_lane` / `escalation` /
+    `revalidation`.
 
     Args:
         value: The candidate gate value.
@@ -241,11 +243,11 @@ def validate_run_at_all(value: str, field_name: str) -> None:
             message so a rejected value names the offending knob.
 
     Raises:
-        ValueError: If ``value`` is not in :data:`VALID_RUN_AT_ALL`.
+        ValueError: If ``value`` is not in :data:`VALID_GATE_MODE`.
     """
-    if value not in VALID_RUN_AT_ALL:
+    if value not in VALID_GATE_MODE:
         raise ValueError(
-            f"Invalid {field_name} '{value}'. Allowed: {list(VALID_RUN_AT_ALL)}"
+            f"Invalid {field_name} '{value}'. Allowed: {list(VALID_GATE_MODE)}"
         )
 
 
@@ -257,8 +259,8 @@ def validate_run_at_all(value: str, field_name: str) -> None:
 #                    (default).
 #   - 'until_clean': re-run validation until it reports no blocking findings.
 # This replaces the retired planning-time `qgate` run-at-all gate on the outline
-# step; the finalize-time `qgate` gate is unaffected (it stays a VALID_RUN_AT_ALL
-# gate — see :data:`VALID_RUN_AT_ALL`).
+# step; the finalize-time `qgate` gate now rides its owning step's
+# `steps['pre-push-quality-gate'].lane` override, not this knob.
 VALID_Q_GATE_VALIDATION = ('off', 'once', 'until_clean')
 
 
@@ -434,15 +436,16 @@ DEFAULT_PLAN_INIT = {
     # false = stop after init and wait for the user. Mirrors the sibling
     # plan_without_asking / execute_without_asking review-gate pattern.
     'init_without_asking': True,
-    # Deep-lane run-at-all gate (auto|always|never). Consumed by the
+    # Deep-lane gate_mode gate (auto|always|never). Consumed by the
     # phase-1-init planning-lane router (_cmd_planning_lane.py): `always` forces
     # the deep lane, `never` forces light, `auto` (default) defers to the S1-S6
-    # signal set. Read via
+    # signal set. Validated by validate_gate_mode at set-time. Read via
     # `manage-config plan phase-1-init get --field deep_lane`.
     'deep_lane': 'auto',
-    # Hard-escalation safety-ratchet gate (auto|always|never). `auto` keeps the
-    # DQ3 explosion / build-break / premise escalation ratchet live; `never` is
-    # the explicit full-speed-full-risk opt-in. Read via
+    # Hard-escalation safety-ratchet gate_mode gate (auto|always|never). `auto`
+    # keeps the DQ3 explosion / build-break / premise escalation ratchet live;
+    # `never` is the explicit full-speed-full-risk opt-in. Validated by
+    # validate_gate_mode at set-time. Read via
     # `manage-config plan phase-1-init get --field escalation`.
     'escalation': 'auto',
     # Tier 1 recipe-match auto-route gate. true (the default) ⇒ a high-confidence
@@ -498,9 +501,9 @@ DEFAULT_PLAN_REFINE = {
     'simplicity': 'lean',
     # Per-phase effort default (seeded at init; balanced-preset baseline).
     'effort': 'level-3',
-    # Premise / narrative-vs-code safety-check run-at-all gate
+    # Premise / narrative-vs-code safety-check gate_mode gate
     # (auto|always|never). Consumed by the light lane + deep refine
-    # revalidation pass. Read via
+    # revalidation pass. Validated by validate_gate_mode at set-time. Read via
     # `manage-config plan phase-2-refine get --field revalidation`.
     'revalidation': 'auto',
 }
@@ -1039,7 +1042,7 @@ def get_default_config() -> dict:
     validate_pr_compact_max_changed_files(DEFAULT_PROJECT['pr_compact_max_changed_files'])
     # Self-validate the seeded lane prune-threshold dict so a malformed default
     # fails loud at seed time rather than at first read. (`lane_selection` is an
-    # enum string validated from the set path, mirroring validate_run_at_all /
+    # enum string validated from the set path, mirroring validate_gate_mode /
     # validate_simplicity — not self-validated here.)
     validate_lane_prune_thresholds(DEFAULT_PLAN_INIT['lane_prune_thresholds'])
     # Materialize the finalize-step defaults seed lazily via the configurable-

@@ -391,19 +391,17 @@ def test_seed_finalize_steps_default_on_non_infra_steps_have_no_lane_key():
         )
 
 
-def test_validate_run_at_all_accepts_simplify_run_at_all_values():
-    """validate_run_at_all must accept every auto|always|never value for the simplify gate."""
-    # no exception for any allowed run-at-all value
-    for value in _config_defaults_mod.VALID_RUN_AT_ALL:
-        _config_defaults_mod.validate_run_at_all(value, 'plan.phase-6-finalize.simplify')
+def test_retired_run_at_all_symbols_are_gone():
+    """The retired VALID_RUN_AT_ALL / validate_run_at_all symbols must not survive.
 
-
-def test_validate_run_at_all_rejects_invalid_simplify_value():
-    """validate_run_at_all must raise ValueError for a simplify value outside the enum."""
-    import pytest
-
-    with pytest.raises(ValueError, match=r'plan\.phase-6-finalize\.simplify'):
-        _config_defaults_mod.validate_run_at_all('sometimes', 'plan.phase-6-finalize.simplify')
+    The `simplify` gate (and the other three finalize ceremony gates) migrated off
+    the run-at-all channel onto the per-element `steps.<step>.lane` override, and
+    the run-at-all enum/validator pair was deleted entirely — replaced by the
+    `gate_mode` enum scoped to the three planning gates (see
+    test_ceremony_policy.py for the gate_mode set-time validation coverage).
+    """
+    assert not hasattr(_config_defaults_mod, 'VALID_RUN_AT_ALL')
+    assert not hasattr(_config_defaults_mod, 'validate_run_at_all')
 
 
 def test_default_plan_finalize_includes_auto_rebase_threshold():

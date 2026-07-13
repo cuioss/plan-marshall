@@ -35,7 +35,7 @@ is also ``never``), ``auto`` (the default) defers to the signals.
 The router also projects a RECOMMENDED execution-profile posture
 (``minimal`` / ``auto`` / ``full``) over the SAME signals via
 ``project_profile_pure``. The projection is a pure derivation that adds no
-discovery and no cognition; it is independent of the ``deep_lane`` ceremony gate
+discovery and no cognition; it is independent of the ``deep_lane`` gate_mode gate
 (``deep_lane=always`` governs planning depth, NOT the profile — see
 ``extension-api/standards/ext-point-lane-element.md`` for the lane contract). On
 ``--persist`` the route command writes the projected posture into
@@ -63,7 +63,7 @@ DEEP = 'deep'
 # Execution-profile postures (the lane lattice minimal ⊏ auto ⊏ full). The
 # planning-lane router projects a RECOMMENDED posture over the same signals it
 # already scores for the {light, deep} verdict; the projection is independent of
-# the deep_lane ceremony gate (deep_lane governs planning DEPTH, not the profile
+# the deep_lane gate_mode gate (deep_lane governs planning DEPTH, not the profile
 # — see ext-point-lane-element.md and §4.2 of the lane-selection outline).
 MINIMAL = 'minimal'
 AUTO = 'auto'
@@ -266,7 +266,7 @@ def project_profile_pure(
     - ``auto`` — everything else (the generic recommendation / default).
 
     The recommendation is exactly that — a default the operator overrides. It is
-    independent of the ``deep_lane`` ceremony gate (which governs planning depth,
+    independent of the ``deep_lane`` gate_mode gate (which governs planning depth,
     not the profile).
     """
     narrow_and_concrete = scope_estimate in _NARROW_SCOPE_ESTIMATES and request_concrete
@@ -435,7 +435,7 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
     ceremony = _read_deep_lane_gate()
 
     # The signal set is scored unconditionally so the execution-profile
-    # projection is available regardless of the deep_lane ceremony gate. The
+    # projection is available regardless of the deep_lane gate_mode gate. The
     # gate short-circuits ONLY the {light, deep} planning-depth verdict; it must
     # NOT coerce the profile (deep_lane=always does not force `full` — §4.2).
     signal_evaluation = _evaluate_signals(plan_id, metadata)
