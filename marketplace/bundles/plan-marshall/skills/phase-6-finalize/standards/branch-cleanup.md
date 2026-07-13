@@ -37,6 +37,9 @@ configurable:
   - key: admin_merge_on_stuck_state
     default: false
     description: Gate the GitHub-only stuck-state `--admin` fallback inside `ci pr safe-merge` — false refuses the admin merge and surfaces the stuck PR to the operator; true permits `gh pr merge --admin` only when the PR stays `mergeable_state: blocked` past the poll timeout AND every active ruleset requirement is provably met. Orthogonal to `final_merge_without_asking` (which gates whether the merge is attempted at all).
+  - key: pre_merge_comment_barrier
+    default: fail_into_loopback
+    description: Gate the fail-closed pre-merge comment-completeness barrier that re-fetches bot comments immediately before merge/enqueue and blocks when any pr-comment finding is still pending. fail_into_loopback (default) loops the plan back into the automatic-review triage pipeline (records the branch-cleanup step loop_back, releases the merge mutex if held, re-enters phase-6-finalize); ask fires an inline AskUserQuestion offering re-triage / merge-anyway-with-recorded-reason / defer. The clean path (zero new pending findings) proceeds straight to merge.
 ---
 
 # Branch Cleanup
@@ -89,7 +92,7 @@ The cross-plan merge mutex (`plan-marshall:manage-locks:merge_lock`) is held acr
 
 The widened hold obeys four invariants:
 
-1. **Release-and-FIFO-re-enqueue at every operator-wait / loop-back boundary.** The lock is held ONLY across non-interactive spans. Before EVERY `AskUserQuestion` (the Pre-Rebase Confirmation Gate, the re-review-timeout trigger-A gate, the Pre-Merge Confirmation Gate, and the merge-queue budget-exhaustion escalation) and before every loop-back-to-phase-5 boundary, the orchestrator releases the lock **if held** and re-enqueues via the FIFO admission queue (preserving FIFO position). On resume it RE-ACQUIRES through the same FIFO poll loop and **re-validates** — re-runs `baseline-reconcile` and re-rebases when `origin/{base_branch}` advanced during the released window — before merging. Releasing before the interactive wait is what prevents a held lock from blocking every other plan while this plan waits on a human. (At the Pre-Rebase Gate the lock is normally not yet held, so its release is a no-op; the guard is uniform for robustness.)
+1. **Release-and-FIFO-re-enqueue at every operator-wait / loop-back boundary.** The lock is held ONLY across non-interactive spans. Before EVERY `AskUserQuestion` (the Pre-Rebase Confirmation Gate, the re-review-timeout trigger-A gate, the Pre-Merge Confirmation Gate, the Pre-Merge Comment-Completeness Barrier ask gate, and the merge-queue budget-exhaustion escalation) and before every loop-back boundary (the loop-back-to-phase-5 disposition AND the Pre-Merge Comment-Completeness Barrier's fail-closed loop-back-to-6-finalize), the orchestrator releases the lock **if held** and re-enqueues via the FIFO admission queue (preserving FIFO position). On resume it RE-ACQUIRES through the same FIFO poll loop and **re-validates** — re-runs `baseline-reconcile` and re-rebases when `origin/{base_branch}` advanced during the released window — before merging. Releasing before the interactive wait is what prevents a held lock from blocking every other plan while this plan waits on a human. (At the Pre-Rebase Gate the lock is normally not yet held, so its release is a no-op; the guard is uniform for robustness.)
 
 2. **Bounded hold with the `merge_hold_budget_seconds` knob.** The orchestrator records the wall-clock instant of acquire and tracks elapsed-since-acquire. When a legitimate wait would push the held duration past `merge_hold_budget_seconds` (default 3600s), it releases + FIFO-re-enqueues + escalates via `AskUserQuestion` rather than continuing to hold. `merge_lock.py` is unchanged — its holder-liveness reclaim already bounds a CRASHED holder; this budget bounds a live-but-slow holder at the orchestrator layer.
 
@@ -666,6 +669,141 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 Set `{merge_consent} = deferred`. Skip the **Merge PR**, **Wait for Merge CI**, **Remove Worktree**, and **Switch to Base Branch** sections entirely; the rebased branch is left in place with no further mutation. Emit the `mark-step-done` payload below using **Branch C — declined by user** (deferral is the same shape from the workflow's point of view: cleanup was not completed this run, re-entry is expected) and return.
 
 **If user selects "Yes, merge"**: Set `{merge_consent} = explicit_yes` and proceed to **Merge PR (if not yet merged)** below. The `pr safe-merge` poll-then-merge path — including its GitHub-only stuck-state admin fallback when `admin_merge_on_stuck_state` is enabled — is authorized (explicit consent was given for the merge action; the stuck-state fallback is part of the same merge intent).
+
+### Pre-Merge Comment-Completeness Barrier
+
+**Only if `state == open` AND `{merge_consent} == explicit_yes`** (the `final_merge_without_asking == true` bypass and the interactive "Yes, merge" both set `{merge_consent} = explicit_yes`). This fail-closed barrier fires AFTER the pre-merge gate authorized the merge and BEFORE the **Merge PR (if not yet merged)** routing below, so it gates BOTH the `use_merge_queue == false` safe-merge path and the `use_merge_queue == true` merge-queue path (both live inside **Merge PR**). It re-fetches bot comments from the provider against the current HEAD and refuses to merge while any `pr-comment` finding is still unhandled — closing the window where a comment that lands after `automatic-review` (order 30) marked done is never re-fetched by the time `branch-cleanup` (order 70) merges. The existing `phase_handshake findings-check` gate only re-reads the findings *store*; this barrier re-reads the *provider*, so a comment that was never fetched is visible to it.
+
+#### Read the barrier knob and the enabled-bot set
+
+Read `pre_merge_comment_barrier` off the `default:branch-cleanup` step's param object — the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above (re-issue the call if the value was not retained):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  step-params get --plan-id {plan_id} --phase 6-finalize --step-id branch-cleanup
+```
+
+Extract `pre_merge_comment_barrier` from the returned `params` object as `{barrier_mode}` (default: `fail_into_loopback`). Valid values: `fail_into_loopback`, `ask`.
+
+Read `enabled_bots` off the `plan-marshall:automatic-review` step's param object (the set of `bot_kind`s this plan reviews with):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review
+```
+
+Extract `enabled_bots` from the returned `params` object as `{enabled_bots}` (e.g. `coderabbit,sourcery,gemini`).
+
+#### Re-fetch bot comments against the current HEAD
+
+Re-run the `github_pr fetch_findings` producer. It dedups against the already-stored findings via `_existing_pr_comment_keys`, so this files ONLY genuinely-new comments as pending `pr-comment` findings — a re-fetch of an already-handled comment adds nothing:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
+  fetch_findings --pr-number {pr_number} --plan-id {plan_id} --enabled-bots {enabled_bots}
+```
+
+> **GitLab provider asymmetry**: the GitLab producer `gitlab_pr fetch_findings` has NO `--enabled-bots` flag (the same asymmetry the FIND stage already documents). On GitLab, invoke it without the flag; every comment is considered.
+
+#### Query for unhandled comments
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
+  --plan-id {plan_id} --type pr-comment --resolution pending
+```
+
+Parse the returned `findings` list; let `{count}` be its length.
+
+#### Clean path — zero pending findings
+
+When the pending `pr-comment` list is empty, the barrier is satisfied: every enabled bot's comments against the current HEAD are handled. Log and proceed directly to **Merge PR (if not yet merged)** below — the barrier added exactly one `fetch_findings` call and zero dispatches:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Pre-merge comment barrier: clean — zero pending pr-comment findings, proceeding to merge"
+```
+
+#### Blocked path — one or more pending findings
+
+When the pending list is non-empty, the merge is blocked. Branch on `{barrier_mode}`:
+
+##### `{barrier_mode} == fail_into_loopback` (default)
+
+Loop the plan back into the `automatic-review` triage pipeline so the unhandled comments are triaged before any further merge attempt. **Release-on-loopback**: release the merge mutex if held (`merge_lock release --plan-id {plan_id}`; idempotent + foreign-safe) per § "Merge-Mutex Hold Window" invariant 4 — a loop-back to triage is a wait boundary, so the lock must not be held across it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
+  --plan-id {plan_id}
+```
+
+Record the `branch-cleanup` step as a loop-back to `6-finalize` so the phase-6-finalize loop-back continuation hook re-fires the finalize pipeline (re-running `automatic-review`'s FIND → TRIAGE → RESPOND over the newly-filed pending findings, then re-entering this barrier):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome loop_back \
+  --loop-back-target 6-finalize --display-detail "pre-merge comment barrier: {count} unhandled comment(s), looping back to triage"
+```
+
+Log the decision and return control to the finalize dispatcher:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge comment barrier: {count} unhandled pr-comment finding(s) — pre_merge_comment_barrier=fail_into_loopback, looping back to automatic-review triage (merge blocked)"
+```
+
+Do NOT proceed to **Merge PR**. The re-fired finalize pipeline re-runs the triage and re-enters this barrier; a subsequent clean barrier proceeds to merge.
+
+##### `{barrier_mode} == ask`
+
+Fire an inline `AskUserQuestion` (branch-cleanup runs inline in the orchestrator). **Release-before-wait / re-acquire-after (widened hold)**: this ask is an operator-wait boundary — under `merge_hold_window == full_window_release_at_waits`, release the merge mutex if held (`merge_lock release --plan-id {plan_id}`; idempotent + foreign-safe) and FIFO-re-enqueue BEFORE the prompt (§ "Merge-Mutex Hold Window" invariant 1), mirroring the `fail_into_loopback` branch's explicit release step:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
+  --plan-id {plan_id}
+```
+
+On the "Merge anyway" resume, RE-ACQUIRE via the canonical FIFO poll loop (§ "Acquire / confirm the cross-plan merge-lock") and re-validate (`baseline-reconcile`) before merging.
+
+Then fire the prompt:
+
+```text
+AskUserQuestion:
+  questions:
+    - question: "{count} bot comment(s) are still unhandled at merge time. How should branch cleanup proceed?"
+      header: "Branch Cleanup — Pre-merge comment barrier"
+      description: |
+        **PR**: #{pr_number}
+        **Unhandled pr-comment findings**: {count}
+
+        A re-fetch against the current HEAD surfaced comment(s) that
+        were never handled. Merging now would land the PR with open
+        bot feedback.
+      options:
+        - label: "Re-triage now"
+          description: "Loop back into automatic-review triage before merging"
+        - label: "Merge anyway (record reason)"
+          description: "Proceed to merge despite unhandled comments; a reason is recorded"
+        - label: "Defer merge"
+          description: "Skip the merge; re-enter finalize later"
+      multiSelect: false
+```
+
+Branch on the operator's selection:
+
+- **"Re-triage now"** → take the SAME loop-back path as `fail_into_loopback` above (release the mutex per invariant 4, record `branch-cleanup` as `loop_back` to `6-finalize`, log, return).
+- **"Merge anyway (record reason)"** → RE-ACQUIRE the merge mutex and re-validate (per the release-before-wait note above), decision-log at WARNING naming the unhandled count and the operator's reason, then continue to **Merge PR (if not yet merged)** below:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge comment barrier: operator chose merge-anyway with {count} unhandled comment(s) — reason: {reason}"
+  ```
+
+- **"Defer merge"** → set `{merge_consent} = deferred`, skip the **Merge PR**, **Wait for Merge CI**, **Remove Worktree**, and **Switch to Base Branch** sections, emit the `mark-step-done` payload using **Branch C — declined by user**, and return (the mutex was already released before the prompt). Log the decision:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Pre-merge comment barrier: operator deferred merge with {count} unhandled comment(s) — re-enter finalize later"
+  ```
 
 ### Merge PR (if not yet merged)
 

@@ -23,6 +23,7 @@ via the root conftest's marketplace PYTHONPATH setup.
 """
 
 import argparse
+import json
 
 from conftest import load_script_module
 
@@ -252,3 +253,107 @@ def test_enabled_bots_empty_disables_all_bots(plan_context, monkeypatch):
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
     assert len(stored) == 1
     assert stored[0].get('bot_kind') in (None, '')
+
+
+# =============================================================================
+# bot_completion — per-bot check-run completion read
+# =============================================================================
+
+
+def _run_gh_returning(rc, stdout, stderr=''):
+    """Return a ``run_gh`` stub yielding a fixed ``(rc, stdout, stderr)`` tuple."""
+
+    def _run_gh(args, capture_json=False, timeout=60):
+        return (rc, stdout, stderr)
+
+    return _run_gh
+
+
+def _checks_json(*checks):
+    """Serialize ``(name, state, bucket)`` triples as the ``gh pr checks --json`` array."""
+    return json.dumps([{'name': name, 'state': state, 'bucket': bucket} for name, state, bucket in checks])
+
+
+def _run_bot_completion(pr_number, bot_kind):
+    args = argparse.Namespace(pr_number=pr_number, bot_kind=bot_kind)
+    return github_pr.cmd_bot_completion(args)
+
+
+def test_bot_completion_slow_bot_in_progress_then_completed(monkeypatch):
+    """A slow bot reports in_progress on the first poll and completed on the next.
+
+    ``bot_completion`` resolves coderabbit's registry ``completion_check_name``
+    (``'CodeRabbit'``), finds that check on the PR HEAD, and reports its state:
+    an IN_PROGRESS check yields ``in_progress=True`` / ``completed=False``; once
+    the same check concludes SUCCESS a follow-up poll yields ``completed=True``.
+    """
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+
+    # Poll 1 — the CodeRabbit check is still running.
+    monkeypatch.setattr(
+        github_pr._github,
+        'run_gh',
+        _run_gh_returning(0, _checks_json(('CodeRabbit', 'IN_PROGRESS', 'pending'))),
+    )
+    first = _run_bot_completion(200, 'coderabbit')
+    assert first['check_name'] == 'CodeRabbit'
+    assert first['in_progress'] is True
+    assert first['completed'] is False
+
+    # Poll 2 — the same check has concluded SUCCESS.
+    monkeypatch.setattr(
+        github_pr._github,
+        'run_gh',
+        _run_gh_returning(0, _checks_json(('CodeRabbit', 'SUCCESS', 'pass'))),
+    )
+    second = _run_bot_completion(200, 'coderabbit')
+    assert second['in_progress'] is False
+    assert second['completed'] is True
+
+
+def test_bot_completion_no_check_name_for_markerless_bot(monkeypatch):
+    """A bot with no registry completion_check_name reports ``no_check_name``.
+
+    Sourcery declares an empty ``completion_check_name``, so ``bot_completion``
+    short-circuits to ``no_check_name`` with both flags false — the caller falls
+    back to the ``review_bot_buffer_seconds`` wait — without ever querying gh.
+    """
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+
+    result = _run_bot_completion(200, 'sourcery')
+    assert result['status'] == 'no_check_name'
+    assert result['in_progress'] is False
+    assert result['completed'] is False
+
+
+def test_bot_completion_check_absent_yields_not_found(monkeypatch):
+    """A completion check not yet posted on the PR yields ``not_found`` (keep polling)."""
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(
+        github_pr._github,
+        'run_gh',
+        _run_gh_returning(0, _checks_json(('verify', 'SUCCESS', 'pass'))),
+    )
+
+    result = _run_bot_completion(200, 'coderabbit')
+    assert result['status'] == 'not_found'
+    assert result['in_progress'] is False
+    assert result['completed'] is False
+
+
+def test_bot_completion_no_checks_at_all_yields_not_found(monkeypatch):
+    """Empty gh output (PR has no checks) resolves to ``not_found``, not an error."""
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    monkeypatch.setattr(github_pr._github, 'run_gh', _run_gh_returning(1, '', 'no checks reported'))
+
+    result = _run_bot_completion(200, 'coderabbit')
+    assert result['status'] == 'not_found'
+    assert result['completed'] is False
+
+
+def test_bot_completion_unconfigured_fails_loud(monkeypatch):
+    """When GitHub is not authenticated, ``bot_completion`` fails loud (never a silent no-op)."""
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (False, 'Not authenticated'))
+
+    result = _run_bot_completion(200, 'coderabbit')
+    assert result['status'] == 'unconfigured'

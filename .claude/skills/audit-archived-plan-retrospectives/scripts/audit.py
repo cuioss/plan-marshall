@@ -260,7 +260,10 @@ CROSS_PLAN_CHECKS = {
 # `#876` (plan-15's boundary — the `architecture-lookup-ratio` check plan-15
 # bumps), `#877` (plan-14's boundary — the `merge-window-accounting` check plan-14
 # reworks, whose accounting plan-14's D1 merge-queue enqueue-path rework and D3
-# merge-lock stale-holder liveness fix alter), and `plan-10` (the roadmap head this plan
+# merge-lock stale-holder liveness fix alter), `#884` (plan-17's boundary — the
+# `finalize-flow-conformance` check plan-17 reworks, whose finalize merge-
+# completeness mechanics plan-17's D1 pre-merge comment barrier and D2
+# completion-aware polling alter), and `plan-10` (the roadmap head this plan
 # re-confirms the general checks accurate against). Every key MUST be a member of
 # `CHECK_NAMES`.
 CHECK_ERA: dict[str, str] = {
@@ -296,11 +299,14 @@ CHECK_ERA: dict[str, str] = {
     # PR (#876).
     "architecture-lookup-ratio": "#876",
     # Roadmap-mechanics checks (plan-11) carry the boundary whose mechanics they
-    # verify: dispatch-topology confirms the plan-10 leaf/dispatch invariant;
-    # finalize-flow-conformance verifies #849's deterministic ci_verify / adaptive
-    # ci-wait mechanics.
+    # verify: dispatch-topology confirms the plan-10 leaf/dispatch invariant.
     "dispatch-topology": "plan-10",
-    "finalize-flow-conformance": "#849",
+    # finalize-flow-conformance — #884 (this plan's boundary, bumped from #849):
+    # this plan's D1 pre-merge comment barrier and D2 completion-aware polling
+    # rework the finalize merge-completeness mechanics this check accounts for, so
+    # pre-boundary missed-comment finalize rows read as era-expected and post-
+    # boundary ones as regressions.
+    "finalize-flow-conformance": "#884",
     # merge-window-accounting — #877 (plan-14's boundary, bumped from #863): plan-14
     # reworked the merge-window-accounting mechanics, so its era boundary is plan-14's
     # PR (#877). D1 strips --delete-branch/--strategy from the pr merge-queue enqueue

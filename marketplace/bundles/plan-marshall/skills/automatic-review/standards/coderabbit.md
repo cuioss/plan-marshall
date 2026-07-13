@@ -10,13 +10,14 @@ lives. The machine-readable registry block below is the single per-bot data reco
 
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter —
 a fenced code block that plugin-doctor treats as an example, not an executable directive. Consumers
-read `bot_kind`, `author_login`, `trigger_comment`, `honors_skip_label`, `ignore_patterns`, and
-`severity_map` from it; the prose sections that follow carry the rationale.
+read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`, `honors_skip_label`,
+`ignore_patterns`, and `severity_map` from it; the prose sections that follow carry the rationale.
 
 ```yaml
 bot_kind: coderabbit
 author_login: coderabbitai
 trigger_comment: "@coderabbitai review"
+completion_check_name: "CodeRabbit"   # in-progress check-run polled to completion by the wait step
 honors_skip_label: true          # central cuioss/coderabbit config skips PRs labelled skip-bot-review
 ignore_patterns:
   - "<!-- This is an auto-generated comment: summarize by coderabbit.ai -->"  # walkthrough / summary

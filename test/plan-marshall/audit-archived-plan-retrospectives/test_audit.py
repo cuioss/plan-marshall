@@ -124,6 +124,14 @@ def test_merge_window_accounting_carries_this_plan_pr_boundary():
     assert audit.CHECK_ERA["merge-window-accounting"] == "#877"
 
 
+def test_finalize_flow_conformance_carries_this_plan_pr_boundary():
+    # Plan-17 reworked the finalize-flow-conformance mechanics — D1's pre-merge
+    # comment barrier and D2's completion-aware polling rework the finalize
+    # merge-completeness surface this check accounts for, so its era boundary is
+    # plan-17's PR (#884, bumped from #849).
+    assert audit.CHECK_ERA["finalize-flow-conformance"] == "#884"
+
+
 def test_stamp_era_inserts_fixed_since_after_status():
     # Arrange: a synthetic check block for a known check.
     block = "check: metrics\nstatus: success\ngenuine_signal_count: 0\nrows[0]{a}:\n"

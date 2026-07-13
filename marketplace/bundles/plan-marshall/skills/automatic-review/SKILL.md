@@ -20,10 +20,13 @@ implements:
 configurable:
   - key: enabled_bots
     default: "coderabbit,sourcery,gemini"
-    description: Comma-separated list of review-bot kinds this step drives. Each entry MUST have a machine-readable registry doc at standards/{bot_kind}.md (bot_kind, author_login, trigger_comment, honors_skip_label, ignore_patterns, severity_map). Dropping a bot from the list removes it from re-review triggering and triage; the pipeline never awaits or classifies a bot absent from this list.
+    description: Comma-separated list of review-bot kinds this step drives. Each entry MUST have a machine-readable registry doc at standards/{bot_kind}.md (bot_kind, author_login, trigger_comment, completion_check_name, honors_skip_label, ignore_patterns, severity_map). Dropping a bot from the list removes it from re-review triggering and triage; the pipeline never awaits or classifies a bot absent from this list.
   - key: review_bot_buffer_seconds
     default: 180
-    description: Buffer (seconds) before the automatic-review bot comment poll, consumed by the pr wait-for-comments wait.
+    description: Buffer (seconds) before the automatic-review bot comment poll, consumed by the pr wait-for-comments wait. Also the fallback wait for a bot that declares no completion_check_name (empty registry field) — the completion-aware poll only applies to bots that publish an in-progress check-run.
+  - key: review_completion_poll_timeout_seconds
+    default: 600
+    description: Bound (seconds) on the per-bot completion-aware poll — for each enabled bot with a non-empty registry completion_check_name, the wait step polls github_pr bot_completion until the bot's check-run reports completed or this budget elapses. A bot still IN_PROGRESS at the bound is logged loudly (WARNING) and left to the D1 pre-merge comment barrier. Bots without a completion_check_name fall back to review_bot_buffer_seconds.
   - key: re_review_on_loopback
     default: false
     description: Gate (default-off) for re-requesting a fresh bot review after a phase-5 loop-back fix commit advances HEAD past the reviewed_commit_sha of the staged pr-comment findings (trigger B). When false, a loop-back fix commit is NOT re-reviewed by the automated bots.
@@ -95,13 +98,15 @@ Skill: plan-marshall:persona-plan-marshall-agent
 The bots this step drives are selected by the `enabled_bots` config knob. Each entry maps
 one-to-one to a machine-readable registry doc at `standards/{bot_kind}.md` under this skill's
 `standards/` directory — there is no hard-coded bot list in the pipeline. Each registry doc carries
-a fenced-YAML data block (`bot_kind`, `author_login`, `trigger_comment`, `honors_skip_label`,
-`ignore_patterns[]`, `severity_map`) plus the producer / consumer / trust boundary / disposition
-rationale for that bot, and links to the org signal/noise source-of-truth rather than duplicating it.
+a fenced-YAML data block (`bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`,
+`honors_skip_label`, `ignore_patterns[]`, `severity_map`) plus the producer / consumer / trust
+boundary / disposition rationale for that bot, and links to the org signal/noise source-of-truth
+rather than duplicating it.
 
 The single generic loader `scripts/bot_registry.py` parses every `standards/{bot_kind}.md` data
 block at runtime and exposes the derived registry (`bot_kinds()`, the login→bot_kind map, each
-bot's `trigger_comment`, `honors_skip_label`, `ignore_patterns`, and `severity_map`). The producer
+bot's `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns`, and
+`severity_map`). The producer
 (`github_pr.py` noise pre-filter), the finding store (`_findings_core.BOT_KINDS`), and the re-review
 strategy registry (`github_re_review.py`) all DERIVE from this loader — adding, removing, or
 re-configuring a bot is a pure `standards/{bot_kind}.md` edit with no code change.
@@ -241,13 +246,45 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
   --pr-number {pr_number} --timeout {review_bot_buffer_seconds}
 ```
 
-`{review_bot_buffer_seconds}` is the `plan-marshall:automatic-review` step's `review_bot_buffer_seconds` param, read from the plan-local execution-manifest step-params snapshot in a single one-stop call: `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review` (then read `review_bot_buffer_seconds` off the returned `params` object; default: 180; max-wait ceiling, not a fixed delay). The polling subcommand exits as soon as a new review-bot comment is posted.
+`{review_bot_buffer_seconds}` is the `plan-marshall:automatic-review` step's `review_bot_buffer_seconds` param, read from the plan-local execution-manifest step-params snapshot in a single one-stop call: `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review` (then read `review_bot_buffer_seconds` off the returned `params` object; default: 180; max-wait ceiling, not a fixed delay). The polling subcommand exits as soon as a new review-bot comment is posted. This wait is the initial settle AND the fallback wait for any bot that publishes no completion check-run; bots that DO publish one are additionally awaited to completion by the completion-aware poll below.
 
 | Script Output | Action |
 |--------------|--------|
-| `status: success`, `timed_out: false` | New comment(s) detected — proceed to producer-stage |
-| `status: success`, `timed_out: true` | No new comment within timeout — proceed to producer-stage anyway (the producer will surface whatever is on the PR) |
-| `status: error` | Treat as warning, log, proceed to producer-stage best-effort |
+| `status: success`, `timed_out: false` | New comment(s) detected — proceed to the completion-aware poll |
+| `status: success`, `timed_out: true` | No new comment within timeout — proceed to the completion-aware poll anyway (the producer will surface whatever is on the PR) |
+| `status: error` | Treat as warning, log, proceed to the completion-aware poll best-effort |
+
+#### Completion-aware poll (per enabled bot)
+
+A fixed buffer out-races a slow bot: a review-bot whose pass is still IN_PROGRESS when the buffer elapses posts its comments AFTER this step moved on, so they are never fetched here (the gap the D1 pre-merge comment barrier is the final net for). To close it at the source, for each enabled bot that publishes an in-progress check-run — a non-empty registry `completion_check_name` — additionally poll that bot's check to completion. The bound is the `review_completion_poll_timeout_seconds` param, read off the SAME one-stop `params` object above (default: `600`). A bot with an empty `completion_check_name` publishes no completion check-run and relied on the `review_bot_buffer_seconds` settle above — it is NOT polled here.
+
+For each `{bot_kind}` in `enabled_bots`, poll the bot's completion state:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
+  bot_completion --pr-number {pr_number} --bot-kind {bot_kind}
+```
+
+The loop is driven across tool calls — **no shell loop**: each poll is exactly one `bot_completion` Bash call, and pacing between polls is a single standalone `sleep {interval}` Bash call (`{interval}` = 30s). Track elapsed wall-clock per bot against `review_completion_poll_timeout_seconds`; stop issuing new polls for a bot once its budget would be exceeded.
+
+| `bot_completion` return | Action |
+|--------------|--------|
+| `status: no_check_name` | The bot publishes no completion check-run — it relied on the `review_bot_buffer_seconds` settle above; do NOT poll it, move to the next enabled bot |
+| `completed: true` | The bot's review pass has concluded — move to the next enabled bot |
+| `in_progress: true` OR `status: not_found` (within budget) | The bot is still running, or has not posted its check-run yet; pace with a single standalone `sleep 30` Bash call, then re-issue the `bot_completion` poll above |
+| budget exhausted with `completed: false` | The bot is still running at the `review_completion_poll_timeout_seconds` bound — log loudly (WARNING) and leave it to the D1 pre-merge comment barrier; move to the next enabled bot |
+| `status: unconfigured` | GitHub not authenticated — treat as warning, log, stop polling (best-effort), proceed to the producer-stage |
+
+Loud WARNING when a bot is still IN_PROGRESS at the bound:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:automatic-review) Completion-aware poll: bot {bot_kind} still IN_PROGRESS at review_completion_poll_timeout_seconds={review_completion_poll_timeout_seconds}s bound — leaving to the D1 pre-merge comment barrier"
+```
+
+Once every enabled bot is completed, markerless (buffer-settled), or logged-at-bound, proceed to the producer-stage.
+
+> **GitLab provider asymmetry:** `bot_completion` is a GitHub-only read verb — the GitLab provider (`gitlab_pr`) has no completion-check-run equivalent (the same asymmetry the FIND stage's `--enabled-bots` note documents). On a GitLab host, skip the completion-aware poll entirely; every bot relies on the `review_bot_buffer_seconds` settle.
 
 The `pr wait-for-comments` return carries a `rate_limited` discriminator: `rate_limited: true` signals the wait ended because the review bot's rate window was exhausted (a rate-limit status-notice was posted) rather than because a genuine review landed or the buffer timed out cleanly. The "Rate-window await" subsection below acts on this discriminator when the opt-in is enabled; when the opt-in is off, `rate_limited: true` is treated as an ordinary settle by the table above.
 
@@ -442,7 +479,31 @@ Before returning control to the finalize pipeline, record that this step ran on 
 
 Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the review outcome. The payload differs by branch:
 
-**Branch A — terminal clean pass** (no loop-back needed): `{N}` is the total count of `pr-comment` findings resolved in the final pass (sum of fixed + suppressed + accepted + taken_into_account from this iteration's `manage-findings resolve` calls). Resolve the HEAD SHA before marking done:
+### Step-done completeness guard (D3)
+
+Branch A (the terminal clean pass) is gated by a deterministic completeness predicate: this step MUST NOT be marked `done` while an enabled bot's review is still pending or was never fetched. Before the Branch A `mark-step-done`, consult the `review_completeness` helper. Read `enabled_bots` off the same execution-manifest step-params snapshot used above (`manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review`; default `coderabbit,sourcery,gemini`) and forward it as `--enabled-bots`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness check \
+  --plan-id {plan_id} --enabled-bots {enabled_bots}
+```
+
+Read `complete`, `pending_bots`, and `unfetched_bots` from the returned TOON. The predicate is fail-closed — a plan whose store is empty reports every enabled bot as unfetched and `complete: false`.
+
+- **`complete: true`** — every enabled bot produced a fetched finding and none remains `pending`. Proceed to Branch A and mark the step `done`.
+- **`complete: false`** — at least one enabled bot is still `pending` (fetched, un-triaged) or `unfetched` (produced no finding — its review posted after the wait step moved on, or never surfaced). The step is **NOT markable done** on this pass. Take exactly one of two paths:
+  1. **Loop back into triage** (default): treat the incompleteness as unfinished review work — re-enter the FIND → triage pipeline (or await the unfetched bot) and record Branch C (`--outcome loop_back`) for this iteration instead of Branch A. The terminal Branch A mark waits for a later pass that returns `complete: true`.
+  2. **Force-done with an explicit recorded reason** (escape hatch): mark the step `done` ONLY after writing a `decision`-log entry at WARNING naming the blocking bot(s) and the reason. There is no silent force-done — the WARNING decision-log entry is mandatory and must precede the Branch A `mark-step-done`:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level WARNING \
+    --message "(plan-marshall:automatic-review) force-done with incomplete review: pending_bots={pending_bots} unfetched_bots={unfetched_bots} — reason: {reason}"
+  ```
+
+The `re_review_on_loopback` default (`false`) is unchanged by this guard. Leaving loop-back re-review off stays safe precisely because the D1 pre-merge comment barrier re-fetches immediately before merge/enqueue and blocks on any unhandled comment — this step-done completeness guard and the D1 barrier are the two nets that make a default-off `re_review_on_loopback` safe.
+
+**Branch A — terminal clean pass** (no loop-back needed; entered only after the completeness guard above returns `complete: true`, or a force-done WARNING was recorded): `{N}` is the total count of `pr-comment` findings resolved in the final pass (sum of fixed + suppressed + accepted + taken_into_account from this iteration's `manage-findings resolve` calls). Resolve the HEAD SHA before marking done:
 
 ```bash
 git -C {worktree_path} rev-parse HEAD
@@ -559,3 +620,14 @@ Field contract:
 **No-mark invariant (symmetric with the dispatcher's item-5d carve-out)** — before returning `escalate_ask`, the leaf MUST NOT call `mark-step-done`. The continuation — firing the `AskUserQuestion` for the `ask` policy, or skipping the merge for the `defer` policy — is owned exclusively by the dispatcher's item 7a, not by the leaf. Recording a terminal outcome here would pre-empt that continuation. This no-mark contract is the symmetric counterpart of the dispatcher-side completion-guard carve-out: the leaf does not record terminality, and the post-dispatch completion guard does not assert it for an `escalate_ask` return (see [`../phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) item 5d, the `escalate_ask`-returning steps skip class). Without both halves, the guard would halt the pipeline with `step_record_missing` before item 7a could run.
 
 The orchestrator-side handling of this return (reading `re_review_on_timeout`, branching on `action`, firing `AskUserQuestion`, and the "wait again" fresh re-dispatch) lives in [`../phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) Step 3 — this document owns the return shape; the dispatcher owns the consumption.
+
+## Canonical invocations
+
+The canonical argparse surface for the invocable script this skill registers: `review_completeness.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+
+### review_completeness — check
+
+```bash
+python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness check \
+  --plan-id PLAN_ID --enabled-bots ENABLED_BOTS
+```

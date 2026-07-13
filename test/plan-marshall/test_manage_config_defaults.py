@@ -272,6 +272,73 @@ class TestWorkingPrefixesDefault:
         )
 
 
+class TestReviewCompletionAndBarrierKnobDefaults:
+    """The two review-completeness-barrier knobs (D4) seed automatically from
+    their owning step's ``configurable:`` frontmatter, so a fresh
+    ``get_default_config()`` MUST expose both nested under their owning step in
+    the ``plan.phase-6-finalize.steps`` keyed map — no hand-added seed in
+    ``_config_defaults.py``. ``review_completion_poll_timeout_seconds`` (600)
+    bounds the completion-aware poll under ``plan-marshall:automatic-review``;
+    ``pre_merge_comment_barrier`` (``fail_into_loopback``) governs the fail-closed
+    pre-merge barrier under ``default:branch-cleanup``."""
+
+    def test_review_completion_poll_timeout_seeds_under_automatic_review(self) -> None:
+        """``review_completion_poll_timeout_seconds == 600`` nests under
+        ``plan-marshall:automatic-review`` in a fresh config."""
+        cfg = _config_defaults.get_default_config()
+        automatic_review = _params_for(
+            cfg['plan']['phase-6-finalize']['steps'], 'plan-marshall:automatic-review'
+        )
+        assert automatic_review['review_completion_poll_timeout_seconds'] == 600, (
+            'get_default_config() steps[plan-marshall:automatic-review]'
+            '["review_completion_poll_timeout_seconds"] must default to 600'
+        )
+
+    def test_pre_merge_comment_barrier_seeds_under_branch_cleanup(self) -> None:
+        """``pre_merge_comment_barrier == 'fail_into_loopback'`` nests under
+        ``default:branch-cleanup`` in a fresh config."""
+        cfg = _config_defaults.get_default_config()
+        branch_cleanup = _params_for(
+            cfg['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
+        )
+        assert branch_cleanup['pre_merge_comment_barrier'] == 'fail_into_loopback', (
+            'get_default_config() steps[default:branch-cleanup]'
+            '["pre_merge_comment_barrier"] must default to fail_into_loopback'
+        )
+
+    def test_both_knobs_match_their_parser_resolved_defaults(self) -> None:
+        """Each seeded knob agrees with its ``configurable:``-declared default via
+        ``resolve_step_defaults`` — the seed and the parser derive from the same
+        frontmatter declaration and must never drift."""
+        from configurable_contract import resolve_step_defaults
+
+        cfg = _config_defaults.get_default_config()
+        steps = cfg['plan']['phase-6-finalize']['steps']
+
+        assert (
+            _params_for(steps, 'plan-marshall:automatic-review')[
+                'review_completion_poll_timeout_seconds'
+            ]
+            == resolve_step_defaults('plan-marshall:automatic-review')[
+                'review_completion_poll_timeout_seconds'
+            ]
+        )
+        assert (
+            _params_for(steps, 'default:branch-cleanup')['pre_merge_comment_barrier']
+            == resolve_step_defaults('default:branch-cleanup')[
+                'pre_merge_comment_barrier'
+            ]
+        )
+
+    def test_knobs_are_not_flat_phase_level_siblings(self) -> None:
+        """Neither knob survives as a flat sibling of ``steps`` — both are
+        strictly step-owned nested params."""
+        cfg = _config_defaults.get_default_config()
+        finalize = cfg['plan']['phase-6-finalize']
+        assert 'review_completion_poll_timeout_seconds' not in finalize
+        assert 'pre_merge_comment_barrier' not in finalize
+
+
 class TestCiVerifyRegistration:
     """``default:ci-verify`` MUST be registered in the canonical built-in
     finalize-step set so that ``marshall-steward`` seeds it into new

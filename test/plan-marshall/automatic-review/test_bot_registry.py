@@ -63,6 +63,13 @@ def test_trigger_comment_per_bot():
     assert bot_registry.trigger_comment('sourcery') == '@sourcery-ai review'
 
 
+def test_completion_check_name_per_bot():
+    """CodeRabbit publishes an in-progress completion check-run; Sourcery and Gemini do not."""
+    assert bot_registry.completion_check_name('coderabbit') == 'CodeRabbit'
+    assert bot_registry.completion_check_name('sourcery') == ''
+    assert bot_registry.completion_check_name('gemini') == ''
+
+
 def test_honors_skip_label_per_bot():
     """CodeRabbit honors the central skip label; Sourcery and Gemini do not."""
     assert bot_registry.honors_skip_label('coderabbit') is True
@@ -108,6 +115,7 @@ def test_module_functions_match_registry_singleton():
     assert bot_registry.login_to_bot_kind() == bot_registry.REGISTRY.login_to_bot_kind()
     for bot_kind in bot_registry.bot_kinds():
         assert bot_registry.trigger_comment(bot_kind) == bot_registry.REGISTRY.trigger_comment(bot_kind)
+        assert bot_registry.completion_check_name(bot_kind) == bot_registry.REGISTRY.completion_check_name(bot_kind)
         assert bot_registry.ignore_patterns(bot_kind) == bot_registry.REGISTRY.ignore_patterns(bot_kind)
 
 
@@ -253,6 +261,7 @@ def test_missing_standards_dir_yields_empty_registry(tmp_path):
 def test_unknown_bot_kind_returns_empty_defaults():
     """Accessors return empty defaults (not raise) for an unregistered bot_kind."""
     assert bot_registry.trigger_comment('nope') == ''
+    assert bot_registry.completion_check_name('nope') == ''
     assert bot_registry.honors_skip_label('nope') is False
     assert bot_registry.ignore_patterns('nope') == []
     assert bot_registry.severity_map('nope') == {}

@@ -1411,11 +1411,13 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
     # no sonar_-prefixed key survives inside the scoped object
     assert not any(k.startswith('sonar_') for k in sonar)
 
-    # enabled-bots list + review buffer + re-review gates + re-review timeout +
-    # rate-window await knobs nest under plan-marshall:automatic-review
+    # enabled-bots list + review buffer + completion-poll bound + re-review gates
+    # + re-review timeout + rate-window await knobs nest under
+    # plan-marshall:automatic-review
     assert _params_for(steps, 'plan-marshall:automatic-review') == {
         'enabled_bots': 'coderabbit,sourcery,gemini',
         'review_bot_buffer_seconds': 180,
+        'review_completion_poll_timeout_seconds': 600,
         're_review_on_loopback': False,
         're_review_on_branch_cleanup': True,
         're_review_await_timeout_seconds': 600,
@@ -1434,6 +1436,7 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
         'merge_hold_budget_seconds': 3600,
         'use_merge_queue': False,
         'admin_merge_on_stuck_state': False,
+        'pre_merge_comment_barrier': 'fail_into_loopback',
     }
 
     # a step that owns no params maps to an empty {} param object.
