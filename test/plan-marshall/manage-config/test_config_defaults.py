@@ -2962,3 +2962,223 @@ def test_project_pr_decision_rejects_corrupt_pr_compact_max_changed_files(plan_c
 
     assert result['status'] == 'error'
     assert result.get('error_type') == 'invalid_value'
+
+
+# =============================================================================
+# D7 — sync-defaults run_at_all → lane migration
+#
+# `_migrate_run_at_all_to_lane` moves the four finalize ceremony gates off their
+# retired run_at_all locations onto the owning step's per-element `lane` override
+# (`never→off` / `always→minimal` / `auto→` omit), removing the legacy key so the
+# deep-merge back-fills the newly-materialized lane steps. The three planning
+# gates (deep_lane / escalation / revalidation) — which live under
+# phase-1-init / phase-2-refine, not phase-6-finalize — are untouched. The
+# migration is idempotent.
+# =============================================================================
+
+
+_cmd_sync_defaults_mod = _load_module(
+    '_cmd_sync_defaults_for_lane_migration_test', '_cmd_sync_defaults.py'
+)
+_migrate_run_at_all_to_lane = _cmd_sync_defaults_mod._migrate_run_at_all_to_lane
+
+
+def test_migrate_qgate_never_materializes_lane_off():
+    """qgate: never → materialize default:pre-push-quality-gate with lane: off."""
+    live = {'plan': {'phase-6-finalize': {'qgate': 'never', 'steps': {}}}}
+    migrated: list = []
+    _migrate_run_at_all_to_lane(live, migrated)
+
+    p6 = live['plan']['phase-6-finalize']
+    assert 'qgate' not in p6
+    assert p6['steps']['default:pre-push-quality-gate']['lane'] == 'off'
+    assert migrated  # a change was recorded
+
+
+def test_migrate_qgate_always_materializes_lane_minimal():
+    """qgate: always → lane: minimal on the materialized owning step."""
+    live = {'plan': {'phase-6-finalize': {'qgate': 'always', 'steps': {}}}}
+    migrated: list = []
+    _migrate_run_at_all_to_lane(live, migrated)
+
+    p6 = live['plan']['phase-6-finalize']
+    assert 'qgate' not in p6
+    assert p6['steps']['default:pre-push-quality-gate']['lane'] == 'minimal'
+
+
+def test_migrate_qgate_auto_omits_lane_but_removes_legacy_key():
+    """qgate: auto → the legacy key is removed but NO lane override is written."""
+    live = {'plan': {'phase-6-finalize': {'qgate': 'auto', 'steps': {}}}}
+    migrated: list = []
+    _migrate_run_at_all_to_lane(live, migrated)
+
+    p6 = live['plan']['phase-6-finalize']
+    assert 'qgate' not in p6
+    # auto is the lane default — the owning step is NOT materialized with a lane.
+    assert 'default:pre-push-quality-gate' not in p6['steps']
+    # The removal is still reported so sync-defaults persists the change.
+    assert migrated
+
+
+def test_migrate_step_owned_simplify_always_to_lane_minimal():
+    """simplify: always (step-owned param) → lane: minimal, legacy param removed."""
+    live = {
+        'plan': {
+            'phase-6-finalize': {
+                'steps': {'default:finalize-step-simplify': {'simplify': 'always'}}
+            }
+        }
+    }
+    migrated: list = []
+    _migrate_run_at_all_to_lane(live, migrated)
+
+    params = live['plan']['phase-6-finalize']['steps']['default:finalize-step-simplify']
+    assert params['lane'] == 'minimal'
+    assert 'simplify' not in params
+
+
+def test_migrate_all_four_gates_preserve_values():
+    """All four ceremony gates migrate together with values preserved."""
+    live = {
+        'plan': {
+            'phase-6-finalize': {
+                'qgate': 'never',
+                'steps': {
+                    'default:pre-submission-self-review': {
+                        'self_review': 'always',
+                        'drop_review_on_scope_gate': False,
+                    },
+                    'default:finalize-step-simplify': {'simplify': 'auto'},
+                    'default:finalize-step-security-audit': {'security_audit': 'never'},
+                },
+            }
+        }
+    }
+    migrated: list = []
+    _migrate_run_at_all_to_lane(live, migrated)
+
+    steps = live['plan']['phase-6-finalize']['steps']
+    # qgate never → materialized lane off.
+    assert steps['default:pre-push-quality-gate']['lane'] == 'off'
+    # self_review always → minimal, sibling escape hatch preserved, legacy removed.
+    self_review = steps['default:pre-submission-self-review']
+    assert self_review['lane'] == 'minimal'
+    assert self_review['drop_review_on_scope_gate'] is False
+    assert 'self_review' not in self_review
+    # simplify auto → legacy removed, no lane written.
+    simplify = steps['default:finalize-step-simplify']
+    assert 'lane' not in simplify
+    assert 'simplify' not in simplify
+    # security_audit never → off, legacy removed.
+    security = steps['default:finalize-step-security-audit']
+    assert security['lane'] == 'off'
+    assert 'security_audit' not in security
+
+
+def test_migrate_bare_owner_key_form_handled():
+    """A legacy config storing the owning step under the bare (unprefixed) form migrates."""
+    live = {
+        'plan': {
+            'phase-6-finalize': {
+                'steps': {'finalize-step-security-audit': {'security_audit': 'never'}}
+            }
+        }
+    }
+    migrated: list = []
+    _migrate_run_at_all_to_lane(live, migrated)
+
+    params = live['plan']['phase-6-finalize']['steps']['finalize-step-security-audit']
+    assert params['lane'] == 'off'
+    assert 'security_audit' not in params
+
+
+def test_migration_is_idempotent():
+    """A second run reports no migration and leaves the lane values unchanged."""
+    live = {
+        'plan': {
+            'phase-6-finalize': {
+                'qgate': 'never',
+                'steps': {'default:finalize-step-simplify': {'simplify': 'always'}},
+            }
+        }
+    }
+    migrated_first: list = []
+    _migrate_run_at_all_to_lane(live, migrated_first)
+    assert migrated_first
+
+    migrated_second: list = []
+    _migrate_run_at_all_to_lane(live, migrated_second)
+    assert migrated_second == []
+
+    steps = live['plan']['phase-6-finalize']['steps']
+    assert steps['default:pre-push-quality-gate']['lane'] == 'off'
+    assert steps['default:finalize-step-simplify']['lane'] == 'minimal'
+
+
+def test_planning_gates_untouched_by_run_at_all_migration():
+    """deep_lane / escalation / revalidation (under init/refine) are never touched."""
+    live = {
+        'plan': {
+            'phase-1-init': {'deep_lane': 'auto', 'escalation': 'always'},
+            'phase-2-refine': {'revalidation': 'never'},
+            'phase-6-finalize': {'qgate': 'auto', 'steps': {}},
+        }
+    }
+    migrated: list = []
+    _migrate_run_at_all_to_lane(live, migrated)
+
+    assert live['plan']['phase-1-init'] == {'deep_lane': 'auto', 'escalation': 'always'}
+    assert live['plan']['phase-2-refine'] == {'revalidation': 'never'}
+
+
+def test_migration_no_op_on_config_without_phase_6():
+    """A config without plan.phase-6-finalize (or without plan) does not crash."""
+    for live in ({'plan': {}}, {}, {'plan': {'phase-6-finalize': {}}}):
+        migrated: list = []
+        # No exception; nothing to migrate.
+        _migrate_run_at_all_to_lane(live, migrated)
+        assert migrated == []
+
+
+def test_cmd_sync_defaults_migrates_legacy_run_at_all(plan_context):
+    """End-to-end: a legacy marshal.json migrates its ceremony run_at_all to lane.
+
+    Seed a fresh marshal.json, hand-inject a legacy run_at_all shape (flat qgate +
+    a step-owned simplify param), then run sync-defaults. The migration converts
+    both to the lane channel, removes the legacy keys, and the deep-merge
+    back-fills the materialized finalize steps.
+    """
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    p6 = config['plan']['phase-6-finalize']
+    p6['qgate'] = 'never'
+    p6.setdefault('steps', {}).setdefault('default:finalize-step-simplify', {})['simplify'] = 'always'
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+    result = _cmd_sync_defaults_mod.cmd_sync_defaults(Namespace())
+    assert result['status'] == 'success'
+    assert result['migrated_count'] >= 2
+
+    after = json.loads(marshal_path.read_text(encoding='utf-8'))
+    p6_after = after['plan']['phase-6-finalize']
+    assert 'qgate' not in p6_after
+    steps_after = p6_after['steps']
+    assert steps_after['default:pre-push-quality-gate']['lane'] == 'off'
+    assert steps_after['default:finalize-step-simplify']['lane'] == 'minimal'
+    assert 'simplify' not in steps_after['default:finalize-step-simplify']
+
+
+def test_cmd_sync_defaults_migration_idempotent_end_to_end(plan_context):
+    """A second sync-defaults run reports zero migrations (idempotent end-to-end)."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    config['plan']['phase-6-finalize']['qgate'] = 'always'
+    marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
+
+    first = _cmd_sync_defaults_mod.cmd_sync_defaults(Namespace())
+    assert first['migrated_count'] >= 1
+
+    second = _cmd_sync_defaults_mod.cmd_sync_defaults(Namespace())
+    assert second['migrated_count'] == 0
