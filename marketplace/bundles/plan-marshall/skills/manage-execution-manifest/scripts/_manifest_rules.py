@@ -684,7 +684,16 @@ def _apply_unresolved_ask_provider_drop(
         drop = False
         for element_key, match_set in _ASK_PROVIDER_INFRA_ELEMENTS.items():
             if step in match_set:
-                override = _lane_override_for(step, marshal_phase_6_map)
+                # ``_lane_override_for`` normalizes the marshal map KEY (so a
+                # promoted ``plan-marshall:automatic-review`` key strips to bare
+                # ``automatic-review``) but compares it against the step_id
+                # verbatim. This pre-filter runs at the candidate-narrowing
+                # stage, where a promoted infra candidate is still carried in its
+                # prefixed ``plan-marshall:automatic-review`` form, so the step
+                # must be boundary-normalized to the same bare shape before the
+                # lookup — otherwise the prefixed key strips to bare and never
+                # matches the prefixed step_id (the drop silently never fires).
+                override = _lane_override_for(_strip_default_prefix(step), marshal_phase_6_map)
                 effective, _is_off = _effective_lane_tier({}, override)
                 if effective == 'ask' and provider_for[element_key] is None:
                     drop = True

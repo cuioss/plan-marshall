@@ -4409,7 +4409,12 @@ class TestUnresolvedAskProviderDropCompose:
         _seed_marshal_with_finalize_steps(steps_map, ci_provider=None)
         result = cmd_compose(_compose_ns(plan_id='d6-ar-drop', phase_6_steps=None))
         assert result is not None and result['status'] == 'success'
-        assert 'plan-marshall:automatic-review' in result['unresolved_ask_provider_dropped']
+        # The compose pipeline boundary-normalizes every candidate to its bare
+        # form before the pre-filters run (``_strip_default_prefix``), so the
+        # promoted ``plan-marshall:automatic-review`` candidate is carried — and
+        # dropped/reported — as bare ``automatic-review`` (the same bare form the
+        # manifest stores, per the keep-case assertion below).
+        assert 'automatic-review' in result['unresolved_ask_provider_dropped']
         manifest = read_manifest('d6-ar-drop')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
