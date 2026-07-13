@@ -77,5 +77,7 @@
     }
   },
   "skills_by_profile_reasoning": "plan-marshall-plugin-dev: marshall-plugin build_system; bundle authors marketplace skills + scripts (optionals apply for script-heavy work); Batch: marshall-plugin build_system detected; all marketplace bundles host skills/scripts authored under plugin-architecture standards",
-  "tips": []
+  "tips": [
+    "generate_executor.discover_scripts propagates the marketplace root to its scan-marketplace-inventory subprocess ONLY via the PM_MARKETPLACE_ROOT env-var anchor, never the --marketplace-root flag. Consumer-chain tests must anchor via that env var with use_flag false, or version-aware discovery silently degrades to the version-unaware glob fallback."
+  ]
 }
