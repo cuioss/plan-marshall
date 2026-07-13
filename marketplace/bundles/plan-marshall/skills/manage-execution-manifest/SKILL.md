@@ -145,7 +145,7 @@ ceremony_finalize_forced_out[0]:
 
 #### Compose-time step-resolution gate
 
-As its final gate — after the frontmatter-order sort and the `automated-review` placement validator, over the FINAL emitted `phase_5.verification_steps` and `phase_6.steps` — `compose` resolves every emitted step id and **fails loud** on the first one that does not resolve. This closes the gap left by `validate-loadable`, which only checks built-in standards-file presence and short-circuits every external (`project:` / `bundle:skill`) step to `loadable: true`: a never-existed `bundle:skill` key, a renamed/removed `project:` skill, or a built-in doc deleted without sweeping `marshal.json` would otherwise compose silently and fail only much later at dispatch time.
+As its final gate — after the frontmatter-order sort and the `automatic-review` placement validator, over the FINAL emitted `phase_5.verification_steps` and `phase_6.steps` — `compose` resolves every emitted step id and **fails loud** on the first one that does not resolve. This closes the gap left by `validate-loadable`, which only checks built-in standards-file presence and short-circuits every external (`project:` / `bundle:skill`) step to `loadable: true`: a never-existed `bundle:skill` key, a renamed/removed `project:` skill, or a built-in doc deleted without sweeping `marshal.json` would otherwise compose silently and fail only much later at dispatch time.
 
 Resolution is keyed on the step-id shape and the phase:
 
