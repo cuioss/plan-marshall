@@ -20,11 +20,15 @@ from constants import (
 # bundle: Reference to bundle providing this domain (e.g., 'pm-dev-java')
 # workflow_skill_extensions: Domain extensions (outline, triage)
 # defaults/optionals: System domain top-level skills
+# always_on/file_globs: per-domain inclusion keys (bool / list[str]) — reserved so
+#   profile iteration never treats them as profile names.
 RESERVED_DOMAIN_KEYS = [
     'bundle',
     'workflow_skill_extensions',
     'defaults',
     'optionals',
+    'always_on',
+    'file_globs',
 ]
 
 # Default system domain configuration
@@ -48,6 +52,31 @@ def validate_domain_invariants(domain: dict) -> None:
     overlap = defaults & optionals
     if overlap:
         raise ValueError(f'Skills must not appear in both defaults and optionals: {sorted(overlap)}')
+
+
+def validate_domain_inclusion(always_on: object, file_globs: object) -> None:
+    """Validate the per-domain inclusion keys ``always_on`` / ``file_globs``.
+
+    ``always_on`` (when provided) MUST be a ``bool``. Unlike the numeric
+    validators (which reject ``bool`` because it is an ``int`` subclass), here a
+    ``bool`` is exactly what is required — any non-bool (including an ``int``) is
+    rejected. ``file_globs`` (when provided) MUST be a ``list`` whose members are
+    all ``str``. A ``None`` value for either key means it is not being set on this
+    call and is skipped (the ``set-inclusion`` verb sets each key independently).
+
+    Args:
+        always_on: The candidate ``always_on`` value, or ``None`` to skip.
+        file_globs: The candidate ``file_globs`` value, or ``None`` to skip.
+
+    Raises:
+        ValueError: If ``always_on`` is provided and is not a bool, or
+            ``file_globs`` is provided and is not a list of str.
+    """
+    if always_on is not None and not isinstance(always_on, bool):
+        raise ValueError(f'Invalid always_on {always_on!r}: expected a bool.')
+    if file_globs is not None:
+        if not isinstance(file_globs, list) or not all(isinstance(g, str) for g in file_globs):
+            raise ValueError(f'Invalid file_globs {file_globs!r}: expected a list of str.')
 
 
 # System retention defaults

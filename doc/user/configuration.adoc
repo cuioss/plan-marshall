@@ -445,7 +445,34 @@ Tune via `/marshall-steward` → Configuration → Build Systems. Canonical cont
 
 `marshal.json` carries a `skill_domains` block that maps each project module to the bundles whose skills apply to it. Domains are detected automatically by the wizard from each bundle's `plan-marshall-plugin` manifest, then assigned per module either by detection (e.g. Java files → `pm-dev-java`) or by user confirmation.
 
-Canonical contracts: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/skill-domains.md[`skill-domains.md`] and link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/skill-domains-operations.md[`skill-domains-operations.md`].
+A plan's applicable domains land in `references.domains` as a **multi-valued set**, not a single winner. The deterministic domain detector composes that set as the unconditional union of three legs: the narrative / operator-selected detector leg, an `always_on` leg, and a `file_globs` leg. On a genuinely ambiguous multi-match the detector surfaces its candidates for a multiSelect prompt, so a plan that spans several domains keeps all of them; refine may *widen* the set (re-evaluating `file_globs` against the real affected files) but never narrows it.
+
+==== Per-domain inclusion keys (`always_on` / `file_globs`)
+
+Two additive, operator-set keys pull a domain into every relevant plan's domain set deterministically — without relying on the narrative detector matching it:
+
+[cols="1,1,3", options="header"]
+|===
+| Key | Type | What it controls
+
+| `skill_domains.{domain}.always_on` | bool (default absent ⇒ `false`) | When `true`, the domain is unconditionally unioned into every plan's `domains` set — no narrative or file signal required. Useful for a meta-project's own domain (e.g. `plan-marshall-plugin-dev`), which is relevant to every plan.
+| `skill_domains.{domain}.file_globs` | list[str] (default absent) | Path globs (`**/*.py`, `src/*.js`, …). A plan whose affected files match any glob unions this domain in — evaluated against the request narrative's path tokens at init, and the real `affected_files` at refine.
+|===
+
+Both keys are absent by default (no seed, so `sync-defaults` neither adds nor wipes them) and are preserved across a `skill-domains configure` reconfigure. Set them with the `skill-domains set-inclusion` verb (each key is written independently; an omitted flag leaves the persisted value untouched):
+
+[source,bash]
+----
+# Mark a domain always-on
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  skill-domains set-inclusion --domain plan-marshall-plugin-dev --always-on
+
+# Attach file globs to a domain
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  skill-domains set-inclusion --domain python --file-globs "**/*.py"
+----
+
+Canonical contracts: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/skill-domains.md[`skill-domains.md`] (§ Domain Inclusion, for the inclusion-key schema and union semantics) and link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/skill-domains-operations.md[`skill-domains-operations.md`].
 
 Tune via `/marshall-steward` → Configuration → Skill Domains.
 

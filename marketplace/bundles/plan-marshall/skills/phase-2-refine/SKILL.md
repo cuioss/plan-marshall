@@ -82,7 +82,7 @@ This phase dispatches under one role key: **`phase-2-refine`** (resolves through
 The confidence loop (Steps 3b/3c/8/9/10/11/12) re-evaluates classification, source-premise verification, and confidence aggregation across iterations — but the *inputs* feeding those re-evaluations are loop-invariant: they are written before the loop begins (phase-1-init, phase-2-refine entry) and are not mutated by the loop body. The dispatched agent MUST read each of the following inputs ONCE at phase entry and reference the cached values throughout every loop iteration:
 
 - `request.md` — both `clarified_request` and `original_input` sections (read via `manage-plan-documents request read --plan-id {plan_id}`).
-- `references.json` — `domains`, `base_branch`, `worktree_path`, `affected_files`, `change_type` (read via `manage-files read --plan-id {plan_id} --file references.json`).
+- `references.json` — `domains`, `base_branch`, `worktree_path`, `affected_files`, `change_type` (read via `manage-files read --plan-id {plan_id} --file references.json`). The cached `domains` value is the **widen-only base** for Step 9's file_globs re-merge: Step 9 may UNION newly-matched domains into `references.domains` (never narrow it), so treat the entry-cached `domains` as the lower bound rather than an immutable value — the one sanctioned in-loop write to a loop-invariant input, and monotonic.
 - `module_mapping.toon` if present at `.plan/local/plans/{plan_id}/module_mapping.toon` (read via `manage-files read`).
 - The architecture topology (read via `manage-architecture overview` at phase entry).
 
@@ -193,6 +193,24 @@ Three sub-analyses using `arch_context`:
 
 > **Coverage contract**: `scope_estimate` is the *scope* dial of the two-dial coverage contract; its orthogonal partner is *thoroughness* (how completely in-radius items are covered and how deeply their relations are traced). Refine defaults to roughly T2 / change-set unless the request signals otherwise. See the scope × thoroughness ladders, the grade-to-the-floor rule, and the coupling constraint in [`persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md).
 
+**Domain Re-merge (file_globs against real `affected_files`)**: Once the module mapping has produced the concrete affected-files set, re-evaluate the `file_globs` (and `always_on`) domain-inclusion legs against the real paths — a stronger file signal than the narrative path tokens available at init. `domain-detect` is a **read verb** — it reads config + request and writes nothing, so this stays inside the refine read-only contract and is NOT a mutating `manage-config` verb. Re-invoke it with the real affected files:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  domain-detect --plan-id {plan_id} --affected-files {comma_separated_affected_files}
+```
+
+Read the current `references.domains` (the loop-invariant value cached at phase entry), union the returned `domains` / `glob_matched` / `always_on` sets into it, and re-persist the widened union — refine may **WIDEN** `domains`, never narrow it — via the plan-scoped `set-list` write (an allowed refine write path, not a config mutation):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set-list \
+  --plan-id {plan_id} \
+  --field domains \
+  --values {union_csv}
+```
+
+Emit one decision-log entry naming any newly-merged domains. The union is monotonic (widen-only), so re-running the re-merge on a later confidence-loop iteration is idempotent once the affected-files set has stabilised.
+
 ### Step 10: Evaluate Confidence
 
 Aggregate the per-dimension scores from the Analyze Request Quality and Analyze Request in Architecture Context steps into a single weighted confidence via the deterministic aggregator:
@@ -255,10 +273,12 @@ compatibility: {compatibility}
 compatibility_description: {compatibility_description}
 simplicity: {simplicity}
 simplicity_description: {simplicity_description}
-domains: [{detected domains}]
+domains: [{widen-only multi-valued domain union}]
 qgate_pending_count: {0 if no findings}
 qgate_validation_required: {true|false}
 ```
+
+`domains` is the multi-valued union carried in `references.domains` — the detector, `always_on`, and `file_globs` legs plus any operator selections from init. Refine may **widen** it (Step 9's file_globs re-merge against the real `affected_files` unions newly-matched domains in) but never narrows it, so the returned set is a superset of the init-persisted domains.
 
 `qgate_validation_required` is `true` when the lesson-derived plan path activated at Step 13.5 (`plan_source` set and not `recipe`), `false` otherwise. See the q-gate-validation activation entry of the Persist and Return Results step for the orchestrator dispatch contract.
 

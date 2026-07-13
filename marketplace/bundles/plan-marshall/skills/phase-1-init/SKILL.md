@@ -32,7 +32,7 @@ Skill: plan-marshall:persona-plan-marshall-agent
 - Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
 - Never skip the phase transition — use `manage-status transition`
 - Never improvise script subcommands — use only those documented below
-- **Never write or edit source files outside `.plan/local/plans/{plan_id}/**`.** Phase-1-init's contract is plan-structure creation only (request.md, references.json, status.json under the plan directory). Even when the task description is detailed — naming specific files, functions, or paths — that is request material to record verbatim in `request.md`, NOT a directive to implement: the more prescriptive and implementation-ready the `content`, the stronger (and more wrong) the pull to "just do it." Source edits against `marketplace/bundles/**`, production code, or test fixtures are the responsibility of phase-5-execute task bodies, never phase-1-init. The recurring anti-pattern is phase-1-init reaching for `Edit` / `Write` against a production path because the request narrative read like an implementation brief. **Return-contract obligation**: Step 12 is the single canonical schema for this phase's output (`plan_id`, `domain`, `next_phase`, `use_worktree`, `planning_lane`, `source`, `artifacts`) — see that step for the authoritative shape. A return that omits `plan_id`, or carries a `pr_url`, a `branch`, or a "patched N files" detail, is a contract violation — the orchestrator's post-init assertion (`plan-marshall:plan-marshall/workflow/planning.md` § Action: init → **Post-init contract assertion**) treats any such signal as an error and refuses to advance to phase-2-refine.
+- **Never write or edit source files outside `.plan/local/plans/{plan_id}/**`.** Phase-1-init's contract is plan-structure creation only (request.md, references.json, status.json under the plan directory). Even when the task description is detailed — naming specific files, functions, or paths — that is request material to record verbatim in `request.md`, NOT a directive to implement: the more prescriptive and implementation-ready the `content`, the stronger (and more wrong) the pull to "just do it." Source edits against `marketplace/bundles/**`, production code, or test fixtures are the responsibility of phase-5-execute task bodies, never phase-1-init. The recurring anti-pattern is phase-1-init reaching for `Edit` / `Write` against a production path because the request narrative read like an implementation brief. **Return-contract obligation**: Step 12 is the single canonical schema for this phase's output (`plan_id`, `domains`, `next_phase`, `use_worktree`, `planning_lane`, `source`, `artifacts`) — see that step for the authoritative shape. A return that omits `plan_id`, or carries a `pr_url`, a `branch`, or a "patched N files" detail, is a contract violation — the orchestrator's post-init assertion (`plan-marshall:plan-marshall/workflow/planning.md` § Action: init → **Post-init contract assertion**) treats any such signal as an error and refuses to advance to phase-2-refine.
 
 **Constraints:**
 - Strictly comply with all rules from persona-plan-marshall-agent, especially tool usage and workflow step discipline
@@ -730,38 +730,36 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Note — no drift-sync at init time**: Materialization is deferred, so no branch checkout, fetch, or rebase happens here. Baseline reconciliation against `origin/{base_branch}` happens at refine time (phase-2-refine Step 3d); phase-5-execute Step 3 is a fast-path "still clean?" check that performs no merge or rebase.
 
-### Step 7: Detect Domain
+### Step 7: Detect Domain(s)
 
-Run the deterministic detector; on the ambiguous branch fire a native `AskUserQuestion` inline. There is no LLM dispatch on this code path — multi-match cases are genuinely human-input territory, resolved in-context.
+Run the deterministic detector; it returns the matched-domain SET `domains` — the unconditional union of the narrative/override/single-domain detector leg, the `always_on` leg, and the `file_globs` leg. On the ambiguous branch fire a native **multiSelect** `AskUserQuestion` inline. There is no LLM dispatch on this code path — multi-match cases are genuinely human-input territory, resolved in-context.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   domain-detect --plan-id {plan_id} [--domain-override {domain}]
 ```
 
-The script reads `request.md` (clarified_request → original_input fallback; lesson-{id}.md takes precedence when present), scans every configured non-system domain in `marshal.json` plus its bundle / skill aliases, and returns one of:
+The script reads `request.md` (clarified_request → original_input fallback; lesson-{id}.md takes precedence when present), scans every configured non-system domain in `marshal.json` plus its bundle / skill aliases, computes the three merge legs, and returns `domains` (the SET), `candidates` (the detector's narrative matches, offered as the multiSelect options), `always_on`, `glob_matched`, `ambiguous`, `source`, and `reason`. Two branches:
 
-- **Single-domain auto-select** (`source=single_domain_configured`): only one non-system domain is configured → that domain wins regardless of narrative.
-- **Unambiguous narrative match** (`source` = lesson body or request section): exactly one domain's alias set intersects the narrative tokens.
-- **Explicit override** (`source=cli_override`): `--domain-override` resolved to a known domain.
-- **Ambiguous** (`ambiguous: true`): multi-match OR zero-match. Do NOT auto-select. Fire a native `AskUserQuestion` at this site, offering the `candidates` list (when present) as the options:
+- **Non-ambiguous** (`ambiguous: false`): the returned `domains` SET is authoritative — persist it directly via Step 9. This covers single-domain auto-select (`source=single_domain_configured`), unambiguous narrative match, explicit override (`source=cli_override`), and the zero-narrative-match case that the `always_on` / `file_globs` legs resolved silently (`reason=inclusion_only_resolve`).
+- **Ambiguous** (`ambiguous: true`): a detector multi-match, OR a zero-match with an empty always_on / glob union. Do NOT auto-select. Fire a native **multiSelect** `AskUserQuestion` at this site, offering the `candidates` list as the selectable options (allowing several selections). When the detector zero-matched, `candidates` carries the configured non-system domains:
 
   ```text
-  AskUserQuestion:
-    question: "The domain for this plan is ambiguous. Which domain applies?"
+  AskUserQuestion (multiSelect):
+    question: "The domain for this plan is ambiguous. Which domain(s) apply? (select all that apply)"
     options:
       - label: "{candidate_1}" description: "Detected candidate domain"
       - label: "{candidate_2}" description: "Detected candidate domain"
       # ... one option per candidate; when zero-match, offer the configured non-system domains
   ```
 
-  Persist the operator's chosen domain in-context via Step 9's `manage-references set-list --field domains` and carry it forward as `{domain}` for the rest of the phase. On this branch the resolved domain comes from the operator's answer, not the detector.
+  Union the operator's selections with the returned `always_on` and `glob_matched` sets, then persist ALL of them in-context via Step 9's `manage-references set-list --field domains --values {comma_separated}`. Carry the resulting union forward as `{domains}` for the rest of the phase. On this branch the resolved domains come from the operator's multiSelect selections plus the always_on / glob legs, never a single detector winner.
 
-**After resolving the domain** (any non-ambiguous branch), log the decision:
+**After resolving the domain(s)** (any branch), log the decision:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-1-init) Detected domain: {domain} - {reasoning}"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-1-init) Detected domains: {domains} - {reasoning}"
 ```
 
 ### Step 8: Resolve Session, Lane, Sibling & Posture
@@ -928,16 +926,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 9: Store Domains in References
 
-Store the detected domain(s) in references.json:
+Store the detected domain SET in references.json. `domains` is a multi-valued union — the detector, `always_on`, and `file_globs` legs (Step 7) all contribute to it, and `set-list` already accepts a comma-separated multi-value `--values`, so ALL resolved domains are persisted in one call (no script-contract change to the persistence call):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set-list \
   --plan-id {plan_id} \
   --field domains \
-  --values {domain}
+  --values {comma_separated_domains}
 ```
 
-**Ambiguous-domain case**: when Step 7 resolved `ambiguous: true`, the operator's chosen domain (from the inline `AskUserQuestion`) is the `{domain}` stored here — this write is the persistence point for that choice. Every non-ambiguous branch stores the detector-resolved domain here as normal.
+**Ambiguous-domain case**: when Step 7 resolved `ambiguous: true`, the value stored here is the union of the operator's multiSelect selections with the returned `always_on` and `glob_matched` sets — this write is the persistence point for that choice. Every non-ambiguous branch stores the returned `domains` SET here as normal.
 
 Project-level settings (compatibility, commit_and_push, branch_strategy, verification steps, finalize steps) are read directly from `marshal.json` by each phase skill at runtime.
 
@@ -947,7 +945,7 @@ Log the plan creation as an artifact:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-1-init) Created plan: {derived_title} (source: {source_type}, domain: {domain})"
+  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-1-init) Created plan: {derived_title} (source: {source_type}, domains: {domains})"
 ```
 
 ### Step 11: Transition Phase
@@ -964,7 +962,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-1-init) Init phase complete - plan created with {domain} domain"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-1-init) Init phase complete - plan created with {domains} domain(s)"
 ```
 
 **Add visual separator** after END log:
@@ -983,7 +981,7 @@ The values carried forward into the orchestrator context are:
 ```toon
 status: success
 plan_id: {plan_id}
-domain: {domain}
+domains: {domains}
 next_phase: 2-refine
 use_worktree: {true|false}
 planning_lane: {light|deep}
@@ -998,7 +996,7 @@ artifacts:
   references: references.json
 ```
 
-`domain` is the domain persisted at Step 9 (from the detector, or from the operator's inline `AskUserQuestion` answer on the ambiguous branch — never `unresolved`, since the prompt resolved it in-context). `planning_lane` is the value resolved by Step 8b's `manage-status planning-lane route`; the orchestrator dispatches the planning pipeline by this lane. The `recipe_key`, `request_aspect`, and `execution_profile` metadata resolved inline are already persisted to `status.metadata`, so no return block re-carries them.
+`domains` is the multi-valued domain SET persisted at Step 9 (the union of the detector, `always_on`, and `file_globs` legs — plus the operator's multiSelect selections on the ambiguous branch — never empty on a resolved plan, since the prompt resolves it in-context). `planning_lane` is the value resolved by Step 8b's `manage-status planning-lane route`; the orchestrator dispatches the planning pipeline by this lane. The `recipe_key`, `request_aspect`, and `execution_profile` metadata resolved inline are already persisted to `status.metadata`, so no return block re-carries them.
 
 **Current-checkout cwd directive.** Phases 2-4 run on the current working tree because worktree materialization is deferred to phase-5-execute Step 2.5. Carry the Step 6 point 4 directive forward so the orchestrating LLM decides, per call, whether a `.plan/execute-script.py` invocation is Bucket A (cwd-agnostic, no routing flags) or Bucket B (pass `--plan-id {plan_id}`, which auto-resolves the current working tree now and the materialized worktree once phase-5 creates it).
 
@@ -1006,9 +1004,9 @@ artifacts:
 
 ## Output
 
-Init runs inline, so it does not return a dispatched-agent envelope — Step 12 (above) is the single source of truth for the values it yields into the orchestrator context. The orchestrator's post-init contract assertion checks that init produced a `plan_id` + `domain` and no rogue source-mutation signal (`pr_url` / `branch` / files-patched); a short human-readable completion summary of the shape `"plan {plan_id} created, domain {domain}"` (e.g. `"plan 2026-05-11-15-007 created, domain plan-marshall"`) is the natural rendering for logs.
+Init runs inline, so it does not return a dispatched-agent envelope — Step 12 (above) is the single source of truth for the values it yields into the orchestrator context. The orchestrator's post-init contract assertion checks that init produced a `plan_id` + `domains` and no rogue source-mutation signal (`pr_url` / `branch` / files-patched); a short human-readable completion summary of the shape `"plan {plan_id} created, domains {domains}"` (e.g. `"plan 2026-05-11-15-007 created, domains plan-marshall-plugin-dev,python"`) is the natural rendering for logs.
 
-All values (`plan_id`, `domain`, `next_phase`, `use_worktree`, `planning_lane`, `source`, `artifacts`) are documented in Step 12 above. Any applicable operator prompts fire inline at their step sites and their resolutions are persisted in-context — there are no prompt-required return blocks.
+All values (`plan_id`, `domains`, `next_phase`, `use_worktree`, `planning_lane`, `source`, `artifacts`) are documented in Step 12 above. Any applicable operator prompts fire inline at their step sites and their resolutions are persisted in-context — there are no prompt-required return blocks.
 
 ---
 

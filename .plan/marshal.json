@@ -221,7 +221,10 @@
       "bundle": "pm-dev-python",
       "workflow_skill_extensions": {
         "triage": "pm-dev-python:ext-triage-python"
-      }
+      },
+      "file_globs": [
+        "**/*.py"
+      ]
     },
     "documentation": {
       "bundle": "pm-documents",
@@ -238,7 +241,8 @@
       "project_skills": [
         "project:recipe-plugin-compliance",
         "project:sync-plugin-cache"
-      ]
+      ],
+      "always_on": true
     },
     "active_profiles": [
       "implementation",

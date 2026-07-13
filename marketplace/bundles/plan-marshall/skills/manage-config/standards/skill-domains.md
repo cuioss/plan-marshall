@@ -332,6 +332,33 @@ These keys are reserved in domain configuration and cannot be used as profile na
 - `core` - Core skills for all profiles
 - `defaults` - Top-level defaults (flat structure compatibility)
 - `optionals` - Top-level optionals (flat structure compatibility)
+- `always_on` - Domain-inclusion flag (see Domain Inclusion below)
+- `file_globs` - Domain-inclusion globs (see Domain Inclusion below)
+
+## Domain Inclusion (always_on / file_globs)
+
+Two additive, per-domain inclusion keys let a domain be pulled into a plan's `references.domains` set deterministically — without relying on the narrative detector matching it:
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `always_on` | bool | `false` (absent) | When `true`, the domain is unconditionally unioned into every plan's `domains` set — no narrative or file signal required. |
+| `file_globs` | list[str] | absent | Path globs (`**/*.py`, `src/*.js`, …). A plan whose affected-files signal matches any glob unions this domain in. |
+
+Both keys are **absent by default** — no seed into `DEFAULT_SYSTEM_DOMAIN` / `get_default_config()`, so `sync-defaults`' non-destructive deep-merge neither adds nor wipes them, and existing domain configs need no migration. They are validated by `validate_domain_inclusion` (`always_on` must be a bool; `file_globs` must be a list of str) and preserved across a `skill-domains configure` reconfigure (mirroring `project_skills` / `active_profiles`).
+
+The domain detector (`manage-config domain-detect`) composes the plan's domain set as the unconditional union `{detector/prompt selections} ∪ always_on_set ∪ glob_matched_set`: the narrative/override/multiSelect detector leg, the `always_on` leg, and the `file_globs` leg (evaluated against the request narrative's path tokens at init, and the real `affected_files` at refine).
+
+Set the keys via the `skill-domains set-inclusion` verb (each key is written independently; an omitted flag leaves the persisted value untouched):
+
+```bash
+# Mark a domain always-on
+manage-config skill-domains set-inclusion --domain plan-marshall-plugin-dev --always-on
+
+# Attach file globs to a domain
+manage-config skill-domains set-inclusion --domain python --file-globs "**/*.py"
+```
+
+`skill-domains get --domain {domain}` surfaces both keys (`always_on` defaulting to `false`, `file_globs` to `[]`).
 
 ## Best Practices
 

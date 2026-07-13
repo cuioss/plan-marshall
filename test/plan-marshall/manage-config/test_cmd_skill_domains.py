@@ -16,6 +16,7 @@ from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json
 
 _SCRIPTS_DIR = (
@@ -38,9 +39,11 @@ def _load_module(name, filename):
 
 
 _cmd_skill_domains = _load_module('_cmd_skill_domains', '_cmd_skill_domains.py')
+_config_defaults = _load_module('_config_defaults', '_config_defaults.py')
 
 cmd_list_verify_steps = _cmd_skill_domains.cmd_list_verify_steps
 cmd_skill_domains = _cmd_skill_domains.cmd_skill_domains
+validate_domain_inclusion = _config_defaults.validate_domain_inclusion
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import run_script  # noqa: E402
@@ -1501,6 +1504,221 @@ def test_cli_skill_domains_get(plan_context):
 
     assert result.success, f'Should succeed: {result.stderr}'
     assert 'pm-dev-java:java-core' in result.stdout
+
+
+# =============================================================================
+# Domain inclusion (always_on / file_globs) Tests — deliverable 1
+# =============================================================================
+
+
+def _inclusion_marshal_config(skill_domains: dict) -> dict:
+    """Build a minimal marshal config carrying the given skill_domains block.
+
+    Supplies the phase-5-execute verification_steps and phase-6-finalize steps
+    the configure verb rewrites, so a configure call in these tests has the same
+    shape the other configure tests provide.
+    """
+    return {
+        'skill_domains': skill_domains,
+        'system': {'retention': {}},
+        'plan': {
+            'phase-1-init': {'branch_strategy': 'direct'},
+            'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+            'phase-5-execute': {
+                'commit_and_push': True,
+                'max_iterations': 5,
+                'verification_steps': {
+                    'default:verify:quality-gate': {},
+                    'default:verify:module-tests': {},
+                },
+            },
+            'phase-6-finalize': {'max_iterations': 3, 'steps': {}},
+        },
+    }
+
+
+def test_validate_domain_inclusion_accepts_valid_values():
+    """validate_domain_inclusion accepts a bool always_on and a list[str] file_globs."""
+    # Neither call raises.
+    validate_domain_inclusion(True, ['**/*.py', 'src/*.py'])
+    validate_domain_inclusion(False, [])
+
+
+def test_validate_domain_inclusion_none_skips_validation():
+    """A None value for either key is skipped (set-inclusion sets keys independently)."""
+    validate_domain_inclusion(None, None)
+    validate_domain_inclusion(True, None)
+    validate_domain_inclusion(None, ['**/*.py'])
+
+
+def test_validate_domain_inclusion_rejects_non_bool_always_on():
+    """A non-bool always_on (including an int, which is not a bool) is rejected."""
+    with pytest.raises(ValueError):
+        validate_domain_inclusion(1, None)
+    with pytest.raises(ValueError):
+        validate_domain_inclusion('true', None)
+
+
+def test_validate_domain_inclusion_rejects_non_list_file_globs():
+    """A non-list file_globs (a bare string) is rejected."""
+    with pytest.raises(ValueError):
+        validate_domain_inclusion(None, '**/*.py')
+
+
+def test_validate_domain_inclusion_rejects_non_str_file_globs_member():
+    """A file_globs list carrying a non-str member is rejected."""
+    with pytest.raises(ValueError):
+        validate_domain_inclusion(None, ['ok', 123])
+
+
+def test_get_surfaces_inclusion_defaults(plan_context, monkeypatch):
+    """get surfaces always_on false / file_globs [] by default for a nested domain."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_skill_domains(Namespace(verb='get', domain='java'))
+
+    assert result['status'] == 'success'
+    assert result['always_on'] is False
+    assert result['file_globs'] == []
+
+
+def test_set_inclusion_round_trip(plan_context, monkeypatch):
+    """set-inclusion writes always_on / file_globs; get reads them back."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    set_result = cmd_skill_domains(
+        Namespace(verb='set-inclusion', domain='java', always_on=True, file_globs='**/*.py, src/*.py')
+    )
+    assert set_result['status'] == 'success'
+    assert set_result['always_on'] is True
+    assert set_result['file_globs'] == ['**/*.py', 'src/*.py']
+
+    get_result = cmd_skill_domains(Namespace(verb='get', domain='java'))
+    assert get_result['always_on'] is True
+    assert get_result['file_globs'] == ['**/*.py', 'src/*.py']
+
+
+def test_set_inclusion_only_file_globs_leaves_always_on_untouched(plan_context, monkeypatch):
+    """A set-inclusion call setting only file_globs leaves a prior always_on intact."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    cmd_skill_domains(Namespace(verb='set-inclusion', domain='java', always_on=True, file_globs=None))
+    result = cmd_skill_domains(
+        Namespace(verb='set-inclusion', domain='java', always_on=None, file_globs='**/*.md')
+    )
+
+    assert result['status'] == 'success'
+    assert result['always_on'] is True
+    assert result['file_globs'] == ['**/*.md']
+
+
+def test_set_inclusion_unknown_domain_errors(plan_context, monkeypatch):
+    """set-inclusion on an unknown domain returns an error."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_skill_domains(
+        Namespace(verb='set-inclusion', domain='nonexistent', always_on=True, file_globs=None)
+    )
+
+    assert result['status'] == 'error'
+
+
+def test_set_inclusion_rejects_non_bool_always_on(plan_context, monkeypatch):
+    """set-inclusion routes a non-bool always_on through the validator and errors."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_skill_domains(
+        Namespace(verb='set-inclusion', domain='java', always_on=1, file_globs=None)
+    )
+
+    assert result['status'] == 'error'
+
+
+def test_configure_preserves_domain_inclusion(plan_context, monkeypatch):
+    """configure preserves operator-set always_on / file_globs for domains that still exist."""
+    config = _inclusion_marshal_config(
+        {
+            'system': {'defaults': ['plan-marshall:persona-plan-marshall-agent']},
+            'java': {
+                'bundle': 'pm-dev-java',
+                'always_on': True,
+                'file_globs': ['**/*.py'],
+                'workflow_skill_extensions': {'triage': 'pm-dev-java:ext-triage-java'},
+            },
+        }
+    )
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
+
+    result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
+    assert result['status'] == 'success'
+
+    updated = json.loads(marshal_path.read_text())
+    assert updated['skill_domains']['java']['always_on'] is True
+    assert updated['skill_domains']['java']['file_globs'] == ['**/*.py']
+
+
+def test_configure_drops_domain_inclusion_for_removed_domains(plan_context, monkeypatch):
+    """configure drops always_on / file_globs for domains that are no longer selected."""
+    config = _inclusion_marshal_config(
+        {
+            'system': {'defaults': []},
+            'java': {'bundle': 'pm-dev-java', 'always_on': True},
+            'javascript': {'bundle': 'pm-dev-frontend', 'file_globs': ['**/*.js']},
+        }
+    )
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
+
+    result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
+    assert result['status'] == 'success'
+
+    updated = json.loads(marshal_path.read_text())
+    assert updated['skill_domains']['java'].get('always_on') is True
+    assert 'javascript' not in updated['skill_domains']
+
+
+def test_cli_set_inclusion_round_trip(plan_context):
+    """CLI plumbing: set-inclusion writes always_on / file_globs via argparse; get reads them back.
+
+    Drives the new input shape (the --always-on BooleanOptionalAction flag plus
+    the --file-globs CSV) through the actual CLI entry point — the boundary test
+    for the verb whose value proposition IS this input shape.
+    """
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    set_result = run_script(
+        SCRIPT_PATH,
+        'skill-domains',
+        'set-inclusion',
+        '--domain',
+        'java',
+        '--always-on',
+        '--file-globs',
+        '**/*.py',
+    )
+    assert set_result.success, f'set-inclusion should succeed: {set_result.stderr}'
+
+    get_result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
+    assert get_result.success, f'get should succeed: {get_result.stderr}'
+    assert 'always_on' in get_result.stdout
+    assert '**/*.py' in get_result.stdout
+
+
+def test_cli_set_inclusion_no_always_on_flag(plan_context):
+    """CLI plumbing: --no-always-on writes always_on false via BooleanOptionalAction."""
+    create_nested_marshal_json(plan_context.fixture_dir)
+
+    set_result = run_script(
+        SCRIPT_PATH,
+        'skill-domains',
+        'set-inclusion',
+        '--domain',
+        'java',
+        '--no-always-on',
+    )
+    assert set_result.success, f'set-inclusion --no-always-on should succeed: {set_result.stderr}'
+    assert 'always_on' in set_result.stdout
 
 
 # =============================================================================
