@@ -43,6 +43,10 @@ phase_5:
     - quality-gate
     - module-tests
     - coverage
+  step_execution_tier[N]{step_id,tier}:
+    "verify:quality-gate",per_task
+    "verify:module-tests",orchestrator
+    "verify:coverage",orchestrator
 
 phase_6:
   steps[M]:
@@ -68,6 +72,7 @@ execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timest
 | `phase_5.early_terminate` | bool | If `true`, Phase 5 transitions directly to Phase 6 without running tasks (analysis-only plans with empty affected_files) |
 | `phase_5.envelope_count` | int | Number of phase-5 `execution-context` envelopes the orchestrator should plan for. Written by `compose` from the optional `--envelope-count` input; defaults to `1` (a single budget-bounded envelope greedily drives the task loop) when the input is absent. A manifest composed before this field existed has no `phase_5.envelope_count` key, and every reader interprets an absent value as the same `1` default — so reads stay backward-compatible. |
 | `phase_5.verification_steps` | list[string] | Ordered list of Phase 5 verification step IDs (e.g., `quality-gate`, `module-tests`, `coverage`). Empty list means no verification needed (e.g., docs-only plans) |
+| `phase_5.step_execution_tier` | list[object] | Per-step `execution_tier` record list — one `{step_id, tier}` object per `phase_5.verification_steps` entry, in list order. `tier` is `per_task` (the leaf runs the step inline) or `orchestrator` (the step exceeds the Bash ceiling and is yielded to the orchestrator's `await-long-running` seam). Written by `compose` via `architecture resolve` per step; the list is total over `verification_steps` and every entry carries a resolved tier (unresolved/absent defaults to `per_task`). A record list rather than a keyed map because a step id (`verify:quality-gate`) contains a colon, which does not round-trip as a TOON object key. This is the compose-time structural enforcement of the leaf-no-background-build invariant (see `ref-workflow-architecture/standards/agents.md` § "Leaf cannot reap a backgrounded build"). |
 | `phase_6.steps` | list[string] | Ordered list of Phase 6 finalize step IDs to dispatch. Subset of the canonical step set: `push`, `create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `adr-propose`, `branch-cleanup`, `archive-plan`, `record-metrics`, `lessons-integration`. CI completion is a dispatcher-resolved precondition declared via `requires: [ci-complete]` on consumer step frontmatters (see `phase-6-finalize/SKILL.md` Step 3 § "Precondition resolution") — it is not itself a step in the canonical set. |
 | `phase_5.step_params` | object | Per-step param snapshot for the selected Phase 5 verify steps, keyed by the (bare) in-manifest step id; each value is the step's resolved param object snapshotted from the marshal.json keyed map at compose time. Verify steps own no params, so values are typically `{}`. Read via `step-params get`; per-plan overridable via `step-params set`. |
 | `phase_6.step_params` | object | Per-step param snapshot for the selected Phase 6 finalize steps, keyed by the (bare) in-manifest step id; each value is the step's resolved param object snapshotted from the marshal.json keyed map at compose time (e.g. `branch-cleanup` carries `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold`; `sonar-roundtrip` carries `touched_file_cleanup` / `do_transition` / `ce_wait_timeout_seconds`; `automated-review` carries `review_bot_buffer_seconds`). This is the **plan-local runtime source** that phase-5/6 consumers read via `step-params get` (per-plan overridable via `step-params set`), NOT the marshal.json keyed map (the compose-time default). |
@@ -125,6 +130,9 @@ phase_5:
   early_terminate: false
   verification_steps_count: 2
   envelope_count: 1
+  step_execution_tier[2]{step_id,tier}:
+    "verify:quality-gate",per_task
+    "verify:module-tests",orchestrator
 phase_6:
   steps_count: 6
 rule_fired: surgical_tech_debt
@@ -531,6 +539,12 @@ After the seven-row matrix and `execution_tier` routing produce the final `phase
 After the canonical-verify footprint pre-filter produces the final `phase_5.verification_steps` list, the composer applies the **request-aspect step-dropping** pass driven by the optional `--aspect` input (the resolved aspect from the `manage-config aspect-classify` verb). When `aspect ∈ {analysis, planning}`, every canonical-verify step whose derived matrix role is a build / quality-gate / test role (`quality-gate` / `module-tests` / `coverage`) is dropped from the phase-5 list. The rationale is the inverse of the footprint pre-filter: an `analysis` or `planning` request carries no production / test footprint to gate, so running (and failing) build / quality-gate / test commands against a code-free change is pure waste — the aspect signal lets the composer drop those gates up front rather than relying on a footprint that may not yet exist at compose time.
 
 An `implementation` aspect (the classifier's safe sub-threshold fallback — any request below the `>= 0.7` aspect-classify threshold defaults to `implementation`) and an absent `--aspect` are no-ops: every build/verify gate is retained. The drop is role-driven (via the same `_role_of` derivation the footprint pre-filter uses) and canonical-agnostic — it adds no per-canonical branch. External (`project:` / `bundle:skill`) steps and any step whose role is unrecognized are passed through untouched. The composer emits one `decision.log` line when at least one step is dropped (canonical prefix `(plan-marshall:manage-execution-manifest:compose) aspect_step_dropping`) and surfaces `aspect` and `aspect_step_dropping_dropped` in the `compose` result for observability.
+
+### Per-step execution_tier stamping (`step_execution_tier`)
+
+After the request-aspect step-dropping pass produces the FINAL `phase_5.verification_steps` list, the composer resolves each selected step's `execution_tier` and stamps a `phase_5.step_execution_tier` record list (one `{step_id, tier}` object per verification step). Each built-in canonical-verify step (`verify:{canonical}`) is resolved via a whole-tree `architecture resolve --command {canonical}`, reading the `execution_tier` field the resolve TOON emits; every other step id (an external `project:` / `bundle:skill` step, or a `verify:{canonical}` whose canonical is unresolvable) defaults to `per_task`. The list is total over `verification_steps` — the composer never emits an unresolved tier, and `per_task` is the safe floor (the leaf runs the step inline, matching the pre-stamp behaviour).
+
+This is the **compose-time structural guard** that supersedes the prose-only leaf-no-background-build invariant (proven insufficient over repeated observations): because the tier is a manifest fact, `phase-5-execute` runs only `per_task` steps inline and routes every `orchestrator`-tier step to the main-context orchestrator's `await-long-running` detach-and-notify seam — the only component permitted to background a build. A dispatched leaf therefore structurally never receives a long build it would background-and-lose. The composer emits one `decision.log` line naming each step's resolved tier (canonical prefix `(plan-marshall:manage-execution-manifest:compose) step_execution_tier stamping`) and surfaces `step_execution_tier` in the `compose` result. The full rule is documented in [standards/decision-rules.md](standards/decision-rules.md) § "execution_tier stamping" and the leaf-boundary contract in [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md) § "Leaf cannot reap a backgrounded build".
 
 ### phase-6-finalize run-at-all selection (`ceremony_finalize_selection`)
 

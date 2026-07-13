@@ -991,6 +991,112 @@ def _log_execution_tier_routing(plan_id: str, mutated_tasks: int, phase_5_steps:
 
 
 # =============================================================================
+# Per-step execution_tier stamping (compose-time structural leaf-build guard)
+# =============================================================================
+#
+# The command-level ``_route_task_verification_commands`` pass above routes each
+# TASK's verification COMMANDS by tier. The stamping pass below is the peer for
+# the whole-tree phase-5 verification STEPS: it resolves every entry of the FINAL
+# ``phase_5.verification_steps`` list to a deterministic ``execution_tier``
+# (``per_task`` | ``orchestrator``) and records it in the manifest.
+#
+# This turns the leaf-no-background-build invariant into a compose-time
+# structural fact rather than a prose rule the leaf must remember: phase-5-execute
+# runs only ``per_task`` steps inline, and every ``orchestrator``-tier step is
+# yielded to the main-context orchestrator's ``await-long-running`` seam (the only
+# component permitted to background a build). A dispatched leaf therefore
+# structurally never receives a long build to background-and-lose. See
+# ``ref-workflow-architecture/standards/agents.md`` § "Leaf cannot reap a
+# backgrounded build" and ``standards/decision-rules.md`` § "execution_tier
+# stamping".
+
+
+def _resolve_step_execution_tier(canonical: str, plan_id: str) -> str:
+    """Resolve a phase-5 canonical-verify step's ``execution_tier`` via ``architecture resolve``.
+
+    Subprocesses the whole-tree ``architecture resolve --command {canonical}`` (no
+    ``--module`` — phase-5 verification steps are whole-tree gates) and reads the
+    ``execution_tier`` field the resolve TOON emits. Returns ``'orchestrator'`` or
+    ``'per_task'``. Any failure — unresolvable executor, non-zero exit,
+    unparseable TOON, non-success status, or an absent/unknown tier — defaults to
+    ``'per_task'`` so the composer NEVER emits an unresolved tier. ``per_task`` is
+    the safe floor: it keeps the step in the leaf's inline slice, matching the
+    pre-stamp behaviour where every step ran inline.
+    """
+    executor = _resolve_executor()
+    if executor is None:
+        return 'per_task'
+    argv: list[str] = [
+        sys.executable,
+        str(executor),
+        'plan-marshall:manage-architecture:architecture',
+        'resolve',
+        '--command',
+        canonical,
+        '--audit-plan-id',
+        plan_id,
+    ]
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=30, check=False)
+    except (subprocess.SubprocessError, OSError):
+        return 'per_task'
+    if proc.returncode != 0 or not proc.stdout:
+        return 'per_task'
+    try:
+        parsed_toon = parse_toon(proc.stdout)
+    except Exception:
+        return 'per_task'
+    if not isinstance(parsed_toon, dict) or parsed_toon.get('status') != 'success':
+        return 'per_task'
+    tier = parsed_toon.get('execution_tier')
+    return tier if tier in ('per_task', 'orchestrator') else 'per_task'
+
+
+def _stamp_phase_5_step_execution_tier(plan_id: str, verification_steps: list[str]) -> list[dict[str, str]]:
+    """Resolve a per-step ``execution_tier`` record list for the final phase-5 verification steps.
+
+    Returns a uniform-array record list — one ``{'step_id': <in-manifest step id>,
+    'tier': <execution_tier>}`` object per selected phase-5 verification step, in
+    list order. The record-list form (rather than a keyed map) is dictated by the
+    TOON storage format: a phase-5 step id (``verify:quality-gate``) contains a
+    colon, and a colon-bearing TOON object KEY does not round-trip through
+    ``parse_toon`` (it mis-splits on the first colon), whereas a QUOTED string
+    VALUE inside a uniform array round-trips exactly. A built-in canonical-verify
+    step (``verify:{canonical}``) resolves its tier via
+    :func:`_resolve_step_execution_tier`; every other step id (an external
+    ``project:`` / ``bundle:skill`` step, or a ``verify:{canonical}`` whose
+    canonical is unresolvable) defaults to ``'per_task'``. The list is total over
+    ``verification_steps`` — every selected phase-5 verification step carries a
+    resolved tier and the composer never emits an unresolved tier.
+    """
+    records: list[dict[str, str]] = []
+    for step in verification_steps:
+        bare = _strip_default_prefix(step)
+        if bare.startswith(_CANONICAL_VERIFY_PREFIX):
+            canonical = bare[len(_CANONICAL_VERIFY_PREFIX) :]
+            tier = _resolve_step_execution_tier(canonical, plan_id)
+        else:
+            tier = 'per_task'
+        records.append({'step_id': step, 'tier': tier})
+    return records
+
+
+def _log_step_execution_tier_stamping(plan_id: str, records: list[dict[str, str]]) -> None:
+    """Emit one decision-log entry summarising the per-step execution_tier stamping.
+
+    Names each step id and its resolved tier so a retrospective can confirm the
+    orchestrator-tier routing from ``decision.log`` without re-parsing the
+    manifest.
+    """
+    rendered = ', '.join(f'{r["step_id"]}={r["tier"]}' for r in records)
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) step_execution_tier stamping — '
+        f'{rendered}'
+    )
+    _emit_decision_log(plan_id, message)
+
+
+# =============================================================================
 # Command Handlers
 # =============================================================================
 
@@ -1349,6 +1455,26 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             '(analysis/planning request has no build/test footprint)',
         )
 
+    # Per-step execution_tier stamping. Runs AFTER the final phase-5 verification
+    # list is settled (seven-row matrix, execution_tier COMMAND routing,
+    # canonical-verify footprint pre-filter, and aspect dropping) so every step
+    # that will be persisted carries a resolved tier. Each selected phase-5
+    # verification step is resolved to a deterministic ``execution_tier``
+    # (``per_task`` | ``orchestrator``) via ``architecture resolve`` and recorded
+    # in ``phase_5.step_execution_tier`` (a uniform-array record list keyed by
+    # step id — see _stamp_phase_5_step_execution_tier for why a record list
+    # rather than a TOON map). This is the compose-time structural guard that
+    # supersedes the prose-only leaf-no-background-build invariant: phase-5-execute
+    # runs only ``per_task`` steps inline and yields every ``orchestrator``-tier
+    # step to the orchestrator's await-long-running seam. The list is total —
+    # every step carries a resolved tier, defaulting absent/unresolved entries to
+    # ``per_task``. See standards/decision-rules.md § "execution_tier stamping".
+    step_execution_tier = _stamp_phase_5_step_execution_tier(
+        plan_id, list(body['phase_5'].get('verification_steps', []))
+    )
+    body['phase_5']['step_execution_tier'] = step_execution_tier
+    _log_step_execution_tier_stamping(plan_id, step_execution_tier)
+
     # plan.phase-6-finalize run-at-all selection runs AFTER the seven-row
     # matrix (and execution_tier routing) and BEFORE the bot-enforcement guard.
     # It forces each of the three finalize gates' steps in (`always`) or out
@@ -1537,6 +1663,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'early_terminate': body['phase_5']['early_terminate'],
             'verification_steps_count': len(body['phase_5']['verification_steps']),
             'envelope_count': body['phase_5']['envelope_count'],
+            'step_execution_tier': body['phase_5']['step_execution_tier'],
         },
         'phase_6': {
             'steps_count': len(body['phase_6']['steps']),
