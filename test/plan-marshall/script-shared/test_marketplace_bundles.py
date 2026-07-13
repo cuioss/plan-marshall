@@ -66,12 +66,20 @@ class TestFindBundles:
         _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
         assert find_bundles(tmp_path) == [live]
 
-    def test_all_orphaned_contributes_nothing(self, tmp_path):
-        # Every version dir of the bundle is orphaned: there is no current version
-        # to scan, so the bundle contributes no directory.
+    # Tier 2 (current-version-orphaned falls through to an older live dir) is
+    # already covered by test_orphaned_version_skipped above — same setup, same
+    # assertion, so no separate Tier-2 test is added here.
+
+    def test_all_versions_orphaned_degraded_fallback(self, tmp_path, capsys):
+        # Tier 3: every version dir is orphaned. The degraded fallback returns the
+        # newest-on-disk dir regardless of the orphan marker, so the bundle is
+        # present (never contribute-zero), and a stderr log line names the bundle.
         _create_bundle(tmp_path, 'bundle-a', '1.0.0', orphaned=True)
-        _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
-        assert find_bundles(tmp_path) == []
+        newest = _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
+        assert find_bundles(tmp_path) == [newest]
+        stderr = capsys.readouterr().err
+        assert 'degraded fallback' in stderr
+        assert 'bundle-a' in stderr
 
     def test_non_versioned_bundle_starting_with_digits(self, tmp_path):
         # A non-versioned bundle whose name starts with digits (e.g. '1.0-my-bundle')

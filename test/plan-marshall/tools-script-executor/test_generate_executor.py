@@ -1642,3 +1642,101 @@ def test_orphaned_cache_version_dir_never_overwrites_current_mappings(tmp_path, 
     assert not resolved.startswith(stale_prefix), (
         f'{notation} leaked to the orphaned stale version dir {stale_prefix}: {resolved}'
     )
+
+
+# ============================================================================
+# FIX C: Claude resolver-template newest-version selection
+# ============================================================================
+# The generated Claude resolver (_resolve_notation_by_target, injected via the
+# {{TARGET_AWARE_RESOLVER}} token) collects EVERY plugin-cache version dir that
+# carries the candidate script and returns the NEWEST by numeric version-tuple —
+# never the first-iterated. These tests render the REAL resolver template source
+# (via generate_target_aware_resolver_code, not the inert _load_template_module
+# stub) and exercise it against a fake plugin cache under a monkeypatched
+# Path.home, so the production resolver body is what is under test.
+
+
+def _load_claude_resolver():
+    """Render and load the real Claude target-aware resolver function.
+
+    Pulls the actual ``_CLAUDE_RESOLVER_TEMPLATE`` body via
+    ``generate_target_aware_resolver_code('claude')`` and execs it into a fresh
+    namespace with ``Path`` available, returning the ``_resolve_notation_by_target``
+    callable. Unlike ``_load_template_module`` (which substitutes the resolver
+    token with a no-op stub), this exercises the production resolver source.
+    """
+    module = load_module()
+    src = module.generate_target_aware_resolver_code('claude')
+    namespace: dict = {'Path': Path}
+    exec(src, namespace)  # noqa: S102 — controlled, generator-owned template source
+    return namespace['_resolve_notation_by_target']
+
+
+def _make_cache_script(home: Path, version: str, skill: str, script: str) -> Path:
+    """Create a plugin-cache script under a fake home and return its path.
+
+    Layout: ``{home}/.claude/plugins/cache/plan-marshall/{version}/skills/{skill}/scripts/{script}.py``.
+    """
+    scripts_dir = home / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / version / 'skills' / skill / 'scripts'
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    script_file = scripts_dir / f'{script}.py'
+    script_file.write_text(f'# {version} {skill} {script}\n')
+    return script_file
+
+
+def test_claude_resolver_multi_version_pollution_returns_newest(tmp_path, monkeypatch):
+    """multi-version-pollution-notation-resolver: with several version dirs each
+    carrying the script, the resolver returns the NEWEST version's path, not the
+    first-iterated. Guards the multi-version-pollution shadowing class.
+
+    Numeric ordering is load-bearing: '0.1.200' -> (0, 1, 200) must win over the
+    lexically-earlier '0.1.100' -> (0, 1, 100) and '0.1.9' -> (0, 1, 9). A
+    first-match (pre-fix) resolver would return whichever version dir ``iterdir``
+    yields first, so pinning the result to the newest is what catches the
+    regression.
+    """
+    home = tmp_path / 'home'
+    _make_cache_script(home, '0.1.9', 'manage-files', 'manage-files')
+    _make_cache_script(home, '0.1.100', 'manage-files', 'manage-files')
+    newest = _make_cache_script(home, '0.1.200', 'manage-files', 'manage-files')
+
+    monkeypatch.setattr(Path, 'home', lambda: home)
+
+    resolve = _load_claude_resolver()
+    result = resolve('plan-marshall:manage-files:manage-files')
+
+    assert result == str(newest.resolve()), (
+        f'resolver must return the newest version dir path {newest.resolve()!r}, got {result!r}'
+    )
+
+
+def test_claude_resolver_reresolves_after_pinned_version_pruned(tmp_path, monkeypatch):
+    """pinned-version-pruned-runtime-reresolve: after the currently-resolved
+    (newest) version dir is pruned from disk, a later resolve re-resolves at
+    runtime to the newest surviving version dir.
+
+    This is the GC-sweep scenario: the newest cache version dir the resolver was
+    returning gets pruned, and the resolver must fall through to the next-newest
+    surviving version dir rather than returning a stale pinned path or ``None``.
+    """
+    home = tmp_path / 'home'
+    older = _make_cache_script(home, '0.1.5', 'manage-status', 'manage-status')
+    newest = _make_cache_script(home, '0.1.10', 'manage-status', 'manage-status')
+
+    monkeypatch.setattr(Path, 'home', lambda: home)
+
+    resolve = _load_claude_resolver()
+
+    # First resolution returns the newest version dir on disk.
+    first = resolve('plan-marshall:manage-status:manage-status')
+    assert first == str(newest.resolve()), f'expected newest {newest.resolve()!r}, got {first!r}'
+
+    # Prune the pinned newest version dir wholesale (the '0.1.10' dir).
+    shutil.rmtree(newest.parents[3])
+
+    # A later resolve re-resolves to the newest surviving version dir.
+    second = resolve('plan-marshall:manage-status:manage-status')
+    assert second == str(older.resolve()), (
+        f'after pruning the pinned version, resolver must re-resolve to the newest '
+        f'surviving dir {older.resolve()!r}, got {second!r}'
+    )
