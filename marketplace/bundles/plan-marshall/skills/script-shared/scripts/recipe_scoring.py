@@ -341,7 +341,12 @@ def _resolve_recipe_skill_md(recipe: dict[str, Any]) -> Path | None:
                 # ``*/skills/{name}/SKILL.md`` glob only matched the flat layout,
                 # so a bundle recipe silently lost its lane seed when this ran
                 # from the deployed cache (whose per-bundle layout is versioned).
-                candidate = resolve_bundle_path(bundles_root, bundle_dir.name, subpath)
+                # resolve_bundle_path iterates the bundle's version dirs, which can
+                # raise OSError on an unreadable bundle — skip it and keep scanning.
+                try:
+                    candidate = resolve_bundle_path(bundles_root, bundle_dir.name, subpath)
+                except OSError:
+                    continue
                 if candidate.is_file():
                     return candidate
     # Project recipes live under the cwd-relative project skill roots (the same

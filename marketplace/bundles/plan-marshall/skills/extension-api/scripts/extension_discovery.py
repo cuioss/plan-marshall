@@ -15,7 +15,7 @@ from typing import Any
 
 # Direct import - executor sets up PYTHONPATH for cross-skill imports
 import resolve_project_dir as _routing
-from marketplace_bundles import _version_sort_key, resolve_bundles_root, resolve_skills_root
+from marketplace_bundles import resolve_bundle_path, resolve_bundles_root, resolve_skills_root
 from marketplace_paths import find_marketplace_path, get_bundle_cache_roots
 from plan_logging import log_entry
 from toon_parser import serialize_toon
@@ -906,28 +906,22 @@ def _resolve_bundle_skills_root(bundle_dir: Path) -> Path | None:
       where a bundle dir holds one or more ``{version}`` dirs; the newest version
       (by ``_version_sort_key``) wins.
 
-    Mirrors :func:`find_extension_path`'s dual-probe. Returns ``None`` when neither
-    layout carries a ``skills`` root. Without the versioned branch, a scan run from
-    the deployed cache silently finds ZERO bundle-optional implementors, because
-    ``{bundle}/skills`` does not exist there (the authored skills live one
-    ``{version}`` segment deeper) — the defect that blocked manifest compose on the
-    ``plan-marshall:plan-retrospective`` / ``plan-marshall:automatic-review`` steps.
+    Delegates the flat-vs-versioned resolution to the shared version-aware
+    ``resolve_bundle_path`` helper (the same logic ``recipe_scoring`` uses), so the
+    "flat ``{bundle}/skills``, else newest ``{bundle}/{version}/skills``" selection
+    is not duplicated. Returns ``None`` when neither layout carries a ``skills``
+    root, or when the bundle dir is unreadable. Without the versioned branch, a
+    scan run from the deployed cache silently finds ZERO bundle-optional
+    implementors, because ``{bundle}/skills`` does not exist there (the authored
+    skills live one ``{version}`` segment deeper) — the defect that blocked
+    manifest compose on the ``plan-marshall:plan-retrospective`` /
+    ``plan-marshall:automatic-review`` steps.
     """
-    flat = bundle_dir / 'skills'
-    if flat.is_dir():
-        return flat
     try:
-        version_dirs = [
-            d
-            for d in bundle_dir.iterdir()
-            if d.is_dir() and not d.name.startswith('.') and (d / 'skills').is_dir()
-        ]
+        candidate = resolve_bundle_path(bundle_dir.parent, bundle_dir.name, 'skills')
     except OSError:
         return None
-    if not version_dirs:
-        return None
-    newest = max(version_dirs, key=lambda d: _version_sort_key(d.name))
-    return newest / 'skills'
+    return candidate if candidate.is_dir() else None
 
 
 def _scan_skills_roots_for_implementors(ext_point: str) -> list[dict[str, Any]]:
