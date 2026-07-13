@@ -82,11 +82,14 @@ python3 .claude/skills/finalize-step-era-stamp-fill/scripts/era_stamp_fill.py ru
   --plan-id {plan_id} --pr-number {pr_number} --worktree-path {worktree_path}
 ```
 
-The script returns a flat TOON document with `status` (`success` | `error`),
+The script returns a flat TOON document. On the `status: success` path it carries
 `filled_count`, `skipped` (`true` | `false`), and the normalized `pr_number`
-(`#NNN`). It rewrites `"PR-PENDING"` → `"#{pr_number}"` in both `audit.py` and
-`test_audit.py` in lock-step; it matches only the double-quoted map-value form, so
-prose mentions and an already-resolved concrete `"#NNN"` are never touched.
+(`#NNN`); on the `status: error` path it carries only `status` and a `message`
+(the `filled_count` / `skipped` / `pr_number` fields are omitted). See the Step 2
+table below for the per-outcome field set. It rewrites `"PR-PENDING"` →
+`"#{pr_number}"` in both `audit.py` and `test_audit.py` in lock-step; it matches
+only the double-quoted map-value form, so prose mentions and an already-resolved
+concrete `"#NNN"` are never touched.
 
 ### 2. Parse the result
 

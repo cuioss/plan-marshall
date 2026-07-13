@@ -71,11 +71,17 @@ def _emit(fields: dict[str, object]) -> None:
         sys.stdout.write(f'{key}: {value}\n')
 
 
-def _atomic_write(path: pathlib.Path, text: str) -> None:
-    """Write ``text`` to ``path`` atomically via a temp file + replace."""
+def _stage_tmp(path: pathlib.Path, text: str) -> pathlib.Path:
+    """Stage ``text`` in a sibling ``.era-tmp`` file and return its path.
+
+    Staging is kept separate from the replace so ``run`` can write EVERY temp
+    file before committing ANY replace: a write failure then leaves all original
+    files intact, and the near-atomic replace phase runs only once all temps are
+    on disk — preserving the lock-step guarantee across audit.py and its mirror.
+    """
     tmp = path.with_name(path.name + '.era-tmp')
     tmp.write_text(text, encoding='utf-8')
-    tmp.replace(path)
+    return tmp
 
 
 def run(pr_number: str, worktree_path: str) -> int:
@@ -106,11 +112,22 @@ def run(pr_number: str, worktree_path: str) -> int:
         _emit({'status': 'success', 'filled_count': 0, 'skipped': 'true', 'pr_number': pr_ref})
         return 0
 
-    # Flush both files together — nothing was written above, so a resolution is
-    # applied to both the source and its mirror in lock-step.
-    for path, new_text, count in planned:
-        if count:
-            _atomic_write(path, new_text)
+    # Two-phase lock-step flush: stage EVERY temp file before committing ANY
+    # replace, so a write failure leaves all originals intact and the replace
+    # phase runs only once all temps exist. Any OSError surfaces as the documented
+    # status:error TOON instead of an uncaught traceback that would desync the
+    # source and its test mirror.
+    try:
+        staged = [
+            (path, _stage_tmp(path, new_text))
+            for path, new_text, count in planned
+            if count
+        ]
+        for path, tmp in staged:
+            tmp.replace(path)
+    except OSError as exc:
+        _emit({'status': 'error', 'message': f'lock-step write failed: {exc}'})
+        return 1
 
     _emit({'status': 'success', 'filled_count': total, 'skipped': 'false', 'pr_number': pr_ref})
     return 0
