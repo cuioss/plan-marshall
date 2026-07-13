@@ -76,7 +76,15 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
   (str|null — null for an orchestrator global-tier build), `args`, `exit_code`
   (int, recorded even when non-zero — the gate filters on it), `worktree_sha`,
   `log_file`, `timestamp_iso`. A build is NOT a commit, so a `kind=build` entry
-  does NOT carry `commit_sha` or `changed_paths`.
+  does NOT carry `commit_sha` or `changed_paths`. The stamp is **tier-agnostic
+  and `run_in_background`-agnostic**: because it is written at the executor
+  dispatch boundary — which every build-class invocation traverses — the writer
+  fires identically for an inline `per_task` build the leaf reaps synchronously
+  and for an `orchestrator`-tier build the `await-long-running` seam dispatches
+  with `run_in_background: true` and reaps on notification. The detached
+  orchestrator build (`plan_id: null`) is therefore stamped exactly like an
+  inline per-task build; the freshness gate matches on `worktree_sha` + `exit_code`
+  alone and never inspects the tier or the background flag.
 - **`kind=change`** — written by the phase-5 execute loop after each deliverable
   completes-and-commits. Fields: `kind: "change"`, `deliverable_id` (or
   `task_id`), `commit_sha`, `changed_paths` (the **git-sourced** list, stored

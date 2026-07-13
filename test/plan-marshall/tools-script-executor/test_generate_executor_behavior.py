@@ -12,12 +12,13 @@ handlers / main() dispatch — all paths the existing subprocess-and-fixture sui
 leaves untouched.
 """
 
+import sys
 import types
 from pathlib import Path
 
 import pytest
 
-from conftest import load_script_module
+from conftest import _MARKETPLACE_SCRIPT_DIRS, load_script_module
 
 # Unique module_name so the in-process load is distinct from the existing
 # test module's ``load_module()`` exec-based load (which traces as <string>
@@ -25,6 +26,55 @@ from conftest import load_script_module
 _gen = load_script_module(
     'plan-marshall', 'tools-script-executor', 'generate_executor.py', 'gen_executor_behavior'
 )
+
+# The build-class change-ledger boundary lives in the executor TEMPLATE (the
+# generated executor), not in generate_executor.py. Rendering the template into
+# an importable module is the established pattern for unit-testing its dispatch
+# boundary helpers (mirrors ``_load_template_module`` in test_generate_executor.py).
+_TEMPLATE_PATH = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
+)
+
+
+def _load_template_module() -> types.ModuleType:
+    """Render the executor template with inert placeholders and exec it as a module.
+
+    Fills the ``{{...}}`` substitution tokens with inert stand-ins (empty
+    mappings, no target-aware resolver body) and points ``{{LOGGING_DIR}}`` at
+    the real manage-logging scripts so the module-level ``from plan_logging
+    import ...`` succeeds. The shared script dirs are placed on ``sys.path`` so
+    the template's ``_ledger_core`` / ``worktree_sha`` / ``toon_parser`` imports
+    resolve. ``main()`` is guarded by ``__name__ == '__main__'`` so exec does not
+    dispatch anything.
+    """
+    source = _TEMPLATE_PATH.read_text(encoding='utf-8')
+    logging_dir = str(
+        Path(__file__).parent.parent.parent.parent
+        / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts'
+    )
+    source = source.replace('{{SCRIPT_MAPPINGS}}', '')
+    source = source.replace('{{SUBCOMMAND_MAPPINGS}}', '')
+    source = source.replace('{{LOGGING_DIR}}', logging_dir)
+    source = source.replace('{{SHARED_MODULE_DIRS}}', '# (none)')
+    source = source.replace('{{EXTRA_SCRIPT_DIRS}}', '')
+    source = source.replace('{{PLAN_DIR_NAME}}', '.plan')
+    source = source.replace('{{EXECUTOR_TARGET}}', 'claude')
+    source = source.replace('{{GENERATED_VERSION}}', '')
+    source = source.replace('{{MAPPINGS_FINGERPRINT}}', '')
+    source = source.replace(
+        '{{TARGET_AWARE_RESOLVER}}',
+        'def _resolve_notation_by_target(notation):\n    return None\n',
+    )
+
+    for extra in _MARKETPLACE_SCRIPT_DIRS:
+        if extra not in sys.path:
+            sys.path.insert(0, extra)
+
+    module = types.ModuleType('executor_template_ledger_boundary')
+    module.__dict__['__file__'] = str(_TEMPLATE_PATH)
+    exec(compile(source, str(_TEMPLATE_PATH), 'exec'), module.__dict__)
+    return module
 
 
 # =============================================================================
@@ -423,3 +473,101 @@ def test_main_cleanup_dispatch_returns_zero(tmp_path, monkeypatch, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert 'success' in out
+
+
+# =============================================================================
+# Build-class dispatch boundary — tier-agnostic kind=build change-ledger stamp
+# =============================================================================
+#
+# Regression coverage for the leaf-no-background-build / tier-agnostic freshness
+# stamp invariant (deliverable 2): a build-class notation dispatched through the
+# generated executor writes exactly one kind=build change-ledger entry carrying a
+# worktree_sha and exit_code — including the orchestrator/global-tier shape
+# (plan_id: null) the detached await-long-running path produces. This proves the
+# stamp is tier-agnostic and covers the detached path, so the pre-commit
+# freshness gate sees a stamp regardless of which tier ran the build.
+
+
+def _redirect_ledger(module, monkeypatch, ledger_path: Path, worktree_sha: str) -> None:
+    """Point the boundary writer at ``ledger_path`` and pin ``worktree_sha``.
+
+    ``_append_build_ledger_record`` calls ``append_entry(record)`` (no path arg
+    → ``resolve_ledger_path()``) and ``compute_worktree_sha(os.getcwd())``, both
+    resolved from the rendered template module's namespace. Redirect the append
+    to the explicit tmp ``ledger_path`` (via ``append_entry``'s optional ``path``
+    parameter) and pin the currency hash so the test is deterministic and needs
+    no git working tree.
+    """
+    import _ledger_core
+
+    real_append = _ledger_core.append_entry
+    monkeypatch.setattr(module, 'append_entry', lambda record: real_append(record, path=ledger_path))
+    monkeypatch.setattr(module, 'compute_worktree_sha', lambda root: worktree_sha)
+
+
+def test_build_class_dispatch_writes_orchestrator_tier_kind_build_entry(tmp_path, monkeypatch):
+    """A build-class dispatch with ``plan_id=None`` (the orchestrator/global-tier
+    shape the detached ``await-long-running`` path produces) writes exactly one
+    ``kind=build`` ledger entry carrying a ``worktree_sha`` and ``exit_code``.
+    """
+    module = _load_template_module()
+    import _ledger_core
+
+    ledger_path = tmp_path / 'change-ledger.jsonl'
+    _redirect_ledger(module, monkeypatch, ledger_path, worktree_sha='feedfacecafe0001')
+
+    module._append_build_ledger_record(
+        notation='plan-marshall:build-pyproject:pyproject_build',
+        plan_id=None,
+        script_args=['run', '--command-args', 'compile plan-marshall'],
+        exit_code=0,
+        log_file=str(tmp_path / 'build.log'),
+    )
+
+    entries = _ledger_core.read_entries(path=ledger_path)
+    assert len(entries) == 1, 'exactly one kind=build entry must be written per dispatch'
+    entry = entries[0]
+    assert entry['kind'] == 'build'
+    assert entry['plan_id'] is None, 'orchestrator/global-tier build stamps plan_id: null'
+    assert entry['worktree_sha'] == 'feedfacecafe0001'
+    assert entry['exit_code'] == 0
+    assert entry['notation'] == 'plan-marshall:build-pyproject:pyproject_build'
+
+
+def test_build_class_dispatch_records_non_zero_exit_code(tmp_path, monkeypatch):
+    """The stamp is written even when the build failed — the freshness gate
+    filters on ``exit_code``, so a non-zero exit is recorded (plan-scoped shape).
+    """
+    module = _load_template_module()
+    import _ledger_core
+
+    ledger_path = tmp_path / 'change-ledger.jsonl'
+    _redirect_ledger(module, monkeypatch, ledger_path, worktree_sha='feedfacecafe0002')
+
+    module._append_build_ledger_record(
+        notation='plan-marshall:build-maven:maven',
+        plan_id='plan-x',
+        script_args=['run', '--targets', 'verify'],
+        exit_code=1,
+        log_file=str(tmp_path / 'build.log'),
+    )
+
+    entries = _ledger_core.read_entries(path=ledger_path)
+    assert len(entries) == 1
+    assert entries[0]['exit_code'] == 1
+    assert entries[0]['plan_id'] == 'plan-x'
+    assert entries[0]['worktree_sha'] == 'feedfacecafe0002'
+
+
+def test_build_class_notation_gate_scopes_the_ledger_boundary():
+    """The ``_is_build_class_notation`` gate fires the ledger boundary for every
+    build-* skill and for nothing else — the boundary is build-class-scoped.
+    """
+    module = _load_template_module()
+
+    assert module._is_build_class_notation('plan-marshall:build-pyproject:pyproject_build') is True
+    assert module._is_build_class_notation('plan-marshall:build-maven:maven') is True
+    assert module._is_build_class_notation('plan-marshall:build-gradle:gradle') is True
+    assert module._is_build_class_notation('plan-marshall:build-npm:npm') is True
+    assert module._is_build_class_notation('plan-marshall:manage-status:manage-status') is False
+    assert module._is_build_class_notation('plan-marshall:manage-change-ledger:manage-change-ledger') is False

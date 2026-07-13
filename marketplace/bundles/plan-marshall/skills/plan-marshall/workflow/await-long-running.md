@@ -64,6 +64,8 @@ Bash(command="{command}", run_in_background: true)
 
 Do NOT poll for completion and do NOT `sleep`/`wait` on the backgrounded job — the completion notification is the wake signal (step d).
 
+**Ledger stamping is automatic (no separate step here).** The detached wrapper `{command}` is itself a `python3 .plan/execute-script.py …` build-class invocation, so it traverses the executor dispatch boundary exactly as an inline `per_task` build does — and the boundary's tier-agnostic `kind=build` writer stamps the change-ledger with `worktree_sha` + `exit_code` (the detached orchestrator build carries `plan_id: null`). This seam therefore performs **no separate stamping step**; see [`../../manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) for the `run_in_background`-agnostic freshness stamp.
+
 ### (d) On the completion notification, read the compact TOON
 
 When the background-completion notification arrives, read the wrapper's **compact result TOON** (its `status` / `errors[]` summary) — NEVER the raw build log. The compact TOON is the contract surface; the raw log is consulted only when the TOON's `log_file` pointer is needed for a specific failure investigation.
