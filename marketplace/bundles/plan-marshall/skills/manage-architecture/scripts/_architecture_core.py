@@ -655,46 +655,150 @@ def classify_changed_path(path: str, merged_build_map: dict[str, list[dict[str, 
     return matches[0][2]
 
 
-def resolve_module_for_path(path: str, project_dir: str = '.') -> str | None:
-    """Resolve the owning module for a changed path by longest ``paths.module`` prefix.
+# Project-local path-prefix map: prefixes that sit outside every module's
+# declared ``paths.sources`` / ``paths.tests`` but still belong to a known
+# module. The meta-project's own ``.claude/skills/**`` tree (project-local
+# skills plus their tests under ``test/plan-marshall/**``) is owned by the
+# ``plan-marshall`` module — the operator-confirmed owner. Each mapping is
+# guarded by module existence at resolution time, so consumer projects that
+# have no ``plan-marshall`` module are unaffected.
+_PROJECT_LOCAL_PREFIX_MAP: tuple[tuple[str, str], ...] = (('.claude/skills', 'plan-marshall'),)
 
-    Unlike the ``which-module`` reader (which requires the path to appear in a
-    module's files inventory), this resolver matches the changed path against
-    every module's ``paths.module`` prefix and returns the longest match. This
-    tolerates changed artifacts that are newly-created files not yet in the
-    crawled inventory — the deriver runs at plan time over a task's declared
-    ``steps[].target`` list, which may include files that do not yet exist.
+
+def project_local_module_for_path(path: str, module_names: list[str]) -> str | None:
+    """Map a project-local path prefix to its owning module.
+
+    Handles paths that sit outside every module's declared ``paths.sources`` /
+    ``paths.tests`` but still belong to a known module — currently the
+    meta-project's ``.claude/skills/**`` tree, owned by ``plan-marshall``. The
+    mapping only fires when the target module is present in ``module_names``, so
+    a consumer project without that module falls through to ``None``.
+
+    Args:
+        path: A repo-relative path.
+        module_names: The list of modules known to the project.
+
+    Returns:
+        The owning module name when a project-local prefix contains ``path`` and
+        that module exists, else ``None``.
+    """
+    for prefix, module in _PROJECT_LOCAL_PREFIX_MAP:
+        normalized = prefix.rstrip('/')
+        if path == normalized or path.startswith(normalized + '/'):
+            return module if module in module_names else None
+    return None
+
+
+def longest_containing_prefix(path: str, paths: dict[str, Any]) -> int | None:
+    """Longest ``paths.sources ∪ paths.tests`` directory prefix that contains ``path``.
+
+    Returns the length of the longest source/test prefix directory that is an
+    ancestor of (or equal to) ``path``, or ``None`` when none contains it.
+    Root-ish prefixes (``''`` / ``'.'``) are skipped — they add no specificity
+    over the root-module fallback. The union of ``paths.tests`` with
+    ``paths.sources`` closes lesson 2026-07-09-04-001: the resolver must consult
+    ``paths.tests``, not ``paths.sources`` alone, so a ``test/**`` path resolves
+    to its owning module instead of falling through to the project root.
+
+    Args:
+        path: A repo-relative path.
+        paths: A module's ``paths`` block (``sources`` / ``tests`` are lists of
+            repo-relative directory prefixes).
+
+    Returns:
+        The length of the longest containing source/test prefix, or ``None``.
+    """
+    best: int | None = None
+    for key in ('sources', 'tests'):
+        entries = paths.get(key) or []
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, str):
+                continue
+            normalized = entry.strip().rstrip('/')
+            if normalized in ('', '.'):
+                continue
+            if path == normalized or path.startswith(normalized + '/'):
+                length = len(normalized)
+                if best is None or length > best:
+                    best = length
+    return best
+
+
+def resolve_module_for_path(path: str, project_dir: str = '.') -> str | None:
+    """Resolve the owning module for a changed path by longest containing prefix.
+
+    Unlike the ``which-module`` reader (which prefers exact membership in a
+    module's crawled files inventory), this resolver matches the changed path by
+    directory-prefix containment and returns the most specific (longest-prefix)
+    module. This tolerates changed artifacts that are newly-created files not yet
+    in the crawled inventory — the deriver runs at plan time over a task's
+    declared ``steps[].target`` list, which may include files that do not yet
+    exist.
+
+    Specificity is the longest of two signals per module: the ``paths.module``
+    prefix and the ``paths.sources ∪ paths.tests`` containment prefix (the union
+    closes lesson 2026-07-09-04-001 so a ``test/**`` path resolves to its owning
+    module rather than the project root). Resolution order:
+
+        1. Most-specific containing module (prefix length > 0).
+        2. Project-local prefix map (``.claude/skills/** → plan-marshall``).
+        3. Root module (the length-0 fallback), when present.
 
     Args:
         path: A changed-artifact path (full repo-relative path).
         project_dir: Project directory path.
 
     Returns:
-        The owning module name (longest ``paths.module`` prefix), or ``None``
-        when no module's path is a prefix of ``path``.
+        The owning module name, or ``None`` when no module contains ``path`` and
+        the project has no root module.
     """
     try:
         module_names = iter_modules(project_dir)
     except DataNotFoundError:
         return None
 
-    best: tuple[int, str] | None = None  # (prefix length, module name)
+    best_specific: tuple[int, str] | None = None  # (prefix length > 0, module name)
+    root_fallback: str | None = None
     for name in module_names:
         try:
             derived = load_module_derived(name, project_dir)
         except DataNotFoundError:
             continue
-        module_path = (derived.get('paths') or {}).get('module') or ''
+        paths = derived.get('paths') or {}
+        module_path = (paths.get('module') or '').strip()
+
         if module_path in ('.', ''):
-            # Root module: matches anything as the shortest prefix (length 0).
-            candidate = (0, name)
-        elif path == module_path or path.startswith(module_path.rstrip('/') + '/'):
-            candidate = (len(module_path), name)
+            # Root module: the length-0 fallback (matches anything).
+            if root_fallback is None or name < root_fallback:
+                root_fallback = name
+            module_prefix_len: int | None = None
+        elif path == module_path.rstrip('/') or path.startswith(module_path.rstrip('/') + '/'):
+            module_prefix_len = len(module_path.rstrip('/'))
         else:
+            module_prefix_len = None
+
+        # sources ∪ tests containment (closes lesson 2026-07-09-04-001).
+        containment_len = longest_containing_prefix(path, paths)
+
+        candidate_len = module_prefix_len
+        if containment_len is not None and (candidate_len is None or containment_len > candidate_len):
+            candidate_len = containment_len
+        if candidate_len is None:
             continue
-        if best is None or candidate[0] > best[0] or (candidate[0] == best[0] and candidate[1] < best[1]):
-            best = candidate
-    return best[1] if best else None
+        candidate = (candidate_len, name)
+        if best_specific is None or candidate[0] > best_specific[0] or (
+            candidate[0] == best_specific[0] and candidate[1] < best_specific[1]
+        ):
+            best_specific = candidate
+
+    if best_specific is not None:
+        return best_specific[1]
+    project_local = project_local_module_for_path(path, module_names)
+    if project_local is not None:
+        return project_local
+    return root_fallback
 
 
 # =============================================================================
