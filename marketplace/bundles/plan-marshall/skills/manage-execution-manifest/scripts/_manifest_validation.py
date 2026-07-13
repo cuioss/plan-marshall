@@ -28,7 +28,7 @@ from _manifest_decide import _split_csv
 from file_ops import output_toon_error
 from input_validation import require_valid_plan_id
 from marketplace_bundles import resolve_bundles_root, resolve_skills_root
-from marketplace_paths import resolve_project_skill_path
+from marketplace_paths import _find_plan_root_from_cwd, resolve_project_skill_path
 
 # =============================================================================
 # Plan-local step-params get/set (manifest snapshot reads + per-plan overrides)
@@ -197,12 +197,34 @@ _PHASE_6_STANDARDS_DIR = _PHASE_6_SKILL_DIR / 'standards'
 # at the bundle SKILL.md rather than the deleted phase-6 body doc.
 _AUTOMATIC_REVIEW_SKILL_MD = resolve_skills_root(Path(__file__)) / 'automatic-review' / 'SKILL.md'
 
-# Repository-root anchor used to render the standards path as a project-relative
-# string in the script output. ``resolve_bundles_root`` identity-walks to the
+# Anchor used to render a BUILT-IN standards path as a bundle-relative string in
+# the script output. ``resolve_bundles_root`` identity-walks to the
 # ``marketplace/bundles`` root (no index arithmetic); its grandparent is the
-# repo root, so rendered paths start with `marketplace/bundles/…` and match the
-# documented contract.
+# source-tree root, so rendered paths start with `marketplace/bundles/…` and
+# match the documented contract. This anchors on ``Path(__file__)`` on purpose:
+# built-in step docs live in the SAME tree as this script (source or plugin
+# cache), so rendering them relative to that tree's root is correct. It MUST NOT
+# be used to locate PROJECT-LOCAL skills — those live in the working tree, not
+# alongside this script; see ``_project_local_skills_root`` below.
 _REPO_ROOT = resolve_bundles_root(Path(__file__)).parent.parent
+
+
+def _project_local_skills_root() -> Path:
+    """Resolve the working-tree root that hosts project-local ``.claude/skills``.
+
+    ``project:`` finalize/verify steps resolve to ``.claude/skills/{name}/SKILL.md``
+    in the actual repository working tree — the main checkout in phases 1-4, a
+    linked worktree in phase-5+ — NOT in the marketplace-source / plugin-cache tree
+    that ``Path(__file__)`` points at. When the executor runs the deployed cache
+    copy, ``_REPO_ROOT`` lands at ``~/.claude/plugins`` (two parents above the cache
+    bundles root), which has no ``.claude/skills``, so a ``base=_REPO_ROOT`` probe
+    reports every ``project:`` step falsely unresolvable. Anchor on the uniform
+    cwd-relative resolver (ADR-002) instead: it walks up to the nearest
+    ``.plan/local`` ancestor (the working-tree root in every production context),
+    falling back to cwd when no such ancestor exists (e.g. an isolated unit test).
+    """
+    root = _find_plan_root_from_cwd()
+    return root if root is not None else Path.cwd()
 
 
 def _is_external_step(step_id: str) -> bool:
@@ -308,7 +330,7 @@ def _resolve_step_order(step_id: str) -> int | None:
     """
     if step_id.startswith('project:'):
         bare = step_id[len('project:') :]
-        skill_path = resolve_project_skill_path(f'{bare}/SKILL.md', base=_REPO_ROOT)
+        skill_path = resolve_project_skill_path(f'{bare}/SKILL.md', base=_project_local_skills_root())
         return _read_frontmatter_order(skill_path)
     if _is_external_step(step_id):
         # bundle:skill external steps have no project-local source file.
@@ -538,7 +560,7 @@ def _check_step_resolvable(step_id: str, phase: str) -> dict[str, Any]:
     # canonical-verify branch.
     if step_id.startswith('project:'):
         project_bare = step_id[len('project:') :]
-        skill_path = resolve_project_skill_path(f'{project_bare}/SKILL.md', base=_REPO_ROOT)
+        skill_path = resolve_project_skill_path(f'{project_bare}/SKILL.md', base=_project_local_skills_root())
         if skill_path.is_file():
             return {'step_id': step_id, 'resolvable': True}
         message = (
