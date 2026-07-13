@@ -1,7 +1,6 @@
 ---
 lane:
-  class: prunable
-  prunable_when: no_code_delta
+  class: adversarial
   cost_size: L
 name: default:sonar-roundtrip
 description: Sonar analysis roundtrip — fetch new-code issues, triage, then fix or suppress (requires: [ci-complete], so CI must finish before this step runs)

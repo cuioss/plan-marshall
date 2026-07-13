@@ -49,8 +49,8 @@ class value is a contract change to this document, not a per-element choice.
 |---------|----------------|-----------|---------|----------|
 | **derived-state** | `minimal` | no — a weakening override emits a correctness **warning** (only where the steps exist) | correctness-required derived output; dropping it ships a broken artifact | deploy-target, sync-plugin-cache |
 | **core** | `minimal` | no | always-on plan machinery; the leanest floor | push, create-pr, ci-verify, branch-cleanup, record-metrics, archive |
-| **adversarial** | `auto` | no | a validator that finds real defects; never predicate-pruned by the lane | outline scope-validator (1st pass), automated-review, self-review, security-audit-as-finder |
-| **prunable** | `auto` | yes — via `prunable_when` | conditional overhead that a firm-signal predicate can skip | sonar-roundtrip, lessons-housekeeping, refine, 4-plan decomposition |
+| **adversarial** | `auto` | no | a validator that finds real defects; never predicate-pruned by the lane | outline scope-validator (1st pass), automatic-review, sonar-roundtrip, self-review, security-audit-as-finder |
+| **prunable** | `auto` | yes — via `prunable_when` | conditional overhead that a firm-signal predicate can skip | lessons-housekeeping, refine, 4-plan decomposition |
 
 ## The resolution lattice
 
@@ -103,6 +103,32 @@ finalize-step params use), value ∈ `off | minimal | auto | full | ask`
 The shipped per-element default lives in each element's frontmatter `lane:` block; `marshal.json`
 carries only the project / meta overrides.
 
+### Adversarial infra elements — the `ask` seed and the compose-time drop-when-no-provider safety net
+
+Two `adversarial` finalize elements depend on external infrastructure a project may or may not
+have: **`automatic-review`** (PR-review bots — CodeRabbit / Gemini / …) needs a CI provider, and
+**`sonar-roundtrip`** needs a Sonar provider. Both seed with a per-element **`lane: ask`** override
+rather than a concrete tier, so their inclusion is answered per-project rather than assumed.
+
+- **Resolution at setup.** `marshall-steward` ALWAYS prompts about both elements at setup and at
+  update-config (enumerated via `manage-config finalize-steps list-ask-lane`), persisting the
+  operator's answer as a concrete override — `off` (no bots / no Sonar), `auto`, or `full` (has
+  them) — via `manage-config finalize-steps set-lane`. A persisted answer is a **RESOLVED** ask.
+- **Compose-time drop-when-no-provider safety net.** When the operator never answered — the
+  effective tier is still literally `ask` at compose (the **UNRESOLVED** case) — the composer's
+  `unresolved_ask_provider_drop` pre-filter DROPS the element **only when its corresponding
+  provider is genuinely absent** (`automatic-review` when no CI provider is configured;
+  `sonar-roundtrip` when no Sonar provider is configured). This closes the
+  sync-defaults-without-steward provenance gap where a materialized-but-unanswered infra element
+  would otherwise reach the finalize pipeline on a project that has no bots / no Sonar.
+- **What is never dropped.** A RESOLVED ask (`off` / `auto` / `full`) is never touched by this
+  pre-filter — `off` is handled by the normal lane-resolution pass; `auto` / `full` keep the
+  element per posture. An `ask` whose provider IS configured is also kept (the operator merely has
+  not answered yet, but the infra exists). The frozen `off`-override-on-floor-step
+  honored-with-warning semantic is untouched.
+
+The pre-filter mechanics live in [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "Pre-Filter: unresolved_ask_provider_drop"; this section owns the element-classification rationale.
+
 ## Prune predicates
 
 `class: prunable` elements name one predicate in `prunable_when`. `auto` evaluates the predicate
@@ -132,8 +158,8 @@ changed) is a standalone improvement, not part of this contract; the lane only *
 | finalize-step-sync-baseline | core | minimal |
 | lessons-capture | core | minimal |
 | lessons-housekeeping | prunable | **minimal** |
-| refine · 4-plan task-decomposition · simplify · sonar-roundtrip | prunable | auto |
-| outline/plan q-gate · self-review · automated-review · plugin-doctor *(meta)* | adversarial | auto |
+| refine · 4-plan task-decomposition · simplify | prunable | auto |
+| outline/plan q-gate · self-review · automatic-review · sonar-roundtrip · plugin-doctor *(meta)* | adversarial | auto |
 | review-retrospective *(meta)* | prunable | auto |
 | security-audit | adversarial | **full** |
 | plan-retrospective *(meta)* | prunable | **full** |
