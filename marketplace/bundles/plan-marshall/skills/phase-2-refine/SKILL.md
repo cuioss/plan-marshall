@@ -4,7 +4,7 @@ lane:
   prunable_when: confidence_complete
   cost_size: M
 name: phase-2-refine
-description: Iterative request clarification until confidence threshold reached
+description: Request clarification toward a confidence threshold via a single bounded operator escalation
 user-invocable: false
 mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow
@@ -12,7 +12,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 # Phase 2: Refine Request
 
-Iterative workflow for analyzing and refining the request until requirements meet confidence threshold.
+Workflow for analyzing and refining the request toward the confidence threshold. When operator clarification is needed, every open question is batched into one escalation and the phase re-dispatches at most once with the answers baked in; a still-below-threshold pass returns the current confidence flagged for manual review rather than iterating unboundedly.
 
 For detailed step-by-step procedures, see `standards/refine-workflow-detail.md`.
 
