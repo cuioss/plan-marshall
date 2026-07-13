@@ -11,10 +11,6 @@ default_on: true
 presets:
   - full
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
-configurable:
-  - key: simplify
-    default: auto
-    description: Run-at-all gate (auto|always|never) for the holistic post-implementation simplification sweep — auto defers to the simplify_inactive pre-filter; always forces the step in; never forces it out.
 ---
 
 # Finalize Step: simplify
@@ -37,7 +33,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 Two independent composition-time surfaces decide whether `finalize-step-simplify` lands in `manifest.phase_6.steps` (both owned by `manage-execution-manifest` — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md)):
 
 1. **The `simplify_inactive` pre-filter** — drops the step when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`. This is the change-shape gate: a pure-analysis / verification / enhancement plan, or a plan that touched zero files, has no surplus structure worth a holistic sweep.
-2. **The `plan.phase-6-finalize.simplify` run-at-all gate** (`auto` default | `always` | `never`, read via `manage-config plan phase-6-finalize step get --step-id default:finalize-step-simplify`, reading `params.simplify`) — the operator override applied by the finalize-selection post-matrix transform. `auto` defers to the `simplify_inactive` pre-filter (historical behaviour); `always` forces the step in even when the pre-filter would have dropped it; `never` removes it unconditionally. The config contract (field definition, default, validation via `validate_run_at_all`) is owned by [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) § phase-6-finalize; this step is the consumer.
+2. **The `steps.default:finalize-step-simplify.lane` override** (`off` | `minimal` | `auto`/absent, read from the step's `lane` override under `plan.phase-6-finalize.steps` via `manage-config plan phase-6-finalize step get --step-id default:finalize-step-simplify`, reading `params.lane`) — the operator override applied by the finalize-selection ceremony transform, which maps the per-element lane override onto the force-in / force-out decision (`off→never`, `minimal→always`, `auto`/absent→auto). `auto`/absent defers to the `simplify_inactive` pre-filter (historical behaviour); `minimal` forces the step in even when the pre-filter would have dropped it; `off` removes it unconditionally. The per-element `lane` override contract (values, resolution) is owned by [`manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) § phase-6-finalize and [`../../extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md); this step is the consumer.
 
 **Visible skip-reason**: whenever the step is skipped, the composer emits a decision-log line to the plan's `logs/decision.log` that names which surface fired, so the omission is observable rather than silent:
 
@@ -47,10 +43,10 @@ Two independent composition-time surfaces decide whether `finalize-step-simplify
   (plan-marshall:manage-execution-manifest:compose) finalize-step-simplify omitted — change_type={value} affected_files_count={N}
   ```
 
-- Ceremony `never` skip (operator forced the step out):
+- Ceremony `off`-lane skip (operator forced the step out via `lane: off`):
 
   ```text
-  (plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection — finalize.simplify=never, dropped finalize-step-simplify from phase_6.steps
+  (plan-marshall:manage-execution-manifest:compose) ceremony_finalize selection — finalize-step-simplify.lane=off, dropped finalize-step-simplify from phase_6.steps
   ```
 
 A `record-step` row with `outcome: skipped` is additionally appended to the manifest's `execution_log[]` when the dispatcher resolves the step as absent, so the skip is both decision-logged at compose time and execution-logged at finalize time.

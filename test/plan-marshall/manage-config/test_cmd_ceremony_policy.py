@@ -59,6 +59,9 @@ _cmd_quality_phases_mod = _load_module(
     '_cmd_quality_phases_for_verb_retirement_test', '_cmd_quality_phases.py'
 )
 _cmd_init_mod = _load_module('_cmd_init_for_verb_retirement_test', '_cmd_init.py')
+_config_defaults_mod = _load_module(
+    '_config_defaults_for_verb_retirement_test', '_config_defaults.py'
+)
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH).
 import conftest  # noqa: E402, F401
@@ -172,53 +175,43 @@ def test_final_merge_without_asking_step_set_then_get_roundtrips(plan_context):
     assert get_result['params']['final_merge_without_asking'] is True
 
 
-def test_run_at_all_gate_set_then_get_roundtrips(plan_context):
-    """``plan phase-6-finalize set --field qgate --value always`` round-trips.
+def test_qgate_is_not_a_seeded_flat_finalize_field(plan_context):
+    """``qgate`` is no longer a seeded flat phase-6-finalize field.
 
-    ``qgate`` is the one finalize run-at-all gate that stays a flat phase-level
-    sibling, so the flat ``set --field`` / ``get --field`` round-trip applies to
-    it. The two folded gates (``simplify`` / ``self_review``) moved under their
-    owning finalize step and are exercised via the one-stop ``step`` verb, not
-    the flat-field path.
+    The finalize `qgate` run-at-all gate was migrated onto the per-element
+    ``steps[pre-push-quality-gate].lane`` override, so a fresh config carries no
+    flat ``qgate`` field under ``plan.phase-6-finalize`` (the former flat
+    ``set --field qgate`` / ``get --field qgate`` round-trip no longer applies —
+    the gate rides the lane channel).
     """
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    set_result = _cmd_quality_phases_mod.cmd_phase(
-        Namespace(verb='set', field='qgate', value='always'), 'phase-6-finalize'
+    config = _config_defaults_mod.get_default_config()
+    assert 'qgate' not in config['plan']['phase-6-finalize'], (
+        'qgate must not survive as a flat phase-6-finalize field after the '
+        'run-at-all → lane migration'
     )
-    get_result = _cmd_quality_phases_mod.cmd_phase(
-        Namespace(verb='get', field='qgate'), 'phase-6-finalize'
-    )
-
-    assert set_result['status'] == 'success'
-    assert set_result['value'] == 'always'
-    assert get_result['value'] == 'always'
 
 
-def test_simplify_gate_step_set_then_get_roundtrips(plan_context):
-    """``step set --step-id default:finalize-step-simplify --param simplify`` round-trips.
+def test_simplify_step_no_longer_declares_a_simplify_run_at_all_param(plan_context):
+    """The simplify step no longer declares a ``simplify`` run-at-all param.
 
-    The folded ``simplify`` gate is reached through the one-stop ``step`` verb
-    against its owning built-in finalize step, mirroring the other step-owned
-    knobs (e.g. ``final_merge_without_asking`` under ``default:branch-cleanup``).
+    The folded ``simplify`` run-at-all gate was removed in the ceremony
+    run-at-all → lane migration: ``default:finalize-step-simplify`` is now
+    config-less, and its on/off is governed by its ``steps.<step>.lane`` override
+    rather than a step-owned ``simplify`` param.
     """
+    from configurable_contract import resolve_step_defaults_optional
+
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    set_result = _cmd_quality_phases_mod.cmd_phase(
-        Namespace(
-            verb='step',
-            step_verb='set',
-            step_id='default:finalize-step-simplify',
-            param='simplify',
-            value='always',
-        ),
-        'phase-6-finalize',
-    )
-    get_result = _cmd_quality_phases_mod.cmd_phase(
-        Namespace(verb='step', step_verb='get', step_id='default:finalize-step-simplify'),
-        'phase-6-finalize',
+    # the step declares no configurable params at all now (resolves to None/{}).
+    resolved = resolve_step_defaults_optional('default:finalize-step-simplify') or {}
+    assert 'simplify' not in resolved, (
+        'default:finalize-step-simplify must no longer declare a simplify param'
     )
 
-    assert set_result['status'] == 'success'
-    assert set_result['params']['simplify'] == 'always'
-    assert get_result['params']['simplify'] == 'always'
+    # and the seeded step nested-param object is the empty {} (config-less).
+    config = _config_defaults_mod.get_default_config()
+    steps = config['plan']['phase-6-finalize']['steps']
+    assert steps.get('default:finalize-step-simplify') == {}

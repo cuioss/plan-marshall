@@ -10,16 +10,20 @@ governs:
 
 - ``deep_lane`` / ``escalation``     → ``plan.phase-1-init``
 - ``revalidation``                   → ``plan.phase-2-refine``
-- ``self_review`` / ``qgate`` /
-  ``simplify``                       → ``plan.phase-6-finalize``
 - the three auto-continuation knobs  → ``plan.phase-6-finalize``
+
+The four finalize ceremony gates (``qgate`` / ``self_review`` / ``simplify`` /
+``security_audit``) have since been migrated OFF the run-at-all channel onto the
+per-element ``steps.<step>.lane`` override — none of them survives as a flat
+phase-level sibling nor as a step-owned run-at-all param.
 
 This module pins the post-dissolution contract:
 
 1. The ``ceremony_policy`` symbols are gone from ``_config_defaults``.
 2. ``get_default_config()`` carries no ``ceremony_policy`` top-level key.
-3. Each distributed gate surfaces under its owning phase block with the ``auto``
-   default, readable via the standard ``plan phase-<N> get --field <gate>`` path.
+3. Each surviving distributed planning gate surfaces under its owning phase block
+   with the ``auto`` default, readable via the standard
+   ``plan phase-<N> get --field <gate>`` path.
 4. ``VALID_RUN_AT_ALL`` enumerates exactly ``auto|always|never``.
 
 The handlers are exercised via per-file ``importlib`` loading (the manage-config
@@ -82,25 +86,24 @@ def _step_ids(steps_map: dict) -> list:
     return list(steps_map.keys())
 
 # The distributed run-at-all gates that stay FLAT phase-level siblings, and the
-# phase block each lives under. The two finalize gates that fold under their
-# owning step (`simplify`, `self_review`) are intentionally absent here — they
-# are exercised by `test_folded_finalize_gates_nest_under_owning_step` below.
+# phase block each lives under. The finalize `qgate` gate is intentionally absent
+# here — it has been migrated off the run-at-all channel onto the per-element
+# `steps.pre-push-quality-gate.lane` override (the ceremony run-at-all → lane
+# migration), so it is no longer a flat phase-level sibling.
 _DISTRIBUTED_GATES = (
     ('phase-1-init', 'deep_lane'),
     ('phase-1-init', 'escalation'),
     ('phase-2-refine', 'revalidation'),
-    ('phase-6-finalize', 'qgate'),
 )
 
-# The finalize run-at-all / escape-hatch knobs that fold under their owning
-# finalize step's nested param object (no longer flat phase-level siblings).
-# `default:finalize-step-simplify` and `default:pre-submission-self-review` are
-# both BUILT-IN finalize steps (discovered with `default_on: true`), so their
-# folded defaults (`simplify`; `self_review` / `drop_review_on_scope_gate`) are
-# materialized in get_default_config()['plan']['phase-6-finalize']['steps'].
+# The finalize escape-hatch knob that folds under its owning finalize step's
+# nested param object (no longer a flat phase-level sibling).
+# `default:pre-submission-self-review` is a BUILT-IN finalize step (discovered
+# with `default_on: true`), so its folded `drop_review_on_scope_gate` default is
+# materialized in get_default_config()['plan']['phase-6-finalize']['steps']. The
+# ceremony run-at-all params (`simplify`, `self_review`) were removed in the
+# run-at-all → lane migration and are no longer folded knobs.
 _SEEDED_FOLDED_KNOBS = (
-    ('default:finalize-step-simplify', 'simplify', 'auto'),
-    ('default:pre-submission-self-review', 'self_review', 'auto'),
     ('default:pre-submission-self-review', 'drop_review_on_scope_gate', False),
 )
 

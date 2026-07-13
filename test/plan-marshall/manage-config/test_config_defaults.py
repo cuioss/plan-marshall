@@ -121,15 +121,16 @@ def _params_for(steps_map: dict, step_id: str):
 
 
 def _discovered_seed_step_ids() -> list:
-    """Return the default-on built-in finalize-step ids, in seed order.
+    """Return the materialized built-in finalize-step ids, in seed order.
 
     The hand-maintained ``BUILT_IN_FINALIZE_STEPS`` constant was removed; the seed
     is now derived from the reusable ``extension_discovery.find_implementors``
-    query — the SOLE finalize-step discovery path. This mirrors
-    ``_seed_finalize_steps()``: filter the discovered implementors to the
-    default-on built-in set (``default_on == true``), sort by ``(order, name)``,
-    and project to the step ids. The result is the expected key insertion order of
-    the seeded ``plan.phase-6-finalize.steps`` keyed map.
+    query — the SOLE finalize-step discovery path. This mirrors the current
+    ``_seed_finalize_steps()``: materialize EVERY built-in implementor (there is
+    NO ``default_on == true`` filter — exclusion is expressed as a ``lane: off``
+    override, never as absence), sort by ``(order, name)``, and project to the
+    step ids. The result is the expected key insertion order of the seeded
+    ``plan.phase-6-finalize.steps`` keyed map.
     """
     from extension_discovery import find_implementors
 
@@ -137,11 +138,28 @@ def _discovered_seed_step_ids() -> list:
         (
             rec
             for rec in find_implementors(_config_defaults_mod.FINALIZE_STEP_EXT_POINT)
-            if rec.get('default_on')
+            if rec.get('source') == 'built-in'
         ),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
     )
     return [rec['name'] for rec in seed_records if rec.get('name')]
+
+
+def _discovered_default_off_built_in_step_ids() -> list:
+    """Return the built-in finalize-step ids whose ``default_on`` is False.
+
+    These are the steps the materialize-all seed carries with a ``lane: off``
+    override (exclusion expressed as ``lane: off``, never absence). Mirrors the
+    source-filter of :func:`_discovered_seed_step_ids` but keeps only the
+    ``default_on == false`` records.
+    """
+    from extension_discovery import find_implementors
+
+    return [
+        rec['name']
+        for rec in find_implementors(_config_defaults_mod.FINALIZE_STEP_EXT_POINT)
+        if rec.get('source') == 'built-in' and not rec.get('default_on') and rec.get('name')
+    ]
 
 
 def _discovered_step_description(step_id: str) -> str:
@@ -228,65 +246,149 @@ def test_default_plan_finalize_includes_final_merge_without_asking():
     )
 
 
-def test_default_plan_finalize_simplify_defaults_to_auto():
-    """`simplify` folds under its owning step `default:finalize-step-simplify`, default 'auto'.
+def test_default_plan_finalize_simplify_is_config_less_after_ceremony_lane_migration():
+    """`default:finalize-step-simplify` is config-less — the `simplify` run-at-all param is gone.
 
-    `simplify` moved out of its former flat-sibling location into the
-    simplify-step's nested param object: `auto` defers to the manifest composer's
-    `simplify_inactive` pre-filter, while always/never force the
-    finalize-step-simplify step in/out.
+    The four finalize ceremony gates (qgate / self_review / simplify /
+    security_audit) moved off the run-at-all channel onto the per-element
+    `steps.<step>.lane` override. The simplify step no longer declares a
+    `simplify` param, so its seeded nested param object is the empty `{}`
+    (default_on:true, non-infra → no `lane` override seeded).
     """
     finalize = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
 
-    # No longer a flat sibling of `steps`.
+    # Never a flat sibling of `steps`, and never a step-owned param anymore.
     assert 'simplify' not in finalize, (
         'simplify must NOT survive as a flat phase-level field'
     )
-    # It is nested under the owning step in the seeded keyed-map `steps` form (the
-    # module-level DEFAULT_PLAN_FINALIZE['steps'] is a None placeholder filled
-    # lazily by get_default_config()).
     config = _config_defaults_mod.get_default_config()
     simplify_step = _params_for(
         config['plan']['phase-6-finalize']['steps'], 'default:finalize-step-simplify'
     )
-    assert simplify_step['simplify'] == 'auto', (
-        "default:finalize-step-simplify.simplify default must be 'auto' "
-        '(defer to the simplify_inactive pre-filter)'
+    assert simplify_step == {}, (
+        'default:finalize-step-simplify must be config-less after the ceremony '
+        f'run-at-all → lane migration; got {simplify_step!r}'
+    )
+    assert 'simplify' not in simplify_step
+    assert 'lane' not in simplify_step, (
+        'a default_on:true non-infra step seeds no lane override'
     )
 
 
-def test_get_default_config_includes_finalize_simplify():
-    """get_default_config() surfaces simplify nested under its owning finalize step."""
+def test_get_default_config_finalize_simplify_carries_no_run_at_all_param():
+    """get_default_config() surfaces the simplify step with no `simplify` run-at-all param."""
     config = _config_defaults_mod.get_default_config()
 
     finalize = config['plan']['phase-6-finalize']
     assert 'simplify' not in finalize
     simplify_step = _params_for(finalize['steps'], 'default:finalize-step-simplify')
-    assert simplify_step['simplify'] == 'auto'
+    assert 'simplify' not in simplify_step
+    assert simplify_step == {}
 
 
-def test_default_plan_finalize_carries_all_finalize_gates():
-    """The three finalize gates default to 'auto' at their respective homes.
+def test_default_plan_finalize_ceremony_gates_have_no_run_at_all_params():
+    """None of the four finalize ceremony gates survives as a run-at-all knob.
 
-    `qgate` stays a flat phase-level sibling; `simplify` / `self_review` fold
-    under their owning finalize step's nested param object.
+    After the ceremony run-at-all → lane migration: `qgate` is no longer a flat
+    phase-level sibling; `simplify` / `self_review` / `security_audit` are no
+    longer step-owned params. Each gate's on/off is governed by its owning step's
+    `steps.<step>.lane` override. The pre-submission-self-review step KEEPS its
+    `drop_review_on_scope_gate` escape hatch (not a ceremony gate).
     """
     finalize = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
 
-    # qgate stays a flat phase-level sibling.
-    assert finalize.get('qgate') == 'auto', (
-        'plan.phase-6-finalize.qgate default must be auto'
+    # qgate no longer a flat phase-level sibling.
+    assert 'qgate' not in finalize, (
+        'plan.phase-6-finalize.qgate must NOT survive as a flat run-at-all sibling '
+        '(finalize-qgate now rides steps[pre-push-quality-gate].lane)'
     )
-    # simplify folds under its owning step in the seeded keyed-map `steps` form.
+
     config = _config_defaults_mod.get_default_config()
     seeded_steps = config['plan']['phase-6-finalize']['steps']
-    assert _params_for(seeded_steps, 'default:finalize-step-simplify')['simplify'] == 'auto'
-    # self_review / drop_review_on_scope_gate fold under the default-on built-in
-    # pre-submission-self-review step, so they are materialized in the seeded
-    # keyed-map `steps` form.
+
+    # simplify / security-audit steps are config-less (their run-at-all params gone).
+    assert _params_for(seeded_steps, 'default:finalize-step-simplify') == {}
+    assert _params_for(seeded_steps, 'default:finalize-step-security-audit') == {}
+
+    # self_review param is gone; drop_review_on_scope_gate (escape hatch) is kept.
     self_review_params = _params_for(seeded_steps, 'default:pre-submission-self-review')
-    assert self_review_params['self_review'] == 'auto'
-    assert self_review_params['drop_review_on_scope_gate'] is False
+    assert 'self_review' not in self_review_params
+    assert self_review_params == {'drop_review_on_scope_gate': False}
+
+
+# ---------------------------------------------------------------------------
+# Materialize-all seed + lane:off / lane:ask overrides (this plan, D1)
+# ---------------------------------------------------------------------------
+#
+# _seed_finalize_steps() now materializes EVERY built-in finalize-step implementor
+# (there is NO default_on filter): exclusion is expressed as a `lane: off` override
+# on each default_on:false step, never as absence from the seed. The two
+# adversarial infra elements (plan-marshall:automatic-review, default:sonar-roundtrip)
+# seed a `lane: ask` override so marshall-steward always prompts about them.
+
+
+def test_lane_ask_infra_steps_constant_names_the_two_infra_elements():
+    """_LANE_ASK_INFRA_STEPS must name exactly the two adversarial infra elements."""
+    assert _config_defaults_mod._LANE_ASK_INFRA_STEPS == (
+        'plan-marshall:automatic-review',
+        'default:sonar-roundtrip',
+    )
+
+
+def test_seed_finalize_steps_materializes_every_built_in_implementor():
+    """_seed_finalize_steps() materializes EVERY built-in implementor, in seed order.
+
+    The default_on filter is gone — exclusion is a `lane: off` override, never
+    absence — so the seeded step-id set equals the full discovered built-in set
+    (which includes the default_on:false steps architecture-refresh and adr-propose).
+    """
+    seeded = _config_defaults_mod._seed_finalize_steps()
+
+    assert isinstance(seeded, dict)
+    assert _step_ids(seeded) == _discovered_seed_step_ids()
+    # the default_on:false built-in steps are now materialized into the seed
+    for step_id in _discovered_default_off_built_in_step_ids():
+        assert step_id in seeded, (
+            f'materialize-all seed must include the default_on:false step {step_id!r}'
+        )
+
+
+def test_seed_finalize_steps_default_off_steps_carry_lane_off():
+    """Every default_on:false built-in step seeds a `lane: off` override."""
+    seeded = _config_defaults_mod._seed_finalize_steps()
+
+    off_steps = _discovered_default_off_built_in_step_ids()
+    # sanity: the discovery surfaces at least one default_on:false built-in step
+    # (architecture-refresh / adr-propose), else this assertion is vacuous.
+    assert off_steps, 'expected at least one default_on:false built-in finalize step'
+    for step_id in off_steps:
+        assert seeded[step_id].get('lane') == 'off', (
+            f'default_on:false step {step_id!r} must seed lane:off, got {seeded[step_id]!r}'
+        )
+
+
+def test_seed_finalize_steps_infra_elements_carry_lane_ask():
+    """The two adversarial infra elements seed a `lane: ask` override on top of their params."""
+    seeded = _config_defaults_mod._seed_finalize_steps()
+
+    for step_id in _config_defaults_mod._LANE_ASK_INFRA_STEPS:
+        assert step_id in seeded, f'infra element {step_id!r} must be materialized into the seed'
+        assert seeded[step_id].get('lane') == 'ask', (
+            f'infra element {step_id!r} must seed lane:ask, got {seeded[step_id]!r}'
+        )
+    # the infra elements retain their own step-owned params alongside lane:ask
+    assert seeded['default:sonar-roundtrip']['touched_file_cleanup'] == 'new_code_only'
+    assert seeded['plan-marshall:automatic-review']['review_bot_buffer_seconds'] == 180
+
+
+def test_seed_finalize_steps_default_on_non_infra_steps_have_no_lane_key():
+    """A default_on:true non-infra step seeds no `lane` override (absent → auto)."""
+    seeded = _config_defaults_mod._seed_finalize_steps()
+
+    for step_id in ('default:finalize-step-simplify', 'default:finalize-step-security-audit'):
+        assert 'lane' not in seeded[step_id], (
+            f'default_on:true non-infra step {step_id!r} must seed no lane override'
+        )
 
 
 def test_validate_run_at_all_accepts_simplify_run_at_all_values():
@@ -1401,19 +1503,22 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
     config = _config_defaults_mod.get_default_config()
     steps = config['plan']['phase-6-finalize']['steps']
 
-    # sonar params nest under default:sonar-roundtrip, prefix-stripped
+    # sonar params nest under default:sonar-roundtrip, prefix-stripped; the
+    # adversarial infra element additionally seeds a lane:ask override.
     sonar = _params_for(steps, 'default:sonar-roundtrip')
     assert sonar == {
         'touched_file_cleanup': 'new_code_only',
         'do_transition': False,
         'ce_wait_timeout_seconds': 600,
+        'lane': 'ask',
     }
     # no sonar_-prefixed key survives inside the scoped object
     assert not any(k.startswith('sonar_') for k in sonar)
 
     # enabled-bots list + review buffer + completion-poll bound + re-review gates
     # + re-review timeout + rate-window await knobs nest under
-    # plan-marshall:automatic-review
+    # plan-marshall:automatic-review; the adversarial infra element additionally
+    # seeds a lane:ask override.
     assert _params_for(steps, 'plan-marshall:automatic-review') == {
         'enabled_bots': 'coderabbit,sourcery,gemini',
         'review_bot_buffer_seconds': 180,
@@ -1424,6 +1529,7 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
         're_review_on_timeout': 'ask',
         'review_rate_window_await': False,
         'review_rate_window_timeout_seconds': 3600,
+        'lane': 'ask',
     }
 
     # branch-cleanup params nest under default:branch-cleanup
@@ -1454,29 +1560,35 @@ def test_default_plan_finalize_config_less_steps_map_to_empty_dict():
     steps = config['plan']['phase-6-finalize']['steps']
 
     param_owning = {
+        # default:sonar-roundtrip owns the sonar params AND seeds a lane:ask override.
         'default:sonar-roundtrip',
+        # plan-marshall:automatic-review owns the bot params AND seeds a lane:ask override.
         'plan-marshall:automatic-review',
         'default:branch-cleanup',
         # default:finalize-step-sync-baseline owns the `auto_rebase_threshold`
         # conflict-gate knob (default no_overlap_only), shared with branch-cleanup
         'default:finalize-step-sync-baseline',
-        # default:finalize-step-simplify owns the folded `simplify` run-at-all gate
-        'default:finalize-step-simplify',
         # default:pre-submission-self-review (the promoted default-on built-in,
-        # order 7) owns the folded `self_review` run-at-all gate plus the
-        # `drop_review_on_scope_gate` scope-gate toggle
+        # order 7) owns the `drop_review_on_scope_gate` scope-gate toggle (the
+        # ceremony `self_review` run-at-all param was removed in the lane migration)
         'default:pre-submission-self-review',
-        # default:finalize-step-security-audit owns the folded `security_audit`
-        # run-at-all gate (auto|always|never), read via _read_step_owned_knob —
-        # the symmetric peer of `simplify`
-        'default:finalize-step-security-audit',
         # default:finalize-step-preference-emitter owns the per-plan
         # `preference_min_recurrence` promotion threshold knob
         'default:finalize-step-preference-emitter',
     }
+    # default_on:false built-in steps carry a `lane: off` override (materialize-all:
+    # exclusion is `lane: off`, never absence) — non-empty but not param-owning.
+    # default:finalize-step-simplify and default:finalize-step-security-audit are
+    # now config-less (their ceremony run-at-all params were removed).
+    lane_off_steps = set(_discovered_default_off_built_in_step_ids())
     for step_id, params in steps.items():
         assert isinstance(params, dict), f'every step value must be a dict; got {params!r}'
-        if step_id in param_owning:
+        if step_id in lane_off_steps:
+            assert params.get('lane') == 'off', (
+                f'default_on:false built-in step {step_id!r} must carry a lane:off '
+                f'override; got {params!r}'
+            )
+        elif step_id in param_owning:
             assert params, f'param-owning step {step_id!r} must carry a non-empty nested dict'
         else:
             assert params == {}, (
@@ -1513,8 +1625,9 @@ def test_default_plan_finalize_drops_flat_step_owned_knobs():
     assert finalize['checks_wait_timeout_seconds'] == 600
     assert finalize['max_iterations'] == 3
     assert finalize['finalize_without_asking'] is True
-    # qgate is the one finalize run-at-all gate that stays a flat sibling
-    assert finalize['qgate'] == 'auto'
+    # qgate is no longer a flat run-at-all sibling — finalize-qgate now rides
+    # steps[pre-push-quality-gate].lane (the ceremony run-at-all → lane migration).
+    assert 'qgate' not in finalize
 
 
 def test_default_plan_execute_verification_steps_is_lazy_placeholder():
