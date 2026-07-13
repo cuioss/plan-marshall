@@ -141,7 +141,7 @@ def test_reworked_build_cost_checks_carry_this_plan_boundary():
     # own PR, carried as the PR-PENDING placeholder until it is resolved to the
     # real PR at finalize.
     for check in ("sequence-and-build-minimality", "token-economics"):
-        assert audit.CHECK_ERA[check] == "PR-PENDING", check
+        assert audit.CHECK_ERA[check] == "#887", check
 
 
 def test_stamp_era_inserts_fixed_since_after_status():

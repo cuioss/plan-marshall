@@ -291,8 +291,8 @@ CHECK_ERA: dict[str, str] = {
     # per-task-vs-per-deliverable build-cost model these two checks' rows are read
     # against. (sequence-and-build-minimality bumped from #849; token-economics
     # bumped from plan-10.)
-    "sequence-and-build-minimality": "PR-PENDING",
-    "token-economics": "PR-PENDING",
+    "sequence-and-build-minimality": "#887",
+    "token-economics": "#887",
     "input-integrity": "#812",
     # General checks unaffected by the roadmap: re-confirmed accurate against the
     # roadmap head (plan-10) by this refresh.
