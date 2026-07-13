@@ -1561,3 +1561,84 @@ def test_preflight_help_listed_in_top_level_help():
     )
     assert result.returncode == 0, f'Script failed: {result.stderr}'
     assert 'preflight' in result.stdout, "Missing 'preflight' in help"
+
+
+# ============================================================================
+# Orphaned plugin-cache version-dir drift false-positive (consumer-chain angle)
+# ============================================================================
+# Reproduces the reported `generate_executor drift` false-positive from the
+# discovery consumer angle: a plugin-cache-shaped bundle with a current version
+# dir PLUS a stale/orphaned duplicate whose name sorts AFTER the current one
+# would, before the fix, be returned by find_bundles and overwrite the current
+# notation->path mappings in the last-write-wins merge. The unit-level
+# complement — direct find_bundles assertions — lives in
+# test/plan-marshall/script-shared/test_marketplace_bundles.py TestFindBundles
+# (test_multi_version_selects_newest / test_orphaned_version_skipped /
+# test_all_orphaned_contributes_nothing).
+
+
+def _add_versioned_cache_bundle(
+    bundles_root: Path, bundle_name: str, current_version: str, stale_version: str
+) -> None:
+    """Add a plugin-cache-shaped bundle with a current and an orphaned stale version dir.
+
+    Both version dirs carry the same skill/script (``foo.py``) plus their own
+    ``.claude-plugin/plugin.json`` (plugin-cache layout, where each version dir is
+    a self-contained bundle). The stale dir sorts AFTER the current one and is
+    marked with a ``.orphaned_at`` file, so it would shadow the current dir in the
+    last-write-wins discovery merge unless find_bundles skips orphaned dirs.
+    """
+    for version, orphaned in ((current_version, False), (stale_version, True)):
+        version_dir = bundles_root / bundle_name / version
+        plugin_dir = version_dir / '.claude-plugin'
+        plugin_dir.mkdir(parents=True)
+        (plugin_dir / 'plugin.json').write_text(
+            f'{{"name": "{bundle_name}", "version": "{version}", "description": "fixture"}}\n'
+        )
+        scripts = version_dir / 'skills' / 'stale-skill' / 'scripts'
+        scripts.mkdir(parents=True)
+        (scripts / 'foo.py').write_text('"""Sentinel script for orphaned-cache drift regression."""\n')
+        if orphaned:
+            (version_dir / '.orphaned_at').write_text('2026-01-01T00:00:00Z')
+
+
+def test_orphaned_cache_version_dir_never_overwrites_current_mappings(tmp_path, monkeypatch):
+    """A stale/orphaned cache version dir must not shadow the current mappings.
+
+    Integration regression for the drift false-positive: an orphaned version dir
+    that sorts after the current one ('1.0.10' > '1.0.0') must be skipped by
+    find_bundles, so every discovered notation->path mapping resolves under the
+    current (non-orphaned) version dir only and drift reports no stale overwrite.
+    Fails against the pre-fix find_bundles (which returned both dirs and let the
+    stale one win the merge); passes after the newest-non-orphaned selection.
+
+    The anchor is supplied via ``PM_MARKETPLACE_ROOT`` (``use_flag=False``), NOT
+    the ``--marketplace-root`` flag. This is load-bearing for the consumer angle:
+    ``generate_executor.discover_scripts`` spawns ``scan-marketplace-inventory``
+    as a subprocess (which has no ``--marketplace-root`` flag). Only the env-var
+    anchor is inherited by that subprocess, so it discovers the versioned fixture
+    through the real ``find_bundles`` chain. Under the ``--marketplace-root``
+    flag the env var is popped, the inventory subprocess loses the anchor,
+    cwd-walk-up cannot reach the ``tmp_path``-nested fake tree, and discovery
+    silently degrades to the version-unaware glob fallback — which never sees the
+    ``bundle/<version>/skills`` layout at all, so the orphaned-overwrite defect
+    this test guards would never be exercised.
+    """
+    fake_ws = _build_fake_marketplace(tmp_path)
+    bundles_root = fake_ws / 'marketplace' / 'bundles'
+    _add_versioned_cache_bundle(bundles_root, 'stale-cache-bundle', '1.0.0', '1.0.10')
+
+    mappings = _generate_with_anchor(tmp_path, fake_ws, use_flag=False, monkeypatch=monkeypatch)
+
+    notation = 'stale-cache-bundle:stale-skill:foo'
+    assert notation in mappings, f'Expected {notation!r} discovered; got {sorted(mappings)[:10]}...'
+
+    resolved = mappings[notation]
+    current_prefix = str(bundles_root / 'stale-cache-bundle' / '1.0.0') + os.sep
+    stale_prefix = str(bundles_root / 'stale-cache-bundle' / '1.0.10') + os.sep
+    assert resolved.startswith(current_prefix), (
+        f'{notation} must resolve under the current version dir {current_prefix}, got {resolved}'
+    )
+    assert not resolved.startswith(stale_prefix), (
+        f'{notation} leaked to the orphaned stale version dir {stale_prefix}: {resolved}'
+    )

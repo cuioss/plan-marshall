@@ -15,8 +15,12 @@ from marketplace_bundles import (
 )
 
 
-def _create_bundle(base: Path, name: str, version: str | None = None) -> Path:
-    """Helper to create a bundle directory with plugin.json."""
+def _create_bundle(base: Path, name: str, version: str | None = None, orphaned: bool = False) -> Path:
+    """Helper to create a bundle directory with plugin.json.
+
+    When ``orphaned`` is set, a ``.orphaned_at`` marker file is placed in the
+    bundle directory so cache-scanning helpers skip it.
+    """
     if version:
         bundle_dir = base / name / version
     else:
@@ -24,6 +28,8 @@ def _create_bundle(base: Path, name: str, version: str | None = None) -> Path:
     plugin_dir = bundle_dir / '.claude-plugin'
     plugin_dir.mkdir(parents=True)
     (plugin_dir / 'plugin.json').write_text('{}')
+    if orphaned:
+        (bundle_dir / '.orphaned_at').write_text('2026-01-01T00:00:00Z')
     return bundle_dir
 
 
@@ -44,6 +50,36 @@ class TestFindBundles:
 
     def test_empty_directory(self, tmp_path):
         assert find_bundles(tmp_path) == []
+
+    def test_multi_version_selects_newest(self, tmp_path):
+        # Two cache version dirs for the same bundle: find_bundles returns only the
+        # NEWEST ('1.0.10' -> (1, 0, 10)), not the lexically-first ('1.0.0'), so a
+        # stale dir cannot shadow the current one in the last-write-wins merge.
+        _create_bundle(tmp_path, 'bundle-a', '1.0.0')
+        new = _create_bundle(tmp_path, 'bundle-a', '1.0.10')
+        assert find_bundles(tmp_path) == [new]
+
+    def test_orphaned_version_skipped(self, tmp_path):
+        # The numerically-newest dir carries a .orphaned_at marker and must be
+        # skipped, so the older non-orphaned dir is returned instead.
+        live = _create_bundle(tmp_path, 'bundle-a', '1.0.0')
+        _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
+        assert find_bundles(tmp_path) == [live]
+
+    def test_all_orphaned_contributes_nothing(self, tmp_path):
+        # Every version dir of the bundle is orphaned: there is no current version
+        # to scan, so the bundle contributes no directory.
+        _create_bundle(tmp_path, 'bundle-a', '1.0.0', orphaned=True)
+        _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
+        assert find_bundles(tmp_path) == []
+
+    def test_non_versioned_bundle_starting_with_digits(self, tmp_path):
+        # A non-versioned bundle whose name starts with digits (e.g. '1.0-my-bundle')
+        # must be treated as a singleton, not grouped by its parent (base_path) and
+        # discarded in favor of a sibling that also matches the version-dir pattern.
+        b1 = _create_bundle(tmp_path, '1.0-bundle-a')
+        b2 = _create_bundle(tmp_path, '2.0-bundle-b')
+        assert sorted(find_bundles(tmp_path)) == sorted([b1, b2])
 
 
 class TestExtractBundleName:
