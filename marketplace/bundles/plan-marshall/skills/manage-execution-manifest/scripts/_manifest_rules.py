@@ -14,6 +14,7 @@ import json
 import shlex
 
 from _manifest_core import _strip_default_prefix
+from _manifest_lanes import _effective_lane_tier, _lane_override_for
 from file_ops import get_marshal_path, read_json
 
 
@@ -594,6 +595,102 @@ def _read_ci_provider() -> str | None:
         if skill_name == 'plan-marshall:workflow-integration-gitlab':
             return 'gitlab'
     return None
+
+
+def _read_sonar_provider() -> str | None:
+    """Return the Sonar provider identifier (``sonar``) from marshal.json.
+
+    Sibling of :func:`_read_ci_provider`. The provider is resolved from the
+    ``providers[]`` entry whose ``skill_name`` is
+    ``plan-marshall:workflow-integration-sonar``. Unlike the CI reader (which
+    keys on ``category == 'ci'`` to disambiguate github/gitlab), a Sonar
+    integration is identified solely by its skill, so this matches on
+    ``skill_name`` directly and returns the single short identifier ``sonar``.
+
+    Returns ``None`` when the marshal file is missing, no Sonar provider is
+    declared, or the providers list is absent/malformed. The D6 compose-time
+    ``_apply_unresolved_ask_provider_drop`` pre-filter consumes this — a
+    non-``None`` result means "Sonar is configured", so an unresolved
+    ``lane:ask`` ``sonar-roundtrip`` element is kept rather than dropped.
+    """
+    marshal_path = get_marshal_path()
+    if marshal_path is None or not marshal_path.is_file():
+        return None
+    try:
+        data = read_json(marshal_path)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    providers = data.get('providers')
+    if not isinstance(providers, list):
+        return None
+    for entry in providers:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get('skill_name') == 'plan-marshall:workflow-integration-sonar':
+            return 'sonar'
+    return None
+
+
+# The two infra-dependent adversarial finalize elements governed by a seeded
+# ``lane: ask`` override. Each maps to the match-set of every prefixed/bare form
+# a (boundary-normalized) candidate list may carry. The candidate list is
+# ``default:``-stripped at the compose boundary, so ``default:sonar-roundtrip``
+# reads back as bare ``sonar-roundtrip``; ``plan-marshall:automatic-review``
+# keeps its bundle prefix. Both forms are listed so the match is robust.
+_ASK_PROVIDER_INFRA_ELEMENTS: dict[str, frozenset[str]] = {
+    'automatic-review': frozenset({'automatic-review', 'plan-marshall:automatic-review'}),
+    'sonar-roundtrip': frozenset({'sonar-roundtrip', 'default:sonar-roundtrip'}),
+}
+
+
+def _apply_unresolved_ask_provider_drop(
+    phase_6_candidates: list[str],
+    marshal_phase_6_map: dict[str, dict] | None,
+    ci_provider: str | None,
+    sonar_provider: str | None,
+) -> tuple[list[str], list[str]]:
+    """Pre-filter (D6): drop an UNRESOLVED ``lane:ask`` infra element when its provider is absent.
+
+    For each of the two infra-dependent adversarial elements
+    (``automatic-review``, ``sonar-roundtrip``) present in the candidate list,
+    resolve its EFFECTIVE lane tier from the marshal.json per-element ``lane``
+    override via :func:`_effective_lane_tier`. The seed value for both elements
+    is ``ask``, and a steward-persisted answer overwrites it to
+    ``off``/``auto``/``full``; so an effective tier still equal to ``ask`` at
+    compose is the UNRESOLVED case (the operator never answered). When the
+    element is unresolved AND its corresponding provider is absent
+    (``ci_provider is None`` for ``automatic-review``; ``sonar_provider is
+    None`` for ``sonar-roundtrip``), the element is DROPPED.
+
+    Never drops a RESOLVED ask (effective tier ``off``/``auto``/``full`` — the
+    ``off`` case is already handled by the lane-resolution pass; a resolved
+    ``auto``/``full`` keeps the element here). Never drops when the provider IS
+    configured. Elements other than the two infra elements pass through
+    untouched. Consistent with the composer's "rows and pre-filters only ever
+    narrow" architecture, this only removes candidates — it never re-adds.
+
+    Returns ``(kept, dropped)``; ``dropped`` preserves each candidate's verbatim
+    form for per-drop decision-log emission.
+    """
+    provider_for: dict[str, str | None] = {
+        'automatic-review': ci_provider,
+        'sonar-roundtrip': sonar_provider,
+    }
+    kept: list[str] = []
+    dropped: list[str] = []
+    for step in phase_6_candidates:
+        drop = False
+        for element_key, match_set in _ASK_PROVIDER_INFRA_ELEMENTS.items():
+            if step in match_set:
+                override = _lane_override_for(step, marshal_phase_6_map)
+                effective, _is_off = _effective_lane_tier({}, override)
+                if effective == 'ask' and provider_for[element_key] is None:
+                    drop = True
+                break
+        (dropped if drop else kept).append(step)
+    return kept, dropped
 
 
 # Build verb → phase-5 step ID mapping. The four canonical verbs are the

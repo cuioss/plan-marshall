@@ -93,6 +93,7 @@ from _manifest_rules import (
     _apply_scope_gated_finalize,  # noqa: F401
     _apply_security_audit_inactive,  # noqa: F401
     _apply_simplify_inactive,  # noqa: F401
+    _apply_unresolved_ask_provider_drop,  # noqa: F401
     _ceremony_finalize_insert_index,  # noqa: F401
     _footprint_has_role,  # noqa: F401
     _parse_verification_command,  # noqa: F401
@@ -100,6 +101,7 @@ from _manifest_rules import (
     _read_drop_review_on_scope_gate,  # noqa: F401
     _read_finalize_gates,  # noqa: F401
     _read_marshal_phase_step_map,  # noqa: F401
+    _read_sonar_provider,  # noqa: F401
     _read_step_owned_knob,  # noqa: F401
     _snapshot_step_params,  # noqa: F401
     _verb_to_phase_5_step,  # noqa: F401
@@ -1266,6 +1268,25 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         phase_6_candidates, args.scope_estimate, drop_review_on_scope_gate
     )
 
+    # Pre-filter 6 (unresolved_ask_provider_drop, D6): drop an UNRESOLVED
+    # lane:ask infra element (automatic-review / sonar-roundtrip) when its
+    # provider is genuinely absent. Both infra elements seed lane:ask; a
+    # steward-persisted answer overwrites the override to off/auto/full, so an
+    # effective tier still equal to ``ask`` at compose means the operator never
+    # answered. When the corresponding provider is also absent
+    # (_read_ci_provider() is None for automatic-review; _read_sonar_provider()
+    # is None for sonar-roundtrip) the element is dropped. A RESOLVED ask
+    # (off/auto/full) and a provider-configured ask both survive; the frozen
+    # off-override-on-floor-step honored-with-warning semantic (owned by the
+    # later lane-resolution pass) is untouched. Runs at the candidate-narrowing
+    # stage so it only ever narrows the candidate list. See
+    # standards/decision-rules.md § Pre-Filter: unresolved_ask_provider_drop.
+    ci_provider = _read_ci_provider()
+    sonar_provider = _read_sonar_provider()
+    phase_6_candidates, unresolved_ask_dropped = _apply_unresolved_ask_provider_drop(
+        phase_6_candidates, marshal_phase_6_map, ci_provider, sonar_provider
+    )
+
     body, rule = _decide(
         change_type=args.change_type,
         track=args.track,
@@ -1504,6 +1525,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_prefilter_omitted(plan_id, 'finalize-step-security-audit', args.change_type, affected_files_count)
     for dropped_step in scope_gated_dropped:
         _log_scope_gated_finalize_subtraction(plan_id, args.scope_estimate, dropped_step)
+    for dropped_step in unresolved_ask_dropped:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) unresolved_ask_provider_drop — '
+            f'dropped {dropped_step} from phase_6.steps (unresolved lane:ask, provider absent)',
+        )
     for change in ceremony_forced_in:
         _log_ceremony_finalize_selection(plan_id, change['gate'], 'always', change['step'])
     for change in ceremony_forced_out:
@@ -1546,6 +1573,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'simplify_omitted': simplify_omitted,
         'security_audit_omitted': security_audit_omitted,
         'scope_gated_finalize_dropped': scope_gated_dropped,
+        'unresolved_ask_provider_dropped': unresolved_ask_dropped,
         'drop_review_on_scope_gate': drop_review_on_scope_gate,
         'ceremony_finalize_gates': ceremony_finalize_gates,
         'ceremony_finalize_forced_in': [c['step'] for c in ceremony_forced_in],

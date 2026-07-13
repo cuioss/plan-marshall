@@ -575,3 +575,166 @@ class TestSecurityAuditInactivePreFilter:
         assert 'finalize-step-security-audit' not in filtered
         # Input list is untouched.
         assert candidates == ['finalize-step-security-audit', 'push']
+
+
+# =============================================================================
+# Test: unresolved_ask_provider_drop pre-filter (D6, direct helper coverage)
+#
+# ``_apply_unresolved_ask_provider_drop`` drops an UNRESOLVED ``lane:ask`` infra
+# element (automatic-review / sonar-roundtrip) from the phase-6 candidate list
+# when its provider is absent. The seed lane for both elements is ``ask``; a
+# steward answer overwrites the override to off/auto/full, so an effective tier
+# still equal to ``ask`` at compose is the unresolved case. These tests exercise
+# the pure helper directly (no compose round-trip) so the full truth table and
+# the no-op contracts are pinned at the unit boundary. See
+# standards/decision-rules.md § Pre-Filter: unresolved_ask_provider_drop.
+# =============================================================================
+
+
+_apply_unresolved_ask_provider_drop = _mem._apply_unresolved_ask_provider_drop
+_read_sonar_provider = _mem._read_sonar_provider
+
+
+def _override_map(ar_lane: str | None = None, sr_lane: str | None = None) -> dict[str, dict]:
+    """Build a marshal-style phase-6 step map with per-element lane overrides.
+
+    Keys mirror the seeded marshal shape: ``plan-marshall:automatic-review`` and
+    ``default:sonar-roundtrip`` (the D1 seed keys). Only elements with a non-None
+    lane are included.
+    """
+    m: dict[str, dict] = {}
+    if ar_lane is not None:
+        m['plan-marshall:automatic-review'] = {'lane': ar_lane}
+    if sr_lane is not None:
+        m['default:sonar-roundtrip'] = {'lane': sr_lane}
+    return m
+
+
+class TestUnresolvedAskProviderDropPreFilter:
+    """Direct unit coverage of the D6 unresolved-ask provider-drop pre-filter."""
+
+    @pytest.mark.parametrize(
+        'ar_lane,ci_provider,expect_present',
+        [
+            ('ask', None, False),      # unresolved ask + no CI provider → DROP
+            ('ask', 'github', True),   # unresolved ask + CI provider → keep
+            ('ask', 'gitlab', True),   # provider identity is irrelevant — any non-None keeps
+            ('auto', None, True),      # resolved auto (steward answered) → keep even w/o provider
+            ('full', None, True),      # resolved full → keep even w/o provider
+            ('off', None, True),       # off is resolved; the later lane pass drops it, not this one
+        ],
+    )
+    def test_automatic_review_truth_table(self, ar_lane, ci_provider, expect_present):
+        candidates = ['plan-marshall:automatic-review', 'push', 'archive-plan']
+        kept, dropped = _apply_unresolved_ask_provider_drop(
+            candidates, _override_map(ar_lane=ar_lane), ci_provider, None
+        )
+        assert ('plan-marshall:automatic-review' in kept) is expect_present
+        assert ('plan-marshall:automatic-review' in dropped) is (not expect_present)
+        # Non-infra candidates are never disturbed.
+        assert 'push' in kept and 'archive-plan' in kept
+
+    @pytest.mark.parametrize(
+        'sr_lane,sonar_provider,expect_present',
+        [
+            ('ask', None, False),      # unresolved ask + no Sonar provider → DROP
+            ('ask', 'sonar', True),    # unresolved ask + Sonar provider → keep
+            ('auto', None, True),      # resolved auto → keep even w/o provider
+            ('full', None, True),      # resolved full → keep even w/o provider
+            ('off', None, True),       # off is resolved; dropped later by the lane pass, not here
+        ],
+    )
+    def test_sonar_roundtrip_truth_table(self, sr_lane, sonar_provider, expect_present):
+        # The candidate list is boundary-normalized in compose (``default:`` is
+        # stripped), so the helper is given the bare ``sonar-roundtrip`` form.
+        candidates = ['sonar-roundtrip', 'push']
+        kept, dropped = _apply_unresolved_ask_provider_drop(
+            candidates, _override_map(sr_lane=sr_lane), None, sonar_provider
+        )
+        assert ('sonar-roundtrip' in kept) is expect_present
+        assert ('sonar-roundtrip' in dropped) is (not expect_present)
+        assert 'push' in kept
+
+    def test_both_unresolved_no_providers_drop_both(self):
+        candidates = ['plan-marshall:automatic-review', 'sonar-roundtrip', 'push']
+        kept, dropped = _apply_unresolved_ask_provider_drop(
+            candidates, _override_map(ar_lane='ask', sr_lane='ask'), None, None
+        )
+        assert kept == ['push']
+        assert set(dropped) == {'plan-marshall:automatic-review', 'sonar-roundtrip'}
+
+    def test_provider_isolation_ci_present_sonar_absent(self):
+        # A configured CI provider keeps automatic-review; an absent Sonar
+        # provider still drops an unresolved sonar-roundtrip. The two elements
+        # are keyed to distinct providers.
+        candidates = ['plan-marshall:automatic-review', 'sonar-roundtrip']
+        kept, dropped = _apply_unresolved_ask_provider_drop(
+            candidates, _override_map(ar_lane='ask', sr_lane='ask'), 'github', None
+        )
+        assert kept == ['plan-marshall:automatic-review']
+        assert dropped == ['sonar-roundtrip']
+
+    def test_no_override_keeps_infra_elements(self):
+        # No marshal override at all (e.g. CSV-fallback, marshal_map None/empty):
+        # the effective tier is undeterminable, not ``ask``, so nothing is dropped
+        # (conservative keep).
+        candidates = ['plan-marshall:automatic-review', 'sonar-roundtrip']
+        for override_map in ({}, None):
+            kept, dropped = _apply_unresolved_ask_provider_drop(candidates, override_map, None, None)
+            assert dropped == []
+            assert kept == candidates
+
+    def test_non_infra_elements_pass_through_untouched(self):
+        candidates = ['push', 'archive-plan', 'finalize-step-simplify']
+        kept, dropped = _apply_unresolved_ask_provider_drop(
+            candidates, _override_map(ar_lane='ask'), None, None
+        )
+        assert kept == candidates
+        assert dropped == []
+
+    def test_does_not_mutate_input_list(self):
+        candidates = ['plan-marshall:automatic-review', 'push']
+        _apply_unresolved_ask_provider_drop(
+            candidates, _override_map(ar_lane='ask'), None, None
+        )
+        assert candidates == ['plan-marshall:automatic-review', 'push']
+
+
+class TestReadSonarProvider:
+    """``_read_sonar_provider`` resolves the Sonar provider from marshal.json."""
+
+    def _seed_providers(self, providers: list[dict]) -> None:
+        from file_ops import get_marshal_path
+
+        marshal = {'plan': {'phase-6-finalize': {}}, 'providers': providers}
+        marshal_path = get_marshal_path()
+        marshal_path.parent.mkdir(parents=True, exist_ok=True)
+        marshal_path.write_text(json.dumps(marshal, indent=2))
+
+    def test_returns_sonar_when_declared(self, plan_context):
+        self._seed_providers(
+            [{'skill_name': 'plan-marshall:workflow-integration-sonar', 'category': 'sonar'}]
+        )
+        assert _read_sonar_provider() == 'sonar'
+
+    def test_returns_sonar_regardless_of_category(self, plan_context):
+        # The reader keys on skill_name, not category, so a differently-categorized
+        # Sonar entry still resolves.
+        self._seed_providers(
+            [{'skill_name': 'plan-marshall:workflow-integration-sonar', 'category': 'quality'}]
+        )
+        assert _read_sonar_provider() == 'sonar'
+
+    def test_none_when_no_sonar_provider(self, plan_context):
+        self._seed_providers(
+            [{'skill_name': 'plan-marshall:workflow-integration-github', 'category': 'ci'}]
+        )
+        assert _read_sonar_provider() is None
+
+    def test_none_when_providers_absent(self, plan_context):
+        from file_ops import get_marshal_path
+
+        marshal_path = get_marshal_path()
+        marshal_path.parent.mkdir(parents=True, exist_ok=True)
+        marshal_path.write_text(json.dumps({'plan': {'phase-6-finalize': {}}}, indent=2))
+        assert _read_sonar_provider() is None

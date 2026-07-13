@@ -4344,3 +4344,150 @@ def test_project_step_resolves_from_working_tree_not_file_anchor(monkeypatch, tm
 
     # Order resolution reads the frontmatter from the cwd working tree too.
     assert _mv._resolve_step_order('project:finalize-step-cache-probe') == 77
+
+
+# =============================================================================
+# D6 — compose-time drop-when-no-provider for an unresolved lane:ask infra element
+#
+# Both adversarial infra elements (automatic-review, sonar-roundtrip) seed
+# ``lane: ask``. A steward-persisted answer overwrites the override to
+# off/auto/full; an effective tier still equal to ``ask`` at compose means the
+# operator never answered (UNRESOLVED). When unresolved AND the corresponding
+# provider is absent (no CI provider for automatic-review; no Sonar provider for
+# sonar-roundtrip), the ``_apply_unresolved_ask_provider_drop`` pre-filter drops
+# the element at the candidate-narrowing stage. A resolved (off/auto/full) ask
+# and a provider-configured ask both survive. These compose round-trip tests
+# exercise the pre-filter end-to-end through cmd_compose; the pure-function truth
+# table is pinned directly in test_decision_rules.py.
+# =============================================================================
+
+
+def _seed_marshal_with_finalize_steps(
+    steps_map: dict[str, dict],
+    *,
+    ci_provider: str | None = None,
+    sonar_provider: bool = False,
+) -> Path:
+    """Seed marshal.json with a ``phase-6-finalize.steps`` keyed map + providers.
+
+    ``steps_map`` becomes the candidate source (its keys ARE the phase-6
+    candidate list) and the per-element ``lane`` override map the D6 pre-filter
+    reads. ``ci_provider`` (``'github'``/``'gitlab'``/``None``) and
+    ``sonar_provider`` control the ``providers[]`` list so the two provider
+    readers resolve deterministically.
+    """
+    from file_ops import get_marshal_path
+
+    providers: list[dict] = []
+    if ci_provider:
+        providers.append(
+            {'skill_name': f'plan-marshall:workflow-integration-{ci_provider}', 'category': 'ci'}
+        )
+    if sonar_provider:
+        providers.append(
+            {'skill_name': 'plan-marshall:workflow-integration-sonar', 'category': 'sonar'}
+        )
+    marshal: dict = {'plan': {'phase-6-finalize': {'steps': steps_map}}}
+    if providers:
+        marshal['providers'] = providers
+    marshal_path = get_marshal_path()
+    marshal_path.parent.mkdir(parents=True, exist_ok=True)
+    marshal_path.write_text(json.dumps(marshal, indent=2))
+    return marshal_path
+
+
+class TestUnresolvedAskProviderDropCompose:
+    """End-to-end compose round-trip of the D6 unresolved-ask provider-drop pre-filter."""
+
+    def test_unresolved_ask_automatic_review_drops_when_no_ci_provider(self, plan_context):
+        """{automatic-review: ask, no CI provider} → dropped from phase_6.steps."""
+        steps_map = {
+            'push': {},
+            'plan-marshall:automatic-review': {'lane': 'ask'},
+            'archive-plan': {},
+        }
+        _seed_marshal_with_finalize_steps(steps_map, ci_provider=None)
+        result = cmd_compose(_compose_ns(plan_id='d6-ar-drop', phase_6_steps=None))
+        assert result is not None and result['status'] == 'success'
+        assert 'plan-marshall:automatic-review' in result['unresolved_ask_provider_dropped']
+        manifest = read_manifest('d6-ar-drop')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        assert 'automatic-review' not in steps and 'plan-marshall:automatic-review' not in steps
+        # Non-infra candidates survive.
+        assert 'push' in steps and 'archive-plan' in steps
+
+    def test_unresolved_ask_automatic_review_kept_when_ci_provider_present(self, plan_context):
+        """{automatic-review: ask, CI provider present} → kept."""
+        steps_map = {
+            'push': {},
+            'plan-marshall:automatic-review': {'lane': 'ask'},
+            'archive-plan': {},
+        }
+        _seed_marshal_with_finalize_steps(steps_map, ci_provider='github')
+        result = cmd_compose(_compose_ns(plan_id='d6-ar-keep', phase_6_steps=None))
+        assert result is not None and result['status'] == 'success'
+        assert result['unresolved_ask_provider_dropped'] == []
+        steps = read_manifest('d6-ar-keep')['phase_6']['steps']
+        assert 'automatic-review' in steps
+
+    def test_unresolved_ask_sonar_roundtrip_drops_when_no_sonar_provider(self, plan_context):
+        """{sonar-roundtrip: ask, no Sonar provider} → dropped."""
+        steps_map = {
+            'push': {},
+            'default:sonar-roundtrip': {'lane': 'ask'},
+            'archive-plan': {},
+        }
+        _seed_marshal_with_finalize_steps(steps_map, sonar_provider=False)
+        result = cmd_compose(_compose_ns(plan_id='d6-sr-drop', phase_6_steps=None))
+        assert result is not None and result['status'] == 'success'
+        assert 'sonar-roundtrip' in result['unresolved_ask_provider_dropped']
+        steps = read_manifest('d6-sr-drop')['phase_6']['steps']
+        assert 'sonar-roundtrip' not in steps
+        assert 'push' in steps and 'archive-plan' in steps
+
+    def test_unresolved_ask_sonar_roundtrip_kept_when_sonar_provider_present(self, plan_context):
+        """{sonar-roundtrip: ask, Sonar provider present} → kept."""
+        steps_map = {
+            'push': {},
+            'default:sonar-roundtrip': {'lane': 'ask'},
+            'archive-plan': {},
+        }
+        _seed_marshal_with_finalize_steps(steps_map, sonar_provider=True)
+        result = cmd_compose(_compose_ns(plan_id='d6-sr-keep', phase_6_steps=None))
+        assert result is not None and result['status'] == 'success'
+        assert result['unresolved_ask_provider_dropped'] == []
+        steps = read_manifest('d6-sr-keep')['phase_6']['steps']
+        assert 'sonar-roundtrip' in steps
+
+    def test_resolved_full_ask_with_provider_survives(self, plan_context):
+        """A full-resolved ask (override overwritten to ``full``) with a configured
+        provider is never dropped by this pre-filter."""
+        steps_map = {
+            'push': {},
+            'plan-marshall:automatic-review': {'lane': 'full'},
+            'default:sonar-roundtrip': {'lane': 'full'},
+            'archive-plan': {},
+        }
+        _seed_marshal_with_finalize_steps(steps_map, ci_provider='github', sonar_provider=True)
+        result = cmd_compose(_compose_ns(plan_id='d6-resolved-full', phase_6_steps=None))
+        assert result is not None and result['status'] == 'success'
+        assert result['unresolved_ask_provider_dropped'] == []
+        steps = read_manifest('d6-resolved-full')['phase_6']['steps']
+        assert 'automatic-review' in steps and 'sonar-roundtrip' in steps
+
+    def test_resolved_auto_ask_survives_even_without_provider(self, plan_context):
+        """An auto-resolved ask survives even when the provider is absent — only an
+        UNRESOLVED ``ask`` is provider-gated by this pre-filter."""
+        steps_map = {
+            'push': {},
+            'plan-marshall:automatic-review': {'lane': 'auto'},
+            'default:sonar-roundtrip': {'lane': 'auto'},
+            'archive-plan': {},
+        }
+        _seed_marshal_with_finalize_steps(steps_map, ci_provider=None, sonar_provider=False)
+        result = cmd_compose(_compose_ns(plan_id='d6-resolved-auto', phase_6_steps=None))
+        assert result is not None and result['status'] == 'success'
+        assert result['unresolved_ask_provider_dropped'] == []
+        steps = read_manifest('d6-resolved-auto')['phase_6']['steps']
+        assert 'automatic-review' in steps and 'sonar-roundtrip' in steps
