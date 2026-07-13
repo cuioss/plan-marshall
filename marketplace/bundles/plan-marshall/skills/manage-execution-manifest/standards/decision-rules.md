@@ -381,6 +381,25 @@ When `ci_provider` is neither `github` nor `gitlab`, OR `plan-marshall:automatic
 
 **Cross-references**: `manage-architecture/standards/resolve-command.md` (the four-field augmented resolve TOON and the ≈600K-token re-dispatch failure mode that motivated it); `persona-plan-marshall-agent` (the sub-agent rule that consumes `bash_timeout_seconds`).
 
+## execution_tier Stamping
+
+**Type**: Composition-time per-step stamping pass. Runs *after* the final `phase_5.verification_steps` list is settled — the seven-row matrix, `execution_tier` COMMAND routing, the `canonical_verify_inactive` footprint pre-filter, and the request-aspect step-dropping pass — so it stamps a tier for every step that will actually be persisted. It is the per-STEP peer of the per-COMMAND `execution_tier` routing above.
+
+**Rule**: every selected phase-5 verification step carries a resolved `execution_tier`; the composer NEVER emits an unresolved tier. The composer writes a `phase_5.step_execution_tier` record list — one `{step_id, tier}` object per verification step, in list order — where each `tier` is resolved as follows:
+
+- **built-in canonical-verify step** (`verify:{canonical}`): resolved via a whole-tree `architecture resolve --command {canonical}` (no `--module`), reading the `execution_tier` field of the resolve TOON (`per_task` | `orchestrator`).
+- **every other step id** — an external `project:` / `bundle:skill` step, or a `verify:{canonical}` whose canonical is unresolvable, or any resolve failure (non-zero exit, unparseable TOON, absent tier): defaults to **`per_task`**.
+
+`per_task` is the safe floor — it keeps the step in the leaf's inline slice, matching the pre-stamp behaviour where every step ran inline. The record-list form (rather than a TOON object map keyed by step id) is dictated by the storage format: a step id (`verify:quality-gate`) contains a colon, which does not round-trip as a TOON object key, whereas a quoted string value inside a uniform array round-trips exactly.
+
+**Structural leaf-no-background-build guard**: this stamping is the compose-time structural enforcement that supersedes the prose-only leaf-no-background-build invariant. Because the tier is a manifest fact, `phase-5-execute` runs only `per_task` steps inline and routes every `orchestrator`-tier step to the main-context orchestrator's `await-long-running` detach-and-notify seam (the only component permitted to background a build). A dispatched leaf therefore structurally never receives a long build it would background-and-lose. See [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot reap a backgrounded build".
+
+**Decision log line** (emitted on every compose, naming each step's resolved tier):
+
+```text
+(plan-marshall:manage-execution-manifest:compose) step_execution_tier stamping — verify:quality-gate=per_task, verify:module-tests=orchestrator, verify:coverage=orchestrator
+```
+
 ## Role-Field Intersection
 
 Rows 2, 3, 5, and 6 intersect the `phase_5_candidates` list against a set of canonical roles (`{quality-gate}`, `{module-tests}`, `{quality-gate, module-tests}`) rather than against literal step IDs. The mechanism is structural: each phase-5 step standards file under `marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/` declares its role in YAML frontmatter (e.g., `role: quality-gate` on `quality_check.md`, `role: module-tests` on `build_verify.md`, `role: coverage` on `coverage_check.md`). At compose time the composer resolves each candidate step ID to its source file and reads the `role:` value; intersection is `candidate_role ∈ {target_role, ...}` rather than `candidate_id ∈ {literal_id, ...}`.

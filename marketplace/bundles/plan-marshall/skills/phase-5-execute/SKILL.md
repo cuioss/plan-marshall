@@ -175,9 +175,9 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   read --plan-id {plan_id}
 ```
 
-Extract `phase_5.early_terminate` (bool) and `phase_5.verification_steps` (list[string]) from the output. **Do NOT evaluate `early_terminate` yet** — Step 2 only reads the manifest and caches the values. Step 2.5 (worktree materialization) MUST run before the `early_terminate` short-circuit fires, so the short-circuit evaluation is deferred to Step 2.6 below.
+Extract `phase_5.early_terminate` (bool), `phase_5.verification_steps` (list[string]), and `phase_5.step_execution_tier` (list of `{step_id, tier}` records) from the output. **Do NOT evaluate `early_terminate` yet** — Step 2 only reads the manifest and caches the values. Step 2.5 (worktree materialization) MUST run before the `early_terminate` short-circuit fires, so the short-circuit evaluation is deferred to Step 2.6 below.
 
-The verification steps to execute at end of phase come from `phase_5.verification_steps` — this **replaces** today's lookup of `marshal.json`'s `phase-5-execute.steps`. The list is consumed by Step 11b (Final Quality Sweep) and the verification dispatch loop. See **Verification Step Types** below for dispatch rules.
+The verification steps to execute at end of phase come from `phase_5.verification_steps` — this **replaces** today's lookup of `marshal.json`'s `phase-5-execute.steps`. The list is consumed by Step 11b (Final Quality Sweep) and the verification dispatch loop. See **Verification Step Types** below for dispatch rules. Each verification step's runnability is governed by its stamped `phase_5.step_execution_tier` entry — see **Per-step `execution_tier` (compose-time structural leaf-build guard)** below.
 
 The step IDs in the manifest are **bare** — `cmd_compose`'s boundary normalization strips only the leading `default:` prefix, so a built-in canonical-verify step appears as `verify:{canonical}` (e.g., `verify:quality-gate`, `verify:module-tests`, `verify:coverage`). Translate them to the `default:` prefixed names used by the Built-in Step Dispatch Table by prepending `default:` for built-in steps — e.g., `verify:quality-gate` → `default:verify:quality-gate`. Steps that already contain `:` beyond the `verify:` segment for project/skill steps (a `project:` or `bundle:skill` prefix) are passed through verbatim.
 
@@ -207,6 +207,15 @@ Each verify step declares an `order: <int>` value in its authoritative source �
 | `default:verify:{canonical}` | Resolve the trailing `{canonical}` via `architecture resolve --command {canonical}` and run the resolved executable | Single parameterized verify step backing every canonical (`quality-gate`, `module-tests`/`verify`, `coverage`, `integration-tests`, `e2e`, …); the canonical is a parameter, not a hardcoded branch — see `standards/canonical_verify.md` |
 
 **Dispatch detection**: a step ID starting with the `default:verify:` prefix routes to the single parameterized canonical-verify step. The SKILL strips the `default:` prefix and feeds the trailing `{canonical}` segment to `architecture resolve --command {canonical}`. The full step body — canonical resolution, `execution_tier`/`bash_timeout_seconds` handling, the unresolved-canonical skip, and the module-scoped vs whole-tree invocation contract — lives in `standards/canonical_verify.md`; do NOT restate it here. Threshold enforcement for `coverage` is native to the resolved build command (pytest `--cov-fail-under`, JaCoCo build-tool config) — no secondary parse-and-check call is required.
+
+### Per-step `execution_tier` (compose-time structural leaf-build guard)
+
+Every entry of `phase_5.verification_steps` carries a stamped `execution_tier` in the manifest's `phase_5.step_execution_tier` record list (`{step_id, tier}` per step; `tier ∈ {per_task, orchestrator}` — see [`manage-execution-manifest/SKILL.md`](../manage-execution-manifest/SKILL.md) § "Per-step execution_tier stamping"). The stamped tier is the **compose-time structural enforcement** of the leaf-no-background-build invariant — it supersedes the prose-only rule the leaf previously had to remember at run time. This dispatched phase-5 leaf branches on the stamped tier for every whole-tree verification step it would run (Step 11b Final Quality Sweep and Step 11c Execute-Exit Verify Gate) and for each `default:verify:{canonical}` end-of-phase step:
+
+- **`tier == per_task`** — the step is in the leaf's **runnable slice**. Resolve and run it inline (synchronously) per `standards/canonical_verify.md`, honouring the resolved `bash_timeout_seconds`. Read the result TOON.
+- **`tier == orchestrator`** — the step is **NOT in the leaf's runnable slice**. The leaf MUST NOT run it (inline OR backgrounded). Return an orchestrator-tier yield signal (`status: blocked`, `voluntary_checkpoint`) naming the step so the main-context orchestrator runs it through the [`await-long-running`](../plan-marshall/workflow/await-long-running.md) detach-and-notify seam (the only component permitted to background a build). Because the tier is a manifest fact rather than a run-time resolution the leaf could ignore, a dispatched leaf **structurally cannot receive** a long build to background-and-lose.
+
+A step whose stamped tier is absent (a manifest composed before this field existed) defaults to `per_task` — the safe floor, matching the prior all-inline behaviour. The leaf resolves the stamped tier from the manifest rather than re-deriving it via `architecture resolve`; the stamp IS the routing authority.
 
 ### Interface Contract for External Steps
 
@@ -756,9 +765,27 @@ The mid-execute per-deliverable build is **focused** by design: it runs the `per
 **Applies when**:
 - A `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`, OR
 - Step 9 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`, OR
-- A task was marked `infeasible` per Step 6 ("Infeasible deliverable — report, never silently substitute") — the leaf returned `status: infeasible` with an `infeasibility_reason`; this routes to the dedicated "For infeasible blocks" sub-section below, NOT the `verification-feedback` code-fix loop
+- A task was marked `infeasible` per Step 6 ("Infeasible deliverable — report, never silently substitute") — the leaf returned `status: infeasible` with an `infeasibility_reason`; this routes to the dedicated "For infeasible blocks" sub-section below, NOT the `verification-feedback` code-fix loop, OR
+- The in-context `execute-task` load returned `escalate_ask: true` with `prompt_options[]` — a scope-deviation and/or `smart_and_ask` gate fired and the task is left not-done; this routes to the dedicated "Scope-deviation / `smart_and_ask` escalation yield" sub-section below, NOT the `verification-feedback` code-fix loop
 
 The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md). This per-task body is a leaf and does NOT dispatch it — the leaf persists the findings and returns a `triage_required` signal; the main-context orchestrator dispatches `verification-feedback` under `--phase phase-5-execute --role verification-feedback` with `producer=build-runner` (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) and the canonical contract in [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md)).
+
+#### Scope-deviation / `smart_and_ask` escalation yield (`escalate_ask`)
+
+**Applies when** the in-context `execute-task` load returned `escalate_ask: true` with `prompt_options[]` — a scope-deviation escalation (Handle Verification Results) and/or a `smart_and_ask` compatibility gate fired, and the leaf left the task not-done. This is a **planning-level operator decision, NOT a fixable code failure** — it is explicitly NOT routed through `verification-feedback` (there is no test/lint/build finding to FIX, SUPPRESS, or ACCEPT). The canonical deviation taxonomy, the three-option shape, and the prohibited "log-and-continue" anti-pattern live in [`ref-workflow-architecture/standards/scope-deviation-escalation.md`](../ref-workflow-architecture/standards/scope-deviation-escalation.md).
+
+Because this per-task body is a **leaf**, it CANNOT fire `AskUserQuestion` and CANNOT dispatch. It collects the `prompt_options[]` from the returned `escalate_ask` — batching across every deviation / `smart_and_ask` gate that fired anywhere in this envelope into ONE `prompt_options[]` list — and **yields an `escalate_ask` envelope to the main-context orchestrator** as a new TASK-boundary yield reason alongside `budget_yield` / `blocked` / `infeasible`. The leaf returns a wrapped terminal payload and stops; the orchestrator fires ONE batched `AskUserQuestion` and applies each option's side effect post-return (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Post-return `escalate_ask` batched deviation dispatch"). The leaf's return payload:
+
+```toon
+status: escalate_ask
+display_detail: "{task_number} escalate_ask: {N} deviation prompt(s)"
+escalate_ask: true
+plan_id: {plan_id}
+prompt_options[N]{id,question,header,options,recommended}:
+  ...
+```
+
+The orchestrator resolves the prompt and re-dispatches phase-5-execute with each resolution baked in: **Hold the line** resumes the fix loop with the requirement intact; **Accept with rationale** persists the rationale to `decision.log` and the PR body; **Split into follow-up plan** seeds a successor lesson. The leaf performs none of the operator-facing interaction.
 
 #### Pre-triage scope cross-reference
 
@@ -879,7 +906,7 @@ After every task in the phase has completed (and Step 11 has resolved any per-ta
      resolve --command quality-gate --audit-plan-id {plan_id}
    ```
 
-2. Execute the returned `executable`. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type lint-issue …`) and **return the `triage_required` signal to the orchestrator** with `producer=build-runner` and `finding_type=lint-issue` — same leaf-returns-signal shape as Step 11d above, only the finding type changes. The leaf does NOT dispatch `verification-feedback` itself; the orchestrator owns the dispatch (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Verification-feedback triage (leaf returned triage_required)") and drives the same fix-task / suppress / accept branch (Step 11e). After the orchestrator's triage resolves, the sweep is NOT re-run — Step 11b runs at most once per phase entry.
+2. **Consult the stamped tier first.** Look up `quality-gate`'s entry in `phase_5.step_execution_tier` (the `verify:quality-gate` step id). When its stamped `tier == orchestrator`, the sweep is NOT in the leaf's runnable slice — do NOT run it; return the orchestrator-tier yield signal (`status: blocked`, `voluntary_checkpoint`) naming the sweep so the orchestrator runs it via `await-long-running` (see **Per-step `execution_tier`** above). Only when the stamped `tier == per_task` (or absent → `per_task` default) does the leaf execute the returned `executable` inline. On non-zero exit, persist the failures to the Q-Gate findings store (`manage-findings qgate add --type lint-issue …`) and **return the `triage_required` signal to the orchestrator** with `producer=build-runner` and `finding_type=lint-issue` — same leaf-returns-signal shape as Step 11d above, only the finding type changes. The leaf does NOT dispatch `verification-feedback` itself; the orchestrator owns the dispatch (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Verification-feedback triage (leaf returned triage_required)") and drives the same fix-task / suppress / accept branch (Step 11e). After the orchestrator's triage resolves, the sweep is NOT re-run — Step 11b runs at most once per phase entry.
 
 3. Log the outcome:
 
@@ -913,7 +940,7 @@ This gate runs after Step 11b's quality sweep and before Step 12.
      resolve --command verify --module {bundle} --audit-plan-id {plan_id}
    ```
 
-   Execute the returned `executable`. Honor the architecture-resolved `bash_timeout_seconds` / `execution_tier` envelope: for `execution_tier=per_task` run the build inline with `timeout: bash_timeout_seconds * 1000`; for `execution_tier=orchestrator` return control to the orchestrator to run the long build (do NOT background it). After each build call, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code.
+   Consult the whole-bundle `verify` step's stamped tier in `phase_5.step_execution_tier` (the `verify:module-tests` step id backs the `verify` canonical) — the stamp is the routing authority. For `tier=per_task` run the build inline with `timeout: bash_timeout_seconds * 1000`; for `tier=orchestrator` the step is NOT in the leaf's runnable slice — return control to the orchestrator to run the long build via `await-long-running` (do NOT run it inline, do NOT background it). After each build call the leaf runs, inspect the result TOON — read `status` and the `errors[]` rows, not the harness exit code.
 
 3. **On non-zero exit** — route the failure through the **same leaf-returns-signal path** as Step 11b: persist each failing finding to the Q-Gate store (`manage-findings qgate add --type lint-issue …`) and return the `triage_required` signal to the orchestrator with `producer=build-runner` and `finding_type=lint-issue`. The leaf does NOT dispatch `verification-feedback` itself. The gate runs at most once per phase entry.
 
@@ -1157,18 +1184,19 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ## Output
 
-phase-5-execute returns on four terminal paths (queue empty → transition; fatal error; triage `blocked`; deliverable `infeasible`). The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
+phase-5-execute returns on five terminal paths (queue empty → transition; fatal error; triage `blocked`; deliverable `infeasible`; scope-deviation `escalate_ask`). The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
 
 ```toon
-status: success | error | blocked | infeasible
+status: success | error | blocked | infeasible | escalate_ask
 display_detail: "<{tasks_completed} tasks complete, {tasks_remaining} remaining>"
 plan_id: {plan_id}
 tasks_completed: {N}
 tasks_remaining: {N}
 infeasibility_reason: {required when status=infeasible — why the declared deliverable cannot be built as scoped}
+prompt_options[N]{id,question,header,options,recommended}: {required when status=escalate_ask — the batched scope-deviation / smart_and_ask questions for the orchestrator to fire}
 ```
 
-`display_detail` shape on success: `"{tasks_completed} tasks complete, {tasks_remaining} remaining"` (e.g. `"7 tasks complete, 0 remaining"`). On `blocked`: `"{task_number} blocked: {short reason}"`. On `infeasible`: `"{task_number} infeasible: {short reason}"`. On error: short error label from § Error Handling. All values are ≤80 chars, ASCII, no trailing period. The `infeasible` return carries `infeasibility_reason`; the orchestrator routes it to the Step 11 "For infeasible blocks" planning gate (drop / re-scope / abort via AskUserQuestion), NOT the `verification-feedback` code-fix loop.
+`display_detail` shape on success: `"{tasks_completed} tasks complete, {tasks_remaining} remaining"` (e.g. `"7 tasks complete, 0 remaining"`). On `blocked`: `"{task_number} blocked: {short reason}"`. On `infeasible`: `"{task_number} infeasible: {short reason}"`. On `escalate_ask`: `"{task_number} escalate_ask: {N} deviation prompt(s)"`. On error: short error label from § Error Handling. All values are ≤80 chars, ASCII, no trailing period. The `infeasible` return carries `infeasibility_reason`; the orchestrator routes it to the Step 11 "For infeasible blocks" planning gate (drop / re-scope / abort via AskUserQuestion), NOT the `verification-feedback` code-fix loop. The `escalate_ask` return carries `prompt_options[]`; the orchestrator fires ONE batched `AskUserQuestion` (§ "Post-return `escalate_ask` batched deviation dispatch" in `execution.md`) and re-dispatches with the resolutions baked in, NOT the `verification-feedback` code-fix loop.
 
 ---
 

@@ -177,6 +177,8 @@ Inside that single envelope, for each task:
 
 The dispatch unit is the **execution envelope pre-computed at plan time** — neither per-task nor per-deliverable. phase-4-plan's bin-packer (`manage-tasks pack-envelopes`) grouped tasks into envelopes (in `depends_on` order, under `per_envelope_budget_tokens`), stamped each task with an `envelope_id`, and recorded `envelope_count` in the manifest. **The orchestrator drives exactly `envelope_count` phase-5-execute dispatches — one per envelope group — passing each its assigned `envelope_id`.** Each dispatched executor runs only the tasks whose `envelope_id` matches its group and yields at a TASK boundary when its group is exhausted (the next pending task belongs to a different envelope → `budget_yield`), or on `triage_required` / `baseline_drift`. The orchestrator re-dispatches the next envelope group to resume the loop until all tasks are done. There is no runtime cost-summing or budget read inside the envelope — the harness cannot self-measure mid-turn, so the continue-vs-yield decision was fully pre-computed at plan time and the executor only reads its `envelope_id` group.
 
+**The dispatched leaf's verification slice is `per_task`-only.** The manifest stamps each `phase_5.verification_steps` entry with an `execution_tier` (`per_task` | `orchestrator`) in `phase_5.step_execution_tier` (composed by `manage-execution-manifest`). A dispatched leaf runs only `per_task`-stamped verification steps inline; every `orchestrator`-tier step is OUTSIDE the leaf's runnable slice and is owned HERE by the main-context orchestrator through the [`await-long-running`](await-long-running.md) detach-and-notify seam — the only component permitted to background a build. This is the compose-time structural enforcement of the leaf-no-background-build invariant (see [`../../ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot reap a backgrounded build"): because the tier is a manifest fact rather than a run-time resolution the leaf could ignore, a leaf structurally never receives a long build to background-and-lose. See § "Orchestrator-tier phase-5 verification (await-long-running)" below for the handler.
+
 ### After execution-context returns
 
 After every `execution-context` dispatch returns control to the orchestrator —
@@ -333,6 +335,21 @@ guard in `manage-tasks finalize-step`.
 
 This dispatch lives in the main-context orchestrator so every cross-envelope `Task:` dispatch originates there, while the leaf retains all deterministic, store-mutating work (failure detection, scope cross-reference, planned-failure exception, iteration-cap check, and `manage-findings qgate add` finding persistence).
 
+### Post-return `escalate_ask` batched deviation dispatch (conditional)
+
+**Trigger**: the just-returned phase-5-execute dispatch carries `status: escalate_ask` with a `prompt_options[]` list in its terminal payload. A scope-deviation escalation (execute-task Handle-Verification) and/or a `smart_and_ask` compatibility gate fired inside the envelope; the leaf left the affected task not-done and batched every gate that fired into ONE `prompt_options[]` list. This is a **planning-level operator decision, NOT a fixable code failure** — it is explicitly NOT routed through `verification-feedback`. The canonical deviation taxonomy, three-option shape, and side-effect contract live in [`../../ref-workflow-architecture/standards/scope-deviation-escalation.md`](../../ref-workflow-architecture/standards/scope-deviation-escalation.md).
+
+Because the dispatched leaf cannot reach the operator but this orchestrator runs in the main context and can (see [`../../ref-workflow-architecture/standards/agents.md` § Leaf cannot fire AskUserQuestion](../../ref-workflow-architecture/standards/agents.md#leaf-cannot-fire-askuserquestion--return-a-prompt-required-envelope)), the orchestrator owns the prompt — mirroring D1's `planning.md` § 2-Refine `refine_prompt` handling:
+
+1. **Fire ONE batched `AskUserQuestion`** covering EVERY entry in `prompt_options[]`, presenting each with the leaf's `recommended` default. Each option's label MUST name the branch it selects (Hold the line / Accept with rationale / Split into follow-up plan) per the option-text-names-the-branch authoring rule.
+
+2. **Apply each resolution's side effect** post-return per `scope-deviation-escalation.md` § "Resolution Handling":
+   - **Hold the line** → re-dispatch phase-5-execute so the leaf resumes the fix loop with the hard requirement intact.
+   - **Accept with rationale** → prompt for the rationale (free-form follow-up `AskUserQuestion`), persist it to `decision.log` at INFO with a `(scope-deviation:accept)` marker, AND surface it verbatim in the PR body under a "Scope Deviation Accepted" subsection.
+   - **Split into follow-up plan** → create a successor lesson via `manage-lessons add` capturing the deferred portion; the current plan continues with only the additive scope.
+
+3. **Re-dispatch phase-5-execute** via the standard execute-phase envelope (per the dispatch block above), baking each resolution into the dispatch prompt so the re-entered leaf resolves each deviation deterministically. The in-flight task state is already persisted, so resumption is lossless. When the `escalate_ask` payload is absent, skip this block.
+
 ### Baseline drift recovery (non-zero overlap)
 
 **Trigger**: the just-returned execution-context dispatch is classified `termination-cause == baseline_drift`. The agent's structured error payload carries `error: baseline_drift` plus `divergent_commits`, `upstream_commit_count`, and `conflict_count > 0`.
@@ -393,6 +410,18 @@ The counter resets to zero on any phase-5-execute return that is NOT `baseline_d
 - `phase-5-execute/SKILL.md` Step 3 — the deterministic drift detection that produces the structured TOON this branch consumes
 - `phase-5-execute/standards/sync-with-main.md` § "Self-absorption contract" — the zero-overlap case that NEVER reaches this branch
 - `plan-marshall/workflow/planning.md` § "2-Refine Phase" — the standard refine dispatch envelope this branch reuses
+
+### Orchestrator-tier phase-5 verification (await-long-running)
+
+**Trigger**: the just-returned phase-5-execute dispatch yielded an orchestrator-tier verification signal — a `status: blocked` / `voluntary_checkpoint` terminal payload naming a `phase_5.verification_steps` step whose stamped `phase_5.step_execution_tier` is `orchestrator` (the leaf's Step 11b Final Quality Sweep or Step 11c Execute-Exit Verify Gate reached a step outside its `per_task` runnable slice and yielded rather than running it). The named step is the whole-tree gate the leaf structurally cannot run.
+
+Because the `await-long-running` seam is the ONLY component permitted to background a build, the orchestrator owns every `orchestrator`-tier phase-5 verification step. On this yield the orchestrator:
+
+1. **Read the stamped tier map** from the manifest (`phase_5.step_execution_tier`) and identify the `orchestrator`-tier verification step(s) named in the leaf's yield.
+2. **Resolve and run each `orchestrator`-tier step through the [`await-long-running`](await-long-running.md) seam** — the detach-and-notify recipe owns the full acquire-slot → background (`run_in_background: true`) → wake-on-notification → state-gated clear → release flow. Resolve the canonical build via `architecture resolve --command {canonical} --audit-plan-id {plan_id}` (whole-tree; the step id `verify:{canonical}` names the canonical) and hand the resolved `executable` to the seam. The orchestrator does NOT block synchronously and does NOT run the build inline — the seam is the authoritative long-build owner.
+3. **On a green build**, re-dispatch phase-5-execute (per the dispatch block above) so the leaf resumes; the freshness gate (`pre-commit-verify-freshness`, Step 12a) now sees the `kind=build` ledger stamp the orchestrator-tier build wrote and permits the transition. **On a failing build**, route the findings through the same `verification-feedback` triage the leaf's `triage_required` path uses (§ "Verification-feedback triage").
+
+This handler is the consuming half of the compose-time `execution_tier` stamping: the composer routes the long build away from the leaf's slice, and the orchestrator picks it up here. The leaf never backgrounds a build; the orchestrator's `await-long-running` seam always does.
 
 ### Execute Phase Completion
 
