@@ -190,6 +190,26 @@ def main() -> int:
     sd_set.add_argument('--defaults', help='Comma-separated default skills')
     sd_set.add_argument('--optionals', help='Comma-separated optional skills')
 
+    sd_set_incl = sd_sub.add_parser(
+        'set-inclusion',
+        help='Set the per-domain always_on / file_globs inclusion keys',
+        allow_abbrev=False,
+    )
+    add_domain_arg(sd_set_incl)
+    sd_set_incl.add_argument(
+        '--always-on',
+        dest='always_on',
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help='Mark the domain always-on (--always-on) or explicitly off (--no-always-on); '
+        'omit to leave the persisted value untouched',
+    )
+    sd_set_incl.add_argument(
+        '--file-globs',
+        dest='file_globs',
+        help='Comma-separated file globs; a plan whose affected files match any glob includes this domain',
+    )
+
     sd_get_ext = sd_sub.add_parser(
         'get-extensions', help='Get workflow skill extensions for domain', allow_abbrev=False
     )
@@ -713,6 +733,12 @@ def main() -> int:
         '--domain-override',
         dest='domain_override',
         help='Explicit domain (bypasses narrative scan; must match a configured domain key).',
+    )
+    p_dd.add_argument(
+        '--affected-files',
+        dest='affected_files',
+        help='Comma-separated affected-file paths — the file signal for the file_globs merge '
+        '(refine passes the real affected_files; init falls back to narrative path tokens).',
     )
 
     args = parse_args_with_toon_errors(parser)

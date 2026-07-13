@@ -29,6 +29,7 @@ from _config_core import (
 )
 from _config_defaults import (
     DEFAULT_SYSTEM_DOMAIN,
+    validate_domain_inclusion,
     validate_domain_invariants,
 )
 from _config_detection import detect_domains
@@ -569,6 +570,12 @@ def cmd_skill_domains(args) -> dict:
             if 'project_skills' in domain_config:
                 result['project_skills'] = domain_config['project_skills']
 
+            # Surface the per-domain inclusion keys with their absent-by-default
+            # values (always_on false, file_globs []). These drive the
+            # domain-detect always_on / file_globs merge legs.
+            result['always_on'] = domain_config.get('always_on', False)
+            result['file_globs'] = domain_config.get('file_globs', [])
+
             # Load profiles from extension.py if bundle is present
             bundle = domain_config.get('bundle')
             if bundle:
@@ -646,6 +653,40 @@ def cmd_skill_domains(args) -> dict:
         config['skill_domains'] = skill_domains
         save_config(config)
         return success_exit({'domain': domain, 'updated': skill_domains[domain]})
+
+    elif args.verb == 'set-inclusion':
+        domain = args.domain
+        if domain not in skill_domains:
+            return error_exit(f'Unknown domain: {domain}')
+        domain_config = skill_domains[domain]
+
+        always_on = getattr(args, 'always_on', None)
+        file_globs_raw = getattr(args, 'file_globs', None)
+        file_globs = None
+        if file_globs_raw is not None:
+            file_globs = [g.strip() for g in file_globs_raw.split(',') if g.strip()]
+
+        try:
+            validate_domain_inclusion(always_on, file_globs)
+        except ValueError as e:
+            return error_exit(str(e))
+
+        # Each key is written independently: an absent flag leaves the persisted
+        # value untouched (tri-state --always-on / no flag; --file-globs absent).
+        if always_on is not None:
+            domain_config['always_on'] = always_on
+        if file_globs is not None:
+            domain_config['file_globs'] = file_globs
+        skill_domains[domain] = domain_config
+        config['skill_domains'] = skill_domains
+        save_config(config)
+        return success_exit(
+            {
+                'domain': domain,
+                'always_on': domain_config.get('always_on', False),
+                'file_globs': domain_config.get('file_globs', []),
+            }
+        )
 
     elif args.verb == 'get-extensions':
         domain = args.domain
@@ -777,12 +818,20 @@ def cmd_skill_domains(args) -> dict:
         # still exist after reconfigure (mirroring project_skills semantics).
         existing_project_skills: dict[str, list] = {}
         existing_domain_active_profiles: dict[str, list] = {}
+        existing_domain_inclusion: dict[str, dict] = {}
         for domain_key, domain_config in skill_domains.items():
             if isinstance(domain_config, dict):
                 if 'project_skills' in domain_config:
                     existing_project_skills[domain_key] = domain_config['project_skills']
                 if 'active_profiles' in domain_config:
                     existing_domain_active_profiles[domain_key] = domain_config['active_profiles']
+                inclusion = {}
+                if 'always_on' in domain_config:
+                    inclusion['always_on'] = domain_config['always_on']
+                if 'file_globs' in domain_config:
+                    inclusion['file_globs'] = domain_config['file_globs']
+                if inclusion:
+                    existing_domain_inclusion[domain_key] = inclusion
 
         # Preserve top-level skill_domains siblings that are NOT domain configs.
         # The global active_profiles list lives as a sibling of the domain
@@ -825,6 +874,12 @@ def cmd_skill_domains(args) -> dict:
         for domain_key, ap in existing_domain_active_profiles.items():
             if domain_key in skill_domains:
                 skill_domains[domain_key]['active_profiles'] = ap
+
+        # Restore operator-set always_on / file_globs inclusion keys to domains
+        # that still exist (mirrors the project_skills / active_profiles blocks).
+        for domain_key, inclusion in existing_domain_inclusion.items():
+            if domain_key in skill_domains:
+                skill_domains[domain_key].update(inclusion)
 
         config['skill_domains'] = skill_domains
 
