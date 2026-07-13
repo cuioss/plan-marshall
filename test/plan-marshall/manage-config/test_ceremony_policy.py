@@ -202,8 +202,8 @@ def test_folded_finalize_knob_is_not_a_flat_sibling(owner_step, knob, default):
 def test_seeded_folded_knob_materializes_under_owning_built_in_step(owner_step, knob, default):
     """A folded knob on a BUILT-IN finalize step is materialized in the default seed.
 
-    `default:finalize-step-simplify` is a built-in finalize step, so its folded
-    `simplify` default appears nested under the step in
+    `default:pre-submission-self-review` is a built-in finalize step, so its folded
+    `drop_review_on_scope_gate` default appears nested under the step in
     get_default_config()['plan']['phase-6-finalize']['steps'].
     """
     config = _config_defaults_mod.get_default_config()

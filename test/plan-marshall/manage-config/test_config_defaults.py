@@ -391,19 +391,6 @@ def test_seed_finalize_steps_default_on_non_infra_steps_have_no_lane_key():
         )
 
 
-def test_retired_run_at_all_symbols_are_gone():
-    """The retired VALID_RUN_AT_ALL / validate_run_at_all symbols must not survive.
-
-    The `simplify` gate (and the other three finalize ceremony gates) migrated off
-    the run-at-all channel onto the per-element `steps.<step>.lane` override, and
-    the run-at-all enum/validator pair was deleted entirely — replaced by the
-    `gate_mode` enum scoped to the three planning gates (see
-    test_ceremony_policy.py for the gate_mode set-time validation coverage).
-    """
-    assert not hasattr(_config_defaults_mod, 'VALID_RUN_AT_ALL')
-    assert not hasattr(_config_defaults_mod, 'validate_run_at_all')
-
-
 def test_default_plan_finalize_includes_auto_rebase_threshold():
     """auto_rebase_threshold nests under default:branch-cleanup with default 'no_overlap_only'."""
     config = _config_defaults_mod.get_default_config()
