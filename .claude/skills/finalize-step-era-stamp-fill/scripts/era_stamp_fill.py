@@ -142,7 +142,6 @@ def main(argv: list[str]) -> int:
         allow_abbrev=False,
     )
     parser.add_argument('command', choices=['run'], help='Subcommand (only `run`).')
-    parser.add_argument('--plan-id', required=True, help='Plan identifier (contract; used for logging).')
     parser.add_argument('--pr-number', required=True, help='The real PR number (accepts NNN or #NNN).')
     parser.add_argument(
         '--worktree-path',

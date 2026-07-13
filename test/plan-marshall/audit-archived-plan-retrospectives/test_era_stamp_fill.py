@@ -225,7 +225,7 @@ def test_run_errors_on_missing_target_file(tmp_path, capsys):
 def test_main_run_wires_args(tmp_path, capsys):
     _seed_worktree(tmp_path, _AUDIT_WITH_PENDING, _TEST_WITH_PENDING)
 
-    rc = era.main(['run', '--plan-id', 'p16', '--pr-number', '#901', '--worktree-path', str(tmp_path)])
+    rc = era.main(['run', '--pr-number', '#901', '--worktree-path', str(tmp_path)])
 
     assert rc == 0
     assert 'filled_count: 2' in capsys.readouterr().out

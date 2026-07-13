@@ -60,7 +60,10 @@ run and merges with the branch).
 
 ## Inputs
 
-- `{plan_id}` — required. Used for logging and the `mark-step-done` call.
+- `{plan_id}` — required. Used for the `mark-step-done` call (Step 4); not passed
+  to the `era_stamp_fill.py` executor itself (mirrors `finalize-step-deploy-target`
+  and `finalize-step-sync-plugin-cache`, whose backing scripts likewise take no
+  `--plan-id`).
 - `{pr_number}` — required. The real PR number, threaded to finalize steps by the
   dispatcher (as it is for `ci-verify`). Accepts `NNN` or `#NNN`.
 - `{worktree_path}` — the feature-branch worktree root the `audit.py` + test mirror
@@ -79,7 +82,7 @@ because it runs at order 21, before the finalize executor-regeneration step (ord
 
 ```bash
 python3 .claude/skills/finalize-step-era-stamp-fill/scripts/era_stamp_fill.py run \
-  --plan-id {plan_id} --pr-number {pr_number} --worktree-path {worktree_path}
+  --pr-number {pr_number} --worktree-path {worktree_path}
 ```
 
 The script returns a flat TOON document. On the `status: success` path it carries
@@ -154,7 +157,7 @@ The canonical argparse surface for the backing executor `era_stamp_fill.py`.
 
 ```bash
 python3 .claude/skills/finalize-step-era-stamp-fill/scripts/era_stamp_fill.py run \
-  --plan-id PLAN_ID --pr-number PR_NUMBER [--worktree-path WORKTREE_PATH]
+  --pr-number PR_NUMBER [--worktree-path WORKTREE_PATH]
 ```
 
 ## Related
