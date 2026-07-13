@@ -801,30 +801,24 @@ def _apply_bot_enforcement_guard(phase_6_steps: list[str], plan_id: str) -> str 
 # signal.
 
 
-def _resolve_command_tier(cmd: str, plan_id: str) -> dict[str, Any] | None:
-    """Subprocess ``architecture resolve`` for a verification command's verb.
+def _invoke_architecture_resolve(argv_extra: list[str], plan_id: str) -> dict[str, Any] | None:
+    """Subprocess ``architecture resolve`` and return the parsed status-success TOON dict.
 
-    Calls the executor with ``--audit-plan-id`` so resolve runs in the
-    correct project_dir context, parses the TOON output via ``parse_toon``,
-    and returns the resolve dict. Returns ``None`` on any failure — the
-    composer treats ``None`` as "non-build / unresolvable" and leaves the
-    command unrouted.
+    Shared by ``_resolve_command_tier`` (per-command, may add ``--module``) and
+    ``_resolve_step_execution_tier`` (whole-tree phase-5 steps, never adds
+    ``--module``). Calls the executor with ``--audit-plan-id`` so resolve runs
+    in the correct project_dir context. Returns ``None`` on any failure —
+    unresolvable executor, subprocess error, non-zero exit, empty stdout,
+    unparseable TOON, or a non-``success`` status; callers apply their own
+    safe default on ``None``.
 
     The composer subprocesses ``architecture resolve`` rather than
     importing its internals because the resolve flow is the canonical
     cross-bundle entry point per the "Build commands: resolve via
-    architecture" hard rule, and the augmented TOON shape (the four
-    ``execution_tier`` fields) is exactly the resolve script's
-    contract — re-deriving them here would duplicate logic.
+    architecture" hard rule, and the augmented TOON shape (the
+    ``execution_tier`` / ``bash_timeout_seconds`` fields) is exactly the
+    resolve script's contract — re-deriving them here would duplicate logic.
     """
-    parsed = _parse_verification_command(cmd)
-    if parsed is None:
-        return None
-    verb, command_args = parsed
-    # Module: second whitespace-separated token of command_args, when present.
-    parts = command_args.strip().split()
-    module = parts[1] if len(parts) >= 2 else None
-
     executor = _resolve_executor()
     if executor is None:
         return None
@@ -833,13 +827,10 @@ def _resolve_command_tier(cmd: str, plan_id: str) -> dict[str, Any] | None:
         str(executor),
         'plan-marshall:manage-architecture:architecture',
         'resolve',
-        '--command',
-        verb,
+        *argv_extra,
         '--audit-plan-id',
         plan_id,
     ]
-    if module:
-        argv.extend(['--module', module])
     try:
         proc = subprocess.run(
             argv,
@@ -859,6 +850,27 @@ def _resolve_command_tier(cmd: str, plan_id: str) -> dict[str, Any] | None:
     if not isinstance(parsed_toon, dict) or parsed_toon.get('status') != 'success':
         return None
     return parsed_toon
+
+
+def _resolve_command_tier(cmd: str, plan_id: str) -> dict[str, Any] | None:
+    """Resolve a verification command's verb via ``architecture resolve``.
+
+    Returns the resolve dict, or ``None`` on any failure — the composer
+    treats ``None`` as "non-build / unresolvable" and leaves the command
+    unrouted. See :func:`_invoke_architecture_resolve` for the shared
+    subprocess/parse contract.
+    """
+    parsed = _parse_verification_command(cmd)
+    if parsed is None:
+        return None
+    verb, command_args = parsed
+    # Module: second whitespace-separated token of command_args, when present.
+    parts = command_args.strip().split()
+    module = parts[1] if len(parts) >= 2 else None
+    argv_extra = ['--command', verb]
+    if module:
+        argv_extra.extend(['--module', module])
+    return _invoke_architecture_resolve(argv_extra, plan_id)
 
 
 def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> int:
@@ -1014,39 +1026,19 @@ def _log_execution_tier_routing(plan_id: str, mutated_tasks: int, phase_5_steps:
 def _resolve_step_execution_tier(canonical: str, plan_id: str) -> str:
     """Resolve a phase-5 canonical-verify step's ``execution_tier`` via ``architecture resolve``.
 
-    Subprocesses the whole-tree ``architecture resolve --command {canonical}`` (no
-    ``--module`` — phase-5 verification steps are whole-tree gates) and reads the
-    ``execution_tier`` field the resolve TOON emits. Returns ``'orchestrator'`` or
-    ``'per_task'``. Any failure — unresolvable executor, non-zero exit,
-    unparseable TOON, non-success status, or an absent/unknown tier — defaults to
-    ``'per_task'`` so the composer NEVER emits an unresolved tier. ``per_task`` is
-    the safe floor: it keeps the step in the leaf's inline slice, matching the
-    pre-stamp behaviour where every step ran inline.
+    Subprocesses the whole-tree ``architecture resolve --command {canonical}``
+    (no ``--module`` — phase-5 verification steps are whole-tree gates; see
+    :func:`_invoke_architecture_resolve` for the shared subprocess/parse
+    contract) and reads the ``execution_tier`` field the resolve TOON emits.
+    Returns ``'orchestrator'`` or ``'per_task'``. Any failure — unresolvable
+    executor, non-zero exit, unparseable TOON, non-success status, or an
+    absent/unknown tier — defaults to ``'per_task'`` so the composer NEVER
+    emits an unresolved tier. ``per_task`` is the safe floor: it keeps the
+    step in the leaf's inline slice, matching the pre-stamp behaviour where
+    every step ran inline.
     """
-    executor = _resolve_executor()
-    if executor is None:
-        return 'per_task'
-    argv: list[str] = [
-        sys.executable,
-        str(executor),
-        'plan-marshall:manage-architecture:architecture',
-        'resolve',
-        '--command',
-        canonical,
-        '--audit-plan-id',
-        plan_id,
-    ]
-    try:
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=30, check=False)
-    except (subprocess.SubprocessError, OSError):
-        return 'per_task'
-    if proc.returncode != 0 or not proc.stdout:
-        return 'per_task'
-    try:
-        parsed_toon = parse_toon(proc.stdout)
-    except Exception:
-        return 'per_task'
-    if not isinstance(parsed_toon, dict) or parsed_toon.get('status') != 'success':
+    parsed_toon = _invoke_architecture_resolve(['--command', canonical], plan_id)
+    if parsed_toon is None:
         return 'per_task'
     tier = parsed_toon.get('execution_tier')
     return tier if tier in ('per_task', 'orchestrator') else 'per_task'
