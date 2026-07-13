@@ -32,6 +32,8 @@ from _architecture_core import (
     load_module_derived,
     load_module_enriched_or_empty,
     load_project_meta,
+    longest_containing_prefix,
+    project_local_module_for_path,
     require_project_meta_result,
     resolve_module_for_path,
 )
@@ -565,12 +567,25 @@ def cmd_files(args: argparse.Namespace) -> dict[str, Any]:
 def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for the ``which-module`` reader.
 
-    Resolves a path to its owning module by scanning every module's
-    ``files`` inventory. When the path appears in more than one module
-    (e.g. paths shared across virtual modules), the tie-breaker is the
+    Resolves a path to its owning module. The primary signal is exact
+    membership in a module's crawled ``files`` inventory, tie-broken by the
     longest ``paths.module`` prefix — so a file under
-    ``marketplace/bundles/pm-dev-java/...`` resolves to ``pm-dev-java``,
-    not the project-root ``default`` module.
+    ``marketplace/bundles/pm-dev-java/...`` resolves to ``pm-dev-java``, not the
+    project-root ``default`` module.
+
+    A containment fallback covers paths that the inventory does not surface as an
+    exact, module-specific match. The crawled inventory elides large categories
+    to a sample (so most ``test/**`` files never appear as an exact hit), and
+    project-local dotfile trees such as ``.claude/skills/**`` are never
+    inventoried at all. Resolution order:
+
+        1. Exact-inventory match that is more specific than the root
+           (``paths.module`` length > 0).
+        2. Longest ``paths.sources ∪ paths.tests`` prefix that contains the path
+           (the union of ``paths.tests`` lets a ``test/**`` path resolve to its
+           owning module instead of the root).
+        3. Project-local prefix map (``.claude/skills/** → plan-marshall``).
+        4. Root-inventory match (the length-0 ``default`` module), when present.
     """
     target = args.path
     try:
@@ -580,33 +595,58 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
-    matches: list[tuple[int, str]] = []  # (paths.module length, name)
+    inventory_best: tuple[int, str] | None = None  # (paths.module length, name)
+    containment_best: tuple[int, str] | None = None  # (sources∪tests prefix length, name)
     for name in module_names:
         try:
             derived = load_module_derived(name, args.project_dir)
         except DataNotFoundError:
             continue
+        paths = derived.get('paths') or {}
+        module_path = (paths.get('module') or '').strip()
+        # Normalize the root module's path ('.' or '') to a prefix length of 0
+        # so its exact-inventory hit is not treated as "more specific than the
+        # root" at the length-0 tie-break below ('.'.rstrip('/') is still '.',
+        # length 1, which would otherwise short-circuit the containment fallback).
+        module_path_norm = '' if module_path in ('.', '') else module_path.rstrip('/')
+
         files_block = derived.get('files') or {}
         for _category, path in _flatten_inventory(files_block):
             if path == target:
-                module_path = (derived.get('paths') or {}).get('module') or ''
-                matches.append((len(module_path), name))
+                candidate = (len(module_path_norm), name)
+                if inventory_best is None or candidate[0] > inventory_best[0] or (
+                    candidate[0] == inventory_best[0] and candidate[1] < inventory_best[1]
+                ):
+                    inventory_best = candidate
                 break
 
-    if not matches:
-        return {
-            'status': 'success',
-            'path': target,
-            'module': None,
-        }
+        containment_len = longest_containing_prefix(target, paths)
+        if containment_len is not None:
+            candidate = (containment_len, name)
+            if containment_best is None or candidate[0] > containment_best[0] or (
+                candidate[0] == containment_best[0] and candidate[1] < containment_best[1]
+            ):
+                containment_best = candidate
 
-    # Longest paths.module prefix wins. ``sorted`` is stable so module names
-    # tie-break alphabetically when the prefix length is identical.
-    matches.sort(key=lambda item: (-item[0], item[1]))
+    # 1. Exact-inventory match more specific than the root.
+    if inventory_best is not None and inventory_best[0] > 0:
+        resolved: str | None = inventory_best[1]
+    # 2. Longest sources ∪ tests containment prefix.
+    elif containment_best is not None:
+        resolved = containment_best[1]
+    # 3. Project-local prefix map (.claude/skills/** → plan-marshall).
+    elif (project_local := project_local_module_for_path(target, module_names)) is not None:
+        resolved = project_local
+    # 4. Root-inventory match (the length-0 default module), when present.
+    elif inventory_best is not None:
+        resolved = inventory_best[1]
+    else:
+        resolved = None
+
     return {
         'status': 'success',
         'path': target,
-        'module': matches[0][1],
+        'module': resolved,
     }
 
 

@@ -1,23 +1,37 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the files-inventory post-processor in ``_cmd_manage.py``.
+# ruff: noqa: I001
+"""Tests for the files-inventory post-processor in ``_cmd_manage.py`` and the
+containment-fallback path→module readers.
 
 Covers classification (marketplace + generic), ``.gitignore`` honouring,
-symlink/dotfile policy, determinism, and the per-category cap behaviour.
-The post-processor mutates the ``modules`` dict in-place — every test
-inspects the resulting ``files`` block on the module dict.
+symlink/dotfile policy, determinism, and the per-category cap behaviour of the
+post-processor (which mutates the ``modules`` dict in-place — every such test
+inspects the resulting ``files`` block on the module dict), plus the
+``which-module`` / ``resolve_module_for_path`` containment fallback that
+resolves ``paths.tests`` paths and project-local ``.claude/skills/**`` paths to
+their owning module (closes lesson 2026-07-09-04-001).
 """
 
 import os
+import sys
 import tempfile
+from argparse import Namespace
 from pathlib import Path
 
 from conftest import load_script_module
 
-load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+sys.path.insert(0, str(Path(__file__).parent))
+
+from _arch_fixtures import seed_project  # noqa: E402
+
+_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_manage = load_script_module('plan-marshall', 'manage-architecture', '_cmd_manage.py', '_cmd_manage')
+_cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
 
 _post_process_files = _cmd_manage._post_process_files
+cmd_which_module = _cmd_client.cmd_which_module
+resolve_module_for_path = _architecture_core.resolve_module_for_path
 
 
 # =============================================================================
@@ -346,3 +360,93 @@ def test_module_with_no_paths_module_gets_empty_files_block():
         modules = {'broken': {'name': 'broken', 'paths': {}}}
         _post_process_files(modules, str(project))
         assert modules['broken']['files'] == {}
+
+
+# =============================================================================
+# which-module / resolve_module_for_path containment fallback
+# =============================================================================
+#
+# Regression coverage for lesson 2026-07-09-04-001: a ``test/**`` path that is
+# not surfaced as an exact ``files``-inventory hit (the crawled ``test``
+# category elides to a sample) must still resolve to its owning module via the
+# ``paths.sources ∪ paths.tests`` containment fallback, and the meta-project's
+# project-local ``.claude/skills/**`` tree must map to ``plan-marshall`` rather
+# than resolving to ``null`` / the root ``default`` module. Both path→module
+# surfaces (``cmd_which_module`` and the sibling ``resolve_module_for_path``)
+# are asserted to agree.
+
+_TEST_PATH = 'test/plan-marshall/tools-script-executor/test_generate_executor_behavior.py'
+_CLAUDE_SKILLS_PATH = '.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py'
+
+
+def _seed_containment_project(tmpdir: str) -> None:
+    """Seed a ``plan-marshall`` module (with ``paths.sources`` + ``paths.tests``)
+    and a project-root ``default`` module.
+
+    The ``test/plan-marshall/**`` file is deliberately absent from the
+    ``plan-marshall`` module's ``files`` inventory so resolution must come from
+    the ``paths.tests`` containment fallback — reproducing the production
+    elision case where the crawled ``test`` category is sampled, not exhaustive.
+    """
+    modules = {
+        'plan-marshall': {
+            'name': 'plan-marshall',
+            'paths': {
+                'module': 'marketplace/bundles/plan-marshall',
+                'sources': [
+                    'marketplace/bundles/plan-marshall/skills',
+                    'marketplace/bundles/plan-marshall/agents',
+                    'marketplace/bundles/plan-marshall/commands',
+                ],
+                'tests': ['test/plan-marshall'],
+            },
+            'files': {
+                'skill': ['marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md'],
+            },
+        },
+        'default': {
+            'name': 'default',
+            'paths': {'module': '.'},
+            'files': {'doc': ['README.md']},
+        },
+    }
+    seed_project(tmpdir, modules)
+
+
+def test_which_module_resolves_test_path_via_paths_tests():
+    """A ``test/**`` path absent from every ``files`` inventory resolves to its
+    owning module through the ``paths.tests`` containment fallback — not the
+    root ``default`` module and not ``None`` (closes lesson 2026-07-09-04-001).
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_containment_project(tmpdir)
+
+        result = cmd_which_module(Namespace(project_dir=tmpdir, path=_TEST_PATH))
+
+        assert result['status'] == 'success'
+        assert result['module'] == 'plan-marshall'
+
+
+def test_which_module_resolves_claude_skills_path_to_plan_marshall():
+    """A project-local ``.claude/skills/**`` path resolves to ``plan-marshall``
+    via the project-local prefix map rather than ``None``.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_containment_project(tmpdir)
+
+        result = cmd_which_module(Namespace(project_dir=tmpdir, path=_CLAUDE_SKILLS_PATH))
+
+        assert result['status'] == 'success'
+        assert result['module'] == 'plan-marshall'
+
+
+def test_resolve_module_for_path_agrees_with_which_module():
+    """The sibling ``resolve_module_for_path`` reader resolves both the
+    ``paths.tests`` containment case and the ``.claude/skills`` project-local map
+    to ``plan-marshall`` — the two path→module surfaces agree.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_containment_project(tmpdir)
+
+        assert resolve_module_for_path(_TEST_PATH, tmpdir) == 'plan-marshall'
+        assert resolve_module_for_path(_CLAUDE_SKILLS_PATH, tmpdir) == 'plan-marshall'

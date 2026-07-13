@@ -45,6 +45,8 @@ The same step body serves **both** consuming contexts; the only difference is an
 
 Scope is the ONLY difference between the two consuming lists — the resolution + execution-tier + report logic is identical. The `per_deliverable_build` list feeds the changed module; the `verification_steps` list feeds whole-tree. Whole-tree gates (e.g. `integration-tests`, `e2e`) live only in `verification_steps`, never in `per_deliverable_build`.
 
+**Division of verification labor (per-task vs per-deliverable).** The module-scoped per-deliverable build is the layer that catches cross-module and sibling regressions — the per-task `execute-task` gate stays deliberately lean (`quality-gate`: mypy + ruff on the touched production sources only; see [`../../execute-task/SKILL.md`](../../execute-task/SKILL.md) implementation-profile Step 5). Because that catch is delegated to this chain-tail build, correct `changed_module` resolution is load-bearing: the module-scoped resolution depends on `architecture which-module --path {changed_path}` returning the owning module for every changed path — including `paths.tests` and project-local `.claude/skills/**` paths. When `which-module` mis-resolves (returns the wrong module or `null`), this build targets the wrong module or none, and the sibling regression it was meant to catch is missed. See [`../../manage-architecture/SKILL.md`](../../manage-architecture/SKILL.md) `which-module` for the containment-resolution contract this build relies on.
+
 ## Exit-code convention for `manage-*` script calls
 
 Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:

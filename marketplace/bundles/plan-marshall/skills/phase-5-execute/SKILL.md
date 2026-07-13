@@ -675,7 +675,7 @@ Step 10 fires at the **per-deliverable chain-tail point** — the moment all tas
 
 #### Step 10a: Per-Deliverable Commit
 
-The per-deliverable commit fires UNCONDITIONALLY at every chain tail:
+The per-deliverable commit fires UNCONDITIONALLY at every chain tail — **regardless of which tier ran the preceding build.** Whether the deliverable's verification ran as an inline `per_task` build (reaped synchronously by the leaf) or as an `orchestrator`-tier build detached through the [`await-long-running`](../plan-marshall/workflow/await-long-running.md) seam, the commit obligation is identical: it is owner-independent. The build's tier decides *who runs and reaps the build*, never *whether the commit fires*. The commit consumes only the tier-agnostic `kind=build` freshness stamp written at the executor dispatch boundary (see [`../manage-change-ledger/SKILL.md`](../manage-change-ledger/SKILL.md)), which is present for the detached orchestrator build exactly as for an inline per-task build.
 
 1. **Commit**:
    ```text

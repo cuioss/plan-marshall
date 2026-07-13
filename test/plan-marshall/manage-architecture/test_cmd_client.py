@@ -676,6 +676,70 @@ def test_cmd_which_module_no_match_returns_null():
         assert result['module'] is None
 
 
+def test_cmd_which_module_root_exact_hit_degrades_to_containment_fallback():
+    """A root-only exact hit degrades to prefix length 0, not 1.
+
+    When a path's ONLY exact-inventory hit lives in the root ``default`` module
+    (``paths.module == '.'``, a whole-tree crawl artifact), that hit must NOT be
+    treated as "more specific than the root". Normalizing ``'.'`` to prefix
+    length 0 lets the more-specific ``paths.sources`` containment fallback win
+    for the owning sub-module. Regression for gemini-code-assist PR #887 finding
+    (``'.'.rstrip('/')`` is still ``'.'``, length 1, which short-circuited step 2).
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        modules = {
+            'default': {
+                'name': 'default',
+                'paths': {'module': '.'},
+                # The exact hit for the target lives ONLY in the root's
+                # whole-tree-crawled inventory.
+                'files': {'source': ['src/widget/core.py']},
+            },
+            'widget': {
+                'name': 'widget',
+                'paths': {'module': 'src/widget', 'sources': ['src/widget']},
+                # No exact-inventory hit for the target — only containment covers it.
+                'files': {'source': ['src/widget/other.py']},
+            },
+        }
+        _seed_project(tmpdir, modules)
+
+        args = Namespace(project_dir=tmpdir, path='src/widget/core.py')
+        result = cmd_which_module(args)
+
+        assert result['status'] == 'success'
+        # Before the fix this resolved to 'default' (root exact hit len 1 > 0);
+        # after normalization the containment fallback resolves to 'widget'.
+        assert result['module'] == 'widget'
+
+
+def test_cmd_which_module_empty_root_module_path_degrades_to_containment_fallback():
+    """An empty-string root ``paths.module`` also degrades to prefix length 0.
+
+    Mirrors the ``'.'`` case for a root module whose ``paths.module`` is ``''``.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        modules = {
+            'default': {
+                'name': 'default',
+                'paths': {'module': ''},
+                'files': {'source': ['src/widget/core.py']},
+            },
+            'widget': {
+                'name': 'widget',
+                'paths': {'module': 'src/widget', 'sources': ['src/widget']},
+                'files': {'source': ['src/widget/other.py']},
+            },
+        }
+        _seed_project(tmpdir, modules)
+
+        args = Namespace(project_dir=tmpdir, path='src/widget/core.py')
+        result = cmd_which_module(args)
+
+        assert result['status'] == 'success'
+        assert result['module'] == 'widget'
+
+
 def test_cmd_find_aggregates_across_modules():
     """cmd_find returns matches from every module that has a hit."""
     with tempfile.TemporaryDirectory() as tmpdir:
