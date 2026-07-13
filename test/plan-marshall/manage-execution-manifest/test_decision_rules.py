@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the manage-execution-manifest pre-filters and bot-enforcement guard.
+"""Tests for the manage-execution-manifest pre-filters and finalize selection.
 
 Covers:
 
@@ -11,7 +11,9 @@ Covers:
   exhaustively covered in ``manage-config/test_build_decision.py``; here we
   assert the consumer-site wiring (verdict → keep/drop).
 - ``pre_submission_self_review_inactive`` — footprint-gated.
-- The bot-enforcement remediation guard.
+- The absence of any bot-enforcement guard: ``automatic-review`` is governed
+  purely by its configured candidacy / ``lane`` — compose never force-adds nor
+  re-orders it.
 - The task-queue-aware ``early_terminate`` predicate.
 """
 
@@ -59,8 +61,6 @@ _mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_commit_push_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_pre_push_quality_gate_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_pre_submission_self_review_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
-_mem._log_bot_enforcement_guard_fired = lambda *a, **kw: None  # type: ignore[attr-defined]
-_mem._log_bot_enforcement_guard_remediated = lambda *a, **kw: None  # type: ignore[attr-defined]
 
 
 # =============================================================================
@@ -307,39 +307,46 @@ class TestPrePushQualityGateInactive:
 
 
 # =============================================================================
-# Test: Bot-enforcement guard
+# Test: no bot-enforcement guard — automatic-review governed by candidacy/lane
 # =============================================================================
 
 
-class TestBotEnforcementGuard:
-    """Composition-time guard remediates `automatic-review` for GitHub/GitLab when missing.
+class TestNoBotEnforcementGuard:
+    """The bot-enforcement guard (and its placement-validator twin) are removed.
 
-    Lesson 2026-04-28-10-001 converted the guard from assertion to remediation.
-    On GitHub/GitLab plans where `automatic-review` is dropped (e.g., by a
-    pre-filter or future row), the guard appends `plan-marshall:automatic-review`
-    back into `phase_6.steps` and emits a `bot-enforcement guard remediated`
-    decision-log line; composition continues normally — no error TOON. The
-    `bot_enforcement_violation` error branch is retained as a safety net for
-    non-remediable violations (currently unreachable).
+    ``automatic-review`` is governed purely by its configured candidacy / ``lane``
+    — compose never force-adds it back on GitHub/GitLab plans and never emits a
+    ``bot_enforcement_violation`` error. Its presence tracks the candidate list and
+    the lane resolution exactly.
     """
 
-    def test_remediates_for_github_when_automated_review_missing(self, plan_context):
+    def test_no_bot_enforcement_symbols_survive(self):
+        """No bot-enforcement guard / placement-validator symbol remains on the module."""
+        for symbol in (
+            '_apply_bot_enforcement_guard',
+            '_bot_enforcement_insert_index',
+            '_validate_automatic_review_placement',
+            '_log_bot_enforcement_guard_fired',
+            '_log_bot_enforcement_guard_remediated',
+            '_log_bot_enforcement_placement_violation',
+        ):
+            assert not hasattr(_mem, symbol), f'{symbol} must be deleted with the bot-enforcement guard'
+
+    def test_github_plan_does_not_force_add_dropped_automatic_review(self, plan_context):
         _seed_marshal(ci_provider='github')
         _stub_footprint(['some/file.py'])
 
-        # Compose a candidate set that EXCLUDES automatic-review.
+        # Candidate set EXCLUDES automatic-review; with no guard it stays absent.
         phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automatic-review')
         ns = _compose_ns(plan_id='qg-bot-github', phase_6_steps=phase_6)
         result = cmd_compose(ns)
 
         assert result is not None
         assert result['status'] == 'success'
-        steps = result_phase_6_steps(result)
-        # Guard appends `plan-marshall:automatic-review` (canonical prefixed form).
-        bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
-        assert 'automatic-review' in bare_step_names
+        assert result.get('error') != 'bot_enforcement_violation'
+        assert 'automatic-review' not in result_phase_6_steps(result)
 
-    def test_remediates_for_gitlab_when_automated_review_missing(self, plan_context):
+    def test_gitlab_plan_does_not_force_add_dropped_automatic_review(self, plan_context):
         _seed_marshal(ci_provider='gitlab')
         _stub_footprint(['some/file.py'])
 
@@ -349,14 +356,14 @@ class TestBotEnforcementGuard:
 
         assert result is not None
         assert result['status'] == 'success'
-        steps = result_phase_6_steps(result)
-        bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
-        assert 'automatic-review' in bare_step_names
+        assert result.get('error') != 'bot_enforcement_violation'
+        assert 'automatic-review' not in result_phase_6_steps(result)
 
-    def test_no_op_when_automated_review_present(self, plan_context):
+    def test_present_when_in_candidates(self, plan_context):
         _seed_marshal(ci_provider='github')
         _stub_footprint(['some/file.py'])
 
+        # multi_module feature keeps automatic-review (present in default candidates).
         ns = _compose_ns(plan_id='qg-bot-present')
         result = cmd_compose(ns)
 
@@ -364,7 +371,7 @@ class TestBotEnforcementGuard:
         assert result['status'] == 'success'
         assert 'automatic-review' in result_phase_6_steps(result)
 
-    def test_no_op_for_non_github_non_gitlab(self, plan_context):
+    def test_absent_for_non_ci_plan_stays_absent(self, plan_context):
         _seed_marshal(ci_provider=None)
         _stub_footprint(['some/file.py'])
 
@@ -374,8 +381,6 @@ class TestBotEnforcementGuard:
 
         assert result is not None
         assert result['status'] == 'success'
-        # No CI provider configured → guard is a no-op; automatic-review
-        # stays dropped and no error is raised.
         assert 'automatic-review' not in result_phase_6_steps(result)
 
 

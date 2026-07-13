@@ -4,10 +4,10 @@
 
 Extracted verbatim from ``manage-execution-manifest.py``: the marshal.json step
 map reads, the candidate-narrowing pre-filters (commit/push, aspect, simplify,
-security-audit, scope-gated finalize), the ceremony-finalize run-at-all
-selection, the CI-provider read and bot-enforcement placement helpers, and the
-build verification-command parser. Every function here is log-free and calls no
-test-patched name; the entry re-exports them and keeps the patched callers.
+security-audit, scope-gated finalize), the ceremony-finalize lane-driven
+selection, the CI-provider read, and the build verification-command parser. Every
+function here is log-free and calls no test-patched name; the entry re-exports
+them and keeps the patched callers.
 """
 
 import json
@@ -266,11 +266,11 @@ def _apply_security_audit_inactive(
 # prefixes are preserved verbatim, so the surgical set lists both forms. See
 # standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
 #
-# ``automatic-review`` is deliberately NOT in either implicit set: the
-# bot-enforcement guard re-adds it on GitHub/GitLab plans, so dropping it via
-# the implicit scope gate would be a silently-undone no-op. The only path that
-# suppresses ``automatic-review`` is the explicit ``drop_review_on_scope_gate``
-# opt-in (see ``_apply_scope_gated_finalize``).
+# ``automatic-review`` is deliberately NOT in either implicit set: its presence
+# is governed purely by its configured ``lane`` (seeded ``ask`` → resolved by
+# marshall-steward) and lane tier, so the implicit scope gate must not drop it.
+# The only path that suppresses ``automatic-review`` is the explicit
+# ``drop_review_on_scope_gate`` opt-in (see ``_apply_scope_gated_finalize``).
 _SCOPE_GATED_SURGICAL_DROP = frozenset(
     {
         'plan-retrospective',
@@ -363,8 +363,9 @@ def _apply_scope_gated_finalize(
       ``plan-marshall:plan-retrospective``.
     - Any other scope value → no implicit subtraction.
 
-    ``automatic-review`` is NEVER subtracted by the implicit scope gate (the
-    bot-enforcement guard would re-add it, making the subtraction a no-op).
+    ``automatic-review`` is NEVER subtracted by the implicit scope gate — its
+    presence is governed purely by its configured ``lane`` and lane tier, so the
+    implicit scope gate must not drop it.
     When ``drop_review_on_scope_gate`` is ``True`` AND the plan is itself
     scope-gated (``scope_estimate in ('surgical', 'single_module')``), the gate
     additionally drops ``automatic-review`` — the only path that suppresses the
@@ -375,7 +376,7 @@ def _apply_scope_gated_finalize(
 
     Consistent with the composer's "rows and pre-filters only ever narrow the
     candidate list" architecture, this pre-filter runs before the seven-row
-    matrix and the bot-enforcement guard. Returns the filtered candidate list
+    matrix. Returns the filtered candidate list
     plus the list of step references that were dropped (for per-subtraction
     decision-log emission). The dropped list preserves the candidate's verbatim
     form so the decision log names exactly what was removed.
@@ -592,92 +593,6 @@ def _read_ci_provider() -> str | None:
             return 'github'
         if skill_name == 'plan-marshall:workflow-integration-gitlab':
             return 'gitlab'
-    return None
-
-
-def _bot_enforcement_insert_index(phase_6_steps: list[str]) -> int:
-    """Resolve the canonical insertion position for ``automatic-review``.
-
-    The remediation must place ``automatic-review`` somewhere it can run before
-    plan-mutating steps (notably ``archive-plan``, which moves the plan
-    directory). ``phase_6_steps`` carries boundary-normalized bare default
-    names (plus possibly the project-prefixed early sync step), so anchor
-    lookups compare plain strings without per-site stripping. Resolution
-    order:
-
-    1. Immediately after ``create-pr`` (its natural neighbour in the
-       candidate ordering — review runs against the freshly-opened PR).
-    2. Else immediately before the first plan-mutating step
-       (``archive-plan``, ``record-metrics``,
-       ``plan-marshall:plan-retrospective``, ``branch-cleanup``).
-    3. Else at the end of the list (no anchors found).
-    """
-    for index, step in enumerate(phase_6_steps):
-        if step == 'create-pr':
-            return index + 1
-    plan_mutating = {
-        'archive-plan',
-        'record-metrics',
-        'branch-cleanup',
-        'plan-marshall:plan-retrospective',
-    }
-    for index, step in enumerate(phase_6_steps):
-        if step in plan_mutating:
-            return index
-    return len(phase_6_steps)
-
-
-def _validate_automatic_review_placement(phase_6_steps: list[str]) -> str | None:
-    """Compose-time placement check for ``automatic-review`` ordering.
-
-    Defense-in-depth complement to ``_apply_bot_enforcement_guard``. The
-    remediation guard ensures ``automatic-review`` is *present* on
-    GitHub/GitLab plans, but a future pre-filter, recipe interaction, or
-    candidate ordering glitch could leave it *misplaced* — sitting at an
-    index later than a plan-mutating step (``archive-plan``,
-    ``record-metrics``, ``branch-cleanup``, or
-    ``plan-marshall:plan-retrospective``). Such a manifest would dispatch
-    the review bot only after the plan directory has already been moved or
-    the branch cleaned up, defeating the lesson the guard exists to enforce.
-
-    Comparison runs against bare names: by the time this validator is
-    invoked, ``cmd_compose`` has already boundary-normalized
-    ``phase_6_candidates`` and the matrix output preserves the same shape.
-    Both the bare ``automatic-review`` name and its
-    ``plan-marshall:automatic-review`` form are detected so future callers cannot
-    silently slip past the check by re-prefixing.
-
-    Returns a diagnostic string naming both the offending
-    ``automatic-review`` index and the first plan-mutating anchor that
-    precedes it. Returns ``None`` when the order is valid (or when
-    ``automatic-review`` is absent — the remediation guard is responsible
-    for presence; this validator is concerned only with ordering).
-    """
-    plan_mutating = {
-        'archive-plan',
-        'record-metrics',
-        'branch-cleanup',
-        'plan-marshall:plan-retrospective',
-    }
-
-    review_index: int | None = None
-    for index, step in enumerate(phase_6_steps):
-        if step in {'automatic-review', 'plan-marshall:automatic-review'}:
-            review_index = index
-            break
-    if review_index is None:
-        return None
-
-    # The violation is the inverse of the desired order: a plan-mutating
-    # anchor at an index *less* than ``review_index`` means the review bot
-    # fires AFTER the plan directory has been moved or the branch cleaned
-    # up. Return the earliest such anchor so the diagnostic names the
-    # first ordering breach.
-    for index, step in enumerate(phase_6_steps):
-        if index >= review_index:
-            break
-        if step in plan_mutating:
-            return f'automatic-review at index {review_index} must precede {step} at index {index}'
     return None
 
 

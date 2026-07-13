@@ -4,8 +4,8 @@
 
 Split from test_manage_execution_manifest.py — tier 2 direct-import tests for
 the compose path (decision matrix, boundary normalization, commit-and-push,
-pre-push-quality-gate, bot-enforcement guard, placement validation, and
-marshal.json source-of-truth) plus the relevant CLI plumbing tests.
+pre-push-quality-gate, frontmatter-order sort, and marshal.json
+source-of-truth) plus the relevant CLI plumbing tests.
 """
 
 import contextlib
@@ -351,9 +351,8 @@ def test_surgical_tech_debt_retains_review_gates(plan_context):
 # ``2026-04-27-23-004`` closed the prefix-handling gap by normalizing both
 # ``phase_5_candidates`` and ``phase_6_candidates`` once at the
 # ``cmd_compose`` boundary — every leading ``default:`` is stripped a single
-# time at intake, so the seven-row matrix, the pre-filter helpers, and the
-# bot-enforcement guard all see bare names. Manifest output and result fields
-# are bare strings throughout.
+# time at intake, so the seven-row matrix and the pre-filter helpers all see
+# bare names. Manifest output and result fields are bare strings throughout.
 #
 # These tests feed prefixed candidates and assert the resulting manifest
 # carries bare-name entries, with each cascade rule (Rule 1, 2, 3, 5, 6)
@@ -597,10 +596,9 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_
     from each ``phase_5_candidates`` and ``phase_6_candidates`` entry once at
     intake (via ``_strip_default_prefix``), and every downstream site — the
     seven-row matrix, ``_apply_commit_push_disabled``,
-    ``_apply_pre_push_quality_gate_inactive``,
-    ``_apply_pre_submission_self_review_inactive``, and the bot-enforcement
-    guard — consumes those already-bare strings without any per-site
-    ``_strip_default_prefix`` call.
+    ``_apply_pre_push_quality_gate_inactive``, and
+    ``_apply_pre_submission_self_review_inactive`` — consumes those already-bare
+    strings without any per-site ``_strip_default_prefix`` call.
 
     The test feeds a deliberately MIXED candidate list (some entries
     prefixed, some bare, plus a project-prefixed entry to demonstrate the
@@ -635,8 +633,7 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_
         'module-tests',  # bare
     ]
     # Use a Row 7 (default) shape so the cascade-rule output preserves
-    # candidates verbatim (modulo boundary normalization).
-    # Force the bot-enforcement guard's no-op path by NOT configuring CI.
+    # candidates verbatim (modulo boundary normalization). No CI configured.
     result = cmd_compose(
         _compose_ns(
             plan_id='boundary-mixed',
@@ -2376,33 +2373,14 @@ def test_security_audit_inactive_no_decision_log_on_kept_branch(plan_context):
     assert drop_entries == []
 
 
-# =============================================================================
-# Bot-Enforcement Guard — Remediation behavior (lesson 2026-04-28-10-001)
-#
-# When the resolved CI provider is github or gitlab AND `automatic-review` is missing from
-# the assembled phase_6.steps (e.g., dropped by Row 5 surgical_bug_fix /
-# surgical_tech_debt), the guard appends `plan-marshall:automatic-review` back into
-# the list and emits a decision-log entry. The composition continues normally;
-# no `bot_enforcement_violation` error is raised. Row 5's other subtractions
-# (`sonar-roundtrip`) stay dropped — the guard remediates
-# only `automatic-review`.
-#
-# Row 5 + no CI provider configured remains the baseline: the guard is a
-# no-op and `automatic-review` stays dropped. The existing
-# test_surgical_bug_fix_trims_heavy_review_steps and
-# test_surgical_tech_debt_trims_heavy_review_steps cover that path.
-# =============================================================================
-
-
 def _write_marshal_with_ci(fixture_dir: Path, *, provider: str) -> None:
     """Write a marshal.json whose ``providers[]`` resolves to the given CI provider.
 
-    The bot-enforcement guard resolves the provider via ``_read_ci_provider``,
-    which maps the ``providers[]`` entry whose ``category == 'ci'`` to a short
-    identifier (``plan-marshall:workflow-integration-github`` -> ``github``,
-    ``plan-marshall:workflow-integration-gitlab`` -> ``gitlab``). Tests for the
-    github/gitlab branch must materialize this entry; the no-CI baseline simply
-    omits ``providers[]``.
+    ``_read_ci_provider`` maps the ``providers[]`` entry whose ``category == 'ci'``
+    to a short identifier (``plan-marshall:workflow-integration-github`` ->
+    ``github``, ``plan-marshall:workflow-integration-gitlab`` -> ``gitlab``). Tests
+    for the github/gitlab branch must materialize this entry; the no-CI baseline
+    simply omits ``providers[]``.
     """
     skill_name = f'plan-marshall:workflow-integration-{provider}'
     marshal_path = fixture_dir / 'marshal.json'
@@ -2411,12 +2389,6 @@ def _write_marshal_with_ci(fixture_dir: Path, *, provider: str) -> None:
         'plan': {'phase-6-finalize': {}},
     }
     marshal_path.write_text(json.dumps(data), encoding='utf-8')
-
-
-_REMEDIATION_LINE_TEMPLATE = (
-    '(plan-marshall:manage-execution-manifest:compose) bot-enforcement guard remediated — '
-    'ci_provider={provider}, automatic-review re-added to phase_6.steps'
-)
 
 
 # =============================================================================
@@ -2462,296 +2434,21 @@ def test_read_ci_provider_returns_none_when_no_providers(plan_context):
     assert _mem._read_ci_provider() is None
 
 
-class TestBotEnforcementGuardRemediation:
-    """Row 5 + resolved provider in {github, gitlab}: guard remediates instead of asserting."""
-
-    @staticmethod
-    def _capture_decision_log() -> tuple[list[tuple[str, str]], Callable[[str, str], None]]:
-        captured: list[tuple[str, str]] = []
-        original = _mem._emit_decision_log
-
-        def _capture(plan_id: str, message: str) -> None:
-            captured.append((plan_id, message))
-
-        _mem._emit_decision_log = _capture
-        return captured, original
-
-    @classmethod
-    def _remediation_messages(cls, captured: list[tuple[str, str]], provider: str) -> list[tuple[str, str]]:
-        line = _REMEDIATION_LINE_TEMPLATE.format(provider=provider)
-        return [entry for entry in captured if entry[1] == line]
-
-    @staticmethod
-    def _compose_row_5(plan_id: str, change_type: str, *, prefixed_candidates: bool) -> dict:
-        """Compose a Row 5 manifest with default-prefixed or bare candidates.
-
-        Both shapes are exercised because phase_6_candidates can arrive prefixed
-        from marshal.json or bare from DEFAULT_PHASE_6_STEPS, and Row 5 plus the
-        guard must work consistently on both.
-        """
-        if prefixed_candidates:
-            phase_6 = ','.join(_PREFIXED_PHASE_6 + ('default:sonar-roundtrip',))
-        else:
-            phase_6 = None  # use DEFAULT_PHASE_6_STEPS via _compose_ns default
-        result = cmd_compose(
-            _compose_ns(
-                plan_id=plan_id,
-                change_type=change_type,
-                scope_estimate='surgical',
-                affected_files_count=2,
-                # Use real canonical-verify step IDs whose derived role resolves
-                # so _looks_docs_only returns False and Row 5 fires.
-                phase_5_steps='verify:quality-gate,verify:module-tests',
-                phase_6_steps=phase_6,
-            )
-        )
-        assert result is not None
-        return result
-
-    def _assert_remediation(
-        self,
-        plan_context,
-        provider: str,
-        change_type: str,
-        rule_fired: str,
-        *,
-        prefixed_candidates: bool,
-    ) -> None:
-        # Plan IDs must be kebab-case — convert change_type's underscore to hyphen.
-        change_type_kebab = change_type.replace('_', '-')
-        plan_id = f'guard-remediate-{provider}-{change_type_kebab}-{"prefixed" if prefixed_candidates else "bare"}'
-        # Ensure the plan dir exists (other tests may create one via plan_dir_for).
-        plan_context.plan_dir_for(plan_id)
-        _write_marshal_with_ci(plan_context.fixture_dir, provider=provider)
-
-        captured, original = self._capture_decision_log()
-        try:
-            result = self._compose_row_5(plan_id, change_type, prefixed_candidates=prefixed_candidates)
-        finally:
-            _mem._emit_decision_log = original
-
-        # (a) Composition succeeds — no bot_enforcement_violation.
-        assert result['status'] == 'success'
-        assert result['rule_fired'] == rule_fired
-
-        manifest = read_manifest(plan_id)
-        assert manifest is not None
-        steps = manifest['phase_6']['steps']
-
-        # (b) automatic-review is in phase_6.steps. Under the new
-        #     precondition-resolver model (lesson 2026-05-15-14-002),
-        #     Row 5 no longer drops review gates — so automatic-review
-        #     is present whether or not the remediation guard fired.
-        #     The guard's membership check ('automatic-review' in steps)
-        #     therefore short-circuits as a no-op on Row 5; remediation
-        #     becomes a backstop against future drift rather than the
-        #     primary mechanism.
-        bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
-        assert 'automatic-review' in bare_step_names
-
-        # (c) sonar-roundtrip is also retained — review gates are never
-        #     silently suppressed by the planner under the new contract.
-        assert 'sonar-roundtrip' in bare_step_names
-
-        # (d) Under the new precondition-resolver model the guard is a
-        #     no-op on Row 5 (automatic-review is already present), so
-        #     the remediation decision log is NOT written. The guard
-        #     remains in place as defense-in-depth against future rule
-        #     drift, but on the current rule matrix it never fires.
-        remediations = self._remediation_messages(captured, provider)
-        assert len(remediations) == 0, (
-            f'expected NO remediation log entries for {provider} under '
-            f'the new contract (guard is a no-op when automatic-review '
-            f'is already retained); got {len(remediations)}: '
-            f'{[m for _, m in captured]!r}'
-        )
-
-    # --- Row 5 surgical_bug_fix variants ---
-
-    def test_github_surgical_bug_fix_remediates_with_default_candidates(self, plan_context):
-        """Row 5 surgical_bug_fix + provider=github (bare candidates) → remediation."""
-        self._assert_remediation(plan_context, 'github', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=False)
-
-    def test_gitlab_surgical_bug_fix_remediates_with_default_candidates(self, plan_context):
-        """Row 5 surgical_bug_fix + provider=gitlab (bare candidates) → remediation."""
-        self._assert_remediation(plan_context, 'gitlab', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=False)
-
-    def test_github_surgical_bug_fix_remediates_with_prefixed_candidates(self, plan_context):
-        """Row 5 surgical_bug_fix + provider=github (default:-prefixed candidates) → remediation."""
-        self._assert_remediation(plan_context, 'github', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=True)
-
-    # --- Row 5 surgical_tech_debt variants ---
-
-    def test_github_surgical_tech_debt_remediates_with_default_candidates(self, plan_context):
-        """Row 5 surgical_tech_debt + provider=github (bare candidates) → remediation."""
-        self._assert_remediation(plan_context, 'github', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=False)
-
-    def test_gitlab_surgical_tech_debt_remediates_with_default_candidates(self, plan_context):
-        """Row 5 surgical_tech_debt + provider=gitlab (bare candidates) → remediation."""
-        self._assert_remediation(plan_context, 'gitlab', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=False)
-
-    def test_github_surgical_tech_debt_remediates_with_prefixed_candidates(self, plan_context):
-        """Row 5 surgical_tech_debt + provider=github (default:-prefixed candidates) → remediation."""
-        self._assert_remediation(plan_context, 'github', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=True)
-
-    # --- Guard is a no-op when automatic-review already present ---
-
-    def test_github_default_rule_no_remediation_when_automated_review_present(self, plan_context):
-        """Guard is a no-op on the default rule (Row 7) — automatic-review survives untouched."""
-        plan_id = 'guard-noop-github-default'
-        _write_marshal_with_ci(plan_context.fixture_dir, provider='github')
-
-        captured, original = self._capture_decision_log()
-        try:
-            result = cmd_compose(
-                _compose_ns(
-                    plan_id=plan_id,
-                    change_type='feature',
-                    scope_estimate='multi_module',
-                    affected_files_count=10,
-                )
-            )
-        finally:
-            _mem._emit_decision_log = original
-
-        assert result is not None
-        assert result['status'] == 'success'
-        assert result['rule_fired'] == 'default'
-
-        # automatic-review is in the default candidate set and Row 7 keeps
-        # the candidates as-is, so it's already present and the guard is
-        # a no-op (no remediation log entry).
-        manifest = read_manifest(plan_id)
-        assert manifest is not None
-        assert 'automatic-review' in manifest['phase_6']['steps']
-        assert self._remediation_messages(captured, 'github') == []
-
-    def test_github_default_rule_with_prefixed_candidates_keeps_automated_review_bare_without_violation(self, plan_context):
-        """Regression: prefixed phase_6 candidates on GitHub CI must not trip the guard.
-
-        Lesson ``2026-04-28-10-001`` originally reported that prefixed inputs
-        (``plan-marshall:automatic-review`` and friends) raised
-        ``bot_enforcement_violation`` because the guard's bare-name membership
-        check at line 829 of ``manage-execution-manifest.py`` did not see the
-        prefixed entry. The defect was fixed by two upstream changes:
-
-        1. PR #303 (``0362bcaf``) converted ``_apply_bot_enforcement_guard``
-           from assertion-style to remediation-style, so the
-           ``bot_enforcement_violation`` error branch is unreachable on the
-           composition-time path.
-        2. PR #305 (``a5231b8b``) added boundary normalization at
-           ``cmd_compose`` lines 976-977 — every leading ``default:`` is
-           stripped from ``phase_6_candidates`` once at intake, so by the time
-           the guard's ``'automatic-review' in phase_6_steps`` membership
-           check runs, every entry is already bare.
-
-        This test pins both fixes by feeding a fully-prefixed candidate list
-        (``_PREFIXED_PHASE_6`` — every entry carries ``default:``, including
-        ``plan-marshall:automatic-review``) on a GitHub-CI plan with a Row 7
-        (default) shape. Row 7 preserves the candidates verbatim modulo
-        boundary normalization, so any regression of either fix shows up here:
-
-        - If boundary normalization at lines 976-977 is removed, the guard's
-          bare-name membership check fails to find ``automatic-review``, the
-          guard appends a duplicate, and the `assert exactly-one` below trips.
-        - If ``_strip_default_prefix`` at line 118 is neutered, the same
-          duplicate-append path fires.
-        - If a future contributor reverts the guard from remediation back to
-          assertion, ``status`` becomes ``error`` and the
-          ``bot_enforcement_violation`` assertion below trips.
-        - If ``automatic-review`` is mispositioned (e.g., after
-          ``archive-plan``), the placement validator emits its own
-          ``bot_enforcement_violation`` and the same assertion catches it.
-        """
-        plan_id = 'guard-noop-github-default-prefixed'
-        _write_marshal_with_ci(plan_context.fixture_dir, provider='github')
-
-        captured, original = self._capture_decision_log()
-        try:
-            result = cmd_compose(
-                _compose_ns(
-                    plan_id=plan_id,
-                    change_type='feature',
-                    scope_estimate='multi_module',
-                    affected_files_count=10,
-                    # Fully-prefixed candidate list — boundary normalization
-                    # at cmd_compose intake must strip every `default:` once
-                    # so the guard sees bare names.
-                    phase_6_steps=','.join(_PREFIXED_PHASE_6),
-                )
-            )
-        finally:
-            _mem._emit_decision_log = original
-
-        # (a) Composition succeeds — the lesson's original symptom
-        #     (``bot_enforcement_violation`` on prefixed inputs) does not
-        #     reproduce.
-        assert result is not None
-        assert result['status'] == 'success', (
-            f'expected success on GitHub CI + prefixed candidates, '
-            f'got error: {result!r}'
-        )
-        assert result['rule_fired'] == 'default'
-
-        manifest = read_manifest(plan_id)
-        assert manifest is not None
-        steps = manifest['phase_6']['steps']
-
-        # (b) No `default:`-prefixed entry survives anywhere — boundary
-        #     normalization is the only sanctioned strip site.
-        assert not any(s.startswith('default:') for s in steps), (
-            f'phase_6 leaked `default:`-prefixed entry: {steps!r}'
-        )
-
-        # (c) Exactly one bare ``automatic-review`` entry — the guard's
-        #     membership check did not double-add it.
-        assert steps.count('automatic-review') == 1, (
-            f'expected exactly one automatic-review entry, '
-            f'got {steps.count("automatic-review")}: {steps!r}'
-        )
-
-        # (d) ``automatic-review`` precedes every plan-mutating anchor.
-        #     Mirrors ``_validate_automated_review_placement``'s contract.
-        review_index = steps.index('automatic-review')
-        for anchor in ('archive-plan', 'record-metrics', 'branch-cleanup'):
-            if anchor in steps:
-                assert steps.index(anchor) > review_index, (
-                    f'automatic-review (index {review_index}) must precede '
-                    f'plan-mutating anchor {anchor!r} (index {steps.index(anchor)}): '
-                    f'{steps!r}'
-                )
-
-        # (e) Guard did not need to remediate — automatic-review was
-        #     present after boundary normalization, so no remediation log.
-        assert self._remediation_messages(captured, 'github') == [], (
-            f'expected no remediation log entries, got: '
-            f'{[m for _, m in captured]!r}'
-        )
-
-
 # =============================================================================
 # Compose-time frontmatter-order sort (lesson 2026-04-28-13-002)
 #
-# The remediation guard guarantees ``automatic-review`` is *present* on
-# GitHub/GitLab plans, but a future pre-filter or recipe interaction could
-# leave it *misplaced* — sitting at an index later than a plan-mutating step
-# (``archive-plan``, ``record-metrics``, ``branch-cleanup``, or
+# ``automatic-review`` (frontmatter order 30) must land before every
+# plan-mutating step (``archive-plan``, ``record-metrics``, ``branch-cleanup``,
 # ``plan-marshall:plan-retrospective``). The ``_sort_steps_by_frontmatter_order``
-# choke-point (this plan's D1) now runs BEFORE the
-# ``_validate_automated_review_placement`` check, so a misordered candidate
-# list is sorted back into frontmatter ``order:`` sequence — ``automatic-review``
-# (order 30) lands strictly before every plan-mutating anchor — and compose
-# succeeds (``status='success'``). The placement validator remains in the
-# source as defense-in-depth, but it no longer observes a misplacement because
-# the sort corrected it first.
+# choke-point is the SOLE ordering authority (the bot-enforcement placement
+# validator was removed): a misordered candidate list is sorted back into
+# frontmatter ``order:`` sequence, so ``automatic-review`` lands strictly before
+# every plan-mutating anchor and compose succeeds (``status='success'``).
 #
-# Construction trick: the bot-enforcement remediation guard returns early on
-# its membership check (``'automatic-review' in phase_6_steps``) and therefore
-# does NOT reposition a misplaced occurrence. We pass an explicit
-# ``--phase-6-steps`` candidate list where ``automatic-review`` is already
-# present in the wrong position; Row 7 (default) preserves the candidate
-# ordering verbatim and the guard is a no-op, so the misplacement reaches the
-# sort choke-point, which reorders it ahead of the anchor.
+# Construction: we pass an explicit ``--phase-6-steps`` candidate list where
+# ``automatic-review`` is already present in the wrong position; Row 7 (default)
+# preserves the candidate ordering verbatim, so the misplacement reaches the sort
+# choke-point, which reorders it ahead of the anchor.
 # =============================================================================
 
 
@@ -2766,17 +2463,16 @@ class TestAutomatedReviewPlacement:
         always remain (push, create-pr, lessons-capture) so the manifest
         is otherwise plausible; only the ``automatic-review`` / ``anchor`` pair
         is deliberately misordered. The anchor is inserted before
-        ``automatic-review`` so the validator's earliest-anchor scan returns
-        precisely the parametrized name.
+        ``automatic-review`` so the sort choke-point must reorder it back ahead
+        of the parametrized anchor.
         """
         return ','.join(['push', 'create-pr', 'lessons-capture', anchor, 'automatic-review'])
 
     def test_compose_sorts_automated_review_before_archive_plan(self, plan_context):
         """Misplaced ``automatic-review`` after ``archive-plan`` → sorted before it, compose succeeds."""
         plan_id = 'placement-archive-plan'
-        # GitHub provider so the existing remediation guard runs but
-        # short-circuits on the membership check (line 845), leaving the
-        # misplacement intact for the sort choke-point to correct.
+        # GitHub provider — the misplacement reaches the sort choke-point, which
+        # reorders automatic-review ahead of the anchor.
         _write_marshal_with_ci(plan_context.fixture_dir, provider='github')
 
         result = cmd_compose(
@@ -2790,8 +2486,7 @@ class TestAutomatedReviewPlacement:
         )
 
         assert result is not None
-        # The D1 sort choke-point corrects the misplacement before the placement
-        # validator runs, so compose now succeeds.
+        # The sort choke-point corrects the misplacement, so compose succeeds.
         assert result['status'] == 'success', f'expected success status, got {result!r}'
         # The persisted manifest sorts ``automatic-review`` strictly before the
         # ``archive-plan`` anchor.
@@ -2812,8 +2507,8 @@ class TestAutomatedReviewPlacement:
         """Misplaced ``automatic-review`` after each remaining anchor → sorted before it, compose succeeds.
 
         Parametrized over the three plan-mutating anchors NOT covered by the
-        ``archive-plan`` test above. Together these cover the full anchor set
-        in ``_validate_automated_review_placement``'s ``plan_mutating`` set:
+        ``archive-plan`` test above. Together these cover the full plan-mutating
+        anchor set the sort must place ``automatic-review`` ahead of:
         ``archive-plan``, ``record-metrics``, ``branch-cleanup``,
         ``plan-marshall:plan-retrospective``.
         """
@@ -2834,8 +2529,8 @@ class TestAutomatedReviewPlacement:
         )
 
         assert result is not None
-        # The D1 sort choke-point corrects the misplacement before the placement
-        # validator runs, so compose now succeeds for every anchor.
+        # The sort choke-point corrects the misplacement, so compose succeeds
+        # for every anchor.
         assert result['status'] == 'success', f'expected success status for anchor={anchor!r}, got {result!r}'
         # The persisted manifest sorts ``automatic-review`` strictly before the
         # parametrized anchor.
@@ -2905,8 +2600,7 @@ def _write_full_marshal(
     is populated. The id lists are converted to the id-keyed map schema
     (``{step_id: {}, ...}`` — key insertion order is the execution order, empty
     param objects), matching the live on-disk shape ``_read_marshal_phase_steps``
-    reads. Prefixes are preserved. No CI provider is declared, so the
-    bot-enforcement guard is a no-op for these fixtures.
+    reads. Prefixes are preserved. No CI provider is declared for these fixtures.
     """
     marshal_path = fixture_dir / 'marshal.json'
     plan_block: dict = {
@@ -3721,12 +3415,12 @@ def test_duplicate_orchestrator_routings_are_deduped(plan_context, monkeypatch):
 # scope_gated_finalize pre-filter tests
 #
 # Deliverable 2: the composer drops heavyweight phase-6 review/audit steps by
-# scope. surgical drops the three non-guarded steps (plan-retrospective,
+# scope. surgical drops the three review/audit steps (plan-retrospective,
 # pre-submission-self-review, plugin-doctor) but RETAINS automatic-review by
-# default (the bot-enforcement guard re-adds it on GitHub/GitLab plans);
-# drop_review_on_scope_gate=true additionally drops automatic-review;
-# single_module drops only plan-retrospective. multi_module/broad retain the
-# full set. One decision-log line is emitted per subtraction.
+# default (the implicit scope gate never drops it — its presence is governed by
+# its configured lane); drop_review_on_scope_gate=true additionally drops
+# automatic-review; single_module drops only plan-retrospective.
+# multi_module/broad retain the full set. One decision-log line per subtraction.
 # =============================================================================
 
 
