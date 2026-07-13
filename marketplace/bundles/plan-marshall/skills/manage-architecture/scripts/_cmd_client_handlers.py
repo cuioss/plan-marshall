@@ -604,11 +604,16 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
             continue
         paths = derived.get('paths') or {}
         module_path = (paths.get('module') or '').strip()
+        # Normalize the root module's path ('.' or '') to a prefix length of 0
+        # so its exact-inventory hit is not treated as "more specific than the
+        # root" at the length-0 tie-break below ('.'.rstrip('/') is still '.',
+        # length 1, which would otherwise short-circuit the containment fallback).
+        module_path_norm = '' if module_path in ('.', '') else module_path.rstrip('/')
 
         files_block = derived.get('files') or {}
         for _category, path in _flatten_inventory(files_block):
             if path == target:
-                candidate = (len(module_path.rstrip('/')), name)
+                candidate = (len(module_path_norm), name)
                 if inventory_best is None or candidate[0] > inventory_best[0] or (
                     candidate[0] == inventory_best[0] and candidate[1] < inventory_best[1]
                 ):
