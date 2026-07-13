@@ -366,6 +366,47 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set-max-iterations --value {3|1|5}
 ```
 
+**Adversarial infra elements (lane:ask) — MANDATORY.** Two adversarial finalize
+elements seed with a `lane: ask` override — `plan-marshall:automatic-review`
+(PR-review bots) and `default:sonar-roundtrip` (the Sonar new-code roundtrip).
+This update-config pass ALWAYS surfaces them so their inclusion is resolved to a
+concrete answer; an UNRESOLVED `ask` whose provider is absent is dropped at
+compose by the drop-when-no-provider safety net, but a resolved answer persisted
+here is never dropped. Enumerate the ask-tier elements (read them from the verb —
+do NOT hard-code the ids):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  finalize-steps list-ask-lane
+```
+
+For **EACH** id in the returned `ask_steps`, prompt the operator and persist the
+answer — one `AskUserQuestion` and one `set-lane` write per element:
+
+```text
+AskUserQuestion:
+  question: "Does this project use {PR-review bots | the Sonar new-code roundtrip}?"
+  header: "Adversarial Infra: {element id}"
+  options:
+    - label: "No"
+      description: "Not used — exclude this element (lane: off)"
+    - label: "Yes"
+      description: "Used — include at the default posture (lane: auto)"
+    - label: "Yes, always"
+      description: "Used and always run regardless of posture (lane: full)"
+  multiSelect: false
+```
+
+Persist the answer (`No` → `off`; `Yes` → `auto`; `Yes, always` → `full`):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  finalize-steps set-lane --step-id {element_id} --lane {off|auto|full}
+```
+
+When `ask_steps` is empty (every ask element was already resolved on a prior
+run), skip the prompts — there is nothing left to resolve.
+
 ---
 
 ## Configuration: Skill Domains

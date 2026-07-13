@@ -62,6 +62,14 @@ _cmd_init_mod = _load_module('_cmd_init_for_verb_retirement_test', '_cmd_init.py
 _config_defaults_mod = _load_module(
     '_config_defaults_for_verb_retirement_test', '_config_defaults.py'
 )
+_cmd_finalize_steps_mod = _load_module(
+    '_cmd_finalize_steps_for_lane_ask_test', '_cmd_finalize_steps.py'
+)
+cmd_list_ask_lane = _cmd_finalize_steps_mod.cmd_finalize_steps_list_ask_lane
+cmd_set_lane = _cmd_finalize_steps_mod.cmd_finalize_steps_set_lane
+
+# The two adversarial infra elements that seed with a lane:ask override.
+_ASK_INFRA_STEPS = ('plan-marshall:automatic-review', 'default:sonar-roundtrip')
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH).
 import conftest  # noqa: E402, F401
@@ -215,3 +223,114 @@ def test_simplify_step_no_longer_declares_a_simplify_run_at_all_param(plan_conte
     config = _config_defaults_mod.get_default_config()
     steps = config['plan']['phase-6-finalize']['steps']
     assert steps.get('default:finalize-step-simplify') == {}
+
+
+# =============================================================================
+# (D8) finalize-steps list-ask-lane / set-lane — the steward always-prompt verbs
+#
+# `list-ask-lane` enumerates the finalize steps whose lane override is still
+# `ask` (the two seeded adversarial infra elements); `set-lane` persists the
+# operator's resolved off/auto/full answer as the step's lane override. Together
+# they back the marshall-steward mandatory prompt at setup + update-config.
+# =============================================================================
+
+
+def test_list_ask_lane_returns_the_two_seeded_infra_elements(plan_context):
+    """A fresh config lists exactly the two lane:ask infra elements."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    result = cmd_list_ask_lane(Namespace())
+
+    assert result['status'] == 'success'
+    assert set(result['ask_steps']) == set(_ASK_INFRA_STEPS)
+    assert result['ask_steps_count'] == 2
+
+
+def test_set_lane_persists_off_and_resolves_the_ask(plan_context):
+    """set-lane off persists the override and the element drops off the ask list."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    set_result = cmd_set_lane(
+        Namespace(step_id='plan-marshall:automatic-review', lane='off')
+    )
+    assert set_result['status'] == 'success'
+    assert set_result['step_id'] == 'plan-marshall:automatic-review'
+    assert set_result['lane'] == 'off'
+
+    # The resolved element is no longer ask-tier; only sonar-roundtrip remains.
+    after = cmd_list_ask_lane(Namespace())
+    assert after['ask_steps'] == ['default:sonar-roundtrip']
+
+    # The persisted lane override reads back through the step-get verb.
+    get_result = _cmd_quality_phases_mod.cmd_phase(
+        Namespace(verb='step', step_verb='get', step_id='plan-marshall:automatic-review'),
+        'phase-6-finalize',
+    )
+    assert get_result['status'] == 'success'
+    assert get_result['params']['lane'] == 'off'
+
+
+def test_set_lane_accepts_auto_and_full(plan_context):
+    """set-lane accepts each resolved value (off/auto/full)."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    auto_result = cmd_set_lane(
+        Namespace(step_id='default:sonar-roundtrip', lane='auto')
+    )
+    assert auto_result['status'] == 'success'
+    assert auto_result['lane'] == 'auto'
+
+    full_result = cmd_set_lane(
+        Namespace(step_id='plan-marshall:automatic-review', lane='full')
+    )
+    assert full_result['status'] == 'success'
+    assert full_result['lane'] == 'full'
+
+    # Both are now resolved — the ask list is empty.
+    after = cmd_list_ask_lane(Namespace())
+    assert after['ask_steps'] == []
+    assert after['ask_steps_count'] == 0
+
+
+def test_set_lane_rejects_non_resolved_lane_values(plan_context):
+    """set-lane rejects `ask` / `minimal` / bogus — only off/auto/full resolve an ask."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    for bad in ('ask', 'minimal', 'bogus', ''):
+        result = cmd_set_lane(
+            Namespace(step_id='plan-marshall:automatic-review', lane=bad)
+        )
+        assert result['status'] == 'error', f'lane={bad!r} must be rejected'
+
+
+def test_set_lane_rejects_unknown_step_id(plan_context):
+    """set-lane rejects a step id outside the discovered finalize-step universe."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    result = cmd_set_lane(
+        Namespace(step_id='default:does-not-exist', lane='off')
+    )
+    assert result['status'] == 'error'
+
+
+def test_finalize_steps_list_ask_lane_cli_is_recognized():
+    """`manage-config finalize-steps list-ask-lane` is a registered subcommand (not argparse-rejected)."""
+    result = run_script(SCRIPT_PATH, 'finalize-steps', 'list-ask-lane')
+    # Recognized subcommand → NOT an argparse exit-2 rejection.
+    assert result.returncode != 2, (
+        'finalize-steps list-ask-lane must be a registered subcommand'
+    )
+
+
+def test_finalize_steps_set_lane_cli_rejects_invalid_lane_choice():
+    """`finalize-steps set-lane --lane bogus` → argparse choices rejection (exit 2)."""
+    result = run_script(
+        SCRIPT_PATH, 'finalize-steps', 'set-lane', '--step-id', 'plan-marshall:automatic-review', '--lane', 'bogus'
+    )
+    assert result.returncode == 2, '--lane choices must reject a non-off/auto/full value at argparse'
+
+
+def test_finalize_steps_set_lane_cli_requires_step_id_and_lane():
+    """`finalize-steps set-lane` with no args → argparse required-arg rejection (exit 2)."""
+    result = run_script(SCRIPT_PATH, 'finalize-steps', 'set-lane')
+    assert result.returncode == 2, 'set-lane requires --step-id and --lane'
