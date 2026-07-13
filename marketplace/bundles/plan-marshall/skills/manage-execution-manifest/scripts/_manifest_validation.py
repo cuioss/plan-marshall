@@ -496,9 +496,16 @@ def _verify_canonicals_universe() -> set[str]:
 
     universe: set[str] = set(_CANONICAL_TO_ROLE.keys())
     for rec in find_implementors(BUILD_VERIFY_STEP_EXT_POINT):
-        for canonical in rec.get('canonicals', []):
-            if isinstance(canonical, str) and canonical:
-                universe.add(canonical)
+        # `canonicals` comes from a third-party extension record loaded at runtime.
+        # `.get(..., [])` only falls back to `[]` when the key is ABSENT; an
+        # explicit `None` (or any non-list) would raise a TypeError on iteration.
+        # Guard the type before iterating, per this project's convention of keeping
+        # defensive type guards when processing third-party extension data.
+        canonicals = rec.get('canonicals')
+        if isinstance(canonicals, list):
+            for canonical in canonicals:
+                if isinstance(canonical, str) and canonical:
+                    universe.add(canonical)
     return universe
 
 

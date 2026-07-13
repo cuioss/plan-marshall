@@ -171,7 +171,7 @@ def test_run_accepts_bare_pr_number(tmp_path, capsys):
 
 def test_run_no_op_when_token_absent(tmp_path, capsys):
     audit_text = 'CHECK_ERA = {"check": "#100"}\n'
-    audit, test = _seed_worktree(tmp_path, audit_text, 'assert True\n')
+    audit, _ = _seed_worktree(tmp_path, audit_text, 'assert True\n')
 
     rc = era.run(pr_number='#5', worktree_path=str(tmp_path))
 

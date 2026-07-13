@@ -99,14 +99,18 @@ def run(pr_number: str, worktree_path: str) -> int:
     root = pathlib.Path(worktree_path)
     planned: list[tuple[pathlib.Path, str, int]] = []
     total = 0
-    for rel in (AUDIT_REL, TEST_REL):
-        path = root / rel
-        if not path.exists():
-            _emit({'status': 'error', 'message': f'target not found: {path}'})
-            return 1
-        new_text, count = fill_pending_token(path.read_text(encoding='utf-8'), pr_ref)
-        planned.append((path, new_text, count))
-        total += count
+    try:
+        for rel in (AUDIT_REL, TEST_REL):
+            path = root / rel
+            if not path.exists():
+                _emit({'status': 'error', 'message': f'target not found: {path}'})
+                return 1
+            new_text, count = fill_pending_token(path.read_text(encoding='utf-8'), pr_ref)
+            planned.append((path, new_text, count))
+            total += count
+    except OSError as exc:
+        _emit({'status': 'error', 'message': f'read failed: {exc}'})
+        return 1
 
     if total == 0:
         _emit({'status': 'success', 'filled_count': 0, 'skipped': 'true', 'pr_number': pr_ref})
@@ -117,17 +121,24 @@ def run(pr_number: str, worktree_path: str) -> int:
     # phase runs only once all temps exist. Any OSError surfaces as the documented
     # status:error TOON instead of an uncaught traceback that would desync the
     # source and its test mirror.
+    # `staged` is declared before the try so the finally clause can best-effort
+    # unlink EVERY staged `.era-tmp` file on any failure — including a partial
+    # replace (some temps already flushed, others not) or an OSError mid-staging.
+    # A temp that was already replace()'d no longer exists, so missing_ok=True is
+    # a safe no-op for it.
+    staged: list[tuple[pathlib.Path, pathlib.Path]] = []
     try:
-        staged = [
-            (path, _stage_tmp(path, new_text))
-            for path, new_text, count in planned
-            if count
-        ]
+        for path, new_text, count in planned:
+            if count:
+                staged.append((path, _stage_tmp(path, new_text)))
         for path, tmp in staged:
             tmp.replace(path)
     except OSError as exc:
         _emit({'status': 'error', 'message': f'lock-step write failed: {exc}'})
         return 1
+    finally:
+        for _path, tmp in staged:
+            tmp.unlink(missing_ok=True)
 
     _emit({'status': 'success', 'filled_count': total, 'skipped': 'false', 'pr_number': pr_ref})
     return 0

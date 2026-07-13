@@ -6,7 +6,7 @@ name: finalize-step-era-stamp-fill
 description: Finalize-phase project-local step that resolves the PR-PENDING era-stamp sentinel in audit.py (and its test mirror) to the real PR number in lock-step, committing and pushing the correction before the merge gate
 user-invocable: false
 mode: script-executor
-allowed-tools: Bash
+allowed-tools: Bash, Write
 order: 21
 default_on: false
 presets: []
