@@ -16,7 +16,7 @@ phase_5:
     - <step-id>
     ...
   step_execution_tier[N]{step_id,tier}:
-    - <step-id>,per_task | orchestrator
+    <step-id>,per_task | orchestrator
     ...
   step_params:
     <step-id>: { <param>: <value>, ... }
