@@ -132,6 +132,18 @@ def test_finalize_flow_conformance_carries_this_plan_pr_boundary():
     assert audit.CHECK_ERA["finalize-flow-conformance"] == "#884"
 
 
+def test_reworked_build_cost_checks_carry_this_plan_boundary():
+    # This plan reworks two checks' mechanics — D1's which-module containment fix
+    # changes how the per-deliverable module-scoped build resolves the touched
+    # module (sequence-and-build-minimality, bumped from #849), and D1/D2 change
+    # the per-task-vs-per-deliverable build-cost model these rows are read against
+    # (token-economics, bumped from plan-10) — so their era boundary is this plan's
+    # own PR, carried as the PR-PENDING placeholder until it is resolved to the
+    # real PR at finalize.
+    for check in ("sequence-and-build-minimality", "token-economics"):
+        assert audit.CHECK_ERA[check] == "PR-PENDING", check
+
+
 def test_stamp_era_inserts_fixed_since_after_status():
     # Arrange: a synthetic check block for a known check.
     block = "check: metrics\nstatus: success\ngenuine_signal_count: 0\nrows[0]{a}:\n"

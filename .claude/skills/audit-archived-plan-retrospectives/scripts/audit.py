@@ -263,9 +263,13 @@ CROSS_PLAN_CHECKS = {
 # merge-lock stale-holder liveness fix alter), `#884` (plan-17's boundary — the
 # `finalize-flow-conformance` check plan-17 reworks, whose finalize merge-
 # completeness mechanics plan-17's D1 pre-merge comment barrier and D2
-# completion-aware polling alter), and `plan-10` (the roadmap head this plan
-# re-confirms the general checks accurate against). Every key MUST be a member of
-# `CHECK_NAMES`.
+# completion-aware polling alter), `plan-10` (the roadmap head this plan
+# re-confirms the general checks accurate against), and `PR-PENDING` (this plan's
+# own boundary, a placeholder resolved to the real PR at finalize — the
+# `sequence-and-build-minimality` and `token-economics` checks this plan reworks,
+# whose per-deliverable module-scoped build resolution (D1) and
+# per-task-vs-per-deliverable build-cost model (D1/D2) this plan alters). Every
+# key MUST be a member of `CHECK_NAMES`.
 CHECK_ERA: dict[str, str] = {
     # Roadmap-affected checks carry the specific boundary whose mechanics they
     # verify (kept in step with the plan-11 semantic updates).
@@ -280,7 +284,15 @@ CHECK_ERA: dict[str, str] = {
     "metrics": "#875",
     "track-selection-accuracy": "#875",
     "global-log-analysis": "#849",
-    "sequence-and-build-minimality": "#849",
+    # sequence-and-build-minimality + token-economics — PR-PENDING (this plan's
+    # boundary, a placeholder resolved to the real PR at finalize): this plan's D1
+    # changes how the per-deliverable module-scoped build resolves the touched
+    # module (the which-module containment fix), and D1/D2 change the
+    # per-task-vs-per-deliverable build-cost model these two checks' rows are read
+    # against. (sequence-and-build-minimality bumped from #849; token-economics
+    # bumped from plan-10.)
+    "sequence-and-build-minimality": "PR-PENDING",
+    "token-economics": "PR-PENDING",
     "input-integrity": "#812",
     # General checks unaffected by the roadmap: re-confirmed accurate against the
     # roadmap head (plan-10) by this refresh.
@@ -290,7 +302,6 @@ CHECK_ERA: dict[str, str] = {
     "scope-estimate-accuracy": "plan-10",
     "pr-merge-velocity": "plan-10",
     "task-count-efficiency": "plan-10",
-    "token-economics": "plan-10",
     "quality-chain": "plan-10",
     "task-graph-redundancy": "plan-10",
     "preference-pattern-detector": "plan-10",
