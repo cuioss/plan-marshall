@@ -224,6 +224,7 @@ Key structural summary:
 - **System domain**: Contains `defaults` and `optionals`
 - **Technical domains**: Reference a `bundle` and declare `workflow_skill_extensions` (outline, triage)
 - **Profiles**: Loaded at runtime from `extension.py`, not stored in marshal.json
+- **Domain inclusion (optional)**: A `skill_domains.{domain}` entry MAY carry two additive, operator-set inclusion keys — `always_on` (bool, default absent ⇒ `false`) and `file_globs` (list[str], default absent) — that union the domain into a plan's `references.domains` set unconditionally (`always_on`) or on a file-glob match against the plan's affected files (`file_globs`). Both are absent by default (no seed, so `sync-defaults` neither adds nor wipes them), validated by `validate_domain_inclusion`, and preserved across a `skill-domains configure` reconfigure. Set via `skill-domains set-inclusion`. See [skill-domains.md § Domain Inclusion](skill-domains.md).
 
 ## Section: build.map
 

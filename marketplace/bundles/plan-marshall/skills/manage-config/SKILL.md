@@ -539,7 +539,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 
 | Noun | Key Verbs |
 |------|-----------|
-| `skill-domains` | list, get, get-defaults, get-optionals, set, add, validate, detect, configure, get-extensions, set-extensions, get-available |
+| `skill-domains` | list, get, get-defaults, get-optionals, set, set-inclusion, add, validate, detect, configure, get-extensions, set-extensions, get-available |
 | `resolve-domain-skills` | `--domain --profile` (aggregates core + profile skills) |
 | `resolve-workflow-skill` | `--phase` (resolve system workflow skill) |
 | `resolve-workflow-skill-extension` | `--domain --type` (outline, triage) |
@@ -556,7 +556,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `init` | Initialize marshal.json (with optional `--force`) |
 | `normalize-keys` | Re-write `marshal.json` with the canonical top-level key order (silent, idempotent; reuses the `save_config` key-order writer) |
 | `steps-sort` | Re-sort `plan.phase-6-finalize.steps` into ascending frontmatter `order` (silent, idempotent, values byte-identical; reuses the manifest composer's `_sort_steps_by_frontmatter_order` choke-point; `phase-5-execute.verification_steps` is out of scope; unresolvable-order steps pinned at their original index) |
-| `domain-detect` | `--plan-id [--domain-override]` (deterministic detector for phase-1-init Step 7; walks `request.md` clarified narrative for explicit mentions of configured `skill_domains` and their bundle aliases; returns `domain` + `ambiguous` boolean. Single-domain projects auto-select; multi-match or zero-match returns `ambiguous=true` so the caller raises `AskUserQuestion` — no LLM dispatch fallback applies.) |
+| `domain-detect` | `--plan-id [--domain-override] [--affected-files CSV]` (deterministic detector for phase-1-init Step 7 and phase-2-refine; walks `request.md` clarified narrative for explicit mentions of configured `skill_domains` and their bundle aliases; returns the multi-valued `domains` SET — the unconditional union `{detector/prompt} ∪ always_on ∪ glob_matched` — plus `candidates` (narrative matches, for the multiSelect prompt), `always_on`, `glob_matched`, `ambiguous`, `source`, `reason`. `ambiguous` is `true` only on a detector multi-match, or a zero-match with an empty always_on/glob union; a zero-match resolved by the always_on/glob legs is silent (`reason=inclusion_only_resolve`). The optional `--affected-files` CSV is the file signal for the `file_globs` leg (refine passes the real affected files; init falls back to narrative path tokens). No LLM dispatch fallback applies.) |
 | `recipe-match` | `--request-text [--threshold 0.6]` (Tier 1 recipe-match for phase-1-init; scores free-form request text against the live recipe registry via the shared `recipe_scoring` core; returns ranked `matches[]` + `top_match` + `meets_auto_route_threshold`. Heuristic-first, zero LLM call inside the script — the bounded LLM fallback is orchestrator-driven.) |
 | `aspect-classify` | `--request-text [--threshold 0.7]` (request-aspect classifier for phase-1-init; scores free-form request text against fixed analysis/planning/implementation keyword tables via `recipe_scoring.tokenize`; returns `aspect` + `confidence` + `drops_build_steps` + per-aspect `breakdown`. A winning analysis/planning aspect is accepted only when its `_overlap_score` confidence clears `>= --threshold` (default `0.7`, NO `0.6` cap) AND beats the implementation overlap; below threshold the safe `implementation` fallback keeps build/quality-gate/test gates. Heuristic-first, zero LLM call inside the script — the bounded LLM fallback is orchestrator-driven.) |
 
@@ -850,6 +850,15 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains set \
   --domain DOMAIN [--profile PROFILE] [--defaults LIST] [--optionals LIST]
 ```
+
+### skill-domains set-inclusion
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains set-inclusion \
+  --domain DOMAIN [--always-on] [--file-globs CSV]
+```
+
+Sets the per-domain inclusion keys `always_on` (bool) and `file_globs` (list[str], via the comma-separated `--file-globs` CSV) after `validate_domain_inclusion`. `--always-on` is a `BooleanOptionalAction` flag: pass `--always-on` to set it `true` or its `--no-always-on` companion to set it `false`; omitting the flag entirely leaves the persisted value untouched (each key is written independently). Domains carrying these keys are unioned into `references.domains` by `domain-detect`.
 
 ### skill-domains get-extensions
 
@@ -1278,8 +1287,10 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-v
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config domain-detect \
-  --plan-id PLAN_ID [--domain-override DOMAIN]
+  --plan-id PLAN_ID [--domain-override DOMAIN] [--affected-files CSV]
 ```
+
+Returns the multi-valued `domains` SET (the union `{detector/prompt} ∪ always_on ∪ glob_matched`) plus `candidates` / `always_on` / `glob_matched` / `ambiguous` / `source` / `reason`. `--affected-files` (comma-separated) is the file signal for the `file_globs` inclusion leg — refine supplies the real affected files; init falls back to path-like tokens extracted from the narrative. Read-only: it reads config + `request.md` and writes nothing (no LLM dispatch).
 
 ### build-map seed
 
