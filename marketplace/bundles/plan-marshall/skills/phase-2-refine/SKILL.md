@@ -238,15 +238,19 @@ For batch input, the analyzer can stage the per-dimension scores as JSON at `.pl
 
 The script returns `{confidence, breakdown[]{dimension, score, weight, weighted}, missing_dimensions, persisted}`; with `--persist`, the overall confidence also lands in `status.metadata.confidence` so phase-3-outline and downstream consumers can read it without re-running the math.
 
-If confidence >= `confidence_threshold` → the Persist and Return Results step. Otherwise → the Clarify with User step.
+If confidence >= `confidence_threshold` → the Persist and Return Results step. Otherwise → the Assemble the `refine_prompt` Clarification Envelope step (the leaf assembles the batched envelope and still returns via Persist and Return Results; the orchestrator owns the prompt).
 
-### Step 11: Clarify with User
+### Step 11: Assemble the `refine_prompt` Clarification Envelope
 
-Formulate clarification questions from issues found in the Analyze Request Quality and Analyze Request in Architecture Context steps. Use AskUserQuestion with specific options. At most 4 questions per iteration, prioritized: Correctness > Consistency > Completeness > Ambiguity > Duplication.
+The dispatched refine leaf **NEVER fires `AskUserQuestion`** — operator input is unreachable inside a dispatched `execution-context` envelope (see [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md#leaf-cannot-fire-askuserquestion--return-a-prompt-required-envelope)). When confidence is below threshold, the leaf completes its analysis pass with a **best-judgment `clarified_request`** and batches EVERY open clarification question into ONE `refine_prompt` **prompt-required envelope** carried on the Step 13 return TOON. Formulate the questions from issues found in the Analyze Request Quality and Analyze Request in Architecture Context steps — at most 4, prioritized Correctness > Consistency > Completeness > Ambiguity > Duplication. Author each option string so its label names the branch the orchestrator selects when it is chosen (the option text is a two-sided contract with the behaviour it dispatches).
+
+**HARD constraint (plan-1 one-context-per-phase):** a return → ask → re-dispatch cycle PER question round is rejected. The envelope carries all questions at once; the main-context orchestrator (`plan-marshall/workflow/planning.md` § 2-Refine Phase) fires ONE batched `AskUserQuestion` with each `recommended` default and re-dispatches phase-2-refine **AT MOST ONCE** with every answer baked in. A still-below-threshold second pass returns the current confidence flagged for manual review — the leaf does NOT loop with the operator in-envelope (mirrors the existing max-iterations behaviour). On the re-dispatch, the re-entered leaf records the baked-in answers via Step 12.
+
+See `standards/refine-workflow-detail.md` Step 11 for the `refine_prompt{questions[N]{id,question,header,options,recommended}}` structure.
 
 ### Step 12: Update Request
 
-Record clarifications via the three-step path-allocate flow — **mandatory after every AskUserQuestion round** (the Clarify with User step), never optional and never deferred: (1) call `manage-plan-documents request path` to get the canonical artifact path, (2) use Edit/Write to update the `## Clarifications` and `## Clarified Request` sections directly in that file, (3) call `manage-plan-documents request mark-clarified` to record the transition. A `not_clarified` return is a hard error that blocks loop continuation — re-run sub-steps (2) and (3) until `mark-clarified` succeeds. When confidence reaches threshold on the first pass with no clarification round, the Persist and Return Results step still writes a `## Clarified Request` section so `request.md` always carries a clarified narrative. Loop back to the Analyze Request Quality step. See `standards/refine-workflow-detail.md` Step 12 for the full procedure.
+Record clarifications via the three-step path-allocate flow — **mandatory whenever the re-dispatch carried operator answers baked in from the `refine_prompt` envelope**, never optional and never deferred: (1) call `manage-plan-documents request path` to get the canonical artifact path, (2) use Edit/Write to update the `## Clarifications` and `## Clarified Request` sections directly in that file from the baked-in answers, (3) call `manage-plan-documents request mark-clarified` to record the transition. A `not_clarified` return is a hard error that blocks continuation — re-run sub-steps (2) and (3) until `mark-clarified` succeeds. When confidence reaches threshold on the first pass with no clarification round, the Persist and Return Results step still writes a `## Clarified Request` section so `request.md` always carries a clarified narrative. See `standards/refine-workflow-detail.md` Step 12 for the full procedure.
 
 ### Step 13: Persist and Return Results
 
@@ -276,11 +280,16 @@ simplicity_description: {simplicity_description}
 domains: [{widen-only multi-valued domain union}]
 qgate_pending_count: {0 if no findings}
 qgate_validation_required: {true|false}
+refine_prompt:
+  questions[N]{id,question,header,options,recommended}:
+    ...
 ```
 
 `domains` is the multi-valued union carried in `references.domains` — the detector, `always_on`, and `file_globs` legs plus any operator selections from init. Refine may **widen** it (Step 9's file_globs re-merge against the real `affected_files` unions newly-matched domains in) but never narrows it, so the returned set is a superset of the init-persisted domains.
 
 `qgate_validation_required` is `true` when the lesson-derived plan path activated at Step 13.5 (`plan_source` set and not `recipe`), `false` otherwise. See the q-gate-validation activation entry of the Persist and Return Results step for the orchestrator dispatch contract.
+
+`refine_prompt` is the **prompt-required envelope** assembled at Step 11. It is present **only when confidence is below threshold** and the leaf batched open clarification questions for the operator; on the threshold-reached path it is absent. The main-context orchestrator (`plan-marshall/workflow/planning.md` § 2-Refine Phase) reads it, fires ONE batched `AskUserQuestion` with each question's `recommended` default, and re-dispatches phase-2-refine at most once with every answer baked in. The leaf itself performs no operator-facing interaction. See `standards/refine-workflow-detail.md` Step 11 for the `questions[N]{id,question,header,options,recommended}` structure.
 
 **Data Location Reference**:
 - Track/scope decisions: `decision.log` filtered by `(plan-marshall:phase-2-refine)`
@@ -306,7 +315,7 @@ display_detail: "<{confidence}% confidence, track {track}, {qgate_pending_count}
 
 `display_detail` shape on success: `"{confidence}% confidence, track {track}, {qgate_pending_count} pending"` (e.g. `"92% confidence, track complex, 0 pending"`); ≤80 chars, ASCII, no trailing period. On error, carries the short error label from § Error Handling.
 
-All other fields (`plan_id`, `confidence`, `track`, `track_reasoning`, `scope_estimate`, `pr_title`, `compatibility`, `compatibility_description`, `simplicity`, `simplicity_description`, `domains`, `qgate_pending_count`) are documented in the Persist and Return Results step above.
+All other fields (`plan_id`, `confidence`, `track`, `track_reasoning`, `scope_estimate`, `pr_title`, `compatibility`, `compatibility_description`, `simplicity`, `simplicity_description`, `domains`, `qgate_pending_count`, and the conditional `refine_prompt` batched-clarification envelope) are documented in the Persist and Return Results step above.
 
 ---
 

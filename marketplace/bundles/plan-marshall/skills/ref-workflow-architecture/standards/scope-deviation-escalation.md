@@ -2,7 +2,7 @@
 
 Defines what counts as "softening a request-level hard requirement" at execute time and the contract every component MUST follow when the softening would otherwise be applied silently.
 
-This standard is the single source of truth for the deviation taxonomy, the AskUserQuestion shape, and the prohibited "log-and-continue" anti-pattern. Two callers reference it: `phase-5-execute` (Step 11 triage loop) and `execute-task` (Handle Verification Results).
+This standard is the single source of truth for the deviation taxonomy, the prompt shape, and the prohibited "log-and-continue" anti-pattern. Two callers reference it: `phase-5-execute` (Step 11 triage loop) and `execute-task` (Handle Verification Results). Both callers are **dispatched leaves** — neither fires `AskUserQuestion` itself. A leaf that detects a softening returns the canonical three-option payload as an `escalate_ask` envelope (`prompt_options[]`); the main-context orchestrator fires the `AskUserQuestion` and applies the resolution's side effects. See [`agents.md`](agents.md#leaf-cannot-fire-askuserquestion--return-a-prompt-required-envelope) § "Leaf cannot fire AskUserQuestion".
 
 ## Hard-Requirement Softening: Definition
 
@@ -26,9 +26,9 @@ The pattern in every case: the implementor concludes mid-execution that the requ
 
 ## Escalation Contract
 
-When an execute-time component (phase-5-execute orchestrator at Step 11 triage; execute-task per-task verifier at Handle Verification Results) detects that the impending decision would soften a request-level hard requirement, it MUST raise an `AskUserQuestion` with the canonical three-option shape below. The component MUST NOT log-and-continue, MUST NOT auto-select ACCEPT, and MUST NOT record the decision via a `[STATUS]` work-log line ahead of (or instead of) the AskUserQuestion thread.
+When an execute-time dispatched leaf (execute-task per-task verifier at Handle Verification Results; the phase-5-execute Step 11 triage loop that collects the leaf's return) detects that the impending decision would soften a request-level hard requirement, the leaf MUST NOT fire `AskUserQuestion` in-leaf, MUST NOT log-and-continue, MUST NOT auto-select ACCEPT, and MUST NOT record the decision via a `[STATUS]` work-log line. Instead the leaf leaves the task not-done and returns an `escalate_ask` envelope carrying the canonical three-option shape below as a `prompt_options[]` entry; the main-context orchestrator fires the `AskUserQuestion` and owns the resolution. When multiple deviation / `smart_and_ask` gates fire within one task or envelope, they batch into ONE `escalate_ask` envelope (one `AskUserQuestion` covering all of them).
 
-### Canonical AskUserQuestion Shape
+### Canonical Prompt Shape (fired by the orchestrator from the envelope)
 
 ```yaml
 question: |
@@ -53,36 +53,37 @@ options:
 multiSelect: false
 ```
 
-### Resolution Handling
+### Resolution Handling (orchestrator-owned, applied post-return)
 
-Each option triggers a deterministic side effect; none of them is "log and silently continue":
+After the orchestrator fires the batched `AskUserQuestion`, each option triggers a deterministic side effect applied by the orchestrator once the leaf has returned; none of them is "log and silently continue":
 
-| Option | Side Effect |
+| Option | Side Effect (applied by the orchestrator post-return) |
 |--------|-------------|
-| **Hold the line** | Component refuses the softening and routes back through the standard triage path (FIX or BLOCKED). No softening recorded. |
-| **Accept with rationale** | Component prompts for the rationale text via a follow-up `AskUserQuestion` (free-form). Rationale is persisted to `decision.log` at INFO level with a `(scope-deviation:accept)` caller-name marker. The PR body MUST include the rationale verbatim under a "Scope Deviation Accepted" subsection. |
-| **Split into follow-up plan** | Component creates a successor lesson via `manage-lessons add` capturing the deferred portion (title, narrative, the original hard requirement, the reason the split was chosen). The current plan continues with only the additive scope. The lesson seeds the follow-up plan at the next planning cycle. |
+| **Hold the line** | The orchestrator re-dispatches the phase so the leaf refuses the softening and routes back through the standard triage path (FIX or BLOCKED), the hard requirement intact. No softening recorded. |
+| **Accept with rationale** | The orchestrator prompts for the rationale text via a follow-up `AskUserQuestion` (free-form). Rationale is persisted to `decision.log` at INFO level with a `(scope-deviation:accept)` caller-name marker. The PR body MUST include the rationale verbatim under a "Scope Deviation Accepted" subsection. |
+| **Split into follow-up plan** | The orchestrator creates a successor lesson via `manage-lessons add` capturing the deferred portion (title, narrative, the original hard requirement, the reason the split was chosen). The current plan continues with only the additive scope. The lesson seeds the follow-up plan at the next planning cycle. |
 
 ## Prohibited Anti-Pattern: Log-and-Continue
 
 The work-log line shape `[STATUS] Gate N deferred status accepted` (or any equivalent — "deferred", "skipped", "deferred to follow-up", "accepted as scope reduction") is **documentation, not authorization**. Recording the decision to `work.log` without a corresponding `AskUserQuestion` thread is the failure mode this standard exists to prevent.
 
-When a component encounters a path that would historically have emitted such a line:
+When a dispatched leaf encounters a path that would historically have emitted such a line:
 
 1. STOP. Do not write the work-log line.
 2. Detect whether the decision softens a hard requirement (see Definition above).
-3. If yes → raise the canonical AskUserQuestion. If no → continue with the standard non-deviating path.
+3. If yes → leave the task not-done and return the `escalate_ask` envelope (`prompt_options[]`) for the orchestrator to fire the `AskUserQuestion`. If no → continue with the standard non-deviating path.
 
-A `[STATUS]` line confirming the user's chosen option (e.g., `[STATUS] (plan-marshall:phase-5-execute) Scope deviation accepted by user — rationale logged to decision.log`) IS allowed and recommended after the AskUserQuestion has resolved. The prohibition is on the order: log MUST follow user decision, never replace it.
+A `[STATUS]` line confirming the user's chosen option (e.g., `[STATUS] (plan-marshall:phase-5-execute) Scope deviation accepted by user — rationale logged to decision.log`) IS allowed and recommended after the orchestrator's `AskUserQuestion` has resolved. The prohibition is on the order: log MUST follow user decision, never replace it — and the decision itself is owned by the orchestrator, never fired from the leaf.
 
 ## Caller References
 
-Two callers reference this standard. When the deviation taxonomy or the AskUserQuestion shape changes, both callers should be reviewed for drift.
+Two dispatched-leaf callers reference this standard, and the main-context orchestrator owns the prompt. When the deviation taxonomy or the prompt shape changes, all three should be reviewed for drift.
 
-| Caller | Reference | Purpose |
-|--------|-----------|---------|
-| `plan-marshall:phase-5-execute` (Step 11 § Scope-Deviation Escalation) | Full standard | Phase-level guard before any "deferred / accepted" path in the FIX/SUPPRESS/ACCEPT triage branch |
-| `plan-marshall:execute-task` (Handle Verification Results § Scope-Deviation Escalation) | Full standard | Per-task guard before recording a verification deviation that softens a hard requirement |
+| Caller | Role | Reference | Purpose |
+|--------|------|-----------|---------|
+| `plan-marshall:execute-task` (Handle Verification Results § Scope-Deviation Escalation) | dispatched leaf — returns `escalate_ask` | Full standard | Per-task guard: detects a softening, leaves the task not-done, returns a `prompt_options[]` entry (batched with any `smart_and_ask` entry) |
+| `plan-marshall:phase-5-execute` (Step 11 triage loop) | dispatched leaf — yields `escalate_ask` | Full standard | Collects the leaf's `prompt_options[]` and yields the batched `escalate_ask` envelope to the orchestrator as a TASK-boundary yield reason |
+| `plan-marshall:plan-marshall/workflow/execution.md` (§ Post-return `escalate_ask` batched deviation dispatch) | main-context orchestrator — fires the prompt | Resolution Handling | Fires ONE batched `AskUserQuestion`, applies each option's side effect post-return, re-dispatches phase-5-execute with the resolutions baked in |
 
 ## Related
 

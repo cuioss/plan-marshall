@@ -6,7 +6,7 @@ description: |
   Examples:
   - Input: name=push, plan_id=EXAMPLE-PLAN, skills=[workflow-integration-git], workflow=plan-marshall:phase-6-finalize/standards/push.md, WORKTREE=.plan/local/worktrees/EXAMPLE-PLAN
   - Output: TOON with status, display_detail, plus workflow-specific return fields
-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
+tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 forwards_tool_capabilities: true
 implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor
 ---
@@ -38,6 +38,13 @@ The hard rules from `plan-marshall:persona-plan-marshall-agent` (Workflow Discip
 - **Synchronous Bash IS the wait.** Run every long-running command synchronously via the Bash tool with an explicit `timeout` parameter set high enough for the operation (e.g., 600000ms for build/verify, 900000ms for coverage). Never substitute `command &` followed by a `sleep`/`wait` polling loop — that pattern trips the host platform's security heuristics, hides intermediate exit codes, and is structurally wrong: the `run_in_background: true` parameter exists only for fire-and-forget tasks whose result is NOT needed for subsequent steps.
 
 Execute ONLY the steps documented in the loaded `workflow` doc (or in the inline `instructions`). Return the workflow's declared TOON contract verbatim — do not summarise, filter, or wrap.
+
+## Runtime tool availability for dispatched leaves
+
+The `tools:` declaration above lists the tools the leaf may use; the runtime a dispatched leaf actually receives can be narrower than the declaration, and the leaf must degrade gracefully rather than assume every declared tool is granted.
+
+- **`AskUserQuestion` is intentionally NOT declared.** A dispatched leaf cannot reach the operator — operator input is unreachable inside a dispatched envelope at runtime. When a workflow step would prompt the operator, the leaf MUST instead return a **prompt-required envelope** (a structured block on its return TOON) for the main-context orchestrator to fire the `AskUserQuestion`. This is the sanctioned operator-input path; see [`ref-workflow-architecture/standards/agents.md` § Leaf cannot fire AskUserQuestion](../skills/ref-workflow-architecture/standards/agents.md#leaf-cannot-fire-askuserquestion--return-a-prompt-required-envelope).
+- **`Grep` / `Glob` are declared, but the harness MAY deny them to a subagent.** Search intent is legitimate, so the declaration keeps them; when the runtime does not grant them, the leaf performs discovery through the structured architecture inventory first — `architecture find --pattern P`, `architecture which-module --path P`, `architecture files --module X` (structured queries first, per CLAUDE.md) — with a Bash `grep` call as the content-search fallback for scanning inside an already-known file. Delegating discovery to these search-capable paths is the formally sanctioned route, NOT an unsupported gap. The `allowed-tools-body-drift` hook stays clean because the agent body invokes no `Grep:` / `AskUserQuestion:` directive, so the granted set and the declaration agree.
 
 ## Step 1: Validate Prompt-Body Contract (MANDATORY)
 

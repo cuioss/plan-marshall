@@ -333,6 +333,21 @@ guard in `manage-tasks finalize-step`.
 
 This dispatch lives in the main-context orchestrator so every cross-envelope `Task:` dispatch originates there, while the leaf retains all deterministic, store-mutating work (failure detection, scope cross-reference, planned-failure exception, iteration-cap check, and `manage-findings qgate add` finding persistence).
 
+### Post-return `escalate_ask` batched deviation dispatch (conditional)
+
+**Trigger**: the just-returned phase-5-execute dispatch carries `status: escalate_ask` with a `prompt_options[]` list in its terminal payload. A scope-deviation escalation (execute-task Handle-Verification) and/or a `smart_and_ask` compatibility gate fired inside the envelope; the leaf left the affected task not-done and batched every gate that fired into ONE `prompt_options[]` list. This is a **planning-level operator decision, NOT a fixable code failure** — it is explicitly NOT routed through `verification-feedback`. The canonical deviation taxonomy, three-option shape, and side-effect contract live in [`../../ref-workflow-architecture/standards/scope-deviation-escalation.md`](../../ref-workflow-architecture/standards/scope-deviation-escalation.md).
+
+Because the dispatched leaf cannot reach the operator but this orchestrator runs in the main context and can (see [`../../ref-workflow-architecture/standards/agents.md` § Leaf cannot fire AskUserQuestion](../../ref-workflow-architecture/standards/agents.md#leaf-cannot-fire-askuserquestion--return-a-prompt-required-envelope)), the orchestrator owns the prompt — mirroring D1's `planning.md` § 2-Refine `refine_prompt` handling:
+
+1. **Fire ONE batched `AskUserQuestion`** covering EVERY entry in `prompt_options[]`, presenting each with the leaf's `recommended` default. Each option's label MUST name the branch it selects (Hold the line / Accept with rationale / Split into follow-up plan) per the option-text-names-the-branch authoring rule.
+
+2. **Apply each resolution's side effect** post-return per `scope-deviation-escalation.md` § "Resolution Handling":
+   - **Hold the line** → re-dispatch phase-5-execute so the leaf resumes the fix loop with the hard requirement intact.
+   - **Accept with rationale** → prompt for the rationale (free-form follow-up `AskUserQuestion`), persist it to `decision.log` at INFO with a `(scope-deviation:accept)` marker, AND surface it verbatim in the PR body under a "Scope Deviation Accepted" subsection.
+   - **Split into follow-up plan** → create a successor lesson via `manage-lessons add` capturing the deferred portion; the current plan continues with only the additive scope.
+
+3. **Re-dispatch phase-5-execute** via the standard execute-phase envelope (per the dispatch block above), baking each resolution into the dispatch prompt so the re-entered leaf resolves each deviation deterministically. The in-flight task state is already persisted, so resumption is lossless. When the `escalate_ask` payload is absent, skip this block.
+
 ### Baseline drift recovery (non-zero overlap)
 
 **Trigger**: the just-returned execution-context dispatch is classified `termination-cause == baseline_drift`. The agent's structured error payload carries `error: baseline_drift` plus `divergent_commits`, `upstream_commit_count`, and `conflict_count > 0`.

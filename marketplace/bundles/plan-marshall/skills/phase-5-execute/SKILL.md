@@ -756,9 +756,27 @@ The mid-execute per-deliverable build is **focused** by design: it runs the `per
 **Applies when**:
 - A `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`, OR
 - Step 9 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`, OR
-- A task was marked `infeasible` per Step 6 ("Infeasible deliverable — report, never silently substitute") — the leaf returned `status: infeasible` with an `infeasibility_reason`; this routes to the dedicated "For infeasible blocks" sub-section below, NOT the `verification-feedback` code-fix loop
+- A task was marked `infeasible` per Step 6 ("Infeasible deliverable — report, never silently substitute") — the leaf returned `status: infeasible` with an `infeasibility_reason`; this routes to the dedicated "For infeasible blocks" sub-section below, NOT the `verification-feedback` code-fix loop, OR
+- The in-context `execute-task` load returned `escalate_ask: true` with `prompt_options[]` — a scope-deviation and/or `smart_and_ask` gate fired and the task is left not-done; this routes to the dedicated "Scope-deviation / `smart_and_ask` escalation yield" sub-section below, NOT the `verification-feedback` code-fix loop
 
 The per-finding LLM core (FIX / SUPPRESS / ACCEPT / AskUserQuestion decisions over the failing findings) is owned by [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md). This per-task body is a leaf and does NOT dispatch it — the leaf persists the findings and returns a `triage_required` signal; the main-context orchestrator dispatches `verification-feedback` under `--phase phase-5-execute --role verification-feedback` with `producer=build-runner` (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) and the canonical contract in [`ref-workflow-architecture/standards/agents.md`](../ref-workflow-architecture/standards/agents.md)).
+
+#### Scope-deviation / `smart_and_ask` escalation yield (`escalate_ask`)
+
+**Applies when** the in-context `execute-task` load returned `escalate_ask: true` with `prompt_options[]` — a scope-deviation escalation (Handle Verification Results) and/or a `smart_and_ask` compatibility gate fired, and the leaf left the task not-done. This is a **planning-level operator decision, NOT a fixable code failure** — it is explicitly NOT routed through `verification-feedback` (there is no test/lint/build finding to FIX, SUPPRESS, or ACCEPT). The canonical deviation taxonomy, the three-option shape, and the prohibited "log-and-continue" anti-pattern live in [`ref-workflow-architecture/standards/scope-deviation-escalation.md`](../ref-workflow-architecture/standards/scope-deviation-escalation.md).
+
+Because this per-task body is a **leaf**, it CANNOT fire `AskUserQuestion` and CANNOT dispatch. It collects the `prompt_options[]` from the returned `escalate_ask` — batching across every deviation / `smart_and_ask` gate that fired anywhere in this envelope into ONE `prompt_options[]` list — and **yields an `escalate_ask` envelope to the main-context orchestrator** as a new TASK-boundary yield reason alongside `budget_yield` / `blocked` / `infeasible`. The leaf returns a wrapped terminal payload and stops; the orchestrator fires ONE batched `AskUserQuestion` and applies each option's side effect post-return (see [`../plan-marshall/workflow/execution.md`](../plan-marshall/workflow/execution.md) § "Post-return `escalate_ask` batched deviation dispatch"). The leaf's return payload:
+
+```toon
+status: escalate_ask
+display_detail: "{task_number} escalate_ask: {N} deviation prompt(s)"
+escalate_ask: true
+plan_id: {plan_id}
+prompt_options[N]{id,question,header,options,recommended}:
+  ...
+```
+
+The orchestrator resolves the prompt and re-dispatches phase-5-execute with each resolution baked in: **Hold the line** resumes the fix loop with the requirement intact; **Accept with rationale** persists the rationale to `decision.log` and the PR body; **Split into follow-up plan** seeds a successor lesson. The leaf performs none of the operator-facing interaction.
 
 #### Pre-triage scope cross-reference
 
@@ -1157,18 +1175,19 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ## Output
 
-phase-5-execute returns on four terminal paths (queue empty → transition; fatal error; triage `blocked`; deliverable `infeasible`). The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
+phase-5-execute returns on five terminal paths (queue empty → transition; fatal error; triage `blocked`; deliverable `infeasible`; scope-deviation `escalate_ask`). The minimum contract every workflow doc that implements `ext-point-execution-context-workflow` MUST return is:
 
 ```toon
-status: success | error | blocked | infeasible
+status: success | error | blocked | infeasible | escalate_ask
 display_detail: "<{tasks_completed} tasks complete, {tasks_remaining} remaining>"
 plan_id: {plan_id}
 tasks_completed: {N}
 tasks_remaining: {N}
 infeasibility_reason: {required when status=infeasible — why the declared deliverable cannot be built as scoped}
+prompt_options[N]{id,question,header,options,recommended}: {required when status=escalate_ask — the batched scope-deviation / smart_and_ask questions for the orchestrator to fire}
 ```
 
-`display_detail` shape on success: `"{tasks_completed} tasks complete, {tasks_remaining} remaining"` (e.g. `"7 tasks complete, 0 remaining"`). On `blocked`: `"{task_number} blocked: {short reason}"`. On `infeasible`: `"{task_number} infeasible: {short reason}"`. On error: short error label from § Error Handling. All values are ≤80 chars, ASCII, no trailing period. The `infeasible` return carries `infeasibility_reason`; the orchestrator routes it to the Step 11 "For infeasible blocks" planning gate (drop / re-scope / abort via AskUserQuestion), NOT the `verification-feedback` code-fix loop.
+`display_detail` shape on success: `"{tasks_completed} tasks complete, {tasks_remaining} remaining"` (e.g. `"7 tasks complete, 0 remaining"`). On `blocked`: `"{task_number} blocked: {short reason}"`. On `infeasible`: `"{task_number} infeasible: {short reason}"`. On `escalate_ask`: `"{task_number} escalate_ask: {N} deviation prompt(s)"`. On error: short error label from § Error Handling. All values are ≤80 chars, ASCII, no trailing period. The `infeasible` return carries `infeasibility_reason`; the orchestrator routes it to the Step 11 "For infeasible blocks" planning gate (drop / re-scope / abort via AskUserQuestion), NOT the `verification-feedback` code-fix loop. The `escalate_ask` return carries `prompt_options[]`; the orchestrator fires ONE batched `AskUserQuestion` (§ "Post-return `escalate_ask` batched deviation dispatch" in `execution.md`) and re-dispatches with the resolutions baked in, NOT the `verification-feedback` code-fix loop.
 
 ---
 

@@ -576,9 +576,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ---
 
-## Step 11: Clarify with User
+## Step 11: Assemble the `refine_prompt` Clarification Envelope
 
-For each issue found in Steps 8-9, formulate a clarification question mapped to its dimension:
+The dispatched refine leaf does **NOT** fire `AskUserQuestion` — operator input is unreachable inside a dispatched `execution-context` envelope (see [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md#leaf-cannot-fire-askuserquestion--return-a-prompt-required-envelope)). When confidence is below threshold, the leaf completes its analysis pass with a best-judgment `clarified_request` and, for each issue found in Steps 8-9, formulates a clarification question mapped to its dimension:
 
 - **Correctness**: "Is {X} the correct {technology/API/pattern}?"
 - **Completeness**: "What should happen when {missing scenario}?"
@@ -587,20 +587,39 @@ For each issue found in Steps 8-9, formulate a clarification question mapped to 
 - **Analysis intent**: "Your request uses 'analyze'. Is the expected outcome a findings-only report, or analysis plus implementation of fixes?"
 - **Module mapping**: "Should this change affect {module A}, {module B}, or both?"
 
-Ask the user via `AskUserQuestion` with explicit options that describe the implementation consequence of each choice. Ask at most 4 questions per iteration (AskUserQuestion limit), prioritize by Correctness > Consistency > Completeness > Ambiguity > Duplication, and provide concrete codebase examples when possible.
+It batches these into ONE `refine_prompt` prompt-required envelope carried on the Step 13 return TOON — at most 4 questions, prioritized by Correctness > Consistency > Completeness > Ambiguity > Duplication, each option describing the implementation consequence of the branch it selects (the option label names the branch the orchestrator takes when it is chosen), with concrete codebase examples when possible.
 
-**Mandatory persistence after every round**: Immediately after the user answers an AskUserQuestion round — before any other action and before looping back to Step 8 — run the Step 12 three-step path-allocate persistence to durably write the answers into `request.md`. The persistence is NOT optional and is NOT deferred to a later iteration: every clarification round produces a populated `## Clarifications` block on disk. Skipping the write because confidence already crossed threshold on this round, or because "the answers are still in context", is the exact defect this contract exists to prevent (clarification answers were silently lost across sessions in archived plans issue-334 / issue-338).
+### `refine_prompt` envelope structure
+
+```toon
+refine_prompt:
+  questions[N]{id,question,header,options,recommended}:
+    q1,"When you say {ambiguous term}, do you mean {A} or {B}?",Ambiguity,"[interpretation A | interpretation B]",interpretation A
+    q2,"Should this change affect {module A}, {module B}, or both?",Module mapping,"[module A | module B | both]",both
+```
+
+- `id` — stable question id the orchestrator echoes back alongside the operator's answer.
+- `question` — the operator-facing prompt text.
+- `header` — the dimension label (Correctness / Consistency / Completeness / Ambiguity / Duplication / Module mapping).
+- `options` — the explicit choices; each label names the branch the orchestrator selects when it is chosen.
+- `recommended` — the leaf's best-judgment default, presented as the pre-selected option.
+
+**HARD constraint (one-context-per-phase)**: the envelope carries all questions at once. The main-context orchestrator (`plan-marshall/workflow/planning.md` § 2-Refine Phase) fires ONE batched `AskUserQuestion` and re-dispatches phase-2-refine **AT MOST ONCE** with every answer baked into the re-dispatch prompt. A still-below-threshold second pass returns the current confidence flagged for manual review (mirrors the max-iterations behaviour). The leaf performs no in-envelope operator interaction and no per-round loop — it assembles the envelope and returns via Step 13.
 
 ---
 
 ## Step 12: Update Request
 
-After receiving user answers, update request.md using the three-step path-allocate
-pattern. The script allocates the canonical artifact path, the main context edits
-the file directly with its native Edit/Write tools, and a second subcommand records
-the clarification transition. No multi-line content crosses the shell boundary.
+On a re-dispatch that carried operator answers baked in from the `refine_prompt`
+envelope (Step 11), record those answers into request.md using the three-step
+path-allocate pattern. The script allocates the canonical artifact path, the leaf
+edits the file directly with its native Edit/Write tools, and a second subcommand
+records the clarification transition. No multi-line content crosses the shell
+boundary. The answers come from the re-dispatch prompt (the orchestrator baked them
+in after firing the batched `AskUserQuestion`), **not** from an in-leaf prompt
+thread — the leaf never fires `AskUserQuestion` itself.
 
-**This step is mandatory after every AskUserQuestion round** (Step 11) — all three sub-steps (12a path-allocate → 12b Edit/Write → 12c mark-clarified) MUST run before the workflow continues. There is no path where a clarification round completes without persisting its answers to `request.md`.
+**This step is mandatory whenever the re-dispatch carried baked-in answers** — all three sub-steps (12a path-allocate → 12b Edit/Write → 12c mark-clarified) MUST run before the workflow continues. There is no path where baked-in clarification answers reach the leaf without being persisted to `request.md`.
 
 ### Step 12a: Allocate Canonical Path
 
@@ -676,15 +695,15 @@ returns `status: success`. Only a successful `mark-clarified` clears the round.
 - {Constraint from clarification}
 ```
 
-### Log and Loop
+### Log and Re-analyze
 
 **Log**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[REFINE:10] (plan-marshall:phase-2-refine) Updated request with {N} clarifications. Returning to analysis."
+  work --plan-id {plan_id} --level INFO --message "[REFINE:10] (plan-marshall:phase-2-refine) Recorded {N} baked-in clarifications. Re-analyzing."
 ```
 
-Go back to Step 8.
+Continue to Step 8 to re-analyze the updated request within this re-dispatched run. There is no cross-dispatch per-round loop — the orchestrator re-dispatches phase-2-refine at most once (Step 11 HARD constraint), so a re-dispatched run that is still below threshold after re-analysis returns the current confidence flagged for manual review rather than assembling a second `refine_prompt` envelope.
 
 ---
 
@@ -806,7 +825,12 @@ compatibility: {compatibility}
 compatibility_description: {compatibility_description}
 domains: [{detected domains}]
 qgate_pending_count: {0 if no findings}
+refine_prompt:
+  questions[N]{id,question,header,options,recommended}:
+    ...
 ```
+
+`refine_prompt` is the conditional batched-clarification envelope assembled at Step 11 — present only when confidence is below threshold, absent on the threshold-reached path. `SKILL.md` § "Step 13: Persist and Return Results" is the single source of truth for the full return TOON.
 
 **Data Location Reference**:
 - Track/scope decisions: `decision.log` filtered by `(plan-marshall:phase-2-refine)`
