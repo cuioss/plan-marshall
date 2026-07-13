@@ -13,13 +13,41 @@ from pathlib import Path
 
 
 def find_bundles(base_path: Path) -> list[Path]:
-    """Find all bundle directories by locating plugin.json files."""
-    bundles = []
+    """Find bundle directories, selecting the newest non-orphaned version per bundle.
+
+    Locates ``.claude-plugin/plugin.json`` files, then reduces each bundle to a
+    single directory:
+
+    - In the versioned plugin-cache layout (``.../plan-marshall/0.1-BETA/``), a
+      directory whose name matches ``^\\d+\\.\\d+`` is a version directory. Version
+      directories sharing a parent belong to the same bundle; the newest
+      non-orphaned one wins, selected via ``_version_sort_key`` (the same helper
+      ``resolve_bundle_path`` and ``collect_script_dirs`` use). A version directory
+      carrying a ``.orphaned_at`` marker is skipped even when it is the numerically
+      newest, so a stale/orphaned directory can never shadow the current one. A
+      bundle whose every version directory is orphaned contributes nothing.
+    - In the non-versioned marketplace layout, each bundle directory forms its own
+      singleton group and passes through unchanged.
+    """
+    versioned_groups: dict[Path, list[Path]] = {}
+    singletons: list[Path] = []
+    seen: set[Path] = set()
     for plugin_json in base_path.rglob('.claude-plugin/plugin.json'):
         bundle_dir = plugin_json.parent.parent
-        if bundle_dir not in bundles:
-            bundles.append(bundle_dir)
-    return sorted(bundles)
+        if bundle_dir in seen:
+            continue
+        seen.add(bundle_dir)
+        if re.match(r'^\d+\.\d+', bundle_dir.name):
+            versioned_groups.setdefault(bundle_dir.parent, []).append(bundle_dir)
+        else:
+            singletons.append(bundle_dir)
+
+    selected: list[Path] = list(singletons)
+    for version_dirs in versioned_groups.values():
+        live = [d for d in version_dirs if not (d / '.orphaned_at').exists()]
+        if live:
+            selected.append(max(live, key=lambda d: _version_sort_key(d.name)))
+    return sorted(selected)
 
 
 def extract_bundle_name(bundle_dir: Path) -> str:
