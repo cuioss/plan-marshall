@@ -437,3 +437,224 @@ def test_sync_defaults_refreshes_stale_provisioning_fields(plan_context):
     # the stale fingerprint is refreshed to the current seed fingerprint
     assert system['config_seed_fingerprint'] == _config_defaults_mod.compute_config_seed_fingerprint()
     assert system['config_seed_fingerprint'] != 'staaaale', 'the stale stamp must be refreshed, not preserved'
+
+
+# =============================================================================
+# Retired step-key rename migration (this plan, D2)
+# =============================================================================
+#
+# sync-defaults migrates retired step keys to their canonicals BEFORE the
+# deep-merge, across the two keyed-map step containers
+# (plan.phase-6-finalize.steps and plan.phase-5-execute.verification_steps). The
+# first (and currently only) rename maps both the built-in-prefixed and the bare
+# legacy review-step forms — default:automated-review / automated-review — to the
+# promoted bundle:skill canonical plan-marshall:automatic-review. The migration
+# preserves each step's nested knob block byte-identically and its insertion
+# order, drops a retired duplicate when the canonical is already present, and is
+# idempotent.
+
+_CANONICAL_REVIEW = 'plan-marshall:automatic-review'
+
+
+def test_sync_defaults_migrates_retired_review_key_preserving_knob_block(plan_context):
+    """default:automated-review migrates to the canonical with its knob block preserved.
+
+    The retired key carries a populated knob block with custom values; after the
+    migration the canonical carries those exact values, the retired key is gone,
+    and the migration is reported in renamed[].
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {
+                        'default:push': {},
+                        'default:automated-review': {
+                            'enabled_bots': 'coderabbit',
+                            'review_bot_buffer_seconds': 42,
+                        },
+                        'default:archive-plan': {},
+                    }
+                }
+            }
+        },
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    # the retired key is gone and the canonical is present
+    assert 'default:automated-review' not in steps
+    assert 'automated-review' not in steps
+    assert _CANONICAL_REVIEW in steps
+    # the user's custom knob values survive byte-identically (no double step)
+    canonical_params = _params_for(steps, _CANONICAL_REVIEW)
+    assert canonical_params['enabled_bots'] == 'coderabbit'
+    assert canonical_params['review_bot_buffer_seconds'] == 42
+    # the migration is reported
+    assert result['renamed_count'] == 1
+    assert any('default:automated-review' in entry and _CANONICAL_REVIEW in entry for entry in result['renamed'])
+
+
+def test_sync_defaults_migrates_bare_retired_review_key(plan_context):
+    """The bare legacy form automated-review also migrates to the canonical."""
+    _write_marshal(
+        plan_context.fixture_dir,
+        {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {
+                        'automated-review': {'enabled_bots': 'sourcery'},
+                    }
+                }
+            }
+        },
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    assert 'automated-review' not in steps
+    assert _CANONICAL_REVIEW in steps
+    assert _params_for(steps, _CANONICAL_REVIEW)['enabled_bots'] == 'sourcery'
+    assert result['renamed_count'] == 1
+
+
+def test_sync_defaults_retired_key_migration_preserves_position(plan_context):
+    """The canonical takes the retired key's insertion position (order preserved).
+
+    The retired key sits between default:push and default:archive-plan; after
+    migration the canonical occupies that same middle slot (the deep-merge only
+    appends the remaining default steps AFTER the present ones).
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {
+                        'default:push': {},
+                        'default:automated-review': {'enabled_bots': 'coderabbit'},
+                        'default:archive-plan': {},
+                    }
+                }
+            }
+        },
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    ordered = list(config['plan']['phase-6-finalize']['steps'])
+    # the canonical sits where the retired key was — between push and archive-plan
+    assert ordered.index(_CANONICAL_REVIEW) == 1
+    assert ordered[0] == 'default:push'
+    assert ordered[2] == 'default:archive-plan'
+
+
+def test_sync_defaults_drops_retired_duplicate_when_canonical_present(plan_context):
+    """A config carrying BOTH the retired and canonical keys drops the retired duplicate.
+
+    The canonical's own knob block wins; the retired duplicate is removed so no
+    double review step survives.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {
+                        'default:automated-review': {'enabled_bots': 'RETIRED'},
+                        _CANONICAL_REVIEW: {'enabled_bots': 'CANONICAL'},
+                    }
+                }
+            }
+        },
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    # the retired duplicate is dropped; the canonical's own block wins
+    assert 'default:automated-review' not in steps
+    assert _params_for(steps, _CANONICAL_REVIEW)['enabled_bots'] == 'CANONICAL'
+    # the drop is reported as a rename entry
+    assert result['renamed_count'] == 1
+    assert any('dropped duplicate' in entry for entry in result['renamed'])
+
+
+def test_sync_defaults_retired_key_migration_is_idempotent(plan_context):
+    """A second sync after migrating a retired key reports no further renames."""
+    _write_marshal(
+        plan_context.fixture_dir,
+        {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {
+                        'default:automated-review': {'enabled_bots': 'coderabbit'},
+                    }
+                }
+            }
+        },
+    )
+
+    first = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    assert first['status'] == 'success'
+    assert first['renamed_count'] == 1
+
+    second = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert second['status'] == 'success'
+    # the retired key is already migrated — the second run renames nothing
+    assert second['renamed'] == []
+    assert second['renamed_count'] == 0
+
+
+def test_sync_defaults_migrates_retired_key_in_verification_steps_container(plan_context):
+    """The phase-5-execute.verification_steps keyed map is also walked by the migration.
+
+    The rename table applies to both step containers; a retired key placed in
+    verification_steps is migrated exactly as in the finalize steps map, proving
+    _STEP_MAP_LOCATIONS covers both.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {
+            'plan': {
+                'phase-5-execute': {
+                    'verification_steps': {
+                        'default:automated-review': {'enabled_bots': 'coderabbit'},
+                    }
+                }
+            }
+        },
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    verification_steps = config['plan']['phase-5-execute']['verification_steps']
+    assert 'default:automated-review' not in verification_steps
+    assert _CANONICAL_REVIEW in verification_steps
+    assert result['renamed_count'] == 1
+    assert any('phase-5-execute.verification_steps' in entry for entry in result['renamed'])
+
+
+def test_sync_defaults_no_renames_reported_for_clean_config(plan_context):
+    """An empty marshal.json sync reports zero renames (no retired keys present)."""
+    _write_marshal(plan_context.fixture_dir, {})
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    assert result['renamed'] == []
+    assert result['renamed_count'] == 0

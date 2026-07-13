@@ -114,6 +114,7 @@ from _manifest_validation import (
     _REPO_ROOT,  # noqa: F401
     _check_ascending_order,  # noqa: F401
     _check_step_loadable,  # noqa: F401
+    _check_step_resolvable,  # noqa: F401
     _coerce_param_value,  # noqa: F401
     _is_external_step,  # noqa: F401
     _read_frontmatter_order,  # noqa: F401
@@ -121,6 +122,7 @@ from _manifest_validation import (
     _resolve_standards_path,  # noqa: F401
     _resolve_step_order,  # noqa: F401
     _sort_steps_by_frontmatter_order,  # noqa: F401
+    check_emitted_steps_resolvable,  # noqa: F401
     cmd_step_params_get,  # noqa: F401
     cmd_step_params_set,  # noqa: F401
     cmd_validate,  # noqa: F401
@@ -1438,6 +1440,39 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'plan_id': plan_id,
             'error': 'bot_enforcement_violation',
             'message': placement_diagnostic,
+        }
+
+    # Compose-time step-resolution gate (fail-loud): every FINAL emitted phase-5/6
+    # step id MUST resolve to a real built-in doc, project-local skill, or bundle
+    # discovery-registry entry. An unresolvable id — a built-in doc deleted
+    # without sweeping marshal.json, a renamed/removed project skill, or a
+    # never-existed bundle:skill key — fails the compose loud, naming the
+    # offending ORIGINAL marshal.json key and the phase (mapped back from the
+    # boundary-normalized emitted id via marshal_phase_{5,6}_map). The gate runs
+    # here, on the FINAL step lists AFTER the sort + placement validator, so only
+    # steps that will actually be persisted are checked. See
+    # _manifest_validation.check_emitted_steps_resolvable and SKILL.md §
+    # "Compose-time step-resolution gate".
+    resolution_error = check_emitted_steps_resolvable(
+        list(body['phase_5'].get('verification_steps', [])),
+        list(body['phase_6'].get('steps', [])),
+        marshal_phase_5_map,
+        marshal_phase_6_map,
+    )
+    if resolution_error is not None:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) unresolvable_step — '
+            f'{resolution_error["message"]}',
+        )
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'unresolvable_step',
+            'message': resolution_error['message'],
+            'phase': resolution_error['phase'],
+            'step_id': resolution_error['step_id'],
+            'marshal_key': resolution_error['marshal_key'],
         }
 
     # Snapshot the resolved per-step params for the FINAL selected steps into the

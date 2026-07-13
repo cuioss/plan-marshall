@@ -1375,6 +1375,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `standards/archive-plan.md` | `default:archive-plan` | Archive the completed plan |
 | `standards/output-template.md` | — | Renderer specification for the five-block final output template (Step 4) |
 | `standards/required-steps.md` | — | Canonical list of steps enforced by the `phase_steps_complete` handshake invariant |
+| `standards/source-edit-pushability.md` | — | General contract for finalize steps that edit source: a source-editing step MUST run pre-merge so its edit is pushable and CI-covered; a step that discovers an edit only post-merge MUST emit an explicit follow-up artifact, never silently revert. `project:finalize-step-era-stamp-fill` is the reference implementation |
 | `standards/validation.md` | — | Configuration requirements, error scenarios |
 | `standards/lessons-integration.md` | — | Conceptual guidance on lesson capture |
 

@@ -15,7 +15,10 @@ from pathlib import Path
 from typing import Any
 
 from _manifest_core import (
+    _CANONICAL_TO_ROLE,
+    _CANONICAL_VERIFY_PREFIX,
     MANIFEST_VERSION,
+    PROMOTED_BUILTIN_STEP_IDS,
     VALID_RECORD_PHASES,
     _strip_default_prefix,
     read_manifest,
@@ -418,6 +421,239 @@ def _check_step_loadable(step_id: str) -> dict[str, Any]:
         'loadable': False,
         'message': message,
     }
+
+
+# =============================================================================
+# Compose-time step-resolution gate
+# =============================================================================
+#
+# ``_check_step_loadable`` short-circuits every external (``project:`` /
+# ``bundle:skill``) step to ``loadable: true`` — it only asserts built-in
+# standards-file presence. That leaves a hole: a phase-5/6 step id that names a
+# never-existed ``bundle:skill`` (or a renamed ``project:`` skill) composes
+# silently and only fails much later at dispatch time. ``_check_step_resolvable``
+# closes that hole by RESOLVING external steps against the same discovery
+# registries the finalize/verify seed and discovery surfaces use, so the composer
+# can fail loud at compose time. It is the gate ``cmd_compose`` runs over the
+# FINAL emitted phase lists.
+
+
+def _phase_step_ext_point(phase: str) -> str:
+    """Map a manifest phase key to its step ext-point value.
+
+    ``phase_6`` → the finalize-step ext-point; anything else (``phase_5``) → the
+    build-verify-step ext-point. Lazy-imported from ``_config_defaults`` to keep
+    the module-import surface narrow and avoid an import cycle.
+    """
+    from _config_defaults import BUILD_VERIFY_STEP_EXT_POINT, FINALIZE_STEP_EXT_POINT
+
+    return FINALIZE_STEP_EXT_POINT if phase == 'phase_6' else BUILD_VERIFY_STEP_EXT_POINT
+
+
+def _discovered_implementor_names(phase: str) -> set[str]:
+    """Return the discovered implementor step-id set for ``phase``'s step ext-point.
+
+    Enumerates every implementor of the phase's step ext-point via the reusable
+    ``extension_discovery.find_implementors`` query — the SOLE discovery path the
+    finalize/verify seed and discovery surfaces already use — and returns each
+    record's ``name`` in BOTH its declared and boundary-normalized
+    (``_strip_default_prefix``) forms, so a promoted ``{bundle}:{skill}`` id and
+    its bare alias both match. The :data:`PROMOTED_BUILTIN_STEP_IDS` map is folded
+    in defensively (both key and value forms) so a promoted-step id resolves
+    regardless of which form the emitted list carries.
+    """
+    from extension_discovery import find_implementors
+
+    names: set[str] = set()
+    for rec in find_implementors(_phase_step_ext_point(phase)):
+        name = rec.get('name', '')
+        if not name:
+            continue
+        names.add(name)
+        names.add(_strip_default_prefix(name))
+    for full, bare in PROMOTED_BUILTIN_STEP_IDS.items():
+        names.add(full)
+        names.add(bare)
+    return names
+
+
+def _verify_canonicals_universe() -> set[str]:
+    """Return the canonical command names a ``verify:{canonical}`` step may name.
+
+    The union of the composer's authoritative ``_CANONICAL_TO_ROLE`` keys (the
+    canonical→role table the composer already recognizes — ``quality-gate`` /
+    ``verify`` / ``module-tests`` / ``coverage`` / ``integration-tests`` /
+    ``e2e``) and every ``ext-point-build-verify-step`` implementor's declared
+    ``canonicals`` list (the built-in ``canonical_verify.md`` declares
+    ``quality-gate`` / ``module-tests`` / ``coverage``). A ``verify:{canonical}``
+    step resolves iff its trailing canonical segment is in this union. Seeding the
+    universe from ``_CANONICAL_TO_ROLE`` keeps the gate robust even when discovery
+    returns nothing (an exotic test/consumer layout without the phase-5 standards
+    docs).
+    """
+    from _config_defaults import BUILD_VERIFY_STEP_EXT_POINT
+    from extension_discovery import find_implementors
+
+    universe: set[str] = set(_CANONICAL_TO_ROLE.keys())
+    for rec in find_implementors(BUILD_VERIFY_STEP_EXT_POINT):
+        # `canonicals` comes from a third-party extension record loaded at runtime.
+        # `.get(..., [])` only falls back to `[]` when the key is ABSENT; an
+        # explicit `None` (or any non-list) would raise a TypeError on iteration.
+        # Guard the type before iterating, per this project's convention of keeping
+        # defensive type guards when processing third-party extension data.
+        canonicals = rec.get('canonicals')
+        if isinstance(canonicals, list):
+            for canonical in canonicals:
+                if isinstance(canonical, str) and canonical:
+                    universe.add(canonical)
+    return universe
+
+
+def _check_step_resolvable(step_id: str, phase: str) -> dict[str, Any]:
+    """Single-step resolvability check for a composed phase-5/6 step id.
+
+    Extends :func:`_check_step_loadable` by RESOLVING external steps rather than
+    short-circuiting them to ``loadable: true``. Resolution is keyed on the step
+    id shape and the ``phase`` (``phase_5`` / ``phase_6``):
+
+    - **project:** step (either phase): resolves iff its project-local
+      ``{bare}/SKILL.md`` exists under the repo root.
+    - **phase_5 canonical-verify** step (bare ``{canonical}`` or
+      ``verify:{canonical}``): resolves iff ``{canonical}`` is in the verify
+      canonicals universe (:func:`_verify_canonicals_universe`).
+    - **phase_5 external bundle:skill** verify step: resolves iff its (normalized)
+      id is a discovered ``ext-point-build-verify-step`` implementor name.
+    - **phase_6 external bundle:skill** step: resolves iff its (normalized) id is a
+      discovered ``ext-point-finalize-step`` implementor name.
+    - **phase_6 built-in** step (bare / ``default:``): keeps the existing
+      standards/workflow file check (:func:`_check_step_loadable`).
+
+    Returns a dict with ``step_id``, ``resolvable`` and — on failure — an
+    actionable ``message``.
+    """
+    bare = _strip_default_prefix(step_id)
+
+    # project: external step (either phase) — resolves via its project-local
+    # SKILL.md. Checked first so a project verify step never falls into the
+    # canonical-verify branch.
+    if step_id.startswith('project:'):
+        project_bare = step_id[len('project:') :]
+        skill_path = resolve_project_skill_path(f'{project_bare}/SKILL.md', base=_REPO_ROOT)
+        if skill_path.is_file():
+            return {'step_id': step_id, 'resolvable': True}
+        message = (
+            f'step `{step_id}` referenced by `marshal.json` resolves to no project-local '
+            f'skill `{project_bare}/SKILL.md` — the plan likely renamed or removed the '
+            f'skill without sweeping `marshal.json`'
+        )
+        return {'step_id': step_id, 'resolvable': False, 'message': message}
+
+    if phase == 'phase_5':
+        # An external bundle:skill verify step (a colon-bearing id that is NOT the
+        # canonical-verify ``verify:{canonical}`` shape) resolves via the
+        # build-verify-step discovery registry.
+        if _is_external_step(step_id) and not bare.startswith(_CANONICAL_VERIFY_PREFIX):
+            names = _discovered_implementor_names('phase_5')
+            if step_id in names or bare in names:
+                return {'step_id': step_id, 'resolvable': True}
+            message = (
+                f'step `{step_id}` referenced by `marshal.json` is not a discovered '
+                f'ext-point-build-verify-step implementor — the id resolves to no '
+                f'built-in verify step, project-local skill, or bundle discovery-registry entry'
+            )
+            return {'step_id': step_id, 'resolvable': False, 'message': message}
+        # Canonical-verify built-in step: accept both the bare ``{canonical}`` and
+        # the ``verify:{canonical}`` forms.
+        canonical = bare[len(_CANONICAL_VERIFY_PREFIX) :] if bare.startswith(_CANONICAL_VERIFY_PREFIX) else bare
+        if canonical in _verify_canonicals_universe():
+            return {'step_id': bare, 'resolvable': True}
+        message = (
+            f'step `{step_id}` names an unknown canonical `{canonical}` — no '
+            f'ext-point-build-verify-step implementor (nor the composer canonical→role '
+            f'table) declares it'
+        )
+        return {'step_id': bare, 'resolvable': False, 'message': message}
+
+    # phase_6 external bundle:skill step — resolves via the finalize-step registry.
+    if _is_external_step(step_id):
+        names = _discovered_implementor_names('phase_6')
+        if step_id in names or bare in names:
+            return {'step_id': step_id, 'resolvable': True}
+        message = (
+            f'step `{step_id}` referenced by `marshal.json` is not a discovered '
+            f'ext-point-finalize-step implementor — the id resolves to no built-in '
+            f'finalize step, project-local skill, or bundle discovery-registry entry'
+        )
+        return {'step_id': step_id, 'resolvable': False, 'message': message}
+
+    # phase_6 built-in (bare / default:) — keep the existing standards/workflow
+    # file check.
+    loadable = _check_step_loadable(step_id)
+    if loadable.get('loadable'):
+        return {'step_id': bare, 'resolvable': True}
+    return {
+        'step_id': bare,
+        'resolvable': False,
+        'message': loadable.get('message', f'step `{bare}` is not resolvable'),
+    }
+
+
+def _build_step_marshal_key_map(marshal_map: dict[str, Any] | None) -> dict[str, str]:
+    """Map each boundary-normalized step id to its ORIGINAL marshal.json key.
+
+    ``marshal_map`` is the keyed step map read from marshal.json — its keys carry
+    the author's original prefixes (``default:foo`` / ``project:foo`` /
+    ``bundle:skill``). The composed manifest carries boundary-normalized ids, so a
+    resolution failure on a normalized id is reported by the marshal.json key the
+    author actually wrote. Returns ``{}`` when the map is absent (the CSV-fallback
+    compose path), which the caller degrades to reporting the emitted id itself.
+    """
+    if not isinstance(marshal_map, dict):
+        return {}
+    result: dict[str, str] = {}
+    for key in marshal_map:
+        result.setdefault(_strip_default_prefix(key), key)
+        result.setdefault(key, key)
+    return result
+
+
+def check_emitted_steps_resolvable(
+    phase_5_steps: list[Any],
+    phase_6_steps: list[Any],
+    marshal_phase_5_map: dict[str, Any] | None,
+    marshal_phase_6_map: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Resolve every FINAL emitted phase-5/6 step id; return the first failure or None.
+
+    Iterates the FINAL emitted ``phase_5.verification_steps`` then
+    ``phase_6.steps``, resolving each via :func:`_check_step_resolvable`. Returns
+    ``None`` when every step resolves. On the first unresolvable step returns a
+    dict carrying ``phase`` (``phase_5`` / ``phase_6``), the emitted ``step_id``,
+    the original ``marshal_key`` (the marshal.json key the author wrote, falling
+    back to the emitted id on the CSV-fallback path), and an actionable
+    ``message`` naming both the offending marshal.json key and the phase.
+    """
+    for phase, steps, marshal_map in (
+        ('phase_5', phase_5_steps, marshal_phase_5_map),
+        ('phase_6', phase_6_steps, marshal_phase_6_map),
+    ):
+        key_map = _build_step_marshal_key_map(marshal_map)
+        for step in steps:
+            if not isinstance(step, str):
+                continue
+            verdict = _check_step_resolvable(step, phase)
+            if not verdict.get('resolvable'):
+                marshal_key = key_map.get(step, step)
+                return {
+                    'phase': phase,
+                    'step_id': step,
+                    'marshal_key': marshal_key,
+                    'message': (
+                        f'{phase} step `{marshal_key}` in marshal.json is unresolvable: '
+                        f'{verdict.get("message", "no resolvable source")}'
+                    ),
+                }
+    return None
 
 
 def cmd_validate(args: argparse.Namespace) -> dict[str, Any] | None:
