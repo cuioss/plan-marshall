@@ -308,7 +308,7 @@ def cmd_domain_detect(args) -> dict[str, Any]:
     # Resolve the file signal for the glob leg once: explicit --affected-files at
     # refine, else path-like tokens from the narrative at init.
     narrative, narrative_source = _load_narrative(plan_id)
-    if affected_files_raw:
+    if affected_files_raw is not None:
         file_signal = {p.strip() for p in affected_files_raw.split(',') if p.strip()}
     else:
         file_signal = _extract_narrative_paths(narrative)
