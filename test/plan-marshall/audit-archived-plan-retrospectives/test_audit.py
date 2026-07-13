@@ -154,7 +154,7 @@ def test_dispatch_topology_carries_this_plan_pr_boundary():
     # This is the co-changing mirror of the audit.py CHECK_ERA constant — the pair
     # changes together and is the designated acceptance for era-fill firing from a
     # composed manifest.
-    assert audit.CHECK_ERA["dispatch-topology"] == "PR-PENDING"
+    assert audit.CHECK_ERA["dispatch-topology"] == "#893"
 
 
 def test_stamp_era_inserts_fixed_since_after_status():

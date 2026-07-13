@@ -315,7 +315,7 @@ CHECK_ERA: dict[str, str] = {
     # changes how the leaf/dispatch-topology invariant (leaf cannot reap a
     # backgrounded build) is ENFORCED — from a prose-only rule to a manifest fact —
     # so this check's era boundary is this plan's own PR. (bumped from plan-10.)
-    "dispatch-topology": "PR-PENDING",
+    "dispatch-topology": "#893",
     # finalize-flow-conformance — #884 (this plan's boundary, bumped from #849):
     # this plan's D1 pre-merge comment barrier and D2 completion-aware polling
     # rework the finalize merge-completeness mechanics this check accounts for, so
