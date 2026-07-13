@@ -15,8 +15,8 @@ from typing import Any
 
 # Direct import - executor sets up PYTHONPATH for cross-skill imports
 import resolve_project_dir as _routing
-from marketplace_bundles import resolve_bundles_root, resolve_skills_root
-from marketplace_paths import get_bundle_cache_roots
+from marketplace_bundles import _version_sort_key, resolve_bundles_root, resolve_skills_root
+from marketplace_paths import find_marketplace_path, get_bundle_cache_roots
 from plan_logging import log_entry
 from toon_parser import serialize_toon
 
@@ -39,14 +39,31 @@ def get_plugin_cache_path() -> Path:
 def get_marketplace_bundles_path() -> Path:
     """Get the path to marketplace bundles directory.
 
-    Resolves via ``resolve_bundles_root`` (walks parents looking for a
-    plan-marshall bundle ancestor). If no source-tree ancestor exists
-    (e.g. running outside the marketplace checkout), falls back to the
-    plugin cache.
+    Resolution order:
+
+    1. The SOURCE ``marketplace/bundles`` resolved cwd-relatively via
+       ``find_marketplace_path`` (ADR-002 uniform cwd rule). In the meta-project
+       the working directory is the checkout, so this returns the authoritative
+       flat source tree — fresher than, and structurally simpler than, the
+       deployed cache copy.
+    2. ``resolve_bundles_root(Path(__file__))`` — walks parents of the running
+       script. When the script ships from the plugin cache this lands in the
+       cache bundles root (layout ``{bundle}/{version}/skills``), which is why
+       consumers that iterate the returned root and join ``{bundle}/skills`` MUST
+       be version-dir-aware (see ``_candidate_skills_roots`` /
+       ``_scan_skills_roots_for_implementors`` and ``find_extension_path``).
+    3. The plugin cache root, when no source ancestor exists.
+
+    Preferring the cwd source (step 1) keeps meta-project discovery on the fresh
+    authored tree; consumer projects (no source tree) fall through to the
+    version-aware cache handling.
 
     Returns:
         Path to bundles directory
     """
+    source = find_marketplace_path()
+    if source is not None:
+        return source
     try:
         return resolve_bundles_root(Path(__file__))
     except RuntimeError:
@@ -879,6 +896,40 @@ def _build_implementor_record(doc_path: Path, source: str, name_override: str | 
     return record
 
 
+def _resolve_bundle_skills_root(bundle_dir: Path) -> Path | None:
+    """Return the ``skills`` root under a bundle dir, covering both layouts.
+
+    Two on-disk layouts carry a bundle's authored skills:
+
+    - Flat source: ``{bundle}/skills`` (a marketplace checkout).
+    - Versioned plugin cache: ``{bundle}/{version}/skills`` (the deployed cache),
+      where a bundle dir holds one or more ``{version}`` dirs; the newest version
+      (by ``_version_sort_key``) wins.
+
+    Mirrors :func:`find_extension_path`'s dual-probe. Returns ``None`` when neither
+    layout carries a ``skills`` root. Without the versioned branch, a scan run from
+    the deployed cache silently finds ZERO bundle-optional implementors, because
+    ``{bundle}/skills`` does not exist there (the authored skills live one
+    ``{version}`` segment deeper) — the defect that blocked manifest compose on the
+    ``plan-marshall:plan-retrospective`` / ``plan-marshall:automatic-review`` steps.
+    """
+    flat = bundle_dir / 'skills'
+    if flat.is_dir():
+        return flat
+    try:
+        version_dirs = [
+            d
+            for d in bundle_dir.iterdir()
+            if d.is_dir() and not d.name.startswith('.') and (d / 'skills').is_dir()
+        ]
+    except OSError:
+        return None
+    if not version_dirs:
+        return None
+    newest = max(version_dirs, key=lambda d: _version_sort_key(d.name))
+    return newest / 'skills'
+
+
 def _scan_skills_roots_for_implementors(ext_point: str) -> list[dict[str, Any]]:
     """Scan every bundle's ``skills/*/SKILL.md`` for ``ext_point`` implementors.
 
@@ -913,8 +964,11 @@ def _scan_skills_roots_for_implementors(ext_point: str) -> list[dict[str, Any]]:
         for bundle_dir in bundle_dirs:
             if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
                 continue
-            skills_root = bundle_dir / 'skills'
-            if not skills_root.is_dir():
+            # Version-dir-aware: {bundle}/skills (source) OR {bundle}/{version}/skills
+            # (deployed cache). A flat-only probe misses every cache-resident
+            # implementor. See _resolve_bundle_skills_root.
+            skills_root = _resolve_bundle_skills_root(bundle_dir)
+            if skills_root is None:
                 continue
             try:
                 skill_dirs = sorted(skills_root.iterdir())

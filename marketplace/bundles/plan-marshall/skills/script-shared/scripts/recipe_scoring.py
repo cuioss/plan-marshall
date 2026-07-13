@@ -320,14 +320,28 @@ def _resolve_recipe_skill_md(recipe: dict[str, Any]) -> Path | None:
         return None
     # Bundle recipes (extension-registered) live under the marketplace tree.
     try:
-        from marketplace_bundles import resolve_bundles_root
+        from marketplace_bundles import resolve_bundle_path, resolve_bundles_root
 
         bundles_root: Path | None = resolve_bundles_root(Path(__file__))
     except (ImportError, ValueError, OSError):
         bundles_root = None
     if bundles_root is not None:
+        try:
+            bundle_dirs = sorted(bundles_root.iterdir())
+        except OSError:
+            bundle_dirs = []
         for name in candidates:
-            for candidate in sorted(bundles_root.glob(f'*/skills/{name}/SKILL.md')):
+            subpath = f'skills/{name}/SKILL.md'
+            for bundle_dir in bundle_dirs:
+                if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
+                    continue
+                # resolve_bundle_path is version-dir-aware: it resolves the flat
+                # source layout ({bundle}/skills/...) AND the newest versioned
+                # cache layout ({bundle}/{version}/skills/...). The former raw
+                # ``*/skills/{name}/SKILL.md`` glob only matched the flat layout,
+                # so a bundle recipe silently lost its lane seed when this ran
+                # from the deployed cache (whose per-bundle layout is versioned).
+                candidate = resolve_bundle_path(bundles_root, bundle_dir.name, subpath)
                 if candidate.is_file():
                     return candidate
     # Project recipes live under the cwd-relative project skill roots (the same

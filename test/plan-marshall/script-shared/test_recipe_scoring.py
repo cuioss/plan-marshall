@@ -542,3 +542,31 @@ def test_score_recipe_shape_never_lowers_a_strong_keyword_match():
     blended, breakdown = score_recipe(_SURGICAL_RECIPE, tokens, None, None, narrative_text=narrative)
     assert blended >= kw_only
     assert blended == max(kw_only, breakdown['shape_score'])
+
+
+# =============================================================================
+# _resolve_recipe_skill_md — versioned-cache-layout resolution
+# =============================================================================
+
+
+def test_resolve_recipe_skill_md_finds_bundle_recipe_in_versioned_cache(tmp_path, monkeypatch):
+    """A bundle recipe's SKILL.md resolves from the versioned plugin-cache layout
+    ({bundle}/{version}/skills/...), not only the flat source layout. The former
+    raw ``*/skills/{name}/SKILL.md`` glob matched only the flat layout, so a bundle
+    recipe silently lost its lane seed when this ran from the deployed cache.
+    """
+    import marketplace_bundles
+
+    from recipe_scoring import _resolve_recipe_skill_md
+
+    skill_md = (
+        tmp_path / 'plan-marshall' / '0.1-BETA' / 'skills' / 'recipe-zzz-cache-probe' / 'SKILL.md'
+    )
+    skill_md.parent.mkdir(parents=True)
+    skill_md.write_text('---\nname: recipe-zzz-cache-probe\n---\n# body\n', encoding='utf-8')
+    # resolve_bundles_root is imported inside _resolve_recipe_skill_md, so patch the
+    # source-module attribute the function-local import re-reads.
+    monkeypatch.setattr(marketplace_bundles, 'resolve_bundles_root', lambda _f: tmp_path)
+
+    resolved = _resolve_recipe_skill_md({'key': 'zzz-cache-probe'})
+    assert resolved == skill_md

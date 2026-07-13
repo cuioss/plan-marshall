@@ -489,3 +489,129 @@ def test_scan_project_ignores_non_finalize_step_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: tmp_path)
 
     assert _disc._scan_project_for_implementors(_FINALIZE_STEP_EXT_POINT) == []
+
+
+# =============================================================================
+# _scan_skills_roots_for_implementors — versioned-cache-layout discovery fix
+# =============================================================================
+#
+# Regression coverage for the bundle-optional implementor discovery fix: the scan
+# resolves each bundle's ``skills`` root version-dir-aware via
+# ``_resolve_bundle_skills_root`` — probing the flat source layout
+# (``{bundle}/skills``) AND the deployed plugin cache layout
+# (``{bundle}/{version}/skills``). A flat-only probe silently found ZERO
+# bundle-optional implementors when the scan ran from the cache (where
+# ``{bundle}/skills`` does not exist), blocking manifest compose on the
+# ``plan-marshall:plan-retrospective`` / ``plan-marshall:automatic-review`` steps.
+
+
+def test_resolve_bundle_skills_root_prefers_flat_source(tmp_path):
+    """The flat source layout ``{bundle}/skills`` wins when present."""
+    bundle_dir = tmp_path / 'plan-marshall'
+    (bundle_dir / 'skills').mkdir(parents=True)
+    assert _disc._resolve_bundle_skills_root(bundle_dir) == bundle_dir / 'skills'
+
+
+def test_resolve_bundle_skills_root_picks_newest_versioned(tmp_path):
+    """With no flat layout, the newest ``{version}/skills`` dir is chosen."""
+    bundle_dir = tmp_path / 'plan-marshall'
+    for version in ('0.1.1068', '0.1.1105', '0.1.1090'):
+        (bundle_dir / version / 'skills').mkdir(parents=True)
+    # 0.1.1105 is numerically newest, not lexicographically first.
+    assert _disc._resolve_bundle_skills_root(bundle_dir) == bundle_dir / '0.1.1105' / 'skills'
+
+
+def test_resolve_bundle_skills_root_none_when_no_skills(tmp_path):
+    """A bundle dir with neither a flat nor a versioned ``skills`` root yields None."""
+    bundle_dir = tmp_path / 'plan-marshall'
+    (bundle_dir / '0.1.1105' / 'not-skills').mkdir(parents=True)
+    assert _disc._resolve_bundle_skills_root(bundle_dir) is None
+
+
+def test_scan_skills_roots_discovers_bundle_optional_from_versioned_cache(tmp_path, monkeypatch):
+    """A bundle-optional finalize step is discovered from the versioned CACHE layout
+    (``{bundle}/{version}/skills/...``) even when the source-tree root contributes
+    nothing — the property that makes discovery correct from a plugin-cache
+    execution context, where a flat ``{bundle}/skills`` probe found nothing.
+    """
+    cache_root = tmp_path / 'cache'
+    versioned_skills = cache_root / 'plan-marshall' / '0.1-BETA' / 'skills'
+    _write_finalize_step(
+        versioned_skills, 'plan-retrospective',
+        implements=_FINALIZE_STEP_EXT_POINT, name='plan-retrospective',
+    )
+    # Source root contributes nothing (nonexistent), so the cache root is the only
+    # scannable root — forcing the versioned-layout branch.
+    monkeypatch.setattr(_disc, 'get_marketplace_bundles_path', lambda: tmp_path / 'no-source')
+    monkeypatch.setattr(_disc, 'get_bundle_cache_roots', lambda: (str(cache_root),))
+
+    records = _disc._scan_skills_roots_for_implementors(_FINALIZE_STEP_EXT_POINT)
+
+    names = [rec['name'] for rec in records]
+    assert 'plan-marshall:plan-retrospective' in names
+    rec = next(r for r in records if r['name'] == 'plan-marshall:plan-retrospective')
+    assert rec['source'] == 'bundle-optional'
+
+
+def test_scan_skills_roots_discovers_from_flat_source(tmp_path, monkeypatch):
+    """The flat source layout still resolves after the fix (both layouts work)."""
+    source_root = tmp_path / 'src'
+    flat_skills = source_root / 'plan-marshall' / 'skills'
+    _write_finalize_step(
+        flat_skills, 'plan-retrospective',
+        implements=_FINALIZE_STEP_EXT_POINT, name='plan-retrospective',
+    )
+    monkeypatch.setattr(_disc, 'get_marketplace_bundles_path', lambda: source_root)
+    monkeypatch.setattr(_disc, 'get_bundle_cache_roots', lambda: ())
+
+    records = _disc._scan_skills_roots_for_implementors(_FINALIZE_STEP_EXT_POINT)
+
+    assert 'plan-marshall:plan-retrospective' in [rec['name'] for rec in records]
+
+
+def test_scan_skills_roots_dedups_bundle_seen_in_both_layouts(tmp_path, monkeypatch):
+    """A bundle:skill present in BOTH the flat source root and the versioned cache
+    root is emitted ONCE — the step_id dedup survives the version-dir nesting.
+    """
+    source_root = tmp_path / 'src'
+    _write_finalize_step(
+        source_root / 'plan-marshall' / 'skills', 'plan-retrospective',
+        implements=_FINALIZE_STEP_EXT_POINT, name='plan-retrospective',
+    )
+    cache_root = tmp_path / 'cache'
+    _write_finalize_step(
+        cache_root / 'plan-marshall' / '0.1-BETA' / 'skills', 'plan-retrospective',
+        implements=_FINALIZE_STEP_EXT_POINT, name='plan-retrospective',
+    )
+    monkeypatch.setattr(_disc, 'get_marketplace_bundles_path', lambda: source_root)
+    monkeypatch.setattr(_disc, 'get_bundle_cache_roots', lambda: (str(cache_root),))
+
+    records = _disc._scan_skills_roots_for_implementors(_FINALIZE_STEP_EXT_POINT)
+
+    matches = [rec for rec in records if rec['name'] == 'plan-marshall:plan-retrospective']
+    assert len(matches) == 1
+
+
+# =============================================================================
+# get_marketplace_bundles_path — prefers the cwd-relative SOURCE tree
+# =============================================================================
+
+
+def test_get_marketplace_bundles_path_prefers_cwd_source(tmp_path, monkeypatch):
+    """The source ``marketplace/bundles`` resolved cwd-relatively wins over the
+    ``Path(__file__)``-derived fallback, keeping meta-project discovery on the
+    fresh authored tree.
+    """
+    sentinel = tmp_path / 'some' / 'marketplace' / 'bundles'
+    sentinel.mkdir(parents=True)
+    monkeypatch.setattr(_disc, 'find_marketplace_path', lambda: sentinel)
+    assert _disc.get_marketplace_bundles_path() == sentinel
+
+
+def test_get_marketplace_bundles_path_falls_back_when_no_source(monkeypatch):
+    """When no cwd source tree resolves, it falls back to the ``__file__`` /
+    cache resolution rather than raising.
+    """
+    monkeypatch.setattr(_disc, 'find_marketplace_path', lambda: None)
+    result = _disc.get_marketplace_bundles_path()
+    assert result.is_dir()
