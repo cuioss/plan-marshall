@@ -458,7 +458,7 @@ def _resolve_notation_by_target(notation: str) -> str | None:
         if candidates:
             _name, newest = max(candidates, key=lambda pair: _version_key(pair[0]))
             return str(newest.resolve())
-    except (OSError, ValueError):
+    except (OSError, ValueError, RuntimeError):
         pass
     return None
 '''
