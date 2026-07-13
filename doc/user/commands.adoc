@@ -13,8 +13,10 @@ Project configuration wizard for the planning system.
 
 [source,bash]
 ----
-/marshall-steward           # Interactive menu, or first-run wizard if .plan/execute-script.py is missing
-/marshall-steward --wizard  # Force first-run wizard
+/marshall-steward                        # Interactive menu, or first-run wizard if .plan/execute-script.py is missing
+/marshall-steward --wizard               # Force first-run wizard
+/marshall-steward upgrade                # Post-change reconciliation — asks before each stage
+/marshall-steward upgrade integrate=true # Post-change reconciliation — runs all four stages end-to-end
 ----
 
 See xref:getting-started.adoc[Getting Started] for the first-run wizard steps. The interactive menu offers:
@@ -22,6 +24,16 @@ See xref:getting-started.adoc[Getting Started] for the first-run wizard steps. T
 * **Maintenance** — regenerate the executor (after `/plugin install` / `/plugin uninstall`), clean execution logs.
 * **Health Check** — verify setup, diagnose missing scripts or stale configuration.
 * **Configuration** — adjust build systems, skill domains, the per-role effort/model registry (see xref:configuration.adoc[Configuration]), terminal-title integration (xref:terminal-title.adoc[Terminal Title]), and other project-level knobs.
+* **Upgrade** — run the post-change reconciliation described below.
+
+The **Upgrade** verb runs the full post-change reconciliation in one flow, in four stages:
+
+. Regenerate `target/claude` and the executor.
+. Reconcile `marshal.json` — sync defaults, sort the finalize steps, and re-seed the build map on drift.
+. Verify — an executor-staleness preflight plus a content-drift report over the emitted `target/claude`.
+. Run the landing cycle — commit, push, open a PR, merge, and switch back to the base branch.
+
+Plain `/marshall-steward upgrade` asks before each of the four stages. `/marshall-steward upgrade integrate=true` suppresses only those four top-level stage gates and runs them end-to-end — the nested gates (the Stage 2 build-map re-seed prompt, and the Stage 4 landing land/leave and branch-reuse prompts) still ask, so `integrate=true` is not a fully-unattended mode. If a stage fails, the flow stops at that stage, reports the partial state and how to resume manually, and rolls nothing back.
 
 == /plan-marshall
 
