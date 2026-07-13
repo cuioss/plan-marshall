@@ -73,6 +73,14 @@ class TestFindBundles:
         _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
         assert find_bundles(tmp_path) == []
 
+    def test_non_versioned_bundle_starting_with_digits(self, tmp_path):
+        # A non-versioned bundle whose name starts with digits (e.g. '1.0-my-bundle')
+        # must be treated as a singleton, not grouped by its parent (base_path) and
+        # discarded in favor of a sibling that also matches the version-dir pattern.
+        b1 = _create_bundle(tmp_path, '1.0-bundle-a')
+        b2 = _create_bundle(tmp_path, '2.0-bundle-b')
+        assert sorted(find_bundles(tmp_path)) == sorted([b1, b2])
+
 
 class TestExtractBundleName:
     def test_marketplace_structure(self, tmp_path):

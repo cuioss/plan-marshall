@@ -27,7 +27,12 @@ def find_bundles(base_path: Path) -> list[Path]:
       newest, so a stale/orphaned directory can never shadow the current one. A
       bundle whose every version directory is orphaned contributes nothing.
     - In the non-versioned marketplace layout, each bundle directory forms its own
-      singleton group and passes through unchanged.
+      singleton group and passes through unchanged — even when its name happens to
+      match the version-dir digit pattern (e.g. ``1.0-my-bundle``). The version-dir
+      check is gated on ``bundle_dir.parent != base_path`` so a top-level bundle
+      whose name starts with digits is never merged into a version group keyed by
+      ``base_path`` itself, which would otherwise silently discard sibling bundles
+      that also match the pattern.
     """
     versioned_groups: dict[Path, list[Path]] = {}
     singletons: list[Path] = []
@@ -37,7 +42,7 @@ def find_bundles(base_path: Path) -> list[Path]:
         if bundle_dir in seen:
             continue
         seen.add(bundle_dir)
-        if re.match(r'^\d+\.\d+', bundle_dir.name):
+        if bundle_dir.parent != base_path and re.match(r'^\d+\.\d+', bundle_dir.name):
             versioned_groups.setdefault(bundle_dir.parent, []).append(bundle_dir)
         else:
             singletons.append(bundle_dir)
