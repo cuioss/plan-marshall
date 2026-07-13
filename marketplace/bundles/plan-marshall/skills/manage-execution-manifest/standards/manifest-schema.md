@@ -15,6 +15,9 @@ phase_5:
   verification_steps[N]:
     - <step-id>
     ...
+  step_execution_tier[N]{step_id,tier}:
+    - <step-id>,per_task | orchestrator
+    ...
   step_params:
     <step-id>: { <param>: <value>, ... }
     ...
@@ -28,6 +31,8 @@ phase_6:
 ```
 
 The in-manifest `verification_steps` / `steps` arrays carry the ordered step-id list (a `list[str]`); the sibling `step_params` map carries each selected step's resolved per-step params alongside it, keyed by the same (bare) step id.
+
+`phase_5.step_execution_tier` is the compose-time-resolved per-step execution tier: a `{step_id, tier}` record list stamped by `compose()` for every `phase_5.verification_steps` entry, where `tier` is `per_task` (the leaf runs the step inline) or `orchestrator` (the step exceeds the Bash ceiling and is routed to the orchestrator's `await-long-running` seam, never to the leaf). An absent or unresolved tier defaults to `per_task`.
 
 `<step-id>` notation:
 
