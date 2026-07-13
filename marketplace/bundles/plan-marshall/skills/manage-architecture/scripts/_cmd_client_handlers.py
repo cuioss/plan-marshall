@@ -582,8 +582,8 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
         1. Exact-inventory match that is more specific than the root
            (``paths.module`` length > 0).
         2. Longest ``paths.sources ∪ paths.tests`` prefix that contains the path
-           (closes lesson 2026-07-09-04-001 — the union of ``paths.tests`` lets a
-           ``test/**`` path resolve to its owning module instead of the root).
+           (the union of ``paths.tests`` lets a ``test/**`` path resolve to its
+           owning module instead of the root).
         3. Project-local prefix map (``.claude/skills/** → plan-marshall``).
         4. Root-inventory match (the length-0 ``default`` module), when present.
     """

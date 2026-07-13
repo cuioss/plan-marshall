@@ -696,9 +696,9 @@ def longest_containing_prefix(path: str, paths: dict[str, Any]) -> int | None:
     ancestor of (or equal to) ``path``, or ``None`` when none contains it.
     Root-ish prefixes (``''`` / ``'.'``) are skipped — they add no specificity
     over the root-module fallback. The union of ``paths.tests`` with
-    ``paths.sources`` closes lesson 2026-07-09-04-001: the resolver must consult
-    ``paths.tests``, not ``paths.sources`` alone, so a ``test/**`` path resolves
-    to its owning module instead of falling through to the project root.
+    ``paths.sources`` is deliberate: the resolver must consult ``paths.tests``,
+    not ``paths.sources`` alone, so a ``test/**`` path resolves to its owning
+    module instead of falling through to the project root.
 
     Args:
         path: A repo-relative path.
@@ -739,8 +739,8 @@ def resolve_module_for_path(path: str, project_dir: str = '.') -> str | None:
 
     Specificity is the longest of two signals per module: the ``paths.module``
     prefix and the ``paths.sources ∪ paths.tests`` containment prefix (the union
-    closes lesson 2026-07-09-04-001 so a ``test/**`` path resolves to its owning
-    module rather than the project root). Resolution order:
+    ensures a ``test/**`` path resolves to its owning module rather than the
+    project root). Resolution order:
 
         1. Most-specific containing module (prefix length > 0).
         2. Project-local prefix map (``.claude/skills/** → plan-marshall``).
@@ -779,7 +779,7 @@ def resolve_module_for_path(path: str, project_dir: str = '.') -> str | None:
         else:
             module_prefix_len = None
 
-        # sources ∪ tests containment (closes lesson 2026-07-09-04-001).
+        # sources ∪ tests containment.
         containment_len = longest_containing_prefix(path, paths)
 
         candidate_len = module_prefix_len
