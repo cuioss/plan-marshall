@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Any
 
 # Direct import - executor sets up PYTHONPATH for cross-skill imports.
-from marketplace_bundles import resolve_bundles_root, resolve_skills_root
+from marketplace_bundles import resolve_skills_root
 from toon_parser import serialize_toon
 
 # The three mandatory sub-fields every ``configurable`` entry MUST declare.
@@ -57,11 +57,6 @@ _REQUIRED_SUBFIELDS: tuple[str, ...] = ('key', 'default', 'description')
 def _phase_6_skill_dir() -> Path:
     """Return the ``phase-6-finalize`` skill directory in the owning bundle."""
     return resolve_skills_root(Path(__file__)) / 'phase-6-finalize'
-
-
-def _repo_root() -> Path:
-    """Return the repository root anchor (grandparent of ``marketplace/bundles``)."""
-    return resolve_bundles_root(Path(__file__)).parent.parent
 
 
 def _strip_default_prefix(step_id: str) -> str:
@@ -109,7 +104,8 @@ def resolve_step_doc_path(step_id: str) -> Path:
     Resolution rules (mirroring manage-execution-manifest):
 
     - ``project:``-prefixed steps resolve to
-      ``.claude/skills/{bare-name}/SKILL.md`` relative to the repo root.
+      ``.claude/skills/{bare-name}/SKILL.md`` relative to the project root
+      (cwd-resolved via ``file_ops._resolve_plan_root``).
     - Built-in steps (bare or ``default:``-prefixed) resolve to the
       ``phase-6-finalize`` body doc, searching ``workflow/`` first then
       ``standards/``. When neither exists the ``workflow/`` path is returned so
@@ -128,7 +124,18 @@ def resolve_step_doc_path(step_id: str) -> Path:
     """
     if step_id.startswith('project:'):
         bare = step_id[len('project:'):]
-        skills_root = _repo_root() / '.claude' / 'skills'
+        # Project-local steps live under the PROJECT root's ``.claude/skills/``,
+        # resolved cwd-relatively (ADR-002) via ``file_ops._resolve_plan_root`` —
+        # the SAME anchor ``extension_discovery._scan_project_for_implementors``
+        # adopted for this identical concern. It is deliberately NOT anchored on
+        # this script's ``__file__``: when the code ships from the plugin cache a
+        # ``__file__``-derived repo root lands in ``~/.claude/plugins`` where
+        # ``.claude/skills/`` does not exist, so every ``project:`` step's
+        # configurable block silently resolves to a non-existent path.
+        from file_ops import _resolve_plan_root
+
+        project_root = _resolve_plan_root() or Path.cwd()
+        skills_root = project_root / '.claude' / 'skills'
         candidate = skills_root / bare / 'SKILL.md'
         return _guard_within(candidate, skills_root, step_id)
 

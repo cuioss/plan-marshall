@@ -157,9 +157,9 @@ class TestResolveStepDefaults:
             ),
             encoding='utf-8',
         )
-        import configurable_contract as cc
+        import file_ops
 
-        monkeypatch.setattr(cc, '_repo_root', lambda: tmp_path)
+        monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: tmp_path)
         defaults = resolve_step_defaults('project:finalize-step-demo')
         assert defaults == {'enabled': True, 'limit': 7}
 
@@ -386,11 +386,23 @@ class TestResolveStepDocPath:
 
     def test_project_prefix_maps_to_claude_skills(self, tmp_path, monkeypatch):
         """A project: step resolves under .claude/skills/{name}/SKILL.md."""
-        import configurable_contract as cc
+        import file_ops
 
-        monkeypatch.setattr(cc, '_repo_root', lambda: tmp_path)
+        monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: tmp_path)
         path = resolve_step_doc_path('project:finalize-step-demo')
         assert path == tmp_path / '.claude' / 'skills' / 'finalize-step-demo' / 'SKILL.md'
+
+    def test_project_prefix_falls_back_to_cwd_when_root_unresolvable(self, tmp_path, monkeypatch):
+        """An unresolvable project root falls back to cwd rather than crashing —
+        the ``_resolve_plan_root() or Path.cwd()`` guard the cache-anchor fix added.
+        """
+        import file_ops
+
+        monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: None)
+        monkeypatch.chdir(tmp_path)
+        path = resolve_step_doc_path('project:finalize-step-demo')
+        expected = (tmp_path / '.claude' / 'skills' / 'finalize-step-demo' / 'SKILL.md').resolve()
+        assert path == expected
 
     def test_default_prefix_prefers_workflow_then_standards(self, tmp_path, monkeypatch):
         """A built-in step prefers workflow/{name}.md, falling back to standards/."""
