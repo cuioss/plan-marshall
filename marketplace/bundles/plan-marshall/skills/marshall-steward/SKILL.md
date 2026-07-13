@@ -1,6 +1,6 @@
 ---
 name: marshall-steward
-description: Project configuration wizard for planning system. Manages executor generation, health checks, executor/config staleness signaling, build systems, and skill domains.
+description: Project configuration wizard for planning system. Manages executor generation, health checks, executor/config staleness signaling, build systems, skill domains, and the upgrade verb for one-flow post-change reconciliation.
 user-invocable: true
 mode: workflow
 ---
