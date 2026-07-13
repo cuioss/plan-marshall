@@ -346,25 +346,26 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ---
 
-## Workflow: Phase-Local Run-at-all Gates and Automation Knobs
+## Workflow: Phase-Local gate_mode Gates and Automation Knobs
 
 **Pattern**: Read-Process
 
-The lifecycle run-at-all gates and automation knobs are flat knobs under their owning phase — read/written through the standard `plan <phase> get/set --field <knob>` verb. Each gate takes `auto|always|never` (validated by `validate_run_at_all`); the automation knobs are boolean. Distribution:
+The three surviving lifecycle gates ride the `gate_mode` enum (`auto|always|never`, validated at set-time by `validate_gate_mode`) as flat knobs under their owning phase — read/written through the standard `plan <phase> get/set --field <knob>` verb. The automation knobs are boolean. The four finalize ceremony gates (`qgate` / `self_review` / `simplify` / `security_audit`) no longer ride a run-at-all knob — each is governed by its owning finalize step's per-element `steps.<step>.lane` override (`off`/`minimal`/`auto`), set via `step set --step-id <owning-step> --param lane --value <value>`. Distribution:
 
 | Knob | Location | Read via |
 |------|----------|----------|
-| `deep_lane` | `plan.phase-1-init` | `plan phase-1-init get --field deep_lane` |
-| `escalation` | `plan.phase-1-init` | `plan phase-1-init get --field escalation` |
+| `deep_lane` | `plan.phase-1-init` (gate_mode) | `plan phase-1-init get --field deep_lane` |
+| `escalation` | `plan.phase-1-init` (gate_mode) | `plan phase-1-init get --field escalation` |
 | `auto_route_recipe` | `plan.phase-1-init` | `plan phase-1-init get --field auto_route_recipe` |
 | `auto_route_recipe_threshold` | `plan.phase-1-init` | `plan phase-1-init get --field auto_route_recipe_threshold` |
-| `revalidation` | `plan.phase-2-refine` | `plan phase-2-refine get --field revalidation` |
+| `revalidation` | `plan.phase-2-refine` (gate_mode) | `plan phase-2-refine get --field revalidation` |
 | `finalize_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field finalize_without_asking` |
 | `loop_back_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field loop_back_without_asking` |
 | `final_merge_without_asking` | `plan.phase-6-finalize.steps['default:branch-cleanup']` (step-owned param) | `plan phase-6-finalize step get --step-id default:branch-cleanup` (read `final_merge_without_asking` off `params`) |
-| `self_review` | `plan.phase-6-finalize.steps['default:pre-submission-self-review']` (step-owned param) | `plan phase-6-finalize step get --step-id default:pre-submission-self-review` (read `self_review` off `params`) |
-| `qgate` (finalize) | `plan.phase-6-finalize` | `plan phase-6-finalize get --field qgate` |
-| `simplify` | `plan.phase-6-finalize.steps['default:finalize-step-simplify']` (step-owned param) | `plan phase-6-finalize step get --step-id default:finalize-step-simplify` (read `simplify` off `params`) |
+| `qgate` (ceremony, lane) | `plan.phase-6-finalize.steps['pre-push-quality-gate'].lane` | `plan phase-6-finalize step get --step-id pre-push-quality-gate` (read `lane` off `params`) |
+| `self_review` (ceremony, lane) | `plan.phase-6-finalize.steps['default:pre-submission-self-review'].lane` | `plan phase-6-finalize step get --step-id default:pre-submission-self-review` (read `lane` off `params`) |
+| `simplify` (ceremony, lane) | `plan.phase-6-finalize.steps['default:finalize-step-simplify'].lane` | `plan phase-6-finalize step get --step-id default:finalize-step-simplify` (read `lane` off `params`) |
+| `security_audit` (ceremony, lane) | `plan.phase-6-finalize.steps['default:finalize-step-security-audit'].lane` | `plan phase-6-finalize step get --step-id default:finalize-step-security-audit` (read `lane` off `params`) |
 | `drop_review_on_scope_gate` | `plan.phase-6-finalize.steps['default:pre-submission-self-review']` (step-owned param) | `plan phase-6-finalize step get --step-id default:pre-submission-self-review` (read `drop_review_on_scope_gate` off `params`) |
 
 ### Read an automation knob
@@ -383,14 +384,14 @@ field: finalize_without_asking
 value: true
 ```
 
-### Read a run-at-all gate
+### Read a gate_mode planning gate
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize get --field qgate
+  plan phase-1-init get --field deep_lane
 ```
 
-The `get` verb is read-only — it never mutates `marshal.json`. An unresolvable field returns `error_type: field_not_found`.
+The `get` verb is read-only — it never mutates `marshal.json`. An unresolvable field returns `error_type: field_not_found`. To read a finalize ceremony gate (`qgate` / `self_review` / `simplify` / `security_audit`), read the `lane` param off its owning step via `plan phase-6-finalize step get --step-id <owning-step>`.
 
 ---
 
@@ -548,7 +549,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `ext-defaults` | get, set, set-default, list, remove |
 | `system` | retention get, retention set |
 | `project` | `get/set` (`default_base_branch`, `working_prefixes`, `pr_strategy`, `pr_compact_max_changed_files`), `pr-decision --changed-files N` (resolve the two PR-batching knobs into a `ride`\|`split` verdict) |
-| `plan` | `{phase} get/set` (incl. run-at-all gates + flat finalize automation knobs), `{phase} step get/set` (one-stop keyed-map step-param read/write), set-steps, add-step, remove-step, set-max-iterations |
+| `plan` | `{phase} get/set` (incl. gate_mode planning gates + flat finalize automation knobs), `{phase} step get/set` (one-stop keyed-map step-param read/write; ceremony gates ride the step `lane` param), set-steps, add-step, remove-step, set-max-iterations |
 | `effort` | `read` (role/phase/`--default` resolver), `resolve-target` (`execution-context-{level}` variant name), `apply-preset --preset` (whole-tree writer), `set --scope {phase}.{role}\|plan --level` (surgical per-scope writer) |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
 | `build-map` | `seed` (re-seed `build.map` from applicable extensions, write-once; `--force` clears + re-derives), `read` (effective map from `build.map`, fail-closed when absent), `drift` (read-only diff of persisted vs derived map: `in_sync` + per-domain added/removed globs) |
@@ -660,20 +661,19 @@ The defaults template contains only `system` domain. Technical domains (java, ja
 }
 ```
 
-### Phase-Local Run-at-all Gates and Automation Knobs
+### Phase-Local gate_mode Gates and Automation Knobs
 
-The lifecycle run-at-all gates and finalize automation knobs are flat phase-local knobs, each owned by the phase whose decision machinery consumes it. Every gate takes `auto|always|never` (validated by `validate_run_at_all`): `auto` defers to the existing machinery (lane router / manifest composer), `always` forces the gate in, `never` skips it. The automation knobs are boolean.
+The three surviving lifecycle gates ride the `gate_mode` enum as flat phase-local knobs, each owned by the phase whose decision machinery consumes it. Each takes `auto|always|never` (validated at set-time by `validate_gate_mode`): `auto` defers to the existing machinery (lane router / refine revalidation), `always` forces the gate in, `never` skips it. The finalize automation knobs are boolean.
 
-**Run-at-all gates:**
+**gate_mode planning gates:**
 
 | Gate | Owning phase | Controls |
 |------|--------------|----------|
 | `deep_lane` | `phase-1-init` | Whether the precondition-driven deep planning lane runs (phase-1-init lane router). `never` forces light, but a hard escalation still ratchets unless `escalation: never` is also set. |
 | `escalation` | `phase-1-init` | Whether the hard-escalation safety ratchet (explosion / build-break / premise) stays live. `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in. |
 | `revalidation` | `phase-2-refine` | Whether the premise / narrative-vs-code safety check runs (light lane + deep refine). |
-| `self_review` | `phase-6-finalize` | Whether the pre-submission structural + cognitive self-review runs (manifest finalize step-selection). |
-| `qgate` | `phase-6-finalize` | Whether finalize re-captures blocking findings. **Highest-risk gate** — `never` can mask real build/test failures. |
-| `simplify` | `phase-6-finalize` | Whether the holistic post-implementation simplification sweep (`finalize-step-simplify`) runs. `always` forces it in even when the composer's `simplify_inactive` pre-filter would drop it; `never` skips it; `auto` defers to that pre-filter. |
+
+**Finalize ceremony gates (per-element `lane` override, not run-at-all):** the four finalize ceremony gates — `qgate`, `self_review`, `simplify`, `security_audit` — are each governed by their owning step's `steps.<step>.lane` override (`off`/`minimal`/`auto`), resolved by the manifest ceremony transform (`off→never`, `minimal→always`, `auto`/absent`→auto`). Set via `plan phase-6-finalize step set --step-id <owning-step> --param lane --value <value>`. The owning steps are `pre-push-quality-gate` (qgate), `default:pre-submission-self-review` (self_review), `default:finalize-step-simplify` (simplify), `default:finalize-step-security-audit` (security_audit).
 
 **Flat phase-1-init recipe-match knobs (under `phase-1-init`):**
 
@@ -714,7 +714,7 @@ The lane mechanism's per-element vocabulary (the closed `lane.class` enum, the c
 
 `plan-marshall:automatic-review`: `enabled_bots` (comma-separated bot-kinds, default `coderabbit,sourcery,gemini`) — the review bots this step drives, each mapping one-to-one to a `standards/{bot_kind}.md` registry doc; dropping a bot from the list removes it from re-review triggering and triage entirely. `review_bot_buffer_seconds` (int, default `180`) — max-wait ceiling for `pr wait-for-comments`. `default:branch-cleanup`: `pr_merge_strategy` (default `squash`), `final_merge_without_asking` (bool, default `false`), `auto_rebase_threshold` (default `no_overlap_only`).
 
-**Access shape.** Read/write each FLAT knob through the standard `plan <phase> get/set --field <knob>` verb — e.g. `plan phase-6-finalize get --field qgate`, `plan phase-6-finalize get --field finalize_without_asking`. Read/write each STEP-OWNED param through the one-stop `plan phase-6-finalize step get/set --step-id {step} [--param {k} --value {v}]` verb against the marshal.json keyed-map serial form (the global-config default + wizard write target), or via the plan-local manifest snapshot `manage-execution-manifest step-params get/set` (the per-plan runtime read/override). See [§ Workflow: Phase-Local Run-at-all Gates and Automation Knobs](#workflow-phase-local-run-at-all-gates-and-automation-knobs).
+**Access shape.** Read/write each FLAT knob through the standard `plan <phase> get/set --field <knob>` verb — e.g. `plan phase-1-init get --field deep_lane`, `plan phase-6-finalize get --field finalize_without_asking`. Read/write each STEP-OWNED param — including a ceremony gate's `lane` override — through the one-stop `plan phase-6-finalize step get/set --step-id {step} [--param {k} --value {v}]` verb against the marshal.json keyed-map serial form (the global-config default + wizard write target), or via the plan-local manifest snapshot `manage-execution-manifest step-params get/set` (the per-plan runtime read/override). See [§ Workflow: Phase-Local gate_mode Gates and Automation Knobs](#workflow-phase-local-gate_mode-gates-and-automation-knobs).
 
 **Default source.** The `Default` column above is not held in any centralized constant. Each param-owning step declares its params self-describingly in the `configurable:` block of its body-doc frontmatter; the finalize-step defaults seed (`get_default_config()`) materializes them by delegating each built-in step id through the `plan-marshall:extension-api:configurable_contract` parser (`resolve_step_defaults_optional`, ownerless steps → `null`). The parser is the single fail-loud source of truth for a valid step-param declaration — see [`extension-api` SKILL.md § Configurable step-param contract](../extension-api/SKILL.md#configurable-step-param-contract).
 
