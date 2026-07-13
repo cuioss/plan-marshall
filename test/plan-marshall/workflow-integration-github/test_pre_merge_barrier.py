@@ -131,7 +131,7 @@ def test_late_comment_after_triage_surfaces_pending_finding(plan_context, monkey
     assert _pending(plan_id) == []
 
     # A late comment lands; the barrier re-fetches with it now present.
-    _patch_provider(monkeypatch, _INITIAL_COMMENTS + [_LATE_COMMENT])
+    _patch_provider(monkeypatch, [*_INITIAL_COMMENTS, _LATE_COMMENT])
     second = _run_fetch(202, plan_id)
     assert second['status'] == 'success'
     # Only the genuinely-new comment is stored; the already-stored ones dedupe.

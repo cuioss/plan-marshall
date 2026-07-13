@@ -58,8 +58,20 @@ def check_completeness(plan_id: str, enabled_bots: list[str]) -> dict:
         mutually exclusive: a bot with no finding is ``unfetched``; a bot with a
         finding but an unresolved one is ``pending``; a bot whose findings are
         all resolved is complete and appears in neither list.
+
+        On a findings-store load failure (corrupt or inaccessible store JSON)
+        returns the ``_emit_toon`` error-branch payload
+        ``{'status': 'error', 'error': 'load_failure', 'detail': ...}`` instead
+        of raising, so the caller renders a structured error and exits non-zero.
     """
-    findings = query_findings(plan_id, finding_type='pr-comment')['findings']
+    try:
+        findings = query_findings(plan_id, finding_type='pr-comment')['findings']
+    except (OSError, ValueError) as e:
+        return {
+            'status': 'error',
+            'error': 'load_failure',
+            'detail': f'Failed to load findings store: {e}',
+        }
 
     pending_bots: list[str] = []
     unfetched_bots: list[str] = []

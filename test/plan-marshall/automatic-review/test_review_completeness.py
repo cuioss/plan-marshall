@@ -183,6 +183,59 @@ def test_cli_complete_emits_true(plan_context):
     assert 'unfetched_bots' not in result.stdout
 
 
+def test_load_failure_oserror_returns_structured_error(plan_context, monkeypatch):
+    """A store I/O error (OSError) is caught and rendered as a load_failure payload."""
+    plan_id = 'rc-oserror'
+    plan_context.plan_dir_for(plan_id)
+
+    def _raise(*_args, **_kwargs):
+        raise OSError('store unreadable')
+
+    monkeypatch.setattr(rc, 'query_findings', _raise)
+
+    result = rc.check_completeness(plan_id, ['coderabbit'])
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'load_failure'
+    assert 'store unreadable' in result['detail']
+
+
+def test_load_failure_valueerror_returns_structured_error(plan_context, monkeypatch):
+    """A corrupt store (ValueError / JSONDecodeError) is caught as load_failure."""
+    plan_id = 'rc-valueerror'
+    plan_context.plan_dir_for(plan_id)
+
+    def _raise(*_args, **_kwargs):
+        raise ValueError('bad json')
+
+    monkeypatch.setattr(rc, 'query_findings', _raise)
+
+    result = rc.check_completeness(plan_id, ['coderabbit'])
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'load_failure'
+    assert 'bad json' in result['detail']
+
+
+def test_cmd_check_load_failure_nonzero_exit(plan_context, monkeypatch, capsys):
+    """cmd_check emits the error TOON branch and returns a non-zero exit code."""
+    plan_id = 'rc-cmd-load-fail'
+    plan_context.plan_dir_for(plan_id)
+
+    def _raise(*_args, **_kwargs):
+        raise OSError('store gone')
+
+    monkeypatch.setattr(rc, 'query_findings', _raise)
+
+    rc_exit = rc.main(['check', '--plan-id', plan_id, '--enabled-bots', 'coderabbit'])
+
+    captured = capsys.readouterr()
+    assert rc_exit == 1
+    assert 'status: error' in captured.out
+    assert 'error: load_failure' in captured.out
+    assert 'detail:' in captured.out
+
+
 def test_cli_whitespace_in_enabled_bots_tolerated(plan_context):
     """Whitespace around comma-separated bot tokens is stripped."""
     plan_id = 'rc-cli-ws'

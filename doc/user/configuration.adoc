@@ -224,14 +224,14 @@ The closed `lane.class` enum, the class→default-tier table, the resolution lat
 [#step-configuration]
 === Step configuration (verify + finalize pipelines)
 
-`plan.phase-5-execute.verification_steps` and `plan.phase-6-finalize.steps` are id-keyed maps of step identifiers (the key insertion order is the execution order). Each value is that step's nested parameter object: step-owned params (e.g. `pr_merge_strategy` under `default:branch-cleanup`, `review_bot_buffer_seconds` under `default:automated-review`, the prefix-stripped sonar params under `default:sonar-roundtrip`) nest under their owning step's value; verify steps and ownerless finalize steps map to the empty object `{}`. Each step ID resolves to one of three sources:
+`plan.phase-5-execute.verification_steps` and `plan.phase-6-finalize.steps` are id-keyed maps of step identifiers (the key insertion order is the execution order). Each value is that step's nested parameter object: step-owned params (e.g. `pr_merge_strategy` under `default:branch-cleanup`, `review_bot_buffer_seconds` under `plan-marshall:automatic-review`, the prefix-stripped sonar params under `default:sonar-roundtrip`) nest under their owning step's value; verify steps and ownerless finalize steps map to the empty object `{}`. Each step ID resolves to one of three sources:
 
 [cols="1,3", options="header"]
 |===
 | Step kind | Example
 
 | **Built-in** (prefix `default:`)
-| `default:verify:quality-gate`, `default:verify:module-tests`, `default:verify:coverage` (phase-5 — canonical-verify form); `default:pre-push-quality-gate`, `default:commit-push`, `default:create-pr`, `default:ci-verify`, `default:automated-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan` (phase-6, kebab-case, canonical default order).
+| `default:verify:quality-gate`, `default:verify:module-tests`, `default:verify:coverage` (phase-5 — canonical-verify form); `default:pre-push-quality-gate`, `default:commit-push`, `default:create-pr`, `default:ci-verify`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan` (phase-6, kebab-case, canonical default order).
 
 | **Project-local** (prefix `project:`)
 | Loaded from `.claude/skills/finalize-step-<step>/` — a project-specific finalize step (e.g. a custom deploy or notification).
