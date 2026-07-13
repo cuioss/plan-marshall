@@ -66,14 +66,9 @@ class TestFindBundles:
         _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
         assert find_bundles(tmp_path) == [live]
 
-    def test_current_version_orphaned_selects_older_live(self, tmp_path):
-        # Tier 2: the numerically-newest ("current") version dir is orphaned, but an
-        # older version dir is still live/non-orphaned. The three-tier precedence
-        # must fall through to the newest *live* dir — an orphaned current version
-        # never shadows a live one.
-        live = _create_bundle(tmp_path, 'bundle-a', '1.0.0')
-        _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
-        assert find_bundles(tmp_path) == [live]
+    # Tier 2 (current-version-orphaned falls through to an older live dir) is
+    # already covered by test_orphaned_version_skipped above — same setup, same
+    # assertion, so no separate Tier-2 test is added here.
 
     def test_all_versions_orphaned_degraded_fallback(self, tmp_path, capsys):
         # Tier 3: every version dir is orphaned. The degraded fallback returns the
