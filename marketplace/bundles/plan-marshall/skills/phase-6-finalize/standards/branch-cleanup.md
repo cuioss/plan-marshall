@@ -755,14 +755,14 @@ Do NOT proceed to **Merge PR**. The re-fired finalize pipeline re-runs the triag
 
 ##### `{barrier_mode} == ask`
 
-Fire an inline `AskUserQuestion` (branch-cleanup runs inline in the orchestrator). **Release-before-wait / re-acquire-after (widened hold)**: this ask is an operator-wait boundary — under `merge_hold_window == full_window_release_at_waits`, release the merge mutex if held and FIFO-re-enqueue BEFORE the prompt (§ "Merge-Mutex Hold Window" invariant 1). On the "Merge anyway" resume, RE-ACQUIRE via the canonical FIFO poll loop (§ "Acquire / confirm the cross-plan merge-lock") and re-validate (`baseline-reconcile`) before merging.
-
-Release the merge mutex if held (`merge_lock release --plan-id {plan_id}`; idempotent + foreign-safe) BEFORE firing the prompt, mirroring the `fail_into_loopback` branch's explicit release step:
+Fire an inline `AskUserQuestion` (branch-cleanup runs inline in the orchestrator). **Release-before-wait / re-acquire-after (widened hold)**: this ask is an operator-wait boundary — under `merge_hold_window == full_window_release_at_waits`, release the merge mutex if held (`merge_lock release --plan-id {plan_id}`; idempotent + foreign-safe) and FIFO-re-enqueue BEFORE the prompt (§ "Merge-Mutex Hold Window" invariant 1), mirroring the `fail_into_loopback` branch's explicit release step:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
   --plan-id {plan_id}
 ```
+
+On the "Merge anyway" resume, RE-ACQUIRE via the canonical FIFO poll loop (§ "Acquire / confirm the cross-plan merge-lock") and re-validate (`baseline-reconcile`) before merging.
 
 Then fire the prompt:
 
