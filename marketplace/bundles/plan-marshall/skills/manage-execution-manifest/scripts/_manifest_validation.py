@@ -320,7 +320,8 @@ def _resolve_step_order(step_id: str) -> int | None:
       frontmatter.
     - ``project:``-prefixed steps: resolve the project-local-skill
       ``{bare-name}/SKILL.md`` via the target's layout roots (relative to the
-      repo root) and read its ``order:`` frontmatter.
+      working-tree root, ``_project_local_skills_root``) and read its ``order:``
+      frontmatter.
     - Other external steps (``bundle:skill``): no resolvable project-local
       source file — return ``None``.
 
@@ -539,7 +540,8 @@ def _check_step_resolvable(step_id: str, phase: str) -> dict[str, Any]:
     id shape and the ``phase`` (``phase_5`` / ``phase_6``):
 
     - **project:** step (either phase): resolves iff its project-local
-      ``{bare}/SKILL.md`` exists under the repo root.
+      ``{bare}/SKILL.md`` exists under the working-tree root
+      (``_project_local_skills_root``).
     - **phase_5 canonical-verify** step (bare ``{canonical}`` or
       ``verify:{canonical}``): resolves iff ``{canonical}`` is in the verify
       canonicals universe (:func:`_verify_canonicals_universe`).
