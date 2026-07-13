@@ -231,13 +231,13 @@ import de.cuioss.test.generator.TypedGenerator;
 import de.cuioss.test.generator.junit.EnableGeneratorController;
 import de.cuioss.test.generator.junit.GeneratorSeed;
 import de.cuioss.test.generator.junit.GeneratorsSource;
-import de.cuioss.test.generator.junit.TypeGeneratorSource;
-import de.cuioss.test.generator.junit.TypeGeneratorMethodSource;
 import de.cuioss.test.generator.junit.TypeGeneratorFactorySource;
 import de.cuioss.test.generator.junit.CompositeTypeGeneratorSource;
 
 // Parameterized Testing
 import de.cuioss.test.generator.junit.parameterized.GeneratorType;
+import de.cuioss.test.generator.junit.parameterized.TypeGeneratorSource;
+import de.cuioss.test.generator.junit.parameterized.TypeGeneratorMethodSource;
 ```
 
 ### Internal Package Restriction
