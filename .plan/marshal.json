@@ -114,19 +114,22 @@
           "review_rate_window_await": false,
           "review_rate_window_timeout_seconds": 3600,
           "review_completion_poll_timeout_seconds": 600,
-          "lane": "ask"
+          "lane": "minimal"
         },
         "default:sonar-roundtrip": {
           "touched_file_cleanup": "new_code_only",
           "do_transition": false,
           "ce_wait_timeout_seconds": 600,
-          "lane": "ask"
+          "lane": "full"
         },
         "project:finalize-step-review-retrospective": {
           "lane": "auto"
         },
         "default:lessons-capture": {
           "lane": "minimal"
+        },
+        "default:adr-propose": {
+          "lane": "off"
         },
         "default:branch-cleanup": {
           "pr_merge_strategy": "squash",
@@ -147,11 +150,11 @@
         "project:finalize-step-deploy-target": {
           "lane": "minimal"
         },
-        "project:finalize-step-sync-plugin-cache": {
+        "plan-marshall:plan-retrospective": {
           "lane": "minimal"
         },
-        "plan-marshall:plan-retrospective": {
-          "lane": "full"
+        "project:finalize-step-sync-plugin-cache": {
+          "lane": "minimal"
         },
         "project:finalize-step-lessons-housekeeping": {
           "lane": "minimal"
@@ -164,9 +167,6 @@
         },
         "default:archive-plan": {
           "lane": "minimal"
-        },
-        "default:adr-propose": {
-          "lane": "off"
         }
       },
       "effort": {
@@ -298,7 +298,7 @@
       "lessons_superseded_days": 0,
       "temp_on_maintenance": true
     },
-    "provisioned_version": "",
+    "provisioned_version": "0.1.1114",
     "config_seed_fingerprint": "37df1a33"
   }
 }
