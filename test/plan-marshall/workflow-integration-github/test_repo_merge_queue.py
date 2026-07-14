@@ -12,9 +12,8 @@ idempotent.
 import argparse
 import json
 
-import pytest
-
 import github_ops
+import pytest
 
 
 @pytest.fixture(autouse=True)
