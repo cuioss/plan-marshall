@@ -285,8 +285,7 @@ def test_load_registry_tolerates_discovery_exception(monkeypatch):
     import types
 
     fake_mod = types.ModuleType('_cmd_skill_resolution')
-    fake_mod._discover_all_recipes = _raising_discover  # type: ignore[attr-defined]
-
+    fake_mod._discover_all_recipes = _raising_discover
     def _fake_import(name, *args, **kwargs):
         if name == '_cmd_skill_resolution':
             return fake_mod
@@ -301,8 +300,7 @@ def test_load_registry_coerces_non_list_to_empty(monkeypatch):
     import types
 
     fake_mod = types.ModuleType('_cmd_skill_resolution')
-    fake_mod._discover_all_recipes = lambda: {'not': 'a list'}  # type: ignore[attr-defined]
-
+    fake_mod._discover_all_recipes = lambda: {'not': 'a list'}
     real_import = builtins.__import__
 
     def _fake_import(name, *args, **kwargs):
@@ -320,8 +318,7 @@ def test_load_registry_returns_discovered_list(monkeypatch):
 
     recipes = [{'key': 'doc-verify', 'name': 'Verify Documentation'}]
     fake_mod = types.ModuleType('_cmd_skill_resolution')
-    fake_mod._discover_all_recipes = lambda: recipes  # type: ignore[attr-defined]
-
+    fake_mod._discover_all_recipes = lambda: recipes
     real_import = builtins.__import__
 
     def _fake_import(name, *args, **kwargs):

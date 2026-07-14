@@ -54,12 +54,11 @@ DEFAULT_PHASE_5_STEPS = _mem.DEFAULT_PHASE_5_STEPS
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 
 # Silence the best-effort decision-log subprocess in tests.
-_mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
-_mem._log_commit_push_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
-_mem._log_pre_push_quality_gate_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
-_mem._log_pre_submission_self_review_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
-_mem._emit_decision_log = lambda *a, **kw: None  # type: ignore[attr-defined]
-
+_mem._log_decision = lambda *a, **kw: None
+_mem._log_commit_push_omitted = lambda *a, **kw: None
+_mem._log_pre_push_quality_gate_omitted = lambda *a, **kw: None
+_mem._log_pre_submission_self_review_omitted = lambda *a, **kw: None
+_mem._emit_decision_log = lambda *a, **kw: None
 
 # =============================================================================
 # Helpers

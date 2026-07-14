@@ -83,7 +83,7 @@ def should_yield(
 
 
 def _skill_text() -> str:
-    return SKILL_PATH.read_text()
+    return str(SKILL_PATH.read_text())
 
 
 def test_skill_md_documents_small_plan_short_circuit():

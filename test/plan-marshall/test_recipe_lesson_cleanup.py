@@ -63,8 +63,7 @@ DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 
 # Silence the best-effort decision-log subprocess so tests don't depend on a
 # running executor.
-_mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
-
+_mem._log_decision = lambda *a, **kw: None
 
 # =============================================================================
 # Lesson-kind → change_type mapping

@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from conftest import get_script_path, run_script
 
@@ -50,7 +51,7 @@ def _capture_file(tmp_path: Path) -> Path:
     return tmp_path / ".plan" / "temp" / "pretooluse-payload-samples.jsonl"
 
 
-def _run(stdin: str, tmp_path: Path) -> object:
+def _run(stdin: str, tmp_path: Path) -> Any:
     """Run the capture leaf with the given stdin, cwd pinned to tmp_path."""
     return run_script(SCRIPT_PATH, input_data=stdin, cwd=str(tmp_path))
 

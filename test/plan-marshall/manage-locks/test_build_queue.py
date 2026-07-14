@@ -75,7 +75,7 @@ def _read_lock_log() -> str:
     log_path = _locks_core._resolve_lock_log_path()
     if not log_path.exists():
         return ''
-    return log_path.read_text(encoding='utf-8')
+    return str(log_path.read_text(encoding='utf-8'))
 
 
 # =============================================================================
@@ -114,7 +114,8 @@ def _set_max_slots(base: Path, max_slots: int) -> None:
 
 def _read_queue(queue_path: Path) -> dict:
     """Read the persisted queue state as a dict."""
-    return json.loads(queue_path.read_text(encoding='utf-8'))
+    data: dict = json.loads(queue_path.read_text(encoding='utf-8'))
+    return data
 
 
 # =============================================================================

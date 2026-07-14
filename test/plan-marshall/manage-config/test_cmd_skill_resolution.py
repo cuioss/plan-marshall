@@ -427,7 +427,8 @@ def _run_discovery_in_cwd(cwd: Path) -> list[dict]:
     try:
         os.chdir(cwd)
         with patch.object(file_ops, '_resolve_plan_root', lambda: PROJECT_ROOT):
-            return _cmd_skill_resolution._discover_all_finalize_steps()
+            steps: list = _cmd_skill_resolution._discover_all_finalize_steps()
+            return steps
     finally:
         os.chdir(original_cwd)
 
@@ -597,7 +598,8 @@ def test_list_finalize_steps_project_skill_order_defaults_to_zero_when_absent():
 
 def _discovered_steps() -> list[dict]:
     """Return the discovered finalize-step list via _discover_all_finalize_steps()."""
-    return _cmd_skill_resolution._discover_all_finalize_steps()
+    steps: list = _cmd_skill_resolution._discover_all_finalize_steps()
+    return steps
 
 
 def test_list_finalize_steps_includes_optional_bundle_step():

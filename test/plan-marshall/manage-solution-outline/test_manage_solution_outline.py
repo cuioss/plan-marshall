@@ -19,6 +19,7 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-solution-outline', 'manag
 
 # Tier 2 direct imports via importlib (script filename has hyphens)
 _spec = importlib.util.spec_from_file_location('manage_solution_outline', str(SCRIPT_PATH))
+assert _spec is not None and _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 

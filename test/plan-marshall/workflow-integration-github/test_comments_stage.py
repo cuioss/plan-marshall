@@ -137,7 +137,8 @@ class TestFetchCommentsWrapper:
 
 def _stage_make_args(pr_number: int, plan_id: str):
     class _Args:
-        pass
+        pr_number: int
+        plan_id: str
 
     a = _Args()
     a.pr_number = pr_number

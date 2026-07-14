@@ -18,6 +18,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 
 from conftest import MARKETPLACE_ROOT, load_script_module
 
@@ -387,7 +388,7 @@ def _default_prefixes() -> list[str]:
     """Return the canonical working_prefixes default entries."""
     from _config_defaults import DEFAULT_PROJECT
 
-    return list(DEFAULT_PROJECT['working_prefixes'])
+    return cast('list[str]', DEFAULT_PROJECT['working_prefixes'])
 
 
 def _write_project_marshal(plan_dir: Path, project_block: dict) -> None:
@@ -517,7 +518,9 @@ def _fake_subprocess(monkeypatch, *, returncode: int, stdout: str = '', stderr: 
     calls: dict = {}
 
     class _Result:
-        pass
+        returncode: int
+        stdout: str
+        stderr: str
 
     result = _Result()
     result.returncode = returncode

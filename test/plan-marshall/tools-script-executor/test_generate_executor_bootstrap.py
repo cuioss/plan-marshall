@@ -124,13 +124,13 @@ class TestBootstrapGuard:
 
 def _skills_dir() -> Path:
     """Absolute path to the marketplace ``…/plan-marshall/skills`` directory."""
-    tse_scripts = get_scripts_dir('plan-marshall', 'tools-script-executor').resolve()
+    tse_scripts: Path = get_scripts_dir('plan-marshall', 'tools-script-executor').resolve()
     return tse_scripts.parent.parent
 
 
 def _template_path() -> Path:
     """Absolute path to the executor template."""
-    tse_scripts = get_scripts_dir('plan-marshall', 'tools-script-executor').resolve()
+    tse_scripts: Path = get_scripts_dir('plan-marshall', 'tools-script-executor').resolve()
     return tse_scripts.parent / 'templates' / 'execute-script.py.template'
 
 

@@ -120,7 +120,7 @@ def test_whitespace_only_title_returns_empty_string():
 
 def test_non_string_title_returns_empty_string():
     """Defensive guard: a non-string input must not raise."""
-    assert derive_short_description(None) == ''  # type: ignore[arg-type]
+    assert derive_short_description(None) == ''
 
 
 def test_non_positive_max_len_returns_empty_string():

@@ -33,7 +33,7 @@ _AUDIT_SCRIPTS_DIR = (
 if str(_AUDIT_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_AUDIT_SCRIPTS_DIR))
 
-import audit  # noqa: E402
+import audit  # type: ignore[import-untyped]  # noqa: E402
 
 # A completed read-only ``resolve`` probe stamped at ERROR with a trailing
 # duration and NO failure marker — the benign non-zero-exit "not found" answer.

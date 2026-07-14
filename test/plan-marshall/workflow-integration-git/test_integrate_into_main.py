@@ -41,6 +41,7 @@ import json
 import os
 from argparse import Namespace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -427,7 +428,7 @@ class TestIntegrateWhenMergeLockAlreadySelfHeld:
 
     def _install_real_merge_lock(
         self, env: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> object:
+    ) -> Any:
         """Swap integrate's ``_load_merge_lock`` to return the REAL merge_lock module
         and stage the holder plan dir so the holder counts as LIVE (so the reentrant
         path, not the stale-reclaim path, is what grants the re-acquire).

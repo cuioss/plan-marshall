@@ -41,6 +41,7 @@ if str(_MANAGE_CONFIG_SCRIPTS_DIR) not in sys.path:
 
 def _load_module(name: str, filename: str, scripts_dir: Path):
     spec = importlib.util.spec_from_file_location(name, scripts_dir / filename)
+    assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
@@ -64,7 +65,8 @@ from conftest import run_script  # noqa: E402
 def _read_finalize_section(fixture_dir: Path) -> dict:
     """Return the on-disk ``plan.phase-6-finalize`` section."""
     config = json.loads((fixture_dir / 'marshal.json').read_text(encoding='utf-8'))
-    return config.get('plan', {}).get('phase-6-finalize', {})
+    section: dict = config.get('plan', {}).get('phase-6-finalize', {})
+    return section
 
 
 # ``apply-preset`` persists ``plan.phase-6-finalize.steps`` in the canonical

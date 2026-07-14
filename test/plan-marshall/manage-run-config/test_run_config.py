@@ -915,7 +915,8 @@ class TestBuildQueueLimitMainAnchoring:
 
 def _read_run_config(plan_context) -> dict:
     """Read the fixture's persisted run-configuration.json as a dict."""
-    return json.loads((plan_context.fixture_dir / 'run-configuration.json').read_text())
+    data: dict = json.loads((plan_context.fixture_dir / 'run-configuration.json').read_text())
+    return data
 
 
 def test_ci_duration_record_creates_window(plan_context):

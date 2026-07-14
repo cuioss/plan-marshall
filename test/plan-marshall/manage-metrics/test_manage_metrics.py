@@ -182,7 +182,7 @@ def _unseeded_plan_dir(plan_context, plan_id: str) -> Path:
     equals ``manage_metrics.get_plan_dir(plan_id)`` under the ``plan_context``
     ``PLAN_BASE_DIR`` redirect, so it matches the ``plan_dir`` the guard reports.
     """
-    plan_dir = plan_context.plans_dir / plan_id
+    plan_dir: Path = plan_context.plans_dir / plan_id
     plan_dir.mkdir(parents=True, exist_ok=True)
     assert not (plan_dir / 'status.json').exists(), 'negative test requires an unseeded plan dir'
     return plan_dir

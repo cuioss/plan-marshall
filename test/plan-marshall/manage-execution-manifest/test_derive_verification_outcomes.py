@@ -141,9 +141,10 @@ def _seed(project_dir: str) -> None:
 
 
 def _derive(project_dir: str, changed: str) -> dict:
-    return cmd_derive_verification(
+    result: dict = cmd_derive_verification(
         Namespace(changed_artifacts=changed, project_dir=project_dir)
     )
+    return result
 
 
 def _verbs(result: dict) -> list[str]:

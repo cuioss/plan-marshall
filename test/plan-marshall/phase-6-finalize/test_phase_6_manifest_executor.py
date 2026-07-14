@@ -26,6 +26,7 @@ depends on:
 
 import importlib.util
 from argparse import Namespace
+from typing import cast
 
 import pytest
 
@@ -391,7 +392,7 @@ class TestLessonsCaptureUnconditional:
 class TestSkillMdManifestNarrative:
     @pytest.fixture(scope='class')
     def skill_md_text(self) -> str:
-        return _PHASE_6_SKILL_MD.read_text(encoding='utf-8')
+        return cast(str, _PHASE_6_SKILL_MD.read_text(encoding='utf-8'))
 
     def test_step_2_reads_execution_manifest(self, skill_md_text: str):
         """Step 2 must read the manifest via manage-execution-manifest read,
@@ -697,15 +698,15 @@ class TestAutomatedReviewCiSignalAndOverflow:
 
     @pytest.fixture(scope='class')
     def automated_review_text(self) -> str:
-        return _AUTOMATED_REVIEW_MD.read_text(encoding='utf-8')
+        return cast(str, _AUTOMATED_REVIEW_MD.read_text(encoding='utf-8'))
 
     @pytest.fixture(scope='class')
     def jsonl_format_text(self) -> str:
-        return _JSONL_FORMAT_MD.read_text(encoding='utf-8')
+        return cast(str, _JSONL_FORMAT_MD.read_text(encoding='utf-8'))
 
     @pytest.fixture(scope='class')
     def triage_text(self) -> str:
-        return _TRIAGE_MD.read_text(encoding='utf-8')
+        return cast(str, _TRIAGE_MD.read_text(encoding='utf-8'))
 
     # ---- Precondition declaration ---------------------------------------
 
@@ -986,27 +987,27 @@ class TestLoopBackWithoutAskingContract:
 
     @pytest.fixture(scope='class')
     def phase_6_skill_md_text(self) -> str:
-        return _PHASE_6_SKILL_MD.read_text(encoding='utf-8')
+        return cast(str, _PHASE_6_SKILL_MD.read_text(encoding='utf-8'))
 
     @pytest.fixture(scope='class')
     def execution_workflow_text(self) -> str:
-        return _EXECUTION_WORKFLOW_MD.read_text(encoding='utf-8')
+        return cast(str, _EXECUTION_WORKFLOW_MD.read_text(encoding='utf-8'))
 
     @pytest.fixture(scope='class')
     def config_defaults_text(self) -> str:
-        return _CONFIG_DEFAULTS_PY.read_text(encoding='utf-8')
+        return cast(str, _CONFIG_DEFAULTS_PY.read_text(encoding='utf-8'))
 
     @pytest.fixture(scope='class')
     def phase_lifecycle_text(self) -> str:
-        return _PHASE_LIFECYCLE_MD.read_text(encoding='utf-8')
+        return cast(str, _PHASE_LIFECYCLE_MD.read_text(encoding='utf-8'))
 
     @pytest.fixture(scope='class')
     def marshal_reference_text(self) -> str:
-        return _MARSHAL_JSON_REFERENCE_MD.read_text(encoding='utf-8')
+        return cast(str, _MARSHAL_JSON_REFERENCE_MD.read_text(encoding='utf-8'))
 
     @pytest.fixture(scope='class')
     def manage_config_skill_text(self) -> str:
-        return _MANAGE_CONFIG_SKILL_MD.read_text(encoding='utf-8')
+        return cast(str, _MANAGE_CONFIG_SKILL_MD.read_text(encoding='utf-8'))
 
     # ---- Defaults surface ------------------------------------------------
 

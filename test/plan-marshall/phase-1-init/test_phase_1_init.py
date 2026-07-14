@@ -29,6 +29,7 @@ _MANAGE_LESSONS_SCRIPT = str(
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-lessons' / 'scripts' / 'manage-lessons.py'
 )
 _spec = importlib.util.spec_from_file_location('manage_lessons', _MANAGE_LESSONS_SCRIPT)
+assert _spec is not None and _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
@@ -105,7 +106,7 @@ class TestPhase1InitBaseBranchSeeding:
             / 'phase-1-init'
             / 'SKILL.md'
         )
-        return skill_md.read_text(encoding='utf-8')
+        return str(skill_md.read_text(encoding='utf-8'))
 
     def test_skill_documents_manage_config_project_read(self):
         """SKILL.md MUST document the `manage-config project get --field default_base_branch` read."""

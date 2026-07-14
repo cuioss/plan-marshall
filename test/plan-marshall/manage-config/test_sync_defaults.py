@@ -75,7 +75,8 @@ def _write_marshal(fixture_dir: Path, config: dict) -> Path:
 
 
 def _read_marshal(fixture_dir: Path) -> dict:
-    return json.loads((fixture_dir / 'marshal.json').read_text(encoding='utf-8'))
+    data: dict = json.loads((fixture_dir / 'marshal.json').read_text(encoding='utf-8'))
+    return data
 
 
 def test_sync_defaults_errors_when_uninitialized(plan_context):

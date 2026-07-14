@@ -305,7 +305,8 @@ class TestRemoveRedundant:
         path.write_text(json.dumps({'permissions': {'allow': allow, 'deny': [], 'ask': []}}))
 
     def _read_allow(self, path) -> list[str]:
-        return json.loads(path.read_text())['permissions']['allow']
+        allow: list = json.loads(path.read_text())['permissions']['allow']
+        return allow
 
     def test_dry_run_removes_nothing(self, tmp_path):
         """Dry-run should not modify any settings file."""
@@ -1086,7 +1087,8 @@ class TestApplyProjectStepPermissions:
 
     def _read_settings(self, path: str) -> dict:
         with open(path) as f:
-            return json.load(f)
+            data: dict = json.load(f)
+            return data
 
     def test_dry_run_does_not_mutate_settings(self, tmp_path):
         """--dry-run must not touch the settings file."""

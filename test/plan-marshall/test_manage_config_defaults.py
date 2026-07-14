@@ -345,41 +345,46 @@ class TestCiVerifyRegistration:
     projects and the phase-6-finalize dispatcher can resolve it. Position
     is load-bearing: ``ci-verify`` consumes the completed-CI signal and
     classifies failures BEFORE ``automatic-review`` consumes PR-comment
-    findings, so it must sit immediately after ``default:create-pr``; the
-    reactivated order-25 ``architecture-refresh`` step now sits between
-    ``default:ci-verify`` and ``plan-marshall:automatic-review``."""
+    findings, so it must sit immediately after ``default:create-pr`` and
+    immediately before ``plan-marshall:automatic-review``. After the D3
+    mutation-settling reorder, ``architecture-refresh`` (order 9) lives in
+    the pre-push settle band — NOT between ``ci-verify`` and
+    ``automatic-review`` — so the post-push tail is the contiguous chain
+    ``create-pr → ci-verify → automatic-review``."""
 
     def test_ci_verify_in_built_in_finalize_steps(self) -> None:
         """The default-on built-in seed MUST contain ``'default:ci-verify'``
         immediately after ``'default:create-pr'`` — the canonical position
         declared by ``standards/ci-verify.md`` § Placement (order 22, between
         create-pr at 20 and automatic-review at 30). The seed is discovered via
-        find_implementors, not a constant. ``architecture-refresh`` is now
-        ``default_on: true`` (order 25), so it enters the seed BETWEEN
-        ``ci-verify`` (22) and ``automatic-review`` (30): the canonical tail is
-        ``ci-verify → architecture-refresh → automatic-review``."""
+        find_implementors, not a constant. After the D3 reorder,
+        ``architecture-refresh`` moved to order 9 (the pre-push settle band), so
+        it no longer sits between ``ci-verify`` and ``automatic-review``: the
+        canonical tail is now the contiguous ``ci-verify → automatic-review``."""
         steps = _discovered_seed_step_ids()
         assert 'default:ci-verify' in steps, (
             "the default-on seed must contain 'default:ci-verify'"
         )
         assert 'default:architecture-refresh' in steps, (
-            "architecture-refresh is now default_on:true and must appear in the seed"
+            "architecture-refresh is default_on:true and must appear in the seed"
         )
         create_pr_idx = steps.index('default:create-pr')
         ci_verify_idx = steps.index('default:ci-verify')
         architecture_refresh_idx = steps.index('default:architecture-refresh')
+        push_idx = steps.index('default:push')
         automated_review_idx = steps.index('plan-marshall:automatic-review')
         assert ci_verify_idx == create_pr_idx + 1, (
             "'default:ci-verify' must sit immediately after "
             "'default:create-pr' in the default-on seed"
         )
-        assert architecture_refresh_idx == ci_verify_idx + 1, (
-            "'default:architecture-refresh' (order 25) must sit immediately "
-            "after 'default:ci-verify' (order 22) in the default-on seed"
+        assert automated_review_idx == ci_verify_idx + 1, (
+            "'plan-marshall:automatic-review' must sit immediately after "
+            "'default:ci-verify' — architecture-refresh (order 9) moved to the "
+            "pre-push settle band and is no longer between them"
         )
-        assert automated_review_idx == ci_verify_idx + 2, (
-            "'plan-marshall:automatic-review' must sit two positions after "
-            "'default:ci-verify' — 'architecture-refresh' is now between them"
+        assert architecture_refresh_idx < push_idx, (
+            "'default:architecture-refresh' (order 9) now sits in the pre-push "
+            "settle band, ahead of the push barrier"
         )
 
     def test_ci_verify_has_description(self) -> None:
@@ -525,7 +530,8 @@ class TestSonarConfigKnobsDefaults:
 
     @staticmethod
     def _sonar_params(cfg: dict) -> dict:
-        return _params_for(cfg['plan']['phase-6-finalize']['steps'], 'default:sonar-roundtrip')
+        params: dict = _params_for(cfg['plan']['phase-6-finalize']['steps'], 'default:sonar-roundtrip')
+        return params
 
     def test_touched_file_cleanup_default_is_new_code_only(self) -> None:
         """``get_default_config()`` MUST expose ``touched_file_cleanup ==

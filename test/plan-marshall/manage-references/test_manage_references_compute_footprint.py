@@ -130,7 +130,8 @@ def _write_references(base_dir: Path, plan_id: str, refs: dict) -> Path:
 
 def _read_references(base_dir: Path, plan_id: str) -> dict:
     refs_path = base_dir / 'plans' / plan_id / 'references.json'
-    return json.loads(refs_path.read_text())
+    data: dict = json.loads(refs_path.read_text())
+    return data
 
 
 def _run_footprint(base_dir: Path, plan_id: str, worktree: Path, *extra: str):

@@ -60,7 +60,7 @@ SHARED_ARTIFACT_PATH = 'work/phase-breakdown-output.txt'
 
 @pytest.fixture(scope='module')
 def output_template_text() -> str:
-    return OUTPUT_TEMPLATE_PATH.read_text(encoding='utf-8')
+    return str(OUTPUT_TEMPLATE_PATH.read_text(encoding='utf-8'))
 
 
 def _heading_indices(text: str, heading: str) -> list[int]:

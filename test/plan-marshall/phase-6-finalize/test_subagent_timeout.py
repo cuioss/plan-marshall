@@ -149,7 +149,7 @@ def _simulate_dispatch_with_timeout(
 class TestBudgetContract:
     @pytest.fixture(scope='class')
     def skill_md_text(self) -> str:
-        return _PHASE_6_SKILL_MD.read_text(encoding='utf-8')
+        return str(_PHASE_6_SKILL_MD.read_text(encoding='utf-8'))
 
     def test_sonar_roundtrip_15min_budget_documented(self, skill_md_text: str):
         assert 'sonar-roundtrip' in skill_md_text

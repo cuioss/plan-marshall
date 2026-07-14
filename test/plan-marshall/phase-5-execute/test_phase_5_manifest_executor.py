@@ -332,7 +332,7 @@ class TestSkillMdManifestNarrative:
 
     @pytest.fixture(scope='class')
     def skill_md_text(self) -> str:
-        return _PHASE_5_SKILL_MD.read_text(encoding='utf-8')
+        return str(_PHASE_5_SKILL_MD.read_text(encoding='utf-8'))
 
     def test_step_2_reads_execution_manifest(self, skill_md_text: str):
         """Step 2 must read the manifest via manage-execution-manifest read."""

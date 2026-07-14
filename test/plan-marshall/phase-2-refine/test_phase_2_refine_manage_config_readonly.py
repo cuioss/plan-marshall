@@ -102,7 +102,7 @@ def _init_synthetic_repo(repo: Path) -> Path:
     subprocess.run(['git', '-C', str(repo), 'config', 'user.name', 'Test'], check=True, timeout=10)
     # Seed a schema-valid marshal.json under {repo}/.plan/ and commit it so
     # the file is tracked and clean before the mutation under test.
-    marshal_path = create_marshal_json(repo)
+    marshal_path: Path = create_marshal_json(repo)
     subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True, timeout=10)
     subprocess.run(['git', '-C', str(repo), 'commit', '-q', '-m', 'init'], check=True, timeout=10)
     return marshal_path

@@ -125,7 +125,7 @@ def _light_setup(plan_context, plan_id: str) -> Path:
     """Seed an all-light baseline: concrete request, light scope, light change_type,
     non-breaking compatibility, auto deep_lane. Every signal biases light.
     """
-    plan_dir = plan_context.plan_dir_for(plan_id)
+    plan_dir: Path = plan_context.plan_dir_for(plan_id)
     _write_request(plan_dir, _CONCRETE_BODY)
     _write_status(plan_dir, metadata={'plan_source': 'lesson', 'change_type': 'bug_fix'})
     _write_references(plan_dir, scope_estimate='surgical')

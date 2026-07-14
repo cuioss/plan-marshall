@@ -71,9 +71,8 @@ ORCHESTRATOR_OWNED_STEPS = _core.ORCHESTRATOR_OWNED_STEPS
 
 # Quiet down the best-effort decision-log writes so tests don't depend on a
 # running executor / a resolvable plan log dir.
-_mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
-_mem._log_record_step = lambda *a, **kw: None  # type: ignore[attr-defined]
-
+_mem._log_decision = lambda *a, **kw: None
+_mem._log_record_step = lambda *a, **kw: None
 
 # =============================================================================
 # Namespace Helpers

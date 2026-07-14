@@ -211,7 +211,7 @@ class TestCmdSetBody:
 
         original_read_text = Path.read_text
 
-        def _raising_read_text(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        def _raising_read_text(self, *args, **kwargs):
             # Only raise for the body source; allow reads on the lesson stub
             # (the function reads the original lesson via ``target.read_text``
             # AFTER the body source). We restrict to the exact body file path.

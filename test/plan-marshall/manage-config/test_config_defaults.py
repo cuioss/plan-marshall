@@ -42,6 +42,7 @@ def _load_module(name: str, filename: str, *, base_dir: Path = _SCRIPTS_DIR, ext
         if str(d) not in sys.path:
             sys.path.insert(0, str(d))
     spec = importlib.util.spec_from_file_location(name, base_dir / filename)
+    assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
@@ -172,7 +173,7 @@ def _discovered_step_description(step_id: str) -> str:
 
     for rec in find_implementors(_config_defaults_mod.FINALIZE_STEP_EXT_POINT):
         if rec.get('name') == step_id:
-            return rec.get('description', '')
+            return str(rec.get('description', ''))
     return ''
 
 
@@ -1405,16 +1406,21 @@ def test_built_in_finalize_steps_places_simplify_before_push():
     default:pre-submission-self-review (index 2, order 7 — the default-on
     built-in structural self-review that runs between the pre-push quality gate
     and the simplify pass), default:finalize-step-simplify (index 3, order 8),
-    default:finalize-step-security-audit (index 4, order 9), then default:push
-    (index 5, order 10) — matching the plain `order:` values (no special
-    placement invariant). The seed is discovered via find_implementors, not a
-    constant.
+    then the two order-9 settle steps in ``(order, name)`` tie-break order:
+    default:architecture-refresh (index 4, order 9 — the D3 move from the
+    post-push region into the pre-push settle band) sorts ahead of
+    default:finalize-step-security-audit (index 5, order 9) because
+    ``architecture-refresh`` < ``finalize-step-security-audit`` by name; then
+    default:push (index 6, order 10) — matching the plain `order:` values (no
+    special placement invariant). The seed is discovered via find_implementors,
+    not a constant.
     """
     steps = _discovered_seed_step_ids()
 
     # presence and relative head order (self-review order 7 nests between the
-    # pre-push quality gate (5) and simplify (8); security-audit, order 9, sits
-    # between simplify (8) and push (10))
+    # pre-push quality gate (5) and simplify (8); the two order-9 settle steps
+    # architecture-refresh and security-audit sit between simplify (8) and
+    # push (10), name-ordered within the order-9 tie)
     assert 'default:finalize-step-simplify' in steps, (
         'default:finalize-step-simplify must be discovered into the default-on seed'
     )
@@ -1422,8 +1428,12 @@ def test_built_in_finalize_steps_places_simplify_before_push():
     assert steps[1] == 'default:pre-push-quality-gate'
     assert steps[2] == 'default:pre-submission-self-review'
     assert steps[3] == 'default:finalize-step-simplify'
-    assert steps[4] == 'default:finalize-step-security-audit'
-    assert steps[5] == 'default:push'
+    assert steps[4] == 'default:architecture-refresh'
+    assert steps[5] == 'default:finalize-step-security-audit'
+    assert steps[6] == 'default:push'
+    # The D3 settle-before-push invariant: architecture-refresh (order 9) sits
+    # in the pre-push settle band, ahead of the push barrier.
+    assert steps.index('default:architecture-refresh') < steps.index('default:push')
 
 
 def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():

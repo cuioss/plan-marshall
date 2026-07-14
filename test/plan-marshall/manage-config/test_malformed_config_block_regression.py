@@ -50,6 +50,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 
 def _load_module(name: str, filename: str):
     spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)

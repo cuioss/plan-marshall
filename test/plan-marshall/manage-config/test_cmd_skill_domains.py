@@ -893,7 +893,8 @@ def _run_discover_project_skills_in_cwd(cwd: Path) -> list[dict]:
     original_cwd = os.getcwd()
     try:
         os.chdir(cwd)
-        return _cmd_skill_domains.discover_project_skills()
+        skills: list = _cmd_skill_domains.discover_project_skills()
+        return skills
     finally:
         os.chdir(original_cwd)
 
@@ -1361,7 +1362,8 @@ def _run_verify_discovery_in_cwd(cwd: Path) -> list[dict]:
     original_cwd = os.getcwd()
     try:
         os.chdir(cwd)
-        return _cmd_skill_domains._discover_all_verify_steps()
+        verify_steps: list = _cmd_skill_domains._discover_all_verify_steps()
+        return verify_steps
     finally:
         os.chdir(original_cwd)
 

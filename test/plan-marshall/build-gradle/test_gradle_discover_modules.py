@@ -38,6 +38,7 @@ sys.path.insert(0, str(EXTENSION_DIR))
 import importlib.util  # noqa: E402
 
 spec = importlib.util.spec_from_file_location('java_extension', EXTENSION_DIR / 'extension.py')
+assert spec is not None and spec.loader is not None
 java_extension = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(java_extension)
 Extension = java_extension.Extension

@@ -58,7 +58,8 @@ def _curated_meta(name: str = 'curated-project') -> dict:
 
 def _run(baseline_dir: str, project_dir: str) -> dict:
     args = SimpleNamespace(pre=str(baseline_dir), project_dir=str(project_dir))
-    return cmd_descriptor_regression_check(args)
+    result: dict = cmd_descriptor_regression_check(args)
+    return result
 
 
 def _violation_fields(result: dict) -> set[str]:

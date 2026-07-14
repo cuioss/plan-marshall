@@ -102,14 +102,15 @@ def _read_lock_log() -> str:
     log_path = _locks_core._resolve_lock_log_path()
     if not log_path.exists():
         return ''
-    return log_path.read_text(encoding='utf-8')
+    return str(log_path.read_text(encoding='utf-8'))
 
 
 def _read_queue(queue_path: Path) -> dict:
     """Read the persisted FIFO merge-queue state as a dict ('{}' when absent)."""
     if not queue_path.exists():
         return {}
-    return json.loads(queue_path.read_text(encoding='utf-8'))
+    data: dict = json.loads(queue_path.read_text(encoding='utf-8'))
+    return data
 
 
 def _waiting_plan_ids(queue_path: Path) -> list[str]:
@@ -1763,7 +1764,7 @@ class TestTitleTokenSurface:
         real_atomic_create = merge_lock._try_atomic_create
 
         def _recording_atomic_create(lock_path: Path, holder: str) -> bool:
-            ok = real_atomic_create(lock_path, holder)
+            ok: bool = real_atomic_create(lock_path, holder)
             events.append(f'atomic_create:{"ok" if ok else "eexist"}')
             return ok
 

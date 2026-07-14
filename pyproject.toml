@@ -138,12 +138,28 @@ mypy_path = []
 # language-domain extensions (plan-marshall-plugin/extension.py) and the
 # build-system-owned BuildExtensionBase subclasses (build-*/scripts/extension.py).
 # Also exclude test/*/plan-marshall-plugin/ directories - invalid Python package name (contains dashes)
+# The same dash-in-package-name limitation applies to every hyphenated test dir
+# that carries an __init__.py (present to disambiguate pytest test-file basename
+# collisions under the default prepend import mode). Under explicit_package_bases
+# mypy derives the package name from the dir name, so a hyphen makes it "not a
+# valid Python package name" (exit 2) regardless of mypy version. ./pw verify
+# never mypy-checks test/ (cmd_quality_gate compiles only marketplace/bundles),
+# so test-compile is the sole surface these break — enumerate them here.
 exclude = [
     "plan-marshall-plugin/extension\\.py$",
     "skills/[^/]*/scripts/extension\\.py$",
     "test/.*/plan-marshall-plugin/",
     "test/plan-marshall/tools-permission-fix/test_permission\\.py$",
     "test/.*/integration/",
+    "test/finalize-step-deploy-target/",
+    "test/finalize-step-sync-plugin-cache/",
+    "test/sync-plugin-cache/",
+    "test/pm-documents/ref-ascii-diagrams/",
+    "test/plan-marshall/execute-task/",
+    "test/plan-marshall/finalize-step-sync-baseline/",
+    "test/plan-marshall/manage-personas/",
+    "test/plan-marshall/phase-4-plan/",
+    "test/plan-marshall/plan-retrospective/",
     "\\.claude/worktrees/",
 ]
 
@@ -153,4 +169,16 @@ exclude = [
 # to catch every unresolved cross-skill import.
 [[tool.mypy.overrides]]
 module = ["yaml", "tomli"]
+ignore_missing_imports = true
+
+# `conftest` is pytest's per-directory fixture module: pytest inserts each test
+# directory onto sys.path at collection time so `from conftest import ...` resolves
+# at RUNTIME, but that dir is not on mypy's MYPYPATH (and several sibling conftest
+# modules share the name, so it cannot be). Scope missing-import tolerance to
+# exactly `conftest` so test-compile (mypy over test/) does not choke on the
+# fixture import while the global `ignore_missing_imports = false` still catches
+# every real cross-skill import. Only test code imports conftest, so this cannot
+# mask a production import regression.
+[[tool.mypy.overrides]]
+module = ["conftest"]
 ignore_missing_imports = true

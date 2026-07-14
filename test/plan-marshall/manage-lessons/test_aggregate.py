@@ -98,7 +98,8 @@ def _make_lessons_dir(tmp_path: Path) -> Path:
 def _run_aggregate(tmp_path: Path, top_n: int = 5) -> dict:
     """Invoke ``cmd_aggregate`` with PLAN_BASE_DIR pointing at tmp_path."""
     with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-        return cmd_aggregate(Namespace(top_n=top_n))
+        result: dict = cmd_aggregate(Namespace(top_n=top_n))
+        return result
 
 
 def _group_by_primary(result: dict) -> dict[str, dict]:

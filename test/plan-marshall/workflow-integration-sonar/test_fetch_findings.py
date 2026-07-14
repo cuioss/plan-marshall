@@ -208,7 +208,7 @@ class TestFetchFindings:
         # the test exercises real configuration. If the dict is empty the
         # test trivially passes; that is acceptable because the assertion
         # is on observable counter behaviour, not config presence.
-        from sonar_mod import SUPPRESSABLE_RULES
+        from sonar_mod import SUPPRESSABLE_RULES  # type: ignore[import-not-found]
 
         if not SUPPRESSABLE_RULES:
             pytest.skip('No suppressable rules configured in sonar-rules.json')
