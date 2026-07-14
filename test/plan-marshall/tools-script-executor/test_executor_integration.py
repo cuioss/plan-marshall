@@ -93,11 +93,15 @@ class ExecutorTestEnvironment:
             '{{LOGGING_DIR}}',
             str(LOGGING_DIR),  # Real marketplace location for plan_logging module
         )
-        # Shared module directories (input_validation etc.)
+        # Shared module directories (input_validation etc.) — emitted as
+        # (skill, pinned_dir) tuple entries per the _BOOTSTRAP_SKILL_DIRS
+        # contract (see generate_executor.get_shared_module_dirs()).
         input_validation_dir = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-input-validation' / 'scripts'
         executor_content = executor_content.replace(
             '{{SHARED_MODULE_DIRS}}',
-            f"sys.path.insert(0, '{input_validation_dir}')" if input_validation_dir.is_dir() else '# (none in test)',
+            f"    ('tools-input-validation', '{input_validation_dir}'),"
+            if input_validation_dir.is_dir()
+            else '    # (none in test)',
         )
         executor_content = executor_content.replace('{{EXTRA_SCRIPT_DIRS}}', '')
         executor_content = executor_content.replace('{{PLAN_DIR_NAME}}', '.plan')
