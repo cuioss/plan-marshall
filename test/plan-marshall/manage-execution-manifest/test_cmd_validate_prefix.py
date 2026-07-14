@@ -113,8 +113,7 @@ def _write_full_marshal(
     keyed-map shape (``{step_id: {param: value, ...}, ...}``) the migrated
     ``_read_marshal_phase_step_map`` requires. Each step gets an empty param
     object; dict-comprehension over the input list preserves insertion order
-    (= execution order). No CI provider is declared, so the bot-enforcement guard
-    is a no-op.
+    (= execution order). No CI provider is declared for these fixtures.
     """
     marshal_path = fixture_dir / 'marshal.json'
     plan_block: dict = {'phase-6-finalize': {'steps': {step_id: {} for step_id in phase_6_steps}}}

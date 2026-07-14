@@ -85,20 +85,22 @@ JSON structure and field definitions for project configuration.
       "checks_wait_timeout_seconds": 600,
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
-      "qgate": "auto",
       "steps": {
         "default:pre-submission-self-review": {
-          "self_review": "auto",
           "drop_review_on_scope_gate": false
         },
-        "default:finalize-step-simplify": { "simplify": "auto" },
+        "default:finalize-step-simplify": {},
         "default:push": {},
         "default:create-pr": {},
-        "plan-marshall:automatic-review": { "review_bot_buffer_seconds": 180 },
+        "plan-marshall:automatic-review": {
+          "review_bot_buffer_seconds": 180,
+          "lane": "ask"
+        },
         "default:sonar-roundtrip": {
           "touched_file_cleanup": "new_code_only",
           "do_transition": false,
-          "ce_wait_timeout_seconds": 600
+          "ce_wait_timeout_seconds": 600,
+          "lane": "ask"
         },
         "default:lessons-capture": {},
         "default:branch-cleanup": {
@@ -363,8 +365,8 @@ These fields live directly under `plan`, outside any phase block.
 | `branch_strategy` | string | "feature" | direct, feature |
 | `use_worktree` | bool | true | Whether the plan allocates an isolated worktree. `true` (default, with `branch_strategy: feature`) materialises a worktree at `.plan/local/worktrees/{plan-id}/` during `phase-5-execute` Step 2.5; `false` runs against the main checkout. |
 | `init_without_asking` | bool | true | Auto-continue from `phase-1-init` to `phase-2-refine`. `true` (default) skips the gate; `false` stops after init and waits for the user. |
-| `deep_lane` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the precondition-driven deep planning lane. Consumed by the phase-1-init `planning-lane route`. `always` forces deep; `never` forces light (the DQ3 hard-escalation ratchet still fires unless `escalation` is also `never`); `auto` defers to the DQ1 signal set. Validated by `validate_run_at_all`. |
-| `escalation` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the hard-escalation safety ratchet (DQ3 explosion / build-break / premise). `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in. Validated by `validate_run_at_all`. |
+| `deep_lane` | enum(`auto`\|`always`\|`never`) | auto | `gate_mode` gate for the precondition-driven deep planning lane. Consumed by the phase-1-init `planning-lane route`. `always` forces deep; `never` forces light (the DQ3 hard-escalation ratchet still fires unless `escalation` is also `never`); `auto` defers to the DQ1 signal set. Validated by `validate_gate_mode` at set-time. |
+| `escalation` | enum(`auto`\|`always`\|`never`) | auto | `gate_mode` gate for the hard-escalation safety ratchet (DQ3 explosion / build-break / premise). `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in. Validated by `validate_gate_mode` at set-time. |
 | `lane_selection` | enum(`ask`\|`auto`) | ask | Whether init PROMPTS for the execution-profile posture (`ask` surfaces the minimal/auto/full dialogue) or silently takes the computed `auto` projection (`auto`). Validated by `validate_lane_selection`. The per-element lane vocabulary (closed `lane.class` enum, class→default tier table, prune-predicate names) is owned by [`../../extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md). |
 | `lane_prune_thresholds` | dict | `{confidence_complete: 95, linear_change_max_deliverables: 1}` | Tunable numeric thresholds the `auto` posture evaluates its prunable-element predicates against at manifest-compose time. `confidence_complete` (int 0–100) is the post-init confidence floor that prunes `refine`; `linear_change_max_deliverables` (int ≥ 1) is the deliverable-count ceiling that prunes the 4-plan decomposition element. The boolean predicates (`no_code_delta`, `footprint_no_lesson_component`) carry no threshold. Validated by `validate_lane_prune_thresholds` (exact key set + range enforcement). |
 
@@ -390,7 +392,7 @@ These fields live directly under `plan`, outside any phase block.
 | `confidence_threshold` | int | 95 | Confidence threshold for refinement completion |
 | `compatibility` | string | "breaking" | breaking, deprecation, smart_and_ask |
 | `simplicity` | string | "lean" | lean, pragmatic, defensive — how aggressively the implementation favours the minimum viable surface over speculative structure. `lean` (default) implements the strict minimum; `pragmatic` keeps low-risk structure that aids readability; `defensive` retains belt-and-suspenders guards/seams where uncertain. |
-| `revalidation` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the premise / narrative-vs-code safety check (light lane + deep refine). `never` disables the safety check. Validated by `validate_run_at_all`. |
+| `revalidation` | enum(`auto`\|`always`\|`never`) | auto | `gate_mode` gate for the premise / narrative-vs-code safety check (light lane + deep refine). `never` disables the safety check. Validated by `validate_gate_mode` at set-time. |
 
 ### phase-3-outline
 
@@ -509,7 +511,13 @@ plan phase-5-execute remove-field --field steps
 
 ### phase-6-finalize
 
-Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON object keyed by step id: a config-less step maps to `{}`; a param-owning step maps to its nested param object. Step-owned params (`review_bot_buffer_seconds` under `plan-marshall:automatic-review`; `touched_file_cleanup` / `do_transition` / `ce_wait_timeout_seconds` under `default:sonar-roundtrip`; `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold` under `default:branch-cleanup`; `simplify` under `default:finalize-step-simplify`; `self_review` / `drop_review_on_scope_gate` under `default:pre-submission-self-review`) nest inside their owning step's value. Key insertion order is the execution order. The reader consumes the keyed map directly; it is the sole on-disk shape both read and written. The one finalize run-at-all gate that has no single owning step body is `qgate` — it stays a flat phase-level sibling, alongside the other ownerless phase-level knobs (`checks_wait_timeout_seconds`, `max_iterations`, the two automation knobs). The `default:pre-submission-self-review` step is a default-on built-in candidate, so its `self_review` / `drop_review_on_scope_gate` knobs (defaults `auto` / `false`) are seeded under the step by the default config.
+Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON object keyed by step id: a config-less step maps to `{}`; a param-owning step maps to its nested param object. Step-owned params (`review_bot_buffer_seconds` under `plan-marshall:automatic-review`; `touched_file_cleanup` / `do_transition` / `ce_wait_timeout_seconds` under `default:sonar-roundtrip`; `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold` under `default:branch-cleanup`; `drop_review_on_scope_gate` under `default:pre-submission-self-review`) nest inside their owning step's value. Key insertion order is the execution order. The reader consumes the keyed map directly; it is the sole on-disk shape both read and written.
+
+**All finalize steps are materialized** — the default config seeds EVERY discovered finalize-step implementor into the `steps` map; a step's exclusion is expressed as a `lane: off` override (in its param object), never as absence. A `default_on: false` step therefore appears in the seed carrying `lane: off`.
+
+**The four finalize ceremony gates ride the `lane` channel, not a run-at-all knob.** `qgate` / `self_review` / `simplify` / `security_audit` are each governed by their owning step's per-element `steps.<step>.lane` override (`off`/`minimal`/`auto`) — resolved by the manifest ceremony transform (`off→never`, `minimal→always`, `auto`/absent`→auto`). There is no flat `qgate` sibling and no `simplify` / `self_review` run-at-all param. The owning steps are `pre-push-quality-gate` (qgate), `default:pre-submission-self-review` (self_review), `default:finalize-step-simplify` (simplify), and `default:finalize-step-security-audit` (security_audit). The `default:pre-submission-self-review` step retains only its `drop_review_on_scope_gate` escape hatch (default `false`, seeded under the step).
+
+**The two adversarial infra elements seed `lane: ask`.** `plan-marshall:automatic-review` and `default:sonar-roundtrip` seed a `lane: ask` override so `marshall-steward` always prompts about them at setup / update-config and persists a resolved `off`/`auto`/`full`; a genuinely-unresolved `ask` whose provider is absent is dropped at compose time by the drop-when-no-provider safety net.
 
 ```json
 {
@@ -519,20 +527,22 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
       "checks_wait_timeout_seconds": 600,
       "finalize_without_asking": true,
       "loop_back_without_asking": false,
-      "qgate": "auto",
       "steps": {
         "default:pre-submission-self-review": {
-          "self_review": "auto",
           "drop_review_on_scope_gate": false
         },
-        "default:finalize-step-simplify": { "simplify": "auto" },
+        "default:finalize-step-simplify": {},
         "default:push": {},
         "default:create-pr": {},
-        "plan-marshall:automatic-review": { "review_bot_buffer_seconds": 180 },
+        "plan-marshall:automatic-review": {
+          "review_bot_buffer_seconds": 180,
+          "lane": "ask"
+        },
         "default:sonar-roundtrip": {
           "touched_file_cleanup": "new_code_only",
           "do_transition": false,
-          "ce_wait_timeout_seconds": 600
+          "ce_wait_timeout_seconds": 600,
+          "lane": "ask"
         },
         "default:lessons-capture": {},
         "default:branch-cleanup": {
@@ -556,8 +566,7 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
 | `checks_wait_timeout_seconds` | int | 600 | Default timeout (seconds) for the CI-completion polling commands consumed by `ci_base.py` (`ci checks wait`, `ci pr wait-for-comments`, `ci checks wait-for-status-flip`, and the two `issue wait-for-*` polls). An explicit `--timeout` CLI flag always wins; the 600s fallback covers callers running outside a plan-marshall project. This is a cross-step finalize wait-policy with no single owning step, so it **stays flat** (phase-level). |
 | `finalize_without_asking` | bool | true | Forward auto-continuation: auto-continue into finalize after execute completes. `true` (default) skips the gate. |
 | `loop_back_without_asking` | bool | false | Reverse auto-continuation: auto-re-enter execute on a `phase-6-finalize` `loop_back` outcome. `false` (default) halts at every loop_back and returns control to the user; `true` opts into the full unattended cycle, capped by `max_iterations`. |
-| `qgate` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the finalize blocking-findings re-capture (`pre-push-quality-gate`). **Highest-risk gate** — `never` can mask real build/test failures and push a red tree. The one finalize run-at-all gate that stays flat (it is consumed as a phase-level gate, not a param the owning step body reads). Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
-| — (pre-push-quality-gate activation) | derived | — | The `default:pre-push-quality-gate` finalize step's activation is **derived from `build.map`** — no dedicated config key. The manifest composer activates the step when the live footprint touches any `glob` registered in `build.map`; an absent build_map or no footprint match leaves the step inactive. |
+| — (pre-push-quality-gate activation) | derived | — | The `default:pre-push-quality-gate` finalize step's activation is **derived from `build.map`** — no dedicated config key. The manifest composer activates the step when the live footprint touches any `glob` registered in `build.map`; an absent build_map or no footprint match leaves the step inactive. Its ceremony gate (`qgate`) rides `steps['pre-push-quality-gate'].lane` (`off`/`minimal`/`auto`), not a flat run-at-all knob. |
 | `steps` | dict | (see below) | Keyed map of step references to execute (key insertion order = execution order), persisted sorted ascending by each step's authoritative `order` value. Config-less steps map to `{}`; param-owning steps map to their nested param object. The keyed map is both the internal normalized representation and the on-disk serial form. |
 
 **Step-owned params (nested under their owning step in the `steps` map):**
@@ -588,17 +597,12 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
 | `final_merge_without_asking` | bool | false | Whether to merge the PR after CI passes without prompting the operator. `true` merges under the unified `manage-locks:merge_lock` cross-plan mutex (acquired by the branch-cleanup Pre-Merge Gate); `false` (default) prompts the operator before merging. |
 | `auto_rebase_threshold` | string | "no_overlap_only" | Gates the pre-merge auto-rebase decision in `branch-cleanup.md`, orthogonal to `final_merge_without_asking`. `no_overlap_only` permits the auto-rebase only when it would touch a disjoint file set; any overlap defers to the operator. |
 
-`default:finalize-step-simplify`:
+`default:finalize-step-simplify` is config-less — its `simplify` ceremony gate rides the step's `lane` override (`off`/`minimal`/`auto`), not a run-at-all param.
+
+`default:pre-submission-self-review` (the on-by-default pre-submission self-review step) — the `self_review` ceremony gate rides the step's `lane` override, so only the `drop_review_on_scope_gate` escape hatch remains as a step-owned param:
 
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
-| `simplify` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the holistic post-implementation simplification sweep (`finalize-step-simplify`). `always` forces the step in even when the composer's `simplify_inactive` pre-filter would drop it; `never` removes it; `auto` (the default) defers to that pre-filter. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
-
-`default:pre-submission-self-review` (the on-by-default pre-submission self-review step):
-
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| `self_review` | enum(`auto`\|`always`\|`never`) | auto | Run-at-all gate for the pre-submission structural + cognitive self-review (canonical step `default:pre-submission-self-review`). `always` overrides the manifest composer's `scope_gated_finalize` drop; `never` removes it. Consumed by `manage-execution-manifest compose`. Validated by `validate_run_at_all`. |
 | `drop_review_on_scope_gate` | bool | false | Escape hatch for the manifest composer's `scope_gated_finalize` pre-filter. `false` (default) keeps the bot-review invariant intact; `true` opts into additionally dropping `plan-marshall:automatic-review` on scope-gated (surgical / single_module) plans. The self-review step owns this knob because it is the primary review step the scope gate suppresses. |
 
 **Two-tier source for step params**: the `steps` keyed map in `marshal.json` is the **compose-time default + wizard global-config write target** (read/written via `step get` / `step set`). The **plan-local runtime source** is the execution manifest — the composer snapshots each selected step's resolved params into the manifest body at compose time, and phase-5/6 runtime consumers read params via `manage-execution-manifest step-params get` (plan-local, per-plan overridable via `step-params set`), NOT from `marshal.json`. The execution manifest's `step_params` block is an id-keyed dict — a separate runtime-override surface. See [manage-execution-manifest/standards/manifest-schema.md](../../manage-execution-manifest/standards/manifest-schema.md) § `step_params`.
@@ -612,13 +616,13 @@ Managed via (the step verbs operate on the keyed map, preserving key insertion o
 
 Default steps (execution order): `default:pre-submission-self-review`, `default:finalize-step-simplify`, `default:push`, `default:create-pr`, `plan-marshall:automatic-review`, `default:sonar-roundtrip`, `default:lessons-capture`, `default:branch-cleanup`, `default:record-metrics`, `default:archive-plan`. Step types: built-in (`default:` prefix), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
 
-### Run-at-all gates and finalize automation knobs (phase-local)
+### gate_mode planning gates and finalize automation knobs (phase-local)
 
-The lifecycle run-at-all gates are flat phase-local knobs — each owned by the phase whose decision machinery consumes it, tabled under the owning phase section above. There is no top-level policy block: `deep_lane` / `escalation` under `phase-1-init`, `revalidation` under `phase-2-refine`. Under `phase-6-finalize` only `qgate` stays flat, alongside the two flat automation knobs (`finalize_without_asking` / `loop_back_without_asking`). The two other `phase-6-finalize` run-at-all gates (`simplify`, `self_review`) and the `drop_review_on_scope_gate` escape hatch each own exactly one finalize step, so they are NOT flat — they are step-owned params nested under their owning step in the `steps` map (`simplify` → `default:finalize-step-simplify`; `self_review` / `drop_review_on_scope_gate` → `default:pre-submission-self-review`; `final_merge_without_asking` → `default:branch-cleanup`; see the per-step param sub-tables above). Each gate takes `auto|always|never`, validated by `validate_run_at_all`; the automation knobs are boolean.
+The three surviving lifecycle gates ride the `gate_mode` enum (`auto|always|never`, validated at set-time by `validate_gate_mode`), each a flat phase-local knob owned by the phase whose decision machinery consumes it: `deep_lane` / `escalation` under `phase-1-init`, `revalidation` under `phase-2-refine`. There is no top-level policy block. `deep_lane` / `escalation` are consumed by the phase-1-init lane router, and `revalidation` by the refine revalidation pass. (The planning-time Q-Gate dispatch on `phase-3-outline` / `phase-4-plan` is governed by the distinct `q_gate_validation` knob — `off`/`once`/`until_clean` — not a `gate_mode` gate; see those phase sections above.)
 
-The three `phase-6-finalize` run-at-all gates (`self_review` / `qgate` / `simplify`) map one-to-one to finalize steps and are consumed by the manifest composer's finalize selection post-matrix transform — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "plan.phase-6-finalize Selection" for the gate→step map and the `plan-marshall:automatic-review` carve-out. `deep_lane` / `escalation` are consumed by the phase-1-init lane router, and `revalidation` by the refine revalidation pass. (The planning-time Q-Gate dispatch on `phase-3-outline` / `phase-4-plan` is governed by the distinct `q_gate_validation` knob — `off`/`once`/`until_clean` — not a run-at-all gate; see those phase sections above.)
+The four **finalize ceremony gates** — `qgate`, `self_review`, `simplify`, `security_audit` — no longer ride a run-at-all knob. Each is governed by its owning step's per-element `steps.<step>.lane` override (`off`/`minimal`/`auto`), consumed by the manifest composer's finalize-selection ceremony transform (`off→never`, `minimal→always`, `auto`/absent`→auto`) — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "plan.phase-6-finalize Selection". Under `phase-6-finalize` the flat phase-level knobs are the two automation knobs (`finalize_without_asking` / `loop_back_without_asking`, boolean) and the timeout/iteration knobs; every ceremony gate rides its owning step's `lane` override, and `drop_review_on_scope_gate` / `final_merge_without_asking` remain step-owned params (see the per-step param sub-tables above).
 
-**Access shape.** Read/write the flat phase-local knobs (`qgate` and the two automation knobs) via the standard `manage-config plan <phase> get/set --field <knob>` verb; read/write the step-owned knobs (`simplify` / `self_review` / `drop_review_on_scope_gate`) via the `step get/set --step-id <owning-step>` verb. See [`manage-config/SKILL.md`](../SKILL.md) § "Phase-Local Run-at-all Gates and Automation Knobs".
+**Access shape.** Read/write the `gate_mode` planning gates and the flat automation knobs via the standard `manage-config plan <phase> get/set --field <knob>` verb; read/write the finalize ceremony gates by setting the owning step's `lane` override (`step set --step-id <owning-step> --param lane --value <off|minimal|auto>`) and the other step-owned knobs (`drop_review_on_scope_gate`, `final_merge_without_asking`) via the same `step get/set --step-id <owning-step>` verb. See [`manage-config/SKILL.md`](../SKILL.md) § "Phase-Local gate_mode Gates and Automation Knobs".
 
 ### Coverage cell (per-phase + plan-wide)
 

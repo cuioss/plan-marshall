@@ -28,7 +28,11 @@ from _cmd_effort import (
     cmd_effort_set,
 )
 from _cmd_ext_defaults import cmd_ext_defaults
-from _cmd_finalize_steps import cmd_finalize_steps_apply_preset
+from _cmd_finalize_steps import (
+    cmd_finalize_steps_apply_preset,
+    cmd_finalize_steps_list_ask_lane,
+    cmd_finalize_steps_set_lane,
+)
 from _cmd_init import cmd_init
 from _cmd_recipe_match import cmd_recipe_match
 from _cmd_skill_domains import (
@@ -637,6 +641,34 @@ def main() -> int:
         ),
     )
 
+    # list-ask-lane: enumerate finalize steps whose lane override is still `ask`
+    # (unresolved) — the marshall-steward always-prompt surface.
+    finalize_steps_sub.add_parser(
+        'list-ask-lane',
+        help='List finalize steps whose lane override is ask (unresolved)',
+        allow_abbrev=False,
+    )
+
+    # set-lane: persist a resolved lane override (off/auto/full) for a finalize
+    # step — the write side of the steward always-prompt flow.
+    finalize_steps_set_lane = finalize_steps_sub.add_parser(
+        'set-lane',
+        help='Persist a resolved lane override (off/auto/full) for a finalize step',
+        allow_abbrev=False,
+    )
+    finalize_steps_set_lane.add_argument(
+        '--step-id',
+        dest='step_id',
+        required=True,
+        help='Finalize step id (e.g. plan-marshall:automatic-review, default:sonar-roundtrip)',
+    )
+    finalize_steps_set_lane.add_argument(
+        '--lane',
+        required=True,
+        choices=['off', 'auto', 'full'],
+        help='Resolved lane override: off (no bots/Sonar) or auto/full (has them)',
+    )
+
     # --- resolve-domain-skills ---
     p_rds = subparsers.add_parser(
         'resolve-domain-skills', help='Resolve skills for domain and profile', allow_abbrev=False
@@ -821,6 +853,10 @@ def main() -> int:
             return 2
         if args.verb == 'apply-preset':
             result = cmd_finalize_steps_apply_preset(args)
+        elif args.verb == 'list-ask-lane':
+            result = cmd_finalize_steps_list_ask_lane(args)
+        elif args.verb == 'set-lane':
+            result = cmd_finalize_steps_set_lane(args)
         else:
             p_finalize_steps.print_help()
             return 2

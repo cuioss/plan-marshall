@@ -423,6 +423,65 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ---
 
+## Step 11b: Resolve Adversarial Infra Elements (lane:ask) — MANDATORY
+
+Two adversarial finalize elements seed with a `lane: ask` override:
+`plan-marshall:automatic-review` (PR-review bots) and `default:sonar-roundtrip`
+(the Sonar new-code roundtrip). Their inclusion is answered by the operator
+HERE — this prompt ALWAYS runs at setup and is **not skippable**, so a
+genuinely-unresolved `ask` never reaches compose. A resolved answer persisted
+here is a RESOLVED ask that the compose-time drop-when-no-provider safety net
+never drops (only an UNRESOLVED `ask` with an absent provider is dropped).
+
+**Enumerate the ask-tier elements** — the list is authoritative; do NOT
+hard-code the two ids, read them from the verb so a future third infra element
+is surfaced automatically:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  finalize-steps list-ask-lane
+```
+
+The verb returns `ask_steps` (the finalize step ids whose lane override is still
+`ask`). For **EACH** id in `ask_steps`, prompt the operator and persist the
+answer — one `AskUserQuestion` and one `set-lane` write per element. Map the
+element id to a human label: `plan-marshall:automatic-review` → "PR-review bots
+(CodeRabbit / Gemini / …)"; `default:sonar-roundtrip` → "Sonar new-code
+roundtrip".
+
+```text
+AskUserQuestion:
+  question: "Does this project use {human label for the element}?"
+  header: "Adversarial Infra: {element id}"
+  description: |
+    This finalize element is gated on external infrastructure. Answer for THIS
+    project so the finalize pipeline includes it only when you actually have the
+    provider configured.
+  options:
+    - label: "No"
+      description: "Not used — exclude this element (lane: off)"
+    - label: "Yes"
+      description: "Used — include at the default posture (lane: auto)"
+    - label: "Yes, always"
+      description: "Used and always run regardless of posture (lane: full)"
+  multiSelect: false
+```
+
+Persist the answer as the element's resolved lane override (`No` → `off`;
+`Yes` → `auto`; `Yes, always` → `full`):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  finalize-steps set-lane --step-id {element_id} --lane {off|auto|full}
+```
+
+Emit one STEWARD audit entry per element answered (per the audit-trail contract
+above) naming the element and the resolved lane. When `ask_steps` is empty (a
+re-run where every ask element was already resolved), record a single
+auto-decision audit entry and skip the prompts.
+
+---
+
 ## Step 12: Review Gates (Optional)
 
 Configure whether phase transitions pause for user review or auto-continue. The defaults are a partition, not "all pause": auto-continue is the default for `init_without_asking` (phase 1→2), `execute_without_asking` (phase 4→5), and `finalize_without_asking` (phase 5→6), all of which default to `true`. Only `plan_without_asking` (phase 3→4) and `loop_back_without_asking` (phase 6→5 reverse) default to `false` (pause).

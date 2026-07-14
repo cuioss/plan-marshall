@@ -4,16 +4,17 @@
 
 Extracted verbatim from ``manage-execution-manifest.py``: the marshal.json step
 map reads, the candidate-narrowing pre-filters (commit/push, aspect, simplify,
-security-audit, scope-gated finalize), the ceremony-finalize run-at-all
-selection, the CI-provider read and bot-enforcement placement helpers, and the
-build verification-command parser. Every function here is log-free and calls no
-test-patched name; the entry re-exports them and keeps the patched callers.
+security-audit, scope-gated finalize), the ceremony-finalize lane-driven
+selection, the CI-provider read, and the build verification-command parser. Every
+function here is log-free and calls no test-patched name; the entry re-exports
+them and keeps the patched callers.
 """
 
 import json
 import shlex
 
 from _manifest_core import _strip_default_prefix
+from _manifest_lanes import _effective_lane_tier, _lane_override_for
 from file_ops import get_marshal_path, read_json
 
 
@@ -266,11 +267,11 @@ def _apply_security_audit_inactive(
 # prefixes are preserved verbatim, so the surgical set lists both forms. See
 # standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
 #
-# ``automatic-review`` is deliberately NOT in either implicit set: the
-# bot-enforcement guard re-adds it on GitHub/GitLab plans, so dropping it via
-# the implicit scope gate would be a silently-undone no-op. The only path that
-# suppresses ``automatic-review`` is the explicit ``drop_review_on_scope_gate``
-# opt-in (see ``_apply_scope_gated_finalize``).
+# ``automatic-review`` is deliberately NOT in either implicit set: its presence
+# is governed purely by its configured ``lane`` (seeded ``ask`` → resolved by
+# marshall-steward) and lane tier, so the implicit scope gate must not drop it.
+# The only path that suppresses ``automatic-review`` is the explicit
+# ``drop_review_on_scope_gate`` opt-in (see ``_apply_scope_gated_finalize``).
 _SCOPE_GATED_SURGICAL_DROP = frozenset(
     {
         'plan-retrospective',
@@ -289,11 +290,14 @@ _SCOPE_GATED_SINGLE_MODULE_DROP = frozenset(
 _SCOPE_GATED_OVERRIDE_DROP = frozenset({'automatic-review', 'plan-marshall:automatic-review'})
 
 
-# Owning finalize step ids for the step-folded run-at-all / escape-hatch knobs.
-# The three knobs that each map to exactly one finalize step are stored nested
-# under their owning step's param object in marshal.json's ``phase-6-finalize.steps``
-# keyed map (folded there from their former flat-sibling location). ``qgate`` is
-# the one finalize run-at-all gate that stays a flat phase-level sibling.
+# Owning finalize step ids for the four ceremony gates and the escape-hatch knob.
+# Each ceremony gate is governed by its owning step's per-element ``lane`` override
+# (``off``/``minimal``/``auto``) stored nested under the owning step's param object
+# in marshal.json's ``phase-6-finalize.steps`` keyed map. There is no flat
+# phase-level ``qgate`` sibling — every ceremony gate rides its owning step's
+# ``lane``. ``drop_review_on_scope_gate`` remains a step-owned escape hatch under
+# the self-review step.
+_QGATE_OWNER_STEP = 'default:pre-push-quality-gate'
 _SIMPLIFY_OWNER_STEP = 'default:finalize-step-simplify'
 _SECURITY_AUDIT_OWNER_STEP = 'default:finalize-step-security-audit'
 _PRE_SUBMISSION_SELF_REVIEW_STEP = 'default:pre-submission-self-review'
@@ -302,10 +306,11 @@ _PRE_SUBMISSION_SELF_REVIEW_STEP = 'default:pre-submission-self-review'
 def _read_step_owned_knob(owner_step_id: str, knob: str) -> object | None:
     """Read a step-owned knob from ``phase-6-finalize.steps`` in marshal.json.
 
-    The step-folded knobs (``simplify`` / ``self_review`` /
-    ``drop_review_on_scope_gate``) live nested under their owning finalize step's
-    param object in the ``phase-6-finalize.steps`` keyed map. This reads
-    ``steps[owner_step_id][knob]`` via :func:`_read_marshal_phase_step_map` (which
+    The step-owned knobs (each ceremony gate's ``lane`` override, plus the
+    ``drop_review_on_scope_gate`` escape hatch) live nested under their owning
+    finalize step's param object in the ``phase-6-finalize.steps`` keyed map. This
+    reads ``steps[owner_step_id][knob]`` via :func:`_read_marshal_phase_step_map`
+    (which
     preserves the full ``default:`` / ``project:`` step-id prefixes), returning
     ``None`` when the marshal file is missing, the owning step is absent from the
     map, or the knob is absent from the step's param object. The caller supplies
@@ -359,8 +364,9 @@ def _apply_scope_gated_finalize(
       ``plan-marshall:plan-retrospective``.
     - Any other scope value → no implicit subtraction.
 
-    ``automatic-review`` is NEVER subtracted by the implicit scope gate (the
-    bot-enforcement guard would re-add it, making the subtraction a no-op).
+    ``automatic-review`` is NEVER subtracted by the implicit scope gate — its
+    presence is governed purely by its configured ``lane`` and lane tier, so the
+    implicit scope gate must not drop it.
     When ``drop_review_on_scope_gate`` is ``True`` AND the plan is itself
     scope-gated (``scope_estimate in ('surgical', 'single_module')``), the gate
     additionally drops ``automatic-review`` — the only path that suppresses the
@@ -371,7 +377,7 @@ def _apply_scope_gated_finalize(
 
     Consistent with the composer's "rows and pre-filters only ever narrow the
     candidate list" architecture, this pre-filter runs before the seven-row
-    matrix and the bot-enforcement guard. Returns the filtered candidate list
+    matrix. Returns the filtered candidate list
     plus the list of step references that were dropped (for per-subtraction
     decision-log emission). The dropped list preserves the candidate's verbatim
     form so the decision log names exactly what was removed.
@@ -426,62 +432,62 @@ _CEREMONY_FINALIZE_STEP_MAP: dict[str, tuple[frozenset[str], str]] = {
     ),
 }
 
-# The run-at-all gate fields for the finalize section, in canonical order.
+# The four finalize ceremony gates, in canonical order.
 _CEREMONY_FINALIZE_GATES = ('self_review', 'qgate', 'simplify', 'security_audit')
 
 # Canonical default for every finalize gate when marshal.json omits the block.
 _CEREMONY_FINALIZE_DEFAULT = 'auto'
 
+# Owning finalize step id for each ceremony gate's ``lane`` override. The gate's
+# effective run-at-all decision is derived from its owning step's per-element
+# ``lane`` value in ``phase-6-finalize.steps`` — there is no flat phase-level
+# ``qgate`` sibling anymore.
+_CEREMONY_GATE_OWNER_STEP: dict[str, str] = {
+    'qgate': _QGATE_OWNER_STEP,
+    'self_review': _PRE_SUBMISSION_SELF_REVIEW_STEP,
+    'simplify': _SIMPLIFY_OWNER_STEP,
+    'security_audit': _SECURITY_AUDIT_OWNER_STEP,
+}
+
+# Per-element ``lane`` override → ceremony run-at-all decision. ``off`` forces the
+# ceremony step out (``never``); ``minimal`` force-keeps it in (``always``);
+# every other value (``auto`` / ``full`` / ``ask`` / absent / malformed) defers
+# to the pre-filter machinery (``auto``).
+_LANE_TO_CEREMONY_VALUE: dict[str, str] = {
+    'off': 'never',
+    'minimal': 'always',
+}
+
 
 def _read_finalize_gates() -> dict[str, str]:
-    """Resolve the four ``plan.phase-6-finalize`` run-at-all gate values.
+    """Resolve the four finalize ceremony gate values from the ``lane`` channel.
 
-    Each gate reads from its canonical home and merges the ``auto`` default
-    under an absent value:
+    Each of the four ceremony gates (``qgate`` / ``self_review`` / ``simplify`` /
+    ``security_audit``) is governed by its owning finalize step's per-element
+    ``lane`` override (``steps[<owner>].lane``) in ``phase-6-finalize.steps``,
+    read via :func:`_read_step_owned_knob`. The owning steps are:
 
-    - ``qgate`` stays a flat phase-local knob, read from
-      ``plan.phase-6-finalize.qgate`` directly (it is consumed as a phase-level
-      run-at-all gate, not a param the owning step body reads).
-    - ``simplify``, ``self_review``, and ``security_audit`` are folded under their
-      owning finalize step's nested param object in ``phase-6-finalize.steps``
-      (``simplify`` → ``default:finalize-step-simplify``; ``self_review`` →
-      ``default:pre-submission-self-review``; ``security_audit`` →
-      ``default:finalize-step-security-audit``). They are read via
-      :func:`_read_step_owned_knob`.
+    - ``qgate`` → ``default:pre-push-quality-gate``
+    - ``self_review`` → ``default:pre-submission-self-review``
+    - ``simplify`` → ``default:finalize-step-simplify``
+    - ``security_audit`` → ``default:finalize-step-security-audit``
 
-    Returns a ``{gate: value}`` dict for the four finalize gates; values are
-    always one of the configured values (or the ``auto`` default). The caller
-    treats any value other than ``always`` / ``never`` as defer.
+    The ``lane`` value maps to the run-at-all decision the ceremony transform
+    consumes: ``off`` → ``never`` (force out), ``minimal`` → ``always`` (force
+    in), and every other value (``auto`` / ``full`` / ``ask`` / absent) → ``auto``
+    (defer to the pre-filter machinery).
+
+    Returns a ``{gate: value}`` dict for the four finalize gates; values are one
+    of ``always`` / ``never`` / ``auto``. The caller treats any value other than
+    ``always`` / ``never`` as defer.
     """
     resolved: dict[str, str] = dict.fromkeys(_CEREMONY_FINALIZE_GATES, _CEREMONY_FINALIZE_DEFAULT)
 
-    # qgate stays a flat phase-level sibling.
-    marshal_path = get_marshal_path()
-    if marshal_path is not None and marshal_path.exists():
-        try:
-            data = read_json(marshal_path, default={})
-        except (OSError, ValueError):
-            data = {}
-        if isinstance(data, dict):
-            plan_block = data.get('plan')
-            if isinstance(plan_block, dict):
-                finalize = plan_block.get('phase-6-finalize')
-                if isinstance(finalize, dict):
-                    qgate_value = finalize.get('qgate')
-                    if isinstance(qgate_value, str) and qgate_value:
-                        resolved['qgate'] = qgate_value
-
-    # simplify / self_review / security_audit are folded under their owning
-    # step's param object.
-    simplify_value = _read_step_owned_knob(_SIMPLIFY_OWNER_STEP, 'simplify')
-    if isinstance(simplify_value, str) and simplify_value:
-        resolved['simplify'] = simplify_value
-    self_review_value = _read_step_owned_knob(_PRE_SUBMISSION_SELF_REVIEW_STEP, 'self_review')
-    if isinstance(self_review_value, str) and self_review_value:
-        resolved['self_review'] = self_review_value
-    security_audit_value = _read_step_owned_knob(_SECURITY_AUDIT_OWNER_STEP, 'security_audit')
-    if isinstance(security_audit_value, str) and security_audit_value:
-        resolved['security_audit'] = security_audit_value
+    for gate in _CEREMONY_FINALIZE_GATES:
+        owner_step = _CEREMONY_GATE_OWNER_STEP[gate]
+        lane_value = _read_step_owned_knob(owner_step, 'lane')
+        if isinstance(lane_value, str) and lane_value in _LANE_TO_CEREMONY_VALUE:
+            resolved[gate] = _LANE_TO_CEREMONY_VALUE[lane_value]
 
     return resolved
 
@@ -591,90 +597,109 @@ def _read_ci_provider() -> str | None:
     return None
 
 
-def _bot_enforcement_insert_index(phase_6_steps: list[str]) -> int:
-    """Resolve the canonical insertion position for ``automatic-review``.
+def _read_sonar_provider() -> str | None:
+    """Return the Sonar provider identifier (``sonar``) from marshal.json.
 
-    The remediation must place ``automatic-review`` somewhere it can run before
-    plan-mutating steps (notably ``archive-plan``, which moves the plan
-    directory). ``phase_6_steps`` carries boundary-normalized bare default
-    names (plus possibly the project-prefixed early sync step), so anchor
-    lookups compare plain strings without per-site stripping. Resolution
-    order:
+    Sibling of :func:`_read_ci_provider`. The provider is resolved from the
+    ``providers[]`` entry whose ``skill_name`` is
+    ``plan-marshall:workflow-integration-sonar``. Unlike the CI reader (which
+    keys on ``category == 'ci'`` to disambiguate github/gitlab), a Sonar
+    integration is identified solely by its skill, so this matches on
+    ``skill_name`` directly and returns the single short identifier ``sonar``.
 
-    1. Immediately after ``create-pr`` (its natural neighbour in the
-       candidate ordering — review runs against the freshly-opened PR).
-    2. Else immediately before the first plan-mutating step
-       (``archive-plan``, ``record-metrics``,
-       ``plan-marshall:plan-retrospective``, ``branch-cleanup``).
-    3. Else at the end of the list (no anchors found).
+    Returns ``None`` when the marshal file is missing, no Sonar provider is
+    declared, or the providers list is absent/malformed. The D6 compose-time
+    ``_apply_unresolved_ask_provider_drop`` pre-filter consumes this — a
+    non-``None`` result means "Sonar is configured", so an unresolved
+    ``lane:ask`` ``sonar-roundtrip`` element is kept rather than dropped.
     """
-    for index, step in enumerate(phase_6_steps):
-        if step == 'create-pr':
-            return index + 1
-    plan_mutating = {
-        'archive-plan',
-        'record-metrics',
-        'branch-cleanup',
-        'plan-marshall:plan-retrospective',
-    }
-    for index, step in enumerate(phase_6_steps):
-        if step in plan_mutating:
-            return index
-    return len(phase_6_steps)
-
-
-def _validate_automatic_review_placement(phase_6_steps: list[str]) -> str | None:
-    """Compose-time placement check for ``automatic-review`` ordering.
-
-    Defense-in-depth complement to ``_apply_bot_enforcement_guard``. The
-    remediation guard ensures ``automatic-review`` is *present* on
-    GitHub/GitLab plans, but a future pre-filter, recipe interaction, or
-    candidate ordering glitch could leave it *misplaced* — sitting at an
-    index later than a plan-mutating step (``archive-plan``,
-    ``record-metrics``, ``branch-cleanup``, or
-    ``plan-marshall:plan-retrospective``). Such a manifest would dispatch
-    the review bot only after the plan directory has already been moved or
-    the branch cleaned up, defeating the lesson the guard exists to enforce.
-
-    Comparison runs against bare names: by the time this validator is
-    invoked, ``cmd_compose`` has already boundary-normalized
-    ``phase_6_candidates`` and the matrix output preserves the same shape.
-    Both the bare ``automatic-review`` name and its
-    ``plan-marshall:automatic-review`` form are detected so future callers cannot
-    silently slip past the check by re-prefixing.
-
-    Returns a diagnostic string naming both the offending
-    ``automatic-review`` index and the first plan-mutating anchor that
-    precedes it. Returns ``None`` when the order is valid (or when
-    ``automatic-review`` is absent — the remediation guard is responsible
-    for presence; this validator is concerned only with ordering).
-    """
-    plan_mutating = {
-        'archive-plan',
-        'record-metrics',
-        'branch-cleanup',
-        'plan-marshall:plan-retrospective',
-    }
-
-    review_index: int | None = None
-    for index, step in enumerate(phase_6_steps):
-        if step in {'automatic-review', 'plan-marshall:automatic-review'}:
-            review_index = index
-            break
-    if review_index is None:
+    marshal_path = get_marshal_path()
+    if marshal_path is None or not marshal_path.is_file():
         return None
-
-    # The violation is the inverse of the desired order: a plan-mutating
-    # anchor at an index *less* than ``review_index`` means the review bot
-    # fires AFTER the plan directory has been moved or the branch cleaned
-    # up. Return the earliest such anchor so the diagnostic names the
-    # first ordering breach.
-    for index, step in enumerate(phase_6_steps):
-        if index >= review_index:
-            break
-        if step in plan_mutating:
-            return f'automatic-review at index {review_index} must precede {step} at index {index}'
+    try:
+        data = read_json(marshal_path)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    providers = data.get('providers')
+    if not isinstance(providers, list):
+        return None
+    for entry in providers:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get('skill_name') == 'plan-marshall:workflow-integration-sonar':
+            return 'sonar'
     return None
+
+
+# The two infra-dependent adversarial finalize elements governed by a seeded
+# ``lane: ask`` override. Each maps to the match-set of every prefixed/bare form
+# a (boundary-normalized) candidate list may carry. The candidate list is
+# ``default:``-stripped at the compose boundary, so ``default:sonar-roundtrip``
+# reads back as bare ``sonar-roundtrip``; ``plan-marshall:automatic-review``
+# keeps its bundle prefix. Both forms are listed so the match is robust.
+_ASK_PROVIDER_INFRA_ELEMENTS: dict[str, frozenset[str]] = {
+    'automatic-review': frozenset({'automatic-review', 'plan-marshall:automatic-review'}),
+    'sonar-roundtrip': frozenset({'sonar-roundtrip', 'default:sonar-roundtrip'}),
+}
+
+
+def _apply_unresolved_ask_provider_drop(
+    phase_6_candidates: list[str],
+    marshal_phase_6_map: dict[str, dict] | None,
+    ci_provider: str | None,
+    sonar_provider: str | None,
+) -> tuple[list[str], list[str]]:
+    """Pre-filter (D6): drop an UNRESOLVED ``lane:ask`` infra element when its provider is absent.
+
+    For each of the two infra-dependent adversarial elements
+    (``automatic-review``, ``sonar-roundtrip``) present in the candidate list,
+    resolve its EFFECTIVE lane tier from the marshal.json per-element ``lane``
+    override via :func:`_effective_lane_tier`. The seed value for both elements
+    is ``ask``, and a steward-persisted answer overwrites it to
+    ``off``/``auto``/``full``; so an effective tier still equal to ``ask`` at
+    compose is the UNRESOLVED case (the operator never answered). When the
+    element is unresolved AND its corresponding provider is absent
+    (``ci_provider is None`` for ``automatic-review``; ``sonar_provider is
+    None`` for ``sonar-roundtrip``), the element is DROPPED.
+
+    Never drops a RESOLVED ask (effective tier ``off``/``auto``/``full`` — the
+    ``off`` case is already handled by the lane-resolution pass; a resolved
+    ``auto``/``full`` keeps the element here). Never drops when the provider IS
+    configured. Elements other than the two infra elements pass through
+    untouched. Consistent with the composer's "rows and pre-filters only ever
+    narrow" architecture, this only removes candidates — it never re-adds.
+
+    Returns ``(kept, dropped)``; ``dropped`` preserves each candidate's verbatim
+    form for per-drop decision-log emission.
+    """
+    provider_for: dict[str, str | None] = {
+        'automatic-review': ci_provider,
+        'sonar-roundtrip': sonar_provider,
+    }
+    kept: list[str] = []
+    dropped: list[str] = []
+    for step in phase_6_candidates:
+        drop = False
+        for element_key, match_set in _ASK_PROVIDER_INFRA_ELEMENTS.items():
+            if step in match_set:
+                # ``_lane_override_for`` normalizes the marshal map KEY (so a
+                # promoted ``plan-marshall:automatic-review`` key strips to bare
+                # ``automatic-review``) but compares it against the step_id
+                # verbatim. This pre-filter runs at the candidate-narrowing
+                # stage, where a promoted infra candidate is still carried in its
+                # prefixed ``plan-marshall:automatic-review`` form, so the step
+                # must be boundary-normalized to the same bare shape before the
+                # lookup — otherwise the prefixed key strips to bare and never
+                # matches the prefixed step_id (the drop silently never fires).
+                override = _lane_override_for(_strip_default_prefix(step), marshal_phase_6_map)
+                effective, _is_off = _effective_lane_tier({}, override)
+                if effective == 'ask' and provider_for[element_key] is None:
+                    drop = True
+                break
+        (dropped if drop else kept).append(step)
+    return kept, dropped
 
 
 # Build verb → phase-5 step ID mapping. The four canonical verbs are the

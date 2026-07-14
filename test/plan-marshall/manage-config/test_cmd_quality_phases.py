@@ -1106,20 +1106,24 @@ def test_finalize_step_set_absent_step_id_errors(plan_context):
 
 
 # =============================================================================
-# Step-folded run-at-all / escape-hatch knobs (simplify / self_review /
-# drop_review_on_scope_gate) live nested under their owning finalize step's param
-# map; qgate stays a flat phase-level sibling.
+# Finalize ceremony gates ride the per-element `steps.<step>.lane` override.
+#
+# D1 folded the four ceremony gates (qgate / self_review / simplify /
+# security_audit) off their run-at-all locations onto each owning step's
+# per-element `lane` override. The former flat `qgate` sibling and the
+# step-owned `simplify` / `self_review` / `security_audit` run-at-all params are
+# gone; `drop_review_on_scope_gate` remains a step-owned param of the
+# self-review step.
 # =============================================================================
 
 
 def _marshal_without_finalize_section() -> dict:
     """A config whose plan.phase-6-finalize is absent → defaults supply the seed.
 
-    The defaults-merge in `cmd_plan` brings the parser-resolved step-owned params
-    (the finalize-step seed delegates to configurable_contract, including the
-    folded `simplify` / `self_review` / `drop_review_on_scope_gate` knobs) into the
-    resolved section, so the step-owned read path is exercised against the
-    canonical default shape.
+    The defaults-merge in `cmd_plan` brings the materialize-all finalize-step seed
+    (every implementor materialized; `default_on:false` → `lane:off`; the two
+    infra elements → `lane:ask`) into the resolved section, so the step-owned read
+    path is exercised against the canonical default shape.
     """
     return {
         'skill_domains': {},
@@ -1135,15 +1139,17 @@ def _marshal_without_finalize_section() -> dict:
     }
 
 
-def test_finalize_step_get_simplify_reads_from_owning_step_param_map(plan_context):
-    """`simplify` is read from its owning step `default:finalize-step-simplify`.
+def test_finalize_step_get_simplify_reads_lane_override_not_run_at_all_param(plan_context):
+    """`default:finalize-step-simplify` is governed by its `steps.<step>.lane` override.
 
-    The knob folded out of its former flat-sibling location into the
-    simplify-step's nested param object; the default is `auto`.
+    D1 folded the four ceremony gates onto the per-element lane channel, so the
+    simplify step no longer declares a `simplify` run-at-all param — its on/off is
+    read from `steps['default:finalize-step-simplify'].lane`, not a removed flat
+    param map. The default seed carries no `simplify` param.
     """
     create_marshal_json(plan_context.fixture_dir, _marshal_without_finalize_section())
 
-    result = cmd_plan(
+    default_get = cmd_plan(
         Namespace(
             sub_noun='phase-6-finalize',
             verb='step',
@@ -1152,12 +1158,18 @@ def test_finalize_step_get_simplify_reads_from_owning_step_param_map(plan_contex
         )
     )
 
-    assert result['status'] == 'success'
-    assert result['params']['simplify'] == 'auto'
+    assert default_get['status'] == 'success'
+    # The retired `simplify` run-at-all param is gone from the step's params.
+    assert 'simplify' not in default_get['params']
 
 
-def test_finalize_step_set_simplify_round_trips_under_owning_step(plan_context):
-    """`step set` writes `simplify` into its owning step and round-trips on disk."""
+def test_finalize_step_set_lane_round_trips_under_owning_step(plan_context):
+    """`step set --param lane` writes the ceremony gate's lane override and round-trips.
+
+    The simplify gate's on/off is now the owning step's `lane` override
+    (`off→never`, `minimal→always`, `auto/absent→auto`), not a `simplify`
+    run-at-all param.
+    """
     create_marshal_json(plan_context.fixture_dir, _marshal_without_finalize_section())
 
     set_result = cmd_plan(
@@ -1166,26 +1178,28 @@ def test_finalize_step_set_simplify_round_trips_under_owning_step(plan_context):
             verb='step',
             step_verb='set',
             step_id='default:finalize-step-simplify',
-            param='simplify',
-            value='never',
+            param='lane',
+            value='off',
         )
     )
 
     assert set_result['status'] == 'success'
-    assert set_result['params']['simplify'] == 'never'
+    assert set_result['params']['lane'] == 'off'
 
     # Persisted nested under the owning step's value in the keyed map.
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     persisted = _params_for(config['plan']['phase-6-finalize']['steps'], 'default:finalize-step-simplify')
-    assert persisted['simplify'] == 'never'
+    assert persisted['lane'] == 'off'
 
 
 def test_finalize_get_no_longer_surfaces_folded_knobs_as_flat_siblings(plan_context):
-    """`phase-6-finalize get` no longer carries the three folded knobs as flat fields.
+    """`phase-6-finalize get` carries none of the retired ceremony gates as flat fields.
 
-    `simplify`, `self_review`, and `drop_review_on_scope_gate` moved out of the
-    flat phase-level section into their owning step's nested param map. The flat
-    `get` payload must not surface them. `qgate` remains a flat sibling.
+    The four ceremony gates (`qgate` / `self_review` / `simplify` /
+    `security_audit`) moved onto their owning step's per-element `lane` override,
+    so the flat `get` payload surfaces none of them — including `qgate`, which is
+    no longer a flat phase-level sibling. `drop_review_on_scope_gate` also stays a
+    step-owned param, never a flat field.
     """
     create_marshal_json(plan_context.fixture_dir, _marshal_without_finalize_section())
 
@@ -1194,9 +1208,10 @@ def test_finalize_get_no_longer_surfaces_folded_knobs_as_flat_siblings(plan_cont
     assert result['status'] == 'success'
     assert 'simplify' not in result
     assert 'self_review' not in result
+    assert 'security_audit' not in result
     assert 'drop_review_on_scope_gate' not in result
-    # qgate stays a flat phase-level sibling.
-    assert result['qgate'] == 'auto'
+    # qgate is no longer a flat phase-level sibling — it rides the lane channel.
+    assert 'qgate' not in result
 
 
 def test_finalize_get_folded_knob_field_is_rejected(plan_context):

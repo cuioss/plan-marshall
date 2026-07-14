@@ -93,7 +93,7 @@ from _manifest_rules import (
     _apply_scope_gated_finalize,  # noqa: F401
     _apply_security_audit_inactive,  # noqa: F401
     _apply_simplify_inactive,  # noqa: F401
-    _bot_enforcement_insert_index,  # noqa: F401
+    _apply_unresolved_ask_provider_drop,  # noqa: F401
     _ceremony_finalize_insert_index,  # noqa: F401
     _footprint_has_role,  # noqa: F401
     _parse_verification_command,  # noqa: F401
@@ -101,9 +101,9 @@ from _manifest_rules import (
     _read_drop_review_on_scope_gate,  # noqa: F401
     _read_finalize_gates,  # noqa: F401
     _read_marshal_phase_step_map,  # noqa: F401
+    _read_sonar_provider,  # noqa: F401
     _read_step_owned_knob,  # noqa: F401
     _snapshot_step_params,  # noqa: F401
-    _validate_automatic_review_placement,  # noqa: F401
     _verb_to_phase_5_step,  # noqa: F401
 )
 from _manifest_validation import (
@@ -456,48 +456,6 @@ def _log_prefilter_omitted(
     _emit_decision_log(plan_id, message)
 
 
-def _log_bot_enforcement_guard_fired(plan_id: str, provider: str) -> None:
-    """Emit the decision-log entry for the ``bot_enforcement_guard`` violation.
-
-    Logged before the composition error is raised on the safety-net path
-    (currently unreachable; see ``_apply_bot_enforcement_guard``). Retained
-    so that any future logic which detects a non-remediable violation has a
-    canonical decision-log entry to emit.
-    """
-    message = (
-        '(plan-marshall:manage-execution-manifest:compose) bot-enforcement guard fired — '
-        f'ci_provider={provider}, automatic-review missing from phase_6.steps'
-    )
-    _emit_decision_log(plan_id, message)
-
-
-def _log_bot_enforcement_guard_remediated(plan_id: str, provider: str) -> None:
-    """Emit the decision-log entry for the ``bot_enforcement_guard`` remediation.
-
-    Logged whenever the guard appends ``automatic-review`` back into
-    ``phase_6.steps`` so the manifest's reconstruction-from-rules-alone
-    remains auditable.
-    """
-    message = (
-        '(plan-marshall:manage-execution-manifest:compose) bot-enforcement guard remediated — '
-        f'ci_provider={provider}, automatic-review re-added to phase_6.steps'
-    )
-    _emit_decision_log(plan_id, message)
-
-
-def _log_bot_enforcement_placement_violation(plan_id: str, diagnostic: str) -> None:
-    """Emit the decision-log entry for the placement-validator rejection.
-
-    Logged whenever the compose-time placement validator detects that
-    ``automatic-review`` sits at an index later than at least one
-    plan-mutating step (``archive-plan``, ``record-metrics``, ``branch-cleanup``,
-    or ``plan-marshall:plan-retrospective``). The diagnostic string carries
-    both step names and indexes for downstream auditing.
-    """
-    message = f'(plan-marshall:manage-execution-manifest:compose) bot-enforcement placement violation — {diagnostic}'
-    _emit_decision_log(plan_id, message)
-
-
 # =============================================================================
 # Pre-Filter Helpers
 # =============================================================================
@@ -672,13 +630,15 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 
 
 # =============================================================================
-# plan.phase-6-finalize run-at-all selection (post-matrix transform)
+# plan.phase-6-finalize ceremony-gate selection (post-matrix transform)
 # =============================================================================
 #
-# The four finalize run-at-all gates (`plan.phase-6-finalize.<gate>`) drive
-# a post-matrix transform that forces each gate's finalize step in (`always`),
-# out (`never`), or defers to the existing decision machinery (`auto`, the
-# default no-op). Each gate maps to exactly one finalize step ID:
+# The four finalize ceremony gates drive a post-matrix transform that forces each
+# gate's finalize step in (`always`), out (`never`), or defers to the existing
+# decision machinery (`auto`, the default no-op). Each gate's effective decision
+# is derived from its owning step's per-element `lane` override
+# (`steps[<owner>].lane` — `off`→`never`, `minimal`→`always`, `auto`/absent→`auto`),
+# NOT from a flat run-at-all sibling. Each gate maps to exactly one finalize step:
 #
 #   self_review    → default:pre-submission-self-review
 #   qgate          → pre-push-quality-gate (the finalize blocking-findings re-capture)
@@ -690,11 +650,10 @@ def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dro
 # matrix time, `always` re-adds it even when that pre-filter dropped it, and
 # `never` forces it out.
 #
-# The transform NEVER touches `automatic-review`: the bot-review invariant
-# (enforced by `_apply_bot_enforcement_guard`) is orthogonal and is preserved
-# verbatim — the four finalize gates are the only
-# finalize steps this transform may add or drop. Run-at-all values are validated
-# at set time by `manage-config`'s `validate_run_at_all`; the composer
+# The transform NEVER touches `automatic-review`: the four ceremony gates are the
+# only finalize steps this transform may add or drop. The `lane` override is
+# validated at set time by `manage-config`'s `validate_lane_override`, and
+# `_read_finalize_gates` maps it to the ceremony decision; the composer
 # defensively treats any non-`{always,never}` value (including `auto` and a
 # malformed value) as defer.
 #
@@ -721,47 +680,6 @@ def _log_ceremony_finalize_selection(
         f'{"to" if value == "always" else "from"} phase_6.steps'
     )
     _emit_decision_log(plan_id, message)
-
-
-def _apply_bot_enforcement_guard(phase_6_steps: list[str], plan_id: str) -> str | None:
-    """Composition-time defense-in-depth: keep ``automatic-review`` on GitHub/GitLab plans.
-
-    PR-review bots are effectively mandatory whenever the plan finalizes
-    through GitHub or GitLab. If the seven-row matrix or any pre-filter has
-    dropped ``automatic-review`` AND the project's CI provider is GitHub or
-    GitLab, this guard remediates by appending ``automatic-review`` back into
-    ``phase_6_steps`` (in-place) and emits a decision-log entry so the
-    manifest's reconstruction-from-rules-alone remains auditable. The guard is
-    remediation rather than assertion because Row 5 of the seven-row matrix
-    legitimately drops ``automatic-review`` for ``surgical+{bug_fix,
-    tech_debt}`` plans, and an assertion-style guard would deadlock
-    every such plan that finalizes through GitHub or GitLab.
-
-    The guard is retained after the deadlock fix as defense-in-depth: any
-    future pre-filter, rule addition, or recipe interaction that drops
-    ``automatic-review`` on a GitHub/GitLab plan will be caught and
-    remediated by the same code path.
-
-    Returns ``None`` for the no-op path (non-GitHub/GitLab CI) and for the
-    remediated path (``automatic-review`` was missing and has been re-added).
-    Returns the offending CI provider identifier (``github`` or ``gitlab``)
-    only on a non-remediable violation — currently unreachable; retained as
-    a safety net for future logic that may detect a violation it cannot
-    auto-fix, which the caller translates into a ``bot_enforcement_violation``
-    error TOON.
-    """
-    provider = _read_ci_provider()
-    if provider not in {'github', 'gitlab'}:
-        return None
-    # ``phase_6_steps`` is the matrix output. Its entries are bare names —
-    # ``cmd_compose`` boundary-normalized the candidate list before the matrix
-    # ran. Compare bare strings without per-site stripping.
-    if 'automatic-review' in phase_6_steps:
-        return None
-    insert_index = _bot_enforcement_insert_index(phase_6_steps)
-    phase_6_steps.insert(insert_index, 'automatic-review')
-    _log_bot_enforcement_guard_remediated(plan_id, provider)
-    return None
 
 
 # =============================================================================
@@ -1134,9 +1052,10 @@ def _apply_lane_resolution(
     ``full`` is a no-op (keep everything). For ``minimal`` / ``auto`` each
     lane-participating element is kept iff ``effective_tier ⊑ posture``; an
     element with no ``lane:`` block is not lane-participating and is always kept.
-    The q-gate is never a phase-6 finalize step, so it is never reached here; the
-    adversarial-floor re-add for CI plans is handled downstream by the
-    bot-enforcement guard, which is why this pass runs BEFORE it.
+    The q-gate is never a phase-6 finalize step, so it is never reached here.
+    ``automatic-review`` participates in this pass like any other lane element —
+    its keep/drop is governed purely by its configured ``lane`` and lane tier,
+    with no separate downstream force-add guard.
     """
     if posture == 'full':
         return list(phase_6_steps), [], []
@@ -1273,8 +1192,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
 
     # Boundary normalization: callers (notably marshal.json) may pass step IDs
     # with the optional ``default:`` prefix; the seven-row matrix, the pre-filter
-    # helpers, the bundle-self-modification matcher, and the bot-enforcement
-    # guard all compare against bare names. Normalize once at the boundary so
+    # helpers, and the bundle-self-modification matcher all compare against bare
+    # names. Normalize once at the boundary so
     # every downstream site can use plain `s in {...}` / `s == 'foo'` checks
     # without per-site `_strip_default_prefix` calls. Normalizing at the
     # boundary covers every comparison site, not just the cascade-rule sites.
@@ -1337,17 +1256,35 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     )
 
     # Pre-filter 5 (scope_gated_finalize) drops heavyweight phase-6 review/audit
-    # steps by scope: surgical drops the three non-guarded steps, single_module
+    # steps by scope: surgical drops the three review/audit steps, single_module
     # drops only plan-retrospective, and the drop_review_on_scope_gate escape
     # hatch additionally drops automatic-review. It runs after the other
-    # pre-filters and before the seven-row matrix and the bot-enforcement guard,
-    # so it only ever narrows the candidate list. automatic-review is dropped
-    # ONLY via the explicit override — never by the implicit scope gate — so the
-    # bot-enforcement invariant stays intact by default. See
-    # standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
+    # pre-filters and before the seven-row matrix, so it only ever narrows the
+    # candidate list. automatic-review is dropped ONLY via the explicit override —
+    # never by the implicit scope gate — so the bot-review invariant stays intact
+    # by default. See standards/decision-rules.md § Pre-Filter: scope_gated_finalize.
     drop_review_on_scope_gate = _read_drop_review_on_scope_gate()
     phase_6_candidates, scope_gated_dropped = _apply_scope_gated_finalize(
         phase_6_candidates, args.scope_estimate, drop_review_on_scope_gate
+    )
+
+    # Pre-filter 6 (unresolved_ask_provider_drop, D6): drop an UNRESOLVED
+    # lane:ask infra element (automatic-review / sonar-roundtrip) when its
+    # provider is genuinely absent. Both infra elements seed lane:ask; a
+    # steward-persisted answer overwrites the override to off/auto/full, so an
+    # effective tier still equal to ``ask`` at compose means the operator never
+    # answered. When the corresponding provider is also absent
+    # (_read_ci_provider() is None for automatic-review; _read_sonar_provider()
+    # is None for sonar-roundtrip) the element is dropped. A RESOLVED ask
+    # (off/auto/full) and a provider-configured ask both survive; the frozen
+    # off-override-on-floor-step honored-with-warning semantic (owned by the
+    # later lane-resolution pass) is untouched. Runs at the candidate-narrowing
+    # stage so it only ever narrows the candidate list. See
+    # standards/decision-rules.md § Pre-Filter: unresolved_ask_provider_drop.
+    ci_provider = _read_ci_provider()
+    sonar_provider = _read_sonar_provider()
+    phase_6_candidates, unresolved_ask_dropped = _apply_unresolved_ask_provider_drop(
+        phase_6_candidates, marshal_phase_6_map, ci_provider, sonar_provider
     )
 
     body, rule = _decide(
@@ -1379,7 +1316,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     body['phase_5']['envelope_count'] = envelope_count
 
     # execution_tier routing runs AFTER the seven-row matrix and BEFORE
-    # the bot-enforcement guard. It walks plan tasks, classifies each
+    # lane resolution. It walks plan tasks, classifies each
     # ``verification.commands`` entry via ``architecture resolve``, and
     # branches on ``execution_tier``:
     #
@@ -1467,17 +1404,17 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     body['phase_5']['step_execution_tier'] = step_execution_tier
     _log_step_execution_tier_stamping(plan_id, step_execution_tier)
 
-    # plan.phase-6-finalize run-at-all selection runs AFTER the seven-row
-    # matrix (and execution_tier routing) and BEFORE the bot-enforcement guard.
-    # It forces each of the three finalize gates' steps in (`always`) or out
-    # (`never`) on the matrix-produced `phase_6.steps`, deferring to the existing
-    # machinery on `auto` (the default). `always` is the only path that can
-    # re-add a step the scope_gated_finalize pre-filter dropped — which is the
-    # point: the operator-set `always` overrides the implicit scope gate. The
-    # transform never touches `automatic-review`, so running it before the
-    # bot-enforcement guard leaves the bot-review invariant intact. The gate
-    # values are flat phase-local knobs read directly from
-    # `plan.phase-6-finalize.<gate>`. See
+    # plan.phase-6-finalize ceremony-gate selection runs AFTER the seven-row
+    # matrix (and execution_tier routing). It forces each of the four finalize
+    # ceremony gates' steps in (`always`) or out (`never`) on the matrix-produced
+    # `phase_6.steps`, deferring to the existing machinery on `auto` (the
+    # default). `always` is the only path that can re-add a step the
+    # scope_gated_finalize pre-filter dropped — which is the point: the
+    # operator-set `always` overrides the implicit scope gate. The transform never
+    # touches `automatic-review`, leaving the bot-review invariant intact. Each
+    # gate's decision is derived from its owning step's per-element `lane` override
+    # (`steps[<owner>].lane` — `off`→`never`, `minimal`→`always`, `auto`/absent→
+    # `auto`), not a flat phase-level sibling. See
     # standards/decision-rules.md § plan.phase-6-finalize Selection.
     ceremony_finalize_gates = _read_finalize_gates()
     ceremony_forced_in, ceremony_forced_out = _apply_ceremony_finalize_selection(
@@ -1485,46 +1422,24 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     )
 
     # Execution-profile lane resolution runs AFTER the change-type / scope
-    # pre-filters and ceremony selection, and BEFORE the bot-enforcement guard.
-    # The posture is read from status.metadata.execution_profile (absent → full →
-    # no pruning, preserving the pre-lane composition path). Each element's
-    # ``lane:`` block (class / tier / cost_size — owned by
-    # extension-api/standards/ext-point-lane-element.md) plus its per-element
-    # marshal.json ``lane`` override resolves keep/drop under the posture cutoff:
-    # ``minimal`` keeps only the tier-minimal floor, ``auto`` additionally keeps
-    # tier-auto elements and drops tier-full ones, ``full`` keeps everything. A
-    # weakening ``off`` override of a derived-state / core floor element is
-    # honored but emits a correctness warning (§5 — minimal must NOT SILENTLY drop
-    # required derived state). Running before the bot-enforcement guard means a
-    # ``minimal`` posture that drops ``automatic-review`` is still re-added for
-    # GitHub/GitLab plans (the §4.9 adversarial-floor / bot-review invariant). The
-    # q-gate is never a phase-6 finalize step, so it is never lane-pruned here.
+    # pre-filters and ceremony selection. The posture is read from
+    # status.metadata.execution_profile (absent → full → no pruning, preserving
+    # the pre-lane composition path). Each element's ``lane:`` block (class / tier
+    # / cost_size — owned by extension-api/standards/ext-point-lane-element.md)
+    # plus its per-element marshal.json ``lane`` override resolves keep/drop under
+    # the posture cutoff: ``minimal`` keeps only the tier-minimal floor, ``auto``
+    # additionally keeps tier-auto elements and drops tier-full ones, ``full``
+    # keeps everything. A weakening ``off`` override of a derived-state / core
+    # floor element is honored but emits a correctness warning (§5 — minimal must
+    # NOT SILENTLY drop required derived state). ``automatic-review`` is governed
+    # purely by its configured ``lane`` (seeded ``ask`` → resolved by
+    # marshall-steward) and its lane tier — there is no separate force-add guard.
+    # The q-gate is never a phase-6 finalize step, so it is never lane-pruned here.
     execution_profile = _read_execution_profile(plan_id)
     lane_kept, lane_dropped, lane_warnings = _apply_lane_resolution(
         body['phase_6']['steps'], execution_profile, marshal_phase_6_map, plan_id
     )
     body['phase_6']['steps'] = lane_kept
-
-    # Bot-enforcement guard runs AFTER the seven-row matrix and BEFORE manifest
-    # persistence. On GitHub/GitLab plans where `automatic-review` is missing
-    # from `phase_6.steps`, the guard remediates in-place (appends the step and
-    # emits a decision-log line) and returns None. The error branch below is
-    # retained as a safety net for any future logic that detects a non-
-    # remediable violation; in current code it is unreachable.
-    final_phase_6_steps = body['phase_6']['steps']
-    bot_guard_fired_provider = _apply_bot_enforcement_guard(final_phase_6_steps, plan_id)
-    if bot_guard_fired_provider is not None:
-        _log_bot_enforcement_guard_fired(plan_id, bot_guard_fired_provider)
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'bot_enforcement_violation',
-            'message': (
-                'automatic-review must remain in the manifest for GitHub/GitLab plans — '
-                'guard could not auto-remediate; investigate manifest composition'
-            ),
-            'ci_provider': bot_guard_fired_provider,
-        }
 
     # Enforce ascending frontmatter-order emission on the FINAL phase_6.steps.
     # cmd_compose never re-sorted the marshal.json ``phase_6.steps`` map by
@@ -1536,29 +1451,13 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # every finalize step's order is below 1000 (nearest tail: record-metrics
     # 998, finalize-step-print-phase-breakdown 999). Steps whose order resolves
     # to ``None`` (external ``bundle:skill`` steps) keep their original index.
-    # Runs AFTER the bot-enforcement guard (so a re-added ``automatic-review`` is
-    # included in the sort) and BEFORE the placement validator (which then
-    # validates the final, sorted layout). Rebind ``final_phase_6_steps``.
+    # This sort is the sole ordering authority — ``automatic-review`` (order 30)
+    # is placed deterministically before the plan-mutating tail by its
+    # frontmatter order, so no separate placement validator is needed. Rebind
+    # ``final_phase_6_steps``.
+    final_phase_6_steps = body['phase_6']['steps']
     body['phase_6']['steps'] = _sort_steps_by_frontmatter_order(final_phase_6_steps)
     final_phase_6_steps = body['phase_6']['steps']
-
-    # Compose-time placement validator (defense-in-depth): even when
-    # ``automatic-review`` is present, reject the manifest if it sits at an
-    # index later than any plan-mutating
-    # step (``archive-plan``, ``record-metrics``, ``branch-cleanup``,
-    # ``plan-marshall:plan-retrospective``). Such a layout would dispatch the
-    # PR-review bot only after the plan directory has been moved or the
-    # branch cleaned up, defeating the bot-enforcement guard's intent. The
-    # check runs after the remediation guard so it sees the final ordering.
-    placement_diagnostic = _validate_automatic_review_placement(final_phase_6_steps)
-    if placement_diagnostic is not None:
-        _log_bot_enforcement_placement_violation(plan_id, placement_diagnostic)
-        return {
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'bot_enforcement_violation',
-            'message': placement_diagnostic,
-        }
 
     # Compose-time step-resolution gate (fail-loud): every FINAL emitted phase-5/6
     # step id MUST resolve to a real built-in doc, project-local skill, or bundle
@@ -1626,6 +1525,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_prefilter_omitted(plan_id, 'finalize-step-security-audit', args.change_type, affected_files_count)
     for dropped_step in scope_gated_dropped:
         _log_scope_gated_finalize_subtraction(plan_id, args.scope_estimate, dropped_step)
+    for dropped_step in unresolved_ask_dropped:
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) unresolved_ask_provider_drop — '
+            f'dropped {dropped_step} from phase_6.steps (unresolved lane:ask, provider absent)',
+        )
     for change in ceremony_forced_in:
         _log_ceremony_finalize_selection(plan_id, change['gate'], 'always', change['step'])
     for change in ceremony_forced_out:
@@ -1668,6 +1573,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'simplify_omitted': simplify_omitted,
         'security_audit_omitted': security_audit_omitted,
         'scope_gated_finalize_dropped': scope_gated_dropped,
+        'unresolved_ask_provider_dropped': unresolved_ask_dropped,
         'drop_review_on_scope_gate': drop_review_on_scope_gate,
         'ceremony_finalize_gates': ceremony_finalize_gates,
         'ceremony_finalize_forced_in': [c['step'] for c in ceremony_forced_in],

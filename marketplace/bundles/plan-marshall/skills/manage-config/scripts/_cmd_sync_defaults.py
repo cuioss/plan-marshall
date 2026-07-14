@@ -93,6 +93,129 @@ def _migrate_retired_step_keys(live: dict, renamed: list[str]) -> dict:
     return live
 
 
+# Legacy run_at_all → lane migration (D7). Maps each of the four finalize
+# ceremony gates' retired run_at_all values onto the per-element ``lane`` override
+# channel: ``never→off``, ``always→minimal``, and ``auto→`` omit (``auto`` is the
+# lane default — an absent override resolves to ``auto``, so no key is written).
+# The mapping table below covers only the two force values; ``auto`` (and any
+# malformed value) falls through to "omit" while STILL removing the retired key so
+# a re-run is a no-op.
+_RUN_AT_ALL_TO_LANE: dict[str, str] = {'never': 'off', 'always': 'minimal'}
+
+# Owning finalize step id (marshal.json keyed form, ``default:``-prefixed) for
+# each ceremony gate's ``lane`` override. Mirrors
+# ``_manifest_rules._CEREMONY_GATE_OWNER_STEP`` — the manifest ceremony transform
+# reads the same owning-step lane overrides this migration writes.
+_CEREMONY_GATE_OWNER_STEP: dict[str, str] = {
+    'qgate': 'default:pre-push-quality-gate',
+    'self_review': 'default:pre-submission-self-review',
+    'simplify': 'default:finalize-step-simplify',
+    'security_audit': 'default:finalize-step-security-audit',
+}
+
+# The three ceremony gates whose legacy run_at_all value lived as a step-owned
+# param (keyed by the gate name) under the owning step's nested param object in
+# ``plan.phase-6-finalize.steps[<owner>]``. ``qgate`` is the flat phase-level
+# sibling handled separately.
+_STEP_OWNED_CEREMONY_GATES: tuple[str, ...] = ('self_review', 'simplify', 'security_audit')
+
+
+def _find_step_key(steps_map: dict, owner: str) -> str | None:
+    """Return the actual key in ``steps_map`` matching ``owner``.
+
+    Matches the ``default:``-prefixed owner id first, then the prefix-stripped
+    bare form, so a legacy config that stored the owning step under either form is
+    handled. Returns ``None`` when neither form is present.
+    """
+    if owner in steps_map:
+        return owner
+    bare = owner[len('default:') :] if owner.startswith('default:') else owner
+    if bare in steps_map:
+        return bare
+    return None
+
+
+def _set_step_lane(phase6: dict, owner: str, lane_value: str) -> None:
+    """Write ``lane_value`` into the owning step's param object under ``steps``.
+
+    Materializes the ``steps`` map and the owning step entry when absent (the
+    ``qgate`` case — ``default:pre-push-quality-gate`` may not yet be present in a
+    legacy config). Preserves any existing sibling params on the step.
+    """
+    steps_map = phase6.get('steps')
+    if not isinstance(steps_map, dict):
+        steps_map = {}
+        phase6['steps'] = steps_map
+    key = _find_step_key(steps_map, owner) or owner
+    params = steps_map.get(key)
+    if not isinstance(params, dict):
+        params = {}
+    params['lane'] = lane_value
+    steps_map[key] = params
+
+
+def _migrate_run_at_all_to_lane(live: dict, migrated: list[str]) -> dict:
+    """Migrate the four finalize ceremony gates off run_at_all onto the lane channel.
+
+    Reads each gate's retired run_at_all value from its legacy location, maps it
+    (:data:`_RUN_AT_ALL_TO_LANE`), writes the owning step's ``lane`` override
+    (materializing ``default:pre-push-quality-gate`` for ``qgate``), and removes
+    the legacy run_at_all key so the subsequent deep-merge back-fills the
+    newly-materialized ``lane:off`` / ``lane:ask`` steps cleanly.
+
+    Legacy locations:
+
+    - ``qgate`` — flat ``plan.phase-6-finalize.qgate``.
+    - ``self_review`` / ``simplify`` / ``security_audit`` — a step-owned param
+      (keyed by the gate name) under the owning step's nested param object in
+      ``plan.phase-6-finalize.steps[<owner>]``.
+
+    The three planning gates (``deep_lane`` / ``escalation`` / ``revalidation``)
+    need NO migration — only the enum they validate against was renamed (D2), so
+    their field names and values are unchanged. Runs BEFORE the deep-merge and is
+    idempotent: once the legacy keys are gone, a re-run reports no migration.
+    Mutates ``live`` in place and returns it; each migration is recorded as a
+    human-readable dotted-path string in ``migrated``.
+    """
+    plan = live.get('plan')
+    if not isinstance(plan, dict):
+        return live
+    phase6 = plan.get('phase-6-finalize')
+    if not isinstance(phase6, dict):
+        return live
+
+    # qgate — flat phase-level sibling.
+    if 'qgate' in phase6:
+        legacy = phase6.pop('qgate')
+        mapped = _RUN_AT_ALL_TO_LANE.get(legacy) if isinstance(legacy, str) else None
+        owner = _CEREMONY_GATE_OWNER_STEP['qgate']
+        if mapped is not None:
+            _set_step_lane(phase6, owner, mapped)
+            migrated.append(f'plan.phase-6-finalize.qgate={legacy} -> steps[{owner}].lane={mapped}')
+        else:
+            migrated.append(f'plan.phase-6-finalize.qgate={legacy} -> (auto: omitted)')
+
+    # self_review / simplify / security_audit — step-owned params.
+    steps_map = phase6.get('steps')
+    if isinstance(steps_map, dict):
+        for gate in _STEP_OWNED_CEREMONY_GATES:
+            owner = _CEREMONY_GATE_OWNER_STEP[gate]
+            key = _find_step_key(steps_map, owner)
+            if key is None:
+                continue
+            params = steps_map.get(key)
+            if not isinstance(params, dict) or gate not in params:
+                continue
+            legacy = params.pop(gate)
+            mapped = _RUN_AT_ALL_TO_LANE.get(legacy) if isinstance(legacy, str) else None
+            if mapped is not None:
+                params['lane'] = mapped
+                migrated.append(f'plan.phase-6-finalize.steps[{key}].{gate}={legacy} -> .lane={mapped}')
+            else:
+                migrated.append(f'plan.phase-6-finalize.steps[{key}].{gate}={legacy} -> (auto: omitted)')
+    return live
+
+
 def _deep_merge_missing(live: dict, defaults: dict, prefix: str, added: list[str]) -> dict:
     """Recursively add keys present in ``defaults`` but absent from ``live``.
 
@@ -149,6 +272,17 @@ def cmd_sync_defaults(args) -> dict:
     migration preserves each step's nested knob block byte-identically and its
     insertion order, and is idempotent (a re-run reports no renames).
 
+    A second migration pass (:func:`_migrate_run_at_all_to_lane`) runs alongside
+    the retired-key migration (also BEFORE the deep-merge): it moves the four
+    finalize ceremony gates (``qgate`` / ``self_review`` / ``simplify`` /
+    ``security_audit``) off their retired run_at_all locations onto the owning
+    step's per-element ``lane`` override (``never→off`` / ``always→minimal`` /
+    ``auto→`` omit) and removes the legacy key, so the deep-merge back-fills the
+    newly-materialized ``lane:off`` / ``lane:ask`` finalize steps automatically.
+    The three planning gates (``deep_lane`` / ``escalation`` / ``revalidation``)
+    need no migration. This pass is idempotent too (a re-run reports no
+    migration).
+
     ``get_default_config()`` does NOT seed ``build.map`` — the
     build_map is materialized only by the wizard's explicit build-map seed
     step (Step 8b), never at init or by sync-defaults. The deep-merge therefore
@@ -163,6 +297,9 @@ def cmd_sync_defaults(args) -> dict:
 
     renamed: list[str] = []
     _migrate_retired_step_keys(live, renamed)
+
+    migrated: list[str] = []
+    _migrate_run_at_all_to_lane(live, migrated)
 
     added: list[str] = []
     merged = _deep_merge_missing(live, defaults, '', added)
@@ -185,7 +322,7 @@ def cmd_sync_defaults(args) -> dict:
         after_system['config_seed_fingerprint'],
     )
 
-    if added or stamps_changed or renamed:
+    if added or stamps_changed or renamed or migrated:
         save_config(merged)
 
     return success_exit(
@@ -194,5 +331,7 @@ def cmd_sync_defaults(args) -> dict:
             'added_count': len(added),
             'renamed': sorted(renamed),
             'renamed_count': len(renamed),
+            'migrated': sorted(migrated),
+            'migrated_count': len(migrated),
         }
     )

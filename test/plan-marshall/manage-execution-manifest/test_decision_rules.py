@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the manage-execution-manifest pre-filters and bot-enforcement guard.
+"""Tests for the manage-execution-manifest pre-filters and finalize selection.
 
 Covers:
 
@@ -11,7 +11,9 @@ Covers:
   exhaustively covered in ``manage-config/test_build_decision.py``; here we
   assert the consumer-site wiring (verdict → keep/drop).
 - ``pre_submission_self_review_inactive`` — footprint-gated.
-- The bot-enforcement remediation guard.
+- The absence of any bot-enforcement guard: ``automatic-review`` is governed
+  purely by its configured candidacy / ``lane`` — compose never force-adds nor
+  re-orders it.
 - The task-queue-aware ``early_terminate`` predicate.
 """
 
@@ -59,8 +61,6 @@ _mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_commit_push_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_pre_push_quality_gate_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_pre_submission_self_review_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
-_mem._log_bot_enforcement_guard_fired = lambda *a, **kw: None  # type: ignore[attr-defined]
-_mem._log_bot_enforcement_guard_remediated = lambda *a, **kw: None  # type: ignore[attr-defined]
 
 
 # =============================================================================
@@ -307,39 +307,46 @@ class TestPrePushQualityGateInactive:
 
 
 # =============================================================================
-# Test: Bot-enforcement guard
+# Test: no bot-enforcement guard — automatic-review governed by candidacy/lane
 # =============================================================================
 
 
-class TestBotEnforcementGuard:
-    """Composition-time guard remediates `automatic-review` for GitHub/GitLab when missing.
+class TestNoBotEnforcementGuard:
+    """The bot-enforcement guard (and its placement-validator twin) are removed.
 
-    Lesson 2026-04-28-10-001 converted the guard from assertion to remediation.
-    On GitHub/GitLab plans where `automatic-review` is dropped (e.g., by a
-    pre-filter or future row), the guard appends `plan-marshall:automatic-review`
-    back into `phase_6.steps` and emits a `bot-enforcement guard remediated`
-    decision-log line; composition continues normally — no error TOON. The
-    `bot_enforcement_violation` error branch is retained as a safety net for
-    non-remediable violations (currently unreachable).
+    ``automatic-review`` is governed purely by its configured candidacy / ``lane``
+    — compose never force-adds it back on GitHub/GitLab plans and never emits a
+    ``bot_enforcement_violation`` error. Its presence tracks the candidate list and
+    the lane resolution exactly.
     """
 
-    def test_remediates_for_github_when_automated_review_missing(self, plan_context):
+    def test_no_bot_enforcement_symbols_survive(self):
+        """No bot-enforcement guard / placement-validator symbol remains on the module."""
+        for symbol in (
+            '_apply_bot_enforcement_guard',
+            '_bot_enforcement_insert_index',
+            '_validate_automatic_review_placement',
+            '_log_bot_enforcement_guard_fired',
+            '_log_bot_enforcement_guard_remediated',
+            '_log_bot_enforcement_placement_violation',
+        ):
+            assert not hasattr(_mem, symbol), f'{symbol} must be deleted with the bot-enforcement guard'
+
+    def test_github_plan_does_not_force_add_dropped_automatic_review(self, plan_context):
         _seed_marshal(ci_provider='github')
         _stub_footprint(['some/file.py'])
 
-        # Compose a candidate set that EXCLUDES automatic-review.
+        # Candidate set EXCLUDES automatic-review; with no guard it stays absent.
         phase_6 = ','.join(s for s in DEFAULT_PHASE_6_STEPS if s != 'automatic-review')
         ns = _compose_ns(plan_id='qg-bot-github', phase_6_steps=phase_6)
         result = cmd_compose(ns)
 
         assert result is not None
         assert result['status'] == 'success'
-        steps = result_phase_6_steps(result)
-        # Guard appends `plan-marshall:automatic-review` (canonical prefixed form).
-        bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
-        assert 'automatic-review' in bare_step_names
+        assert result.get('error') != 'bot_enforcement_violation'
+        assert 'automatic-review' not in result_phase_6_steps(result)
 
-    def test_remediates_for_gitlab_when_automated_review_missing(self, plan_context):
+    def test_gitlab_plan_does_not_force_add_dropped_automatic_review(self, plan_context):
         _seed_marshal(ci_provider='gitlab')
         _stub_footprint(['some/file.py'])
 
@@ -349,14 +356,14 @@ class TestBotEnforcementGuard:
 
         assert result is not None
         assert result['status'] == 'success'
-        steps = result_phase_6_steps(result)
-        bare_step_names = {s[len('default:') :] if s.startswith('default:') else s for s in steps}
-        assert 'automatic-review' in bare_step_names
+        assert result.get('error') != 'bot_enforcement_violation'
+        assert 'automatic-review' not in result_phase_6_steps(result)
 
-    def test_no_op_when_automated_review_present(self, plan_context):
+    def test_present_when_in_candidates(self, plan_context):
         _seed_marshal(ci_provider='github')
         _stub_footprint(['some/file.py'])
 
+        # multi_module feature keeps automatic-review (present in default candidates).
         ns = _compose_ns(plan_id='qg-bot-present')
         result = cmd_compose(ns)
 
@@ -364,7 +371,7 @@ class TestBotEnforcementGuard:
         assert result['status'] == 'success'
         assert 'automatic-review' in result_phase_6_steps(result)
 
-    def test_no_op_for_non_github_non_gitlab(self, plan_context):
+    def test_absent_for_non_ci_plan_stays_absent(self, plan_context):
         _seed_marshal(ci_provider=None)
         _stub_footprint(['some/file.py'])
 
@@ -374,8 +381,6 @@ class TestBotEnforcementGuard:
 
         assert result is not None
         assert result['status'] == 'success'
-        # No CI provider configured → guard is a no-op; automatic-review
-        # stays dropped and no error is raised.
         assert 'automatic-review' not in result_phase_6_steps(result)
 
 
@@ -570,3 +575,166 @@ class TestSecurityAuditInactivePreFilter:
         assert 'finalize-step-security-audit' not in filtered
         # Input list is untouched.
         assert candidates == ['finalize-step-security-audit', 'push']
+
+
+# =============================================================================
+# Test: unresolved_ask_provider_drop pre-filter (D6, direct helper coverage)
+#
+# ``_apply_unresolved_ask_provider_drop`` drops an UNRESOLVED ``lane:ask`` infra
+# element (automatic-review / sonar-roundtrip) from the phase-6 candidate list
+# when its provider is absent. The seed lane for both elements is ``ask``; a
+# steward answer overwrites the override to off/auto/full, so an effective tier
+# still equal to ``ask`` at compose is the unresolved case. These tests exercise
+# the pure helper directly (no compose round-trip) so the full truth table and
+# the no-op contracts are pinned at the unit boundary. See
+# standards/decision-rules.md § Pre-Filter: unresolved_ask_provider_drop.
+# =============================================================================
+
+
+_apply_unresolved_ask_provider_drop = _mem._apply_unresolved_ask_provider_drop
+_read_sonar_provider = _mem._read_sonar_provider
+
+
+def _override_map(ar_lane: str | None = None, sr_lane: str | None = None) -> dict[str, dict]:
+    """Build a marshal-style phase-6 step map with per-element lane overrides.
+
+    Keys mirror the seeded marshal shape: ``plan-marshall:automatic-review`` and
+    ``default:sonar-roundtrip`` (the D1 seed keys). Only elements with a non-None
+    lane are included.
+    """
+    m: dict[str, dict] = {}
+    if ar_lane is not None:
+        m['plan-marshall:automatic-review'] = {'lane': ar_lane}
+    if sr_lane is not None:
+        m['default:sonar-roundtrip'] = {'lane': sr_lane}
+    return m
+
+
+class TestUnresolvedAskProviderDropPreFilter:
+    """Direct unit coverage of the D6 unresolved-ask provider-drop pre-filter."""
+
+    @pytest.mark.parametrize(
+        'ar_lane,ci_provider,expect_present',
+        [
+            ('ask', None, False),      # unresolved ask + no CI provider → DROP
+            ('ask', 'github', True),   # unresolved ask + CI provider → keep
+            ('ask', 'gitlab', True),   # provider identity is irrelevant — any non-None keeps
+            ('auto', None, True),      # resolved auto (steward answered) → keep even w/o provider
+            ('full', None, True),      # resolved full → keep even w/o provider
+            ('off', None, True),       # off is resolved; the later lane pass drops it, not this one
+        ],
+    )
+    def test_automatic_review_truth_table(self, ar_lane, ci_provider, expect_present):
+        candidates = ['plan-marshall:automatic-review', 'push', 'archive-plan']
+        kept, dropped = _apply_unresolved_ask_provider_drop(
+            candidates, _override_map(ar_lane=ar_lane), ci_provider, None
+        )
+        assert ('plan-marshall:automatic-review' in kept) is expect_present
+        assert ('plan-marshall:automatic-review' in dropped) is (not expect_present)
+        # Non-infra candidates are never disturbed.
+        assert 'push' in kept and 'archive-plan' in kept
+
+    @pytest.mark.parametrize(
+        'sr_lane,sonar_provider,expect_present',
+        [
+            ('ask', None, False),      # unresolved ask + no Sonar provider → DROP
+            ('ask', 'sonar', True),    # unresolved ask + Sonar provider → keep
+            ('auto', None, True),      # resolved auto → keep even w/o provider
+            ('full', None, True),      # resolved full → keep even w/o provider
+            ('off', None, True),       # off is resolved; dropped later by the lane pass, not here
+        ],
+    )
+    def test_sonar_roundtrip_truth_table(self, sr_lane, sonar_provider, expect_present):
+        # The candidate list is boundary-normalized in compose (``default:`` is
+        # stripped), so the helper is given the bare ``sonar-roundtrip`` form.
+        candidates = ['sonar-roundtrip', 'push']
+        kept, dropped = _apply_unresolved_ask_provider_drop(
+            candidates, _override_map(sr_lane=sr_lane), None, sonar_provider
+        )
+        assert ('sonar-roundtrip' in kept) is expect_present
+        assert ('sonar-roundtrip' in dropped) is (not expect_present)
+        assert 'push' in kept
+
+    def test_both_unresolved_no_providers_drop_both(self):
+        candidates = ['plan-marshall:automatic-review', 'sonar-roundtrip', 'push']
+        kept, dropped = _apply_unresolved_ask_provider_drop(
+            candidates, _override_map(ar_lane='ask', sr_lane='ask'), None, None
+        )
+        assert kept == ['push']
+        assert set(dropped) == {'plan-marshall:automatic-review', 'sonar-roundtrip'}
+
+    def test_provider_isolation_ci_present_sonar_absent(self):
+        # A configured CI provider keeps automatic-review; an absent Sonar
+        # provider still drops an unresolved sonar-roundtrip. The two elements
+        # are keyed to distinct providers.
+        candidates = ['plan-marshall:automatic-review', 'sonar-roundtrip']
+        kept, dropped = _apply_unresolved_ask_provider_drop(
+            candidates, _override_map(ar_lane='ask', sr_lane='ask'), 'github', None
+        )
+        assert kept == ['plan-marshall:automatic-review']
+        assert dropped == ['sonar-roundtrip']
+
+    def test_no_override_keeps_infra_elements(self):
+        # No marshal override at all (e.g. CSV-fallback, marshal_map None/empty):
+        # the effective tier is undeterminable, not ``ask``, so nothing is dropped
+        # (conservative keep).
+        candidates = ['plan-marshall:automatic-review', 'sonar-roundtrip']
+        for override_map in ({}, None):
+            kept, dropped = _apply_unresolved_ask_provider_drop(candidates, override_map, None, None)
+            assert dropped == []
+            assert kept == candidates
+
+    def test_non_infra_elements_pass_through_untouched(self):
+        candidates = ['push', 'archive-plan', 'finalize-step-simplify']
+        kept, dropped = _apply_unresolved_ask_provider_drop(
+            candidates, _override_map(ar_lane='ask'), None, None
+        )
+        assert kept == candidates
+        assert dropped == []
+
+    def test_does_not_mutate_input_list(self):
+        candidates = ['plan-marshall:automatic-review', 'push']
+        _apply_unresolved_ask_provider_drop(
+            candidates, _override_map(ar_lane='ask'), None, None
+        )
+        assert candidates == ['plan-marshall:automatic-review', 'push']
+
+
+class TestReadSonarProvider:
+    """``_read_sonar_provider`` resolves the Sonar provider from marshal.json."""
+
+    def _seed_providers(self, providers: list[dict]) -> None:
+        from file_ops import get_marshal_path
+
+        marshal = {'plan': {'phase-6-finalize': {}}, 'providers': providers}
+        marshal_path = get_marshal_path()
+        marshal_path.parent.mkdir(parents=True, exist_ok=True)
+        marshal_path.write_text(json.dumps(marshal, indent=2))
+
+    def test_returns_sonar_when_declared(self, plan_context):
+        self._seed_providers(
+            [{'skill_name': 'plan-marshall:workflow-integration-sonar', 'category': 'sonar'}]
+        )
+        assert _read_sonar_provider() == 'sonar'
+
+    def test_returns_sonar_regardless_of_category(self, plan_context):
+        # The reader keys on skill_name, not category, so a differently-categorized
+        # Sonar entry still resolves.
+        self._seed_providers(
+            [{'skill_name': 'plan-marshall:workflow-integration-sonar', 'category': 'quality'}]
+        )
+        assert _read_sonar_provider() == 'sonar'
+
+    def test_none_when_no_sonar_provider(self, plan_context):
+        self._seed_providers(
+            [{'skill_name': 'plan-marshall:workflow-integration-github', 'category': 'ci'}]
+        )
+        assert _read_sonar_provider() is None
+
+    def test_none_when_providers_absent(self, plan_context):
+        from file_ops import get_marshal_path
+
+        marshal_path = get_marshal_path()
+        marshal_path.parent.mkdir(parents=True, exist_ok=True)
+        marshal_path.write_text(json.dumps({'plan': {'phase-6-finalize': {}}}, indent=2))
+        assert _read_sonar_provider() is None

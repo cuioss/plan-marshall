@@ -11,10 +11,6 @@ mutates_source: true
 default_on: true
 presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
-configurable:
-  - key: security_audit
-    default: auto
-    description: Run-at-all gate (auto|always|never) for the proactive security-audit sweep — auto defers to the security_audit_inactive pre-filter; always forces the step in; never forces it out.
 ---
 
 # Finalize Step: security-audit
@@ -37,7 +33,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 Two independent composition-time surfaces decide whether `finalize-step-security-audit` lands in `manifest.phase_6.steps` (both owned by `manage-execution-manifest` — see [`../../manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md)):
 
 1. **The `security_audit_inactive` pre-filter** — drops the step when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`. This is the change-shape gate: a pure-analysis / verification plan, or a plan that touched zero files, has no change surface worth a proactive security sweep.
-2. **The `plan.phase-6-finalize.security_audit` run-at-all gate** (`auto` default | `always` | `never`, read via `manage-config plan phase-6-finalize step get --step-id default:finalize-step-security-audit`, reading `params.security_audit`) — the operator override applied by the finalize-selection post-matrix transform. `auto` defers to the `security_audit_inactive` pre-filter; `always` forces the step in even when the pre-filter would have dropped it; `never` removes it unconditionally.
+2. **The `steps.default:finalize-step-security-audit.lane` override** (`off` | `minimal` | `auto`/absent, read from the step's `lane` override under `plan.phase-6-finalize.steps` via `manage-config plan phase-6-finalize step get --step-id default:finalize-step-security-audit`, reading `params.lane`) — the operator override applied by the finalize-selection ceremony transform, which maps the per-element lane override onto the force-in / force-out decision (`off→never`, `minimal→always`, `auto`/absent→auto). `auto`/absent defers to the `security_audit_inactive` pre-filter; `minimal` forces the step in even when the pre-filter would have dropped it; `off` removes it unconditionally. The per-element `lane` override contract (values, resolution) is owned by [`../../manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) § phase-6-finalize and [`../../extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md); this step is the consumer.
 
 **Visible skip-reason**: whenever the step is skipped, the composer emits a decision-log line to the plan's `logs/decision.log` naming which surface fired, so the omission is observable rather than silent. A `record-step` row with `outcome: skipped` is additionally appended to the manifest's `execution_log[]` when the dispatcher resolves the step as absent.
 

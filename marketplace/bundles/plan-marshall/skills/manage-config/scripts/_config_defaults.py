@@ -220,20 +220,22 @@ DEFAULT_PLAN_COVERAGE = {'thoroughness': 'inherit', 'scope': 'inherit'}
 # `manage-findings ... --raw-input-max-bytes`).
 DEFAULT_FINDING_RAW_INPUT_MAX_BYTES = 65536
 
-# Run-at-all gate enum. Each distributed gate knob (deep_lane, escalation,
-# revalidation, self_review, simplify) takes one of these values. `auto` (the
+# Gate-mode enum. Governs ONLY the three planning gates `deep_lane` /
+# `escalation` (phase-1-init) and `revalidation` (phase-2-refine): `auto` (the
 # default) defers to the owning phase's decision machinery; `always` forces the
-# gate's step/lane in; `never` forces it out. Note: `qgate` governs ONLY the
-# phase-6-finalize pre-push-quality-gate run-at-all gate; the retired
-# planning-time outline `qgate` gate has been replaced by the distinct
-# `q_gate_validation` knob (see :data:`VALID_Q_GATE_VALIDATION` below), which
-# now governs planning-time q-gate validation on phase-3-outline and
-# phase-4-plan.
-VALID_RUN_AT_ALL = ('auto', 'always', 'never')
+# gate's decision in; `never` forces it out. The four finalize ceremony gates
+# (`qgate`, `self_review`, `simplify`, `security_audit`) do NOT ride this enum —
+# each is governed by its owning step's `steps.<step>.lane` override
+# (`off`/`minimal`/`auto`). Planning-time q-gate validation is governed by the
+# distinct `q_gate_validation` knob (see :data:`VALID_Q_GATE_VALIDATION` below).
+VALID_GATE_MODE = ('auto', 'always', 'never')
 
 
-def validate_run_at_all(value: str, field_name: str) -> None:
-    """Validate a run-at-all gate value (``auto|always|never``).
+def validate_gate_mode(value: str, field_name: str) -> None:
+    """Validate a gate_mode value (``auto|always|never``).
+
+    Scoped to the three planning gates `deep_lane` / `escalation` /
+    `revalidation`.
 
     Args:
         value: The candidate gate value.
@@ -241,11 +243,11 @@ def validate_run_at_all(value: str, field_name: str) -> None:
             message so a rejected value names the offending knob.
 
     Raises:
-        ValueError: If ``value`` is not in :data:`VALID_RUN_AT_ALL`.
+        ValueError: If ``value`` is not in :data:`VALID_GATE_MODE`.
     """
-    if value not in VALID_RUN_AT_ALL:
+    if value not in VALID_GATE_MODE:
         raise ValueError(
-            f"Invalid {field_name} '{value}'. Allowed: {list(VALID_RUN_AT_ALL)}"
+            f"Invalid {field_name} '{value}'. Allowed: {list(VALID_GATE_MODE)}"
         )
 
 
@@ -257,8 +259,8 @@ def validate_run_at_all(value: str, field_name: str) -> None:
 #                    (default).
 #   - 'until_clean': re-run validation until it reports no blocking findings.
 # This replaces the retired planning-time `qgate` run-at-all gate on the outline
-# step; the finalize-time `qgate` gate is unaffected (it stays a VALID_RUN_AT_ALL
-# gate — see :data:`VALID_RUN_AT_ALL`).
+# step; the finalize-time `qgate` gate now rides its owning step's
+# `steps['pre-push-quality-gate'].lane` override, not this knob.
 VALID_Q_GATE_VALIDATION = ('off', 'once', 'until_clean')
 
 
@@ -434,15 +436,16 @@ DEFAULT_PLAN_INIT = {
     # false = stop after init and wait for the user. Mirrors the sibling
     # plan_without_asking / execute_without_asking review-gate pattern.
     'init_without_asking': True,
-    # Deep-lane run-at-all gate (auto|always|never). Consumed by the
+    # Deep-lane gate_mode gate (auto|always|never). Consumed by the
     # phase-1-init planning-lane router (_cmd_planning_lane.py): `always` forces
     # the deep lane, `never` forces light, `auto` (default) defers to the S1-S6
-    # signal set. Read via
+    # signal set. Validated by validate_gate_mode at set-time. Read via
     # `manage-config plan phase-1-init get --field deep_lane`.
     'deep_lane': 'auto',
-    # Hard-escalation safety-ratchet gate (auto|always|never). `auto` keeps the
-    # DQ3 explosion / build-break / premise escalation ratchet live; `never` is
-    # the explicit full-speed-full-risk opt-in. Read via
+    # Hard-escalation safety-ratchet gate_mode gate (auto|always|never). `auto`
+    # keeps the DQ3 explosion / build-break / premise escalation ratchet live;
+    # `never` is the explicit full-speed-full-risk opt-in. Validated by
+    # validate_gate_mode at set-time. Read via
     # `manage-config plan phase-1-init get --field escalation`.
     'escalation': 'auto',
     # Tier 1 recipe-match auto-route gate. true (the default) ⇒ a high-confidence
@@ -498,9 +501,9 @@ DEFAULT_PLAN_REFINE = {
     'simplicity': 'lean',
     # Per-phase effort default (seeded at init; balanced-preset baseline).
     'effort': 'level-3',
-    # Premise / narrative-vs-code safety-check run-at-all gate
+    # Premise / narrative-vs-code safety-check gate_mode gate
     # (auto|always|never). Consumed by the light lane + deep refine
-    # revalidation pass. Read via
+    # revalidation pass. Validated by validate_gate_mode at set-time. Read via
     # `manage-config plan phase-2-refine get --field revalidation`.
     'revalidation': 'auto',
 }
@@ -777,6 +780,16 @@ DEFAULT_PLAN_EXECUTE = {
 # This constant is the discovery key only.
 FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
 
+# The two adversarial infra-dependent finalize elements that seed with a
+# `lane: ask` override. Their on/off/tier is answered by the operator at
+# marshall-steward setup / update-config (which persists a resolved
+# `off`/`auto`/`full`), and an UNRESOLVED `ask` (operator never answered) whose
+# provider is absent is dropped at compose time by the drop-when-no-provider
+# safety net. `ask` is seeded here rather than in each step's `configurable:`
+# frontmatter because it is a project-provisioning posture, not a step param the
+# step body reads.
+_LANE_ASK_INFRA_STEPS = ('plan-marshall:automatic-review', 'default:sonar-roundtrip')
+
 # Valid values for the `default:sonar-roundtrip` step's nested `touched_file_cleanup`
 # param — enum controlling which surface the Sonar roundtrip's success criterion
 # covers.
@@ -820,16 +833,24 @@ def validate_sonar_touched_file_cleanup(value: str) -> None:
 #                                      merge_queue_wait_budget_seconds,
 #                                      pre_merge_comment_barrier,
 #                                      admin_merge_on_stuck_state
-#   - default:finalize-step-simplify → simplify (run-at-all gate)
+#   - default:finalize-step-simplify → (config-less; the retired `simplify`
+#                                      run-at-all param is gone — the step's
+#                                      on/off is governed by its
+#                                      `steps.<step>.lane` override)
 #   - default:finalize-step-preference-emitter → preference_min_recurrence
 #                                      (per-plan disposition recurrence threshold)
-#   - default:pre-submission-self-review → self_review,
-#                                      drop_review_on_scope_gate (a default-on
+#   - default:pre-submission-self-review → drop_review_on_scope_gate (a default-on
 #                                      built-in step, so the seed DOES include it
-#                                      and its params — auto / false — directly)
-# Phase-level knobs with no single owning step (checks_wait_timeout_seconds,
-# max_iterations, finalize_without_asking, loop_back_without_asking, qgate,
-# effort, …) stay flat siblings of `steps`.
+#                                      and its param — false — directly; the
+#                                      retired `self_review` run-at-all param is
+#                                      gone, replaced by the step's
+#                                      `steps.<step>.lane` override)
+# The four finalize ceremony gates (qgate, self_review, simplify, security_audit)
+# no longer ride a run-at-all param: each is governed by its owning step's
+# `steps.<step>.lane` override (`off`/`minimal`/`auto`). Phase-level knobs with no
+# single owning step (checks_wait_timeout_seconds, max_iterations,
+# finalize_without_asking, loop_back_without_asking, effort, …) stay flat siblings
+# of `steps`.
 
 
 def _seed_finalize_steps() -> dict:
@@ -837,19 +858,26 @@ def _seed_finalize_steps() -> dict:
 
     Discovers every finalize-step implementor via the reusable
     ``extension_discovery.find_implementors`` query (the SOLE discovery path —
-    there is no parallel constant list), filters to the default-on built-in seed
-    (``default_on == true``), sorts by ``order``, and delegates each step id to
-    ``configurable_contract.resolve_step_defaults_optional``. A param-owning step
-    resolves to its ``{param_key: default}`` object; an ownerless step resolves
-    to ``None`` (no params), which is normalized to an empty ``{}`` object
-    (config-less). The result is the id-keyed map ``{step_id: param-object}`` —
-    the sole on-disk shape both read and written — with key insertion order as
-    the execution order.
+    there is no parallel constant list), materializes EVERY built-in implementor
+    (there is no ``default_on == true`` filter — exclusion is now expressed as a
+    ``lane: off`` override, never as absence), sorts by ``order``, and delegates
+    each step id to ``configurable_contract.resolve_step_defaults_optional``. A
+    param-owning step resolves to its ``{param_key: default}`` object; an
+    ownerless step resolves to ``None`` (no params), which is normalized to an
+    empty ``{}`` object (config-less). The result is the id-keyed map
+    ``{step_id: param-object}`` — the sole on-disk shape both read and written —
+    with key insertion order as the execution order.
 
-    The discovered ``default_on: true`` set includes
-    ``default:finalize-step-security-audit`` via its own step-doc frontmatter,
-    closing the historical hand-maintained-constant gap where the step existed as
-    a doc but was invisible to the seed.
+    Per-element ``lane`` overrides are folded into each step's param object:
+
+    - The two adversarial infra elements (:data:`_LANE_ASK_INFRA_STEPS` —
+      ``plan-marshall:automatic-review`` and ``default:sonar-roundtrip``) seed a
+      ``lane: ask`` override so marshall-steward always prompts about them and a
+      genuinely-unresolved ask with no provider is dropped at compose.
+    - Every ``default_on: false`` step seeds a ``lane: off`` override so its
+      exclusion is expressed as ``lane: off`` rather than absence from the seed.
+    - Every ``default_on: true`` non-infra step carries no ``lane`` key (absent
+      override resolves to the ``auto`` posture).
 
     The cross-bundle modules are imported lazily here (not at module top level) so
     importing ``_config_defaults`` never pulls in the extension-api parser — the
@@ -857,8 +885,9 @@ def _seed_finalize_steps() -> dict:
 
     Returns:
         The keyed-map serial form: an id-keyed dict mapping each step id to its
-        ``{param_key: default}`` object (``{}`` for config-less steps), in
-        execution order.
+        ``{param_key: default}`` object (``{}`` for config-less steps), with a
+        folded-in ``lane`` override for the infra (``ask``) and ``default_on:
+        false`` (``off``) steps, in execution order.
     """
     # Lazy imports — executor sets PYTHONPATH for cross-skill imports.
     from configurable_contract import (
@@ -868,17 +897,19 @@ def _seed_finalize_steps() -> dict:
 
     implementors = find_implementors(FINALIZE_STEP_EXT_POINT)
     seed_records = sorted(
-        (
-            rec
-            for rec in implementors
-            if rec.get('default_on') and rec.get('source') == 'built-in'
-        ),
+        (rec for rec in implementors if rec.get('source') == 'built-in'),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
     )
-    return {
-        rec['name']: (resolve_step_defaults_optional(rec['name']) or {})
-        for rec in seed_records
-    }
+    seed: dict = {}
+    for rec in seed_records:
+        name = rec['name']
+        params = dict(resolve_step_defaults_optional(name) or {})
+        if name in _LANE_ASK_INFRA_STEPS:
+            params['lane'] = 'ask'
+        elif not rec.get('default_on'):
+            params['lane'] = 'off'
+        seed[name] = params
+    return seed
 
 
 DEFAULT_PLAN_FINALIZE = {
@@ -893,19 +924,11 @@ DEFAULT_PLAN_FINALIZE = {
     # `manage-config plan phase-6-finalize get --field <knob>`.
     'finalize_without_asking': True,
     'loop_back_without_asking': False,
-    # qgate is the one finalize run-at-all gate that stays a flat phase-level
-    # sibling (auto|always|never): it maps to pre-push-quality-gate (the finalize
-    # blocking-findings re-capture) but is consumed by the decision machinery as a
-    # phase-level run-at-all gate, not as a param the step body reads. `auto`
-    # (default) defers to the existing decision machinery; `always`/`never` force
-    # the step in/out. Read via
-    # `manage-config plan phase-6-finalize get --field qgate`. The two other
-    # run-at-all gates (`simplify`, `self_review`) and the
-    # `drop_review_on_scope_gate` escape hatch each own exactly one finalize step,
-    # so they fold into that step's nested param object under `steps` (declared in
-    # the owning step's `configurable:` frontmatter, read by
-    # `configurable_contract.py`) rather than remaining flat siblings.
-    'qgate': 'auto',
+    # The finalize `qgate` gate no longer lives here as a flat run-at-all sibling.
+    # Finalize-qgate now rides `steps['pre-push-quality-gate'].lane` — the same
+    # per-element `lane` override channel the other three ceremony gates
+    # (`self_review`, `simplify`, `security_audit`) use — resolved by the
+    # manifest ceremony transform (`off→never`, `minimal→always`, `auto/absent→auto`).
     # Default timeout (seconds) for the CI-completion polling commands consumed
     # by tools-integration-ci/scripts/ci_base.py (`ci checks wait`,
     # `ci pr wait-for-comments`, `ci checks wait-for-status-flip`, and the two
@@ -926,16 +949,19 @@ DEFAULT_PLAN_FINALIZE = {
     # Step-owned params (sonar params under `default:sonar-roundtrip`;
     # `review_bot_buffer_seconds` under `plan-marshall:automatic-review`;
     # `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold`
-    # under `default:branch-cleanup`; `simplify` under
-    # `default:finalize-step-simplify`) live in the owning step's nested param
+    # under `default:branch-cleanup`) live in the owning step's nested param
     # object. Each step's params are declared self-describingly in the step's
-    # body-doc `configurable:` frontmatter and read by `configurable_contract.py`;
-    # the `self_review` / `drop_review_on_scope_gate` knobs own the
-    # `default:pre-submission-self-review` step, which IS a default-on built-in
-    # candidate (its step doc declares `default_on: true`), so the default seed
-    # DOES include it with its params (`self_review: auto` /
-    # `drop_review_on_scope_gate: false`) — a fresh project's candidate list carries
-    # the step directly. The reader
+    # body-doc `configurable:` frontmatter and read by `configurable_contract.py`.
+    # The four finalize ceremony gates (`qgate`, `self_review`, `simplify`,
+    # `security_audit`) no longer ride a run-at-all param — each is governed by
+    # its owning step's `steps.<step>.lane` override. `default:finalize-step-simplify`
+    # and `default:finalize-step-security-audit` are now config-less; the
+    # `default:pre-submission-self-review` step retains only its
+    # `drop_review_on_scope_gate: false` param. ALL finalize-step implementors are
+    # materialized into this map (exclusion is a `lane: off` override, never
+    # absence); the two adversarial infra elements
+    # (`plan-marshall:automatic-review`, `default:sonar-roundtrip`) seed a
+    # `lane: ask` override. The reader
     # (`_steps_map` / `_read_marshal_phase_step_map`) consumes this keyed map
     # directly — it is the sole on-disk shape both read and written.
     #
@@ -1016,7 +1042,7 @@ def get_default_config() -> dict:
     validate_pr_compact_max_changed_files(DEFAULT_PROJECT['pr_compact_max_changed_files'])
     # Self-validate the seeded lane prune-threshold dict so a malformed default
     # fails loud at seed time rather than at first read. (`lane_selection` is an
-    # enum string validated from the set path, mirroring validate_run_at_all /
+    # enum string validated from the set path, mirroring validate_gate_mode /
     # validate_simplicity — not self-validated here.)
     validate_lane_prune_thresholds(DEFAULT_PLAN_INIT['lane_prune_thresholds'])
     # Materialize the finalize-step defaults seed lazily via the configurable-

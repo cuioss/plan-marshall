@@ -10,17 +10,22 @@ governs:
 
 - ``deep_lane`` / ``escalation``     → ``plan.phase-1-init``
 - ``revalidation``                   → ``plan.phase-2-refine``
-- ``self_review`` / ``qgate`` /
-  ``simplify``                       → ``plan.phase-6-finalize``
 - the three auto-continuation knobs  → ``plan.phase-6-finalize``
+
+The four finalize ceremony gates (``qgate`` / ``self_review`` / ``simplify`` /
+``security_audit``) have since been migrated OFF the run-at-all channel onto the
+per-element ``steps.<step>.lane`` override — none of them survives as a flat
+phase-level sibling nor as a step-owned run-at-all param.
 
 This module pins the post-dissolution contract:
 
 1. The ``ceremony_policy`` symbols are gone from ``_config_defaults``.
 2. ``get_default_config()`` carries no ``ceremony_policy`` top-level key.
-3. Each distributed gate surfaces under its owning phase block with the ``auto``
-   default, readable via the standard ``plan phase-<N> get --field <gate>`` path.
-4. ``VALID_RUN_AT_ALL`` enumerates exactly ``auto|always|never``.
+3. Each surviving distributed planning gate surfaces under its owning phase block
+   with the ``auto`` default, readable via the standard
+   ``plan phase-<N> get --field <gate>`` path.
+4. ``VALID_GATE_MODE`` enumerates exactly ``auto|always|never`` and the three
+   planning gates reject an out-of-enum value at their ``set`` boundary.
 
 The handlers are exercised via per-file ``importlib`` loading (the manage-config
 test convention).
@@ -82,25 +87,24 @@ def _step_ids(steps_map: dict) -> list:
     return list(steps_map.keys())
 
 # The distributed run-at-all gates that stay FLAT phase-level siblings, and the
-# phase block each lives under. The two finalize gates that fold under their
-# owning step (`simplify`, `self_review`) are intentionally absent here — they
-# are exercised by `test_folded_finalize_gates_nest_under_owning_step` below.
+# phase block each lives under. The finalize `qgate` gate is intentionally absent
+# here — it has been migrated off the run-at-all channel onto the per-element
+# `steps.pre-push-quality-gate.lane` override (the ceremony run-at-all → lane
+# migration), so it is no longer a flat phase-level sibling.
 _DISTRIBUTED_GATES = (
     ('phase-1-init', 'deep_lane'),
     ('phase-1-init', 'escalation'),
     ('phase-2-refine', 'revalidation'),
-    ('phase-6-finalize', 'qgate'),
 )
 
-# The finalize run-at-all / escape-hatch knobs that fold under their owning
-# finalize step's nested param object (no longer flat phase-level siblings).
-# `default:finalize-step-simplify` and `default:pre-submission-self-review` are
-# both BUILT-IN finalize steps (discovered with `default_on: true`), so their
-# folded defaults (`simplify`; `self_review` / `drop_review_on_scope_gate`) are
-# materialized in get_default_config()['plan']['phase-6-finalize']['steps'].
+# The finalize escape-hatch knob that folds under its owning finalize step's
+# nested param object (no longer a flat phase-level sibling).
+# `default:pre-submission-self-review` is a BUILT-IN finalize step (discovered
+# with `default_on: true`), so its folded `drop_review_on_scope_gate` default is
+# materialized in get_default_config()['plan']['phase-6-finalize']['steps']. The
+# ceremony run-at-all params (`simplify`, `self_review`) were removed in the
+# run-at-all → lane migration and are no longer folded knobs.
 _SEEDED_FOLDED_KNOBS = (
-    ('default:finalize-step-simplify', 'simplify', 'auto'),
-    ('default:pre-submission-self-review', 'self_review', 'auto'),
     ('default:pre-submission-self-review', 'drop_review_on_scope_gate', False),
 )
 
@@ -198,8 +202,8 @@ def test_folded_finalize_knob_is_not_a_flat_sibling(owner_step, knob, default):
 def test_seeded_folded_knob_materializes_under_owning_built_in_step(owner_step, knob, default):
     """A folded knob on a BUILT-IN finalize step is materialized in the default seed.
 
-    `default:finalize-step-simplify` is a built-in finalize step, so its folded
-    `simplify` default appears nested under the step in
+    `default:pre-submission-self-review` is a built-in finalize step, so its folded
+    `drop_review_on_scope_gate` default appears nested under the step in
     get_default_config()['plan']['phase-6-finalize']['steps'].
     """
     config = _config_defaults_mod.get_default_config()
@@ -210,22 +214,54 @@ def test_seeded_folded_knob_materializes_under_owning_built_in_step(owner_step, 
 
 
 # =============================================================================
-# (3) The run-at-all enum survives under its distributed name
+# (3) The gate_mode enum + set-time validation for the three planning gates
 # =============================================================================
 
 
-def test_valid_run_at_all_enumerates_expected_values():
-    """VALID_RUN_AT_ALL must enumerate exactly auto|always|never."""
-    assert _config_defaults_mod.VALID_RUN_AT_ALL == ('auto', 'always', 'never')
+def test_valid_run_at_all_symbol_is_gone():
+    """The retired VALID_RUN_AT_ALL / validate_run_at_all symbols must not survive."""
+    assert not hasattr(_config_defaults_mod, 'VALID_RUN_AT_ALL')
+    assert not hasattr(_config_defaults_mod, 'validate_run_at_all')
 
 
-def test_validate_run_at_all_accepts_every_allowed_value():
-    """validate_run_at_all accepts each allowed value without raising."""
-    for value in _config_defaults_mod.VALID_RUN_AT_ALL:
-        _config_defaults_mod.validate_run_at_all(value, 'plan.phase-6-finalize.qgate')
+def test_valid_gate_mode_enumerates_expected_values():
+    """VALID_GATE_MODE must enumerate exactly auto|always|never."""
+    assert _config_defaults_mod.VALID_GATE_MODE == ('auto', 'always', 'never')
 
 
-def test_validate_run_at_all_rejects_unknown_value():
-    """validate_run_at_all raises ValueError naming the offending knob path."""
-    with pytest.raises(ValueError, match=r'plan\.phase-6-finalize\.qgate'):
-        _config_defaults_mod.validate_run_at_all('sometimes', 'plan.phase-6-finalize.qgate')
+def test_validate_gate_mode_accepts_every_allowed_value():
+    """validate_gate_mode accepts each allowed value without raising."""
+    for value in _config_defaults_mod.VALID_GATE_MODE:
+        _config_defaults_mod.validate_gate_mode(value, 'plan.phase-1-init.deep_lane')
+
+
+def test_validate_gate_mode_rejects_unknown_value():
+    """validate_gate_mode raises ValueError naming the offending knob path."""
+    with pytest.raises(ValueError, match=r'plan\.phase-1-init\.deep_lane'):
+        _config_defaults_mod.validate_gate_mode('sometimes', 'plan.phase-1-init.deep_lane')
+
+
+@pytest.mark.parametrize('phase,gate', _DISTRIBUTED_GATES)
+def test_set_path_rejects_out_of_enum_gate_mode(phase, gate, plan_context):
+    """Setting a planning gate to an out-of-enum value is rejected at the set boundary."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    result = _cmd_quality_phases_mod.cmd_phase(
+        Namespace(verb='set', field=gate, value='sometimes'), phase
+    )
+
+    assert result['status'] == 'error'
+    assert gate in result.get('message', '') or gate in str(result)
+
+
+@pytest.mark.parametrize('phase,gate', _DISTRIBUTED_GATES)
+def test_set_path_accepts_every_valid_gate_mode(phase, gate, plan_context):
+    """Setting a planning gate to any allowed value succeeds and persists it."""
+    _cmd_init_mod.cmd_init(Namespace(force=False))
+
+    for value in _config_defaults_mod.VALID_GATE_MODE:
+        result = _cmd_quality_phases_mod.cmd_phase(
+            Namespace(verb='set', field=gate, value=value), phase
+        )
+        assert result['status'] == 'success'
+        assert result['value'] == value

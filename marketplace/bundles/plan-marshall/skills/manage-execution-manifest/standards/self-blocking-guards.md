@@ -29,8 +29,14 @@ marketplace component.
 
 ## Symptoms
 
-The bot-enforcement guard surfaced two failure modes in close succession; both
-are characteristic of self-blocking guards in general.
+The now-retired bot-enforcement guard surfaced two failure modes in close
+succession before it was removed; both are characteristic of self-blocking
+guards in general and are preserved here as the canonical worked example. (That
+guard force-added `plan-marshall:automatic-review` on GitHub/GitLab plans; it
+has since been retired — `automatic-review` is now governed purely by its
+configured `lane` and lane tier, and its ordering is handled by the
+frontmatter-order sort. The failure-mode taxonomy below still applies to any
+future guard that inserts or reorders manifest steps.)
 
 **Missing-prefix failure** — the guard inserts a remediation step into the
 manifest using a name shape (`automatic-review`) that is correct against the
@@ -61,10 +67,8 @@ A plan that edits the guard helper itself can still be finalized by the broken
 helper, because the anchor + exclusion contract is robust to the most common
 defects (wrong index, missing prefix, reordered candidate list).
 
-The bot-enforcement guard implements this contract in
-`scripts/manage-execution-manifest.py` at `_bot_enforcement_insert_index`
-(see the function definition for the resolution algorithm, documented inline
-in the docstring). The function picks the insertion index in three tiers:
+The retired bot-enforcement guard historically implemented this contract via an
+anchor-relative insertion helper that picked the insertion index in three tiers:
 
 1. Immediately after the stable anchor `create-pr` (its natural neighbour —
    review runs against the freshly-opened PR).
@@ -73,8 +77,13 @@ in the docstring). The function picks the insertion index in three tiers:
    `plan-marshall:plan-retrospective`).
 3. Else at the end of the list (no anchors found — degraded but safe).
 
-The source file is the ground truth. Do not duplicate the algorithm here —
-read the function and its docstring directly when reasoning about edge cases.
+That guard has since been retired — `plan-marshall:automatic-review` is placed
+deterministically by the frontmatter-order sort (order 30 sorts before the
+plan-mutating tail), so no bespoke insertion helper remains. The three-tier
+anchor-relative pattern above is retained here as the canonical contract for any
+FUTURE guard that must insert a step at a position-sensitive index; a new such
+guard should encode the anchor + exclusion-zone resolution in its own helper and
+document the algorithm inline in that helper's docstring.
 
 What makes this contract self-fixing:
 
@@ -112,10 +121,10 @@ Required properties:
   decision-log entry naming the plan, the guard, and the rationale recorded
   by the operator. Silent overrides defeat the purpose.
 
-The bot-enforcement guard does NOT use this fallback — Mitigation A
-(anchor-relative insertion) was sufficient to make the guard self-fixing.
-Mitigation B is documented here so future guards that genuinely need it have
-a canonical pattern to follow rather than each inventing an ad-hoc bypass.
+The retired bot-enforcement guard did NOT use this fallback — Mitigation A
+(anchor-relative insertion) was sufficient to make that guard self-fixing while
+it existed. Mitigation B is documented here so future guards that genuinely need
+it have a canonical pattern to follow rather than each inventing an ad-hoc bypass.
 
 When in doubt, choose Mitigation A. Reach for B only after demonstrating that
 no stable anchor exists for the invariant in question.

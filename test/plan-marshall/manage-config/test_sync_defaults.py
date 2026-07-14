@@ -265,15 +265,20 @@ def test_sync_defaults_backfills_verification_steps_as_keyed_map(plan_context):
     )
 
 
-def test_sync_defaults_backfills_finalize_steps_as_keyed_map_form(plan_context):
-    """Syncing an empty marshal.json back-fills finalize steps as the keyed-map form.
+def test_sync_defaults_materializes_all_finalize_steps_as_keyed_map_form(plan_context):
+    """Syncing an empty marshal.json materializes EVERY finalize-step implementor.
 
-    Param-owning steps (sonar-roundtrip / automatic-review / branch-cleanup /
-    finalize-step-sync-baseline / pre-submission-self-review /
-    finalize-step-simplify / finalize-step-security-audit /
-    finalize-step-preference-emitter) land with a non-empty nested param object;
-    the remaining config-less steps map to {}.
+    D1 changed `_seed_finalize_steps` to materialize every discovered built-in
+    implementor (no `default_on` filter): exclusion is expressed as a `lane: off`
+    override, never absence, and the two adversarial infra elements
+    (`default:sonar-roundtrip` / `plan-marshall:automatic-review`) seed a
+    `lane: ask` override. The four ceremony gates (qgate / self_review / simplify /
+    security_audit) no longer ride a run-at-all param — `finalize-step-simplify`
+    and `finalize-step-security-audit` are config-less, and
+    `pre-submission-self-review` retains only its `drop_review_on_scope_gate` param.
     """
+    from extension_discovery import find_implementors
+
     _write_marshal(plan_context.fixture_dir, {})
 
     result = cmd_sync_defaults(Namespace(audit_plan_id=None))
@@ -282,35 +287,48 @@ def test_sync_defaults_backfills_finalize_steps_as_keyed_map_form(plan_context):
     config = _read_marshal(plan_context.fixture_dir)
     steps = config['plan']['phase-6-finalize']['steps']
     assert isinstance(steps, dict)
+    assert steps, 'finalize steps backfill should not be empty'
 
-    param_owning = {
-        'default:sonar-roundtrip',
-        'plan-marshall:automatic-review',
-        'default:branch-cleanup',
-        # default:finalize-step-sync-baseline owns the `auto_rebase_threshold`
-        # conflict-gate knob (default no_overlap_only)
-        'default:finalize-step-sync-baseline',
-        # default:pre-submission-self-review (the promoted default-on built-in,
-        # order 7) owns the folded `self_review` gate + `drop_review_on_scope_gate`
-        'default:pre-submission-self-review',
-        # default:finalize-step-simplify owns the folded `simplify` run-at-all gate
-        'default:finalize-step-simplify',
-        # default:finalize-step-security-audit owns the folded `security_audit`
-        # run-at-all gate (auto|always|never), the symmetric peer of `simplify`
-        'default:finalize-step-security-audit',
-        # default:finalize-step-preference-emitter owns the preference_min_recurrence knob
-        'default:finalize-step-preference-emitter',
-    }
-    for step_id, params in steps.items():
+    # Every step value is a dict (the keyed-map shape).
+    for _step_id, params in steps.items():
         assert isinstance(params, dict), f'every step value must be a dict; got {params!r}'
-        if step_id in param_owning:
-            assert params, f'param-owning step {step_id!r} must carry a non-empty nested dict'
-        else:
-            assert params == {}, f'config-less step {step_id!r} must map to {{}}, got {params!r}'
-    assert param_owning <= set(steps), (
-        f'all param-owning steps must appear in the keyed map; '
-        f'missing: {param_owning - set(steps)!r}'
+
+    # Materialize-all: every discovered built-in implementor is present in the seed.
+    implementors = [
+        rec
+        for rec in find_implementors(_config_defaults_mod.FINALIZE_STEP_EXT_POINT)
+        if rec.get('source') == 'built-in' and rec.get('name')
+    ]
+    built_in_names = {rec['name'] for rec in implementors}
+    assert built_in_names <= set(steps), (
+        f'materialize-all seed must carry every built-in implementor; '
+        f'missing: {built_in_names - set(steps)!r}'
     )
+
+    infra = {'default:sonar-roundtrip', 'plan-marshall:automatic-review'}
+    # The two adversarial infra elements seed `lane: ask`.
+    for name in infra:
+        assert steps[name].get('lane') == 'ask', (
+            f'{name} must seed lane:ask, got {steps[name]!r}'
+        )
+
+    # Every non-infra `default_on: false` step seeds `lane: off` (exclusion as
+    # lane:off, never absence); infra elements are exempt (they seed lane:ask).
+    for rec in implementors:
+        name = rec['name']
+        if name in infra or rec.get('default_on'):
+            continue
+        assert steps[name].get('lane') == 'off', (
+            f'default_on:false step {name!r} must seed lane:off, got {steps[name]!r}'
+        )
+
+    # The retired ceremony run-at-all params are gone from their owning steps;
+    # simplify / security-audit are config-less, self-review keeps only its
+    # escape-hatch param.
+    assert 'simplify' not in steps.get('default:finalize-step-simplify', {})
+    assert 'security_audit' not in steps.get('default:finalize-step-security-audit', {})
+    assert 'self_review' not in steps.get('default:pre-submission-self-review', {})
+    assert 'drop_review_on_scope_gate' in steps.get('default:pre-submission-self-review', {})
 
 
 def test_sync_defaults_preserves_present_steps_map_untouched(plan_context):
