@@ -79,6 +79,8 @@ Skill: plan-marshall:persona-plan-marshall-agent
 
 For each entry in `skills[]`, in order, load that skill into context using the platform's skill-loading mechanism before continuing to the next entry. Each entry is a runtime `{bundle}:{skill}` notation substituted per iteration.
 
+**Workflow-doc de-dup (skip the double-load).** When `workflow` is present, resolve it to its filesystem path (Step 4's notation table) and skip loading any `skills[]` entry whose resolved `SKILL.md` path equals that resolved `workflow` path — that body is already loaded as the workflow in Step 5, so loading it again as a skill re-reads the same doc into the same envelope. Phase dispatches are the canonical trigger: the orchestrator passes both `skills=[plan-marshall:phase-N]` and `workflow=plan-marshall:phase-N/SKILL.md`, and the skill notation `{bundle}:{skill}` resolves to `.../{skill}/SKILL.md` — byte-identical to the `{bundle}:{skill}/SKILL.md` workflow path — so the phase SKILL body would otherwise load twice. Compare the resolved paths (not the raw notations): a `skills[]` entry `{bundle}:{skill}` matches when its resolved `marketplace/bundles/{bundle}/skills/{skill}/SKILL.md` equals the resolved `workflow` path. Skills that resolve to a different SKILL.md (the workflow's `skills[]` prerequisites) load normally.
+
 If any skill load fails, STOP and return:
 
 ```toon
