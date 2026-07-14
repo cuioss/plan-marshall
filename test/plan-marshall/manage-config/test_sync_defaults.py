@@ -765,6 +765,47 @@ def test_sync_defaults_materializes_freshly_merged_default_step_to_off(plan_cont
     assert steps[_CORE_STEP]['lane'] == 'minimal'
 
 
+def test_sync_defaults_materializes_wholesale_copied_steps_subtree_to_off(plan_context):
+    """A wholesale-copied default `steps` subtree materializes each new step to `off`.
+
+    Regression for the ancestor-added-rows bug (PR #896): when a live config's
+    `phase-6-finalize` dict has NO `steps` key at all, the deep-merge copies the
+    entire default `steps` map in ONE shot (the ancestor-added-subtree case,
+    distinct from the per-step recursion the sibling test exercises). The prior
+    `_deep_merge_missing` recorded only the subtree ROOT
+    (`plan.phase-6-finalize.steps`) in `added`, never the per-step leaf paths, so
+    `_materialize_finalize_lanes` misclassified every wholesale-copied row as
+    pre-existing and filled it with its frontmatter-class effective lane
+    (`minimal` / `auto`) instead of the required `lane: off`, violating the
+    "infra steps must be opt-in" principle. With the per-descendant recording
+    fix (`_record_added_paths`), each freshly-copied config-less step is
+    recognised as newly-added and materialised to `off`.
+    """
+    # phase-6-finalize present but with NO `steps` key -> the whole default
+    # `steps` map is copied wholesale (the ancestor-added-subtree case).
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'max_iterations': 3}}},
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    # the wholesale-copied config-less core step is freshly-added, so it
+    # materialises to `off` (opt-in) — NOT its effective `minimal` lane.
+    assert steps[_CORE_STEP]['lane'] == 'off'
+    assert steps['default:archive-plan']['lane'] == 'off'
+    # the config-less adversarial step, likewise freshly-copied, is `off` too,
+    # not its effective `auto` lane.
+    assert steps[_ADVERSARIAL_STEP]['lane'] == 'off'
+    # the per-step leaf dotted path was recorded in `added` (the fix) — not just
+    # the subtree root — and the step is reported as materialised to off.
+    assert f'plan.phase-6-finalize.steps.{_CORE_STEP}' in result['added']
+    assert _materialized_entry(_CORE_STEP, 'off') in result['materialized']
+
+
 def test_sync_defaults_preserves_explicit_lane_untouched(plan_context):
     """A step carrying an explicit `lane` is preserved byte-identically and NOT reported.
 

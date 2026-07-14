@@ -219,6 +219,29 @@ def _migrate_run_at_all_to_lane(live: dict, migrated: list[str]) -> dict:
     return live
 
 
+def _record_added_paths(value: object, prefix: str, added: list[str]) -> None:
+    """Record ``prefix`` and, when ``value`` is a dict, every descendant dotted path.
+
+    Used when :func:`_deep_merge_missing` copies a whole subtree wholesale (the key
+    was absent from ``live``): every key inside the copied subtree is itself newly
+    added, so its dotted path must be recorded — not just the subtree root. Recording
+    only the root is the ancestor-added-rows bug: when a live config's
+    ``phase-6-finalize`` dict has no ``steps`` key at all, the deep-merge copies the
+    entire ``steps`` map in one shot and would otherwise record only
+    ``plan.phase-6-finalize.steps`` — never the per-step leaf paths
+    ``plan.phase-6-finalize.steps.{step_id}``. Downstream,
+    :func:`_materialize_finalize_lanes`'s ``dotted in added_set`` provenance check
+    would then miss those freshly-copied rows and materialize them with their
+    frontmatter-class effective lane instead of the required ``lane: off``. Recording
+    every descendant path treats each wholesale-copied row as newly-added, so the
+    provenance check classifies it correctly.
+    """
+    added.append(prefix)
+    if isinstance(value, dict):
+        for key, sub_value in value.items():
+            _record_added_paths(sub_value, f'{prefix}.{key}', added)
+
+
 def _deep_merge_missing(live: dict, defaults: dict, prefix: str, added: list[str]) -> dict:
     """Recursively add keys present in ``defaults`` but absent from ``live``.
 
@@ -231,6 +254,10 @@ def _deep_merge_missing(live: dict, defaults: dict, prefix: str, added: list[str
     - Lists (and all non-dict values) are atomic: if the key is present in
       ``live``, the user's value is kept verbatim; if absent, the default is
       copied in.
+    - When an absent key's default is a dict copied wholesale, every descendant
+      dotted path is recorded in ``added`` (via :func:`_record_added_paths`), not
+      just the subtree root — so downstream provenance checks recognize each
+      wholesale-copied leaf row as newly-added.
 
     Ownerless-step interaction: an ownerless ``steps`` / ``verification_steps``
     entry now defaults to ``None`` (no noisy empty ``{}``). Because ``None`` is a
@@ -255,7 +282,7 @@ def _deep_merge_missing(live: dict, defaults: dict, prefix: str, added: list[str
         path = f'{prefix}.{key}' if prefix else key
         if key not in live:
             live[key] = default_value
-            added.append(path)
+            _record_added_paths(default_value, path, added)
         elif isinstance(default_value, dict) and isinstance(live[key], dict):
             _deep_merge_missing(live[key], default_value, path, added)
     return live
