@@ -989,31 +989,30 @@ def _gh_api_json_body(method: str, endpoint: str, payload: dict) -> tuple[int, s
             pass
 
 
-def _self_heal_merge_queue_bypass(
-    owner: str, repo: str, resolved_ids: list[int]
-) -> tuple[bool, dict | None]:
-    """Ensure the resolved bypass actor(s) are present on an already-configured ruleset.
+def _fetch_plan_marshall_ruleset(
+    owner: str, repo: str
+) -> tuple[int | None, dict | None, dict | None]:
+    """Fetch the ``plan-marshall-merge-queue`` ruleset detail.
 
-    Fetches the ``plan-marshall-merge-queue`` ruleset (list by name, then read the
-    detail) and, when any resolved id is NOT already among its ``bypass_actors``,
-    PATCHes the merged set in via ``PUT /repos/{o}/{r}/rulesets/{id}``.
-
-    Returns ``(changed, error)``: ``changed`` is ``True`` only when a PUT was
-    actually issued; ``error`` is a ready-to-return :func:`make_error` dict on a
-    ``gh`` failure, else ``None``. A missing ruleset-by-name or an
-    already-present actor is a no-op (``(False, None)``).
+    Lists the repo rulesets, finds the one named ``plan-marshall-merge-queue``,
+    and reads its full detail. Returns ``(ruleset_id, detail, error)``:
+    ``(None, None, None)`` when no ruleset carries that name (the merge queue is
+    configured via some other ruleset — nothing named to touch); ``(None, None,
+    error)`` with a ready-to-return :func:`make_error` dict on a ``gh`` failure;
+    ``(ruleset_id, detail, None)`` on success. Shared by the enable short-circuit
+    and :func:`_self_heal_merge_queue_bypass`.
     """
     returncode, stdout, stderr = run_gh(['api', f'repos/{owner}/{repo}/rulesets'])
     if returncode != 0:
         if _is_auth_scope_error(stderr):
-            return False, make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, stderr.strip())
-        return False, make_error('repo_merge_queue_enable', 'Failed to list repository rulesets', stderr.strip())
+            return None, None, make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, stderr.strip())
+        return None, None, make_error('repo_merge_queue_enable', 'Failed to list repository rulesets', stderr.strip())
     try:
         rulesets = json.loads(stdout)
     except json.JSONDecodeError:
-        return False, make_error('repo_merge_queue_enable', 'Could not parse rulesets response')
+        return None, None, make_error('repo_merge_queue_enable', 'Could not parse rulesets response')
     if not isinstance(rulesets, list):
-        return False, make_error('repo_merge_queue_enable', 'rulesets response was not a list')
+        return None, None, make_error('repo_merge_queue_enable', 'rulesets response was not a list')
 
     ruleset_id = None
     for ruleset in rulesets:
@@ -1021,35 +1020,68 @@ def _self_heal_merge_queue_bypass(
             ruleset_id = ruleset.get('id')
             break
     if ruleset_id is None:
-        # Configured via some other ruleset — nothing named to self-heal.
-        return False, None
+        return None, None, None
 
     returncode, stdout, stderr = run_gh(['api', f'repos/{owner}/{repo}/rulesets/{ruleset_id}'])
     if returncode != 0:
         if _is_auth_scope_error(stderr):
-            return False, make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, stderr.strip())
-        return False, make_error('repo_merge_queue_enable', 'Failed to read merge-queue ruleset detail', stderr.strip())
+            return None, None, make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, stderr.strip())
+        return None, None, make_error('repo_merge_queue_enable', 'Failed to read merge-queue ruleset detail', stderr.strip())
     try:
         detail = json.loads(stdout)
     except json.JSONDecodeError:
-        return False, make_error('repo_merge_queue_enable', 'Could not parse ruleset detail response')
+        return None, None, make_error('repo_merge_queue_enable', 'Could not parse ruleset detail response')
     if not isinstance(detail, dict):
-        return False, make_error('repo_merge_queue_enable', 'ruleset detail response was not an object')
+        return None, None, make_error('repo_merge_queue_enable', 'ruleset detail response was not an object')
+    return ruleset_id, detail, None
 
+
+def _integration_bypass_present_ids(detail: dict) -> tuple[set, list]:
+    """Return ``(present_ids, existing_actors)`` from a fetched ruleset detail.
+
+    ``present_ids`` is the set of ``actor_id``s already granted as ``Integration``
+    / ``bypass_mode: always`` — an id present with any other shape is NOT counted
+    (it is the GH013 misconfiguration self-heal exists to correct).
+    ``existing_actors`` is the dict-only subset of the ruleset's ``bypass_actors``
+    (non-dict elements dropped so they never corrupt a rebuilt payload).
+    """
     existing = detail.get('bypass_actors')
     existing_raw = existing if isinstance(existing, list) else []
-    # (a) Only dict entries may be echoed back into the PUT body — a non-dict
-    # element in the fetched ruleset would otherwise corrupt the merged payload.
     existing_actors = [a for a in existing_raw if isinstance(a, dict)]
-    # (b) An actor id counts as present only when it already carries the exact
-    # bypass shape we grant (Integration / always). An id present with a
-    # different actor_type or bypass_mode is the GH013 misconfiguration this
-    # self-heal exists to correct, so treat it as missing and re-grant it.
     present_ids = {
         a.get('actor_id')
         for a in existing_actors
         if a.get('actor_type') == 'Integration' and a.get('bypass_mode') == 'always'
     }
+    return present_ids, existing_actors
+
+
+def _self_heal_merge_queue_bypass(
+    owner: str, repo: str, resolved_ids: list[int]
+) -> tuple[bool, dict | None]:
+    """Ensure the resolved bypass actor(s) are present on an already-configured ruleset.
+
+    Fetches the ``plan-marshall-merge-queue`` ruleset and, when any resolved id is
+    NOT already granted as an ``Integration`` / ``always`` bypass actor, rewrites
+    the ruleset with the merged actor set via ``PUT /repos/{o}/{r}/rulesets/{id}``.
+
+    Returns ``(changed, error)``: ``changed`` is ``True`` only when a PUT was
+    actually issued; ``error`` is a ready-to-return :func:`make_error` dict on a
+    ``gh`` failure, else ``None``. A missing ruleset-by-name or an
+    already-present actor is a no-op (``(False, None)``).
+    """
+    ruleset_id, detail, error = _fetch_plan_marshall_ruleset(owner, repo)
+    if error is not None:
+        return False, error
+    if ruleset_id is None or detail is None:
+        # Configured via some other ruleset — nothing named to self-heal.
+        return False, None
+
+    # An actor id counts as present only when it already carries the exact bypass
+    # shape we grant (Integration / always). An id present with a different
+    # actor_type or bypass_mode is the GH013 misconfiguration this self-heal exists
+    # to correct, so treat it as missing and re-grant it.
+    present_ids, existing_actors = _integration_bypass_present_ids(detail)
     missing_ids = [actor_id for actor_id in resolved_ids if actor_id not in present_ids]
     if not missing_ids:
         return False, None
@@ -1062,10 +1094,22 @@ def _self_heal_merge_queue_bypass(
         {'actor_id': actor_id, 'actor_type': 'Integration', 'bypass_mode': 'always'}
         for actor_id in missing_ids
     ]
-    # The ruleset update endpoint is a partial update — sending only bypass_actors
-    # leaves the merge_queue rule and conditions untouched.
+    # Defensive full-object update. GitHub's ruleset-update endpoint is a
+    # documented partial update (PUT /repos/{o}/{r}/rulesets/{id} touches only the
+    # fields present in the body), so sending only bypass_actors leaves the
+    # merge_queue rule and conditions intact — the correct and verified behavior.
+    # We nonetheless echo the existing name/target/enforcement/conditions/rules
+    # back alongside the merged bypass_actors so that even if the endpoint ever
+    # treated the PUT as a full replace, the merge_queue rule and conditions would
+    # survive rather than being silently wiped (the single load-bearing
+    # API-semantics assumption, made robust rather than relied upon).
+    update_body: dict = {'bypass_actors': merged_actors}
+    for key in ('name', 'target', 'enforcement', 'conditions', 'rules'):
+        value = detail.get(key)
+        if value is not None:
+            update_body[key] = value
     returncode, _stdout, stderr = _gh_api_json_body(
-        'PUT', f'repos/{owner}/{repo}/rulesets/{ruleset_id}', {'bypass_actors': merged_actors}
+        'PUT', f'repos/{owner}/{repo}/rulesets/{ruleset_id}', update_body
     )
     if returncode != 0:
         if _is_auth_scope_error(stderr):
@@ -1118,11 +1162,43 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
     if error is not None:
         return error
 
-    # Resolve the bypass-actor id(s) once (config-first, org-list fallback). An
-    # empty resolution preserves today's bypass-less behavior on both branches.
-    resolved_ids = _resolve_bypass_actor_ids(owner)
+    no_change = {
+        'status': 'success',
+        'operation': 'repo_merge_queue_enable',
+        'provider': 'github',
+        'branch': branch,
+        'eligibility': discriminator,
+        'changed': False,
+        'detail': 'merge queue already configured; no change made',
+    }
 
     if discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED:
+        # Resolve config-first. A static bypass_app_id needs no API call and goes
+        # straight to self-heal. The slugs-only fallback would otherwise issue an
+        # org-installations lookup on every enable, so short-circuit it when the
+        # existing ruleset already carries an Integration/always bypass actor
+        # (already self-healed) — the ruleset fetch here is the same one self-heal
+        # would make, only reordered so the org-list call can be skipped.
+        app_id, slugs = _read_merge_queue_bypass_config()
+        if app_id is None and not slugs:
+            return no_change
+
+        if app_id is not None:
+            resolved_ids = [app_id]
+        else:
+            ruleset_id, ruleset_detail, fetch_error = _fetch_plan_marshall_ruleset(owner, repo)
+            if fetch_error is not None:
+                return fetch_error
+            if ruleset_id is None or ruleset_detail is None:
+                # Configured via some other ruleset — nothing named to self-heal.
+                return no_change
+            present_ids, _ = _integration_bypass_present_ids(ruleset_detail)
+            if present_ids:
+                # slugs-only AND the ruleset already carries an Integration/always
+                # actor — skip the org-installations API call entirely.
+                return no_change
+            resolved_ids = _resolve_bypass_actor_ids(owner)
+
         # Self-heal: when an actor id resolved but the existing ruleset lacks it,
         # PATCH it in; otherwise this stays the idempotent no-op it was before.
         if resolved_ids:
@@ -1139,17 +1215,12 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
                     'changed': True,
                     'detail': 'merge queue already configured; bypass actor patched into ruleset',
                 }
-        return {
-            'status': 'success',
-            'operation': 'repo_merge_queue_enable',
-            'provider': 'github',
-            'branch': branch,
-            'eligibility': discriminator,
-            'changed': False,
-            'detail': 'merge queue already configured; no change made',
-        }
+        return no_change
 
     if discriminator == MERGE_QUEUE_ELIGIBLE_UNCONFIGURED:
+        # Resolve the bypass-actor id(s) (config-first, org-list fallback). An
+        # empty resolution preserves today's bypass-less create behavior.
+        resolved_ids = _resolve_bypass_actor_ids(owner)
         payload = build_merge_queue_ruleset_payload(branch, resolved_ids)
         # gh api reads a JSON request body from a file via --input; the nested
         # ruleset structure cannot be expressed via field flags.

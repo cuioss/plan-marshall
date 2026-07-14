@@ -552,3 +552,70 @@ def test_enable_self_heal_noop_when_no_id_resolved(monkeypatch):
     # No id resolved → self-heal never fetches the ruleset and issues no PUT.
     assert not any(c == ['api', 'repos/owner/repo/rulesets'] for c in captured)
     assert not any(b[0] == 'PUT' for b in bodies)
+
+
+def test_enable_slugs_only_shortcircuits_org_list_when_actor_present(monkeypatch):
+    # slugs-only config on an already-configured repo whose ruleset already
+    # carries an Integration/always bypass actor must NOT issue the (expensive)
+    # org-installations lookup — the ruleset already-healed check short-circuits it.
+    run_gh_stub, body_stub, captured, bodies = _make_enable_stubs(
+        rules=[{'type': 'merge_queue'}],
+        rulesets_list=[{'id': 5, 'name': 'plan-marshall-merge-queue'}],
+        ruleset_detail={
+            'id': 5,
+            'name': 'plan-marshall-merge-queue',
+            'bypass_actors': [{'actor_id': 42, 'actor_type': 'Integration', 'bypass_mode': 'always'}],
+        },
+    )
+    _install_enable(monkeypatch, run_gh_stub, body_stub)
+    monkeypatch.setattr(github_ops, '_read_merge_queue_bypass_config', lambda: (None, ['release-bot']))
+
+    result = github_ops.cmd_repo_merge_queue_enable(argparse.Namespace())
+    assert result['status'] == 'success'
+    assert result['changed'] is False
+    # The short-circuit fired: the org-installations endpoint was never called,
+    # and no PUT was issued.
+    assert not any(c == ['api', 'orgs/owner/installations'] for c in captured)
+    assert not any(b[0] == 'PUT' for b in bodies)
+
+
+def test_enable_self_heal_put_preserves_rules_and_conditions(monkeypatch):
+    # The self-heal PUT sends the full ruleset object (name/target/enforcement/
+    # conditions/rules echoed back alongside the merged bypass_actors) so a
+    # hypothetical full-replace by GitHub cannot silently wipe the merge_queue rule.
+    detail = {
+        'id': 5,
+        'name': 'plan-marshall-merge-queue',
+        'target': 'branch',
+        'enforcement': 'active',
+        'conditions': {'ref_name': {'include': ['refs/heads/main'], 'exclude': []}},
+        'rules': [{'type': 'merge_queue', 'parameters': {'merge_method': 'SQUASH'}}],
+        'bypass_actors': [],
+        # read-only fields that MUST NOT be echoed into the update body
+        'created_at': '2024-01-01T00:00:00Z',
+        'node_id': 'RRS_abc',
+    }
+    run_gh_stub, body_stub, _captured, bodies = _make_enable_stubs(
+        rules=[{'type': 'merge_queue'}],
+        rulesets_list=[{'id': 5, 'name': 'plan-marshall-merge-queue'}],
+        ruleset_detail=detail,
+    )
+    _install_enable(monkeypatch, run_gh_stub, body_stub)
+    monkeypatch.setattr(github_ops, '_read_merge_queue_bypass_config', lambda: (999, []))
+
+    result = github_ops.cmd_repo_merge_queue_enable(argparse.Namespace())
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    puts = [b for b in bodies if b[0] == 'PUT']
+    assert len(puts) == 1
+    payload = puts[0][2]
+    # The merge_queue rule and conditions ride along in the full-object PUT.
+    assert 'merge_queue' in [r.get('type') for r in payload['rules']]
+    assert payload['conditions']['ref_name']['include'] == ['refs/heads/main']
+    assert payload['target'] == 'branch'
+    assert payload['enforcement'] == 'active'
+    assert [a['actor_id'] for a in payload['bypass_actors']] == [999]
+    # Read-only fields from the GET response are NOT forwarded into the update body.
+    assert 'created_at' not in payload
+    assert 'node_id' not in payload
+    assert 'id' not in payload
