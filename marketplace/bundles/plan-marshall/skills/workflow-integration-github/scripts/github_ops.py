@@ -807,15 +807,21 @@ def _probe_merge_queue_state(owner: str, repo: str, branch: str) -> tuple[str, s
     return MERGE_QUEUE_ELIGIBLE_UNCONFIGURED, 'no merge_queue rule on branch', None
 
 
-def build_merge_queue_ruleset_payload(branch: str) -> dict:
+def build_merge_queue_ruleset_payload(branch: str, bypass_actor_ids: list[int] | None = None) -> dict:
     """Build the ``POST /rulesets`` request body enabling a merge queue on ``branch``.
 
     Pure function (no I/O) so the payload contract is unit-testable independent
     of the ``gh`` invocation. Creates an active branch ruleset scoped to the
     single target branch carrying one ``merge_queue`` rule with GitHub's
     documented default parameters.
+
+    When ``bypass_actor_ids`` is non-empty, a top-level ``bypass_actors`` key is
+    added whose entries grant each id an ``Integration`` (GitHub App) bypass with
+    ``bypass_mode == 'always'`` — this is what lets an org release-automation app
+    push straight to the ruleset-protected branch without a GH013 rejection. When
+    ``None``/empty the key is omitted entirely (today's bypass-less behavior).
     """
-    return {
+    payload: dict = {
         'name': 'plan-marshall-merge-queue',
         'target': 'branch',
         'enforcement': 'active',
@@ -840,6 +846,96 @@ def build_merge_queue_ruleset_payload(branch: str) -> dict:
             }
         ],
     }
+    if bypass_actor_ids:
+        payload['bypass_actors'] = [
+            {'actor_id': actor_id, 'actor_type': 'Integration', 'bypass_mode': 'always'}
+            for actor_id in bypass_actor_ids
+        ]
+    return payload
+
+
+def _read_merge_queue_bypass_config() -> tuple[int | None, list[str]]:
+    """Read the two org-agnostic merge-queue bypass knobs from marshal.json.
+
+    Mirrors :func:`ci_base._resolve_ci_timeout`'s defensive lazy-import seam:
+    ``_config_core`` triggers ``get_base_dir()`` at import time, which raises when
+    no git root is resolvable, so the import is guarded. Reads
+    ``merge_queue.bypass_app_id`` (int) and ``merge_queue.bypass_app_slugs``
+    (list[str]).
+
+    Returns ``(None, [])`` on an absent block/keys or any read/parse error — the
+    resolver never raises, so a missing or malformed config preserves today's
+    bypass-less behavior.
+    """
+    try:
+        from _config_core import is_initialized, load_config
+    except Exception:
+        return None, []
+    try:
+        if not is_initialized():
+            return None, []
+        cfg = load_config()
+        merge_queue = cfg.get('merge_queue', {}) or {}
+        raw_id = merge_queue.get('bypass_app_id')
+        # bool is an int subclass — reject it so a stray `true` is not read as 1.
+        app_id = raw_id if isinstance(raw_id, int) and not isinstance(raw_id, bool) else None
+        raw_slugs = merge_queue.get('bypass_app_slugs')
+        slugs = [s for s in raw_slugs if isinstance(s, str) and s] if isinstance(raw_slugs, list) else []
+        return app_id, slugs
+    except Exception:
+        return None, []
+
+
+def _resolve_bypass_actor_ids(owner: str) -> list[int]:
+    """Resolve merge-queue ruleset bypass-actor ids (two-tier, config-first).
+
+    1. **config-only** — a valid ``merge_queue.bypass_app_id`` yields ``[id]``
+       with NO ``gh api`` call. Works for org-owned and personal-account repos.
+    2. **org-list fallback** — no config id but ``merge_queue.bypass_app_slugs``
+       non-empty: ``GET /orgs/{owner}/installations``, match each installation's
+       ``app_slug`` against the configured slug(s), and return the matched
+       ``app_id``(s) (mirrors ``setup-branch-protection.py::get_app_id``).
+    3. neither resolves ⇒ ``[]``.
+
+    The org-list path no-ops gracefully (returns ``[]``, never an error) on any
+    non-zero ``gh`` exit — including the ``admin:org``-scope / non-org-ownership
+    precondition failure — so a personal-account or under-scoped token silently
+    preserves today's bypass-less behavior instead of surfacing a failure.
+    """
+    app_id, slugs = _read_merge_queue_bypass_config()
+    if app_id is not None:
+        return [app_id]
+    if not slugs:
+        return []
+
+    returncode, stdout, _stderr = run_gh(['api', f'orgs/{owner}/installations'])
+    if returncode != 0:
+        # Includes the admin:org-scope / non-org-ownership precondition failure —
+        # a best-effort lookup, so any failure degrades to the empty resolution.
+        return []
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return []
+    installations = data.get('installations') if isinstance(data, dict) else None
+    if not isinstance(installations, list):
+        return []
+
+    wanted = {slug.lower() for slug in slugs}
+    matched: list[int] = []
+    for installation in installations:
+        if not isinstance(installation, dict):
+            continue
+        slug = installation.get('app_slug')
+        app = installation.get('app_id')
+        if (
+            isinstance(slug, str)
+            and slug.lower() in wanted
+            and isinstance(app, int)
+            and not isinstance(app, bool)
+        ):
+            matched.append(app)
+    return matched
 
 
 def _resolve_repo_branch_and_probe(
@@ -871,6 +967,96 @@ def _resolve_repo_branch_and_probe(
         return make_error(operation, scope_error, detail), '', '', '', '', ''
 
     return None, owner, repo, branch, discriminator, detail
+
+
+def _gh_api_json_body(method: str, endpoint: str, payload: dict) -> tuple[int, str, str]:
+    """Send a JSON body to a ``gh api`` endpoint via a transient ``--input`` file.
+
+    The nested ruleset structure cannot be expressed via ``gh api`` field flags,
+    so the payload is written to a temp file consumed by ``gh api --input`` and
+    the file is unlinked afterwards. Returns the ``(returncode, stdout, stderr)``
+    tuple from :func:`run_gh`.
+    """
+    tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8')
+    try:
+        json.dump(payload, tmp)
+        tmp.close()
+        return run_gh(['api', '-X', method, endpoint, '--input', tmp.name])
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
+
+def _self_heal_merge_queue_bypass(
+    owner: str, repo: str, resolved_ids: list[int]
+) -> tuple[bool, dict | None]:
+    """Ensure the resolved bypass actor(s) are present on an already-configured ruleset.
+
+    Fetches the ``plan-marshall-merge-queue`` ruleset (list by name, then read the
+    detail) and, when any resolved id is NOT already among its ``bypass_actors``,
+    PATCHes the merged set in via ``PUT /repos/{o}/{r}/rulesets/{id}``.
+
+    Returns ``(changed, error)``: ``changed`` is ``True`` only when a PUT was
+    actually issued; ``error`` is a ready-to-return :func:`make_error` dict on a
+    ``gh`` failure, else ``None``. A missing ruleset-by-name or an
+    already-present actor is a no-op (``(False, None)``).
+    """
+    returncode, stdout, stderr = run_gh(['api', f'repos/{owner}/{repo}/rulesets'])
+    if returncode != 0:
+        if _is_auth_scope_error(stderr):
+            return False, make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, stderr.strip())
+        return False, make_error('repo_merge_queue_enable', 'Failed to list repository rulesets', stderr.strip())
+    try:
+        rulesets = json.loads(stdout)
+    except json.JSONDecodeError:
+        return False, make_error('repo_merge_queue_enable', 'Could not parse rulesets response')
+    if not isinstance(rulesets, list):
+        return False, make_error('repo_merge_queue_enable', 'rulesets response was not a list')
+
+    ruleset_id = None
+    for ruleset in rulesets:
+        if isinstance(ruleset, dict) and ruleset.get('name') == 'plan-marshall-merge-queue':
+            ruleset_id = ruleset.get('id')
+            break
+    if ruleset_id is None:
+        # Configured via some other ruleset — nothing named to self-heal.
+        return False, None
+
+    returncode, stdout, stderr = run_gh(['api', f'repos/{owner}/{repo}/rulesets/{ruleset_id}'])
+    if returncode != 0:
+        if _is_auth_scope_error(stderr):
+            return False, make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, stderr.strip())
+        return False, make_error('repo_merge_queue_enable', 'Failed to read merge-queue ruleset detail', stderr.strip())
+    try:
+        detail = json.loads(stdout)
+    except json.JSONDecodeError:
+        return False, make_error('repo_merge_queue_enable', 'Could not parse ruleset detail response')
+    if not isinstance(detail, dict):
+        return False, make_error('repo_merge_queue_enable', 'ruleset detail response was not an object')
+
+    existing = detail.get('bypass_actors')
+    existing_actors = existing if isinstance(existing, list) else []
+    present_ids = {a.get('actor_id') for a in existing_actors if isinstance(a, dict)}
+    missing_ids = [actor_id for actor_id in resolved_ids if actor_id not in present_ids]
+    if not missing_ids:
+        return False, None
+
+    merged_actors = list(existing_actors) + [
+        {'actor_id': actor_id, 'actor_type': 'Integration', 'bypass_mode': 'always'}
+        for actor_id in missing_ids
+    ]
+    # The ruleset update endpoint is a partial update — sending only bypass_actors
+    # leaves the merge_queue rule and conditions untouched.
+    returncode, _stdout, stderr = _gh_api_json_body(
+        'PUT', f'repos/{owner}/{repo}/rulesets/{ruleset_id}', {'bypass_actors': merged_actors}
+    )
+    if returncode != 0:
+        if _is_auth_scope_error(stderr):
+            return False, make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, stderr.strip())
+        return False, make_error('repo_merge_queue_enable', 'Failed to patch merge-queue ruleset bypass_actors', stderr.strip())
+    return True, None
 
 
 def cmd_repo_merge_queue_probe(args: argparse.Namespace) -> dict:
@@ -917,8 +1103,27 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
     if error is not None:
         return error
 
+    # Resolve the bypass-actor id(s) once (config-first, org-list fallback). An
+    # empty resolution preserves today's bypass-less behavior on both branches.
+    resolved_ids = _resolve_bypass_actor_ids(owner)
+
     if discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED:
-        # Idempotent no-op — the merge queue is already configured.
+        # Self-heal: when an actor id resolved but the existing ruleset lacks it,
+        # PATCH it in; otherwise this stays the idempotent no-op it was before.
+        if resolved_ids:
+            changed, heal_error = _self_heal_merge_queue_bypass(owner, repo, resolved_ids)
+            if heal_error is not None:
+                return heal_error
+            if changed:
+                return {
+                    'status': 'success',
+                    'operation': 'repo_merge_queue_enable',
+                    'provider': 'github',
+                    'branch': branch,
+                    'eligibility': discriminator,
+                    'changed': True,
+                    'detail': 'merge queue already configured; bypass actor patched into ruleset',
+                }
         return {
             'status': 'success',
             'operation': 'repo_merge_queue_enable',
@@ -930,24 +1135,12 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
         }
 
     if discriminator == MERGE_QUEUE_ELIGIBLE_UNCONFIGURED:
-        payload = build_merge_queue_ruleset_payload(branch)
-        # gh api reads a JSON request body from a file via --input; write the
-        # payload to a transient file so the nested ruleset structure survives
-        # intact (field flags cannot express the nested rules array).
-        tmp = tempfile.NamedTemporaryFile(
-            mode='w', suffix='.json', delete=False, encoding='utf-8'
+        payload = build_merge_queue_ruleset_payload(branch, resolved_ids)
+        # gh api reads a JSON request body from a file via --input; the nested
+        # ruleset structure cannot be expressed via field flags.
+        returncode, _stdout, stderr = _gh_api_json_body(
+            'POST', f'repos/{owner}/{repo}/rulesets', payload
         )
-        try:
-            json.dump(payload, tmp)
-            tmp.close()
-            returncode, _stdout, stderr = run_gh(
-                ['api', '-X', 'POST', f'repos/{owner}/{repo}/rulesets', '--input', tmp.name]
-            )
-        finally:
-            try:
-                os.unlink(tmp.name)
-            except OSError:
-                pass
         if returncode != 0:
             if _is_auth_scope_error(stderr):
                 return make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, stderr.strip())
