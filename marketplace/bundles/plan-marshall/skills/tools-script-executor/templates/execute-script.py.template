@@ -50,11 +50,82 @@ MARSHALL_VERSION = '{{GENERATED_VERSION}}'
 MAPPINGS_FINGERPRINT = '{{MAPPINGS_FINGERPRINT}}'
 
 # Add shared module directories to sys.path so executor-level imports can find them
-# (e.g., plan_logging imports input_validation at module level)
+# (e.g., plan_logging imports input_validation at module level).
+#
+# Each entry is a (skill, pinned_dir) pair. The version-pinned plugin-cache path
+# baked in at generation time is the FAST PATH; when that directory is absent — its
+# embedded MARSHALL_VERSION cache dir was GC-pruned — the bootstrap re-resolves the
+# skill's scripts dir against the NEWEST surviving
+# ~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts version dir (the same
+# numeric-version-tuple max() walk the target-aware resolver uses), so a pruned pinned
+# version can no longer break the executor's own bootstrap imports. Same defect class
+# as the Path(__file__) cache-resolver bugs. Pure stdlib and fully defensive — a
+# resolution failure never raises.
+_BOOTSTRAP_SKILL_DIRS = [
 {{SHARED_MODULE_DIRS}}
+]
+
+# The logging skill's scripts dir, resolved with the same pruned-version self-heal.
+_BOOTSTRAP_LOGGING_DIR = ('manage-logging', '{{LOGGING_DIR}}')
+
+
+def _newest_cache_scripts_dir(skill: str) -> str | None:
+    """Re-resolve ``{skill}/scripts`` against the newest surviving plugin-cache version dir.
+
+    Fires only when a baked-in version-pinned bootstrap dir is absent (its embedded
+    MARSHALL_VERSION cache path was GC-pruned). Walks
+    ``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts``, collecting every
+    version dir that carries the skill, and returns the NEWEST by numeric version-tuple —
+    the same newest-only selection the target-aware resolver uses. Pure stdlib and
+    defensive: any failure (including a missing HOME) returns ``None`` rather than raising.
+    """
+    import re as _re
+
+    def _vkey(name: str) -> tuple[int, ...]:
+        return tuple(int(part) for part in _re.findall(r'\d+', name))
+
+    try:
+        cache_root = Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
+        if not cache_root.is_dir():
+            return None
+        candidates = []
+        for version_dir in cache_root.iterdir():
+            if not version_dir.is_dir() or version_dir.name.startswith('.'):
+                continue
+            scripts_dir = version_dir / 'skills' / skill / 'scripts'
+            if scripts_dir.is_dir():
+                candidates.append((version_dir.name, scripts_dir))
+        if candidates:
+            _name, newest = max(candidates, key=lambda pair: _vkey(pair[0]))
+            return str(newest.resolve())
+    except (OSError, ValueError, RuntimeError):
+        pass
+    return None
+
+
+def _bootstrap_sys_path_insert(skill: str, pinned_dir: str) -> None:
+    """Insert ``pinned_dir`` on ``sys.path`` (fast path); self-heal to the newest cache dir when pruned.
+
+    The version-pinned dir is used verbatim when it still exists on disk — the common,
+    byte-stable case. When it is absent (GC-pruned), :func:`_newest_cache_scripts_dir`
+    re-resolves the newest surviving cache version dir for ``skill`` and inserts that
+    instead. Defensive: a missing pinned dir with no surviving cache dir inserts nothing.
+    """
+    if pinned_dir and Path(pinned_dir).is_dir():
+        sys.path.insert(0, pinned_dir)
+        return
+    healed = _newest_cache_scripts_dir(skill)
+    if healed:
+        sys.path.insert(0, healed)
+
+
+# Fast path first (shared dirs in emission order), then the logging dir LAST so it lands
+# at sys.path[0] — preserving the pre-self-heal insertion order exactly.
+for _bootstrap_skill, _bootstrap_dir in _BOOTSTRAP_SKILL_DIRS:
+    _bootstrap_sys_path_insert(_bootstrap_skill, _bootstrap_dir)
+_bootstrap_sys_path_insert(*_BOOTSTRAP_LOGGING_DIR)
 
 # Import plan logging module from marketplace (named plan_logging to avoid conflict with stdlib)
-sys.path.insert(0, '{{LOGGING_DIR}}')
 from plan_logging import (  # type: ignore[import-not-found]
     cleanup_old_script_logs,
     extract_plan_id,

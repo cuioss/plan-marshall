@@ -647,10 +647,15 @@ def generate_executor(
     logging_scripts_dir = get_logging_scripts_dir(base_path)
     logging_dir = str(logging_scripts_dir.resolve())
 
-    # Shared module directories (must be on sys.path before executor-level imports)
+    # Shared module directories (must be on sys.path before executor-level imports).
+    # Emitted as ``(skill, pinned_dir)`` pairs so the template bootstrap can self-heal a
+    # GC-pruned pinned version to the newest surviving plugin-cache version dir. The skill
+    # name is the parent dir name of each resolved ``.../skills/{skill}/scripts`` path.
     shared_dirs = get_shared_module_dirs(base_path)
     shared_module_lines = (
-        '\n'.join(f"sys.path.insert(0, '{d}')" for d in shared_dirs) if shared_dirs else '# (none detected)'
+        '\n'.join(f"    ('{Path(d).parent.name}', '{d}')," for d in shared_dirs)
+        if shared_dirs
+        else '    # (none detected)'
     )
 
     # Collect ALL script directories (including subdirectories of skills like script-shared
