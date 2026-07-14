@@ -181,7 +181,7 @@ The `repo merge-queue enable` path reads two optional, org-agnostic `marshal.jso
 | `merge_queue.bypass_app_id` | int | Static numeric GitHub App id — the config-only preferred path. When set, its id is used directly as an `Integration` bypass actor (`bypass_mode: always`) with **no** `gh api` call, so it works on both org-owned and personal-account repos. |
 | `merge_queue.bypass_app_slugs` | list[str] | App slugs for the best-effort org-list fallback, used only when `bypass_app_id` is unset. Each slug is matched against `gh api /orgs/{owner}/installations` and the matched installation's app id is used. This path requires `admin:org` scope on an org-owned repo; it no-ops gracefully (no bypass actor, no error) when that precondition is unmet. |
 
-On the idempotent already-configured path, `enable` self-heals a bypass-less ruleset: when an id resolves and is absent from the existing ruleset's `bypass_actors`, it is PATCHed in.
+On the idempotent already-configured path, `enable` self-heals the ruleset's `bypass_actors`: when a resolved id is not already present as an `Integration`/`bypass_mode: always` actor — either wholly absent, or present but carrying the wrong `actor_type`/`bypass_mode` — the wrong-shaped entry (if any) is dropped and the id is PATCHed back in with the correct `Integration`/`always` shape, so the merged set carries exactly one bypass actor per resolved id.
 
 ## Canonical invocations
 
