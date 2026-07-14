@@ -172,6 +172,17 @@ The strategies differ **only** in the trigger comment `request_fresh_review` pos
 
 `standards/comment-patterns.json` is a **pre-filter only** — it drops obvious noise (bot signatures, "lgtm", "thanks!") before findings are written. Classification of surviving comments belongs to the consolidated triage pass, which reads the validated top-level body (promoted from `raw_input.{body}` by the batched `manage-findings ingest` pass) — never the raw un-ingested `raw_input.*`.
 
+## Merge-queue bypass-actor configuration
+
+The `repo merge-queue enable` path reads two optional, org-agnostic `marshal.json` keys under the top-level `merge_queue` block to weave a bypass actor into the `plan-marshall-merge-queue` ruleset — letting an org release-automation app (tag + version-bump push straight to the protected branch) proceed without a GH013 push-protection rejection. Both are absent by default; when neither is set the ruleset is created with no `bypass_actors` (the bypass-less behavior).
+
+| Key | Type | Purpose |
+|-----|------|---------|
+| `merge_queue.bypass_app_id` | int | Static numeric GitHub App id — the config-only preferred path. When set, its id is used directly as an `Integration` bypass actor (`bypass_mode: always`) with **no** `gh api` call, so it works on both org-owned and personal-account repos. |
+| `merge_queue.bypass_app_slugs` | list[str] | App slugs for the best-effort org-list fallback, used only when `bypass_app_id` is unset. Each slug is matched against `gh api /orgs/{owner}/installations` and the matched installation's app id is used. This path requires `admin:org` scope on an org-owned repo; it no-ops gracefully (no bypass actor, no error) when that precondition is unmet. |
+
+On the idempotent already-configured path, `enable` self-heals a bypass-less ruleset: when an id resolves and is absent from the existing ruleset's `bypass_actors`, it is PATCHed in.
+
 ## Canonical invocations
 
 The canonical argparse surface for the three CLI scripts owned by this skill,
