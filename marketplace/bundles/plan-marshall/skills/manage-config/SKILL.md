@@ -107,6 +107,13 @@ added_count: 3
 renamed[1]:
   - plan.phase-6-finalize.steps.default:automated-review -> plan-marshall:automatic-review
 renamed_count: 1
+migrated[1]:
+  - plan.phase-6-finalize.steps.default:branch-cleanup.run_at_all -> lane
+migrated_count: 1
+materialized[2]:
+  - plan.phase-6-finalize.steps.default:push.lane=minimal
+  - plan.phase-6-finalize.steps.plan-marshall:automatic-review.lane=off
+materialized_count: 2
 ```
 
 `added[]` lists the dotted paths of every newly-added key; `added_count` is its
@@ -114,7 +121,15 @@ length. An empty `added[]` (with `added_count: 0`) means the live config already
 carried every default. `renamed[]` lists each migrated retired key as a
 human-readable dotted-path string (`... -> {canonical}` for a rename in place, or
 `... (dropped duplicate of {canonical})` for a dropped duplicate); `renamed_count`
-is its length, and an empty `renamed[]` means no retired key was present. The
+is its length, and an empty `renamed[]` means no retired key was present.
+`migrated[]` lists each legacy `run_at_all` finalize-step key rewritten to the
+unified `lane` knob; `migrated_count` is its length. `materialized[]` lists each
+`plan.phase-6-finalize.steps` entry whose lane was made explicit by the
+materialization pass — a pre-existing lane-less step annotated with its resolved
+frontmatter-class effective lane (`...=minimal` / `...=auto`), a freshly-merged
+default step annotated with `...=off` (opt-in); `materialized_count` is its length,
+and an empty `materialized[]` means every finalize step already carried an explicit
+`lane` (idempotent re-run). The
 config is persisted whenever `added[]`, `renamed[]`, or the provisioning stamps
 changed.
 
