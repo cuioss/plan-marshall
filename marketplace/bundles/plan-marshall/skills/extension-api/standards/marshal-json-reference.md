@@ -106,7 +106,7 @@ The three surviving lifecycle gates ride the `gate_mode` enum (`auto`\|`always`\
 | `plan.phase-2-refine.revalidation` (gate_mode) | User config | light lane + deep refine | - |
 | `plan.phase-3-outline.q_gate_validation` (`off`\|`once`\|`until_clean` re-run knob, NOT a gate_mode gate) | User config | deep-lane outline dispatch + planning-outline q-gate auto-loop | - |
 | `plan.phase-4-plan.q_gate_validation` (`off`\|`once`\|`until_clean` re-run knob, NOT a gate_mode gate) | User config | phase-4-plan q-gate signaling + planning-outline q-gate auto-loop | - |
-| `plan.phase-6-finalize.steps['pre-push-quality-gate'].lane` (qgate ceremony gate; read via `manage-execution-manifest step-params get`) | User config | manage-execution-manifest (finalize ceremony transform) | - |
+| `plan.phase-6-finalize.steps['default:pre-push-quality-gate'].lane` (qgate ceremony gate; read via `manage-execution-manifest step-params get`) | User config | manage-execution-manifest (finalize ceremony transform) | - |
 | `plan.phase-6-finalize.steps['default:pre-submission-self-review'].lane` (self_review ceremony gate; read via `manage-execution-manifest step-params get`) | User config | manage-execution-manifest (finalize ceremony transform) | - |
 | `plan.phase-6-finalize.steps['default:finalize-step-simplify'].lane` (simplify ceremony gate; read via `manage-execution-manifest step-params get`) | User config | manage-execution-manifest (finalize ceremony transform) | - |
 | `plan.phase-6-finalize.steps['default:finalize-step-security-audit'].lane` (security_audit ceremony gate; read via `manage-execution-manifest step-params get`) | User config | manage-execution-manifest (finalize ceremony transform) | - |
