@@ -480,6 +480,67 @@ def test_enable_self_heal_noop_when_actor_present(monkeypatch):
     assert not any(b[0] == 'PUT' for b in bodies)
 
 
+def test_enable_self_heal_filters_non_dict_existing_actor(monkeypatch):
+    # A non-dict entry in the fetched ruleset's bypass_actors must be dropped
+    # from the merged PUT body — echoing it back would corrupt the payload.
+    run_gh_stub, body_stub, _captured, bodies = _make_enable_stubs(
+        rules=[{'type': 'merge_queue'}],
+        rulesets_list=[{'id': 5, 'name': 'plan-marshall-merge-queue'}],
+        ruleset_detail={
+            'id': 5,
+            'name': 'plan-marshall-merge-queue',
+            'bypass_actors': [
+                'garbage-non-dict-entry',
+                {'actor_id': 111, 'actor_type': 'Integration', 'bypass_mode': 'always'},
+            ],
+        },
+    )
+    _install_enable(monkeypatch, run_gh_stub, body_stub)
+    monkeypatch.setattr(github_ops, '_read_merge_queue_bypass_config', lambda: (999, []))
+
+    result = github_ops.cmd_repo_merge_queue_enable(argparse.Namespace())
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    puts = [b for b in bodies if b[0] == 'PUT']
+    assert len(puts) == 1
+    payload = puts[0][2]
+    # Every merged entry is a dict — the string element was filtered out.
+    assert all(isinstance(a, dict) for a in payload['bypass_actors'])
+    # The pre-existing valid actor is retained and the missing one is added.
+    assert {a['actor_id'] for a in payload['bypass_actors']} == {111, 999}
+
+
+def test_enable_self_heal_regrants_actor_with_wrong_mode(monkeypatch):
+    # An actor_id present but carrying the WRONG bypass_mode/actor_type (exactly
+    # the GH013 scenario) must be treated as missing and re-granted the correct
+    # Integration/always shape — not silently no-op'd.
+    run_gh_stub, body_stub, _captured, bodies = _make_enable_stubs(
+        rules=[{'type': 'merge_queue'}],
+        rulesets_list=[{'id': 5, 'name': 'plan-marshall-merge-queue'}],
+        ruleset_detail={
+            'id': 5,
+            'name': 'plan-marshall-merge-queue',
+            'bypass_actors': [
+                {'actor_id': 999, 'actor_type': 'Team', 'bypass_mode': 'pull_request'},
+            ],
+        },
+    )
+    _install_enable(monkeypatch, run_gh_stub, body_stub)
+    monkeypatch.setattr(github_ops, '_read_merge_queue_bypass_config', lambda: (999, []))
+
+    result = github_ops.cmd_repo_merge_queue_enable(argparse.Namespace())
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    puts = [b for b in bodies if b[0] == 'PUT']
+    assert len(puts) == 1
+    payload = puts[0][2]
+    # Exactly one entry for id 999, carrying the corrected Integration/always shape.
+    actors_999 = [a for a in payload['bypass_actors'] if a['actor_id'] == 999]
+    assert len(actors_999) == 1
+    assert actors_999[0]['actor_type'] == 'Integration'
+    assert actors_999[0]['bypass_mode'] == 'always'
+
+
 def test_enable_self_heal_noop_when_no_id_resolved(monkeypatch):
     run_gh_stub, body_stub, captured, bodies = _make_enable_stubs(rules=[{'type': 'merge_queue'}])
     _install_enable(monkeypatch, run_gh_stub, body_stub)

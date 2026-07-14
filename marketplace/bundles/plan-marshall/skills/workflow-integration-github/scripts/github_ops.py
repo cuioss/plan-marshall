@@ -1037,13 +1037,28 @@ def _self_heal_merge_queue_bypass(
         return False, make_error('repo_merge_queue_enable', 'ruleset detail response was not an object')
 
     existing = detail.get('bypass_actors')
-    existing_actors = existing if isinstance(existing, list) else []
-    present_ids = {a.get('actor_id') for a in existing_actors if isinstance(a, dict)}
+    existing_raw = existing if isinstance(existing, list) else []
+    # (a) Only dict entries may be echoed back into the PUT body — a non-dict
+    # element in the fetched ruleset would otherwise corrupt the merged payload.
+    existing_actors = [a for a in existing_raw if isinstance(a, dict)]
+    # (b) An actor id counts as present only when it already carries the exact
+    # bypass shape we grant (Integration / always). An id present with a
+    # different actor_type or bypass_mode is the GH013 misconfiguration this
+    # self-heal exists to correct, so treat it as missing and re-grant it.
+    present_ids = {
+        a.get('actor_id')
+        for a in existing_actors
+        if a.get('actor_type') == 'Integration' and a.get('bypass_mode') == 'always'
+    }
     missing_ids = [actor_id for actor_id in resolved_ids if actor_id not in present_ids]
     if not missing_ids:
         return False, None
 
-    merged_actors = list(existing_actors) + [
+    # Drop any wrong-shaped existing entry for an id we are about to re-grant so
+    # the merged set carries exactly one Integration/always entry per resolved id.
+    heal_ids = set(missing_ids)
+    retained_actors = [a for a in existing_actors if a.get('actor_id') not in heal_ids]
+    merged_actors = retained_actors + [
         {'actor_id': actor_id, 'actor_type': 'Integration', 'bypass_mode': 'always'}
         for actor_id in missing_ids
     ]
