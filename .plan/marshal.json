@@ -67,29 +67,43 @@
       "max_iterations": 3,
       "finalize_without_asking": true,
       "loop_back_without_asking": true,
-      "qgate": "auto",
       "checks_wait_timeout_seconds": 600,
       "steps": {
         "default:finalize-step-sync-baseline": {
-          "auto_rebase_threshold": "no_overlap_only"
+          "auto_rebase_threshold": "no_overlap_only",
+          "lane": "minimal"
         },
-        "default:pre-push-quality-gate": {},
-        "project:finalize-step-plugin-doctor": {},
+        "default:pre-push-quality-gate": {
+          "lane": "minimal"
+        },
+        "project:finalize-step-plugin-doctor": {
+          "lane": "auto"
+        },
         "default:pre-submission-self-review": {
-          "self_review": "auto",
-          "drop_review_on_scope_gate": false
+          "drop_review_on_scope_gate": false,
+          "lane": "auto"
         },
         "default:finalize-step-simplify": {
-          "simplify": "auto"
+          "lane": "auto"
         },
         "default:finalize-step-security-audit": {
-          "security_audit": "auto"
+          "lane": "full"
         },
-        "default:push": {},
-        "default:create-pr": {},
-        "project:finalize-step-era-stamp-fill": {},
-        "default:ci-verify": {},
-        "default:architecture-refresh": {},
+        "default:push": {
+          "lane": "minimal"
+        },
+        "default:create-pr": {
+          "lane": "minimal"
+        },
+        "project:finalize-step-era-stamp-fill": {
+          "lane": "minimal"
+        },
+        "default:ci-verify": {
+          "lane": "minimal"
+        },
+        "default:architecture-refresh": {
+          "lane": "minimal"
+        },
         "plan-marshall:automatic-review": {
           "enabled_bots": "coderabbit,sourcery,gemini",
           "review_bot_buffer_seconds": 180,
@@ -98,15 +112,22 @@
           "re_review_await_timeout_seconds": 600,
           "re_review_on_timeout": "ask",
           "review_rate_window_await": false,
-          "review_rate_window_timeout_seconds": 3600
+          "review_rate_window_timeout_seconds": 3600,
+          "review_completion_poll_timeout_seconds": 600,
+          "lane": "ask"
         },
         "default:sonar-roundtrip": {
           "touched_file_cleanup": "new_code_only",
           "do_transition": false,
-          "ce_wait_timeout_seconds": 600
+          "ce_wait_timeout_seconds": 600,
+          "lane": "ask"
         },
-        "project:finalize-step-review-retrospective": {},
-        "default:lessons-capture": {},
+        "project:finalize-step-review-retrospective": {
+          "lane": "auto"
+        },
+        "default:lessons-capture": {
+          "lane": "minimal"
+        },
         "default:branch-cleanup": {
           "pr_merge_strategy": "squash",
           "final_merge_without_asking": true,
@@ -115,18 +136,38 @@
           "merge_hold_window": "full_window_release_at_waits",
           "merge_hold_budget_seconds": 3600,
           "use_merge_queue": true,
-          "admin_merge_on_stuck_state": false
+          "admin_merge_on_stuck_state": false,
+          "pre_merge_comment_barrier": "fail_into_loopback",
+          "lane": "minimal"
         },
         "default:finalize-step-preference-emitter": {
-          "preference_min_recurrence": 2
+          "preference_min_recurrence": 2,
+          "lane": "minimal"
         },
-        "project:finalize-step-deploy-target": {},
-        "project:finalize-step-sync-plugin-cache": {},
-        "plan-marshall:plan-retrospective": {},
-        "project:finalize-step-lessons-housekeeping": {},
-        "default:record-metrics": {},
-        "default:finalize-step-print-phase-breakdown": {},
-        "default:archive-plan": {}
+        "project:finalize-step-deploy-target": {
+          "lane": "minimal"
+        },
+        "project:finalize-step-sync-plugin-cache": {
+          "lane": "minimal"
+        },
+        "plan-marshall:plan-retrospective": {
+          "lane": "full"
+        },
+        "project:finalize-step-lessons-housekeeping": {
+          "lane": "minimal"
+        },
+        "default:record-metrics": {
+          "lane": "minimal"
+        },
+        "default:finalize-step-print-phase-breakdown": {
+          "lane": "minimal"
+        },
+        "default:archive-plan": {
+          "lane": "minimal"
+        },
+        "default:adr-propose": {
+          "lane": "off"
+        }
       },
       "effort": {
         "default": "level-3",
@@ -257,7 +298,7 @@
       "lessons_superseded_days": 0,
       "temp_on_maintenance": true
     },
-    "provisioned_version": "0.1.1096",
-    "config_seed_fingerprint": "dc978cd2"
+    "provisioned_version": "",
+    "config_seed_fingerprint": "37df1a33"
   }
 }
