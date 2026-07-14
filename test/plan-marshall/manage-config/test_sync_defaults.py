@@ -676,3 +676,212 @@ def test_sync_defaults_no_renames_reported_for_clean_config(plan_context):
     assert result['status'] == 'success'
     assert result['renamed'] == []
     assert result['renamed_count'] == 0
+
+
+# =============================================================================
+# Finalize-lane materialization (this plan, D1)
+# =============================================================================
+#
+# sync-defaults materializes an explicit `lane` on every lane-less
+# `plan.phase-6-finalize.steps` entry AFTER the deep-merge and BEFORE the
+# provisioning re-stamp. The fill rule is provenance-driven:
+#   - a PRE-EXISTING lane-less step (not in `added`) is filled with its
+#     frontmatter-class effective lane (a semantic no-op: `core` /
+#     `derived-state` → `minimal`, `adversarial` / `prunable` → `auto`);
+#   - a FRESHLY deep-merged default row (in `added`) that lacks a lane is filled
+#     with `lane: off` (opt-in);
+#   - a step already carrying an explicit `lane` is left untouched (idempotent);
+#   - a pre-existing step whose frontmatter lane is unresolvable is left
+#     lane-less and NOT reported.
+# Scope is `plan.phase-6-finalize.steps` ONLY. Each materialized step is reported
+# as an annotated dotted-path string in `materialized` / `materialized_count`.
+
+# Frontmatter-class anchors (pinned to the real phase-6-finalize step docs):
+#   default:push                        → class core       → effective minimal
+#   default:pre-submission-self-review  → class adversarial → effective auto
+#   default:archive-plan                → class core       → effective minimal
+_CORE_STEP = 'default:push'
+_ADVERSARIAL_STEP = 'default:pre-submission-self-review'
+
+
+def _materialized_entry(step_id: str, lane: str) -> str:
+    """Render the expected `materialized` report string for a step + fill value."""
+    return f'plan.phase-6-finalize.steps.{step_id} -> lane={lane}'
+
+
+def test_sync_defaults_materializes_preexisting_steps_to_effective_lane(plan_context):
+    """A pre-existing lane-less core / adversarial step gets its frontmatter-class effective lane.
+
+    `default:push` (class core) materializes to `minimal`; the pre-existing
+    `default:pre-submission-self-review` (class adversarial) materializes to
+    `auto`. Both are pre-existing (present in the input, not freshly merged), so
+    the fill surfaces the composer's own default — a semantic no-op — never `off`.
+    Both are reported in `materialized`.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {_CORE_STEP: {}, _ADVERSARIAL_STEP: {}}}}},
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    # pre-existing core → minimal (a no-op surfacing of the class default)
+    assert steps[_CORE_STEP]['lane'] == 'minimal'
+    # pre-existing adversarial → auto (never off, because it pre-existed)
+    assert steps[_ADVERSARIAL_STEP]['lane'] == 'auto'
+    # both are reported with their annotated dotted-path fill entry
+    assert _materialized_entry(_CORE_STEP, 'minimal') in result['materialized']
+    assert _materialized_entry(_ADVERSARIAL_STEP, 'auto') in result['materialized']
+    assert result['materialized_count'] == len(result['materialized'])
+
+
+def test_sync_defaults_materializes_freshly_merged_default_step_to_off(plan_context):
+    """A freshly deep-merged default step that lacks a lane is materialized to `off`.
+
+    `default:archive-plan` is a default_on:true step absent from the sparse input
+    config; the deep-merge back-fills it (its dotted path lands in `added`), so
+    the materializer fills it with `lane: off` (opt-in) — NOT its core effective
+    lane. This is why the D2 compose-time immunity net exists: a freshly-merged
+    core floor step can carry `off`, and the composer must ignore it.
+    """
+    # sparse input: one pre-existing step; every other default step is fresh
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {_CORE_STEP: {}}}}},
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    # freshly-merged default step → off (opt-in), reported
+    assert steps['default:archive-plan']['lane'] == 'off'
+    assert _materialized_entry('default:archive-plan', 'off') in result['materialized']
+    # the pre-existing core step still materializes to its effective lane, not off
+    assert steps[_CORE_STEP]['lane'] == 'minimal'
+
+
+def test_sync_defaults_materializes_wholesale_copied_steps_subtree_to_off(plan_context):
+    """A wholesale-copied default `steps` subtree materializes each new step to `off`.
+
+    Regression for the ancestor-added-rows bug (PR #896): when a live config's
+    `phase-6-finalize` dict has NO `steps` key at all, the deep-merge copies the
+    entire default `steps` map in ONE shot (the ancestor-added-subtree case,
+    distinct from the per-step recursion the sibling test exercises). The prior
+    `_deep_merge_missing` recorded only the subtree ROOT
+    (`plan.phase-6-finalize.steps`) in `added`, never the per-step leaf paths, so
+    `_materialize_finalize_lanes` misclassified every wholesale-copied row as
+    pre-existing and filled it with its frontmatter-class effective lane
+    (`minimal` / `auto`) instead of the required `lane: off`, violating the
+    "infra steps must be opt-in" principle. With the per-descendant recording
+    fix (`_record_added_paths`), each freshly-copied config-less step is
+    recognised as newly-added and materialised to `off`.
+    """
+    # phase-6-finalize present but with NO `steps` key -> the whole default
+    # `steps` map is copied wholesale (the ancestor-added-subtree case).
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'max_iterations': 3}}},
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    # the wholesale-copied config-less core step is freshly-added, so it
+    # materialises to `off` (opt-in) — NOT its effective `minimal` lane.
+    assert steps[_CORE_STEP]['lane'] == 'off'
+    assert steps['default:archive-plan']['lane'] == 'off'
+    # the config-less adversarial step, likewise freshly-copied, is `off` too,
+    # not its effective `auto` lane.
+    assert steps[_ADVERSARIAL_STEP]['lane'] == 'off'
+    # the per-step leaf dotted path was recorded in `added` (the fix) — not just
+    # the subtree root — and the step is reported as materialised to off.
+    assert f'plan.phase-6-finalize.steps.{_CORE_STEP}' in result['added']
+    assert _materialized_entry(_CORE_STEP, 'off') in result['materialized']
+
+
+def test_sync_defaults_preserves_explicit_lane_untouched(plan_context):
+    """A step carrying an explicit `lane` is preserved byte-identically and NOT reported.
+
+    An explicit `ask` on the infra review gate and an explicit resolved tier
+    (`full`) on a core step both survive the materialization pass untouched, and
+    neither is reported in `materialized`.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {
+            'plan': {
+                'phase-6-finalize': {
+                    'steps': {
+                        'plan-marshall:automatic-review': {'lane': 'ask'},
+                        _CORE_STEP: {'lane': 'full'},
+                    }
+                }
+            }
+        },
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    # the explicit lanes survive untouched
+    assert steps['plan-marshall:automatic-review']['lane'] == 'ask'
+    assert steps[_CORE_STEP]['lane'] == 'full'
+    # neither explicit-lane step is reported as materialized
+    assert not any('plan-marshall:automatic-review' in entry for entry in result['materialized'])
+    assert not any(_CORE_STEP in entry for entry in result['materialized'])
+
+
+def test_sync_defaults_lane_materialization_is_idempotent(plan_context):
+    """A second sync materializes nothing — every step already carries an explicit lane.
+
+    The first sync fills a lane on every lane-less finalize step; the second
+    observes them all explicit and reports `materialized == []`.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {_CORE_STEP: {}, _ADVERSARIAL_STEP: {}}}}},
+    )
+
+    first = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    assert first['status'] == 'success'
+    assert first['materialized_count'] > 0
+
+    second = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert second['status'] == 'success'
+    assert second['materialized'] == []
+    assert second['materialized_count'] == 0
+
+
+def test_sync_defaults_leaves_unresolvable_frontmatter_step_lane_less(plan_context):
+    """A pre-existing step whose frontmatter lane is unresolvable is left lane-less and unreported.
+
+    An external `bundle:skill` step has no project-local source doc, so its
+    frontmatter lane cannot be resolved to a concrete lattice tier. The
+    materializer leaves it untouched (materializing a value it cannot resolve
+    would not be a no-op) and does NOT report it.
+    """
+    unresolvable = 'external-bundle:custom-finalize-step'
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': {unresolvable: {}}}}},
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    # the unresolvable external step is left lane-less
+    assert 'lane' not in steps[unresolvable]
+    # and is NOT reported in materialized
+    assert not any(unresolvable in entry for entry in result['materialized'])

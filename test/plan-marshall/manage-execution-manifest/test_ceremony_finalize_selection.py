@@ -873,3 +873,210 @@ class TestCeremonyFinalizeAdrPropose:
         bare = _bare(_manifest_phase_6_steps(result))
         assert 'adr-propose' in bare
         assert 'adr-propose' not in result['ceremony_finalize_forced_out']
+
+
+# =============================================================================
+# Test: compose-time immune-off floor (D2)
+#
+# A hand-written ``lane: off`` on a ``class: core`` / ``derived-state`` finalize
+# step is IMMUNE — the composer ignores the weakening ``off`` and KEEPS the step
+# at its class-default (``minimal``) tier, surfacing an informational warning in
+# ``lane_warnings``. A ``lane: off`` on a ``class: adversarial`` / ``prunable``
+# step remains a real opt-out that DROPS it. The retired "off honored-but-warning"
+# drop of a floor element is gone. Composed under each pruning posture
+# (``minimal`` / ``auto``); ``full`` is a no-op lane pass (verified separately).
+# =============================================================================
+
+
+# Canned lane blocks keyed by step id, mirroring the real frontmatter classes of
+# the mandatory finalize ceremony floor plus two opt-out peers. The blocks are
+# monkeypatched onto ``_resolve_element_lane`` so the immune-off behaviour is
+# exercised deterministically without depending on the shipped frontmatter.
+_IMMUNE_OFF_LANE_BLOCKS = {
+    'push': {'class': 'core', 'tier': 'minimal', 'cost_size': 'XS'},
+    'create-pr': {'class': 'core', 'tier': 'minimal', 'cost_size': 'M'},
+    'ci-verify': {'class': 'core', 'tier': 'minimal', 'cost_size': 'XS'},
+    'branch-cleanup': {'class': 'core', 'tier': 'minimal', 'cost_size': 'XS'},
+    'record-metrics': {'class': 'core', 'tier': 'minimal', 'cost_size': 'XS'},
+    'archive-plan': {'class': 'core', 'tier': 'minimal', 'cost_size': 'XS'},
+    'project:finalize-step-deploy-target': {'class': 'derived-state', 'tier': 'minimal', 'cost_size': 'XS'},
+    'project:finalize-step-sync-plugin-cache': {'class': 'derived-state', 'tier': 'minimal', 'cost_size': 'XS'},
+    'sonar-roundtrip': {'class': 'adversarial', 'tier': 'auto', 'cost_size': 'L'},
+    'plan-marshall:plan-retrospective': {'class': 'prunable', 'tier': 'auto', 'cost_size': 'L'},
+}
+
+# The mandatory floor: every ``core`` / ``derived-state`` step named in the D2
+# success criteria. Immune to a weakening ``off``.
+_IMMUNE_FLOOR_STEPS = [
+    'push',
+    'create-pr',
+    'ci-verify',
+    'branch-cleanup',
+    'record-metrics',
+    'archive-plan',
+    'project:finalize-step-deploy-target',
+    'project:finalize-step-sync-plugin-cache',
+]
+
+# The opt-out peers: a ``lane: off`` here is honoured (drops cleanly).
+_OPT_OUT_STEPS = ['sonar-roundtrip', 'plan-marshall:plan-retrospective']
+
+
+def _patch_immune_off_lanes(monkeypatch):
+    """Monkeypatch ``_resolve_element_lane`` to the canned immune-off blocks."""
+    monkeypatch.setattr(
+        _mem, '_resolve_element_lane', lambda step: _IMMUNE_OFF_LANE_BLOCKS.get(step)
+    )
+
+
+def _write_execution_profile(plan_context, plan_id, profile):
+    """Seed ``{plan_dir}/status.json`` with ``metadata.execution_profile``."""
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    (plan_dir / 'status.json').write_text(
+        json.dumps({'plan_id': plan_id, 'metadata': {'execution_profile': profile}}, indent=2),
+        encoding='utf-8',
+    )
+
+
+def _seed_marshal_lane_overrides(candidates, off_steps):
+    """Write a marshal.json whose phase-6 steps map carries per-step ``lane`` overrides.
+
+    Every candidate becomes a key in the AUTHORITATIVE ``plan.phase-6-finalize.steps``
+    map (the composer prefers it over the CSV). A step in ``off_steps`` carries a
+    hand-written ``{'lane': 'off'}`` param; every other step seeds as ``None``.
+    """
+    from file_ops import get_marshal_path
+
+    steps = {c: ({'lane': 'off'} if c in off_steps else None) for c in candidates}
+    marshal = {
+        'plan': {'phase-6-finalize': {'steps': steps}},
+        'build': {
+            'map': {
+                'python': [
+                    {'glob': '**/*.py', 'role': 'production', 'build_class': 'compile'},
+                ],
+            },
+        },
+    }
+    marshal_path = get_marshal_path()
+    marshal_path.parent.mkdir(parents=True, exist_ok=True)
+    marshal_path.write_text(json.dumps(marshal, indent=2))
+    return marshal_path
+
+
+class TestCeremonyFinalizeImmuneOff:
+    """A hand-written floor ``off`` is neutralised; an opt-out ``off`` still drops."""
+
+    @pytest.mark.parametrize('posture', ['minimal', 'auto'])
+    def test_floor_off_is_immune_kept_with_warning(self, plan_context, monkeypatch, posture):
+        _patch_immune_off_lanes(monkeypatch)
+        candidates = _IMMUNE_FLOOR_STEPS + _OPT_OUT_STEPS
+        # Every step (floor AND opt-out) carries a hand-written lane: off.
+        _seed_marshal_lane_overrides(candidates, off_steps=candidates)
+        _stub_footprint(_FOOTPRINT)
+        plan_id = f'immune-off-{posture}'
+        _write_execution_profile(plan_context, plan_id, posture)
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=5,
+                phase_6_steps=','.join(candidates),
+            )
+        )
+
+        assert result is not None and result['status'] == 'success'
+        assert result['execution_profile'] == posture
+
+        # Every mandatory floor step survives despite its hand-written off.
+        composed = _bare(_manifest_phase_6_steps(result))
+        for step in _IMMUNE_FLOOR_STEPS:
+            assert next(iter(_bare([step]))) in composed, f'{step} must survive a floor off'
+
+        # The opt-out peers with off are dropped (never kept).
+        for step in _OPT_OUT_STEPS:
+            assert step in result['lane_dropped']
+            assert next(iter(_bare([step]))) not in composed
+
+        # Each floor step surfaces an immune informational warning.
+        warned = {w['step']: w['warning'] for w in result['lane_warnings']}
+        for step in _IMMUNE_FLOOR_STEPS:
+            assert step in warned
+            assert 'immune' in warned[step]
+
+        # The retired "honored-but-warning" drop semantic is gone.
+        assert all('honored' not in w['warning'] for w in result['lane_warnings'])
+        # An opt-out drop never carries a warning (a clean opt-out).
+        for step in _OPT_OUT_STEPS:
+            assert step not in warned
+
+    def test_full_posture_is_noop_no_lane_pruning(self, plan_context, monkeypatch):
+        """Under ``full`` the lane pass is a no-op — nothing is dropped or warned,
+        even with hand-written floor / opt-out offs."""
+        _patch_immune_off_lanes(monkeypatch)
+        candidates = _IMMUNE_FLOOR_STEPS + _OPT_OUT_STEPS
+        _seed_marshal_lane_overrides(candidates, off_steps=candidates)
+        _stub_footprint(_FOOTPRINT)
+        plan_id = 'immune-off-full'
+        _write_execution_profile(plan_context, plan_id, 'full')
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=5,
+                phase_6_steps=','.join(candidates),
+            )
+        )
+
+        assert result is not None and result['status'] == 'success'
+        assert result['execution_profile'] == 'full'
+        assert result['lane_dropped'] == []
+        assert result['lane_warnings'] == []
+
+    def test_opt_out_off_drop_is_attributable_to_off_under_auto(self, plan_context, monkeypatch):
+        """Under ``auto`` an adversarial (tier-auto) step is KEPT without an override
+        but DROPPED once a hand-written ``off`` is set — the drop is the off, not the
+        posture cutoff."""
+        _patch_immune_off_lanes(monkeypatch)
+        candidates = [
+            'push', 'create-pr', 'ci-verify', 'branch-cleanup',
+            'record-metrics', 'archive-plan', 'sonar-roundtrip',
+        ]
+
+        # Baseline: no override → sonar-roundtrip (tier auto) survives auto posture.
+        _seed_marshal_lane_overrides(candidates, off_steps=[])
+        _stub_footprint(_FOOTPRINT)
+        _write_execution_profile(plan_context, 'immune-off-baseline', 'auto')
+        baseline = cmd_compose(
+            _compose_ns(
+                plan_id='immune-off-baseline',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=5,
+                phase_6_steps=','.join(candidates),
+            )
+        )
+        assert baseline is not None and baseline['status'] == 'success'
+        assert 'sonar-roundtrip' in _bare(_manifest_phase_6_steps(baseline))
+        assert 'sonar-roundtrip' not in baseline['lane_dropped']
+
+        # With off → the adversarial step drops cleanly (no warning).
+        _seed_marshal_lane_overrides(candidates, off_steps=['sonar-roundtrip'])
+        _write_execution_profile(plan_context, 'immune-off-optout', 'auto')
+        dropped = cmd_compose(
+            _compose_ns(
+                plan_id='immune-off-optout',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=5,
+                phase_6_steps=','.join(candidates),
+            )
+        )
+        assert dropped is not None and dropped['status'] == 'success'
+        assert 'sonar-roundtrip' in dropped['lane_dropped']
+        assert 'sonar-roundtrip' not in _bare(_manifest_phase_6_steps(dropped))
+        assert all(w['step'] != 'sonar-roundtrip' for w in dropped['lane_warnings'])

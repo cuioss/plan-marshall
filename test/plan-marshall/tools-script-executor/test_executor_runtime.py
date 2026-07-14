@@ -105,7 +105,7 @@ def _render_executor(target_path: Path, embedded_script_path: Path) -> Path:
     rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
     rendered = rendered.replace(
         '{{SHARED_MODULE_DIRS}}',
-        f"sys.path.insert(0, '{INPUT_VALIDATION_DIR}')",
+        f"    ('tools-input-validation', '{INPUT_VALIDATION_DIR}'),",
     )
     rendered = rendered.replace('{{EXTRA_SCRIPT_DIRS}}', '')
     rendered = rendered.replace('{{PLAN_DIR_NAME}}', '.plan')
@@ -308,7 +308,7 @@ def _render_executor_for_post_removal(
     rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
     rendered = rendered.replace(
         '{{SHARED_MODULE_DIRS}}',
-        f"sys.path.insert(0, '{INPUT_VALIDATION_DIR}')",
+        f"    ('tools-input-validation', '{INPUT_VALIDATION_DIR}'),",
     )
     rendered = rendered.replace('{{EXTRA_SCRIPT_DIRS}}', '')
     rendered = rendered.replace('{{PLAN_DIR_NAME}}', '.plan')
@@ -449,7 +449,7 @@ def _render_executor_with_cwd_walk(target_path: Path, embedded_script_path: Path
     rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
     rendered = rendered.replace(
         '{{SHARED_MODULE_DIRS}}',
-        f"sys.path.insert(0, '{INPUT_VALIDATION_DIR}')",
+        f"    ('tools-input-validation', '{INPUT_VALIDATION_DIR}'),",
     )
     rendered = rendered.replace('{{EXTRA_SCRIPT_DIRS}}', '')
     rendered = rendered.replace('{{PLAN_DIR_NAME}}', '.plan')

@@ -59,8 +59,8 @@ from _manifest_decide import (
 from _manifest_lanes import (
     _CLASS_DEFAULT_TIER,  # noqa: F401
     _DEFAULT_COST_SIZE_TABLE,  # noqa: F401
+    _IMMUNE_TO_OFF_CLASSES,  # noqa: F401
     _TIER_RANK,  # noqa: F401
-    _WARN_ON_DROP_CLASSES,  # noqa: F401
     DEFAULT_EXECUTION_PROFILE,  # noqa: F401
     LANE_OVERRIDES,  # noqa: F401
     LANE_TIERS,  # noqa: F401
@@ -1276,9 +1276,10 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # answered. When the corresponding provider is also absent
     # (_read_ci_provider() is None for automatic-review; _read_sonar_provider()
     # is None for sonar-roundtrip) the element is dropped. A RESOLVED ask
-    # (off/auto/full) and a provider-configured ask both survive; the frozen
-    # off-override-on-floor-step honored-with-warning semantic (owned by the
-    # later lane-resolution pass) is untouched. Runs at the candidate-narrowing
+    # (off/auto/full) and a provider-configured ask both survive; the
+    # off-override-on-floor-step immunity semantic — a weakening off on a
+    # core / derived-state floor element is ignored, not dropped (owned by the
+    # later lane-resolution pass) — is untouched. Runs at the candidate-narrowing
     # stage so it only ever narrows the candidate list. See
     # standards/decision-rules.md § Pre-Filter: unresolved_ask_provider_drop.
     ci_provider = _read_ci_provider()
@@ -1430,8 +1431,11 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # the posture cutoff: ``minimal`` keeps only the tier-minimal floor, ``auto``
     # additionally keeps tier-auto elements and drops tier-full ones, ``full``
     # keeps everything. A weakening ``off`` override of a derived-state / core
-    # floor element is honored but emits a correctness warning (§5 — minimal must
-    # NOT SILENTLY drop required derived state). ``automatic-review`` is governed
+    # floor element is IMMUNE — the ``off`` is ignored, the element is KEPT at its
+    # class-default tier, and an informational warning records the neutralized
+    # override (the mandatory finalize floor cannot be weakened). An ``off`` on an
+    # ``adversarial`` / ``prunable`` element is a real opt-out that drops it
+    # cleanly. ``automatic-review`` is governed
     # purely by its configured ``lane`` (seeded ``ask`` → resolved by
     # marshall-steward) and its lane tier — there is no separate force-add guard.
     # The q-gate is never a phase-6 finalize step, so it is never lane-pruned here.

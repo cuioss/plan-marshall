@@ -228,7 +228,7 @@ When `scope_estimate ∈ {none, multi_module, broad}` and `drop_review_on_scope_
 
 - MUST NOT drop a RESOLVED ask — an effective tier of `off`/`auto`/`full` keeps the element (`off` is handled by the later lane-resolution pass; `auto`/`full` keep it per posture).
 - MUST NOT drop when the provider IS configured — an `ask` whose provider exists is kept (the operator merely has not answered yet, but the infra is present).
-- MUST NOT alter the frozen `off`-override-on-floor-step honored-with-warning semantic — that path is owned by the lane-resolution pass and is untouched.
+- MUST NOT alter the `off`-override-on-floor-step immunity semantic (a weakening `off` on a `core` / `derived-state` floor element is ignored, not dropped) — that path is owned by the lane-resolution pass and is untouched.
 
 **Why a pre-filter (not a row / post-matrix transform)**: the drop depends only on the per-element lane override and the configured providers, both orthogonal to the change-type / scope / recipe inputs the seven-row matrix consumes. Modeling it as a candidate-narrowing pre-filter keeps the seven-row matrix unchanged and matches the composer's "rows and pre-filters only ever narrow" architecture.
 
@@ -323,7 +323,7 @@ When all four gates resolve to `auto` (the default), the transform is a no-op an
 - `auto` additionally keeps tier-`auto` elements and drops tier-`full` ones (`security-audit`, `plan-retrospective`);
 - `full` keeps everything.
 
-An element with no `lane:` block is not lane-participating and is always kept. An `off` override drops the element; when it weakens a `derived-state` / `core` floor element the drop is **honored but emits a correctness warning** (the lane-selection design §5 — `minimal` must never *silently* drop required derived state). An `ask` effective tier keeps the element at compose time (the `phase-1-init` dialogue owns the per-element prompt).
+An element with no `lane:` block is not lane-participating and is always kept. An `off` override on an `adversarial` / `prunable` element drops it cleanly (a real opt-out). An `off` override on a `derived-state` / `core` floor element is **immune** — it is ignored, the element is KEPT at its class-default tier, and an informational note records that the weakening override was neutralized (the lane-selection design §5 — `minimal` must never drop required derived state, so the correctness floor cannot be weakened away). An `ask` effective tier keeps the element at compose time (the `phase-1-init` dialogue owns the per-element prompt).
 
 **`plan-marshall:automatic-review` is governed purely by its lane**: this pass resolves `plan-marshall:automatic-review` exactly like any other adversarial lane element — kept iff its effective tier ⊑ posture, with its per-element `marshal.json` `lane` override taking precedence over the class default. There is no separate downstream force-add guard that re-asserts it: a `minimal` posture that drops it, or an `off` override, is honored as the operator's decision. **The q-gate is never a phase-6 finalize step, so the lane pass never touches it** — the adversarial q-gate is always kept.
 
@@ -333,7 +333,7 @@ An element with no `lane:` block is not lane-participating and is always kept. A
 
 ```text
 (plan-marshall:manage-execution-manifest:compose) lane_resolution — execution_profile={posture}, dropped {steps} from phase_6.steps (tier above posture cutoff)
-(plan-marshall:manage-execution-manifest:compose) lane_resolution warning — {step}: override 'off' drops {class} floor element — honored, but weakening a required element
+(plan-marshall:manage-execution-manifest:compose) lane_resolution warning — {step}: override 'off' ignored for {class} floor element — immune, cannot be weakened
 ```
 
 When the posture is `full` (or no lane-participating element is above the cutoff), the transform is a no-op and emits no log entry. The composer surfaces `execution_profile`, `lane_dropped`, and `lane_warnings` in the `compose` result for observability.

@@ -645,12 +645,17 @@ def generate_executor(
 
     # logging module location (unified logging skill)
     logging_scripts_dir = get_logging_scripts_dir(base_path)
-    logging_dir = str(logging_scripts_dir.resolve())
+    logging_dir = logging_scripts_dir.resolve().as_posix()
 
-    # Shared module directories (must be on sys.path before executor-level imports)
+    # Shared module directories (must be on sys.path before executor-level imports).
+    # Emitted as ``(skill, pinned_dir)`` pairs so the template bootstrap can self-heal a
+    # GC-pruned pinned version to the newest surviving plugin-cache version dir. The skill
+    # name is the parent dir name of each resolved ``.../skills/{skill}/scripts`` path.
     shared_dirs = get_shared_module_dirs(base_path)
     shared_module_lines = (
-        '\n'.join(f"sys.path.insert(0, '{d}')" for d in shared_dirs) if shared_dirs else '# (none detected)'
+        '\n'.join(f"    ('{d.parent.name}', '{d.as_posix()}')," for d in shared_dirs)
+        if shared_dirs
+        else '    # (none detected)'
     )
 
     # Collect ALL script directories (including subdirectories of skills like script-shared
@@ -658,7 +663,7 @@ def generate_executor(
     # These are injected as extra PYTHONPATH entries so subprocess-invoked scripts can
     # import from organized subdirectory layouts (e.g., script-shared/scripts/build/).
     all_script_dirs = collect_script_dirs(base_path)
-    extra_dirs_code = ', '.join(f"'{d}'" for d in sorted({str(Path(d).resolve()) for d in all_script_dirs}))
+    extra_dirs_code = ', '.join(f"'{d}'" for d in sorted({Path(d).resolve().as_posix() for d in all_script_dirs}))
 
     # Provisioning stamps: the version and script-set fingerprint the executor
     # was generated at, read from the installed dist-manifest.json (emitted by

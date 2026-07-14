@@ -13,11 +13,26 @@ subprocess that pre-seeds ``sys.path`` and then imports the real generator by
 file path — asserting on the resulting ``sys.path`` ordering.
 """
 
+import os
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 
 from conftest import get_scripts_dir
+
+# The shared-module skills the executor template bootstraps onto sys.path before
+# its own top-level imports (plan_logging, toon_parser, _ledger_core,
+# worktree_sha, input_validation). Mirrors get_shared_module_dirs' shared_skills
+# plus the separately-handled logging skill.
+_BOOTSTRAP_SHARED_SKILLS = (
+    'tools-file-ops',
+    'tools-input-validation',
+    'ref-toon-format',
+    'script-shared',
+    'manage-change-ledger',
+)
+_BOOTSTRAP_LOGGING_SKILL = 'manage-logging'
 
 
 def _run_bootstrap_probe(seed_lines: str) -> tuple[int, int, int, str]:
@@ -105,3 +120,126 @@ class TestBootstrapGuard:
         assert real_idx != -1
         assert injected_idx != -1
         assert real_idx < injected_idx
+
+
+def _skills_dir() -> Path:
+    """Absolute path to the marketplace ``…/plan-marshall/skills`` directory."""
+    tse_scripts = get_scripts_dir('plan-marshall', 'tools-script-executor').resolve()
+    return tse_scripts.parent.parent
+
+
+def _template_path() -> Path:
+    """Absolute path to the executor template."""
+    tse_scripts = get_scripts_dir('plan-marshall', 'tools-script-executor').resolve()
+    return tse_scripts.parent / 'templates' / 'execute-script.py.template'
+
+
+def _render_executor(pruned_base: Path) -> str:
+    """Render the executor template with every bootstrap dir PINNED at a pruned path.
+
+    The shared-module and logging bootstrap dirs are pointed at
+    ``{pruned_base}/skills/{skill}/scripts`` — directories that do NOT exist,
+    mirroring a GC-pruned embedded MARSHALL_VERSION cache path. Every other
+    substitution token is filled with a minimal valid value so the rendered file
+    is importable and its module-level shared imports (``plan_logging``,
+    ``toon_parser``, ``_ledger_core``, ``worktree_sha``) must resolve exclusively
+    through the template's newest-cache self-heal.
+    """
+    template = _template_path().read_text(encoding='utf-8')
+
+    def pinned(skill: str) -> str:
+        return str(pruned_base / 'skills' / skill / 'scripts')
+
+    shared_pairs = '\n'.join(f'    ({skill!r}, {pinned(skill)!r}),' for skill in _BOOTSTRAP_SHARED_SKILLS)
+
+    content = template.replace('{{SCRIPT_MAPPINGS}}', '')
+    content = content.replace('{{LOGGING_DIR}}', pinned(_BOOTSTRAP_LOGGING_SKILL))
+    content = content.replace('{{SHARED_MODULE_DIRS}}', shared_pairs)
+    content = content.replace('{{EXTRA_SCRIPT_DIRS}}', '')
+    content = content.replace('{{PLAN_DIR_NAME}}', '.plan')
+    content = content.replace(
+        '{{TARGET_AWARE_RESOLVER}}',
+        'def _resolve_notation_by_target(notation):\n    return None',
+    )
+    content = content.replace('{{EXECUTOR_TARGET}}', 'claude')
+    content = content.replace('{{GENERATED_VERSION}}', '')
+    content = content.replace('{{MAPPINGS_FINGERPRINT}}', '')
+    return content
+
+
+def _stand_up_fake_cache(home: Path, skills: tuple[str, ...]) -> None:
+    """Create a plugin cache under ``home`` whose ONLY (newer) version dir carries the skills.
+
+    Lays out ``{home}/.claude/plugins/cache/plan-marshall/9.9.9999/skills/{skill}/scripts``
+    as a symlink to each real marketplace skill's ``scripts`` dir, so the template's
+    ``_newest_cache_scripts_dir`` self-heal resolves the real modules. No older/pinned
+    version dir is created — that is the GC-pruned shape.
+    """
+    skills_dir = _skills_dir()
+    cache_ver = home / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / '9.9.9999' / 'skills'
+    for skill in skills:
+        skill_dir = cache_ver / skill
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / 'scripts').symlink_to(skills_dir / skill / 'scripts', target_is_directory=True)
+
+
+def _run_executor(executor: Path, home: Path) -> subprocess.CompletedProcess:
+    """Invoke the rendered executor with ``--list`` under a clean env + fake HOME.
+
+    ``PYTHONPATH`` is dropped so the ONLY way the module-level shared imports resolve
+    is the template's newest-cache self-heal (the pinned dirs are pruned). ``--list``
+    exits right after the module-load bootstrap, so a self-heal failure surfaces as a
+    non-zero exit with a ``ModuleNotFoundError`` before ``main`` runs.
+    """
+    env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
+    env['HOME'] = str(home)
+    return subprocess.run(
+        [sys.executable, str(executor), '--list'],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=env,
+    )
+
+
+class TestTemplateBootstrapSelfHeal:
+    """The executor template self-heals a GC-pruned pinned cache version dir."""
+
+    _ALL_BOOTSTRAP_SKILLS = (*_BOOTSTRAP_SHARED_SKILLS, _BOOTSTRAP_LOGGING_SKILL)
+
+    def test_pruned_pinned_version_self_heals_to_newest_cache_dir(self, tmp_path):
+        # Arrange: render an executor whose bootstrap dirs are all pinned at a pruned
+        # (nonexistent) path, and stand up a fake cache whose ONLY version dir (newer)
+        # carries the real shared modules — the exact GC-pruned-pinned-version shape.
+        pruned_base = tmp_path / 'pruned-cache'
+        executor = tmp_path / 'execute-script.py'
+        executor.write_text(_render_executor(pruned_base), encoding='utf-8')
+        home = tmp_path / 'fakehome'
+        _stand_up_fake_cache(home, self._ALL_BOOTSTRAP_SKILLS)
+
+        # Act
+        result = _run_executor(executor, home)
+
+        # Assert: the bootstrap re-resolved to the newest surviving cache version dir,
+        # so plan_logging (and the other shared imports) loaded cleanly.
+        assert result.returncode == 0, result.stderr
+        assert 'ModuleNotFoundError' not in result.stderr
+        assert 'plan_logging' not in result.stderr
+
+    def test_pruned_pinned_version_without_cache_fails_to_import(self, tmp_path):
+        # Arrange: same pruned-pinned render, but NO surviving cache version dir — the
+        # self-heal has nothing to resolve to. This proves the pruned-pinned setup
+        # genuinely breaks the imports, so the positive test above exercises the heal.
+        pruned_base = tmp_path / 'pruned-cache'
+        executor = tmp_path / 'execute-script.py'
+        executor.write_text(_render_executor(pruned_base), encoding='utf-8')
+        home = tmp_path / 'emptyhome'
+        home.mkdir()
+
+        # Act
+        result = _run_executor(executor, home)
+
+        # Assert: with both the pinned dir and the cache absent, the module-level
+        # import of plan_logging fails loudly.
+        assert result.returncode != 0
+        assert 'plan_logging' in result.stderr

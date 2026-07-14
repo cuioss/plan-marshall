@@ -30,9 +30,11 @@ _CLASS_DEFAULT_TIER = {
     'prunable': 'auto',
 }
 
-# Classes whose weakening (``off``) override is honored but emits a correctness
-# warning (§5 — minimal must not SILENTLY drop required derived state).
-_WARN_ON_DROP_CLASSES = ('derived-state', 'core')
+# Floor classes immune to a weakening ``off`` override: the mandatory finalize
+# ceremony must run regardless of a hand-written ``off``, so the composer ignores
+# the ``off`` and resolves such an element at its class-default (``minimal``) tier.
+# ``adversarial`` / ``prunable`` remain a real opt-out (``off`` drops them).
+_IMMUNE_TO_OFF_CLASSES = ('core', 'derived-state')
 
 # Absent posture → full → no lane pruning. This keeps every plan that never set
 # an execution profile on the pre-lane composition path (back-compat default).
@@ -110,9 +112,11 @@ def _effective_lane_tier(lane: dict[str, str], override: str | None) -> tuple[st
     Precedence: per-element override ▸ declared ``lane.tier`` ▸ class default.
     Returns ``(effective_tier, is_off)`` where ``effective_tier`` is a lattice
     level, the sentinel ``'ask'``, or ``None`` (undeterminable); ``is_off`` is
-    True when an explicit ``off`` override drops the element.
+    True when an explicit ``off`` override drops the element. A weakening ``off``
+    on a ``core`` / ``derived-state`` floor class is immune — it is ignored and
+    resolution falls through to the declared ``lane.tier`` / class default.
     """
-    if override == 'off':
+    if override == 'off' and lane.get('class') not in _IMMUNE_TO_OFF_CLASSES:
         return None, True
     if override in ('minimal', 'auto', 'full'):
         return override, False
@@ -130,23 +134,27 @@ def _effective_lane_tier(lane: dict[str, str], override: str | None) -> tuple[st
 def _lane_keep_decision(lane: dict[str, str], override: str | None, posture: str) -> tuple[bool, str | None]:
     """Decide whether an element runs under ``posture`` — returns (keep, warning).
 
-    An element runs iff ``effective_tier ⊑ posture``. An ``off`` override drops
-    it (with a correctness warning for a ``derived-state`` / ``core`` floor
-    element — honored, never silently). An ``ask`` effective tier keeps the
-    element at compose time (the init dialogue owns the per-element prompt).
+    An element runs iff ``effective_tier ⊑ posture``. An ``off`` override on an
+    ``adversarial`` / ``prunable`` element drops it cleanly (a real opt-out, no
+    warning). An ``off`` on a ``core`` / ``derived-state`` floor class is immune:
+    it is ignored, the element is KEPT at its class-default tier, and an
+    informational warning records that the weakening override was neutralized. An
+    ``ask`` effective tier keeps the element at compose time (the init dialogue
+    owns the per-element prompt).
     """
     effective, is_off = _effective_lane_tier(lane, override)
     if is_off:
-        cls = lane.get('class')
-        warning = None
-        if cls in _WARN_ON_DROP_CLASSES:
-            warning = f"override 'off' drops {cls} floor element — honored, but weakening a required element"
-        return False, warning
+        # adversarial / prunable off → clean opt-out drop, no warning.
+        return False, None
+    cls = lane.get('class')
+    warning = None
+    if override == 'off' and cls in _IMMUNE_TO_OFF_CLASSES:
+        warning = f"override 'off' ignored for {cls} floor element — immune, cannot be weakened"
     if effective == 'ask' or effective is None:
         # ask → dialogue-resolved (keep at compose); undeterminable → keep.
-        return True, None
+        return True, warning
     keep = _TIER_RANK[effective] <= _TIER_RANK.get(posture, _TIER_RANK['full'])
-    return keep, None
+    return keep, warning
 
 
 def _read_execution_profile(plan_id: str) -> str:

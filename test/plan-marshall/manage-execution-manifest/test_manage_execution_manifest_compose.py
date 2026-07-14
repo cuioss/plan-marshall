@@ -3916,12 +3916,19 @@ def _patch_element_lane(monkeypatch, blocks=None):
         ({'class': 'adversarial'}, None, ('auto', False)),     # class default
         ({'class': 'adversarial', 'tier': 'full'}, None, ('full', False)),  # declared tier
         ({'class': 'core'}, 'full', ('full', False)),          # override wins
-        ({'class': 'core'}, 'off', (None, True)),              # off drops
+        ({'class': 'core'}, 'off', ('minimal', False)),        # immune floor: off ignored → class default
+        ({'class': 'derived-state'}, 'off', ('minimal', False)),  # immune floor: off ignored → class default
+        ({'class': 'adversarial'}, 'off', (None, True)),       # non-floor off drops (real opt-out)
+        ({'class': 'prunable'}, 'off', (None, True)),          # non-floor off drops (real opt-out)
         ({'class': 'prunable'}, 'ask', ('ask', False)),        # ask sentinel
     ],
 )
 def test_effective_lane_tier_precedence(lane, override, expected):
-    """Effective tier resolves override ▸ declared tier ▸ class default."""
+    """Effective tier resolves override ▸ declared tier ▸ class default.
+
+    A weakening ``off`` on a ``core`` / ``derived-state`` floor class is immune —
+    the ``off`` is ignored and resolution falls through to the class default.
+    """
     assert _effective_lane_tier(lane, override) == expected
 
 
@@ -3942,13 +3949,41 @@ def test_lane_keep_decision_cutoff(lane, posture, expected_keep):
     assert warning is None
 
 
-def test_lane_keep_off_override_drops_derived_state_with_warning():
-    """An ``off`` override of a derived-state floor element is honored but warns (§5)."""
+def test_lane_keep_off_override_immune_for_derived_state_floor():
+    """An ``off`` override of a derived-state floor element is IMMUNE — the element
+    is KEPT and an informational warning records the neutralized override."""
     keep, warning = _lane_keep_decision({'class': 'derived-state', 'tier': 'minimal'}, 'off', 'minimal')
 
-    assert keep is False
+    assert keep is True
     assert warning is not None
     assert 'derived-state' in warning
+    assert 'immune' in warning
+
+
+def test_lane_keep_off_override_immune_for_core_floor():
+    """An ``off`` override of a core floor element is IMMUNE — KEPT with a warning."""
+    keep, warning = _lane_keep_decision({'class': 'core', 'tier': 'minimal'}, 'off', 'minimal')
+
+    assert keep is True
+    assert warning is not None
+    assert 'core' in warning
+    assert 'immune' in warning
+
+
+def test_lane_keep_off_override_drops_adversarial_cleanly():
+    """An ``off`` override of a non-floor adversarial element drops it — no warning (real opt-out)."""
+    keep, warning = _lane_keep_decision({'class': 'adversarial', 'tier': 'auto'}, 'off', 'auto')
+
+    assert keep is False
+    assert warning is None
+
+
+def test_lane_keep_off_override_drops_prunable_cleanly():
+    """An ``off`` override of a non-floor prunable element drops it — no warning (real opt-out)."""
+    keep, warning = _lane_keep_decision({'class': 'prunable', 'tier': 'auto'}, 'off', 'auto')
+
+    assert keep is False
+    assert warning is None
 
 
 def test_lane_keep_minimal_override_force_keeps_under_every_posture():
@@ -4009,15 +4044,32 @@ def test_apply_lane_resolution_keeps_unblocked_elements(monkeypatch):
     assert dropped == []
 
 
-def test_apply_lane_resolution_derived_state_off_override_warns(monkeypatch):
-    """An ``off`` marshal override of a derived-state floor element drops it WITH a warning (§5 invariant)."""
+def test_apply_lane_resolution_derived_state_off_override_is_immune(monkeypatch):
+    """An ``off`` marshal override of a derived-state floor element is IMMUNE — the
+    element is KEPT with an informational warning (the mandatory floor cannot be weakened)."""
     _patch_element_lane(monkeypatch)
     overrides = {'project:finalize-step-deploy-target': {'lane': 'off'}}
     kept, dropped, warnings = _apply_lane_resolution(_LANE_STEPS, 'minimal', overrides, 'p')
 
-    assert 'project:finalize-step-deploy-target' in dropped
-    assert kept == ['push', 'archive-plan']
-    assert any(step == 'project:finalize-step-deploy-target' for step, _ in warnings)
+    assert 'project:finalize-step-deploy-target' in kept
+    assert kept == ['push', 'archive-plan', 'project:finalize-step-deploy-target']
+    assert 'project:finalize-step-deploy-target' not in dropped
+    assert any(
+        step == 'project:finalize-step-deploy-target' and 'immune' in warning
+        for step, warning in warnings
+    )
+
+
+def test_apply_lane_resolution_adversarial_off_override_drops_cleanly(monkeypatch):
+    """An ``off`` marshal override of a non-floor adversarial element drops it with NO
+    warning — the opt-out is a real drop (auto posture would otherwise keep it)."""
+    _patch_element_lane(monkeypatch)
+    overrides = {'sonar-roundtrip': {'lane': 'off'}}
+    kept, dropped, warnings = _apply_lane_resolution(_LANE_STEPS, 'auto', overrides, 'p')
+
+    assert 'sonar-roundtrip' in dropped
+    assert 'sonar-roundtrip' not in kept
+    assert all(step != 'sonar-roundtrip' for step, _ in warnings)
 
 
 def test_meta_project_minimal_keeps_derived_state_without_override(monkeypatch):
