@@ -47,8 +47,8 @@ class value is a contract change to this document, not a per-element choice.
 
 | `class` | default `tier` | prunable? | meaning | examples |
 |---------|----------------|-----------|---------|----------|
-| **derived-state** | `minimal` | no — a weakening override emits a correctness **warning** (only where the steps exist) | correctness-required derived output; dropping it ships a broken artifact | deploy-target, sync-plugin-cache |
-| **core** | `minimal` | no | always-on plan machinery; the leanest floor | push, create-pr, ci-verify, branch-cleanup, record-metrics, archive |
+| **derived-state** | `minimal` | no — a weakening `off` is **immune** (ignored; the element stays at its class-default tier) | correctness-required derived output; dropping it ships a broken artifact | deploy-target, sync-plugin-cache |
+| **core** | `minimal` | no — a weakening `off` is **immune** (ignored; the element stays at its class-default tier) | always-on plan machinery; the leanest floor | push, create-pr, ci-verify, branch-cleanup, record-metrics, archive |
 | **adversarial** | `auto` | no | a validator that finds real defects; never predicate-pruned by the lane | outline scope-validator (1st pass), automatic-review, sonar-roundtrip, self-review, security-audit-as-finder |
 | **prunable** | `auto` | yes — via `prunable_when` | conditional overhead that a firm-signal predicate can skip | lessons-housekeeping, refine, 4-plan decomposition |
 
@@ -64,9 +64,11 @@ part of the plan" holds without a dedicated `always` level.
 For each element, the composer resolves in this order:
 
 1. **effective tier** = per-element override (`marshal.json`) ▸ else declared `lane.tier` ▸ else
-   class default. An explicit override **always wins**, including an `off` that drops a
-   `derived-state` / `core` floor element (which additionally emits a correctness warning, but is
-   honored — *user decision wins*).
+   class default. An explicit override wins **except** a weakening `off` on a `derived-state` /
+   `core` floor element, which is **immune**: the `off` is ignored, the element resolves at its
+   declared `lane.tier` / class default, and an informational note records that the weakening
+   override was neutralized. An `off` on an `adversarial` / `prunable` element is a real opt-out
+   that drops it cleanly.
 2. **element runs iff** `effective_tier ⊑ posture` on `minimal ⊏ auto ⊏ full` (posture = the
    init-chosen global preset).
 3. if effective tier is `ask` → surface this element **individually** in the init dialogue.
@@ -81,10 +83,13 @@ So:
   predicate fires";
 - `full` = "everything configured."
 
-> **Overriding principle — everything is configurable (user decision wins).** The contract
-> supplies *defaults*. No classification is a hard lock: an explicit project/user override always
-> wins. For correctness-critical `derived-state` elements a weakening override surfaces a loud
-> **warning** but is still honored — the operator decides, the system informs.
+> **Overriding principle — everything is configurable, except the correctness floor.** The
+> contract supplies *defaults*, and an explicit project/user override wins over them — **except**
+> a weakening `off` on a `core` / `derived-state` floor element. That single case is **immune**:
+> the `off` is ignored, the element keeps running at its class-default tier, and an informational
+> note records that the weakening override was neutralized. The floor is correctness-critical
+> derived state and always-on machinery, so it cannot be dropped; every other classification stays
+> freely configurable (an `off` on an `adversarial` / `prunable` element is a real opt-out).
 
 ### Per-element override knob
 
@@ -124,8 +129,8 @@ rather than a concrete tier, so their inclusion is answered per-project rather t
 - **What is never dropped.** A RESOLVED ask (`off` / `auto` / `full`) is never touched by this
   pre-filter — `off` is handled by the normal lane-resolution pass; `auto` / `full` keep the
   element per posture. An `ask` whose provider IS configured is also kept (the operator merely has
-  not answered yet, but the infra exists). The frozen `off`-override-on-floor-step
-  honored-with-warning semantic is untouched.
+  not answered yet, but the infra exists). The `off`-override-on-floor-step immunity semantic (a
+  weakening `off` on a `core` / `derived-state` element is ignored, not dropped) is untouched.
 
 The pre-filter mechanics live in [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "Pre-Filter: unresolved_ask_provider_drop"; this section owns the element-classification rationale.
 

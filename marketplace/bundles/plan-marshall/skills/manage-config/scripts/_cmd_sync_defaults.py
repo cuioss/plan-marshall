@@ -17,6 +17,9 @@ from _config_core import (
     success_exit,
 )
 from _config_defaults import get_default_config, stamp_provisioning_fields
+from _manifest_lanes import LANE_TIERS, _effective_lane_tier, _read_frontmatter_lane
+from _manifest_validation import _REPO_ROOT, _is_external_step, _resolve_standards_path
+from marketplace_paths import resolve_project_skill_path
 
 # Retired step keys and their canonical replacements. Each entry maps a step id
 # that a prior release emitted (and which live consumer configs may still carry)
@@ -258,6 +261,101 @@ def _deep_merge_missing(live: dict, defaults: dict, prefix: str, added: list[str
     return live
 
 
+def _resolve_finalize_step_lane(step_id: str) -> dict[str, str] | None:
+    """Resolve a phase-6-finalize step's ``lane:`` frontmatter block from its source doc.
+
+    Mirrors ``manage-execution-manifest``'s composer resolver
+    (``manage-execution-manifest.py`` ``_resolve_element_lane``) verbatim so the
+    materialized effective lane is exactly the composer's own default:
+
+    - Built-in steps (bare or ``default:``-prefixed) resolve via the phase-6
+      standards / workflow doc (:func:`_resolve_standards_path`).
+    - ``project:`` steps resolve via the project-local ``{bare}/SKILL.md``.
+    - Other ``bundle:skill`` external steps have no project-local source and
+      return ``None`` (not lane-participating — left untouched by the materializer).
+
+    Returns the nested ``lane:`` sub-key dict (``class`` / ``tier`` / …), or
+    ``None`` when the source doc is missing, has no frontmatter, or declares no
+    ``lane:`` block.
+    """
+    if step_id.startswith('project:'):
+        bare = step_id[len('project:') :]
+        skill_path = resolve_project_skill_path(f'{bare}/SKILL.md', base=_REPO_ROOT)
+        return _read_frontmatter_lane(skill_path)
+    if _is_external_step(step_id):
+        return None
+    return _read_frontmatter_lane(_resolve_standards_path(step_id))
+
+
+def _materialize_finalize_lanes(live: dict, materialized: list[str], added: list[str]) -> dict:
+    """Fill an explicit ``lane`` on every lane-less ``plan.phase-6-finalize.steps`` entry.
+
+    Runs AFTER :func:`_deep_merge_missing` (so it sees the back-filled default
+    rows and consumes the populated ``added`` accumulator) and BEFORE the
+    provisioning re-stamp. Walks the finalize keyed-map and, for each step whose
+    param object carries no ``lane`` key, decides the fill value by PROVENANCE:
+
+    - **Freshly deep-merged default row** — the step's dotted path
+      ``plan.phase-6-finalize.steps.{step_id}`` is in ``added`` (a default row the
+      user's config did not previously have): filled with ``lane: off`` (opt-in,
+      per the "infra steps must be opt-in" principle).
+    - **Pre-existing step** (not in ``added``): filled with its **effective lane**
+      — the frontmatter-class default the composer would apply with no override,
+      resolved via :func:`_resolve_finalize_step_lane` +
+      :func:`_effective_lane_tier` (declared ``tier`` ▸ class default: ``core`` /
+      ``derived-state`` → ``minimal``, ``adversarial`` / ``prunable`` → ``auto``).
+      This is a semantic no-op — it surfaces the implicit default as an explicit
+      value, changing nothing operationally.
+    - **Unresolvable pre-existing step** — the frontmatter lane cannot be resolved
+      to a concrete lattice tier (no source doc / no ``lane:`` block / external
+      ``bundle:skill`` step): left untouched and NOT reported. The composer keeps
+      such elements by default; materializing a value it cannot resolve would not
+      be a no-op.
+
+    Idempotent: a step already carrying any explicit ``lane`` (``off`` / ``ask`` /
+    a resolved tier) is left untouched, so a re-run materializes nothing. Scope is
+    ``plan.phase-6-finalize.steps`` ONLY. Mutates ``live`` in place and returns it;
+    each materialized step is recorded as an annotated dotted-path string in
+    ``materialized``.
+    """
+    plan = live.get('plan')
+    if not isinstance(plan, dict):
+        return live
+    phase6 = plan.get('phase-6-finalize')
+    if not isinstance(phase6, dict):
+        return live
+    steps_map = phase6.get('steps')
+    if not isinstance(steps_map, dict):
+        return live
+
+    added_set = set(added)
+    for step_id, params in steps_map.items():
+        if not isinstance(step_id, str) or not step_id:
+            continue
+        # Idempotent: an explicit lane (off / ask / a resolved tier) is left as-is.
+        if isinstance(params, dict) and 'lane' in params:
+            continue
+
+        dotted = f'plan.phase-6-finalize.steps.{step_id}'
+        if dotted in added_set:
+            fill = 'off'
+        else:
+            lane_block = _resolve_finalize_step_lane(step_id)
+            if not lane_block:
+                continue  # unresolvable frontmatter — leave lane-less, do not report
+            effective, _is_off = _effective_lane_tier(lane_block, None)
+            if effective not in LANE_TIERS:
+                continue  # undeterminable tier — leave untouched (not a no-op otherwise)
+            fill = effective
+
+        if not isinstance(params, dict):
+            params = {}
+        params['lane'] = fill
+        steps_map[step_id] = params
+        materialized.append(f'{dotted} -> lane={fill}')
+    return live
+
+
 def cmd_sync_defaults(args) -> dict:
     """Handle sync-defaults command.
 
@@ -283,6 +381,16 @@ def cmd_sync_defaults(args) -> dict:
     need no migration. This pass is idempotent too (a re-run reports no
     migration).
 
+    A materialization pass (:func:`_materialize_finalize_lanes`) runs AFTER the
+    deep-merge and BEFORE the provisioning re-stamp: it fills an explicit ``lane``
+    on every lane-less ``plan.phase-6-finalize.steps`` entry so the finalize
+    step-set is fully explicit. A **pre-existing** lane-less step is filled with
+    its frontmatter-class effective lane (a semantic no-op surfacing the composer's
+    own default); only a **freshly deep-merged default** row (one in ``added``) is
+    filled with ``lane: off`` (opt-in). It is idempotent (a step already carrying
+    an explicit ``lane`` is untouched) and scoped to ``phase-6-finalize.steps``
+    only.
+
     ``get_default_config()`` does NOT seed ``build.map`` — the
     build_map is materialized only by the wizard's explicit build-map seed
     step (Step 8b), never at init or by sync-defaults. The deep-merge therefore
@@ -304,6 +412,13 @@ def cmd_sync_defaults(args) -> dict:
     added: list[str] = []
     merged = _deep_merge_missing(live, defaults, '', added)
 
+    # Materialize an explicit lane on every lane-less phase-6-finalize step. Runs
+    # AFTER the deep-merge (consumes the populated ``added`` accumulator to
+    # distinguish a freshly-merged default row from a pre-existing step) and
+    # BEFORE the provisioning re-stamp.
+    materialized: list[str] = []
+    _materialize_finalize_lanes(merged, materialized, added)
+
     # Refresh the provisioning stamps (system.provisioned_version /
     # system.config_seed_fingerprint). The deep-merge only ADDS missing keys, so
     # an already-present stamp would go stale after a default-config change; this
@@ -322,7 +437,7 @@ def cmd_sync_defaults(args) -> dict:
         after_system['config_seed_fingerprint'],
     )
 
-    if added or stamps_changed or renamed or migrated:
+    if added or stamps_changed or renamed or migrated or materialized:
         save_config(merged)
 
     return success_exit(
@@ -333,5 +448,7 @@ def cmd_sync_defaults(args) -> dict:
             'renamed_count': len(renamed),
             'migrated': sorted(migrated),
             'migrated_count': len(migrated),
+            'materialized': sorted(materialized),
+            'materialized_count': len(materialized),
         }
     )
