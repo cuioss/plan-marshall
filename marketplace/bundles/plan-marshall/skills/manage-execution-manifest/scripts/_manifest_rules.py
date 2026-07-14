@@ -618,7 +618,7 @@ def _read_sonar_provider() -> str | None:
         return None
     try:
         data = read_json(marshal_path)
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):
         return None
     if not isinstance(data, dict):
         return None
