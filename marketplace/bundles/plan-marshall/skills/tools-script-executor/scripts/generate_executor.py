@@ -634,7 +634,7 @@ def generate_mappings_code(mappings: dict[str, str]) -> str:
 # emitted structure MUST bump BOTH this constant and the template marker in
 # lockstep. A version skew is refused loudly (no write) rather than emitting a
 # structurally-mismatched executor — the SyntaxError-executor-on-format-skew
-# defect class (lesson 2026-07-14-17-002).
+# defect class.
 _SUPPORTED_TEMPLATE_FORMAT_VERSION = 1
 
 # Matches the template's ``# TEMPLATE_FORMAT_VERSION: N`` marker comment.
