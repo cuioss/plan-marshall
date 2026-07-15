@@ -435,6 +435,77 @@ def test_failure_detail_falls_back_to_message_without_failures_section():
     assert test_failures[0].detail == 'AssertionError: assert 1 == 2'
 
 
+# A test name that recurs in the FAILURES section — a rerun/retry plugin
+# re-executes `test_flaky` and prints a SECOND FAILURES block for the same
+# test id, at a different frame with a different exception. Two FAILED lines
+# for the same test name in the short summary, in the same order as the two
+# FAILURES blocks.
+_RERUN_FAILURES_LOG = """============================= FAILURES =============================
+_________________________ test_flaky _________________________
+
+    def test_flaky():
+>       assert attempt() == 1
+test/test_flaky.py:10: in test_flaky
+    assert attempt() == 1
+src/calc.py:10: in attempt
+    raise ValueError("first failure")
+E       ValueError: first failure
+
+src/calc.py:10: ValueError
+_________________________ test_flaky _________________________
+
+    def test_flaky():
+>       assert attempt() == 1
+test/test_flaky.py:10: in test_flaky
+    assert attempt() == 1
+src/calc.py:99: in attempt
+    raise TypeError("second failure")
+E       TypeError: second failure
+
+src/calc.py:99: TypeError
+==================== short test summary info ====================
+FAILED test/test_flaky.py::test_flaky - ValueError: first failure
+FAILED test/test_flaky.py::test_flaky - TypeError: second failure
+==================== 2 failed in 1.20s ====================
+"""
+
+
+def test_failure_detail_preserves_every_block_per_test_name():
+    """A test name recurring in the FAILURES section keeps EVERY occurrence's
+    block, paired in encounter order — the second occurrence must not
+    overwrite/collapse onto the first (ordered per-test-name deque)."""
+    with _temp_log(_RERUN_FAILURES_LOG) as path:
+        issues, _, _ = parse_log(path)
+
+    test_failures = [i for i in issues if i.category == 'test_failure']
+    # Distinct messages (ValueError vs TypeError) -> distinct dedup keys ->
+    # both FAILED lines survive add_issue_deduped as separate issues.
+    assert len(test_failures) == 2
+
+    first, second = test_failures[0].detail, test_failures[1].detail
+    assert first is not None and second is not None
+    assert 'src/calc.py:10' in first
+    assert 'ValueError: first failure' in first
+    assert 'src/calc.py:99' in second
+    assert 'TypeError: second failure' in second
+    # Each occurrence carries its OWN block, not a shared/overwritten one.
+    assert first != second
+
+
+def test_slice_test_returns_every_occurrence_for_a_recurring_test_name():
+    """--test <name> against a recurring test name returns each occurrence's
+    OWN detail block, not N copies of the last-captured block."""
+    with _temp_log(_RERUN_FAILURES_LOG) as path:
+        result = slice_failure_details(path, test_name='test_flaky')
+
+    assert result['status'] == 'success'
+    assert result['matched'] == 2
+    details = [f['detail'] for f in result['failures']]
+    assert 'src/calc.py:10' in details[0]
+    assert 'src/calc.py:99' in details[1]
+    assert details[0] != details[1]
+
+
 def test_issue_to_dict_round_trips_detail():
     """Issue.to_dict() includes 'detail' only when populated (backward-compatible)."""
     with_detail = Issue(
