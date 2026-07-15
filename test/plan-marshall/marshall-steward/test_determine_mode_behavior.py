@@ -388,7 +388,9 @@ def _default_prefixes() -> list[str]:
     """Return the canonical working_prefixes default entries."""
     from _config_defaults import DEFAULT_PROJECT
 
-    return cast('list[str]', DEFAULT_PROJECT['working_prefixes'])
+    # Defensive copy: return a fresh list so a caller mutation cannot leak into
+    # the shared DEFAULT_PROJECT default list and corrupt state across tests.
+    return list(cast('list[str]', DEFAULT_PROJECT['working_prefixes']))
 
 
 def _write_project_marshal(plan_dir: Path, project_block: dict) -> None:
