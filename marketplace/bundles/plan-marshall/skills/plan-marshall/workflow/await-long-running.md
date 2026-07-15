@@ -16,13 +16,24 @@ The wake primitive (the background-completion notification) is **Claude-specific
 |----------|------------------|:----------------:|-------------------|
 | **build/verify** | The architecture-resolved wrapper command (`compile` / `module-tests` / `verify` / `coverage` / `quality-gate`) whose resolved envelope carries `execution_tier=orchestrator` | Yes — acquire before, release after | Background-completion notification → wrapper's compact result TOON |
 | **remote-CI wait** | The provider CI-wait handler (`cmd_ci_wait` for GitHub / GitLab) that seeds its first sleep from the p50 window then tails the provider's terminal-state watch verb | No — a CI wait consumes no local build slot | Background-completion notification → wait handler's return TOON (`final_status`, `duration_sec`, `failing_checks`) |
+| **finalize-wait barrier** | The phase-6 concurrent wait barrier — the three per-signal waits ({CI, review-bot comments, Sonar CE}) detached concurrently off one settled HEAD, coordinated by the `ci barrier` per-signal-proceed / re-settle verb | No — a wait consumes no local build slot | Background-completion notification on ANY signal's state transition (per-signal-proceed) OR barrier budget exhaustion → the `ci barrier` decision TOON (`barrier_status`, `proceed`/`pending`/`affected`) |
+
+### Finalize-wait barrier consumer specifics
+
+The finalize-wait barrier (see [`phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) § "Wait-region: the concurrent barrier off one settled HEAD") is a **wait-class** consumer — it consumes no local build slot, so it skips the build-queue rungs (a) and (f) exactly like the remote-CI wait. It differs from a single remote-CI wait in three ways:
+
+- **Fan-out concurrency**: the three per-signal arms are detached **concurrently** off the one settled HEAD, so the barrier's wall time approaches `max(signal)` rather than `sum(signal)`. Each arm reuses its own existing ratchet (the CI arm reuses the p50-seeded `cmd_ci_wait`; see the remote-CI wait row).
+- **Wake-on-transition, per-signal-proceed**: the barrier wakes on ANY arm's state transition (a signal reaching a terminal state) — NOT only when all three settle — so the orchestrator proceeds past each settled arm independently. It also wakes on **budget exhaustion**. On each wake it reads the compact `ci barrier` decision TOON (never the raw poll flood) and advances the arms named in `proceed` while continuing to await those in `pending`.
+- **Bounded re-settle re-entry**: when a `barrier_status: re_settle` decision names `affected` arms (a fix pushed after barrier entry advanced HEAD), the orchestrator re-detaches only those affected arms against the new settled HEAD — never a full finalize replay. This converges in ≤1–2 iterations (see the phase-6 wait-region narrative).
+
+The **synchronous-blocking fallback (step (g))** applies unchanged: when the background primitive is unavailable, the barrier degrades to awaiting each arm's wait **inline** at its resolved timeout — i.e. the pre-detach serial blocking behaviour — still bracketed by the build-busy set/clear. The Claude-specific wake primitive stays contained behind this seam; the barrier consumer carries no runtime-specific branch of its own.
 
 ## Parameters
 
 | Parameter | Description |
 |-----------|-------------|
 | `plan_id` | Plan identifier — forwarded to every `manage-locks` / `manage-status` / `platform-runtime` call below. |
-| `consumer` | `build` or `ci-wait` — selects the build-queue-slot rung (build only) and the completion-TOON shape. |
+| `consumer` | `build`, `ci-wait`, or `finalize-barrier` — selects the build-queue-slot rung (build only) and the completion-TOON shape. `finalize-barrier` follows the same no-build-slot rungs as `ci-wait` but wakes per-signal (see § "Finalize-wait barrier consumer specifics"). |
 | `command` | The resolved wrapper `executable` (build consumer) or the CI-wait handler invocation (ci-wait consumer) to run detached. |
 | `bash_timeout_seconds` | The architecture-resolved timeout, used ONLY on the fallback synchronous path (step 7). |
 

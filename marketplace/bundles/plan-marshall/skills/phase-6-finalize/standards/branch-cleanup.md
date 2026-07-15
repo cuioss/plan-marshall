@@ -355,25 +355,36 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 Parse the TOON output. On `status: rejected` (lease violation — remote moved since last fetch), ABORT cleanup and surface the error. On `status: error`, ABORT cleanup and return the error TOON verbatim to the dispatcher. On `status: success`, continue to the CI wait below. **Release-on-abort**: on either the `rejected` or `error` branch, release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4) — a lease violation means `origin/{base_branch}` moved, so holding the lock further would only block the plan that legitimately advanced it.
 
-After the force-push, wait for CI to complete on the rebased branch before proceeding to merge. Pass `--adaptive` so this wait seeds its ceiling from — and records its observed duration back into — the persisted `ci:wait` budget (the same #849 ratchet `ci_complete_precondition` drives), instead of the fixed `DEFAULT_CI_TIMEOUT`:
+After the force-push, gate on CI before proceeding to merge. **How much CI wall-clock this gate spends is governed by `use_merge_queue`** — read `use_merge_queue` off the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above (default: `false`). When the merge queue is enabled, the platform re-tests the rebased HEAD against the latest base as its OWN authoritative CI gate (see § "Merge routing"), so a full-green pre-merge wait here is redundant with it — the pre-review full-green `ci-verify` wait is folded into the merge queue's authoritative CI.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} checks wait \
-    --pr-number {pr_number} --adaptive
-```
+- **`use_merge_queue == true`** — the merge queue's re-test is the authoritative CI. Do NOT block for full-green CI here; run only a cheap **not-obviously-red** snapshot so a branch that is ALREADY clearly failing is surfaced before it is enqueued, then proceed to the enqueue where the queue's authoritative CI runs:
 
-**Bash tool timeout**: 1800000ms (30-minute safety net — the outer ceiling; `--adaptive` seeds the inner `ci:wait` ceiling from the persisted budget so the wait converges on observed CI durations rather than the fixed baseline).
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} checks status \
+      --pr-number {pr_number}
+  ```
 
-If CI fails after the rebase → log warning but continue to the merge attempt (the merge itself may still succeed if branch protection allows it):
+  Parse `overall_status` from the returned TOON. `pending`, `success`, and `none` all proceed straight to the merge routing without waiting — the queue re-tests regardless. A `failure` snapshot (CI has already gone clearly red on the rebased HEAD) logs the warning below but still proceeds; the merge queue will re-test and refuse a still-red HEAD, so this gate never hard-blocks — it only surfaces the early signal cheaply. This is the fold: the redundant full-green pre-merge CI wait is removed under the merge-queue path, leaving only this single non-blocking snapshot.
+
+- **`use_merge_queue == false`** (default) — the immediate `pr safe-merge` path below has NO queue re-test, so the pre-merge CI wait remains the authoritative gate. Pass `--adaptive` so this wait seeds its ceiling from — and records its observed duration back into — the persisted `ci:wait` budget (the same #849 ratchet `ci_complete_precondition` drives), instead of the fixed `DEFAULT_CI_TIMEOUT`:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} checks wait \
+      --pr-number {pr_number} --adaptive
+  ```
+
+  **Bash tool timeout**: 1800000ms (30-minute safety net — the outer ceiling; `--adaptive` seeds the inner `ci:wait` ceiling from the persisted budget so the wait converges on observed CI durations rather than the fixed baseline).
+
+If CI is red on this gate (a `failure` snapshot under the merge-queue path, or a failing `checks wait` under the immediate-merge path) → log warning but continue to the merge attempt (the merge itself may still succeed if branch protection allows it, and the merge queue re-tests regardless):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: CI failed after rebase — continuing with merge attempt"
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: CI red after rebase — continuing with merge attempt"
 ```
 
 Log the rebase:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: rebased onto origin/{base_branch}, force-pushed with lease, CI passed"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: rebased onto origin/{base_branch}, force-pushed with lease, CI gated"
 ```
 
 ### Re-review the rebased HEAD (trigger A)

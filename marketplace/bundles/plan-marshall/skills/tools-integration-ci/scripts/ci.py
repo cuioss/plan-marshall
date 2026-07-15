@@ -20,6 +20,14 @@ Top-level flags (consumed by the router before provider dispatch):
                          worktree-isolated plan branch. When omitted, subprocesses
                          inherit the Python process cwd (current behaviour).
 
+Provider-agnostic verbs (handled by the router, no provider dispatch):
+    barrier              Concurrent finalize-wait barrier coordinator —
+                         per-signal-proceed + bounded re-settle over the
+                         {CI, review, sonar} signals off one settled HEAD.
+                         Pure computation; needs no CI provider and no worktree
+                         resolution. See ``_ci_barrier.py`` and
+                         ``phase-6-finalize/SKILL.md`` § "Wait-region".
+
 The provider is determined automatically from marshal.json configuration.
 This eliminates the need for eval or jq in skill instructions.
 
@@ -99,13 +107,24 @@ def get_provider() -> str | None:
 
 
 def main() -> int:
+    # Provider-agnostic barrier coordinator — intercepted BEFORE provider
+    # routing because it computes over caller-supplied signal state and needs
+    # no CI provider, no worktree resolution, and no gh/glab subprocess. Keeping
+    # it ahead of extract_routing_args also keeps it usable when no CI provider
+    # is configured (the barrier is a pure state machine, not a provider call).
+    argv = sys.argv[1:]
+    if argv and argv[0] == 'barrier':
+        from _ci_barrier import run_barrier_cli
+
+        return run_barrier_cli(argv[1:])
+
     # Consume top-level router flags (--project-dir and --plan-id) before
     # delegating to the provider module. sys.argv is rewritten in place so the
     # downstream provider parser sees only its own arguments. The two flags
     # implement the two-state contract: --plan-id auto-resolves via
     # manage-status; --project-dir is the explicit override; both together
     # is a hard error (handled inside extract_routing_args).
-    project_dir, remaining = extract_routing_args(sys.argv[1:])
+    project_dir, remaining = extract_routing_args(argv)
     sys.argv = [sys.argv[0], *remaining]
     if project_dir is not None:
         set_default_cwd(project_dir)
