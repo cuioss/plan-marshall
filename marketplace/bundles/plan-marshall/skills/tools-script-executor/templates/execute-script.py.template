@@ -30,6 +30,13 @@ Examples:
     python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory --audit-plan-id EXAMPLE-PLAN --include-descriptions
 """
 
+# TEMPLATE_FORMAT_VERSION: 1
+# Deterministic decoupling contract between this template's placeholder shapes
+# (e.g. {{SHARED_MODULE_DIRS}}, {{SCRIPT_MAPPINGS}}) and generate_executor.py's
+# substitution logic. Any change to a placeholder's emitted structure MUST bump
+# this marker in lockstep with the generator's _SUPPORTED_TEMPLATE_FORMAT_VERSION
+# constant; the generator asserts the two match before writing an executor.
+
 import os
 import subprocess
 import sys

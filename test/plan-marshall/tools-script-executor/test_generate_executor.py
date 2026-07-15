@@ -1165,8 +1165,8 @@ def test_generate_substitutes_version_and_fingerprint_from_manifest(tmp_path, mo
     plan_dir.mkdir()
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-    ok = module.generate_executor({}, MARKETPLACE_ROOT, dry_run=False)
-    assert ok, 'generate_executor should succeed with an empty mapping set'
+    result = module.generate_executor({}, MARKETPLACE_ROOT, dry_run=False)
+    assert result['status'] == 'success', f'generate_executor should succeed with an empty mapping set: {result}'
 
     generated = plan_dir / 'execute-script.py'
     assert generated.is_file(), f'Expected generated executor at {generated}'
@@ -1192,8 +1192,8 @@ def test_generate_uses_empty_sentinel_on_fresh_install(tmp_path, monkeypatch):
     plan_dir.mkdir()
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-    ok = module.generate_executor({}, MARKETPLACE_ROOT, dry_run=False)
-    assert ok, 'fresh install (no manifest) must still generate the executor'
+    result = module.generate_executor({}, MARKETPLACE_ROOT, dry_run=False)
+    assert result['status'] == 'success', f'fresh install (no manifest) must still generate the executor: {result}'
 
     text = (plan_dir / 'execute-script.py').read_text(encoding='utf-8')
     assert "MARSHALL_VERSION = ''" in text, 'fresh install must stamp the empty version sentinel'
@@ -1740,3 +1740,144 @@ def test_claude_resolver_reresolves_after_pinned_version_pruned(tmp_path, monkey
         f'after pruning the pinned version, resolver must re-resolve to the newest '
         f'surviving dir {older.resolve()!r}, got {second!r}'
     )
+
+
+# ============================================================================
+# Deliverable 1: regeneration safety — format handshake, residue guard,
+# py_compile self-check, atomic write
+# ============================================================================
+# generate_executor() runs three deterministic guards on the substituted content
+# BEFORE any write and commits atomically (write-temp + os.replace), so a
+# malformed generation can never overwrite a working executor. These tests pin:
+# (a) a well-formed generation still writes a compilable executor and reports
+#     status: success;
+# (b) a template TEMPLATE_FORMAT_VERSION skew is refused with no write and a
+#     byte-identical pre-existing executor;
+# (c) an unsubstituted {{...}} placeholder residue fails loudly with no write;
+# (d) a py_compile-failing substitution is refused and the pre-existing working
+#     executor is preserved (the direct Leg B acceptance assertion).
+# They reuse the _build_fake_marketplace scaffolding so generate_executor runs
+# end-to-end against a controllable template, and PLAN_BASE_DIR isolation so the
+# executor write target lands under tmp_path, never the real project tree.
+
+
+def _fake_bundles_root(tmp_path: Path) -> Path:
+    """Return the bundles dir of a fake marketplace copied under tmp_path."""
+    fake_ws = _build_fake_marketplace(tmp_path)
+    return fake_ws / 'marketplace' / 'bundles'
+
+
+def _fake_template_path(bundles_root: Path) -> Path:
+    """Return the copied executor template inside a fake bundles tree."""
+    return bundles_root / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'templates' / 'execute-script.py.template'
+
+
+def _seed_pre_existing_executor(tmp_path: Path) -> tuple[Path, str]:
+    """Create a sentinel pre-existing executor under tmp_path/.plan and return it.
+
+    Returns the executor path and its exact byte content so a caller can assert
+    a refused regeneration left it untouched.
+    """
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir(exist_ok=True)
+    executor = plan_dir / 'execute-script.py'
+    sentinel = "# SENTINEL pre-existing executor — must survive a refused regen\nSCRIPTS = {}\n"
+    executor.write_text(sentinel, encoding='utf-8')
+    return executor, sentinel
+
+
+def test_generate_executor_wellformed_writes_compilable_and_reports_success(tmp_path, monkeypatch):
+    """(a) A well-formed generation writes a compilable executor and reports
+    status: success — the happy path through all three guards + atomic write."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+    module = load_module()
+    bundles_root = _fake_bundles_root(tmp_path)
+
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+
+    result = module.generate_executor({'a:b:c': '/x/y/z.py'}, bundles_root, dry_run=False, target='claude')
+
+    assert result['status'] == 'success', f'well-formed generation must succeed, got {result}'
+    generated = plan_dir / 'execute-script.py'
+    assert generated.is_file(), 'a successful generation must write the executor'
+    # The written executor itself compiles — the self-check gate's positive case.
+    compile(generated.read_text(encoding='utf-8'), str(generated), 'exec')
+
+
+def test_generate_executor_format_skew_refuses_write_and_preserves_existing(tmp_path, monkeypatch):
+    """(b) A template whose TEMPLATE_FORMAT_VERSION marker mismatches the
+    generator's supported version returns status: error, writes no executor, and
+    leaves any pre-existing executor byte-identical."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+    module = load_module()
+    bundles_root = _fake_bundles_root(tmp_path)
+
+    template = _fake_template_path(bundles_root)
+    body = template.read_text(encoding='utf-8')
+    skewed = body.replace('# TEMPLATE_FORMAT_VERSION: 1', '# TEMPLATE_FORMAT_VERSION: 999')
+    assert skewed != body, 'fixture must actually alter the format marker'
+    template.write_text(skewed, encoding='utf-8')
+
+    executor, sentinel = _seed_pre_existing_executor(tmp_path)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
+
+    result = module.generate_executor({'a:b:c': '/x/y/z.py'}, bundles_root, dry_run=False, target='claude')
+
+    assert result['status'] == 'error', f'a format skew must be refused, got {result}'
+    assert 'format' in result['error'].lower() or 'version' in result['error'].lower()
+    assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing executor must be byte-identical after refusal'
+
+
+def test_generate_executor_placeholder_residue_refuses_write_and_preserves_existing(tmp_path, monkeypatch):
+    """(c) A substituted content carrying a residual {{...}} placeholder token
+    (a placeholder the generator never fills) is refused with no write and the
+    pre-existing executor preserved."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+    module = load_module()
+    bundles_root = _fake_bundles_root(tmp_path)
+
+    template = _fake_template_path(bundles_root)
+    body = template.read_text(encoding='utf-8')
+    # Inject an unfillable placeholder inside a comment: it survives substitution
+    # (the generator fills no {{NEVER_FILLED}}) yet keeps the format marker intact.
+    injected = body.replace('VALIDATE_TOON = False', 'VALIDATE_TOON = False  # residue {{NEVER_FILLED}}')
+    assert injected != body, 'fixture must actually inject the residue token'
+    template.write_text(injected, encoding='utf-8')
+
+    executor, sentinel = _seed_pre_existing_executor(tmp_path)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
+
+    result = module.generate_executor({'a:b:c': '/x/y/z.py'}, bundles_root, dry_run=False, target='claude')
+
+    assert result['status'] == 'error', f'placeholder residue must be refused, got {result}'
+    assert 'residue' in result['error'].lower() or 'placeholder' in result['error'].lower()
+    assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing executor must be byte-identical after refusal'
+
+
+def test_generate_executor_py_compile_failure_refuses_write_and_preserves_existing(tmp_path, monkeypatch):
+    """(d) A substitution that produces non-compiling Python returns status: error
+    and preserves the pre-existing working executor untouched — the direct Leg B
+    acceptance assertion (a broken executor can never be emitted)."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+    module = load_module()
+    bundles_root = _fake_bundles_root(tmp_path)
+
+    template = _fake_template_path(bundles_root)
+    body = template.read_text(encoding='utf-8')
+    # Inject a module-level syntax error that carries no {{...}} residue and
+    # keeps the format marker intact, so guards 1 and 2 pass and guard 3 (the
+    # py_compile self-check) is the one that trips.
+    broken = body.replace('VALIDATE_TOON = False', 'VALIDATE_TOON = False\ndef __broken_syntax(:\n    pass')
+    assert broken != body, 'fixture must actually inject the syntax error'
+    template.write_text(broken, encoding='utf-8')
+
+    executor, sentinel = _seed_pre_existing_executor(tmp_path)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
+
+    result = module.generate_executor({'a:b:c': '/x/y/z.py'}, bundles_root, dry_run=False, target='claude')
+
+    assert result['status'] == 'error', f'a non-compiling substitution must be refused, got {result}'
+    assert 'compile' in result['error'].lower() or 'syntax' in result['error'].lower()
+    assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing working executor must be preserved on a failed self-check'
