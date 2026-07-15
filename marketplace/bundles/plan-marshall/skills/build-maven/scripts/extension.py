@@ -10,8 +10,11 @@ aggregator and the build_map seed consume. Subclasses
 on the Java domain extension that subclasses ``ExtensionBase``.
 
 The Maven build extension claims Java production / test sources under the
-``src/main`` and ``src/test`` convention plus the ``pom.xml`` reactor
-descriptor. Gradle descriptors are owned by the sibling build-gradle extension.
+``src/main`` and ``src/test`` convention, the Maven-standard resource trees
+(``src/main/resources`` → production, ``src/test/resources`` → test, whatever
+the resource's extension), shell scripts by bare basename (``*.sh`` → config),
+plus the ``pom.xml`` reactor descriptor. Gradle descriptors are owned by the
+sibling build-gradle extension.
 """
 
 import fnmatch
@@ -35,14 +38,28 @@ class BuildExtension(BuildExtensionBase):
 
     # Glob patterns ordered by specificity (highest first). Each tuple is
     # (glob, role, specificity) where specificity is the count of non-wildcard
-    # path-segment tokens in the glob.
+    # path-segment tokens in the glob. Matching is first-match-wins, so row
+    # order carries the routing: the Maven-standard resource trees
+    # (specificity 3) sit ABOVE the ``src/main`` / ``src/test`` java rows
+    # (specificity 2), claiming every file under ``src/main/resources`` as
+    # production and under ``src/test/resources`` as test regardless of
+    # extension. The bare-basename ``*.sh`` config route is the FINAL row
+    # (specificity 0) — below the ``pom.xml`` descriptor rows — so a shell
+    # script inside a resource tree (``src/main/resources/bin/run.sh``) still
+    # resolves to that tree's role, and only a script outside any claimed tree
+    # (``build.sh``, ``scripts/release.sh``) falls through to config.
     _CLASSIFY_PATTERNS: tuple[tuple[str, str, int], ...] = (
+        ('**/src/main/resources/**', 'production', 3),
+        ('src/main/resources/**', 'production', 3),
+        ('**/src/test/resources/**', 'test', 3),
+        ('src/test/resources/**', 'test', 3),
         ('**/src/main/**/*.java', 'production', 2),
         ('src/main/**/*.java', 'production', 2),
         ('**/src/test/**/*.java', 'test', 2),
         ('src/test/**/*.java', 'test', 2),
         ('**/pom.xml', 'config', 1),
         ('pom.xml', 'config', 1),
+        ('*.sh', 'config', 0),
     )
 
     def _match_classify(self, path: str) -> tuple[str, int] | None:
@@ -83,17 +100,29 @@ class BuildExtension(BuildExtensionBase):
         under any module's ``src/main`` tree (the leading ``*/`` admits the
         nested-module layout) and ``src/main/*.java`` covers the repo-root
         single-module layout; the parallel ``src/test`` routes claim test
-        sources. The bare ``pom.xml`` reactor descriptor is a basename-only route
-        under ``config``: it matches the descriptor at any tree depth (every
-        module's ``pom.xml``), not only a repo-root instance. See the base
-        classify_globs() contract for the route-collection wiring.
+        sources. The Maven-standard resource trees are routed the same way and
+        listed first: ``*/src/main/resources/*`` and ``src/main/resources/*``
+        claim resources under ``production``, the parallel ``src/test/resources``
+        routes claim them under ``test`` — extension-independent, since a
+        resource's role follows its tree, not its suffix. The bare ``pom.xml``
+        reactor descriptor is a basename-only route under ``config``: it matches
+        the descriptor at any tree depth (every module's ``pom.xml``), not only a
+        repo-root instance. The bare-basename ``*.sh`` route claims shell scripts
+        under ``config`` and is listed LAST so a script inside a resource tree
+        keeps that tree's role. See the base classify_globs() contract for the
+        route-collection wiring.
         """
         return [
+            ('*/src/main/resources/*', 'production'),
+            ('src/main/resources/*', 'production'),
+            ('*/src/test/resources/*', 'test'),
+            ('src/test/resources/*', 'test'),
             ('*/src/main/*.java', 'production'),
             ('src/main/*.java', 'production'),
             ('*/src/test/*.java', 'test'),
             ('src/test/*.java', 'test'),
             ('pom.xml', 'config'),
+            ('*.sh', 'config'),
         ]
 
     # build_class: this extension claims the ``production`` / ``test`` /
