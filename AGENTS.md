@@ -56,29 +56,6 @@ Examples:
 - **No duplication** — Cross-reference instead of duplicating
 - **Current state only** — Document present requirements, not transitions
 
-## Architecture
-
-```
-marketplace/
-├── .claude-plugin/marketplace.json    # Master marketplace manifest
-├── targets/                           # Multi-target generators (claude, opencode)
-└── bundles/                           # 10 production bundles
-    └── {bundle}/
-        ├── .claude-plugin/plugin.json # Bundle manifest
-        ├── agents/                    # Task agents (*.md)
-        ├── commands/                  # Slash commands (*.md)
-        └── skills/
-            └── {skill}/
-                ├── SKILL.md           # Skill definition
-                ├── standards/         # Detailed standards (*.md)
-                ├── scripts/           # Python/Bash scripts
-                └── templates/         # Document/code templates
-
-test/                                  # pytest tests for scripts
-doc/                                   # Documentation (AsciiDoc)
-doc/refactor/                          # Multi-target distribution design plans
-```
-
 ## Plugin Cache Sync
 
 After editing skills/agents/commands in `marketplace/bundles/`, sync to Claude Code plugin cache:
