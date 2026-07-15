@@ -145,6 +145,24 @@ _UNIVERSAL_FLAG_ALLOWLIST: frozenset[str] = frozenset(
     {'audit-plan-id', 'project-dir', 'plan-id'}
 )
 
+# Router-level verbs handled by a script's ``main()`` BEFORE argparse subparser
+# dispatch, so they never appear in the script's ``--help`` choices group and
+# the ``--help``-derived surface cannot see them. These are a legitimate pattern
+# (a provider-agnostic verb intercepted ahead of provider routing so it works
+# with no provider configured), NOT a documentation defect — validating them
+# against the introspected subcommand set is a false positive. Keyed by
+# ``bundle:skill:script`` notation → the set of router-level verb names. When an
+# invocation's first positional is a router verb for its notation, the analyzer
+# accepts the verb and skips sub-verb / flag validation for it (the verb's own
+# argparse lives in a helper module the standard child-probe never reaches).
+#
+# ``ci barrier`` is the provider-agnostic finalize-wait barrier coordinator —
+# intercepted at the top of ``tools-integration-ci/scripts/ci.py::main()`` before
+# provider dispatch, implemented in the ``_ci_barrier.py`` helper.
+_ROUTER_VERBS: dict[str, frozenset[str]] = {
+    'plan-marshall:tools-integration-ci:ci': frozenset({'barrier'}),
+}
+
 # =============================================================================
 # In-scope derivation
 # =============================================================================
@@ -1306,6 +1324,14 @@ def _analyze_one_invocation(
 
     positionals = _extract_positional_tokens(rest)
     declared_flags = _extract_flag_tokens(rest)
+
+    # Router-level verbs (handled in main() before argparse dispatch) are valid
+    # even though the ``--help``-derived surface cannot see them. When the first
+    # positional is a registered router verb for this notation, accept the
+    # invocation wholesale — the verb's own flags live in a helper module the
+    # child-probe never reaches, so there is nothing to validate against.
+    if positionals and positionals[0] in _ROUTER_VERBS.get(notation, frozenset()):
+        return findings
 
     # When the script declares no subcommands, positional tokens after the
     # notation are not subcommands — validate flags against the root parser.
