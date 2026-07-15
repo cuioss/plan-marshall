@@ -4,6 +4,8 @@ description: Domain-invariant recipe for deliberate wide-scope simplification ca
 user-invocable: false
 mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-recipe
+metadata:
+  verification_profile: quality
 ---
 
 # Recipe: Simplify Codebase
@@ -98,6 +100,8 @@ Collect one deliverable per sweep batch (one batch per radius unit at T1–T3; o
 
 The unit's achieved thoroughness grades to the FLOOR across its batches (a campaign where some batches were only sampled is graded at the sampled rung — see the grade-to-the-floor rule in the central standard).
 
+**Verify-then-triage routing.** This recipe declares `verification_profile: quality` (see the frontmatter `metadata:` block above). Any surplus-structure finding the `finalize-step-simplify` cognitive engine surfaces during a batch sweep passes through the [verify stage](../extension-api/standards/ext-point-verify.md) adversarial-refute pass FIRST — before triage: the `quality` verify skill (`persona-code-reviewer` [adversarial-refute](../persona-code-reviewer/standards/adversarial-refute.md)) refutes each finding, so a false positive that flags load-bearing structure as surplus closes `rejected` and never reaches triage, while confirmed findings flow on to triage unchanged. Do NOT restate the `rejected` resolution semantics — the `ext-point-verify` contract owns them.
+
 ---
 
 ## Step 5: Outline Writing
@@ -136,5 +140,6 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 - `plan-marshall:persona-plan-marshall-agent` `standards/coverage-gathering-contract.md` — the coverage-gathering contract this recipe implements (gather → expand → consume; persistence; cell→instruction table).
 - `plan-marshall:manage-config` `coverage expand` / `coverage resolve` — the static identifier→instruction expander and the project-default resolver that enforce the coupling constraint.
 - `plan-marshall:phase-6-finalize` `standards/finalize-step-simplify.md` — the cognitive simplification engine this recipe reuses (widened past the change-set cap).
+- `plan-marshall:extension-api` `standards/ext-point-verify.md` — the verify stage this recipe opts into via `metadata.verification_profile: quality`; the engine's findings pass the `persona-code-reviewer` adversarial-refute pass before triage.
 - `plan-marshall:recipe-refactor-to-profile-standards` — the sibling recipe whose module/package iteration scaffold this recipe mirrors.
 - `plan-marshall:phase-3-outline` Step 2.5 — loads this skill with input parameters.
