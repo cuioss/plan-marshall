@@ -32,8 +32,12 @@ Examples:
 
 # TEMPLATE_FORMAT_VERSION: 1
 # Deterministic decoupling contract between this template's placeholder shapes
-# (e.g. {{SHARED_MODULE_DIRS}}, {{SCRIPT_MAPPINGS}}) and generate_executor.py's
-# substitution logic. Any change to a placeholder's emitted structure MUST bump
+# (the double-brace-wrapped `SHARED_MODULE_DIRS` and `SCRIPT_MAPPINGS` tokens) and
+# generate_executor.py's substitution logic. The token names are spelled here
+# WITHOUT their surrounding double braces on purpose: a literal double-brace token
+# in this comment would be matched by the global str.replace substitutions in both
+# generate_executor.py and the test harness, splicing generated code into the middle
+# of this comment. Any change to a placeholder's emitted structure MUST bump
 # this marker in lockstep with the generator's _SUPPORTED_TEMPLATE_FORMAT_VERSION
 # constant; the generator asserts the two match before writing an executor.
 
