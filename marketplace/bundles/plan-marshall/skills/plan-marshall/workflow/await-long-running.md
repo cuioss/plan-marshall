@@ -28,6 +28,25 @@ The finalize-wait barrier (see [`phase-6-finalize/SKILL.md`](../../phase-6-final
 
 The **synchronous-blocking fallback (step (g))** applies unchanged: when the background primitive is unavailable, the barrier degrades to awaiting each arm's wait **inline** at its resolved timeout — i.e. the pre-detach serial blocking behaviour — still bracketed by the build-busy set/clear. The Claude-specific wake primitive stays contained behind this seam; the barrier consumer carries no runtime-specific branch of its own.
 
+#### Multi-arm notification lifecycle and re-arm
+
+Step (e)'s state-gated, fire-exactly-once clear is defined for a **single** detached call: one `build-busy` set, one wake, one clear. The finalize-barrier consumer detaches **three** independent arms ({CI, review, sonar}) that wake and settle at different times, and can re-detach a subset of them after a `re_settle` decision — so the single-flag gate generalizes to a **per-arm lifecycle** layered on top of the one shared title-token. Each arm moves through:
+
+```text
+pending → armed → notified → advanced
+                       ↑          │
+                       └─re-armed─┘   (re_settle names this arm `affected`)
+```
+
+- **`pending`** — the arm has not yet been detached (barrier not yet entered, or awaiting its turn if entry is staggered).
+- **`armed`** — the arm's underlying wait is detached (step c) against the current `settled_head`: the CI arm's `ci wait`, the review arm's bot-comment poll, or the sonar arm's CE wait, each on its own existing ratchet.
+- **`notified`** — the arm's wait returned a terminal state (`settled` or `failed`) and a wake fired for it (or for a sibling arm — see below). The arm is *notified*, not yet *advanced*: `compute_barrier_state` is pure and stateless, so it re-derives `proceed`/`pending`/`failed`/`affected` from the live signal snapshot on every call and will keep reporting an already-terminal arm in `proceed` on every subsequent wake, regardless of whether the orchestrator already acted on it.
+- **`advanced`** — the orchestrator has processed this arm's notification exactly once (logged it, treated its result as final) and will not reprocess it on a later wake. Because the barrier state machine itself carries no such memory, the orchestrator holds the per-arm idempotency gate that step (e) held via the single `build-busy` flag: a conversation-scoped `advanced_arms` set, empty at barrier entry, that gains a name the first time that arm appears in `proceed` (or `failed`, for a terminal failure routed to triage) and is checked before acting on it again. A later wake whose `proceed`/`failed` bucket repeats an already-`advanced` name is a no-op for that name — mirroring step (e)'s "state already cleared → already handled" branch, applied per-arm instead of per-flag.
+
+**Re-arm.** A `barrier_status: re_settle` decision's `affected` list names arms that were previously `advanced` but whose terminal observation is now stale (`head != settled_head` — a bounded-re-settle push moved HEAD after they settled). Re-arming an affected arm means: remove its name from `advanced_arms` (it is no longer considered handled) and re-detach it (step c again) against the **new** `settled_head` — i.e. drive it back from `advanced` to `armed`. Arms absent from `affected` keep their `advanced_arms` membership untouched and are NOT re-detached; this is what bounds the re-settle to the affected arms only, never a full barrier restart.
+
+**Shared title-token spans the whole multi-wake window.** Unlike the single-call case, the `build-busy` token set in step (b) is NOT cleared on the barrier's first wake — it stays set across every intermediate `waiting` / `re_settle` decision, because the detached window is still open while any arm is `pending`, `armed`, or freshly `re-armed`. Step (e)'s clear condition generalizes from "the flag is present" to "the barrier's `barrier_status` is a terminal one (`complete` or `failed`) AND no arm is currently `armed`/`re-armed`" — read `title_token` on each wake exactly as step (e) does, but branch the clear on the barrier decision, not on the flag's mere presence: a `waiting` or `re_settle` status leaves the token untouched (more arms remain outstanding); only `complete` (all arms `advanced`, none `affected`) or `failed` (a genuine terminal failure, not a re-settle candidate) triggers the clear-and-push in step (e).
+
 ## Parameters
 
 | Parameter | Description |
