@@ -3,7 +3,8 @@
     "manage-tasks qgate-mechanical-checks keyword_drift findings are a standing consideration: when the mechanical-checks q-gate flags keyword drift between a description and its body, fold the correction into the work (taken_into_account) rather than suppressing it."
   ],
   "insights": [
-    "Coverage instrumentation roughly triples runtime versus module-tests for this module, pushing past the host background-kill threshold. The command 'coverage plan-marshall' was killed twice with no output while module-tests of the same suite completed. Run coverage synchronously in the foreground with an extended Bash timeout of at least 600000ms rather than backgrounded. When coverage keeps getting killed, module-tests is the fallback verification signal."
+    "Coverage instrumentation roughly triples runtime versus module-tests for this module, pushing past the host background-kill threshold. The command 'coverage plan-marshall' was killed twice with no output while module-tests of the same suite completed. Run coverage synchronously in the foreground with an extended Bash timeout of at least 600000ms rather than backgrounded. When coverage keeps getting killed, module-tests is the fallback verification signal.",
+    "build-maven and build-gradle each carry TWO independent path/glob classification tables that do not feed each other: classify_paths()/_CLASSIFY_PATTERNS (used by phase-4 aggregation) and classify_globs() (a separate glob-role table). A bug reported against the phase-4 unknown-bucket symptom is produced by _CLASSIFY_PATTERNS, not classify_globs(), even when a request names classify_globs() explicitly - root-cause each report against the correct table before scoping a fix."
   ],
   "internal_dependencies": [],
   "key_dependencies": [],
@@ -78,6 +79,7 @@
   },
   "skills_by_profile_reasoning": "plan-marshall-plugin-dev: marshall-plugin build_system; bundle authors marketplace skills + scripts (optionals apply for script-heavy work); Batch: marshall-plugin build_system detected; all marketplace bundles host skills/scripts authored under plugin-architecture standards",
   "tips": [
-    "generate_executor.discover_scripts propagates the marketplace root to its scan-marketplace-inventory subprocess ONLY via the PM_MARKETPLACE_ROOT env-var anchor, never the --marketplace-root flag. Consumer-chain tests must anchor via that env var with use_flag false, or version-aware discovery silently degrades to the version-unaware glob fallback."
+    "generate_executor.discover_scripts propagates the marketplace root to its scan-marketplace-inventory subprocess ONLY via the PM_MARKETPLACE_ROOT env-var anchor, never the --marketplace-root flag. Consumer-chain tests must anchor via that env var with use_flag false, or version-aware discovery silently degrades to the version-unaware glob fallback.",
+    "In fnmatch-based glob classify tables (build-maven/build-gradle classify_globs and _CLASSIFY_PATTERNS), a double-star prefix does not also match a bare repo-root file: the pattern star-star-slash-star-dot-sh still misses a root-level foo.sh because a single star in fnmatch spans the path separator too. Use a plain star-dot-ext row with no double-star prefix as the minimum pattern that additionally covers the repo root."
   ]
 }
