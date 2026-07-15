@@ -38,8 +38,13 @@ CORE_FIELDS = ['status', 'exit_code', 'duration_seconds', 'log_file', 'command']
 """Core fields that appear in every result, in display order."""
 
 # Additional fields that may appear after core fields
-EXTRA_FIELDS = ['error', 'timeout_used_seconds', 'wrapper', 'command_type']
-"""Additional scalar fields that appear after core fields."""
+EXTRA_FIELDS = ['error', 'timeout_used_seconds', 'wrapper', 'command_type', 'truncated']
+"""Additional scalar fields that appear after core fields.
+
+``truncated`` is the count reconciling the capped/deduped ``errors`` array against
+the true total (see ``_build_shared._cap_errors_with_truncation``); it must be in
+this whitelist or ``format_toon`` silently drops it and ``errors`` count-vs-shown
+can disagree in TOON output (the JSON path already passes it through)."""
 
 # Structured fields handled specially
 STRUCTURED_FIELDS = {'errors', 'warnings', 'tests'}
