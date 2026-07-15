@@ -4,6 +4,8 @@ description: On-demand code-review recipe that runs a diff-aware structural/qual
 user-invocable: false
 mode: workflow
 implements: plan-marshall:extension-api/standards/ext-point-recipe
+metadata:
+  verification_profile: quality
 ---
 
 # Recipe: Code Review
@@ -94,7 +96,7 @@ This is a code-review pass, NOT a security audit: where a finding is fundamental
 
 ---
 
-## Step 4: Emit findings and dispatch to triage
+## Step 4: Emit findings, verify, and dispatch to triage
 
 Emit each identified issue as a `lint-issue` finding — one `add` call per finding:
 
@@ -105,7 +107,9 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings ad
   --file-path {file} --line {line} --module {module}
 ```
 
-Then dispatch each finding to its domain `ext-triage-*` extension (keyed on the finding's module from Step 2) for the FIX / SUPPRESS / ACCEPT decision — the same resolution model every findings producer uses. The recipe adds a producer; it does not add a new resolution model.
+This recipe declares `verification_profile: quality` (see the frontmatter `metadata:` block above), so each emitted finding passes through the [verify stage](../extension-api/standards/ext-point-verify.md) adversarial-refute pass FIRST — before triage ever sees it. Load the `quality` verify skill (`persona-code-reviewer` [adversarial-refute](../persona-code-reviewer/standards/adversarial-refute.md)) and refute each `lint-issue` finding: refuted false positives close `rejected` via `manage-findings resolve --resolution rejected` and never reach triage, while confirmed (surviving) findings fall through to dispatch. Do NOT restate the `rejected` resolution semantics — the `ext-point-verify` contract owns them.
+
+Then dispatch each confirmed finding to its domain `ext-triage-*` extension (keyed on the finding's module from Step 2) for the FIX / SUPPRESS / ACCEPT decision — the same resolution model every findings producer uses. The recipe adds a producer; it does not add a new resolution model.
 
 After all findings are emitted, return the run summary as TOON:
 
@@ -135,4 +139,5 @@ Emitting into `manage-findings` (rather than printing a report and stopping) is 
 - `plan-marshall:manage-findings` `add` — the Step-4 findings sink (`lint-issue` type).
 - `plan-marshall:extension-api` `standards/ext-point-triage.md` — the domain `ext-triage-*` resolution model the findings flow into.
 - `plan-marshall:extension-api` `standards/ext-point-recipe.md` — the recipe extension point this skill implements.
+- `plan-marshall:extension-api` `standards/ext-point-verify.md` — the verify stage this recipe opts into via `metadata.verification_profile: quality`; its findings pass the `persona-code-reviewer` adversarial-refute pass before triage.
 - `plan-marshall:recipe-security-audit` — the sibling on-demand audit recipe; the security family this recipe is deliberately independent of.

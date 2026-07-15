@@ -24,3 +24,12 @@ The persona resolver (`manage-personas resolve`) flattens this persona's composi
 ## Profiles
 
 None. A meta/evaluator persona that composes other personas as lenses omits the `profiles:` field — it is never reverse-looked-up from a task's work-activity profile.
+
+## Quality Verify Profile
+
+This persona provides the **`quality` verify profile** for the [`ext-point-verify`](../extension-api/standards/ext-point-verify.md) findings-pipeline stage, mirroring the role `persona-security-expert` plays for the `security` profile. The adversarial-refute methodology lives in [`standards/adversarial-refute.md`](standards/adversarial-refute.md): when a producer declares `metadata.verification_profile: quality`, the orchestrator's verify pre-stage resolves that profile key to this persona and loads that standard in-context to refute each candidate quality/structural/documentation finding before triage. Confirmed findings flow on to `ext-triage-*` unchanged; refuted false positives close `rejected` and never reach triage. The stage placement and `rejected` semantics are owned by the `ext-point-verify` contract — see that document.
+
+## Related
+
+- [`standards/adversarial-refute.md`](standards/adversarial-refute.md) — The `quality` verify-profile methodology this persona provides, implementing `ext-point-verify` as a verify profile (the quality counterpart to the security persona's role)
+- [`extension-api:ext-point-verify.md`](../extension-api/standards/ext-point-verify.md) — The verify extension-point contract the quality profile implements

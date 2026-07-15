@@ -8,6 +8,8 @@ lane:
   profile: auto
   steps:
     sonar-roundtrip: off
+metadata:
+  verification_profile: quality
 ---
 
 # Recipe: Verify Documentation Quality
@@ -170,6 +172,10 @@ This section defines how the task executor verifies documentation within each de
 - Report findings only — fixes are a separate workflow
 - Verify script outputs manually before treating links as broken
 
+### Verify-then-triage routing
+
+This recipe declares `verification_profile: quality` (see the frontmatter `metadata:` block above). Every finding the format / link / drift checks below map to passes through the [verify stage](../../../plan-marshall/skills/extension-api/standards/ext-point-verify.md) adversarial-refute pass FIRST — before triage: the `quality` verify skill (`persona-code-reviewer` adversarial-refute) refutes each finding, so a doc-drift claim that turns out to be a false positive on an already-correct reference closes `rejected` and never reaches triage, while confirmed findings flow on to triage unchanged. Do NOT restate the `rejected` resolution semantics — the `ext-point-verify` contract owns them.
+
 ### Format Validation
 
 Run the AsciiDoc validator and parse output:
@@ -219,3 +225,4 @@ Compare documentation against actual project structure:
 - `pm-documents:ref-documentation` — Content quality, tone analysis, and review orchestration
 - `plan-marshall:recipe-refactor-to-profile-standards` — Built-in recipe (same 4-step pattern)
 - `plan-marshall:phase-3-outline` Step 3 — Loads this skill with input parameters
+- `plan-marshall:extension-api` `standards/ext-point-verify.md` — the verify stage this recipe opts into via `metadata.verification_profile: quality`; its documentation findings pass the `persona-code-reviewer` adversarial-refute pass before triage.

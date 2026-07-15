@@ -1,6 +1,6 @@
 # Extension Point: Verify
 
-> **Type**: Findings-Pipeline Stage Extension | **Hook Method**: producer `verification_profile` declaration | **Implementations**: 1 | **Status**: Active
+> **Type**: Findings-Pipeline Stage Extension | **Hook Method**: producer `verification_profile` declaration | **Implementations**: 4 | **Status**: Active
 
 ## Overview
 
@@ -121,7 +121,14 @@ verification_profile: security
         │
         ▼
   persona-security-expert/standards/adversarial-refute.md  (the verify skill)
+
+verification_profile: quality
+        │
+        ▼
+  persona-code-reviewer/standards/adversarial-refute.md    (the verify skill)
 ```
+
+The `quality` profile is the code-review counterpart to `security`: it resolves to the `persona-code-reviewer` adversarial-refute standard, which refutes candidate quality/structural/documentation findings with quality lenses (defect vs preference, surplus vs load-bearing, drift vs already-correct) in place of the security lenses.
 
 Unlike triage's `resolve-workflow-skill-extension` config lookup, the verify-profile resolution is a knowledge resolution carried out in the LLM-driven verify pre-stage: the profile key selects the verify skill the orchestrator loads in-context. There is no separate config-registration step for the profile beyond the producer's `verification_profile` declaration and the verify skill's existence.
 
@@ -130,8 +137,11 @@ Unlike triage's `resolve-workflow-skill-extension` config lookup, the verify-pro
 | Producer | verification_profile | Verify Skill |
 |----------|----------------------|--------------|
 | `recipe-security-audit` | `security` | `persona-security-expert` (adversarial-refute) |
+| `recipe-code-review` | `quality` | `persona-code-reviewer` (adversarial-refute) |
+| `recipe-simplify-codebase` | `quality` | `persona-code-reviewer` (adversarial-refute) |
+| `pm-documents:recipe-doc-verify` | `quality` | `persona-code-reviewer` (adversarial-refute) |
 
-Security-audit is the pilot consumer: its engine declares the `security` verification_profile, and findings it emits pass through the `persona-security-expert` adversarial-refute pass before domain triage. Findings the refute pass invalidates close `rejected`; confirmed findings flow to `ext-triage-*` unchanged.
+Security-audit is the pilot consumer: its engine declares the `security` verification_profile, and findings it emits pass through the `persona-security-expert` adversarial-refute pass before domain triage. The three `quality`-profile producers — `recipe-code-review`, `recipe-simplify-codebase`, and `pm-documents:recipe-doc-verify` — are the LLM-reasoning quality/structural/documentation finding producers; each declares `verification_profile: quality` so the findings it emits pass through the `persona-code-reviewer` adversarial-refute pass before domain triage. Findings the refute pass invalidates close `rejected`; confirmed findings flow to `ext-triage-*` unchanged.
 
 ## Related Specifications
 

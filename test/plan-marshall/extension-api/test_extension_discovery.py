@@ -1230,3 +1230,74 @@ def test_recipe_security_audit_declares_metadata_verification_profile():
         'recipe-security-audit declares metadata.verification_profile: security; '
         'the implementor record must surface it'
     )
+
+
+# =============================================================================
+# Implementor record — the `quality` verify profile consumers (live tree)
+# =============================================================================
+#
+# recipe-code-review, recipe-simplify-codebase (plan-marshall), and
+# pm-documents:recipe-doc-verify each declare ``metadata.verification_profile:
+# quality`` — opting into the ext-point-verify stage against the
+# ``persona-code-reviewer`` adversarial-refute profile. These live-tree tests
+# mirror ``test_recipe_security_audit_declares_metadata_verification_profile``:
+# the deterministic frontmatter parse must surface ``quality`` on each record so
+# the orchestrator's verify pre-stage resolves the profile at runtime.
+
+_QUALITY_PROFILE_RECIPES = (
+    ('plan-marshall', 'recipe-code-review'),
+    ('plan-marshall', 'recipe-simplify-codebase'),
+    ('pm-documents', 'recipe-doc-verify'),
+)
+
+
+@pytest.mark.parametrize('bundle,recipe', _QUALITY_PROFILE_RECIPES)
+def test_quality_profile_recipe_declares_metadata_verification_profile(bundle, recipe):
+    """Each wired recipe's SKILL.md surfaces metadata.verification_profile: quality.
+
+    Live-tree regression per consumer: the recipe declares
+    ``verification_profile: quality`` under its frontmatter ``metadata:`` block,
+    and the implementor record the deterministic parser builds must carry it —
+    the exact fact the orchestrator's verify pre-stage resolves to load the
+    ``persona-code-reviewer`` adversarial-refute pass.
+    """
+    skill_md = MARKETPLACE_ROOT / bundle / 'skills' / recipe / 'SKILL.md'
+    assert skill_md.is_file(), f'{recipe} SKILL.md not found: {skill_md}'
+
+    record = _discovery._build_implementor_record(skill_md, 'bundle-optional')
+
+    assert record.get('verification_profile') == 'quality', (
+        f'{recipe} declares metadata.verification_profile: quality; '
+        'the implementor record must surface it'
+    )
+
+
+def test_find_implementors_recipe_surfaces_quality_and_security_profiles():
+    """find_implementors(ext-point-recipe) surfaces each producer's verify profile.
+
+    Registration-level guard on the reusable discovery query: the three wired
+    ``quality`` recipes surface ``verification_profile: quality`` in their
+    implementor records, while the ``recipe-security-audit`` pilot still surfaces
+    ``security`` — one query proving all four producers' verify-stage opt-in is
+    live and each maps to the right profile.
+    """
+    records = _discovery.find_implementors(
+        'plan-marshall:extension-api/standards/ext-point-recipe'
+    )
+    assert records, 'Expected at least one ext-point-recipe implementor'
+
+    def _profile_for(recipe_name):
+        matches = [
+            rec for rec in records
+            if pathlib.Path(rec['path']).parent.name == recipe_name
+        ]
+        assert len(matches) == 1, (
+            f'expected exactly one ext-point-recipe record for {recipe_name!r}, '
+            f'got {len(matches)}'
+        )
+        return matches[0].get('verification_profile')
+
+    assert _profile_for('recipe-code-review') == 'quality'
+    assert _profile_for('recipe-simplify-codebase') == 'quality'
+    assert _profile_for('recipe-doc-verify') == 'quality'
+    assert _profile_for('recipe-security-audit') == 'security'
