@@ -1165,8 +1165,8 @@ def test_generate_substitutes_version_and_fingerprint_from_manifest(tmp_path, mo
     plan_dir.mkdir()
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-    ok = module.generate_executor({}, MARKETPLACE_ROOT, dry_run=False)
-    assert ok, 'generate_executor should succeed with an empty mapping set'
+    result = module.generate_executor({}, MARKETPLACE_ROOT, dry_run=False)
+    assert result['status'] == 'success', f'generate_executor should succeed with an empty mapping set: {result}'
 
     generated = plan_dir / 'execute-script.py'
     assert generated.is_file(), f'Expected generated executor at {generated}'
@@ -1192,8 +1192,8 @@ def test_generate_uses_empty_sentinel_on_fresh_install(tmp_path, monkeypatch):
     plan_dir.mkdir()
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-    ok = module.generate_executor({}, MARKETPLACE_ROOT, dry_run=False)
-    assert ok, 'fresh install (no manifest) must still generate the executor'
+    result = module.generate_executor({}, MARKETPLACE_ROOT, dry_run=False)
+    assert result['status'] == 'success', f'fresh install (no manifest) must still generate the executor: {result}'
 
     text = (plan_dir / 'execute-script.py').read_text(encoding='utf-8')
     assert "MARSHALL_VERSION = ''" in text, 'fresh install must stamp the empty version sentinel'
@@ -1403,6 +1403,9 @@ def test_preflight_reports_marshal_stale_advisory_without_mutation(tmp_path, mon
     marshal.write_text(json.dumps(marshal_body), encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
     monkeypatch.chdir(tmp_path)
+    # Isolate the orthogonal multi-version-pollution scan (which reads the real
+    # plugin-cache tree) so this config-staleness case stays hermetic.
+    monkeypatch.setattr(module, '_detect_multi_version_pollution', lambda *a, **k: [])
 
     result = module.cmd_preflight(_preflight_args())
 
@@ -1433,6 +1436,9 @@ def test_preflight_int_tuple_version_compare_avoids_lexical_bug(tmp_path, monkey
     marshal.write_text(json.dumps({'system': {'provisioned_version': '0.1.9'}}), encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
     monkeypatch.chdir(tmp_path)
+    # Isolate the orthogonal multi-version-pollution scan (which reads the real
+    # plugin-cache tree) so this int-tuple compare case stays hermetic.
+    monkeypatch.setattr(module, '_detect_multi_version_pollution', lambda *a, **k: [])
 
     result = module.cmd_preflight(_preflight_args())
 
@@ -1537,6 +1543,12 @@ def test_preflight_subcommand_registered_and_emits_toon(tmp_path):
     env = _subprocess_env()
     env['PM_DIST_MANIFEST'] = str(manifest)
     env['PLAN_BASE_DIR'] = str(tmp_path / '.plan')
+    # Isolate HOME so the orthogonal multi-version-pollution scan cannot read a
+    # real (possibly stale/polluted) plugin-cache tree — cache-first resolution
+    # then falls back to the marketplace source, keeping this end-to-end case
+    # hermetic. Mirrors the _detect_multi_version_pollution stub the in-process
+    # preflight tests use (which a subprocess cannot monkeypatch).
+    env['HOME'] = str(tmp_path)
     (tmp_path / '.plan').mkdir()
 
     result = subprocess.run(
@@ -1739,4 +1751,273 @@ def test_claude_resolver_reresolves_after_pinned_version_pruned(tmp_path, monkey
     assert second == str(older.resolve()), (
         f'after pruning the pinned version, resolver must re-resolve to the newest '
         f'surviving dir {older.resolve()!r}, got {second!r}'
+    )
+
+
+# ============================================================================
+# Deliverable 1: regeneration safety — format handshake, residue guard,
+# py_compile self-check, atomic write
+# ============================================================================
+# generate_executor() runs three deterministic guards on the substituted content
+# BEFORE any write and commits atomically (write-temp + os.replace), so a
+# malformed generation can never overwrite a working executor. These tests pin:
+# (a) a well-formed generation still writes a compilable executor and reports
+#     status: success;
+# (b) a template TEMPLATE_FORMAT_VERSION skew is refused with no write and a
+#     byte-identical pre-existing executor;
+# (c) an unsubstituted {{...}} placeholder residue fails loudly with no write;
+# (d) a py_compile-failing substitution is refused and the pre-existing working
+#     executor is preserved (the direct Leg B acceptance assertion).
+# They reuse the _build_fake_marketplace scaffolding so generate_executor runs
+# end-to-end against a controllable template, and PLAN_BASE_DIR isolation so the
+# executor write target lands under tmp_path, never the real project tree.
+
+
+def _fake_bundles_root(tmp_path: Path) -> Path:
+    """Return the bundles dir of a fake marketplace copied under tmp_path."""
+    fake_ws = _build_fake_marketplace(tmp_path)
+    return fake_ws / 'marketplace' / 'bundles'
+
+
+def _fake_template_path(bundles_root: Path) -> Path:
+    """Return the copied executor template inside a fake bundles tree."""
+    return bundles_root / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'templates' / 'execute-script.py.template'
+
+
+def _seed_pre_existing_executor(tmp_path: Path) -> tuple[Path, str]:
+    """Create a sentinel pre-existing executor under tmp_path/.plan and return it.
+
+    Returns the executor path and its exact byte content so a caller can assert
+    a refused regeneration left it untouched.
+    """
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir(exist_ok=True)
+    executor = plan_dir / 'execute-script.py'
+    sentinel = "# SENTINEL pre-existing executor — must survive a refused regen\nSCRIPTS = {}\n"
+    executor.write_text(sentinel, encoding='utf-8')
+    return executor, sentinel
+
+
+def test_generate_executor_wellformed_writes_compilable_and_reports_success(tmp_path, monkeypatch):
+    """(a) A well-formed generation writes a compilable executor and reports
+    status: success — the happy path through all three guards + atomic write."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+    module = load_module()
+    bundles_root = _fake_bundles_root(tmp_path)
+
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+
+    result = module.generate_executor({'a:b:c': '/x/y/z.py'}, bundles_root, dry_run=False, target='claude')
+
+    assert result['status'] == 'success', f'well-formed generation must succeed, got {result}'
+    generated = plan_dir / 'execute-script.py'
+    assert generated.is_file(), 'a successful generation must write the executor'
+    # The written executor itself compiles — the self-check gate's positive case.
+    compile(generated.read_text(encoding='utf-8'), str(generated), 'exec')
+
+
+def test_generate_executor_format_skew_refuses_write_and_preserves_existing(tmp_path, monkeypatch):
+    """(b) A template whose TEMPLATE_FORMAT_VERSION marker mismatches the
+    generator's supported version returns status: error, writes no executor, and
+    leaves any pre-existing executor byte-identical."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+    module = load_module()
+    bundles_root = _fake_bundles_root(tmp_path)
+
+    template = _fake_template_path(bundles_root)
+    body = template.read_text(encoding='utf-8')
+    skewed = body.replace('# TEMPLATE_FORMAT_VERSION: 1', '# TEMPLATE_FORMAT_VERSION: 999')
+    assert skewed != body, 'fixture must actually alter the format marker'
+    template.write_text(skewed, encoding='utf-8')
+
+    # Post-Q-Gate-6dcc8f, get_templates_dir() resolves the template script-relative
+    # to the executing generator and IGNORES base_path, so writing the fixture into
+    # the fake bundles tree no longer redirects generate_executor's template read.
+    # Point get_templates_dir at the fixture's own dir so the skewed template is the
+    # one under test (test-only injection; production resolution is unchanged).
+    monkeypatch.setattr(module, 'get_templates_dir', lambda base_path: template.parent)
+
+    executor, sentinel = _seed_pre_existing_executor(tmp_path)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
+
+    result = module.generate_executor({'a:b:c': '/x/y/z.py'}, bundles_root, dry_run=False, target='claude')
+
+    assert result['status'] == 'error', f'a format skew must be refused, got {result}'
+    assert 'format' in result['error'].lower() or 'version' in result['error'].lower()
+    assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing executor must be byte-identical after refusal'
+
+
+def test_generate_executor_placeholder_residue_refuses_write_and_preserves_existing(tmp_path, monkeypatch):
+    """(c) A substituted content carrying a residual {{...}} placeholder token
+    (a placeholder the generator never fills) is refused with no write and the
+    pre-existing executor preserved."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+    module = load_module()
+    bundles_root = _fake_bundles_root(tmp_path)
+
+    template = _fake_template_path(bundles_root)
+    body = template.read_text(encoding='utf-8')
+    # Inject an unfillable placeholder inside a comment: it survives substitution
+    # (the generator fills no {{NEVER_FILLED}}) yet keeps the format marker intact.
+    injected = body.replace('VALIDATE_TOON = False', 'VALIDATE_TOON = False  # residue {{NEVER_FILLED}}')
+    assert injected != body, 'fixture must actually inject the residue token'
+    template.write_text(injected, encoding='utf-8')
+
+    # Post-Q-Gate-6dcc8f, get_templates_dir() resolves the template script-relative
+    # to the executing generator and IGNORES base_path, so writing the fixture into
+    # the fake bundles tree no longer redirects generate_executor's template read.
+    # Point get_templates_dir at the fixture's own dir so the residue-injected
+    # template is the one under test (test-only injection; production unchanged).
+    monkeypatch.setattr(module, 'get_templates_dir', lambda base_path: template.parent)
+
+    executor, sentinel = _seed_pre_existing_executor(tmp_path)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
+
+    result = module.generate_executor({'a:b:c': '/x/y/z.py'}, bundles_root, dry_run=False, target='claude')
+
+    assert result['status'] == 'error', f'placeholder residue must be refused, got {result}'
+    assert 'residue' in result['error'].lower() or 'placeholder' in result['error'].lower()
+    assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing executor must be byte-identical after refusal'
+
+
+def test_generate_executor_py_compile_failure_refuses_write_and_preserves_existing(tmp_path, monkeypatch):
+    """(d) A substitution that produces non-compiling Python returns status: error
+    and preserves the pre-existing working executor untouched — the direct Leg B
+    acceptance assertion (a broken executor can never be emitted)."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+    module = load_module()
+    bundles_root = _fake_bundles_root(tmp_path)
+
+    template = _fake_template_path(bundles_root)
+    body = template.read_text(encoding='utf-8')
+    # Inject a module-level syntax error that carries no {{...}} residue and
+    # keeps the format marker intact, so guards 1 and 2 pass and guard 3 (the
+    # py_compile self-check) is the one that trips.
+    broken = body.replace('VALIDATE_TOON = False', 'VALIDATE_TOON = False\ndef __broken_syntax(:\n    pass')
+    assert broken != body, 'fixture must actually inject the syntax error'
+    template.write_text(broken, encoding='utf-8')
+
+    # Post-Q-Gate-6dcc8f, get_templates_dir() resolves the template script-relative
+    # to the executing generator and IGNORES base_path, so writing the fixture into
+    # the fake bundles tree no longer redirects generate_executor's template read.
+    # Point get_templates_dir at the fixture's own dir so the syntax-broken template
+    # is the one under test (test-only injection; production resolution unchanged).
+    monkeypatch.setattr(module, 'get_templates_dir', lambda base_path: template.parent)
+
+    executor, sentinel = _seed_pre_existing_executor(tmp_path)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
+
+    result = module.generate_executor({'a:b:c': '/x/y/z.py'}, bundles_root, dry_run=False, target='claude')
+
+    assert result['status'] == 'error', f'a non-compiling substitution must be refused, got {result}'
+    assert 'compile' in result['error'].lower() or 'syntax' in result['error'].lower()
+    assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing working executor must be preserved on a failed self-check'
+
+
+# ============================================================================
+# Q-Gate finding 6dcc8f: template resolves script-relative, never cache-newest
+# ============================================================================
+# get_templates_dir() must resolve the executor template as a script-relative
+# sibling of the EXECUTING generator (SCRIPT_DIR.parent / 'templates'), IGNORING
+# the base_path (the newest cache-version dir). The live incident: an old pinned
+# executor (0.1.1105) ran its own old generator code but substituted against the
+# NEWEST (0.1.1116) template, producing a version-mismatched SyntaxError-bricked
+# executor. Binding the template to the executing generator closes that class
+# structurally. get_shared_module_dirs() is the INVERSE — it correctly STAYS
+# newest-cache-version (PR #894 FIX C / GC-prune self-heal) and must not regress.
+
+
+def test_get_templates_dir_is_script_relative_sibling_of_generator():
+    """get_templates_dir returns SCRIPT_DIR.parent / 'templates' — the real
+    templates dir co-located with generate_executor.py — and that dir carries
+    the actual executor template."""
+    module = load_module()
+
+    result = module.get_templates_dir(Path('/some/unrelated/base/path'))
+
+    expected = module.SCRIPT_DIR.parent / 'templates'
+    assert result == expected, f'expected script-relative templates dir {expected}, got {result}'
+    assert (result / 'execute-script.py.template').is_file(), (
+        f'resolved templates dir must be the real co-located one, got {result}'
+    )
+
+
+def test_get_templates_dir_is_base_path_independent():
+    """The resolved templates dir is identical regardless of which base_path is
+    passed — base_path is intentionally unused."""
+    module = load_module()
+
+    a = module.get_templates_dir(Path('/nonexistent/cache/version-a'))
+    b = module.get_templates_dir(Path('/totally/other/root/version-b'))
+
+    assert a == b == module.SCRIPT_DIR.parent / 'templates', (
+        f'get_templates_dir must ignore base_path; got a={a}, b={b}'
+    )
+
+
+def test_get_templates_dir_ignores_cache_newest_base_path(tmp_path):
+    """Version-mismatch simulation: a base_path pointing at a DIFFERENT (newer)
+    cache-version tree that itself carries a valid templates dir. get_templates_dir
+    must STILL resolve to the executing generator's own co-located templates,
+    never the base_path's — the exact skew from the live incident.
+
+    Against the pre-fix resolution (``_resolve_plan_marshall_path(base_path, ...)``)
+    this base_path WOULD resolve to the decoy templates dir below; the fix makes
+    it resolve script-relative instead.
+    """
+    module = load_module()
+
+    # Build a decoy cache-version tree carrying its own (wrong-version) template.
+    decoy_templates = (
+        tmp_path / 'plan-marshall' / '0.1.9999' / 'skills' / 'tools-script-executor' / 'templates'
+    )
+    decoy_templates.mkdir(parents=True)
+    (decoy_templates / 'execute-script.py.template').write_text('# decoy newer-version template\n')
+
+    result = module.get_templates_dir(tmp_path)
+
+    expected = module.SCRIPT_DIR.parent / 'templates'
+    assert result == expected, f'expected script-relative templates dir {expected}, got {result}'
+    assert result != decoy_templates, 'must not select the decoy templates under base_path'
+    assert not str(result).startswith(str(tmp_path)), (
+        f'resolved templates dir must not live under the passed base_path, got {result}'
+    )
+    assert (result / 'execute-script.py.template').is_file(), (
+        'resolved dir must be the real co-located templates dir'
+    )
+
+
+def test_get_shared_module_dirs_stays_base_path_newest_version(tmp_path):
+    """Regression guard: get_shared_module_dirs MUST remain base_path-dependent
+    (newest-cache-version) resolution — the INVERSE of get_templates_dir. This
+    preserves the PR #894 FIX C / GC-prune self-heal contract governing the
+    executor's OWN runtime sys.path bootstrap.
+    """
+    module = load_module()
+
+    # Build a versioned cache tree carrying the shared-module dirs under base_path.
+    version_root = tmp_path / 'plan-marshall' / '0.1.500' / 'skills'
+    for sub in (
+        'tools-file-ops',
+        'tools-input-validation',
+        'ref-toon-format',
+        'script-shared',
+        'manage-change-ledger',
+    ):
+        (version_root / sub / 'scripts').mkdir(parents=True)
+
+    dirs = module.get_shared_module_dirs(tmp_path)
+    dir_strs = [str(d) for d in dirs]
+
+    assert dir_strs, 'expected shared dirs resolved under the versioned base_path'
+    base_resolved = str(tmp_path.resolve())
+    for d in dir_strs:
+        assert d.startswith(base_resolved), (
+            f'get_shared_module_dirs must resolve under the passed base_path {base_resolved}; got {d}'
+        )
+    # And the version dir is honoured (proving newest-cache-version resolution).
+    assert all('0.1.500' in d for d in dir_strs), (
+        f'shared dirs must resolve through the versioned cache tree; got {dir_strs}'
     )

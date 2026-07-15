@@ -1,12 +1,22 @@
 # Upgrade Flow
 
 The `upgrade` verb runs the full post-change reconciliation in ONE flow after a
-marketplace change: regenerate `target/claude` + the executor, reconcile
-`marshal.json`, verify (executor preflight + content-drift report), then run the
-existing landing cycle. The verb is pure orchestration glue over already-shipped
-machinery — it FIRST calls the deterministic planner `upgrade.py plan` to obtain
-the fixed four-stage plan with per-stage gate dispositions, then drives each
-stage's existing machinery honoring those dispositions.
+change: regenerate the target tree and/or executor, reconcile `marshal.json`,
+verify, then run the existing landing cycle. The verb is pure orchestration glue
+over already-shipped machinery — it FIRST calls the deterministic planner
+`upgrade.py plan` to obtain the fixed four-stage plan with per-stage gate
+dispositions AND per-stage `sub_steps`, then drives each stage's existing
+machinery honoring those dispositions.
+
+The plan is **project-kind aware**. A `meta` project (the plan-marshall
+meta-project itself) regenerates the `target/claude` tree AND the executor and
+verifies with executor preflight AND a content-drift report; a `consumer`
+project (a downstream project that consumes plan-marshall) regenerates ONLY the
+executor and verifies with executor preflight ONLY — the meta-only sub-steps
+(`marketplace/targets/generate.py` in Stage 1, `content_drift_cli.py` in Stage 3)
+are absent from a consumer plan and MUST NOT be attempted. The planner detects
+the kind or is told it explicitly; this flow runs exactly the `sub_steps` the
+plan emitted for the resolved kind.
 
 This reference is loaded from two entry points (see [`../SKILL.md`](../SKILL.md)):
 Main Menu option 5 ("Upgrade"), and the `upgrade` early verb check (which passes
@@ -20,29 +30,42 @@ and all CI/PR operations go through the `tools-integration-ci:ci` abstraction
 
 ## The four stages
 
+The four stages and their order are fixed. Each stage runs the `sub_steps` the
+plan emitted for the resolved `project_kind`; the meta/consumer matrix below
+names them (Stages 2 and 4 are kind-invariant, Stages 1 and 3 drop meta-only
+sub-steps on a consumer).
+
 ```text
-  Stage 1  regenerate-targets   generate.py --target claude + generate_executor generate   [mutating]
-  Stage 2  reconcile-config     manage-config sync-defaults + steps-sort                    [mutating]
+  Stage 1  regenerate-targets   meta:     regenerate-target-tree + regenerate-executor  [mutating]
+                                consumer: regenerate-executor
+  Stage 2  reconcile-config     both:     reconcile-marshal-json                        [mutating]
                                 └─ nested gate: build-map re-seed (still prompts)
-  Stage 3  verify               generate_executor preflight + content_drift_cli report      [read-only]
-  Stage 4  land                 Read references/landing-cycle.md and execute AS-IS          [mutating]
+  Stage 3  verify               meta:     executor-preflight + content-drift-report     [read-only]
+                                consumer: executor-preflight
+  Stage 4  land                 both:     run-landing-cycle                             [mutating]
                                 └─ nested gates: land/leave + branch-reuse (still prompt)
 ```
 
 ## Step 0: Obtain the stage plan
 
 Call the deterministic planner FIRST, passing the resolved `integrate` value
-(`true` when the invocation carried `integrate=true`, otherwise `false`):
+(`true` when the invocation carried `integrate=true`, otherwise `false`) and
+`--project-kind auto` (the planner detects `meta` vs `consumer` from the cwd via
+a read-only `marketplace/targets/generate.py` + `marketplace/bundles/` presence
+check; pass `meta` or `consumer` explicitly to override the detection):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade plan --integrate {integrate}
+python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade plan --integrate {integrate} --project-kind auto
 ```
 
 See the [`../SKILL.md`](../SKILL.md) Canonical invocations (`upgrade — plan`) for
-the verb shape. Parse the returned `stages[4]{order,key,name,mutating,top_level_gate,nested_gates}`
-list. Each stage's `top_level_gate` is the disposition this flow honors below:
-`prompt` (ask before running the stage) or `suppressed` (run without the
-top-level prompt).
+the verb shape. Parse the returned top-level `project_kind` and the
+`stages[4]{order,key,name,mutating,top_level_gate,nested_gates,sub_steps}` list.
+Each stage's `top_level_gate` is the disposition this flow honors below: `prompt`
+(ask before running the stage) or `suppressed` (run without the top-level
+prompt). Each stage's `sub_steps` is the exact ordered list of sub-steps to run
+for the resolved kind — run exactly those, and never a sub-step absent from the
+emitted list (a `consumer` plan omits the meta-only sub-steps).
 
 ## Gate contract
 
@@ -91,19 +114,40 @@ For each stage, before running its machinery:
 
 ## Stage 1: regenerate-targets (mutating)
 
-Honor the Stage 1 top-level gate, then regenerate the Claude target tree and the
-executor:
+Honor the Stage 1 top-level gate, then run exactly the Stage 1 `sub_steps` the
+plan emitted for the resolved kind:
 
-```bash
-python3 marketplace/targets/generate.py --target claude --output target/claude
-```
+- **`regenerate-target-tree`** (meta only — absent from a consumer plan) —
+  regenerate the Claude target tree:
 
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor generate
-```
+  ```bash
+  python3 marketplace/targets/generate.py --target claude --output target/claude
+  ```
 
-See the `tools-script-executor` Canonical invocations (`generate_executor` →
-`generate`) for the verb shape.
+- **`regenerate-executor`** (both kinds) — regenerate the executor. Invoke the
+  post-change `generate_executor.py` **directly, by its resolved script path**
+  — NOT through the `.plan/execute-script.py` proxy — so a recovery run works
+  even when the currently-installed executor is broken and cannot proxy at all.
+  Resolve the script path per kind: meta uses the marketplace-source generator
+  (`marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py`);
+  consumer uses the freshly-synced cache-version generator under the plugin
+  cache. Run its `generate` verb directly:
+
+  ```bash
+  python3 {resolved_generate_executor_path} generate
+  ```
+
+  See the `tools-script-executor` Canonical invocations (`generate_executor` →
+  `generate`) for the verb shape. The generator's own self-check — the
+  TEMPLATE_FORMAT_VERSION handshake, the unsubstituted-placeholder residue
+  guard, and the `py_compile` self-check with atomic write — makes every regen
+  path fail-safe regardless of how it is invoked: a malformed generation is
+  refused with `status: error` and the pre-existing working executor is left
+  byte-identical, so a regeneration can never leave a corrupt executor in place.
+
+A `consumer` plan runs only `regenerate-executor`; the meta-only
+`marketplace/targets/generate.py` sub-step is absent from its `sub_steps` and
+MUST NOT be attempted (a consumer has no marketplace source tree).
 
 > **Session restart after executor regeneration.** Regenerating the executor may
 > change the emitted agent set. The registry is session-pinned at session start,
@@ -164,10 +208,10 @@ top-level gate.
 
 ## Stage 3: verify (read-only)
 
-Honor the Stage 3 top-level gate, then run the two read-only verification checks.
-Neither mutates the working tree.
+Honor the Stage 3 top-level gate, then run exactly the Stage 3 `sub_steps` the
+plan emitted for the resolved kind. Neither sub-step mutates the working tree.
 
-**(a) Executor / config staleness preflight:**
+**(a) `executor-preflight`** (both kinds) — executor / config staleness preflight:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor preflight
@@ -176,10 +220,11 @@ python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_exe
 See the `tools-script-executor` Canonical invocations (`generate_executor` →
 `preflight`) for the verb shape.
 
-**(b) Content-drift report** — the thin CLI over the content-drift engine.
-Exit `0` means the emitted `target/claude/` markdown matches a fresh emit; exit
-`1` means drift was detected (or `target/claude` is not generated), with the
-drifted/missing/orphan paths named in the TOON report:
+**(b) `content-drift-report`** (meta only — absent from a consumer plan) — the
+thin CLI over the content-drift engine. Exit `0` means the emitted
+`target/claude/` markdown matches a fresh emit; exit `1` means drift was detected
+(or `target/claude` is not generated), with the drifted/missing/orphan paths
+named in the TOON report:
 
 ```bash
 python3 marketplace/targets/claude/content_drift_cli.py
@@ -188,6 +233,10 @@ python3 marketplace/targets/claude/content_drift_cli.py
 If drift is reported, the fix is to re-run Stage 1's `generate.py` emit — the
 source `.md` files under `marketplace/bundles/` are canonical and MUST NOT be
 edited to satisfy the gate.
+
+A `consumer` plan runs only `executor-preflight`; the meta-only
+`content-drift-report` sub-step is absent from its `sub_steps` and MUST NOT be
+attempted (a consumer has no `marketplace/targets/claude/content_drift_cli.py`).
 
 ## Stage 4: land (mutating)
 

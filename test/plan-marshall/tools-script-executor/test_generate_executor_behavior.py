@@ -208,6 +208,7 @@ def test_discover_local_scripts_skips_hidden_skill_dirs(tmp_path):
 # =============================================================================
 
 _TEMPLATE_BODY = (
+    '# TEMPLATE_FORMAT_VERSION: 1\n'
     'SCRIPTS = {\n'
     '{{SCRIPT_MAPPINGS}}\n'
     '}\n'
@@ -244,9 +245,9 @@ def test_generate_executor_dry_run_does_not_write(tmp_path, monkeypatch, capsys)
     plan_dir.mkdir()
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-    ok = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=True, target='claude')
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=True, target='claude')
 
-    assert ok is True
+    assert result['status'] == 'success'
     out = capsys.readouterr().out
     assert '=== execute-script.py ===' in out
     assert not (plan_dir / 'execute-script.py').exists()
@@ -259,9 +260,17 @@ def test_generate_executor_writes_substituted_executor(tmp_path, monkeypatch):
     plan_dir.mkdir()
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-    ok = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
+    # get_templates_dir() deliberately ignores base_path and resolves the REAL
+    # script-relative production template (TASK-008's fix). Monkeypatch it back to
+    # the synthetic base's templates dir so the isolated _TEMPLATE_BODY fixture is
+    # what gets read and asserted on, keeping the test's deterministic-content
+    # intent rather than coupling the assertions to the real template's shape.
+    synthetic_templates = base / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'templates'
+    monkeypatch.setattr(_gen, 'get_templates_dir', lambda base_path: synthetic_templates)
 
-    assert ok is True
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
+
+    assert result['status'] == 'success'
     written = (plan_dir / 'execute-script.py').read_text(encoding='utf-8')
     # Mapping line, target token, and resolver body are all substituted.
     assert '"a:b:c": "/p/c.py"' in written
@@ -271,16 +280,24 @@ def test_generate_executor_writes_substituted_executor(tmp_path, monkeypatch):
     assert '{{' not in written
 
 
-def test_generate_executor_returns_false_when_template_missing(tmp_path, monkeypatch):
-    """A base path with no template file makes the writer return False."""
+def test_generate_executor_returns_error_when_template_missing(tmp_path, monkeypatch):
+    """A templates dir with no template file makes the writer return status: error."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-    # tmp_path/'empty-base' has no plan-marshall/.../templates/ tree.
-    ok = _gen.generate_executor({'a:b:c': '/p/c.py'}, tmp_path / 'empty-base', dry_run=False)
+    # Post-TASK-008 get_templates_dir() ignores base_path and always resolves the
+    # real script-relative template, so a base_path with no templates/ tree can no
+    # longer reach the missing-template branch. Monkeypatch get_templates_dir to a
+    # directory that carries no template file, so generate_executor() still
+    # exercises the template-missing status: error early return.
+    empty_templates = tmp_path / 'no-templates'
+    empty_templates.mkdir()
+    monkeypatch.setattr(_gen, 'get_templates_dir', lambda base_path: empty_templates)
 
-    assert ok is False
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, tmp_path / 'empty-base', dry_run=False)
+
+    assert result['status'] == 'error'
 
 
 # =============================================================================

@@ -22,6 +22,24 @@ The executor is always written directly to ``<root>/.plan/execute-script.py``
 shim-to-external-executor split — every documented call site
 (``python3 .plan/execute-script.py …``) runs the real executor directly.
 
+Self-checking, atomic regeneration:
+    ``generate`` is fail-safe by construction — it never overwrites a working
+    executor with a malformed one. After the template is read and all
+    placeholders are substituted, three deterministic guards run BEFORE any
+    write: (1) a **format handshake** asserts the template's
+    ``TEMPLATE_FORMAT_VERSION`` marker equals the generator's
+    ``_SUPPORTED_TEMPLATE_FORMAT_VERSION`` constant (a skew is refused loudly
+    with a re-sync instruction); (2) a **residue guard** rejects any surviving
+    ``{{...}}`` placeholder token (template/generator placeholder-set
+    disagreement); (3) a **py_compile self-check** compiles the substituted
+    content in memory and, on ``SyntaxError``, returns ``status: error`` rather
+    than writing. Only a content that passes all three is committed, and the
+    commit is **atomic** — written to a sibling temp path and ``os.replace``-d
+    onto the real executor, so a partial or broken write can never leave a
+    corrupt executor in place. Every regen caller (the meta upgrade path, the
+    consumer upgrade path, and the finalize ``sync-plugin-cache`` path) inherits
+    this protection because it lives inside the generator itself.
+
 Context Detection:
     By default, operates in plugin-cache context (~/.claude/plugins/cache/plan-marshall/).
     Use --marketplace flag for marketplace development context (marketplace/bundles/).
@@ -183,8 +201,35 @@ def get_inventory_script(base_path: Path) -> Path:
 
 
 def get_templates_dir(base_path: Path) -> Path:
-    """Get path to templates directory based on context."""
-    return _resolve_plan_marshall_path(base_path, 'skills/tools-script-executor/templates')
+    """Resolve the executor template dir as a script-relative sibling of THIS generator.
+
+    Unlike every other path helper in this module, this deliberately IGNORES
+    ``base_path`` (the newest cache-version dir returned by
+    ``get_base_path(scope=cache-first)``) and resolves the templates directory
+    relative to the *executing* generator file: ``SCRIPT_DIR.parent / 'templates'``
+    — mirroring the ``_SCRIPTS_DIR`` / ``_SKILLS_DIR`` bootstrap pattern used for
+    the shared-library ``sys.path`` inserts at the top of this module.
+
+    Why script-relative and NOT newest-version: the template is substituted into
+    the executor by whichever generator version is actually running. Resolving the
+    template against the newest cache version instead lets an OLD pinned generator
+    (e.g. 0.1.1105) substitute against a NEWER template (e.g. 0.1.1116), producing
+    a version-mismatched, SyntaxError-bricked executor — the ``TEMPLATE_FORMAT_VERSION``
+    handshake only protects transitions where the executing generator already
+    carries the handshake code, so a pre-fix generator stays unprotected. Binding
+    the template to the executing generator guarantees the two always match and
+    closes that mixed-version class structurally rather than only detecting it
+    after the fact.
+
+    This is the *inverse* of ``get_shared_module_dirs()`` (and the #888/#889/#894
+    ``Path(__file__)`` resolver-class fix), which correctly STAYS newest-version:
+    that governs the executor's OWN runtime ``sys.path`` bootstrap / GC-prune
+    self-heal contract, where cache-newest-walk IS the fix. Here cache-newest-walk
+    is the bug. The distinction is "resolve by role, not by flipping the resolver
+    globally": ``base_path`` is retained in the signature for call-site
+    compatibility but is intentionally unused.
+    """
+    return SCRIPT_DIR.parent / 'templates'
 
 
 def get_logging_scripts_dir(base_path: Path) -> Path:
@@ -609,14 +654,63 @@ def generate_mappings_code(mappings: dict[str, str]) -> str:
     return '\n'.join(lines)
 
 
+# The template format version this generator knows how to fill. The template
+# carries a matching ``# TEMPLATE_FORMAT_VERSION: N`` marker; the two are the
+# explicit decoupling contract for every placeholder shape (SCRIPT_MAPPINGS,
+# SHARED_MODULE_DIRS, TARGET_AWARE_RESOLVER, …). Any change to a placeholder's
+# emitted structure MUST bump BOTH this constant and the template marker in
+# lockstep. A version skew is refused loudly (no write) rather than emitting a
+# structurally-mismatched executor — the SyntaxError-executor-on-format-skew
+# defect class.
+_SUPPORTED_TEMPLATE_FORMAT_VERSION = 1
+
+# Matches the template's ``# TEMPLATE_FORMAT_VERSION: N`` marker comment.
+_TEMPLATE_FORMAT_VERSION_RE = re.compile(r'^#\s*TEMPLATE_FORMAT_VERSION:\s*(\d+)\s*$', re.MULTILINE)
+
+# Matches any residual ``{{...}}`` placeholder token that survived substitution.
+_UNSUBSTITUTED_PLACEHOLDER_RE = re.compile(r'\{\{[^{}]*\}\}')
+
+
+def parse_template_format_version(template: str) -> int | None:
+    """Parse the ``# TEMPLATE_FORMAT_VERSION: N`` marker from template text.
+
+    Args:
+        template: The raw template file contents.
+
+    Returns:
+        The integer version declared by the marker, or ``None`` when the marker
+        is absent or malformed.
+    """
+    match = _TEMPLATE_FORMAT_VERSION_RE.search(template)
+    if match:
+        return int(match.group(1))
+    return None
+
+
 def generate_executor(
     mappings: dict[str, str],
     base_path: Path,
     dry_run: bool = False,
     target: str | None = None,
-) -> bool:
+) -> dict:
     """
     Generate execute-script.py with embedded mappings.
+
+    After the template is read and all placeholders are substituted, three
+    deterministic guards run BEFORE any write, so a malformed generation can
+    never overwrite a working executor:
+
+    1. **Format handshake** — the template's ``TEMPLATE_FORMAT_VERSION`` marker
+       must equal :data:`_SUPPORTED_TEMPLATE_FORMAT_VERSION`; a skew returns a
+       ``status: error`` dict and writes nothing.
+    2. **Residue guard** — any surviving ``{{...}}`` placeholder token (a
+       placeholder the generator did not fill, or one a newer template
+       introduced) returns a ``status: error`` dict and writes nothing.
+    3. **py_compile self-check + atomic write** — the substituted content is
+       compiled in memory; a ``SyntaxError`` returns a ``status: error`` dict
+       leaving any pre-existing executor byte-identical, and a clean compile is
+       written to a sibling temp path and ``os.replace``-d onto the real
+       executor so a partial write can never leave a corrupt executor in place.
 
     Args:
         mappings: Script notation to path mappings
@@ -627,14 +721,15 @@ def generate_executor(
             :func:`read_marshal_target`.
 
     Returns:
-        True if successful
+        A ``{'status': 'success'}`` dict on success (carrying ``dry_run: True``
+        for a preview run), or a ``{'status': 'error', 'error': ...}`` dict
+        naming the failure when a guard trips or the template is absent.
     """
     templates_dir = get_templates_dir(base_path)
     executor_template = templates_dir / 'execute-script.py.template'
 
     if not executor_template.exists():
-        print(f'Error: Template not found: {executor_template}', file=sys.stderr)
-        return False
+        return {'status': 'error', 'error': f'Template not found: {executor_template}'}
 
     template = executor_template.read_text()
     mappings_code = generate_mappings_code(mappings)
@@ -687,12 +782,71 @@ def generate_executor(
         print('=== execute-script.py ===')
         print(content[:2000])
         print('... (truncated)')
-        return True
+        return {'status': 'success', 'dry_run': True}
 
     real_executor = executor_path()
+
+    # Guard 1 — format handshake: refuse a template whose declared format
+    # version the generator does not support (never write a file).
+    template_version = parse_template_format_version(template)
+    if template_version != _SUPPORTED_TEMPLATE_FORMAT_VERSION:
+        return {
+            'status': 'error',
+            'error': (
+                f'Template format skew: {executor_template} declares '
+                f'TEMPLATE_FORMAT_VERSION={template_version!r} but this generator supports '
+                f'{_SUPPORTED_TEMPLATE_FORMAT_VERSION}. Re-sync so the template and generator '
+                f'are the same version (run /sync-plugin-cache, then regenerate) before '
+                f'regenerating the executor. Existing executor left untouched.'
+            ),
+        }
+
+    # Guard 2 — residue guard: refuse any surviving {{...}} placeholder token
+    # (a placeholder the generator did not fill, or one a newer template
+    # introduced) the same loud way (never write a file).
+    residue = _UNSUBSTITUTED_PLACEHOLDER_RE.search(content)
+    if residue is not None:
+        return {
+            'status': 'error',
+            'error': (
+                f'Unsubstituted placeholder residue in generated content: {residue.group(0)!r}. '
+                f'The template and generator disagree on the placeholder set; no executor was '
+                f'written and any existing executor was left untouched.'
+            ),
+        }
+
+    # Guard 3 — py_compile self-check: compile the substituted content in memory
+    # before it is ever written. A SyntaxError means the generation is malformed;
+    # return an error and preserve the existing executor untouched.
+    try:
+        compile(content, str(real_executor), 'exec')
+    except SyntaxError as exc:
+        return {
+            'status': 'error',
+            'error': (
+                f'Generated executor failed py_compile self-check ({exc}); refusing to write a '
+                f'malformed executor. Any pre-existing executor was left untouched.'
+            ),
+        }
+
+    # Atomic write: write to a sibling temp path and os.replace() it onto the
+    # real executor so a partial/broken write can never leave a corrupt executor
+    # in place.
     real_executor.parent.mkdir(parents=True, exist_ok=True)
-    real_executor.write_text(content)
-    return True
+    tmp_executor = real_executor.with_name(real_executor.name + '.tmp')
+    try:
+        tmp_executor.write_text(content, encoding='utf-8')
+        os.replace(tmp_executor, real_executor)
+    finally:
+        # No-op on the success path (os.replace already consumed the tmp file);
+        # only unlinks a stray tmp file when write_text or os.replace raised
+        # before completing the swap. Swallow cleanup OSError so a cleanup
+        # failure never masks the original exception.
+        try:
+            tmp_executor.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return {'status': 'success'}
 
 
 def compute_checksum(mappings: dict[str, str]) -> str:
@@ -1124,10 +1278,15 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             print(f'  {notation} -> {path}')
         print()
 
-    # Generate executor (uses logging skill from plan-marshall/logging)
+    # Generate executor (uses logging skill from plan-marshall/logging).
+    # The generator now self-checks the substituted content (format handshake,
+    # placeholder-residue guard, py_compile) and writes atomically; a failed
+    # self-check surfaces here as the command's status: error (non-zero exit via
+    # the safe_main contract), preserving any pre-existing working executor.
     print('Generating executor...')
-    if not generate_executor(mappings, base_path, dry_run=args.dry_run, target=resolved_target):
-        return {'status': 'error', 'error': 'Failed to generate executor'}
+    gen_result = generate_executor(mappings, base_path, dry_run=args.dry_run, target=resolved_target)
+    if gen_result.get('status') != 'success':
+        return gen_result
 
     if args.dry_run:
         print('\nDry run complete. No files written.')
