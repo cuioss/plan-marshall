@@ -1893,3 +1893,110 @@ def test_generate_executor_py_compile_failure_refuses_write_and_preserves_existi
     assert result['status'] == 'error', f'a non-compiling substitution must be refused, got {result}'
     assert 'compile' in result['error'].lower() or 'syntax' in result['error'].lower()
     assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing working executor must be preserved on a failed self-check'
+
+
+# ============================================================================
+# Q-Gate finding 6dcc8f: template resolves script-relative, never cache-newest
+# ============================================================================
+# get_templates_dir() must resolve the executor template as a script-relative
+# sibling of the EXECUTING generator (SCRIPT_DIR.parent / 'templates'), IGNORING
+# the base_path (the newest cache-version dir). The live incident: an old pinned
+# executor (0.1.1105) ran its own old generator code but substituted against the
+# NEWEST (0.1.1116) template, producing a version-mismatched SyntaxError-bricked
+# executor. Binding the template to the executing generator closes that class
+# structurally. get_shared_module_dirs() is the INVERSE — it correctly STAYS
+# newest-cache-version (PR #894 FIX C / GC-prune self-heal) and must not regress.
+
+
+def test_get_templates_dir_is_script_relative_sibling_of_generator():
+    """get_templates_dir returns SCRIPT_DIR.parent / 'templates' — the real
+    templates dir co-located with generate_executor.py — and that dir carries
+    the actual executor template."""
+    module = load_module()
+
+    result = module.get_templates_dir(Path('/some/unrelated/base/path'))
+
+    expected = module.SCRIPT_DIR.parent / 'templates'
+    assert result == expected, f'expected script-relative templates dir {expected}, got {result}'
+    assert (result / 'execute-script.py.template').is_file(), (
+        f'resolved templates dir must be the real co-located one, got {result}'
+    )
+
+
+def test_get_templates_dir_is_base_path_independent():
+    """The resolved templates dir is identical regardless of which base_path is
+    passed — base_path is intentionally unused."""
+    module = load_module()
+
+    a = module.get_templates_dir(Path('/nonexistent/cache/version-a'))
+    b = module.get_templates_dir(Path('/totally/other/root/version-b'))
+
+    assert a == b == module.SCRIPT_DIR.parent / 'templates', (
+        f'get_templates_dir must ignore base_path; got a={a}, b={b}'
+    )
+
+
+def test_get_templates_dir_ignores_cache_newest_base_path(tmp_path):
+    """Version-mismatch simulation: a base_path pointing at a DIFFERENT (newer)
+    cache-version tree that itself carries a valid templates dir. get_templates_dir
+    must STILL resolve to the executing generator's own co-located templates,
+    never the base_path's — the exact skew from the live incident.
+
+    Against the pre-fix resolution (``_resolve_plan_marshall_path(base_path, ...)``)
+    this base_path WOULD resolve to the decoy templates dir below; the fix makes
+    it resolve script-relative instead.
+    """
+    module = load_module()
+
+    # Build a decoy cache-version tree carrying its own (wrong-version) template.
+    decoy_templates = (
+        tmp_path / 'plan-marshall' / '0.1.9999' / 'skills' / 'tools-script-executor' / 'templates'
+    )
+    decoy_templates.mkdir(parents=True)
+    (decoy_templates / 'execute-script.py.template').write_text('# decoy newer-version template\n')
+
+    result = module.get_templates_dir(tmp_path)
+
+    expected = module.SCRIPT_DIR.parent / 'templates'
+    assert result == expected, f'expected script-relative templates dir {expected}, got {result}'
+    assert result != decoy_templates, 'must not select the decoy templates under base_path'
+    assert not str(result).startswith(str(tmp_path)), (
+        f'resolved templates dir must not live under the passed base_path, got {result}'
+    )
+    assert (result / 'execute-script.py.template').is_file(), (
+        'resolved dir must be the real co-located templates dir'
+    )
+
+
+def test_get_shared_module_dirs_stays_base_path_newest_version(tmp_path):
+    """Regression guard: get_shared_module_dirs MUST remain base_path-dependent
+    (newest-cache-version) resolution — the INVERSE of get_templates_dir. This
+    preserves the PR #894 FIX C / GC-prune self-heal contract governing the
+    executor's OWN runtime sys.path bootstrap.
+    """
+    module = load_module()
+
+    # Build a versioned cache tree carrying the shared-module dirs under base_path.
+    version_root = tmp_path / 'plan-marshall' / '0.1.500' / 'skills'
+    for sub in (
+        'tools-file-ops',
+        'tools-input-validation',
+        'ref-toon-format',
+        'script-shared',
+        'manage-change-ledger',
+    ):
+        (version_root / sub / 'scripts').mkdir(parents=True)
+
+    dirs = module.get_shared_module_dirs(tmp_path)
+    dir_strs = [str(d) for d in dirs]
+
+    assert dir_strs, 'expected shared dirs resolved under the versioned base_path'
+    base_resolved = str(tmp_path.resolve())
+    for d in dir_strs:
+        assert d.startswith(base_resolved), (
+            f'get_shared_module_dirs must resolve under the passed base_path {base_resolved}; got {d}'
+        )
+    # And the version dir is honoured (proving newest-cache-version resolution).
+    assert all('0.1.500' in d for d in dir_strs), (
+        f'shared dirs must resolve through the versioned cache tree; got {dir_strs}'
+    )

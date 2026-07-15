@@ -201,8 +201,35 @@ def get_inventory_script(base_path: Path) -> Path:
 
 
 def get_templates_dir(base_path: Path) -> Path:
-    """Get path to templates directory based on context."""
-    return _resolve_plan_marshall_path(base_path, 'skills/tools-script-executor/templates')
+    """Resolve the executor template dir as a script-relative sibling of THIS generator.
+
+    Unlike every other path helper in this module, this deliberately IGNORES
+    ``base_path`` (the newest cache-version dir returned by
+    ``get_base_path(scope=cache-first)``) and resolves the templates directory
+    relative to the *executing* generator file: ``SCRIPT_DIR.parent / 'templates'``
+    — mirroring the ``_SCRIPTS_DIR`` / ``_SKILLS_DIR`` bootstrap pattern used for
+    the shared-library ``sys.path`` inserts at the top of this module.
+
+    Why script-relative and NOT newest-version: the template is substituted into
+    the executor by whichever generator version is actually running. Resolving the
+    template against the newest cache version instead lets an OLD pinned generator
+    (e.g. 0.1.1105) substitute against a NEWER template (e.g. 0.1.1116), producing
+    a version-mismatched, SyntaxError-bricked executor — the ``TEMPLATE_FORMAT_VERSION``
+    handshake only protects transitions where the executing generator already
+    carries the handshake code, so a pre-fix generator stays unprotected. Binding
+    the template to the executing generator guarantees the two always match and
+    closes that mixed-version class structurally rather than only detecting it
+    after the fact.
+
+    This is the *inverse* of ``get_shared_module_dirs()`` (and the #888/#889/#894
+    ``Path(__file__)`` resolver-class fix), which correctly STAYS newest-version:
+    that governs the executor's OWN runtime ``sys.path`` bootstrap / GC-prune
+    self-heal contract, where cache-newest-walk IS the fix. Here cache-newest-walk
+    is the bug. The distinction is "resolve by role, not by flipping the resolver
+    globally": ``base_path`` is retained in the signature for call-site
+    compatibility but is intentionally unused.
+    """
+    return SCRIPT_DIR.parent / 'templates'
 
 
 def get_logging_scripts_dir(base_path: Path) -> Path:
