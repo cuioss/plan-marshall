@@ -25,6 +25,7 @@ parse_log = _pyproject_cmd_parse_mod.parse_log
 _REGISTRY = _pyproject_cmd_parse_mod._REGISTRY
 _has_pytest_output = _pyproject_cmd_parse_mod._has_pytest_output
 slice_failure_details = _pyproject_cmd_parse_mod.slice_failure_details
+_pytest_failing_frame = _pyproject_cmd_parse_mod._pytest_failing_frame
 
 
 @contextmanager
@@ -507,3 +508,50 @@ def test_slice_missing_log_returns_error():
     result = slice_failure_details('/nonexistent/build.log', failures_detail=True)
     assert result['status'] == 'error'
     assert 'not found' in result['error'].lower()
+
+
+# =============================================================================
+# `_pytest_failing_frame`: the frame search must isolate the traceback and
+# ignore captured stdout/stderr/log sections appended after the traceback.
+# =============================================================================
+
+
+def test_failing_frame_ignores_captured_output_section():
+    """A `foo.py:NN:`-shaped string in a Captured stdout section is NOT picked.
+
+    pytest appends `---`-ruled `Captured stdout call` sections after the
+    traceback. Those `---`-borders do not close the block (only `=`-borders do),
+    so the captured text stays inside the block the frame search scans. When the
+    captured output contains a `foo.py:NN:`-shaped substring AFTER the real
+    traceback frame, the naive last-match search would corrupt the signature by
+    picking the captured line. The real traceback frame must win.
+    """
+    block = (
+        '    def test_thing():\n'
+        '>       assert compute(3) == 0\n'
+        'test/test_a.py:10: in test_thing\n'
+        '    assert compute(3) == 0\n'
+        'src/real.py:42: in compute\n'
+        '    raise AssertionError("bad state")\n'
+        'E       AssertionError: bad state\n'
+        '\n'
+        'src/real.py:42: AssertionError\n'
+        '----------------------- Captured stdout call -----------------------\n'
+        'debug: emitting from decoy.py:99: sentinel\n'
+    )
+    assert _pytest_failing_frame(block) == 'src/real.py:42'
+
+
+def test_failing_frame_returns_deepest_traceback_frame():
+    """Without captured output, the last traceback frame is returned unchanged."""
+    block = (
+        'test/test_a.py:10: in test_thing\n'
+        '    assert compute(3) == 0\n'
+        'src/real.py:42: AssertionError\n'
+    )
+    assert _pytest_failing_frame(block) == 'src/real.py:42'
+
+
+def test_failing_frame_none_without_frame():
+    """A block with no `path.py:NN:` frame yields None."""
+    assert _pytest_failing_frame('E   AssertionError: boom\n') is None

@@ -271,7 +271,13 @@ def _pytest_failing_frame(block: str) -> str | None:
     across tests that share a root cause, which is what makes it a stable
     signature component.
     """
-    matches = list(_PYTEST_FRAME_PATTERN.finditer(block))
+    # Isolate the traceback by discarding captured stdout/stderr/log sections.
+    # Those `---`-ruled sections (e.g. `---- Captured stdout call ----`) do not
+    # match `_PYTEST_SECTION_LINE` (which requires `=`-borders), so they remain
+    # inside the block; a `foo.py:NN:`-shaped substring in captured output would
+    # otherwise be mis-picked as the failing frame.
+    traceback_part = block.split('\n---', 1)[0]
+    matches = list(_PYTEST_FRAME_PATTERN.finditer(traceback_part))
     if not matches:
         return None
     last = matches[-1]
