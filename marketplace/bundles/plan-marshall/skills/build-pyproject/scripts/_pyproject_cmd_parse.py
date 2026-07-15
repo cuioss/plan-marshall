@@ -184,42 +184,58 @@ def _parse_pytest(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, s
     return issues, test_summary, status
 
 
-def _find_pytest_line_number(content: str, file_path: str, test_name: str) -> int | None:
-    """Try to extract line number for a pytest failure from traceback output.
+def _find_pytest_line_number(block: str, file_path: str) -> int | None:
+    """Extract a pytest failure's line number from its own traceback block.
 
-    Looks for patterns like 'file.py:42: AssertionError' in the output.
+    Scoped to the single resolved failure `block` (NOT the whole log): searching
+    the entire log content would collapse every failure in one file onto the last
+    `file.py:NN` occurrence, so multiple failures sharing a file all resolved to
+    the same wrong line. Confining the search to the block that belongs to this
+    FAILED line keeps each failure's line distinct. Looks for `file.py:NN:`
+    frames and returns the last (deepest, closest to the failure point); falls
+    back to None when the block carries no such frame.
     """
     # Pattern: file.py:NN: in test_name or file.py:NN: AssertionError
     escaped_file = re.escape(file_path)
     pattern = re.compile(rf'{escaped_file}:(\d+):')
-    matches = list(pattern.finditer(content))
+    matches = list(pattern.finditer(block))
     if matches:
         # Return last match (closest to the actual failure point)
         return int(matches[-1].group(1))
     return None
 
 
-def _extract_pytest_failure_blocks(content: str) -> dict[str, str]:
-    """Map each failing test to its traceback/assertion block.
+def _extract_pytest_failure_blocks(content: str) -> dict[str, list[str]]:
+    """Map each failing test key to its ordered list of traceback blocks.
 
     Scans the `=== FAILURES ===` section, splitting it into per-test blocks on
     the underscore-ruled `____ test_name ____` headers. A block runs until the
     next header or the next top-level `=== section ===` line (pytest's short
     test summary / final counts), which terminates the FAILURES section.
 
+    The value is an ORDERED LIST, not a single block: when separate files or
+    repeated pytest runs share a test name, each occurrence produces its own
+    block. Storing one block per key would overwrite the earlier occurrences and
+    lose their distinct tracebacks/signatures. `_collect_pytest_failure_records`
+    consumes one block per matching FAILED line, in order, to keep them distinct.
+
     Args:
         content: ANSI-stripped log content.
 
     Returns:
         Dict mapping a normalized block key (see `_pytest_block_key`) to the
-        stripped block text. Empty when the log carries no FAILURES section
-        (e.g. a `--tb=no` or summary-only run) — callers then fall back to the
-        terse FAILED-line message.
+        ordered list of stripped block texts for that key. Empty when the log
+        carries no FAILURES section (e.g. a `--tb=no` or summary-only run) —
+        callers then fall back to the terse FAILED-line message.
     """
-    blocks: dict[str, str] = {}
+    blocks: dict[str, list[str]] = {}
     in_failures = False
     current_key: str | None = None
     current_lines: list[str] = []
+
+    def _flush() -> None:
+        if current_key is not None:
+            blocks.setdefault(current_key, []).append('\n'.join(current_lines).strip())
 
     for raw in content.split('\n'):
         if _PYTEST_FAILURES_BANNER.match(raw):
@@ -230,25 +246,22 @@ def _extract_pytest_failure_blocks(content: str) -> dict[str, str]:
 
         header = _PYTEST_BLOCK_HEADER.match(raw)
         if header:
-            if current_key is not None:
-                blocks[current_key] = '\n'.join(current_lines).strip()
+            _flush()
             current_key = _pytest_block_key(header.group(1))
             current_lines = []
             continue
 
         if _PYTEST_SECTION_LINE.match(raw):
             # A new top-level `=== section ===` closes the FAILURES section.
-            if current_key is not None:
-                blocks[current_key] = '\n'.join(current_lines).strip()
-                current_key = None
+            _flush()
+            current_key = None
             in_failures = False
             continue
 
         if current_key is not None:
             current_lines.append(raw)
 
-    if current_key is not None:
-        blocks[current_key] = '\n'.join(current_lines).strip()
+    _flush()
 
     return blocks
 
@@ -323,6 +336,10 @@ def _collect_pytest_failure_records(content: str) -> list[dict]:
         FAILED-line order.
     """
     failure_blocks = _extract_pytest_failure_blocks(content)
+    # Per-key cursor: consume one block per matching FAILED line, in order, so
+    # repeated test names (across files or reruns) each keep their own block
+    # instead of all resolving to a single overwritten entry.
+    block_cursors: dict[str, int] = {}
     signature_details: dict[str, str] = {}
     records: list[dict] = []
 
@@ -330,9 +347,17 @@ def _collect_pytest_failure_records(content: str) -> list[dict]:
         file_path = match.group(1)
         test_name = match.group(2)
         message = match.group(3) if match.group(3) else f'Test {test_name} failed'
-        line_num = _find_pytest_line_number(content, file_path, test_name)
 
-        block = failure_blocks.get(_pytest_block_key(test_name)) or message
+        key = _pytest_block_key(test_name)
+        blocks_for_key = failure_blocks.get(key, [])
+        cursor = block_cursors.get(key, 0)
+        if cursor < len(blocks_for_key):
+            block = blocks_for_key[cursor]
+            block_cursors[key] = cursor + 1
+        else:
+            block = message
+
+        line_num = _find_pytest_line_number(block, file_path)
         frame = _pytest_failing_frame(block) or f'{file_path}:{line_num}'
         signature = _pytest_failure_signature(message, frame)
         if signature not in signature_details:
