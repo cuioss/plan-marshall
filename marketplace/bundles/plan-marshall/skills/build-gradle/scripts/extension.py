@@ -10,10 +10,12 @@ aggregator and the build_map seed consume. Subclasses
 on the Java domain extension that subclasses ``ExtensionBase``.
 
 The Gradle build extension claims Java production / test sources under the
-``src/main`` and ``src/test`` convention plus the Gradle build descriptors
-(``build.gradle`` / ``build.gradle.kts`` / ``settings.gradle`` /
-``settings.gradle.kts``). The ``pom.xml`` reactor descriptor is owned by the
-sibling build-maven extension.
+``src/main`` and ``src/test`` convention, the Maven-standard resource trees
+(``src/main/resources`` → production, ``src/test/resources`` → test, whatever
+the resource's extension), shell scripts by bare basename (``*.sh`` → config),
+plus the Gradle build descriptors (``build.gradle`` / ``build.gradle.kts`` /
+``settings.gradle`` / ``settings.gradle.kts``). The ``pom.xml`` reactor
+descriptor is owned by the sibling build-maven extension.
 """
 
 import fnmatch
@@ -37,8 +39,21 @@ class BuildExtension(BuildExtensionBase):
 
     # Glob patterns ordered by specificity (highest first). Each tuple is
     # (glob, role, specificity) where specificity is the count of non-wildcard
-    # path-segment tokens in the glob.
+    # path-segment tokens in the glob. Matching is first-match-wins, so row
+    # order carries the routing: the Maven-standard resource trees
+    # (specificity 3) sit ABOVE the ``src/main`` / ``src/test`` java rows
+    # (specificity 2), claiming every file under ``src/main/resources`` as
+    # production and under ``src/test/resources`` as test regardless of
+    # extension. The bare-basename ``*.sh`` config route is the FINAL row
+    # (specificity 0) — below the Gradle descriptor rows — so a shell script
+    # inside a resource tree (``src/main/resources/bin/run.sh``) still resolves
+    # to that tree's role, and only a script outside any claimed tree
+    # (``build.sh``, ``scripts/release.sh``) falls through to config.
     _CLASSIFY_PATTERNS: tuple[tuple[str, str, int], ...] = (
+        ('**/src/main/resources/**', 'production', 3),
+        ('src/main/resources/**', 'production', 3),
+        ('**/src/test/resources/**', 'test', 3),
+        ('src/test/resources/**', 'test', 3),
         ('**/src/main/**/*.java', 'production', 2),
         ('src/main/**/*.java', 'production', 2),
         ('**/src/test/**/*.java', 'test', 2),
@@ -51,6 +66,7 @@ class BuildExtension(BuildExtensionBase):
         ('settings.gradle', 'config', 1),
         ('**/settings.gradle.kts', 'config', 1),
         ('settings.gradle.kts', 'config', 1),
+        ('*.sh', 'config', 0),
     )
 
     def _match_classify(self, path: str) -> tuple[str, int] | None:
@@ -91,11 +107,21 @@ class BuildExtension(BuildExtensionBase):
         source under any subproject's ``src/main`` tree (the leading ``*/`` admits
         the nested-subproject layout) and ``src/main/*.java`` covers the repo-root
         single-project layout; the parallel ``src/test`` routes claim test
-        sources. The Gradle build descriptors are claimed by exact basename under
-        ``config``. See the base classify_globs() contract for the
-        route-collection wiring.
+        sources. The Maven-standard resource trees are routed the same way and
+        listed first: ``*/src/main/resources/*`` and ``src/main/resources/*``
+        claim resources under ``production``, the parallel ``src/test/resources``
+        routes claim them under ``test`` — extension-independent, since a
+        resource's role follows its tree, not its suffix. The Gradle build
+        descriptors are claimed by exact basename under ``config``. The
+        bare-basename ``*.sh`` route claims shell scripts under ``config`` and is
+        listed LAST so a script inside a resource tree keeps that tree's role.
+        See the base classify_globs() contract for the route-collection wiring.
         """
         return [
+            ('*/src/main/resources/*', 'production'),
+            ('src/main/resources/*', 'production'),
+            ('*/src/test/resources/*', 'test'),
+            ('src/test/resources/*', 'test'),
             ('*/src/main/*.java', 'production'),
             ('src/main/*.java', 'production'),
             ('*/src/test/*.java', 'test'),
@@ -104,6 +130,7 @@ class BuildExtension(BuildExtensionBase):
             ('build.gradle.kts', 'config'),
             ('settings.gradle', 'config'),
             ('settings.gradle.kts', 'config'),
+            ('*.sh', 'config'),
         ]
 
     # build_class: this extension claims the ``production`` / ``test`` /
