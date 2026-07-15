@@ -44,6 +44,56 @@ VALID_SIGNAL_STATES = frozenset({'pending', 'settled', 'failed'})
 #: candidate (a mutation advanced HEAD past where it settled).
 _TERMINAL_STATES = frozenset({'settled', 'failed'})
 
+#: The three finalize-wait barrier arms. The barrier decision is only valid over
+#: a COMPLETE snapshot — exactly one record per arm. A snapshot missing an arm,
+#: carrying a duplicate arm, or carrying an unknown name would let the barrier
+#: reach a decision over a partial/duplicated view (e.g. reporting ``complete``
+#: while an un-passed arm was simply absent from the snapshot), so the coordinator
+#: rejects it fail-loud rather than deciding over it.
+REQUIRED_SIGNAL_NAMES = frozenset({'ci', 'review', 'sonar'})
+
+
+class BarrierSignalSetError(ValueError):
+    """Raised when the barrier signal set is not exactly one record per arm.
+
+    Distinct from the per-signal state ValueError (an out-of-vocabulary state):
+    this is a snapshot-completeness failure — a missing arm, a duplicate arm, or
+    an unknown signal name. A subclass of ``ValueError`` so existing
+    ``except ValueError`` handlers still catch it, while callers that want to
+    surface a distinct error code (the ``ci barrier`` CLI) can catch it first.
+    """
+
+
+def _validate_signal_set(signals: list[tuple[str, str, str]]) -> None:
+    """Require exactly one signal record per barrier arm.
+
+    Rejects a snapshot that is missing an arm, carries a duplicate arm, or
+    carries an unknown signal name — any of which would let the barrier decide
+    over an incomplete or duplicated view. Fail-loud via ``BarrierSignalSetError``
+    so the coordinator never reports a decision (e.g. ``complete``) over a
+    partial snapshot.
+
+    Raises:
+        BarrierSignalSetError: when the arm set is not exactly
+            ``REQUIRED_SIGNAL_NAMES`` with one record each.
+    """
+    counts: dict[str, int] = {}
+    unknown: list[str] = []
+    for name, _state, _head in signals:
+        counts[name] = counts.get(name, 0) + 1
+        if name not in REQUIRED_SIGNAL_NAMES and name not in unknown:
+            unknown.append(name)
+
+    missing = sorted(REQUIRED_SIGNAL_NAMES - counts.keys())
+    duplicate = sorted(name for name, count in counts.items() if count > 1)
+
+    if missing or duplicate or unknown:
+        raise BarrierSignalSetError(
+            'barrier requires exactly one signal per arm '
+            f'{sorted(REQUIRED_SIGNAL_NAMES)}: '
+            f'missing={missing}, duplicate={duplicate}, unknown={sorted(unknown)}'
+        )
+
 
 def compute_barrier_state(
     signals: list[tuple[str, str, str]],
@@ -63,6 +113,8 @@ def compute_barrier_state(
         name lists (``proceed`` / ``pending`` / ``failed`` / ``affected``).
 
     Raises:
+        BarrierSignalSetError: when the signal set is not exactly one record per
+            arm — a missing arm, a duplicate arm, or an unknown signal name.
         ValueError: when any signal carries a state outside
             ``VALID_SIGNAL_STATES``.
 
@@ -79,6 +131,8 @@ def compute_barrier_state(
        ``pending`` (its wait has not reached a terminal state).
     4. ``complete`` — every signal settled at the current settled HEAD.
     """
+    _validate_signal_set(signals)
+
     proceed: list[str] = []
     pending: list[str] = []
     failed: list[str] = []
@@ -202,6 +256,20 @@ def run_barrier_cli(argv: list[str]) -> int:
 
     try:
         result = compute_barrier_state(signals, args.settled_head)
+    except BarrierSignalSetError as exc:
+        # Snapshot-completeness failure (missing / duplicate / unknown arm) —
+        # caught BEFORE the generic ValueError arm so it surfaces its own code.
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'operation': 'barrier',
+                    'error': 'incomplete_signals',
+                    'message': str(exc),
+                }
+            )
+        )
+        return 0
     except ValueError as exc:
         print(
             serialize_toon(

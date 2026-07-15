@@ -465,9 +465,53 @@ def test_barrier_bounded_re_settle_converges_next_iteration():
 
 
 def test_barrier_invalid_state_raises_value_error():
-    """An out-of-vocabulary signal state raises ValueError from the state machine."""
+    """An out-of-vocabulary signal state raises ValueError from the state machine.
+
+    The snapshot is COMPLETE (one record per arm) so the completeness check
+    passes and the per-signal state validation is what rejects the bad state.
+    """
     with pytest.raises(ValueError, match='invalid signal state'):
-        _ci_barrier.compute_barrier_state([_sig('ci', 'green', _H1)], _H1)
+        _ci_barrier.compute_barrier_state(
+            [_sig('ci', 'green', _H1), _sig('review', 'settled', _H1), _sig('sonar', 'settled', _H1)],
+            _H1,
+        )
+
+
+def test_barrier_missing_arm_raises():
+    """A snapshot missing an arm is rejected fail-loud (never decided over)."""
+    with pytest.raises(_ci_barrier.BarrierSignalSetError, match='missing'):
+        _ci_barrier.compute_barrier_state(
+            [_sig('ci', 'settled', _H1), _sig('review', 'settled', _H1)],
+            _H1,
+        )
+
+
+def test_barrier_duplicate_arm_raises():
+    """A snapshot with a duplicate arm record is rejected fail-loud."""
+    with pytest.raises(_ci_barrier.BarrierSignalSetError, match='duplicate'):
+        _ci_barrier.compute_barrier_state(
+            [
+                _sig('ci', 'settled', _H1),
+                _sig('ci', 'settled', _H1),
+                _sig('review', 'settled', _H1),
+                _sig('sonar', 'settled', _H1),
+            ],
+            _H1,
+        )
+
+
+def test_barrier_unknown_name_raises():
+    """A snapshot carrying an unknown signal name is rejected fail-loud."""
+    with pytest.raises(_ci_barrier.BarrierSignalSetError, match='unknown'):
+        _ci_barrier.compute_barrier_state(
+            [
+                _sig('ci', 'settled', _H1),
+                _sig('review', 'settled', _H1),
+                _sig('sonar', 'settled', _H1),
+                _sig('lint', 'settled', _H1),
+            ],
+            _H1,
+        )
 
 
 def test_barrier_parse_signal_forms():
@@ -540,6 +584,8 @@ def test_router_barrier_re_settle_names_affected(tmp_path):
         '--signal',
         f'ci:settled:{_H2}',
         '--signal',
+        f'review:settled:{_H2}',
+        '--signal',
         f'sonar:settled:{_H1}',
         cwd=tmp_path,
     )
@@ -565,7 +611,11 @@ def test_router_barrier_malformed_signal_is_soft_error(tmp_path):
 
 
 def test_router_barrier_invalid_state_is_soft_error(tmp_path):
-    """An out-of-vocabulary signal state returns a status:error TOON."""
+    """An out-of-vocabulary signal state returns a status:error TOON.
+
+    The arm set is complete so completeness passes first; the bad state is what
+    surfaces the invalid_signal_state error.
+    """
     result = run_script(
         SCRIPT_PATH,
         'barrier',
@@ -573,11 +623,77 @@ def test_router_barrier_invalid_state_is_soft_error(tmp_path):
         _H1,
         '--signal',
         f'ci:green:{_H1}',
+        '--signal',
+        f'review:settled:{_H1}',
+        '--signal',
+        f'sonar:settled:{_H1}',
         cwd=tmp_path,
     )
     assert result.success
     assert 'status: error' in result.stdout
     assert 'invalid_signal_state' in result.stdout
+
+
+def test_router_barrier_missing_arm_is_soft_error(tmp_path):
+    """A snapshot missing an arm returns a status:error incomplete_signals TOON."""
+    result = run_script(
+        SCRIPT_PATH,
+        'barrier',
+        '--settled-head',
+        _H1,
+        '--signal',
+        f'ci:settled:{_H1}',
+        '--signal',
+        f'review:settled:{_H1}',
+        cwd=tmp_path,
+    )
+    assert result.success
+    assert 'status: error' in result.stdout
+    assert 'incomplete_signals' in result.stdout
+
+
+def test_router_barrier_duplicate_arm_is_soft_error(tmp_path):
+    """A snapshot with a duplicate arm returns a status:error incomplete_signals TOON."""
+    result = run_script(
+        SCRIPT_PATH,
+        'barrier',
+        '--settled-head',
+        _H1,
+        '--signal',
+        f'ci:settled:{_H1}',
+        '--signal',
+        f'ci:settled:{_H1}',
+        '--signal',
+        f'review:settled:{_H1}',
+        '--signal',
+        f'sonar:settled:{_H1}',
+        cwd=tmp_path,
+    )
+    assert result.success
+    assert 'status: error' in result.stdout
+    assert 'incomplete_signals' in result.stdout
+
+
+def test_router_barrier_unknown_name_is_soft_error(tmp_path):
+    """A snapshot carrying an unknown signal name returns incomplete_signals."""
+    result = run_script(
+        SCRIPT_PATH,
+        'barrier',
+        '--settled-head',
+        _H1,
+        '--signal',
+        f'ci:settled:{_H1}',
+        '--signal',
+        f'review:settled:{_H1}',
+        '--signal',
+        f'sonar:settled:{_H1}',
+        '--signal',
+        f'lint:settled:{_H1}',
+        cwd=tmp_path,
+    )
+    assert result.success
+    assert 'status: error' in result.stdout
+    assert 'incomplete_signals' in result.stdout
 
 
 # =============================================================================

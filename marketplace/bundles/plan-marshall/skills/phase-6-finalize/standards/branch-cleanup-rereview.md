@@ -112,12 +112,12 @@ This sub-block is evaluated ONLY when the `github_re_review re-review` call abov
 
   Branch on the operator's selection:
 
-  - **"Wait another {re_review_await_timeout_seconds}s"** → re-enter the inline trigger-A await with a fresh budget: re-issue the `github_re_review re-review` call in step 3 above (with the same `--timeout {re_review_await_timeout_seconds}`) and re-evaluate `matched`/`timed_out`. Log the decision:
+  - **"Wait another {re_review_await_timeout_seconds}s"** → re-enter the inline trigger-A await with a fresh budget. **Re-resolve `{head_sha}` and `{push_time}` FIRST** — the release-before-wait / re-acquire-after boundary above may have re-rebased the branch onto an advanced `origin/{base_branch}` during the released window, advancing HEAD past the `{head_sha}` captured in step 2. Re-issuing the re-review with the stale `{head_sha}` / `{push_time}` would request (and await) a review for a commit the branch no longer points at. So after the re-acquire + re-validate completes, RE-RUN step 2 (`git -C {worktree_path} rev-parse HEAD` → `{head_sha}` and `git -C {worktree_path} show -s --format=%cI HEAD` → `{push_time}`) to capture the CURRENT rebased HEAD, THEN re-issue the `github_re_review re-review` call in step 3 above (with the freshly-resolved `--head-sha {head_sha}` / `--push-time {push_time}` and the same `--timeout {re_review_await_timeout_seconds}`) and re-evaluate `matched`/`timed_out`. Log the decision with the freshly-resolved SHA:
 
     ```bash
     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
       decision --plan-id {plan_id} --level INFO \
-      --message "(plan-marshall:phase-6-finalize) Branch cleanup re-review timeout (trigger A): user chose to wait another {re_review_await_timeout_seconds}s — re-issuing re-review for head_sha={head_sha}"
+      --message "(plan-marshall:phase-6-finalize) Branch cleanup re-review timeout (trigger A): user chose to wait another {re_review_await_timeout_seconds}s — re-resolved head_sha={head_sha} (post-reacquisition) and re-issuing re-review"
     ```
 
   - **"Merge anyway — proceed unreviewed"** → decision-log at WARNING naming the unreviewed `{head_sha}`, then continue to the **Pre-Merge Confirmation Gate** below (same effect as the `proceed` policy):

@@ -515,6 +515,54 @@ def test_non_router_unknown_subcommand_still_flagged(ci_router_index: dict) -> N
     assert findings[0]['details']['reason'] == 'subcommand_unknown'
 
 
+def test_router_verb_unknown_flag_is_flagged(ci_router_index: dict) -> None:
+    """A router verb's flags ARE validated — a misspelled/unknown flag is caught.
+
+    ``ci barrier`` is admitted as a valid verb, but its flag surface is modeled
+    in ``_ROUTER_VERBS`` and validated with the standard machinery, so a bogus
+    flag is reported rather than accepted wholesale (the finding daae30 fix).
+    """
+    content = (
+        'python3 .plan/execute-script.py '
+        'plan-marshall:tools-integration-ci:ci barrier '
+        '--settled-head SHA --signal ci:pending --bogus x'
+    )
+    findings = analyze_manage_invocation_markdown(
+        content, 'SKILL.md', ci_router_index
+    )
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'flag_unknown'
+    assert findings[0]['details']['flag'] == 'bogus'
+    assert findings[0]['details']['subcommand'] == 'barrier'
+
+
+def test_router_verb_missing_required_flag_is_flagged(ci_router_index: dict) -> None:
+    """A router verb's required flags are validated — omitting one is flagged."""
+    content = (
+        'python3 .plan/execute-script.py '
+        'plan-marshall:tools-integration-ci:ci barrier --settled-head SHA'
+    )
+    findings = analyze_manage_invocation_markdown(
+        content, 'SKILL.md', ci_router_index
+    )
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'required_flag_missing'
+    assert findings[0]['details']['missing'] == ['signal']
+
+
+def test_router_verb_injected_routing_flags_accepted(ci_router_index: dict) -> None:
+    """Executor/router-injected flags (--plan-id) are accepted on a router verb."""
+    content = (
+        'python3 .plan/execute-script.py '
+        'plan-marshall:tools-integration-ci:ci --plan-id p barrier '
+        '--settled-head SHA --signal ci:pending'
+    )
+    findings = analyze_manage_invocation_markdown(
+        content, 'SKILL.md', ci_router_index
+    )
+    assert findings == []
+
+
 # ---------------------------------------------------------------------------
 # Synthetic-marketplace builder — drives the in-scope derivation directly.
 # ---------------------------------------------------------------------------
