@@ -187,8 +187,8 @@ def _extract_skill_ref(entry) -> str:
     - Dict: {"skill": "pm-dev-java:java-core", "description": "..."}
     """
     if isinstance(entry, dict):
-        return entry.get('skill', '')
-    return entry
+        return str(entry.get('skill', ''))
+    return str(entry)
 
 
 def validate_skill_references(domains: dict, bundle_name: str) -> list:
@@ -228,7 +228,7 @@ def agent_exists(agent_ref: str) -> bool:
     bundle, agent = agent_ref.split(':', 1)
     agent_path = MARKETPLACE_ROOT / bundle / 'agents' / f'{agent}.md'
 
-    return agent_path.is_file()
+    return bool(agent_path.is_file())
 
 
 def validate_triage_and_outline_skill(module, bundle_name: str) -> list:

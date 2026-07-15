@@ -172,7 +172,7 @@ def test_capture_phase_steps_empty_required_file_returns_none(
 
 
 def test_capture_phase_steps_no_phase_entry(required_steps_path: Path) -> None:
-    metadata = {'phase_steps': {}}
+    metadata: dict = {'phase_steps': {}}
     with pytest.raises(inv.PhaseStepsIncomplete) as excinfo:
         inv._capture_phase_steps_complete('pid', metadata, '5-execute')
     assert set(excinfo.value.missing) == {'step-a', 'step-b'}

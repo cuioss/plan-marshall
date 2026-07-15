@@ -88,7 +88,8 @@ def _run(payload_json: str):
 
 def _decision(stdout: str) -> dict:
     """Parse the deny envelope's hookSpecificOutput from leaf stdout."""
-    return json.loads(stdout)["hookSpecificOutput"]
+    output: dict = json.loads(stdout)["hookSpecificOutput"]
+    return output
 
 
 # =============================================================================

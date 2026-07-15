@@ -1035,7 +1035,7 @@ def test_resolve_routes_subprocess_timeout_to_wait_failed_timeout(
 # ---------------------------------------------------------------------------
 
 
-class _StubTimeoutGet:
+class _StubTimeoutGetSeeded:
     """Deterministic ``run_config timeout get`` substitute.
 
     Returns a fixed seeded value, ignoring the requested default — this
@@ -1070,7 +1070,7 @@ def test_resolve_reads_timeout_from_run_config_entry(plan_context):
     rather than the hard-coded DEFAULT_CI_WAIT_TIMEOUT_SECONDS.
     """
     plan_id = 'ci-precond-runconfig-seeded'
-    get_stub = _StubTimeoutGet(seeded_value=420)
+    get_stub = _StubTimeoutGetSeeded(seeded_value=420)
     set_stub = _StubTimeoutSet()
     wait_stub = _StubCiWait(
         [{'status': 'success', 'final_status': 'success'}]
@@ -1160,7 +1160,7 @@ def test_resolve_explicit_timeout_overrides_run_config_lookup(plan_context):
     lookup entirely — the get helper MUST NOT be consulted.
     """
     plan_id = 'ci-precond-runconfig-explicit'
-    get_stub = _StubTimeoutGet(seeded_value=420)
+    get_stub = _StubTimeoutGetSeeded(seeded_value=420)
     set_stub = _StubTimeoutSet()
     wait_stub = _StubCiWait(
         [{'status': 'success', 'final_status': 'success'}]

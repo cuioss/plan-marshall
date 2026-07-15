@@ -72,7 +72,7 @@ _PATTERN_LETTERS = ('WL-A', 'WL-B', 'WL-C')
 @pytest.fixture(scope='module')
 def agent_text() -> str:
     """Return the full text of the q-gate-validation-agent.md file."""
-    return _AGENT_PATH.read_text(encoding='utf-8')
+    return str(_AGENT_PATH.read_text(encoding='utf-8'))
 
 
 @pytest.fixture(scope='module')

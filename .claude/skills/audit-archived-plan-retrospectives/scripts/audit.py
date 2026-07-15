@@ -264,12 +264,13 @@ CROSS_PLAN_CHECKS = {
 # `finalize-flow-conformance` check plan-17 reworks, whose finalize merge-
 # completeness mechanics plan-17's D1 pre-merge comment barrier and D2
 # completion-aware polling alter), `plan-10` (the roadmap head this plan
-# re-confirms the general checks accurate against), and `PR-PENDING` (this plan's
-# own boundary, a placeholder resolved to the real PR at finalize — the
-# `dispatch-topology` check this plan reworks, whose leaf/dispatch-topology
-# enforcement this plan's D6 compose-time execution_tier structural guard changes
-# from a prose-only rule into a manifest fact). Every key MUST be a member of
-# `CHECK_NAMES`.
+# re-confirms the general checks accurate against), and `PR-PENDING` (plan-8's own
+# boundary, a placeholder resolved to the real PR at finalize by
+# project:finalize-step-era-stamp-fill AFTER create-pr — plan-8 reworks the
+# `token-economics` check, whose finalize_heavy accounting plan-8's finalize-wait
+# consolidation changes, and the `token-efficiency-trend` check, whose
+# tokens-per-phase floor plan-8's per-dispatch context trim lowers). Every key
+# MUST be a member of `CHECK_NAMES`.
 CHECK_ERA: dict[str, str] = {
     # Roadmap-affected checks carry the specific boundary whose mechanics they
     # verify (kept in step with the plan-11 semantic updates).
@@ -284,21 +285,27 @@ CHECK_ERA: dict[str, str] = {
     "metrics": "#875",
     "track-selection-accuracy": "#875",
     "global-log-analysis": "#849",
-    # sequence-and-build-minimality + token-economics — PR-PENDING (this plan's
-    # boundary, a placeholder resolved to the real PR at finalize): this plan's D1
-    # changes how the per-deliverable module-scoped build resolves the touched
-    # module (the which-module containment fix), and D1/D2 change the
-    # per-task-vs-per-deliverable build-cost model these two checks' rows are read
-    # against. (sequence-and-build-minimality bumped from #849; token-economics
-    # bumped from plan-10.)
+    # sequence-and-build-minimality — #887 (plan-7's boundary): plan-7's D1
+    # which-module containment fix and the per-task-vs-per-deliverable build-cost
+    # model change are the mechanics this check's rows are read against.
     "sequence-and-build-minimality": "#887",
-    "token-economics": "#887",
+    # token-economics — PR-PENDING (plan-8's boundary, a placeholder resolved to
+    # the real PR at finalize by project:finalize-step-era-stamp-fill AFTER
+    # create-pr): plan-8's finalize-wait consolidation changes the finalize_heavy
+    # token-economics accounting this check flags, so its era boundary is plan-8's
+    # own PR. (bumped from #887.)
+    "token-economics": "#899",
     "input-integrity": "#812",
+    # token-efficiency-trend — PR-PENDING (plan-8's boundary, a placeholder
+    # resolved to the real PR at finalize by project:finalize-step-era-stamp-fill
+    # AFTER create-pr): plan-8's per-dispatch context trim lowers the
+    # tokens-per-phase floor this cross-plan trend check reads, so its era boundary
+    # is plan-8's own PR. (bumped from plan-10.)
+    "token-efficiency-trend": "#899",
     # General checks unaffected by the roadmap: re-confirmed accurate against the
     # roadmap head (plan-10) by this refresh.
     "quality-verification-report": "plan-10",
     "recurring-pattern-detector": "plan-10",
-    "token-efficiency-trend": "plan-10",
     "scope-estimate-accuracy": "plan-10",
     "pr-merge-velocity": "plan-10",
     "task-count-efficiency": "plan-10",

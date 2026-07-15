@@ -46,7 +46,7 @@ _SCRIPTS_DIR = (
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
-import review_retrospective as rr  # noqa: E402
+import review_retrospective as rr  # type: ignore[import-untyped]  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -58,14 +58,16 @@ def _reviewer(result: dict, author: str) -> dict:
     """Return the single ``reviewers[]`` row for ``author`` (asserts uniqueness)."""
     rows = [r for r in result['reviewers'] if r['author'] == author]
     assert len(rows) == 1, f'expected exactly one reviewer row for {author!r}, got {rows}'
-    return rows[0]
+    row: dict = rows[0]
+    return row
 
 
 def _kind_count(result: dict, author: str, kind: str) -> int:
     """Return the ``by_author_kind`` count for ``(author, kind)`` (0 when absent)."""
     for row in result['by_author_kind']:
         if row['author'] == author and row['kind'] == kind:
-            return row['count']
+            count: int = row['count']
+            return count
     return 0
 
 

@@ -103,7 +103,8 @@ def _run_inline_enrich(plan_id: str, monkeypatch, buckets: dict | None = None) -
         return dict(resolved), counters, 'success'
 
     monkeypatch.setattr(manage_metrics, '_run_normalized_tokens_op', _fake_op)
-    return cmd_enrich(Namespace(plan_id=plan_id, session_id='sess-inline'))
+    result: dict = cmd_enrich(Namespace(plan_id=plan_id, session_id='sess-inline'))
+    return result
 
 
 # =============================================================================

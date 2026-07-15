@@ -33,7 +33,7 @@ _AUDIT_SCRIPTS_DIR = (
 if str(_AUDIT_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_AUDIT_SCRIPTS_DIR))
 
-import audit  # noqa: E402
+import audit  # type: ignore[import-untyped]  # noqa: E402
 
 # A completed read-only ``resolve`` probe stamped at ERROR with a trailing
 # duration and NO failure marker — the benign non-zero-exit "not found" answer.
@@ -132,16 +132,26 @@ def test_finalize_flow_conformance_carries_this_plan_pr_boundary():
     assert audit.CHECK_ERA["finalize-flow-conformance"] == "#884"
 
 
-def test_reworked_build_cost_checks_carry_this_plan_boundary():
-    # This plan reworks two checks' mechanics — D1's which-module containment fix
-    # changes how the per-deliverable module-scoped build resolves the touched
-    # module (sequence-and-build-minimality, bumped from #849), and D1/D2 change
-    # the per-task-vs-per-deliverable build-cost model these rows are read against
-    # (token-economics, bumped from plan-10) — so their era boundary is this plan's
-    # own PR, carried as the PR-PENDING placeholder until it is resolved to the
-    # real PR at finalize.
-    for check in ("sequence-and-build-minimality", "token-economics"):
-        assert audit.CHECK_ERA[check] == "#887", check
+def test_sequence_build_minimality_carries_plan7_boundary():
+    # sequence-and-build-minimality's era boundary is plan-7's PR (#887): plan-7's
+    # D1 which-module containment fix and the per-task-vs-per-deliverable build-cost
+    # model change are the mechanics this check's rows are read against. plan-8 does
+    # NOT rework it, so its stamp stays resolved at #887.
+    assert audit.CHECK_ERA["sequence-and-build-minimality"] == "#887"
+
+
+def test_plan8_reworked_checks_carry_pr_pending_boundary():
+    # Plan-8 reworks two checks' mechanics, so their era boundary is plan-8's own PR,
+    # carried as the PR-PENDING placeholder until project:finalize-step-era-stamp-fill
+    # resolves it to the real PR at finalize (in lock-step with the audit.py mirror —
+    # the pair changes together and is the designated acceptance for era-fill firing
+    # from a composed manifest):
+    #   * token-economics — plan-8's finalize-wait consolidation changes the
+    #     finalize_heavy token-economics accounting this check flags (bumped from #887).
+    #   * token-efficiency-trend — plan-8's per-dispatch context trim lowers the
+    #     tokens-per-phase floor this cross-plan trend check reads (bumped from plan-10).
+    for check in ("token-economics", "token-efficiency-trend"):
+        assert audit.CHECK_ERA[check] == "#899", check
 
 
 def test_dispatch_topology_carries_this_plan_pr_boundary():

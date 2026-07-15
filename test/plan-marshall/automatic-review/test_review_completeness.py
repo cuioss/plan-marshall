@@ -46,7 +46,7 @@ def _seed(plan_id: str, bot_kind: str, resolution: str = 'pending') -> str:
         kind='inline',
     )
     assert result['status'] == 'success', result
-    hash_id = result['hash_id']
+    hash_id: str = result['hash_id']
     if resolution != 'pending':
         resolved = fc.resolve_finding(plan_id, hash_id, resolution)
         assert resolved['status'] == 'success', resolved

@@ -10,6 +10,7 @@ import json
 
 # Import the ci router module directly for unit tests of private helpers.
 # conftest bootstraps PYTHONPATH so tools-integration-ci scripts are importable.
+import _ci_barrier
 import ci as ci_module
 import pytest
 
@@ -359,3 +360,442 @@ def test_router_accepts_plan_id_only_flag(tmp_path):
     # an argparse failure at the router (exit 2 + argparse error to stderr).
     assert result.returncode in (0, 2), f'Unexpected returncode {result.returncode}; stderr={result.stderr!r}'
     assert 'unrecognized arguments' not in result.stderr, '--plan-id must be consumed by the router, not rejected'
+
+
+# =============================================================================
+# Concurrent finalize-wait barrier coordinator (_ci_barrier + `ci barrier`)
+# =============================================================================
+#
+# The barrier is a provider-agnostic per-signal-proceed / bounded-re-settle
+# state machine intercepted by the router BEFORE provider dispatch. These tests
+# cover the pure state machine (compute_barrier_state) and the router-level
+# `ci barrier` CLI wiring, including the three deliverable-4 paths:
+# concurrent per-signal-proceed, bounded re-settle over affected signals only,
+# and convergence in <=1-2 iterations.
+
+# The three finalize-wait barrier signals, per phase-6-finalize.
+_H1 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'  # settled HEAD
+_H2 = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'  # post-re-settle HEAD
+
+
+def _sig(name, state, head):
+    return (name, state, head)
+
+
+def test_barrier_all_settled_is_complete():
+    """Every signal settled at the settled HEAD -> barrier_status: complete."""
+    result = _ci_barrier.compute_barrier_state(
+        [_sig('ci', 'settled', _H1), _sig('review', 'settled', _H1), _sig('sonar', 'settled', _H1)],
+        _H1,
+    )
+    assert result['barrier_status'] == 'complete'
+    assert result['proceed'] == ['ci', 'review', 'sonar']
+    assert result['pending'] == []
+    assert result['affected'] == []
+
+
+def test_barrier_pending_signal_is_waiting_and_proceeds_settled_arms():
+    """A pending arm -> waiting; the already-settled arms still surface in proceed.
+
+    This is the per-signal-proceed property: wall time approaches max(signal)
+    because settled arms are reported independently of the slowest pending one.
+    """
+    result = _ci_barrier.compute_barrier_state(
+        [_sig('ci', 'settled', _H1), _sig('review', 'pending', ''), _sig('sonar', 'settled', _H1)],
+        _H1,
+    )
+    assert result['barrier_status'] == 'waiting'
+    assert result['proceed'] == ['ci', 'sonar']
+    assert result['pending'] == ['review']
+
+
+def test_barrier_failed_at_settled_head_is_failed():
+    """A signal terminally failed at the settled HEAD -> barrier_status: failed."""
+    result = _ci_barrier.compute_barrier_state(
+        [_sig('ci', 'failed', _H1), _sig('review', 'settled', _H1), _sig('sonar', 'settled', _H1)],
+        _H1,
+    )
+    assert result['barrier_status'] == 'failed'
+    assert result['failed'] == ['ci']
+    assert result['affected'] == []
+
+
+def test_barrier_stale_settled_signal_triggers_re_settle():
+    """A settled signal observed at a stale HEAD -> re_settle, naming the affected arm.
+
+    A finding posted after barrier entry was fixed and pushed, advancing HEAD
+    from _H1 to _H2; the sonar arm settled against the now-stale _H1 and must be
+    re-entered against _H2 (affected signals only).
+    """
+    result = _ci_barrier.compute_barrier_state(
+        [_sig('ci', 'settled', _H2), _sig('review', 'settled', _H2), _sig('sonar', 'settled', _H1)],
+        _H2,
+    )
+    assert result['barrier_status'] == 're_settle'
+    assert result['affected'] == ['sonar']
+    # The arms already at the new HEAD proceed; only the stale one is affected.
+    assert result['proceed'] == ['ci', 'review']
+
+
+def test_barrier_re_settle_takes_precedence_over_failed_and_pending():
+    """re_settle wins over a concurrent failed/pending signal (HEAD advanced)."""
+    result = _ci_barrier.compute_barrier_state(
+        [_sig('ci', 'settled', _H1), _sig('review', 'pending', ''), _sig('sonar', 'failed', _H2)],
+        _H2,
+    )
+    # ci was settled at the stale _H1 -> affected; the failed sonar is at the
+    # current head, but the stale settled ci forces a re_settle first.
+    assert result['barrier_status'] == 're_settle'
+    assert result['affected'] == ['ci']
+
+
+def test_barrier_bounded_re_settle_converges_next_iteration():
+    """After re-entering the affected arm against the new HEAD, the barrier completes.
+
+    Models the <=1-2 iteration convergence: iteration 1 pushed a fix (HEAD -> _H2)
+    and left sonar stale; iteration 2 re-waits sonar against _H2 with no new
+    finding, so every arm is settled at _H2 -> complete.
+    """
+    iteration_2 = _ci_barrier.compute_barrier_state(
+        [_sig('ci', 'settled', _H2), _sig('review', 'settled', _H2), _sig('sonar', 'settled', _H2)],
+        _H2,
+    )
+    assert iteration_2['barrier_status'] == 'complete'
+    assert iteration_2['affected'] == []
+
+
+def test_barrier_invalid_state_raises_value_error():
+    """An out-of-vocabulary signal state raises ValueError from the state machine.
+
+    The snapshot is COMPLETE (one record per arm) so the completeness check
+    passes and the per-signal state validation is what rejects the bad state.
+    """
+    with pytest.raises(ValueError, match='invalid signal state'):
+        _ci_barrier.compute_barrier_state(
+            [_sig('ci', 'green', _H1), _sig('review', 'settled', _H1), _sig('sonar', 'settled', _H1)],
+            _H1,
+        )
+
+
+def test_barrier_missing_arm_raises():
+    """A snapshot missing an arm is rejected fail-loud (never decided over)."""
+    with pytest.raises(_ci_barrier.BarrierSignalSetError, match='missing'):
+        _ci_barrier.compute_barrier_state(
+            [_sig('ci', 'settled', _H1), _sig('review', 'settled', _H1)],
+            _H1,
+        )
+
+
+def test_barrier_duplicate_arm_raises():
+    """A snapshot with a duplicate arm record is rejected fail-loud."""
+    with pytest.raises(_ci_barrier.BarrierSignalSetError, match='duplicate'):
+        _ci_barrier.compute_barrier_state(
+            [
+                _sig('ci', 'settled', _H1),
+                _sig('ci', 'settled', _H1),
+                _sig('review', 'settled', _H1),
+                _sig('sonar', 'settled', _H1),
+            ],
+            _H1,
+        )
+
+
+def test_barrier_unknown_name_raises():
+    """A snapshot carrying an unknown signal name is rejected fail-loud."""
+    with pytest.raises(_ci_barrier.BarrierSignalSetError, match='unknown'):
+        _ci_barrier.compute_barrier_state(
+            [
+                _sig('ci', 'settled', _H1),
+                _sig('review', 'settled', _H1),
+                _sig('sonar', 'settled', _H1),
+                _sig('lint', 'settled', _H1),
+            ],
+            _H1,
+        )
+
+
+def test_barrier_parse_signal_forms():
+    """NAME:STATE, NAME:STATE:HEAD, and NAME:STATE: (empty head) all parse."""
+    assert _ci_barrier._parse_signal('review:pending') == ('review', 'pending', '')
+    assert _ci_barrier._parse_signal('ci:settled:abc') == ('ci', 'settled', 'abc')
+    assert _ci_barrier._parse_signal('sonar:settled:') == ('sonar', 'settled', '')
+
+
+def test_barrier_parse_signal_rejects_missing_state():
+    """A bare NAME with no STATE is rejected."""
+    with pytest.raises(ValueError, match='expected NAME:STATE'):
+        _ci_barrier._parse_signal('ci')
+
+
+# --- Router-level `ci barrier` CLI wiring (intercepted before provider) ------
+
+
+def test_router_barrier_waiting_without_provider(tmp_path):
+    """`ci barrier` is provider-agnostic — it works with no CI provider configured."""
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    (plan_dir / 'marshal.json').write_text(json.dumps({'providers': []}))
+
+    result = run_script(
+        SCRIPT_PATH,
+        'barrier',
+        '--settled-head',
+        _H1,
+        '--signal',
+        f'ci:settled:{_H1}',
+        '--signal',
+        'review:pending',
+        '--signal',
+        f'sonar:settled:{_H1}',
+        cwd=tmp_path,
+    )
+    assert result.success, f'barrier failed: {result.stderr}'
+    # Provider-agnostic: never routes to the "not configured" provider path.
+    assert 'not configured' not in result.stdout
+    assert 'barrier_status: waiting' in result.stdout
+
+
+def test_router_barrier_complete(tmp_path):
+    """All arms settled at the settled HEAD -> complete via the CLI."""
+    result = run_script(
+        SCRIPT_PATH,
+        'barrier',
+        '--settled-head',
+        _H1,
+        '--signal',
+        f'ci:settled:{_H1}',
+        '--signal',
+        f'review:settled:{_H1}',
+        '--signal',
+        f'sonar:settled:{_H1}',
+        cwd=tmp_path,
+    )
+    assert result.success
+    assert 'barrier_status: complete' in result.stdout
+
+
+def test_router_barrier_re_settle_names_affected(tmp_path):
+    """A stale settled arm -> re_settle with the affected arm named in the TOON."""
+    result = run_script(
+        SCRIPT_PATH,
+        'barrier',
+        '--settled-head',
+        _H2,
+        '--signal',
+        f'ci:settled:{_H2}',
+        '--signal',
+        f'review:settled:{_H2}',
+        '--signal',
+        f'sonar:settled:{_H1}',
+        cwd=tmp_path,
+    )
+    assert result.success
+    assert 'barrier_status: re_settle' in result.stdout
+    assert 'sonar' in result.stdout
+
+
+def test_router_barrier_malformed_signal_is_soft_error(tmp_path):
+    """A malformed --signal returns a status:error TOON (three-tier: exit 0)."""
+    result = run_script(
+        SCRIPT_PATH,
+        'barrier',
+        '--settled-head',
+        _H1,
+        '--signal',
+        'ci',
+        cwd=tmp_path,
+    )
+    assert result.success
+    assert 'status: error' in result.stdout
+    assert 'invalid_signal' in result.stdout
+
+
+def test_router_barrier_invalid_state_is_soft_error(tmp_path):
+    """An out-of-vocabulary signal state returns a status:error TOON.
+
+    The arm set is complete so completeness passes first; the bad state is what
+    surfaces the invalid_signal_state error.
+    """
+    result = run_script(
+        SCRIPT_PATH,
+        'barrier',
+        '--settled-head',
+        _H1,
+        '--signal',
+        f'ci:green:{_H1}',
+        '--signal',
+        f'review:settled:{_H1}',
+        '--signal',
+        f'sonar:settled:{_H1}',
+        cwd=tmp_path,
+    )
+    assert result.success
+    assert 'status: error' in result.stdout
+    assert 'invalid_signal_state' in result.stdout
+
+
+def test_router_barrier_missing_arm_is_soft_error(tmp_path):
+    """A snapshot missing an arm returns a status:error incomplete_signals TOON."""
+    result = run_script(
+        SCRIPT_PATH,
+        'barrier',
+        '--settled-head',
+        _H1,
+        '--signal',
+        f'ci:settled:{_H1}',
+        '--signal',
+        f'review:settled:{_H1}',
+        cwd=tmp_path,
+    )
+    assert result.success
+    assert 'status: error' in result.stdout
+    assert 'incomplete_signals' in result.stdout
+
+
+def test_router_barrier_duplicate_arm_is_soft_error(tmp_path):
+    """A snapshot with a duplicate arm returns a status:error incomplete_signals TOON."""
+    result = run_script(
+        SCRIPT_PATH,
+        'barrier',
+        '--settled-head',
+        _H1,
+        '--signal',
+        f'ci:settled:{_H1}',
+        '--signal',
+        f'ci:settled:{_H1}',
+        '--signal',
+        f'review:settled:{_H1}',
+        '--signal',
+        f'sonar:settled:{_H1}',
+        cwd=tmp_path,
+    )
+    assert result.success
+    assert 'status: error' in result.stdout
+    assert 'incomplete_signals' in result.stdout
+
+
+def test_router_barrier_unknown_name_is_soft_error(tmp_path):
+    """A snapshot carrying an unknown signal name returns incomplete_signals."""
+    result = run_script(
+        SCRIPT_PATH,
+        'barrier',
+        '--settled-head',
+        _H1,
+        '--signal',
+        f'ci:settled:{_H1}',
+        '--signal',
+        f'review:settled:{_H1}',
+        '--signal',
+        f'sonar:settled:{_H1}',
+        '--signal',
+        f'lint:settled:{_H1}',
+        cwd=tmp_path,
+    )
+    assert result.success
+    assert 'status: error' in result.stdout
+    assert 'incomplete_signals' in result.stdout
+
+
+# =============================================================================
+# Barrier-detach / wake decision surface (await-long-running finalize-barrier)
+# =============================================================================
+#
+# D5 routes the barrier through the await-long-running detach seam. Detach/wake
+# itself is orchestration (no script), but the seam's wake DECISIONS are driven
+# by the pure `ci barrier` decision function: the seam wakes on a signal state
+# transition (per-signal-proceed), stays parked while every arm is pending
+# (until budget exhaustion), and — being pure — returns the identical decision
+# whether awaited detached or via the synchronous fallback. These tests frame
+# that decision surface deterministically.
+
+
+def test_barrier_transition_wake_sequence_proceeds_per_signal():
+    """A pending->settled transition on one arm wakes the barrier to proceed it.
+
+    Models successive wakes: the seam parks on `waiting`, wakes when the review
+    arm transitions pending->settled (per-signal-proceed advances it while sonar
+    is still pending), then wakes again to `complete` once sonar settles.
+    """
+    # Wake 1: review still pending — only ci has settled.
+    wake1 = _ci_barrier.compute_barrier_state(
+        [_sig('ci', 'settled', _H1), _sig('review', 'pending', ''), _sig('sonar', 'pending', '')],
+        _H1,
+    )
+    assert wake1['barrier_status'] == 'waiting'
+    assert wake1['proceed'] == ['ci']
+
+    # Wake 2: review transitioned settled — the barrier proceeds it while still
+    # awaiting sonar (per-signal-proceed, not all-or-nothing).
+    wake2 = _ci_barrier.compute_barrier_state(
+        [_sig('ci', 'settled', _H1), _sig('review', 'settled', _H1), _sig('sonar', 'pending', '')],
+        _H1,
+    )
+    assert wake2['barrier_status'] == 'waiting'
+    assert wake2['proceed'] == ['ci', 'review']
+    assert wake2['pending'] == ['sonar']
+
+    # Wake 3: sonar settled — the barrier completes.
+    wake3 = _ci_barrier.compute_barrier_state(
+        [_sig('ci', 'settled', _H1), _sig('review', 'settled', _H1), _sig('sonar', 'settled', _H1)],
+        _H1,
+    )
+    assert wake3['barrier_status'] == 'complete'
+
+
+def test_barrier_budget_exhaustion_proxy_stays_waiting():
+    """An all-pending barrier stays `waiting` on every poll — the seam's budget-exhaustion input.
+
+    The detach seam wakes on transition OR budget exhaustion; a barrier whose
+    arms never leave `pending` is exactly the state the seam times out on. The
+    decision function reports `waiting` with every arm still pending — never a
+    spurious `complete` — so the seam's budget path is reached rather than a
+    false settle.
+    """
+    result = _ci_barrier.compute_barrier_state(
+        [_sig('ci', 'pending', ''), _sig('review', 'pending', ''), _sig('sonar', 'pending', '')],
+        _H1,
+    )
+    assert result['barrier_status'] == 'waiting'
+    assert result['pending'] == ['ci', 'review', 'sonar']
+    assert result['proceed'] == []
+
+
+def test_barrier_synchronous_fallback_decision_is_identical_to_detached():
+    """The decision is pure — detached and synchronous-fallback awaits agree.
+
+    `compute_barrier_state` depends only on its inputs, not on HOW the arms were
+    awaited, so the await-long-running synchronous fallback (step g) yields the
+    byte-identical decision as the detached path for the same signal snapshot.
+    This is the property that lets the fallback stay behaviourally identical.
+    """
+    signals = [_sig('ci', 'settled', _H1), _sig('review', 'pending', ''), _sig('sonar', 'settled', _H1)]
+    detached = _ci_barrier.compute_barrier_state(signals, _H1)
+    synchronous = _ci_barrier.compute_barrier_state(list(signals), _H1)
+    assert detached == synchronous
+
+
+def test_barrier_re_settle_wake_re_enters_affected_arms_only(tmp_path):
+    """A post-entry push wakes the barrier to re_settle only the affected arms (via CLI).
+
+    Models the bounded-re-settle wake: a fix pushed after barrier entry advanced
+    HEAD to _H2; the review arm settled against the stale _H1 and is the sole
+    `affected` arm the seam re-detaches — never the arms already at _H2, and
+    never a full replay.
+    """
+    result = run_script(
+        SCRIPT_PATH,
+        'barrier',
+        '--settled-head',
+        _H2,
+        '--signal',
+        f'ci:settled:{_H2}',
+        '--signal',
+        f'review:settled:{_H1}',
+        '--signal',
+        f'sonar:settled:{_H2}',
+        cwd=tmp_path,
+    )
+    assert result.success
+    assert 'barrier_status: re_settle' in result.stdout
+    # Only the stale review arm is re-entered; ci/sonar already at _H2 proceed.
+    assert 'review' in result.stdout

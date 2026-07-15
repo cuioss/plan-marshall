@@ -40,7 +40,7 @@ def _parse_on_section() -> dict:
 
     data = yaml.safe_load(text)
     # YAML 1.1: a bare ``on:`` key is parsed as the boolean True, not 'on'.
-    on_section = data.get('on')
+    on_section: dict = data.get('on')
     if on_section is None:
         on_section = data.get(True)
     return on_section

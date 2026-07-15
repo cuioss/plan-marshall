@@ -594,7 +594,7 @@ class TestNarrativeContract:
 
     @pytest.fixture(scope='class')
     def standard_text(self) -> str:
-        return _ARCHITECTURE_REFRESH_MD.read_text(encoding='utf-8')
+        return str(_ARCHITECTURE_REFRESH_MD.read_text(encoding='utf-8'))
 
     # ----- Inputs and tiers -------------------------------------------------
 
@@ -785,15 +785,15 @@ class TestNarrativeContract:
 class TestCrossReferences:
     @pytest.fixture(scope='class')
     def skill_md_text(self) -> str:
-        return _PHASE_6_SKILL_MD.read_text(encoding='utf-8')
+        return str(_PHASE_6_SKILL_MD.read_text(encoding='utf-8'))
 
     @pytest.fixture(scope='class')
     def standard_text(self) -> str:
-        return _ARCHITECTURE_REFRESH_MD.read_text(encoding='utf-8')
+        return str(_ARCHITECTURE_REFRESH_MD.read_text(encoding='utf-8'))
 
     @pytest.fixture(scope='class')
     def phase_1_text(self) -> str:
-        return _PHASE_1_INIT_SKILL_MD.read_text(encoding='utf-8')
+        return str(_PHASE_1_INIT_SKILL_MD.read_text(encoding='utf-8'))
 
     def test_skill_md_dispatch_table_routes_default_architecture_refresh(
         self,
@@ -836,8 +836,11 @@ class TestCrossReferences:
 
     def test_standard_frontmatter_declares_order(self, standard_text: str):
         """Frontmatter `order:` makes the manifest composer sort deterministically."""
-        # The doc carries `order: 25` — pin it to detect accidental edits.
-        assert 'order: 25' in standard_text
+        # The D3 mutation-settling reorder moved architecture-refresh from the
+        # post-push region (order 25) into the pre-push settle band (order 9), so
+        # its local HEAD-changing refresh settles BEFORE the single push barrier
+        # (order 10). Pin `order: 9` to detect accidental edits.
+        assert 'order: 9' in standard_text
 
     def test_standard_frontmatter_declares_default_on_true(
         self,

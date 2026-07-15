@@ -124,7 +124,7 @@ A step is active if and only if it appears in `manifest.phase_6.steps`. Absent s
 
 ## Dispatched workflows vs inline steps
 
-Of the 17 default + project finalize steps, **6 dispatch** and **11 run inline**. Every dispatched step resolves under the phase-scoped registry — `manage-config effort resolve-target --phase phase-6-finalize [--role <subkey>]`. Step → resolved role: `pre-submission-self-review` → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`); `create-pr` → `phase-6-finalize` (no `--role`); `lessons-capture` + `adr-propose` → `phase-6-finalize --role post-run-review`; `plan-marshall:automatic-review` + `sonar-roundtrip` → `phase-6-finalize --role verification-feedback` (`producer=pr-comment` / `sonar` runtime input); `architecture-refresh` is hybrid (Tier 0 inline scripts; Tier 1 fans out under `phase-6-finalize` per affected module — the only per-iteration parallel dispatch in the contract); `project:finalize-step-plugin-doctor` (meta-project only) → `phase-6-finalize --role verification-feedback` (`producer=plugin-doctor` runtime input). Two opt-in dispatched steps exist outside the default set: **retrospective** → `phase-6-finalize --role post-run-review` (8 LLM aspects iterate inside one envelope); `/workflow-pr-doctor` (slash-command surface) → `phase-6-finalize --role verification-feedback` (`producer=pr-state` runtime input). The 11 inline steps (`finalize-step-sync-baseline`, `push`, `ci-verify`, `branch-cleanup`, `pre-push-quality-gate`, `record-metrics`, `archive-plan`, `finalize-step-print-phase-breakdown`, `architecture-refresh` Tier 0, `project:finalize-step-deploy-target`, `project:finalize-step-sync-plugin-cache`) are pure scripts or trivial orchestration that earn no envelope. `ci-verify` is a deterministic taxonomy-classification script (`scripts/ci_verify.py`): its green pass-through (`final_status == success` AND no failing checks) marks the step done with ZERO dispatch, and only genuinely-red CI files one taxonomy finding per failing check and returns a per-producer needs-triage signal that the dispatcher routes to `verification-feedback` (the sole LLM step, red-CI only). This green-early-return / no-dispatch bypass is documented BEFORE the red-CI triage dispatch it bypasses. CI completion is no longer a sibling step in this roster — it is a dispatcher-resolved precondition (`requires: [ci-complete]`) checked inline before any consumer step runs; see Step 3 § "Precondition resolution" below. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 5 (find the LLM core, not the wrapping step).
+Of the 17 default + project finalize steps, **6 dispatch** (run under `Task: execution-context-{level}`) and **11 run inline** (pure scripts / trivial orchestration that earn no envelope). Every dispatched step resolves under the phase-scoped registry `manage-config effort resolve-target --phase phase-6-finalize [--role <subkey>]`. `ci-verify` is a deterministic inline classifier whose green pass-through marks the step done with ZERO dispatch and only red CI routes one taxonomy finding per failing check to `verification-feedback`; CI completion itself is a dispatcher-resolved precondition (`requires: [ci-complete]`), not a sibling step (see Step 3 § "Precondition resolution"). The full per-step dispatched/inline classification, the step→role map, and the rationale live in [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md) — the single source of truth the Execute Step Pipeline dispatch branch consumes.
 
 ## Step Types
 
@@ -145,6 +145,8 @@ Four step types are supported, distinguished by prefix notation:
 The dispatched-vs-inline classification (which project/skill steps dispatch under `Task: execution-context-{level}` vs load inline via `Skill:`) is owned by the "Dispatched workflows vs inline steps" section above — it is the single source of truth, and the "Interface Contract for External Steps" section's `Skill:` template applies only to INLINE external steps.
 
 Each step declares an `order: <int>` value in its authoritative source — frontmatter on built-in standards docs (`standards/{name}.md`), frontmatter on project-local `SKILL.md` for `project:` steps, and the return-dict `order` field for extension-contributed skills. `marshall-steward` sorts the `steps` list by this value when writing it to `marshal.json`. This skill iterates the list as written and does NOT re-sort or validate `order` at runtime — the persisted order is the runtime order.
+
+The materialized keyed-map step roster, each step's explicit `lane` (exclusion = `lane: off`; core / derived-state classes are immune to a weakening `off`), and the frontmatter-`order`-governed sequence — resolved through the single choke-point `_manifest_validation._sort_steps_by_frontmatter_order`, consumed by both the plan-local manifest composer and `manage-config steps-sort` — are the CURRENT (post-#895/#896/#898) model. The central lane / order / preset contract is [`extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md); this skill documents the roster and consumes the resolved order, it does not re-specify the lane/order authority. There is no compose-layer `order` field and no `run_at_all` boolean — a step is present iff it is in the manifest, and its position is its `order:` frontmatter.
 
 ### Built-in Step Dispatch Table
 
@@ -191,54 +193,45 @@ dispatch shape.
 
 In both cases the step body can access the plan's context via manage-* scripts (references, status, config).
 
-#### Session-id forwarding
+#### Session-id forwarding and required termination
 
-`--session-id {session_id}` is forwarded ONLY to external steps on the per-step opt-in whitelist below. The forwarding is opt-in (rather than universal) because some external steps may reject unknown flags; opting in keeps the contract additive for new dependencies without breaking existing steps.
-
-| Whitelisted external step | Why it needs `--session-id` |
-|---------------------------|------------------------------|
-| `plan-marshall:plan-retrospective` | Aspect 12 (chat-history-analysis) is conditional on `--session-id`. Without it, the aspect is silently skipped and the retrospective report omits the chat-history section. See `plan-retrospective/SKILL.md` → "Input Contract" for the consumer-side declaration. |
-
-`default:record-metrics` is intentionally NOT on this whitelist: it is a built-in step, dispatched via `standards/record-metrics.md`, which already consumes `--session-id` inline. The whitelist scope is project- and skill-type external steps only.
-
-**How to apply** — when defining a new external step that consumes session-scoped state:
-
-1. Declare `--session-id` as an input in the step's authoritative document (project step `SKILL.md` or fully-qualified skill `SKILL.md`/standards).
-2. Add the fully-qualified step name to the whitelist table above.
-3. Verify by running a finalize end-to-end and confirming the step does not hit a "session_id missing" code path.
-
-The orchestrator is responsible for resolving `session_id` (see "How to obtain session_id" earlier in this file). This skill receives the resolved value via its Input Parameters and forwards it verbatim to whitelisted steps; it does not re-resolve.
-
-**Required termination:** Every external step (project and fully-qualified skill) MUST terminate with a `manage-status mark-step-done` call that carries `--display-detail "{one-line summary}"`. This is REQUIRED, not optional — a missing or empty `display_detail` causes renderer failure in Step 4 (the literal placeholder `<missing display_detail>` will surface to the user and contribute to a `[FAILED]` headline). The detail string is authored by the step itself; the renderer NEVER invents content on the step's behalf.
-
-The full command template (use verbatim, substituting the placeholders):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step {step_name} --outcome {done|skipped|failed} \
-  --display-detail "{one-line summary}"
-```
-
-MANDATORY annotations for every argument:
-
-- `--phase` — MANDATORY. Always the literal string `6-finalize` for steps dispatched under this operation. This anchors the step record to the finalize phase; any other value routes the record into the wrong phase bucket and breaks the Step 4 renderer grouping.
-- `--outcome` — MANDATORY. Must be exactly one of `done`, `skipped`, or `failed`. Any other value (including misspellings or capitalized variants) is rejected by `manage-status`. The choice determines the headline classification and CANNOT be inferred from `display_detail` alone.
-- `--step` — MANDATORY. Must match the fully-qualified step name as listed in `marshal.json` (e.g. `default:push`, `project:foo`, or `plan-marshall:some-skill:some-script`). Mismatches here create orphan status records that the renderer cannot pair with the dispatched step.
-- `--display-detail` — MANDATORY. Single-line summary of what the step actually did, authored by the step itself. Subject to the constraints listed below. A missing, empty, or whitespace-only value triggers the `<missing display_detail>` placeholder and contributes a `[FAILED]` headline regardless of the `--outcome` value.
-
-**Notation:** the canonical 3-part notation is `plan-marshall:manage-status:manage-status` — every segment is kebab-case.
-
-**`display_detail` constraints:**
-
-- ≤80 characters
-- No trailing period
-- No embedded newlines (single line only)
-- Plain ASCII — no unicode glyphs
-- Concrete and user-facing (describe what the step did, not how)
-
-See [standards/output-template.md](standards/output-template.md#display_detail-contract-for-step-authors) for the full detail-string convention, ASCII icon rules, and concrete examples per built-in step.
+`--session-id {session_id}` is forwarded ONLY to external steps on a per-step opt-in whitelist (currently just `plan-marshall:plan-retrospective`), and every external step MUST terminate with a `manage-status mark-step-done --phase 6-finalize --step {step_name} --outcome {done|skipped|failed} --display-detail "{≤80-char, no-trailing-period, ASCII, single-line summary}"` call — a missing `display_detail` surfaces the `<missing display_detail>` placeholder and forces a `[FAILED]` headline. The whitelist, the how-to-apply steps, the full mark-step-done template with per-argument MANDATORY annotations, and the `display_detail` constraint list live in [`standards/external-step-contract.md`](standards/external-step-contract.md). The orchestrator resolves `session_id` (see "How to obtain session_id" earlier in this file) and forwards it verbatim to whitelisted steps.
 
 ---
+
+## Mutation-settling stage (settle → push once → wait)
+
+The finalize pipeline is a **mutation-settling stage**: every LOCAL, HEAD-changing step settles BEFORE the single push, and the wait region runs AFTER it off one settled HEAD. The stages, by `order:`:
+
+- **SETTLE (local HEAD-changing, `order < 10`)** — `finalize-step-sync-baseline` (3, rebase→HEAD), `pre-push-quality-gate` (5, gate), `project:finalize-step-plugin-doctor` / `pre-submission-self-review` / `finalize-step-simplify` / `finalize-step-security-audit` (fixes→HEAD), and `architecture-refresh` (9, derived-state — sorts LAST in the settle band so the descriptor refresh captures the code-mutating settle edits). Each mutating step's edits are committed on the feature branch by the dispatcher's commit instrumentation (Step 3 item 5f) before the barrier runs.
+- **PUSH (`order: 10`)** — the single `default:push` barrier ships the fully-settled HEAD. There is exactly ONE push.
+- **WAIT (post-push, `order > 10`)** — `create-pr`, `ci-verify`, `automatic-review`, `sonar-roundtrip` are the D4 **concurrent WAIT barrier** off that one settled HEAD (see § the wait-region narrative for the barrier mechanics — this section does not restate it). Post-push HEAD mutations that structurally REQUIRE the remote PR (era-stamp-fill's PR-number resolution, sonar/review fix application) are NOT pulled before the push — they are absorbed by the D4 bounded re-settle mutation-fixpoint. The post-wait settle band (`review-retrospective`, `lessons-capture` at 60) then runs before `branch-cleanup` (70) merges.
+
+**Ordering authority.** The settle-before-push-before-wait sequence is NOT a compose-layer `order` field and NOT a `run_at_all` boolean — it is governed entirely by each step doc's `order:` frontmatter, resolved through the single choke-point `_manifest_validation._sort_steps_by_frontmatter_order` (consumed by BOTH the plan-local manifest composer AND `manage-config steps-sort`). To move a step between the settle stage and the wait region, edit its `order:` frontmatter (settle `< 10`, wait `> 10`); the composer and `steps-sort` re-materialize the roster and the ascending-order validator asserts the barrier holds. See the roster block above and [`extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md) for the lane/order contract.
+
+## Wait-region: the concurrent barrier off one settled HEAD
+
+The post-push wait region awaits three EXTERNAL-latency signals — CI checks, review-bot comments, and the Sonar compute-engine — that all run against the single HEAD the settle stage pushed. They were historically awaited **serially**: `ci-verify` blocked for green CI, THEN `automatic-review` blocked for the review buffer + comments, THEN `sonar-roundtrip` blocked for the CE. Because the three processes run **concurrently on the remote** the moment the push lands, serial awaiting paid `sum(signal)` wall-clock for work that completes in `max(signal)`.
+
+The wait region is now **one concurrent barrier**: all three signals are polled off the one settled HEAD at once, and the barrier **proceeds per-signal** — as each signal reaches a terminal state, the pipeline advances past it independently, rather than blocking the other two behind the slowest. The three signals remain **three distinct materialized steps** — `default:ci-verify` (`lane: minimal`), `plan-marshall:automatic-review` (`lane: minimal`), and `default:sonar-roundtrip` (`lane: full`) — each keeping its own `lane` and `order:` frontmatter. The barrier is a *concurrency pattern over how those three steps' waits are awaited*; it does NOT merge, drop, or re-lane any step, and it adds no compose-layer grouping (see deliverable-4 § "Section partition").
+
+**Per-signal ratchets are reused, not replaced.** Each arm awaits through its own existing ratchet: the CI arm through the p50-seeded terminal-state `ci wait` (the #849 ratchet `ci_complete_precondition` drives), the review arm through the completion-aware bot-comment poll (plan-17 #884 D2), and the Sonar arm through the CE wait. The barrier layers **coordination** over those independent waits; it introduces no competing wait subsystem.
+
+**Coordinator verb.** The provider-agnostic per-signal-proceed / re-settle decision is computed by the router-level `ci barrier` verb (implemented in `tools-integration-ci/scripts/_ci_barrier.py`; canonical surface in [`tools-integration-ci/SKILL.md`](../tools-integration-ci/SKILL.md) § Canonical invocations). Given the one `--settled-head` and one `--signal NAME:STATE[:HEAD]` per barrier signal, it returns `barrier_status` ∈ `{complete, waiting, failed, re_settle}` plus the per-bucket signal lists (`proceed` / `pending` / `failed` / `affected`). `waiting` means keep awaiting the `pending` arms; `complete` means all three settled at the settled HEAD; `failed` means a signal terminally failed at that HEAD (route it through the existing per-step triage); `re_settle` means HEAD advanced past where a settled signal was observed and the `affected` arms must be re-entered.
+
+**Bounded re-settle (mutation-fixpoint).** A finding can post AFTER the barrier is entered (a bot comments, or Sonar surfaces a new-code issue) — a check-then-act window. The mitigation is a **bounded re-settle**: apply the fix → commit + push (advancing HEAD) → re-enter the barrier for the **affected signals only** (the `ci barrier` `affected` set), NOT a full finalize replay (the settle-stage gates — quality-gate, plugin-doctor, simplify, security-audit — are NOT re-run). Because a push re-runs every arm that validates against HEAD, the affected set is the barrier's own signals, and a clean re-entry (no new finding lands) settles them all at the new HEAD. The common case therefore **converges in ≤1–2 iterations**: iteration 1 applies-and-pushes the fix, iteration 2 observes all arms settled at the new HEAD → `complete`. This is the check-then-act / TOCTOU mitigation menu applied to the wait region — see [`ref-code-quality/standards/code-organization.md`](../ref-code-quality/standards/code-organization.md).
+
+The barrier poll runs off resident context via the `await-long-running` detach seam so the large orchestrator context is not held during the wall-clock wait — that routing is documented in § "Barrier-detach routing" immediately below, and does not change any step's `lane` or `order:`.
+
+### Barrier-detach routing (off resident context)
+
+The wait-region barrier is a long-running orchestrator-tier wait, so it is **detached** through the shared [`await-long-running`](../plan-marshall/workflow/await-long-running.md) seam (as the `finalize-barrier` consumer) rather than blocked on synchronously. Detaching keeps the poll **off resident context**: the large orchestrator context is not held resident across the CI/review/Sonar wall-clock wait — the seam backgrounds the per-signal arms and the orchestrator wakes only on a notification, reading the compact `ci barrier` decision TOON, never the raw poll flood.
+
+**Wake-on-transition contract.** The seam wakes the orchestrator on ANY barrier signal's **state transition** — a signal reaching a terminal state — so the pipeline proceeds past that arm the moment it settles (per-signal-proceed), NOT only when all three settle. It also wakes on **budget exhaustion**. On each wake the orchestrator reads the `ci barrier` decision (`barrier_status` + the `proceed` / `pending` / `affected` buckets) and advances the settled arms while continuing to await the `pending` ones. A `re_settle` decision re-detaches only the `affected` arms against the new settled HEAD (the D4 bounded re-settle), never a full finalize replay.
+
+**Synchronous fallback preserved.** When the background primitive is unavailable (a non-Claude runtime, or `run_in_background` not honoured), the seam degrades to `await-long-running` step (g): the barrier awaits each arm's wait **inline** at its resolved timeout — the pre-detach serial blocking behaviour — still correct, only resident. The Claude-specific wake primitive stays contained behind the seam.
+
+This is a **routing/narrative change only**: the three WAIT steps (`default:ci-verify`, `plan-marshall:automatic-review`, `default:sonar-roundtrip`) keep their own `lane` and `order:` frontmatter, and no materialized step is added or removed. Detaching governs *where the poll runs* (off resident context), never *which steps run or how they are laned*.
 
 ## Operation: finalize
 

@@ -215,13 +215,14 @@ class TestProjectInitialSetupFreshInit:
 
 def _collect_commands(entries: list[dict[str, Any]]) -> list[str]:
     """Return the list of hook commands inside a hooks-event entry list."""
-    return [
+    commands: list = [
         h.get("command")
         for entry in entries
         if isinstance(entry, dict)
         for h in entry.get("hooks", [])
         if isinstance(h, dict)
     ]
+    return commands
 
 
 def _count_command(entries: list[dict[str, Any]], command: str) -> int:

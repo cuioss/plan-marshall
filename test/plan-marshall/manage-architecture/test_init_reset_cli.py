@@ -41,7 +41,8 @@ _ARCHITECTURE_SCRIPT = get_script_path('plan-marshall', 'manage-architecture', '
 
 def _read_enriched(module_name: str, project_dir: str) -> dict:
     """Read a module's on-disk ``enriched.json`` as a dict."""
-    return json.loads(get_module_enriched_path(module_name, project_dir).read_text())
+    data: dict = json.loads(get_module_enriched_path(module_name, project_dir).read_text())
+    return data
 
 
 def _seed_curated_and_missing(tmpdir: str) -> None:

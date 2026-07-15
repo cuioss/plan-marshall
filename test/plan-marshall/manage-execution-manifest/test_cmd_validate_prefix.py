@@ -59,9 +59,8 @@ read_manifest = _mem.read_manifest
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 
 # Quiet down the best-effort decision-log subprocess.
-_mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
-_mem._log_execution_tier_routing = lambda *a, **kw: None  # type: ignore[attr-defined]
-
+_mem._log_decision = lambda *a, **kw: None
+_mem._log_execution_tier_routing = lambda *a, **kw: None
 
 # =============================================================================
 # Namespace + fixture helpers

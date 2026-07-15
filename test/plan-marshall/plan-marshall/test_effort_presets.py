@@ -372,16 +372,16 @@ def test_preset_ladder_is_monotonic() -> None:
         """
         group_value = preset['roles'].get(group)
         if group_value is None:
-            return preset['default']
+            return str(preset['default'])
         if isinstance(group_value, str):
             return group_value
         # dict-valued group: subkey override wins; missing subkey bubbles
         # to the group's ``default`` entry, then to the preset default.
         if subkey is not None and subkey in group_value:
-            return group_value[subkey]
+            return str(group_value[subkey])
         if 'default' in group_value:
-            return group_value['default']
-        return preset['default']
+            return str(group_value['default'])
+        return str(preset['default'])
 
     # Also include the ``default`` slot itself in the walk.
     slots.add(('__plan_default__', None))

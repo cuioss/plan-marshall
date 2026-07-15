@@ -191,7 +191,7 @@ def test_keyed_map_dropped_project_step_is_surfaced(tmp_path: Path):
     plan_dir = project_root / '.plan'
     _ship_project_finalize_skills(project_root, _PROJECT_STEPS)
     # Keyed-map with two shipped project steps dropped.
-    present = {
+    present: dict = {
         'default:pre-submission-self-review': {},
         'project:finalize-step-sync-plugin-cache': {},
         'default:push': {},

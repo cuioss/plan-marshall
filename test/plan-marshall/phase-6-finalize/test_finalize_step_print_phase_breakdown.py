@@ -69,7 +69,7 @@ def _parse_frontmatter(text: str) -> dict[str, str]:
 @pytest.fixture(scope='module')
 def standards_text() -> str:
     assert STANDARDS_PATH.is_file(), f'expected standards file at {STANDARDS_PATH}'
-    return STANDARDS_PATH.read_text(encoding='utf-8')
+    return str(STANDARDS_PATH.read_text(encoding='utf-8'))
 
 
 @pytest.fixture(scope='module')

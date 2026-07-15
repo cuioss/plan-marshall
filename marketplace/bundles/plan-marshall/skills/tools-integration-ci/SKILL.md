@@ -81,8 +81,9 @@ tools-integration-ci/
 │   └── issue-operations.md      # Issue create, view, close
 └── scripts/
     ├── ci_health.py             # Detection & verification
-    ├── ci.py                    # Provider-agnostic passthrough router
+    ├── ci.py                    # Provider-agnostic passthrough router (+ router-level `barrier` verb)
     ├── ci_base.py               # Shared argparse surface (pr/checks/issue/branch/repo sub-verbs)
+    ├── _ci_barrier.py           # Concurrent finalize-wait barrier coordinator (per-signal-proceed / re-settle)
     └── _ci_log_filter.py        # Failure-log error-extraction filter
 ```
 
@@ -344,6 +345,17 @@ duplicate); on GitLab it treats an "already exists" / HTTP 409 as a no-op succes
 `--color` is a 6-hex-digit RGB string (no leading `#`; the GitLab handler prefixes
 `#` as that platform requires). The steward landing cycle calls this to ensure the
 `skip-bot-review` label exists before creating a `--label skip-bot-review` PR.
+
+### barrier
+
+Provider-agnostic verb — handled by the `ci.py` router directly (no provider dispatch, no CI provider required, no worktree resolution). It is the coordinator for the phase-6 concurrent finalize-wait barrier: given the one settled HEAD and the current state of each awaited signal, it computes the per-signal-proceed / bounded-re-settle decision. Pure computation, implemented in `scripts/_ci_barrier.py`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci barrier \
+  --settled-head SHA --signal NAME:STATE[:HEAD] [--signal NAME:STATE[:HEAD] ...]
+```
+
+`--settled-head` is the single HEAD sha the barrier polls off. `--signal` is repeatable — one per awaited signal (`ci`, `review`, `sonar`) — as `NAME:STATE[:HEAD]`, where `STATE` is one of `pending|settled|failed` and `HEAD` is the sha the signal was last observed against (omit for an unobserved signal). It returns `barrier_status` ∈ `{complete, waiting, failed, re_settle}` plus the per-bucket signal-name lists `proceed` / `pending` / `failed` / `affected`. `re_settle` names the `affected` arms to re-enter against the new settled HEAD after a bounded re-settle push (affected signals only, never a full finalize replay). See [`phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) § "Wait-region: the concurrent barrier off one settled HEAD" for the consuming narrative.
 
 ## References
 

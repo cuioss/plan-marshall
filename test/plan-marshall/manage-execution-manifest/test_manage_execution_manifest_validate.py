@@ -64,8 +64,7 @@ _check_ascending_order = _validation._check_ascending_order
 _resolve_step_order = _validation._resolve_step_order
 
 # Quiet down the best-effort decision-log subprocess.
-_mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
-
+_mem._log_decision = lambda *a, **kw: None
 
 # =============================================================================
 # Namespace Helpers

@@ -132,7 +132,7 @@ def _add_task(plan_id: str, title: str, number_hint: int, depends_on: str = 'non
         depends_on=depends_on,
     )
     Path(prep['path']).write_text(toon, encoding='utf-8')
-    result = cmd_commit_add(Namespace(plan_id=plan_id, slot=None))
+    result: dict = cmd_commit_add(Namespace(plan_id=plan_id, slot=None))
     assert result.get('status') == 'success', f'commit-add failed: {result}'
     return result
 

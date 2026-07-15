@@ -192,7 +192,8 @@ def _invoke_rebase(
     monkeypatch.setattr(git_workflow, '_resolve_worktree_path_for_plan', lambda _pid: (target, resolver_error))
     monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: root)
 
-    return cmd_worktree_rebase_to(Namespace(plan_id=plan_id, base=base))
+    result: dict = cmd_worktree_rebase_to(Namespace(plan_id=plan_id, base=base))
+    return result
 
 
 # ---------------------------------------------------------------------------

@@ -113,6 +113,21 @@ class Issue:
         severity: Issue severity (SEVERITY_ERROR or SEVERITY_WARNING).
         category: Optional category (e.g., "compilation", "test_failure", "deprecation").
         stack_trace: Optional stack trace for test failures.
+        detail: Optional representative failure detail block (a traceback /
+            assertion body) captured once per unique failure signature. Distinct
+            from ``stack_trace`` (raw ``at``/``Caused by:`` frame collection) — it
+            carries the *why* of a failure so it can reach the emitted result and
+            the finding store without a raw-log re-read. Presentation-only: it is
+            truncated to a display cap by the parser, so it MUST NOT be used as a
+            dedup identity — use ``signature`` for that.
+        signature: Optional full, un-truncated parser-computed failure signature
+            (assertion type + normalized message + failing frame). Kept separate
+            from ``detail`` so failure deduplication (``_issue_failure_signature``)
+            keys on the complete identity rather than the truncated ``detail``
+            presentation text, which could collapse distinct root causes sharing
+            a truncated prefix. Populated by parsers that compute a signature
+            (pyproject today); absent for parsers that do not, which fall back to
+            a per-failure ``category:file:line:message`` key.
         accepted: Whether this warning is accepted (for structured mode output).
     """
 
@@ -122,6 +137,8 @@ class Issue:
     severity: str
     category: str | None = None
     stack_trace: str | None = None
+    detail: str | None = None
+    signature: str | None = None
     accepted: bool = field(default=False)
 
     def to_dict(self) -> dict:
@@ -143,6 +160,9 @@ class Issue:
 
         if self.stack_trace is not None:
             result['stack_trace'] = self.stack_trace
+
+        if self.detail is not None:
+            result['detail'] = self.detail
 
         if self.accepted:
             result['accepted'] = True

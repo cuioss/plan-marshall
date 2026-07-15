@@ -44,8 +44,7 @@ _manifest_mod = _load_module('manage_execution_manifest', 'manage-execution-mani
 _classify_paths_via_extensions = _manifest_mod._classify_paths_via_extensions
 
 # Silence the best-effort decision-log subprocess in the aggregator tests.
-_manifest_mod._emit_decision_log = lambda *a, **kw: None  # type: ignore[attr-defined]
-
+_manifest_mod._emit_decision_log = lambda *a, **kw: None
 
 # =============================================================================
 # Local FakeExtension (Deliverable 4's conftest fixture is built in a later

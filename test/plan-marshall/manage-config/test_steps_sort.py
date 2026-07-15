@@ -71,7 +71,8 @@ def _finalize_config(steps: dict) -> dict:
 def _persisted_steps(fixture_dir) -> dict:
     """Read back ``plan.phase-6-finalize.steps`` from the on-disk marshal.json."""
     config = json.loads((fixture_dir / 'marshal.json').read_text())
-    return config['plan']['phase-6-finalize']['steps']
+    steps: dict = config['plan']['phase-6-finalize']['steps']
+    return steps
 
 
 def test_steps_sort_reorders_shuffled_to_ascending_with_unknown_key_pinned(plan_context, monkeypatch):
@@ -241,3 +242,54 @@ def test_steps_sort_real_resolver_produces_ascending_order(plan_context):
     assert _manifest_validation._check_ascending_order(result['after']) is None
     # The persisted map matches the returned order.
     assert list(_persisted_steps(plan_context.fixture_dir).keys()) == result['after']
+
+
+def test_steps_sort_real_resolver_places_architecture_refresh_before_push_preserving_lane(plan_context):
+    """D3 real-resolver: steps-sort re-materializes the mutation-settling reorder.
+
+    Uses the GENUINE ``_resolve_step_order`` (no monkeypatch) so the actual
+    phase-6 step-doc frontmatter drives the sort: ``default:architecture-refresh``
+    (order 9) and ``default:finalize-step-security-audit`` (order 9) sort into the
+    pre-push settle band BEFORE ``default:push`` (order 10), while the WAIT steps
+    (``ci-verify`` / ``sonar-roundtrip``, order > 10) sort after it. Each step's
+    ``lane`` value is preserved byte-identically (steps-sort reorders keys only),
+    and a second run is a zero-diff no-op (idempotent under the steward invariant).
+    """
+    # Scrambled input: push and the wait steps ahead of the settle steps.
+    scrambled = {
+        'default:push': {'lane': 'minimal'},  # order 10 — the single push barrier
+        'default:ci-verify': {'lane': 'minimal'},  # wait (> 10)
+        'default:sonar-roundtrip': {'lane': 'full'},  # wait (> 10)
+        'default:architecture-refresh': {'lane': 'minimal'},  # settle (order 9) — D3 move
+        'default:finalize-step-security-audit': {'lane': 'full'},  # settle (order 9)
+    }
+    create_marshal_json(plan_context.fixture_dir, _finalize_config(scrambled))
+
+    result = cmd_steps_sort(Namespace())
+
+    assert result['status'] == 'success'
+    assert result['reordered'] is True
+    after = result['after']
+    push_idx = after.index('default:push')
+    # Settle steps (order < 10) sort before the single push.
+    assert after.index('default:architecture-refresh') < push_idx
+    assert after.index('default:finalize-step-security-audit') < push_idx
+    # WAIT steps (order > 10) sort after the push.
+    for wait in ('default:ci-verify', 'default:sonar-roundtrip'):
+        assert after.index(wait) > push_idx
+
+    # Each per-step value (including the lane) is preserved byte-identically.
+    persisted = _persisted_steps(plan_context.fixture_dir)
+    assert persisted['default:architecture-refresh'] == {'lane': 'minimal'}
+    assert persisted['default:finalize-step-security-audit'] == {'lane': 'full'}
+    assert persisted['default:push'] == {'lane': 'minimal'}
+    assert persisted['default:ci-verify'] == {'lane': 'minimal'}
+    assert persisted['default:sonar-roundtrip'] == {'lane': 'full'}
+
+    # Idempotent: a second run over the re-materialized map is a zero-diff no-op.
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    bytes_after_first = marshal_path.read_bytes()
+    second = cmd_steps_sort(Namespace())
+    assert second['reordered'] is False
+    assert second['before'] == second['after']
+    assert marshal_path.read_bytes() == bytes_after_first

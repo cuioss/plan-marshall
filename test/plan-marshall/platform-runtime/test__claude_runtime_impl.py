@@ -22,7 +22,7 @@ from __future__ import annotations  # noqa: I001
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -525,7 +525,7 @@ class TestSessionRenderTitle:
     @pytest.mark.parametrize(
         "cell",
         _RENDER_MATRIX,
-        ids=[c["id"] for c in _RENDER_MATRIX],
+        ids=[cast(dict, c)["id"] for c in _RENDER_MATRIX],
     )
     def test_resolver_matrix(self, cell, rt, tmp_path, monkeypatch, capsys):
         """Every {tier × outcome} cell asserts the function returns "" and stdout matches the hook contract.

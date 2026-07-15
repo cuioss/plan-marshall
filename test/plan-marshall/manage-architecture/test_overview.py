@@ -76,7 +76,7 @@ def _create_three_module_project(tmpdir: str, with_enrichment: bool = True) -> N
             'commands': {},
         },
     }
-    enriched = None
+    enriched: dict[str, dict] | None = None
     description = ''
     if with_enrichment:
         description = 'A demo project for overview rendering tests.'

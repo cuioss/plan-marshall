@@ -47,8 +47,7 @@ DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 # Quiet down the best-effort decision-log subprocess so tests don't depend on a
 # running executor. The handler is wrapped in try/except so failures are
 # already silent, but we replace it with a no-op for clarity and speed.
-_mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
-
+_mem._log_decision = lambda *a, **kw: None
 
 # =============================================================================
 # Namespace Helpers

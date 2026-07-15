@@ -28,6 +28,7 @@ _MANAGE_FILES_SCRIPT = str(
     / 'manage-files.py'
 )
 _spec = importlib.util.spec_from_file_location('manage_files', _MANAGE_FILES_SCRIPT)
+assert _spec is not None and _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 

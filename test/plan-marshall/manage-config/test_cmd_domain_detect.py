@@ -70,7 +70,7 @@ def _write_request(plan_dir: Path, body: str) -> None:
 
 def _make_plan_dir(plan_context, plan_id: str) -> Path:
     """Create a plan directory under the fixture base for ``plan_id``."""
-    plan_dir = plan_context.fixture_dir / 'plans' / plan_id
+    plan_dir: Path = plan_context.fixture_dir / 'plans' / plan_id
     plan_dir.mkdir(parents=True, exist_ok=True)
     return plan_dir
 

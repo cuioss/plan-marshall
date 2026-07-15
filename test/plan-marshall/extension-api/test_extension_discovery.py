@@ -317,7 +317,7 @@ def test_discover_build_extensions_serves_expected_domain_keys():
     by_skill = {entry['skill']: entry['module'] for entry in discovered}
 
     def _key(skill: str) -> str:
-        return by_skill[skill].get_skill_domains()[0]['domain']['key']
+        return str(by_skill[skill].get_skill_domains()[0]['domain']['key'])
 
     assert _key('build-pyproject') == 'python'
     assert _key('build-maven') == 'java'

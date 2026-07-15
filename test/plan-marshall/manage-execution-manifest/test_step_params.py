@@ -55,8 +55,7 @@ _denormalize_step_params_for_write = _mem._denormalize_step_params_for_write
 _normalize_step_params_block = _mem._normalize_step_params_block
 
 # Quiet down the best-effort decision-log subprocess.
-_mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
-
+_mem._log_decision = lambda *a, **kw: None
 
 # =============================================================================
 # Namespace Helpers

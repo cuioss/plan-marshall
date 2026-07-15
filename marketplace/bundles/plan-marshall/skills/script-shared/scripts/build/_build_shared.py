@@ -332,6 +332,14 @@ def _store_build_findings(
             detail_lines.append('')
             detail_lines.append('--- stack trace ---')
             detail_lines.append(issue.stack_trace)
+        # The representative per-signature failure block (deliverable 9) carries
+        # the *why* of a failure — round-trip it into the finding store so a
+        # triage reader gets the traceback/assertion body without a raw-log
+        # re-read. Present only for parsers that populate it (pyproject today).
+        if issue.detail:
+            detail_lines.append('')
+            detail_lines.append('--- failure detail ---')
+            detail_lines.append(issue.detail)
         detail_lines.append('')
         detail_lines.append('--- message ---')
         detail_lines.append(issue.message)
@@ -408,6 +416,61 @@ def _reconcile_pending_build_findings(plan_id: str, command_str: str) -> int:
     if reconcile_result.get('status') == 'success':
         return int(reconcile_result.get('resolved_count', 0))
     return 0
+
+
+# Maximum number of error rows surfaced on a failing build result. The cap
+# bounds output size; the `truncated` marker (see `_cap_errors_with_truncation`)
+# reconciles it against the true total so count-vs-shown never silently disagree.
+_ERRORS_EMIT_CAP = 20
+
+
+def _issue_failure_signature(issue: Issue) -> str:
+    """Return the dedup key for a test-failure Issue.
+
+    Keys on ``issue.signature`` — the full, un-truncated parser-computed identity
+    (assertion type + normalized message + failing frame), which is identical
+    across failures that share one root cause, so it collapses N failures sharing
+    a cause to one shown row. ``issue.detail`` is NOT used as identity: it is the
+    truncated presentation block (capped to a display length by the parser), so
+    two distinct root causes whose blocks share a truncated prefix would collide.
+    Parsers that do not populate ``signature`` (Maven/Gradle/npm, the out-of-scope
+    follow-on) fall back to a per-failure ``category:file:line:message`` key, which
+    never over-dedups distinct terse failures.
+    """
+    if issue.signature:
+        return f'sig:{issue.signature}'
+    return f'msg:{issue.category}:{issue.file}:{issue.line}:{issue.message}'
+
+
+def _cap_errors_with_truncation(errors: list[Issue], cap: int = _ERRORS_EMIT_CAP) -> tuple[list[Issue], int]:
+    """Dedup test-failure errors by signature, then cap, reconciling the total.
+
+    Test-failure errors are collapsed to one row per unique failure signature so
+    the shown set represents ALL root causes rather than the first ``cap`` raw
+    lines; non-test errors (build / lint) are never deduped. The shown set is
+    then capped at ``cap``. The returned ``truncated`` count equals
+    ``len(errors) - len(shown)`` so ``len(shown) + truncated`` always reconstructs
+    the true total — count-vs-shown can never silently disagree.
+
+    Because this cap lives in the SHARED helper, the reconciliation benefits
+    Maven/Gradle/npm as well as pyproject: their parsers still emit terse
+    per-failure messages until the follow-on, but the cap and the ``truncated``
+    marker are now correct for every build tool.
+    """
+    total = len(errors)
+    deduped: list[Issue] = []
+    seen_signatures: set[str] = set()
+    for issue in errors:
+        if _classify_issue_finding_type(issue) == 'test-failure':
+            signature = _issue_failure_signature(issue)
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+        deduped.append(issue)
+
+    shown = deduped[:cap]
+    truncated = total - len(shown)
+    return shown, truncated
 
 
 def cmd_run_common(
@@ -558,9 +621,15 @@ def cmd_run_common(
             command=command_str,
         )
 
-        # Add errors if present
+        # Add errors if present. Dedup test-failures by signature so the shown
+        # set covers ALL root causes (not the first N raw lines), cap it, and
+        # emit an explicit `truncated: N` marker whenever the shown set is
+        # smaller than the total so count-vs-shown can never silently disagree.
         if errors:
-            output['errors'] = errors[:20]
+            shown_errors, truncated_count = _cap_errors_with_truncation(errors)
+            output['errors'] = shown_errors
+            if truncated_count > 0:
+                output['truncated'] = truncated_count
 
         # Add warnings if present
         if filtered_warnings:

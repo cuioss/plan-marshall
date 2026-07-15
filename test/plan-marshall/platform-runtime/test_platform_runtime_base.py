@@ -140,6 +140,7 @@ class _ConcreteRuntime(Runtime):
         target: str,
         overwrite_statusline: bool = False,
         overwrite_env_disable: bool = False,
+        enforcement: bool = False,
     ) -> str:
         return toon_success("project install-hook")
 
@@ -240,7 +241,7 @@ def test_all_expected_methods_are_abstract():
 def test_runtime_cannot_be_instantiated_directly():
     """Runtime ABC cannot be instantiated directly."""
     with pytest.raises(TypeError):
-        Runtime()  # type: ignore[abstract]
+        Runtime()
 
 
 @pytest.mark.parametrize("missing_method", ALL_ABSTRACT_METHODS)

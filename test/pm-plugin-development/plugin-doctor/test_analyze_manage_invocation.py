@@ -432,6 +432,138 @@ def nested_index(tmp_path: Path) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Router-level verb allowlist (``_ROUTER_VERBS``).
+# ---------------------------------------------------------------------------
+
+# The real notation the ``_ROUTER_VERBS`` map keys on. ``ci barrier`` is
+# intercepted in ``ci.py::main()`` BEFORE provider argparse dispatch, so it
+# never appears in the ``--help`` choices group — the analyzer must accept it
+# via the router-verb allowlist rather than flag it as an unknown subcommand.
+_CI_NOTATION = 'plan-marshall:tools-integration-ci:ci'
+
+
+def _ci_router_source() -> str:
+    """CI-router shape — provider subcommands only.
+
+    Mirrors the ``ci`` surface as ``--help`` renders it: the provider verbs
+    (``branch`` / ``checks`` / ``pr``) are registered subparsers, but the
+    provider-agnostic ``barrier`` verb is intercepted in ``main()`` ahead of
+    argparse dispatch and is therefore ABSENT from this synthetic surface —
+    exactly as it is absent from the real ``ci --help``.
+    """
+    return textwrap.dedent('''
+        import argparse
+
+        def main():
+            parser = argparse.ArgumentParser()
+            subparsers = parser.add_subparsers(dest='cmd')
+            for name in ('branch', 'checks', 'pr'):
+                p = subparsers.add_parser(name)
+                p.add_argument('--flag')
+            parser.parse_args()
+
+        if __name__ == '__main__':
+            main()
+    ''').lstrip()
+
+
+@pytest.fixture
+def ci_router_index(tmp_path: Path) -> dict:
+    script = tmp_path / 'syn_ci.py'
+    script.write_text(_ci_router_source(), encoding='utf-8')
+    executor = _make_executor(tmp_path, {_CI_NOTATION: script})
+    tree = derive_script_tree(_CI_NOTATION, executor)
+    assert tree is not None
+    # Guard: the synthetic surface must NOT contain ``barrier`` — the whole
+    # point is that the allowlist, not the ``--help`` surface, admits it.
+    assert 'barrier' not in tree.known_subcommands()
+    return {_CI_NOTATION: tree}
+
+
+def test_router_verb_barrier_accepted(ci_router_index: dict) -> None:
+    """A router-level verb absent from ``--help`` is accepted via the allowlist.
+
+    ``ci barrier`` is intercepted before argparse dispatch, so it is not in the
+    derived surface; ``_ROUTER_VERBS`` admits it and the concrete documented
+    invocation produces no finding.
+    """
+    content = (
+        'python3 .plan/execute-script.py '
+        'plan-marshall:tools-integration-ci:ci barrier '
+        '--settled-head SHA --signal ci:pending'
+    )
+    findings = analyze_manage_invocation_markdown(
+        content, 'SKILL.md', ci_router_index
+    )
+    assert findings == []
+
+
+def test_non_router_unknown_subcommand_still_flagged(ci_router_index: dict) -> None:
+    """The router-verb allowlist does not blanket-accept unknown subcommands.
+
+    A genuinely-unregistered subcommand on the same notation is still flagged —
+    only names listed in ``_ROUTER_VERBS`` for the notation are admitted.
+    """
+    content = (
+        'python3 .plan/execute-script.py '
+        'plan-marshall:tools-integration-ci:ci bogus --flag x'
+    )
+    findings = analyze_manage_invocation_markdown(
+        content, 'SKILL.md', ci_router_index
+    )
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'subcommand_unknown'
+
+
+def test_router_verb_unknown_flag_is_flagged(ci_router_index: dict) -> None:
+    """A router verb's flags ARE validated — a misspelled/unknown flag is caught.
+
+    ``ci barrier`` is admitted as a valid verb, but its flag surface is modeled
+    in ``_ROUTER_VERBS`` and validated with the standard machinery, so a bogus
+    flag is reported rather than accepted wholesale (the finding daae30 fix).
+    """
+    content = (
+        'python3 .plan/execute-script.py '
+        'plan-marshall:tools-integration-ci:ci barrier '
+        '--settled-head SHA --signal ci:pending --bogus x'
+    )
+    findings = analyze_manage_invocation_markdown(
+        content, 'SKILL.md', ci_router_index
+    )
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'flag_unknown'
+    assert findings[0]['details']['flag'] == 'bogus'
+    assert findings[0]['details']['subcommand'] == 'barrier'
+
+
+def test_router_verb_missing_required_flag_is_flagged(ci_router_index: dict) -> None:
+    """A router verb's required flags are validated — omitting one is flagged."""
+    content = (
+        'python3 .plan/execute-script.py '
+        'plan-marshall:tools-integration-ci:ci barrier --settled-head SHA'
+    )
+    findings = analyze_manage_invocation_markdown(
+        content, 'SKILL.md', ci_router_index
+    )
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'required_flag_missing'
+    assert findings[0]['details']['missing'] == ['signal']
+
+
+def test_router_verb_injected_routing_flags_accepted(ci_router_index: dict) -> None:
+    """Executor/router-injected flags (--plan-id) are accepted on a router verb."""
+    content = (
+        'python3 .plan/execute-script.py '
+        'plan-marshall:tools-integration-ci:ci --plan-id p barrier '
+        '--settled-head SHA --signal ci:pending'
+    )
+    findings = analyze_manage_invocation_markdown(
+        content, 'SKILL.md', ci_router_index
+    )
+    assert findings == []
+
+
+# ---------------------------------------------------------------------------
 # Synthetic-marketplace builder — drives the in-scope derivation directly.
 # ---------------------------------------------------------------------------
 

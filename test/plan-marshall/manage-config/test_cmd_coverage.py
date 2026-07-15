@@ -38,6 +38,7 @@ if str(_MANAGE_CONFIG_SCRIPTS_DIR) not in sys.path:
 
 def _load_module(name: str, filename: str, scripts_dir: Path):
     spec = importlib.util.spec_from_file_location(name, scripts_dir / filename)
+    assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)

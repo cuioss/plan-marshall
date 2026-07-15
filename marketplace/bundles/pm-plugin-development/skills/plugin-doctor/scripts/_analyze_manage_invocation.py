@@ -145,6 +145,53 @@ _UNIVERSAL_FLAG_ALLOWLIST: frozenset[str] = frozenset(
     {'audit-plan-id', 'project-dir', 'plan-id'}
 )
 
+# Router-level verbs handled by a script's ``main()`` BEFORE argparse subparser
+# dispatch, so they never appear in the script's ``--help`` choices group and
+# the ``--help``-derived surface cannot see them. These are a legitimate pattern
+# (a provider-agnostic verb intercepted ahead of provider routing so it works
+# with no provider configured), NOT a documentation defect — validating them
+# against the introspected subcommand set is a false positive. Keyed by
+# ``bundle:skill:script`` notation → a ``{verb_name: _RouterVerb}`` map that
+# MODELS each router verb's own flag surface (long flags + required subset).
+#
+# The verb name being registered admits it as a valid first positional (the
+# ``--help``-derived surface cannot see it), but its flags ARE validated against
+# the modeled surface below rather than accepted wholesale — a misspelled or
+# unknown flag on a router verb is a real defect and must be flagged, exactly as
+# for a ``--help``-derived subcommand. The model is hand-maintained because the
+# verb's argparse lives in a helper module the standard child-probe never reaches.
+#
+# ``ci barrier`` is the provider-agnostic finalize-wait barrier coordinator —
+# intercepted at the top of ``tools-integration-ci/scripts/ci.py::main()`` before
+# provider dispatch, implemented in the ``_ci_barrier.py`` helper. Its argparse
+# (``run_barrier_cli``) declares ``--settled-head`` (required) and ``--signal``
+# (required, repeatable).
+
+
+@dataclass(frozen=True)
+class _RouterVerb:
+    """The modeled flag surface of one router-level verb.
+
+    ``flags`` is the verb's full long-flag surface (without ``--``);
+    ``required_flags`` is the subset argparse declares ``required=True``. These
+    are validated with the SAME unknown-flag / missing-required machinery as a
+    ``--help``-derived leaf, so a misspelled flag on a router verb is caught
+    rather than accepted wholesale.
+    """
+
+    flags: frozenset[str] = frozenset()
+    required_flags: frozenset[str] = frozenset()
+
+
+_ROUTER_VERBS: dict[str, dict[str, _RouterVerb]] = {
+    'plan-marshall:tools-integration-ci:ci': {
+        'barrier': _RouterVerb(
+            flags=frozenset({'settled-head', 'signal'}),
+            required_flags=frozenset({'settled-head', 'signal'}),
+        ),
+    },
+}
+
 # =============================================================================
 # In-scope derivation
 # =============================================================================
@@ -1276,6 +1323,84 @@ def _ancestor_union_flags(tree: _ScriptTree, chain: list[str]) -> set[str]:
     return union
 
 
+def _validate_router_verb(
+    *,
+    notation: str,
+    verb: str,
+    spec: _RouterVerb,
+    declared_flags: list[str],
+    file_path: str,
+    line: int,
+) -> list[dict]:
+    """Validate a router verb's flags against its modeled surface.
+
+    Router verbs are intercepted before argparse dispatch, so their flag surface
+    is not in any ``--help`` node — it is modeled in ``_ROUTER_VERBS``. This
+    reuses the SAME unknown-flag / missing-required finding shapes as the
+    ``--help``-derived leaf path, plus the universal executor/router-injected
+    allowlist (``--plan-id`` / ``--project-dir`` / ``--audit-plan-id`` are
+    consumed by the router before the verb, so they are always acceptable).
+    The router verb occupies the ``subcommand`` slot in finding details.
+    """
+    findings: list[dict] = []
+    known_flags = set(spec.flags) | _UNIVERSAL_FLAG_ALLOWLIST
+    used_flags = set(declared_flags)
+
+    for flag in sorted(used_flags - known_flags):
+        findings.append(
+            _build_finding(
+                rule_id=RULE_MANAGE_INVOCATION_INVALID,
+                file_path=file_path,
+                line=line,
+                severity='error',
+                description=(
+                    f'`{notation} {verb}` invocation uses unregistered flag '
+                    f'`--{flag}` (registered: {sorted(known_flags)})'
+                ),
+                details={
+                    'notation': notation,
+                    'subcommand': verb,
+                    'sub_verb': None,
+                    'flag': flag,
+                    'reason': 'flag_unknown',
+                    'canonical_hint': _canonical_hint_for_flag(
+                        notation, verb, None, known_flags
+                    ),
+                    'known_flags': sorted(known_flags),
+                },
+            )
+        )
+
+    missing_required = sorted(spec.required_flags - used_flags)
+    if missing_required:
+        findings.append(
+            _build_finding(
+                rule_id=RULE_MANAGE_INVOCATION_INVALID,
+                file_path=file_path,
+                line=line,
+                severity='error',
+                description=(
+                    f'`{notation} {verb}` invocation is missing required '
+                    f'flag(s) {missing_required} (required: '
+                    f'{sorted(spec.required_flags)})'
+                ),
+                details={
+                    'notation': notation,
+                    'subcommand': verb,
+                    'sub_verb': None,
+                    'missing': missing_required,
+                    'reason': 'required_flag_missing',
+                    'canonical_hint': _canonical_hint_for_missing_required(
+                        notation, verb, None, set(missing_required)
+                    ),
+                    'required_flags': sorted(spec.required_flags),
+                },
+            )
+        )
+
+    return findings
+
+
 def _analyze_one_invocation(
     *,
     notation: str,
@@ -1306,6 +1431,23 @@ def _analyze_one_invocation(
 
     positionals = _extract_positional_tokens(rest)
     declared_flags = _extract_flag_tokens(rest)
+
+    # Router-level verbs (handled in main() before argparse dispatch) are valid
+    # even though the ``--help``-derived surface cannot see them. When the first
+    # positional is a registered router verb for this notation, admit the verb
+    # itself but STILL validate its flags against the modeled surface — a
+    # misspelled or unknown flag on a router verb is a real defect, not something
+    # to accept wholesale.
+    router_verbs = _ROUTER_VERBS.get(notation, {})
+    if positionals and positionals[0] in router_verbs:
+        return _validate_router_verb(
+            notation=notation,
+            verb=positionals[0],
+            spec=router_verbs[positionals[0]],
+            declared_flags=declared_flags,
+            file_path=file_path,
+            line=line,
+        )
 
     # When the script declares no subcommands, positional tokens after the
     # notation are not subcommands — validate flags against the root parser.

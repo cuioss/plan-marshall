@@ -39,6 +39,7 @@ for _d in (_CONFIG_SCRIPTS, _EXT_SCRIPTS):
 
 def _load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
@@ -82,7 +83,9 @@ def _discovered_description(step_id: str) -> str:
 
     for rec in find_implementors(_config_defaults.FINALIZE_STEP_EXT_POINT):
         if rec.get('name') == step_id:
-            return rec.get('description', '')
+            # `or ''` (not the `.get` default) so a present-but-null description
+            # coerces to '' rather than the truthy literal string 'None'.
+            return str(rec.get('description') or '')
     return ''
 
 

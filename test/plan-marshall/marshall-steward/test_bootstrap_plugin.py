@@ -19,6 +19,7 @@ SCRIPT_PATH = _SCRIPTS_DIR / 'bootstrap_plugin.py'
 
 # Tier 2 direct import via importlib
 _spec = importlib.util.spec_from_file_location('bootstrap_plugin', SCRIPT_PATH)
+assert _spec is not None and _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
