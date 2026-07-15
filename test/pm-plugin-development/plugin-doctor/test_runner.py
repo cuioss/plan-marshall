@@ -94,8 +94,16 @@ GOLDEN_QG_LABELS = [
 
 
 def _clean_bundles(root: Path) -> Path:
-    """Materialize a minimal finding-free marketplace bundles root."""
-    bundles = root / 'bundles'
+    """Materialize a minimal finding-free marketplace bundles root.
+
+    The tree is nested two levels deep at ``root/marketplace/bundles`` (not
+    ``root/bundles``) so the agentfile-hygiene rules'
+    ``repo_root_from_marketplace_root()`` derivation (``.parent.parent``)
+    resolves back to the test's own isolated ``tmp_path`` instead of escaping
+    to the shared pytest-xdist base temp directory and scanning sibling tests'
+    CLAUDE.md fixtures.
+    """
+    bundles = root / 'marketplace' / 'bundles'
     bundle = bundles / 'qg-clean'
     (bundle / '.claude-plugin').mkdir(parents=True)
     (bundle / '.claude-plugin' / 'plugin.json').write_text(
