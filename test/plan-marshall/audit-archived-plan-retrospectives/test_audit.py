@@ -151,7 +151,7 @@ def test_plan8_reworked_checks_carry_pr_pending_boundary():
     #   * token-efficiency-trend — plan-8's per-dispatch context trim lowers the
     #     tokens-per-phase floor this cross-plan trend check reads (bumped from plan-10).
     for check in ("token-economics", "token-efficiency-trend"):
-        assert audit.CHECK_ERA[check] == "PR-PENDING", check
+        assert audit.CHECK_ERA[check] == "#899", check
 
 
 def test_dispatch_topology_carries_this_plan_pr_boundary():

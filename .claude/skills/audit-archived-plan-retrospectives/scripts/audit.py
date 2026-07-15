@@ -294,14 +294,14 @@ CHECK_ERA: dict[str, str] = {
     # create-pr): plan-8's finalize-wait consolidation changes the finalize_heavy
     # token-economics accounting this check flags, so its era boundary is plan-8's
     # own PR. (bumped from #887.)
-    "token-economics": "PR-PENDING",
+    "token-economics": "#899",
     "input-integrity": "#812",
     # token-efficiency-trend — PR-PENDING (plan-8's boundary, a placeholder
     # resolved to the real PR at finalize by project:finalize-step-era-stamp-fill
     # AFTER create-pr): plan-8's per-dispatch context trim lowers the
     # tokens-per-phase floor this cross-plan trend check reads, so its era boundary
     # is plan-8's own PR. (bumped from plan-10.)
-    "token-efficiency-trend": "PR-PENDING",
+    "token-efficiency-trend": "#899",
     # General checks unaffected by the roadmap: re-confirmed accurate against the
     # roadmap head (plan-10) by this refresh.
     "quality-verification-report": "plan-10",
