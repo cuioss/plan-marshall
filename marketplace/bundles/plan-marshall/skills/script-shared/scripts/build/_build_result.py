@@ -200,6 +200,13 @@ def create_log_file(build_system: str, scope: str = 'default', project_dir: str 
         timestamp = datetime.now(UTC).strftime(TIMESTAMP_FORMAT)
         log_filename = f'{build_system}-{timestamp}.log'
 
+        # Constrain the resolved log dir to the sanctioned base: reject a
+        # scope that escapes the base via .. segments or an absolute path.
+        base = _resolve_log_base_dir(project_dir).resolve()
+        candidate = (base / scope).resolve()
+        if candidate != base and base not in candidate.parents:
+            return None
+
         log_dir = _resolve_log_base_dir(project_dir) / scope
         log_dir.mkdir(parents=True, exist_ok=True)
 
