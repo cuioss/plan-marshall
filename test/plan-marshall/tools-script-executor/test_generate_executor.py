@@ -1832,6 +1832,13 @@ def test_generate_executor_format_skew_refuses_write_and_preserves_existing(tmp_
     assert skewed != body, 'fixture must actually alter the format marker'
     template.write_text(skewed, encoding='utf-8')
 
+    # Post-Q-Gate-6dcc8f, get_templates_dir() resolves the template script-relative
+    # to the executing generator and IGNORES base_path, so writing the fixture into
+    # the fake bundles tree no longer redirects generate_executor's template read.
+    # Point get_templates_dir at the fixture's own dir so the skewed template is the
+    # one under test (test-only injection; production resolution is unchanged).
+    monkeypatch.setattr(module, 'get_templates_dir', lambda base_path: template.parent)
+
     executor, sentinel = _seed_pre_existing_executor(tmp_path)
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
 
@@ -1857,6 +1864,13 @@ def test_generate_executor_placeholder_residue_refuses_write_and_preserves_exist
     injected = body.replace('VALIDATE_TOON = False', 'VALIDATE_TOON = False  # residue {{NEVER_FILLED}}')
     assert injected != body, 'fixture must actually inject the residue token'
     template.write_text(injected, encoding='utf-8')
+
+    # Post-Q-Gate-6dcc8f, get_templates_dir() resolves the template script-relative
+    # to the executing generator and IGNORES base_path, so writing the fixture into
+    # the fake bundles tree no longer redirects generate_executor's template read.
+    # Point get_templates_dir at the fixture's own dir so the residue-injected
+    # template is the one under test (test-only injection; production unchanged).
+    monkeypatch.setattr(module, 'get_templates_dir', lambda base_path: template.parent)
 
     executor, sentinel = _seed_pre_existing_executor(tmp_path)
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
@@ -1884,6 +1898,13 @@ def test_generate_executor_py_compile_failure_refuses_write_and_preserves_existi
     broken = body.replace('VALIDATE_TOON = False', 'VALIDATE_TOON = False\ndef __broken_syntax(:\n    pass')
     assert broken != body, 'fixture must actually inject the syntax error'
     template.write_text(broken, encoding='utf-8')
+
+    # Post-Q-Gate-6dcc8f, get_templates_dir() resolves the template script-relative
+    # to the executing generator and IGNORES base_path, so writing the fixture into
+    # the fake bundles tree no longer redirects generate_executor's template read.
+    # Point get_templates_dir at the fixture's own dir so the syntax-broken template
+    # is the one under test (test-only injection; production resolution unchanged).
+    monkeypatch.setattr(module, 'get_templates_dir', lambda base_path: template.parent)
 
     executor, sentinel = _seed_pre_existing_executor(tmp_path)
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
