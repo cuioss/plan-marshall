@@ -24,6 +24,7 @@ _pyproject_cmd_parse_mod = load_script_module('plan-marshall', 'build-pyproject'
 parse_log = _pyproject_cmd_parse_mod.parse_log
 _REGISTRY = _pyproject_cmd_parse_mod._REGISTRY
 _has_pytest_output = _pyproject_cmd_parse_mod._has_pytest_output
+slice_failure_details = _pyproject_cmd_parse_mod.slice_failure_details
 
 
 @contextmanager
@@ -319,3 +320,190 @@ def test_summary_extraction_is_order_independent():
         summary_b.failed,
         summary_b.skipped,
     )
+
+
+# =============================================================================
+# Per-signature failure-detail capture (deliverable 9).
+#
+# A pytest run with N failures across M root causes must yield exactly M
+# distinct deduped detail blocks on the parsed Issues: failures sharing one
+# signature (assertion type + normalized message + failing frame) carry ONE
+# captured block, not N copies.
+# =============================================================================
+
+# Two tests failing at the SAME production frame (src/calc.py:42) with the same
+# assertion message (one root cause), plus a third distinct root cause
+# (TypeError at src/other.py:5) — N=3 failures, M=2 root causes.
+_FAILURES_LOG = """============================= FAILURES =============================
+_________________________ test_alpha _________________________
+
+    def test_alpha():
+>       assert compute(3) == 0
+test/test_a.py:10: in test_alpha
+    assert compute(3) == 0
+src/calc.py:42: in compute
+    raise AssertionError("bad state")
+E       AssertionError: bad state
+
+src/calc.py:42: AssertionError
+_________________________ test_beta _________________________
+
+    def test_beta():
+>       assert compute(9) == 0
+test/test_b.py:15: in test_beta
+    assert compute(9) == 0
+src/calc.py:42: in compute
+    raise AssertionError("bad state")
+E       AssertionError: bad state
+
+src/calc.py:42: AssertionError
+_________________________ test_gamma _________________________
+
+    def test_gamma():
+>       result = parse(None)
+test/test_c.py:20: in test_gamma
+    result = parse(None)
+src/other.py:5: in parse
+    return value.strip()
+E       TypeError: expected str, got NoneType
+
+src/other.py:5: TypeError
+==================== short test summary info ====================
+FAILED test/test_a.py::test_alpha - AssertionError: bad state
+FAILED test/test_b.py::test_beta - AssertionError: bad state
+FAILED test/test_c.py::test_gamma - TypeError: expected str, got NoneType
+==================== 3 failed, 10 passed in 1.20s ====================
+"""
+
+
+def test_failure_detail_attached_per_issue():
+    """Each test_failure Issue carries a non-empty representative detail block."""
+    with _temp_log(_FAILURES_LOG) as path:
+        issues, _, _ = parse_log(path)
+
+    test_failures = [i for i in issues if i.category == 'test_failure']
+    assert len(test_failures) == 3
+    for issue in test_failures:
+        assert issue.detail is not None
+        assert issue.detail.strip() != ''
+
+
+def test_failure_detail_dedups_shared_root_cause():
+    """N=3 failures across M=2 root causes yield exactly 2 distinct detail blocks."""
+    with _temp_log(_FAILURES_LOG) as path:
+        issues, _, _ = parse_log(path)
+
+    details_by_file = {i.file: i.detail for i in issues if i.category == 'test_failure'}
+
+    # test_a and test_b share one root cause (same assertion + same frame) ->
+    # they carry the SAME captured block (deduped by signature).
+    assert details_by_file['test/test_a.py'] == details_by_file['test/test_b.py']
+    # test_c is a distinct root cause -> a different block.
+    assert details_by_file['test/test_c.py'] != details_by_file['test/test_a.py']
+
+    # Exactly M=2 distinct detail blocks across the N=3 failures.
+    distinct_blocks = {i.detail for i in issues if i.category == 'test_failure'}
+    assert len(distinct_blocks) == 2
+
+
+def test_failure_detail_captures_traceback_body():
+    """The captured block carries the traceback body (the failing frame), not just the terse tail."""
+    with _temp_log(_FAILURES_LOG) as path:
+        issues, _, _ = parse_log(path)
+
+    by_file = {i.file: i.detail for i in issues if i.category == 'test_failure'}
+    # The shared block is the representative traceback for the src/calc.py frame.
+    assert 'src/calc.py:42' in by_file['test/test_a.py']
+    assert 'AssertionError: bad state' in by_file['test/test_a.py']
+    # The distinct block carries its own frame + assertion.
+    assert 'src/other.py:5' in by_file['test/test_c.py']
+    assert 'TypeError' in by_file['test/test_c.py']
+
+
+def test_failure_detail_falls_back_to_message_without_failures_section():
+    """A summary-only log (no FAILURES section) uses the terse FAILED-line message as detail."""
+    content = (
+        'FAILED test/test_x.py::test_one - AssertionError: assert 1 == 2\n'
+        '==================== 1 failed in 0.50s ====================\n'
+    )
+    with _temp_log(content) as path:
+        issues, _, _ = parse_log(path)
+
+    test_failures = [i for i in issues if i.category == 'test_failure']
+    assert len(test_failures) == 1
+    assert test_failures[0].detail == 'AssertionError: assert 1 == 2'
+
+
+def test_issue_to_dict_round_trips_detail():
+    """Issue.to_dict() includes 'detail' only when populated (backward-compatible)."""
+    with_detail = Issue(
+        file='test/test_a.py',
+        line=10,
+        message='AssertionError: bad state',
+        severity='error',
+        category='test_failure',
+        detail='src/calc.py:42: AssertionError\nE  AssertionError: bad state',
+    )
+    d = with_detail.to_dict()
+    assert d['detail'] == 'src/calc.py:42: AssertionError\nE  AssertionError: bad state'
+
+    without_detail = Issue(
+        file='src/main.py',
+        line=5,
+        message='boom',
+        severity='error',
+        category='type_error',
+    )
+    assert 'detail' not in without_detail.to_dict()
+
+
+# =============================================================================
+# `parse` slice verb (deliverable 11): `slice_failure_details`.
+# =============================================================================
+
+
+def test_slice_failures_detail_returns_deduped_set():
+    """--failures-detail returns the deduped-by-signature set for all failures."""
+    with _temp_log(_FAILURES_LOG) as path:
+        result = slice_failure_details(path, failures_detail=True)
+
+    assert result['status'] == 'success'
+    # 3 raw failures collapse to 2 root causes (test_a + test_b share one).
+    assert result['total_failures'] == 3
+    assert result['root_causes'] == 2
+    assert len(result['failures']) == 2
+    tests = {f['test'] for f in result['failures']}
+    # The shared root cause is represented once (by its first test).
+    assert 'test_gamma' in tests
+
+
+def test_slice_test_returns_named_slice():
+    """--test <name> returns the traceback slice for the named failing test."""
+    with _temp_log(_FAILURES_LOG) as path:
+        result = slice_failure_details(path, test_name='test_gamma')
+
+    assert result['status'] == 'success'
+    assert result['test'] == 'test_gamma'
+    assert result['matched'] == 1
+    slice_entry = result['failures'][0]
+    assert slice_entry['test'] == 'test_gamma'
+    assert slice_entry['file'] == 'test/test_c.py'
+    assert 'src/other.py:5' in slice_entry['detail']
+    assert 'TypeError' in slice_entry['detail']
+
+
+def test_slice_test_no_match_returns_empty():
+    """--test <name> for a non-failing test returns an empty match set."""
+    with _temp_log(_FAILURES_LOG) as path:
+        result = slice_failure_details(path, test_name='test_does_not_exist')
+
+    assert result['status'] == 'success'
+    assert result['matched'] == 0
+    assert result['failures'] == []
+
+
+def test_slice_missing_log_returns_error():
+    """A missing log file yields a structured error, not an exception."""
+    result = slice_failure_details('/nonexistent/build.log', failures_detail=True)
+    assert result['status'] == 'error'
+    assert 'not found' in result['error'].lower()

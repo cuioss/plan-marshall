@@ -85,8 +85,11 @@ python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build ru
 python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build parse \
   --log LOG \
   [--mode {default,errors,structured}] [--format {toon,json}] \
+  [--failures-detail] [--test TEST] \
   (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
 ```
+
+`--failures-detail` slices the deduped per-signature traceback detail for ALL failing tests; `--test TEST` slices the traceback for one named failing test. Both are additive to the standard parse surface — with neither set, `parse` behaves exactly as before.
 
 ### coverage-report
 

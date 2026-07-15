@@ -364,3 +364,167 @@ class TestCmdRunCommonGreenBuildReconciliation:
         q = query_findings(plan_context.plan_id, finding_type='build-error')
         assert q['filtered_count'] == 1
         assert q['findings'][0]['resolution'] == 'fixed'
+
+
+class TestFailureDetailRoundTrip:
+    """The per-signature failure-detail block (deliverable 9) round-trips into
+    the ``manage-findings --type test-failure`` store via ``_store_build_findings``."""
+
+    def test_detail_round_trips_into_test_failure_finding(self, plan_context):
+        from _build_parse import Issue
+        from _build_shared import _store_build_findings
+        from _findings_core import query_findings
+
+        block = 'src/calc.py:42: AssertionError\nE  AssertionError: bad state'
+        issues = [
+            Issue(
+                file='test/test_a.py',
+                line=10,
+                message='AssertionError: bad state',
+                severity='error',
+                category='test_failure',
+                detail=block,
+            )
+        ]
+        _store_build_findings(
+            plan_id=plan_context.plan_id,
+            tool_name='python',
+            issues=issues,
+            command_str='module-tests plan-marshall',
+        )
+
+        tf = query_findings(plan_context.plan_id, finding_type='test-failure')
+        assert tf['filtered_count'] == 1
+        detail_text = tf['findings'][0]['detail']
+        assert '--- failure detail ---' in detail_text
+        assert 'src/calc.py:42' in detail_text
+        assert 'AssertionError: bad state' in detail_text
+
+    def test_finding_detail_omits_block_when_issue_carries_none(self, plan_context):
+        from _build_parse import Issue
+        from _build_shared import _store_build_findings
+        from _findings_core import query_findings
+
+        issues = [
+            Issue(
+                file='src/Main.py',
+                line=5,
+                message='Compile failed',
+                severity='error',
+                category='compilation',
+            )
+        ]
+        _store_build_findings(
+            plan_id=plan_context.plan_id,
+            tool_name='python',
+            issues=issues,
+            command_str='compile',
+        )
+
+        be = query_findings(plan_context.plan_id, finding_type='build-error')
+        assert be['filtered_count'] == 1
+        assert '--- failure detail ---' not in be['findings'][0]['detail']
+
+
+class TestErrorsCapTruncation:
+    """The shared ``errors`` emission cap is deduped by failure signature and
+    reconciled with an explicit ``truncated: N`` marker so count-vs-shown can
+    never silently disagree. Because the cap lives in the shared helper the
+    reconciliation is correct for Maven/Gradle/npm as well as pyproject."""
+
+    def _make_test_failures(self, count, root_causes):
+        from _build_parse import Issue
+
+        issues = []
+        for i in range(count):
+            rc = i % root_causes
+            issues.append(
+                Issue(
+                    file=f'test/test_{i}.py',
+                    line=i + 1,
+                    message=f'AssertionError: cause {rc}',
+                    severity='error',
+                    category='test_failure',
+                    detail=f'root-cause-block-{rc}',
+                )
+            )
+        return issues
+
+    def test_dedup_collapses_shared_signatures_under_cap(self):
+        from _build_shared import _cap_errors_with_truncation
+
+        # 30 failures across 5 root causes -> 5 shown, truncated 25.
+        errors = self._make_test_failures(30, 5)
+        shown, truncated = _cap_errors_with_truncation(errors)
+
+        assert len(shown) == 5
+        assert truncated == 25
+        assert len(shown) + truncated == len(errors)
+        # The shown set covers ALL root causes, deduped by signature.
+        assert {i.detail for i in shown} == {f'root-cause-block-{n}' for n in range(5)}
+
+    def test_distinct_root_causes_over_cap_are_capped_and_truncated(self):
+        from _build_shared import _cap_errors_with_truncation
+
+        # 25 distinct root causes -> 20 shown (cap), truncated 5.
+        errors = self._make_test_failures(25, 25)
+        shown, truncated = _cap_errors_with_truncation(errors)
+
+        assert len(shown) == 20
+        assert truncated == 5
+        assert len(shown) + truncated == 25
+
+    def test_no_truncation_when_within_cap(self):
+        from _build_shared import _cap_errors_with_truncation
+
+        errors = self._make_test_failures(3, 3)
+        shown, truncated = _cap_errors_with_truncation(errors)
+
+        assert len(shown) == 3
+        assert truncated == 0
+
+    def test_non_test_errors_are_not_deduped(self):
+        from _build_parse import Issue
+        from _build_shared import _cap_errors_with_truncation
+
+        # Only test-failures are collapsed by signature; identical-detail build
+        # errors must both survive.
+        errors = [
+            Issue(file='a.py', line=1, message='same', severity='error', category='compilation', detail='blk'),
+            Issue(file='b.py', line=2, message='same', severity='error', category='compilation', detail='blk'),
+        ]
+        shown, truncated = _cap_errors_with_truncation(errors)
+
+        assert len(shown) == 2
+        assert truncated == 0
+
+    def test_cmd_run_common_emits_truncated_marker(self, plan_context):
+        from _build_shared import cmd_run_common
+
+        errors = self._make_test_failures(30, 5)
+
+        def parser(_log):
+            return errors, None, 'failed'
+
+        log_file = plan_context.fixture_dir / 'fail.log'
+        log_file.write_text('failed\n')
+        result = {
+            'status': 'error',
+            'exit_code': 1,
+            'duration_seconds': 0.1,
+            'log_file': str(log_file),
+            'command': 'module-tests plan-marshall',
+        }
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = cmd_run_common(
+                result=result,
+                parser_fn=parser,
+                tool_name='python',
+                plan_id=None,
+            )
+
+        assert rc == 0
+        # 30 failures collapse to 5 shown root causes -> truncated 25.
+        assert 'truncated: 25' in buf.getvalue()

@@ -80,6 +80,21 @@ Grep(pattern="todo", path="/path", output_mode="content", -i=true, -C=3)
 Grep(pattern="pattern", path="/path", glob="*.md", output_mode="content")
 ```
 
+### Querying a build log for failure detail
+
+When you need the *why* of a build/test failure — the traceback or assertion body behind a terse `FAILED …` line — follow this strict preference order. Do NOT default to a full-file `Read` of the build `log_file`.
+
+1. **First choice — the structured slice.** Ask the build tool for the deduped per-signature traceback via the `parse` verb's failure-detail flags (`--failures-detail` for all failing tests, `--test <name>` for one). It returns one block per root cause with no log scanning at all. See the `### parse` entry in [`build-pyproject` SKILL.md → Canonical invocations](../../build-pyproject/SKILL.md#canonical-invocations):
+   ```text
+   python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build parse --log {log_file} --failures-detail --format json
+   ```
+2. **Fallback — the `Grep` tool over the log.** When the structured slice is unavailable (a non-pyproject build, or a signal the slice does not carry), query the log with the **`Grep` tool** over `log_file`:
+   ```text
+   Grep(pattern="FAILED|AssertionError|Error", path="{log_file}", output_mode="content", -C=5)
+   ```
+   A Bash `grep` over the same `log_file` is hook-blocked by the [No Bash for file operations](../SKILL.md#bash-no-file-operations) rule. Do NOT route around that block with Bash. The `Grep` tool is granted by the execution-context profile and is NOT hook-blocked, so it is the correct fallback.
+3. **Avoid — a full-file `Read` of the log.** A full-file `Read` of a large build log burns context on content you do not need; it is the avoidable detour, not a substitute for the slice or the targeted `Grep`-tool query. Read the whole log only when both the structured slice and a targeted `Grep` genuinely cannot answer the question.
+
 ## When Bash IS Appropriate
 
 **Git operations** — plain `git` in a phase-5+ cwd-pinned context, `git -C {path}` cross-tree, never `cd {path} && git ...`:
