@@ -1403,6 +1403,9 @@ def test_preflight_reports_marshal_stale_advisory_without_mutation(tmp_path, mon
     marshal.write_text(json.dumps(marshal_body), encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
     monkeypatch.chdir(tmp_path)
+    # Isolate the orthogonal multi-version-pollution scan (which reads the real
+    # plugin-cache tree) so this config-staleness case stays hermetic.
+    monkeypatch.setattr(module, '_detect_multi_version_pollution', lambda *a, **k: [])
 
     result = module.cmd_preflight(_preflight_args())
 
@@ -1433,6 +1436,9 @@ def test_preflight_int_tuple_version_compare_avoids_lexical_bug(tmp_path, monkey
     marshal.write_text(json.dumps({'system': {'provisioned_version': '0.1.9'}}), encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
     monkeypatch.chdir(tmp_path)
+    # Isolate the orthogonal multi-version-pollution scan (which reads the real
+    # plugin-cache tree) so this int-tuple compare case stays hermetic.
+    monkeypatch.setattr(module, '_detect_multi_version_pollution', lambda *a, **k: [])
 
     result = module.cmd_preflight(_preflight_args())
 
@@ -1537,6 +1543,12 @@ def test_preflight_subcommand_registered_and_emits_toon(tmp_path):
     env = _subprocess_env()
     env['PM_DIST_MANIFEST'] = str(manifest)
     env['PLAN_BASE_DIR'] = str(tmp_path / '.plan')
+    # Isolate HOME so the orthogonal multi-version-pollution scan cannot read a
+    # real (possibly stale/polluted) plugin-cache tree — cache-first resolution
+    # then falls back to the marketplace source, keeping this end-to-end case
+    # hermetic. Mirrors the _detect_multi_version_pollution stub the in-process
+    # preflight tests use (which a subprocess cannot monkeypatch).
+    env['HOME'] = str(tmp_path)
     (tmp_path / '.plan').mkdir()
 
     result = subprocess.run(

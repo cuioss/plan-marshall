@@ -208,6 +208,7 @@ def test_discover_local_scripts_skips_hidden_skill_dirs(tmp_path):
 # =============================================================================
 
 _TEMPLATE_BODY = (
+    '# TEMPLATE_FORMAT_VERSION: 1\n'
     'SCRIPTS = {\n'
     '{{SCRIPT_MAPPINGS}}\n'
     '}\n'
@@ -244,9 +245,9 @@ def test_generate_executor_dry_run_does_not_write(tmp_path, monkeypatch, capsys)
     plan_dir.mkdir()
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-    ok = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=True, target='claude')
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=True, target='claude')
 
-    assert ok is True
+    assert result['status'] == 'success'
     out = capsys.readouterr().out
     assert '=== execute-script.py ===' in out
     assert not (plan_dir / 'execute-script.py').exists()
@@ -259,9 +260,9 @@ def test_generate_executor_writes_substituted_executor(tmp_path, monkeypatch):
     plan_dir.mkdir()
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-    ok = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
 
-    assert ok is True
+    assert result['status'] == 'success'
     written = (plan_dir / 'execute-script.py').read_text(encoding='utf-8')
     # Mapping line, target token, and resolver body are all substituted.
     assert '"a:b:c": "/p/c.py"' in written
@@ -271,16 +272,16 @@ def test_generate_executor_writes_substituted_executor(tmp_path, monkeypatch):
     assert '{{' not in written
 
 
-def test_generate_executor_returns_false_when_template_missing(tmp_path, monkeypatch):
-    """A base path with no template file makes the writer return False."""
+def test_generate_executor_returns_error_when_template_missing(tmp_path, monkeypatch):
+    """A base path with no template file makes the writer return status: error."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
     # tmp_path/'empty-base' has no plan-marshall/.../templates/ tree.
-    ok = _gen.generate_executor({'a:b:c': '/p/c.py'}, tmp_path / 'empty-base', dry_run=False)
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, tmp_path / 'empty-base', dry_run=False)
 
-    assert ok is False
+    assert result['status'] == 'error'
 
 
 # =============================================================================
