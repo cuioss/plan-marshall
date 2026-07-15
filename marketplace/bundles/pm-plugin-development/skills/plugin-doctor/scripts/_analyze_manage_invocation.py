@@ -149,19 +149,12 @@ _UNIVERSAL_FLAG_ALLOWLIST: frozenset[str] = frozenset(
 # dispatch, so they never appear in the script's ``--help`` choices group and
 # the ``--help``-derived surface cannot see them. These are a legitimate pattern
 # (a provider-agnostic verb intercepted ahead of provider routing so it works
-# with no provider configured), NOT a documentation defect — validating them
-# against the introspected subcommand set is a false positive. Keyed by
-# ``bundle:skill:script`` notation → the set of router-level verb names. When an
-# invocation's first positional is a router verb for its notation, the analyzer
-# accepts the verb and skips sub-verb / flag validation for it (the verb's own
-# argparse lives in a helper module the standard child-probe never reaches).
-#
-# ``ci barrier`` is the provider-agnostic finalize-wait barrier coordinator —
-# intercepted at the top of ``tools-integration-ci/scripts/ci.py::main()`` before
-# provider dispatch, implemented in the ``_ci_barrier.py`` helper.
-_ROUTER_VERBS: dict[str, frozenset[str]] = {
-    'plan-marshall:tools-integration-ci:ci': frozenset({'barrier'}),
-}
+# with no provider configured), NOT a documentation defect — the VERB NAME is
+# accepted without being resolved against the introspected subcommand set. The
+# verb's FLAGS, however, are a known, fixed surface (the router's own argparse
+# parser lives in a helper module the standard child-probe never reaches) and
+# ARE validated against a hand-declared ``_LeafParser`` per verb — see
+# ``_ROUTER_VERBS`` below (defined after ``_LeafParser``).
 
 # =============================================================================
 # In-scope derivation
@@ -316,6 +309,29 @@ class _LeafParser:
 
     def has_children(self) -> bool:
         return bool(self.children)
+
+
+# Router-level verbs handled by a script's ``main()`` BEFORE argparse subparser
+# dispatch (see the module comment above ``_UNIVERSAL_FLAG_ALLOWLIST``). Keyed
+# by ``bundle:skill:script`` notation → ``{verb_name: _LeafParser}``, where each
+# verb's ``_LeafParser`` is a hand-declared flag surface (``flags`` /
+# ``required_flags``; ``children`` is always empty — a router verb is a leaf).
+# This is NOT derived from ``--help`` (the verb is invisible there); it is
+# authored by hand from the verb's own argparse declaration and MUST be kept
+# in sync with it.
+#
+# ``ci barrier`` is the provider-agnostic finalize-wait barrier coordinator —
+# intercepted at the top of ``tools-integration-ci/scripts/ci.py::main()``
+# before provider dispatch, implemented in the ``_ci_barrier.py`` helper
+# (``--settled-head`` and ``--signal`` are both required there).
+_ROUTER_VERBS: dict[str, dict[str, _LeafParser]] = {
+    'plan-marshall:tools-integration-ci:ci': {
+        'barrier': _LeafParser(
+            flags={'settled-head', 'signal'},
+            required_flags={'settled-head', 'signal'},
+        ),
+    },
+}
 
 
 @dataclass
@@ -1294,6 +1310,87 @@ def _ancestor_union_flags(tree: _ScriptTree, chain: list[str]) -> set[str]:
     return union
 
 
+def _validate_router_verb_flags(
+    *,
+    notation: str,
+    verb: str,
+    leaf: _LeafParser,
+    declared_flags: list[str],
+    file_path: str,
+    line: int,
+) -> list[dict]:
+    """Validate flags used with a router-level verb against its own surface.
+
+    Router verbs (see ``_ROUTER_VERBS``) are intercepted in a script's
+    ``main()`` before argparse subparser dispatch, so their VERB NAME is
+    invisible to the ``--help``-derived tree — but the verb has its own fixed
+    argparse parser (in the router's helper module), and that flag surface is
+    hand-declared on ``leaf``. Validation mirrors the normal leaf flow
+    (unknown flag / missing required flag), plus the universal allowlist for
+    executor-injected flags — but there is no ancestor chain to union (a
+    router verb resolves with no parent positionals), so ``leaf.flags`` alone
+    (plus the allowlist) is the known-flags set.
+    """
+    findings: list[dict] = []
+    known_flags = leaf.flags | _UNIVERSAL_FLAG_ALLOWLIST
+    used_flags = set(declared_flags)
+
+    unknown_flags = sorted(used_flags - known_flags)
+    for flag in unknown_flags:
+        findings.append(
+            _build_finding(
+                rule_id=RULE_MANAGE_INVOCATION_INVALID,
+                file_path=file_path,
+                line=line,
+                severity='error',
+                description=(
+                    f'`{notation} {verb}` invocation uses unregistered flag '
+                    f'`--{flag}` (registered: {sorted(known_flags)})'
+                ),
+                details={
+                    'notation': notation,
+                    'subcommand': verb,
+                    'sub_verb': None,
+                    'flag': flag,
+                    'reason': 'flag_unknown',
+                    'canonical_hint': _canonical_hint_for_flag(
+                        notation, verb, None, known_flags
+                    ),
+                    'known_flags': sorted(known_flags),
+                },
+            )
+        )
+
+    missing_required = sorted(leaf.required_flags - used_flags)
+    if missing_required:
+        findings.append(
+            _build_finding(
+                rule_id=RULE_MANAGE_INVOCATION_INVALID,
+                file_path=file_path,
+                line=line,
+                severity='error',
+                description=(
+                    f'`{notation} {verb}` invocation is missing required '
+                    f'flag(s) {missing_required} (required: '
+                    f'{sorted(leaf.required_flags)})'
+                ),
+                details={
+                    'notation': notation,
+                    'subcommand': verb,
+                    'sub_verb': None,
+                    'missing': missing_required,
+                    'reason': 'required_flag_missing',
+                    'canonical_hint': _canonical_hint_for_missing_required(
+                        notation, verb, None, set(missing_required)
+                    ),
+                    'required_flags': sorted(leaf.required_flags),
+                },
+            )
+        )
+
+    return findings
+
+
 def _analyze_one_invocation(
     *,
     notation: str,
@@ -1326,12 +1423,22 @@ def _analyze_one_invocation(
     declared_flags = _extract_flag_tokens(rest)
 
     # Router-level verbs (handled in main() before argparse dispatch) are valid
-    # even though the ``--help``-derived surface cannot see them. When the first
-    # positional is a registered router verb for this notation, accept the
-    # invocation wholesale — the verb's own flags live in a helper module the
-    # child-probe never reaches, so there is nothing to validate against.
-    if positionals and positionals[0] in _ROUTER_VERBS.get(notation, frozenset()):
-        return findings
+    # even though the ``--help``-derived surface cannot see the VERB NAME
+    # itself. Their FLAGS, though, are a known, fixed surface hand-declared in
+    # ``_ROUTER_VERBS`` — validate them the same way a normal leaf's flags are
+    # validated, rather than accepting the invocation wholesale (which would
+    # silently hide a typo'd or invented flag on an otherwise-legitimate
+    # router verb).
+    router_verbs = _ROUTER_VERBS.get(notation)
+    if router_verbs and positionals and positionals[0] in router_verbs:
+        return _validate_router_verb_flags(
+            notation=notation,
+            verb=positionals[0],
+            leaf=router_verbs[positionals[0]],
+            declared_flags=declared_flags,
+            file_path=file_path,
+            line=line,
+        )
 
     # When the script declares no subcommands, positional tokens after the
     # notation are not subcommands — validate flags against the root parser.

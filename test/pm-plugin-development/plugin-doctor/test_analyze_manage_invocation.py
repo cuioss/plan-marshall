@@ -515,6 +515,46 @@ def test_non_router_unknown_subcommand_still_flagged(ci_router_index: dict) -> N
     assert findings[0]['details']['reason'] == 'subcommand_unknown'
 
 
+def test_router_verb_barrier_unknown_flag_flagged(ci_router_index: dict) -> None:
+    """A router verb's VERB NAME is admitted, but its FLAGS are still validated.
+
+    Accepting ``ci barrier`` via the allowlist must not blanket-accept any flag
+    typed after it — an invented flag is still a ``flag_unknown`` finding.
+    """
+    content = (
+        'python3 .plan/execute-script.py '
+        'plan-marshall:tools-integration-ci:ci barrier '
+        '--settled-head SHA --signal ci:pending --bogus-flag x'
+    )
+    findings = analyze_manage_invocation_markdown(
+        content, 'SKILL.md', ci_router_index
+    )
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'flag_unknown'
+    assert findings[0]['details']['flag'] == 'bogus-flag'
+    assert findings[0]['details']['subcommand'] == 'barrier'
+
+
+def test_router_verb_barrier_missing_required_flag_flagged(
+    ci_router_index: dict,
+) -> None:
+    """A router verb's own required flags are enforced, not skipped.
+
+    ``ci barrier`` requires both ``--settled-head`` and ``--signal``; omitting
+    one must surface ``required_flag_missing``, not a clean pass.
+    """
+    content = (
+        'python3 .plan/execute-script.py '
+        'plan-marshall:tools-integration-ci:ci barrier --signal ci:pending'
+    )
+    findings = analyze_manage_invocation_markdown(
+        content, 'SKILL.md', ci_router_index
+    )
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'required_flag_missing'
+    assert findings[0]['details']['missing'] == ['settled-head']
+
+
 # ---------------------------------------------------------------------------
 # Synthetic-marketplace builder — drives the in-scope derivation directly.
 # ---------------------------------------------------------------------------
