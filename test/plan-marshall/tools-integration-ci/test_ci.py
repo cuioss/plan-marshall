@@ -470,6 +470,60 @@ def test_barrier_invalid_state_raises_value_error():
         _ci_barrier.compute_barrier_state([_sig('ci', 'green', _H1)], _H1)
 
 
+def test_barrier_invalid_state_precedes_completeness_check():
+    """A bad state on a partial signal set raises the state error, not completeness.
+
+    Per-signal state validation runs BEFORE the three-arm completeness check, so
+    an invalid state on an incomplete set (only `ci` here, missing review/sonar)
+    still raises the more specific state error rather than
+    IncompleteBarrierSignalsError.
+    """
+    with pytest.raises(ValueError, match='invalid signal state') as exc_info:
+        _ci_barrier.compute_barrier_state([_sig('ci', 'green', _H1)], _H1)
+    assert not isinstance(exc_info.value, _ci_barrier.IncompleteBarrierSignalsError)
+
+
+def test_barrier_missing_arm_raises_incomplete_barrier_signals_error():
+    """A signal set missing a required arm raises IncompleteBarrierSignalsError."""
+    with pytest.raises(_ci_barrier.IncompleteBarrierSignalsError, match='missing'):
+        _ci_barrier.compute_barrier_state(
+            [_sig('ci', 'settled', _H1), _sig('sonar', 'settled', _H1)],
+            _H1,
+        )
+
+
+def test_barrier_unexpected_arm_raises_incomplete_barrier_signals_error():
+    """A signal set naming an arm outside {ci, review, sonar} is rejected."""
+    with pytest.raises(_ci_barrier.IncompleteBarrierSignalsError, match='unexpected'):
+        _ci_barrier.compute_barrier_state(
+            [
+                _sig('ci', 'settled', _H1),
+                _sig('review', 'settled', _H1),
+                _sig('lint', 'settled', _H1),
+            ],
+            _H1,
+        )
+
+
+def test_barrier_duplicate_arm_raises_incomplete_barrier_signals_error():
+    """A repeated signal name (masking a missing arm) is rejected."""
+    with pytest.raises(_ci_barrier.IncompleteBarrierSignalsError, match='duplicated'):
+        _ci_barrier.compute_barrier_state(
+            [
+                _sig('ci', 'settled', _H1),
+                _sig('ci', 'settled', _H1),
+                _sig('sonar', 'settled', _H1),
+            ],
+            _H1,
+        )
+
+
+def test_barrier_incomplete_signals_error_is_value_error_subclass():
+    """IncompleteBarrierSignalsError is a ValueError, so pytest.raises(ValueError) still matches."""
+    with pytest.raises(ValueError, match='incomplete barrier signals'):
+        _ci_barrier.compute_barrier_state([_sig('ci', 'settled', _H1)], _H1)
+
+
 def test_barrier_parse_signal_forms():
     """NAME:STATE, NAME:STATE:HEAD, and NAME:STATE: (empty head) all parse."""
     assert _ci_barrier._parse_signal('review:pending') == ('review', 'pending', '')
@@ -540,6 +594,8 @@ def test_router_barrier_re_settle_names_affected(tmp_path):
         '--signal',
         f'ci:settled:{_H2}',
         '--signal',
+        f'review:settled:{_H2}',
+        '--signal',
         f'sonar:settled:{_H1}',
         cwd=tmp_path,
     )
@@ -578,6 +634,24 @@ def test_router_barrier_invalid_state_is_soft_error(tmp_path):
     assert result.success
     assert 'status: error' in result.stdout
     assert 'invalid_signal_state' in result.stdout
+
+
+def test_router_barrier_incomplete_signals_is_soft_error(tmp_path):
+    """A signal set missing a required arm returns a status:error TOON (three-tier: exit 0)."""
+    result = run_script(
+        SCRIPT_PATH,
+        'barrier',
+        '--settled-head',
+        _H1,
+        '--signal',
+        f'ci:settled:{_H1}',
+        '--signal',
+        f'sonar:settled:{_H1}',
+        cwd=tmp_path,
+    )
+    assert result.success
+    assert 'status: error' in result.stdout
+    assert 'incomplete_barrier_signals' in result.stdout
 
 
 # =============================================================================

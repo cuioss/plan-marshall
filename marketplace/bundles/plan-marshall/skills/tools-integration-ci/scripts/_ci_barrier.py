@@ -22,6 +22,14 @@ waits:
   in <=1-2 iterations: a re-settle re-enters only the barrier signals, and a
   clean re-entry (no new finding) settles them all at the new HEAD.
 
+The coordinator enforces the **complete three-arm contract**: a call must
+supply signals for EXACTLY ``{ci, review, sonar}`` — no fewer (a caller that
+forgot an arm), no more (an unexpected/mistyped name), and no duplicate (which
+would silently mask a missing arm behind a repeated one). Without this check,
+an incomplete signal set could report a false ``complete``/``re_settle``
+decision over fewer than the three signals the wait region actually needs
+settled. See ``REQUIRED_SIGNAL_NAMES`` / ``IncompleteBarrierSignalsError``.
+
 The coordinator is a pure state machine over ``(name, state, head)`` signal
 records; it runs no subprocess and couples to no provider, so the CI router
 (``ci.py``) can own it without importing the sonar/review subsystems. See
@@ -44,6 +52,62 @@ VALID_SIGNAL_STATES = frozenset({'pending', 'settled', 'failed'})
 #: candidate (a mutation advanced HEAD past where it settled).
 _TERMINAL_STATES = frozenset({'settled', 'failed'})
 
+#: The three-arm signal-name contract the phase-6 finalize wait region
+#: requires — CI checks, review-bot comments, and the Sonar compute-engine.
+#: ``compute_barrier_state`` rejects any signal set whose names are not
+#: EXACTLY this set (see ``IncompleteBarrierSignalsError``).
+REQUIRED_SIGNAL_NAMES = frozenset({'ci', 'review', 'sonar'})
+
+
+class IncompleteBarrierSignalsError(ValueError):
+    """The signal set does not exactly match ``REQUIRED_SIGNAL_NAMES``.
+
+    A ``ValueError`` subclass, so existing ``pytest.raises(ValueError)``
+    callers still match; callers that need to distinguish this from a
+    per-signal invalid-state error (e.g. to pick a TOON ``error:`` code)
+    catch this subclass specifically, ahead of the general ``ValueError``.
+    """
+
+
+def _check_signal_completeness(signals: list[tuple[str, str, str]]) -> None:
+    """Enforce the complete three-arm barrier contract.
+
+    The phase-6 finalize wait region always awaits exactly
+    ``REQUIRED_SIGNAL_NAMES`` — never fewer (a caller that forgot one arm),
+    never more (an unexpected/mistyped name), and never a duplicate (which
+    would silently mask a missing arm behind a repeated one). Without this
+    check, an incomplete signal set could report a false ``complete`` or
+    ``re_settle`` decision over fewer than the three signals the wait region
+    actually needs settled.
+
+    Args:
+        signals: the ``(name, state, head)`` records passed to
+            ``compute_barrier_state``.
+
+    Raises:
+        IncompleteBarrierSignalsError: when the signal names are missing,
+            unexpected, or duplicated relative to ``REQUIRED_SIGNAL_NAMES``.
+    """
+    names = [name for name, _state, _head in signals]
+    name_set = set(names)
+    missing = sorted(REQUIRED_SIGNAL_NAMES - name_set)
+    unexpected = sorted(name_set - REQUIRED_SIGNAL_NAMES)
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if not missing and not unexpected and not duplicates:
+        return
+
+    parts = []
+    if missing:
+        parts.append(f'missing {missing}')
+    if unexpected:
+        parts.append(f'unexpected {unexpected}')
+    if duplicates:
+        parts.append(f'duplicated {duplicates}')
+    raise IncompleteBarrierSignalsError(
+        f'incomplete barrier signals: {"; ".join(parts)} '
+        f'(required exactly {sorted(REQUIRED_SIGNAL_NAMES)})'
+    )
+
 
 def compute_barrier_state(
     signals: list[tuple[str, str, str]],
@@ -65,6 +129,11 @@ def compute_barrier_state(
     Raises:
         ValueError: when any signal carries a state outside
             ``VALID_SIGNAL_STATES``.
+        IncompleteBarrierSignalsError: when the signal names are not EXACTLY
+            ``REQUIRED_SIGNAL_NAMES`` — a missing, unexpected, or duplicated
+            arm (a ``ValueError`` subclass; checked after per-signal state
+            validation so a bad state on a partial signal set still raises
+            the more specific state error first).
 
     Decision precedence (first match wins):
 
@@ -102,6 +171,13 @@ def compute_barrier_state(
             failed.append(name)
         else:  # pending
             pending.append(name)
+
+    # Enforced AFTER per-signal state validation (a bad state on a partial
+    # signal set raises the more specific state error above first) but
+    # BEFORE the barrier_status decision — an incomplete signal set must
+    # never reach a `complete`/`re_settle` verdict over fewer than the three
+    # required arms.
+    _check_signal_completeness(signals)
 
     if affected:
         barrier_status = 're_settle'
@@ -202,6 +278,20 @@ def run_barrier_cli(argv: list[str]) -> int:
 
     try:
         result = compute_barrier_state(signals, args.settled_head)
+    except IncompleteBarrierSignalsError as exc:
+        # Caught ahead of the general ValueError below — a subclass, so this
+        # branch must come first or the general handler would shadow it.
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'operation': 'barrier',
+                    'error': 'incomplete_barrier_signals',
+                    'message': str(exc),
+                }
+            )
+        )
+        return 0
     except ValueError as exc:
         print(
             serialize_toon(

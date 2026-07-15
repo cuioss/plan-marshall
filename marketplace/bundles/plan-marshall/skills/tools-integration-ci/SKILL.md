@@ -357,6 +357,8 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci barrier \
 
 `--settled-head` is the single HEAD sha the barrier polls off. `--signal` is repeatable — one per awaited signal (`ci`, `review`, `sonar`) — as `NAME:STATE[:HEAD]`, where `STATE` is one of `pending|settled|failed` and `HEAD` is the sha the signal was last observed against (omit for an unobserved signal). It returns `barrier_status` ∈ `{complete, waiting, failed, re_settle}` plus the per-bucket signal-name lists `proceed` / `pending` / `failed` / `affected`. `re_settle` names the `affected` arms to re-enter against the new settled HEAD after a bounded re-settle push (affected signals only, never a full finalize replay). See [`phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) § "Wait-region: the concurrent barrier off one settled HEAD" for the consuming narrative.
 
+**Complete three-arm contract, enforced.** The `--signal` set MUST name EXACTLY the three required arms `{ci, review, sonar}` — a missing arm, an unexpected/mistyped name, or a duplicate name is rejected with a soft `status: error` TOON (`error: incomplete_barrier_signals`) rather than silently computing a `complete`/`re_settle` decision over fewer than three signals. Provide all three `--signal` flags on every invocation, even for arms that are still `pending`.
+
 ## References
 
 - `standards/architecture.md` - Static routing and skill boundaries
