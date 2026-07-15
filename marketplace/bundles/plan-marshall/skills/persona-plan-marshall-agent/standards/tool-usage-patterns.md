@@ -88,12 +88,12 @@ When you need the *why* of a build/test failure — the traceback or assertion b
    ```text
    python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build parse --log {log_file} --failures-detail --format json
    ```
-2. **Fallback — the `Grep` tool over the log.** When the structured slice is unavailable (a non-pyproject build, or a signal the slice does not carry), query the log with the **`Grep` tool** over `log_file`:
+2. **Fallback — the `Grep` tool over the log, WHEN the runtime grants it.** When the structured slice is unavailable (a non-pyproject build, or a signal the slice does not carry) AND the `Grep` tool is available in the current runtime, query the log with the **`Grep` tool** over `log_file`:
    ```text
    Grep(pattern="FAILED|AssertionError|Error", path="{log_file}", output_mode="content", -C=5)
    ```
-   A Bash `grep` over the same `log_file` is hook-blocked by the [No Bash for file operations](../SKILL.md#bash-no-file-operations) rule. Do NOT route around that block with Bash. The `Grep` tool is granted by the execution-context profile and is NOT hook-blocked, so it is the correct fallback.
-3. **Avoid — a full-file `Read` of the log.** A full-file `Read` of a large build log burns context on content you do not need; it is the avoidable detour, not a substitute for the slice or the targeted `Grep`-tool query. Read the whole log only when both the structured slice and a targeted `Grep` genuinely cannot answer the question.
+   A Bash `grep` over the same `log_file` is hook-blocked by the [No Bash for file operations](../SKILL.md#bash-no-file-operations) rule. Do NOT route around that block with Bash. The `Grep` tool is NOT hook-blocked, so it is the correct fallback **when the runtime grants it** — but a dispatched subagent's runtime MAY deny `Grep` / `Glob` even though the agent declaration lists them (the harness can narrow the granted set below the declaration; see [`execution-context.md` § Runtime tool availability for dispatched leaves](../../../agents/execution-context.md)). When `Grep` is NOT granted, do NOT silently degrade to a coverage-shrinking spot-check: read the specific failure detail out of the already-known `log_file` with a targeted `Read`, and when a genuine broad content sweep is needed that the structured slice and a targeted `Read` cannot cover, RETURN the coverage gap to the main-context orchestrator (the sanctioned search-capable path) rather than passing green with reduced coverage.
+3. **Avoid — a full-file `Read` of the log.** A full-file `Read` of a large build log burns context on content you do not need; it is the avoidable detour, not a substitute for the slice or the targeted `Grep`-tool query (or, when `Grep` is denied, the targeted `Read` and coverage-gap return above). Read the whole log only when the structured slice, a targeted `Grep`, and a targeted `Read` all genuinely cannot answer the question.
 
 ## When Bash IS Appropriate
 
