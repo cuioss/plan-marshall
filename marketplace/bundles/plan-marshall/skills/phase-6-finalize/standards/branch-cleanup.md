@@ -375,13 +375,25 @@ After the force-push, gate on CI before proceeding to merge. **How much CI wall-
 
   **Bash tool timeout**: 1800000ms (30-minute safety net — the outer ceiling; `--adaptive` seeds the inner `ci:wait` ceiling from the persisted budget so the wait converges on observed CI durations rather than the fixed baseline).
 
-If CI is red on this gate (a `failure` snapshot under the merge-queue path, or a failing `checks wait` under the immediate-merge path) → log warning but continue to the merge attempt (the merge itself may still succeed if branch protection allows it, and the merge queue re-tests regardless):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: CI red after rebase — continuing with merge attempt"
-```
+If CI is red on this gate, the disposition depends on `use_merge_queue` — the two branches are NOT symmetric, because only the queue path has an authoritative downstream re-test to catch a still-red HEAD:
 
-Log the rebase:
+- **`use_merge_queue == true`** — the `checks status` call above was a cheap non-blocking snapshot, not the authoritative gate; the merge queue's own re-test refuses to merge a still-red HEAD. Log a warning and continue to the enqueue (see § "Merge routing"):
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: CI snapshot red after rebase — continuing to merge-queue enqueue (queue re-tests before merging)"
+  ```
+
+- **`use_merge_queue == false`** (default) — this `checks wait` IS the authoritative CI gate for the immediate `pr safe-merge` path below; there is no downstream re-test to catch a red HEAD, so a `failure` or `timeout` result here is a real, actionable failure — NOT a "log and continue" signal. **ABORT cleanup with a fatal error.** Do NOT proceed to the **Re-review the rebased HEAD** section, the **Pre-Merge Confirmation Gate**, the merge, or any cleanup below. Log at ERROR naming the observed status:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: CI failed after rebase (final_status={ci_final_status}) on the non-queue path - aborting merge; resolve CI or enable use_merge_queue and re-run finalize"
+  ```
+
+  Then return the failure to the dispatcher so the step outcome is recorded `failed` and the Step 4 renderer surfaces a `[FAILED]` headline, rather than silently attempting (and possibly completing) a merge on red CI. **Release-on-abort**: release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4) — mirroring the rebase-conflict and force-push-lease abort paths above.
+
+Log the rebase (reached only when CI gated clean — merge-queue snapshot non-`failure`, or non-queue `checks wait` returned `success`):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: rebased onto origin/{base_branch}, force-pushed with lease, CI gated"
