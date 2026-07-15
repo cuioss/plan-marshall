@@ -445,7 +445,11 @@ class TestErrorsCapTruncation:
                     message=f'AssertionError: cause {rc}',
                     severity='error',
                     category='test_failure',
+                    # `detail` is presentation-only; `signature` is the dedup
+                    # identity. Two failures share a root cause iff they share a
+                    # signature — so N failures collapse to `root_causes` groups.
                     detail=f'root-cause-block-{rc}',
+                    signature=f'sig-{rc}',
                 )
             )
         return issues
@@ -498,6 +502,59 @@ class TestErrorsCapTruncation:
         assert len(shown) == 2
         assert truncated == 0
 
+    def test_distinct_signatures_sharing_truncated_detail_prefix_not_collapsed(self):
+        from _build_parse import Issue
+        from _build_shared import _cap_errors_with_truncation
+
+        # Two DISTINCT root causes whose (truncated) detail presentation blocks
+        # share a long common prefix but whose full signatures differ MUST both
+        # survive — keying dedup on the truncated `detail` would wrongly collapse
+        # them to one row (CodeRabbit finding 284265). Keying on `signature`
+        # keeps them distinct.
+        shared_prefix = 'X' * 2000
+        errors = [
+            Issue(
+                file='test/test_a.py',
+                line=1,
+                message='AssertionError: alpha',
+                severity='error',
+                category='test_failure',
+                detail=shared_prefix,
+                signature='sig-alpha',
+            ),
+            Issue(
+                file='test/test_b.py',
+                line=2,
+                message='AssertionError: beta',
+                severity='error',
+                category='test_failure',
+                detail=shared_prefix,
+                signature='sig-beta',
+            ),
+        ]
+        shown, truncated = _cap_errors_with_truncation(errors)
+
+        assert len(shown) == 2
+        assert truncated == 0
+
+    def test_missing_signature_falls_back_to_message_key(self):
+        from _build_parse import Issue
+        from _build_shared import _cap_errors_with_truncation
+
+        # Parsers that do not populate `signature` (Maven/Gradle/npm) fall back to
+        # a per-failure category:file:line:message key — distinct terse failures
+        # are never over-deduped, and identical ones collapse.
+        errors = [
+            Issue(file='t.py', line=1, message='boom', severity='error', category='test_failure'),
+            Issue(file='t.py', line=1, message='boom', severity='error', category='test_failure'),
+            Issue(file='t.py', line=2, message='boom', severity='error', category='test_failure'),
+        ]
+        shown, truncated = _cap_errors_with_truncation(errors)
+
+        # First two collapse (same key), third is distinct -> 2 shown.
+        assert len(shown) == 2
+        assert truncated == 1
+
     def test_cmd_run_common_emits_truncated_marker(self, plan_context):
         from _build_shared import cmd_run_common
 
@@ -528,3 +585,92 @@ class TestErrorsCapTruncation:
         assert rc == 0
         # 30 failures collapse to 5 shown root causes -> truncated 25.
         assert 'truncated: 25' in buf.getvalue()
+
+
+class TestToonErrorRowDetailProjection:
+    """`format_toon` must surface `Issue.detail` on error rows (CodeRabbit
+    finding c06bb0). `Issue.to_dict()` exposes detail to JSON, but the tabular
+    TOON error rows previously dropped it, silently losing the failure detail on
+    default output. Multi-line detail is collapsed to a single physical line so
+    the row-per-line table stays round-trippable."""
+
+    def test_toon_error_row_includes_detail_when_present(self):
+        from _build_format import format_toon
+        from _build_parse import Issue
+
+        result = {
+            'status': 'error',
+            'exit_code': 1,
+            'log_file': 'x.log',
+            'command': 'module-tests',
+            'errors': [
+                Issue(
+                    file='test/test_a.py',
+                    line=10,
+                    message='AssertionError: bad state',
+                    severity='error',
+                    category='test_failure',
+                    detail='src/calc.py:42: AssertionError\nE  AssertionError: bad state',
+                ),
+            ],
+        }
+        out = format_toon(result)
+
+        # The error-row header declares a `detail` column ...
+        assert 'errors[1]{file,line,message,category,detail}' in out
+        # ... and the detail content is present, collapsed to one physical line
+        # (no raw newline splits the row).
+        assert 'src/calc.py:42: AssertionError | E  AssertionError: bad state' in out
+
+    def test_toon_error_rows_round_trip_with_multiline_detail(self):
+        from _build_format import format_toon
+        from _build_parse import Issue
+        from toon_parser import parse_toon
+
+        result = {
+            'status': 'error',
+            'exit_code': 1,
+            'log_file': 'x.log',
+            'command': 'module-tests',
+            'errors': [
+                Issue(
+                    file='test/test_a.py',
+                    line=10,
+                    message='AssertionError: bad state',
+                    severity='error',
+                    category='test_failure',
+                    detail='line one\nline two\nline three',
+                ),
+            ],
+        }
+        out = format_toon(result)
+        parsed = parse_toon(out)
+
+        # The multi-line detail did not break the one-row-per-line table.
+        assert isinstance(parsed.get('errors'), list)
+        assert len(parsed['errors']) == 1
+        assert parsed['errors'][0]['file'] == 'test/test_a.py'
+
+    def test_toon_error_rows_omit_detail_column_when_absent(self):
+        from _build_format import format_toon
+        from _build_parse import Issue
+
+        result = {
+            'status': 'error',
+            'exit_code': 1,
+            'log_file': 'x.log',
+            'command': 'compile',
+            'errors': [
+                Issue(
+                    file='src/Main.py',
+                    line=5,
+                    message='Compile failed',
+                    severity='error',
+                    category='compilation',
+                ),
+            ],
+        }
+        out = format_toon(result)
+
+        # Backward-compatible 4-field shape when no error carries a detail.
+        assert 'errors[1]{file,line,message,category}' in out

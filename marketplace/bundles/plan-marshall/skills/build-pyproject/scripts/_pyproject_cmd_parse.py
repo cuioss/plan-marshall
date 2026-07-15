@@ -168,7 +168,13 @@ def _parse_pytest(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, s
             category='test_failure',
         ):
             continue
+        # `detail` is the truncated presentation block; `signature` is the full,
+        # un-truncated dedup identity (assertion type + normalized message +
+        # failing frame). Keep them separate so failure dedup keys on the full
+        # signature rather than the truncated detail (which could collapse
+        # distinct root causes sharing a truncated prefix).
         issues[-1].detail = record['detail']
+        issues[-1].signature = record['signature']
 
     # Attach stack traces to issues
     collect_stack_traces(lines, issues)

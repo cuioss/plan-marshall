@@ -427,15 +427,18 @@ _ERRORS_EMIT_CAP = 20
 def _issue_failure_signature(issue: Issue) -> str:
     """Return the dedup key for a test-failure Issue.
 
-    The per-signature representative block (deliverable 9, ``issue.detail``) is
-    identical across failures that share one root cause, so it IS the failure
-    signature — using it as the dedup key collapses N failures sharing a cause to
-    one shown row. Parsers that do not yet populate ``detail`` (Maven/Gradle/npm,
-    the out-of-scope follow-on) fall back to a per-failure ``category:file:line:
-    message`` key, which never over-dedups distinct terse failures.
+    Keys on ``issue.signature`` — the full, un-truncated parser-computed identity
+    (assertion type + normalized message + failing frame), which is identical
+    across failures that share one root cause, so it collapses N failures sharing
+    a cause to one shown row. ``issue.detail`` is NOT used as identity: it is the
+    truncated presentation block (capped to a display length by the parser), so
+    two distinct root causes whose blocks share a truncated prefix would collide.
+    Parsers that do not populate ``signature`` (Maven/Gradle/npm, the out-of-scope
+    follow-on) fall back to a per-failure ``category:file:line:message`` key, which
+    never over-dedups distinct terse failures.
     """
-    if issue.detail:
-        return f'detail:{issue.detail}'
+    if issue.signature:
+        return f'sig:{issue.signature}'
     return f'msg:{issue.category}:{issue.file}:{issue.line}:{issue.message}'
 
 

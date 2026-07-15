@@ -86,9 +86,16 @@ def format_toon(result: dict) -> str:
     # Errors section — normalize Issue objects to dicts with consistent fields
     if 'errors' in result and result['errors']:
         errors = _normalize_issues(result['errors'])
-        # Ensure consistent field set for uniform array serialization
-        ordered['errors'] = [
-            OrderedDict(
+        # The optional `detail` projection surfaces the representative failure
+        # block (deliverable 9) on default TOON output. Issue.to_dict() already
+        # exposes `detail` to JSON, but the tabular error rows dropped it, so the
+        # default TOON path silently lost the failure detail. The column is added
+        # only when at least one row carries a detail (the historical 4-field
+        # shape is preserved otherwise, keeping existing consumers stable).
+        include_detail = any(err.get('detail') for err in errors)
+        rows: list[OrderedDict[str, Any]] = []
+        for err in errors:
+            row: OrderedDict[str, Any] = OrderedDict(
                 [
                     ('file', err.get('file', '-') or '-'),
                     ('line', err.get('line') if err.get('line') is not None else '-'),
@@ -96,8 +103,10 @@ def format_toon(result: dict) -> str:
                     ('category', err.get('category', '')),
                 ]
             )
-            for err in errors
-        ]
+            if include_detail:
+                row['detail'] = _collapse_detail(err.get('detail'))
+            rows.append(row)
+        ordered['errors'] = rows
 
     # Warnings section — normalize with optional accepted field
     if 'warnings' in result and result['warnings']:
@@ -174,6 +183,22 @@ def format_json(result: dict, indent: int = 2) -> str:
 # =============================================================================
 # Helper Functions
 # =============================================================================
+
+
+def _collapse_detail(detail: Any) -> str:
+    """Collapse a possibly multi-line failure detail block to a single line.
+
+    The TOON error table is line-oriented (one physical line per row), so a raw
+    multi-line traceback block would break the row-per-line round-trip — the
+    serializer quotes newline-bearing values but the embedded newline still
+    splits the row across physical lines. Collapsing the block's non-empty lines
+    to a ` | `-joined single line keeps it on one physical row while remaining
+    readable. Empty / None details render as '-'.
+    """
+    if not detail:
+        return '-'
+    parts = [segment.strip() for segment in str(detail).splitlines() if segment.strip()]
+    return ' | '.join(parts) if parts else '-'
 
 
 def _normalize_result(result: dict) -> dict:

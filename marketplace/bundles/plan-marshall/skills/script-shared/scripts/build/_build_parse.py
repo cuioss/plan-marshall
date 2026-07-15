@@ -117,7 +117,17 @@ class Issue:
             assertion body) captured once per unique failure signature. Distinct
             from ``stack_trace`` (raw ``at``/``Caused by:`` frame collection) — it
             carries the *why* of a failure so it can reach the emitted result and
-            the finding store without a raw-log re-read.
+            the finding store without a raw-log re-read. Presentation-only: it is
+            truncated to a display cap by the parser, so it MUST NOT be used as a
+            dedup identity — use ``signature`` for that.
+        signature: Optional full, un-truncated parser-computed failure signature
+            (assertion type + normalized message + failing frame). Kept separate
+            from ``detail`` so failure deduplication (``_issue_failure_signature``)
+            keys on the complete identity rather than the truncated ``detail``
+            presentation text, which could collapse distinct root causes sharing
+            a truncated prefix. Populated by parsers that compute a signature
+            (pyproject today); absent for parsers that do not, which fall back to
+            a per-failure ``category:file:line:message`` key.
         accepted: Whether this warning is accepted (for structured mode output).
     """
 
@@ -128,6 +138,7 @@ class Issue:
     category: str | None = None
     stack_trace: str | None = None
     detail: str | None = None
+    signature: str | None = None
     accepted: bool = field(default=False)
 
     def to_dict(self) -> dict:
