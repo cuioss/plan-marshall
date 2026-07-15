@@ -375,11 +375,25 @@ After the force-push, gate on CI before proceeding to merge. **How much CI wall-
 
   **Bash tool timeout**: 1800000ms (30-minute safety net — the outer ceiling; `--adaptive` seeds the inner `ci:wait` ceiling from the persisted budget so the wait converges on observed CI durations rather than the fixed baseline).
 
-If CI is red on this gate (a `failure` snapshot under the merge-queue path, or a failing `checks wait` under the immediate-merge path) → log warning but continue to the merge attempt (the merge itself may still succeed if branch protection allows it, and the merge queue re-tests regardless):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: CI red after rebase — continuing with merge attempt"
-```
+The disposition of a red gate depends on WHICH path produced it — the two paths are NOT symmetric, because only the merge-queue path has an authoritative re-test behind it:
+
+- **Merge-queue path (`use_merge_queue == true`)** — a `failure` snapshot is NON-authoritative: the merge queue re-tests the rebased HEAD and refuses a still-red one, so this cheap snapshot never hard-blocks. Log a warning and proceed to the enqueue:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: CI red snapshot after rebase (merge-queue path) — enqueuing anyway; the merge queue re-tests and refuses a still-red HEAD"
+  ```
+
+- **Immediate-merge path (`use_merge_queue == false`, default)** — the `pr safe-merge` below has NO queue re-test, so this `checks wait --adaptive` IS the authoritative CI gate. A failing (or `timed_out`) wait means a KNOWN-RED PR, and warn-and-proceed here would merge it whenever branch protection does not itself enforce the check. Do NOT proceed. Parse the wait's terminal status (`final_status`) from the returned TOON; when it is not green, **ABORT or ESCALATE** — never warn-and-continue:
+
+  - **Abort (default, fail-loud)**: release the merge mutex if held (§ "Merge-Mutex Hold Window" invariant 4 — the plan no longer intends to merge), decision-log the abort naming the red checks, and return control to the dispatcher WITHOUT calling `pr safe-merge`. Re-entering finalize after CI goes green is the recovery path.
+
+    ```bash
+    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+      decision --plan-id {plan_id} --level ERROR --message "(plan-marshall:phase-6-finalize) Branch cleanup: CI RED on the authoritative immediate-merge gate (use_merge_queue=false, no queue re-test) — aborting merge for known-red PR #{pr_number}; re-enter finalize after CI is green"
+    ```
+
+  - **Escalate (operator override)**: when an operator gate is warranted, fire an inline `AskUserQuestion` mirroring the trigger-A timeout gate — default **"Abort merge"**, with an explicit **"Merge anyway — override red CI"** option that decision-logs the override at WARNING before proceeding. Silent warn-and-proceed is NOT one of the options.
 
 Log the rebase:
 ```bash
