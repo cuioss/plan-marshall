@@ -1502,6 +1502,41 @@ def test_quality_gate_registers_four_mirror_rules(tmp_path):
 
 
 # =============================================================================
+# Quality-gate agentfile-hygiene registration (deliverable D3)
+# =============================================================================
+#
+# cmd_quality_gate must register the two agentfile-hygiene backstop rules so
+# they gate every build: agentfile-line-count-over-budget (summary label
+# ``analyze_agentfile_line_budget``) and agentfile-directory-tree-present
+# (``analyze_agentfile_directory_tree``). Before this flip both ran only under
+# ``analyze`` (informational). The observable registration signal is one
+# rules_run entry per label; a de-registration regresses the build. Each rule's
+# own detection behaviour is pinned in its dedicated analyzer test module; this
+# test is about registration, so it runs over a clean fixture with no
+# over-budget or tree-bearing agentfile (zero findings for both).
+
+
+def test_quality_gate_registers_agentfile_hygiene_rules(tmp_path):
+    """quality-gate enumerates the two agentfile-hygiene rules in rules_run.
+
+    Runs the gate over a clean fixture (no over-budget or tree-bearing
+    agentfile → zero findings) and asserts both rules are registered. The clean
+    fixture keeps the test about registration, not detection.
+    """
+    temp_root = _build_clean_fixture(tmp_path)
+    data = _doctor.cmd_quality_gate(_ns(marketplace_root=str(temp_root / 'marketplace')))
+
+    rules = {entry['rule'] for entry in data['rules_run']}
+    for rule_label in (
+        'analyze_agentfile_line_budget',
+        'analyze_agentfile_directory_tree',
+    ):
+        assert rule_label in rules, (
+            f'{rule_label} must appear in rules_run for the build gate, got: {data["rules_run"]}'
+        )
+
+
+# =============================================================================
 # --rules opt-in flag tests (replaces PM_ARGUMENT_NAMING_ENABLED env-var gate)
 # =============================================================================
 #

@@ -87,6 +87,8 @@ GOLDEN_QG_LABELS = [
     'fenced-code-no-language',
     'analyze_fail_closed_gate_reads',
     'analyze_sys_path_bootstrap',
+    'analyze_agentfile_line_budget',
+    'analyze_agentfile_directory_tree',
     'scan_manage_invocation',
 ]
 

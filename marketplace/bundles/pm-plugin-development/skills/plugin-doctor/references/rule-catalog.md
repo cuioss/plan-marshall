@@ -318,7 +318,7 @@ Forward-looking lint rules.
 
 ## Rule Pack: AskUserQuestion reachability
 
-**Activation**: Analyze-surfaced only. Registered in `doctor-marketplace.py::cmd_analyze` (via the runner's marketplace-wide pass), **NOT** in `cmd_quality_gate` — it surfaces findings without failing the build, mirroring the analyze-surfaced agentfile-hygiene backstop rules. The rule is registered NON-gating initially so any remaining unreachable dialogue is visibly surfaced as a finding rather than silently passing green, without exploding the migration scope or breaking the build. The rule flags only the structured `AskUserQuestion:` invocation block (see Detection logic); prose mentions of the tool are never flagged, so a dispatched leaf that already returns a prompt-required envelope (as `phase-3-outline`'s Step 12 operator-feedback dialogue does with its `outline_prompt` block) produces zero findings. The known remaining deferred dialogue is `phase-2-refine` Step 11's in-envelope confidence-loop clarification. Promotion to `quality-gate` (build-failing) is a follow-up once that deferred call site has been migrated to the orchestrator-owned pattern.
+**Activation**: Analyze-surfaced only. Registered in `doctor-marketplace.py::cmd_analyze` (via the runner's marketplace-wide pass), **NOT** in `cmd_quality_gate` — it surfaces findings without failing the build. The rule is registered NON-gating initially so any remaining unreachable dialogue is visibly surfaced as a finding rather than silently passing green, without exploding the migration scope or breaking the build. The rule flags only the structured `AskUserQuestion:` invocation block (see Detection logic); prose mentions of the tool are never flagged, so a dispatched leaf that already returns a prompt-required envelope (as `phase-3-outline`'s Step 12 operator-feedback dialogue does with its `outline_prompt` block) produces zero findings. The known remaining deferred dialogue is `phase-2-refine` Step 11's in-envelope confidence-loop clarification. Promotion to `quality-gate` (build-failing) is a follow-up once that deferred call site has been migrated to the orchestrator-owned pattern.
 
 | Rule ID | Intent | False-positive policy | Suppression |
 |---------|--------|-----------------------|-------------|
@@ -1105,7 +1105,7 @@ Five rules that catch gaps between what the marketplace *declares* and what is *
 
 ## Rule Pack: Agentfile-hygiene backstop
 
-Two deterministic rules that are the fast backstop for the cognitive `plan-marshall:recipe-agentfile-hygiene` sweep. Both embody the single normative rubric in `plan-marshall:ref-agentfile-hygiene` `standards/rubric.md`; shared detection helpers (agentfile discovery, fenced-block spans, tree-glyph detection) live in `_analyze_agentfile_shared.py`. **Activation**: analyze-surfaced only — unconditionally active in `doctor-marketplace.py analyze` and intentionally absent from `quality-gate`. The repository's own agentfiles legitimately exceed the heuristic line budget and draw directory trees, so these rules are advisory backstops for the recipe, not build gates. Discovery anchors at the **repo root** (every `CLAUDE.md` at any nesting level plus `AGENTS.md`), pruning `.plan/`, `.git/`, `node_modules/`, and `target/`.
+Two deterministic rules that are the fast backstop for the cognitive `plan-marshall:recipe-agentfile-hygiene` sweep. Both embody the single normative rubric in `plan-marshall:ref-agentfile-hygiene` `standards/rubric.md`; shared detection helpers (agentfile discovery, fenced-block spans, tree-glyph detection) live in `_analyze_agentfile_shared.py`. **Activation**: build-failing under `quality-gate` (via `RuleRunner.run_quality_gate`, routed through the `scoped(...)` wrapper) and also active in `doctor-marketplace.py analyze`. An always-on agentfile that drifts over the line budget or draws a directory tree regresses the build. Discovery anchors at the **repo root** (every `CLAUDE.md` at any nesting level plus `AGENTS.md`), pruning `.plan/`, `.git/`, `node_modules/`, and `target/`.
 
 | Rule ID | Intent | False-positive policy | Suppression |
 |---------|--------|-----------------------|-------------|
@@ -1126,7 +1126,7 @@ Two deterministic rules that are the fast backstop for the cognitive `plan-marsh
 
 **Recommended fix**: Run the cognitive `recipe-agentfile-hygiene` sweep to re-classify each section against the rubric and demote (`demotable-to-skill`) or delete (`inert/deletable`) until the file is within budget. A project that genuinely needs a different budget tunes the single configurable threshold rather than hard-coding per-type values.
 
-**Suppression mechanism**: None — this is an advisory analyze-only backstop; resolve by trimming the agentfile (or adjusting the configured budget with rubric justification).
+**Suppression mechanism**: None — this is a build-failing rule; resolve by trimming the agentfile (or adjusting the configured budget with rubric justification).
 
 ---
 
@@ -1148,7 +1148,7 @@ Two deterministic rules that are the fast backstop for the cognitive `plan-marsh
 
 **Recommended fix**: Delete the directory-tree drawing (classification `inert/deletable`). If a structural overview is genuinely wanted, demote it to a human-facing doc loaded deliberately, rather than keeping it always-on.
 
-**Suppression mechanism**: None — this is an advisory analyze-only backstop; resolve by deleting the tree.
+**Suppression mechanism**: None — this is a build-failing rule; resolve by deleting the tree.
 
 ---
 

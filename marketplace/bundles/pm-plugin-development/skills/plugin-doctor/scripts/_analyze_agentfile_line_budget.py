@@ -13,10 +13,10 @@ line budget"), which sets a single configurable default applied across all
 agentfile types. ``DEFAULT_LINE_BUDGET`` mirrors that default; callers may pass
 a different ``budget`` to tune the threshold without editing the rule.
 
-Analyze-surfaced only: this rule runs under ``doctor-marketplace.py analyze``
-and is intentionally absent from ``quality-gate`` (the repository's own
-agentfiles legitimately exceed the heuristic budget, so the rule is an advisory
-backstop for the cognitive recipe, not a build gate).
+Build-failing under ``quality-gate``: this rule runs in both
+``doctor-marketplace.py quality-gate`` (via ``RuleRunner.run_quality_gate``) and
+``analyze``. An always-on agentfile that drifts over budget regresses the build,
+so the rubric's line budget is enforced, not merely an advisory backstop.
 
 Public API
 ----------
@@ -39,7 +39,7 @@ from _rule_registry import RuleDescriptor
 RULE_ID = 'agentfile-line-count-over-budget'
 RULE_NAME = 'analyze_agentfile_line_budget'
 
-# Analyze-surfaced agentfile-hygiene backstop (intentionally not in quality-gate).
+# Build-failing agentfile-hygiene backstop (enforced under quality-gate).
 RULE_DESCRIPTOR = RuleDescriptor(
     rule_id=RULE_ID,
     severity='warning',
