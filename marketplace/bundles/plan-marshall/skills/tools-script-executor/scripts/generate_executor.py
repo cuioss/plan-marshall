@@ -834,8 +834,18 @@ def generate_executor(
     # in place.
     real_executor.parent.mkdir(parents=True, exist_ok=True)
     tmp_executor = real_executor.with_name(real_executor.name + '.tmp')
-    tmp_executor.write_text(content)
-    os.replace(tmp_executor, real_executor)
+    try:
+        tmp_executor.write_text(content, encoding='utf-8')
+        os.replace(tmp_executor, real_executor)
+    finally:
+        # No-op on the success path (os.replace already consumed the tmp file);
+        # only unlinks a stray tmp file when write_text or os.replace raised
+        # before completing the swap. Swallow cleanup OSError so a cleanup
+        # failure never masks the original exception.
+        try:
+            tmp_executor.unlink(missing_ok=True)
+        except OSError:
+            pass
     return {'status': 'success'}
 
 
