@@ -248,7 +248,7 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `menu-enforcement-hook.md` | Detect→confirm→install sub-menu for the conditional PreToolUse enforcement hook (orthogonal `--enforcement` install) | Linked from `menu-configuration.md` (Enforcement Hook) |
 | `merge-queue-setup.md` | Idempotent probe→ask→configure provisioning of the platform merge queue (GitHub merge queue / GitLab merge train) via the `ci repo merge-queue` verbs | Linked from `wizard-flow.md` Step 13.5 and `menu-configuration.md` (Merge Queue) |
 | `landing-cycle.md` | End-of-run landing cycle: detect uncommitted plan-marshall artifact diff → offer to commit → push → `skip-bot-review`-labelled plan-less PR → merge-queue-aware merge → switch-to-main → pull; base-branch-conditional branch selection + bot skip-label honoring matrix | Linked from the "End-of-Run Landing Cycle" hook (menu-mode Quit path + `wizard-flow.md` end) |
-| `upgrade-flow.md` | Post-change `upgrade` verb: four-stage reconciliation (regenerate `target/claude` + executor → reconcile `marshal.json` → verify via executor preflight + content-drift report → run the landing cycle), consuming the `upgrade.py plan` stage plan and honoring its per-stage gate dispositions | Main Menu option 5, or the `upgrade` early verb check |
+| `upgrade-flow.md` | Post-change `upgrade` verb: four-stage reconciliation driven by the project-kind-aware `upgrade.py plan` stage plan (the meta/consumer stage matrix — meta regenerates the target tree + executor and verifies with preflight + content-drift; consumer regenerates the executor only and verifies with preflight only), honoring each stage's per-stage gate dispositions and `sub_steps` | Main Menu option 5, or the `upgrade` early verb check |
 | `error-handling.md` | Error types and recovery | On error conditions |
 
 ---
@@ -759,6 +759,6 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:gitignore_setup [
 ### upgrade — plan
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade plan [--integrate {true|false}]
+python3 .plan/execute-script.py plan-marshall:marshall-steward:upgrade plan [--integrate {true|false}] [--project-kind {auto|meta|consumer}]
 ```
 
