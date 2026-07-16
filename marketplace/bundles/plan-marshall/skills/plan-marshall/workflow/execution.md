@@ -415,6 +415,33 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   --plan-id {plan_id} --completed 5-execute
 ```
 
+**Recovery branch — `worktree_dirty_at_boundary`**: the transition's inline
+clean-tree post-condition refuses to advance when the worktree still carries
+uncommitted changes at the `5-execute → 6-finalize` boundary (a phase-5
+Step 10a commit obligation was skipped; the refusal TOON carries
+`dirty_files[]`). The recovery is deterministic: run the boundary settlement
+commit — the Step 10a commit shape —
+
+```text
+Skill: plan-marshall:workflow-integration-git
+Parameters:
+  - message: conventional commit derived from the residual deliverable
+  - push: false
+  - create-pr: false
+```
+
+then complete the Step 10a bookkeeping (resolve `{commit_sha}` via
+`git rev-parse HEAD` in the worktree, enumerate the commit's paths via
+`git diff-tree --no-commit-id --name-only -r {commit_sha}`, and append the
+`kind=change` ledger entry per
+[`manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) §
+"Canonical invocations" → `append (kind=change)`), and retry the
+`manage-status transition --completed 5-execute` call above **exactly once**.
+A second `worktree_dirty_at_boundary` refusal halts loudly for the operator —
+do NOT loop, do NOT bypass the guard. The settlement commit is the recovery
+path, not the norm: commit ownership lives with the phase-5-execute envelope's
+Step 10a chain-tail (see `phase-5-execute/SKILL.md` § Step 10a).
+
 **Config check** — Read `finalize_without_asking` to determine next action:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \

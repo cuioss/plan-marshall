@@ -6,6 +6,7 @@ Lifecycle command handlers for manage-status: create, transition, archive, delet
 
 import argparse
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +40,69 @@ VERIFY_REFUSAL_ERRORS = frozenset({
     'worktree_unresolved',
     'worktree_metadata_drift',
     'main_checkout_dirtied_during_plan',
+    'worktree_dirty_at_boundary',
 })
+
+
+def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
+    """Clean-tree post-condition for guarded boundaries (5-execute → 6-finalize).
+
+    When the plan runs in an isolated worktree (``metadata.use_worktree``
+    truthy), the working tree at ``metadata.worktree_path`` MUST be clean
+    before the transition into a blocking boundary is allowed: every
+    per-deliverable commit belongs to the phase-5-execute envelope's Step 10a
+    chain-tail, so uncommitted edits at the boundary mean a commit obligation
+    was skipped. Returns the structured refusal dict when the tree is dirty
+    (or when ``git status`` itself fails — the gate fails closed), and
+    ``None`` when the transition may proceed.
+    """
+    metadata = status.get('metadata', {})
+    if not metadata.get('use_worktree'):
+        return None
+    worktree_path = metadata.get('worktree_path')
+    if not worktree_path:
+        # Resolvability is asserted by the strict-verify guard that runs
+        # before this gate (``worktree_unresolved``); an empty path here
+        # means the verify guard already owns the refusal path.
+        return None
+
+    proc = subprocess.run(
+        ['git', '-C', worktree_path, 'status', '--porcelain'],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        # Fail closed: an unreadable tree cannot be proven clean.
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'worktree_dirty_at_boundary',
+            'dirty_files': [],
+            'message': (
+                f'git status failed in worktree {worktree_path} '
+                f'(exit {proc.returncode}): {proc.stderr.strip()} — '
+                'cannot prove the tree is clean; refusing to transition.'
+            ),
+        }
+
+    porcelain = proc.stdout.strip()
+    if not porcelain:
+        return None
+
+    dirty_files = [line[3:] for line in porcelain.splitlines() if len(line) > 3]
+    return {
+        'status': 'error',
+        'plan_id': plan_id,
+        'error': 'worktree_dirty_at_boundary',
+        'dirty_files': dirty_files,
+        'message': (
+            f'Worktree {worktree_path} has {len(dirty_files)} uncommitted '
+            'change(s) at a guarded phase boundary. Every per-deliverable '
+            'commit is owned by phase-5-execute Step 10a — run the boundary '
+            'settlement commit, then retry the transition.'
+        ),
+    }
 
 
 def verify_blocks_transition(verify_result: dict[str, Any]) -> bool:
@@ -189,6 +252,15 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
         verify_result = cmd_verify(verify_args)
         if verify_blocks_transition(verify_result):
             return verify_result
+
+        # Clean-tree post-condition: after the strict-verify guard passes,
+        # the worktree itself must be clean — uncommitted edits at the
+        # boundary mean a phase-5 Step 10a commit obligation was skipped.
+        # On refusal, skip write_status so current_phase stays on the
+        # completed phase (same contract as the verify refusal above).
+        clean_tree_refusal = _clean_tree_refusal(args.plan_id, status)
+        if clean_tree_refusal is not None:
+            return clean_tree_refusal
 
     # Mark completed phase as done
     phases[completed_idx]['status'] = PHASE_STATUS_DONE
