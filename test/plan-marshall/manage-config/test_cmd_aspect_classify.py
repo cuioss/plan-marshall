@@ -41,9 +41,9 @@ to the threshold contract above (the field is absent).
 from argparse import Namespace
 
 import pytest
+from test_helpers import SCRIPT_PATH
 
 from conftest import load_script_module, run_script
-from test_helpers import SCRIPT_PATH
 
 _cmd_aspect_classify_mod = load_script_module('plan-marshall', 'manage-config', '_cmd_aspect_classify.py')
 cmd_aspect_classify = _cmd_aspect_classify_mod.cmd_aspect_classify
