@@ -24,7 +24,6 @@ intact, never half-written state.
 """
 
 import copy
-import fnmatch
 import json
 import os
 import shutil
@@ -621,12 +620,43 @@ def _merge_build_map(config: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
         return {}
 
 
+def _load_route_matcher():
+    """Import the shared two-regime build_map matcher from ``script-shared``.
+
+    Mirrors :func:`load_merged_build_map`'s deferred cross-skill import: the
+    ``script-shared/scripts/extension`` dir is resolved via
+    ``marketplace_bundles`` and inserted into ``sys.path`` before importing
+    ``extension_base.route_matches`` — the single canonical matcher every
+    build_map matching site shares (seed-prune, completeness validator,
+    build-decision footprint loop, and this deriver).
+    """
+    import sys
+
+    from marketplace_bundles import (
+        resolve_bundle_path,
+        resolve_bundles_root,
+    )
+
+    bundles_root = resolve_bundles_root(Path(__file__))
+    ext_dir = str(resolve_bundle_path(bundles_root, 'plan-marshall', 'skills/script-shared/scripts/extension'))
+    if ext_dir not in sys.path:
+        sys.path.insert(0, ext_dir)
+    from extension_base import route_matches
+
+    return route_matches
+
+
 def classify_changed_path(path: str, merged_build_map: dict[str, list[dict[str, str]]]) -> str | None:
     """Classify a single changed-artifact path to a build_class (longest-glob-wins).
 
     Matches ``path`` against every ``{glob, role, build_class}`` entry across
-    all domains of ``merged_build_map`` using ``fnmatch`` — the same matcher the
-    aggregator uses. When more than one glob matches, the longest glob wins
+    all domains of ``merged_build_map`` using the shared two-regime matcher
+    (``extension_base.route_matches`` — the same matcher the aggregator uses):
+    a bare-basename glob (no ``/`` — e.g. ``pom.xml``, ``package.json``)
+    matches the path's basename anywhere in the tree, so a nested
+    ``services/auth/pom.xml`` is claimed by a bare ``pom.xml`` route; a
+    path-bearing glob matches the full repo-relative path with a single ``*``
+    spanning ``/``. When more than one glob matches, the longest glob wins
     (the deterministic "longest-glob-wins" precedence, with the glob string
     itself as the alphabetical tie-break). The build_map does not persist the
     per-entry integer specificity, so glob length is the specificity proxy.
@@ -639,6 +669,7 @@ def classify_changed_path(path: str, merged_build_map: dict[str, list[dict[str, 
         The winning ``build_class`` string, or ``None`` when no glob matches
         (the path is unclaimed — it derives no build).
     """
+    route_matches = _load_route_matcher()
     matches: list[tuple[int, str, str]] = []  # (glob length, glob, build_class)
     for entries in merged_build_map.values():
         for entry in entries:
@@ -646,7 +677,7 @@ def classify_changed_path(path: str, merged_build_map: dict[str, list[dict[str, 
             build_class = entry.get('build_class')
             if not glob or not build_class:
                 continue
-            if fnmatch.fnmatch(path, glob):
+            if route_matches(path, glob):
                 matches.append((len(glob), glob, build_class))
     if not matches:
         return None

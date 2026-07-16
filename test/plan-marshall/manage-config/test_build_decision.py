@@ -128,7 +128,7 @@ def test_bare_basename_glob_matches_subdir_only_footprint(monkeypatch):
     """A bare-basename build glob matches a config file living in a subdirectory.
 
     Regression for the bare-basename subdir-matching fix: ``should_execute_build``
-    now matches via ``_route_matches``, so a bare-basename glob (no ``/`` — e.g.
+    now matches via ``route_matches``, so a bare-basename glob (no ``/`` — e.g.
     ``package.json``) matches its file *anywhere in the tree*. Before the fix the
     decision used ``fnmatch.fnmatch('nifi-cuioss-ui/package.json', 'package.json')``,
     which is False, so a change to a subdirectory-only config file wrongly

@@ -163,6 +163,34 @@ def test_classify_changed_path_unmatched_returns_none():
     assert classify_changed_path('unrelated/file.txt', _BUILD_MAP) is None
 
 
+def test_classify_changed_path_nested_pom_matches_bare_basename_route():
+    """A nested ``services/auth/pom.xml`` is claimed by a bare ``pom.xml`` route.
+
+    The bare-basename regime of the shared matcher (``route_matches``) matches
+    a route with no ``/`` against the path's basename anywhere in the tree —
+    the semantics the aggregator has always used. The pre-fix deriver matched
+    the full path with ``fnmatch.fnmatch``, so every nested descriptor on a
+    multi-module reactor went unclaimed (``classified_count: 0`` — lesson
+    2026-07-16-17-012, TokenSheriff).
+    """
+    merged = {
+        'java': [
+            {'glob': 'pom.xml', 'role': 'config', 'build_class': 'verify'},
+        ]
+    }
+    assert classify_changed_path('services/auth/pom.xml', merged) == 'verify'
+
+
+def test_classify_changed_path_bare_basename_no_false_positive():
+    """A bare-basename route claims only exact-basename matches, not siblings."""
+    merged = {
+        'javascript': [
+            {'glob': 'package.json', 'role': 'config', 'build_class': 'verify'},
+        ]
+    }
+    assert classify_changed_path('ui/package-lock.json', merged) is None
+
+
 # =============================================================================
 # Module resolution (resolve_module_for_path)
 # =============================================================================
@@ -420,6 +448,36 @@ def test_plain_test_java_still_derives_module_tests_beside_it_route():
         assert result['status'] == 'success'
         verbs = {c['command'] for c in result['commands']}
         assert verbs == {'test-compile', 'module-tests'}
+
+
+def test_nested_pom_against_bare_route_derives_verify():
+    """A nested pom.xml against a seeded bare ``pom.xml`` route classifies
+    non-zero and derives the module's ``verify`` executable (lesson
+    2026-07-16-17-012 end-to-end).
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / 'project'
+        project.mkdir()
+        build_map = {
+            'java': [
+                {'glob': 'pom.xml', 'role': 'config', 'build_class': 'verify'},
+            ],
+        }
+        _seed(str(project), build_map=build_map)
+
+        result = cmd_derive_verification(
+            Namespace(
+                changed_artifacts='pm-mod/services/auth/pom.xml',
+                project_dir=str(project),
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert result['classified_count'] == 1
+        assert result['unclaimed'] == []
+        verbs = {c['command'] for c in result['commands']}
+        assert verbs == {'verify'}
+        assert any('verify pm-mod' in e for e in _executables(result))
 
 
 def test_empty_build_map_yields_all_unclaimed():

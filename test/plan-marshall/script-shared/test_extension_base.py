@@ -13,9 +13,9 @@ from extension_base import (
     BuildExtensionBase,
     ExtensionBase,
     _pattern_matches_any,
-    _route_matches,
     _tracked_basenames,
     derive_globs_from_tree,
+    route_matches,
 )
 
 _SCRIPTS_DIR = (
@@ -575,7 +575,7 @@ def test_filter_live_and_dead_route_same_domain_yields_only_live(tmp_path):
 
 
 # =============================================================================
-# _route_matches() — bare-basename vs path-bearing matching regimes
+# route_matches() — bare-basename vs path-bearing matching regimes
 # =============================================================================
 #
 # The shared matcher behind the build-map fix. A route pattern with no ``/`` is a
@@ -588,7 +588,7 @@ def test_filter_live_and_dead_route_same_domain_yields_only_live(tmp_path):
 
 def test_route_matches_bare_basename_at_repo_root():
     """A bare-basename route matches the file at repo root."""
-    assert _route_matches('package.json', 'package.json') is True
+    assert route_matches('package.json', 'package.json') is True
 
 
 def test_route_matches_bare_basename_in_subdirectory():
@@ -598,12 +598,12 @@ def test_route_matches_bare_basename_in_subdirectory():
     ``nifi-cuioss-ui/package.json``. The pre-fix full-path fnmatch would have
     returned False and wrongly pruned the subdir-only config route.
     """
-    assert _route_matches('nifi-cuioss-ui/package.json', 'package.json') is True
+    assert route_matches('nifi-cuioss-ui/package.json', 'package.json') is True
 
 
 def test_route_matches_bare_basename_glob_in_subdirectory():
     """A bare-basename GLOB (e.g. ``*.tsx``) matches by basename anywhere in the tree."""
-    assert _route_matches('src/components/App.tsx', '*.tsx') is True
+    assert route_matches('src/components/App.tsx', '*.tsx') is True
 
 
 def test_route_matches_bare_basename_no_false_positive_on_different_basename():
@@ -613,12 +613,12 @@ def test_route_matches_bare_basename_no_false_positive_on_different_basename():
     match ``nifi-cuioss-ui/package-lock.json`` (a different basename) even though
     it lives in a subdirectory.
     """
-    assert _route_matches('nifi-cuioss-ui/package-lock.json', 'package.json') is False
+    assert route_matches('nifi-cuioss-ui/package-lock.json', 'package.json') is False
 
 
 def test_route_matches_path_bearing_matches_full_path():
     """A path-bearing route matches against the whole repo-relative path."""
-    assert _route_matches('scripts/foo.py', 'scripts/*.py') is True
+    assert route_matches('scripts/foo.py', 'scripts/*.py') is True
 
 
 def test_route_matches_path_bearing_no_false_positive_on_unrelated_dir():
@@ -628,12 +628,12 @@ def test_route_matches_path_bearing_no_false_positive_on_unrelated_dir():
     (``scripts/*.py``) stays anchored to its directory, so a file with the same
     basename under an unrelated directory (``vendor/foo.py``) does NOT match.
     """
-    assert _route_matches('vendor/foo.py', 'scripts/*.py') is False
+    assert route_matches('vendor/foo.py', 'scripts/*.py') is False
 
 
 def test_route_matches_path_bearing_single_star_spans_slash():
     """A single ``*`` in a path-bearing route spans ``/`` (fnmatch semantics)."""
-    assert _route_matches('marketplace/targets/generate.py', 'marketplace/*.py') is True
+    assert route_matches('marketplace/targets/generate.py', 'marketplace/*.py') is True
 
 
 def test_derive_globs_retains_bare_basename_subdir_only_config(tmp_path):
@@ -643,7 +643,7 @@ def test_derive_globs_retains_bare_basename_subdir_only_config(tmp_path):
     deriver: a ``package.json`` config route survives the tree-presence prune even
     though the only tracked ``package.json`` lives in a subdirectory
     (``nifi-cuioss-ui/package.json``), because the deriver matches via
-    ``_route_matches`` (basename-anchored for bare-basename routes). Before the
+    ``route_matches`` (basename-anchored for bare-basename routes). Before the
     fix the full-path fnmatch pruned it as a dead glob.
     """
 
@@ -666,7 +666,7 @@ def test_derive_globs_retains_bare_basename_subdir_only_config(tmp_path):
 # _pattern_matches_any() — batch-filter route-presence predicate
 # =============================================================================
 #
-# The batch counterpart to the removed per-element ``any(_route_matches(p, pattern)
+# The batch counterpart to the removed per-element ``any(route_matches(p, pattern)
 # for p in tracked)`` truthiness loop. derive_globs_from_tree now prunes routes
 # via ``_pattern_matches_any`` (one fnmatch.filter pass) instead of the per-element
 # loop. The contract is exact equivalence: for every (pattern, corpus) pair the
@@ -678,7 +678,7 @@ def test_derive_globs_retains_bare_basename_subdir_only_config(tmp_path):
 
 def _loop_matches_any(pattern: str, tracked: list[str]) -> bool:
     """Reference oracle — the removed per-element loop the batch helper replaced."""
-    return any(_route_matches(p, pattern) for p in tracked)
+    return any(route_matches(p, pattern) for p in tracked)
 
 
 def test_pattern_matches_any_bare_basename_at_repo_root():
@@ -732,7 +732,7 @@ def test_pattern_matches_any_equivalent_to_per_element_loop():
 
     The single load-bearing contract of the refactor: across BOTH regimes, for a
     corpus mixing matching and non-matching paths, ``_pattern_matches_any`` returns
-    exactly what ``any(_route_matches(p, pattern) for p in tracked)`` produced.
+    exactly what ``any(route_matches(p, pattern) for p in tracked)`` produced.
     """
     corpus = [
         'package.json',

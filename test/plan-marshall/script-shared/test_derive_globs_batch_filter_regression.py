@@ -3,7 +3,7 @@
 """Batch-filter-equivalence regression for ``derive_globs_from_tree``.
 
 Locks the ``fnmatch.filter`` batch route-prune refactor to the exact semantics
-of the removed per-element ``any(_route_matches(p, route[0]) for p in tracked)``
+of the removed per-element ``any(route_matches(p, route[0]) for p in tracked)``
 loop, exercised END-TO-END through ``derive_globs_from_tree`` against a real
 git-tracked fixture tree that drives BOTH glob regimes simultaneously:
 
@@ -30,8 +30,8 @@ from extension_base import (
     ROLE_CONFIG,
     ROLE_PRODUCTION,
     BuildExtensionBase,
-    _route_matches,
     derive_globs_from_tree,
+    route_matches,
 )
 
 
@@ -49,7 +49,7 @@ def _git_init_and_track(root: Path, rel_paths: list[str]) -> None:
 
 def _loop_matches_any(pattern: str, tracked: list[str]) -> bool:
     """Reference oracle — the removed per-element loop the batch prune replaced."""
-    return any(_route_matches(p, pattern) for p in tracked)
+    return any(route_matches(p, pattern) for p in tracked)
 
 
 class _DualRegimeExtension(BuildExtensionBase):

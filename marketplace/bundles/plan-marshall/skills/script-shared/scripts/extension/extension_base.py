@@ -78,7 +78,7 @@ def derive_globs_from_tree(
     ``config``). This function gathers those declared routes,
     keyed by the extension's first domain key, then filters them to the routes
     actually present in the project tree: a route survives only when at least one
-    git-tracked file matches its ``pattern`` via :func:`_route_matches` (the same
+    git-tracked file matches its ``pattern`` via :func:`route_matches` (the same
     matcher the downstream ``manage-execution-manifest`` consumer and
     :func:`validate_tree_completeness` use). A bare-basename route (no ``/`` — e.g.
     ``pom.xml``, ``package.json``, ``tsconfig.json``) matches the config file
@@ -183,12 +183,13 @@ def _list_tracked_files(project_root: str) -> list[str]:
     return sorted(rel_paths)
 
 
-def _route_matches(path: str, pattern: str) -> bool:
+def route_matches(path: str, pattern: str) -> bool:
     """Return True when repo-relative ``path`` matches route ``pattern``.
 
-    A single matcher shared by the three build-map matching sites
+    The single public build_map matcher shared by every matching site
     (:func:`derive_globs_from_tree` seed-prune, :func:`validate_tree_completeness`
-    coverage check, :func:`should_execute_build` footprint loop). Two regimes,
+    coverage check, :func:`should_execute_build` footprint loop, and the deriver's
+    ``classify_changed_path`` in ``manage-architecture``). Two regimes,
     selected by whether the pattern names a directory segment:
 
     - **Bare-basename routes** (``pattern`` contains no ``/`` — e.g. ``pom.xml``,
@@ -238,8 +239,8 @@ def _tracked_basenames(tracked_tuple: tuple[str, ...]) -> list[str]:
 def _pattern_matches_any(pattern: str, tracked: list[str]) -> bool:
     """Return True when route ``pattern`` matches at least one ``tracked`` path.
 
-    The batch counterpart to the per-element :func:`_route_matches` truthiness
-    loop. Both honour the same two regimes — :func:`_route_matches` decides them
+    The batch counterpart to the per-element :func:`route_matches` truthiness
+    loop. Both honour the same two regimes — :func:`route_matches` decides them
     per (path, pattern) pair; this function decides the regime once for the whole
     corpus and hands the matching off to :func:`fnmatch.filter`, which does one
     batch pass instead of re-dispatching the matcher for every tracked file:
@@ -258,7 +259,7 @@ def _pattern_matches_any(pattern: str, tracked: list[str]) -> bool:
 
     Returns:
         True when ``pattern`` matches at least one path under the regime its shape
-        selects — identical to ``any(_route_matches(p, pattern) for p in tracked)``.
+        selects — identical to ``any(route_matches(p, pattern) for p in tracked)``.
     """
     if '/' not in pattern:
         return bool(fnmatch.filter(_tracked_basenames(tuple(tracked)), pattern))
@@ -356,7 +357,7 @@ def validate_tree_completeness(project_root: str, extensions: list) -> list[str]
     file is covered when it matches at least one ``production`` or ``test`` route
     declared by any extension.
 
-    Route patterns are matched with :func:`_route_matches` — the SAME matcher
+    Route patterns are matched with :func:`route_matches` — the SAME matcher
     the downstream build_map consumer (``manage-execution-manifest``) uses. A
     path-bearing route matches via :func:`fnmatch.fnmatch` so a single ``*``
     matches across ``/`` (e.g. ``marketplace/targets/*.py`` covers
@@ -397,7 +398,7 @@ def validate_tree_completeness(project_root: str, extensions: list) -> list[str]
             continue
         if not _within_buildable_roots(rel_path, buildable_roots):
             continue
-        if not any(_route_matches(rel_path, pattern) for pattern in source_routes):
+        if not any(route_matches(rel_path, pattern) for pattern in source_routes):
             uncovered.append(rel_path)
     return sorted(uncovered)
 
@@ -581,7 +582,7 @@ def should_execute_build(
 
     for path in footprint:
         for glob in globs:
-            if _route_matches(path, glob):
+            if route_matches(path, glob):
                 return {'decision': 'build', 'canonical_command': canonical_command}
 
     return {
@@ -1190,7 +1191,7 @@ class BuildExtensionBase(ABC):  # noqa: B024 — ABC contract anchor; every Axis
         one of the three resolved file roles. The route declares both WHAT this
         build extension owns and WHERE it lives, so the build_map seed consumes
         the routes verbatim: no tree scan enumerates one glob per directory.
-        Patterns are matched with :func:`_route_matches` (the matcher the
+        Patterns are matched with :func:`route_matches` (the matcher the
         downstream ``manage-execution-manifest`` build_map consumer uses): a
         path-bearing route is matched against the whole repo-relative path via
         :func:`fnmatch.fnmatch`, so a single ``*`` matches across ``/`` — declare
