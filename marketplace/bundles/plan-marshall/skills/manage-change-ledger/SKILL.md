@@ -144,22 +144,28 @@ python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger classify-outcome \
   --job-status {completed|killed} --output-bytes OUTPUT_BYTES \
-  [--worktree-sha WORKTREE_SHA]
+  --worktree-sha WORKTREE_SHA
 ```
 
 The deterministic killed-job classifier — a pure function of three observable
 inputs (the harness-reported job status, the byte count of the job's captured
 output, and the presence of a matching `kind=build` ledger row, most-recent
-first and scoped to `--worktree-sha` when supplied) returning a fixed
-`verdict`:
+first and scoped to the required `--worktree-sha`) returning a fixed
+`verdict`. `--worktree-sha` is required: an unscoped cross-check can match a
+stale row stamped against a different worktree state and misclassify a killed
+job as `success`. Every call site already holds the sha at call time (the
+`await-long-running` seam computes it before dispatch).
 
 - `externally_killed` — the job reported `killed`, OR no matching ledger row
-  exists AND `--output-bytes 0`. The latter is the **whole-tree-kill
-  signature**: the executor died before the dispatch boundary could stamp a
-  row, so the missing row plus the 0-byte output IS the kill evidence. The
-  returned TOON's `display_detail`/`message` render "externally killed — not
-  flaky, do not blind-retry" — the call site MUST NOT re-dispatch the
-  identical command as a retry.
+  exists AND `--output-bytes 0`, OR the matching row itself carries
+  `status: killed`. The no-row case is the **whole-tree-kill signature**:
+  the executor died before the dispatch boundary could stamp a row, so the
+  missing row plus the 0-byte output IS the kill evidence. The killed-row
+  case is the **child-kill signature**: the executor survived to the
+  boundary and stamped the `killed` outcome it observed. The returned TOON's
+  `display_detail`/`message` render "externally killed — not flaky, do not
+  blind-retry" — the call site MUST NOT re-dispatch the identical command as
+  a retry.
 - `timeout` — a matching row carries `status: timeout` (a clean timeout is
   never classified as a kill).
 - `success` — a matching row carries `status: success`.

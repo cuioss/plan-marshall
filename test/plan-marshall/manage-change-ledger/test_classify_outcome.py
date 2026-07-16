@@ -6,13 +6,15 @@ deterministic killed-job classifier.
 The classifier is a pure function of three observable inputs — the
 harness-reported job status (``completed`` | ``killed``), the byte count of
 the job's captured output, and the presence of a matching ``kind=build``
-ledger row (most-recent first, scoped to ``--worktree-sha`` when supplied) —
+ledger row (most-recent first, scoped to the REQUIRED ``--worktree-sha``) —
 returning a fixed ``verdict``:
 
-* ``externally_killed`` — the job reported ``killed`` OR (no matching row AND
+* ``externally_killed`` — the job reported ``killed``, OR (no matching row AND
   ``output_bytes == 0``, the whole-tree-kill signature where the executor died
-  before stamping anything). MUST render "externally killed — not flaky, do
-  not blind-retry" in the agent-readable TOON.
+  before stamping anything), OR the matching row itself carries
+  ``status: killed`` (the child-kill signature — the executor survived to the
+  boundary and stamped the kill). MUST render "externally killed — not flaky,
+  do not blind-retry" in the agent-readable TOON.
 * ``timeout`` — a matching row carries ``status: timeout`` (a clean timeout is
   never classified as a kill).
 * ``success`` — a matching row carries ``status: success``.
@@ -70,16 +72,14 @@ def env(tmp_path: Path):
             *,
             job_status: str,
             output_bytes: int,
-            worktree_sha: str | None = None,
+            worktree_sha: str = _SHA_A,
         ) -> dict:
-            args = [
+            result = self.run(
                 'classify-outcome',
                 '--job-status', job_status,
                 '--output-bytes', str(output_bytes),
-            ]
-            if worktree_sha is not None:
-                args.extend(['--worktree-sha', worktree_sha])
-            result = self.run(*args)
+                '--worktree-sha', worktree_sha,
+            )
             assert result.success, result.stderr
             data: dict = result.toon()
             return data
@@ -131,6 +131,23 @@ def test_worktree_sha_scoping_treats_foreign_row_as_no_row(env) -> None:
     data = env.classify(job_status='completed', output_bytes=0, worktree_sha=_SHA_B)
 
     assert data['verdict'] == 'externally_killed', data
+
+
+def test_killed_row_with_completed_job_is_externally_killed(env) -> None:
+    """The child-kill signature: a matching row carrying ``status: killed``.
+
+    The executor survived to the dispatch boundary and stamped the kill it
+    observed, while the harness reported the job as completed. This MUST
+    classify externally_killed, not undecidable — regression for the branch
+    order that fell through to undecidable.
+    """
+    env.append_build(status='killed')
+
+    data = env.classify(job_status='completed', output_bytes=0, worktree_sha=_SHA_A)
+
+    assert data['verdict'] == 'externally_killed', data
+    assert NO_BLIND_RETRY in data['message']
+    assert NO_BLIND_RETRY in data['display_detail']
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +218,8 @@ def test_error_row_is_undecidable(env) -> None:
 def test_job_status_is_choices_validated(env) -> None:
     """``--job-status`` accepts only completed|killed (argparse rejection)."""
     result = env.run(
-        'classify-outcome', '--job-status', 'flaky', '--output-bytes', '0'
+        'classify-outcome', '--job-status', 'flaky',
+        '--output-bytes', '0', '--worktree-sha', _SHA_A,
     )
 
     assert not result.success
@@ -209,6 +227,19 @@ def test_job_status_is_choices_validated(env) -> None:
 
 def test_output_bytes_is_required(env) -> None:
     """``--output-bytes`` is a required argument."""
-    result = env.run('classify-outcome', '--job-status', 'killed')
+    result = env.run(
+        'classify-outcome', '--job-status', 'killed', '--worktree-sha', _SHA_A
+    )
+
+    assert not result.success
+
+
+def test_worktree_sha_is_required(env) -> None:
+    """``--worktree-sha`` is required — an unscoped cross-check could match a
+    stale row from a different worktree state and misclassify a kill as
+    success."""
+    result = env.run(
+        'classify-outcome', '--job-status', 'killed', '--output-bytes', '0'
+    )
 
     assert not result.success

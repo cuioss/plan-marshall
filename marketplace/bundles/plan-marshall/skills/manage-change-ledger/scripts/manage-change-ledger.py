@@ -27,11 +27,12 @@ primitive. It exposes three verbs on the shared deterministic core
   * ``classify-outcome`` — the deterministic killed-job classifier. A pure
     function of observable inputs (reported job status, output byte count,
     presence of a matching ``kind=build`` ledger row) returning a fixed
-    verdict: ``externally_killed`` (the whole-tree-kill signature — the job
-    reported killed, or no row was stamped AND the output was empty),
-    ``timeout``, ``success``, or ``undecidable``. The ``externally_killed``
-    verdict renders "externally killed — not flaky, do not blind-retry" so
-    the call site never mistakes a harness kill for a flaky build.
+    verdict: ``externally_killed`` (the job reported killed, no row was
+    stamped AND the output was empty — the whole-tree-kill signature — or
+    the matching row itself carries ``status: killed``), ``timeout``,
+    ``success``, or ``undecidable``. The ``externally_killed`` verdict
+    renders "externally killed — not flaky, do not blind-retry" so the
+    call site never mistakes a harness kill for a flaky build.
 
 The ledger resolves under the tracked-config dir (``get_tracked_config_dir()``),
 NOT plan-scoped, so plan-less orchestrator builds are covered. ``compute_worktree_sha``
@@ -158,29 +159,39 @@ def run_classify_outcome(args: Namespace) -> dict[str, Any]:
     """``classify-outcome`` — deterministic verdict over a finished/killed job.
 
     Inputs: the reported job status (``completed`` | ``killed``), the byte
-    count of the job's captured output, and an optional ``--worktree-sha``
+    count of the job's captured output, and the required ``--worktree-sha``
     that scopes the ledger cross-check. The matching row is the MOST RECENT
-    ``kind=build`` entry (restricted to the supplied ``worktree_sha`` when
-    given), read through ``_ledger_core.read_entries`` — never a
-    re-implemented JSONL read.
+    ``kind=build`` entry stamped against the supplied ``worktree_sha``, read
+    through ``_ledger_core.read_entries`` — never a re-implemented JSONL
+    read. The sha is required because an unscoped cross-check can match a
+    stale row from a different worktree state and misclassify a killed job
+    as ``success``.
 
     Verdicts, in order:
 
-    (a) ``externally_killed`` — the job reported ``killed`` OR (no matching
-        ledger row AND ``output_bytes == 0``). The latter is the
-        whole-tree-kill signature: the executor died before the dispatch
-        boundary could stamp anything, so the ABSENCE of a row is itself the
-        signal. Renders the no-blind-retry message.
+    (a) ``externally_killed`` — the job reported ``killed``, OR (no matching
+        ledger row AND ``output_bytes == 0``), OR a matching row carries
+        ``status: killed``. The no-row case is the whole-tree-kill signature:
+        the executor died before the dispatch boundary could stamp anything,
+        so the ABSENCE of a row is itself the signal. The killed-row case is
+        the child-kill signature: the executor survived to the boundary and
+        stamped the ``killed`` outcome. Both render the no-blind-retry
+        message.
     (b) ``timeout`` — a matching row carries ``status: timeout``.
     (c) ``success`` — a matching row carries ``status: success``.
     (d) ``undecidable`` — anything else.
     """
-    entries = [e for e in read_entries() if e.get('kind') == KIND_BUILD]
-    if args.worktree_sha:
-        entries = [e for e in entries if e.get('worktree_sha') == args.worktree_sha]
+    entries = [
+        e
+        for e in read_entries()
+        if e.get('kind') == KIND_BUILD and e.get('worktree_sha') == args.worktree_sha
+    ]
     matching_row = entries[-1] if entries else None
 
     if args.job_status == 'killed' or (matching_row is None and args.output_bytes == 0):
+        verdict = 'externally_killed'
+        message = _NO_BLIND_RETRY_MESSAGE
+    elif matching_row is not None and matching_row.get('status') == 'killed':
         verdict = 'externally_killed'
         message = _NO_BLIND_RETRY_MESSAGE
     elif matching_row is not None and matching_row.get('status') == 'timeout':
@@ -227,7 +238,7 @@ Examples:
   manage-change-ledger.py append --kind build --notation NOTATION --exit-code 0 --status success [--plan-id ID] [--log-file PATH]
   manage-change-ledger.py append --kind change --deliverable-id 2 --commit-sha SHA --changed-paths a,b,c
   manage-change-ledger.py query [--kind build|change] [--exit-code 0]
-  manage-change-ledger.py classify-outcome --job-status killed --output-bytes 0 [--worktree-sha SHA]
+  manage-change-ledger.py classify-outcome --job-status killed --output-bytes 0 --worktree-sha SHA
 """,
         subcommands=[
             {
@@ -340,7 +351,8 @@ Examples:
                     {
                         'flags': ['--worktree-sha'],
                         'dest': 'worktree_sha',
-                        'help': 'Scope the ledger cross-check to rows stamped against this sha',
+                        'required': True,
+                        'help': 'Scope the ledger cross-check to rows stamped against this sha (required — an unscoped cross-check can match a stale row from a different worktree state)',
                     },
                 ],
             },

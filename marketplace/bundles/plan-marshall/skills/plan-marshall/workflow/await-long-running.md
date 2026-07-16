@@ -88,10 +88,10 @@ When the background-completion notification arrives, **classify the outcome FIRS
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger classify-outcome \
-  --job-status {completed|killed} --output-bytes {N} [--worktree-sha {sha}]
+  --job-status {completed|killed} --output-bytes {N} --worktree-sha {sha}
 ```
 
-Pass the harness-reported job state as `--job-status` and the byte count of the job's captured output as `--output-bytes`. The verdicts (see [`../../manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) § classify-outcome):
+Pass the harness-reported job state as `--job-status`, the byte count of the job's captured output as `--output-bytes`, and the pre-dispatch `worktree_sha` as the **required** `--worktree-sha` (compute it via the `worktree-sha` verb BEFORE detaching in step (c) and hold it for the wake path — an unscoped cross-check could match a stale row from a different worktree state and misclassify a killed job as `success`). The verdicts (see [`../../manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) § classify-outcome):
 
 - **`externally_killed`** — the harness killed the job (reported `killed`, or no ledger row was stamped AND the output is 0 bytes — the whole-tree-kill signature). The orchestrator MUST surface the verdict message **"externally killed — not flaky, do not blind-retry"** and MUST NOT re-dispatch the identical command as a retry. A kill is not flakiness; blind re-dispatch feeds the same killer.
 - **`timeout` / `success` / `undecidable`** — proceed to read the wrapper's **compact result TOON** (its `status` / `errors[]` summary) — NEVER the raw build log. The compact TOON is the contract surface; the raw log is consulted only when the TOON's `log_file` pointer is needed for a specific failure investigation.
