@@ -16,8 +16,9 @@ Covers:
 
 import json
 
-from conftest import get_script_path, run_script
 from plan_logging import get_log_path, log_entry, read_decision_log, read_work_log
+
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-logging', 'manage-logging.py')
 

@@ -92,7 +92,9 @@ def handle_read(args: argparse.Namespace) -> dict[str, Any]:
     log_type = args.type
     limit = args.limit
     phase = args.phase
-    store = args.store
+    # --store defaults to 'plans' via getattr so legacy direct-call Namespaces
+    # without the attribute keep working (mirrors handle_write).
+    store = getattr(args, 'store', 'plans')
 
     # Work and decision logs support full parsing
     if log_type == 'work':
