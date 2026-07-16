@@ -538,6 +538,7 @@ def test_build_class_dispatch_writes_orchestrator_tier_kind_build_entry(tmp_path
         plan_id=None,
         script_args=['run', '--command-args', 'compile plan-marshall'],
         exit_code=0,
+        stdout='',
         log_file=str(tmp_path / 'build.log'),
     )
 
@@ -548,6 +549,7 @@ def test_build_class_dispatch_writes_orchestrator_tier_kind_build_entry(tmp_path
     assert entry['plan_id'] is None, 'orchestrator/global-tier build stamps plan_id: null'
     assert entry['worktree_sha'] == 'feedfacecafe0001'
     assert entry['exit_code'] == 0
+    assert entry['status'] == 'success', 'empty stdout + exit_code 0 derives status=success'
     assert entry['notation'] == 'plan-marshall:build-pyproject:pyproject_build'
 
 
@@ -566,6 +568,7 @@ def test_build_class_dispatch_records_non_zero_exit_code(tmp_path, monkeypatch):
         plan_id='plan-x',
         script_args=['run', '--targets', 'verify'],
         exit_code=1,
+        stdout='',
         log_file=str(tmp_path / 'build.log'),
     )
 
@@ -574,6 +577,7 @@ def test_build_class_dispatch_records_non_zero_exit_code(tmp_path, monkeypatch):
     assert entries[0]['exit_code'] == 1
     assert entries[0]['plan_id'] == 'plan-x'
     assert entries[0]['worktree_sha'] == 'feedfacecafe0002'
+    assert entries[0]['status'] == 'error', 'empty stdout + non-zero exit derives status=error'
 
 
 def test_build_class_notation_gate_scopes_the_ledger_boundary():

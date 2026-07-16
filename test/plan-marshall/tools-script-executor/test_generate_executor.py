@@ -957,8 +957,8 @@ def test_template_build_ledger_uses_shared_primitives():
     worktree-sha helper rather than re-implementing the hash or the append."""
     source = TEMPLATE_PATH.read_text(encoding='utf-8')
 
-    assert 'from _ledger_core import append_entry, build_record' in source, (
-        'template must import append_entry + build_record from the manage-change-ledger core'
+    assert 'from _ledger_core import BUILD_STATUSES, append_entry, build_record' in source, (
+        'template must import BUILD_STATUSES + append_entry + build_record from the manage-change-ledger core'
     )
     assert 'from worktree_sha import compute_worktree_sha' in source, (
         'template must import compute_worktree_sha from the shared script-shared helper'
