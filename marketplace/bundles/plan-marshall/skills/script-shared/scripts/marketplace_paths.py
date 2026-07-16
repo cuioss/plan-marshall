@@ -12,9 +12,12 @@ up from the current working directory to the nearest ancestor containing a
 ``.plan/local`` directory. There is no per-phase branch and no sideways
 resolution indirection — phases 1-4 resolve to the main checkout because the
 working directory IS main, and phase-5+ resolve to the pinned worktree because
-the working directory is pinned there. The single deliberate exception is the
-merge lock (``merge_lock.py``), which always resolves to the main checkout;
-every other resolution in the codebase is cwd-relative.
+the working directory is pinned there. The single deliberate exception mechanism
+is ``resolve_main_anchored_path`` (below), which always resolves to the main
+checkout for the bounded exception set — ``merge.lock``,
+``run-configuration.json``, ``lessons-learned``, ``build-queue.json``,
+``merge-queue.json``, ``orchestrator`` — every other resolution in the
+codebase is cwd-relative.
 """
 
 import json
@@ -369,7 +372,7 @@ def resolve_main_anchored_path(subpath: str | Path) -> Path:
     cross-session shared state MUST route through this function rather than
     re-implementing git-common-dir resolution. The bounded exception set is
     exactly: ``merge.lock``, ``run-configuration.json``, ``lessons-learned``,
-    ``build-queue.json``, ``merge-queue.json``.
+    ``build-queue.json``, ``merge-queue.json``, ``orchestrator``.
 
     Resolution precedence:
 
