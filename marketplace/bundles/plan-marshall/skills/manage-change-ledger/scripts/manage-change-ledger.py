@@ -24,6 +24,14 @@ primitive. It exposes three verbs on the shared deterministic core
   * ``query`` — read the ledger (optional ``--kind`` / ``--exit-code`` filters),
     printing the matching entries as TOON. For inspection and tests; the
     freshness gate imports ``read_entries`` directly rather than shelling here.
+  * ``classify-outcome`` — the deterministic killed-job classifier. A pure
+    function of observable inputs (reported job status, output byte count,
+    presence of a matching ``kind=build`` ledger row) returning a fixed
+    verdict: ``externally_killed`` (the whole-tree-kill signature — the job
+    reported killed, or no row was stamped AND the output was empty),
+    ``timeout``, ``success``, or ``undecidable``. The ``externally_killed``
+    verdict renders "externally killed — not flaky, do not blind-retry" so
+    the call site never mistakes a harness kill for a flaky build.
 
 The ledger resolves under the tracked-config dir (``get_tracked_config_dir()``),
 NOT plan-scoped, so plan-less orchestrator builds are covered. ``compute_worktree_sha``
@@ -37,6 +45,7 @@ from argparse import Namespace
 from typing import Any
 
 from _ledger_core import (
+    BUILD_STATUSES,
     KIND_BUILD,
     KIND_CHANGE,
     append_entry,
@@ -100,11 +109,17 @@ def run_append(args: Namespace) -> dict[str, Any]:
                 '--exit-code is required for --kind build',
                 code=ErrorCode.INVALID_INPUT,
             )
+        if not args.status:
+            return make_error(
+                '--status is required for --kind build',
+                code=ErrorCode.INVALID_INPUT,
+            )
         record = build_record(
             notation=args.notation,
             plan_id=args.plan_id,
             args=args.args,
             exit_code=args.exit_code,
+            status=args.status,
             worktree_sha=worktree_sha,
             log_file=args.log_file,
         )
@@ -136,6 +151,57 @@ def run_append(args: Namespace) -> dict[str, Any]:
     }
 
 
+_NO_BLIND_RETRY_MESSAGE = 'externally killed — not flaky, do not blind-retry'
+
+
+def run_classify_outcome(args: Namespace) -> dict[str, Any]:
+    """``classify-outcome`` — deterministic verdict over a finished/killed job.
+
+    Inputs: the reported job status (``completed`` | ``killed``), the byte
+    count of the job's captured output, and an optional ``--worktree-sha``
+    that scopes the ledger cross-check. The matching row is the MOST RECENT
+    ``kind=build`` entry (restricted to the supplied ``worktree_sha`` when
+    given), read through ``_ledger_core.read_entries`` — never a
+    re-implemented JSONL read.
+
+    Verdicts, in order:
+
+    (a) ``externally_killed`` — the job reported ``killed`` OR (no matching
+        ledger row AND ``output_bytes == 0``). The latter is the
+        whole-tree-kill signature: the executor died before the dispatch
+        boundary could stamp anything, so the ABSENCE of a row is itself the
+        signal. Renders the no-blind-retry message.
+    (b) ``timeout`` — a matching row carries ``status: timeout``.
+    (c) ``success`` — a matching row carries ``status: success``.
+    (d) ``undecidable`` — anything else.
+    """
+    entries = [e for e in read_entries() if e.get('kind') == KIND_BUILD]
+    if args.worktree_sha:
+        entries = [e for e in entries if e.get('worktree_sha') == args.worktree_sha]
+    matching_row = entries[-1] if entries else None
+
+    if args.job_status == 'killed' or (matching_row is None and args.output_bytes == 0):
+        verdict = 'externally_killed'
+        message = _NO_BLIND_RETRY_MESSAGE
+    elif matching_row is not None and matching_row.get('status') == 'timeout':
+        verdict = 'timeout'
+        message = 'build timed out — ledger row carries status: timeout'
+    elif matching_row is not None and matching_row.get('status') == 'success':
+        verdict = 'success'
+        message = 'build succeeded — ledger row carries status: success'
+    else:
+        verdict = 'undecidable'
+        message = 'no decisive signal — job completed but no conclusive ledger row'
+
+    return {
+        'status': 'success',
+        'verdict': verdict,
+        'display_detail': message,
+        'message': message,
+        'matched_row': matching_row is not None,
+    }
+
+
 def run_query(args: Namespace) -> dict[str, Any]:
     """``query`` — read the ledger with optional ``--kind`` / ``--exit-code`` filters."""
     entries = read_entries()
@@ -158,9 +224,10 @@ def main() -> int:
         epilog="""
 Examples:
   manage-change-ledger.py worktree-sha [--worktree-root PATH]
-  manage-change-ledger.py append --kind build --notation NOTATION --exit-code 0 [--plan-id ID] [--log-file PATH]
+  manage-change-ledger.py append --kind build --notation NOTATION --exit-code 0 --status success [--plan-id ID] [--log-file PATH]
   manage-change-ledger.py append --kind change --deliverable-id 2 --commit-sha SHA --changed-paths a,b,c
   manage-change-ledger.py query [--kind build|change] [--exit-code 0]
+  manage-change-ledger.py classify-outcome --job-status killed --output-bytes 0 [--worktree-sha SHA]
 """,
         subcommands=[
             {
@@ -219,6 +286,12 @@ Examples:
                         'help': 'build: the build exit code (recorded even when non-zero)',
                     },
                     {
+                        'flags': ['--status'],
+                        'dest': 'status',
+                        'choices': sorted(BUILD_STATUSES),
+                        'help': 'build: the truthful build outcome of record (required for --kind build)',
+                    },
+                    {
                         'flags': ['--log-file'],
                         'dest': 'log_file',
                         'help': 'build: the build log path',
@@ -242,6 +315,32 @@ Examples:
                         'flags': ['--changed-paths'],
                         'dest': 'changed_paths',
                         'help': 'change: comma-separated git-sourced changed paths (stored verbatim)',
+                    },
+                ],
+            },
+            {
+                'name': 'classify-outcome',
+                'help': 'Deterministic verdict over a finished/killed job (externally_killed / timeout / success / undecidable)',
+                'handler': run_classify_outcome,
+                'args': [
+                    {
+                        'flags': ['--job-status'],
+                        'dest': 'job_status',
+                        'required': True,
+                        'choices': ['completed', 'killed'],
+                        'help': 'The job status the caller observed (harness-reported)',
+                    },
+                    {
+                        'flags': ['--output-bytes'],
+                        'dest': 'output_bytes',
+                        'required': True,
+                        'type': int,
+                        'help': 'Byte count of the job captured output (0 = the kill signature half)',
+                    },
+                    {
+                        'flags': ['--worktree-sha'],
+                        'dest': 'worktree_sha',
+                        'help': 'Scope the ledger cross-check to rows stamped against this sha',
                     },
                 ],
             },

@@ -72,19 +72,25 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
 `timestamp_iso` (UTC ISO-8601). Two kinds:
 
 - **`kind=build`** — written by the executor dispatch boundary after every
-  build-class invocation. Fields: `kind: "build"`, `notation`, `plan_id`
-  (str|null — null for an orchestrator global-tier build), `args`, `exit_code`
-  (int, recorded even when non-zero — the gate filters on it), `worktree_sha`,
-  `log_file`, `timestamp_iso`. A build is NOT a commit, so a `kind=build` entry
-  does NOT carry `commit_sha` or `changed_paths`. The stamp is **tier-agnostic
-  and `run_in_background`-agnostic**: because it is written at the executor
-  dispatch boundary — which every build-class invocation traverses — the writer
-  fires identically for an inline `per_task` build the leaf reaps synchronously
-  and for an `orchestrator`-tier build the `await-long-running` seam dispatches
-  with `run_in_background: true` and reaps on notification. The detached
-  orchestrator build (`plan_id: null`) is therefore stamped exactly like an
-  inline per-task build; the freshness gate matches on `worktree_sha` + `exit_code`
-  alone and never inspects the tier or the background flag.
+  build-class invocation that runs to completion. Fields: `kind: "build"`,
+  `notation`, `plan_id` (str|null — null for an orchestrator global-tier
+  build), `args`, `exit_code` (int, recorded even when non-zero — orthogonal
+  diagnostic detail), `status` (the truthful build outcome of record —
+  `success` | `error` | `timeout` | `killed` — derived at the boundary from
+  the returncode and the wrapper's stdout TOON; a timed-out build stamps
+  `status: timeout` despite its exit code 0, and a child killed by a POSIX
+  signal stamps `status: killed`), `worktree_sha`, `log_file`,
+  `timestamp_iso`. A build is NOT a commit, so a `kind=build` entry does NOT
+  carry `commit_sha` or `changed_paths`. The stamp is **tier-agnostic** —
+  written at the executor dispatch boundary, it fires identically for an
+  inline `per_task` build and for an `orchestrator`-tier build detached via
+  the `await-long-running` seam — but ONLY for jobs whose executor process
+  survives to the boundary. A job whose whole process tree is killed dies
+  BEFORE the boundary runs and stamps nothing at all: **a missing row is
+  itself a signal** (no row + zero output bytes is the whole-tree-kill
+  signature). The freshness gate matches on `worktree_sha` + `status ==
+  success` alone and never inspects the tier, the background flag, or the
+  exit code.
 - **`kind=change`** — written by the phase-5 execute loop after each deliverable
   completes-and-commits. Fields: `kind: "change"`, `deliverable_id` (or
   `task_id`), `commit_sha`, `changed_paths` (the **git-sourced** list, stored
@@ -113,7 +119,7 @@ python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger append \
-  --kind build --notation NOTATION --exit-code EXIT_CODE \
+  --kind build --notation NOTATION --exit-code EXIT_CODE --status {success|error|timeout|killed} \
   [--plan-id PLAN_ID] [--args ARGS] [--log-file LOG_FILE] \
   [--worktree-root WORKTREE_ROOT] [--worktree-sha WORKTREE_SHA]
 ```
@@ -132,6 +138,35 @@ python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change
 python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger query \
   [--kind build|change] [--exit-code EXIT_CODE]
 ```
+
+### manage-change-ledger — classify-outcome
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger classify-outcome \
+  --job-status {completed|killed} --output-bytes OUTPUT_BYTES \
+  [--worktree-sha WORKTREE_SHA]
+```
+
+The deterministic killed-job classifier — a pure function of three observable
+inputs (the harness-reported job status, the byte count of the job's captured
+output, and the presence of a matching `kind=build` ledger row, most-recent
+first and scoped to `--worktree-sha` when supplied) returning a fixed
+`verdict`:
+
+- `externally_killed` — the job reported `killed`, OR no matching ledger row
+  exists AND `--output-bytes 0`. The latter is the **whole-tree-kill
+  signature**: the executor died before the dispatch boundary could stamp a
+  row, so the missing row plus the 0-byte output IS the kill evidence. The
+  returned TOON's `display_detail`/`message` render "externally killed — not
+  flaky, do not blind-retry" — the call site MUST NOT re-dispatch the
+  identical command as a retry.
+- `timeout` — a matching row carries `status: timeout` (a clean timeout is
+  never classified as a kill).
+- `success` — a matching row carries `status: success`.
+- `undecidable` — anything else.
+
+The classifier reads the ledger through `_ledger_core.read_entries` — never a
+re-implemented JSONL read.
 
 ## Shared Core (`scripts/_ledger_core.py`)
 
@@ -155,7 +190,7 @@ from _ledger_core import (
 |---------------------|-----------|----------|
 | `tools-script-executor` dispatch boundary | produces | `append --kind build` (executor template `kind=build` writer) |
 | `phase-5-execute` Step 10a chain-tail | produces | `append --kind change` after each per-deliverable commit |
-| `manage-tasks:pre-commit-verify-freshness` gate | consumes | imports `read_entries` + `compute_worktree_sha`; scans `kind=build` by `worktree_sha` |
+| `manage-tasks:pre-commit-verify-freshness` gate | consumes | imports `read_entries` + `compute_worktree_sha`; scans `kind=build` by `status == success` + `worktree_sha` |
 
 ## Related
 

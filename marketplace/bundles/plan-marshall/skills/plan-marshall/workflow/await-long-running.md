@@ -74,15 +74,29 @@ Run the resolved wrapper command (build consumer) or the CI-wait handler (ci-wai
 Bash(command="{command}", run_in_background: true)
 ```
 
+`run_in_background` is a **known-lossy primitive**: the harness kills backgrounded jobs with zero output, and the loss is **detected on the wake path (step d), not prevented**.
+
 Do NOT poll for completion and do NOT `sleep`/`wait` on the backgrounded job — the completion notification is the wake signal (step d).
 
-**Ledger stamping is automatic (no separate step here).** The detached wrapper `{command}` is itself a `python3 .plan/execute-script.py …` build-class invocation, so it traverses the executor dispatch boundary exactly as an inline `per_task` build does — and the boundary's tier-agnostic `kind=build` writer stamps the change-ledger with `worktree_sha` + `exit_code` (the detached orchestrator build carries `plan_id: null`). This seam therefore performs **no separate stamping step**; see [`../../manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) for the `run_in_background`-agnostic freshness stamp.
+**Ledger stamping is automatic for jobs that complete (no separate step here).** The detached wrapper `{command}` is itself a `python3 .plan/execute-script.py …` build-class invocation, so when it runs to completion it traverses the executor dispatch boundary exactly as an inline `per_task` build does — the boundary's tier-agnostic `kind=build` writer stamps the change-ledger with `worktree_sha` + the truthful `status` (the detached orchestrator build carries `plan_id: null`). A job whose whole process tree is killed dies BEFORE the boundary runs and stamps **no row at all** — the missing row is itself the kill signal step (d)'s classifier keys on. This seam therefore performs **no separate stamping step**; see [`../../manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) for the entry shape and the whole-tree-kill signature.
 
-### (d) On the completion notification, read the compact TOON
+**Why the synchronous fallback (step g) is NOT the mandated path.** The resolved `module-tests plan-marshall` envelope carries `bash_timeout_seconds: 1012` with `exceeds_bash_ceiling: true` — beyond the 600s Bash tool ceiling — so a synchronous-only seam cannot carry this repository's own orchestrator-tier builds. The primitive stays, and the kill class is made legible instead. The root-cause seam is the `marshalld` work-server epic, which this seam is independent of and must not block on.
 
-When the background-completion notification arrives, read the wrapper's **compact result TOON** (its `status` / `errors[]` summary) — NEVER the raw build log. The compact TOON is the contract surface; the raw log is consulted only when the TOON's `log_file` pointer is needed for a specific failure investigation.
+### (d) On the completion notification, classify the outcome, then read the compact TOON
 
-For the `build` consumer, analyse `status` (`success` / `error` / `timeout`) and the `errors[N]{file,line,message,category}` rows. For the `ci-wait` consumer, read `final_status`, `duration_sec`, and `failing_checks` from the handler's return TOON.
+When the background-completion notification arrives, **classify the outcome FIRST** — before consuming any TOON — via the deterministic killed-job classifier:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger classify-outcome \
+  --job-status {completed|killed} --output-bytes {N} [--worktree-sha {sha}]
+```
+
+Pass the harness-reported job state as `--job-status` and the byte count of the job's captured output as `--output-bytes`. The verdicts (see [`../../manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) § classify-outcome):
+
+- **`externally_killed`** — the harness killed the job (reported `killed`, or no ledger row was stamped AND the output is 0 bytes — the whole-tree-kill signature). The orchestrator MUST surface the verdict message **"externally killed — not flaky, do not blind-retry"** and MUST NOT re-dispatch the identical command as a retry. A kill is not flakiness; blind re-dispatch feeds the same killer.
+- **`timeout` / `success` / `undecidable`** — proceed to read the wrapper's **compact result TOON** (its `status` / `errors[]` summary) — NEVER the raw build log. The compact TOON is the contract surface; the raw log is consulted only when the TOON's `log_file` pointer is needed for a specific failure investigation.
+
+For the `build` consumer, analyse `status` (`success` / `error` / `timeout` / `killed`) and the `errors[N]{file,line,message,category}` rows. For the `ci-wait` consumer, read `final_status`, `duration_sec`, and `failing_checks` from the handler's return TOON.
 
 ### (e) State-gated, fire-exactly-once clear
 

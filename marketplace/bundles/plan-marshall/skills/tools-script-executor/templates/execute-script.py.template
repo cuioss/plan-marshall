@@ -20,7 +20,10 @@ Runtime side-effects:
     kind=build entry to the unified change-ledger (.plan/work/change-ledger.jsonl,
     resolved via the tracked-config dir so plan-less orchestrator builds are covered too).
     The entry stamps notation, plan_id (nullable), args, exit_code (recorded even when
-    non-zero), worktree_sha (the working-tree currency hash), log_file, and timestamp_iso.
+    non-zero), status (the truthful build outcome — success/error/timeout/killed —
+    derived from the returncode and the wrapper's stdout TOON, so a timed-out build
+    stamps status=timeout despite its exit code 0), worktree_sha (the working-tree
+    currency hash), log_file, and timestamp_iso.
     The write is fire-and-forget — any failure is swallowed and never alters the dispatched
     script's exit code, stdout, or stderr.
 
@@ -158,7 +161,7 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]
 # manage-change-ledger. Both directories are placed on sys.path by the
 # shared-module block injected above — the writer re-uses these primitives
 # rather than re-implementing the hash or the append.
-from _ledger_core import append_entry, build_record  # type: ignore[import-not-found]
+from _ledger_core import BUILD_STATUSES, append_entry, build_record  # type: ignore[import-not-found]
 from worktree_sha import compute_worktree_sha  # type: ignore[import-not-found]
 
 # ============================================================================
@@ -284,27 +287,68 @@ def _is_build_class_notation(notation: str) -> bool:
     return any(notation.startswith(prefix) for prefix in _BUILD_CLASS_PREFIXES)
 
 
+def _derive_build_status(exit_code: int, stdout: str) -> str:
+    """Derive the truthful build outcome for the ``kind=build`` ledger stamp.
+
+    Derivation order:
+
+    1. ``exit_code < 0`` → ``killed``. ``subprocess.run`` reports a child
+       terminated by a POSIX signal as a negative returncode, so a build
+       killed while the executor survives is stamped truthfully.
+    2. The captured stdout parses as a TOON payload whose ``status`` is a
+       known build status (see ``BUILD_STATUSES``) → that status. This closes
+       the false-fresh hole: the build wrapper reports ``status: timeout`` on
+       stdout while the PROCESS exits 0, so the stdout TOON — not the exit
+       code — carries the real outcome.
+    3. Else ``exit_code == 0`` → ``success``; any other exit → ``error``.
+
+    Defensive by construction: a malformed / absent stdout TOON falls through
+    to the exit-code branch and never raises.
+
+    Args:
+        exit_code: The subprocess returncode observed at the boundary.
+        stdout: The captured stdout of the dispatched build wrapper.
+
+    Returns:
+        One of ``success`` / ``error`` / ``timeout`` / ``killed``.
+    """
+    if exit_code < 0:
+        return 'killed'
+    if stdout:
+        try:
+            candidate = parse_toon(stdout.strip()).get('status')
+            if candidate in BUILD_STATUSES:
+                return str(candidate)
+        except Exception:
+            pass
+    return 'success' if exit_code == 0 else 'error'
+
+
 def _append_build_ledger_record(
     notation: str,
     plan_id: str | None,
     script_args: list[str],
     exit_code: int,
+    stdout: str,
     log_file: str | None,
 ) -> None:
     """Append one ``kind=build`` change-ledger entry for a build-class dispatch.
 
     Fired from :func:`main` after the subprocess completes (regardless of
-    ``exit_code`` — the freshness gate filters on it). Computes the
-    working-tree currency hash via the shared :func:`compute_worktree_sha`
-    against the executor's cwd (pinned to the worktree in phase-5, the main
-    checkout otherwise), builds the record via :func:`build_record` (which
-    stamps ``kind: "build"`` and the ISO timestamp), and appends it via the
-    pure-append :func:`append_entry` (which resolves the ledger path under the
-    tracked-config ``work/`` dir).
+    outcome — the freshness gate filters on the stamped ``status``). Derives
+    the truthful build ``status`` via :func:`_derive_build_status` (returncode
+    signal-death check, then the wrapper's stdout TOON, then the exit code),
+    computes the working-tree currency hash via the shared
+    :func:`compute_worktree_sha` against the executor's cwd (pinned to the
+    worktree in phase-5, the main checkout otherwise), builds the record via
+    :func:`build_record` (which stamps ``kind: "build"`` and the ISO
+    timestamp), and appends it via the pure-append :func:`append_entry`
+    (which resolves the ledger path under the tracked-config ``work/`` dir).
 
-    Fire-and-forget: the whole body is wrapped in a broad ``try/except`` that
-    returns silently. A ledger-write failure never alters the dispatched
-    script's exit code, stdout, or stderr.
+    Fire-and-forget: the whole body — INCLUDING the status derivation — is
+    wrapped in a broad ``try/except`` that returns silently. A derivation or
+    ledger-write failure never alters the dispatched script's exit code,
+    stdout, or stderr.
 
     Args:
         notation: The build-class notation that was dispatched.
@@ -312,15 +356,19 @@ def _append_build_ledger_record(
         script_args: Arguments forwarded to the dispatched script. Joined into
             the free-form ``args`` field.
         exit_code: The build exit code (recorded even when non-zero).
+        stdout: The captured stdout of the dispatched wrapper — the source of
+            the TOON ``status`` used by the derivation.
         log_file: The script-execution log path for this dispatch.
     """
     try:
+        status = _derive_build_status(exit_code, stdout)
         worktree_sha = compute_worktree_sha(os.getcwd())
         record = build_record(
             notation=notation,
             plan_id=plan_id,
             args=' '.join(script_args) if script_args else None,
             exit_code=exit_code,
+            status=status,
             worktree_sha=worktree_sha,
             log_file=log_file,
         )
@@ -810,17 +858,20 @@ def main():
     # Build-class dispatch boundary: after every build-class invocation, append
     # a kind=build entry to the unified change-ledger so the freshness gate can
     # ask "was this exact working-tree state built?". Records are appended
-    # unconditionally on completion regardless of exit_code (the gate filters on
-    # it). The plan_id resolves to the same value used elsewhere in the boundary
-    # (script-arg --plan-id or executor --audit-plan-id), and may be None for an
-    # orchestrator global-tier build. The writer is fire-and-forget — see
-    # _append_build_ledger_record.
+    # unconditionally on completion regardless of outcome; the stamped status
+    # carries the truthful result (success/error/timeout/killed), derived from
+    # the returncode and the wrapper's stdout TOON — the gate requires
+    # status == 'success'. The plan_id resolves to the same value used elsewhere
+    # in the boundary (script-arg --plan-id or executor --audit-plan-id), and may
+    # be None for an orchestrator global-tier build. The writer is
+    # fire-and-forget — see _append_build_ledger_record.
     if _is_build_class_notation(notation):
         _append_build_ledger_record(
             notation=notation,
             plan_id=_active_plan_id,
             script_args=script_args,
             exit_code=exit_code,
+            stdout=stdout_capture,
             log_file=str(get_log_path(_active_plan_id, 'script')),
         )
 

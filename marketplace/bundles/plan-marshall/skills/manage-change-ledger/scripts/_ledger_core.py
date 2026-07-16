@@ -42,6 +42,14 @@ from file_ops import get_tracked_config_dir, now_utc_iso
 KIND_BUILD = 'build'
 KIND_CHANGE = 'change'
 
+# The truthful build-outcome vocabulary carried by every kind=build entry's
+# `status` field. Mirrors the build wrapper's stdout TOON vocabulary
+# (success/error/timeout — see script-shared/scripts/build/_build_shared.py)
+# plus `killed` for a child terminated by a POSIX signal (negative returncode
+# at the executor dispatch boundary). The freshness gate requires
+# status == 'success'; exit_code is retained as orthogonal diagnostic detail.
+BUILD_STATUSES = frozenset({'success', 'error', 'timeout', 'killed'})
+
 
 def resolve_ledger_path() -> Path:
     """Resolve the single change-ledger path under the tracked-config dir.
@@ -100,6 +108,7 @@ def build_record(
     plan_id: str | None,
     args: str | None,
     exit_code: int,
+    status: str,
     worktree_sha: str | None,
     log_file: str | None,
     timestamp_iso: str | None = None,
@@ -107,10 +116,13 @@ def build_record(
     """Construct a ``kind=build`` ledger record.
 
     Written by the executor dispatch boundary after every build-class
-    invocation. Carries the build outcome (``exit_code``, recorded even when
-    non-zero — the gate filters on it) stamped against the working-tree
-    ``worktree_sha`` at capture time. A build is NOT a commit, so this record
-    does NOT carry ``commit_sha`` or ``changed_paths``.
+    invocation. ``status`` is the outcome of record — one of
+    :data:`BUILD_STATUSES` (``success`` / ``error`` / ``timeout`` /
+    ``killed``), derived truthfully at the dispatch boundary (a timed-out
+    build carries ``status: timeout`` despite its exit code 0). ``exit_code``
+    is retained as orthogonal diagnostic detail. Both are stamped against the
+    working-tree ``worktree_sha`` at capture time. A build is NOT a commit, so
+    this record does NOT carry ``commit_sha`` or ``changed_paths``.
     """
     return {
         'kind': KIND_BUILD,
@@ -118,6 +130,7 @@ def build_record(
         'plan_id': plan_id,
         'args': args,
         'exit_code': exit_code,
+        'status': status,
         'worktree_sha': worktree_sha,
         'log_file': log_file,
         'timestamp_iso': timestamp_iso if timestamp_iso is not None else now_utc_iso(),
