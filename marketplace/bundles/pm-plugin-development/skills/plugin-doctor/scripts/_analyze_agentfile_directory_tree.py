@@ -16,8 +16,10 @@ structural overview is genuinely wanted) are defined in the shared rubric
 directory-tree anti-pattern"); this rule is the deterministic backstop that
 points at the cognitive recipe for judgement-based remediation.
 
-Analyze-surfaced only: runs under ``doctor-marketplace.py analyze`` and is
-intentionally absent from ``quality-gate``.
+Build-failing under ``quality-gate``: runs in both
+``doctor-marketplace.py quality-gate`` (via ``RuleRunner.run_quality_gate``) and
+``analyze``. A directory-tree drawing in an always-on agentfile regresses the
+build, not merely an advisory finding.
 
 Public API
 ----------
@@ -41,7 +43,7 @@ from _rule_registry import RuleDescriptor
 RULE_ID = 'agentfile-directory-tree-present'
 RULE_NAME = 'analyze_agentfile_directory_tree'
 
-# Analyze-surfaced agentfile-hygiene backstop (intentionally not in quality-gate).
+# Build-failing agentfile-hygiene backstop (enforced under quality-gate).
 RULE_DESCRIPTOR = RuleDescriptor(
     rule_id=RULE_ID,
     severity='warning',

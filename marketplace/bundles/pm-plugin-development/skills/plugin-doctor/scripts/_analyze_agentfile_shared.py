@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared detection helpers for the agentfile-hygiene plugin-doctor rules.
 
-Two analyze-surfaced backstop rules consume these helpers:
+Two backstop rules consume these helpers:
 
 - ``agentfile-line-count-over-budget`` (``_analyze_agentfile_line_budget.py``)
 - ``agentfile-directory-tree-present`` (``_analyze_agentfile_directory_tree.py``)

@@ -736,6 +736,16 @@ def cmd_quality_gate(args) -> dict:
                                     wrong type, empty description, duplicate key,
                                     or any declaration that fails the central D1
                                     contract parser; ownerless docs are skipped)
+      - analyze_agentfile_line_budget (agentfile-line-count-over-budget: an
+                                    always-on agentfile (``CLAUDE.md`` /
+                                    ``AGENTS.md``) whose line count exceeds the
+                                    budget — build-failing under quality-gate;
+                                    rubric owned by
+                                    plan-marshall:ref-agentfile-hygiene)
+      - analyze_agentfile_directory_tree (agentfile-directory-tree-present: a
+                                    fenced directory-tree drawing inside an
+                                    always-on agentfile — build-failing under
+                                    quality-gate)
 
     Note: ``analyze_bash_chain_shapes_in_skills`` and
     ``analyze_tmp_redirect_in_skills`` are NOT included in quality-gate because

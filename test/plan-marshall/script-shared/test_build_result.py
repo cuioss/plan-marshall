@@ -38,6 +38,7 @@ STATUS_SUCCESS = _build_result_mod.STATUS_SUCCESS
 STATUS_TIMEOUT = _build_result_mod.STATUS_TIMEOUT
 TIMESTAMP_FORMAT = _build_result_mod.TIMESTAMP_FORMAT
 _get_log_base_dir = _build_result_mod._get_log_base_dir
+_resolve_log_base_dir = _build_result_mod._resolve_log_base_dir
 create_log_file = _build_result_mod.create_log_file
 error_result = _build_result_mod.error_result
 success_result = _build_result_mod.success_result
@@ -132,6 +133,59 @@ def test_create_log_file_returns_absolute():
     with tempfile.TemporaryDirectory() as tmpdir:
         log_file = create_log_file('maven', 'default', tmpdir)
         assert Path(log_file).is_absolute()
+
+
+def test_create_log_file_rejects_parent_escape_scope(tmp_path):
+    """A ..-escape scope is rejected: no log dir is created outside the base.
+
+    Fails against the pre-fix code (which builds ``base / scope`` unguarded,
+    letting ``../../../escaped`` climb out of the sanctioned base) and passes
+    once the containment guard fails closed with ``None``.
+    """
+    # Arrange: base resolves to {project_dir}/.plan/temp/build-output, so a
+    # three-level ``..`` climb lands back at project_dir/escaped — outside base.
+    project_dir = str(tmp_path)
+    escaped = tmp_path / 'escaped'
+
+    # Act
+    log_file = create_log_file('maven', '../../../escaped', project_dir)
+
+    # Assert: guard fails closed and nothing was created outside the base.
+    assert log_file is None
+    assert not escaped.exists()
+
+
+def test_create_log_file_rejects_absolute_scope(tmp_path):
+    """An absolute-path scope is rejected and creates no file outside the base.
+
+    Fails against the pre-fix code (an absolute ``scope`` replaces the base
+    entirely under ``Path`` join semantics, so the log lands at the attacker's
+    absolute path) and passes once the guard fails closed with ``None``.
+    """
+    # Arrange: a tmp-scoped absolute path we can inspect for non-creation.
+    project_dir = str(tmp_path)
+    evil_target = tmp_path / 'evil_target'
+
+    # Act
+    log_file = create_log_file('maven', str(evil_target), project_dir)
+
+    # Assert: guard fails closed and the escaping absolute dir was not created.
+    assert log_file is None
+    assert not evil_target.exists()
+
+
+def test_create_log_file_legitimate_scope_stays_contained(tmp_path):
+    """A legitimate single-segment scope still resolves strictly under the base."""
+    # Arrange
+    project_dir = str(tmp_path)
+    base = _resolve_log_base_dir(project_dir).resolve()
+
+    # Act
+    log_file = create_log_file('maven', 'core-api', project_dir)
+
+    # Assert
+    assert log_file is not None
+    assert base in Path(log_file).resolve().parents
 
 
 def test_success_result_basic():

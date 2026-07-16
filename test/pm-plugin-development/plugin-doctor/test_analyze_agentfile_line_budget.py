@@ -6,8 +6,9 @@ The analyzer discovers every always-on agentfile (``CLAUDE.md`` at any nesting
 level plus ``AGENTS.md``) under the repository root derived from the supplied
 marketplace (``bundles/``) root, and flags each one whose total line count
 exceeds the always-on line budget (default 200, configurable per call). The
-rule is analyze-surfaced only — registered in ``doctor-marketplace.py``'s
-``cmd_analyze`` and intentionally absent from ``cmd_quality_gate``.
+rule is build-failing under quality-gate — registered in
+``doctor-marketplace.py``'s ``cmd_quality_gate`` (via
+``RuleRunner.run_quality_gate``) as well as ``cmd_analyze``.
 
 Fixture shape: the analyzer derives the repo root as ``marketplace_root.parent.parent``,
 so each fixture nests ``{repo}/marketplace/bundles`` as the marketplace root and
@@ -215,19 +216,19 @@ class TestConfigurableBudget:
 
 
 # ===========================================================================
-# Registration — analyze-surfaced only (present in cmd_analyze, absent from
-# cmd_quality_gate).
+# Registration — build-failing under quality-gate (present in BOTH
+# cmd_quality_gate and cmd_analyze).
 # ===========================================================================
 
 
-class TestAnalyzeOnlyRegistration:
-    """The rule is wired into cmd_analyze but NOT cmd_quality_gate."""
+class TestQualityGateRegistration:
+    """The rule is wired into BOTH cmd_quality_gate and cmd_analyze."""
 
-    def test_call_present_in_analyze_runner_absent_in_quality_gate(self) -> None:
+    def test_call_present_in_both_analyze_and_quality_gate(self) -> None:
         # The marketplace-wide dispatch lives on _runner.RuleRunner: agentfile
-        # rules run in run_analyze_marketplace_rules but NOT in run_quality_gate
-        # (analyze-surfaced only).
-        runner_src = (
+        # rules run in run_analyze_marketplace_rules AND run_quality_gate
+        # (build-failing under quality-gate).
+        runner_src: str = (
             get_scripts_dir('pm-plugin-development', 'plugin-doctor') / '_runner.py'
         ).read_text(encoding='utf-8')
 
@@ -242,4 +243,4 @@ class TestAnalyzeOnlyRegistration:
         quality_gate_body = _method_body('run_quality_gate')
 
         assert 'analyze_agentfile_line_budget(' in analyze_body
-        assert 'analyze_agentfile_line_budget(' not in quality_gate_body
+        assert 'analyze_agentfile_line_budget(' in quality_gate_body

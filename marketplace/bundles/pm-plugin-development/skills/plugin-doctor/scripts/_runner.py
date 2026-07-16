@@ -250,6 +250,18 @@ class RuleRunner:
             'analyze_sys_path_bootstrap',
             scoped(analyze_sys_path_bootstrap(root)),
         )
+        # agentfile-hygiene cluster — the two deterministic backstop rules
+        # (line-budget + directory-tree) that embody the rubric owned by
+        # plan-marshall:ref-agentfile-hygiene/standards/rubric.md. Build-failing
+        # under quality-gate; they stay active in analyze mode too.
+        emit(
+            'analyze_agentfile_line_budget',
+            scoped(analyze_agentfile_line_budget(root)),
+        )
+        emit(
+            'analyze_agentfile_directory_tree',
+            scoped(analyze_agentfile_directory_tree(root)),
+        )
 
         # manage-invocation cluster — scoped uses the referenced-notation index,
         # unscoped uses the eager whole-marketplace scan. find_marketplace_root
