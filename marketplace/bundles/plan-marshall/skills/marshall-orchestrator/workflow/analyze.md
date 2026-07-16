@@ -53,7 +53,7 @@ Decide which output contract applies:
 
 1. Record the observation as a Watch or Open Defect entry in `epic.md` — NO ship semantics, no landing report, no queue-status transition for the observed plan.
 2. When the observation warrants new work, either **fold** it into an existing staged `plans/PLAN-NN-{plan_slug}.md` spec or **spawn** a new spec (and queue entry via the `decompose.md` Step 4 queue-write shape) — anything larger than the small-ops carve-out becomes a plan, never inline work.
-3. Regenerate the START-HERE block only when the queue was touched (Step 3.5 invocation).
+3. Regenerate the START-HERE block only when the queue was touched (the Step 3 item 5 invocation).
 
 ### Step 5: Log and set the resume anchor
 
