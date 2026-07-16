@@ -113,11 +113,19 @@ gh api repos/{owner}/{repo}/rules/branches/{branch}  # → [ {type: ...}, ... ]
 | HTTP 404 (rules endpoint unavailable) | `ineligible` |
 | HTTP 401/403 or "must have admin" / "Resource not accessible" | actionable auth-scope error (never a stack trace) |
 
+On `eligible_configured` the success TOON additionally carries `merge_method` —
+the found `merge_queue` rule's `parameters.merge_method` in the ruleset spelling
+(`SQUASH` / `MERGE` / `REBASE`). The field is omitted when the queue is
+unconfigured or the parameter is absent/malformed.
+
 ### repo merge-queue enable
 
-Probe first. On `eligible_configured` the verb is a no-op (`changed: false`). On
-`eligible_unconfigured` it creates an active branch ruleset carrying a
-`merge_queue` rule scoped to the default branch:
+Probe first. On `eligible_unconfigured` it creates an active branch ruleset
+carrying a `merge_queue` rule scoped to the default branch. The rule's
+`merge_method` is the mapped value of the configured `pr_merge_strategy`
+(`default:branch-cleanup` step param): `squash` → `SQUASH`, `merge` → `MERGE`,
+`rebase` → `REBASE`, defaulting to `SQUASH` on an absent/malformed/unknown
+value:
 
 **CLI Command**:
 ```bash
@@ -133,9 +141,21 @@ field flags, so it is written to a transient file and passed via `--input`):
   "target": "branch",
   "enforcement": "active",
   "conditions": {"ref_name": {"include": ["refs/heads/{branch}"], "exclude": []}},
-  "rules": [{"type": "merge_queue", "parameters": {"merge_method": "MERGE", "grouping_strategy": "ALLGREEN", ...}}]
+  "rules": [{"type": "merge_queue", "parameters": {"merge_method": "{mapped pr_merge_strategy}", "grouping_strategy": "ALLGREEN", ...}}]
 }
 ```
+
+On `eligible_configured` the verb reconciles the named
+`plan-marshall-merge-queue` ruleset's merge method against the same mapped
+`pr_merge_strategy` value: when `parameters.merge_method` already matches, the
+verb is a no-op (`changed: false`); when it differs, the corrected `merge_queue`
+rule parameters are written via `PUT /repos/{owner}/{repo}/rulesets/{id}` (a
+documented partial update, sent with the existing
+name/target/enforcement/conditions/rules echoed back defensively) and the verb
+returns `changed: true` with the reconcile detail. The method reconcile shares
+one ruleset fetch — and at most one PUT — with the bypass-actor self-heal. A
+merge queue configured via some other ruleset name has nothing named to
+reconcile and stays a no-op.
 
 On an `ineligible` probe the verb refuses with the actionable message naming the
 Administration-scope / org-policy remedy; an auth-scope failure returns the same

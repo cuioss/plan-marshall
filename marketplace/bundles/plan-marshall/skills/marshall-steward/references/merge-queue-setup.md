@@ -36,13 +36,34 @@ verbatim and stop (never a stack trace).
 ### Step MQ-2: Branch on the discriminator
 
 **On `eligible_configured`** — the platform merge queue is already configured.
-Report and return silently; make no change:
+Run the `enable` verb anyway: on GitHub it reconciles the named ruleset's merge
+method against the configured `pr_merge_strategy` (see
+`tools-integration-ci/standards/pr-operations.md` § "Workflow: Repo Merge-Queue
+Probe / Enable"), so it may return `changed: true` with the reconcile detail
+rather than the historical unconditional no-op:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --level INFO \
-  --message "[STEWARD] (plan-marshall:marshall-steward) Merge queue already configured — no change made"
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci repo merge-queue enable
 ```
+
+Log the outcome the verb actually reports — the `detail` field names what (if
+anything) was reconciled:
+
+- `changed: false` →
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --level INFO \
+    --message "[STEWARD] (plan-marshall:marshall-steward) Merge queue already configured — no change made"
+  ```
+
+- `changed: true` →
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --level INFO \
+    --message "[STEWARD] (plan-marshall:marshall-steward) Merge queue already configured — reconciled: {detail from enable TOON}"
+  ```
 
 **On `eligible_unconfigured`** — available but not yet configured. Fire exactly
 ONE `AskUserQuestion`:
@@ -103,10 +124,18 @@ Do NOT set `use_merge_queue=true` on an `ineligible` / `unsupported` probe — t
 
 ## Idempotence and non-clobbering
 
-- The step is **idempotent**: a re-run against an `eligible_configured` project
-  surfaces the "already configured" note and mutates nothing.
-- The `enable` verb is itself idempotent (an already-configured repo is left
-  unchanged, `changed: false`), so a double-invocation is safe.
+- The queue's merge method **tracks `pr_merge_strategy`** (the
+  `default:branch-cleanup` step param) from project config at enable time: a
+  fresh provision writes the mapped method, and a re-run against a configured
+  repo reconciles any drift.
+- The step is **idempotent** in the reconciled sense: a re-run against an
+  `eligible_configured` project mutates nothing when the queue's configured
+  merge method already matches `pr_merge_strategy` (`changed: false`, the
+  "already configured — no change made" note). A method drift is corrected
+  exactly once (`changed: true` with the reconcile detail); the run after that
+  is a no-op again.
+- The `enable` verb is itself idempotent under the same definition, so a
+  double-invocation is safe.
 - The step **never clobbers** an operator's prior `use_merge_queue` choice: it
   only writes `use_merge_queue=true` on an explicit "Enable now" answer against
   an `eligible_unconfigured` probe.
