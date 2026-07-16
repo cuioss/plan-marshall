@@ -589,6 +589,29 @@ def _command_executable(commands: dict[str, Any], command_name: str) -> str:
     return cmd_data if isinstance(cmd_data, str) else cmd_data.get('executable', '')
 
 
+def _resolved_command_dict(
+    commands: dict[str, Any], command_name: str, module_name: str, resolution_level: str
+) -> dict[str, Any]:
+    """Build ``resolve_command``'s return dict from a resolved command entry.
+
+    Surfaces the authored ``mutating`` signal additively: dict-form entries
+    carrying ``mutating: true`` (stamped by build-maven's ``_build_commands``
+    from the authored ``build.maven.profiles.mutating`` list) ride the field
+    into the return dict; string entries and unmarked dict entries carry no
+    ``mutating`` key.
+    """
+    result: dict[str, Any] = {
+        'module': module_name,
+        'command': command_name,
+        'executable': _command_executable(commands, command_name),
+        'resolution_level': resolution_level,
+    }
+    cmd_data = commands[command_name]
+    if isinstance(cmd_data, dict) and cmd_data.get('mutating'):
+        result['mutating'] = True
+    return result
+
+
 def _needs_profile_enrichment(command_name: str, commands: dict[str, Any]) -> bool:
     """Whether requesting ``command_name`` warrants a lazy profile enrich.
 
@@ -610,7 +633,7 @@ def _needs_profile_enrichment(command_name: str, commands: dict[str, Any]) -> bo
     return False
 
 
-def resolve_command(command_name: str, module_name: str | None = None, project_dir: str = '.') -> dict[str, str]:
+def resolve_command(command_name: str, module_name: str | None = None, project_dir: str = '.') -> dict[str, Any]:
     """Resolve command to executable form with cascading fallback.
 
     Resolution order:
@@ -647,8 +670,7 @@ def resolve_command(command_name: str, module_name: str | None = None, project_d
             commands = enriched_commands
 
     if command_name in commands:
-        executable = _command_executable(commands, command_name)
-        return {'module': module_name, 'command': command_name, 'executable': executable, 'resolution_level': 'module'}
+        return _resolved_command_dict(commands, command_name, module_name, 'module')
 
     # Cascade: try root module if current module is not already root.
     if root_module_name and module_name != root_module_name:
@@ -662,13 +684,7 @@ def resolve_command(command_name: str, module_name: str | None = None, project_d
             if enriched_root is not None:
                 root_commands = enriched_root
         if command_name in root_commands:
-            executable = _command_executable(root_commands, command_name)
-            return {
-                'module': root_module_name,
-                'command': command_name,
-                'executable': executable,
-                'resolution_level': 'root',
-            }
+            return _resolved_command_dict(root_commands, command_name, root_module_name, 'root')
 
     raise ValueError(f'Command not found: {command_name}')
 

@@ -6,7 +6,7 @@ This document is the authoritative source for the augmented fields. The base res
 
 ## Augmented Fields
 
-When the resolved `executable` matches the Bucket B build shape, the result carries these four fields in addition to the base `status`, `module`, `command`, `executable`, and `resolution_level`:
+When the resolved `executable` matches the Bucket B build shape, the result carries these four fields in addition to the base `status`, `module`, `command`, `executable`, `resolution_level`, and (when authored) `mutating` (see [Authored `mutating` signal](#authored-mutating-signal)):
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -104,6 +104,25 @@ LLMs that read this TOON MUST follow the rule documented in `persona-plan-marsha
 - `execution_tier=orchestrator` → do NOT invoke the command via Bash from a sub-agent; return control to the orchestrator per the surrounding workflow.
 
 The `hint` field is a recognition token, not optional prose — its presence in the TOON is the structural signal that the contract applies.
+
+## Authored `mutating` signal
+
+A resolved command MAY carry an optional `mutating: true` field. The field is **authored, never inferred**: the operator lists source-mutating profile ids in the `build.maven.profiles.mutating` ext-defaults key (CSV, symmetric with `build.maven.profiles.skip` / `build.maven.profiles.map.canonical`), build-maven's command-map builder stamps `mutating: true` onto every command-map entry derived from a listed profile, and `resolve` surfaces the field additively from the resolved entry. Absence of the field means "not authored as mutating" — unknown, not safe; there is no inferred `mutating: false`.
+
+The canonical trigger is an OpenRewrite-bearing profile: a `quality-gate` that resolves `verify -Ppre-commit` rewrites tracked sources in place, which is destructive when run against a worktree carrying uncommitted work.
+
+**Gate-context behavioural contract**: a worktree gate context (per-task verification, per-deliverable focused build, end-of-phase sweep, pre-push gate) SHOULD prefer a non-mutating candidate when one resolves for the same canonical, and MUST NOT run a `mutating: true` command as the pre-push worktree gate without operator confirmation. The signal rides through `derive-verification`'s command rows unchanged (the deriver copies the resolved dict), so a derived gate command carries the same field.
+
+Example:
+
+```toon
+status: success
+module: my-service
+command: quality-gate
+executable: python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Ppre-commit"
+resolution_level: module
+mutating: true
+```
 
 ## Build-class → verification command
 

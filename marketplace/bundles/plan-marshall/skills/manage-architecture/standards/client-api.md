@@ -458,6 +458,12 @@ command: module-tests
 executable: python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "test -pl oauth-sheriff-core -am"
 ```
 
+**Optional field**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `mutating` | bool | Present (and `true`) only when the resolved command was derived from a profile the operator authored as source-mutating (`build.maven.profiles.mutating`). Absence means "not authored as mutating" — unknown, not safe. See [resolve-command.md](resolve-command.md) § "Authored `mutating` signal" for the authoring source and the gate-context behavioural contract. |
+
 **Hybrid module example** (both Maven and npm):
 ```toon
 module: nifi-cuioss-ui

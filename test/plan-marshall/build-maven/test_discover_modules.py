@@ -44,6 +44,8 @@ _parse_profiles_from_maven_output = _maven_cmd_discover_mod._parse_profiles_from
 _filter_command_line_profiles = _maven_cmd_discover_mod.filter_command_line_profiles
 _filter_skip_profiles = _maven_cmd_discover_mod.filter_skip_profiles
 _map_canonical_profiles = _maven_cmd_discover_mod.map_canonical_profiles
+_mark_mutating_profiles = _maven_cmd_discover_mod.mark_mutating_profiles
+EXT_KEY_PROFILES_MUTATING = _maven_cmd_discover_mod.EXT_KEY_PROFILES_MUTATING
 
 # =============================================================================
 # Fixtures
@@ -765,6 +767,125 @@ def test_enrich_maven_module_is_the_only_subprocess_seam(monkeypatch):
 
     assert result is not None
     assert len(metadata_calls) == 1
+
+
+# =============================================================================
+# Unit Tests: Authored Mutating Profiles (build.maven.profiles.mutating)
+# =============================================================================
+
+_MUTATING_PROFILE_POM = """<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>gate-app</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+  <profiles>
+    <profile><id>pre-commit</id></profile>
+  </profiles>
+</project>
+"""
+
+
+def _patch_ext_defaults(monkeypatch, values: dict[str, str]):
+    """Patch _config_core.ext_defaults_get to serve authored ext-defaults values."""
+    import _config_core
+
+    def fake_ext_defaults_get(key, project_root):
+        return values.get(key)
+
+    monkeypatch.setattr(_config_core, 'ext_defaults_get', fake_ext_defaults_get)
+
+
+def test_mark_mutating_stamps_listed_profiles_only():
+    """mark_mutating_profiles stamps mutating: True on listed ids only."""
+    profiles = [
+        {'id': 'pre-commit', 'canonical': 'quality-gate'},
+        {'id': 'coverage', 'canonical': 'coverage'},
+    ]
+
+    marked = _mark_mutating_profiles(profiles, ['pre-commit'])
+
+    by_id = {p['id']: p for p in marked}
+    assert by_id['pre-commit']['mutating'] is True
+    assert 'mutating' not in by_id['coverage']
+
+
+def test_mark_mutating_none_list_stamps_nothing():
+    """A None/empty mutating list leaves every profile unmarked."""
+    profiles = [{'id': 'pre-commit', 'canonical': 'quality-gate'}]
+
+    assert 'mutating' not in _mark_mutating_profiles(profiles, None)[0]
+    assert 'mutating' not in _mark_mutating_profiles(profiles, [])[0]
+
+
+def test_build_commands_stamps_mutating_on_authored_quality_gate():
+    """A quality-gate derived from a mutating-marked profile is dict-form with mutating: true."""
+    profiles = [{'id': 'pre-commit', 'canonical': 'quality-gate', 'mutating': True}]
+
+    commands = _build_commands(
+        module_name='my-module', packaging='jar', has_sources=True, has_tests=True, profiles=profiles, relative_path='.'
+    )
+
+    entry = commands['quality-gate']
+    assert isinstance(entry, dict)
+    assert entry['mutating'] is True
+    assert 'verify -Ppre-commit' in entry['executable']
+    # Entries not derived from a listed profile stay plain strings — no
+    # inferred mutating: false ever.
+    assert isinstance(commands['verify'], str)
+
+
+def test_build_commands_no_mutating_key_without_authoring():
+    """Without the authored marker, profile-derived entries stay plain strings."""
+    profiles = [{'id': 'pre-commit', 'canonical': 'quality-gate'}]
+
+    commands = _build_commands(
+        module_name='my-module', packaging='jar', has_sources=True, has_tests=True, profiles=profiles, relative_path='.'
+    )
+
+    assert isinstance(commands['quality-gate'], str)
+    assert 'verify -Ppre-commit' in commands['quality-gate']
+
+
+def test_build_commands_stamps_mutating_on_profile_canonical():
+    """A non-quality-gate profile canonical (e.g. coverage) is stamped too."""
+    profiles = [{'id': 'rewrite-coverage', 'canonical': 'coverage', 'mutating': True}]
+
+    commands = _build_commands(
+        module_name='my-module', packaging='jar', has_sources=True, has_tests=True, profiles=profiles, relative_path='.'
+    )
+
+    entry = commands['coverage']
+    assert isinstance(entry, dict)
+    assert entry['mutating'] is True
+    assert 'verify -Prewrite-coverage' in entry['executable']
+
+
+def test_discover_quality_gate_carries_mutating_when_authored(monkeypatch):
+    """Lesson 2026-07-16-17-013 rec. 3: authored build.maven.profiles.mutating=pre-commit
+    yields a discovered quality-gate entry carrying mutating: true."""
+    _patch_ext_defaults(monkeypatch, {EXT_KEY_PROFILES_MUTATING: 'pre-commit'})
+    root = _make_module_tree({'.': _MUTATING_PROFILE_POM})
+
+    module = discover_maven_modules(str(root))[0]
+
+    entry = module['commands']['quality-gate']
+    assert isinstance(entry, dict)
+    assert entry['mutating'] is True
+    assert 'verify -Ppre-commit' in entry['executable']
+
+
+def test_discover_quality_gate_plain_without_mutating_key(monkeypatch):
+    """Without the authored key, the discovered quality-gate entry carries no mutating key."""
+    _patch_ext_defaults(monkeypatch, {})
+    root = _make_module_tree({'.': _MUTATING_PROFILE_POM})
+
+    module = discover_maven_modules(str(root))[0]
+
+    entry = module['commands']['quality-gate']
+    assert isinstance(entry, str)
+    assert 'verify -Ppre-commit' in entry
 
 
 # =============================================================================

@@ -123,6 +123,26 @@ def map_canonical_profiles(profiles: list[dict], explicit_mapping: dict[str, str
     return result
 
 
+def mark_mutating_profiles(profiles: list[dict], mutating_list: list[str] | None) -> list[dict]:
+    """Stamp ``mutating: True`` onto profiles authored as source-mutating.
+
+    The authored ``build.maven.profiles.mutating`` CSV is the only source —
+    no pattern inference. Profiles not listed carry no ``mutating`` key.
+
+    Args:
+        profiles: List of profile dicts with 'id' field.
+        mutating_list: Authored profile IDs that mutate sources (None or empty
+            stamps nothing).
+
+    Returns:
+        List of profile dicts, listed ones carrying ``mutating: True``.
+    """
+    if not mutating_list:
+        return profiles
+    mutating_set = {m.strip() for m in mutating_list}
+    return [{**p, 'mutating': True} if p['id'] in mutating_set else p for p in profiles]
+
+
 # =============================================================================
 # Extension Defaults Keys (for config_defaults callback)
 # =============================================================================
@@ -145,6 +165,49 @@ EXT_KEY_PROFILES_SKIP = 'build.maven.profiles.skip'
 # Format: profile1:canonical1,profile2:canonical2,...
 # Effect: Maps profile IDs to canonical command names during discovery
 EXT_KEY_PROFILES_MAP = 'build.maven.profiles.map.canonical'
+
+# Key: build.maven.profiles.mutating
+# Value: Comma-separated list of profile IDs the operator authors as
+#        source-mutating (e.g. an OpenRewrite-bearing pre-commit profile)
+# Example: "pre-commit"
+# Effect: Command-map entries derived from a listed profile carry
+#         `mutating: true`; entries not derived from a listed profile carry no
+#         `mutating` key, so authored-true vs unknown stays distinguishable.
+#         No pattern inference of any kind — the operator authoring is the
+#         only source.
+EXT_KEY_PROFILES_MUTATING = 'build.maven.profiles.mutating'
+
+
+def _read_profile_ext_config(project_root: str) -> tuple[list[str] | None, dict[str, str] | None, list[str] | None]:
+    """Read the three authored profile ext-defaults keys for ``project_root``.
+
+    Returns:
+        Tuple of (skip_list, explicit_mapping, mutating_list); each element is
+        ``None`` when its key is unset.
+    """
+    from _config_core import ext_defaults_get
+
+    skip_list = None
+    explicit_mapping = None
+    mutating_list = None
+
+    skip_csv = ext_defaults_get(EXT_KEY_PROFILES_SKIP, project_root)
+    if skip_csv:
+        skip_list = [s.strip() for s in skip_csv.split(',')]
+
+    map_csv = ext_defaults_get(EXT_KEY_PROFILES_MAP, project_root)
+    if map_csv:
+        explicit_mapping = {}
+        for pair in map_csv.split(','):
+            if ':' in pair:
+                profile_id, canonical = pair.split(':', 1)
+                explicit_mapping[profile_id.strip()] = canonical.strip()
+
+    mutating_csv = ext_defaults_get(EXT_KEY_PROFILES_MUTATING, project_root)
+    if mutating_csv:
+        mutating_list = [m.strip() for m in mutating_csv.split(',')]
+
+    return skip_list, explicit_mapping, mutating_list
 
 
 # =============================================================================
@@ -296,29 +359,16 @@ def _map_canonical_declared_profiles(profile_ids: list[str], project_root: str) 
         project_root: Project root for configuration lookup (skip-list, mapping).
 
     Returns:
-        List of ``{id, canonical}`` dicts, skip-filtered, in declared order.
+        List of ``{id, canonical}`` dicts (authored-mutating ones carrying
+        ``mutating: True``), skip-filtered, in declared order.
     """
-    from _config_core import ext_defaults_get
-
     profiles = [{'id': pid} for pid in profile_ids]
 
-    skip_list = None
-    explicit_mapping = None
-
-    skip_csv = ext_defaults_get(EXT_KEY_PROFILES_SKIP, project_root)
-    if skip_csv:
-        skip_list = [s.strip() for s in skip_csv.split(',')]
-
-    map_csv = ext_defaults_get(EXT_KEY_PROFILES_MAP, project_root)
-    if map_csv:
-        explicit_mapping = {}
-        for pair in map_csv.split(','):
-            if ':' in pair:
-                profile_id, canonical = pair.split(':', 1)
-                explicit_mapping[profile_id.strip()] = canonical.strip()
+    skip_list, explicit_mapping, mutating_list = _read_profile_ext_config(project_root)
 
     profiles = filter_skip_profiles(profiles, skip_list)
-    return map_canonical_profiles(profiles, explicit_mapping)
+    profiles = map_canonical_profiles(profiles, explicit_mapping)
+    return mark_mutating_profiles(profiles, mutating_list)
 
 
 # =============================================================================
@@ -577,42 +627,33 @@ def _apply_profile_pipeline(raw_profiles: list, project_root: str) -> list:
     1. Filter to command-line activated profiles only (Active: false)
     2. Apply skip list from configuration
     3. Map to canonical command names
+    4. Stamp authored-mutating profiles
 
     Args:
         raw_profiles: Raw profiles from Maven output with is_active field
         project_root: Project root for configuration lookup
 
     Returns:
-        List of processed profile dicts with id and canonical fields only
+        List of processed profile dicts with id and canonical fields
+        (authored-mutating ones carrying ``mutating: True``)
     """
     # Import directly - executor sets up PYTHONPATH for cross-skill imports
-    from _config_core import ext_defaults_get
     from plan_logging import log_entry
 
     # 1. Filter to command-line only (Active: false)
     profiles = filter_command_line_profiles(raw_profiles)
 
-    # 2. Get skip list and mapping from configuration (if available)
-    skip_list = None
-    explicit_mapping = None
-
-    skip_csv = ext_defaults_get(EXT_KEY_PROFILES_SKIP, project_root)
-    if skip_csv:
-        skip_list = [s.strip() for s in skip_csv.split(',')]
-
-    map_csv = ext_defaults_get(EXT_KEY_PROFILES_MAP, project_root)
-    if map_csv:
-        explicit_mapping = {}
-        for pair in map_csv.split(','):
-            if ':' in pair:
-                profile_id, canonical = pair.split(':', 1)
-                explicit_mapping[profile_id.strip()] = canonical.strip()
+    # 2. Get skip list, mapping, and mutating list from configuration
+    skip_list, explicit_mapping, mutating_list = _read_profile_ext_config(project_root)
 
     # 3. Apply skip list
     profiles = filter_skip_profiles(profiles, skip_list)
 
     # 4. Map to canonical names
     profiles = map_canonical_profiles(profiles, explicit_mapping)
+
+    # 5. Stamp authored-mutating profiles
+    profiles = mark_mutating_profiles(profiles, mutating_list)
 
     log_entry(
         'script',
@@ -709,6 +750,11 @@ def _build_commands(
     - Non-pom: clean-install
     - Profile-based: integration-tests, coverage, benchmark
 
+    Entries derived from an authored-mutating profile (see
+    ``EXT_KEY_PROFILES_MUTATING``) are emitted in dict form
+    ``{'executable': ..., 'mutating': True}``; all other entries are plain
+    executable strings.
+
     ``compile`` / ``package`` are emitted for ``pom`` aggregators too as a
     reactor passthrough — ``compile`` at the root drives the whole reactor's
     compile, and ``compile -pl {relative_path}`` a nested aggregator's subtree.
@@ -760,8 +806,10 @@ def _build_commands(
             cmd_map['module-tests'] = f'test{pl_arg}'
 
     # 3. Profile-based commands (integration-tests, coverage, benchmark)
-    # Track which profiles map to each canonical for conflict detection
+    # Track which profiles map to each canonical for conflict detection, and
+    # which canonicals were derived from an authored-mutating profile.
     canonical_profiles: dict[str, list[str]] = {}
+    mutating_canonicals: set[str] = set()
     for profile in profiles or []:
         canonical = profile.get('canonical')
         profile_id = profile.get('id')
@@ -773,10 +821,20 @@ def _build_commands(
                 # Only use the first profile match — subsequent matches are conflicts
                 if cmd_map.get('quality-gate') == f'verify{pl_arg}':
                     cmd_map['quality-gate'] = profile_args
+                    if profile.get('mutating'):
+                        mutating_canonicals.add('quality-gate')
             elif canonical in ['integration-tests', 'e2e', 'coverage', 'benchmark']:
                 cmd_map[canonical] = profile_args
+                if profile.get('mutating'):
+                    mutating_canonicals.add(canonical)
 
     result: dict[str, Any] = build_canonical_commands(skill, cmd_map)
+
+    # Stamp the authored mutating signal onto profile-derived entries: dict-form
+    # entries carry `mutating: true`; unlisted entries stay plain strings so
+    # authored-true vs unknown remains distinguishable downstream.
+    for canonical in mutating_canonicals:
+        result[canonical] = {'executable': result[canonical], 'mutating': True}
 
     # Report conflicts when multiple profiles map to the same canonical
     conflicts = {c: ps for c, ps in canonical_profiles.items() if len(ps) > 1}
