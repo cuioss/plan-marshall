@@ -328,11 +328,13 @@ def _derive_build_status(exit_code: int, stdout: str) -> str:
         return 'error'
     if stdout:
         try:
-            candidate = parse_toon(stdout.strip()).get('status')
-            if candidate == 'killed':
-                return 'error'
-            if candidate in BUILD_STATUSES:
-                return str(candidate)
+            parsed = parse_toon(stdout.strip())
+            if isinstance(parsed, dict):
+                candidate = parsed.get('status')
+                if candidate == 'killed':
+                    return 'error'
+                if candidate in BUILD_STATUSES:
+                    return candidate
         except Exception:
             pass
     return 'success'
