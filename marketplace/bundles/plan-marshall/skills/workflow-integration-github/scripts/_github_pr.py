@@ -780,7 +780,9 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
             'Could not determine repository owner/name for the merge-queue preflight',
         )
 
-    mq_discriminator, mq_detail, mq_error = github_ops._probe_merge_queue_state(owner, repo, base_branch)
+    mq_discriminator, mq_detail, mq_error, _mq_method = github_ops._probe_merge_queue_state(
+        owner, repo, base_branch
+    )
     if mq_error is not None:
         # Auth-scope failure, non-404 gh api error, or malformed rules response.
         return make_error('pr_safe_merge', mq_error, mq_detail)
