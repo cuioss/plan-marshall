@@ -174,6 +174,8 @@ When the footprint is non-empty, the pre-filter is a no-op and emits no log entr
 
 When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement}` AND `affected_files_count > 0`), the pre-filter is a no-op and emits no log entry; `finalize-step-simplify` survives into the seven-row matrix.
 
+**Operator-selected drop surfaces as a lane warning**: when this pre-filter fires over a step the operator's selected posture/lane would have included (and the ceremony `always` gate did not force it back in), the composer additionally appends a `{step, warning}` entry to the `lane_warnings[]` compose result naming the ceremony pre-filter — not the lane — as the remover, so the drop is never silent. The `simplify_omitted` boolean in the compose result remains unchanged.
+
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `pre_submission_self_review_inactive` and *before* every row of the seven-row matrix.
 
 ### Pre-Filter: `security_audit_inactive`
@@ -191,6 +193,8 @@ When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement
 ```
 
 When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement}` AND `affected_files_count > 0`), the pre-filter is a no-op and emits no log entry; `finalize-step-security-audit` survives into the seven-row matrix.
+
+**Operator-selected drop surfaces as a lane warning**: when this pre-filter fires over a step the operator's selected posture/lane would have included (and the ceremony `always` gate did not force it back in), the composer additionally appends a `{step, warning}` entry to the `lane_warnings[]` compose result naming the ceremony pre-filter — not the lane — as the remover, so the drop is never silent. The `security_audit_omitted` boolean in the compose result remains unchanged.
 
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs immediately *after* `simplify_inactive` (its symmetric peer) and *before* `scope_gated_finalize` and every row of the seven-row matrix.
 

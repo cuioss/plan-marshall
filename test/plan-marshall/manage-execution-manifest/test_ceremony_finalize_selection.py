@@ -1135,3 +1135,98 @@ class TestCeremonyFinalizeImmuneOff:
         assert 'sonar-roundtrip' in dropped['lane_dropped']
         assert 'sonar-roundtrip' not in _bare(_manifest_phase_6_steps(dropped))
         assert all(w['step'] != 'sonar-roundtrip' for w in dropped['lane_warnings'])
+
+
+# =============================================================================
+# Test: ceremony pre-filter drop of an operator-selected step surfaces a
+# lane_warnings[] entry (second producer on the lane_warnings channel)
+#
+# The API-Sheriff live case: full posture (operator keeps everything), the
+# simplify_inactive / security_audit_inactive pre-filter fires (non-code-touching
+# change_type), and the drop was previously SILENT — the lane said "keep", yet
+# the step vanished with only the *_omitted booleans as evidence. The composer
+# now appends a {step, warning} entry naming the ceremony pre-filter — not the
+# lane — as the remover. The *_omitted booleans remain unchanged.
+# =============================================================================
+
+
+class TestCeremonyPrefilterLaneWarnings:
+    """A fired ceremony pre-filter over an operator-selected step warns via lane_warnings."""
+
+    def test_warning_emitted_when_prefilter_drops_posture_included_step(self, plan_context):
+        # Full posture keeps everything, so both ceremony steps are
+        # operator-selected; change_type=analysis fires both pre-filters.
+        plan_id = 'ceremony-prefilter-warning'
+        _seed_marshal()  # all ceremony gates default to auto
+        _stub_footprint(_FOOTPRINT)
+        _write_execution_profile(plan_context, plan_id, 'full')
+
+        result = cmd_compose(_compose_ns(plan_id=plan_id, change_type='analysis'))
+
+        assert result is not None
+        assert result['status'] == 'success'
+        # The *_omitted booleans remain the pre-filter's own signal, unchanged.
+        assert result['simplify_omitted'] is True
+        assert result['security_audit_omitted'] is True
+        # The silent-drop scenario now yields a non-empty lane_warnings naming
+        # the ceremony pre-filter as the remover for BOTH dropped steps.
+        warned = {w['step']: w['warning'] for w in result['lane_warnings']}
+        assert 'finalize-step-simplify' in warned
+        assert 'finalize-step-security-audit' in warned
+        assert 'ceremony pre-filter' in warned['finalize-step-simplify']
+        assert 'ceremony pre-filter' in warned['finalize-step-security-audit']
+        # The steps are genuinely gone from the composed list.
+        bare = _bare(_manifest_phase_6_steps(result))
+        assert 'finalize-step-simplify' not in bare
+        assert 'finalize-step-security-audit' not in bare
+
+    def test_no_warning_when_step_never_a_candidate(self, plan_context):
+        # The ceremony steps are absent from the candidate set → the pre-filter
+        # never fires (a no-op over an absent step) → no warning entry.
+        plan_id = 'ceremony-prefilter-no-candidate'
+        candidates = [
+            s for s in _phase_6_with_ceremony_steps().split(',')
+            if s not in ('finalize-step-simplify', 'finalize-step-security-audit')
+        ]
+        # finalize_gates={} still seeds the authoritative steps map from the
+        # candidate list (no gate overrides).
+        _seed_marshal(finalize_gates={}, candidates=candidates)
+        _stub_footprint(_FOOTPRINT)
+        _write_execution_profile(plan_context, plan_id, 'full')
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='analysis',
+                phase_6_steps=','.join(candidates),
+            )
+        )
+
+        assert result is not None
+        assert result['status'] == 'success'
+        # Pre-filters are no-ops over an absent step.
+        assert result['simplify_omitted'] is False
+        assert result['security_audit_omitted'] is False
+        warned_steps = {w['step'] for w in result['lane_warnings']}
+        assert 'finalize-step-simplify' not in warned_steps
+        assert 'finalize-step-security-audit' not in warned_steps
+
+    def test_no_warning_when_always_gate_readds_the_step(self, plan_context):
+        # The simplify gate `always` (lane: minimal) re-adds the step the
+        # pre-filter dropped — the step IS present, so no ceremony-pre-filter
+        # warning fires for it. The security_audit step (gate auto) stays
+        # dropped and still warns.
+        plan_id = 'ceremony-prefilter-always-readd'
+        _seed_marshal(finalize_gates={'simplify': 'minimal'})
+        _stub_footprint(_FOOTPRINT)
+        _write_execution_profile(plan_context, plan_id, 'full')
+
+        result = cmd_compose(_compose_ns(plan_id=plan_id, change_type='analysis'))
+
+        assert result is not None
+        assert result['status'] == 'success'
+        assert 'finalize-step-simplify' in _bare(_manifest_phase_6_steps(result))
+        warned = {w['step']: w['warning'] for w in result['lane_warnings']}
+        assert 'finalize-step-simplify' not in warned
+        assert 'finalize-step-security-audit' in warned
+        assert 'ceremony pre-filter' in warned['finalize-step-security-audit']

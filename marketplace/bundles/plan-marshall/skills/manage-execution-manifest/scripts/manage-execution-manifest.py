@@ -1075,6 +1075,57 @@ def _apply_lane_resolution(
     return kept, dropped, warnings
 
 
+def _ceremony_prefilter_warnings(
+    fired_steps: tuple[tuple[str, bool], ...],
+    final_phase_6_steps: list[str],
+    posture: str,
+    marshal_phase_6_map: dict[str, dict] | None,
+) -> list[tuple[str, str]]:
+    """Warnings for ceremony pre-filter drops the operator's posture/lane would have kept.
+
+    Second producer on the ``lane_warnings`` channel (peer of
+    :func:`_apply_lane_resolution`, same ``(step, warning)`` tuple shape): when
+    the ``simplify_inactive`` / ``security_audit_inactive`` ceremony pre-filter
+    fired for a step (the change_type + affected_files_count activation gate
+    failed) AND the operator's selected posture/lane would have included the
+    step AND the ceremony ``always`` gate did not force it back into the final
+    step list, the drop would otherwise be silent from the operator's
+    perspective — the lane said "keep", yet the step vanished. One entry per
+    such drop names the ceremony pre-filter — not the lane — as the remover.
+
+    Read-only with respect to the lane machinery: no keep/drop decision is
+    changed here; the same resolvers (:func:`_resolve_element_lane`,
+    :func:`_lane_override_for`, :func:`_lane_keep_decision`) are consulted
+    purely to answer "would the lane have kept it?". An explicit ``off``
+    override means the operator opted the step out (ceremony ``never``), so no
+    warning is emitted for it.
+    """
+    warnings: list[tuple[str, str]] = []
+    for step, fired in fired_steps:
+        if not fired or step in final_phase_6_steps:
+            continue
+        override = _lane_override_for(step, marshal_phase_6_map)
+        if override == 'off':
+            # Operator explicitly opted the step out — not operator-selected.
+            continue
+        if posture != 'full':
+            lane = _resolve_element_lane(step)
+            if lane and 'class' in lane:
+                keep, _ = _lane_keep_decision(lane, override, posture)
+                if not keep:
+                    # The lane itself would have dropped the step under this
+                    # posture — the ceremony pre-filter changed nothing.
+                    continue
+        warnings.append(
+            (
+                step,
+                'ceremony pre-filter (change_type/affected_files gate) removed this '
+                'operator-selected step — the lane did not drop it',
+            )
+        )
+    return warnings
+
+
 def _sum_lane_cost(steps: list[str], table: dict[str, str]) -> int:
     """Sum each element's ``cost_size`` through the token table (§4.6 cost preview)."""
     total = 0
@@ -1445,6 +1496,24 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         body['phase_6']['steps'], execution_profile, marshal_phase_6_map, plan_id
     )
     body['phase_6']['steps'] = lane_kept
+
+    # Ceremony pre-filter warnings ride the same lane_warnings channel as lane
+    # resolution (second producer, same (step, warning) shape). When the
+    # simplify / security-audit ceremony pre-filter fired but the operator's
+    # selected posture/lane would have included the step — and the ceremony
+    # `always` gate did not force it back in — the entry names the ceremony
+    # pre-filter (not the lane) as the remover, so the drop is never silent.
+    lane_warnings.extend(
+        _ceremony_prefilter_warnings(
+            (
+                ('finalize-step-simplify', simplify_omitted),
+                ('finalize-step-security-audit', security_audit_omitted),
+            ),
+            body['phase_6']['steps'],
+            execution_profile,
+            marshal_phase_6_map,
+        )
+    )
 
     # Enforce ascending frontmatter-order emission on the FINAL phase_6.steps.
     # cmd_compose never re-sorted the marshal.json ``phase_6.steps`` map by
