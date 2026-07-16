@@ -118,6 +118,8 @@ The `build_class` value **names the canonical command directly** — there is no
 | `verify` | config | `architecture resolve --command verify --module {M}` (full reactor for the affected module) |
 | `none` | any | (no command — a changed set whose only role yields `none` derives no build) |
 
+**Maven IT-signature routing note**: Maven test paths matching the Failsafe naming signature (`*IT.java` / `IT*.java` / `*ITCase.java` under `src/test`) route to the `verify` build_class — the Failsafe-bound full-module gate — rather than `module-tests`, because Surefire's default include patterns exclude them and the plain `test` goal would execute zero of the changed tests. The routing lives in the build-maven extension's `classify_build_class` override; the enum itself is unchanged.
+
 `{M}` is the module resolved per changed path by longest `paths.module` prefix (the finest granularity the architecture API resolves). Derived commands are de-duplicated by their resolved `executable`, so N changed production files in one module derive **one** `compile`, not N. A changed set whose only classification is `none` derives **zero** Python builds — this is the structural property that ends the docs-only build recurrence.
 
 Each architecture-resolved command in the output carries the same four-field execution-tier augmentation documented above (`bash_timeout_seconds` / `exceeds_bash_ceiling` / `execution_tier` / `hint`) when its `executable` is a Bucket B build notation, so the per-task timeout routing applies to derived commands exactly as it does to a direct `resolve`.

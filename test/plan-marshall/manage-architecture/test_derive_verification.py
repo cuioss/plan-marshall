@@ -368,6 +368,60 @@ def test_deriver_is_deterministic():
         assert first == second
 
 
+def test_it_route_stamped_verify_derives_failsafe_gate():
+    """A seeded IT route stamped build_class=verify derives the module's verify
+    executable — not the Surefire test goal — for a changed *IT.java artifact
+    (lesson 2026-07-16-16-001 issue 1).
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / 'project'
+        project.mkdir()
+        build_map = {
+            'java': [
+                {'glob': '*/src/test/*IT.java', 'role': 'test', 'build_class': 'verify'},
+                {'glob': '*/src/test/*.java', 'role': 'test', 'build_class': 'module-tests'},
+            ],
+        }
+        _seed(str(project), build_map=build_map)
+
+        result = cmd_derive_verification(
+            Namespace(
+                changed_artifacts='pm-mod/src/test/java/com/example/RestApiGatewayIT.java',
+                project_dir=str(project),
+            )
+        )
+
+        assert result['status'] == 'success'
+        verbs = {c['command'] for c in result['commands']}
+        assert verbs == {'verify'}
+        assert any('verify pm-mod' in e for e in _executables(result))
+
+
+def test_plain_test_java_still_derives_module_tests_beside_it_route():
+    """A plain FooTest.java under the same seeded map keeps the module-tests ladder."""
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / 'project'
+        project.mkdir()
+        build_map = {
+            'java': [
+                {'glob': '*/src/test/*IT.java', 'role': 'test', 'build_class': 'verify'},
+                {'glob': '*/src/test/*.java', 'role': 'test', 'build_class': 'module-tests'},
+            ],
+        }
+        _seed(str(project), build_map=build_map)
+
+        result = cmd_derive_verification(
+            Namespace(
+                changed_artifacts='pm-mod/src/test/java/com/example/FooTest.java',
+                project_dir=str(project),
+            )
+        )
+
+        assert result['status'] == 'success'
+        verbs = {c['command'] for c in result['commands']}
+        assert verbs == {'test-compile', 'module-tests'}
+
+
 def test_empty_build_map_yields_all_unclaimed():
     """With no build_map seeded, every path is unclaimed and nothing derives."""
     with tempfile.TemporaryDirectory() as tmp:
