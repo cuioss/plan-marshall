@@ -798,9 +798,14 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> int
 
     - Skip the task when it has no ``verification.commands`` list.
     - Classify each command via ``_resolve_command_tier``.
-    - ``orchestrator`` → map the verb to its phase-5 step ID, append
-      (de-duped) to ``body['phase_5']['verification_steps']``, and drop the
-      command from the task's ``verification.commands``.
+    - ``orchestrator`` → map the verb to its phase-5 step ID (canonical map
+      first; unmapped verbs generalize to the bare ``verify:{verb}`` step,
+      logged per routed verb), append (de-duped) to
+      ``body['phase_5']['verification_steps']``, and drop the command from
+      the task's ``verification.commands`` — no leaf ever runs an
+      orchestrator-tier command inline. Only the defensive raw-shell /
+      non-``plan-marshall:build-`` fall-through (verb unparseable) leaves
+      an orchestrator-tier command in place.
     - ``per_task`` → set ``verification.bash_timeout_seconds`` on the task
       (overwriting any prior value so re-compose is deterministic). When
       multiple ``per_task`` commands share a task, the maximum
@@ -860,10 +865,21 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> int
                 verb, _ = parsed
                 step_id = _verb_to_phase_5_step(verb)
                 if step_id is None:
-                    # Unmapped verb (e.g. a custom build target). Leave the
-                    # command per-task so the existing flow handles it.
-                    kept_commands.append(raw)
-                    continue
+                    # Non-canonical verb (e.g. a custom build target) on an
+                    # orchestrator-tier command: route to the generalized bare
+                    # ``verify:{verb}`` step ID (boundary-normalization
+                    # contract — bare, no ``default:`` prefix) so no leaf ever
+                    # runs an orchestrator-tier command inline. Name the routed
+                    # verb in the decision log — the canonical map did not
+                    # cover it, and a silent route would be unobservable.
+                    step_id = f'verify:{verb}'
+                    _emit_decision_log(
+                        plan_id,
+                        '(plan-marshall:manage-execution-manifest:compose) '
+                        'execution_tier routing — routed non-canonical '
+                        f'orchestrator-tier verb {verb!r} to phase-5 step '
+                        f'{step_id!r}',
+                    )
                 if step_id not in seen_steps:
                     verification_steps.append(step_id)
                     seen_steps.add(step_id)

@@ -706,9 +706,13 @@ def _apply_unresolved_ask_provider_drop(
 
 # Build verb → phase-5 step ID mapping. The four canonical verbs are the
 # ones registered by every build skill's ``_CONFIG`` (verify / quality-gate /
-# coverage / module-tests). Verbs not in this map are left to the consumer
-# (the composer skips routing for unmapped verbs, preserving today's
-# behaviour).
+# coverage / module-tests). This map is the canonical FAST PATH only: for
+# orchestrator-tier commands, verbs not in this map generalize to the bare
+# ``verify:{verb}`` step ID at the composer's routing pass
+# (``_route_task_verification_commands``), so no orchestrator-tier build
+# command is ever left in a task's ``verification.commands`` for a leaf to
+# run inline. Only per-task-tier and unparseable (raw-shell /
+# non-``plan-marshall:build-``) commands stay with the consumer.
 #
 # The step IDs are BARE (no ``default:`` prefix) per the boundary-
 # normalization contract: the candidate lists are stripped to bare names at
