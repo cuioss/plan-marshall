@@ -290,17 +290,27 @@ def _is_build_class_notation(notation: str) -> bool:
 def _derive_build_status(exit_code: int, stdout: str) -> str:
     """Derive the truthful build outcome for the ``kind=build`` ledger stamp.
 
-    Derivation order:
+    Derivation order — a nonzero exit code is AUTHORITATIVE over any stdout
+    status, so a script that prints ``status: success`` while exiting non-zero
+    can never launder a real process failure into a fresh-looking build:
 
     1. ``exit_code < 0`` → ``killed``. ``subprocess.run`` reports a child
        terminated by a POSIX signal as a negative returncode, so a build
-       killed while the executor survives is stamped truthfully.
-    2. The captured stdout parses as a TOON payload whose ``status`` is a
-       known build status (see ``BUILD_STATUSES``) → that status. This closes
-       the false-fresh hole: the build wrapper reports ``status: timeout`` on
-       stdout while the PROCESS exits 0, so the stdout TOON — not the exit
-       code — carries the real outcome.
-    3. Else ``exit_code == 0`` → ``success``; any other exit → ``error``.
+       killed while the executor survives is stamped truthfully. ``killed``
+       is reserved for this branch — a stdout status never produces it.
+    2. Any other nonzero ``exit_code`` → ``error``, regardless of what the
+       stdout TOON claims (a contradictory ``status: success`` /
+       nonzero-exit combination stamps ``error``).
+    3. ``exit_code == 0`` AND the captured stdout parses as a TOON payload
+       whose ``status`` is a known build status (see ``BUILD_STATUSES``) →
+       that status, EXCEPT ``killed``. This closes the false-fresh hole: the
+       build wrapper reports ``status: timeout`` on stdout while the PROCESS
+       exits 0, so the stdout TOON — not the exit code — carries the real
+       outcome. A stdout claim of ``killed`` at exit 0 stamps ``error``: the
+       wrapper's stdout vocabulary never includes ``killed`` (see
+       ``_ledger_core.BUILD_STATUSES``), so the claim is untrustworthy — but
+       it must not launder into ``success`` either.
+    4. Else (``exit_code == 0``) → ``success``.
 
     Defensive by construction: a malformed / absent stdout TOON falls through
     to the exit-code branch and never raises.
@@ -314,14 +324,18 @@ def _derive_build_status(exit_code: int, stdout: str) -> str:
     """
     if exit_code < 0:
         return 'killed'
+    if exit_code != 0:
+        return 'error'
     if stdout:
         try:
             candidate = parse_toon(stdout.strip()).get('status')
+            if candidate == 'killed':
+                return 'error'
             if candidate in BUILD_STATUSES:
                 return str(candidate)
         except Exception:
             pass
-    return 'success' if exit_code == 0 else 'error'
+    return 'success'
 
 
 def _append_build_ledger_record(
@@ -337,7 +351,8 @@ def _append_build_ledger_record(
     Fired from :func:`main` after the subprocess completes (regardless of
     outcome — the freshness gate filters on the stamped ``status``). Derives
     the truthful build ``status`` via :func:`_derive_build_status` (returncode
-    signal-death check, then the wrapper's stdout TOON, then the exit code),
+    signal-death check, then nonzero-exit → ``error``, then the wrapper's
+    stdout TOON on a zero exit),
     computes the working-tree currency hash via the shared
     :func:`compute_worktree_sha` against the executor's cwd (pinned to the
     worktree in phase-5, the main checkout otherwise), builds the record via

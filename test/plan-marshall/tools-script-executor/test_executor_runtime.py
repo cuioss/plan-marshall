@@ -595,9 +595,13 @@ def test_pm_marketplace_root_with_trailing_slash_rewrites(two_marketplace_trees,
 # Truthful build-status stamping: after every build-class dispatch the boundary
 # appends one kind=build change-ledger row whose `status` is derived via
 # _derive_build_status — (1) negative returncode (POSIX signal death) =>
-# `killed`; (2) else the wrapper's stdout TOON `status` when it is a known
-# build status (the timeout fix: the wrapper exits 0 on timeout, the TOON
-# carries the truth); (3) else exit 0 => `success`, non-zero => `error`.
+# `killed` (reserved for this branch only); (2) any other nonzero returncode =>
+# `error`, AUTHORITATIVE over any contradictory stdout status (a stdout
+# `status: success` with exit 1 must not launder into a fresh-looking build);
+# (3) exit 0 => the wrapper's stdout TOON `status` when it is a known build
+# status other than `killed` (the timeout fix: the wrapper exits 0 on timeout,
+# the TOON carries the truth; a stdout `killed` claim at exit 0 stamps `error`);
+# (4) else exit 0 => `success`.
 # These tests drive a rendered executor end-to-end against a fake build-class
 # script that emits controlled stdout/exit, then assert the stamped row.
 
@@ -697,6 +701,14 @@ def _run_build_dispatch(tmp_path: Path, script_body: str) -> list[dict]:
         ('not a toon payload at all', 0, 'success'),
         # Absent stdout with non-zero exit => error.
         ('', 1, 'error'),
+        # THE laundering regression: a contradictory `status: success` claim
+        # with a nonzero exit must stamp error — the exit code is
+        # authoritative, so a real process failure can never look fresh.
+        ('status: success\nexit_code: 0\n', 1, 'error'),
+        # `killed` is reserved for negative returncodes: a stdout claim of
+        # `status: killed` at exit 0 stamps error (never killed, never
+        # success) — the wrapper's stdout vocabulary does not include killed.
+        ('status: killed\n', 0, 'error'),
     ],
 )
 def test_build_boundary_stamps_derived_status(
