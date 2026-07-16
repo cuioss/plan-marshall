@@ -646,7 +646,9 @@ def _load_route_matcher():
     return route_matches
 
 
-def classify_changed_path(path: str, merged_build_map: dict[str, list[dict[str, str]]]) -> str | None:
+def classify_changed_path(
+    path: str, merged_build_map: dict[str, list[dict[str, str]]]
+) -> tuple[str, str] | None:
     """Classify a single changed-artifact path to a build_class (longest-glob-wins).
 
     Matches ``path`` against every ``{glob, role, build_class}`` entry across
@@ -666,24 +668,27 @@ def classify_changed_path(path: str, merged_build_map: dict[str, list[dict[str, 
         merged_build_map: The merged map from :func:`load_merged_build_map`.
 
     Returns:
-        The winning ``build_class`` string, or ``None`` when no glob matches
-        (the path is unclaimed — it derives no build).
+        A ``(build_class, domain)`` pair — the winning entry's ``build_class``
+        and the build_map domain key it was declared under (the module-ownership
+        affinity signal consumed by :func:`resolve_module_for_path`) — or
+        ``None`` when no glob matches (the path is unclaimed — it derives no
+        build).
     """
     route_matches = _load_route_matcher()
-    matches: list[tuple[int, str, str]] = []  # (glob length, glob, build_class)
-    for entries in merged_build_map.values():
+    matches: list[tuple[int, str, str, str]] = []  # (glob length, glob, build_class, domain)
+    for domain, entries in merged_build_map.items():
         for entry in entries:
             glob = entry.get('glob')
             build_class = entry.get('build_class')
             if not glob or not build_class:
                 continue
             if route_matches(path, glob):
-                matches.append((len(glob), glob, build_class))
+                matches.append((len(glob), glob, build_class, domain))
     if not matches:
         return None
     # Longest glob wins; alphabetical glob tie-break (stable, deterministic).
     matches.sort(key=lambda item: (-item[0], item[1]))
-    return matches[0][2]
+    return matches[0][2], matches[0][3]
 
 
 # Project-local path-prefix map: prefixes that sit outside every module's
@@ -757,7 +762,20 @@ def longest_containing_prefix(path: str, paths: dict[str, Any]) -> int | None:
     return best
 
 
-def resolve_module_for_path(path: str, project_dir: str = '.') -> str | None:
+# Build-system technology → build_map domain key. Maps a virtual module's
+# ``virtual_module.technology`` (stamped by ``_split_to_virtual_modules``) to
+# the domain key the merged build_map is keyed by, so the resolver can prefer
+# the virtual sibling whose build system serves the domain that claimed the
+# changed path (maven/gradle → java, npm → javascript, pyproject → python).
+_TECHNOLOGY_TO_DOMAIN: dict[str, str] = {
+    'maven': 'java',
+    'gradle': 'java',
+    'npm': 'javascript',
+    'pyproject': 'python',
+}
+
+
+def resolve_module_for_path(path: str, project_dir: str = '.', preferred_domain: str | None = None) -> str | None:
     """Resolve the owning module for a changed path by longest containing prefix.
 
     Unlike the ``which-module`` reader (which prefers exact membership in a
@@ -773,13 +791,21 @@ def resolve_module_for_path(path: str, project_dir: str = '.') -> str | None:
     ensures a ``test/**`` path resolves to its owning module rather than the
     project root). Resolution order:
 
-        1. Most-specific containing module (prefix length > 0).
+        1. Most-specific containing module (prefix length > 0). On a
+           specificity tie — the virtual-sibling case, where maven/npm modules
+           split from one physical path share the same ``paths.module`` — the
+           module whose ``virtual_module.technology`` serves ``preferred_domain``
+           (per :data:`_TECHNOLOGY_TO_DOMAIN`) wins; alphabetical order remains
+           the fallback when no domain affinity discriminates.
         2. Project-local prefix map (``.claude/skills/** → plan-marshall``).
         3. Root module (the length-0 fallback), when present.
 
     Args:
         path: A changed-artifact path (full repo-relative path).
         project_dir: Project directory path.
+        preferred_domain: The build_map domain key that claimed ``path`` (the
+            second element of :func:`classify_changed_path`'s return). ``None``
+            preserves the pure alphabetical tie-break.
 
     Returns:
         The owning module name, or ``None`` when no module contains ``path`` and
@@ -790,7 +816,7 @@ def resolve_module_for_path(path: str, project_dir: str = '.') -> str | None:
     except DataNotFoundError:
         return None
 
-    best_specific: tuple[int, str] | None = None  # (prefix length > 0, module name)
+    candidates: list[tuple[int, str, str]] = []  # (prefix length > 0, module name, technology)
     root_fallback: str | None = None
     for name in module_names:
         try:
@@ -818,14 +844,17 @@ def resolve_module_for_path(path: str, project_dir: str = '.') -> str | None:
             candidate_len = containment_len
         if candidate_len is None:
             continue
-        candidate = (candidate_len, name)
-        if best_specific is None or candidate[0] > best_specific[0] or (
-            candidate[0] == best_specific[0] and candidate[1] < best_specific[1]
-        ):
-            best_specific = candidate
+        technology = (derived.get('virtual_module') or {}).get('technology') or ''
+        candidates.append((candidate_len, name, technology))
 
-    if best_specific is not None:
-        return best_specific[1]
+    if candidates:
+        best_len = max(candidate[0] for candidate in candidates)
+        best = sorted(candidate[1:] for candidate in candidates if candidate[0] == best_len)
+        if len(best) > 1 and preferred_domain:
+            affine = [name for name, technology in best if _TECHNOLOGY_TO_DOMAIN.get(technology) == preferred_domain]
+            if affine:
+                return affine[0]
+        return best[0][0]
     project_local = project_local_module_for_path(path, module_names)
     if project_local is not None:
         return project_local

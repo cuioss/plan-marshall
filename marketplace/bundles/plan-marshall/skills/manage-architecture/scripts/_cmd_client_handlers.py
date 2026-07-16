@@ -297,11 +297,12 @@ def cmd_derive_verification(args: argparse.Namespace) -> dict[str, Any]:
     classified: list[dict[str, str]] = []
     unclaimed: list[str] = []
     for path in paths:
-        build_class = classify_changed_path(path, merged)
-        if build_class is None:
+        classification = classify_changed_path(path, merged)
+        if classification is None:
             unclaimed.append(path)
             continue
-        classified.append({'path': path, 'build_class': build_class})
+        build_class, domain = classification
+        classified.append({'path': path, 'build_class': build_class, 'domain': domain})
 
     # De-duplicate derived commands by their executable string so a changed set
     # touching N production files in one module derives ONE compile, not N.
@@ -322,7 +323,7 @@ def cmd_derive_verification(args: argparse.Namespace) -> dict[str, Any]:
             unclaimed.append(path)
             continue
 
-        module_name = resolve_module_for_path(path, project_dir)
+        module_name = resolve_module_for_path(path, project_dir, preferred_domain=item['domain'])
         for verb in resolve_verbs:
             try:
                 resolved = resolve_command(verb, module_name, project_dir)
