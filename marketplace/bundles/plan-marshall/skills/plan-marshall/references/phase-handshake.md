@@ -68,6 +68,16 @@ diffs[2]{invariant,captured,observed}:
   main_sha,3823a0dd,15efe821
 ```
 
+#### Loop-back auto-override (sanctioned re-entry drift)
+
+A loop-back (`manage-status set-phase` to a phase that precedes the current one) guarantees drift by construction: the re-entered phases legitimately change the invariants the earlier capture recorded, so the next guarded-boundary verify reports `status: drift` every time. `cmd_set_phase` therefore persists `metadata.loop_back_reentry = {from_phase, to_phase, at}` on every backward move, and `cmd_transition`'s inline guard consumes it: when the blocking verify result is **invariant drift** AND the marker is present, the transition re-captures the handshake automatically with `override=True` and the recorded reason `loop-back re-entry auto-override (scheduled by {from_phase} loop_back)`, clears the marker (persisted immediately, so the override fires exactly once per scheduled loop-back), emits a decision-log WARNING carrying the drift diff summary, and proceeds.
+
+Scope limits:
+
+- Expected-by-construction drift on a sanctioned loop-back re-entry is the ONLY auto-resolved case. Drift WITHOUT the marker keeps the blocking behavior unchanged — the operator-facing drift protocol below applies only to unscheduled drift.
+- The worktree-resolution and dirty-boundary refusals (`VERIFY_REFUSAL_ERRORS`: `worktree_unresolved`, `worktree_metadata_drift`, `main_checkout_dirtied_during_plan`, `worktree_dirty_at_boundary`) are NEVER bypassed by the marker — only invariant drift is auto-resolved.
+- A failed re-capture blocks the transition (fail closed) with the re-capture's error payload.
+
 ### `findings-check`
 
 Read-only single-invariant gate. Evaluates ONLY the `pending_findings_blocking_count` invariant (via [resolution rule](#pending_findings_blocking_count-resolution)) for `phase` and writes **no** handshake row. Unlike `capture` it never runs `capture_all`, so `phase_steps_complete` is never evaluated — the verb cannot short-circuit on `phase_steps_incomplete`. It exists for the intra-finalize boundaries, where the downstream finalize steps (`branch-cleanup`, `record-metrics`, `archive-plan`) have not run yet so the composite `capture` gate would always fail on `phase_steps_incomplete` before ever evaluating the blocking-findings invariant.
@@ -306,12 +316,12 @@ The actual call sites for `capture` and `verify` are the orchestrator workflow f
 
 The abstract contract is documented in [`../../ref-workflow-architecture/standards/phase-lifecycle.md`](../../ref-workflow-architecture/standards/phase-lifecycle.md): the Phase Completion Protocol calls `capture` as its final step; the Phase Entry Protocol calls `verify --strict` immediately after the Q-Gate check. The orchestrator workflows are the canonical implementation of that contract — they wire capture/verify alongside the existing `manage-metrics phase-boundary` calls so a single workflow edit covers all six phases without touching any phase skill individually.
 
-On `drift`: stop the phase, surface `diffs[]` verbatim, do not rationalize. Valid responses are an authorized override (`capture --override --reason X` followed by re-entry) or manual investigation. On `skipped`: log a warning and continue — first-time rollout and manual transitions produce this status; it is not an error.
+On `drift`: stop the phase, surface `diffs[]` verbatim, do not rationalize. Valid responses are an authorized override (`capture --override --reason X` followed by re-entry) or manual investigation. Exception: expected-by-construction drift on a sanctioned loop-back re-entry is re-captured automatically with a recorded override reason (see [Loop-back auto-override](#loop-back-auto-override-sanctioned-re-entry-drift)) — the operator-facing drift protocol applies only to unscheduled drift. On `skipped`: log a warning and continue — first-time rollout and manual transitions produce this status; it is not an error.
 
 ## Non-goals
 
 - **No global config lookup** for worktree applicability — the per-plan `_worktree_materialized` predicate (persisted `status.metadata.worktree_path` OR a materialization phase) is the single source, never global config.
-- **No automatic remediation** on drift. `verify` reports; the caller decides. There is no `--fix` flag.
+- **No automatic remediation** on unscheduled drift. `verify` reports; the caller decides. There is no `--fix` flag. The one sanctioned exception is the [loop-back auto-override](#loop-back-auto-override-sanctioned-re-entry-drift), which re-captures with a recorded override reason exactly once per scheduled loop-back.
 - **No backwards-compatibility shim** for rows missing newer invariant columns — missing columns are skipped during comparison.
 - **No cross-plan handshakes** — each plan owns its own `handshakes.toon`.
 - **No user-facing slash command** — this is a script-only surface consumed by the lifecycle protocols.

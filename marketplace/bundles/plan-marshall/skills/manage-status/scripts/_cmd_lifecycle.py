@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from _handshake_commands import cmd_verify
+from _handshake_commands import cmd_capture, cmd_verify
 from _invariants import _BLOCKING_BOUNDARIES
 from _short_description import derive_short_description
 from _status_core import (
@@ -105,6 +105,69 @@ def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] 
             'settlement commit, then retry the transition.'
         ),
     }
+
+
+def _loop_back_auto_override(
+    args: argparse.Namespace,
+    status: dict[str, Any],
+    verify_result: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Auto-resolve the structurally-guaranteed loop-back handshake drift.
+
+    A sanctioned loop-back (``cmd_set_phase`` backward move) persists
+    ``metadata.loop_back_reentry``; the re-entered phases then legitimately
+    change the invariants the earlier capture recorded, so ``cmd_verify``
+    reports ``status: drift`` by construction at the next guarded boundary.
+    When BOTH hold — the blocking verify result is invariant drift AND the
+    marker is present — re-capture the handshake with ``override=True`` and a
+    recorded reason, clear the marker (persisted immediately so the override
+    fires exactly once per scheduled loop-back), emit a decision-log WARNING
+    with the drift diff summary, and let the transition proceed by returning
+    ``None``.
+
+    Every other blocking result returns the refusal unchanged: drift WITHOUT
+    the marker keeps today's blocking behavior, and the worktree-resolution /
+    dirty-boundary / main-dirtied refusals (``VERIFY_REFUSAL_ERRORS``) are
+    NEVER bypassed by the marker — only invariant drift is auto-resolved.
+    A failed re-capture also blocks (fail closed) by returning its error
+    payload.
+    """
+    metadata = status.get('metadata', {})
+    marker = metadata.get('loop_back_reentry')
+    if verify_result.get('status') != 'drift' or not marker:
+        return verify_result
+
+    from_phase = marker.get('from_phase', 'unknown') if isinstance(marker, dict) else 'unknown'
+    recapture = cmd_capture(
+        argparse.Namespace(
+            plan_id=args.plan_id,
+            phase=args.completed,
+            override=True,
+            reason=f'loop-back re-entry auto-override (scheduled by {from_phase} loop_back)',
+            strict=False,
+        )
+    )
+    if recapture.get('status') != 'success':
+        # Fail closed: an un-recapturable baseline cannot be auto-resolved.
+        return recapture
+
+    metadata.pop('loop_back_reentry', None)
+    write_status(args.plan_id, status)
+
+    diff_summary = '; '.join(
+        f'{d.get("invariant")}: {d.get("captured")} -> {d.get("observed")}'
+        for d in verify_result.get('diffs', [])
+    )
+    log_entry(
+        'decision',
+        args.plan_id,
+        'WARNING',
+        f'(plan-marshall:manage-status) Loop-back re-entry auto-override at '
+        f'{args.completed}: drift ({verify_result.get("drift_count", 0)} invariant(s)) '
+        f'auto-resolved via override re-capture scheduled by {from_phase} loop_back — '
+        f'{diff_summary}',
+    )
+    return None
 
 
 def verify_blocks_transition(verify_result: dict[str, Any]) -> bool:
@@ -253,7 +316,9 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
         )
         verify_result = cmd_verify(verify_args)
         if verify_blocks_transition(verify_result):
-            return verify_result
+            refusal = _loop_back_auto_override(args, status, verify_result)
+            if refusal is not None:
+                return refusal
 
         # Clean-tree post-condition: after the strict-verify guard passes,
         # the worktree itself must be clean — uncommitted edits at the
