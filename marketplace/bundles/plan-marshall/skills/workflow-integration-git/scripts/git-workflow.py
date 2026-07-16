@@ -1134,6 +1134,14 @@ def cmd_worktree_remove(args):
     Order matters: ``git worktree remove`` refuses to drop a branch ref
     that is still checked out. We remove the worktree first, then delete
     the branch ref so the cleanup is symmetric with ``cmd_worktree_create``.
+
+    Precondition (script-enforced): the plan directory MUST already live on
+    the current checkout (``integrate_into_main`` has landed it back on main)
+    before the worktree may be removed — otherwise the removal would destroy
+    the sole authoritative plan-state copy still resident in the worktree.
+    The refusal (``error: plan_dir_not_moved_back``) is NOT overridable by
+    ``--force``: that flag keeps its dirty-tree meaning only. An abandonment
+    flow moves or deletes the plan dir first, then removes the worktree.
     """
     target, error = _resolve_worktree_path_for_plan(args.plan_id)
     if error is not None:
@@ -1155,6 +1163,23 @@ def cmd_worktree_remove(args):
             'worktree_path': str(target),
             'action': 'noop',
             'message': 'Worktree does not exist',
+        }
+
+    # Script-enforced move-back precondition: refuse while the plan dir has
+    # not landed back on the current checkout. Deliberately NOT overridable
+    # by --force (dirty-tree meaning only) — destroying the sole
+    # authoritative plan-state copy has no legitimate fast path.
+    if not _plan_dir_on_current_checkout(args.plan_id):
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_dir_not_moved_back',
+            'worktree_path': str(target),
+            'message': (
+                'Plan directory has not been moved back to the current checkout — '
+                'run integrate_into_main before worktree-remove. The refusal is '
+                'not overridable by --force.'
+            ),
         }
 
     # Step 1: remove the worktree itself.

@@ -881,6 +881,118 @@ class TestToonContract:
         assert 'warnings' in result['validation']
 
 
+class TestWorktreeRemoveMoveBackPrecondition:
+    """worktree-remove — the script-enforced plan-dir move-back precondition.
+
+    Proves (a) removal REFUSES with ``plan_dir_not_moved_back`` while the
+    worktree still holds the sole plan-state copy and main holds no plan dir;
+    (b) the refusal persists under ``--force`` (the flag keeps its dirty-tree
+    meaning only); (c) removal succeeds after the plan dir is moved to main's
+    ``.plan/local/plans/{plan_id}/``; (d) the existing noop branch (target
+    absent) is unchanged. Fixture ``.gitignore`` covers ``.plan/`` so
+    worktree-resident plan state never blocks the non-force removal.
+    """
+
+    PLAN_ID = 'moveback-plan'
+    BRANCH = 'feature/moveback-plan'
+
+    def _seed_main_and_worktree(self, tmp_path: Path) -> tuple[Path, Path]:
+        """Create a main repo plus a registered worktree holding plan state."""
+        main = tmp_path / 'main'
+        main.mkdir()
+        _git_init_with_identity(main)
+        (main / '.gitignore').write_text('.plan/\n')
+        (main / 'file.txt').write_text('one')
+        subprocess.run(['git', 'add', '.'], cwd=main, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', 'init'], cwd=main, capture_output=True)
+
+        worktree = tmp_path / 'wt'
+        subprocess.run(
+            ['git', '-C', str(main), 'worktree', 'add', '-b', self.BRANCH, str(worktree)],
+            capture_output=True,
+            check=True,
+        )
+        # Worktree-resident plan state — the sole authoritative copy pre-move-back.
+        plan_dir = worktree / '.plan' / 'local' / 'plans' / self.PLAN_ID
+        plan_dir.mkdir(parents=True)
+        (plan_dir / 'status.json').write_text('{}')
+        return main, worktree
+
+    def _patch(self, monkeypatch, main: Path, worktree: Path) -> None:
+        monkeypatch.setattr(
+            git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (worktree, None)
+        )
+        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: main)
+        monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: '')
+
+    def _remove(self, force: bool = False) -> dict:
+        return dict(
+            git_workflow.cmd_worktree_remove(Namespace(plan_id=self.PLAN_ID, force=force))
+        )
+
+    def test_refuses_while_plan_dir_not_moved_back(self, tmp_path: Path, monkeypatch):
+        """(a) plan dir only in the worktree, main empty → refusal, tree intact."""
+        main, worktree = self._seed_main_and_worktree(tmp_path)
+        self._patch(monkeypatch, main, worktree)
+
+        result = self._remove()
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'plan_dir_not_moved_back', (
+            f'Expected the move-back precondition refusal, got {result!r}.'
+        )
+        assert 'integrate_into_main' in result['message']
+        assert worktree.exists(), (
+            'The refusal must leave the worktree (the sole plan-state copy) intact.'
+        )
+
+    def test_force_does_not_override_refusal(self, tmp_path: Path, monkeypatch):
+        """(b) --force keeps its dirty-tree meaning only — refusal persists."""
+        main, worktree = self._seed_main_and_worktree(tmp_path)
+        self._patch(monkeypatch, main, worktree)
+
+        result = self._remove(force=True)
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'plan_dir_not_moved_back', (
+            f'--force must NOT bypass the move-back precondition, got {result!r}.'
+        )
+        assert worktree.exists()
+
+    def test_succeeds_after_plan_dir_moved_to_main(self, tmp_path: Path, monkeypatch):
+        """(c) plan dir landed on main → removal proceeds."""
+        main, worktree = self._seed_main_and_worktree(tmp_path)
+        self._patch(monkeypatch, main, worktree)
+        # Simulate integrate_into_main: land the plan dir on main.
+        main_plan_dir = main / '.plan' / 'local' / 'plans' / self.PLAN_ID
+        main_plan_dir.mkdir(parents=True)
+        (main_plan_dir / 'status.json').write_text('{}')
+
+        result = self._remove()
+
+        assert result['status'] == 'success', f'Expected removal to proceed, got {result!r}.'
+        assert result['action'] == 'removed'
+        assert not worktree.exists()
+
+    def test_noop_branch_unchanged_when_target_absent(self, tmp_path: Path, monkeypatch):
+        """(d) absent worktree still short-circuits to the noop success."""
+        main, _worktree = self._seed_main_and_worktree(tmp_path)
+        absent = tmp_path / 'absent-wt'
+        monkeypatch.setattr(
+            git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (absent, None)
+        )
+        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: main)
+        monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: '')
+
+        result = self._remove()
+
+        assert result['status'] == 'success'
+        assert result['action'] == 'noop', (
+            'The target-absent noop branch must fire BEFORE the move-back '
+            f'precondition, got {result!r}.'
+        )
+
+
 # =============================================================================
 # Subprocess (Tier 3) tests -- CLI plumbing only
 # =============================================================================

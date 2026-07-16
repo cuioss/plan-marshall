@@ -78,7 +78,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 Both `{worktree_path}` and `{main_checkout}` were resolved at finalize entry (see SKILL.md Step 0) and are available throughout this workflow. If `worktree_path` is absent (`use_worktree == false`), the consolidated verbs invoked below (`force-push-with-lease`, `switch-and-pull`, `prune-local-and-remote-ref`) resolve the correct working tree internally via `--plan-id {plan_id}` — no path substitution is required at the call site.
 
-The cleanup ordering — **move-back first (via `integrate_into_main`), then remove worktree, then delete branch** — is enforced by the surrounding finalize wiring and here at the call site. The atomic move-back script `plan-marshall:workflow-integration-git:integrate_into_main` runs in `phase-6-finalize/SKILL.md` Step 0 § move-back, AFTER the PR merge and BEFORE this `branch-cleanup` step: it acquires the merge lock, folds the plan's own global logs into the plan dir, moves the plan directory back from the worktree to main, and releases the lock — all while the worktree is STILL PRESENT. The worktree MUST be retained until that move-back completes, because the plan's authoritative state lives in the worktree until then; removing it first would strand the plan-state copy. `branch-cleanup` therefore removes the worktree only AFTER `integrate_into_main` has returned.
+The cleanup ordering — **move-back first (via `integrate_into_main`), then remove worktree, then delete branch** — is now **script-enforced**, not just wired: `worktree-remove` itself refuses with `error: plan_dir_not_moved_back` until `integrate_into_main` has landed the plan directory back on the main checkout, and the refusal is NOT overridable by `--force` (`--force` keeps its dirty-tree meaning only). On that refusal, surface the error and run the move-back — never force. The atomic move-back script `plan-marshall:workflow-integration-git:integrate_into_main` runs in `phase-6-finalize/SKILL.md` Step 0 § move-back, AFTER the PR merge and BEFORE this `branch-cleanup` step: it acquires the merge lock, folds the plan's own global logs into the plan dir, moves the plan directory back from the worktree to main, and releases the lock — all while the worktree is STILL PRESENT. The worktree MUST be retained until that move-back completes, because the plan's authoritative state lives in the worktree until then; removing it first would strand the plan-state copy. `branch-cleanup` therefore removes the worktree only AFTER `integrate_into_main` has returned.
 
 Worktree removal is sequenced before branch deletion here at the call site because `git worktree remove` refuses to operate on a worktree that is the cwd of any shell, and the local branch cannot be deleted while still checked out in a worktree. The consolidated verbs are designed to be invoked after worktree removal (they target the main checkout); the `worktree-remove` verb handles the worktree removal step before these cleanup verbs run.
 
@@ -780,6 +780,13 @@ Parse the TOON output:
 
 - `status: success, action: removed` → continue. From this point forward, the consolidated verbs (`switch-and-pull`, `prune-local-and-remote-ref`) and every `ci` invocation MUST use `--project-dir {main_checkout}`, because `{worktree_path}` no longer exists on disk.
 - `status: success, action: noop` → worktree already gone (possibly manual cleanup), continue with the same `{main_checkout}` rule for `ci` invocations.
+- `status: error, error: plan_dir_not_moved_back` → ABORT cleanup. The script-enforced move-back precondition fired: the plan directory has not been moved back to the main checkout, so removing the worktree would destroy the sole authoritative plan-state copy. Surface the error and run `integrate_into_main` first — NEVER retry with `--force` (the refusal is deliberately not overridable; `--force` keeps its dirty-tree meaning only):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: worktree-remove refused (plan_dir_not_moved_back) — run integrate_into_main to land the plan dir on main, then re-run cleanup. Do not force."
+```
+
 - `status: error, error: worktree_remove_failed` → ABORT cleanup. The worktree has uncommitted changes or is otherwise not clean. Log the error:
 
 ```bash
@@ -912,7 +919,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
   --plan-id {plan_id}
 ```
 
-On `status: error`, log and abort as in PR mode. Do not proceed with branch deletion while the worktree remains. On success, the consolidated verbs (`switch-and-pull`, `prune-local-and-remote-ref`) and any `ci` invocations MUST use `--project-dir {main_checkout}`.
+On `status: error`, log and abort as in PR mode — including the script-enforced `error: plan_dir_not_moved_back` refusal (run `integrate_into_main` first; never retry with `--force`). Do not proceed with branch deletion while the worktree remains. On success, the consolidated verbs (`switch-and-pull`, `prune-local-and-remote-ref`) and any `ci` invocations MUST use `--project-dir {main_checkout}`.
 
 ### Switch to Base Branch, Pull, and Clean Up
 
