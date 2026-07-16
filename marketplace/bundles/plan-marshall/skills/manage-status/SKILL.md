@@ -1,6 +1,6 @@
 ---
 name: manage-status
-description: Manage status.json files with phase tracking, metadata, and lifecycle operations
+description: Manage status.json files with phase tracking, metadata, and lifecycle operations for plans, plus the lean kind=orchestrator status store for orchestrator epics
 user-invocable: false
 mode: script-executor
 scope: plan
@@ -8,7 +8,7 @@ scope: plan
 
 # Manage Status Skill
 
-Manage status.json files with phase tracking, metadata, and lifecycle operations. Handles plan status storage (JSON), phase operations, metadata management, plan discovery, phase transitions, archiving, and routing.
+Manage status.json files with phase tracking, metadata, and lifecycle operations. Handles plan status storage (JSON), phase operations, metadata management, plan discovery, phase transitions, archiving, and routing. Additionally serves the lean `kind=orchestrator` status store: `create`/`read`/`metadata` accept `--store orchestrator`, and `update-field` sets the orchestrator schema's top-level fields — no phase-transition machinery applies to the orchestrator kind (see [status-lifecycle.md](standards/status-lifecycle.md)).
 
 ## Enforcement
 
@@ -859,14 +859,17 @@ restating the command inline.
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create \
   --plan-id PLAN_ID --title TEXT --phases CSV \
   [--force] \
-  [--use-worktree]
+  [--use-worktree] \
+  [--store {plans|orchestrator}]
 ```
+
+`--phases` is required for the default `plans` store and ignored for `--store orchestrator` (the `kind=orchestrator` schema carries a single three-value `phase` field instead of a phase list).
 
 ### read
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
-  --plan-id PLAN_ID
+  --plan-id PLAN_ID [--store {plans|orchestrator}]
 ```
 
 ### set-phase
@@ -895,8 +898,19 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status progre
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id PLAN_ID --field FIELD \
-  (--get | --set --value VALUE)
+  (--get | --set --value VALUE) \
+  [--store {plans|orchestrator}]
 ```
+
+### update-field
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
+  --plan-id PLAN_ID --field FIELD --value VALUE \
+  [--store orchestrator]
+```
+
+Orchestrator store only (`--store` defaults to `orchestrator`). Sets one top-level field of a `kind=orchestrator` status.json: `phase` (`init|orchestrating|closed`), `resume_anchor` (verbatim string), or the list fields `workstreams` / `plans` (JSON-array `--value`). The plans store has no generic field setter — plan status mutations go through the dedicated verbs.
 
 ### get-context
 

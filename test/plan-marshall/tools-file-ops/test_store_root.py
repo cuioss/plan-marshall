@@ -17,9 +17,8 @@ import subprocess
 import uuid
 from pathlib import Path
 
-import pytest
-
 import file_ops
+import pytest
 from file_ops import base_path, get_plan_dir, get_store_dir
 
 

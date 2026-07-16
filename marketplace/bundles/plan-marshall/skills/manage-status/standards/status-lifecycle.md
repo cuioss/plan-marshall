@@ -1,6 +1,6 @@
 # Status Lifecycle
 
-Phase and plan lifecycle model for manage-status.
+Phase and plan lifecycle model for manage-status. Two status kinds exist side by side: the plan status.json (the default `plans` store, everything below up to and including Metadata) and the lean `kind=orchestrator` status.json (the `orchestrator` store — see the Orchestrator Status section at the end).
 
 ## Phase State Machine
 
@@ -93,3 +93,60 @@ Arbitrary key-value pairs stored in `status.json` under the `metadata` object. C
 | `confidence` | phase-2-refine | Request clarity confidence (0-100) |
 
 Metadata fields are promoted to top-level in `get-context` output for convenience.
+
+## Orchestrator Status (`kind=orchestrator`)
+
+Orchestrator epics persist a second, deliberately lean status kind under the main-anchored orchestrator store — `.plan/local/orchestrator/{slug}/status.json`, resolved via `get_store_dir('orchestrator', slug)`. It is the machine authority for an epic's plan queue and resume state (see `persona-marshall-orchestrator/standards/orchestration-model.md` for the consuming contract).
+
+### Schema
+
+```json
+{
+  "kind": "orchestrator",
+  "title": "Epic title",
+  "phase": "init | orchestrating | closed",
+  "workstreams": [],
+  "plans": [
+    {
+      "id": "PLAN-01",
+      "slug": "short-slug",
+      "workstream": "WS-01",
+      "status": "staged",
+      "plan_marshall_plan_id": "",
+      "pr": "",
+      "landing": ""
+    }
+  ],
+  "resume_anchor": "the exact next action a resuming session takes",
+  "metadata": {},
+  "created": "...",
+  "updated": "..."
+}
+```
+
+### Three-Phase Lifecycle
+
+```text
+init ──→ orchestrating ──→ closed
+```
+
+| Phase | Meaning |
+|-------|---------|
+| `init` | Epic scaffolded; decomposition not yet complete |
+| `orchestrating` | Active: plans staged, launched, analyzed, reconciled |
+| `closed` | Epic frozen into `history.md`; tree retained as audit record |
+
+There is NO phase-transition machinery for the orchestrator kind — no `phases[]` list, no `set-phase`/`update-phase`/`transition`. The `phase` field is a plain three-value field set via `update-field --field phase --value {init|orchestrating|closed}`.
+
+### Verb Surface
+
+The orchestrator store is served by exactly four verbs (see Canonical invocations in `SKILL.md`):
+
+| Verb | Operation |
+|------|-----------|
+| `create --store orchestrator` | Create the `kind=orchestrator` status.json (`--phases` ignored) |
+| `read --store orchestrator` | Read the epic status document |
+| `update-field` | Set a top-level field: `phase`, `resume_anchor`, or the JSON-array list fields `workstreams` / `plans` |
+| `metadata --store orchestrator` | Get/set entries of the `metadata` object |
+
+Plan discovery (`list`), archiving, routing, title-token, and every other plan-store verb do NOT apply to the orchestrator store — orchestrator epics are structurally invisible to plan discovery because it globs only `.plan/local/plans/`.

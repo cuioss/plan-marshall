@@ -25,6 +25,8 @@ Usage:
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done --plan-id EXAMPLE-PLAN --phase 5-execute --step discovery --outcome done
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status assert-step-recorded --plan-id EXAMPLE-PLAN --phase 6-finalize --step ci-verify --require-terminal
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status sibling-collision-check --plan-id EXAMPLE-PLAN
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create --store orchestrator --plan-id example-epic --title "Epic"
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field --plan-id example-epic --field resume_anchor --value "next action"
 """
 
 import argparse
@@ -48,7 +50,14 @@ from _cmd_planning_lane import (
 )
 from _cmd_routing import cmd_get_routing_context, cmd_route, cmd_self_test
 from _cmd_sibling_collision import cmd_sibling_collision
-from _status_core import TITLE_TOKEN_STATES
+from _status_core import (
+    ORCHESTRATOR_STORE,
+    TITLE_TOKEN_STATES,
+    cmd_orchestrator_create,
+    cmd_orchestrator_metadata,
+    cmd_orchestrator_read,
+    cmd_orchestrator_update_field,
+)
 from _status_query import (
     cmd_get_context,
     cmd_get_worktree_path,
@@ -99,8 +108,22 @@ def main() -> int:
     create_parser.add_argument('--title', required=True, help='Plan title')
     create_parser.add_argument(
         '--phases',
-        required=True,
-        help='Comma-separated phase names (e.g., 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize)',
+        default=None,
+        help=(
+            'Comma-separated phase names (e.g., 1-init,2-refine,3-outline,4-plan,5-execute,6-finalize). '
+            'Required for the default plans store; ignored for --store orchestrator '
+            '(the kind=orchestrator schema carries a single three-value phase field).'
+        ),
+    )
+    create_parser.add_argument(
+        '--store',
+        choices=['plans', 'orchestrator'],
+        default='plans',
+        help=(
+            'Target store. plans (default) creates the plan status.json under '
+            '.plan/local/plans/{plan_id}/; orchestrator creates a kind=orchestrator '
+            'status.json under the main-anchored .plan/local/orchestrator/{plan_id}/ tree.'
+        ),
     )
     create_parser.add_argument('--force', action='store_true', help='Overwrite existing status')
     create_parser.add_argument(
@@ -118,6 +141,12 @@ def main() -> int:
     # read (get is an accepted alias for the same operation)
     read_parser = subparsers.add_parser('read', aliases=['get'], help='Read plan status', allow_abbrev=False)
     add_plan_id_arg(read_parser)
+    read_parser.add_argument(
+        '--store',
+        choices=['plans', 'orchestrator'],
+        default='plans',
+        help='Target store (plans default; orchestrator reads the kind=orchestrator status.json).',
+    )
     read_parser.set_defaults(func=cmd_read)
 
     # set-phase
@@ -147,7 +176,38 @@ def main() -> int:
     metadata_parser.add_argument('--set', action='store_true', help='Set metadata field')
     add_field_arg(metadata_parser)
     metadata_parser.add_argument('--value', help='Metadata field value (required for --set)')
+    metadata_parser.add_argument(
+        '--store',
+        choices=['plans', 'orchestrator'],
+        default='plans',
+        help='Target store (plans default; orchestrator targets the kind=orchestrator status.json).',
+    )
     metadata_parser.set_defaults(func=cmd_metadata)
+
+    # update-field — orchestrator-store top-level field setter
+    update_field_parser = subparsers.add_parser(
+        'update-field',
+        help='Update a top-level field of a kind=orchestrator status.json (orchestrator store only)',
+        description=(
+            'Set one top-level field of an orchestrator-store status.json: phase '
+            '(init|orchestrating|closed), resume_anchor (verbatim string), or the '
+            'list fields workstreams / plans (JSON-array --value). The plans store '
+            'has no generic field setter — plan status mutations go through the '
+            'dedicated verbs (set-phase, update-phase, metadata, transition).'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(update_field_parser)
+    add_field_arg(update_field_parser)
+    update_field_parser.add_argument('--value', required=True, help='New field value (JSON array for list fields)')
+    update_field_parser.add_argument(
+        '--store',
+        choices=['orchestrator'],
+        default='orchestrator',
+        help='Target store (orchestrator only).',
+    )
+    update_field_parser.set_defaults(func=cmd_orchestrator_update_field)
 
     # title-token (set | clear)
     title_token_parser = subparsers.add_parser(
@@ -561,7 +621,29 @@ def main() -> int:
     self_test_parser.set_defaults(func=cmd_self_test)
 
     args = parse_args_with_toon_errors(parser)
-    result = args.func(args)
+    store = getattr(args, 'store', 'plans')
+    if args.command == 'create' and store == 'plans' and not args.phases:
+        output_toon(
+            {
+                'status': 'error',
+                'error': 'wrong_parameters',
+                'message': '--phases is required for the plans store',
+            }
+        )
+        return 2
+    if store == ORCHESTRATOR_STORE:
+        # Orchestrator-store dispatch: the store-bearing verbs route to the lean
+        # kind=orchestrator handlers; the plans-store handlers stay untouched.
+        orchestrator_handlers = {
+            'create': cmd_orchestrator_create,
+            'read': cmd_orchestrator_read,
+            'get': cmd_orchestrator_read,
+            'metadata': cmd_orchestrator_metadata,
+            'update-field': cmd_orchestrator_update_field,
+        }
+        result = orchestrator_handlers[args.command](args)
+    else:
+        result = args.func(args)
     if result is not None:
         output_toon(result)
     # Strict-drift exit-code contract for ``transition``: the inline guard
