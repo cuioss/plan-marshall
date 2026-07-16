@@ -432,6 +432,15 @@ class TestWorktreeRemove:
 
         monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: tmp_path)
 
+        # Satisfy the script-level plan-dir move-back precondition: removal
+        # requires {root}/.plan/local/plans/{plan_id}/status.json on the
+        # current checkout (mirrors TestWorktreeRemoveMoveBackPrecondition's
+        # seeding in test_git_workflow.py), so this test keeps exercising its
+        # original worktree-then-branch removal-ordering contract.
+        plan_dir = tmp_path / '.plan' / 'local' / 'plans' / 'rm-me'
+        plan_dir.mkdir(parents=True)
+        (plan_dir / 'status.json').write_text('{}')
+
         # Stub the resolution + branch-name reads.
         _stub_manage_status_call(
             monkeypatch,
