@@ -86,11 +86,13 @@ def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] 
             ),
         }
 
-    porcelain = proc.stdout.strip()
-    if not porcelain:
+    if not proc.stdout.strip():
         return None
 
-    dirty_files = [line[3:] for line in porcelain.splitlines() if len(line) > 3]
+    # Split the RAW stdout — a global .strip() would eat the leading space
+    # of the first line's "XY " porcelain status prefix (e.g. " M src.py")
+    # and shift the fixed 3-char slice into the path.
+    dirty_files = [line[3:] for line in proc.stdout.splitlines() if len(line) > 3]
     return {
         'status': 'error',
         'plan_id': plan_id,
