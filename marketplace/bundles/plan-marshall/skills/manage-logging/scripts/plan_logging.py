@@ -9,7 +9,9 @@ Provides:
 - Decision logging (dedicated log for decision entries)
 
 Log file locations:
-- Plan-scoped: .plan/local/plans/{plan_id}/logs/{script-execution,work,decision}.log
+- Plan-scoped (store='plans'): .plan/local/plans/{plan_id}/logs/{script-execution,work,decision}.log
+- Orchestrator-scoped (store='orchestrator'): .plan/local/orchestrator/{slug}/logs/{decision,work}.log
+  (main-anchored via get_store_dir, resolving cross-session regardless of caller cwd)
 - Global fallback: .plan/logs/{type}-YYYY-MM-DD.log
 
 Configuration via environment variables:
@@ -36,7 +38,7 @@ from constants import (
     VALID_LOG_TYPES,
     VALID_WORK_CATEGORIES,
 )
-from file_ops import get_base_dir, now_utc_iso
+from file_ops import get_base_dir, get_store_dir, now_utc_iso
 from input_validation import is_valid_plan_id
 
 # =============================================================================
@@ -44,6 +46,11 @@ from input_validation import is_valid_plan_id
 # =============================================================================
 
 LOG_ENABLED = True
+
+# Store names accepted by the store-aware logging API. 'plans' is the default
+# (existing plan-scoped behavior, byte-identical); 'orchestrator' routes to the
+# main-anchored orchestrator tree via file_ops.get_store_dir.
+VALID_STORES = ('plans', 'orchestrator')
 
 
 def get_plan_base_dir() -> Path:
@@ -126,13 +133,21 @@ def extract_plan_id(args: list[str]) -> str | None:
 # =============================================================================
 
 
-def get_log_path(plan_id: str | None, log_type: str = 'script') -> Path:
+def get_log_path(plan_id: str | None, log_type: str = 'script', store: str = 'plans') -> Path:
     """
     Get path to log file.
 
+    Log-directory resolution routes through file_ops.get_store_dir — the one
+    parameterized store-root mechanism. ``store='plans'`` (default) preserves
+    the existing plan-scoped behavior byte-identically; ``store='orchestrator'``
+    resolves the main-anchored orchestrator tree
+    (``.plan/local/orchestrator/{entry_id}/logs/``) regardless of caller cwd.
+
     Args:
-        plan_id: Plan identifier (None for global)
+        plan_id: Entry identifier — a plan id (store='plans') or an epic slug
+            (store='orchestrator'). None for global.
         log_type: 'script', 'work', or 'decision'
+        store: Store name — 'plans' (default) or 'orchestrator'
 
     Returns:
         Path to log file in logs/ subdirectory
@@ -147,8 +162,14 @@ def get_log_path(plan_id: str | None, log_type: str = 'script') -> Path:
     else:
         filename = 'script-execution.log'
 
+    if plan_id and store == 'orchestrator':
+        # Orchestrator entries have no status.json sentinel contract — the
+        # slug tree is scaffolded by marshall-orchestrator before logging, and
+        # the store is main-anchored, so no plans-style orphan-slot hazard.
+        return get_store_dir('orchestrator', plan_id) / 'logs' / filename
+
     if plan_id:
-        plan_dir = get_plans_dir() / plan_id
+        plan_dir = get_store_dir('plans', plan_id)
         # Treat the slot as plan-scoped ONLY when it is an INITIALIZED plan dir:
         # the directory exists AND carries the status.json sentinel. A bare
         # existence test would extend a status.json-less orphan slot (e.g. a
@@ -179,7 +200,7 @@ VALID_TYPES = VALID_LOG_TYPES
 VALID_LEVELS = VALID_LOG_LEVELS
 
 
-def log_entry(log_type: str, plan_id: str | None, level: str, message: str) -> None:
+def log_entry(log_type: str, plan_id: str | None, level: str, message: str, store: str = 'plans') -> None:
     """
     Write log entry to appropriate log file.
 
@@ -188,6 +209,7 @@ def log_entry(log_type: str, plan_id: str | None, level: str, message: str) -> N
         plan_id: Plan identifier, or None for no plan context (global fallback)
         level: INFO, WARNING, ERROR
         message: Log message
+        store: Store name — 'plans' (default) or 'orchestrator'
     """
     if not LOG_ENABLED:
         return
@@ -196,7 +218,7 @@ def log_entry(log_type: str, plan_id: str | None, level: str, message: str) -> N
     level = level.upper()
 
     try:
-        log_file = get_log_path(plan_id, log_type_lower)
+        log_file = get_log_path(plan_id, log_type_lower, store=store)
         log_file.parent.mkdir(parents=True, exist_ok=True)
 
         entry = format_log_entry(level, message)
@@ -363,13 +385,14 @@ def log_work(plan_id: str, category: str, message: str, phase: str, detail: str 
         return {'status': 'error', 'plan_id': plan_id, 'error': 'write_failed', 'message': str(e)}
 
 
-def read_work_log(plan_id: str, phase: str | None = None) -> dict[str, Any]:
+def read_work_log(plan_id: str, phase: str | None = None, store: str = 'plans') -> dict[str, Any]:
     """
     Read work log entries.
 
     Args:
         plan_id: Plan identifier
         phase: Filter by phase (optional)
+        store: Store name — 'plans' (default) or 'orchestrator'
 
     Returns:
         Result dict with entries
@@ -383,7 +406,7 @@ def read_work_log(plan_id: str, phase: str | None = None) -> dict[str, Any]:
         }
 
     try:
-        log_file = get_log_path(plan_id, 'work')
+        log_file = get_log_path(plan_id, 'work', store=store)
 
         if not log_file.exists():
             return {'status': 'success', 'plan_id': plan_id, 'total_entries': 0, 'entries': []}
@@ -400,18 +423,19 @@ def read_work_log(plan_id: str, phase: str | None = None) -> dict[str, Any]:
         return {'status': 'error', 'plan_id': plan_id, 'error': 'read_failed', 'message': str(e)}
 
 
-def list_recent_work(plan_id: str, limit: int = 10) -> dict[str, Any]:
+def list_recent_work(plan_id: str, limit: int = 10, store: str = 'plans') -> dict[str, Any]:
     """
     List most recent work log entries.
 
     Args:
         plan_id: Plan identifier
         limit: Maximum entries to return
+        store: Store name — 'plans' (default) or 'orchestrator'
 
     Returns:
         Result dict with entries
     """
-    result = read_work_log(plan_id)
+    result = read_work_log(plan_id, store=store)
 
     if result['status'] != 'success':
         return result
@@ -433,16 +457,17 @@ def list_recent_work(plan_id: str, limit: int = 10) -> dict[str, Any]:
 # =============================================================================
 
 
-def log_separator(log_type: str, plan_id: str) -> None:
+def log_separator(log_type: str, plan_id: str, store: str = 'plans') -> None:
     """
     Append a blank line to the specified log file for visual separation.
 
     Args:
         log_type: 'work' or 'decision'
         plan_id: Plan identifier
+        store: Store name — 'plans' (default) or 'orchestrator'
     """
     try:
-        log_file = get_log_path(plan_id, log_type)
+        log_file = get_log_path(plan_id, log_type, store=store)
         log_file.parent.mkdir(parents=True, exist_ok=True)
 
         with open(log_file, 'a', encoding='utf-8') as f:
@@ -504,13 +529,14 @@ def log_decision(plan_id: str, message: str, phase: str, detail: str | None = No
         return {'status': 'error', 'plan_id': plan_id, 'error': 'write_failed', 'message': str(e)}
 
 
-def read_decision_log(plan_id: str, phase: str | None = None) -> dict[str, Any]:
+def read_decision_log(plan_id: str, phase: str | None = None, store: str = 'plans') -> dict[str, Any]:
     """
     Read decision log entries.
 
     Args:
         plan_id: Plan identifier
         phase: Filter by phase (optional)
+        store: Store name — 'plans' (default) or 'orchestrator'
 
     Returns:
         Result dict with entries
@@ -524,7 +550,7 @@ def read_decision_log(plan_id: str, phase: str | None = None) -> dict[str, Any]:
         }
 
     try:
-        log_file = get_log_path(plan_id, 'decision')
+        log_file = get_log_path(plan_id, 'decision', store=store)
 
         if not log_file.exists():
             return {'status': 'success', 'plan_id': plan_id, 'total_entries': 0, 'entries': []}
@@ -603,10 +629,13 @@ if __name__ == '__main__':
     print(f'\nPlan Base Directory: {get_plan_base_dir()}')
     print(f'Max Output Capture: {get_max_output()}')
     print(f'Retention Days: {get_retention_days()}')
-    print('\nLog locations (plan-scoped):')
+    print('\nLog locations (plan-scoped, store=plans):')
     print('  .plan/local/plans/{plan_id}/logs/script-execution.log')
     print('  .plan/local/plans/{plan_id}/logs/work.log')
     print('  .plan/local/plans/{plan_id}/logs/decision.log')
+    print('\nLog locations (orchestrator-scoped, store=orchestrator):')
+    print('  .plan/local/orchestrator/{slug}/logs/work.log')
+    print('  .plan/local/orchestrator/{slug}/logs/decision.log')
     print('\nAvailable functions:')
     print('- format_timestamp() -> str')
     print('- format_log_entry(level, message, **fields) -> str')

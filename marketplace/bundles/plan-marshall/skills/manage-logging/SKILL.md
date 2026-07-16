@@ -1,6 +1,6 @@
 ---
 name: manage-logging
-description: Unified logging infrastructure for script execution, work progress, and decision tracking
+description: Unified logging infrastructure for script execution, work progress, and decision tracking across the plan, global, and main-anchored orchestrator stores
 user-invocable: false
 mode: script-executor
 scope: hybrid
@@ -11,6 +11,8 @@ scope: hybrid
 Unified logging infrastructure providing script execution logging, semantic work progress tracking, and decision logging.
 
 **Scope: hybrid** means this skill operates at both plan-scoped and global levels. When a `plan_id` is provided and the plan directory exists, logs go to `.plan/plans/{plan-id}/logs/`. Otherwise, logs fall back to global daily files at `.plan/logs/`.
+
+A third, opt-in store exists for orchestrator epics: `--store orchestrator` on the `work` / `decision` / `read` verbs routes to the main-anchored orchestrator tree at `.plan/local/orchestrator/{slug}/logs/` (resolved via `file_ops.get_store_dir`, stable across sessions and worktree cwds). The default store is `plans` — every existing call path is unchanged.
 
 ## Enforcement
 
@@ -49,6 +51,10 @@ All plan-scoped logs are stored in the `logs/` subdirectory of the plan.
 **File**: `.plan/plans/{plan-id}/logs/decision.log`
 **Fallback**: `.plan/logs/decision-YYYY-MM-DD.log` (global)
 
+### Orchestrator Store (`--store orchestrator`)
+
+**Files**: `.plan/local/orchestrator/{slug}/logs/work.log` and `.plan/local/orchestrator/{slug}/logs/decision.log` (main-anchored — no global fallback; `--plan-id` carries the epic slug). The orchestrator logged-event vocabulary (decision, interaction, plan-status-change, reconciliation) is defined in [standards/log-format.md](standards/log-format.md) § Orchestrator Logged Events.
+
 ---
 
 ## CLI Script Usage
@@ -67,9 +73,10 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 | Argument | Required | Values | Description |
 |----------|----------|--------|-------------|
 | `type` | Yes | `script`, `work`, `decision` | Log type (determines output file) |
-| `--plan-id` | No | kebab-case | Plan identifier. **Optional on write subcommands** — when omitted, the entry is written to the dated global log under `.plan/logs/` (the first-class global/no-plan path); when supplied and resolving to an initialized plan, the entry is plan-scoped. |
+| `--plan-id` | No | kebab-case | Plan identifier. **Optional on write subcommands** — when omitted, the entry is written to the dated global log under `.plan/logs/` (the first-class global/no-plan path); when supplied and resolving to an initialized plan, the entry is plan-scoped. **Required with `--store orchestrator`** (the epic slug — the orchestrator store has no global fallback). |
 | `--level` | Yes | `INFO`, `WARNING`, `ERROR` | Log level |
 | `--message` | Yes | string | Log message |
+| `--store` | No | `plans` (default), `orchestrator` | Store selection — `work` and `decision` verbs only (`script` has no store flag). `orchestrator` writes main-anchored to `.plan/local/orchestrator/{slug}/logs/{work,decision}.log`. |
 
 **Output**: None (exit code only)
 
@@ -119,10 +126,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `--plan-id` | Yes | Plan identifier |
+| `--plan-id` | Yes | Plan identifier (or epic slug with `--store orchestrator`) |
 | `--type` | Yes | Log type: `work`, `script`, or `decision` |
 | `--limit` | No | Max entries to return (most recent) |
 | `--phase` | No | Filter by phase (work/decision logs only) |
+| `--store` | No | Store selection: `plans` (default) or `orchestrator` |
 
 **Output** (TOON):
 
@@ -196,20 +204,22 @@ notation occurrences across the marketplace. Consuming skills xref this section 
 name (e.g., "see `manage-logging` Canonical invocations → `work`") instead of
 restating the command inline.
 
-`--plan-id` is OPTIONAL on the three write subcommands (`work` / `decision` / `script`); omitting it writes to the dated global log under `.plan/logs/`.
+`--plan-id` is OPTIONAL on the three write subcommands (`work` / `decision` / `script`); omitting it writes to the dated global log under `.plan/logs/`. `--store` is available on `work`, `decision`, and `read` only (default `plans`); `--store orchestrator` requires `--plan-id` (the epic slug) and routes to `.plan/local/orchestrator/{slug}/logs/`.
 
 ### work
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging work \
-  [--plan-id PLAN_ID] --level {INFO|WARNING|ERROR} --message TEXT
+  [--plan-id PLAN_ID] --level {INFO|WARNING|ERROR} --message TEXT \
+  [--store {plans|orchestrator}]
 ```
 
 ### decision
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging decision \
-  [--plan-id PLAN_ID] --level {INFO|WARNING|ERROR} --message TEXT
+  [--plan-id PLAN_ID] --level {INFO|WARNING|ERROR} --message TEXT \
+  [--store {plans|orchestrator}]
 ```
 
 ### script
@@ -233,7 +243,7 @@ Default `--type` is `work`.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read \
   --plan-id PLAN_ID --type {work|decision|script} \
-  [--limit N] [--phase PHASE]
+  [--limit N] [--phase PHASE] [--store {plans|orchestrator}]
 ```
 
 `--phase` filters only `work` and `decision` log reads.
@@ -334,7 +344,17 @@ log_entry('work', 'EXAMPLE-PLAN', 'INFO', '[ARTIFACT] Created deliverable')
 └── decision-YYYY-MM-DD.log            # Daily global decision logs
 ```
 
+### Orchestrator Logs
+
+```text
+.plan/local/orchestrator/{slug}/
+└── logs/
+    ├── work.log                # Interaction / plan-status-change / reconciliation events
+    └── decision.log            # Orchestrator decision events
+```
+
 **Scope Selection**:
+- If `--store orchestrator`: main-anchored orchestrator log (requires `plan_id` = epic slug; no fallback)
 - If `plan_id` is provided and plan directory exists: plan-scoped log
 - Otherwise: global log (both script and work types supported)
 
@@ -357,6 +377,7 @@ log_entry('work', 'EXAMPLE-PLAN', 'INFO', '[ARTIFACT] Created deliverable')
 | Error Code | Cause |
 |------------|-------|
 | `invalid_plan_id` | plan_id format invalid |
+| `missing_plan_id` | `--store orchestrator` supplied without `--plan-id` (the epic slug) |
 | `invalid_log_type` | Log type not in: script, work, decision |
 | `invalid_level` | Level not in: INFO, WARNING, ERROR |
 | `write_failed` | File system permission denied or directory missing |

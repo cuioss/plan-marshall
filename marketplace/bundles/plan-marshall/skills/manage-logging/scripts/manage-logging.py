@@ -25,6 +25,10 @@ Arguments (write):
                  initialized plan, the entry is plan-scoped.
     --level    - Log level: INFO, WARNING, ERROR (required)
     --message  - Log message (required)
+    --store    - Store name: 'plans' (default) or 'orchestrator'. Available on
+                 the work and decision verbs only. With --store orchestrator,
+                 --plan-id is REQUIRED (the epic slug) and the entry is written
+                 main-anchored under .plan/local/orchestrator/{slug}/logs/.
 
 Global / no-plan logging:
     Omitting --plan-id writes to .plan/logs/{work,decision,script-execution}-{date}.log.
@@ -40,6 +44,7 @@ Arguments (read):
     --type     - Log type: 'script', 'work', or 'decision' (required)
     --limit    - Max entries to return (optional, default: all)
     --phase    - Filter by phase (optional, work/decision logs only)
+    --store    - Store name: 'plans' (default) or 'orchestrator'
 
 Examples:
     # Write operations
@@ -67,7 +72,15 @@ from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
-from plan_logging import get_log_path, list_recent_work, log_entry, log_separator, read_decision_log, read_work_log
+from plan_logging import (
+    VALID_STORES,
+    get_log_path,
+    list_recent_work,
+    log_entry,
+    log_separator,
+    read_decision_log,
+    read_work_log,
+)
 
 VALID_TYPES = VALID_LOG_TYPES
 VALID_LEVELS = VALID_LOG_LEVELS
@@ -79,23 +92,24 @@ def handle_read(args: argparse.Namespace) -> dict[str, Any]:
     log_type = args.type
     limit = args.limit
     phase = args.phase
+    store = args.store
 
     # Work and decision logs support full parsing
     if log_type == 'work':
         if limit:
-            result = list_recent_work(plan_id, limit=limit)
+            result = list_recent_work(plan_id, limit=limit, store=store)
         else:
-            result = read_work_log(plan_id, phase=phase)
+            result = read_work_log(plan_id, phase=phase, store=store)
         result['log_type'] = 'work'
     elif log_type == 'decision':
-        result = read_decision_log(plan_id, phase=phase)
+        result = read_decision_log(plan_id, phase=phase, store=store)
         if limit and result.get('entries'):
             result['entries'] = result['entries'][-limit:]
             result['showing'] = len(result['entries'])
         result['log_type'] = 'decision'
     else:
         # Script logs - read raw file content
-        log_file = get_log_path(plan_id, 'script')
+        log_file = get_log_path(plan_id, 'script', store=store)
         if log_file.exists():
             content = log_file.read_text(encoding='utf-8')
             file_lines = content.strip().split('\n') if content.strip() else []
@@ -135,10 +149,22 @@ def handle_write(args: argparse.Namespace) -> dict[str, Any] | None:
     plan_id = args.plan_id
     level = args.level
     message = args.message
+    # --store exists only on the work/decision write parsers; the script
+    # write parser has no store flag and always targets the plans store.
+    store = getattr(args, 'store', 'plans')
+
+    if store == 'orchestrator' and not plan_id:
+        # Real input boundary: the orchestrator store has no global/no-plan
+        # fallback — the entry id (epic slug) selects the tree to write into.
+        return {
+            'status': 'error',
+            'error': 'missing_plan_id',
+            'message': '--store orchestrator requires --plan-id (the epic slug)',
+        }
 
     # Log entry — log_entry is best-effort and never raises into the caller
     # (it swallows all exceptions internally), so no guard is needed here.
-    log_entry(log_type, plan_id, level, message)
+    log_entry(log_type, plan_id, level, message, store=store)
     return None
 
 
@@ -175,6 +201,15 @@ def main() -> int:
             continue
         write_parser = subparsers.add_parser(log_type, help=f'Write a {log_type} log entry', allow_abbrev=False)
         _add_write_args(write_parser)
+        if log_type in ('work', 'decision'):
+            # Only the two orchestrator logged-event verbs are store-aware;
+            # script-execution logging stays plans/global-only.
+            write_parser.add_argument(
+                '--store',
+                default='plans',
+                choices=VALID_STORES,
+                help="Store name (default: plans); 'orchestrator' requires --plan-id (epic slug)",
+            )
         write_parser.set_defaults(log_type=log_type)
 
     # Separator subcommand
@@ -188,6 +223,12 @@ def main() -> int:
     read_parser.add_argument('--type', required=True, choices=VALID_TYPES, help='Log type')
     read_parser.add_argument('--limit', type=int, help='Max entries to return')
     add_phase_arg(read_parser, required=False)
+    read_parser.add_argument(
+        '--store',
+        default='plans',
+        choices=VALID_STORES,
+        help='Store name (default: plans)',
+    )
 
     args = parse_args_with_toon_errors(parser)
 

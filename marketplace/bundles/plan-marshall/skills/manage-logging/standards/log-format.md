@@ -206,6 +206,39 @@ Decision entries are written to a dedicated log file. They do NOT include a `[DE
 
 ---
 
+## Orchestrator Logged Events
+
+**Files**: `.plan/local/orchestrator/{slug}/logs/work.log` and `.plan/local/orchestrator/{slug}/logs/decision.log` (written via `--store orchestrator` on the `work` / `decision` verbs; main-anchored, no global fallback).
+
+Entries use the standard entry format and the standard two-segment `(bundle:skill)` caller shape. Exactly four event types are defined for the orchestrator store:
+
+| Event | Verb / File | Category bracket | Purpose |
+|-------|-------------|------------------|---------|
+| decision | `decision` → `decision.log` | none (file is the category) | Orchestration decisions (decomposition, queue ordering, fold/park calls) |
+| interaction | `work` → `work.log` | `[INTERACTION]` | AskUserQuestion outcomes — the question topic and the operator's chosen option |
+| plan-status-change | `work` → `work.log` | `[PLAN-STATUS]` | A tracked plan's lifecycle transition in the epic queue |
+| reconciliation | `work` → `work.log` | `[RECONCILIATION]` | Ledger reconciliation — landing reports folded into epic.md / status.json |
+
+One example line per event type:
+
+```text
+[2026-07-16T10:02:11Z] [INFO] [b3c9e4] (plan-marshall:marshall-orchestrator) Decomposed epic into 3 workstreams: WS-01-substrate, WS-02-surface, WS-03-ship
+```
+
+```text
+[2026-07-16T10:05:42Z] [INFO] [a7d2f8] [INTERACTION] (plan-marshall:marshall-orchestrator) AskUserQuestion: PLAN-03 ordering -> operator chose "park until PLAN-01 lands"
+```
+
+```text
+[2026-07-16T10:41:07Z] [INFO] [c4e8a1] [PLAN-STATUS] (plan-marshall:marshall-orchestrator) PLAN-02 queued -> running
+```
+
+```text
+[2026-07-16T11:20:33Z] [INFO] [e9f1b6] [RECONCILIATION] (plan-marshall:marshall-orchestrator) Folded landing report landings/PLAN-01.md into epic.md queue; retired 2 folded queue items
+```
+
+---
+
 ## Parsing Guidelines
 
 ### Reading Log Files
@@ -271,11 +304,11 @@ def parse_log_file(content: str) -> list[dict]:
 
 All plan-scoped logs are stored in the `logs/` subdirectory of the plan.
 
-| Log Type | Plan-Scoped | Global |
-|----------|-------------|--------|
-| Script Execution | `logs/script-execution.log` | `script-execution-YYYY-MM-DD.log` |
-| Work | `logs/work.log` | `work-YYYY-MM-DD.log` |
-| Decision | `logs/decision.log` | `decision-YYYY-MM-DD.log` |
+| Log Type | Plan-Scoped | Global | Orchestrator (`--store orchestrator`) |
+|----------|-------------|--------|----------------------------------------|
+| Script Execution | `logs/script-execution.log` | `script-execution-YYYY-MM-DD.log` | — (not store-aware) |
+| Work | `logs/work.log` | `work-YYYY-MM-DD.log` | `.plan/local/orchestrator/{slug}/logs/work.log` |
+| Decision | `logs/decision.log` | `decision-YYYY-MM-DD.log` | `.plan/local/orchestrator/{slug}/logs/decision.log` |
 
 ---
 
