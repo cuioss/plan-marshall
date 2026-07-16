@@ -22,7 +22,6 @@ No implementation-side capability (no build/CI/source verbs) exists here.
 """
 
 import argparse
-import sys
 from pathlib import Path
 from typing import Any
 

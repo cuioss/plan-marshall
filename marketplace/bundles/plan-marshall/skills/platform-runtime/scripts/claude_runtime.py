@@ -931,6 +931,42 @@ def _read_title_state(plan_id: str) -> dict[str, Any] | None:
     return state
 
 
+def _read_orchestrator_title_state(slug: str) -> dict[str, Any] | None:
+    """Read the orchestrator title state for *slug*, or ``None``.
+
+    Resolves the epic's ``status.json`` via
+    ``file_ops.get_store_dir('orchestrator', slug)`` — the main-anchored
+    orchestrator store (deliverable D0) — and returns the state dict the
+    :func:`manage_terminal_title.compose` orchestrator branch consumes:
+    ``kind: orchestrator`` plus the ``slug``, with ``title_token`` carried
+    through best-effort when persisted. Returns ``None`` when the slug is
+    empty, the store cannot be resolved, or the file is absent/unreadable —
+    the caller then reports the existing ``no_title_state`` no-op, so the
+    inherited terminal-title gating stays intact (no new config knob).
+    """
+    if not slug:
+        return None
+    try:
+        from file_ops import get_store_dir
+
+        status_path = get_store_dir("orchestrator", slug) / "status.json"
+    except (ImportError, RuntimeError, ValueError):
+        return None
+    try:
+        if not status_path.is_file():
+            return None
+    except OSError:
+        return None
+    status_data = _read_json(status_path)
+    if status_data is None:
+        return None
+    state: dict[str, Any] = {"kind": "orchestrator", "slug": slug}
+    title_token = status_data.get("title_token")
+    if isinstance(title_token, str):
+        state["title_token"] = title_token
+    return state
+
+
 def _manage_status_store_session(plan_id: str, session_id: str) -> bool:
     """Store session_id in plan status.json via manage-status metadata --set.
 

@@ -1,6 +1,6 @@
 ---
 name: manage-terminal-title
-description: Pure platform-agnostic terminal-title composition consumed by platform-runtime via PYTHONPATH
+description: Pure platform-agnostic terminal-title composition consumed by platform-runtime via PYTHONPATH — plan-scoped pm:{phase} bodies and orchestrator Orchestrator-{SlugName} bodies
 user-invocable: false
 mode: knowledge
 ---
@@ -49,7 +49,8 @@ independent:
 ### Body
 
 `_compose_body(state_dict)` renders the body from `current_phase` and the
-optional `short_description`:
+optional `short_description` — or, when the state carries `kind: orchestrator`,
+the orchestrator body from the state's `slug`:
 
 | Condition | Body |
 |-----------|------|
@@ -58,9 +59,21 @@ optional `short_description`:
 | Terminal phase (`complete` / `archived`), `short` present | `pm:Completed:{short}` |
 | Terminal phase, no `short` | `pm:Completed` |
 | `current_phase` empty / missing | `None` (true no-op) |
+| `kind: orchestrator`, `slug` present | `Orchestrator-{SlugName}` |
+| `kind: orchestrator`, `slug` empty / missing | `None` (true no-op) |
 
 A terminal phase renders the Completed body — NOT `None` — so a finished plan
 still shows in the title (with the ✅ override below).
+
+**Orchestrator body:** when the passed state dict carries `kind: orchestrator`,
+the body is `Orchestrator-{SlugName}` (slug from the state's `slug` field)
+instead of the plan-scoped `pm:{phase}[:{short}]` form — e.g.
+`Orchestrator-token-optimization`. Icon and glyph slots keep their existing
+semantics (process icon, `build-busy` 🔨 icon-slot override); only the body
+composition branches on the kind, and the composer stays a pure leaf function.
+The orchestrator state is read by `platform-runtime`'s `session
+push-title-token --store orchestrator --slug {slug}` seam, which resolves the
+epic's `status.json` via `get_store_dir('orchestrator', slug)`.
 
 ### Glyph (`TITLE_TOKEN_GLYPHS`)
 
