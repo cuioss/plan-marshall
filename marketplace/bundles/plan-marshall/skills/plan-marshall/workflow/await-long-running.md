@@ -25,7 +25,7 @@ The finalize-wait barrier (see [`phase-6-finalize/SKILL.md`](../../phase-6-final
 - **Fan-out concurrency**: the three per-signal arms are detached **concurrently** off the one settled HEAD, so the barrier's wall time approaches `max(signal)` rather than `sum(signal)`. Each arm reuses its own existing ratchet (the CI arm reuses the p50-seeded `cmd_ci_wait`; see the remote-CI wait row).
 - **Wake-on-transition, per-signal-proceed**: the barrier wakes on ANY arm's state transition (a signal reaching a terminal state) — NOT only when all three settle — so the orchestrator proceeds past each settled arm independently. It also wakes on **budget exhaustion**. On each wake it reads the compact `ci barrier` decision TOON (never the raw poll flood) and advances the arms named in `proceed` while continuing to await those in `pending`.
 - **Bounded re-settle re-entry**: when a `barrier_status: re_settle` decision names `affected` arms (a fix pushed after barrier entry advanced HEAD), the orchestrator re-detaches only those affected arms against the new settled HEAD — never a full finalize replay. This converges in ≤1–2 iterations (see the phase-6 wait-region narrative).
-- **Multi-arm notification lifecycle — per-arm gate, re-arm while pending**: because the barrier wakes per-signal, MULTIPLE legitimate completion notifications arrive during one barrier — one per arm as each reaches a terminal state (`settled` or `failed`, the `proceed` / `failed` buckets). The single-gate idempotency contract of step (e) (one `build-busy` state → clear-once) is NOT sufficient here on its own: a naïve single gate cleared on the FIRST arm's completion would treat every LATER arm's genuine completion as an already-handled duplicate reminder and drop it. The barrier consumer therefore gates per-arm, not once for the whole barrier: it tracks which arms it has already handled (the `proceed` / `failed` names it has already consumed) and, on each wake, handles ONLY the newly-terminal arms named in that wake's decision TOON that it has not yet handled. Equivalently, it **re-arms** the `build-busy` state after each per-arm handling **whenever the decision TOON still reports a non-empty `pending` bucket** (more arms are still coming), and only performs the final state-gated clear once the decision reaches a terminal `barrier_status` (`complete`, or a `failed`/`re_settle` the orchestrator acts on) with an empty `pending` bucket. A repeated "still running" reminder for an arm already handled remains a no-op (the Claude Code issue #11190 leak guard); the distinction is between a repeat of an ALREADY-handled arm (no-op) and a fresh completion of a not-yet-handled arm (handle it), which the per-arm handled-set — not a single whole-barrier gate — is what disambiguates.
+- **Multi-arm notification lifecycle — per-arm gate, re-arm while pending**: because the barrier wakes per-signal, MULTIPLE legitimate completion notifications arrive during one barrier — one per arm as each reaches a terminal state (`settled` or `failed`, the `proceed` / `failed` buckets). The single-gate idempotency contract of step (d) (one `build-busy` state → handle-and-clear-once in step (e)) is NOT sufficient here on its own: a naïve single gate cleared on the FIRST arm's completion would treat every LATER arm's genuine completion as an already-handled duplicate reminder and drop it. The barrier consumer therefore gates per-arm, not once for the whole barrier: it tracks which arms it has already handled (the `proceed` / `failed` names it has already consumed) and, on each wake, handles ONLY the newly-terminal arms named in that wake's decision TOON that it has not yet handled. Equivalently, it **re-arms** the `build-busy` state after each per-arm handling **whenever the decision TOON still reports a non-empty `pending` bucket** (more arms are still coming), and only performs the final state-gated clear once the decision reaches a terminal `barrier_status` (`complete`, or a `failed`/`re_settle` the orchestrator acts on) with an empty `pending` bucket. A repeated "still running" reminder for an arm already handled remains a no-op (the Claude Code issue #11190 leak guard); the distinction is between a repeat of an ALREADY-handled arm (no-op) and a fresh completion of a not-yet-handled arm (handle it), which the per-arm handled-set — not a single whole-barrier gate — is what disambiguates.
 
 The **synchronous-blocking fallback (step (g))** applies unchanged: when the background primitive is unavailable, the barrier degrades to awaiting each arm's wait **inline** at its resolved timeout — i.e. the pre-detach serial blocking behaviour — still bracketed by the build-busy set/clear. The Claude-specific wake primitive stays contained behind this seam; the barrier consumer carries no runtime-specific branch of its own.
 
@@ -74,19 +74,17 @@ Run the resolved wrapper command (build consumer) or the CI-wait handler (ci-wai
 Bash(command="{command}", run_in_background: true)
 ```
 
+`run_in_background` is a **known-lossy primitive**: the harness kills backgrounded jobs with zero output, and the loss is **detected on the wake path (steps d/e), not prevented**.
+
 Do NOT poll for completion and do NOT `sleep`/`wait` on the backgrounded job — the completion notification is the wake signal (step d).
 
-**Ledger stamping is automatic (no separate step here).** The detached wrapper `{command}` is itself a `python3 .plan/execute-script.py …` build-class invocation, so it traverses the executor dispatch boundary exactly as an inline `per_task` build does — and the boundary's tier-agnostic `kind=build` writer stamps the change-ledger with `worktree_sha` + `exit_code` (the detached orchestrator build carries `plan_id: null`). This seam therefore performs **no separate stamping step**; see [`../../manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) for the `run_in_background`-agnostic freshness stamp.
+**Ledger stamping is automatic for jobs that complete (no separate step here).** The detached wrapper `{command}` is itself a `python3 .plan/execute-script.py …` build-class invocation, so when it runs to completion it traverses the executor dispatch boundary exactly as an inline `per_task` build does — the boundary's tier-agnostic `kind=build` writer stamps the change-ledger with `worktree_sha` + the truthful `status` (the detached orchestrator build carries `plan_id: null`). A job whose whole process tree is killed dies BEFORE the boundary runs and stamps **no row at all** — the missing row is itself the kill signal step (e)'s classifier keys on. This seam therefore performs **no separate stamping step**; see [`../../manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) for the entry shape and the whole-tree-kill signature.
 
-### (d) On the completion notification, read the compact TOON
+**Why the synchronous fallback (step g) is NOT the mandated path.** The resolved `module-tests plan-marshall` envelope carries `bash_timeout_seconds: 1012` with `exceeds_bash_ceiling: true` — beyond the 600s Bash tool ceiling — so a synchronous-only seam cannot carry this repository's own orchestrator-tier builds. The primitive stays, and the kill class is made legible instead. The root-cause seam is the `marshalld` work-server epic, which this seam is independent of and must not block on.
 
-When the background-completion notification arrives, read the wrapper's **compact result TOON** (its `status` / `errors[]` summary) — NEVER the raw build log. The compact TOON is the contract surface; the raw log is consulted only when the TOON's `log_file` pointer is needed for a specific failure investigation.
+### (d) On the completion notification, check the state gate FIRST
 
-For the `build` consumer, analyse `status` (`success` / `error` / `timeout`) and the `errors[N]{file,line,message,category}` rows. For the `ci-wait` consumer, read `final_status`, `duration_sec`, and `failing_checks` from the handler's return TOON.
-
-### (e) State-gated, fire-exactly-once clear
-
-The persisted `build-busy` title-token state IS the **"not-yet-handled" gate**. The orchestrator reads the current state, and the gate — not the arrival of a reminder — decides whether to act:
+The persisted `build-busy` title-token state IS the **"not-yet-handled" gate**, and it runs BEFORE any outcome work — classification included. When the background-completion notification arrives, the orchestrator reads the current state, and the gate — not the arrival of a reminder — decides whether to act:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
@@ -95,18 +93,39 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
 
 Read `title_token` from the returned TOON, then branch:
 
-- **`title_token == build-busy` (state present → not yet handled)** — this is the first handling of the completion. Do the work exactly once: consume the compact TOON (step d), clear the state, and push the restored repaint:
+- **`title_token == build-busy` (state present → not yet handled)** — this is the first handling of the completion. Proceed to step (e): handle the outcome exactly once, clear the state, and push the restored repaint.
+- **`title_token` absent (state already cleared → already handled)** — this is a **repeated "still running" reminder**, not a fresh completion. **No-op**: do NOT classify, do NOT read any TOON, do NOT re-clear, do NOT re-release the slot. Gating BEFORE classification is what makes the repeat a true no-op — a classifier invoked ahead of the gate would still re-run on every reminder. An un-gated reminder that re-runs the handling on every repeat is the failure mode behind Claude Code issue #11190, where a leaked reminder re-fired thousands of tokens. The title-token-state gate is the idempotency mechanism that makes the handling fire exactly once regardless of how many reminders arrive.
+
+### (e) Handle the outcome once (state-present branch only), then clear
+
+This step runs ONLY on the state-present branch of step (d). The outcome handling branches by `consumer` — the killed-job classifier applies to the **build consumer only**, because only build-class invocations traverse the executor dispatch boundary that stamps `kind=build` ledger rows; the ci-wait and finalize-barrier consumers stamp no rows, so the missing-row kill signature is not a valid discriminator for them.
+
+- **`build`** — classify the outcome FIRST, before consuming any TOON, via the deterministic killed-job classifier:
 
   ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-status:manage-status title-token clear \
-    --plan-id {plan_id}
-  python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
-    --plan-id {plan_id}
+  python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger classify-outcome \
+    --job-status {completed|killed} --output-bytes {N} --worktree-sha {sha}
   ```
 
-  The plain `session push-title-token` (no `--icon`) repaints to the current process icon (e.g. ➤ active).
+  Pass the harness-reported job state as `--job-status`, the byte count of the job's captured output as `--output-bytes`, and the pre-dispatch `worktree_sha` as the **required** `--worktree-sha` (compute it via the `worktree-sha` verb BEFORE detaching in step (c) and hold it for the wake path — an unscoped cross-check could match a stale row from a different worktree state and misclassify a killed job as `success`). The verdicts (see [`../../manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) § classify-outcome):
 
-- **`title_token` absent (state already cleared → already handled)** — this is a **repeated "still running" reminder**, not a fresh completion. **No-op**: do NOT re-read the TOON, do NOT re-clear, do NOT re-release the slot. An un-gated reminder that re-runs the handling on every repeat is the failure mode behind Claude Code issue #11190, where a leaked reminder re-fired thousands of tokens. The title-token-state gate is the idempotency mechanism that makes the clear fire exactly once regardless of how many reminders arrive.
+  - **`externally_killed`** — the harness killed the job (reported `killed`, no ledger row was stamped AND the output is 0 bytes — the whole-tree-kill signature — or the matching row itself carries `status: killed`). The orchestrator MUST surface the verdict message **"externally killed — not flaky, do not blind-retry"** and MUST NOT re-dispatch the identical command as a retry. A kill is not flakiness; blind re-dispatch feeds the same killer.
+  - **`timeout` / `success` / `undecidable`** — proceed to read the wrapper's **compact result TOON** — analyse `status` (`success` / `error` / `timeout` / `killed`) and the `errors[N]{file,line,message,category}` rows — NEVER the raw build log. The compact TOON is the contract surface; the raw log is consulted only when the TOON's `log_file` pointer is needed for a specific failure investigation.
+
+- **`ci-wait`** — no classifier (this consumer stamps no ledger rows). Read the wait handler's return TOON directly: `final_status`, `duration_sec`, and `failing_checks` (per the Consumers table above).
+
+- **`finalize-barrier`** — no classifier (this consumer stamps no ledger rows). Read the `ci barrier` decision TOON directly: `barrier_status` and the `proceed` / `pending` / `failed` / `affected` buckets, applying the per-arm handled-set gating from § "Finalize-wait barrier consumer specifics" (re-arm while `pending` is non-empty; final clear only at a terminal `barrier_status` with an empty `pending` bucket).
+
+After the consumer-specific handling, clear the state and push the restored repaint:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status title-token clear \
+  --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
+  --plan-id {plan_id}
+```
+
+The plain `session push-title-token` (no `--icon`) repaints to the current process icon (e.g. ➤ active).
 
 All four title-surface operations (set / clear / both pushes) are **best-effort**, mirroring `merge_lock` — a failure of any one never aborts the wrapped operation.
 
@@ -119,7 +138,7 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue release \
   --plan-id {plan_id} --id {admission_id}
 ```
 
-The `ci-wait` consumer skips this step. The release fires only on the state-present branch of step (e) — a repeated reminder must not double-release.
+The `ci-wait` consumer skips this step. The release fires only on the state-present branch of step (d) — a repeated reminder must not double-release.
 
 ### (g) Fallback — synchronous blocking call
 

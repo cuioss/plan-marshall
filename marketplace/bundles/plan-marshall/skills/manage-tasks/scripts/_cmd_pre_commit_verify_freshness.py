@@ -7,17 +7,23 @@ Closes the necessary-vs-sufficient gap between ``loop-exit-guard``
 proof). The command answers a single deterministic question:
 
     Does the unified change-ledger contain a ``kind=build`` entry with
-    ``exit_code == 0`` whose ``worktree_sha`` equals the CURRENT working-tree
-    currency hash?
+    ``status == 'success'`` whose ``worktree_sha`` equals the CURRENT
+    working-tree currency hash?
 
 A ``kind=build`` entry is stamped by the executor dispatch boundary after every
-build-class invocation, carrying the working-tree ``worktree_sha`` captured at
-build time. The gate recomputes the current working-tree sha and looks for a
-matching successful build entry. The query is build-tool-agnostic and
-tier-agnostic: it filters on ``kind``, ``exit_code`` and ``worktree_sha`` only —
-never ``notation`` or ``plan_id`` — so a Maven/Gradle/npm build, or an
-orchestrator-driven global-tier build with ``plan_id: null``, satisfies the gate
-exactly as a plan-scoped pyproject build does.
+build-class invocation, carrying the truthful build ``status`` (``success`` /
+``error`` / ``timeout`` / ``killed``) and the working-tree ``worktree_sha``
+captured at build time. The gate recomputes the current working-tree sha and
+looks for a matching successful build entry. Matching on ``status`` rather than
+``exit_code`` is load-bearing: the build wrapper exits 0 on timeout (the
+outcome is modeled in its stdout TOON, not the exit code), so an ``exit_code``
+predicate would launder a build that never finished into a false ``fresh``.
+A row lacking ``status`` never matches — the gate fails closed to ``stale``.
+The query is build-tool-agnostic and tier-agnostic: it filters on ``kind``,
+``status`` and ``worktree_sha`` only — never ``notation`` or ``plan_id`` — so a
+Maven/Gradle/npm build, or an orchestrator-driven global-tier build with
+``plan_id: null``, satisfies the gate exactly as a plan-scoped pyproject build
+does.
 
 The primitive is the *working-tree* currency, NOT the committed ``HEAD``. This
 is a pre-commit gate: at gate time the plan's edits are still uncommitted, so a
@@ -57,7 +63,7 @@ Outcomes:
                      ``coverage``, or the bare ``verify`` alias). Any build/test
                      step in the list disables the exemption and the plan falls
                      through to the ledger scan below.
-- ``fresh``        — a ``kind=build`` entry with ``exit_code == 0`` and a
+- ``fresh``        — a ``kind=build`` entry with ``status == 'success'`` and a
                      matching ``worktree_sha`` exists; a successful build has
                      been observed against the current on-disk state, so the
                      gate is permitted to pass.
@@ -314,13 +320,15 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
         }
 
     # Scan for any successful build entry stamped against the current
-    # working-tree sha. The query filters on kind, exit_code and worktree_sha
+    # working-tree sha. The query filters on kind, status and worktree_sha
     # only — never notation or plan_id — so it is build-tool-agnostic and
-    # tier-agnostic.
+    # tier-agnostic. Requiring status == 'success' (not exit_code == 0) is
+    # what closes the false-fresh hole: a timed-out build exits 0 but stamps
+    # status: timeout, and a row lacking status never matches (fail-closed).
     for entry in entries:
         if (
             entry.get('kind') == KIND_BUILD
-            and entry.get('exit_code') == 0
+            and entry.get('status') == 'success'
             and entry.get('worktree_sha') == current_sha
         ):
             return {

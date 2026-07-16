@@ -590,3 +590,156 @@ def test_pm_marketplace_root_with_trailing_slash_rewrites(two_marketplace_trees,
     assert 'SENTINEL:B' in result.stdout, (
         f'Expected env-rooted tree B to be invoked with trailing-slash root. stdout:\n{result.stdout}'
     )
+
+
+# Truthful build-status stamping: after every build-class dispatch the boundary
+# appends one kind=build change-ledger row whose `status` is derived via
+# _derive_build_status — (1) negative returncode (POSIX signal death) =>
+# `killed` (reserved for this branch only); (2) any other nonzero returncode =>
+# `error`, AUTHORITATIVE over any contradictory stdout status (a stdout
+# `status: success` with exit 1 must not launder into a fresh-looking build);
+# (3) exit 0 => the wrapper's stdout TOON `status` when it is a known build
+# status other than `killed` (the timeout fix: the wrapper exits 0 on timeout,
+# the TOON carries the truth; a stdout `killed` claim at exit 0 stamps `error`);
+# (4) else exit 0 => `success`.
+# These tests drive a rendered executor end-to-end against a fake build-class
+# script that emits controlled stdout/exit, then assert the stamped row.
+
+BUILD_CLASS_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
+
+BUILD_SCRIPT_TEMPLATE = """#!/usr/bin/env python3
+import sys
+sys.stdout.write({stdout!r})
+sys.exit({exit_code})
+"""
+
+SIGNAL_KILLED_SCRIPT = """#!/usr/bin/env python3
+import os
+import signal
+os.kill(os.getpid(), signal.SIGKILL)
+"""
+
+
+def _build_fake_build_skill(root: Path, body: str) -> Path:
+    """Stage a fake build-pyproject script under a marketplace-shaped tree.
+
+    The notation prefix ``plan-marshall:build-pyproject:`` is what makes the
+    executor's ``_is_build_class_notation`` boundary fire.
+    """
+    script_dir = (
+        root / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
+        / 'build-pyproject' / 'scripts'
+    )
+    script_dir.mkdir(parents=True, exist_ok=True)
+    script_path = script_dir / 'pyproject_build.py'
+    script_path.write_text(body)
+    return script_path.resolve()
+
+
+def _render_build_executor(target_path: Path, embedded_script_path: Path) -> Path:
+    """Render the template with the fake build-class script registered."""
+    template_content = EXECUTOR_TEMPLATE.read_text()
+    mappings_code = f'    "{BUILD_CLASS_NOTATION}": "{embedded_script_path}",'
+
+    rendered = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
+    rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
+    rendered = rendered.replace(
+        '{{SHARED_MODULE_DIRS}}',
+        f"    ('tools-input-validation', '{INPUT_VALIDATION_DIR}'),",
+    )
+    rendered = rendered.replace('{{EXTRA_SCRIPT_DIRS}}', '')
+    rendered = rendered.replace('{{PLAN_DIR_NAME}}', '.plan')
+    rendered = rendered.replace('{{EXECUTOR_TARGET}}', 'claude')
+    rendered = rendered.replace(
+        '{{TARGET_AWARE_RESOLVER}}',
+        'def _resolve_notation_by_target(notation):\n    return None\n',
+    )
+
+    target_path.write_text(rendered)
+    return target_path
+
+
+def _run_build_dispatch(tmp_path: Path, script_body: str) -> list[dict]:
+    """Dispatch the fake build script through a rendered executor.
+
+    Returns the parsed kind=build rows from the isolated change-ledger
+    (resolved under PLAN_BASE_DIR/work/change-ledger.jsonl).
+    """
+    import json
+
+    script_path = _build_fake_build_skill(tmp_path / 'tree', script_body)
+    plan_dir = tmp_path / 'plan'
+    plan_dir.mkdir()
+    (plan_dir / 'logs').mkdir()
+    executor_path = plan_dir / 'execute-script.py'
+    _render_build_executor(executor_path, embedded_script_path=script_path)
+
+    _run_executor(executor_path, plan_dir, BUILD_CLASS_NOTATION, 'run')
+
+    ledger_path = plan_dir / 'work' / 'change-ledger.jsonl'
+    assert ledger_path.is_file(), (
+        f'Boundary did not stamp a kind=build ledger row at {ledger_path}'
+    )
+    return [
+        json.loads(line)
+        for line in ledger_path.read_text().splitlines()
+        if line.strip()
+    ]
+
+
+@pytest.mark.parametrize(
+    ('stdout', 'exit_code', 'expected_status'),
+    [
+        # Clean success — TOON confirms, exit 0.
+        ('status: success\nexit_code: 0\n', 0, 'success'),
+        # THE false-fresh regression: wrapper reports timeout on stdout while
+        # the PROCESS exits 0 — the stamp must carry timeout, not success.
+        ('status: timeout\ntimeout_used_seconds: 5\n', 0, 'timeout'),
+        # Failing build: TOON error + non-zero exit.
+        ('status: error\n', 1, 'error'),
+        # Malformed stdout with exit 0 falls through to the exit-code branch.
+        ('not a toon payload at all', 0, 'success'),
+        # Absent stdout with non-zero exit => error.
+        ('', 1, 'error'),
+        # THE laundering regression: a contradictory `status: success` claim
+        # with a nonzero exit must stamp error — the exit code is
+        # authoritative, so a real process failure can never look fresh.
+        ('status: success\nexit_code: 0\n', 1, 'error'),
+        # `killed` is reserved for negative returncodes: a stdout claim of
+        # `status: killed` at exit 0 stamps error (never killed, never
+        # success) — the wrapper's stdout vocabulary does not include killed.
+        ('status: killed\n', 0, 'error'),
+    ],
+)
+def test_build_boundary_stamps_derived_status(
+    tmp_path, monkeypatch, stdout: str, exit_code: int, expected_status: str
+):
+    """The kind=build row carries the truthfully derived `status`."""
+    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+
+    entries = _run_build_dispatch(
+        tmp_path, BUILD_SCRIPT_TEMPLATE.format(stdout=stdout, exit_code=exit_code)
+    )
+
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry['kind'] == 'build'
+    assert entry['status'] == expected_status, entry
+    assert entry['exit_code'] == exit_code
+
+
+def test_build_boundary_stamps_killed_on_signal_death(tmp_path, monkeypatch):
+    """A child killed by a POSIX signal stamps `status: killed`.
+
+    ``subprocess.run`` reports signal death as a negative returncode, so the
+    surviving executor stamps the row truthfully (D1 detection); the recorded
+    exit_code stays the negative diagnostic value.
+    """
+    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+
+    entries = _run_build_dispatch(tmp_path, SIGNAL_KILLED_SCRIPT)
+
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry['status'] == 'killed', entry
+    assert entry['exit_code'] < 0

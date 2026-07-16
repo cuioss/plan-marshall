@@ -3,10 +3,13 @@
 """Tests for the ``pre-commit-verify-freshness`` subcommand of manage-tasks.
 
 The subcommand answers a single deterministic question — "does the unified
-change-ledger contain a ``kind=build`` entry with ``exit_code == 0`` whose
+change-ledger contain a ``kind=build`` entry with ``status == 'success'`` whose
 ``worktree_sha`` equals the CURRENT working-tree currency hash?" — and returns
 one of three statuses (``fresh``, ``stale``, ``undecidable``) for the
-orchestrator to consume as a fail-closed gate. See
+orchestrator to consume as a fail-closed gate. Matching on ``status`` rather
+than ``exit_code`` is load-bearing: the build wrapper exits 0 on timeout, so an
+exit-code predicate would launder a build that never finished into a false
+``fresh`` (regression covered below). See
 ``marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md`` §
 "Pre-Commit Verify Freshness" for the contract.
 
@@ -94,6 +97,7 @@ def _build_entry(
     *,
     worktree_sha: str | None = _CURRENT_SHA,
     exit_code: int = 0,
+    status: str | None = 'success',
     notation: str = 'plan-marshall:build-pyproject:pyproject_build',
     plan_id: str | None = 'freshness-test',
     timestamp_iso: str = '2026-06-11T12:00:00Z',
@@ -101,10 +105,12 @@ def _build_entry(
     """Construct a ``kind=build`` ledger record dict.
 
     Mirrors the shape produced by ``_ledger_core.build_record``. The gate filters
-    on ``kind``, ``exit_code`` and ``worktree_sha`` only — never ``notation`` or
-    ``plan_id`` — so those fields are parameterised to prove tier/tool agnosticism.
+    on ``kind``, ``status`` and ``worktree_sha`` only — never ``notation``,
+    ``exit_code`` or ``plan_id`` — so those fields are parameterised to prove
+    tier/tool agnosticism. ``status=None`` omits the key entirely, modelling a
+    pre-change row (which must fail closed to ``stale``).
     """
-    return {
+    entry = {
         'kind': 'build',
         'notation': notation,
         'plan_id': plan_id,
@@ -114,6 +120,9 @@ def _build_entry(
         'log_file': None,
         'timestamp_iso': timestamp_iso,
     }
+    if status is not None:
+        entry['status'] = status
+    return entry
 
 
 def _change_entry(*, worktree_sha: str = _CURRENT_SHA) -> dict:
@@ -241,16 +250,73 @@ def test_stale_when_build_entry_for_different_sha(plan_context, monkeypatch, tmp
 
 
 def test_stale_when_only_failed_build_for_current_sha(plan_context, monkeypatch, tmp_path) -> None:
-    """A build entry matches the sha but ``exit_code != 0`` -> stale (fail closed)."""
+    """A build entry matches the sha but ``status != success`` -> stale (fail closed)."""
     plan_dir = plan_context.plan_dir_for('freshness-failed-build')
     _write_status(plan_dir)
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
     ledger_path = _write_ledger(
-        tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=1)]
+        tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=1, status='error')]
     )
     _stub_ledger_path(monkeypatch, ledger_path)
 
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-failed-build'))
+
+    assert result['status'] == 'stale', result
+
+
+def test_stale_when_timeout_build_exits_zero_for_current_sha(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """THE false-fresh regression: ``exit_code: 0`` + ``status: timeout`` -> stale.
+
+    The build wrapper exits 0 on timeout (the outcome is modeled in its stdout
+    TOON, not the exit code). Before the ``status`` predicate, this row proved
+    freshness — a build that never finished laundered into a false ``fresh``.
+    The gate must now report ``stale`` for it despite the matching sha and the
+    zero exit code.
+    """
+    plan_dir = plan_context.plan_dir_for('freshness-timeout-build')
+    _write_status(plan_dir)
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(
+        tmp_path,
+        [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=0, status='timeout')],
+    )
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-timeout-build'))
+
+    assert result['status'] == 'stale', result
+
+
+def test_stale_when_killed_build_matches_sha(plan_context, monkeypatch, tmp_path) -> None:
+    """A ``status: killed`` row (signal-terminated child) must not prove freshness."""
+    plan_dir = plan_context.plan_dir_for('freshness-killed-build')
+    _write_status(plan_dir)
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(
+        tmp_path,
+        [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=-9, status='killed')],
+    )
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-killed-build'))
+
+    assert result['status'] == 'stale', result
+
+
+def test_stale_when_row_lacks_status_key(plan_context, monkeypatch, tmp_path) -> None:
+    """A pre-change row without a ``status`` key never matches (fail-closed)."""
+    plan_dir = plan_context.plan_dir_for('freshness-statusless-row')
+    _write_status(plan_dir)
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(
+        tmp_path,
+        [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=0, status=None)],
+    )
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-statusless-row'))
 
     assert result['status'] == 'stale', result
 
@@ -291,7 +357,7 @@ def test_undecidable_when_worktree_sha_unresolvable(plan_context, monkeypatch, t
 def test_fresh_match_is_notation_and_tier_agnostic(plan_context, monkeypatch, tmp_path) -> None:
     """A non-pyproject, plan-less (``plan_id=None``) build still satisfies the gate.
 
-    The query filters on ``kind``, ``exit_code`` and ``worktree_sha`` only — so a
+    The query filters on ``kind``, ``status`` and ``worktree_sha`` only — so a
     Maven build from an orchestrator-driven global-tier run with ``plan_id=None``
     proves freshness exactly as a plan-scoped pyproject build does.
     """
@@ -326,7 +392,8 @@ def test_fresh_among_mixed_entries(plan_context, monkeypatch, tmp_path) -> None:
         [
             _change_entry(worktree_sha=_OTHER_SHA),
             _build_entry(worktree_sha=_OTHER_SHA),
-            _build_entry(worktree_sha=_CURRENT_SHA, exit_code=1),
+            _build_entry(worktree_sha=_CURRENT_SHA, exit_code=1, status='error'),
+            _build_entry(worktree_sha=_CURRENT_SHA, exit_code=0, status='timeout'),
             _build_entry(worktree_sha=_CURRENT_SHA, notation='plan-marshall:build-npm:npm'),
         ],
     )

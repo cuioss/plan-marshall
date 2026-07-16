@@ -16,7 +16,9 @@ fixture, never the real ``.plan/`` tree).
 Coverage:
 
 * ``append --kind build`` — stamps ``kind``/``worktree_sha``/``timestamp_iso``
-  plus the build fields and appends one JSONL line;
+  plus the build fields (including the truthful ``status`` outcome —
+  ``success`` / ``error`` / ``timeout`` / ``killed``) and appends one JSONL
+  line;
 * ``append --kind change`` — stamps the change fields, storing
   ``commit_sha``/``changed_paths`` verbatim;
 * ``query`` — round-trips both entries; ``--kind`` filters; an empty ledger
@@ -25,9 +27,10 @@ Coverage:
   output for the same tree; a pre-computed ``--worktree-sha`` is honoured;
 * TOON output shape — ``status``/``kind``/``worktree_sha``/``ledger_path`` keys
   on append, ``status``/``count``/``ledger_path`` on query;
-* error paths — missing ``--notation``/``--exit-code`` (build), missing
-  ``--commit-sha`` / deliverable id (change), and ``worktree-sha`` in a
-  non-git directory (``head_unresolvable``).
+* error paths — missing ``--notation``/``--exit-code``/``--status`` (build),
+  missing ``--commit-sha`` / deliverable id (change), an unknown ``--status``
+  value (argparse choices rejection), and ``worktree-sha`` in a non-git
+  directory (``head_unresolvable``).
 """
 
 from __future__ import annotations
@@ -116,6 +119,8 @@ def test_append_build_writes_one_entry(env) -> None:
         'plan-marshall:build-pyproject:pyproject_build',
         '--exit-code',
         '0',
+        '--status',
+        'success',
         '--plan-id',
         'my-plan',
         '--args',
@@ -140,6 +145,7 @@ def test_append_build_writes_one_entry(env) -> None:
     assert entry['notation'] == 'plan-marshall:build-pyproject:pyproject_build'
     assert entry['plan_id'] == 'my-plan'
     assert entry['exit_code'] == 0
+    assert entry['status'] == 'success'
     assert entry['log_file'] == '/tmp/build.log'
     assert entry['worktree_sha'] == data['worktree_sha']
     assert entry['timestamp_iso']
@@ -149,7 +155,7 @@ def test_append_build_writes_one_entry(env) -> None:
 
 
 def test_append_build_records_nonzero_exit(env) -> None:
-    # a failed build is still recorded (the gate filters on it).
+    # a failed build is still recorded (exit_code is diagnostic detail).
     result = env.run(
         'append',
         '--kind',
@@ -158,18 +164,43 @@ def test_append_build_records_nonzero_exit(env) -> None:
         'plan-marshall:build-pyproject:pyproject_build',
         '--exit-code',
         '1',
+        '--status',
+        'error',
     )
 
     assert result.success, result.stderr
     entry = _read_ledger(env.ledger_path)[0]
     assert entry['exit_code'] == 1
+    assert entry['status'] == 'error'
     # plan_id is nullable — omitted here, stored as null.
     assert entry['plan_id'] is None
 
 
+@pytest.mark.parametrize('build_status', ['success', 'error', 'timeout', 'killed'])
+def test_append_build_stores_each_status_vocabulary_value(env, build_status: str) -> None:
+    # every vocabulary value round-trips verbatim onto the stored entry.
+    result = env.run(
+        'append',
+        '--kind',
+        'build',
+        '--notation',
+        'plan-marshall:build-pyproject:pyproject_build',
+        '--exit-code',
+        '0',
+        '--status',
+        build_status,
+    )
+
+    assert result.success, result.stderr
+    entry = _read_ledger(env.ledger_path)[0]
+    assert entry['status'] == build_status
+
+
 def test_append_build_requires_notation(env) -> None:
     # --notation is mandatory for kind=build.
-    result = env.run('append', '--kind', 'build', '--exit-code', '0')
+    result = env.run(
+        'append', '--kind', 'build', '--exit-code', '0', '--status', 'success'
+    )
 
     # error TOON, no ledger line written.
     data = result.toon()
@@ -180,11 +211,35 @@ def test_append_build_requires_notation(env) -> None:
 def test_append_build_requires_exit_code(env) -> None:
     # --exit-code is mandatory for kind=build.
     result = env.run(
-        'append', '--kind', 'build', '--notation', 'plan-marshall:x:y'
+        'append', '--kind', 'build', '--notation', 'plan-marshall:x:y',
+        '--status', 'success',
     )
 
     data = result.toon()
     assert data['status'] == 'error'
+    assert not env.ledger_path.exists()
+
+
+def test_append_build_requires_status(env) -> None:
+    # --status is mandatory for kind=build (the truthful outcome of record).
+    result = env.run(
+        'append', '--kind', 'build', '--notation', 'plan-marshall:x:y',
+        '--exit-code', '0',
+    )
+
+    data = result.toon()
+    assert data['status'] == 'error'
+    assert not env.ledger_path.exists()
+
+
+def test_append_build_rejects_unknown_status(env) -> None:
+    # --status is choices-validated at the argparse boundary.
+    result = env.run(
+        'append', '--kind', 'build', '--notation', 'plan-marshall:x:y',
+        '--exit-code', '0', '--status', 'flaky',
+    )
+
+    assert not result.success
     assert not env.ledger_path.exists()
 
 
@@ -278,7 +333,8 @@ def test_query_empty_ledger_returns_zero(env) -> None:
 def test_query_round_trips_both_kinds(env) -> None:
     # one build entry and one change entry.
     env.run(
-        'append', '--kind', 'build', '--notation', 'n', '--exit-code', '0'
+        'append', '--kind', 'build', '--notation', 'n', '--exit-code', '0',
+        '--status', 'success',
     )
     env.run(
         'append',
@@ -300,8 +356,10 @@ def test_query_round_trips_both_kinds(env) -> None:
 
 def test_query_kind_filter(env) -> None:
     # two builds, one change.
-    env.run('append', '--kind', 'build', '--notation', 'n1', '--exit-code', '0')
-    env.run('append', '--kind', 'build', '--notation', 'n2', '--exit-code', '1')
+    env.run('append', '--kind', 'build', '--notation', 'n1', '--exit-code', '0',
+            '--status', 'success')
+    env.run('append', '--kind', 'build', '--notation', 'n2', '--exit-code', '1',
+            '--status', 'error')
     env.run(
         'append', '--kind', 'change', '--deliverable-id', '1', '--commit-sha', 's'
     )
@@ -315,8 +373,10 @@ def test_query_kind_filter(env) -> None:
 
 def test_query_exit_code_filter(env) -> None:
     # a passing and a failing build.
-    env.run('append', '--kind', 'build', '--notation', 'n1', '--exit-code', '0')
-    env.run('append', '--kind', 'build', '--notation', 'n2', '--exit-code', '1')
+    env.run('append', '--kind', 'build', '--notation', 'n1', '--exit-code', '0',
+            '--status', 'success')
+    env.run('append', '--kind', 'build', '--notation', 'n2', '--exit-code', '1',
+            '--status', 'error')
 
     # filter to the failing build.
     result = env.run('query', '--exit-code', '1')
@@ -342,7 +402,8 @@ def test_worktree_sha_matches_appended_entry(env) -> None:
 
     # append a build entry against the same (unchanged) tree.
     append_result = env.run(
-        'append', '--kind', 'build', '--notation', 'n', '--exit-code', '0'
+        'append', '--kind', 'build', '--notation', 'n', '--exit-code', '0',
+        '--status', 'success',
     )
 
     # writer and verb hash the same tree to the same value.
@@ -359,6 +420,8 @@ def test_worktree_sha_honours_precomputed_value(env) -> None:
         'n',
         '--exit-code',
         '0',
+        '--status',
+        'success',
         '--worktree-sha',
         'precomputed-sha-value',
     )

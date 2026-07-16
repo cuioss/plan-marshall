@@ -77,7 +77,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `rename-path` | `--plan-id --old-path --new-path` | Record path rename and rewrite step targets |
 | `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the six deterministic Q-Gate checks for phase-4-plan Step 9 (coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire. |
 | `loop-exit-guard` | `--plan-id` | Script-level enforcement of the phase-5-execute "unfinished > 0 → must continue" invariant. The predicate is the union of `pending` AND `in_progress` tasks. Emits `status: continue` (with `pending_count`, `pending_ids`, `in_progress_count`, `in_progress_ids`) when EITHER bucket is non-empty — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` (with all four count/id fields present and zero-valued) only when BOTH counts are zero. See "Loop-Exit Guard" below for the contract. |
-| `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition. Queries the unified change-ledger for a `kind=build` entry with `exit_code == 0` whose `worktree_sha` matches the recomputed working-tree currency hash. Emits `status: fresh` (matching successful build entry exists, or `reason: documentation_only` when the plan's `execution.toon` composes an empty `phase_5.verification_steps` so no build runs, or `reason: lint_only` when every `phase_5.verification_steps` entry is a structural-lint `quality-gate` step and none is a build/test step), `status: stale` (ledger has entries but none matches the current working-tree sha), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: only `fresh` permits transition. See "Pre-Commit Verify Freshness" below for the contract. |
+| `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition. Queries the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches the recomputed working-tree currency hash. Emits `status: fresh` (matching successful build entry exists, or `reason: documentation_only` when the plan's `execution.toon` composes an empty `phase_5.verification_steps` so no build runs, or `reason: lint_only` when every `phase_5.verification_steps` entry is a structural-lint `quality-gate` step and none is a build/test step), `status: stale` (ledger has entries but none matches the current working-tree sha), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: only `fresh` permits transition. See "Pre-Commit Verify Freshness" below for the contract. |
 
 ### Loop-Exit Guard (`loop-exit-guard`)
 
@@ -151,7 +151,7 @@ the pre-push state (worktree-actually-verified proof). `loop-exit-guard`
 answers a structurally narrower question ("is the task queue empty?") than
 what the pre-commit gate needs ("has the codebase actually been verified
 against its current on-disk state?"). This verb closes the gap by querying the
-unified change-ledger for a `kind=build` entry with `exit_code == 0` whose
+unified change-ledger for a `kind=build` entry with `status == success` whose
 `worktree_sha` matches the recomputed working-tree currency hash. The two
 guards are complementary, not redundant: queue-emptiness and verify-freshness
 must BOTH be true before any pre-commit transition.
@@ -171,12 +171,17 @@ gate (a false-positive `fresh`). Folding the uncommitted state into the sha
 means an edit after a clean-tree build changes the sha, and the gate correctly
 reports `stale`.
 
-The ledger query filters on `kind`, `exit_code`, and `worktree_sha` only —
-never `notation` or `plan_id` — so it is build-tool-agnostic and tier-agnostic:
-a Maven/Gradle/npm build, or an orchestrator-driven global-tier build with
-`plan_id: null`, satisfies the gate exactly as a plan-scoped pyproject build
-does. The `kind=build` entry is stamped by the executor dispatch boundary after
-every build-class invocation. See
+The ledger query filters on `kind`, `status`, and `worktree_sha` only —
+never `notation`, `exit_code`, or `plan_id` — so it is build-tool-agnostic and
+tier-agnostic: a Maven/Gradle/npm build, or an orchestrator-driven global-tier
+build with `plan_id: null`, satisfies the gate exactly as a plan-scoped
+pyproject build does. Requiring `status == success` rather than
+`exit_code == 0` is load-bearing: the build wrapper exits 0 on timeout (the
+outcome lives in its stdout TOON, not the exit code), so an exit-code
+predicate would launder a build that never finished into a false `fresh`. A
+row lacking `status` never matches — the gate fails closed to `stale`. The
+`kind=build` entry is stamped by the executor dispatch boundary after every
+build-class invocation that runs to completion. See
 [`../manage-change-ledger/SKILL.md`](../manage-change-ledger/SKILL.md) for the
 ledger API (entry schema, `query` verb, and the `kind=build` writer) — the
 ledger query semantics are not inline-copied here.
@@ -202,7 +207,7 @@ ledger query semantics are not inline-copied here.
   step in the list (`module-tests`, `coverage`, or the bare `verify` alias)
   disables the exemption and the plan falls through to the ledger-scan outcomes
   below.
-- `status: fresh` — a `kind=build` entry with `exit_code == 0` and a matching
+- `status: fresh` — a `kind=build` entry with `status == success` and a matching
   `worktree_sha` exists; a successful build has been observed against the
   current on-disk state, so the gate is permitted to pass. Carries
   `worktree_sha`, `matched_notation`, `timestamp_iso`, `worktree_root`, and
@@ -261,8 +266,9 @@ from inside the loop.
    `reason: head_unresolvable`.
 4. Read the change-ledger entries. When the ledger file is absent or empty,
    return `undecidable` with `reason: no_registry`.
-5. Scan for any entry with `kind == build`, `exit_code == 0`, and
+5. Scan for any entry with `kind == build`, `status == success`, and
    `worktree_sha` equal to the current working-tree sha. On a match → `fresh`.
+   A row lacking `status` never matches (fail-closed for pre-existing rows).
 6. No match → `stale`.
 
 The algorithm never raises uncaught exceptions on missing status metadata,
