@@ -1,0 +1,182 @@
+= ADR-006: Generated-tree drift is gated at the consume boundary not in CI
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: Drift between the marketplace source tree and the generated target/claude/ tree is gated at the consume boundary (the plugin-cache sync guard) using git's own ls-files / hash-object primitives over the whole tree, never as a CI gate, because target/ is gitignored and CI regenerates it from source on every run.
+// tags: generated-tree, drift, git-native, build, ci, worktree
+// affects: default, sync-plugin-cache, finalize-step-deploy-target
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Accepted
+
+== Context
+
+The marketplace has a source tree (`marketplace/bundles/`, tracked in git) and a
+*generated* tree (`target/claude/`, produced by the multi-target generator and
+gitignored). The generated tree is a transformed emit of the source — verbatim
+skill / standards / command bodies alongside expanded agent variants, a
+variant-aware `plugin.json`, and a top-level `marketplace.json` — with no
+byte-for-byte source counterpart. Downstream consumers (the plugin cache, the
+regenerated executor) read the *generated* tree, so a generated tree that has
+drifted from its source is a real correctness hazard: a consumer would run stale
+component bodies while the source has already moved on.
+
+Four overlapping mechanisms already observe this drift, and every one of them
+lives at the point where the generated tree can actually be inspected — the
+developer worktree — never in CI:
+
+* A **whole-tree source fingerprint** (`source_fingerprint.compute_source_tree_fingerprint`)
+  folds `git ls-files marketplace/bundles` and `git hash-object --stdin-paths`
+  into a single SHA-1 digest over the worktree bytes of every tracked source
+  path. It leans exclusively on git's native primitives — `ls-files` supplies
+  the tracked-and-not-ignored path set, `hash-object` supplies the content hash
+  — so untracked, gitignored, and build-artefact paths are excluded by git
+  itself with no custom filter. `FingerprintError` makes an unavailable git a
+  hard failure rather than a silent non-git hashing fallback.
+
+* The **emit marker's per-file manifest** (`.emit-marker.json`'s `file_hashes`)
+  is written at the end of every successful emit and records a per-file blob
+  hash of the emitted `target/claude/` tree, computed with the same shared
+  `hash_objects` primitive so the emit side and the consume side hash
+  identically.
+
+* The **consume-boundary staleness guard** in the plugin-cache sync engine
+  (`sync._staleness_guard`, backed by `sync._file_level_drift`) recomputes the
+  source fingerprint against the live worktree and compares it to the sentinel's
+  `source_tree_fingerprint`; on match it then diffs the live `target/claude/`
+  tree against the sentinel's `file_hashes` manifest, naming each `missing`,
+  `diverged`, or `extra` path in its refusal message. This is the boundary that
+  actually refuses to sync stale generated content into the plugin cache.
+
+* A **regen-first content-drift engine** (`content_drift.run_content_drift_check`)
+  overlaps the above by regenerating a fresh target tree into a throwaway temp
+  dir and diffing every `*.md` body byte-for-byte against the on-disk
+  `target/claude/`, catching markdown-body drift the manifest-equality gate
+  cannot see.
+
+The structural fact that decides where the gate belongs: **`target/claude/` is
+gitignored, so it does not exist in a fresh CI checkout, and CI regenerates it
+from source on every run.** A drift check wired into CI would therefore either
+compare a freshly regenerated tree against itself (tautological) or run against a
+tree that is simply absent (inert). The observable-drift boundary is the
+developer worktree — the only place where a *stale* or *hand-mutated*
+`target/claude/` can exist — not CI.
+
+== Decision
+
+**Generated-tree drift is gated at the consume boundary — the plugin-cache
+sync's `_staleness_guard` — using git's `ls-files` / `hash-object` primitives
+over the whole tree, and is never wired in as a CI gate.** The guard runs where
+the generated tree is actually consumed and can actually be stale; it refuses
+the sync when the recomputed whole-tree source fingerprint diverges from the
+sentinel, or when the per-file manifest comparison names a missing / diverged /
+extra target file.
+
+CI's responsibility is the *source* tree: `./pw verify` type-checks, lints, and
+tests `marketplace/bundles/` and the script surface. Because CI regenerates
+`target/claude/` from that source on every run, the generated tree in CI is by
+construction a faithful function of the source that already passed the source
+gates — there is no independent generated-tree state for CI to guard. The gate
+lives at the consume boundary because that is the only boundary where the
+invariant "the generated tree the consumer reads matches its source" can be
+violated and therefore observed.
+
+== Consequences
+
+=== Positive
+
+* The drift gate runs where drift can actually exist — the developer worktree
+  and the plugin-cache sync — so a refusal always corresponds to a real stale /
+  hand-mutated generated tree, never to a CI artefact of regeneration order.
+* The whole-tree fingerprint and the per-file manifest lean entirely on git's
+  own `ls-files` / `hash-object` primitives, so the gitignore / tracking rules
+  are enforced by git rather than a second, drift-prone filter.
+* No generated artefact is committed to version control to make a git-diff-native
+  CI gate possible, so the repository stays free of the generated-artefact-in-VCS
+  maintenance burden.
+
+=== Negative
+
+* `./pw verify` can be green while `target/claude/` is stale or absent. That is
+  intentional and harmless: the source passed its gates, and the consume-boundary
+  guard will refuse any attempt to sync a stale generated tree into the plugin
+  cache. A reader expecting "green verify implies a fresh generated tree" must
+  instead read the invariant as "green verify implies a healthy *source* tree."
+
+=== Risks
+
+* The consume-boundary guard is only as protective as the workflow steps that
+  invoke it (`finalize-step-deploy-target` to emit, the `sync-plugin-cache` sync
+  to consume). A path that reads `target/claude/` without going through the sync
+  guard bypasses the gate; such readers must route through the guarded sync
+  rather than reading the generated tree directly.
+
+== Alternatives Considered
+
+=== Option A — Wire a generated-tree drift check into the quality gate / CI
+
+Add a drift check to `cmd_quality_gate` (and thus CI) that compares
+`target/claude/` against a freshly regenerated tree.
+
+*Rejected because:* it is inert or tautological. `target/` is gitignored, so in a
+fresh CI checkout the generated tree is absent, and CI regenerates it from source
+on every run — the check would compare a fresh regeneration against itself
+(tautological) or against nothing (inert). The check adds a gate at a boundary
+where the invariant it guards cannot be violated.
+
+=== Option B — Commit `target/claude/` to make a git-diff-native CI gate possible
+
+Track the generated tree in version control so CI can assert "no uncommitted
+regeneration diff" with a plain `git diff`.
+
+*Rejected because:* it re-introduces the generated-artefact-in-VCS problem — every
+source edit produces a paired mechanical regeneration diff that must be committed
+in lockstep, review noise scales with generated-tree size, and merge conflicts
+arise in files no human authored. The cost of carrying the artefact in git
+exceeds the value of the git-diff-native gate it would enable.
+
+=== Option C — Rebuild a diff-text drift approach that a prior abandoned attempt took
+
+Reconstruct the earlier diff-text drift-detection approach — comparing rendered
+text spans to flag drift.
+
+*Rejected as out of scope:* that approach addressed a *different* invariant —
+detecting deleted-symbol survivors in transformed output — not source-to-generated
+tree currency. Folding it in here would conflate two distinct drift questions; it
+belongs to its own decision if and when that invariant is revisited.
+
+The alternatives fall in one class: they either place the gate at a boundary
+where the invariant cannot be observed (A), pay an artefact-in-VCS cost to
+manufacture such a boundary (B), or solve a different invariant entirely (C). The
+decision keeps the gate at the one boundary — the consume point — where
+generated-tree drift can actually exist and be observed.
+
+== Generalisation
+
+This decision extends the principle ADR-001 settled for the script-call contract:
+**when a proposed gate's invariant is already enforced by an underlying tool's own
+primitives at the boundary where it can actually be observed, do not add a second
+gate.** ADR-001 applied it to argparse — the runtime schema contract argparse
+already enforces means no embedded pre-flight validator is warranted. The same
+shape applies here to git and the build pipeline: git's `ls-files` / `hash-object`
+primitives, invoked at the consume boundary by the staleness guard, already
+enforce the source-to-generated currency invariant at the only boundary where a
+stale generated tree can exist. A CI gate would be a second specification of that
+same contract at a boundary (a gitignored, always-regenerated tree) where the
+invariant cannot be violated. The diagnostic question for any proposed drift gate
+is therefore: *at which boundary can this invariant actually be violated, and does
+an underlying tool already observe it there?* When the answer is "the consume
+boundary, and git already observes it," the CI gate is redundant by construction.
+
+== References
+
+* xref:001-Skills_are_the_source_of_truth_for_script_calls_drift_detection_is_dev-time_post-hoc.adoc[ADR-001] — the source-of-truth / no-redundant-gate principle this decision extends from the script-call surface to the generated-tree surface.
+* `marketplace/targets/claude/source_fingerprint.py` — the whole-tree git-native fingerprint (`compute_source_tree_fingerprint`, `list_tracked_files`, `hash_objects`).
+* `.claude/skills/sync-plugin-cache/scripts/sync.py` — the consume-boundary staleness guard (`_staleness_guard`, `_file_level_drift`) and the `.emit-marker.json` sentinel it reads.
+* `marketplace/targets/claude/content_drift.py` — the regen-first `*.md` content-drift engine (`run_content_drift_check`).
+* `plan-marshall:finalize-step-deploy-target` — the emit step that writes the sentinel the guard compares against.
