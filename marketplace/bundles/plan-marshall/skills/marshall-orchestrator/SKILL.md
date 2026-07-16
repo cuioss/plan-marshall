@@ -83,6 +83,33 @@ Authoring templates for the ledger documents live in `templates/` and mirror the
 |--------|----------|---------|
 | orchestrator | `plan-marshall:marshall-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read/transition plan-queue state), `resume-summary` (generate the START-HERE block from status.json) |
 
+## Canonical invocations
+
+The canonical argparse surface for `orchestrator.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline.
+
+### scaffold
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator scaffold \
+  --slug SLUG
+```
+
+### queue
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator queue \
+  --slug SLUG [--transition PLAN-NN --status STATUS]
+```
+
+`--transition` and `--status` are supplied together: without them the verb reads the queue; with them it transitions the named plan to the new status.
+
+### resume-summary
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator resume-summary \
+  --slug SLUG
+```
+
 ## Related
 
 - [`persona-marshall-orchestrator`](../persona-marshall-orchestrator/SKILL.md) — the orchestrator work identity and its central standard
