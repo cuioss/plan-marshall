@@ -1214,7 +1214,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     #   3. pre_submission_self_review_inactive — drop pre-submission-self-review
     #      when the live footprint is empty.
     #   4. simplify_inactive — drop finalize-step-simplify when
-    #      change_type ∉ {feature, bug_fix, tech_debt} OR affected_files_count == 0.
+    #      change_type ∉ {feature, bug_fix, tech_debt, enhancement}
+    #      OR affected_files_count == 0.
     #   4b. security_audit_inactive — drop finalize-step-security-audit on the
     #      same change_type + affected_files_count gate as simplify_inactive.
     #   5. scope_gated_finalize — drop heavyweight phase-6 review/audit steps by

@@ -205,9 +205,11 @@ def _apply_aspect_step_dropping(
 
 # Code-touching change types that gate ``finalize-step-simplify`` activation.
 # Branch-prefix reconciliation: ``fix`` → ``bug_fix``, ``chore`` → ``tech_debt``,
-# ``feature`` → ``feature``. ``analysis`` / ``enhancement`` / ``verification`` are
-# excluded. See standards/decision-rules.md § Pre-Filter: simplify_inactive.
-_SIMPLIFY_CHANGE_TYPES = frozenset({'feature', 'bug_fix', 'tech_debt'})
+# ``feature`` → ``feature``. ``enhancement`` is code-touching by definition (it
+# names a change to existing production behaviour) and is included; ``analysis``
+# / ``verification`` are excluded — they produce no code to simplify or audit.
+# See standards/decision-rules.md § Pre-Filter: simplify_inactive.
+_SIMPLIFY_CHANGE_TYPES = frozenset({'feature', 'bug_fix', 'tech_debt', 'enhancement'})
 
 
 def _apply_code_step_inactive(
@@ -221,8 +223,8 @@ def _apply_code_step_inactive(
     Shared gate for ``finalize-step-simplify`` and ``finalize-step-security-audit``.
     Both steps activate when BOTH:
 
-    1. ``change_type ∈ {feature, bug_fix, tech_debt}`` — the three code-touching
-       change types; and
+    1. ``change_type ∈ {feature, bug_fix, tech_debt, enhancement}`` — the four
+       code-touching change types; and
     2. ``affected_files_count > 0``.
 
     When either condition fails, ``step_name`` is removed from

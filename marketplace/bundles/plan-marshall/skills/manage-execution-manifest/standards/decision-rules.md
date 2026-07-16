@@ -87,8 +87,8 @@ The pre-filters run in this order:
 1. **`commit_push_disabled`** — drops `push`, `pre-push-quality-gate`, AND `pre-submission-self-review` when no push will occur.
 2. **`pre_push_quality_gate_inactive`** — drops `pre-push-quality-gate` when activation conditions fail.
 3. **`pre_submission_self_review_inactive`** — drops `pre-submission-self-review` when the live plan footprint is empty.
-4. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`.
-4b. **`security_audit_inactive`** — drops `finalize-step-security-audit` on the same gate as `simplify_inactive` (`change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`).
+4. **`simplify_inactive`** — drops `finalize-step-simplify` when `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`.
+4b. **`security_audit_inactive`** — drops `finalize-step-security-audit` on the same gate as `simplify_inactive` (`change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`).
 5. **`scope_gated_finalize`** — drops heavyweight phase-6 review/audit steps by `scope_estimate`: `surgical` drops `plan-retrospective`, `pre-submission-self-review`, and `plugin-doctor`; `single_module` drops only `plan-retrospective`. `plan-marshall:automatic-review` is dropped ONLY via the explicit `drop_review_on_scope_gate` opt-in, never by the implicit scope gate.
 6. **`unresolved_ask_provider_drop`** — drops an UNRESOLVED `lane: ask` infra element (`plan-marshall:automatic-review` / `default:sonar-roundtrip`) when its corresponding provider is genuinely absent (no CI provider for `automatic-review`; no Sonar provider for `sonar-roundtrip`). A resolved ask (`off`/`auto`/`full`) and a provider-configured ask both survive. Documented in its own subsection below.
 
@@ -158,11 +158,11 @@ When the footprint is non-empty, the pre-filter is a no-op and emits no log entr
 
 ### Pre-Filter: `simplify_inactive`
 
-**Condition**: `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`.
+**Condition**: `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`.
 
-**Effect**: `finalize-step-simplify` is removed from `phase_6_candidates` before the rows are evaluated. Equivalently — phrased as the activation gate — `default:finalize-step-simplify` lands in `phase_6.steps` **whenever `change_type ∈ {feature, bug_fix, tech_debt}` AND `affected_files_count > 0`** (and the step is present in the candidate set). The pre-filter is the subtraction-only expression of that gate: the step is a candidate by default and dropped when the gate fails, matching the manifest architecture where rows and pre-filters only ever narrow the candidate list.
+**Effect**: `finalize-step-simplify` is removed from `phase_6_candidates` before the rows are evaluated. Equivalently — phrased as the activation gate — `default:finalize-step-simplify` lands in `phase_6.steps` **whenever `change_type ∈ {feature, bug_fix, tech_debt, enhancement}` AND `affected_files_count > 0`** (and the step is present in the candidate set). The pre-filter is the subtraction-only expression of that gate: the step is a candidate by default and dropped when the gate fails, matching the manifest architecture where rows and pre-filters only ever narrow the candidate list.
 
-**Enum reconciliation**: the source plan phrased the gate in branch-prefix terms `{feature, fix, chore}`. The manifest's `change_type` vocabulary (see Inputs table) uses `feature` / `bug_fix` / `tech_debt`. The mapping is explicit: branch-prefix `fix` → `change_type: bug_fix`, branch-prefix `chore` → `change_type: tech_debt`, `feature` → `feature` unchanged. The gate is therefore `change_type ∈ {feature, bug_fix, tech_debt}` — the three code-touching change types — excluding `analysis`, `enhancement`, and `verification`.
+**Enum reconciliation**: the source plan phrased the gate in branch-prefix terms `{feature, fix, chore}`. The manifest's `change_type` vocabulary (see Inputs table) uses `feature` / `bug_fix` / `tech_debt` / `enhancement`. The mapping is explicit: branch-prefix `fix` → `change_type: bug_fix`, branch-prefix `chore` → `change_type: tech_debt`, `feature` → `feature` unchanged. `enhancement` has no branch prefix of its own but is code-touching by definition — it names a change to existing production behaviour, so there is always a change surface to simplify or audit. The gate is therefore `change_type ∈ {feature, bug_fix, tech_debt, enhancement}` — the four code-touching change types — excluding `analysis` and `verification`, which produce no code.
 
 **Why a pre-filter (not an eighth row)**: Activation depends only on `change_type` and `affected_files_count` and uses no language detection — it is domain-agnostic by construction (the cognitive simplification pass applies to any code or doc change in scope). The gate is orthogonal to the scope / recipe inputs the seven-row matrix consumes, and expressing it as a pre-filter keeps the seven-row matrix unchanged.
 
@@ -172,15 +172,15 @@ When the footprint is non-empty, the pre-filter is a no-op and emits no log entr
 (plan-marshall:manage-execution-manifest:compose) finalize-step-simplify omitted — change_type={value} affected_files_count={N}
 ```
 
-When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt}` AND `affected_files_count > 0`), the pre-filter is a no-op and emits no log entry; `finalize-step-simplify` survives into the seven-row matrix.
+When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement}` AND `affected_files_count > 0`), the pre-filter is a no-op and emits no log entry; `finalize-step-simplify` survives into the seven-row matrix.
 
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `pre_submission_self_review_inactive` and *before* every row of the seven-row matrix.
 
 ### Pre-Filter: `security_audit_inactive`
 
-**Condition**: `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0` — the same gate as `simplify_inactive`.
+**Condition**: `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0` — the same gate as `simplify_inactive`.
 
-**Effect**: `finalize-step-security-audit` is removed from `phase_6_candidates` before the rows are evaluated. Equivalently — phrased as the activation gate — `default:finalize-step-security-audit` lands in `phase_6.steps` **whenever `change_type ∈ {feature, bug_fix, tech_debt}` AND `affected_files_count > 0`** (and the step is present in the candidate set). The proactive security sweep has no change surface to audit on a pure-analysis / verification plan or a zero-files plan, so the gate is identical to `simplify_inactive` — a subtraction-only expression matching the manifest architecture where rows and pre-filters only ever narrow the candidate list.
+**Effect**: `finalize-step-security-audit` is removed from `phase_6_candidates` before the rows are evaluated. Equivalently — phrased as the activation gate — `default:finalize-step-security-audit` lands in `phase_6.steps` **whenever `change_type ∈ {feature, bug_fix, tech_debt, enhancement}` AND `affected_files_count > 0`** (and the step is present in the candidate set). The proactive security sweep has no change surface to audit on a pure-analysis / verification plan or a zero-files plan, so the gate is identical to `simplify_inactive` — a subtraction-only expression matching the manifest architecture where rows and pre-filters only ever narrow the candidate list.
 
 **Why a pre-filter (not an eighth row)**: Activation depends only on `change_type` and `affected_files_count`, orthogonal to the scope / recipe inputs the seven-row matrix consumes. The branch-prefix enum reconciliation (`fix → bug_fix`, `chore → tech_debt`) documented for `simplify_inactive` applies verbatim. Expressing it as a pre-filter keeps the seven-row matrix unchanged.
 
@@ -190,7 +190,7 @@ When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt}` AND `affec
 (plan-marshall:manage-execution-manifest:compose) finalize-step-security-audit omitted — change_type={value} affected_files_count={N}
 ```
 
-When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt}` AND `affected_files_count > 0`), the pre-filter is a no-op and emits no log entry; `finalize-step-security-audit` survives into the seven-row matrix.
+When the gate passes (`change_type ∈ {feature, bug_fix, tech_debt, enhancement}` AND `affected_files_count > 0`), the pre-filter is a no-op and emits no log entry; `finalize-step-security-audit` survives into the seven-row matrix.
 
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs immediately *after* `simplify_inactive` (its symmetric peer) and *before* `scope_gated_finalize` and every row of the seven-row matrix.
 
@@ -293,7 +293,7 @@ The never-silently-drop policy is load-bearing: an unclassified path indicates e
 
 - **`never`** — every match-set form of the gate's step (bare and `project:`-prefixed) is removed from `phase_6.steps`. A no-op when already absent. The composer applies the resolved value directly.
 - **`always`** — the gate's canonical step is ensured present, inserted before the plan-mutating tail (`archive-plan` / `record-metrics` / `branch-cleanup` / `plan-marshall:plan-retrospective`) when absent. A no-op when any match-set form is already present. `always` is the **only** path that can re-add a step the relevant pre-filter dropped — that is the point: an operator-set `always` overrides the implicit gate. For `self_review` / `qgate` the overridden pre-filter is `scope_gated_finalize`; for `simplify` it is `simplify_inactive`; for `security_audit` it is `security_audit_inactive`.
-- **`auto`** (the default) — defer to the existing decision machinery already applied before this transform. For `self_review` / `qgate` that is the `scope_gated_finalize` pre-filter and the seven-row matrix; for `simplify` it is the `simplify_inactive` pre-filter and for `security_audit` the `security_audit_inactive` pre-filter (both drop the step when `change_type ∉ {feature, bug_fix, tech_debt}` OR `affected_files_count == 0`). No-op in every case.
+- **`auto`** (the default) — defer to the existing decision machinery already applied before this transform. For `self_review` / `qgate` that is the `scope_gated_finalize` pre-filter and the seven-row matrix; for `simplify` it is the `simplify_inactive` pre-filter and for `security_audit` the `security_audit_inactive` pre-filter (both drop the step when `change_type ∉ {feature, bug_fix, tech_debt, enhancement}` OR `affected_files_count == 0`). No-op in every case.
 
 **The deliberate `plan-marshall:automatic-review` carve-out**: this transform's gate map contains only the four finalize steps (`default:pre-submission-self-review`, `pre-push-quality-gate`, `finalize-step-simplify`, `finalize-step-security-audit`). It NEVER adds or drops `plan-marshall:automatic-review`, whose presence is governed purely by its configured `lane` and lane tier through the execution-profile lane-resolution pass — there is no separate force-add guard. Keeping the ceremony transform's gate map to exactly the four ceremony steps structurally guarantees `plan-marshall:automatic-review` is never force-added or force-dropped by this transform.
 

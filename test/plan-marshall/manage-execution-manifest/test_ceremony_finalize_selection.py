@@ -541,9 +541,11 @@ class TestCeremonyFinalizeSimplify:
 
     ``finalize-step-simplify`` is a member of ``DEFAULT_PHASE_6_STEPS``; the
     ``simplify_inactive`` pre-filter keeps it only when
-    ``change_type ∈ {feature, bug_fix, tech_debt}`` AND ``affected_files > 0``.
-    The default ``_compose_ns`` (``change_type='feature'``,
-    ``affected_files_count=5``) therefore keeps the step in the ``auto`` baseline.
+    ``change_type ∈ {feature, bug_fix, tech_debt, enhancement}`` AND
+    ``affected_files > 0``. The default ``_compose_ns``
+    (``change_type='feature'``, ``affected_files_count=5``) therefore keeps the
+    step in the ``auto`` baseline. ``analysis`` / ``verification`` are the
+    still-excluded change types used as the canonical 'gate fails' fixtures.
     """
 
     def test_auto_defers_to_prefilter_keep_branch(self, plan_context):
@@ -562,15 +564,15 @@ class TestCeremonyFinalizeSimplify:
         assert 'finalize-step-simplify' in _bare(_manifest_phase_6_steps(result))
 
     def test_auto_defers_to_prefilter_drop_branch(self, plan_context):
-        # change_type=enhancement is outside the simplify activation set
-        # ({feature, bug_fix, tech_debt}) → the simplify_inactive pre-filter
-        # drops the step; auto does NOT re-add it. On a multi_module enhancement
-        # (Row 7 default) the rest of phase_6 is retained.
+        # change_type=analysis is outside the simplify activation set
+        # ({feature, bug_fix, tech_debt, enhancement}) → the simplify_inactive
+        # pre-filter drops the step; auto does NOT re-add it. On a multi_module
+        # analysis plan (Row 7 default) the rest of phase_6 is retained.
         _seed_marshal(finalize_gates={'simplify': 'auto'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
-            _compose_ns(plan_id='ceremony-simplify-auto-drop', change_type='enhancement')
+            _compose_ns(plan_id='ceremony-simplify-auto-drop', change_type='analysis')
         )
 
         assert result is not None
@@ -593,13 +595,13 @@ class TestCeremonyFinalizeSimplify:
         assert 'finalize-step-simplify' in result['ceremony_finalize_forced_out']
 
     def test_never_is_no_op_when_already_dropped_by_prefilter(self, plan_context):
-        # enhancement change_type → simplify_inactive already dropped the step;
+        # analysis change_type → simplify_inactive already dropped the step;
         # never simplify is then a no-op (no double-drop, no forced_out entry).
         _seed_marshal(finalize_gates={'simplify': 'off'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
-            _compose_ns(plan_id='ceremony-simplify-never-absent', change_type='enhancement')
+            _compose_ns(plan_id='ceremony-simplify-never-absent', change_type='analysis')
         )
 
         assert result is not None
@@ -608,13 +610,13 @@ class TestCeremonyFinalizeSimplify:
         assert 'finalize-step-simplify' not in _bare(_manifest_phase_6_steps(result))
 
     def test_always_readds_simplify_dropped_by_prefilter(self, plan_context):
-        # enhancement change_type → simplify_inactive drops the step; always
+        # analysis change_type → simplify_inactive drops the step; always
         # must re-add it regardless, overriding the pre-filter.
         _seed_marshal(finalize_gates={'simplify': 'minimal'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
-            _compose_ns(plan_id='ceremony-simplify-always-readd', change_type='enhancement')
+            _compose_ns(plan_id='ceremony-simplify-always-readd', change_type='analysis')
         )
 
         assert result is not None
@@ -635,13 +637,13 @@ class TestCeremonyFinalizeSimplify:
         assert 'finalize-step-simplify' in _bare(_manifest_phase_6_steps(result))
 
     def test_always_inserts_before_plan_mutating_tail(self, plan_context):
-        # enhancement drops the step; always re-adds it before the
+        # analysis drops the step; always re-adds it before the
         # plan-mutating tail.
         _seed_marshal(finalize_gates={'simplify': 'minimal'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
-            _compose_ns(plan_id='ceremony-simplify-always-order', change_type='enhancement')
+            _compose_ns(plan_id='ceremony-simplify-always-order', change_type='analysis')
         )
 
         assert result is not None
@@ -665,10 +667,12 @@ class TestCeremonyFinalizeSecurityAudit:
 
     ``finalize-step-security-audit`` is a member of ``DEFAULT_PHASE_6_STEPS``; the
     ``security_audit_inactive`` pre-filter keeps it only when
-    ``change_type ∈ {feature, bug_fix, tech_debt}`` AND ``affected_files > 0``
-    (the same gate as ``simplify_inactive``). The default ``_compose_ns``
-    (``change_type='feature'``, ``affected_files_count=5``) therefore keeps the
-    step in the ``auto`` baseline.
+    ``change_type ∈ {feature, bug_fix, tech_debt, enhancement}`` AND
+    ``affected_files > 0`` (the same gate as ``simplify_inactive``). The default
+    ``_compose_ns`` (``change_type='feature'``, ``affected_files_count=5``)
+    therefore keeps the step in the ``auto`` baseline. ``analysis`` /
+    ``verification`` are the still-excluded change types used as the canonical
+    'gate fails' fixtures.
     """
 
     def test_auto_defers_to_prefilter_keep_branch(self, plan_context):
@@ -687,14 +691,15 @@ class TestCeremonyFinalizeSecurityAudit:
         assert 'finalize-step-security-audit' in _bare(_manifest_phase_6_steps(result))
 
     def test_auto_defers_to_prefilter_drop_branch(self, plan_context):
-        # change_type=enhancement is outside the security_audit activation set
-        # ({feature, bug_fix, tech_debt}) → the security_audit_inactive pre-filter
-        # drops the step; auto does NOT re-add it.
+        # change_type=analysis is outside the security_audit activation set
+        # ({feature, bug_fix, tech_debt, enhancement}) → the
+        # security_audit_inactive pre-filter drops the step; auto does NOT
+        # re-add it.
         _seed_marshal(finalize_gates={'security_audit': 'auto'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
-            _compose_ns(plan_id='ceremony-secaudit-auto-drop', change_type='enhancement')
+            _compose_ns(plan_id='ceremony-secaudit-auto-drop', change_type='analysis')
         )
 
         assert result is not None
@@ -717,7 +722,7 @@ class TestCeremonyFinalizeSecurityAudit:
         assert 'finalize-step-security-audit' in result['ceremony_finalize_forced_out']
 
     def test_never_is_no_op_when_already_dropped_by_prefilter(self, plan_context):
-        # enhancement change_type → security_audit_inactive already dropped the
+        # analysis change_type → security_audit_inactive already dropped the
         # step; never security_audit is then a no-op (no double-drop, no
         # forced_out entry).
         _seed_marshal(finalize_gates={'security_audit': 'off'})
@@ -725,7 +730,7 @@ class TestCeremonyFinalizeSecurityAudit:
 
         result = cmd_compose(
             _compose_ns(
-                plan_id='ceremony-secaudit-never-absent', change_type='enhancement'
+                plan_id='ceremony-secaudit-never-absent', change_type='analysis'
             )
         )
 
@@ -735,14 +740,14 @@ class TestCeremonyFinalizeSecurityAudit:
         assert 'finalize-step-security-audit' not in _bare(_manifest_phase_6_steps(result))
 
     def test_always_readds_security_audit_dropped_by_prefilter(self, plan_context):
-        # enhancement change_type → security_audit_inactive drops the step; always
+        # analysis change_type → security_audit_inactive drops the step; always
         # must re-add it regardless, overriding the pre-filter.
         _seed_marshal(finalize_gates={'security_audit': 'minimal'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
             _compose_ns(
-                plan_id='ceremony-secaudit-always-readd', change_type='enhancement'
+                plan_id='ceremony-secaudit-always-readd', change_type='analysis'
             )
         )
 
@@ -764,14 +769,14 @@ class TestCeremonyFinalizeSecurityAudit:
         assert 'finalize-step-security-audit' in _bare(_manifest_phase_6_steps(result))
 
     def test_always_inserts_before_plan_mutating_tail(self, plan_context):
-        # enhancement drops the step; always re-adds it before the
+        # analysis drops the step; always re-adds it before the
         # plan-mutating tail.
         _seed_marshal(finalize_gates={'security_audit': 'minimal'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
             _compose_ns(
-                plan_id='ceremony-secaudit-always-order', change_type='enhancement'
+                plan_id='ceremony-secaudit-always-order', change_type='analysis'
             )
         )
 
@@ -781,6 +786,57 @@ class TestCeremonyFinalizeSecurityAudit:
         assert 'finalize-step-security-audit' in bare_seq
         assert 'archive-plan' in bare_seq
         assert bare_seq.index('finalize-step-security-audit') < bare_seq.index('archive-plan')
+
+
+# =============================================================================
+# Test: enhancement gate activation — enhancement is code-touching by definition
+# =============================================================================
+
+
+class TestEnhancementGateActivation:
+    """``enhancement`` is a member of the code-touching activation set
+    ``{feature, bug_fix, tech_debt, enhancement}``: with ``affected_files > 0``
+    the ``simplify_inactive`` / ``security_audit_inactive`` pre-filters KEEP both
+    ceremony steps, so a full-posture enhancement plan composes with
+    ``finalize-step-simplify`` AND ``finalize-step-security-audit`` present —
+    via the pre-filter keep branch, not a force-add."""
+
+    def test_full_posture_enhancement_plan_keeps_both_ceremony_steps(self, plan_context):
+        plan_id = 'ceremony-enhancement-activation'
+        _seed_marshal()  # all ceremony gates default to auto
+        _stub_footprint(_FOOTPRINT)
+        _write_execution_profile(plan_context, plan_id, 'full')
+
+        result = cmd_compose(_compose_ns(plan_id=plan_id, change_type='enhancement'))
+
+        assert result is not None
+        assert result['status'] == 'success'
+        bare = _bare(_manifest_phase_6_steps(result))
+        assert 'finalize-step-simplify' in bare
+        assert 'finalize-step-security-audit' in bare
+        # auto gates deferred — nothing was force-added; the pre-filters kept both.
+        assert result['ceremony_finalize_forced_in'] == []
+        assert result['ceremony_finalize_forced_out'] == []
+
+    def test_enhancement_with_zero_files_still_drops_both_ceremony_steps(self, plan_context):
+        # The second gate leg is unchanged: affected_files_count == 0 drops the
+        # steps regardless of the code-touching change type.
+        _seed_marshal()
+        _stub_footprint(_FOOTPRINT)
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='ceremony-enhancement-zero-files',
+                change_type='enhancement',
+                affected_files_count=0,
+            )
+        )
+
+        assert result is not None
+        assert result['status'] == 'success'
+        bare = _bare(_manifest_phase_6_steps(result))
+        assert 'finalize-step-simplify' not in bare
+        assert 'finalize-step-security-audit' not in bare
 
 
 # =============================================================================
