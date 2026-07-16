@@ -25,9 +25,22 @@ The verb performs NO LLM call and NO plan-scoped read — only the free-form
 request text drives scoring. Tier 2 (direct import) tests with a Tier 3
 subprocess test for CLI plumbing / the constructed-argv assertion at the
 argparse boundary.
+
+Negation override (exception to the sub-threshold fallback): an explicit
+negative build constraint in the RAW request text — a fixed phrase table
+(``no build``, ``docs only``, …) matched case-insensitively BEFORE
+tokenization — overrides the implementation fallback. ``recipe_scoring.tokenize``
+drops ``no`` (length filter) and ``build`` is itself an implementation keyword,
+so the override must key on the phrase, not the tokens. On a match the verb
+returns the higher-scored non-implementation candidate with
+``drops_build_steps: true`` and reports the phrase via
+``negative_constraint_matched``; without a match, behavior is byte-identical
+to the threshold contract above (the field is absent).
 """
 
 from argparse import Namespace
+
+import pytest
 
 from test_helpers import SCRIPT_PATH
 
@@ -225,6 +238,93 @@ def test_result_carries_full_breakdown_and_scores():
     assert breakdown['analysis']['matched_keywords'] == ['analyze', 'audit', 'evaluate', 'investigate']
     assert breakdown['analysis']['score'] == 1.0
     assert breakdown['implementation']['matched_keywords'] == []
+
+
+# =============================================================================
+# Negation override — explicit negative build constraint (Tier 2)
+# =============================================================================
+
+
+def test_negation_override_576_shape_docs_review_with_no_build():
+    """The TokenSheriff #576 shape: sub-threshold docs review WITH 'no build'.
+
+    A docs-review request whose analysis overlap is far below 0.7 would fall
+    back to ``implementation`` — but the explicit 'no build' constraint
+    overrides the fallback: non-implementation aspect, ``drops_build_steps:
+    true``, and the matched phrase surfaced for observability.
+    """
+    request = 'Review the getting-started docs wording for accuracy, no build needed'
+    result = cmd_aspect_classify(_ns(request))
+
+    assert result['scores']['analysis'] < 0.7
+    assert result['aspect'] in ('analysis', 'planning')
+    assert result['drops_build_steps'] is True
+    assert result['negative_constraint_matched'] == 'no build'
+
+
+@pytest.mark.parametrize(
+    'phrase',
+    [
+        'no build',
+        'no builds',
+        'without build',
+        'do not build',
+        'no verify',
+        'docs only',
+        'docs-only',
+        'documentation only',
+        'documentation-only',
+    ],
+)
+def test_each_representative_negation_phrase_triggers_override(phrase):
+    """Every representative negation phrase fires the override and is reported.
+
+    The request embeds the phrase in otherwise non-keyword text, so all aspect
+    scores stay far below the threshold — only the negation override can flip
+    ``drops_build_steps`` to true.
+    """
+    result = cmd_aspect_classify(_ns(f'xylophone marmalade {phrase} obsidian'))
+
+    assert result['aspect'] in ('analysis', 'planning')
+    assert result['drops_build_steps'] is True
+    assert result['negative_constraint_matched'] == phrase
+
+
+def test_negation_phrase_matches_case_insensitively():
+    """The phrase table matches against the lower-cased raw request text."""
+    result = cmd_aspect_classify(_ns('Docs ONLY change to the README'))
+
+    assert result['drops_build_steps'] is True
+    assert result['negative_constraint_matched'] == 'docs only'
+
+
+def test_negation_free_sub_threshold_request_unchanged():
+    """A negation-free sub-threshold request still falls back to implementation.
+
+    Byte-identical to the pre-override contract: implementation fallback,
+    ``drops_build_steps: false``, and NO ``negative_constraint_matched`` field
+    in the result.
+    """
+    result = cmd_aspect_classify(_ns('analyze audit xylophone marmalade obsidian'))
+
+    assert result['aspect'] == 'implementation'
+    assert result['drops_build_steps'] is False
+    assert 'negative_constraint_matched' not in result
+
+
+def test_negation_override_survives_tokenization_hostile_text():
+    """The phrase match keys on the raw text, not the token set.
+
+    ``recipe_scoring.tokenize`` drops 'no' (length filter) and keeps 'build'
+    (an implementation keyword), so the token set of this request looks
+    implementation-shaped — yet the raw-text phrase match still sees the
+    negation.
+    """
+    result = cmd_aspect_classify(_ns('You need no build because the docs already explain it'))
+
+    assert result['aspect'] in ('analysis', 'planning')
+    assert result['drops_build_steps'] is True
+    assert result['negative_constraint_matched'] == 'no build'
 
 
 # =============================================================================

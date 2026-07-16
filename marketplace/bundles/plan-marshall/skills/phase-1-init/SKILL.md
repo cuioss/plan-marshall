@@ -597,7 +597,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:phase-1-init) Request aspect classified: {aspect} (drops_build_steps={drops_build_steps})"
 ```
 
-The classifier defaults to `implementation` below its threshold — the safe fallback that keeps build/verify gates. No prompt is shown for the aspect; it is silent metadata.
+The classifier defaults to `implementation` below its threshold — the safe fallback that keeps build/verify gates — except when the request carries an explicit negative build constraint (e.g. "no build", "docs only"), which overrides the fallback with `drops_build_steps: true`; the full negation-override contract lives in `manage-config` SKILL.md § `aspect-classify`. No prompt is shown for the aspect; it is silent metadata.
 
 **Step 5c-lesson — doc-shaped predicate (lesson-source only)**:
 
