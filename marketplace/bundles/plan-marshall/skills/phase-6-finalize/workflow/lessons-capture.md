@@ -6,6 +6,7 @@ name: default:lessons-capture
 description: Capture lessons from triage findings and PR-review escalations (skipped when qgate_findings=0, pr_comments_promoted=0, and script_failure_clusters=0)
 order: 60
 default_on: true
+mutates_source: true
 presets:
   - local
   - standard
@@ -18,6 +19,8 @@ implements:
 # Lessons Capture
 
 Pure executor for the `lessons-capture` finalize step. Records lessons learned from the implementation. Advisory only — does not block.
+
+**Source mutation (`mutates_source: true`)**: Branch B3 (facts routed to architecture hints) is the mutating branch — each `architecture enrich` call writes the per-module `enriched.json` under the source tree, so the dispatcher's post-step porcelain check observes a dirty tree, commits the write with the step's commit-message fallback, and — because lessons-capture runs after `create-pr` — triggers the item-5f Post-PR re-push so the PR head advances inside the normal settle band instead of at the merge gate. Pure Branch A/B/B2 runs (lesson files live under `.plan/`, not the source tree) produce an empty porcelain and are the item-5f case (c) no-op.
 
 ## Exit-code convention for `manage-*` script calls
 
