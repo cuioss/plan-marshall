@@ -72,10 +72,8 @@ developer worktree — the only place where a *stale* or *hand-mutated*
 **Generated-tree drift is gated at the consume boundary — the plugin-cache
 sync's `_staleness_guard` — using git's `ls-files` / `hash-object` primitives
 over the whole tree, and is never wired in as a CI gate.** The guard runs where
-the generated tree is actually consumed and can actually be stale; it refuses
-the sync when the recomputed whole-tree source fingerprint diverges from the
-sentinel, or when the per-file manifest comparison names a missing / diverged /
-extra target file.
+the generated tree is actually consumed and can actually be stale, applying the
+whole-tree fingerprint check and per-file manifest comparison described above.
 
 CI's responsibility is the *source* tree: `./pw verify` type-checks, lints, and
 tests `marketplace/bundles/` and the script surface. Because CI regenerates
@@ -140,21 +138,17 @@ in lockstep, review noise scales with generated-tree size, and merge conflicts
 arise in files no human authored. The cost of carrying the artefact in git
 exceeds the value of the git-diff-native gate it would enable.
 
-=== Option C — Rebuild a diff-text drift approach that a prior abandoned attempt took
+=== Option C — Rebuild the diff-text drift approach the abandoned PR #723 took
 
-Reconstruct the earlier diff-text drift-detection approach — comparing rendered
-text spans to flag drift.
+Reconstruct PR #723's diff-text drift-detection approach — string-parsing
+unified-diff text to flag drift.
 
-*Rejected as out of scope:* that approach addressed a *different* invariant —
-detecting deleted-symbol survivors in transformed output — not source-to-generated
-tree currency. Folding it in here would conflate two distinct drift questions; it
-belongs to its own decision if and when that invariant is revisited.
-
-The alternatives fall in one class: they either place the gate at a boundary
-where the invariant cannot be observed (A), pay an artefact-in-VCS cost to
-manufacture such a boundary (B), or solve a different invariant entirely (C). The
-decision keeps the gate at the one boundary — the consume point — where
-generated-tree drift can actually exist and be observed.
+*Rejected as out of scope:* PR #723 addressed a *different* invariant — detecting
+deleted-symbol survivors in transformed output — not source-to-generated tree
+currency, and its approach was abandoned after four successive edge-case defects
+in its hand-rolled unified-diff parser. Folding a rebuild in here would conflate
+two distinct drift questions; the survivor-sweep invariant belongs to its own
+decision if and when it is revisited.
 
 == Generalisation
 
