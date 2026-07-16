@@ -114,7 +114,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--recipe-key` (optional override): Forces the `recipe` rule. When omitted, the composer reads the provenance itself from `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`), so lesson- and recipe-derived plans select the `recipe` rule without the caller forwarding this flag.
 - `--affected-files-count` (optional, default 0): Count of affected files surfaced by the outline; used by the `early_terminate` rule
 - `--phase-5-steps` (optional): Comma-separated candidate Phase 5 verification step IDs. The composer prefers `marshal.json::plan.phase-5-execute.verification_steps` (the phase-aware list-field — phase-5 reads `verification_steps`, every other phase reads `steps`; see [decision-rules.md](standards/decision-rules.md) § "Phase-aware step source"), falling back to this CSV only when no marshal.json is present. The IDs may be the legacy bare role-file forms (`default:quality_check`, …) or the parameterized canonical-verify form `default:verify:{canonical}` (e.g. `default:verify:quality-gate`, `default:verify:module-tests`, `default:verify:coverage`), whose matrix role is derived from the trailing canonical segment (see [decision-rules.md](standards/decision-rules.md) § "Role derivation for canonical-verify steps"). The decision matrix selects a subset, then the generic footprint pre-filter (§ "Generic footprint pre-filter") drops any footprint-gated whole-tree canonical (`integration` / `e2e`) that the live footprint does not exercise.
-- `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs from `marshal.json` (e.g., `push,create-pr,automated-review,sonar-roundtrip,lessons-capture,adr-propose,branch-cleanup,archive-plan`). The decision matrix selects a subset. If omitted, defaults to the full canonical set.
+- `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs (e.g., `push,create-pr,automated-review,sonar-roundtrip,lessons-capture,adr-propose,branch-cleanup,archive-plan`). Same fallback-only contract as `--phase-5-steps`: the composer prefers `marshal.json::plan.phase-6-finalize.steps`, consulting this CSV only when no marshal.json is present — so in an inited project the CSV cannot inject a plan-scoped candidate. The decision matrix selects a subset. If both marshal.json and the CSV are absent, defaults to the full canonical set.
 - `--commit-and-push` (optional, default `true`): `true|false` — the resolved `commit_and_push` boolean from phase-5-execute config. When `false`, `push`, `pre-push-quality-gate`, and `pre-submission-self-review` are all removed from the candidate set by the `commit_push_disabled` pre-filter before the matrix runs (a local-only run).
 - `--envelope-count` (optional, default `1`): Number of phase-5 `execution-context` envelopes the orchestrator should plan for. Persisted into the manifest's `phase_5.envelope_count`. When omitted, defaults to `1` (a single budget-bounded envelope greedily drives the task loop until the queue is empty or a TASK-boundary re-dispatch point fires). A non-positive value is clamped to `1`. The field is written under every decision-matrix rule (including `early_terminate`), so the `phase_5` block always carries it.
 - `--aspect` (optional): `analysis|planning|implementation` — the resolved request aspect from the `manage-config aspect-classify` verb (phase-1-init). When `analysis` or `planning`, the **request-aspect step-dropping** pass (§ "Request-aspect step dropping") removes every build / quality-gate / test canonical-verify step (derived roles `quality-gate` / `module-tests` / `coverage`) from the final `phase_5.verification_steps` — an analysis / planning request carries no production / test footprint, so those gates have nothing to gate. When omitted, or `implementation` (the classifier's safe sub-threshold fallback), every build/verify gate is retained. The drop is role-driven and canonical-agnostic; external (`project:` / `bundle:skill`) steps are passed through untouched.
@@ -295,7 +295,7 @@ The value is coerced (`true`/`false` → bool; integer literal → int; else str
 
 ### validate
 
-Verify the manifest schema and that all step IDs exist in the candidate `marshal.json` set.
+Verify the manifest schema and that all step IDs appear in the caller-supplied allow-list CSVs.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
@@ -306,8 +306,10 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier
-- `--phase-5-steps` (optional): Comma-separated allowed Phase 5 step IDs to validate against
-- `--phase-6-steps` (optional): Comma-separated allowed Phase 6 step IDs to validate against
+- `--phase-5-steps` (optional): Comma-separated allowed Phase 5 step IDs to validate against. This is `validate`'s own caller-supplied allow-list — a separate surface from `compose`'s same-named fallback-only candidate flag. Because `compose`'s `execution_tier` routing can append `verify:{verb}` step IDs that were never in the configured candidate list, the allow-list must also cover those compose-routed IDs.
+- `--phase-6-steps` (optional): Comma-separated allowed Phase 6 step IDs to validate against (same allow-list semantics)
+
+Omitting a flag skips that phase's step-ID check (schema checks always run).
 
 **Prefix-agnostic step-ID comparison**: the unknown-ID check strips the optional `default:` prefix from BOTH the allowed set and the manifest step IDs before the set-membership test, so a bare manifest ID (e.g. `verify:module-tests`) validates against a `default:`-prefixed allowed-list entry (e.g. `default:verify:module-tests`) and vice versa. `project:` / `bundle:skill` prefixes are preserved verbatim, so external steps still compare exactly. This is what lets the composer's boundary-normalized (bare) manifest IDs validate against an allowed-list passed in either prefixed or bare form.
 
@@ -396,13 +398,13 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count] [--aspect]` | Compose and write execution.toon |
+| `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count] [--aspect]` | Compose and write execution.toon (`--phase-5-steps`/`--phase-6-steps` are fallback-only — `marshal.json` is the authoritative candidate source) |
 | `read` | `--plan-id` | Read manifest as TOON |
 | `lanes preview` | `--plan-id [--phase-6-steps]` | Resolve the minimal/auto/full phase-6 step sets + cost sums in one TOON (the posture-dialogue projection) |
 | `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome {executed\|skipped\|error} [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon |
 | `step-params get` | `--plan-id --phase {5-execute\|6-finalize} --step-id` | Return a step's snapshotted param object from the manifest (plan-local read) |
 | `step-params set` | `--plan-id --phase {5-execute\|6-finalize} --step-id --param --value` | Write a per-plan param override into the manifest snapshot |
-| `validate` | `--plan-id [--phase-5-steps] [--phase-6-steps]` | Validate manifest schema + step IDs |
+| `validate` | `--plan-id [--phase-5-steps] [--phase-6-steps]` | Validate manifest schema + step IDs against the caller-supplied allow-list CSVs (a separate surface from compose's candidate source) |
 | `validate-loadable` | `--plan-id (--step-id ID \| --all)` | Verify standards file presence for built-in `phase_6.steps` entries |
 
 ---
@@ -449,6 +451,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   [--aspect {analysis|planning|implementation}]
 ```
 
+`--phase-5-steps` / `--phase-6-steps` on `compose` are **fallback-only** (tests / no-marshal contexts): with a readable `marshal.json` the composer sources its candidate lists authoritatively from `plan.phase-5-execute.steps` / `plan.phase-6-finalize.steps` and ignores the CSVs, so in an inited project forwarding a CSV cannot inject a plan-scoped candidate. The same-named flags on `validate` are a different surface — see `validate` below.
+
 ### read
 
 ```bash
@@ -481,6 +485,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   --plan-id PLAN_ID \
   [--phase-5-steps LIST] [--phase-6-steps LIST]
 ```
+
+On `validate` the `--phase-5-steps` / `--phase-6-steps` CSVs are the **caller-supplied allow-list** of permitted step IDs — a separate input from `compose`'s candidate source (where the same-named flags are fallback-only against the marshal-authoritative seeding above). Omitting a flag skips that phase's step-ID check; when supplied, every manifest step ID must appear in the allow-list (prefix-agnostic on `default:`; `project:` / `bundle:skill` prefixes compare verbatim) or validation fails with `invalid_manifest`. Because `compose`'s `execution_tier` routing can append `verify:{verb}` step IDs that were never in the configured candidate list, the allow-list must also cover the compose-routed `verify:{verb}` IDs.
 
 ### validate-loadable
 
