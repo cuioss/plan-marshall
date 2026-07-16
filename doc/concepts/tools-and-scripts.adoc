@@ -1,7 +1,10 @@
 = Tools and Scripts
 :nofooter:
 :toc: left
-:toclevels: 2
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
@@ -54,3 +57,4 @@ The token lives on disk under `~/.plan-marshall-credentials/` with restrictive p
 * xref:security.adoc[Concepts › Security] — why narrowing the runtime surface matters.
 * xref:build-management.adoc[Concepts › Build Management] — the same deterministic-script pattern for the build-system surface.
 * xref:audit-trail.adoc[Concepts › Audit Trail] — where every script call is logged.
+* xref:orchestration.adoc[Concepts › Orchestration] — the small-ops carve-out that consumes this scripted CI/git surface from above the plan lifecycle, and the `--store orchestrator` reuse of the `manage-status`/`manage-logging` script layer.

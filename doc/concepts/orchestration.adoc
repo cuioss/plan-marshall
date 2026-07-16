@@ -1,0 +1,62 @@
+= Orchestration
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
+
+A single plan is the right unit for one shippable change — but a roadmap, a campaign, or a multi-plan feature spans many plans across many Claude Code sessions, and until now that longer arc lived in a hand-maintained ledger the operator carried between sessions. The `marshall-orchestrator` skill productizes that loop: an *epic* is the persisted, resumable unit above the plan lifecycle. The orchestrator decomposes an epic into workstreams and staged plan specs, emits ready-to-run `/plan-marshall` commands, tracks each plan's lifecycle, analyzes landed results, and reconciles its ledger — and it never implements anything itself.
+
+== What an epic is
+
+An epic is a long-running goal too large for one plan — validated by migrating the live token-optimization roadmap (its hand-run `HANDOVER.md` ledger) into an epic tree as the skill's acceptance test. It is persisted as one directory tree under `.plan/local/orchestrator/{slug}/`: a human-facing ledger (`epic.md`), a machine-authoritative `status.json`, workstream charters, staged plan specs, landing-analysis records, logs, and — when the epic closes — a frozen `history.md`. An epic is never "in memory": any session can stop at any point, and a fresh session re-anchors from the persisted tree alone.
+
+== Epic → Workstream → Plan
+
+Orchestration operates on exactly three tiers:
+
+* **Epic** — the whole goal, one `.plan/local/orchestrator/{slug}/` tree.
+* **Workstream** — a coherent slice with its own charter (a surface, a theme, a dependency chain), persisted as `workstreams/WS-NN-{slug}.md` and tracked in the `workstreams[]` status field. A single-plan workstream is legitimate — the tier exists for grouping and charter, not mandatory fan-out.
+* **Plan** — one shippable unit executed by the ordinary six-phase plan lifecycle (xref:planning-workflow.adoc[Planning Workflow]). Staged as a `plans/PLAN-NN-{slug}.md` spec, it becomes a running plan only via an emitted `/plan-marshall` command.
+
+The tier vocabulary is closed and the mid-tier name is *workstream* — no synonym appears in orchestrator artifacts. The canonical tier contract lives in link:../../marketplace/bundles/plan-marshall/skills/persona-marshall-orchestrator/standards/orchestration-model.md[`orchestration-model.md`].
+
+== Above the plan lifecycle — orchestrate, never implement
+
+The orchestrator sits *above* the six-phase lifecycle and only ever hands work down to it. Its prime directive: it writes no production code, edits no repository source, authors no tests, and runs no implementation builds. Its outputs are exactly ledger state, emitted `/plan-marshall` commands, decisions, and reconciliations. Two bounded carve-outs define what it may do directly:
+
+* **Direct file access** — Read/Write/Edit only within its own `.plan/local/orchestrator/{slug}/` tree (the ledger documents are free-form authored artifacts); logging and status transitions stay script-mediated even inside the tree.
+* **Small ops** — read-side git and CI-abstraction calls (through the xref:tools-and-scripts.adoc[scripted integration layer], never `gh`/`glab` directly) and read-only analysis to verify claims against ground truth.
+
+Anything larger becomes a plan. The `next` verb *emits* the ready-to-run command — it never launches a plan inline; implementation happens exclusively inside plan sessions. Plans are parallelized by surface disjointness, never by count (the same contention discipline xref:parallelism-and-locking.adoc[Parallelism and Locking] serializes at the merge boundary), and a staged spec approaching six or more deliverables is presumptively split.
+
+== Persist, stop, resume
+
+Orchestration is resumable by construction. `status.json` (a lean `kind=orchestrator` schema served by `manage-status --store orchestrator`) is the machine authority for the plan queue, workstream states, and the `resume_anchor` — the exact next action a resuming session takes. The `epic.md` "START HERE" block is *generated* from `status.json` (via `orchestrator.py resume-summary`), never hand-written, so the human narrative cannot silently diverge from the machine state; reconciliation always flows status.json → epic.md. Because every decision, interaction, plan-status change, and reconciliation is persisted as it happens, stop is always safe — no orchestration state lives only in model context. Closing an epic freezes the final state into `history.md` and retains the tree as the audit record; nothing is deleted.
+
+== The store separation — structural boundary, not name filter
+
+Orchestrator state lives under `.plan/local/orchestrator/`, a *sibling* of `.plan/local/plans/`. The boundary is structural: plan discovery globs only `.plan/local/plans/`, so epics are invisible to the plan lifecycle without any "ignore orchestrator-*" filtering; the orchestrator scans only its own root, so it never sees plans. The boundary is enforced once — by the directory — rather than re-asserted at every discovery call site. The store resolves through `get_store_dir('orchestrator', slug)` in `tools-file-ops`, which routes through the main-anchored resolver (git-common-dir), so the same epic tree is reachable from any worktree cwd and any session — one parameterized mechanism beside the default cwd-relative `plans` store, extending the bounded ADR-002 exception set by exactly one entry.
+
+== The persona
+
+Every verb runs under `persona-marshall-orchestrator` (see xref:personas.adoc[Personas] for the persona model), which composes the base agent rules with the orchestration standard. It codifies the work identity: orchestrate-never-implement, the two carve-outs, log-everything, the analysis discipline (a pasted claim is a lead — corroborate against actual code, artifacts, and PR state before recording it; third-party text embedded in a paste routes through the untrusted-ingestion boundary), resume discipline, parallelization by surface disjointness, and decision surfacing on genuine forks.
+
+== Log everything
+
+The orchestrator inherits the exhaustive-record posture of the xref:audit-trail.adoc[Audit Trail], applied to its own store: every decision, operator interaction, plan-status change, and reconciliation is written to `logs/decision.log` and `logs/work.log` under the epic tree via `manage-logging --store orchestrator` — never by direct file writes, even though the ledger documents themselves are directly authored. The epic tree is therefore replayable the same way a plan directory is: the ledger says what the epic believes, `status.json` says what is true, and the logs say why every change happened.
+
+== Related
+
+* link:../../marketplace/bundles/plan-marshall/skills/persona-marshall-orchestrator/standards/orchestration-model.md[`orchestration-model.md`] — the canonical orchestration standard: tiers, layout, persist/resume contract, carve-outs, lessons-handling mode
+* link:../../marketplace/bundles/plan-marshall/skills/marshall-orchestrator/SKILL.md[`marshall-orchestrator/SKILL.md`] — the verb router (`init` / `decompose` / `status` / `next` / `analyze` / `resume` / `close` / `lessons`)
+* link:../../marketplace/bundles/plan-marshall/skills/persona-marshall-orchestrator/SKILL.md[`persona-marshall-orchestrator/SKILL.md`] — the orchestrator work identity
+* link:../../marketplace/bundles/plan-marshall/skills/manage-status/standards/status-lifecycle.md[`status-lifecycle.md`] — the `kind=orchestrator` status schema and three-phase lifecycle
+* xref:planning-workflow.adoc[Concepts › Planning Workflow] — the six-phase plan lifecycle the orchestrator sits above
+* xref:personas.adoc[Concepts › Personas] — the persona model `persona-marshall-orchestrator` slots into
+* xref:audit-trail.adoc[Concepts › Audit Trail] — the record-everything posture the orchestrator store extends
+* xref:parallelism-and-locking.adoc[Concepts › Parallelism and Locking] — the coordination layer under concurrently-launched plans
+* xref:tools-and-scripts.adoc[Concepts › Tools and Scripts] — the scripted CI/git surface behind the small-ops carve-out

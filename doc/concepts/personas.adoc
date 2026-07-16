@@ -1,7 +1,10 @@
 = Personas
 :nofooter:
 :toc: left
-:toclevels: 2
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
@@ -141,3 +144,4 @@ A persona skill may carry an optional **priming preamble** as frontmatter data (
 * xref:extension-architecture.adoc[Concepts › Extension Architecture] — persona (identity) vs profile (domain-resolution axis) vs role/level (compute selection).
 * xref:execution-context.adoc[Concepts › Execution Context] — the role/level compute resolution that runs orthogonally to persona identity.
 * xref:skill-handling.adoc[Concepts › Skill Handling] — how the resolved `skills[]` enters the subagent context.
+* xref:orchestration.adoc[Concepts › Orchestration] — `persona-marshall-orchestrator`, the epic-orchestration work identity resolved through this same composition model.

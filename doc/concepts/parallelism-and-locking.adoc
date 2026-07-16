@@ -37,4 +37,5 @@ Lock contention is cross-session by nature, so its event trail cannot live in an
 
 * link:../../marketplace/bundles/plan-marshall/skills/manage-locks/SKILL.md[`manage-locks`] — canonical contract: the merge mutex, the build-queue limiter, the shared TOCTOU-safe core, and main-anchored resolution
 * xref:branches-and-worktrees.adoc[Branches and Worktrees] — the plan-bound isolation and post-execute shipping flow the merge mutex coordinates
+* xref:orchestration.adoc[Concepts › Orchestration] — the epic tier that decides *which* plans run concurrently (parallelization by surface disjointness) before these locks serialize their shared moments
 * xref:../user/parallelism-and-locking.adoc[User Guide › Parallelism and Locking] — operator knobs, the `[LOCK]` log, and the stuck-queue FAQ
