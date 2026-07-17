@@ -148,14 +148,14 @@ def test_update_rejects_invalid_status(adr_dir):
 def test_update_without_status_is_unchanged_noop(adr_dir):
     """cmd_update with status=None succeeds without rewriting the Status section."""
     cmd_create(Namespace(command='create', title='Unchanged ADR', status='Accepted'))
-    original = (adr_dir / '001-Unchanged_ADR.adoc').read_text()
+    original = (adr_dir / '0001-Unchanged_ADR.adoc').read_text()
 
     result = cmd_update(Namespace(command='update', number=1, status=None))
 
     assert result['status'] == 'success'
     assert result['adr_status'] == 'unchanged'
     # File content is byte-identical — no status rewrite occurred.
-    assert (adr_dir / '001-Unchanged_ADR.adoc').read_text() == original
+    assert (adr_dir / '0001-Unchanged_ADR.adoc').read_text() == original
 
 
 # =========================================================================
