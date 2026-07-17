@@ -96,6 +96,19 @@ def handle_read(args: argparse.Namespace) -> dict[str, Any]:
     # without the attribute keep working (mirrors handle_write).
     store = getattr(args, 'store', 'plans')
 
+    # The read parser exposes --store for ALL log types, but script-execution
+    # logging is plans/global-only on both the write side (handle_write's
+    # parser has no --store) and in get_log_path. Reject the nonsensical
+    # 'script' + 'orchestrator' read combination explicitly rather than letting
+    # get_log_path resolve it to a path no writer ever targets.
+    if log_type == 'script' and store == 'orchestrator':
+        return {
+            'status': 'error',
+            'error': 'wrong_parameters',
+            'plan_id': plan_id,
+            'message': "--type script does not support --store orchestrator (script logging is plans/global-only)",
+        }
+
     # Work and decision logs support full parsing
     if log_type == 'work':
         if limit:
@@ -243,6 +256,12 @@ def main() -> int:
         result = handle_write(args)
     if result is not None:
         output_toon(result)
+        if result.get('status') == 'error':
+            # Propagate a non-zero exit code so automation reading the exit
+            # status sees the rejection (e.g. handle_write's missing_plan_id
+            # error, handle_read's wrong_parameters error). The TOON is still
+            # emitted on stdout above per the manage-* output contract.
+            return 1
     return 0
 
 

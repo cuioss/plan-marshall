@@ -78,8 +78,17 @@ def _epic_root(slug: str) -> Path:
 
 
 def _read_status(slug: str) -> dict[str, Any]:
-    """Read the epic's status.json (empty dict when absent)."""
-    return dict(read_json(_epic_root(slug) / FILE_STATUS))
+    """Read the epic's status.json (empty dict when absent or malformed).
+
+    ``read_json`` degrades a missing/unreadable/unparseable file to ``{}``, but
+    a status.json whose top-level JSON is valid-but-non-dict (an array, a bare
+    string, ``null``) would otherwise reach ``dict(...)`` and raise. Fall back
+    to ``{}`` on any non-dict parse so callers always receive a dict.
+    """
+    data = read_json(_epic_root(slug) / FILE_STATUS)
+    if not isinstance(data, dict):
+        return {}
+    return dict(data)
 
 
 def _write_status(slug: str, status: dict[str, Any]) -> None:

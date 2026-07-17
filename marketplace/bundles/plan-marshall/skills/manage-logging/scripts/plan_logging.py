@@ -151,7 +151,17 @@ def get_log_path(plan_id: str | None, log_type: str = 'script', store: str = 'pl
 
     Returns:
         Path to log file in logs/ subdirectory
+
+    Raises:
+        ValueError: when ``store`` is not one of :data:`VALID_STORES`. The guard
+            closes the silent fall-through where any string other than
+            ``'orchestrator'`` slipped past to the plans/global branch.
     """
+    if store not in VALID_STORES:
+        raise ValueError(
+            f'unknown store {store!r}: expected one of {list(VALID_STORES)}'
+        )
+
     log_type = log_type.lower()
 
     # Map log type to filename

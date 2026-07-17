@@ -132,8 +132,18 @@ def get_store_status_path(store: str, entry_id: str) -> Path:
 
 
 def read_store_status(store: str, entry_id: str) -> dict[Any, Any]:
-    """Read status.json for a store entry (empty dict when absent)."""
-    return cast(dict[Any, Any], read_json(get_store_status_path(store, entry_id)))
+    """Read status.json for a store entry (empty dict when absent or malformed).
+
+    ``read_json`` already degrades a missing/unreadable/unparseable file to the
+    default ``{}``, but a status.json whose top-level JSON is valid-but-non-dict
+    (an array, a bare string, ``null``) would otherwise flow straight into
+    ``cast(dict, ...)`` and crash every downstream ``.get``/subscript caller.
+    Fall back to ``{}`` on any non-dict parse so callers always receive a dict.
+    """
+    data = read_json(get_store_status_path(store, entry_id))
+    if not isinstance(data, dict):
+        return {}
+    return cast(dict[Any, Any], data)
 
 
 def write_store_status(store: str, entry_id: str, status: dict[Any, Any]) -> None:
@@ -270,6 +280,14 @@ def cmd_orchestrator_metadata(args: argparse.Namespace) -> dict[str, Any] | None
     if status is None:
         return None
     if args.set:
+        if args.value is None:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'store': ORCHESTRATOR_STORE,
+                'error': 'wrong_parameters',
+                'message': '--set requires --value; refusing to store a null metadata value',
+            }
         if 'metadata' not in status:
             status['metadata'] = {}
         previous_value = status['metadata'].get(args.field)

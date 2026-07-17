@@ -85,8 +85,12 @@ class TestUnknownStore:
 
 
 def _git(*args: str, cwd: Path) -> None:
-    subprocess.run(
-        ['git', '-c', 'user.name=store-root-test', '-c', 'user.email=test@example.com', *args],
+    # Test-controlled fixture helper: args are hardcoded test literals plus
+    # caller-supplied git subcommands, never externally-sourced input; 'git'
+    # is resolved via PATH intentionally so the fixture works across CI
+    # runners without hardcoding an absolute git path.
+    subprocess.run(  # noqa: S603
+        ['git', '-c', 'user.name=store-root-test', '-c', 'user.email=test@example.com', *args],  # noqa: S607
         cwd=cwd,
         check=True,
         capture_output=True,

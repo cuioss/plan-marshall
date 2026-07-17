@@ -464,15 +464,56 @@ def get_store_dir(store: str, entry_id: str) -> Path:
         Path to the entry's root directory under the selected store.
 
     Raises:
-        ValueError: when ``store`` is not a known store name.
+        ValueError: when ``store`` is not a known store name, or when an
+            ``'orchestrator'`` ``entry_id`` contains a path-traversal or
+            path-separator component (``..``, ``/``, ``\\``, or an embedded
+            null byte).
     """
     if store == 'plans':
         return base_path('plans', entry_id)
     if store == 'orchestrator':
+        # entry_id (an epic slug) flows unvalidated from CLI callers straight
+        # into the main-anchored join below, and this is the single choke point
+        # for every orchestrator-store consumer — including
+        # claude_runtime.py's _read_orchestrator_title_state(slug), which reads
+        # this function directly without going through orchestrator.py's
+        # _validate_slug. Reject traversal and separator components here so no
+        # caller can escape the orchestrator/ subtree.
+        _reject_unsafe_entry_id(entry_id)
         return resolve_main_anchored_path(f'orchestrator/{entry_id}')
     raise ValueError(
         f"unknown store {store!r}: expected 'plans' or 'orchestrator'"
     )
+
+
+def _reject_unsafe_entry_id(entry_id: str) -> None:
+    """Reject an orchestrator-store ``entry_id`` that could escape the subtree.
+
+    Guards the single ``get_store_dir(store='orchestrator', ...)`` choke point
+    against path traversal (``..``), path separators (``/`` or ``\\``), and
+    embedded null bytes before the value is interpolated into a filesystem
+    join. An empty or whitespace-only value is likewise rejected — it cannot
+    name a real entry directory.
+
+    Args:
+        entry_id: Orchestrator-store entry identifier (an epic slug).
+
+    Raises:
+        ValueError: when ``entry_id`` is empty/whitespace-only or contains
+            ``..``, ``/``, ``\\``, or a null byte.
+    """
+    if not entry_id or not entry_id.strip():
+        raise ValueError('orchestrator entry_id must be a non-empty identifier')
+    if (
+        '..' in entry_id
+        or '/' in entry_id
+        or '\\' in entry_id
+        or '\x00' in entry_id
+    ):
+        raise ValueError(
+            f'unsafe orchestrator entry_id {entry_id!r}: must not contain '
+            "'..', '/', '\\', or a null byte"
+        )
 
 
 def get_plan_dir(plan_id: str) -> Path:
