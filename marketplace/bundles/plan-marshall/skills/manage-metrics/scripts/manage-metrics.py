@@ -507,6 +507,20 @@ def _worked_ms(phase: dict) -> int:
     return max(agent_ms, subagent_ms)
 
 
+def _parse_iso(value: object) -> datetime | None:
+    """Parse an ISO-8601 timestamp string to a datetime, tolerating a ``Z`` suffix.
+
+    Returns ``None`` for a missing / non-string / unparseable value so callers can
+    skip a phase whose boundary timestamp was never recorded.
+    """
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).strip().replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return None
+
+
 def cmd_generate(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
 
@@ -552,6 +566,34 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         if boundary_sum:
             phases[phase_name]['dispatch_boundary_total'] = boundary_sum
 
+    # Render-time boundary monotonicity detector. A finalize loop-back re-enters
+    # an earlier phase (e.g. 5-execute) under its own phase key, so a LATER
+    # phase's start_time can precede an EARLIER phase's already-closed end_time.
+    # Walking the canonical PHASE_NAMES order, flag any phase whose start_time
+    # precedes the maximum end_time seen so far in the sequence. This is a
+    # READ-ONLY detector — it surfaces the anomaly (a top-level
+    # `boundary_monotonicity` warning listing the phases plus a per-phase
+    # `boundary_non_monotonic` annotation) and guards the idle residual below,
+    # but NEVER mutates the recorded start_time / end_time boundary fields. The
+    # corruption it guards against is upstream, in the phase-row writes, so the
+    # detector only annotates and guards rather than rewriting the boundary. It
+    # does not touch the #812 `end_time`-keyed partial verdict.
+    non_monotonic_phases: list[str] = []
+    prior_end_dt: datetime | None = None
+    for phase_name in PHASE_NAMES:
+        if phase_name not in phases:
+            continue
+        phase = phases[phase_name]
+        start_dt = _parse_iso(phase.get('start_time'))
+        end_dt = _parse_iso(phase.get('end_time'))
+        if start_dt is not None and prior_end_dt is not None and start_dt < prior_end_dt:
+            non_monotonic_phases.append(phase_name)
+            phase['boundary_non_monotonic'] = 'true'
+        if end_dt is not None and (prior_end_dt is None or end_dt > prior_end_dt):
+            prior_end_dt = end_dt
+    if non_monotonic_phases:
+        data['boundary_monotonicity'] = ','.join(non_monotonic_phases)
+
     # Persist the per-phase idle residual back into metrics.toon before
     # rendering: idle = max(0, wall_clock - worked). Derived deterministically
     # from already-persisted fields via session-boundary inference — no new API.
@@ -561,6 +603,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         phase = phases[phase_name]
         wall_ms = _wall_clock_ms(phase)
         if wall_ms is None:
+            continue
+        if phase_name in non_monotonic_phases:
+            # Guard: a re-entered (non-monotonic) phase's wall span overlaps an
+            # earlier phase's already-closed window, so the idle residual derived
+            # from it is corrupt. Zero it rather than emit a meaningless figure;
+            # the boundary_monotonicity warning surfaces the anomaly instead.
+            phase['idle_duration_ms'] = 0
             continue
         idle_ms = max(0, wall_ms - _worked_ms(phase))
         phase['idle_duration_ms'] = idle_ms
@@ -598,6 +647,19 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # report is a floor, not a complete accounting.
     if partial:
         lines.append(f'> Partial: unrecorded phases — {", ".join(unrecorded_phases)}')
+        lines.append('')
+
+    # Boundary-monotonicity warning: when a finalize loop-back re-entered an
+    # earlier phase, a later phase's start_time precedes an earlier phase's
+    # end_time. Surface it under the heading so a reader sees the idle residual
+    # for those phases was guarded (zeroed) rather than derived from a corrupt
+    # overlapping span.
+    if non_monotonic_phases:
+        lines.append(
+            '> Boundary monotonicity warning: re-entered (non-monotonic) phase '
+            f'boundaries detected — {", ".join(non_monotonic_phases)}. Idle residual '
+            'guarded for these phases (a finalize loop-back re-enters an earlier phase).'
+        )
         lines.append('')
 
     # Collect breakdown rows (phases that exist) preserving canonical phase order.
@@ -854,6 +916,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'phases_recorded': len(phases),
         'partial': partial,
         'unrecorded_phases': unrecorded_phases,
+        'boundary_monotonicity': non_monotonic_phases,
         'total_worked_seconds': round(total_worked, 1),
         'total_wall_seconds': round(total_wall, 1),
         'total_idle_seconds': round(total_idle, 1),

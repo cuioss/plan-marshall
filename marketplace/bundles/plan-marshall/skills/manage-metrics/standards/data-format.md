@@ -62,6 +62,7 @@ session_message_count: 127
 | `idle_duration_ms` | int | Derived by `generate` — the per-phase idle residual `max(0, wall_clock_ms - worked_ms)` |
 | `dispatch_boundary_total` | int | Derived by `generate` — the sum of the `total_tokens` column across the phase's `work/metrics-dispatch-boundaries-{phase}.toon` rows. Persisted as a DISTINCT field (it never overwrites `total_tokens`); present only when the boundary file exists and sums to a truthy value. See Dispatch-Boundary Reconciliation below |
 | `inline_main_context_tokens` | int | Derived by `enrich` — `input_tokens + output_tokens + cache_creation_input_tokens` (EXCLUDING `cache_read_input_tokens`) surfaced when a phase carries BOTH a dispatched `total_tokens` AND non-zero four-field usage (the inline-step signature). Persisted as a DISTINCT field (it never overwrites `total_tokens`). See Inline Main-Context Attribution below |
+| `boundary_non_monotonic` | `true` token | Derived by `generate` — set on a phase whose `start_time` precedes the maximum `end_time` of earlier phases in canonical order (a finalize loop-back re-entry). Read-only annotation; the recorded `start_time` / `end_time` are never rewritten. See Boundary Monotonicity below |
 
 The four-field usage view (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) lives only in the raw `message.usage` dicts inside the transcripts — the single-figure `<usage>` return tag carries no input/output split and no cache fields. `enrich` accumulates these four fields per phase from BOTH the parent orchestrator turns and every discovered subagent transcript, then records `billing_weighted_total` per phase. These fields exist independently of `total_tokens`, which `enrich` leaves untouched.
 
@@ -168,6 +169,41 @@ the complementary case: a mixed phase where a dispatched total already exists.
 #### Worked <= Reported (wall) Invariant
 
 For every phase row that carries both signals, `Worked <= Reported (wall)` MUST hold. The invariant is what makes the `Idle` column non-blank for subagent-dispatching phases — when Worked could exceed wall (the prior additive formula), Idle clamped to zero and the column rendered `-`, hiding all user-wait time. The `max(agent_duration_ms, subagent_duration_ms)` definition guarantees the invariant for any phase whose dispatched subagents return within the phase window; out-of-window attribution (a subagent that overruns the boundary) cannot occur because `enrich` only attributes `<usage>` totals to phases whose `start_time..end_time` window contains the subagent's timestamp.
+
+### Boundary Monotonicity (Loop-Back Re-entry)
+
+A finalize **loop-back** re-enters an earlier phase (e.g. `5-execute`) and
+re-records its work under that phase's key. Because a later phase (`6-finalize`)
+was already closed, the re-entered phase's fresh `start_time` can end up
+preceding the earlier phase's already-recorded `end_time` — a **non-monotonic**
+boundary. The corruption is upstream, in the phase-row writes: the overlapping
+window makes the derived wall span (and therefore the `idle = max(0, wall -
+worked)` residual) meaningless.
+
+`generate` carries a **render-time monotonicity detector**. Walking the canonical
+`PHASE_NAMES` order it tracks the maximum `end_time` seen so far and flags any
+phase whose `start_time` precedes it. On a violation it:
+
+- persists the top-level `boundary_monotonicity` key (comma-joined list of the
+  offending phase names, in canonical order) to `metrics.toon`, and returns the
+  same list under `boundary_monotonicity` in the `generate` TOON;
+- stamps the per-phase `boundary_non_monotonic: true` annotation on each
+  offending phase row;
+- **guards the idle residual** for each offending phase by zeroing its
+  `idle_duration_ms` rather than deriving a corrupt figure from the overlapping
+  span; and
+- renders a `> Boundary monotonicity warning: …` marker line under the
+  `## Phase Breakdown` heading.
+
+The detector is **read-only** with respect to the boundary fields — it NEVER
+rewrites `start_time` / `end_time`, and it does not touch the `#812`
+`end_time`-keyed `partial` verdict (a re-entered phase still carries its
+`end_time`, so it stays recorded / non-`partial`). It adds no new write path; it
+reuses the existing `generate` read → annotate → write loop.
+
+| Field | Type | Source |
+|-------|------|--------|
+| `boundary_monotonicity` | list (comma-joined in `metrics.toon`, simple TOON array in the `generate` return) | Derived by `generate` — canonical-order list of phases whose `start_time` precedes an earlier phase's `end_time`; absent when every boundary is monotonic |
 
 ### Enrichment Fields
 
