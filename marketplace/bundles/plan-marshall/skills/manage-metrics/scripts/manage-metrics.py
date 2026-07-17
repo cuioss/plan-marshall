@@ -1616,6 +1616,27 @@ def _run_normalized_tokens_op(
         return per_phase, counters, status
 
 
+_INLINE_MAIN_CONTEXT_FIELDS = ('input_tokens', 'output_tokens', 'cache_creation_input_tokens')
+
+
+def _inline_main_context_sum(phase_row: dict) -> int:
+    """Sum a phase row's inline-attributable four-field usage.
+
+    ``input_tokens + output_tokens + cache_creation_input_tokens`` —
+    ``cache_read_input_tokens`` is EXCLUDED so the figure matches the
+    dispatched-``<usage>`` total definition (fed via ``end-phase
+    --total-tokens``, which also excludes cache reads). Shared by both the
+    inline-only ``total_tokens`` derivation and the mixed-phase
+    ``inline_main_context_tokens`` surfacing below — the two consumers differ
+    only in which field the sum is written to.
+    """
+    return sum(
+        int(phase_row[field])
+        for field in _INLINE_MAIN_CONTEXT_FIELDS
+        if isinstance(phase_row.get(field), (int, float))
+    )
+
+
 def cmd_enrich(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
     session_id = args.session_id
@@ -1688,15 +1709,7 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         # overwritten, so this fires only on the inline-phase signature (no prior
         # total).
         if not phase_row.get('total_tokens'):
-            inline_total = sum(
-                int(phase_row[field])
-                for field in (
-                    'input_tokens',
-                    'output_tokens',
-                    'cache_creation_input_tokens',
-                )
-                if isinstance(phase_row.get(field), (int, float))
-            )
+            inline_total = _inline_main_context_sum(phase_row)
             if inline_total:
                 phase_row['total_tokens'] = inline_total
         else:
@@ -1715,15 +1728,7 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
             # attribution surfaced alongside the dispatched total, not a
             # replacement. The #812 `end_time`-keyed partial verdict is untouched
             # — a timestamps-only inline close stays non-`partial`.
-            inline_main_context = sum(
-                int(phase_row[field])
-                for field in (
-                    'input_tokens',
-                    'output_tokens',
-                    'cache_creation_input_tokens',
-                )
-                if isinstance(phase_row.get(field), (int, float))
-            )
+            inline_main_context = _inline_main_context_sum(phase_row)
             if inline_main_context:
                 phase_row['inline_main_context_tokens'] = inline_main_context
 

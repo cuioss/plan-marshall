@@ -997,6 +997,29 @@ class TestReconcileAccumulatorIntoPhase:
         assert 'tool_uses' not in phase_data
         assert 'agent_duration_ms' not in phase_data
 
+    def test_partial_backfill_only_absent_fields(self):
+        """Only the absent fields are folded; present fields win."""
+        phase_data = {'duration_seconds': 600, 'total_tokens': 50000}
+        manage_metrics._reconcile_accumulator_into_phase(
+            phase_data, {'total_tokens': 999, 'tool_uses': 7}
+        )
+        assert phase_data['total_tokens'] == 50000  # explicit wins
+        assert phase_data['tool_uses'] == 7  # absent → folded
+
+    def test_duration_clamped_to_wall_span_during_fold(self):
+        """A folded duration_ms is clamped to the row's wall span."""
+        phase_data = {'duration_seconds': 1.0}
+        manage_metrics._reconcile_accumulator_into_phase(phase_data, {'duration_ms': 4000})
+        assert phase_data['agent_duration_ms'] == 1000
+        assert phase_data['agent_duration_seconds'] == 1.0
+
+    def test_duration_unclamped_when_wall_span_absent(self):
+        """Without a recorded wall span the folded duration flows through unclamped."""
+        phase_data: dict = {}
+        manage_metrics._reconcile_accumulator_into_phase(phase_data, {'duration_ms': 4000})
+        assert phase_data['agent_duration_ms'] == 4000
+        assert phase_data['agent_duration_seconds'] == 4.0
+
 
 # =============================================================================
 # Test: dispatch-boundary reconciliation (D1) — _read_dispatch_boundary_totals
@@ -1156,29 +1179,6 @@ class TestGenerateReconcilesDispatchBoundaries:
 
         md = (plan_context.plan_dir_for('db-recon-smaller') / 'metrics.md').read_text()
         assert 'reconciled from dispatch boundaries' not in md
-
-    def test_partial_backfill_only_absent_fields(self):
-        """Only the absent fields are folded; present fields win."""
-        phase_data = {'duration_seconds': 600, 'total_tokens': 50000}
-        manage_metrics._reconcile_accumulator_into_phase(
-            phase_data, {'total_tokens': 999, 'tool_uses': 7}
-        )
-        assert phase_data['total_tokens'] == 50000  # explicit wins
-        assert phase_data['tool_uses'] == 7  # absent → folded
-
-    def test_duration_clamped_to_wall_span_during_fold(self):
-        """A folded duration_ms is clamped to the row's wall span."""
-        phase_data = {'duration_seconds': 1.0}
-        manage_metrics._reconcile_accumulator_into_phase(phase_data, {'duration_ms': 4000})
-        assert phase_data['agent_duration_ms'] == 1000
-        assert phase_data['agent_duration_seconds'] == 1.0
-
-    def test_duration_unclamped_when_wall_span_absent(self):
-        """Without a recorded wall span the folded duration flows through unclamped."""
-        phase_data: dict = {}
-        manage_metrics._reconcile_accumulator_into_phase(phase_data, {'duration_ms': 4000})
-        assert phase_data['agent_duration_ms'] == 4000
-        assert phase_data['agent_duration_seconds'] == 4.0
 
 
 # =============================================================================
