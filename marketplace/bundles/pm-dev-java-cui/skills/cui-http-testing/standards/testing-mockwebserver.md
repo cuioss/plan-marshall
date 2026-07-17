@@ -234,6 +234,10 @@ class AutoHttpsTest {
 
 For custom certificate control, use `@TestProvidedCertificate(methodName = "createCerts")` with a static method returning `HandshakeCertificates`. For reusable certificate logic across tests, use `@TestProvidedCertificate(providerClass = MyCertProvider.class, methodName = "provide")`.
 
+### Re-Anchoring OP-Emitted URLs (Native-Container Tests)
+
+When an integration test runs a real OP (e.g. Keycloak) in a container and the client FOLLOWS a URL the OP emitted — the discovery issuer, a login form action, a PAR endpoint — the emitted URL carries the Docker-internal authority (`https://keycloak:8443`), which is unreachable from the test JVM. Provide a `toExternal()` helper that re-anchors the emitted authority to the reachable host base (`https://localhost:1443`) while preserving the raw path and query untouched, and route every followed OP-emitted URL through it. Discovery-issuer assertions must expect the realm's configured `frontendUrl`, not the host-mapped URL the test connects through.
+
 ## Response Mocking Patterns
 
 ### Error Responses
@@ -359,7 +363,7 @@ class RetryLogicTest {
 
     ModuleDispatcherElement getModuleDispatcher() {
         return new ModuleDispatcherElement() {
-            private int callCount = 0;
+            private final AtomicInteger callCount = new AtomicInteger();
 
             @Override
             public String getBaseUrl() { return "/api"; }
@@ -367,8 +371,7 @@ class RetryLogicTest {
             @Override
             public Optional<mockwebserver3.MockResponse> handleGet(
                     @NonNull mockwebserver3.RecordedRequest request) {
-                callCount++;
-                if (callCount == 1) {
+                if (callCount.incrementAndGet() == 1) {
                     return Optional.of(new mockwebserver3.MockResponse.Builder()
                         .code(500).build());
                 }
@@ -398,6 +401,17 @@ class RetryLogicTest {
     }
 }
 ```
+
+## Thread-Safe Shared Test Doubles
+
+A mutable test double (MockWebServer dispatcher, fake, or spy) is written on the test thread and read on the server's handler thread — cross-thread by construction. Two rules:
+
+- **Atomic shared state.** Every mutable field on a dispatcher/fake/spy that is accessed from more than one thread MUST use `AtomicInteger`/`AtomicReference`, `volatile`, or synchronized access. A non-atomic `callCount++` can lose increments, so a concurrency assertion reads its expected value and PASSES while the regression it guards is live — the test is green precisely when it should fail. The Retry Logic Testing example above uses `AtomicInteger` for exactly this reason.
+- **Global-state isolation.** A test that mutates process-global state (system properties, static singletons) MUST be annotated `@Isolated` (or hold the matching `@ResourceLock`) so parallel test classes cannot observe the transient mutation.
+
+## Direct Dependencies for Integration Tests
+
+A new module's integration tests that import another module's classes need a DIRECT compile-scope dependency on exactly what they import. A full-reactor build masks a missing declaration — the reactor classpath supplies the class anyway — and the isolated CI integration-test job then fails to compile. Reproduce the CI condition locally with `test-compile -pl {it-module}` WITHOUT `-am`: the isolated invocation compiles only the IT module against its declared dependencies, surfacing the drift before CI does.
 
 ## Integration with CUI Test Generator
 
