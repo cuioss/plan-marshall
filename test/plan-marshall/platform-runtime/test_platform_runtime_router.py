@@ -446,12 +446,12 @@ class TestDispatch:
             "session push-title-token",
             ["--plan-id", "my-plan", "--icon", "⏳"],
         )
-        rt.session_push_title_token.assert_called_once_with("my-plan", "⏳")
+        rt.session_push_title_token.assert_called_once_with("my-plan", "⏳", store="plans", slug=None)
 
     def test_dispatch_session_push_title_token_icon_optional(self, rt):
         """session push-title-token without --icon forwards icon=None (plain repaint)."""
         _dispatch(rt, "session push-title-token", ["--plan-id", "my-plan"])
-        rt.session_push_title_token.assert_called_once_with("my-plan", None)
+        rt.session_push_title_token.assert_called_once_with("my-plan", None, store="plans", slug=None)
 
     # ---- session bind ---------------------------------------------------------
 

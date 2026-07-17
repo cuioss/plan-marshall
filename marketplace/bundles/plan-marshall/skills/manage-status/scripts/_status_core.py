@@ -12,11 +12,13 @@ import sys
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
+from _locks_core import rmw_json
 from constants import DIR_ARCHIVED, DIR_PLANS, FILE_STATUS
 from file_ops import (
     base_path,
     get_executor_path,
     get_plan_dir,
+    get_store_dir,
     now_utc_iso,
     output_toon,
     read_json,
@@ -101,6 +103,263 @@ def normalize_metadata(status: dict[Any, Any]) -> dict[Any, Any]:
         metadata = {}
         status['metadata'] = metadata
     return metadata
+
+
+# =============================================================================
+# Orchestrator store (kind=orchestrator)
+# =============================================================================
+#
+# The orchestrator store holds epic-level status.json documents under
+# ``.plan/local/orchestrator/{slug}/`` (main-anchored via ``get_store_dir``,
+# deliverable D0). The ``kind=orchestrator`` schema is deliberately lean —
+# a three-value ``phase`` field instead of the plan phase-transition
+# machinery:
+#
+#   {kind, title, phase (init|orchestrating|closed), workstreams[],
+#    plans[]{id,slug,workstream,status,plan_marshall_plan_id,pr,landing},
+#    resume_anchor, metadata, created, updated}
+#
+# See ``standards/status-lifecycle.md`` for the schema contract.
+
+ORCHESTRATOR_STORE = 'orchestrator'
+ORCHESTRATOR_PHASES = ('init', 'orchestrating', 'closed')
+ORCHESTRATOR_LIST_FIELDS = frozenset({'workstreams', 'plans'})
+ORCHESTRATOR_UPDATABLE_FIELDS = frozenset({'phase', 'resume_anchor'}) | ORCHESTRATOR_LIST_FIELDS
+
+
+def get_store_status_path(store: str, entry_id: str) -> Path:
+    """Get the status.json path for an entry of a named store."""
+    return get_store_dir(store, entry_id) / FILE_STATUS
+
+
+def read_store_status(store: str, entry_id: str) -> dict[Any, Any]:
+    """Read status.json for a store entry (empty dict when absent or malformed).
+
+    ``read_json`` already degrades a missing/unreadable/unparseable file to the
+    default ``{}``, but a status.json whose top-level JSON is valid-but-non-dict
+    (an array, a bare string, ``null``) would otherwise flow straight into
+    ``cast(dict, ...)`` and crash every downstream ``.get``/subscript caller.
+    Fall back to ``{}`` on any non-dict parse so callers always receive a dict.
+    """
+    data = read_json(get_store_status_path(store, entry_id))
+    if not isinstance(data, dict):
+        return {}
+    return cast(dict[Any, Any], data)
+
+
+def write_store_status(store: str, entry_id: str, status: dict[Any, Any]) -> None:
+    """Write status.json for a store entry, stamping ``updated``."""
+    status['updated'] = now_utc_iso()
+    write_json(get_store_status_path(store, entry_id), status)
+
+
+def _require_orchestrator_status(args: argparse.Namespace) -> dict[Any, Any] | None:
+    """Validate the slug and read the orchestrator status, TOON error when missing."""
+    require_valid_plan_id(args)
+    status = read_store_status(ORCHESTRATOR_STORE, args.plan_id)
+    if not status:
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'store': ORCHESTRATOR_STORE,
+                'error': 'file_not_found',
+                'message': 'status.json not found in orchestrator store',
+            }
+        )
+        return None
+    return status
+
+
+def cmd_orchestrator_create(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Create a ``kind=orchestrator`` status.json under the orchestrator store."""
+    require_valid_plan_id(args)
+    status_path = get_store_status_path(ORCHESTRATOR_STORE, args.plan_id)
+    if status_path.exists() and not args.force:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'store': ORCHESTRATOR_STORE,
+            'error': 'already_exists',
+            'message': 'status.json already exists (use --force to overwrite)',
+        }
+    now = now_utc_iso()
+    status: dict[str, Any] = {
+        'kind': 'orchestrator',
+        'title': args.title,
+        'phase': ORCHESTRATOR_PHASES[0],
+        'workstreams': [],
+        'plans': [],
+        'resume_anchor': '',
+        'metadata': {},
+        'created': now,
+        'updated': now,
+    }
+    write_json(status_path, status)
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'store': ORCHESTRATOR_STORE,
+        'kind': 'orchestrator',
+        'phase': status['phase'],
+        'file': str(status_path),
+    }
+
+
+def cmd_orchestrator_read(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Read a ``kind=orchestrator`` status.json."""
+    status = _require_orchestrator_status(args)
+    if status is None:
+        return None
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'store': ORCHESTRATOR_STORE,
+        'plan': status,
+    }
+
+
+def cmd_orchestrator_update_field(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Update one top-level field of a ``kind=orchestrator`` status.json.
+
+    ``phase`` is validated against :data:`ORCHESTRATOR_PHASES`;
+    list fields (``workstreams``, ``plans``) take a JSON-array ``--value``;
+    ``resume_anchor`` stores the value verbatim.
+    """
+    status = _require_orchestrator_status(args)
+    if status is None:
+        return None
+    field = args.field
+    if field not in ORCHESTRATOR_UPDATABLE_FIELDS:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'store': ORCHESTRATOR_STORE,
+            'error': 'invalid_field',
+            'message': f'--field must be one of {sorted(ORCHESTRATOR_UPDATABLE_FIELDS)}, got: {field}',
+        }
+    value: Any = args.value
+    if field == 'phase' and value not in ORCHESTRATOR_PHASES:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'store': ORCHESTRATOR_STORE,
+            'error': 'invalid_value',
+            'message': f'--value for phase must be one of {list(ORCHESTRATOR_PHASES)}, got: {value}',
+        }
+    if field in ORCHESTRATOR_LIST_FIELDS:
+        try:
+            value = json.loads(value)
+        except ValueError:
+            value = None
+        if not isinstance(value, list):
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'store': ORCHESTRATOR_STORE,
+                'error': 'invalid_value',
+                'message': f'--value for {field} must be a JSON array',
+            }
+    # Serialize the read-modify-write behind the shared O_EXCL-guarded
+    # rmw_json critical section (the same coordination core merge_lock uses):
+    # the mutation runs against the FRESH in-lock state, so a concurrent
+    # orchestrator session mutating a DIFFERENT field cannot be clobbered by a
+    # last-writer-wins over a stale read. The orchestrator status.json is
+    # main-anchored via get_store_dir('orchestrator', ...) (ADR-002), matching
+    # rmw_json's main-anchored contract.
+    outcome: dict[str, Any] = {}
+
+    def _mutate(state: dict[str, Any]) -> dict[str, Any]:
+        outcome['previous'] = state.get(field)
+        state[field] = value
+        state['updated'] = now_utc_iso()
+        return state
+
+    rmw_json(get_store_status_path(ORCHESTRATOR_STORE, args.plan_id), _mutate)
+    result: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'store': ORCHESTRATOR_STORE,
+        'field': field,
+        'value': value,
+    }
+    if outcome.get('previous') is not None:
+        result['previous_value'] = outcome['previous']
+    return result
+
+
+def cmd_orchestrator_metadata(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Get or set a metadata field of a ``kind=orchestrator`` status.json."""
+    status = _require_orchestrator_status(args)
+    if status is None:
+        return None
+    if args.set:
+        if args.value is None:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'store': ORCHESTRATOR_STORE,
+                'error': 'wrong_parameters',
+                'message': '--set requires --value; refusing to store a null metadata value',
+            }
+        # Serialize the metadata read-modify-write behind the shared
+        # O_EXCL-guarded rmw_json critical section (the coordination core
+        # merge_lock reuses). The mutation runs against the FRESH in-lock
+        # state and touches only status['metadata'][field], so a concurrent
+        # orchestrator session setting a different metadata field (or a
+        # different top-level field) is not lost to a last-writer-wins over a
+        # stale read. Main-anchored via get_store_dir (ADR-002).
+        field = args.field
+        value = args.value
+        outcome: dict[str, Any] = {}
+
+        def _mutate(state: dict[str, Any]) -> dict[str, Any]:
+            metadata = state.get('metadata')
+            if not isinstance(metadata, dict):
+                metadata = {}
+                state['metadata'] = metadata
+            outcome['previous'] = metadata.get(field)
+            metadata[field] = value
+            state['updated'] = now_utc_iso()
+            return state
+
+        rmw_json(get_store_status_path(ORCHESTRATOR_STORE, args.plan_id), _mutate)
+        result: dict[str, Any] = {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'store': ORCHESTRATOR_STORE,
+            'field': field,
+            'value': value,
+        }
+        if outcome.get('previous') is not None:
+            result['previous_value'] = outcome['previous']
+        return result
+    if args.get:
+        metadata = status.get('metadata', {})
+        value = metadata.get(args.field)
+        if value is None:
+            return {
+                'status': 'not_found',
+                'plan_id': args.plan_id,
+                'store': ORCHESTRATOR_STORE,
+                'field': args.field,
+                'message': f"Metadata field '{args.field}' not found",
+                'available_fields': list(metadata.keys()),
+            }
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'store': ORCHESTRATOR_STORE,
+            'field': args.field,
+            'value': value,
+        }
+    return {
+        'status': 'error',
+        'plan_id': args.plan_id,
+        'store': ORCHESTRATOR_STORE,
+        'error': 'missing_operation',
+        'message': 'Either --get or --set is required',
+    }
 
 
 # =============================================================================

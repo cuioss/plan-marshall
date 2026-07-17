@@ -15,7 +15,7 @@ Operations:
     layout bundle-cache-root (no arguments)
     session capture         --plan-id <id>
     session render-title    (no arguments)
-    session push-title-token --plan-id <id>  [--icon <glyph>]
+    session push-title-token --plan-id <id>  [--icon <glyph>]  [--store plans|orchestrator]  [--slug <slug>]
     session bind            --plan-id <id>  [--session-id <id>]
     session resolve-plan    [--session-id <id>]
     session doctor          [--fix]
@@ -310,12 +310,33 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # ------------------------------------------------------------------
     if operation == "session push-title-token":
         p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session push-title-token")
-        p.add_argument("--plan-id", required=True)
+        p.add_argument("--plan-id", default=None,
+                       help="Plan identifier (required for the default plans store)")
         p.add_argument("--icon", default=None,
                        help="Optional push-mode icon glyph; omit for a plain repaint "
                             "with the default active icon")
+        p.add_argument("--store", choices=["plans", "orchestrator"], default="plans",
+                       help="State store the title state is read from; "
+                            "'orchestrator' resolves the epic's status.json via "
+                            "get_store_dir('orchestrator', slug)")
+        p.add_argument("--slug", default=None,
+                       help="Epic slug (required with --store orchestrator)")
         ns = p.parse_args(remaining)
-        return runtime.session_push_title_token(ns.plan_id, ns.icon)
+        if ns.store == "orchestrator" and not ns.slug:
+            return toon_error(
+                "session push-title-token",
+                "invalid_argument",
+                "--slug is required with --store orchestrator",
+            )
+        if ns.store == "plans" and not ns.plan_id:
+            return toon_error(
+                "session push-title-token",
+                "invalid_argument",
+                "--plan-id is required with the default plans store",
+            )
+        return runtime.session_push_title_token(
+            ns.plan_id or "", ns.icon, store=ns.store, slug=ns.slug
+        )
 
     # ------------------------------------------------------------------
     # session bind

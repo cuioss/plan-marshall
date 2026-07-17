@@ -14,8 +14,11 @@ caller passes the already-read plan state.
 
 Composition has three independent inputs:
 
-* **Body** — ``pm:{phase}[:{short}]`` for active phases, and the Completed body
-  for terminal phases (``complete`` / ``archived``). See :func:`_compose_body`.
+* **Body** — ``pm:{phase}[:{short}]`` for active phases, the Completed body
+  for terminal phases (``complete`` / ``archived``), and
+  ``Orchestrator-{SlugName}`` when the passed state dict carries
+  ``kind: orchestrator`` (the slug comes from the state's ``slug`` field).
+  See :func:`_compose_body`.
 * **Glyph** — the ``title_token`` lock-state glyph (⏳/🔒), prepended when set
   for an active phase. Suppressed for terminal phases regardless of the
   persisted token state — a finished plan holds no live lock state. See
@@ -112,6 +115,17 @@ _TERMINAL_PHASES: frozenset[str] = frozenset({"complete", "archived"})
 _BODY_PREFIX = "pm"
 _COMPLETED_PHASE_LABEL = "Completed"
 
+# --- Orchestrator body (kind == orchestrator) --------------------------------
+#
+# When the passed state dict carries ``kind: orchestrator`` the body is
+# ``Orchestrator-{SlugName}`` (slug from the state's ``slug`` field) instead of
+# the plan-scoped ``pm:{phase}[:{short}]`` form. Icon and glyph slots keep
+# their existing semantics (process icon, ``build-busy`` 🔨 override) — only
+# the body composition branches on the kind. The composer stays a pure leaf
+# function of the passed state.
+_KIND_ORCHESTRATOR = "orchestrator"
+_ORCHESTRATOR_BODY_PREFIX = "Orchestrator"
+
 
 def resolve_icon(process_state: str | None) -> str:
     """Map a target-neutral process state to the canonical process icon.
@@ -135,10 +149,13 @@ def resolve_icon(process_state: str | None) -> str:
 
 
 def _compose_body(state_dict: dict[str, object]) -> str | None:
-    """Render the title body from the plan state dict.
+    """Render the title body from the passed state dict.
 
     Returns:
 
+    - ``Orchestrator-{SlugName}`` when the state carries ``kind: orchestrator``
+      — the orchestrator body, composed from the state's ``slug`` field. The
+      plan-scoped phase fields are never consulted on this branch.
     - ``pm:{phase}:{short}`` when ``current_phase`` is an active (non-terminal)
       phase and ``short_description`` is present.
     - ``pm:{phase}`` when active and no ``short_description``.
@@ -146,10 +163,18 @@ def _compose_body(state_dict: dict[str, object]) -> str | None:
       terminal phase (``complete`` / ``archived``) — the Completed body, NOT
       ``None``, so a finished plan still renders (with the ✅ override applied by
       :func:`compose`).
-    - ``None`` only when ``current_phase`` is empty/missing (true no-op).
+    - ``None`` when ``current_phase`` is empty/missing (true no-op), or when
+      ``kind: orchestrator`` carries an empty/missing ``slug``.
 
     Pure — operates solely on the passed ``state_dict``.
     """
+    if state_dict.get("kind") == _KIND_ORCHESTRATOR:
+        slug = state_dict.get("slug")
+        slug_str = slug.strip() if isinstance(slug, str) else ""
+        if not slug_str:
+            return None
+        return f"{_ORCHESTRATOR_BODY_PREFIX}-{slug_str}"
+
     phase = state_dict.get("current_phase")
     if not phase or not isinstance(phase, str):
         return None
@@ -182,6 +207,9 @@ def compose(
             ``short_description`` (str), and optional ``title_token`` (one of
             the :data:`TITLE_TOKEN_GLYPHS` keys for a glyph state, or
             :data:`_TITLE_TOKEN_BUILD_BUSY` for the 🔨 icon-slot override).
+            Alternatively an orchestrator state — ``kind: orchestrator`` plus
+            ``slug`` (str) — which composes the ``Orchestrator-{SlugName}``
+            body; icon and glyph slots keep their existing semantics.
         process_state: The target-neutral process state driving the process icon
             — one of the :data:`PROCESS_STATES` values (``"active"``,
             ``"waiting"``, ``"busy"``, ``"done"``). ``None`` for push-mode /

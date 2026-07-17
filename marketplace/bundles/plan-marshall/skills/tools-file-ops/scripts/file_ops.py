@@ -18,6 +18,7 @@ Usage:
         get_base_dir,
         set_base_dir,
         base_path,
+        get_store_dir,
         get_temp_dir,
         get_executor_path,
         guard_worktree_cwd
@@ -38,6 +39,7 @@ from typing import Any
 from marketplace_paths import (
     PLAN_DIR_NAME,
     _find_plan_root_from_cwd,
+    resolve_main_anchored_path,
 )
 from toon_parser import serialize_toon
 
@@ -438,8 +440,87 @@ def get_temp_dir(subdir: str | None = None) -> Path:
     return temp_path
 
 
+def get_store_dir(store: str, entry_id: str) -> Path:
+    """Resolve the root directory for an entry of a named runtime-state store.
+
+    This is the ONE parameterized store-root mechanism in the manage-* path
+    layer. Each store maps to its own resolution rule:
+
+    - ``store='plans'`` — routes through the existing cwd-relative
+      :func:`base_path` (``{base_dir}/plans/{entry_id}``, ADR-002 unchanged):
+      plan state moves into the pinned worktree during phase-5+ and resolves
+      wherever the working directory is.
+    - ``store='orchestrator'`` — routes through
+      :func:`marketplace_paths.resolve_main_anchored_path`
+      (``<main-root>/.plan/local/orchestrator/{entry_id}``): orchestrator
+      state is cross-session shared state that stays main-anchored regardless
+      of caller cwd, joining the bounded main-anchored exception set.
+
+    Args:
+        store: Store name — ``'plans'`` or ``'orchestrator'``.
+        entry_id: Entry identifier within the store (a plan id or an epic id).
+
+    Returns:
+        Path to the entry's root directory under the selected store.
+
+    Raises:
+        ValueError: when ``store`` is not a known store name, or when an
+            ``'orchestrator'`` ``entry_id`` contains a path-traversal or
+            path-separator component (``..``, ``/``, ``\\``, or an embedded
+            null byte).
+    """
+    if store == 'plans':
+        return base_path('plans', entry_id)
+    if store == 'orchestrator':
+        # entry_id (an epic slug) flows unvalidated from CLI callers straight
+        # into the main-anchored join below, and this is the single choke point
+        # for every orchestrator-store consumer — including
+        # claude_runtime.py's _read_orchestrator_title_state(slug), which reads
+        # this function directly without going through orchestrator.py's
+        # _validate_slug. Reject traversal and separator components here so no
+        # caller can escape the orchestrator/ subtree.
+        _reject_unsafe_entry_id(entry_id)
+        return resolve_main_anchored_path(f'orchestrator/{entry_id}')
+    raise ValueError(
+        f"unknown store {store!r}: expected 'plans' or 'orchestrator'"
+    )
+
+
+def _reject_unsafe_entry_id(entry_id: str) -> None:
+    """Reject an orchestrator-store ``entry_id`` that could escape the subtree.
+
+    Guards the single ``get_store_dir(store='orchestrator', ...)`` choke point
+    against path traversal (``..``), path separators (``/`` or ``\\``), and
+    embedded null bytes before the value is interpolated into a filesystem
+    join. An empty or whitespace-only value is likewise rejected — it cannot
+    name a real entry directory.
+
+    Args:
+        entry_id: Orchestrator-store entry identifier (an epic slug).
+
+    Raises:
+        ValueError: when ``entry_id`` is empty/whitespace-only or contains
+            ``..``, ``/``, ``\\``, or a null byte.
+    """
+    if not entry_id or not entry_id.strip():
+        raise ValueError('orchestrator entry_id must be a non-empty identifier')
+    if (
+        '..' in entry_id
+        or '/' in entry_id
+        or '\\' in entry_id
+        or '\x00' in entry_id
+    ):
+        raise ValueError(
+            f'unsafe orchestrator entry_id {entry_id!r}: must not contain '
+            "'..', '/', '\\', or a null byte"
+        )
+
+
 def get_plan_dir(plan_id: str) -> Path:
     """Get the plan directory path for a given plan ID.
+
+    Delegates to :func:`get_store_dir` with ``store='plans'`` — behavior is
+    byte-identical to the previous direct ``base_path('plans', plan_id)``.
 
     Args:
         plan_id: Plan identifier
@@ -447,7 +528,7 @@ def get_plan_dir(plan_id: str) -> Path:
     Returns:
         Path to {base_dir}/plans/{plan_id}/
     """
-    return base_path('plans', plan_id)
+    return get_store_dir('plans', plan_id)
 
 
 class PlanNotFoundError(Exception):

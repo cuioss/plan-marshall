@@ -1,7 +1,10 @@
 = Audit Trail
 :nofooter:
 :toc: left
-:toclevels: 2
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
@@ -39,6 +42,7 @@ Invocation paths: dispatched automatically as the `post-run-review` finalize ste
 The script-executor proxy logs what already happened. The phase handshakes refuse to advance when invariants have drifted, but they refuse *at the boundary* — not the moment an off-script action fires. The trail's contribution is making the next reviewer's job tractable: "the run is on disk, in known shapes, and `plan-retrospective` can synthesize a verdict." It is the safety net under the live enforcement (xref:process-enforcement.adoc[Process Enforcement]), not a replacement for it.
 ====
 
+[#_from_dispositions_to_durable_preferences]
 == From dispositions to durable preferences
 
 The audit trail's finding dispositions are not only a record of what was done — they are a learning signal. When the same finding class repeatedly receives the same user gate-disposition (`suppressed`, `accepted`, or `taken_into_account`), that recurrence is evidence of a durable project preference. Plan Marshall promotes those recurrences into architecture hints through *two* surfaces that share one generalization-and-routing contract:
@@ -66,3 +70,4 @@ The audit trail is strictly local. Storage lives under `.plan/local/{plans,archi
 * xref:security.adoc[Concepts › Security] — the script-executor proxy that makes the audit trail comprehensive.
 * xref:skill-handling.adoc[Concepts › Skill Handling] — the `[SKILL]` log tag and how loaded context is auditable.
 * xref:process-enforcement.adoc[Concepts › Process Enforcement] — the four enforcement layers the audit trail records.
+* xref:orchestration.adoc[Concepts › Orchestration] — the orchestrator store's log-everything posture: the same record-as-side-effect discipline applied to epic-level decisions and reconciliations under `.plan/local/orchestrator/{slug}/logs/`.

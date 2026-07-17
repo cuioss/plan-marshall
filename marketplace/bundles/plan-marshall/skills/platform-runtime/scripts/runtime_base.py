@@ -268,12 +268,25 @@ class Runtime(ABC):
         """
 
     @abstractmethod
-    def session_push_title_token(self, plan_id: str, icon: str | None = None) -> str:
+    def session_push_title_token(
+        self,
+        plan_id: str,
+        icon: str | None = None,
+        store: str = "plans",
+        slug: str | None = None,
+    ) -> str:
         """Push a live terminal title for *plan_id* directly to ``/dev/tty``.
 
         Resolves the plan's title state from ``status.json``, composes the
         title string via the ``manage-terminal-title`` composer, and writes the
         OSC escape (``\\x1b]0;{composed}\\x07``) directly to ``/dev/tty``.
+
+        With ``store="orchestrator"`` the state-read seam resolves the epic's
+        ``status.json`` via ``get_store_dir('orchestrator', slug)`` (the
+        main-anchored orchestrator store) and repaints with the
+        ``Orchestrator-{SlugName}`` body composed by the same composer.
+        Gating is inherited: when the terminal-title setting is not
+        configured, the push is the existing no-op — no new config knob.
 
         This is the single repaint seam for blocking callers (e.g. a lock/build
         acquire wait) and for the ``manage-status`` phase-state-write drive seam
@@ -292,9 +305,16 @@ class Runtime(ABC):
 
         Args:
             plan_id: Plan identifier whose ``status.json`` supplies the title
-                state.
+                state (default ``plans`` store; ignored for the orchestrator
+                store).
             icon: Optional push-mode icon glyph that overrides the event-resolved
                 icon for non-terminal phases; ``None`` for a plain repaint.
+            store: State store the title state is read from — ``"plans"``
+                (default, plan-scoped ``status.json``) or ``"orchestrator"``
+                (epic ``status.json`` under the main-anchored orchestrator
+                store).
+            slug: Epic slug selecting the orchestrator-store entry; required
+                when ``store="orchestrator"``.
 
         Returns:
             Serialized TOON string (success or no-op) noting whether the push

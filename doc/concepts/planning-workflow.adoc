@@ -1,7 +1,10 @@
 = Planning Workflow
 :nofooter:
 :toc: left
-:toclevels: 2
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
@@ -84,8 +87,13 @@ Two boundaries that catch most violations:
 
 Both kinds land in the same `enriched.json` `best_practices[]` / `insights[]` schema and surface identically in the phase-3-outline Architecture Hints section — so a future outline is biased not only by what past plans *learned to fix* but by what the project has *demonstrated it prefers*.
 
+== Above the lifecycle
+
+A goal too large for one plan — a roadmap, a campaign, a multi-plan feature — is orchestrated as an *epic* by the `marshall-orchestrator` skill, which decomposes it into workstreams and staged plan specs and emits ready-to-run `/plan-marshall` commands, each of which enters this six-phase lifecycle as an ordinary plan. See xref:orchestration.adoc[Orchestration].
+
 == Related
 
+* xref:orchestration.adoc[Concepts › Orchestration] — the epic tier that sits above this lifecycle and hands work down to it
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/phases.md[`ref-workflow-architecture/standards/phases.md`] — full phase pipeline specification
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/phase-lifecycle.md[`ref-workflow-architecture/standards/phase-lifecycle.md`] — plan lifecycle states
 * link:../../marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/call-graph.md[`ref-workflow-architecture/standards/call-graph.md`] — dispatch call graph

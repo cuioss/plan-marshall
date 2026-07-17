@@ -150,7 +150,13 @@ class _ConcreteRuntime(Runtime):
     def session_render_title(self, statusline: bool = False) -> str:
         return toon_success("session render-title")
 
-    def session_push_title_token(self, plan_id: str, icon: str | None = None) -> str:
+    def session_push_title_token(
+        self,
+        plan_id: str,
+        icon: str | None = None,
+        store: str = "plans",
+        slug: str | None = None,
+    ) -> str:
         return toon_success("session push-title-token")
 
     def session_bind(self, plan_id: str, session_id: str | None = None) -> str:

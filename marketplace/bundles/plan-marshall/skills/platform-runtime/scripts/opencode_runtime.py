@@ -201,7 +201,13 @@ class OpenCodeRuntime(Runtime):
             "Use OpenCode's built-in TUI status surface for plan visibility",
         )
 
-    def session_push_title_token(self, plan_id: str, icon: str | None = None) -> str:
+    def session_push_title_token(
+        self,
+        plan_id: str,
+        icon: str | None = None,
+        store: str = "plans",
+        slug: str | None = None,
+    ) -> str:
         """No-op: OpenCode has no plugin-driven terminal-title push channel."""
         return toon_noop(
             "session push-title-token",

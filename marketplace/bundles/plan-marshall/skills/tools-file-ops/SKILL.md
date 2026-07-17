@@ -1,6 +1,6 @@
 ---
 name: tools-file-ops
-description: Base module providing reusable file operations patterns for workflow scripts
+description: Base module providing reusable file operations patterns and parameterized store-root resolution (plans, orchestrator) for workflow scripts
 user-invocable: false
 mode: knowledge
 ---
@@ -14,12 +14,12 @@ mode: knowledge
 **Execution mode**: Library module; import functions as documented in usage examples.
 
 **Prohibited actions:**
-- Do not access `.plan/` files directly; use `base_path()` for path construction
+- Do not access `.plan/` files directly; use `base_path()` or the parameterized `get_store_dir(store, entry_id)` resolver for path construction
 - Do not bypass atomic write; always use `atomic_write_file()` for writes
 - Do not construct cross-domain paths manually; use ID-based access pattern
 
 **Constraints:**
-- All path construction goes through `base_path()` or `get_base_dir()`
+- All path construction goes through `base_path()`, `get_base_dir()`, or the sanctioned `get_store_dir(store, entry_id)` store-root resolver (`store='plans'` routes through `base_path`; `store='orchestrator'` routes main-anchored via `resolve_main_anchored_path`)
 - File writes use atomic temp-file-plus-rename pattern
 - Cross-domain access uses IDs, not paths
 
@@ -66,15 +66,22 @@ Import `file_ops` module in Python scripts that write to `.plan/` directories:
 - **Output**: `Path` - full path including workflow base directory
 - **Example**: `base_path('plans', 'my-task', 'plan.md')` → `.plan/local/plans/my-task/plan.md`
 
+**4. get_store_dir(store, entry_id)**
+- **Purpose**: Resolve the root directory for an entry of a named runtime-state store — the ONE parameterized store-root mechanism
+- **Input**: `store` (str) - `'plans'` or `'orchestrator'`; `entry_id` (str) - plan id or epic id
+- **Output**: `Path` - store entry root. `'plans'` routes through `base_path('plans', entry_id)` (cwd-relative, ADR-002 unchanged); `'orchestrator'` routes through `resolve_main_anchored_path(f'orchestrator/{entry_id}')` (main-anchored shared state)
+- **Raises**: `ValueError` on unknown store values
+- **Note**: `get_plan_dir(plan_id)` delegates to `get_store_dir('plans', plan_id)` with byte-identical behavior
+
 **File Operations**
 
-**4. atomic_write_file(path, content)**
+**5. atomic_write_file(path, content)**
 - **Purpose**: Write file atomically using temp file + rename
 - **Input**: `path` (str/Path), `content` (str)
 - **Output**: None (raises on error)
 - **Pattern**: Creates temp file, writes, renames to target
 
-**5. ensure_directory(path)**
+**6. ensure_directory(path)**
 - **Purpose**: Create directory and parents if needed
 - **Input**: `path` (str/Path) - file or directory path
 - **Output**: None
@@ -82,19 +89,19 @@ Import `file_ops` module in Python scripts that write to `.plan/` directories:
 
 **TOON Output Helpers**
 
-**6. output_success(operation, **kwargs)**
+**7. output_success(operation, **kwargs)**
 - **Purpose**: Print TOON success output to stdout
 - **Input**: `operation` (str), additional kwargs
 - **Output**: Prints TOON to stdout
 
-**7. output_error(operation, error)**
+**8. output_error(operation, error)**
 - **Purpose**: Print TOON error output to stderr
 - **Input**: `operation` (str), `error` (str)
 - **Output**: Prints TOON to stderr
 
 **Script Entry Point**
 
-**8. safe_main(main_fn)**
+**9. safe_main(main_fn)**
 - **Purpose**: Decorator for script entry points; catches unhandled exceptions and outputs TOON error
 - **Input**: `main_fn` - the main function (must return int or None)
 - **Output**: Wrapped function that calls `sys.exit()` internally
@@ -102,23 +109,23 @@ Import `file_ops` module in Python scripts that write to `.plan/` directories:
 
 **Metadata Functions**
 
-**9. parse_markdown_metadata(content)**
+**10. parse_markdown_metadata(content)**
 - **Purpose**: Parse key=value metadata from markdown
 - **Input**: `content` (str) - full file content
 - **Output**: `dict` - metadata key-value pairs
 - **Format**: Supports `key=value` and `key.subkey=value` (dot notation)
 
-**10. generate_markdown_metadata(data)**
+**11. generate_markdown_metadata(data)**
 - **Purpose**: Generate key=value metadata block
 - **Input**: `data` (dict) - metadata to serialize
 - **Output**: `str` - formatted metadata block
 
-**11. update_markdown_metadata(content, updates)**
+**12. update_markdown_metadata(content, updates)**
 - **Purpose**: Update specific metadata fields in markdown content
 - **Input**: `content` (str), `updates` (dict)
 - **Output**: `str` - updated content
 
-**12. get_metadata_content_split(content)**
+**13. get_metadata_content_split(content)**
 - **Purpose**: Split markdown content into metadata and body
 - **Input**: `content` (str)
 - **Output**: `tuple[str, str]` - (metadata_block, body_content)
@@ -176,11 +183,12 @@ if __name__ == '__main__':
 ## Python Usage
 
 ```python
-from file_ops import base_path, atomic_write_file, output_success, output_error
+from file_ops import base_path, get_store_dir, atomic_write_file, output_success, output_error
 from constants import STATUS_SUCCESS, FILE_STATUS, PHASES, DIR_PLANS
 
-# Resolve plan directory paths
-plan_dir = base_path('plans', plan_id)  # Returns Path to .plan/local/plans/{plan_id}
+# Resolve store-entry root paths (the ONE parameterized store-root mechanism)
+plan_dir = get_store_dir('plans', plan_id)  # Returns Path to .plan/local/plans/{plan_id}
+epic_dir = get_store_dir('orchestrator', epic_id)  # Main-anchored: <main>/.plan/local/orchestrator/{epic_id}
 artifacts = base_path('plans', plan_id, 'artifacts')
 
 # Atomic file writes (temp file + rename for crash safety)

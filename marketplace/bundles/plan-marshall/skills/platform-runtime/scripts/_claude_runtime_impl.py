@@ -429,7 +429,13 @@ class ClaudeRuntime(Runtime):
             pass
         return ""
 
-    def session_push_title_token(self, plan_id: str, icon: str | None = None) -> str:
+    def session_push_title_token(
+        self,
+        plan_id: str,
+        icon: str | None = None,
+        store: str = "plans",
+        slug: str | None = None,
+    ) -> str:
         """Push a live terminal title for *plan_id* directly to ``/dev/tty``.
 
         Reads the plan's title state from ``status.json`` via
@@ -437,6 +443,16 @@ class ClaudeRuntime(Runtime):
         :func:`manage_terminal_title.compose` (with *icon* as the push-mode icon
         override and ``event=None``), and writes the OSC escape
         (``\\x1b]0;{composed}\\x07``) directly to ``/dev/tty``.
+
+        With ``store="orchestrator"`` the state read routes through
+        :func:`claude_runtime._read_orchestrator_title_state` instead — the
+        epic's ``status.json`` resolved via ``get_store_dir('orchestrator',
+        slug)`` — and the composer renders the ``Orchestrator-{SlugName}``
+        body. Everything downstream of the state read (compose, ``/dev/tty``
+        write, best-effort gating) is shared with the plans-store path, so the
+        inherited terminal-title gating applies unchanged: an absent /
+        unrenderable state or an unopenable ``/dev/tty`` stays the existing
+        no-op — no new config knob.
 
         ``icon`` is optional. When supplied it overrides the event-resolved icon
         for non-terminal phases (e.g. the lock ⏳/🔒 or build 🔨 glyph). When
@@ -451,18 +467,23 @@ class ClaudeRuntime(Runtime):
 
         Returns a success TOON noting whether the push reached a TTY.
         """
-        state = claude_runtime._read_title_state(plan_id)
+        if store == "orchestrator":
+            state = claude_runtime._read_orchestrator_title_state(slug or "")
+            entry_fields: dict[str, Any] = {"store": store, "slug": slug or ""}
+        else:
+            state = claude_runtime._read_title_state(plan_id)
+            entry_fields = {"plan_id": plan_id}
         if state is None:
             return toon_success(
                 "session push-title-token",
-                {"plan_id": plan_id, "pushed": False, "reason": "no_title_state"},
+                {**entry_fields, "pushed": False, "reason": "no_title_state"},
             )
 
         composed = compose(state, None, icon_override=icon)
         if not composed:
             return toon_success(
                 "session push-title-token",
-                {"plan_id": plan_id, "pushed": False, "reason": "no_title_state"},
+                {**entry_fields, "pushed": False, "reason": "no_title_state"},
             )
 
         pushed = False
@@ -476,7 +497,7 @@ class ClaudeRuntime(Runtime):
 
         return toon_success(
             "session push-title-token",
-            {"plan_id": plan_id, "pushed": pushed},
+            {**entry_fields, "pushed": pushed},
         )
 
     def session_bind(self, plan_id: str, session_id: str | None = None) -> str:
