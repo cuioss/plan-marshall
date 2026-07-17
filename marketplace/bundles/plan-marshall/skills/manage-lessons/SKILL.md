@@ -105,6 +105,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add 
 - `--title` (required): Lesson title
 - `--bundle`: Optional bundle reference
 - `--rule`: Rule identity — required for `--category arch-constraint` (the dedup key). When an active `arch-constraint` lesson already covers the rule, `add` reinforces it (recurrence_count bump + `## Recurrence` section) and returns the existing id with `action: reinforced` instead of allocating a new lesson.
+- `--allow-foreign-store`: Bypass the cross-repo wrong-store guard — file the lesson even when the resolved main-anchored store repo does not own the `--component` bundle. Without this flag, a mismatch refuses with `error: wrong_store`. Skipped under test overrides (`PLAN_BASE_DIR`).
 
 **Output** (TOON):
 ```toon
@@ -411,6 +412,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons from
   - `component`: Component name (defaults to "unknown")
   - `error`: Error message (required)
   - `solution`: Optional solution description
+- `--allow-foreign-store`: Bypass the cross-repo wrong-store guard — file the lesson even when the resolved main-anchored store repo does not own the context `component` bundle. Without this flag, a mismatch refuses with `error: wrong_store`. Skipped under test overrides (`PLAN_BASE_DIR`).
 
 **Output** (TOON):
 ```toon
@@ -546,6 +548,7 @@ The classification logic for the read-side corpus operations lives under `refere
 | `file_read_error` | `set-body --file PATH` failed with an `OSError` while reading (permission denied, I/O error, etc.) |
 | `malformed_lesson` | `set-body` target lesson file is missing its metadata header / title structure |
 | `missing_required` | Required parameter missing |
+| `wrong_store` | `add` / `from-error` refused: the resolved main-anchored lessons store repo does not own the component's bundle (the bundle segment of `--component`/context `component` has no `marketplace/bundles/{bundle}` directory in that repo). Bypass with `--allow-foreign-store`. Skipped under test overrides (`PLAN_BASE_DIR`) |
 
 ---
 
@@ -562,10 +565,11 @@ restating the command inline.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component COMPONENT --category {bug|improvement|anti-pattern|arch-constraint} --title TEXT \
-  [--bundle BUNDLE] [--rule RULE]
+  [--bundle BUNDLE] [--rule RULE] [--allow-foreign-store]
 ```
 
 `--rule` is required when `--category arch-constraint` (the dedup key); ignored for other categories.
+`--allow-foreign-store` bypasses the cross-repo wrong-store guard (see [Error Responses](#error-responses) → `wrong_store`).
 
 ### update
 
@@ -624,8 +628,10 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons aggr
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons from-error \
-  --context JSON
+  --context JSON [--allow-foreign-store]
 ```
+
+`--allow-foreign-store` bypasses the cross-repo wrong-store guard (see [Error Responses](#error-responses) → `wrong_store`).
 
 ### remove
 

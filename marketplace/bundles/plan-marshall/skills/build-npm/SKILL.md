@@ -40,6 +40,7 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 
 - **run**: Additional `--working-dir` (monorepo nested frontends) and `--env` (e.g., `"NODE_ENV=test CI=true"`) parameters. Result includes `command_type` field (`npm`/`npx`)
 - **coverage-report**: Searches `coverage/coverage-summary.json` (Jest/Istanbul), `coverage/lcov.info` (LCOV), `dist/coverage/coverage-summary.json`. Reports `function`/`statement` metrics instead of JaCoCo's `instruction`/`method`
+- **check-warnings**: Additional `--warning-baseline BASELINE` parameter (npm-only; Maven/Gradle do not register this flag). When omitted, behavior is unchanged (no gate). When set, the result gains a `gate` block (`baseline`, `actual`, `status: pass|fail`) computed from `actual = fixable + unknown`, and the command exits 1 when `actual` exceeds `baseline`
 - **discover**: Detects workspaces from `package.json` `workspaces` field (npm/yarn) and `pnpm-workspace.yaml` `packages` field (pnpm). Commands are conditional on available scripts
 
 ### Producer-Side Finding Storage (`run --plan-id`)
@@ -111,8 +112,11 @@ python3 .plan/execute-script.py plan-marshall:build-npm:npm coverage-report \
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-npm:npm check-warnings \
   [--warnings WARNINGS] [--acceptable-warnings ACCEPTABLE_WARNINGS] \
+  [--warning-baseline BASELINE] \
   (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
 ```
+
+`--warning-baseline` (npm-only) gates the command: when set, exit code is 1 if `fixable + unknown` warning count exceeds `BASELINE`.
 
 ### discover
 
