@@ -54,7 +54,7 @@ Read `re_review_on_branch_cleanup` off the returned `params` object (default: `t
      fetch_findings --pr-number {pr_number} --plan-id {plan_id}
    ```
 
-   Then enumerate the pending `pr-comment` findings and dispatch the consolidated `verification-feedback` (`producer=pr-comment`) pass exactly as documented in [`../../automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § "Consumer: enumerate pending pr-comment findings" and § "Dispatch the per-finding triage core" — the dispatch runs the single batched `manage-findings ingest`, the TOP-LEVEL-only triage, and the `post_responses` RESPOND loop for the rebased HEAD, reusing the existing pipeline rather than the retired per-finding dispatch. Log the re-review outcome:
+   The re-filed findings remain `pending` in the store — `automatic-review` is FIND-only and dispatches no triage of its own (see [`../../automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § "Findings await the unified triage"). They are consumed by the dispatcher-owned unified wait-region triage (`producer=finalize-feedback`), which runs the single batched `manage-findings ingest`, the TOP-LEVEL-only triage, and the `post_responses` RESPOND loop over the union of pending `pr-comment` ∪ `sonar-issue` findings for the rebased HEAD (see [`../SKILL.md`](../SKILL.md) Step 3 item 7c). Log the re-review outcome:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
