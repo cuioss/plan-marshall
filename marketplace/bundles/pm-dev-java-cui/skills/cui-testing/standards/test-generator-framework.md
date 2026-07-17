@@ -169,6 +169,8 @@ static TypedGenerator<String> createStringGenerator() {
 }
 ```
 
+**Runtime reflective access — beware package-private `@Nested` classes.** A `@TypeGeneratorMethodSource` whose factory method resolves through a package-private `@Nested` test class compiles cleanly but fails at runtime with `IllegalAccessException` when the parameterized method executes — JUnit's reflective invocation cannot reach a method on a non-public nested class. Prefer `@TypeGeneratorSource` with a public `static` generator class over `@TypeGeneratorMethodSource` with a factory on a package-private `@Nested` class; if a method source is required, make the declaring class accessible (e.g. declare the nested class `public`).
+
 ### @TypeGeneratorFactorySource
 
 Uses a factory class with parameters to create generators:
