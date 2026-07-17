@@ -362,7 +362,7 @@ def _warn_args(warnings: list[dict], *, baseline: int | None = None, with_baseli
 
 
 def test_warning_baseline_satisfied_reports_pass_gate(capsys):
-    """actionable <= baseline → gate.status pass; the gate adds no failure."""
+    """actionable <= baseline → gate.status pass and the gate is authoritative for exit 0."""
     args = _warn_args([_warn('one'), _warn('two')], baseline=2)
 
     exit_code = cmd_check_warnings_base(args, matcher='substring')
@@ -371,9 +371,9 @@ def test_warning_baseline_satisfied_reports_pass_gate(capsys):
     assert output['gate']['baseline'] == 2
     assert output['gate']['actual'] == 2
     assert output['gate']['status'] == 'pass'
-    # actionable == baseline, so the gate does not raise the exit code; the two
-    # fixable warnings still drive exit 1 via the pre-existing base logic.
-    assert exit_code == 1
+    # A supplied baseline overrides the base fixable/unknown exit rule: the gate
+    # passing exits 0 even though two fixable (actionable > 0) warnings were found.
+    assert exit_code == 0
 
 
 def test_warning_baseline_satisfied_all_acceptable_exits_zero(capsys):
@@ -433,5 +433,6 @@ def test_npm_cli_warning_baseline_gates():
     assert 'fail' in exceeded.stdout
 
     satisfied = run_script(script, 'check-warnings', '--warnings', warnings, '--warning-baseline', '5')
-    # gate passes (actionable 2 <= 5); base logic still exits 1 on fixable warnings.
+    # gate passes (actionable 2 <= 5) and is authoritative for the exit code.
     assert 'pass' in satisfied.stdout
+    assert satisfied.returncode == 0

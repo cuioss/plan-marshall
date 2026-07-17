@@ -53,7 +53,11 @@ def _npm_check_warnings_extra_args(warn_parser):
         '--warning-baseline',
         dest='warning_baseline',
         type=int,
-        help='Fail (exit 1) when actionable warnings (fixable + unknown) exceed this committed baseline',
+        help=(
+            'Gate the exit code on this committed baseline: exit 0 when '
+            'actionable warnings (fixable + unknown) are at or under it, '
+            'exit 1 when they exceed it'
+        ),
     )
 
 

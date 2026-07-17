@@ -116,12 +116,12 @@ Parameters:
 ### Output
 
 ```text
-ADR Created: doc/adr/004-{title}.adoc
-Number: ADR-004
+ADR Created: doc/adr/0004-{title}.adoc
+Number: ADR-0004
 Status: Proposed
 
 Next steps:
-1. Edit doc/adr/004-{title}.adoc to fill in:
+1. Edit doc/adr/0004-{title}.adoc to fill in:
    - Context
    - Decision
    - Consequences
