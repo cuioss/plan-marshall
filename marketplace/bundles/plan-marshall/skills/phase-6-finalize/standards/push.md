@@ -51,7 +51,37 @@ Parse `status` from the returned TOON. The contract is **fail-closed**: only `st
 
 The freshness gate is **complementary to**, NOT redundant with, the `pre-push-quality-gate` step. The quality-gate verifies *what the code is* (mypy + ruff + tests on the on-disk tree); freshness verifies *that the most recent `verify` run actually observed this version of the code*. A worktree that was modified after the most recent successful build passes neither: the quality-gate may pass against the new tree if the orchestrator re-runs it, but the freshness gate fails because no `kind=build` change-ledger entry carries the current working-tree `worktree_sha`. The two gates together close the gap that `loop-exit-guard` cannot close on its own — `loop-exit-guard` answers "is the queue empty?" while freshness answers "has a `verify` run actually observed this version of the code?"
 
-The `--force` escape mirrors phase-5 Step 12a's escape — orchestrator-only, log-recorded, never auto-invoked. When the orchestrator drives finalize with `--force` AND the freshness gate returned a non-`fresh` status, the dispatcher records a `decision`-level WARNING (`(plan-marshall:phase-6-finalize:push) Worktree-freshness precondition overridden via --force — proceeding with status={status}` — append `reason={reason}` only when status is `undecidable`; the `stale` branch does not emit a `reason` field) and then allows `push` to proceed.
+#### Finalize-internal re-stale reconciliation (documented — replaces the silent `--force`)
+
+A `stale` status has two distinct causes, and only ONE is a genuine defect:
+
+- **Genuine un-built source drift** — source was edited after the last successful `verify`, and no build observed the current tree. This MUST stay fail-closed (halt per the table above).
+- **Finalize-internal re-stale (known-safe)** — a finalize-internal `mutates_source: true` step (`era-stamp-fill`, `lessons-capture`, `sync-plugin-cache`) committed DURING finalize, advancing the working-tree `worktree_sha` past the last `kind=build` ledger entry. The source a `verify` DID observe is unchanged; only a finalize-owned commit moved the currency hash. Overriding this silently with `--force` discards the distinction and the audit trail.
+
+Before failing closed on `stale`, the executor MUST determine which cause applies by consulting the **reconciliation record** the dispatcher emits at `phase-6-finalize/SKILL.md` Step 3 item 5f(d) immediately after a finalize-internal `mutates_source` commit. Resolve the current HEAD:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Then read the decision log for a freshness-reconcile record naming that HEAD:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  read --plan-id {plan_id} --type decision
+```
+
+- **A reconciliation record names the current HEAD as a finalize-internal commit** (marker `(plan-marshall:phase-6-finalize:freshness-reconcile)` carrying `commit_sha={HEAD}`, the producing `step_id`, and the prior successful-build `worktree_sha`): the `stale` is the known-safe finalize-internal case. Emit a legible `decision`-level reconciliation confirmation and PROCEED to **Execution** below — the gate is reconciled for a documented reason, NOT silently overridden:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO \
+    --message "(plan-marshall:phase-6-finalize:push) Freshness reconciled — stale worktree_sha={worktree_sha} attributable to finalize-internal commit {commit_sha} from step {step_id}; prior successful-build worktree_sha={prior_build_worktree_sha}. Proceeding to push against a documented reconciliation, not a silent override."
+  ```
+
+- **No reconciliation record names the current HEAD**: the `stale` is genuine un-built source drift. Fail closed per the table above — halt, record `outcome=failed`, do NOT push.
+
+The `--force` escape survives only as the orchestrator-only, log-recorded, never-auto-invoked manual override for the genuine-drift case (mirroring phase-5 Step 12a's escape) — it is NOT the mechanism for the finalize-internal re-stale, which is now handled by the reconciliation record above. When the orchestrator drives finalize with `--force` AND the gate returned a non-`fresh` status with NO matching reconciliation record, the dispatcher records a `decision`-level WARNING (`(plan-marshall:phase-6-finalize:push) Worktree-freshness precondition overridden via --force — proceeding with status={status}` — append `reason={reason}` only when status is `undecidable`; the `stale` branch does not emit a `reason` field) and then allows `push` to proceed.
 
 ## Execution
 
