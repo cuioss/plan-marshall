@@ -85,9 +85,9 @@ Each subagent transcript is summed as a whole and attributed to the single phase
 
 `generate` reconciles each phase's recorded `total_tokens` against the durable
 dispatch-boundaries sum (the `total_tokens` column summed across the phase's
-`work/metrics-dispatch-boundaries-{phase}.toon` rows). `generate` is now the
-**first consumer** of the dispatch-boundaries file — previously it was a
-write-only audit trail read only by `plan-retrospective`.
+`work/metrics-dispatch-boundaries-{phase}.toon` rows). `generate` reads the
+dispatch-boundaries file as a reconciliation source; `plan-retrospective` also
+reads it, as an audit trail.
 
 The per-phase accumulator (`work/metrics-accumulator-{phase}.toon`) and the
 dispatch-boundaries file record the **same population**: every dispatched leaf
@@ -97,7 +97,7 @@ appears once in each. They diverge only when a leaf's Step-8b
 *under-count* relative to the boundary sum. Because the two measure the same
 leaves, the non-double-counting reconciliation is:
 
-```
+```text
 reported = max(total_tokens, dispatch_boundary_total)   # NOT a sum
 ```
 
@@ -139,7 +139,7 @@ parent-window `message.usage` four-field view into the phase row.
 
 The derivation matches the inline-only `total_tokens` narrowing:
 
-```
+```text
 inline_main_context_tokens = input_tokens + output_tokens + cache_creation_input_tokens
 ```
 
@@ -172,10 +172,10 @@ For every phase row that carries both signals, `Worked <= Reported (wall)` MUST 
 
 ### Boundary Monotonicity (Loop-Back Re-entry)
 
-A finalize **loop-back** re-enters an earlier phase (e.g. `5-execute`) and
+A finalize **loop-back** re-enters a prior phase (e.g. `5-execute`) and
 re-records its work under that phase's key. Because a later phase (`6-finalize`)
 was already closed, the re-entered phase's fresh `start_time` can end up
-preceding the earlier phase's already-recorded `end_time` — a **non-monotonic**
+preceding a prior phase's already-recorded `end_time` — a **non-monotonic**
 boundary. The corruption is upstream, in the phase-row writes: the overlapping
 window makes the derived wall span (and therefore the `idle = max(0, wall -
 worked)` residual) meaningless.
@@ -203,7 +203,7 @@ reuses the existing `generate` read → annotate → write loop.
 
 | Field | Type | Source |
 |-------|------|--------|
-| `boundary_monotonicity` | list (comma-joined in `metrics.toon`, simple TOON array in the `generate` return) | Derived by `generate` — canonical-order list of phases whose `start_time` precedes an earlier phase's `end_time`; absent when every boundary is monotonic |
+| `boundary_monotonicity` | list (comma-joined in `metrics.toon`, simple TOON array in the `generate` return) | Derived by `generate` — canonical-order list of phases whose `start_time` precedes a prior phase's `end_time`; absent when every boundary is monotonic |
 
 ### Enrichment Fields
 
