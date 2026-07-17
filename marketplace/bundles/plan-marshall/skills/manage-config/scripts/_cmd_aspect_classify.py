@@ -27,6 +27,7 @@ responsibility (phase-1-init), keeping the LLM out of the script body.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from recipe_scoring import tokenize
@@ -87,13 +88,17 @@ _NEGATION_PHRASES: tuple[str, ...] = (
 def _match_negation_phrase(request_text: str) -> str | None:
     """Return the matched negation phrase from the raw request text, if any.
 
-    Case-insensitive substring match over the fixed ``_NEGATION_PHRASES``
-    table, longest phrase first so the most specific phrase is reported
-    (e.g. ``'no builds'`` wins over its ``'no build'`` prefix).
+    Case-insensitive word-boundary match (``\\b``-anchored regex) over the
+    fixed ``_NEGATION_PHRASES`` table, longest phrase first so the most
+    specific phrase is reported (e.g. ``'no builds'`` wins over its
+    ``'no build'`` prefix). Word boundaries prevent substring false
+    positives where a phrase appears inside a larger token — e.g.
+    ``"mono build"`` contains ``"no build"`` as a substring but MUST NOT
+    trigger the negation override.
     """
     lowered = request_text.lower()
     for phrase in sorted(_NEGATION_PHRASES, key=len, reverse=True):
-        if phrase in lowered:
+        if re.search(r'\b' + re.escape(phrase) + r'\b', lowered):
             return phrase
     return None
 

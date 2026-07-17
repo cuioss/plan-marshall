@@ -311,6 +311,44 @@ def test_negation_free_sub_threshold_request_unchanged():
     assert 'negative_constraint_matched' not in result
 
 
+def test_longest_negation_phrase_wins_when_both_no_build_and_no_builds_present():
+    """When the request contains BOTH 'no build' and 'no builds', the longer wins.
+
+    'no builds' is a superstring of 'no build'; the sort-by-length-descending
+    precedence must report 'no builds' (the more specific phrase), not its
+    'no build' prefix.
+    """
+    result = cmd_aspect_classify(
+        _ns('Refactor the docs; no build now and no builds later either'),
+    )
+
+    assert result['drops_build_steps'] is True
+    assert result['negative_constraint_matched'] == 'no builds'
+
+
+def test_no_build_substring_inside_larger_token_does_not_trigger_override():
+    """'mono build' must NOT match 'no build' — word boundaries block the substring hit.
+
+    Before the word-boundary fix, 'mono build' contained 'no build' as a
+    substring ('mo[no build]') and falsely triggered the negation override.
+    The request carries no genuine negation, so it must fall back to the
+    implementation gate-keeping default.
+    """
+    result = cmd_aspect_classify(_ns('Set up a mono build for the workspace'))
+
+    assert result['aspect'] == 'implementation'
+    assert result['drops_build_steps'] is False
+    assert 'negative_constraint_matched' not in result
+
+
+def test_no_verify_substring_inside_larger_token_does_not_trigger_override():
+    """'chrono verify' must NOT match 'no verify' — word boundaries block the substring hit."""
+    result = cmd_aspect_classify(_ns('Add a chrono verify step to the pipeline'))
+
+    assert result['drops_build_steps'] is False
+    assert 'negative_constraint_matched' not in result
+
+
 def test_negation_override_survives_tokenization_hostile_text():
     """The phrase match keys on the raw text, not the token set.
 
