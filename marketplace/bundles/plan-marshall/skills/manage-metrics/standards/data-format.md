@@ -61,6 +61,7 @@ session_message_count: 127
 | `billing_weighted_total` | int | Derived by `enrich` from the four-field view: `input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)`. A billing-cost figure, NOT a work-comparable measure |
 | `idle_duration_ms` | int | Derived by `generate` — the per-phase idle residual `max(0, wall_clock_ms - worked_ms)` |
 | `dispatch_boundary_total` | int | Derived by `generate` — the sum of the `total_tokens` column across the phase's `work/metrics-dispatch-boundaries-{phase}.toon` rows. Persisted as a DISTINCT field (it never overwrites `total_tokens`); present only when the boundary file exists and sums to a truthy value. See Dispatch-Boundary Reconciliation below |
+| `inline_main_context_tokens` | int | Derived by `enrich` — `input_tokens + output_tokens + cache_creation_input_tokens` (EXCLUDING `cache_read_input_tokens`) surfaced when a phase carries BOTH a dispatched `total_tokens` AND non-zero four-field usage (the inline-step signature). Persisted as a DISTINCT field (it never overwrites `total_tokens`). See Inline Main-Context Attribution below |
 
 The four-field usage view (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) lives only in the raw `message.usage` dicts inside the transcripts — the single-figure `<usage>` return tag carries no input/output split and no cache fields. `enrich` accumulates these four fields per phase from BOTH the parent orchestrator turns and every discovered subagent transcript, then records `billing_weighted_total` per phase. These fields exist independently of `total_tokens`, which `enrich` leaves untouched.
 
@@ -118,6 +119,43 @@ staying safe under the same-population invariant. The reconciliation is
 
 The `#812` `partial` / `unrecorded_phases` completeness verdict (which keys off
 `end_time` only) is untouched by this reconciliation.
+
+### Inline Main-Context Attribution
+
+An **inline** step runs in the orchestrator's own (main) context rather than as a
+dispatched subagent, so it produces no `<usage>` envelope and contributes nothing
+to the per-phase accumulator — there is no per-step `<usage>` source. Its cost is
+instead captured by `enrich`'s phase-window attribution, which sums the
+parent-window `message.usage` four-field view into the phase row.
+
+`enrich` surfaces that inline contribution as the distinct
+`inline_main_context_tokens` field on any phase that carries **both**:
+
+- a truthy dispatched `total_tokens` (recorded by a dispatched step's `<usage>` /
+  the accumulator), AND
+- non-zero four-field `message.usage` (the inline-step signature — the `6-finalize`
+  case where dispatched steps AND inline finalize steps both ran).
+
+The derivation matches the inline-only `total_tokens` narrowing:
+
+```
+inline_main_context_tokens = input_tokens + output_tokens + cache_creation_input_tokens
+```
+
+`cache_read_input_tokens` is **excluded** so the figure matches the
+dispatched-`<usage>` total definition (which is fed via `end-phase --total-tokens`
+and excludes cache reads); including it would over-count the inline contribution
+by ~100× versus comparable dispatched rows. The field is **explicit-wins**: it is
+surfaced ALONGSIDE `total_tokens`, never overwriting it, and `generate` renders it
+as a reconciliation line under the phase total in `metrics.md`. This attribution
+does not touch the `#812` `end_time`-keyed `partial` verdict — a timestamps-only
+inline close stays non-`partial`.
+
+When a phase carries four-field usage but **no** dispatched `total_tokens` (the
+pure inline-only phase — `1-init`, recipe-inline refine/outline), the same sum is
+folded directly into `total_tokens` instead (see the inline-derivation note in
+`cmd_generate` / the `enrich` writer). The `inline_main_context_tokens` field is
+the complementary case: a mixed phase where a dispatched total already exists.
 
 ### Worked, Reported (Wall), and Idle Time
 

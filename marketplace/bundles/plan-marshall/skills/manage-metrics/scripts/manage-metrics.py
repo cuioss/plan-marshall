@@ -802,6 +802,15 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                 '(reconciled from dispatch boundaries; same-population max with total_tokens)'
             )
 
+        inline_main_context = phase.get('inline_main_context_tokens')
+        if inline_main_context:
+            lines.append(
+                f'- **Inline main-context tokens**: {int(inline_main_context):,} '
+                '(inline-step cost attributed via enrich phase-window usage — '
+                'input + output + cache_creation, excludes cache_read; surfaced '
+                'alongside the dispatched total, never replacing it)'
+            )
+
         tool_uses = phase.get('tool_uses')
         if tool_uses:
             lines.append(f'- **Tool uses**: {int(tool_uses)}')
@@ -1621,6 +1630,33 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
             )
             if inline_total:
                 phase_row['total_tokens'] = inline_total
+        else:
+            # The phase already carries a dispatched total_tokens (subagent
+            # `<usage>` / accumulator). When enrich has ALSO attributed non-zero
+            # main-context four-field usage to this window, the phase ran BOTH
+            # dispatched steps AND inline main-context steps — the 6-finalize
+            # signature: an inline finalize step produces no dispatched `<usage>`
+            # envelope, yet enrich attributes the parent-window `message.usage`
+            # onto the row. Surface that inline contribution as a DISTINCT
+            # inline_main_context_tokens field, derived the same way as the
+            # inline-only branch above — input_tokens + output_tokens +
+            # cache_creation_input_tokens, EXCLUDING cache_read_input_tokens so
+            # the figure matches the dispatched-`<usage>` total definition. This
+            # NEVER overwrites total_tokens (explicit-wins); it is a per-inline
+            # attribution surfaced alongside the dispatched total, not a
+            # replacement. The #812 `end_time`-keyed partial verdict is untouched
+            # — a timestamps-only inline close stays non-`partial`.
+            inline_main_context = sum(
+                int(phase_row[field])
+                for field in (
+                    'input_tokens',
+                    'output_tokens',
+                    'cache_creation_input_tokens',
+                )
+                if isinstance(phase_row.get(field), (int, float))
+            )
+            if inline_main_context:
+                phase_row['inline_main_context_tokens'] = inline_main_context
 
     write_metrics(plan_id, data)
 
