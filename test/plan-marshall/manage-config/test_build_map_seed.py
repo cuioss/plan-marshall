@@ -896,7 +896,7 @@ def test_seed_persists_live_glob_and_prunes_dead_glob(plan_context, monkeypatch)
 # exists to provide: a project whose build config files (``package.json``) live
 # ONLY in subdirectories — never at repo root — must still (1) carry the
 # bare-basename config route in the seeded ``build.map`` (it survives the
-# tree-presence prune because ``_route_matches`` matches a bare-basename route by
+# tree-presence prune because ``route_matches`` matches a bare-basename route by
 # basename anywhere in the tree) and (2) resolve to a ``build`` verdict when the
 # plan footprint touches one of those subdirectory-only config files.
 #
@@ -920,7 +920,7 @@ class _MultiModuleSubdirConfigExtension(BuildExtensionBase):
     Models a multi-module JS project whose build config lives only in
     per-module subdirectories (``module-a/package.json``, ``module-b/package.json``)
     — never at repo root. The bare-basename ``package.json`` route (no ``/``) must
-    match those subdir-only files via the basename regime of ``_route_matches``, so
+    match those subdir-only files via the basename regime of ``route_matches``, so
     it survives the seed's tree-presence prune. Declares itself applicable so the
     applicability filter keeps the domain.
     """

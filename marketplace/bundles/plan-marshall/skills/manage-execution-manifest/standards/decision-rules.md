@@ -122,7 +122,7 @@ When `commit_and_push == true` (or absent — the default is `true`), the pre-fi
 
 - `marshal.json::build.map` is absent or carries no `glob` entries, OR
 - the live plan footprint is empty, OR
-- No entry in the live footprint matches any glob in `build_map_globs` (using `fnmatch.fnmatch`).
+- No entry in the live footprint matches any glob in `build_map_globs` (using the shared two-regime matcher `extension_base.route_matches`: a bare-basename glob — no `/` — matches the path's basename anywhere in the tree; a path-bearing glob matches the full repo-relative path with a single `*` spanning `/`).
 
 **Effect**: `pre-push-quality-gate` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-push-quality-gate` was already removed by `commit_push_disabled`, this pre-filter is a no-op and emits no log entry.
 

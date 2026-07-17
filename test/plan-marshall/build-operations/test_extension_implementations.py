@@ -679,10 +679,10 @@ def test_plugin_dev_not_applicable_to_plain_module():
 
 
 def test_documents_only_documentation_profile():
-    """pm-documents should only define core and documentation profiles."""
+    """pm-documents defines core, documentation, and implementation profiles."""
     ext = load_extension('pm-documents')
     domains = ext.get_skill_domains()[0]
-    assert set(domains['profiles'].keys()) == {'core', 'documentation'}
+    assert set(domains['profiles'].keys()) == {'core', 'documentation', 'implementation'}
 
 
 def test_documents_applies_to_doc_module():

@@ -87,8 +87,11 @@ class BuildExtension(BuildExtensionBase):
         """Return the npm build system's explicit ``(pattern, role)`` build_map routes.
 
         Each route is a single-``*`` fnmatch glob paired with a resolved role.
-        Patterns are matched with ``fnmatch.fnmatch`` by the downstream
-        ``manage-execution-manifest`` consumer, where a single ``*`` spans ``/``.
+        Patterns are matched with the shared two-regime matcher
+        (``extension_base.route_matches``) by every downstream consumer: a
+        bare-basename route (no ``/``) matches the path's basename anywhere in
+        the tree, while a path-bearing route matches the full repo-relative
+        path with a single ``*`` spanning ``/``.
         For each JS/TS suffix the extension declares a broad production route
         (e.g. ``*.js``) plus the more-specific colocated-test routes
         (``*.spec.js`` / ``*.test.js``); the seed aggregator's longest-glob-wins

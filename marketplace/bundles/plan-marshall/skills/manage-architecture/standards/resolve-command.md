@@ -6,7 +6,7 @@ This document is the authoritative source for the augmented fields. The base res
 
 ## Augmented Fields
 
-When the resolved `executable` matches the Bucket B build shape, the result carries these four fields in addition to the base `status`, `module`, `command`, `executable`, and `resolution_level`:
+When the resolved `executable` matches the Bucket B build shape, the result carries these four fields in addition to the base `status`, `module`, `command`, `executable`, `resolution_level`, and (when authored) `mutating` (see [Authored `mutating` signal](#authored-mutating-signal)):
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -105,6 +105,31 @@ LLMs that read this TOON MUST follow the rule documented in `persona-plan-marsha
 
 The `hint` field is a recognition token, not optional prose — its presence in the TOON is the structural signal that the contract applies.
 
+## Authored `mutating` signal
+
+A resolved command MAY carry an optional `mutating: true` field. The field is **authored, never inferred**: the operator lists source-mutating profile ids in the `build.maven.profiles.mutating` ext-defaults key (CSV, symmetric with `build.maven.profiles.skip` / `build.maven.profiles.map.canonical`), build-maven's command-map builder stamps `mutating: true` onto every command-map entry derived from a listed profile, and `resolve` surfaces the field additively from the resolved entry. Absence of the field means "not authored as mutating" — unknown, not safe; there is no inferred `mutating: false`.
+
+The canonical trigger is an OpenRewrite-bearing profile: a `quality-gate` that resolves `verify -Ppre-commit` rewrites tracked sources in place, which is destructive when run against a worktree carrying uncommitted work.
+
+**Gate-context behavioural contract**: a worktree gate context (per-task verification, per-deliverable focused build, end-of-phase sweep, pre-push gate) SHOULD prefer a non-mutating candidate when one resolves for the same canonical, and MUST NOT run a `mutating: true` command as the pre-push worktree gate without operator confirmation. The signal rides through `derive-verification`'s command rows unchanged (the deriver copies the resolved dict), so a derived gate command carries the same field.
+
+Example:
+
+```toon
+status: success
+module: my-service
+command: quality-gate
+executable: python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Ppre-commit"
+resolution_level: module
+mutating: true
+bash_timeout_seconds: 600
+exceeds_bash_ceiling: false
+execution_tier: per_task
+hint: "Pass timeout=600000 (bash_timeout_seconds * 1000) on the Bash call"
+```
+
+The example carries the four-field execution-tier augmentation (`bash_timeout_seconds` / `exceeds_bash_ceiling` / `execution_tier` / `hint`) because its `executable` is a Bucket B build notation — the `mutating` stamp composes with that augmentation, it does not replace it.
+
 ## Build-class → verification command
 
 `architecture derive-verification --changed-artifacts PATH1,PATH2,...` is the single deterministic consumer of the `build_map` file-to-build contract. It classifies each changed-artifact path to a `build_class` via the merged `build_map` (seed ∪ user overrides, longest-glob-wins), groups by `build_class`, and emits the architecture-resolved verification command set per the closed mapping below. This table is the **single source of truth** for the build_class → command mapping — `manage-execution-manifest` and `phase-4-plan` consume the deriver, they do not re-derive the table.
@@ -117,6 +142,8 @@ The `build_class` value **names the canonical command directly** — there is no
 | `module-tests` | test | `architecture resolve --command test-compile --module {M}` **+** `architecture resolve --command module-tests --module {M}` |
 | `verify` | config | `architecture resolve --command verify --module {M}` (full reactor for the affected module) |
 | `none` | any | (no command — a changed set whose only role yields `none` derives no build) |
+
+**Maven IT-signature routing note**: Maven test paths matching the Failsafe naming signature (`*IT.java` / `IT*.java` / `*ITCase.java` under `src/test`) route to the `verify` build_class — the Failsafe-bound full-module gate — rather than `module-tests`, because Surefire's default include patterns exclude them and the plain `test` goal would execute zero of the changed tests. The routing lives in the build-maven extension's `classify_build_class` override; the enum itself is unchanged.
 
 `{M}` is the module resolved per changed path by longest `paths.module` prefix (the finest granularity the architecture API resolves). Derived commands are de-duplicated by their resolved `executable`, so N changed production files in one module derive **one** `compile`, not N. A changed set whose only classification is `none` derives **zero** Python builds — this is the structural property that ends the docs-only build recurrence.
 

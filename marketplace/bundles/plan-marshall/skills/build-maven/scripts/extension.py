@@ -18,8 +18,9 @@ sibling build-gradle extension.
 """
 
 import fnmatch
+from posixpath import basename
 
-from extension_base import BuildExtensionBase
+from extension_base import BUILD_CLASS_BUILD_CONFIG_FULL, BuildExtensionBase
 
 
 class BuildExtension(BuildExtensionBase):
@@ -93,14 +94,21 @@ class BuildExtension(BuildExtensionBase):
         """Return the Maven build system's explicit ``(pattern, role)`` build_map routes.
 
         Each route is a single-``*`` fnmatch glob paired with a resolved role.
-        Patterns are matched with ``fnmatch.fnmatch`` by the downstream
-        ``manage-execution-manifest`` consumer, where a single ``*`` spans ``/``,
+        Patterns are matched with the shared two-regime matcher
+        (``extension_base.route_matches``) by every downstream consumer: a
+        bare-basename route (no ``/``) matches the path's basename anywhere in
+        the tree, while a path-bearing route matches the full repo-relative
+        path with a single ``*`` spanning ``/``,
         so the ``src/main`` / ``src/test`` Maven convention splits production from
         test by location: ``*/src/main/*.java`` covers every production source
         under any module's ``src/main`` tree (the leading ``*/`` admits the
         nested-module layout) and ``src/main/*.java`` covers the repo-root
         single-module layout; the parallel ``src/test`` routes claim test
-        sources. The Maven-standard resource trees are routed the same way and
+        sources. Dedicated IT routes (``*IT.java`` / ``*ITCase.java`` /
+        ``IT*.java`` under ``src/test``) sit above the generic test routes by
+        glob-length specificity so ``classify_build_class`` stamps them with
+        the Failsafe-bound ``verify`` build_class at seed time. The
+        Maven-standard resource trees are routed the same way and
         listed first: ``*/src/main/resources/*`` and ``src/main/resources/*``
         claim resources under ``production``, the parallel ``src/test/resources``
         routes claim them under ``test`` — extension-independent, since a
@@ -119,14 +127,55 @@ class BuildExtension(BuildExtensionBase):
             ('src/test/resources/*', 'test'),
             ('*/src/main/*.java', 'production'),
             ('src/main/*.java', 'production'),
+            ('*/src/test/*IT.java', 'test'),
+            ('src/test/*IT.java', 'test'),
+            ('*/src/test/*ITCase.java', 'test'),
+            ('src/test/*ITCase.java', 'test'),
+            ('*/src/test/IT*.java', 'test'),
+            ('src/test/IT*.java', 'test'),
             ('*/src/test/*.java', 'test'),
             ('src/test/*.java', 'test'),
             ('pom.xml', 'config'),
             ('*.sh', 'config'),
         ]
 
-    # build_class: this extension claims the ``production`` / ``test`` /
-    # ``config`` roles, for which the BuildExtensionBase defaults
-    # (``production → compile``, ``test → module-tests``,
-    # ``config → verify``) are correct. No classify_build_class
-    # override is required — the inherited base default is the contract.
+    # Failsafe's default inclusion patterns — the Maven integration-test naming
+    # signature. A test file whose basename matches one of these is executed by
+    # the Failsafe plugin (bound to the ``verify`` lifecycle phase), NOT by
+    # Surefire's plain ``test`` goal, whose default includes EXCLUDE them.
+    _IT_BASENAME_PATTERNS: tuple[str, ...] = ('*IT.java', 'IT*.java', '*ITCase.java')
+
+    def classify_build_class(self, path: str, role: str) -> str:
+        """Route Maven IT-signature test paths to the Failsafe-bound ``verify`` gate.
+
+        The base role→build_class default maps ``test → module-tests`` — the
+        module's plain Surefire ``test`` goal. Surefire's default includes
+        exclude the Failsafe IT naming patterns (``*IT.java`` / ``IT*.java`` /
+        ``*ITCase.java``), so that gate executes zero of a changed IT file's
+        tests and reports success. IT-signature test paths therefore route to
+        the existing ``verify`` build_class — the full-module reactor gate that
+        runs the Failsafe plugin — keeping the build_class enum a closed
+        4-value contract with no new member.
+
+        Accepts both real paths and route-pattern strings: the build_map seed
+        stamps each ``(pattern, role)`` route via this method at seed time, and
+        an IT route's basename (e.g. ``*IT.java``) matches its own signature
+        pattern under fnmatch, so the seeded IT routes carry
+        ``build_class=verify`` while the generic ``*/src/test/*.java`` route
+        keeps the ``module-tests`` default.
+
+        Args:
+            path: A repo-relative path or a route-pattern string claimed under
+                ``role``.
+            role: The role this extension claimed the path under.
+
+        Returns:
+            ``verify`` for ``test``-role paths whose basename matches the IT
+            naming signature; the inherited base default otherwise.
+        """
+        if role == 'test' and any(
+            fnmatch.fnmatchcase(basename(path), pattern)
+            for pattern in self._IT_BASENAME_PATTERNS
+        ):
+            return BUILD_CLASS_BUILD_CONFIG_FULL
+        return super().classify_build_class(path, role)

@@ -34,6 +34,9 @@ from pathlib import Path
 # extension_base is importable: conftest._setup_marketplace_pythonpath() adds
 # script-shared/scripts/extension/ to sys.path.
 from extension_base import (
+    BUILD_CLASS_BUILD_CONFIG_FULL,
+    BUILD_CLASS_PROD_COMPILE,
+    BUILD_CLASS_TEST_RUN,
     BUILD_MAP_ROLES,
     BuildExtensionBase,
 )
@@ -378,3 +381,99 @@ def test_classify_globs_uses_single_star_not_recursive():
     ext = BuildExtension()
     for pattern, _role in ext.classify_globs():
         assert '**' not in pattern
+
+
+# --- Failsafe IT routing: lesson 2026-07-16-16-001 issue 1 -------------------
+#
+# Maven's generic */src/test/*.java route claims *IT.java / IT*.java /
+# *ITCase.java files under role test, whose base default maps to module-tests —
+# the plain Surefire test goal. Surefire's default includes EXCLUDE the IT
+# naming patterns, so the derived gate executed zero of the changed tests and
+# reported success. IT-signature paths must route to the Failsafe-bound verify
+# build_class instead.
+
+
+def test_it_suffix_java_under_src_test_resolves_verify_build_class():
+    """A FooIT.java under src/test resolves the Failsafe-bound verify gate."""
+    ext = BuildExtension()
+    assert (
+        ext.classify_build_class('src/test/java/com/example/RestApiGatewayIT.java', 'test')
+        == BUILD_CLASS_BUILD_CONFIG_FULL
+    )
+    assert (
+        ext.classify_build_class(
+            'module-a/src/test/java/com/example/FooIT.java', 'test'
+        )
+        == BUILD_CLASS_BUILD_CONFIG_FULL
+    )
+
+
+def test_it_prefix_and_itcase_java_resolve_verify_build_class():
+    """The IT*.java and *ITCase.java sibling signatures also route to verify."""
+    ext = BuildExtension()
+    assert (
+        ext.classify_build_class('src/test/java/com/example/ITFooGateway.java', 'test')
+        == BUILD_CLASS_BUILD_CONFIG_FULL
+    )
+    assert (
+        ext.classify_build_class('src/test/java/com/example/FooITCase.java', 'test')
+        == BUILD_CLASS_BUILD_CONFIG_FULL
+    )
+
+
+def test_plain_test_java_still_resolves_module_tests():
+    """A plain FooTest.java keeps the Surefire module-tests default."""
+    ext = BuildExtension()
+    assert (
+        ext.classify_build_class('src/test/java/com/example/FooTest.java', 'test')
+        == BUILD_CLASS_TEST_RUN
+    )
+    assert (
+        ext.classify_build_class(
+            'module-a/src/test/java/com/example/BarTest.java', 'test'
+        )
+        == BUILD_CLASS_TEST_RUN
+    )
+
+
+def test_it_signature_outside_test_role_keeps_base_default():
+    """The IT signature discriminates only test-role paths — other roles unaffected."""
+    ext = BuildExtension()
+    assert ext.classify_build_class('pom.xml', 'config') == BUILD_CLASS_BUILD_CONFIG_FULL
+    assert (
+        ext.classify_build_class('src/main/java/com/example/ITHelper.java', 'production')
+        == BUILD_CLASS_PROD_COMPILE
+    )
+
+
+def test_classify_build_class_accepts_route_pattern_strings():
+    """The seed stamps (pattern, role) routes via classify_build_class — IT route
+    patterns must stamp verify, the generic test route keeps module-tests."""
+    ext = BuildExtension()
+    assert (
+        ext.classify_build_class('*/src/test/*IT.java', 'test')
+        == BUILD_CLASS_BUILD_CONFIG_FULL
+    )
+    assert (
+        ext.classify_build_class('src/test/*ITCase.java', 'test')
+        == BUILD_CLASS_BUILD_CONFIG_FULL
+    )
+    assert (
+        ext.classify_build_class('*/src/test/IT*.java', 'test')
+        == BUILD_CLASS_BUILD_CONFIG_FULL
+    )
+    assert ext.classify_build_class('*/src/test/*.java', 'test') == BUILD_CLASS_TEST_RUN
+
+
+def test_classify_globs_declares_it_routes_with_role_test():
+    """The dedicated IT routes are declared under role test, above the generic rows."""
+    ext = BuildExtension()
+    routes = ext.classify_globs()
+    assert ('*/src/test/*IT.java', 'test') in routes
+    assert ('src/test/*IT.java', 'test') in routes
+    assert ('*/src/test/*ITCase.java', 'test') in routes
+    assert ('src/test/*ITCase.java', 'test') in routes
+    assert ('*/src/test/IT*.java', 'test') in routes
+    assert ('src/test/IT*.java', 'test') in routes
+    patterns = [pattern for pattern, _role in routes]
+    assert patterns.index('*/src/test/*IT.java') < patterns.index('*/src/test/*.java')

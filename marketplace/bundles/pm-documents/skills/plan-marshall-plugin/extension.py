@@ -65,6 +65,15 @@ class Extension(ExtensionBase):
                             },
                         ],
                     },
+                    # Documentation-module skill alias: phase-4-plan's closed task-profile
+                    # enum looks up skills_by_profile.implementation for every deliverable,
+                    # so documentation modules must declare the profile or doc tasks ship
+                    # with an empty skill set. The core doc skills fold in via
+                    # _build_applicable_result's core-merge.
+                    'implementation': {
+                        'defaults': [],
+                        'optionals': [],
+                    },
                 },
             }
         ]

@@ -155,12 +155,40 @@ def test_classify_changed_path_longest_glob_wins():
         ]
     }
     # The longer, more specific glob (none) wins over the broad *.py (compile).
-    assert classify_changed_path('pm-mod/generated/foo.py', merged) == 'none'
+    assert classify_changed_path('pm-mod/generated/foo.py', merged) == ('none', 'd')
 
 
 def test_classify_changed_path_unmatched_returns_none():
     """A path no glob matches classifies to None (unclaimed)."""
     assert classify_changed_path('unrelated/file.txt', _BUILD_MAP) is None
+
+
+def test_classify_changed_path_nested_pom_matches_bare_basename_route():
+    """A nested ``services/auth/pom.xml`` is claimed by a bare ``pom.xml`` route.
+
+    The bare-basename regime of the shared matcher (``route_matches``) matches
+    a route with no ``/`` against the path's basename anywhere in the tree —
+    the semantics the aggregator has always used. The pre-fix deriver matched
+    the full path with ``fnmatch.fnmatch``, so every nested descriptor on a
+    multi-module reactor went unclaimed (``classified_count: 0`` — lesson
+    2026-07-16-17-012, TokenSheriff).
+    """
+    merged = {
+        'java': [
+            {'glob': 'pom.xml', 'role': 'config', 'build_class': 'verify'},
+        ]
+    }
+    assert classify_changed_path('services/auth/pom.xml', merged) == ('verify', 'java')
+
+
+def test_classify_changed_path_bare_basename_no_false_positive():
+    """A bare-basename route claims only exact-basename matches, not siblings."""
+    merged = {
+        'javascript': [
+            {'glob': 'package.json', 'role': 'config', 'build_class': 'verify'},
+        ]
+    }
+    assert classify_changed_path('ui/package-lock.json', merged) is None
 
 
 # =============================================================================
@@ -185,6 +213,132 @@ def test_resolve_module_for_path_newly_created_file_resolves():
         _seed(str(project))
         # File does not exist on disk / inventory — prefix resolution still works.
         assert resolve_module_for_path('pm-mod/scripts/brand_new.py', str(project)) == 'pm-mod'
+
+
+# =============================================================================
+# Virtual-sibling domain-affinity tie-break (lesson 2026-07-16-16-001 issue 2)
+# =============================================================================
+
+# The npm build_map domain routes for the virtual-sibling fixture: a production
+# JS file under the shared physical path is claimed by the javascript domain.
+_SIBLING_BUILD_MAP = {
+    'javascript': [
+        {'glob': 'e-2-e-playwright/utils/*.js', 'role': 'production', 'build_class': 'compile'},
+    ],
+}
+
+
+def _virtual_module_derived(base_name: str, technology: str, sibling_technology: str) -> dict:
+    """A virtual-sibling derived payload sharing ``paths.module`` with its sibling."""
+    name = f'{base_name}-{technology}'
+    derived = _module_derived(name, base_name)
+    derived['build_systems'] = [technology]
+    derived['virtual_module'] = {
+        'physical_path': base_name,
+        'technology': technology,
+        'sibling_modules': [f'{base_name}-{sibling_technology}'],
+    }
+    return derived
+
+
+def _seed_virtual_siblings(project_dir: str) -> None:
+    """Seed maven+npm virtual siblings at the same physical path plus the build_map."""
+    save_project_meta(
+        {
+            'name': 'virtual-sibling-test',
+            'description': '',
+            'description_reasoning': '',
+            'extensions_used': [],
+            'modules': {'e-2-e-playwright-maven': {}, 'e-2-e-playwright-npm': {}},
+        },
+        project_dir,
+    )
+    save_module_derived(
+        'e-2-e-playwright-maven',
+        _virtual_module_derived('e-2-e-playwright', 'maven', 'npm'),
+        project_dir,
+    )
+    save_module_derived(
+        'e-2-e-playwright-npm',
+        _virtual_module_derived('e-2-e-playwright', 'npm', 'maven'),
+        project_dir,
+    )
+    marshal = Path(project_dir) / '.plan' / 'marshal.json'
+    marshal.parent.mkdir(parents=True, exist_ok=True)
+    marshal.write_text(json.dumps({'build': {'map': _SIBLING_BUILD_MAP}}, indent=2), encoding='utf-8')
+
+
+def test_resolve_module_for_path_prefers_domain_affine_sibling():
+    """On a virtual-sibling specificity tie, the sibling whose technology serves
+    the winning domain wins (npm → javascript), not the alphabetically-first
+    Maven wrapper (lesson 2026-07-16-16-001 issue 2).
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / 'project'
+        project.mkdir()
+        _seed_virtual_siblings(str(project))
+        resolved = resolve_module_for_path(
+            'e-2-e-playwright/utils/constants.js', str(project), preferred_domain='javascript'
+        )
+        assert resolved == 'e-2-e-playwright-npm'
+
+
+def test_resolve_module_for_path_alphabetical_fallback_without_affinity():
+    """Without a discriminating domain affinity, the alphabetical tie-break holds."""
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / 'project'
+        project.mkdir()
+        _seed_virtual_siblings(str(project))
+        # No preferred domain — pure alphabetical: maven < npm.
+        assert (
+            resolve_module_for_path('e-2-e-playwright/utils/constants.js', str(project))
+            == 'e-2-e-playwright-maven'
+        )
+        # A domain neither sibling's technology serves — alphabetical fallback.
+        assert (
+            resolve_module_for_path(
+                'e-2-e-playwright/utils/constants.js', str(project), preferred_domain='python'
+            )
+            == 'e-2-e-playwright-maven'
+        )
+
+
+def test_resolve_module_for_path_java_affinity_selects_maven_sibling():
+    """A java-domain claim resolves the Maven sibling on the same tie."""
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / 'project'
+        project.mkdir()
+        _seed_virtual_siblings(str(project))
+        resolved = resolve_module_for_path(
+            'e-2-e-playwright/src/main/java/App.java', str(project), preferred_domain='java'
+        )
+        assert resolved == 'e-2-e-playwright-maven'
+
+
+def test_production_js_under_maven_wrapper_derives_npm_compile():
+    """End-to-end lesson 2026-07-16-16-001 issue 2: a production JS file under
+    an npm virtual module with a Maven-wrapper sibling at the same physical path
+    derives the npm module's compile — not the wrapper's Maven goal.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / 'project'
+        project.mkdir()
+        _seed_virtual_siblings(str(project))
+
+        result = cmd_derive_verification(
+            Namespace(
+                changed_artifacts='e-2-e-playwright/utils/constants.js',
+                project_dir=str(project),
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert result['classified_count'] == 1
+        assert result['unclaimed'] == []
+        verbs = {c['command'] for c in result['commands']}
+        assert verbs == {'compile'}
+        assert any('compile e-2-e-playwright-npm' in e for e in _executables(result))
+        assert not any('e-2-e-playwright-maven' in e for e in _executables(result))
 
 
 # =============================================================================
@@ -366,6 +520,90 @@ def test_deriver_is_deterministic():
         first = cmd_derive_verification(args)
         second = cmd_derive_verification(args)
         assert first == second
+
+
+def test_it_route_stamped_verify_derives_failsafe_gate():
+    """A seeded IT route stamped build_class=verify derives the module's verify
+    executable — not the Surefire test goal — for a changed *IT.java artifact
+    (lesson 2026-07-16-16-001 issue 1).
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / 'project'
+        project.mkdir()
+        build_map = {
+            'java': [
+                {'glob': '*/src/test/*IT.java', 'role': 'test', 'build_class': 'verify'},
+                {'glob': '*/src/test/*.java', 'role': 'test', 'build_class': 'module-tests'},
+            ],
+        }
+        _seed(str(project), build_map=build_map)
+
+        result = cmd_derive_verification(
+            Namespace(
+                changed_artifacts='pm-mod/src/test/java/com/example/RestApiGatewayIT.java',
+                project_dir=str(project),
+            )
+        )
+
+        assert result['status'] == 'success'
+        verbs = {c['command'] for c in result['commands']}
+        assert verbs == {'verify'}
+        assert any('verify pm-mod' in e for e in _executables(result))
+
+
+def test_plain_test_java_still_derives_module_tests_beside_it_route():
+    """A plain FooTest.java under the same seeded map keeps the module-tests ladder."""
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / 'project'
+        project.mkdir()
+        build_map = {
+            'java': [
+                {'glob': '*/src/test/*IT.java', 'role': 'test', 'build_class': 'verify'},
+                {'glob': '*/src/test/*.java', 'role': 'test', 'build_class': 'module-tests'},
+            ],
+        }
+        _seed(str(project), build_map=build_map)
+
+        result = cmd_derive_verification(
+            Namespace(
+                changed_artifacts='pm-mod/src/test/java/com/example/FooTest.java',
+                project_dir=str(project),
+            )
+        )
+
+        assert result['status'] == 'success'
+        verbs = {c['command'] for c in result['commands']}
+        assert verbs == {'test-compile', 'module-tests'}
+
+
+def test_nested_pom_against_bare_route_derives_verify():
+    """A nested pom.xml against a seeded bare ``pom.xml`` route classifies
+    non-zero and derives the module's ``verify`` executable (lesson
+    2026-07-16-17-012 end-to-end).
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / 'project'
+        project.mkdir()
+        build_map = {
+            'java': [
+                {'glob': 'pom.xml', 'role': 'config', 'build_class': 'verify'},
+            ],
+        }
+        _seed(str(project), build_map=build_map)
+
+        result = cmd_derive_verification(
+            Namespace(
+                changed_artifacts='pm-mod/services/auth/pom.xml',
+                project_dir=str(project),
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert result['classified_count'] == 1
+        assert result['unclaimed'] == []
+        verbs = {c['command'] for c in result['commands']}
+        assert verbs == {'verify'}
+        assert any('verify pm-mod' in e for e in _executables(result))
 
 
 def test_empty_build_map_yields_all_unclaimed():
