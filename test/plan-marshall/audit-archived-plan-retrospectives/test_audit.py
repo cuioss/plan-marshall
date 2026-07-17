@@ -127,7 +127,7 @@ def test_metrics_check_carries_this_plan_pr_boundary():
     # the real PR at finalize. This is the co-changing mirror of the audit.py
     # CHECK_ERA constant — the pair changes together and is the designated
     # acceptance for era-fill firing from a composed manifest.
-    assert audit.CHECK_ERA["metrics"] == "PR-PENDING"
+    assert audit.CHECK_ERA["metrics"] == "#922"
 
 
 def test_merge_window_accounting_carries_this_plan_pr_boundary():

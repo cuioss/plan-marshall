@@ -286,7 +286,7 @@ CHECK_ERA: dict[str, str] = {
     # idle guard. Those ARE the per-phase token/duration recording mechanics the
     # `metrics` check verifies, so pre-fix archived rows read as era-expected and
     # post-fix rows as regressions. (bumped from #875.)
-    "metrics": "PR-PENDING",
+    "metrics": "#922",
     # track-selection-accuracy — #875 (plan-13's boundary): verifies the
     # classify-before-route lane signals (change_type + scope_estimate
     # pre-classified before the router runs). Unaffected by this plan.
