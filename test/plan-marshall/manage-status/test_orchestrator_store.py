@@ -15,7 +15,10 @@ Covers:
 """
 
 import json
+import threading
 from argparse import Namespace
+
+import pytest
 
 from conftest import get_script_path, load_script_module, run_script
 
@@ -358,3 +361,73 @@ class TestPlansStoreRegression:
 
         assert not (plan_context.plans_dir / 'separation-epic').joinpath('status.json').exists()
         assert _orchestrator_status_file(plan_context, 'separation-epic').exists()
+
+
+# =============================================================================
+# Concurrency: serialized read-modify-write (PR #915 finding 63cf41)
+# =============================================================================
+
+
+class TestOrchestratorConcurrentWrites:
+    """The orchestrator-store status.json read-modify-write is serialized behind
+    the shared ``_locks_core.rmw_json`` O_EXCL guard, so two concurrent sessions
+    mutating the same document cannot lose a write (last-writer-wins over a stale
+    read), and the guard is released on the error path.
+    """
+
+    def test_should_not_lose_interleaved_metadata_writes(self, plan_context):
+        cmd_orchestrator_create(_create_args('race-epic'))
+
+        rounds = 20
+        start = threading.Barrier(2)
+        errors: list[Exception] = []
+
+        def _setter(field: str) -> None:
+            try:
+                start.wait()
+                for i in range(rounds):
+                    cmd_orchestrator_metadata(
+                        Namespace(
+                            plan_id='race-epic', set=True, get=False, field=field, value=f'{field}-{i}'
+                        )
+                    )
+            except Exception as exc:  # noqa: BLE001 - surfaced into the assertion below
+                errors.append(exc)
+
+        thread_a = threading.Thread(target=_setter, args=('alpha',))
+        thread_b = threading.Thread(target=_setter, args=('beta',))
+        thread_a.start()
+        thread_b.start()
+        thread_a.join()
+        thread_b.join()
+
+        assert not errors
+        content = json.loads(_orchestrator_status_file(plan_context, 'race-epic').read_text(encoding='utf-8'))
+        # No lost update: BOTH concurrently-written fields survived. Each set
+        # merged into the FRESH in-lock state rather than clobbering the whole
+        # document from a stale snapshot.
+        assert content['metadata']['alpha'] == f'alpha-{rounds - 1}'
+        assert content['metadata']['beta'] == f'beta-{rounds - 1}'
+
+    def test_should_release_lock_on_mutate_error(self, plan_context):
+        cmd_orchestrator_create(_create_args('err-epic'))
+        status_path = _orchestrator_status_file(plan_context, 'err-epic')
+        guard_path = status_path.with_name(status_path.name + '.lock')
+
+        def _boom(_state):
+            raise RuntimeError('mutate failed')
+
+        with pytest.raises(RuntimeError, match='mutate failed'):
+            _core.rmw_json(status_path, _boom)
+
+        # The O_EXCL guard is removed in rmw_json's finally even when the
+        # mutation raises — a leaked guard would wedge every later writer.
+        assert not guard_path.exists()
+
+        # And the critical section is immediately re-acquirable afterwards.
+        result = cmd_orchestrator_metadata(
+            Namespace(plan_id='err-epic', set=True, get=False, field='owner', value='ok')
+        )
+        assert result['status'] == 'success'
+        content = json.loads(status_path.read_text(encoding='utf-8'))
+        assert content['metadata']['owner'] == 'ok'

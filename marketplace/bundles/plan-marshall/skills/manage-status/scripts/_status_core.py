@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
+from _locks_core import rmw_json
 from constants import DIR_ARCHIVED, DIR_PLANS, FILE_STATUS
 from file_ops import (
     base_path,
@@ -259,9 +260,22 @@ def cmd_orchestrator_update_field(args: argparse.Namespace) -> dict[str, Any] | 
                 'error': 'invalid_value',
                 'message': f'--value for {field} must be a JSON array',
             }
-    previous = status.get(field)
-    status[field] = value
-    write_store_status(ORCHESTRATOR_STORE, args.plan_id, status)
+    # Serialize the read-modify-write behind the shared O_EXCL-guarded
+    # rmw_json critical section (the same coordination core merge_lock uses):
+    # the mutation runs against the FRESH in-lock state, so a concurrent
+    # orchestrator session mutating a DIFFERENT field cannot be clobbered by a
+    # last-writer-wins over a stale read. The orchestrator status.json is
+    # main-anchored via get_store_dir('orchestrator', ...) (ADR-002), matching
+    # rmw_json's main-anchored contract.
+    outcome: dict[str, Any] = {}
+
+    def _mutate(state: dict[str, Any]) -> dict[str, Any]:
+        outcome['previous'] = state.get(field)
+        state[field] = value
+        state['updated'] = now_utc_iso()
+        return state
+
+    rmw_json(get_store_status_path(ORCHESTRATOR_STORE, args.plan_id), _mutate)
     result: dict[str, Any] = {
         'status': 'success',
         'plan_id': args.plan_id,
@@ -269,8 +283,8 @@ def cmd_orchestrator_update_field(args: argparse.Namespace) -> dict[str, Any] | 
         'field': field,
         'value': value,
     }
-    if previous is not None:
-        result['previous_value'] = previous
+    if outcome.get('previous') is not None:
+        result['previous_value'] = outcome['previous']
     return result
 
 
@@ -288,20 +302,37 @@ def cmd_orchestrator_metadata(args: argparse.Namespace) -> dict[str, Any] | None
                 'error': 'wrong_parameters',
                 'message': '--set requires --value; refusing to store a null metadata value',
             }
-        if 'metadata' not in status:
-            status['metadata'] = {}
-        previous_value = status['metadata'].get(args.field)
-        status['metadata'][args.field] = args.value
-        write_store_status(ORCHESTRATOR_STORE, args.plan_id, status)
+        # Serialize the metadata read-modify-write behind the shared
+        # O_EXCL-guarded rmw_json critical section (the coordination core
+        # merge_lock reuses). The mutation runs against the FRESH in-lock
+        # state and touches only status['metadata'][field], so a concurrent
+        # orchestrator session setting a different metadata field (or a
+        # different top-level field) is not lost to a last-writer-wins over a
+        # stale read. Main-anchored via get_store_dir (ADR-002).
+        field = args.field
+        value = args.value
+        outcome: dict[str, Any] = {}
+
+        def _mutate(state: dict[str, Any]) -> dict[str, Any]:
+            metadata = state.get('metadata')
+            if not isinstance(metadata, dict):
+                metadata = {}
+                state['metadata'] = metadata
+            outcome['previous'] = metadata.get(field)
+            metadata[field] = value
+            state['updated'] = now_utc_iso()
+            return state
+
+        rmw_json(get_store_status_path(ORCHESTRATOR_STORE, args.plan_id), _mutate)
         result: dict[str, Any] = {
             'status': 'success',
             'plan_id': args.plan_id,
             'store': ORCHESTRATOR_STORE,
-            'field': args.field,
-            'value': args.value,
+            'field': field,
+            'value': value,
         }
-        if previous_value is not None:
-            result['previous_value'] = previous_value
+        if outcome.get('previous') is not None:
+            result['previous_value'] = outcome['previous']
         return result
     if args.get:
         metadata = status.get('metadata', {})
