@@ -352,13 +352,15 @@ Lessons capture **the recurrence pattern the ADR's principle defends against** �
 ADRs follow this naming pattern:
 
 ```text
-doc/adr/{NNN}-{Title_With_Underscores}.adoc
+doc/adr/{N…}-{Title_With_Underscores}.adoc
 ```
 
-Examples:
-- `doc/adr/001-Use_PostgreSQL_for_Persistence.adoc`
-- `doc/adr/002-Adopt_Quarkus_Framework.adoc`
-- `doc/adr/003-Implement_CQRS_Pattern.adoc`
+The numeric prefix is **zero-padded to the prevailing corpus width** — the widest existing ADR prefix in `doc/adr/`. A new ADR is numbered one past the highest existing number and emitted at that same width, so a 4-digit corpus (`0001`..`0006`) yields `0007` and a 3-digit corpus (`001`..`007`) yields `008`. An empty or absent corpus defaults to width 4 (`0001`). The parser accepts any prefix width, so mixed-width corpora are read correctly.
+
+Examples (4-digit corpus):
+- `doc/adr/0001-Use_PostgreSQL_for_Persistence.adoc`
+- `doc/adr/0002-Adopt_Quarkus_Framework.adoc`
+- `doc/adr/0003-Implement_CQRS_Pattern.adoc`
 
 ## Scripts
 
