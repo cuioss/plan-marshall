@@ -55,7 +55,7 @@ CodeRabbit is a first-class bot in plan-marshall — this rule refines, not intr
 |---|---|---|
 | Identity | `automatic-review/scripts/bot_registry.py` parses the data block above; `_findings_core.BOT_KINDS` and `github_re_review.py`'s login→bot_kind map both derive from it | `author_login: coderabbitai` → `bot_kind: coderabbit` |
 | Producer (fetch + pre-filter + store) | `workflow-integration-github` `github_pr.py`, shared pre-filter `scripts/comment-patterns.json` (`ignore` category) plus this bot's registry `ignore_patterns` | the CodeRabbit `ignore_patterns` above |
-| Consumer (per-finding decision) | `automatic-review` (this skill) → `plan-marshall/workflow/triage.md` (dispatched as `verification-feedback`, `producer=pr-comment`); domain disposition in `ext-triage-{java,python,js,plugin}/standards/pr-comment-disposition.md` | classify by the markers below |
+| Consumer (per-finding decision) | `automatic-review` (this skill) is FIND-only and dispatches nothing; the dispatcher-owned unified triage (`plan-marshall/workflow/verification-feedback.md`, `producer=finalize-feedback`, see `phase-6-finalize/SKILL.md` Step 3 item 7c) → `plan-marshall/workflow/triage.md` makes the per-finding decision; domain disposition in `ext-triage-{java,python,js,plugin}/standards/pr-comment-disposition.md` | classify by the markers below |
 | Re-review trigger | `github_re_review.py` generic strategy parameterized by this doc's `trigger_comment` | posts `@coderabbitai review` (wired) |
 | Architecture | `ref-workflow-architecture/standards/findings-pipeline.md` | — |
 | Trust boundary | `untrusted-ingestion` SKILL | applies to the AI-agent prompt block (below) |

@@ -1,6 +1,6 @@
 # Dispatch Walkthrough — Worked Examples
 
-Concrete end-to-end traces of `execution-context-{level}` dispatches at three representative call sites: a single-workflow phase entry, a finalize step that sub-dispatches `verification-feedback` (producer=pr-comment) by reference, and a per-iteration parallel fan-out. For the dispatch contract itself (prompt-body fields, role-key resolution, mandatory rules), see [`agents.md`](agents.md). For the heuristics that decide *whether* a step should dispatch, see [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md). For the holistic visual call graph covering every dispatch path (not just these three exemplars), see [`call-graph.md`](call-graph.md).
+Concrete end-to-end traces of `execution-context-{level}` dispatches at three representative call sites: a single-workflow phase entry, the phase-6-finalize dispatcher's item-7c unified triage that sub-dispatches `verification-feedback` (`producer=finalize-feedback`) by reference over the union of two FIND-only wait-region producers, and a per-iteration parallel fan-out. For the dispatch contract itself (prompt-body fields, role-key resolution, mandatory rules), see [`agents.md`](agents.md). For the heuristics that decide *whether* a step should dispatch, see [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md). For the holistic visual call graph covering every dispatch path (not just these three exemplars), see [`call-graph.md`](call-graph.md).
 
 ## Generic eight-step sequence
 
@@ -116,21 +116,21 @@ One dispatch, ~210 s wall-clock, the entire confidence loop runs inside one enve
 
 ---
 
-## Example B — phase-6-finalize automated-review with `verification-feedback` (sub-dispatch by reference)
+## Example B — phase-6-finalize dispatcher-owned unified triage (`producer=finalize-feedback`, sub-dispatch by reference)
 
-The most complex case. The manifest step `automated-review` runs **mostly inline as scripts** (producer fetch, finding enumeration) and **dispatches `verification-feedback` once** with `producer=pr-comment` when there are findings to triage. Findings live in the per-plan findings store; the subagent queries them as its first workflow step — they are NEVER embedded in the prompt body.
+The most complex case. The manifest steps `plan-marshall:automatic-review` and `default:sonar-roundtrip` are the two **wait-region producers** — each runs **entirely inline as scripts** (producer fetch, finding enumeration) and is **FIND-only**: it files its own finding type (`pr-comment` / `sonar-issue`) to the store and marks done, dispatching NO triage of its own. After BOTH have filed, the phase-6-finalize dispatcher's Step 3 item 7c fires **ONE** `verification-feedback` dispatch with `producer=finalize-feedback` over the union of their pending findings. Findings live in the per-plan findings store; the subagent queries them as its first workflow step — they are NEVER embedded in the prompt body.
 
 ### Setup
 - `{plan_id}` = `feature-jwt-auth`
-- `manifest.phase_6.steps` includes `automated-review` (declares `requires: [ci-complete]` in its frontmatter, ordered before `sonar-roundtrip`)
-- The phase-6-finalize dispatcher just resolved the `ci-complete` precondition for the current HEAD via `ci_complete_precondition.resolve` — the cache now records `success` for this SHA.
+- `manifest.phase_6.steps` includes `plan-marshall:automatic-review` (declares `requires: [ci-complete]` in its frontmatter, gated on the `review` signal arm) and `default:sonar-roundtrip` (gated on the `sonar` signal arm, ordered after `automatic-review`)
+- The phase-6-finalize dispatcher has already resolved the `ci-complete` precondition for the current HEAD on both signal arms via `ci_complete_precondition.resolve` — each arm's cache records a terminal state for this SHA.
 
-### Orchestrator: inline orchestration prologue
+### Orchestrator: wait-region producers file inline (no dispatch)
+
+`plan-marshall:automatic-review` (inline, FIND-only):
 
 ```bash
-# 1. Wait for review-bot comments (CI completion already guaranteed by
-#    the dispatcher's precondition resolver — no manage-status signal
-#    lookup is required inside this body).
+# 1. Wait for review-bot comments
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
   --plan-id feature-jwt-auth pr wait-for-comments \
   --pr-number 142 --timeout 180
@@ -139,14 +139,30 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
   fetch_findings --pr-number 142 --plan-id feature-jwt-auth
 
-# 3. Gate-check: count pending findings (NOT content)
+# 3. Consumer count (for display only) — this step does NOT triage
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   list --plan-id feature-jwt-auth --type pr-comment --resolution pending
 ```
 
-If pending count is 0 → skip the dispatch, mark step done. If non-zero → proceed to dispatch.
+Files 4 pending `pr-comment` findings; `mark-step-done --outcome done --head-at-completion {sha}`.
 
-### Orchestrator: dispatch `verification-feedback` by reference
+`default:sonar-roundtrip` (inline, FIND-only, runs after `automatic-review` per manifest order):
+
+```bash
+# 1. Producer: FIND new-code issues into the ledger (untrusted message under raw_input)
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar \
+  fetch_findings --plan-id feature-jwt-auth --project feature-jwt-auth-key
+
+# 2. Consumer count (for display only) — this step does NOT triage
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  list --plan-id feature-jwt-auth --type sonar-issue --resolution pending
+```
+
+Files 2 pending `sonar-issue` findings; `mark-step-done --outcome done --head-at-completion {sha}`.
+
+### Dispatcher: item 7c fires after the LATER producer completes
+
+`sonar-roundtrip` is the later of the two wait-region producers in manifest order, so its `done` outcome triggers item 7c — the dispatcher runs ONE unified triage over the union.
 
 **Steps 2–3 (resolve level):**
 
@@ -160,14 +176,20 @@ Returns `target: execution-context-level-3`.
 **Step 4 (prompt body — no findings list inline):**
 
 ```text
-name: verification-feedback
+name: wait-region-unified-triage
 plan_id: feature-jwt-auth
-skills[1]:
+skills[7]:
 - plan-marshall:manage-findings
+- plan-marshall:manage-tasks
+- plan-marshall:manage-architecture
+- plan-marshall:manage-config
+- plan-marshall:manage-execution-manifest
+- plan-marshall:workflow-integration-github
+- plan-marshall:workflow-integration-sonar
 workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
-producer: pr-comment
-pr_number: 142
+producer: finalize-feedback
 caller_phase: phase-6-finalize
+pr_number: 142
 WORKTREE: --plan-id feature-jwt-auth
 ```
 
@@ -176,32 +198,35 @@ WORKTREE: --plan-id feature-jwt-auth
 **Step 6 (subagent body — smart-grouping algorithm):**
 
 1. `Skill: plan-marshall:persona-plan-marshall-agent` (implicit)
-2. `Skill: plan-marshall:manage-findings`
-3. `Read plan-marshall:plan-marshall/workflow/triage.md`
-4. **Fetch findings from the store** (NOT from the prompt body):
+2. `Skill: plan-marshall:manage-findings` (+ the other forwarded `skills[]` entries)
+3. `Read plan-marshall:plan-marshall/workflow/verification-feedback.md` → Step 1 branch `producer=finalize-feedback` — store-only union query (NOT from the prompt body):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-     list --plan-id feature-jwt-auth --type pr-comment --resolution pending
+     list --plan-id feature-jwt-auth --resolution pending --include-qgate
    ```
 
-   Returns 6 pending findings of mixed `(domain, rule_id)` pairs. This is the single source of truth. On loop-back re-entry the second query sees only currently-pending findings — stale-data failure mode avoided.
+   Returns 6 pending findings — 4 `pr-comment` + 2 `sonar-issue`, mixed `(domain, rule_id)` pairs. This union is the single source of truth. On loop-back re-entry the second query sees only currently-pending findings — stale-data failure mode avoided.
 
-5. **Pre-group by `(domain, rule_id)`**. The subagent calls `architecture which-module` for each finding once to populate the `domain` field, then groups. Findings with no `rule_id` form singleton groups.
+4. Step 1.4 batched INGEST (`manage-findings ingest`) promotes each finding's quarantined `raw_input.{field}` to its clean top-level fields.
+
+5. **Pre-group by `(domain, rule_id)`** (`triage.md` § Step 2). The subagent calls `architecture which-module` for each finding once to populate the `domain` field, then groups. A defect flagged by BOTH CodeRabbit (`pr-comment`) and Sonar (`sonar-issue`) is co-located into the same group without a hard cross-producer dedup — each finding keeps its own provider RESPOND surface. Findings with no `rule_id` form singleton groups.
 
 6. **Sequential between groups, batched LLM decision within a group:**
    - Per group: load `ext-triage-{domain}` once (idempotent across same-domain groups in the same envelope).
    - One LLM call decides every finding in the group, returning `decisions[N]{hash_id, outcome, rationale}`.
-   - Act on each decision sequentially: `manage-findings resolve`, PR thread reply, fix-task allocation. Sequential action preserves cross-group feedback — TASK-N allocated for group 1 can be referenced when triaging group 2.
+   - Act on each decision sequentially: `manage-findings resolve`, fix-task allocation. Sequential action preserves cross-group feedback — TASK-N allocated for group 1 can be referenced when triaging group 2.
 
 7. AskUserQuestion (within a batched decision): the LLM can flag M of N findings as `ASK_USER_QUESTION`; the subagent raises the M prompts one by one. Batching the *decision* call does not batch the user UX.
+
+8. **RESPOND (Step 8)**: one `github_pr post_responses` call transmits every terminal-disposition `pr-comment` finding's thread-reply, and one `sonar post_responses` call transmits every terminal `sonar-issue` server-side dismissal — each keyed by `hash_id`, never by positional pairing.
 
 **Step 7 (subagent returns):**
 
 ```toon
 status: loop_back
-display_detail: 6 comments triaged, 2 fix tasks created
-producer: pr-comment
+display_detail: 6 findings triaged (4 pr-comment + 2 sonar-issue), 2 fix tasks created
+producer: finalize-feedback
 findings_processed: 6
 findings_resolved: 6
 fix_tasks_created: 2
@@ -212,11 +237,11 @@ fix_task_numbers[2]:
 
 Plus one `<usage>` tag — one envelope cost, not six.
 
-**Step 8 (orchestrator):** `mark-step-done --outcome loop_back`. The phase-6-finalize dispatcher's loop-back continuation transitions back to phase-5-execute, dispatches the fix tasks, transitions forward, re-enters the manifest. The next `automated-review` run sees 0 pending findings and short-circuits.
+**Step 8 (orchestrator):** item 7c consumes the return exactly as item 7b does — `mark-step-done` is NOT called for item 7c itself (it produces no `phase_steps["6-finalize"]` record of its own; it is not a manifest step). The dispatcher reads `loop_back_target`, applies the symmetric `loop_back_without_asking` knob and the `max_iterations` ceiling, then re-enters per the granularity branch (`5-execute` full-phase rollback / `6-finalize` inline replay). A re-entry re-fires both `plan-marshall:automatic-review` and `sonar-roundtrip` (they are HEAD-dependent — the fix commit advanced HEAD), which re-FIND against the new tree, and item 7c runs the unified triage again.
 
 ### Key by-reference property
 
-The findings list never lives in the prompt body. Passing `finding_type` plus the loaded `manage-findings` skill is all the subagent needs. Embedding inline would duplicate the store's data into the prompt for zero information gain — and would freeze the list at orchestrator-query time, defeating loop-back re-query semantics.
+The findings list never lives in the prompt body. Passing the union query plus the loaded `manage-findings` skill is all the subagent needs. Embedding inline would duplicate the store's data into the prompt for zero information gain — and would freeze the list at orchestrator-query time, defeating loop-back re-query semantics.
 
 ---
 
