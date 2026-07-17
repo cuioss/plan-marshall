@@ -442,9 +442,12 @@ def main_anchored_store_owns_bundle(bundle: str) -> bool:
     # would resolve to the bundles directory itself (which exists, incorrectly
     # returning True), and pathlib silently discards the left-hand operand when
     # the right-hand side is an absolute path or contains a separator — either of
-    # which could bypass the ownership guard. A valid bundle is a single simple
-    # directory name with no path separators.
-    if not bundle or '/' in bundle or '\\' in bundle:
+    # which could bypass the ownership guard. The current-/parent-directory
+    # references '.' and '..' also resolve to existing directories (the bundles
+    # dir itself and marketplace/ respectively), so they must be rejected too. A
+    # valid bundle is a single simple directory name with no path separators and
+    # no traversal segment.
+    if not bundle or bundle in ('.', '..') or '/' in bundle or '\\' in bundle:
         return False
 
     if os.environ.get('PLAN_BASE_DIR') or _override_is_set():

@@ -367,6 +367,22 @@ class TestMainAnchoredStoreOwnsBundle:
         monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
         assert main_anchored_store_owns_bundle('a\\b') is False
 
+    def test_current_dir_bundle_returns_false(self, tmp_path, monkeypatch):
+        # '.' has no separator but resolves to the bundles directory itself.
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        assert main_anchored_store_owns_bundle('.') is False
+
+    def test_parent_dir_bundle_returns_false_in_production(self, tmp_path, monkeypatch):
+        # '..' has no separator but {bundles}/.. resolves to marketplace/ (which
+        # exists), so without the traversal-segment rejection the production
+        # branch would incorrectly report it as owned. The guard must reject it
+        # BEFORE the is_dir() check.
+        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+        monkeypatch.setattr(marketplace_paths, '_override_is_set', lambda: False)
+        monkeypatch.setattr(marketplace_paths, '_main_checkout_root', lambda: tmp_path)
+        (tmp_path / MARKETPLACE_BUNDLES_PATH / 'plan-marshall').mkdir(parents=True)
+        assert main_anchored_store_owns_bundle('..') is False
+
     def test_valid_simple_name_preserves_is_dir_behavior(self, tmp_path, monkeypatch):
         # In the production branch (no override), a valid simple name resolves to
         # {main_root}/marketplace/bundles/{bundle}.is_dir().
