@@ -289,6 +289,18 @@ LOGGER.info("User password: %s", password);
 LOGGER.info("User authenticated: %s", username);
 ```
 
+**Sanitize every channel that reaches the log — including the throwable.** When sanitizing untrusted content before logging, the format string is not the only sink: `CuiLogger.debug(Throwable, String, Object...)` (and the `info`/`warn`/`error` siblings) render the throwable via `e.toString()`, which STARTS with the unsanitized exception message — so passing the raw throwable alongside a sanitized message re-opens the exact log-injection (CWE-117) sink the message-only fix meant to close. Preserve the cause on a domain exception instead of handing the raw throwable to the logger:
+
+```java
+// Avoid: Bad — sanitized message, but e.toString() re-injects the raw message
+LOGGER.warn(e, WARN.TRANSPORT_FAILED, sanitize(e.getMessage()));
+
+// Preferred: Good — cause preserved on a domain exception with a sanitized message
+throw new TransportException(sanitize(e.getMessage()), e);
+```
+
+This is the CUI-specific instance of the generic log-injection principle, which is owned by the `pm-dev-java:java-security` secure-logging surface — apply the generic rule from there; it is not restated here. The boundary with rule 2 (Exception Parameter First): exception-first governs HOW to log a throwable when logging it is intended and still applies whenever the throwable's message chain is trusted or already sanitized; this rule governs WHETHER to pass the raw throwable when its message carries untrusted content.
+
 ---
 
 For compliance verification patterns (violation detection, coverage analysis, identifier validation), see `logging-maintenance-reference.md`.
@@ -307,6 +319,7 @@ For compliance verification patterns (violation detection, coverage analysis, id
 - Exception parameter comes first
 - %s used for all substitutions
 - No sensitive information logged
+- No raw throwable passed alongside a sanitized message
 - No System.out or System.err usage
 
 ### Documentation
