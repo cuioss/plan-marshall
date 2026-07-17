@@ -244,12 +244,17 @@ def cmd_coverage(module: str | None) -> int:
 
 
 def cmd_verify(module: str | None) -> int:
-    """Run full verification: quality-gate + module-tests."""
+    """Run full verification: quality-gate + test-compile + module-tests."""
     print(f'=== verify: {"all" if not module else module} ===')
 
     exit_code = cmd_quality_gate(module)
     if exit_code != 0:
         print('verify: quality-gate failed', file=sys.stderr)
+        return exit_code
+
+    exit_code = cmd_test_compile(module)
+    if exit_code != 0:
+        print('verify: test-compile failed', file=sys.stderr)
         return exit_code
 
     exit_code = cmd_module_tests(module, parallel=True)

@@ -761,18 +761,31 @@ class TestAutomatedReviewCiSignalAndOverflow:
     def test_timeout_contract_describes_precondition_split(
         self, automated_review_text: str
     ):
-        """The 900 s budget remains ``triage-only``; CI wait wall-clock is
-        now bounded by the dispatcher's ``ci-complete`` precondition
-        resolver (600 s ceiling). The contract MUST say so explicitly so a
-        future edit doesn't restore the combined-budget shape.
+        """The 900 s budget is now ``FIND-only`` — triage and RESPOND moved out
+        of this step and run once at the dispatcher level as the unified
+        wait-region triage. CI wait wall-clock is bounded separately by the
+        dispatcher's **per-signal review-arm** precondition resolver (600 s
+        ceiling), NOT the old global ``ci-complete`` colour gate. The contract
+        MUST say so explicitly so a future edit doesn't restore the combined
+        triage-budget shape or the global-CI gate.
         """
         text_lower = automated_review_text.lower()
-        assert 'triage-only' in text_lower, (
-            'Timeout Contract must declare the 900 s budget as triage-only'
+        assert 'find-only' in text_lower, (
+            'Timeout Contract must declare the 900 s budget as FIND-only '
+            '(triage/RESPOND moved to the dispatcher-level unified triage)'
+        )
+        assert 'triage-only' not in text_lower, (
+            'the legacy triage-only combined-budget shape must be gone — the '
+            '900 s budget is now FIND-only'
         )
         assert 'precondition' in text_lower, (
-            'Timeout Contract must reference the ci-complete precondition '
-            'resolver as the CI wait-time owner'
+            'Timeout Contract must reference the precondition resolver as the '
+            'CI wait-time owner'
+        )
+        assert 'review arm' in text_lower or 'review-arm' in text_lower, (
+            'the precondition must be gated on the per-signal review arm, not '
+            'global CI colour — a red CI unrelated to the review signal no '
+            'longer skips the comment FIND'
         )
 
     # ---- Overflow handling -----------------------------------------------

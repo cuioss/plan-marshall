@@ -1022,6 +1022,166 @@ class TestReconcileAccumulatorIntoPhase:
 
 
 # =============================================================================
+# Test: dispatch-boundary reconciliation (D1) — _read_dispatch_boundary_totals
+# and the cmd_generate same-population max reconciliation
+# =============================================================================
+
+
+def _write_dispatch_boundaries(plan_context, plan_id: str, phase: str, totals: list[int]) -> Path:
+    """Write a dispatch-boundaries file for ``phase`` with one row per entry in ``totals``.
+
+    Mirrors the writer's header + CSV-row layout (see cmd_record_dispatch_boundary /
+    data-format.md § Per-Dispatch Context-Load Attribution). Each row places the
+    supplied total in the ``total_tokens`` column (position 2) with fixed filler in
+    the surrounding columns. Returns the file path.
+    """
+    path: Path = manage_metrics._dispatch_boundary_path(plan_id, phase)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    header = (
+        f'plan_id: {plan_id}\n'
+        f'phase: {phase}\n'
+        'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
+        'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens}:\n'
+    )
+    rows = ''.join(
+        f'2026-05-08T14:{i:02d}:11Z,budget_yield,{total},38,412390,38000,4000,210000,12000\n'
+        for i, total in enumerate(totals)
+    )
+    path.write_text(header + rows, encoding='utf-8')
+    return path
+
+
+class TestReadDispatchBoundaryTotals:
+    """Direct coverage of the _read_dispatch_boundary_totals reader."""
+
+    def test_sums_total_tokens_column_across_rows(self, plan_context):
+        """The reader sums the total_tokens column (position 2) across all data rows."""
+        _write_dispatch_boundaries(plan_context, 'db-read-sum', '5-execute', [1_000_000, 1_000_000])
+        assert manage_metrics._read_dispatch_boundary_totals('db-read-sum', '5-execute') == 2_000_000
+
+    def test_absent_file_returns_zero(self, plan_context):
+        """A missing boundary file reads as 0 (the caller's clean no-op signal)."""
+        assert manage_metrics._read_dispatch_boundary_totals('db-read-absent', '5-execute') == 0
+
+    def test_header_and_malformed_rows_are_skipped(self, plan_context):
+        """Header lines and a short/malformed data row are skipped, not summed or fatal."""
+        path = manage_metrics._dispatch_boundary_path('db-read-malformed', '5-execute')
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            'plan_id: db-read-malformed\n'
+            'phase: 5-execute\n'
+            'rows[]{timestamp,termination_cause,total_tokens}:\n'
+            '2026-05-08T14:00:11Z,budget_yield,500\n'
+            'too,short\n'
+            '2026-05-08T14:01:11Z,budget_yield,not_an_int,x,y\n'
+            '2026-05-08T14:02:11Z,budget_yield,700\n',
+            encoding='utf-8',
+        )
+        # Only the two well-formed integer rows (500 + 700) contribute.
+        assert manage_metrics._read_dispatch_boundary_totals('db-read-malformed', '5-execute') == 1200
+
+
+class TestGenerateReconcilesDispatchBoundaries:
+    """cmd_generate reconciles a dispatched phase's under-counted total against the
+    dispatch-boundaries sum via same-population max — the #565 divergence.
+    """
+
+    def test_reconciles_undercounted_phase_to_boundary_sum(self, plan_context):
+        """A 5-execute row reporting ~89k against a ~2.0M boundary sum renders the boundary
+        sum, persists it as a DISTINCT field, keeps total_tokens byte-identical, and annotates.
+        """
+        manage_metrics.write_metrics(
+            'db-recon-under',
+            {
+                'phases': {
+                    '5-execute': {
+                        'start_time': '2026-05-08T13:00:00+00:00',
+                        'end_time': '2026-05-08T14:00:00+00:00',
+                        'total_tokens': 89000,
+                    },
+                },
+            },
+        )
+        _write_dispatch_boundaries(plan_context, 'db-recon-under', '5-execute', [1_000_000, 1_000_000])
+
+        result = cmd_generate(_ns_generate('db-recon-under'))
+        assert result['status'] == 'success'
+        # The reconciled (larger) boundary sum feeds the Total.
+        assert result['total_tokens'] == 2_000_000
+
+        toon = (plan_context.plan_dir_for('db-recon-under') / 'work' / 'metrics.toon').read_text()
+        # Explicit-wins: the recorded total_tokens stays byte-identical.
+        assert 'total_tokens: 89000' in toon
+        # The boundary sum is persisted as a DISTINCT field, never overwriting total_tokens.
+        assert 'dispatch_boundary_total: 2000000' in toon
+
+        md = (plan_context.plan_dir_for('db-recon-under') / 'metrics.md').read_text()
+        assert '2,000,000' in md
+        assert 'reconciled from dispatch boundaries' in md
+        # The recorded raw total is still visible in the Phase Details section.
+        assert '89,000' in md
+
+    def test_absent_boundary_file_is_clean_noop(self, plan_context):
+        """With no boundary file, the recorded total renders unchanged and no distinct
+        field or annotation appears.
+        """
+        manage_metrics.write_metrics(
+            'db-recon-noop',
+            {
+                'phases': {
+                    '5-execute': {
+                        'start_time': '2026-05-08T13:00:00+00:00',
+                        'end_time': '2026-05-08T14:00:00+00:00',
+                        'total_tokens': 50000,
+                    },
+                },
+            },
+        )
+
+        result = cmd_generate(_ns_generate('db-recon-noop'))
+        assert result['status'] == 'success'
+        assert result['total_tokens'] == 50000
+
+        toon = (plan_context.plan_dir_for('db-recon-noop') / 'work' / 'metrics.toon').read_text()
+        assert 'total_tokens: 50000' in toon
+        assert 'dispatch_boundary_total' not in toon
+
+        md = (plan_context.plan_dir_for('db-recon-noop') / 'metrics.md').read_text()
+        assert 'reconciled from dispatch boundaries' not in md
+
+    def test_smaller_boundary_sum_prefers_recorded_total(self, plan_context):
+        """When the boundary sum is smaller than the recorded total, the render prefers the
+        recorded value and emits no annotation — but the distinct field is still persisted.
+        """
+        manage_metrics.write_metrics(
+            'db-recon-smaller',
+            {
+                'phases': {
+                    '5-execute': {
+                        'start_time': '2026-05-08T13:00:00+00:00',
+                        'end_time': '2026-05-08T14:00:00+00:00',
+                        'total_tokens': 89000,
+                    },
+                },
+            },
+        )
+        _write_dispatch_boundaries(plan_context, 'db-recon-smaller', '5-execute', [10000])
+
+        result = cmd_generate(_ns_generate('db-recon-smaller'))
+        assert result['status'] == 'success'
+        # max(89000, 10000) = 89000 feeds the Total; no reconciliation occurs.
+        assert result['total_tokens'] == 89000
+
+        toon = (plan_context.plan_dir_for('db-recon-smaller') / 'work' / 'metrics.toon').read_text()
+        assert 'total_tokens: 89000' in toon
+        # The distinct field is still recorded even when it is the smaller of the pair.
+        assert 'dispatch_boundary_total: 10000' in toon
+
+        md = (plan_context.plan_dir_for('db-recon-smaller') / 'metrics.md').read_text()
+        assert 'reconciled from dispatch boundaries' not in md
+
+
+# =============================================================================
 # Test: cmd_generate reconciles each phase against its accumulator
 # =============================================================================
 

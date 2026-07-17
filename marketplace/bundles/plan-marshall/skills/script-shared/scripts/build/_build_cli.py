@@ -195,13 +195,22 @@ def add_parse_subparser(
     return parse_parser
 
 
-def add_check_warnings_subparser(subparsers, check_warnings_fn, *, help_text: str = 'Categorize build warnings'):
+def add_check_warnings_subparser(
+    subparsers,
+    check_warnings_fn,
+    *,
+    help_text: str = 'Categorize build warnings',
+    extra_args_fn=None,
+):
     """Add standard 'check-warnings' subparser with common arguments.
 
     Args:
         subparsers: argparse subparsers object.
         check_warnings_fn: Handler function (from create_check_warnings_handler).
         help_text: Help text for the subparser.
+        extra_args_fn: Optional callable(warn_parser) to add tool-specific args
+            (e.g., npm's --warning-baseline). Only tools that pass this seam
+            register the extra flag, so other build tools stay unaffected.
 
     Returns:
         The created check-warnings subparser.
@@ -214,6 +223,8 @@ def add_check_warnings_subparser(subparsers, check_warnings_fn, *, help_text: st
         help='JSON object with acceptable patterns',
     )
     add_project_dir_arg(warn_parser)
+    if extra_args_fn:
+        extra_args_fn(warn_parser)
     warn_parser.set_defaults(func=check_warnings_fn)
     return warn_parser
 
@@ -360,6 +371,7 @@ def register_standard_subparsers(
     coverage_handler: Callable | None = None,
     coverage_help: str = 'Parse coverage report',
     check_warnings_handler: Callable | None = None,
+    check_warnings_extra_args_fn: Callable | None = None,
     run_config_key_config=None,
     extra_register_fns: list[Callable] | None = None,
 ) -> list[Callable]:
@@ -382,6 +394,9 @@ def register_standard_subparsers(
         coverage_handler: Handler for 'coverage-report' subcommand.
         coverage_help: Help text for coverage subparser.
         check_warnings_handler: Handler for 'check-warnings' subcommand.
+        check_warnings_extra_args_fn: Extra args callback for the check-warnings
+            subparser (e.g., npm's --warning-baseline). Tools that omit it keep
+            the standard check-warnings surface unchanged.
         run_config_key_config: When non-None, an ExecuteConfig instance that
             registers the 'run-config-key' subcommand exposing the canonical
             run-config key construction. The same config object that
@@ -431,8 +446,8 @@ def register_standard_subparsers(
 
     if check_warnings_handler is not None:
 
-        def _reg_warn(subparsers, _h=check_warnings_handler):
-            add_check_warnings_subparser(subparsers, _h)
+        def _reg_warn(subparsers, _h=check_warnings_handler, _extra=check_warnings_extra_args_fn):
+            add_check_warnings_subparser(subparsers, _h, extra_args_fn=_extra)
 
         fns.append(_reg_warn)
 

@@ -1338,6 +1338,7 @@ def _run_spec(spec: FixtureSpec) -> set[str]:
         if spec.analyzer is not None:
             findings = spec.analyzer(scratch_root)
         else:
+            assert spec.component is not None  # analyzer-less specs carry a component factory
             component = spec.component(scratch_root)
             result = analyze_component(component)
             findings = result.get('issues', [])

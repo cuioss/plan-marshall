@@ -9,11 +9,13 @@ Of the 17 default + project finalize steps, **6 dispatch** and **11 run inline**
 - `pre-submission-self-review` → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`)
 - `create-pr` → `phase-6-finalize` (no `--role`)
 - `lessons-capture` + `adr-propose` → `phase-6-finalize --role post-run-review`
-- `plan-marshall:automatic-review` + `sonar-roundtrip` → `phase-6-finalize --role verification-feedback` (`producer=pr-comment` / `sonar` runtime input)
+- `plan-marshall:automatic-review` + `sonar-roundtrip` → `phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`) — **FIND-only**: each files its own finding type (`pr-comment` / `sonar-issue`) and marks done, taking no `producer` runtime input at all
 - `architecture-refresh` is hybrid (Tier 0 inline scripts; Tier 1 fans out under `phase-6-finalize` per affected module — the only per-iteration parallel dispatch in the contract)
 - `project:finalize-step-plugin-doctor` (meta-project only) → `phase-6-finalize --role verification-feedback` (`producer=plugin-doctor` runtime input)
 
 Two opt-in dispatched steps exist outside the default set: **retrospective** → `phase-6-finalize --role post-run-review` (8 LLM aspects iterate inside one envelope); `/workflow-pr-doctor` (slash-command surface) → `phase-6-finalize --role verification-feedback` (`producer=pr-state` runtime input).
+
+**Dispatcher-owned unified triage (not a manifest step)**: after BOTH `plan-marshall:automatic-review` and `sonar-roundtrip` have filed, the phase-6-finalize dispatcher's Step 3 item 7c fires ONE additional dispatch — `phase-6-finalize --role verification-feedback` with `producer=finalize-feedback` — over the union of their pending `pr-comment` ∪ `sonar-issue` findings. This is the ONLY place `producer=finalize-feedback` triage happens in finalize; it produces no `phase_steps["6-finalize"]` record of its own and is not counted in the 6/17 roster above. See [`../SKILL.md`](../SKILL.md) Step 3 item 7c and [`../../plan-marshall/workflow/verification-feedback.md`](../../plan-marshall/workflow/verification-feedback.md) § "Producer modes".
 
 ## Inline steps
 

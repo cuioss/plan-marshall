@@ -1278,6 +1278,19 @@ The orchestrator's `phase-boundary` call reads this accumulator file as a
 fallback when its explicit token flags are omitted — so the orchestrator
 does not need to maintain a parallel running sum in model context.
 
+**Loop-back re-entry and boundary monotonicity.** A finalize loop-back
+re-enters `5-execute` and re-records its work under `phase=5-execute`, so a
+later phase's `start_time` can end up preceding this phase's already-closed
+`end_time`. `manage-metrics generate` carries a render-time monotonicity
+detector that surfaces the resulting non-monotonic boundary (a top-level
+`boundary_monotonicity` warning plus a per-phase annotation) and guards the
+idle residual for the affected phase, rather than silently emitting a corrupt
+residual derived from the overlapping window. The detector is read-only — it
+never rewrites the recorded `start_time` / `end_time` fields and never touches
+the `#812` `end_time`-keyed partial verdict. See
+`manage-metrics/standards/data-format.md` § "Boundary Monotonicity (Loop-Back
+Re-entry)".
+
 ## Canonical invocations
 
 The canonical argparse surface for the two entry-point scripts this skill registers: `scope_creep_check.py` and `verify_failure_scope.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".

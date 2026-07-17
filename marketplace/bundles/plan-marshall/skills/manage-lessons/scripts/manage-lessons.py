@@ -56,9 +56,11 @@ from _lessons_crud import (
     retire_quiet_arch_constraints,
 )
 from _lessons_io import (
+    WrongStoreError,
     _build_lesson_content,
     get_lessons_dir,
     get_tombstones_dir,
+    guard_component_store_match,
     read_lesson,
 )
 from _lessons_query import (
@@ -391,6 +393,11 @@ def cmd_add(args: argparse.Namespace) -> dict:
     Returns the absolute path of the created file. The caller writes the body
     directly to that path via the Write tool — there is no inline body API.
     """
+    try:
+        guard_component_store_match(args.component, getattr(args, 'allow_foreign_store', False))
+    except WrongStoreError as exc:
+        return {'status': 'error', 'error': 'wrong_store', 'message': str(exc)}
+
     if args.category not in VALID_CATEGORIES:
         return {
             'status': 'error',
@@ -771,9 +778,24 @@ def cmd_from_error(args: argparse.Namespace) -> dict:
     try:
         context = json.loads(args.context)
     except json.JSONDecodeError:
-        return {'status': 'error', 'error': 'invalid_json', 'message': 'Context must be valid JSON'}
+        return {'status': 'error', 'error': 'invalid_json', 'message': 'Context must be a valid JSON object'}
 
+    # A valid JSON array or scalar (e.g. "[]") parses cleanly but has no .get,
+    # so reject any non-dict context with the same structured error.
+    if not isinstance(context, dict):
+        return {'status': 'error', 'error': 'invalid_json', 'message': 'Context must be a valid JSON object'}
+
+    # An explicit null or numeric component would crash guard_component_store_match;
+    # coerce any non-string value to the 'unknown' default before the guard.
     component = context.get('component', 'unknown')
+    if not isinstance(component, str):
+        component = 'unknown'
+
+    try:
+        guard_component_store_match(component, getattr(args, 'allow_foreign_store', False))
+    except WrongStoreError as exc:
+        return {'status': 'error', 'error': 'wrong_store', 'message': str(exc)}
+
     error = context.get('error', 'Unknown error')
     solution = context.get('solution', '')
 
@@ -1077,6 +1099,18 @@ def cmd_retire_quiet(args: argparse.Namespace) -> dict:
     return result
 
 
+def _add_allow_foreign_store_arg(parser: argparse.ArgumentParser) -> None:
+    """Register the ``--allow-foreign-store`` bypass shared by ``add`` and ``from-error``."""
+    parser.add_argument(
+        '--allow-foreign-store',
+        action='store_true',
+        help=(
+            'Bypass the cross-repo wrong-store guard: file the lesson even when the '
+            "resolved main-anchored store repo does not own the component's bundle."
+        ),
+    )
+
+
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Manage lessons learned', allow_abbrev=False)
@@ -1102,6 +1136,7 @@ def main() -> int:
             'existing lesson instead of allocating a new one.'
         ),
     )
+    _add_allow_foreign_store_arg(add_parser)
     add_parser.set_defaults(func=cmd_add)
 
     # update
@@ -1204,6 +1239,7 @@ def main() -> int:
     # from-error
     from_error_parser = subparsers.add_parser('from-error', help='Create from error context', allow_abbrev=False)
     from_error_parser.add_argument('--context', required=True, help='JSON error context')
+    _add_allow_foreign_store_arg(from_error_parser)
     from_error_parser.set_defaults(func=cmd_from_error)
 
     # remove

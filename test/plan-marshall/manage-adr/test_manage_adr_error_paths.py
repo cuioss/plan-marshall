@@ -111,6 +111,64 @@ def test_delete_rejects_unknown_number(adr_dir):
 
 
 # =========================================================================
+# Ambiguous-number rejections (two files share a number at different widths)
+# =========================================================================
+
+
+def _write_ambiguous_pair(adr_dir):
+    """Write a 3-digit and a 4-digit prefixed ADR file for the same number 8."""
+    narrow = adr_dir / '008-First_Copy.adoc'
+    wide = adr_dir / '0008-Second_Copy.adoc'
+    narrow.write_text('= ADR-008: First Copy\n\n== Status\n\nProposed\n\n')
+    wide.write_text('= ADR-0008: Second Copy\n\n== Status\n\nProposed\n\n')
+    return narrow, wide
+
+
+def test_read_rejects_ambiguous_number(adr_dir):
+    """cmd_read returns ambiguous_number when two files share the number."""
+    _write_ambiguous_pair(adr_dir)
+
+    result = cmd_read(Namespace(command='read', number=8))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'ambiguous_number'
+    assert result['operation'] == 'read'
+    # Both ambiguous filenames are surfaced so the caller can disambiguate.
+    assert '008-First_Copy.adoc' in result['message']
+    assert '0008-Second_Copy.adoc' in result['message']
+
+
+def test_update_rejects_ambiguous_number_without_modifying_files(adr_dir):
+    """cmd_update returns ambiguous_number and modifies neither matching file."""
+    narrow, wide = _write_ambiguous_pair(adr_dir)
+    narrow_before = narrow.read_text()
+    wide_before = wide.read_text()
+
+    result = cmd_update(Namespace(command='update', number=8, status='Accepted'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'ambiguous_number'
+    assert result['operation'] == 'update'
+    # Neither file's content changed — the guard fires before any write.
+    assert narrow.read_text() == narrow_before
+    assert wide.read_text() == wide_before
+
+
+def test_delete_rejects_ambiguous_number_without_deleting_files(adr_dir):
+    """cmd_delete (with force) returns ambiguous_number and deletes neither file."""
+    narrow, wide = _write_ambiguous_pair(adr_dir)
+
+    result = cmd_delete(Namespace(command='delete', number=8, force=True))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'ambiguous_number'
+    assert result['operation'] == 'delete'
+    # Both ambiguous files survive — nothing was unlinked.
+    assert narrow.exists()
+    assert wide.exists()
+
+
+# =========================================================================
 # Invalid-status rejection on the direct cmd path (argparse choices bypassed)
 # =========================================================================
 
@@ -148,14 +206,14 @@ def test_update_rejects_invalid_status(adr_dir):
 def test_update_without_status_is_unchanged_noop(adr_dir):
     """cmd_update with status=None succeeds without rewriting the Status section."""
     cmd_create(Namespace(command='create', title='Unchanged ADR', status='Accepted'))
-    original = (adr_dir / '001-Unchanged_ADR.adoc').read_text()
+    original = (adr_dir / '0001-Unchanged_ADR.adoc').read_text()
 
     result = cmd_update(Namespace(command='update', number=1, status=None))
 
     assert result['status'] == 'success'
     assert result['adr_status'] == 'unchanged'
     # File content is byte-identical — no status rewrite occurred.
-    assert (adr_dir / '001-Unchanged_ADR.adoc').read_text() == original
+    assert (adr_dir / '0001-Unchanged_ADR.adoc').read_text() == original
 
 
 # =========================================================================

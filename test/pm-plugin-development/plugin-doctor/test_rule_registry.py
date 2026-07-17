@@ -119,7 +119,7 @@ def test_rule_descriptor_is_frozen():
         scope=reg.SCOPE_FILE_LOCAL,
     )
     with pytest.raises(dataclasses.FrozenInstanceError):
-        descriptor.rule_id = 'mutated'  # type: ignore[misc]
+        descriptor.rule_id = 'mutated'
 
 
 def test_scope_constants_are_the_two_runner_dispatch_values():

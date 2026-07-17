@@ -21,6 +21,10 @@ from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
 
+import _lessons_io
+import file_ops
+import marketplace_paths
+
 from _lessons_helpers import (
     SCRIPT_PATH,
     _FakeDatetime,
@@ -465,6 +469,79 @@ class TestCollisionSafeAllocation:
 
 
 # =============================================================================
+# Tier 2: cmd_from_error input validation (non-dict context, non-string component)
+# =============================================================================
+
+
+class TestFromErrorInputValidation:
+    """Regression guard for ``cmd_from_error`` untrusted-JSON validation.
+
+    ``args.context`` is parsed with ``json.loads`` and previously used
+    ``context.get(...)`` unchecked, so a valid JSON array or scalar (e.g.
+    ``"[]"``) crashed with ``AttributeError`` instead of a structured error, and
+    a non-string ``component`` (explicit null / numeric) crashed inside
+    ``guard_component_store_match``. The guards now reject a non-dict context and
+    coerce a non-string component to ``'unknown'``.
+    """
+
+    def test_non_dict_json_array_context_returns_structured_error(self, tmp_path):
+        """A JSON array parses cleanly but is not a dict — reject with invalid_json."""
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_from_error(Namespace(context='[]'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_json'
+        assert result['message'] == 'Context must be a valid JSON object'
+
+    def test_non_dict_json_scalar_context_returns_structured_error(self, tmp_path):
+        """A JSON scalar (number) is not a dict — reject with invalid_json."""
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_from_error(Namespace(context='42'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_json'
+        assert result['message'] == 'Context must be a valid JSON object'
+
+    def test_malformed_json_still_rejected(self, tmp_path):
+        """Truly malformed JSON keeps returning the structured invalid_json error."""
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_from_error(Namespace(context='{not valid'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_json'
+        assert result['message'] == 'Context must be a valid JSON object'
+
+    def test_non_string_component_defaults_to_unknown(self, tmp_path):
+        """An explicit null / numeric component must not crash — it defaults to 'unknown'."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        error_context = json.dumps({'component': None, 'error': 'boom', 'solution': 'fix'})
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_from_error(Namespace(context=error_context))
+
+        assert result['status'] == 'success'
+        assert result['created_from'] == 'error_context'
+        lesson_path = next(lessons_dir.glob(f'{result["id"]}.md'))
+        assert 'component=unknown' in lesson_path.read_text(encoding='utf-8')
+
+    def test_numeric_component_defaults_to_unknown(self, tmp_path):
+        """A numeric component value also coerces to 'unknown' instead of crashing."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        error_context = json.dumps({'component': 7, 'error': 'boom'})
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_from_error(Namespace(context=error_context))
+
+        assert result['status'] == 'success'
+        lesson_path = next(lessons_dir.glob(f'{result["id"]}.md'))
+        assert 'component=unknown' in lesson_path.read_text(encoding='utf-8')
+
+
+# =============================================================================
 # Tier 2: status frontmatter on new lessons
 # =============================================================================
 
@@ -654,3 +731,156 @@ class TestLessonsCorpusMainAnchoring:
 
         # the main-anchored plans scan reserved 001 → next is 002.
         assert next_id == '2025-01-01-02-002'
+
+
+# =============================================================================
+# Tier 2: cross-repo wrong-store refusal guard (deliverable 3)
+# =============================================================================
+
+
+class TestMainAnchoredStoreOwnsBundle:
+    """``marketplace_paths.main_anchored_store_owns_bundle`` repo-ownership predicate."""
+
+    def test_override_short_circuits_true(self, tmp_path, monkeypatch):
+        """A PLAN_BASE_DIR override reports ownership True without touching git."""
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+
+        assert marketplace_paths.main_anchored_store_owns_bundle('any-bundle') is True
+
+    def test_owns_bundle_when_source_dir_exists(self, tmp_path, monkeypatch):
+        """Without an override, ownership is the existence of the bundle source dir."""
+        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+        monkeypatch.setattr(marketplace_paths, '_main_checkout_root', lambda: tmp_path)
+        (tmp_path / 'marketplace' / 'bundles' / 'owned-bundle').mkdir(parents=True)
+
+        assert marketplace_paths.main_anchored_store_owns_bundle('owned-bundle') is True
+        assert marketplace_paths.main_anchored_store_owns_bundle('foreign-bundle') is False
+
+
+class TestGuardComponentStoreMatch:
+    """``_lessons_io.guard_component_store_match`` raise/return contract."""
+
+    def test_raises_when_store_does_not_own_bundle(self, monkeypatch):
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', lambda bundle: False)
+
+        try:
+            _lessons_io.guard_component_store_match('foreign:skill', allow_foreign=False)
+        except _lessons_io.WrongStoreError as exc:
+            assert 'foreign' in str(exc)
+        else:  # pragma: no cover - the guard must raise
+            raise AssertionError('expected WrongStoreError')
+
+    def test_returns_when_store_owns_bundle(self, monkeypatch):
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', lambda bundle: True)
+
+        # No exception → guard is satisfied.
+        _lessons_io.guard_component_store_match('owned:skill', allow_foreign=False)
+
+    def test_allow_foreign_bypasses_ownership_check(self, monkeypatch):
+        def _boom(bundle):  # pragma: no cover - must not be consulted
+            raise AssertionError('ownership must not be consulted when allow_foreign is True')
+
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', _boom)
+
+        _lessons_io.guard_component_store_match('foreign:skill', allow_foreign=True)
+
+
+class TestAddWrongStoreGuard:
+    """``cmd_add`` / ``cmd_from_error`` refuse to file into a store that does not own the bundle."""
+
+    def test_add_into_unowned_store_refuses_and_writes_nothing(self, tmp_path, monkeypatch):
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', lambda bundle: False)
+
+        result = cmd_add(
+            Namespace(
+                component='foreign-bundle:skill',
+                category='bug',
+                title='Rejected',
+                bundle=None,
+                allow_foreign_store=False,
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'wrong_store'
+        assert 'foreign-bundle' in result['message']
+        # Nothing was written into the store.
+        assert not list(lessons_dir.glob('*.md'))
+
+    def test_allow_foreign_store_bypasses_refusal(self, tmp_path, monkeypatch):
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', lambda bundle: False)
+
+        result = cmd_add(
+            Namespace(
+                component='foreign-bundle:skill',
+                category='bug',
+                title='Allowed Anyway',
+                bundle=None,
+                allow_foreign_store=True,
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert Path(result['path']).exists()
+
+    def test_owned_bundle_add_passes(self, tmp_path, monkeypatch):
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', lambda bundle: True)
+
+        result = cmd_add(
+            Namespace(
+                component='owned-bundle:skill',
+                category='bug',
+                title='Owned',
+                bundle=None,
+                allow_foreign_store=False,
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert Path(result['path']).exists()
+
+    def test_active_override_bypasses_guard(self, tmp_path):
+        """Under a PLAN_BASE_DIR override the real guard is skipped (existing add tests unaffected)."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        # No ownership monkeypatch: the real predicate short-circuits True under
+        # the override, so cmd_add succeeds even for a bundle the checkout may
+        # not own — this is exactly why the PLAN_BASE_DIR-based suites stay green.
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_add(
+                Namespace(
+                    component='any-bundle:skill',
+                    category='bug',
+                    title='Override Bypass',
+                    bundle=None,
+                    allow_foreign_store=False,
+                )
+            )
+
+        assert result['status'] == 'success'
+        assert Path(result['path']).exists()
+
+    def test_from_error_into_unowned_store_refuses(self, tmp_path, monkeypatch):
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        monkeypatch.setattr(_lessons_io, 'main_anchored_store_owns_bundle', lambda bundle: False)
+
+        context = json.dumps({'component': 'foreign-bundle:skill', 'error': 'boom', 'solution': 'x'})
+        result = cmd_from_error(Namespace(context=context, allow_foreign_store=False))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'wrong_store'
+        assert not list(lessons_dir.glob('*.md'))

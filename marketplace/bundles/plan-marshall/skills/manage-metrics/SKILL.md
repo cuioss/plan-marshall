@@ -93,6 +93,7 @@ phases_recorded: 6
 partial: true
 unrecorded_phases[1]:
   - 6-finalize
+boundary_monotonicity[0]:
 total_worked_seconds: 572.5
 total_wall_seconds: 640.0
 total_idle_seconds: 67.5
