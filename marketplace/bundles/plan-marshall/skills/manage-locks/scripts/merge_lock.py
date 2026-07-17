@@ -99,9 +99,10 @@ cwd, because cross-session coordination is inherently main-scoped: phase-5+
 callers run with cwd pinned to their own worktree, yet they must all contend for
 one shared lock and one shared queue. This script CALLS the single sanctioned
 main-anchored resolver :func:`marketplace_paths.resolve_main_anchored_path`, the
-ONE mechanism covering the bounded exception set (``merge.lock``,
+ONE mechanism covering the per-repo bounded exception set (``merge.lock``,
 ``merge-queue.json``, ``run-configuration.json``, ``lessons-learned``,
-``build-queue.json``). See ADR-002
+``orchestrator``). (The build-slot queue is NOT in this set — it is machine-global
+under ``home_root()`` per ADR-008, not per-repo main-anchored.) See ADR-002
 (``doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc``)
 and ``tools-script-executor/standards/cwd-policy.md`` for the contract.
 
@@ -262,8 +263,10 @@ def _resolve_merge_queue_path() -> Path:
     :func:`marketplace_paths.resolve_main_anchored_path` (ADR-002). The queue lives
     at ``<main>/.plan/local/merge-queue.json`` — the FIFO active+waiting fairness
     state in FRONT of the ``O_EXCL`` ``merge.lock``. ``merge-queue.json`` is one of
-    the bounded-exception files routed through that utility, mirroring how
-    ``build_queue.py`` resolves ``build-queue.json``.
+    the per-repo bounded-exception files routed through that utility. (Unlike the
+    merge queue, ``build_queue.py`` resolves ``build-queue.json`` under the
+    machine-global ``home_root()`` tier, NOT this main-anchored utility — see
+    ADR-008.)
     """
     return resolve_main_anchored_path(_QUEUE_FILENAME)
 

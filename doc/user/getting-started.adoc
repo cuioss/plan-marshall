@@ -26,7 +26,7 @@ When the executor (`​.plan/execute-script.py`) is missing, `/marshall-steward`
 8. **Set review gates** — interactive prompts for the four review-gate booleans (`init_without_asking`, `plan_without_asking`, `execute_without_asking`, `finalize_without_asking` + the asymmetric `loop_back_without_asking`). See xref:configuration.adoc#review-gates[Configuration › Review gates].
 9. **Detect CI provider and tools** — identifies GitHub vs. GitLab, Sonar/SonarCloud, and any other integrations.
 10. **Configure architecture-refresh tier knobs** — sets `tier_0` (deterministic discover) and `tier_1` (LLM re-enrichment) policies in `run-configuration.json`.
-11. **Credential setup** — interactively prompts for credentials for each registered provider (GitHub, GitLab, Sonar, Git) and stores them under `~/.plan-marshall-credentials/`. The credentials never enter the LLM's context.
+11. **Credential setup** — interactively prompts for credentials for each registered provider (GitHub, GitLab, Sonar, Git) and stores them under `~/.plan-marshall/credentials/` (the machine-global home root, overridable via `PLAN_MARSHALL_HOME`). The credentials never enter the LLM's context.
 12. **Permission setup** — applies any marketplace-recommended permission updates from `tools-permission-fix`.
 
 Plus several smaller steps (configuration validation, terminal-title opt-in, etc.). The wizard is idempotent — re-running it on a fresh checkout produces the same setup.

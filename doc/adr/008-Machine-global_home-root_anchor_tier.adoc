@@ -1,0 +1,171 @@
+= ADR-008: Machine-global home-root anchor tier
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: A third path-anchoring tier — the machine-global home root (home_root(), ~/.plan-marshall) — for host-wide state shared across every checkout, distinct from the per-repo main-anchored exception (ADR-002) and the per-repo store-root mechanism (get_store_dir).
+// tags: path-resolution, anchoring, home-root, credentials, build-queue, concurrency, machine-global
+// affects: script-shared/marketplace_paths.py, manage-providers, manage-locks/build_queue.py, tools-file-ops/file_ops.py, tools-script-executor/standards/cwd-policy.md
+// supersedes:
+// end-adr-metadata
+
+// Authoring discipline (see manage-adr SKILL.md → "Authoring Discipline"):
+// ADRs are durable architectural statements, not incident write-ups. No PR numbers,
+// commit SHAs, dates, or lesson IDs anywhere in the body. CLAUDE.md's "current state
+// only" rule applies — describe the architecture, not the chronology.
+
+== Status
+
+Accepted
+
+== Context
+
+Plan Marshall resolves runtime state through a small, deliberately-bounded set of
+anchoring rules. Two already exist and are both *repository-scoped*:
+
+* The uniform cwd-relative rule (ADR-002): every plan-scoped path resolves by
+  walking up from the pinned working directory to the nearest `.plan/local`
+  ancestor. This binds state to whichever checkout the caller is in.
+* The single sanctioned per-repo main-anchored exception (ADR-002):
+  `resolve_main_anchored_path` in `script-shared/marketplace_paths.py` resolves a
+  bounded set of cross-session corpora — `merge.lock`, `merge-queue.json`,
+  `run-configuration.json`, `lessons-learned`, `orchestrator` — against *one
+  repository's* main checkout via `git rev-parse --git-common-dir`, so every
+  worktree of that repository contends for one shared file.
+
+A parallel, orthogonal mechanism, `get_store_dir(store, entry_id)` in
+`tools-file-ops/file_ops.py`, parameterizes entry-shaped store roots (`plans`,
+`orchestrator`); both of its stores are likewise *per-repo* (a plan id or an epic
+id addresses state under one repository's `.plan/local`).
+
+A class of state does not fit any of these: state that must be shared across
+*every checkout on the host*, not just the worktrees of one repository. Two
+concrete members drive the need:
+
+* *Credentials.* A machine's provider tokens are a property of the operator and
+  the machine, not of any single clone. Binding them to one repository's checkout
+  would force re-entry per clone and scatter secrets across repos.
+* *The build-slot queue.* Build concurrency is a whole-machine resource: two
+  sessions in *different* repositories can each start a full build and thrash the
+  same CPU/IO budget. A per-repo main-anchored queue cannot express a slot budget
+  that spans repositories — each repo would resolve its own queue file and admit
+  its own `k` builds independently, defeating the cap.
+
+Routing host-wide state through the per-repo main-anchored utility is therefore not
+merely imprecise but incorrect: it would bind machine-wide coordination to one
+arbitrary repository's checkout. The structural question this ADR settles is
+whether host-wide state gets a first-class anchoring tier of its own, or is
+shoe-horned into the per-repo mechanisms.
+
+== Decision
+
+Introduce a third anchoring tier: the *machine-global home root*, `home_root()` in
+`script-shared/marketplace_paths.py`. It returns `$PLAN_MARSHALL_HOME` when set,
+otherwise `~/.plan-marshall`. It is a single host-wide directory shared across every
+checkout on the machine; it does not depend on git resolution and is not
+repo-scoped.
+
+The tier's membership is *bounded and enumerated*, mirroring the discipline of the
+per-repo main-anchored set:
+
+* `~/.plan-marshall/credentials/` — the provider credential store (owned by
+  `manage-providers`; the explicit `PLAN_MARSHALL_CREDENTIALS_DIR` override retains
+  highest precedence for test isolation and operator overrides).
+* `~/.plan-marshall/build-queue.json` — the build-slot concurrency queue (owned by
+  `manage-locks/build_queue.py`).
+* A reserved slot for a future `marshalld` orchestration daemon's machine-global
+  state.
+
+Because the build queue now records holders originating in *different* checkouts,
+each active/waiting entry is stamped at acquire with its originating checkout's
+`project_root` (via the public `main_checkout_root()` resolver). The dead-holder
+prune judges each entry's liveness against *its own* recorded `project_root`, so a
+foreign repository's live holder is never reclaimed by a session running in a
+different checkout.
+
+The three tiers are kept strictly distinct:
+
+* *Machine-global home root* (`home_root()`, this ADR) — host-wide state shared
+  across every checkout.
+* *Per-repo main-anchored exception* (`resolve_main_anchored_path`, ADR-002) —
+  cross-session state shared across one repository's worktrees, resolved to that
+  repository's main checkout.
+* *Per-repo store-root mechanism* (`get_store_dir`, `tools-file-ops/file_ops.py`) —
+  entry-shaped stores (`plans`, `orchestrator`) addressed by an entry id under one
+  repository's `.plan/local`.
+
+Per-repo state stays per-repo by deliberate decision: `run-configuration.json`
+(adaptive timeouts are a property of one repo's build profile), `lessons-learned`
+(the corpus is committed and reviewed alongside one repository's code), and the
+merge mutex / merge-admission queue (`merge.lock` / `merge-queue.json`, which
+serialize *one repository's* merges to *its own* `main`). Only genuinely host-wide
+state uses the home-root tier.
+
+== Consequences
+
+=== Positive
+
+* Machine-wide state is anchored correctly: one credential store and one build-slot
+  budget per host, shared across every clone, with no per-repo duplication and no
+  binding to an arbitrary repository's checkout.
+* The build-queue cap is meaningful across repositories — concurrent builds in
+  different clones contend for the same slot budget.
+* The three anchoring tiers are each small and explicitly enumerated, so the
+  codebase resists regrowing pervasive ad-hoc resolution: a reviewer can place any
+  new shared-state need into exactly one tier.
+* `PLAN_MARSHALL_HOME` gives operators and tests a single override for the whole
+  tier without special-casing each member.
+
+=== Negative
+
+* There are now three anchoring mechanisms to understand rather than two; a new
+  contributor must learn which tier a given piece of state belongs to.
+* Home-root state lives outside any repository and is therefore invisible to git —
+  it survives `rm -rf .plan/` (intended for credentials) but is not captured by a
+  repo checkout or backup that only covers the working tree.
+
+=== Risks
+
+* *Mis-tiering.* Placing per-repo state under the home root would silently share it
+  across unrelated repositories; placing host-wide state under a per-repo anchor
+  would fragment it. The bounded enumeration and the cwd-policy assertion are the
+  guardrails against both directions.
+* *Foreign-holder liveness.* The build queue's cross-repo prune depends on each
+  entry's stamped `project_root` being resolvable; a legacy entry lacking the stamp
+  falls back to caller-anchored resolution, which is harmless under a breaking
+  clean-start but would mis-judge liveness if the two tiers' clean-start assumption
+  were violated.
+
+== Alternatives Considered
+
+* *Keep build-queue.json and credentials under the per-repo main-anchored set.*
+  This is the pre-existing shape. It cannot express a host-wide slot budget (each
+  repo admits its own `k` builds) and forces credential re-entry per clone. Rejected
+  because it binds genuinely machine-wide state to one arbitrary repository's
+  checkout — a correctness failure, not merely an inelegance.
+* *Extend `get_store_dir` with a `home` store.* The store-root mechanism is
+  entry-shaped (addressed by a plan/epic id) and per-repo by construction. The
+  home-root members are not entry-shaped (a single credentials dir, a single queue
+  file), so overloading `get_store_dir` would blur its "one entry per id under this
+  repo" contract without buying anything. Rejected as a category error; no new store
+  name is added.
+* *A single universal anchor that subsumes both repo-scoped and host-wide state.*
+  Collapsing the tiers would remove the per-repo isolation that ADR-002 exists to
+  guarantee — worktrees would no longer resolve their own state — and re-introduce
+  the pervasive-resolver problem ADR-002 confined. Rejected because the scoping
+  distinction (per-repo vs host-wide) is real and load-bearing.
+
+The alternatives fall in one class: each tries to serve two different scopes
+(per-repo and host-wide) with one mechanism. The decision keeps the scopes
+explicit and gives each its own small, bounded anchor.
+
+== References
+
+* xref:002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc[ADR-002 — Plan-scoped operations move into a cwd-pinned hermetic worktree] — the uniform cwd rule and the per-repo main-anchored exception this tier is positioned against.
+* `marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/cwd-policy.md` — the canonical statement of the three tiers and the assertion that machine-wide state uses the home-root tier.
+* `marketplace/bundles/plan-marshall/skills/manage-locks/SKILL.md` — the build-queue limiter's machine-global anchoring and the `project_root` stamping contract.
+* `marketplace/bundles/plan-marshall/skills/manage-providers/SKILL.md` — the credential store under the home-root tier.

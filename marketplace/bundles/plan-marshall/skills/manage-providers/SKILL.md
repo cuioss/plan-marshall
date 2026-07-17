@@ -7,7 +7,7 @@ mode: script-executor
 
 # Manage Providers
 
-Provider management skill for plan-marshall. Stores credentials outside LLM reach in `~/.plan-marshall-credentials/`, handles all user interaction via Python scripts (the LLM never sees secrets), and provides a `RestClient` for authenticated HTTP requests.
+Provider management skill for plan-marshall. Stores credentials outside LLM reach in `~/.plan-marshall/credentials/` (under the machine-global home root, overridable via the `PLAN_MARSHALL_HOME` env var), handles all user interaction via Python scripts (the LLM never sees secrets), and provides a `RestClient` for authenticated HTTP requests.
 
 ## Enforcement
 
@@ -20,7 +20,7 @@ Provider management skill for plan-marshall. Stores credentials outside LLM reac
 - Never pass secrets as CLI arguments or through the LLM — secrets go into files directly by the user
 
 **Constraints:**
-- Primary security boundary is `chmod 700` on `~/.plan-marshall-credentials/`
+- Primary security boundary is `chmod 700` on `~/.plan-marshall/credentials/`
 - Deny rules are defense-in-depth only — fundamentally incomplete blocklist
 - All file creation uses atomic `os.open()` with mode `0o600` (no umask race)
 - All path resolution validates via `os.path.realpath()` (symlink protection)
@@ -45,7 +45,7 @@ Each provider module exports `get_provider_declarations()` returning a list of d
 | `list-providers` | List available credential providers from marshal.json |
 | `edit` | Update non-secret fields (URL, auth type) |
 | `verify` | HTTP connectivity test, writes `verified_at` timestamp into the credential file |
-| `list` | List configured skills by scanning `~/.plan-marshall-credentials/` (no secrets in output) |
+| `list` | List configured skills by scanning `~/.plan-marshall/credentials/` (no secrets in output) |
 | `remove` | Remove credential file |
 | `ensure-denied` | Add deny rules to the host platform's settings |
 

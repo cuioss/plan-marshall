@@ -47,7 +47,7 @@ When new builds stop being admitted, work through these steps in order:
 
 2. *Let the self-healing reaper clear it.* The reaper runs at the start of every acquire and every release, so the next queue operation auto-clears any active entry older than `2 ×` the adaptive `build.queue.upper_limit_seconds` and emits a `reaped-stale` `[LOCK]` event. In most cases simply triggering another build (or releasing one) frees the wedged slot without any manual action.
 
-3. *Edit `build-queue.json` as a last resort.* If a slot must be freed immediately and no queue operation is imminent, inspect the main-anchored `.plan/local/build-queue.json` to identify the stale active entry, then remove that entry from the `active` list. Do this only when you are certain the holding build is genuinely dead — removing a live build's entry lets a second build claim its slot.
+3. *Edit `build-queue.json` as a last resort.* If a slot must be freed immediately and no queue operation is imminent, inspect the machine-global `~/.plan-marshall/build-queue.json` (the host-wide queue, overridable via `PLAN_MARSHALL_HOME`) to identify the stale active entry, then remove that entry from the `active` list. Do this only when you are certain the holding build is genuinely dead — removing a live build's entry lets a second build claim its slot.
 
 == Concept Crossover
 

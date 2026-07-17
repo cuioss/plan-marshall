@@ -8,7 +8,7 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
-Several plans can be in flight at once — each in its own worktree on its own feature branch (see xref:branches-and-worktrees.adoc[Branches and Worktrees]) — so the only state they contend for is the shared underlying repository and Plan Marshall's own main-anchored coordination files. Two cooperative locks serialize the moments where that shared state actually matters: the *merge mutex* serializes the merge-to-`main` boundary, and the *build-queue limiter* caps how many builds run at once across the cluster. Both are file-based, both anchor to the main checkout regardless of which worktree the caller is pinned to, and both sit on one shared, TOCTOU-safe read-modify-write core. A self-healing reaper, a main-anchored event log, and a pair of lock-state terminal-title glyphs make the live state observable and keep a crashed session from wedging the system.
+Several plans can be in flight at once — each in its own worktree on its own feature branch (see xref:branches-and-worktrees.adoc[Branches and Worktrees]) — so the only state they contend for is the shared underlying repository and Plan Marshall's own main-anchored coordination files. Two cooperative locks serialize the moments where that shared state actually matters: the *merge mutex* serializes the merge-to-`main` boundary, and the *build-queue limiter* caps how many builds run at once across the host. Both are file-based and sit on one shared, TOCTOU-safe read-modify-write core; they differ in scope: the merge mutex anchors to the repository's main checkout (per-repo), while the build-queue limiter is machine-global (host-wide across every checkout, under the `~/.plan-marshall` home root). A self-healing reaper, a main-anchored event log, and a pair of lock-state terminal-title glyphs make the live state observable and keep a crashed session from wedging the system.
 
 == Merge Mutex
 
@@ -18,7 +18,7 @@ The same mutex serves two callers: the user-facing Pre-Merge Gate that lands the
 
 == Build-Queue Limiter
 
-Running every concurrent plan's full build at the same time would thrash a shared machine. The *build-queue limiter* (`manage-locks` `build_queue`) caps concurrency to a bounded number of slots, persisted in the main-anchored `build-queue.json`. A build that finds a free slot is admitted immediately; one that does not is enqueued and waits, then is promoted into the next freed slot in FIFO order (oldest enqueue first). The wrapper that requests a slot retries with backoff until it is admitted, so the limiter shapes throughput without ever dropping a build.
+Running every concurrent plan's full build at the same time would thrash a shared machine. The *build-queue limiter* (`manage-locks` `build_queue`) caps concurrency to a bounded number of slots, persisted in the machine-global `build-queue.json` under the home root (`~/.plan-marshall/build-queue.json`, overridable via `PLAN_MARSHALL_HOME`) so every checkout on the host shares one slot budget. A build that finds a free slot is admitted immediately; one that does not is enqueued and waits, then is promoted into the next freed slot in FIFO order (oldest enqueue first). The wrapper that requests a slot retries with backoff until it is admitted, so the limiter shapes throughput without ever dropping a build.
 
 == Self-Healing Stale Reaper
 

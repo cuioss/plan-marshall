@@ -6,7 +6,7 @@ Reference document for the manage-providers skill covering threat model, securit
 
 ### Threat 1: LLM Credential Exfiltration
 
-**Primary boundary**: `chmod 700` on `~/.plan-marshall-credentials/` directory. The OS prevents any process running as a different user from reading.
+**Primary boundary**: `chmod 700` on `~/.plan-marshall/credentials/` directory (under the machine-global home root, overridable via `PLAN_MARSHALL_HOME`). The OS prevents any process running as a different user from reading.
 
 **Defense-in-depth**: host-platform deny rules covering `Read`, `Bash(cat)`, `Bash(head)`, `Bash(tail)`, `Bash(less)`, `Bash(more)`, `Bash(cp)`, `Bash(grep)`, `Bash(python3 -c)`, `Bash(base64)` — both `~` and absolute path forms.
 
@@ -49,19 +49,30 @@ These constraints apply to all scripts in this skill:
 
 ### Covered Patterns
 
+The rules are single-sourced from `CREDENTIALS_DIR`; every Read/Bash vector is
+emitted in BOTH the tilde and absolute path forms, and the `python3 -c` vector
+uses the distinctive path tail so it matches either spelling in an inline script:
+
 ```text
-Read(~/.plan-marshall-credentials/**)
+Read(~/.plan-marshall/credentials/**)
 Read({abs_path}/**)
-Bash(cat ~/.plan-marshall-credentials/*)
+Bash(cat ~/.plan-marshall/credentials/*)
 Bash(cat {abs_path}/*)
-Bash(head ~/.plan-marshall-credentials/*)
-Bash(tail ~/.plan-marshall-credentials/*)
-Bash(less ~/.plan-marshall-credentials/*)
-Bash(more ~/.plan-marshall-credentials/*)
-Bash(cp ~/.plan-marshall-credentials/*)
-Bash(grep ~/.plan-marshall-credentials/*)
-Bash(python3 -c *plan-marshall-credentials*)
-Bash(base64 ~/.plan-marshall-credentials/*)
+Bash(head ~/.plan-marshall/credentials/*)
+Bash(head {abs_path}/*)
+Bash(tail ~/.plan-marshall/credentials/*)
+Bash(tail {abs_path}/*)
+Bash(less ~/.plan-marshall/credentials/*)
+Bash(less {abs_path}/*)
+Bash(more ~/.plan-marshall/credentials/*)
+Bash(more {abs_path}/*)
+Bash(cp ~/.plan-marshall/credentials/*)
+Bash(cp {abs_path}/*)
+Bash(grep ~/.plan-marshall/credentials/*)
+Bash(grep {abs_path}/*)
+Bash(base64 ~/.plan-marshall/credentials/*)
+Bash(base64 {abs_path}/*)
+Bash(python3 -c *.plan-marshall/credentials*)
 ```
 
 ### Acknowledged Bypass Limitations
