@@ -14,7 +14,7 @@ The epic slug is NOT an input — it is derived in Step 1. Every invocation of t
 
 ### Step 1: Derive the dated slug and scaffold the epic
 
-Derive the slug as `lessons-handling-{YY-MM-DD}-{NN}` from today's date, per the dated-slug rule in the mode contract, where `{NN}` is a collision-safe two-digit per-invocation sequence suffix (`01`, `02`, …). Because every invocation opens a FRESH, distinct epic, the bare `lessons-handling-{YY-MM-DD}` form collides on the second same-day run — reopening the earlier epic instead of starting a new one. Resolve `{NN}` by checking the orchestrator store for existing `lessons-handling-{YY-MM-DD}-*` slugs and taking the next free ordinal (first run of the day is `-01`, e.g. `lessons-handling-26-07-16-01`). Then scaffold the epic tree (idempotent):
+Derive the slug as `lessons-handling-{YY-MM-DD}-{NN}` from today's date, per the dated-slug rule in the mode contract, where `{NN}` is a collision-safe two-digit per-invocation sequence suffix (`01`, `02`, …). Because every invocation opens a FRESH, distinct epic, the bare `lessons-handling-{YY-MM-DD}` form collides on the second same-day run — reopening an already-created epic instead of starting a new one. Resolve `{NN}` by checking the orchestrator store for existing `lessons-handling-{YY-MM-DD}-*` slugs and taking the next free ordinal (first run of the day is `-01`, e.g. `lessons-handling-26-07-16-01`). Then scaffold the epic tree (idempotent):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator scaffold \
