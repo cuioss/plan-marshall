@@ -844,7 +844,8 @@ def resolve_module_for_path(path: str, project_dir: str = '.', preferred_domain:
             candidate_len = containment_len
         if candidate_len is None:
             continue
-        technology = (derived.get('virtual_module') or {}).get('technology') or ''
+        virtual_module = derived.get('virtual_module')
+        technology = (virtual_module.get('technology') if isinstance(virtual_module, dict) else '') or ''
         candidates.append((candidate_len, name, technology))
 
     if candidates:
