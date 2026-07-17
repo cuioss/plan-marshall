@@ -75,8 +75,8 @@ status: success
 operation: list
 count: 2
 adrs[2]{number,title,status,path}:
-1,Use PostgreSQL,Accepted,doc/adr/001-Use_PostgreSQL.adoc
-2,Adopt Quarkus,Proposed,doc/adr/002-Adopt_Quarkus.adoc
+1,Use PostgreSQL,Accepted,doc/adr/0001-Use_PostgreSQL.adoc
+2,Adopt Quarkus,Proposed,doc/adr/0002-Adopt_Quarkus.adoc
 ```
 
 ## Workflow: create-adr
