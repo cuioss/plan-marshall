@@ -13,6 +13,7 @@ import pytest
 from _providers_core import (
     VALID_AUTH_TYPES,
     RestClient,
+    _migrate_credentials_home_if_needed,
     apply_extra_passthrough,
     get_authenticated_client,
     get_project_name,
@@ -602,3 +603,240 @@ class TestVerifySystemAuth:
         }
         result = verify_system_auth(provider)
         assert len(result['output']) <= 500
+
+
+# =============================================================================
+# Credentials home-root migration tests
+# =============================================================================
+
+
+def _migration_env(tmp_path, monkeypatch):
+    """Set up an isolated home-root migration sandbox.
+
+    Clears the explicit ``PLAN_MARSHALL_CREDENTIALS_DIR`` override (the autouse
+    ``_credentials_dir_sandbox`` sets it, which would otherwise make the
+    migration a no-op), points ``PLAN_MARSHALL_HOME`` at a tmp home so
+    ``home_root()`` never touches the real ``~``, and redirects the module
+    ``CREDENTIALS_DIR`` / ``_OLD_CREDENTIALS_DIR`` constants at tmp paths.
+
+    Returns:
+        ``(new_dir, old_dir)`` — the home-root credentials dir and the legacy dir.
+    """
+    monkeypatch.delenv('PLAN_MARSHALL_CREDENTIALS_DIR', raising=False)
+    # PLAN_MARSHALL_HOME, when set, IS the home root verbatim (the ~/.plan-marshall
+    # suffix applies only to the unset default), so home_root() == home here and
+    # the credentials dir is home/credentials.
+    home = tmp_path / 'home'
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(home))
+    new_dir = home / 'credentials'
+    old_dir = tmp_path / 'old-plan-marshall-credentials'
+    monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', new_dir)
+    monkeypatch.setattr('_providers_core._OLD_CREDENTIALS_DIR', old_dir)
+    return new_dir, old_dir
+
+
+class TestCredentialsHomeMigration:
+    """Tests for _migrate_credentials_home_if_needed() — the lazy, idempotent
+    home-root migration that never merges and never reads credential contents.
+    """
+
+    def test_migrates_old_to_new_then_idempotent_no_op(self, tmp_path, monkeypatch):
+        """Only-old → migrate; a re-run is a no-op reporting already_migrated."""
+        new_dir, old_dir = _migration_env(tmp_path, monkeypatch)
+        old_dir.mkdir(mode=0o700, parents=True)
+        (old_dir / 'github.json').write_text('{"skill": "github", "auth_type": "system"}')
+        assert not new_dir.exists()
+
+        result = _migrate_credentials_home_if_needed()
+
+        assert result == 'migrated'
+        assert new_dir.is_dir()
+        assert (new_dir / 'github.json').is_file()
+        assert not old_dir.exists()
+
+        # Idempotent re-run: new present, old absent → already_migrated, no change.
+        again = _migrate_credentials_home_if_needed()
+        assert again == 'already_migrated'
+        assert (new_dir / 'github.json').is_file()
+
+    def test_no_op_when_nothing_to_migrate(self, tmp_path, monkeypatch):
+        """Neither dir present → already_migrated and nothing is created."""
+        new_dir, old_dir = _migration_env(tmp_path, monkeypatch)
+        assert not new_dir.exists()
+        assert not old_dir.exists()
+
+        assert _migrate_credentials_home_if_needed() == 'already_migrated'
+        assert not new_dir.exists()
+
+    def test_explicit_override_is_never_migrated(self, tmp_path, monkeypatch):
+        """When PLAN_MARSHALL_CREDENTIALS_DIR is set, migration is inert."""
+        new_dir, old_dir = _migration_env(tmp_path, monkeypatch)
+        # Re-assert the explicit override — it must short-circuit the migration.
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(new_dir))
+        old_dir.mkdir(mode=0o700, parents=True)
+        (old_dir / 'github.json').write_text('{"skill": "github"}')
+
+        assert _migrate_credentials_home_if_needed() == 'already_migrated'
+        # Old dir untouched, new dir NOT created — the override is authoritative.
+        assert (old_dir / 'github.json').is_file()
+        assert not new_dir.exists()
+
+    def test_conflict_keeps_new_and_never_merges(self, tmp_path, monkeypatch, capsys):
+        """Both dirs present → conflict; new kept verbatim, old NOT merged in."""
+        new_dir, old_dir = _migration_env(tmp_path, monkeypatch)
+        new_dir.mkdir(mode=0o700, parents=True)
+        (new_dir / 'new-only.json').write_text('{"skill": "new"}')
+        old_dir.mkdir(mode=0o700, parents=True)
+        (old_dir / 'old-only.json').write_text('{"skill": "old", "token": "SECRET-DO-NOT-LEAK"}')
+
+        result = _migrate_credentials_home_if_needed()
+
+        assert result == 'conflict'
+        # New dir untouched; the old file was NOT merged into it.
+        assert (new_dir / 'new-only.json').is_file()
+        assert not (new_dir / 'old-only.json').exists()
+        # Old dir left in place for manual review.
+        assert (old_dir / 'old-only.json').is_file()
+        # The conflict notice names paths only — never a credential value.
+        captured = capsys.readouterr()
+        assert 'SECRET-DO-NOT-LEAK' not in captured.out
+        assert 'SECRET-DO-NOT-LEAK' not in captured.err
+
+    def test_migration_never_reads_file_contents(self, tmp_path, monkeypatch, capsys):
+        """A non-JSON, secret-looking blob migrates verbatim — never parsed/read.
+
+        If the migration parsed or rewrote credential files it would either fail
+        on this non-JSON payload or alter the bytes. A byte-identical move proves
+        it uses a pure filesystem rename that never reads the content, and no
+        secret text appears in any output.
+        """
+        new_dir, old_dir = _migration_env(tmp_path, monkeypatch)
+        old_dir.mkdir(mode=0o700, parents=True)
+        secret_blob = b'\x00\x01 not-json token=SECRET-DO-NOT-LEAK \xff\xfe'
+        (old_dir / 'weird.bin').write_bytes(secret_blob)
+
+        result = _migrate_credentials_home_if_needed()
+
+        assert result == 'migrated'
+        assert (new_dir / 'weird.bin').read_bytes() == secret_blob
+        captured = capsys.readouterr()
+        assert 'SECRET-DO-NOT-LEAK' not in captured.out
+        assert 'SECRET-DO-NOT-LEAK' not in captured.err
+
+    def test_rename_eexist_is_treated_as_lost_race(self, tmp_path, monkeypatch):
+        """A sibling claiming new_dir (EEXIST) during os.rename is a lost race.
+
+        Reproduces the PR #923 gap: a concurrent migrator creates CREDENTIALS_DIR
+        between our new_dir.exists() check and the os.rename, so os.rename raises
+        FileExistsError (errno EEXIST). This must resolve to already_migrated,
+        never crash.
+        """
+        import errno as _errno
+
+        _new_dir, old_dir = _migration_env(tmp_path, monkeypatch)
+        old_dir.mkdir(mode=0o700, parents=True)
+        (old_dir / 'github.json').write_text('{"skill": "github"}')
+
+        def _raise_eexist(src, dst):
+            raise FileExistsError(_errno.EEXIST, 'File exists')
+
+        monkeypatch.setattr('_providers_core.os.rename', _raise_eexist)
+
+        assert _migrate_credentials_home_if_needed() == 'already_migrated'
+
+    def test_rename_enotempty_is_treated_as_lost_race(self, tmp_path, monkeypatch):
+        """A non-empty target (ENOTEMPTY) during os.rename is a lost race.
+
+        A sibling both created AND started populating CREDENTIALS_DIR before our
+        rename, so os.rename raises OSError with errno ENOTEMPTY. This must
+        resolve to already_migrated, never crash.
+        """
+        import errno as _errno
+
+        _new_dir, old_dir = _migration_env(tmp_path, monkeypatch)
+        old_dir.mkdir(mode=0o700, parents=True)
+        (old_dir / 'github.json').write_text('{"skill": "github"}')
+
+        def _raise_enotempty(src, dst):
+            raise OSError(_errno.ENOTEMPTY, 'Directory not empty')
+
+        monkeypatch.setattr('_providers_core.os.rename', _raise_enotempty)
+
+        assert _migrate_credentials_home_if_needed() == 'already_migrated'
+
+    def test_exdev_fallback_move_race_is_treated_as_lost_race(self, tmp_path, monkeypatch):
+        """The EXDEV → shutil.move fallback has the same lost-race exposure.
+
+        os.rename raises EXDEV (cross-filesystem), the shutil.move fallback then
+        loses the same race (ENOTEMPTY). The fallback branch must mirror the
+        rename branch and resolve to already_migrated, never crash.
+        """
+        import errno as _errno
+
+        _new_dir, old_dir = _migration_env(tmp_path, monkeypatch)
+        old_dir.mkdir(mode=0o700, parents=True)
+        (old_dir / 'github.json').write_text('{"skill": "github"}')
+
+        def _raise_exdev(src, dst):
+            raise OSError(_errno.EXDEV, 'Invalid cross-device link')
+
+        def _raise_enotempty_move(src, dst):
+            raise OSError(_errno.ENOTEMPTY, 'Directory not empty')
+
+        monkeypatch.setattr('_providers_core.os.rename', _raise_exdev)
+        monkeypatch.setattr('_providers_core.shutil.move', _raise_enotempty_move)
+
+        assert _migrate_credentials_home_if_needed() == 'already_migrated'
+
+    def test_unrelated_oserror_still_propagates(self, tmp_path, monkeypatch):
+        """An OSError that is NOT a lost race (e.g. EACCES) still propagates.
+
+        Guards against over-swallowing: only EEXIST/ENOTEMPTY (and the existing
+        FileNotFoundError / EXDEV cases) are handled — a genuine permission
+        failure must still surface rather than be silently masked.
+        """
+        import errno as _errno
+
+        _new_dir, old_dir = _migration_env(tmp_path, monkeypatch)
+        old_dir.mkdir(mode=0o700, parents=True)
+        (old_dir / 'github.json').write_text('{"skill": "github"}')
+
+        def _raise_eacces(src, dst):
+            raise OSError(_errno.EACCES, 'Permission denied')
+
+        monkeypatch.setattr('_providers_core.os.rename', _raise_eacces)
+
+        with pytest.raises(OSError):
+            _migrate_credentials_home_if_needed()
+
+
+class TestGetProjectNameCwdFallbackDisambiguation:
+    """Tests for the cwd-fallback disambiguation added to get_project_name()."""
+
+    def test_distinct_dirs_same_basename_resolve_distinct(self, tmp_path, monkeypatch):
+        """Two different dirs sharing a basename get distinct project names."""
+        stage_marshal(tmp_path, monkeypatch, config=None)  # no marshal → cwd-fallback
+        a = tmp_path / 'a' / 'proj'
+        b = tmp_path / 'b' / 'proj'
+        a.mkdir(parents=True)
+        b.mkdir(parents=True)
+
+        monkeypatch.chdir(a)
+        name_a = get_project_name()
+        monkeypatch.chdir(b)
+        name_b = get_project_name()
+
+        assert name_a != name_b
+        assert name_a.startswith('proj-')
+        assert name_b.startswith('proj-')
+        # Deterministic: the same dir always resolves to the same name.
+        assert get_project_name() == name_b
+
+    def test_url_derived_output_unchanged_no_hash_suffix(self, tmp_path, monkeypatch):
+        """The URL-derived branch is unchanged — plain repo name, no hash suffix."""
+        stage_marshal(
+            tmp_path,
+            monkeypatch,
+            {'providers': [{'category': 'version-control', 'url': 'https://github.com/org/myrepo.git'}]},
+        )
+        assert get_project_name() == 'myrepo'

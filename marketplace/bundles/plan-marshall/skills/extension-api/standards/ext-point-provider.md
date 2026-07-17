@@ -63,7 +63,7 @@ None — discovery is automatic via filesystem scanning.
 
 - Returns list of provider dicts with authentication configuration
 - Each provider is registerable by `manage-providers`
-- Credentials are stored in `.plan/credentials/`
+- Credentials are stored in `~/.plan-marshall/credentials/`
 
 ## Hook API
 
@@ -118,7 +118,7 @@ The `discover-and-persist` command validates these rules before persisting to ma
 
 ## Storage
 
-Credentials are stored in `~/.plan-marshall-credentials/` (not in marshal.json). Provider declarations are persisted to marshal.json by `discover-and-persist` and loaded at runtime by `_providers_core.load_declared_providers()`.
+Credentials are stored in `~/.plan-marshall/credentials/` (under the machine-global home root, overridable via `PLAN_MARSHALL_HOME`; not in marshal.json). Provider declarations are persisted to marshal.json by `discover-and-persist` and loaded at runtime by `_providers_core.load_declared_providers()`.
 
 ## Current Implementations
 

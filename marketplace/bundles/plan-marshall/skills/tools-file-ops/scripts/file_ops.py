@@ -443,8 +443,14 @@ def get_temp_dir(subdir: str | None = None) -> Path:
 def get_store_dir(store: str, entry_id: str) -> Path:
     """Resolve the root directory for an entry of a named runtime-state store.
 
-    This is the ONE parameterized store-root mechanism in the manage-* path
-    layer. Each store maps to its own resolution rule:
+    This is the ONE parameterized store-root mechanism for entry-shaped stores
+    in the manage-* path layer — stores addressed by an ``entry_id`` (a plan id
+    or an epic id). Non-entry-shaped machine-wide state (``build-queue.json``,
+    ``credentials/``) is NOT resolved here: it anchors to the distinct
+    machine-global home-root tier, ``marketplace_paths.home_root()``, which
+    returns a single host-wide ``~/.plan-marshall`` directory shared across every
+    checkout. No new store name is added for that tier; it is a separate
+    mechanism, not a store. Each store below maps to its own resolution rule:
 
     - ``store='plans'`` — routes through the existing cwd-relative
       :func:`base_path` (``{base_dir}/plans/{entry_id}``, ADR-002 unchanged):

@@ -15,9 +15,16 @@ working directory IS main, and phase-5+ resolve to the pinned worktree because
 the working directory is pinned there. The single deliberate exception mechanism
 is ``resolve_main_anchored_path`` (below), which always resolves to the main
 checkout for the bounded exception set — ``merge.lock``,
-``run-configuration.json``, ``lessons-learned``, ``build-queue.json``,
-``merge-queue.json``, ``orchestrator`` — every other resolution in the
-codebase is cwd-relative.
+``run-configuration.json``, ``lessons-learned``, ``merge-queue.json``,
+``orchestrator`` — every other resolution in the codebase is cwd-relative.
+
+Distinct from the per-repo main-anchored exception above is the machine-global
+home-root tier: ``home_root()`` returns a single ``~/.plan-marshall`` directory
+(overridable via ``PLAN_MARSHALL_HOME``) shared across every checkout on the
+machine. Where ``resolve_main_anchored_path`` anchors per-repo shared state to
+one repository's main checkout, ``home_root()`` anchors machine-wide state
+(build-queue.json, credentials/) to the host — it is not repo-scoped and does
+not depend on git resolution.
 """
 
 import json
@@ -26,6 +33,26 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+
+def resolve_home() -> Path:
+    """Resolve the user home directory, with a fallback for restricted envs.
+
+    ``Path.home()`` raises ``RuntimeError`` when it cannot determine the home
+    directory — minimal containers and CI runners without ``HOME`` set are the
+    common triggers. Several module-level constants in this area (and in the
+    provider scripts that import them) call the home resolver at *import* time,
+    so an unguarded ``Path.home()`` failure crashes the whole import chain
+    before any script logic runs. Fall back to ``$HOME`` (when set) or ``/tmp``
+    so import always succeeds; every module-level home resolution in this area
+    routes through this single helper rather than calling ``Path.home()``
+    directly.
+    """
+    try:
+        return Path.home()
+    except RuntimeError:
+        return Path(os.environ.get('HOME') or '/tmp')
+
 
 # Central configuration
 PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
@@ -58,7 +85,7 @@ _SKILL_ROOTS_CACHE: tuple[str, ...] | None = None
 # Fallback deployed-bundle cache root used when the platform-runtime layout op
 # cannot be reached. This is the Claude default — every supported environment
 # that lacks a resolvable runtime is a Claude checkout.
-_DEFAULT_BUNDLE_CACHE_ROOTS = (str(Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH),)
+_DEFAULT_BUNDLE_CACHE_ROOTS = (str(resolve_home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH),)
 
 # Per-process memoisation cache for the resolved deployed-bundle cache roots.
 _BUNDLE_CACHE_ROOTS_CACHE: tuple[str, ...] | None = None
@@ -363,6 +390,58 @@ def _main_checkout_root() -> Path:
     return common_dir.parent
 
 
+def main_checkout_root() -> Path:
+    """Return the MAIN checkout root — public thin wrapper over ``_main_checkout_root``.
+
+    Exposes the git-common-dir main-checkout resolution as a public symbol so
+    callers that need to stamp a holder's originating project (e.g. build-queue
+    holders under the machine-global ``home_root()`` tier) can name the main
+    checkout without reaching a private symbol.
+
+    Raises:
+        RuntimeError: when git cannot resolve the common dir (not a repo).
+    """
+    return _main_checkout_root()
+
+
+# =============================================================================
+# Machine-global home-root tier
+# =============================================================================
+# Distinct from the per-repo main-anchored exception above: ``home_root()`` is a
+# single host-wide directory shared across every checkout on the machine, the
+# home for non-entry-shaped machine-wide state (build-queue.json, credentials/).
+# It is NOT repo-scoped and does not depend on git resolution.
+
+
+def home_root() -> Path:
+    """Return the machine-global plan-marshall home root.
+
+    Resolves to ``$PLAN_MARSHALL_HOME`` when set, otherwise ``~/.plan-marshall``.
+    This is the single host-wide anchor for machine-global state shared across
+    every checkout on the machine — distinct from ``resolve_main_anchored_path``,
+    which anchors per-repo shared state to one repository's main checkout.
+    """
+    return Path(os.environ.get('PLAN_MARSHALL_HOME') or (resolve_home() / '.plan-marshall'))
+
+
+def ensure_home_root() -> Path:
+    """Create the machine-global home root with ``0o700`` permissions.
+
+    ``Path.mkdir(mode=...)`` applies the mode only to the leaf directory it
+    creates — a home root materialized as a *parent* (``parents=True`` on a
+    child path) or via a mode-less ``mkdir`` gets umask-default permissions,
+    leaving machine-global state world-listable. Every first-touch creator of
+    ``home_root()`` routes through this helper instead: it creates the root
+    with ``0o700`` and repairs the mode when the directory already exists with
+    a wider one. ``home_root()`` itself stays a pure resolver.
+    """
+    root = home_root()
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if (root.stat().st_mode & 0o777) != 0o700:
+        os.chmod(root, 0o700)
+    return root
+
+
 def resolve_main_anchored_path(subpath: str | Path) -> Path:
     """Resolve ``subpath`` under the MAIN checkout's ``.plan/local``, cwd-independent.
 
@@ -372,7 +451,9 @@ def resolve_main_anchored_path(subpath: str | Path) -> Path:
     cross-session shared state MUST route through this function rather than
     re-implementing git-common-dir resolution. The bounded exception set is
     exactly: ``merge.lock``, ``run-configuration.json``, ``lessons-learned``,
-    ``build-queue.json``, ``merge-queue.json``, ``orchestrator``.
+    ``merge-queue.json``, ``orchestrator``. (Machine-global state such as
+    ``build-queue.json`` and ``credentials/`` is NOT in this set — it anchors to
+    the host-wide ``home_root()`` tier, not a repository's main checkout.)
 
     Resolution precedence:
 

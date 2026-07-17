@@ -133,6 +133,65 @@ def test_holder_is_dead_true_when_neither_path_exists(plan_context):
 
 
 # =============================================================================
+# holder_is_dead — project-qualified liveness (project_root=, machine-global lock)
+# =============================================================================
+#
+# When a lock file is shared across repos (the machine-global lock anchor), a
+# recorded holder may live in a DIFFERENT project's checkout. The acquirer must
+# judge that holder's liveness against ITS project (project_root=<A>), not the
+# acquirer's own checkout — otherwise a foreign LIVE holder is wrongly reclaimed.
+
+
+def test_holder_is_dead_foreign_live_holder_not_reclaimed_with_project_root(tmp_path, monkeypatch):
+    # A holder whose live plan dir exists under project A's checkout must NOT be
+    # declared dead when checked with project_root=<A> from a session whose own
+    # checkout is project B (where the holder is absent). Caller-anchored
+    # (project_root=None) resolution against B still reports it dead.
+    holder = 'foreign-live-holder'
+    project_a = tmp_path / 'project-a'
+    (project_a / '.plan' / 'local' / 'plans' / holder).mkdir(parents=True)
+
+    # The session's own checkout is B — anchor project_root=None resolution there.
+    b_base = tmp_path / 'project-b' / '.plan' / 'local'
+    b_base.mkdir(parents=True)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(b_base))
+
+    # Caller-anchored (default) sees B, where the holder is absent → dead.
+    assert holder_is_dead(holder) is True
+    # Project-qualified against A sees A's live plan dir → NOT dead.
+    assert holder_is_dead(holder, project_root=project_a) is False
+
+
+def test_holder_is_dead_project_root_consults_worktree_plan_dir(tmp_path, monkeypatch):
+    # The project-qualified base consults BOTH liveness paths. Here the holder's
+    # plan dir lives in its WORKTREE under project A (moved-in mid-execute), not
+    # A's main checkout — project_root=<A> must still judge it alive.
+    holder = 'foreign-wt-holder'
+    project_a = tmp_path / 'project-a'
+    wt_plan = project_a / '.plan' / 'local' / 'worktrees' / holder / '.plan' / 'local' / 'plans' / holder
+    wt_plan.mkdir(parents=True)
+
+    b_base = tmp_path / 'project-b' / '.plan' / 'local'
+    b_base.mkdir(parents=True)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(b_base))
+
+    assert holder_is_dead(holder, project_root=project_a) is False
+    assert holder_is_dead(holder) is True  # caller-anchored at B → dead
+
+
+def test_holder_is_dead_project_root_dead_when_absent_in_that_project(tmp_path, monkeypatch):
+    # project_root does not blanket a holder alive — a holder absent from project
+    # A's checkout is still dead when judged against A.
+    b_base = tmp_path / 'project-b' / '.plan' / 'local'
+    b_base.mkdir(parents=True)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(b_base))
+    project_a = tmp_path / 'project-a'
+    project_a.mkdir(parents=True)
+
+    assert holder_is_dead('absent-holder', project_root=project_a) is True
+
+
+# =============================================================================
 # holder_has_live_worktree — worktree-directory presence heartbeat (D3)
 # =============================================================================
 #

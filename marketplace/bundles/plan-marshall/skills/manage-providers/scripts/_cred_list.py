@@ -9,7 +9,11 @@ import argparse
 import json
 from pathlib import Path
 
-from _providers_core import CREDENTIALS_DIR, get_project_name
+from _providers_core import (
+    CREDENTIALS_DIR,
+    _migrate_credentials_home_if_needed,
+    get_project_name,
+)
 from file_ops import output_toon
 
 
@@ -50,6 +54,10 @@ def _scan_dir(directory: Path, scope: str) -> list[dict]:
 
 def run_list(args: argparse.Namespace) -> int:
     """Execute the list subcommand."""
+    # Lazily migrate the pre-home-root credentials dir before scanning so a
+    # first-ever `list` after the home-root move sees the migrated entries.
+    _migrate_credentials_home_if_needed()
+
     scope = args.scope
 
     entries: list[dict] = []

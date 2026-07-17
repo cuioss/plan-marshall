@@ -93,7 +93,7 @@ Destination: PR-behavior (a runtime side-effect), though it keys on host editor,
 |----------|----------|
 | `manage-metrics/SKILL.md:21,326-337`, `standards/data-format.md:64,70-77`, `manage-metrics.py:720-739` | the A2 leak is wider than the parser — the **docs and the renderer** also carry the Claude four-field / `<usage>` / billing-weight vocabulary. The normalized-token boundary must reach the doc + render surfaces too |
 | `manage-architecture/scripts/_cmd_client.py:110-120` + `standards/resolve-command.md:14,57-59` | `_BASH_CEILING_SECONDS=600` bakes the Claude Bash-tool 600s timeout ceiling into core; `execution_tier` (per_task/orchestrator) routing is *derived* from it. The ceiling is a per-target runtime fact → it should come from the runtime |
-| `manage-providers/scripts/_cred_ensure_denied.py:19-80` | emits Claude `permissions.deny` DSL (`Read(~/.plan-marshall-credentials/**)`, `Bash(cat …)`) into the host settings file — same class as the A1 permission-DSL leak (the SKILL prose is already neutralized to "host platform", the emitted rule strings are not) |
+| `manage-providers/scripts/_cred_ensure_denied.py:19-80` | emits Claude `permissions.deny` DSL (`Read(~/.plan-marshall/credentials/**)`, `Bash(cat …)`) into the host settings file — same class as the A1 permission-DSL leak (the SKILL prose is already neutralized to "host platform", the emitted rule strings are not) |
 | `manage-locks/scripts/merge_lock.py` | **FIXED** — no longer duplicates the glyph vocabulary; it imports `TITLE_TOKEN_GLYPHS` from `manage_terminal_title` as the single source of truth |
 
 Destination: all PR-behavior (normalize the contract / source the value from the runtime), except the metrics docs which are prose-neutralize alongside the A2 code fix.
@@ -216,7 +216,7 @@ Destination: reword target-neutral, or source the value from the runtime (e.g. t
 CI/git/build operations (all `build-maven`/`build-gradle`/`build-npm` + most `build-pyproject`;
 all `github`/`gitlab`/`sonar` providers; `tools-integration-ci` scripts); metrics
 storage/aggregation; `manage-change-ledger`, `manage-locks` core, `manage-logging` format,
-`manage-providers` (uses `~/.plan-marshall-credentials`, never `~/.claude`); `plan-doctor`;
+`manage-providers` (uses `~/.plan-marshall/credentials`, never `~/.claude`); `plan-doctor`;
 all `extension.py` (shared Extension API); `script-shared` build/extension/query layers;
 `ref-toon-format`, `ref-code-quality`, `persona-module-tester`. The `.plan/`
 executor surface and `marshal.json` are target-agnostic by design. Env vars throughout are

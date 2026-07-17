@@ -6,8 +6,8 @@ waiting queue.
 Notation: ``plan-marshall:manage-locks:build_queue``
 
 This standalone script caps how many build sessions run concurrently across the
-cluster. It persists ``active`` + ``waiting`` + ``run_log`` state in the
-main-anchored ``build-queue.json`` and mutates it through the shared
+machine. It persists ``active`` + ``waiting`` + ``run_log`` state in the
+machine-global ``build-queue.json`` (under ``home_root()``, ADR-008) and mutates it through the shared
 TOCTOU-safe read-modify-write core (:func:`_locks_core.rmw_json`), so two
 sessions racing to claim or free a slot can never both observe the same
 pre-state and both admit. It is modeled on ``merge_lock.py`` (the ``k=1`` merge
@@ -59,15 +59,19 @@ It exposes two actions:
     ``[600 s, 3600 s]`` so the reap threshold tracks the longest observed real
     build without ever exceeding a 1 h ceiling.
 
-**Main-anchored resolution — via the single sanctioned utility (ADR-002):** the
-queue file always resolves against the MAIN checkout regardless of the caller's
-cwd, because cross-session coordination is inherently main-scoped: phase-5+
-callers run with cwd pinned to their own worktree, yet they must all contend for
-one shared queue. This script routes ``build-queue.json`` through the single
-sanctioned :func:`marketplace_paths.resolve_main_anchored_path` — the ONE
-mechanism covering the bounded exception set (``merge.lock``,
-``run-configuration.json``, ``lessons-learned``, ``build-queue.json``). No new
-git-common-dir copy is introduced.
+**Machine-global resolution — the host-wide home-root tier:** the queue file
+resolves under the machine-global home root (:func:`marketplace_paths.home_root`,
+``~/.plan-marshall/build-queue.json`` by default, overridable via
+``PLAN_MARSHALL_HOME``) regardless of the caller's cwd, because build-session
+coordination spans EVERY checkout on the host, not just one repository: sessions
+in different repos must all contend for the one shared queue. This is distinct
+from the per-repo main-anchored exception (``merge.lock``,
+``run-configuration.json``, ``lessons-learned``, ``merge-queue.json``,
+``orchestrator``) that ``merge_lock`` still uses — build-queue.json is NOT a
+member of that per-repo bounded set; it belongs to the machine-global tier.
+Because the queue records holders from multiple checkouts, each active/waiting
+entry is stamped at acquire with ``project_root = str(main_checkout_root())`` so
+its liveness is later judged against the checkout it originated in.
 
 **Concurrency correctness (TOCTOU / check-then-act):** the admit/release cycle is
 a read-modify-write (read the queue → decide admit/promote → write the queue) —
@@ -82,7 +86,10 @@ and is not duplicated here.
 **Holder liveness via the shared core (no duplicate).** The plan-liveness
 predicate is :func:`_locks_core.holder_is_dead`, imported from the shared
 coordination core, NOT re-implemented here — a holder is dead when its plan dir
-lives in NEITHER the main checkout NOR the holder's worktree. The plan_id is
+lives in NEITHER the checkout NOR the worktree of the project that recorded it.
+Because the queue is machine-global, the prune passes each entry's stamped
+``project_root`` so a foreign project's live holder is judged against its OWN
+checkout and never reclaimed by a session in a different repo. The plan_id is
 recovered from the admission id (everything before the trailing ``:{uuid4}``), so
 a crashed session whose plan dir is gone has its active slot reclaimed under
 contention without ever evicting a live slot holder.
@@ -115,7 +122,8 @@ from typing import Any
 from _locks_core import holder_is_dead, log_lock_event, rmw_json
 from file_ops import get_marshal_path, read_json
 from marketplace_paths import (
-    resolve_main_anchored_path,
+    ensure_home_root,
+    main_checkout_root,
 )
 from run_config import (
     _read_build_queue_upper_limit,
@@ -139,13 +147,19 @@ _DEFAULT_MAX_SLOTS = 5
 
 
 def _resolve_queue_path() -> Path:
-    """Resolve the build-queue path against the MAIN checkout, cwd-independent.
+    """Resolve the build-queue path under the machine-global home root.
 
-    Delegates to the shared main-anchored resolver
-    :func:`marketplace_paths.resolve_main_anchored_path` — the single sanctioned
-    mechanism (ADR-002). The queue lives at ``<main>/.plan/local/build-queue.json``.
+    The build queue coordinates build sessions across EVERY checkout on the host,
+    so it lives under the machine-global home-root tier
+    (:func:`marketplace_paths.home_root`) — ``~/.plan-marshall/build-queue.json``
+    by default, overridable via ``PLAN_MARSHALL_HOME`` — NOT a per-repo
+    main-anchored path. It is host-wide and does not depend on git resolution.
+
+    Routes through :func:`marketplace_paths.ensure_home_root` so the home root
+    is created ``0o700`` on first touch — a mode-less parent ``mkdir`` would
+    leave machine-global queue state world-listable.
     """
-    return resolve_main_anchored_path(_QUEUE_FILENAME)
+    return ensure_home_root() / _QUEUE_FILENAME
 
 
 def _resolve_max_slots() -> int:
@@ -206,12 +220,22 @@ def _plan_id_of(entry_id: str) -> str:
 def _prune_dead_active(active: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Drop active entries whose holder plan is dead (crashed session reclaim).
 
-    A holder is dead when its plan dir lives in NEITHER the main checkout NOR the
-    holder's worktree (the shared :func:`_locks_core.holder_is_dead` predicate).
-    Reclaiming dead active slots before the capacity check frees slots wedged by
-    a crashed build session without ever evicting a LIVE holder.
+    A holder is dead when its plan dir lives in NEITHER the checkout NOR the
+    worktree of the project that recorded it. Because the queue is machine-global
+    (shared across every checkout), each entry's liveness is judged against the
+    project it originated in — its stamped ``project_root`` — via
+    ``holder_is_dead(plan_id, project_root=e.get('project_root'))``, so a FOREIGN
+    project's live holder is never reclaimed by a session in a different checkout.
+    A legacy entry lacking ``project_root`` falls back to caller-anchored
+    resolution (``project_root=None``), which is harmless under the breaking
+    clean-start. Reclaiming dead active slots before the capacity check frees
+    slots wedged by a crashed build session without ever evicting a LIVE holder.
     """
-    return [e for e in active if not holder_is_dead(_plan_id_of(e['id']))]
+    return [
+        e
+        for e in active
+        if not holder_is_dead(_plan_id_of(e['id']), project_root=e.get('project_root'))
+    ]
 
 
 def validate_lock_queue(
@@ -304,8 +328,12 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
     result is a structured signal the wrapper re-polls against, not an error.
     """
     plan_id: str = args.plan_id
+    queue_path = _resolve_queue_path()
+    # Stamp this session's originating checkout so a foreign project's live holder
+    # is judged against ITS checkout (machine-global queue). main_checkout_root()
+    # raises when the caller is not in a git repo — a real error for a build.
     try:
-        queue_path = _resolve_queue_path()
+        project_root = str(main_checkout_root())
     except RuntimeError as exc:
         return make_error(str(exc), code=ErrorCode.NOT_FOUND, plan_id=plan_id)
 
@@ -359,8 +387,10 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
         # First acquire for this plan: admit when a slot is free, else enqueue at
         # the back of the FIFO waiting queue. An admitted entry records
         # active_since (the slot activation time used by the reaper); a queued
-        # entry does not — it is not active yet.
-        entry = {'id': new_entry_id, 'plan_id': plan_id, 'ts': ts}
+        # entry does not — it is not active yet. Every new entry is stamped with
+        # project_root so the machine-global prune judges its liveness against the
+        # checkout it originated in.
+        entry = {'id': new_entry_id, 'plan_id': plan_id, 'ts': ts, 'project_root': project_root}
         if len(active) < max_slots:
             entry['active_since'] = ts
             active.append(entry)

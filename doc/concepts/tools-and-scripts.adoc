@@ -41,7 +41,7 @@ A skill declares it needs credentials by shipping a `{provider}_provider.py` nex
 ====
 **"The LLM never sees the credential" is a filesystem-level guarantee, not a metaphysical one.**
 
-The token lives on disk under `~/.plan-marshall-credentials/` with restrictive permissions, read by the integration script at HTTPS-call time, and dropped from memory when the script exits. What the LLM dispatches is the operation; what the script does with the credential happens behind the dispatch. If the credential file is world-readable, copied into the project tree, or echoed by a misconfigured script, the guarantee fails. The contract is good and the defaults are right; the operator still has to not undermine them.
+The token lives on disk under `~/.plan-marshall/credentials/` (the machine-global home root, overridable via `PLAN_MARSHALL_HOME`) with restrictive permissions, read by the integration script at HTTPS-call time, and dropped from memory when the script exits. What the LLM dispatches is the operation; what the script does with the credential happens behind the dispatch. If the credential file is world-readable, copied into the project tree, or echoed by a misconfigured script, the guarantee fails. The contract is good and the defaults are right; the operator still has to not undermine them.
 ====
 
 == Related

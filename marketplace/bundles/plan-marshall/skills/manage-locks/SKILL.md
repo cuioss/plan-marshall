@@ -1,6 +1,6 @@
 ---
 name: manage-locks
-description: Cross-session coordination primitives — the unified file-based merge mutex fronted by a FIFO admission queue for fair merge ordering, and the build-queue concurrency limiter, on one shared, TOCTOU-safe, main-anchored core
+description: Cross-session coordination primitives — the unified file-based merge mutex fronted by a FIFO admission queue for fair merge ordering, and the build-queue concurrency limiter, on one shared, TOCTOU-safe read-modify-write + plan-liveness core
 user-invocable: false
 mode: script-executor
 scope: global
@@ -9,11 +9,14 @@ scope: global
 # Manage Locks Skill
 
 The single home for cross-session coordination primitives in plan-marshall. Both
-primitives serialize concurrent sessions against the MAIN checkout regardless of
-which worktree the caller is pinned to, and both sit on one shared,
-TOCTOU-safe, main-anchored read-modify-write + plan-liveness core
-(`scripts/_locks_core.py`). The skill is `script-deterministic` — pure file
-coordination, no LLM judgement.
+primitives serialize concurrent sessions regardless of which worktree the caller
+is pinned to, and both sit on one shared, TOCTOU-safe read-modify-write +
+plan-liveness core (`scripts/_locks_core.py`). They differ in scope: the merge
+mutex is **per-repo main-anchored** (it serializes one repository's merges to its
+own `main`), while the build-queue limiter is **machine-global** (it caps build
+concurrency across every checkout on the host, so its state lives under the
+machine-global home root, not the per-repo main checkout). The skill is
+`script-deterministic` — pure file coordination, no LLM judgement.
 
 Two primitives live here:
 
@@ -39,8 +42,12 @@ Two primitives live here:
   orchestrator escalation.
 - **The build-queue limiter** (`scripts/build_queue.py`, notation
   `plan-marshall:manage-locks:build_queue`) — a bounded-`k`-slot admitter with a
-  FIFO waiting queue, persisted in the main-anchored `build-queue.json`. It caps
-  how many build sessions run concurrently across the cluster.
+  FIFO waiting queue, persisted in the machine-global `build-queue.json` under the
+  home root (`~/.plan-marshall/build-queue.json`, overridable via
+  `PLAN_MARSHALL_HOME`). It caps how many build sessions run concurrently across
+  every checkout on the host; each entry is stamped with its originating
+  checkout's `project_root` so a foreign project's live holder is judged against
+  its own repo and never reclaimed.
 
 ## Enforcement
 
@@ -52,7 +59,7 @@ Two primitives live here:
 - Do not read, write, or mutate the lock file (`merge.lock`) or the queue file (`build-queue.json`) directly — every mutation goes through the script API so the atomic `O_EXCL` / serialized read-modify-write invariant holds.
 - Do not invent script arguments not listed in the **Canonical invocations** section below.
 - Do not re-implement holder-liveness or main-anchored read-modify-write in a consumer — import the shared helpers from `_locks_core` so there is one TOCTOU-safe serialization surface, not parallel copies.
-- Do not add a second main-anchored resolution path — route `build-queue.json` and `merge.lock` through `resolve_main_anchored_path` (the single ADR-002 sanctioned utility).
+- Do not add a second main-anchored resolution path for per-repo state — route `merge.lock` and `merge-queue.json` through `resolve_main_anchored_path` (the single ADR-002 sanctioned utility). Route `build-queue.json` through `home_root()` (the machine-global tier), NOT `resolve_main_anchored_path` — the build queue is host-wide, and binding it to one repository's main checkout would break cross-repo build coordination.
 
 **Constraints:**
 - Strictly comply with all rules from persona-plan-marshall-agent, especially tool usage and workflow step discipline.
@@ -61,44 +68,64 @@ Two primitives live here:
 
 ## Storage Location
 
-Both coordination files live under the MAIN checkout's `.plan/local`, resolved via
+The merge-mutex files live under the MAIN checkout's `.plan/local`, resolved via
 the single sanctioned `resolve_main_anchored_path` utility (ADR-002), so every
-session contends for the same file regardless of its pinned cwd:
+session in one repository contends for the same file regardless of its pinned
+cwd. The build-queue file is machine-global — it lives under the home root
+(`home_root()`) so every checkout on the host shares one slot budget:
 
 ```text
 <main>/.plan/local/merge.lock          # the unified merge mutex (one-line holder plan_id)
 <main>/.plan/local/merge-queue.json    # the merge-lock FIFO admission queue (waiting state)
-<main>/.plan/local/build-queue.json    # the build-queue active + waiting + run-log state
+~/.plan-marshall/build-queue.json      # the machine-global build-queue active + waiting + run-log state
 ```
 
-## Main-Anchored Resolution (ADR-002 Bounded Exception)
+## Anchoring: per-repo main vs machine-global home root
 
 Every other path resolution in the codebase is uniform cwd-relative (see
 `tools-script-executor/standards/cwd-policy.md` and `file_ops.get_base_dir`). The
-merge lock and the build queue are deliberate exceptions: cross-session
-coordination is inherently main-scoped, so phase-5+ callers pinned to their own
-worktrees must all contend for one shared file on main. Both route through the
-single sanctioned `marketplace_paths.resolve_main_anchored_path` utility — the ONE
-mechanism covering the bounded exception set (`merge.lock`, `merge-queue.json`,
-`run-configuration.json`, `lessons-learned`, `build-queue.json`). New
-cross-session shared state MUST route through that utility rather than
-re-implementing git-common-dir resolution. See
-ADR-002 (`doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc`).
+coordination files are the deliberate exceptions, but they split across two tiers:
+
+- **Per-repo main-anchored (ADR-002)** — the merge mutex (`merge.lock`,
+  `merge-queue.json`) serializes ONE repository's merges to its own `main`, so it
+  routes through the single sanctioned
+  `marketplace_paths.resolve_main_anchored_path` utility — the ONE mechanism
+  covering the per-repo bounded exception set (`merge.lock`, `merge-queue.json`,
+  `run-configuration.json`, `lessons-learned`, `orchestrator`). New **per-repo**
+  cross-session shared state MUST route through that utility rather than
+  re-implementing git-common-dir resolution.
+- **Machine-global home root (ADR-008)** — the build queue coordinates build
+  concurrency across EVERY checkout on the host, so `build-queue.json` lives under
+  `marketplace_paths.home_root()` (`~/.plan-marshall`, overridable via
+  `PLAN_MARSHALL_HOME`), NOT the per-repo main-anchored utility. Machine-wide state
+  belongs here, not in the per-repo exception set above.
+
+See ADR-002 (`doc/adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc`)
+and ADR-008 (`doc/adr/008-machine-global-home-root-anchor-tier.adoc`).
 
 ## Shared Core (`scripts/_locks_core.py`)
 
 The shared core is the TOCTOU / check-then-act mitigation surface for every
 consumer. It exposes:
 
-- `holder_is_dead(holder)` — the plan-liveness predicate. A holder is dead when
-  its plan directory exists in NEITHER `<main>/.plan/local/plans/{holder}` NOR
-  `<main>/.plan/local/worktrees/{holder}/.plan/local/plans/{holder}` (both anchored
-  at main, cwd-independent). An empty/malformed holder is treated as dead (a
-  corrupt lock is reclaimable); resolution failures propagate loudly. Checking
-  both paths is load-bearing — an actively-executing holder's plan dir has been
-  MOVED into the worktree (ADR-002), so a main-only check would wrongly declare it
-  dead and let a concurrent acquirer steal the lock. Its FIFO-prune contract
-  (dropping a crashed waiter's queue entry) is unchanged.
+- `holder_is_dead(holder, project_root=None)` — the plan-liveness predicate. A
+  holder is dead when its plan directory exists in NEITHER
+  `{root}/.plan/local/plans/{holder}` NOR
+  `{root}/.plan/local/worktrees/{holder}/.plan/local/plans/{holder}`, where
+  `{root}` is the supplied `project_root` when given, else the CALLING project's
+  main checkout (cwd-independent). The optional `project_root` parameter
+  project-qualifies the liveness check for machine-global consumers: under the
+  machine-global build queue (ADR-008) a session in project B checking a holder
+  recorded by project A must resolve liveness against A's checkout — the queue
+  stamps each entry with its acquirer's `project_root` and the prune forwards it,
+  so a foreign project's LIVE holder is never falsely reclaimed. The merge-lock
+  caller passes nothing and keeps the caller-anchored behaviour unchanged. An
+  empty/malformed holder is treated as dead (a corrupt lock is reclaimable);
+  resolution failures propagate loudly. Checking both paths is load-bearing — an
+  actively-executing holder's plan dir has been MOVED into the worktree
+  (ADR-002), so a main-only check would wrongly declare it dead and let a
+  concurrent acquirer steal the lock. Its FIFO-prune contract (dropping a
+  crashed waiter's queue entry) is unchanged.
 - `holder_has_live_worktree(holder)` — a STRONGER presence/heartbeat liveness
   signal that gates automatic stale-reclaim. It returns True when the holder's
   git worktree directory `<main>/.plan/local/worktrees/{holder}` is still present
@@ -111,13 +138,14 @@ consumer. It exposes:
   blocked payload below); the FIFO prune retains such a waiter rather than
   dropping it. Anchored at main (cwd-independent) exactly like `holder_is_dead`;
   an empty/malformed holder → False.
-- `rmw_json(path, mutate)` — the TOCTOU-safe main-anchored read-modify-write
-  helper for JSON state files. It serializes the mutation (an `O_EXCL` guard /
-  atomic temp-file replace) so two sessions cannot both observe the same
-  pre-state and both claim a slot/lock. A missing or corrupt file is treated as
-  empty (`{}`). It is the single read-modify-write mechanism BOTH the build queue
-  (`build-queue.json`) and the merge lock's FIFO admission queue
-  (`merge-queue.json`) build on; the merge lock's final `k=1` grant stays the
+- `rmw_json(path, mutate)` — the TOCTOU-safe read-modify-write helper for JSON
+  state files. It is path-agnostic: the CALLER resolves the path (main-anchored
+  for the merge queue, machine-global under `home_root()` for the build queue). It
+  serializes the mutation (an `O_EXCL` guard / atomic temp-file replace) so two
+  sessions cannot both observe the same pre-state and both claim a slot/lock. A
+  missing or corrupt file is treated as empty (`{}`). It is the single
+  read-modify-write mechanism BOTH the build queue (`build-queue.json`) and the
+  merge lock's FIFO admission queue (`merge-queue.json`) build on; the merge lock's final `k=1` grant stays the
   atomic `O_EXCL` create on `merge.lock` (NOT `rmw_json`), with `rmw_json` serving
   only the FIFO enqueue/dequeue in FRONT of that grant. The TOCTOU / check-then-act
   mitigation menu lives in `ref-code-quality/standards/code-organization.md#toctou--check-then-act-hazards`

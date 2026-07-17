@@ -197,7 +197,7 @@ Project-level settings (committed, shared via git). Seeded on `init` and back-fi
 
 ## Section: credentials_config
 
-Non-secret per-provider configuration (committed, shared via git), written by `manage-providers credentials edit --extra` / `configure --extra`. Holds the non-secret extra fields a provider integration needs (e.g. SonarCloud `organization` / `project_key`); the secret token is stored separately in the out-of-tree credential file under `~/.plan-marshall-credentials/`, never here. The block is keyed by the fully-qualified `bundle:skill` provider name. It is absent until the first `--extra` upsert; `save_config` orders it canonically between `build` and `project` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`).
+Non-secret per-provider configuration (committed, shared via git), written by `manage-providers credentials edit --extra` / `configure --extra`. Holds the non-secret extra fields a provider integration needs (e.g. SonarCloud `organization` / `project_key`); the secret token is stored separately in the out-of-tree credential file under `~/.plan-marshall/credentials/` (the machine-global home root, overridable via `PLAN_MARSHALL_HOME`), never here. The block is keyed by the fully-qualified `bundle:skill` provider name. It is absent until the first `--extra` upsert; `save_config` orders it canonically between `build` and `project` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`).
 
 ### Structure
 

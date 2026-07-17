@@ -14,13 +14,17 @@ Security constraints:
 """
 
 import base64
+import errno
+import hashlib
 import http.client
 import json
 import os
 import re
 import shlex
+import shutil
 import ssl
 import subprocess
+import sys
 import time
 import urllib.parse
 from datetime import UTC, datetime
@@ -28,10 +32,21 @@ from pathlib import Path
 from typing import Any
 
 from file_ops import get_marshal_path
+from marketplace_paths import ensure_home_root, home_root, resolve_home
 
 # === Constants ===
 
-CREDENTIALS_DIR = Path(os.environ.get('PLAN_MARSHALL_CREDENTIALS_DIR') or (Path.home() / '.plan-marshall-credentials'))
+# Credentials live under the machine-global home root by default
+# (``home_root()/credentials``). The explicit ``PLAN_MARSHALL_CREDENTIALS_DIR``
+# override keeps highest precedence so the conftest test sandbox and operator
+# overrides still win.
+CREDENTIALS_DIR = (
+    Path(os.environ['PLAN_MARSHALL_CREDENTIALS_DIR'])
+    if os.environ.get('PLAN_MARSHALL_CREDENTIALS_DIR')
+    else home_root() / 'credentials'
+)
+# Pre-home-root credentials location, retained ONLY as the lazy-migration source.
+_OLD_CREDENTIALS_DIR = resolve_home() / '.plan-marshall-credentials'
 VALID_AUTH_TYPES = ('none', 'token', 'basic', 'system')
 SECRET_PLACEHOLDERS = {
     'token': 'REPLACE_WITH_YOUR_TOKEN',
@@ -157,30 +172,43 @@ def apply_extra_passthrough(provider_config: dict[str, Any], extra_pairs: list[s
 def get_project_name() -> str:
     """Derive project name from marshal.json or cwd.
 
+    When a version-control provider URL resolves, the name is the URL-derived
+    repo name — UNCHANGED, so every existing ``{project_name}/`` credential
+    subdir migrates verbatim. On the cwd-fallback branch (no version-control URL
+    resolves), the bare ``Path.cwd().name`` is disambiguated with a short stable
+    hash of the absolute cwd (``{name}-{hash8}``) so two different directories
+    that happen to share a basename get distinct credential subdirs instead of
+    silently colliding on one.
+
     Sanitizes the name to prevent path traversal attacks.
     """
     marshal_path = _marshal_path()
-    name = Path.cwd().name  # fallback
 
+    repo_url = ''
     if marshal_path.exists():
         try:
             config = json.loads(marshal_path.read_text(encoding='utf-8'))
             # Find version-control provider for repo URL
-            repo_url = ''
             for p in config.get('providers', []):
                 if p.get('category') == 'version-control':
                     repo_url = p.get('url', '')
                     break
-            if repo_url:
-                # Extract repo name from URL (last path segment, strip .git)
-                name = repo_url.rstrip('/').rsplit('/', 1)[-1]
-                if name.endswith('.git'):
-                    name = name[:-4]
         except (json.JSONDecodeError, KeyError):
-            pass
+            repo_url = ''
 
-    # Sanitize: only allow safe characters
-    return _PROJECT_NAME_PATTERN.sub('', name)
+    if repo_url:
+        # URL-derived branch — output UNCHANGED (last path segment, strip .git).
+        name = repo_url.rstrip('/').rsplit('/', 1)[-1]
+        if name.endswith('.git'):
+            name = name[:-4]
+        return _PROJECT_NAME_PATTERN.sub('', name)
+
+    # cwd-fallback branch — disambiguate the bare basename with a short stable
+    # hash of the absolute cwd path so distinct dirs sharing a basename do not
+    # collide on one credential subdir.
+    cwd = Path.cwd()
+    digest = hashlib.sha256(str(cwd.resolve()).encode('utf-8')).hexdigest()[:8]
+    return _PROJECT_NAME_PATTERN.sub('', f'{cwd.name}-{digest}')
 
 
 def resolve_credential_path(skill: str, scope: str = 'global', project_name: str | None = None) -> Path:
@@ -217,13 +245,108 @@ def resolve_credential_path(skill: str, scope: str = 'global', project_name: str
     return path
 
 
+def _migrate_credentials_home_if_needed() -> str:
+    """Lazily migrate the pre-home-root credentials dir to the home-root path.
+
+    Idempotent and best-effort — safe to call on every credential access.
+    Returns a status literal ``'migrated' | 'already_migrated' | 'conflict'``
+    (no secrets) so the ``migrate-home`` subcommand can report deterministically:
+
+    - **Explicit override** — when ``PLAN_MARSHALL_CREDENTIALS_DIR`` is set the
+      credentials location is operator/test-specified and authoritative; never
+      migrate into or out of it (this also keeps the conftest sandbox inert).
+      Reports ``already_migrated``.
+    - **No-op** — when the new ``CREDENTIALS_DIR`` already exists (already
+      migrated) or the old ``~/.plan-marshall-credentials`` is absent (nothing
+      to migrate). Reports ``already_migrated``.
+    - **Conflict** — when BOTH the old and new dirs exist, keep the new dir and
+      never merge; emit a one-line stderr notice (paths only, no secrets) so an
+      operator can remove the stale old dir manually. Reports ``conflict``.
+    - **Migrate** — when only the old dir exists, ensure ``home_root()`` exists
+      at 0700, then ``os.rename`` the old dir to the new path. A lost race with
+      a concurrent migrator is swallowed and reports ``already_migrated``:
+      ``FileNotFoundError`` (the old dir was moved first) and
+      ``FileExistsError`` / ``OSError`` with ``errno`` in ``(EEXIST, ENOTEMPTY)``
+      (a sibling created or populated the new dir between the ``exists()`` check
+      and the rename). A cross-filesystem rename (``EXDEV``) falls back to
+      ``shutil.move``, which copies then unlinks the source only after a
+      successful copy and carries the same lost-race handling. Reports
+      ``migrated``.
+    """
+    # The explicit override is authoritative — do not migrate.
+    if os.environ.get('PLAN_MARSHALL_CREDENTIALS_DIR'):
+        return 'already_migrated'
+
+    new_dir = CREDENTIALS_DIR
+    old_dir = _OLD_CREDENTIALS_DIR
+
+    if new_dir.exists():
+        # Already migrated, or a conflict where both are present. Never merge —
+        # keep the new dir; flag the lingering old dir for manual cleanup.
+        if old_dir.exists():
+            print(
+                f'WARNING: credentials migration conflict — both {old_dir} and '
+                f'{new_dir} exist; keeping {new_dir} and leaving the old dir for '
+                'manual review (no merge performed).',
+                file=sys.stderr,
+            )
+            return 'conflict'
+        return 'already_migrated'
+
+    if not old_dir.exists():
+        return 'already_migrated'  # nothing to migrate
+
+    # Only the old dir exists → migrate it to the home-root location.
+    ensure_home_root()
+    try:
+        os.rename(str(old_dir), str(new_dir))
+    except FileNotFoundError:
+        # Lost race: a concurrent migrator already moved the old dir.
+        return 'already_migrated'
+    except OSError as exc:
+        if getattr(exc, 'errno', None) == errno.EXDEV:
+            # Cross-filesystem: shutil.move copies then removes the source only
+            # after a successful copy. The move itself carries the same lost-race
+            # exposure as os.rename, so mirror the handling here.
+            try:
+                shutil.move(str(old_dir), str(new_dir))
+            except FileNotFoundError:
+                # Lost race: a concurrent migrator already moved the old dir.
+                return 'already_migrated'
+            except OSError as move_exc:
+                if getattr(move_exc, 'errno', None) in (errno.EEXIST, errno.ENOTEMPTY):
+                    # Lost race: a sibling migrator created/populated new_dir
+                    # between our exists() check and this move.
+                    return 'already_migrated'
+                raise
+        elif getattr(exc, 'errno', None) in (errno.EEXIST, errno.ENOTEMPTY):
+            # Lost race: a sibling migrator created CREDENTIALS_DIR (possibly
+            # empty, then started populating it) between our new_dir.exists()
+            # check and this os.rename. FileExistsError (errno EEXIST) and a
+            # non-empty-target rename (errno ENOTEMPTY) both mean the new dir
+            # is already claimed — treat identically to the FileNotFoundError
+            # lost-race case rather than crashing.
+            return 'already_migrated'
+        else:
+            raise
+    return 'migrated'
+
+
 def ensure_credentials_dir(scope: str = 'global', project_name: str | None = None) -> Path:
     """Ensure credentials directory exists with correct permissions.
 
-    Creates ~/.plan-marshall-credentials/ with chmod 700.
+    Lazily migrates the pre-home-root credentials dir first, then creates
+    ``CREDENTIALS_DIR`` (``home_root()/credentials`` by default) with chmod 700.
     For project scope, also creates the project subdirectory.
     """
-    CREDENTIALS_DIR.mkdir(mode=0o700, exist_ok=True)
+    _migrate_credentials_home_if_needed()
+    # Harden the home root itself before creating the leaf: mkdir's mode applies
+    # only to the leaf, so a parents=True creation of CREDENTIALS_DIR would give
+    # ~/.plan-marshall umask-default permissions. Skipped under the explicit
+    # PLAN_MARSHALL_CREDENTIALS_DIR override (test sandbox / operator path).
+    if not os.environ.get('PLAN_MARSHALL_CREDENTIALS_DIR'):
+        ensure_home_root()
+    CREDENTIALS_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     # Verify permissions (in case directory already existed with wrong perms)
     current_mode = CREDENTIALS_DIR.stat().st_mode & 0o777
     if current_mode != 0o700:
