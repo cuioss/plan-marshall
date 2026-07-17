@@ -9,6 +9,7 @@ detectors live alongside them. Importers pull these by flat name (e.g.
 ``from _self_review_detectors import _detect_regexes``).
 """
 
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -258,6 +259,32 @@ def _collect_skill_contract_sources(skill_dir: Path) -> list[Path]:
     return sources
 
 
+# Well-known vendored / large / generated directories the schema-bearing walk
+# must never descend into. A recursive ``rglob('*.md')`` would climb straight
+# into ``node_modules`` / ``.git`` / ``target`` / ``.plan`` / ``__pycache__`` —
+# wasting I/O and surfacing schema-bearing files far outside the change surface.
+# Pruning these matches the surfacer's diff-scoped design used by every sibling
+# detector.
+_VENDORED_DIR_NAMES = frozenset({'node_modules', '.git', 'target', '.plan', '__pycache__'})
+
+
+def _walk_md_pruned(anchor: Path) -> list[Path]:
+    """Recursively collect ``*.md`` files under ``anchor``, pruning vendored trees.
+
+    Unlike ``anchor.rglob('*.md')``, this walks with ``os.walk`` and drops every
+    ``_VENDORED_DIR_NAMES`` directory from ``dirnames`` in place, so the traversal
+    never escapes into a vendored subtree (no descent, not merely a post-filter of
+    the results). Returns a sorted list of ``*.md`` paths.
+    """
+    collected: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(anchor):
+        dirnames[:] = [d for d in dirnames if d not in _VENDORED_DIR_NAMES]
+        for name in filenames:
+            if name.endswith('.md'):
+                collected.append(Path(dirpath) / name)
+    return sorted(collected)
+
+
 def _collect_schema_bearing_within_radius(
     modified_path: Path, project_dir: Path, radius: int
 ) -> list[tuple[Path, str]]:
@@ -266,8 +293,10 @@ def _collect_schema_bearing_within_radius(
 
     Walks up at most ``radius`` parents from the modified file's parent
     directory (bounded by ``project_dir``) to choose an anchor, then
-    recursively collects every *.md file in the anchor's subtree. ``radius=0``
-    restricts the scan to the modified file's own parent directory only.
+    recursively collects every *.md file in the anchor's subtree — pruning
+    well-known vendored/large directories (``_VENDORED_DIR_NAMES``) so the walk
+    never escapes into a vendored subtree. ``radius=0`` restricts the scan to
+    the modified file's own parent directory only.
 
     Returns a list of (path, format) tuples where format is 'json' or 'toon'.
     """
@@ -288,7 +317,7 @@ def _collect_schema_bearing_within_radius(
         if radius == 0:
             md_iter = sorted(anchor.glob('*.md'))
         else:
-            md_iter = sorted(anchor.rglob('*.md'))
+            md_iter = _walk_md_pruned(anchor)
     except OSError:
         return []
 

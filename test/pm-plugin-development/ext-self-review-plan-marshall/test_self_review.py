@@ -829,6 +829,65 @@ class TestContractRadiusMonotonicBreadth:
         assert narrow_files < wide_files
 
 
+class TestSchemaBearingVendoredExclusion:
+    """The schema-bearing walk (``_collect_schema_bearing_within_radius`` for
+    ``radius > 0``) must never descend into vendored / large / generated trees
+    (``node_modules``, ``.git``, ``target``, ``.plan``, ``__pycache__``). A
+    vendored ``*.md`` carrying a fenced schema block within the anchor radius
+    must NOT be surfaced, while a genuine in-radius schema-bearing ``*.md``
+    outside every vendored tree is still surfaced. Guards the diff-scoped-design
+    boundedness fix for the surfacer's sole unscoped recursive walk."""
+
+    @staticmethod
+    def _build_vendored_fixture(root: Path, vendored_dir: str) -> tuple[Path, str]:
+        """Build a bundle carrying a genuine schema-bearing md AND a vendored
+        subtree whose md also carries a fenced schema block, several levels above
+        the modified file. Returns (project_root, modified_rel_path)."""
+        project = root / 'project'
+        bundle = project / 'marketplace' / 'bundles' / 'b1'
+        bundle.mkdir(parents=True)
+        # Genuine, non-vendored schema-bearing md at the bundle level.
+        (bundle / 'genuine-schema.md').write_text('# Genuine\n```json\n{"k": 1}\n```\n')
+        # Vendored subtree with its own schema-bearing md — must be pruned.
+        vendored = bundle / vendored_dir / 'pkg'
+        vendored.mkdir(parents=True)
+        (vendored / 'vendored-schema.md').write_text('# Vendored\n```json\n{"v": 2}\n```\n')
+        # The modified file sits deep under the bundle, in a scripts/ dir with no md.
+        scripts = bundle / 'skills' / 'my-skill' / 'scripts'
+        scripts.mkdir(parents=True)
+        (scripts / 'mod.py').write_text('def main(): pass\n')
+        rel = 'marketplace/bundles/b1/skills/my-skill/scripts/mod.py'
+        return project, rel
+
+    @pytest.mark.parametrize('vendored_dir', ['node_modules', '.git', 'target', '.plan', '__pycache__'])
+    def test_vendored_schema_md_is_not_surfaced(self, tmp_path: Path, vendored_dir: str):
+        project, rel = self._build_vendored_fixture(tmp_path, vendored_dir)
+
+        _, schema = _detect_contract_sources([rel], project, radius=5)
+        surfaced = {entry['file'] for entry in schema}
+
+        genuine = 'marketplace/bundles/b1/genuine-schema.md'
+        vendored = f'marketplace/bundles/b1/{vendored_dir}/pkg/vendored-schema.md'
+        # The genuine in-radius schema-bearing md is still surfaced.
+        assert genuine in surfaced
+        # The vendored subtree md is pruned — the walk never descends into it.
+        assert vendored not in surfaced
+
+    def test_genuine_nested_schema_below_vendored_sibling_still_surfaced(self, tmp_path: Path):
+        # A genuine schema-bearing md nested OUTSIDE a vendored sibling directory
+        # is still reached by the recursive walk — pruning removes only the
+        # vendored subtree, not the rest of the anchor's tree.
+        project, rel = self._build_vendored_fixture(tmp_path, 'node_modules')
+        nested = project / 'marketplace' / 'bundles' / 'b1' / 'skills' / 'my-skill'
+        (nested / 'nested-schema.md').write_text('# Nested\n```toon\nstatus: ok\n```\n')
+
+        _, schema = _detect_contract_sources([rel], project, radius=5)
+        surfaced = {entry['file'] for entry in schema}
+
+        assert 'marketplace/bundles/b1/skills/my-skill/nested-schema.md' in surfaced
+        assert 'marketplace/bundles/b1/node_modules/pkg/vendored-schema.md' not in surfaced
+
+
 # =============================================================================
 # Test: _detect_keep_markers
 # =============================================================================
