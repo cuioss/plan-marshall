@@ -5,49 +5,53 @@
 Tests deny rule management and settings file manipulation.
 """
 
+import importlib
 import json
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.py')
 
 
+@pytest.fixture
+def real_home_deny_rules(monkeypatch):
+    """Rebuild ``_cred_ensure_denied.DENY_RULES`` against the REAL home path.
+
+    The absolute-form rules derive from ``_providers_core.CREDENTIALS_DIR``,
+    which the autouse ``_credentials_dir_sandbox`` redirects to a tmp dir for
+    every test. These deny rules exist to protect the REAL
+    ``~/.plan-marshall/credentials``, so pin ``CREDENTIALS_DIR`` back to the
+    real home path and reload the module (no write — ``DENY_RULES`` is pure
+    strings) before yielding the rebuilt list, then revert in teardown so the
+    module-level reload never leaks into subsequent tests.
+    """
+    import _cred_ensure_denied
+    import _providers_core
+
+    sandboxed_dir = _providers_core.CREDENTIALS_DIR
+    real_dir = Path.home() / '.plan-marshall' / 'credentials'
+    monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', real_dir)
+    importlib.reload(_cred_ensure_denied)
+    try:
+        yield _cred_ensure_denied.DENY_RULES
+    finally:
+        monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', sandboxed_dir)
+        importlib.reload(_cred_ensure_denied)
+
+
 class TestEnsureDeniedRules:
     """Tests for deny rule content."""
 
-    def test_deny_rules_cover_both_path_forms(self, monkeypatch):
-        """Deny rules must include both ~ and absolute path forms.
-
-        The absolute-form rules derive from ``_providers_core.CREDENTIALS_DIR``,
-        which the autouse ``_credentials_dir_sandbox`` redirects to a tmp dir.
-        These deny rules exist to protect the REAL ``~/.plan-marshall/credentials``,
-        so pin ``CREDENTIALS_DIR`` back to the real home path and rebuild the
-        module's ``DENY_RULES`` against it (no write — DENY_RULES is pure strings).
-        """
-        import importlib
-
-        import _cred_ensure_denied
-        import _providers_core
-
-        # Capture the sandboxed dir so the global reload below is fully reverted
-        # in the finally block — otherwise _cred_ensure_denied.DENY_RULES would
-        # stay pinned to the real home path and leak into subsequent tests.
-        sandboxed_dir = _providers_core.CREDENTIALS_DIR
-        real_dir = Path.home() / '.plan-marshall' / 'credentials'
-        monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', real_dir)
-        importlib.reload(_cred_ensure_denied)
-        try:
-            deny_rules = _cred_ensure_denied.DENY_RULES
-
-            tilde_rules = [r for r in deny_rules if '~/' in r]
-            abs_rules = [r for r in deny_rules if str(Path.home()) in r]
-            assert len(tilde_rules) > 0, 'Must have tilde-form rules'
-            assert len(abs_rules) > 0, 'Must have absolute-path-form rules'
-        finally:
-            monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', sandboxed_dir)
-            importlib.reload(_cred_ensure_denied)
+    def test_deny_rules_cover_both_path_forms(self, real_home_deny_rules):
+        """Deny rules must include both ~ and absolute path forms."""
+        tilde_rules = [r for r in real_home_deny_rules if '~/' in r]
+        abs_rules = [r for r in real_home_deny_rules if str(Path.home()) in r]
+        assert len(tilde_rules) > 0, 'Must have tilde-form rules'
+        assert len(abs_rules) > 0, 'Must have absolute-path-form rules'
 
     def test_deny_rules_cover_read_tool(self):
         """Deny rules must cover Read tool access."""
@@ -65,32 +69,16 @@ class TestEnsureDeniedRules:
             matching = [r for r in DENY_RULES if f'Bash({cmd} ' in r]
             assert len(matching) >= 1, f'Missing deny rule for Bash({cmd})'
 
-    def test_no_rule_names_the_retired_old_path(self, monkeypatch):
+    def test_no_rule_names_the_retired_old_path(self, real_home_deny_rules):
         """No deny rule may name the retired ``~/.plan-marshall-credentials`` path.
 
-        Rebuild ``DENY_RULES`` against the real home-root credentials path (the
-        autouse sandbox redirects CREDENTIALS_DIR to a tmp dir), then assert every
-        rule names the NEW ``.plan-marshall/credentials`` surface and none names
-        the retired ``.plan-marshall-credentials`` basename.
+        Every rule must name the NEW ``.plan-marshall/credentials`` surface and
+        none may name the retired ``.plan-marshall-credentials`` basename.
         """
-        import importlib
-
-        import _cred_ensure_denied
-        import _providers_core
-
-        sandboxed_dir = _providers_core.CREDENTIALS_DIR
-        real_dir = Path.home() / '.plan-marshall' / 'credentials'
-        monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', real_dir)
-        importlib.reload(_cred_ensure_denied)
-        try:
-            deny_rules = _cred_ensure_denied.DENY_RULES
-            for rule in deny_rules:
-                assert '.plan-marshall-credentials' not in rule, f'Retired path in rule: {rule}'
-            # The new distinctive path segment IS present (python3 -c substring vector).
-            assert any('.plan-marshall/credentials' in r for r in deny_rules)
-        finally:
-            monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', sandboxed_dir)
-            importlib.reload(_cred_ensure_denied)
+        for rule in real_home_deny_rules:
+            assert '.plan-marshall-credentials' not in rule, f'Retired path in rule: {rule}'
+        # The new distinctive path segment IS present (python3 -c substring vector).
+        assert any('.plan-marshall/credentials' in r for r in real_home_deny_rules)
 
 
 class TestEnsureDeniedCLI:
