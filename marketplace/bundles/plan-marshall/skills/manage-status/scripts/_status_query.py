@@ -87,7 +87,13 @@ def cmd_set_phase(args: argparse.Namespace) -> dict[str, Any] | None:
     # (see _cmd_lifecycle.cmd_transition). Forward moves never write it.
     is_loop_back = previous in phase_names and phase_names.index(previous) > phase_names.index(args.phase)
     if is_loop_back:
-        metadata = status.setdefault('metadata', {})
+        metadata = status.get('metadata')
+        if not isinstance(metadata, dict):
+            # dict.setdefault only applies its default when the key is
+            # ABSENT — an explicit JSON null would flow through and make the
+            # item assignment below raise TypeError. Normalize and persist.
+            metadata = {}
+            status['metadata'] = metadata
         metadata['loop_back_reentry'] = {
             'from_phase': previous,
             'to_phase': args.phase,

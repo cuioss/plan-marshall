@@ -56,7 +56,14 @@ def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] 
     (or when ``git status`` itself fails — the gate fails closed), and
     ``None`` when the transition may proceed.
     """
-    metadata = status.get('metadata', {})
+    metadata = status.get('metadata')
+    if not isinstance(metadata, dict):
+        # An explicit JSON null (or non-dict) for status['metadata'] would
+        # make .get(..., {}) return None — the default only applies when the
+        # key is ABSENT. Normalize and persist so downstream reads/writes in
+        # the same call stay consistent.
+        metadata = {}
+        status['metadata'] = metadata
     if not metadata.get('use_worktree'):
         return None
     worktree_path = metadata.get('worktree_path')
@@ -132,7 +139,13 @@ def _loop_back_auto_override(
     A failed re-capture also blocks (fail closed) by returning its error
     payload.
     """
-    metadata = status.get('metadata', {})
+    metadata = status.get('metadata')
+    if not isinstance(metadata, dict):
+        # Guard against an explicit JSON null for status['metadata'] — the
+        # .get default applies only when the key is absent. Normalize and
+        # persist so the marker pop below mutates the stored dict.
+        metadata = {}
+        status['metadata'] = metadata
     marker = metadata.get('loop_back_reentry')
     if verify_result.get('status') != 'drift' or not marker:
         return verify_result
@@ -319,6 +332,31 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
             refusal = _loop_back_auto_override(args, status, verify_result)
             if refusal is not None:
                 return refusal
+        else:
+            # Consume-on-next-guarded-verification: the loop_back_reentry
+            # marker is consumed at the very next guarded boundary check
+            # REGARDLESS of whether that check found drift. A clean verify
+            # with the marker still present must clear it here — otherwise a
+            # later, genuinely unscheduled drift would find the stale marker
+            # and incorrectly auto-override it.
+            metadata = status.get('metadata')
+            if isinstance(metadata, dict) and metadata.get('loop_back_reentry'):
+                marker = metadata.pop('loop_back_reentry')
+                write_status(args.plan_id, status)
+                from_phase = (
+                    marker.get('from_phase', 'unknown')
+                    if isinstance(marker, dict)
+                    else 'unknown'
+                )
+                log_entry(
+                    'decision',
+                    args.plan_id,
+                    'INFO',
+                    f'(plan-marshall:manage-status) Loop-back re-entry marker '
+                    f'consumed on clean guarded verification at {args.completed} '
+                    f'(scheduled by {from_phase} loop_back) — no drift to '
+                    'auto-resolve; marker cleared without recapture',
+                )
 
         # Clean-tree post-condition: after the strict-verify guard passes,
         # the worktree itself must be clean — uncommitted edits at the

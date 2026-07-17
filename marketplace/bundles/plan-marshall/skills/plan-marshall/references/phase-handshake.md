@@ -70,11 +70,15 @@ diffs[2]{invariant,captured,observed}:
 
 #### Loop-back auto-override (sanctioned re-entry drift)
 
-A loop-back (`manage-status set-phase` to a phase that precedes the current one) guarantees drift by construction: the re-entered phases legitimately change the invariants recorded at the pre-loop-back capture, so the next guarded-boundary verify reports `status: drift` every time. `cmd_set_phase` therefore persists `metadata.loop_back_reentry = {from_phase, to_phase, at}` on every backward move, and `cmd_transition`'s inline guard consumes it: when the blocking verify result is **invariant drift** AND the marker is present, the transition re-captures the handshake automatically with `override=True` and the recorded reason `loop-back re-entry auto-override (scheduled by {from_phase} loop_back)`, clears the marker (persisted immediately, so the override fires exactly once per scheduled loop-back), emits a decision-log WARNING carrying the drift diff summary, and proceeds.
+A loop-back (`manage-status set-phase` to a phase that precedes the current one) guarantees drift by construction: the re-entered phases legitimately change the invariants recorded at the pre-loop-back capture, so the next guarded-boundary verify reports `status: drift` every time. `cmd_set_phase` therefore persists `metadata.loop_back_reentry = {from_phase, to_phase, at}` on every backward move, and `cmd_transition`'s inline guard consumes it at the **very next guarded boundary check, regardless of whether that check found drift** (the consume-on-next-guarded-verification contract):
+
+- **Drift + marker** (the expected case): the transition re-captures the handshake automatically with `override=True` and the recorded reason `loop-back re-entry auto-override (scheduled by {from_phase} loop_back)`, clears the marker (persisted immediately, so the override fires exactly once per scheduled loop-back), emits a decision-log WARNING carrying the drift diff summary, and proceeds.
+- **Clean verify + marker**: the marker is consumed without a recapture — the transition pops it, persists the cleared metadata, and emits a decision-log INFO line noting the marker was consumed on a clean guarded verification. This prevents a stale marker from surviving a clean boundary and incorrectly auto-overriding a later, genuinely unscheduled drift.
 
 Scope limits:
 
 - Expected-by-construction drift on a sanctioned loop-back re-entry is the ONLY auto-resolved case. Drift WITHOUT the marker keeps the blocking behavior unchanged — the operator-facing drift protocol below applies only to unscheduled drift.
+- The marker never survives past the first guarded boundary check after the loop-back — it is consumed on that check's outcome either way (recapture on drift, plain clear on clean).
 - The worktree-resolution and dirty-boundary refusals (`VERIFY_REFUSAL_ERRORS`: `worktree_unresolved`, `worktree_metadata_drift`, `main_checkout_dirtied_during_plan`, `worktree_dirty_at_boundary`) are NEVER bypassed by the marker — only invariant drift is auto-resolved.
 - A failed re-capture blocks the transition (fail closed) with the re-capture's error payload.
 

@@ -220,6 +220,50 @@ def test_drift_with_marker_auto_recaptures_and_advances(
 
 
 # =============================================================================
+# (b2) Clean verify + marker → marker consumed WITHOUT recapture
+# =============================================================================
+
+
+def test_clean_verify_with_marker_consumes_marker_without_recapture(
+    plan_context, _stubbed_invariants, _stub_metadata
+):
+    """Consume-on-next-guarded-verification: a clean (non-blocking) guarded
+    verify with the marker present must clear it — without a recapture — so a
+    stale marker cannot incorrectly auto-override a later, genuinely
+    unscheduled drift."""
+    plan_id = 'loopback-clean-verify-consumes-marker'
+    status_path = _seed_plan(plan_context, plan_id, {'use_worktree': False})
+
+    # Sanctioned loop-back writes the marker; invariants are NOT mutated, so
+    # the guarded verify at the boundary comes back clean.
+    cmd_set_phase(Namespace(plan_id=plan_id, phase='2-refine'))
+    cmd_set_phase(Namespace(plan_id=plan_id, phase='5-execute'))
+    assert _read_status(status_path)['metadata'].get('loop_back_reentry') is not None
+
+    result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
+
+    assert result is not None
+    assert result['status'] == 'success'
+    assert result['next_phase'] == '6-finalize'
+
+    after = _read_status(status_path)
+    assert 'loop_back_reentry' not in after.get('metadata', {}), (
+        'A clean guarded verification must consume the marker — a stale '
+        'marker would incorrectly auto-override a later unscheduled drift.'
+    )
+
+    row = _store.get_row(plan_id, '5-execute')
+    assert row is not None
+    assert not _is_true(row.get('override')), (
+        f'A clean verify must NOT recapture with override=true — the marker '
+        f'is consumed by a plain clear, got {row!r}.'
+    )
+    # Unscheduled drift AFTER the marker is consumed still blocks — proven by
+    # test_drift_without_marker_still_blocks (case c); the marker-absence
+    # assertion above is what guarantees that case now applies.
+
+
+# =============================================================================
 # (c) Drift WITHOUT the marker still blocks
 # =============================================================================
 
@@ -242,6 +286,65 @@ def test_drift_without_marker_still_blocks(plan_context, _stubbed_invariants, _s
     assert after['current_phase'] == '5-execute', (
         'cmd_transition advanced despite unscheduled drift — the auto-override '
         'must be gated on the loop_back_reentry marker.'
+    )
+
+
+# =============================================================================
+# (d-pre) Explicit-None metadata is normalized, never crashed on
+# =============================================================================
+
+
+def test_set_phase_loop_back_with_explicit_none_metadata(
+    plan_context, _stubbed_invariants, _stub_metadata
+):
+    """An explicit JSON null for status['metadata'] must be normalized by the
+    backward set-phase (dict.setdefault would return None and the marker
+    assignment would raise TypeError)."""
+    plan_id = 'loopback-none-metadata-setphase'
+    status_path = _seed_plan(plan_context, plan_id)
+    status = _read_status(status_path)
+    status['metadata'] = None
+    status_path.write_text(json.dumps(status), encoding='utf-8')
+
+    result = cmd_set_phase(Namespace(plan_id=plan_id, phase='2-refine'))
+
+    assert result['status'] == 'success'
+    marker = _read_status(status_path).get('metadata', {}).get('loop_back_reentry')
+    assert marker is not None, (
+        'Explicit-None metadata must be normalized to a dict so the backward '
+        'set-phase can persist the loop-back marker.'
+    )
+    assert marker['from_phase'] == '5-execute'
+
+
+def test_loop_back_auto_override_with_explicit_none_metadata():
+    """_loop_back_auto_override must not raise AttributeError when
+    status['metadata'] is explicitly None — it returns the verify result
+    unchanged (no marker means no auto-override)."""
+    verify_result = {'status': 'drift', 'drift_count': 1, 'diffs': []}
+
+    result = _lifecycle._loop_back_auto_override(
+        Namespace(plan_id='loopback-none-metadata-override', completed='5-execute'),
+        {'metadata': None},
+        verify_result,
+    )
+
+    assert result is verify_result, (
+        'None metadata carries no marker — the blocking verify result must be '
+        'returned unchanged, not crashed on.'
+    )
+
+
+def test_clean_tree_refusal_with_explicit_none_metadata():
+    """_clean_tree_refusal must not raise AttributeError when
+    status['metadata'] is explicitly None — no worktree means no refusal."""
+    result = _lifecycle._clean_tree_refusal(
+        'loopback-none-metadata-cleantree', {'metadata': None}
+    )
+
+    assert result is None, (
+        'None metadata implies no use_worktree — the clean-tree gate must '
+        'pass through, not crash.'
     )
 
 
