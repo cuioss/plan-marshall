@@ -108,12 +108,26 @@ def test_check_era_covers_exactly_all_checks():
 
 
 def test_reworked_checks_carry_this_plan_boundary():
-    # This plan (plan-13) reworks three checks' mechanics — inline-init metrics
-    # recording, the classify-before-route lane signals, and the Tier-1 recipe
-    # floor that re-arms the checkpoint measurement — so their era boundary is
-    # this plan's own PR (#875), kept in lock-step with the audit.py mirror.
-    for check in ("metrics", "track-selection-accuracy", "lane-lever-effectiveness"):
+    # Plan-13 reworks two checks' mechanics — the classify-before-route lane
+    # signals and the Tier-1 recipe floor that re-arms the checkpoint measurement
+    # — so their era boundary is plan-13's PR (#875), kept in lock-step with the
+    # audit.py mirror. The `metrics` check has since moved OFF #875 to this plan's
+    # own PR-PENDING boundary (see test_metrics_check_carries_this_plan_pr_boundary).
+    for check in ("track-selection-accuracy", "lane-lever-effectiveness"):
         assert audit.CHECK_ERA[check] == "#875", check
+
+
+def test_metrics_check_carries_this_plan_pr_boundary():
+    # This plan makes per-step token attribution sound — D1 dispatch-boundary
+    # reconciliation, D2 inline 6-finalize main-context attribution, and D3 the
+    # loop-back boundary-monotonicity idle guard — exactly the per-phase
+    # token/duration recording mechanics the `metrics` check verifies. So its era
+    # boundary is this plan's own PR, carried as the PR-PENDING placeholder
+    # (bumped from #875) until project:finalize-step-era-stamp-fill resolves it to
+    # the real PR at finalize. This is the co-changing mirror of the audit.py
+    # CHECK_ERA constant — the pair changes together and is the designated
+    # acceptance for era-fill firing from a composed manifest.
+    assert audit.CHECK_ERA["metrics"] == "PR-PENDING"
 
 
 def test_merge_window_accounting_carries_this_plan_pr_boundary():
