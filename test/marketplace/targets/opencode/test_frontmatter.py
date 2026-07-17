@@ -27,7 +27,7 @@ def opencode_config_dir() -> Path:
 
 
 @pytest.fixture()
-def mapping(opencode_config_dir: Path) -> dict[str, dict[str, str]]:
+def mapping(opencode_config_dir: Path) -> dict[str, dict]:
     return load_mapping(opencode_config_dir)
 
 
@@ -81,7 +81,7 @@ class TestParseFrontmatter:
 
 class TestToolPermissionMapping:
     def test_known_tools_map_to_permissions(
-        self, mapping: dict[str, dict[str, str]], rules: dict[str, list[str]]
+        self, mapping: dict[str, dict], rules: dict[str, list[str]]
     ):
         fm = {
             'description': 'agent',
@@ -93,7 +93,7 @@ class TestToolPermissionMapping:
         assert 'bash: allow' in result
 
     def test_duplicate_permissions_deduplicated(
-        self, mapping: dict[str, dict[str, str]], rules: dict[str, list[str]]
+        self, mapping: dict[str, dict], rules: dict[str, list[str]]
     ):
         fm = {
             'description': 'agent',
@@ -105,14 +105,14 @@ class TestToolPermissionMapping:
         assert result.count('edit: allow') == 1
 
     def test_unmapped_tool_raises(
-        self, mapping: dict[str, dict[str, str]], rules: dict[str, list[str]]
+        self, mapping: dict[str, dict], rules: dict[str, list[str]]
     ):
         fm = {'description': 'agent', 'tools': 'Read, BogusTool'}
         with pytest.raises(UnmappedToolError):
             transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
 
     def test_no_tools_field_omits_permission_block(
-        self, mapping: dict[str, dict[str, str]], rules: dict[str, list[str]]
+        self, mapping: dict[str, dict], rules: dict[str, list[str]]
     ):
         fm = {'description': 'agent'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
@@ -125,7 +125,7 @@ class TestToolPermissionMapping:
 
 class TestModelAliasResolution:
     def test_known_alias_resolves_to_prefixed_id(
-        self, mapping: dict[str, dict[str, str]], rules: dict[str, list[str]]
+        self, mapping: dict[str, dict], rules: dict[str, list[str]]
     ):
         fm = {'description': 'agent', 'model': 'sonnet'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
@@ -133,14 +133,14 @@ class TestModelAliasResolution:
         assert f'model: {OPENCODE_MODEL_PREFIX}{sonnet_id}' in result
 
     def test_unknown_alias_passes_through(
-        self, mapping: dict[str, dict[str, str]], rules: dict[str, list[str]]
+        self, mapping: dict[str, dict], rules: dict[str, list[str]]
     ):
         fm = {'description': 'agent', 'model': 'anthropic/custom-model'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
         assert 'model: anthropic/custom-model' in result
 
     def test_no_model_field_omits_model_line(
-        self, mapping: dict[str, dict[str, str]], rules: dict[str, list[str]]
+        self, mapping: dict[str, dict], rules: dict[str, list[str]]
     ):
         fm = {'description': 'agent'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
@@ -159,7 +159,7 @@ class TestRequiredFieldValidation:
             )
 
     def test_agent_missing_description_raises(
-        self, mapping: dict[str, dict[str, str]], rules: dict[str, list[str]]
+        self, mapping: dict[str, dict], rules: dict[str, list[str]]
     ):
         with pytest.raises(UnmappedFrontmatterError):
             transform_agent_frontmatter({}, mapping, rules, source_label='agents/x.md')

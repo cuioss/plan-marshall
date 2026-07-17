@@ -30,7 +30,7 @@ def load_frontend_cui_extension():
     spec = importlib.util.spec_from_file_location('extension_pm_dev_frontend_cui', extension_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    spec.loader.exec_module(module)
 
     assert hasattr(module, 'Extension'), 'Extension class not found in extension.py'
     return module.Extension()

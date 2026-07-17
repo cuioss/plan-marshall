@@ -198,7 +198,7 @@ class TestScanSkillForUndefinedFields:
 
     def test_finding_shape(self, tmp_path: Path) -> None:
         """Each finding carries all required keys."""
-        authoritative = frozenset()
+        authoritative: frozenset[str] = frozenset()
         skill_dir = tmp_path / 'skill'
         (skill_dir / 'standards').mkdir(parents=True)
         _make_skill_md(
