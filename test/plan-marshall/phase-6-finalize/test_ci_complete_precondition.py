@@ -1840,3 +1840,343 @@ def test_run_config_timeout_get_degrades_when_executor_unresolvable(monkeypatch)
 
     assert result == 600
     assert run_called['hit'] is False
+
+
+# ---------------------------------------------------------------------------
+# Per-signal FIND-gate mode (``--signal-arm review|sonar``) — deliverable 1.
+#
+# The per-signal gate keys a producer's FIND step on that producer's OWN
+# barrier arm reaching a terminal state (settled OR failed), not on global CI
+# green. A ``failed`` arm STILL proceeds to FIND — a red gate is exactly when
+# that producer's findings exist (the TokenSheriff-572 deadlock fix). A
+# ``pending`` arm (CI not yet terminal) waits. The gate decision keys ONLY on
+# terminal-ness; it never inspects ``failing_checks[]`` to reclassify a red
+# gate. The two arms differ only in how a terminal-but-red CI is LABELLED —
+# the ``review`` arm is always ``settled`` on a terminal poll (its comment
+# snapshot is stable once CI has merely finished), the ``sonar`` arm mirrors
+# the analysis gate (``failed`` on a red poll).
+#
+# The resolver reuses the existing ci_wait_runner / git_head_resolver seams —
+# the per-signal path delegates to the legacy resolver to run the bounded
+# ``ci wait`` and re-maps its terminal envelope onto the arm verdict.
+# ---------------------------------------------------------------------------
+
+
+def _sonar_red_ci_envelope() -> dict:
+    """A terminal CI envelope that is red ONLY via the Sonar check.
+
+    This is the TokenSheriff-572 scenario: the global CI gate is red, but the
+    single failing check is the Sonar analysis. Under the retired global-CI
+    gate this blackout-skipped BOTH producer FINDs.
+    """
+    return {
+        'status': 'success',
+        'final_status': 'failure',
+        'failing_checks': [
+            {'name': 'SonarCloud Code Analysis', 'conclusion': 'FAILURE'},
+        ],
+        'wait_outcome': 'completed',
+    }
+
+
+def test_signal_arm_sonar_red_ci_proceeds_as_failed(plan_context):
+    """(a) CI red only via the Sonar check → the sonar arm is terminal-but-red
+    → ``arm_proceed`` with ``arm_state=failed`` so ``sonar-roundtrip`` FINDs
+    its new-code issues rather than skipping the very signal it consumes.
+    """
+    plan_id = 'ci-precond-signal-sonar-red'
+    wait_stub = _StubCiWait([_sonar_red_ci_envelope()])
+
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        signal_arm='sonar',
+    )
+
+    assert result['status'] == 'arm_proceed', (
+        'a failed sonar arm must PROCEED to FIND, not skip — a red gate is '
+        'exactly when its findings exist (the TokenSheriff-572 fix)'
+    )
+    assert result['signal_arm'] == 'sonar'
+    assert result['arm_state'] == 'failed'
+    assert result['ci_final_status'] == 'failure'
+    assert result['head_sha'] == _SHA_A
+    # A red terminal is not cached — re-entry re-polls.
+    assert not _cache_path(plan_id).exists()
+
+
+def test_signal_arm_review_red_ci_proceeds_as_settled(plan_context):
+    """(a) The SAME Sonar-only red CI leaves the review arm ``settled`` →
+    ``arm_proceed`` so ``automatic-review`` fetches the PR comments. A red CI
+    unrelated to the review signal no longer skips the comment FIND.
+    """
+    plan_id = 'ci-precond-signal-review-red'
+    wait_stub = _StubCiWait([_sonar_red_ci_envelope()])
+
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        signal_arm='review',
+    )
+
+    assert result['status'] == 'arm_proceed'
+    assert result['signal_arm'] == 'review'
+    assert result['arm_state'] == 'settled', (
+        'the review arm is stable once CI has FINISHED regardless of colour '
+        '— a red CI must not label it failed'
+    )
+    assert result['ci_final_status'] == 'failure'
+
+
+def test_signal_arm_tokensheriff_572_both_producers_proceed(plan_context):
+    """TokenSheriff-572 reproduction: a Sonar-only red CI must NOT skip either
+    FIND. Under the retired global-CI gate both ``automatic-review`` and
+    ``sonar-roundtrip`` blackout-skipped; the per-signal gate proceeds on
+    both, so the deadlock is resolved.
+    """
+    sonar = resolve(
+        plan_id='ci-precond-ts572-sonar',
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=_StubCiWait([_sonar_red_ci_envelope()]),
+        git_head_resolver=_StubGitHead(_SHA_A),
+        signal_arm='sonar',
+    )
+    review = resolve(
+        plan_id='ci-precond-ts572-review',
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=_StubCiWait([_sonar_red_ci_envelope()]),
+        git_head_resolver=_StubGitHead(_SHA_A),
+        signal_arm='review',
+    )
+
+    assert sonar['status'] == 'arm_proceed'
+    assert review['status'] == 'arm_proceed'
+
+
+def test_signal_arm_green_sonar_settles(plan_context):
+    """CI green → the sonar arm settles cleanly → ``arm_proceed``."""
+    plan_id = 'ci-precond-signal-green-sonar'
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=_StubCiWait(
+            [{'status': 'success', 'final_status': 'success'}]
+        ),
+        git_head_resolver=_StubGitHead(_SHA_A),
+        signal_arm='sonar',
+    )
+    assert result['status'] == 'arm_proceed'
+    assert result['arm_state'] == 'settled'
+    assert result['ci_final_status'] == 'success'
+
+
+def test_signal_arm_green_review_settles(plan_context):
+    """CI green → the review arm settles cleanly → ``arm_proceed``."""
+    plan_id = 'ci-precond-signal-green-review'
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=_StubCiWait(
+            [{'status': 'success', 'final_status': 'success'}]
+        ),
+        git_head_resolver=_StubGitHead(_SHA_A),
+        signal_arm='review',
+    )
+    assert result['status'] == 'arm_proceed'
+    assert result['arm_state'] == 'settled'
+    assert result['ci_final_status'] == 'success'
+
+
+def test_signal_arm_pending_sonar_waits(plan_context):
+    """(b) CI not yet terminal (timeout) → the sonar arm is ``pending`` →
+    ``arm_pending`` so the dispatcher waits and re-polls on re-entry.
+    """
+    plan_id = 'ci-precond-signal-pending-sonar'
+    wait_stub = _StubCiWait(
+        [
+            {
+                'status': 'error',
+                'operation': 'ci_wait',
+                'error': 'Timeout waiting for CI',
+                'wait_outcome': 'deadline_exceeded',
+                'duration_sec': 600,
+                'failing_checks': [{'name': 'build', 'conclusion': 'PENDING'}],
+            }
+        ]
+    )
+
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_set_runner=_StubTimeoutSet(),
+        signal_arm='sonar',
+    )
+
+    assert result['status'] == 'arm_pending'
+    assert result['arm_state'] == 'pending'
+    assert result['ci_final_status'] == 'timeout'
+    assert result['wait_outcome'] == 'deadline_exceeded'
+    # A pending arm is never cached — re-entry re-polls.
+    assert not _cache_path(plan_id).exists()
+
+
+def test_signal_arm_pending_review_waits(plan_context):
+    """(b) A pending arm waits for the review arm too — the per-signal wait
+    semantics are symmetric across producer arms.
+    """
+    plan_id = 'ci-precond-signal-pending-review'
+    wait_stub = _StubCiWait(
+        [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
+    )
+
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        timeout_seconds=600,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        timeout_set_runner=_StubTimeoutSet(),
+        monotonic_clock=_StubClock([0.0, 601.0]),
+        signal_arm='review',
+    )
+
+    assert result['status'] == 'arm_pending'
+    assert result['arm_state'] == 'pending'
+    assert result['ci_final_status'] == 'timeout'
+
+
+def test_signal_arm_no_checks_sonar_proceeds_failed(plan_context):
+    """``final_status: none`` (no CI configured) is a terminal state → the
+    sonar arm proceeds (labelled failed, since the gate is not green).
+    """
+    plan_id = 'ci-precond-signal-no-checks-sonar'
+    wait_stub = _StubCiWait(
+        [
+            {
+                'status': 'success',
+                'final_status': 'none',
+                'failing_checks': [],
+                'wait_outcome': 'completed',
+            }
+        ]
+    )
+
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=wait_stub,
+        git_head_resolver=_StubGitHead(_SHA_A),
+        signal_arm='sonar',
+    )
+
+    assert result['status'] == 'arm_proceed'
+    assert result['arm_state'] == 'failed'
+    assert result['ci_final_status'] == 'no_checks'
+
+
+def test_signal_arm_cache_hit_settles_without_repolling(plan_context):
+    """A cache hit (a prior success at the same HEAD) settles the arm without
+    re-polling ``ci wait`` — the per-signal path reuses the shared cache.
+    """
+    plan_id = 'ci-precond-signal-cache-hit'
+    git_stub = _StubGitHead(_SHA_A)
+    # First: a legacy success populates the per-HEAD cache.
+    resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=_StubCiWait(
+            [{'status': 'success', 'final_status': 'success'}]
+        ),
+        git_head_resolver=git_stub,
+    )
+    # Second: a per-signal resolution with NO envelopes — must hit the cache.
+    empty_wait = _StubCiWait([])
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=empty_wait,
+        git_head_resolver=git_stub,
+        signal_arm='sonar',
+    )
+
+    assert result['status'] == 'arm_proceed'
+    assert result['arm_state'] == 'settled'
+    assert len(empty_wait.calls) == 0, (
+        'a cache hit must settle the arm without re-invoking ci wait'
+    )
+
+
+def test_signal_arm_ci_value_falls_back_to_legacy(plan_context):
+    """``--signal-arm ci`` (like an absent value) resolves the legacy global
+    ci-complete path unchanged — the return carries the legacy
+    ``wait_succeeded`` shape, NOT the ``arm_proceed`` shape.
+    """
+    plan_id = 'ci-precond-signal-ci-legacy'
+    result = resolve(
+        plan_id=plan_id,
+        worktree_path=_WORKTREE,
+        pr_number=_PR,
+        ci_wait_runner=_StubCiWait(
+            [{'status': 'success', 'final_status': 'success'}]
+        ),
+        git_head_resolver=_StubGitHead(_SHA_A),
+        signal_arm='ci',
+    )
+    assert result['status'] == 'wait_succeeded'
+    assert 'signal_arm' not in result
+    assert 'arm_state' not in result
+
+
+def test_build_parser_accepts_signal_arm():
+    """The CLI exposes ``--signal-arm`` with the {ci, review, sonar} choices."""
+    parser = _resolver_mod.build_parser()
+    args = parser.parse_args(
+        [
+            'resolve',
+            '--plan-id',
+            'p',
+            '--worktree-path',
+            '/w',
+            '--pr-number',
+            '1',
+            '--signal-arm',
+            'sonar',
+        ]
+    )
+    assert args.signal_arm == 'sonar'
+
+
+def test_build_parser_signal_arm_defaults_none():
+    """When ``--signal-arm`` is omitted the parsed value is ``None`` — the
+    legacy global path is the default.
+    """
+    parser = _resolver_mod.build_parser()
+    args = parser.parse_args(
+        [
+            'resolve',
+            '--plan-id',
+            'p',
+            '--worktree-path',
+            '/w',
+            '--pr-number',
+            '1',
+        ]
+    )
+    assert args.signal_arm is None

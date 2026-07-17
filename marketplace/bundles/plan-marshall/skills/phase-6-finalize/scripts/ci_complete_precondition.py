@@ -45,6 +45,42 @@ Outcome semantics:
   duration — the starved-ratchet fix (the success path never fired when the
   ceiling sat below the real CI duration).
 
+Per-signal FIND-gate mode (``--signal-arm {ci|review|sonar}``):
+
+The default (``--signal-arm`` absent, or ``ci``) resolves the global
+``ci-complete`` precondition described above, honouring ``--mode``
+(``strict`` | ``consume-failures``) — this is the path ``default:ci-verify``
+consumes, and it is unchanged. When ``--signal-arm`` names a producer arm
+(``review`` or ``sonar``), the resolver instead gates the FIND step on that
+arm's OWN terminal state — mirroring the ``_ci_barrier``
+``settled`` / ``failed`` / ``pending`` vocabulary — rather than on global CI
+green::
+
+    status: arm_proceed | arm_pending
+    signal_arm: review | sonar
+    arm_state: settled | failed | pending
+    head_sha: <40-char hex SHA>
+    ci_final_status: success | failure | timeout | no_checks
+    failing_checks: [ ... ]         # forwarded when the arm is failed/pending
+    wait_outcome: completed | deadline_exceeded
+
+* ``arm_proceed`` — the arm reached a TERMINAL state (``settled`` OR
+  ``failed``); the producer's FIND runs. A ``failed`` arm STILL proceeds — a
+  red gate is exactly when that producer's findings exist. This is the
+  TokenSheriff-572 deadlock fix: the old global-CI gate skipped the FIND on
+  the very signal it should have consumed.
+* ``arm_pending`` — the underlying ``ci wait`` did not reach a terminal state
+  within the budget (``ci_final_status: timeout``); the arm has not settled,
+  so the dispatcher waits and re-polls on re-entry.
+
+The gate decision (proceed vs wait) keys ONLY on terminal-ness — it never
+inspects ``failing_checks[]`` to reclassify a red gate, per the request
+exclusion. The two arms differ only in how a terminal-but-red CI is
+LABELLED: the ``review`` arm's comment snapshot is stable once CI has merely
+FINISHED (always ``settled`` on a terminal poll, regardless of colour), while
+the ``sonar`` arm mirrors the analysis gate (``settled`` on success,
+``failed`` on a terminal-but-red poll). Either label proceeds to FIND.
+
 The script is invoked via the marketplace executor notation
 ``plan-marshall:phase-6-finalize:ci_complete_precondition`` from the
 markdown dispatcher in ``phase-6-finalize/SKILL.md`` Step 3 ("Precondition
@@ -395,6 +431,7 @@ def resolve(
     timeout_set_runner=None,
     monotonic_clock=None,
     mode: str = 'strict',
+    signal_arm: str | None = None,
 ) -> dict:
     """Resolve the ``ci-complete`` precondition for the current HEAD.
 
@@ -430,11 +467,37 @@ def resolve(
             place of :func:`time.monotonic`. Called once immediately before
             and once immediately after the ``ci wait`` subprocess so the
             elapsed-at-deadline can be measured deterministically in tests.
+        signal_arm: Producer arm to gate on. ``None`` (the default) or
+            ``'ci'`` resolves the legacy global ``ci-complete`` precondition,
+            honouring ``mode``. ``'review'`` or ``'sonar'`` resolve the
+            per-signal FIND-gate (see the module docstring): the FIND runs
+            once the named arm reaches a terminal state, including a red
+            arm. The ``mode`` argument is not consulted in the per-signal
+            path.
 
     Returns:
         Dict matching the return contract documented in the module
-        docstring.
+        docstring. In the ``signal_arm in {'review', 'sonar'}`` path the
+        return is the ``arm_proceed`` / ``arm_pending`` shape instead of the
+        legacy ``satisfied`` / ``wait_succeeded`` / ``wait_failed`` shape.
     """
+    # Per-signal FIND-gate mode: a named producer arm gates on its OWN
+    # terminal state, not global CI green. Delegates to the legacy resolver
+    # below (whose behaviour is unchanged) and re-maps the terminal envelope.
+    if signal_arm in ('review', 'sonar'):
+        return _resolve_signal_arm(
+            signal_arm,
+            plan_id,
+            worktree_path,
+            pr_number,
+            timeout_seconds=timeout_seconds,
+            ci_wait_runner=ci_wait_runner,
+            git_head_resolver=git_head_resolver,
+            timeout_get_runner=timeout_get_runner,
+            timeout_set_runner=timeout_set_runner,
+            monotonic_clock=monotonic_clock,
+        )
+
     head_fn = git_head_resolver or _run_git_rev_parse_head
     wait_fn = ci_wait_runner or _run_ci_wait
     timeout_get_fn = timeout_get_runner or _run_run_config_timeout_get
@@ -565,6 +628,106 @@ def resolve(
     }
 
 
+def _resolve_signal_arm(
+    signal_arm: str,
+    plan_id: str,
+    worktree_path: str,
+    pr_number: int,
+    *,
+    timeout_seconds: int | None,
+    ci_wait_runner,
+    git_head_resolver,
+    timeout_get_runner,
+    timeout_set_runner,
+    monotonic_clock,
+) -> dict:
+    """Resolve the per-signal FIND-gate precondition for a producer arm.
+
+    Unlike the legacy ``ci``-arm path (which gates a consumer step on GLOBAL
+    CI green), the per-signal gate keys on the named producer arm's OWN
+    terminal state, mirroring the ``_ci_barrier``
+    ``settled`` / ``failed`` / ``pending`` vocabulary:
+
+    * A terminal arm (``settled`` OR ``failed``) yields ``arm_proceed`` so the
+      producer's FIND runs. A ``failed`` arm STILL proceeds — a red gate is
+      exactly when that producer's findings exist (the TokenSheriff-572
+      deadlock fix: the old global-CI gate skipped the FIND on the very signal
+      it should have consumed).
+    * A ``pending`` arm (the underlying ``ci wait`` did not reach a terminal
+      state within the budget) yields ``arm_pending`` so the dispatcher waits
+      and re-polls on re-entry.
+
+    The gate decision (proceed vs wait) keys ONLY on terminal-ness — it never
+    inspects ``failing_checks[]`` to reclassify a red gate, per the request
+    exclusion. The two producer arms differ only in how a terminal-but-red CI
+    is LABELLED, reflecting each signal's own dependence on CI colour:
+
+    * ``review`` — the review-bot comment snapshot is stable once CI has
+      merely FINISHED, regardless of pass/fail, so a terminal poll is always
+      ``settled``. A red CI unrelated to the review signal no longer skips the
+      comment FIND.
+    * ``sonar`` — the arm mirrors the analysis gate: ``settled`` on CI
+      success, ``failed`` on a terminal-but-red poll (new-code findings exist
+      exactly then). Either way it proceeds to FIND.
+
+    Implemented by delegating to :func:`resolve` (the legacy resolver, whose
+    behaviour is unchanged) to run the bounded ``ci wait`` — reusing its cache,
+    timeout sourcing, and upward-ratchet machinery verbatim — then re-mapping
+    its terminal envelope onto the per-arm verdict.
+    """
+    inner = resolve(
+        plan_id=plan_id,
+        worktree_path=worktree_path,
+        pr_number=pr_number,
+        timeout_seconds=timeout_seconds,
+        ci_wait_runner=ci_wait_runner,
+        git_head_resolver=git_head_resolver,
+        timeout_get_runner=timeout_get_runner,
+        timeout_set_runner=timeout_set_runner,
+        monotonic_clock=monotonic_clock,
+    )
+    head_sha = inner['head_sha']
+    ci_final_status = inner.get('ci_final_status')
+    inner_status = inner['status']
+
+    # CI reached a green terminal state → the arm settled cleanly → proceed.
+    if inner_status in ('satisfied', 'wait_succeeded'):
+        return {
+            'status': 'arm_proceed',
+            'signal_arm': signal_arm,
+            'arm_state': 'settled',
+            'head_sha': head_sha,
+            'ci_final_status': ci_final_status,
+        }
+
+    # inner_status == 'wait_failed'. A timeout means CI never reached a
+    # terminal state within the budget → the arm is still pending → wait.
+    if ci_final_status == 'timeout':
+        return {
+            'status': 'arm_pending',
+            'signal_arm': signal_arm,
+            'arm_state': 'pending',
+            'head_sha': head_sha,
+            'ci_final_status': ci_final_status,
+            'wait_outcome': inner.get('wait_outcome', 'deadline_exceeded'),
+            'failing_checks': inner.get('failing_checks', []),
+        }
+
+    # ci_final_status in ('failure', 'no_checks'): CI reached a terminal state
+    # but the gate is red. The arm is TERMINAL → proceed to FIND regardless;
+    # only the label differs per arm (see docstring).
+    arm_state = 'failed' if signal_arm == 'sonar' else 'settled'
+    return {
+        'status': 'arm_proceed',
+        'signal_arm': signal_arm,
+        'arm_state': arm_state,
+        'head_sha': head_sha,
+        'ci_final_status': ci_final_status,
+        'failing_checks': inner.get('failing_checks', []),
+        'wait_outcome': inner.get('wait_outcome', 'completed'),
+    }
+
+
 # ---------------------------------------------------------------------------
 # CLI surface
 # ---------------------------------------------------------------------------
@@ -579,6 +742,7 @@ def cmd_resolve(args: argparse.Namespace) -> int:
             pr_number=args.pr_number,
             timeout_seconds=args.timeout,
             mode=args.mode,
+            signal_arm=args.signal_arm,
         )
     except RuntimeError as exc:
         payload = {
@@ -646,12 +810,26 @@ def build_parser() -> argparse.ArgumentParser:
         default='strict',
         dest='mode',
         help=(
-            "Precondition mode. 'strict' (default) is used by "
-            "automated-review / sonar-roundtrip — wait_failed short-"
-            "circuits the consumer step. 'consume-failures' is used by "
-            "ci-verify — wait_failed threads the envelope through to "
-            "the consumer body without short-circuiting. See "
-            "phase-6-finalize/standards/ci-verify.md."
+            "Precondition mode for the global ci-complete (ci-arm) path — "
+            "ignored when --signal-arm names a producer arm. 'strict' "
+            "(default) short-circuits the consumer step on wait_failed. "
+            "'consume-failures' is used by ci-verify — wait_failed threads "
+            "the envelope through to the consumer body without short-"
+            "circuiting. See phase-6-finalize/standards/ci-verify.md."
+        ),
+    )
+    resolve_parser.add_argument(
+        '--signal-arm',
+        choices=('ci', 'review', 'sonar'),
+        default=None,
+        dest='signal_arm',
+        help=(
+            "Producer arm to gate the FIND step on. Omitted (or 'ci') "
+            "resolves the legacy global ci-complete precondition honouring "
+            "--mode. 'review' / 'sonar' gate on that arm's own terminal "
+            "state (settled|failed proceed to FIND, pending waits) rather "
+            "than global CI green — a red arm STILL proceeds because its "
+            "findings exist exactly then. See the module docstring."
         ),
     )
     resolve_parser.set_defaults(func=cmd_resolve)
