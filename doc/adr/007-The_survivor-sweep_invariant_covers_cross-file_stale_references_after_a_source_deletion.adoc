@@ -1,0 +1,299 @@
+= ADR-007: The survivor-sweep invariant covers cross-file stale references after a source deletion
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// summary: Cross-file stale references left behind by a source deletion (the survivor-sweep invariant) are a source-tree referential-completeness property, distinct from ADR-006's currency invariant; enforcement belongs to the existing dev-time detector family, no new gate is wired in CI or at the consume boundary (both inert for this invariant), and any future detector derives its inputs git-natively via list_tracked_files / hash_objects — never by parsing diff text.
+// tags: drift, survivor-sweep, referential-completeness, git-native, dev-time
+// affects: default, sync-plugin-cache, ext-self-review-plan-marshall
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Accepted
+
+== Context
+
+The marketplace's drift architecture settled by
+xref:006-Generated-tree_drift_is_gated_at_the_consume_boundary_not_in_CI.adoc[ADR-006]
+guards a *currency* invariant: the generated `target/claude/` tree the
+consumer reads must be a faithful function of the current
+`marketplace/bundles/` source. Every mechanism behind that invariant is a
+per-file comparison — bytes of a path now versus bytes of the same path at
+emit time.
+
+This ADR settles a different, residual invariant: **cross-file
+referential completeness of the source tree itself**. When a deletion (or
+rename) removes something from source file A, every reference to it that
+lives in *another* source file B becomes a stale survivor. The survivor is
+not drift between source and generated output — it is an internal
+inconsistency of the source, which every currency check then faithfully
+propagates into a perfectly "fresh" generated tree.
+
+=== Survivor taxonomy
+
+Four survivor classes exist after a source-side deletion or rename:
+
+* **Deleted symbol** — a function, class, CLI verb, or flag is removed from
+  file A while file B (prose, a workflow doc, another script) still names
+  it. In scope: this is the class with no dedicated whole-surface detector.
+* **Deleted path** — a file or directory is removed while another file
+  still cites its path. In scope: same detection gap as the deleted-symbol
+  class; a path is a symbol whose namespace is the filesystem.
+* **Deleted heading / xref anchor** — an AsciiDoc or markdown heading is
+  removed while an ``xref:``/anchor link in another document still targets
+  it. In scope: structurally identical to the deleted-symbol class over the
+  documentation surface.
+* **Renamed identifier** — a rename is a deletion plus an addition; the
+  stale references to the old name are exactly the deleted-symbol case.
+  In scope by reduction: no separate treatment is warranted.
+
+All four classes share one shape: the defect lives in a file the change
+never touched, so any per-file check of the touched file passes by
+construction.
+
+=== Already-covered legs (do not re-solve)
+
+Two adjacent legs of the survivor problem are already owned by the
+currency machinery and MUST NOT be re-solved by any survivor-sweep
+mechanism:
+
+* **Orphaned generated files** — when a source file is deleted, its
+  previously emitted counterpart under `target/claude/` becomes an orphan.
+  The consume-boundary guard's file-level check
+  (``sync._file_level_drift``) computes the `extra` class — a live target
+  file absent from the emit manifest — and names it in the refusal
+  message. Orphans are therefore swept at the consume boundary already.
+* **The deleted-from file's own drift** — the change to file A itself is
+  observed twice: the whole-tree source fingerprint
+  (``source_fingerprint.compute_source_tree_fingerprint``) changes the
+  digest the sentinel comparison checks, and the regen-first content-drift
+  engine (``content_drift.run_content_drift_check``) diffs A's regenerated
+  emit byte-for-byte. Both force a re-emit; both are per-file currency
+  checks over the changed file.
+
+=== Failing case the currency checks cannot see
+
+The residual gap, demonstrated end-to-end:
+
+1. Source file A (``marketplace/bundles/.../scripts/tool.py``) deletes
+   subcommand `sweep`; source file B
+   (``marketplace/bundles/.../SKILL.md``) still documents
+   `python3 .plan/execute-script.py ...:tool sweep`.
+2. The developer re-emits the target tree, as the currency guards demand.
+3. **Fingerprint check — passes.** The emitter recomputes
+   `source_tree_fingerprint` over the post-deletion source and stores it
+   in the sentinel; the sync guard's recompute matches, because both sides
+   hash the *same* (internally inconsistent) source tree.
+4. **``_file_level_drift`` — passes.** Every emitted file matches the
+   per-file hash manifest written at emit time; B's emitted copy is
+   byte-identical to B's source, stale reference included. No `missing`,
+   `diverged`, or `extra` entry exists.
+5. **``content_drift`` — passes.** The regen-first engine regenerates a
+   fresh tree from the same source and diffs it against the on-disk tree;
+   both contain the identical stale reference, so no `*.md` body differs.
+
+All three mechanisms are per-file currency checks: each asks "does this
+file match its source / its manifest / its fresh regeneration?" — none
+asks "does what this file *references* still exist elsewhere?" The
+survivor rides through every gate because the gates were never specified
+to see it.
+
+=== The structural choice point
+
+The question this ADR settles is the ADR-001/ADR-006 diagnostic applied to
+the residual invariant: *at which boundary can a cross-file stale
+reference actually be observed, and does an existing mechanism already
+observe it there?*
+
+== Decision
+
+**The survivor-sweep invariant — cross-file referential completeness of
+the source tree after a deletion or rename — is a dev-time, source-side
+invariant. No new gate is wired into CI or into the consume-boundary sync
+guard: currency-only checks are tautological for this invariant, while a
+source-side CI extractor would be a late duplicate of the dev-time
+family. Where enforcement is warranted it belongs to the existing
+dev-time detector family, and no new detector is built by this
+decision.**
+
+The reasoning, leg by leg:
+
+* **CI and the consume boundary are inert for this invariant.**
+  `target/` is gitignored and always regenerated from source, so any
+  CI-sited mechanism compares a fresh emit of the inconsistent source
+  against itself — the survivor is present on both sides and the check is
+  tautological (the same structural fact that decided ADR-006). The
+  consume-boundary guard compares the generated tree against its emit
+  manifest; a source tree that consistently carries a stale reference
+  produces a generated tree that consistently carries it too. Currency
+  mechanisms cannot be extended to see referential completeness — it is a
+  different predicate over a different scope (cross-file, source-side).
+* **The dev-time family already observes the highest-value slices.**
+  Applying the no-second-gate diagnostic against the existing detectors:
+  the plugin-doctor `script-call-drift` rule already sweeps every
+  documented script invocation against argparse's live surface, which is
+  precisely the deleted-CLI-verb/flag survivor class over the
+  highest-risk reference type; the phase-3 outline consumer-sweep
+  surfaces consumers of a contract a plan is about to change, catching
+  survivors *before* the deletion lands; and
+  ``ext-self-review-plan-marshall``'s deterministic candidate family
+  (producer-consumer pairs, source-of-truth duplicates, stale
+  count-prose, same-document ordinal references) flags cross-reference
+  classes at pre-submission time. A new always-on gate would re-specify
+  slices of what these detectors already enforce at the boundary where
+  the defect is introduced and can be fixed — the edit.
+* **The residual uncovered slices do not warrant a gate now.** Deleted
+  prose-level symbols outside the script-call surface, deleted paths
+  cited in prose, and deleted xref anchors have no dedicated whole-surface
+  detector. Building one is deliberately NOT decided here: the recurrence
+  evidence is thin, and a speculative whole-tree reference extractor is
+  exactly the class of surplus structure the minimum-implementation
+  principle rejects. The explicit conclusion is **no gate** for these
+  slices today, with the shape of a future detector recorded below so the
+  design is not re-derived from scratch if recurrence justifies building
+  it.
+
+=== Shape of a future detector (recorded, not committed)
+
+If a survivor-sweep detector is ever justified, it derives its inputs
+git-natively and lives in the dev-time family:
+
+* Enumerate the candidate file set with
+  `source_fingerprint.list_tracked_files` (git's own tracked-and-not-
+  ignored path set — no custom filter).
+* Detect *which* files changed between two states by comparing
+  `source_fingerprint.hash_objects` blob SHAs over the worktree bytes,
+  yielding the changed/deleted set without parsing any diff text.
+* Extract the deleted identifiers from the changed files' old and new
+  contents directly (git blob reads), then sweep the *unchanged* tracked
+  files for references to them.
+* Report as a dev-time finding (a plugin-doctor rule or an
+  `ext-self-review` candidate), never as a CI or consume-boundary refusal.
+
+What the future detector MUST NOT do is parse unified-diff text — the
+approach the abandoned PR #723 took, rejected below.
+
+== Consequences
+
+=== Positive
+
+* The drift architecture stays two cleanly separated invariants: ADR-006
+  owns source-to-generated *currency* at the consume boundary; this ADR
+  names cross-file *referential completeness* as a source-side, dev-time
+  property. Neither mechanism family is asked to enforce the other's
+  predicate.
+* No inert gate is added: every boundary that cannot observe the
+  invariant (CI, consume-sync) stays free of a check that would pass
+  vacuously and erode trust in the gates that do bind.
+* The already-covered legs are recorded, so future work neither re-solves
+  the orphaned-file sweep nor re-implements the deleted-from file's own
+  currency checks.
+* The git-native derivation sketch pins the acceptable implementation
+  shape for any future detector, closing off a rebuild of the
+  diff-text-parsing approach.
+
+=== Negative
+
+* The uncovered survivor slices (prose-level deleted symbols outside the
+  script-call surface, deleted paths in prose, deleted xref anchors)
+  remain undetected by any automated whole-surface sweep. A stale
+  reference in these classes survives until a reader hits it, a plan's
+  consumer-sweep crosses it, or a self-review candidate happens to frame
+  it. This is an accepted, bounded exposure — not an oversight.
+
+=== Risks
+
+* If deletion-heavy refactors become frequent, the accepted exposure
+  grows with them. The trigger for revisiting is recurrence evidence
+  (repeated survivor defects reaching review or runtime), at which point
+  the recorded detector shape is built as its own separate future plan —
+  a dev-time survivor-sweep detector extending the plugin-doctor /
+  `ext-self-review-plan-marshall` family — rather than folded into an
+  unrelated change.
+
+== Alternatives Considered
+
+=== Option A — Wire a survivor-sweep gate into CI
+
+Add a CI check that scans for cross-file stale references on every push.
+
+*Rejected because:* for the generated-tree side it is inert by the same
+structural fact ADR-006 records — `target/` is gitignored and regenerated
+from source on every CI run, so both sides of any comparison carry the
+survivor. For the source-tree side, a CI-sited reference extractor is a
+second, late specification of what the dev-time detectors already enforce
+at edit time; it fires after the defect is committed, at the boundary
+furthest from the fix.
+
+=== Option B — Extend the consume-boundary sync guard to sweep references
+
+Teach `sync._staleness_guard` (or ``_file_level_drift``) to validate
+cross-file references while it validates currency.
+
+*Rejected because:* the guard's predicate is per-file currency against an
+emit manifest; referential completeness is a cross-file predicate over the
+*source* tree. A source tree that consistently carries a stale reference
+emits a generated tree that consistently carries it — the guard would need
+a full reference extractor over content it exists only to hash, at a
+boundary (cache sync) where the defect can no longer be conveniently
+fixed. Wrong predicate, wrong boundary, wrong failure mode (a sync refusal
+for a prose defect).
+
+=== Option C — Rebuild the diff-text-parsing detector (the abandoned PR #723 approach)
+
+Reconstruct the survivor detector that string-parsed unified-diff text to
+find deleted lines and then grepped for their fragments.
+
+*Rejected because:* diff text is a presentation format, not a data model —
+hunk contexts, rename detection, and line-splitting semantics forced a
+hand-rolled parser that failed on successive edge cases until the approach
+was abandoned. Git already exposes the underlying facts natively:
+`list_tracked_files` gives the path universe, `hash_objects` gives
+content identity, and blob reads give old/new file contents. Any future
+detector derives from those primitives (the sketch in the Decision
+section); parsing diff text re-introduces a fragile second parser for
+data git will hand over structurally.
+
+=== Option D — Build the dev-time survivor-sweep detector now
+
+Accept the dev-time boundary (as the Decision does) but build the
+whole-surface reference extractor immediately as a plugin-doctor rule.
+
+*Rejected because:* the highest-value slice (documented script calls) is
+already owned by `script-call-drift`, and the remaining slices lack the
+recurrence evidence to justify a whole-tree symbol/anchor extractor —
+speculative structure with real maintenance cost. Recording the detector's
+shape while deferring its construction preserves the design at zero
+carrying cost.
+
+The unifying principle: Options A and B site a check at a boundary where
+the invariant cannot be violated or cannot be usefully observed; Options C
+and D build mechanism ahead of either the correct primitive (C) or the
+demonstrated need (D). The ADR-001/ADR-006 diagnostic disposes of all
+four: enforce an invariant only at the boundary where it is observable,
+with the primitives that already own the facts, when the need is real.
+
+== Generalisation
+
+A per-item integrity check (does this item match its expected state?)
+never composes into a referential integrity check (does everything this
+item points at still exist?). The two are different predicates over
+different scopes, and a system that owns strong per-item checks can still
+silently accept dangling references. The diagnostic question for any
+proposed "sweep" mechanism is therefore: *is the defect a property of the
+item itself, or of the graph between items?* Item-level defects belong to
+the existing per-item gates; graph-level defects need a dedicated
+traversal sited where the graph is authored — and only when the failure
+rate justifies the traversal's cost.
+
+== References
+
+* xref:001-Skills_are_the_source_of_truth_for_script_calls_drift_detection_is_dev-time_post-hoc.adoc[ADR-001] — the no-second-gate diagnostic and the dev-time home of the script-call drift detector (``script-call-drift``), which owns the deleted-CLI-verb survivor slice.
+* xref:006-Generated-tree_drift_is_gated_at_the_consume_boundary_not_in_CI.adoc[ADR-006] — the currency invariant this decision is distinguished from, and the structural fact (gitignored, always-regenerated ``target/``) that makes CI-sited mechanisms inert.
+* `marketplace/targets/claude/source_fingerprint.py` — the git-native primitives (`list_tracked_files`, `hash_objects`, `compute_source_tree_fingerprint`) any future detector derives from.
+* `.claude/skills/sync-plugin-cache/scripts/sync.py` — the consume-boundary guard whose `_file_level_drift` `extra` class already sweeps orphaned generated files.
+* `marketplace/targets/claude/content_drift.py` — the regen-first per-file content-currency engine that the failing case shows passing a survivor.
+* `pm-plugin-development:ext-self-review-plan-marshall` — the pre-submission deterministic candidate family that owns the edit-time cross-reference slices.
