@@ -254,6 +254,45 @@ def _read_recipe_source(plan_id: str) -> str | None:
     return None
 
 
+def _read_request_aspect(plan_id: str) -> str | None:
+    """Resolve the request-aspect classification from status metadata.
+
+    ``phase-1-init`` seeds ``status.metadata.request_aspect`` with the aspect
+    the ``manage-config aspect-classify`` verb assigned to the request
+    (``analysis`` / ``planning`` / ``implementation``). The composer reads this
+    surrogate directly so aspect-driven step dropping no longer depends on the
+    ``phase-4-plan`` agent remembering to forward ``--aspect`` from
+    ``manage-status read`` — the gap that let an ``analysis`` / ``planning``
+    request compose the full build/test verification list because the flag was
+    omitted. An explicit ``--aspect`` argument still takes precedence at the
+    call site in :func:`cmd_compose`, exactly mirroring how ``--recipe-key``
+    wins over :func:`_read_recipe_source`.
+
+    Returns the trimmed aspect string, or ``None`` when ``status.json`` is
+    absent or its metadata carries no ``request_aspect``.
+    """
+    status_path = get_plan_dir(plan_id) / FILE_STATUS
+    if not status_path.exists():
+        return None
+    # Best-effort: a malformed status.json must degrade to "no aspect" rather
+    # than crash compose. read_json returns its default only for a missing
+    # file, so a corrupt-but-present file raises here — mirror the OSError /
+    # JSONDecodeError guard used by _read_recipe_source in this module.
+    try:
+        status = read_json(status_path, default={})
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(status, dict):
+        return None
+    metadata = status.get('metadata', {})
+    if not isinstance(metadata, dict):
+        return None
+    value = metadata.get('request_aspect')
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
 def _looks_docs_only(phase_5_candidates: list[str], role_cache: dict[str, str | None]) -> bool:
     """Heuristic: docs-only plans don't request module-tests or coverage.
 

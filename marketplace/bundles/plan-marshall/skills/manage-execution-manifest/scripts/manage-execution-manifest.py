@@ -53,6 +53,7 @@ from _manifest_decide import (
     _decide,  # noqa: F401
     _looks_docs_only,  # noqa: F401
     _read_recipe_source,  # noqa: F401
+    _read_request_aspect,  # noqa: F401
     _read_task_queue_active,  # noqa: F401
     _split_csv,  # noqa: F401
 )
@@ -1469,7 +1470,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # ``--aspect`` is a no-op: every build/verify gate is retained. The drop is
     # role-driven and canonical-agnostic, reusing the same per-compose role
     # cache as the footprint pre-filter above.
-    aspect = getattr(args, 'aspect', None)
+    aspect = getattr(args, 'aspect', None) or _read_request_aspect(plan_id)
     body['phase_5']['verification_steps'], aspect_dropped = _apply_aspect_step_dropping(
         list(body['phase_5'].get('verification_steps', [])),
         aspect,
