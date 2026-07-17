@@ -411,7 +411,7 @@ A mutable test double (MockWebServer dispatcher, fake, or spy) is written on the
 
 ## Direct Dependencies for Integration Tests
 
-A new module's integration tests that import another module's classes need a DIRECT compile-scope dependency on exactly what they import. A full-reactor build masks a missing declaration — the reactor classpath supplies the class anyway — and the isolated CI integration-test job then fails to compile. Reproduce the CI condition locally with `test-compile -pl {it-module}` WITHOUT `-am`: the isolated invocation compiles only the IT module against its declared dependencies, surfacing the drift before CI does.
+A new module's integration tests that import another module's classes need a DIRECT dependency with the appropriate scope (e.g. `test`) on exactly what they import. A full-reactor build masks a missing declaration — the reactor classpath supplies the class anyway — and the isolated CI integration-test job then fails to compile. Reproduce the CI condition locally with `test-compile -pl {it-module}` WITHOUT `-am`: the isolated invocation compiles only the IT module against its declared dependencies, surfacing the drift before CI does.
 
 ## Integration with CUI Test Generator
 
