@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from file_ops import get_marshal_path
-from marketplace_paths import home_root
+from marketplace_paths import ensure_home_root, home_root
 
 # === Constants ===
 
@@ -294,7 +294,7 @@ def _migrate_credentials_home_if_needed() -> str:
         return 'already_migrated'  # nothing to migrate
 
     # Only the old dir exists → migrate it to the home-root location.
-    home_root().mkdir(mode=0o700, parents=True, exist_ok=True)
+    ensure_home_root()
     try:
         os.rename(str(old_dir), str(new_dir))
     except FileNotFoundError:
@@ -318,6 +318,12 @@ def ensure_credentials_dir(scope: str = 'global', project_name: str | None = Non
     For project scope, also creates the project subdirectory.
     """
     _migrate_credentials_home_if_needed()
+    # Harden the home root itself before creating the leaf: mkdir's mode applies
+    # only to the leaf, so a parents=True creation of CREDENTIALS_DIR would give
+    # ~/.plan-marshall umask-default permissions. Skipped under the explicit
+    # PLAN_MARSHALL_CREDENTIALS_DIR override (test sandbox / operator path).
+    if not os.environ.get('PLAN_MARSHALL_CREDENTIALS_DIR'):
+        ensure_home_root()
     CREDENTIALS_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     # Verify permissions (in case directory already existed with wrong perms)
     current_mode = CREDENTIALS_DIR.stat().st_mode & 0o777

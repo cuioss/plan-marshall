@@ -9,6 +9,7 @@ cwd. These tests pin both PLAN_BASE_DIR and cwd and never contend for the real
 ``.plan/`` under ``-n auto``.
 """
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -666,6 +667,46 @@ class TestHomeRoot:
         assert resolved == tmp_path / '.plan-marshall'
         # Not anchored under any checkout's .plan/local (cwd-independent).
         assert resolved != worktree / '.plan' / 'local' / '.plan-marshall'
+
+
+class TestEnsureHomeRoot:
+    """First-touch creation of the home root must be 0o700, never umask-default."""
+
+    def test_creates_home_root_with_0700(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        custom = tmp_path / 'ensure-home'
+        monkeypatch.setenv('PLAN_MARSHALL_HOME', str(custom))
+
+        created = marketplace_paths.ensure_home_root()
+
+        assert created == custom
+        assert custom.is_dir()
+        assert (custom.stat().st_mode & 0o777) == 0o700
+
+    def test_repairs_wider_mode_on_existing_root(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        custom = tmp_path / 'wide-home'
+        custom.mkdir(mode=0o755)
+        os.chmod(custom, 0o755)
+        monkeypatch.setenv('PLAN_MARSHALL_HOME', str(custom))
+
+        marketplace_paths.ensure_home_root()
+
+        assert (custom.stat().st_mode & 0o777) == 0o700
+
+    def test_idempotent_on_correct_mode(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        custom = tmp_path / 'ok-home'
+        monkeypatch.setenv('PLAN_MARSHALL_HOME', str(custom))
+        marketplace_paths.ensure_home_root()
+
+        again = marketplace_paths.ensure_home_root()
+
+        assert again == custom
+        assert (custom.stat().st_mode & 0o777) == 0o700
 
 
 class TestMainCheckoutRoot:

@@ -581,9 +581,9 @@ class TestSharedCoreDelegation:
 
     def test_imports_shared_resolvers(self) -> None:
         # Resolution is delegated to the shared marketplace_paths resolvers —
-        # the machine-global home root and the public main-checkout resolver —
-        # never re-implemented here.
-        assert hasattr(build_queue, 'home_root')
+        # the hardened machine-global home-root creator and the public
+        # main-checkout resolver — never re-implemented here.
+        assert hasattr(build_queue, 'ensure_home_root')
         assert hasattr(build_queue, 'main_checkout_root')
 
     def test_no_inline_git_common_dir_in_source(self) -> None:

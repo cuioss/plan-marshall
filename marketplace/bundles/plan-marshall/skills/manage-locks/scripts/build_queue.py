@@ -122,7 +122,7 @@ from typing import Any
 from _locks_core import holder_is_dead, log_lock_event, rmw_json
 from file_ops import get_marshal_path, read_json
 from marketplace_paths import (
-    home_root,
+    ensure_home_root,
     main_checkout_root,
 )
 from run_config import (
@@ -154,8 +154,12 @@ def _resolve_queue_path() -> Path:
     (:func:`marketplace_paths.home_root`) — ``~/.plan-marshall/build-queue.json``
     by default, overridable via ``PLAN_MARSHALL_HOME`` — NOT a per-repo
     main-anchored path. It is host-wide and does not depend on git resolution.
+
+    Routes through :func:`marketplace_paths.ensure_home_root` so the home root
+    is created ``0o700`` on first touch — a mode-less parent ``mkdir`` would
+    leave machine-global queue state world-listable.
     """
-    return home_root() / _QUEUE_FILENAME
+    return ensure_home_root() / _QUEUE_FILENAME
 
 
 def _resolve_max_slots() -> int:

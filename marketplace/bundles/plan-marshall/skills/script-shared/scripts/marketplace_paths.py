@@ -404,6 +404,24 @@ def home_root() -> Path:
     return Path(os.environ.get('PLAN_MARSHALL_HOME') or (Path.home() / '.plan-marshall'))
 
 
+def ensure_home_root() -> Path:
+    """Create the machine-global home root with ``0o700`` permissions.
+
+    ``Path.mkdir(mode=...)`` applies the mode only to the leaf directory it
+    creates — a home root materialized as a *parent* (``parents=True`` on a
+    child path) or via a mode-less ``mkdir`` gets umask-default permissions,
+    leaving machine-global state world-listable. Every first-touch creator of
+    ``home_root()`` routes through this helper instead: it creates the root
+    with ``0o700`` and repairs the mode when the directory already exists with
+    a wider one. ``home_root()`` itself stays a pure resolver.
+    """
+    root = home_root()
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if (root.stat().st_mode & 0o777) != 0o700:
+        os.chmod(root, 0o700)
+    return root
+
+
 def resolve_main_anchored_path(subpath: str | Path) -> Path:
     """Resolve ``subpath`` under the MAIN checkout's ``.plan/local``, cwd-independent.
 
