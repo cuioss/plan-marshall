@@ -411,6 +411,52 @@ def resolve_main_anchored_path(subpath: str | Path) -> Path:
     return main_root / PLAN_DIR_NAME / 'local' / subpath
 
 
+def main_anchored_store_owns_bundle(bundle: str) -> bool:
+    """Return whether the main-anchored store repo owns ``bundle``'s source tree.
+
+    Repo ownership is the filesystem existence of
+    ``{main_checkout_root}/marketplace/bundles/{bundle}`` — the store repo owns a
+    bundle exactly when it carries that bundle's source directory. This is the
+    ownership predicate the manage-lessons cross-repo wrong-store guard consults
+    before allocating a lesson into the (ADR-002 main-anchored) lessons store.
+
+    A test override short-circuits to ``True`` (guard-satisfied): when
+    ``PLAN_BASE_DIR`` is set or ``file_ops`` carries a ``set_base_dir()``
+    override, the override directory stands in for the main-checkout
+    ``.plan/local`` and is not a real marketplace tree, so every override-based
+    test keeps passing without tripping the guard.
+
+    Args:
+        bundle: Bundle name parsed from a ``bundle:skill[:script]`` component
+            notation (e.g. ``plan-marshall``).
+
+    Returns:
+        ``True`` when an override is active OR the resolved main checkout owns the
+        bundle's source directory; ``False`` otherwise.
+
+    Raises:
+        RuntimeError: in the production branch when git cannot resolve the main
+            checkout (not a repo and no override set).
+    """
+    # Reject invalid bundle names before any path construction. An empty string
+    # would resolve to the bundles directory itself (which exists, incorrectly
+    # returning True), and pathlib silently discards the left-hand operand when
+    # the right-hand side is an absolute path or contains a separator — either of
+    # which could bypass the ownership guard. The current-/parent-directory
+    # references '.' and '..' also resolve to existing directories (the bundles
+    # dir itself and marketplace/ respectively), so they must be rejected too. A
+    # valid bundle is a single simple directory name with no path separators and
+    # no traversal segment.
+    if not bundle or bundle in ('.', '..') or '/' in bundle or '\\' in bundle:
+        return False
+
+    if os.environ.get('PLAN_BASE_DIR') or _override_is_set():
+        return True
+
+    main_root = _main_checkout_root()
+    return (main_root / MARKETPLACE_BUNDLES_PATH / bundle).is_dir()
+
+
 def get_temp_dir(subdir: str) -> Path:
     """Get temp directory under the cwd-relative ``.plan/temp/{subdir}``.
 

@@ -18,8 +18,52 @@ from pathlib import Path
 from constants import DIR_LESSONS
 from file_ops import parse_markdown_metadata
 from marketplace_paths import (
+    main_anchored_store_owns_bundle,
     resolve_main_anchored_path,
 )
+
+
+class WrongStoreError(Exception):
+    """Raised when a lesson's component bundle is not owned by the resolved store repo.
+
+    The manage-lessons entry module catches this and renders it as the standard
+    ``status: error`` TOON (exit non-zero) rather than allocating a lesson into a
+    store repo that does not own the component's bundle.
+    """
+
+
+def guard_component_store_match(component: str, allow_foreign: bool) -> None:
+    """Refuse to file a lesson whose bundle is not owned by the resolved store repo.
+
+    Parses the bundle (first ``:``-segment) from the ``bundle:skill[:script]``
+    component notation and consults
+    :func:`marketplace_paths.main_anchored_store_owns_bundle`. When the resolved
+    main-anchored store repo does not own the bundle AND ``allow_foreign`` is
+    ``False``, raises :class:`WrongStoreError`. When ``allow_foreign`` is ``True``
+    or ownership holds (including under a test override, where the ownership
+    predicate short-circuits to ``True``), returns without effect.
+
+    Args:
+        component: The ``bundle:skill[:script]`` component notation.
+        allow_foreign: When ``True``, bypass the refusal (explicit override).
+
+    Raises:
+        WrongStoreError: when the store repo does not own the component's bundle
+            and ``allow_foreign`` is ``False``.
+    """
+    if allow_foreign:
+        return
+
+    bundle = component.split(':', 1)[0]
+    if main_anchored_store_owns_bundle(bundle):
+        return
+
+    store_repo = resolve_main_anchored_path('')
+    raise WrongStoreError(
+        f"lessons store repo '{store_repo}' does not own bundle '{bundle}' "
+        f"(from component '{component}'); refusing to file into the wrong store. "
+        f'Pass --allow-foreign-store to override.'
+    )
 
 
 def get_lessons_dir() -> Path:

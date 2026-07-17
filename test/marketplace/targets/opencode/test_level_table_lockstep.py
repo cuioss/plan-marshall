@@ -28,7 +28,9 @@ MAPPING_JSON = REPO_ROOT / 'marketplace/targets/opencode/mapping.json'
 
 
 def _model_map() -> dict[str, dict]:
-    return json.loads(MAPPING_JSON.read_text(encoding='utf-8'))['model_map']
+    data = json.loads(MAPPING_JSON.read_text(encoding='utf-8'))
+    model_map: dict[str, dict] = data['model_map']
+    return model_map
 
 
 def test_opencode_reuses_claude_level_tables() -> None:
@@ -73,7 +75,9 @@ def test_gated_efforts_are_advertised_by_their_alias() -> None:
         effort = binding['effort']
         if effort not in opencode_ve.ALIAS_GATED_EFFORTS:
             continue
-        supported = model_map[binding['model']]['supports_effort']
+        alias = binding['model']
+        assert isinstance(alias, str)
+        supported = model_map[alias]['supports_effort']
         assert effort in supported, (
             f'{level}: gated effort {effort!r} not advertised by '
             f'{binding["model"]}.supports_effort {supported} — the top tier '
@@ -91,7 +95,9 @@ def test_ungated_efforts_are_universally_supported() -> None:
         effort = binding['effort']
         if effort is None or effort in opencode_ve.ALIAS_GATED_EFFORTS:
             continue
-        supported = model_map[binding['model']]['supports_effort']
+        alias = binding['model']
+        assert isinstance(alias, str)
+        supported = model_map[alias]['supports_effort']
         assert effort in supported, (
             f'{level}: ungated effort {effort!r} not in '
             f'{binding["model"]}.supports_effort {supported} — either gate it '

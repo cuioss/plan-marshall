@@ -62,15 +62,15 @@ class TestTargetBaseContract:
 
     def test_cannot_instantiate_target_base(self):
         with pytest.raises(TypeError):
-            TargetBase()  # type: ignore[abstract]
+            TargetBase()
 
     def test_cannot_instantiate_incomplete_subclass(self):
         with pytest.raises(TypeError):
-            IncompleteTarget()  # type: ignore[abstract]
+            IncompleteTarget()
 
     def test_cannot_instantiate_subclass_missing_generate(self):
         with pytest.raises(TypeError):
-            MissingGenerateTarget()  # type: ignore[abstract]
+            MissingGenerateTarget()
 
     def test_complete_subclass_instantiates(self):
         target = MinimalTarget()

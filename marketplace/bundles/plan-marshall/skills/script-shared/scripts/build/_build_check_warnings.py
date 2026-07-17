@@ -47,7 +47,10 @@ def cmd_check_warnings_base(
         filter_severity: If set, only warnings with this severity are processed.
 
     Returns:
-        Exit code: 0 if no fixable/unknown warnings, 1 otherwise.
+        Exit code: without a caller-supplied ``--warning-baseline``, 0 if no
+        fixable/unknown warnings, 1 otherwise. With a baseline supplied, the
+        gate is authoritative: 0 when actionable warnings are at or under the
+        baseline, 1 when they exceed it.
     """
     warnings = None
     patterns: dict = {}
@@ -88,5 +91,25 @@ def cmd_check_warnings_base(
         'unknown': unknown_count,
         'categorized': categorized,
     }
+    # Optional caller-baselined warning-count gate. Only tools that register the
+    # --warning-baseline flag (npm) carry the attribute; build-maven/build-gradle
+    # lack it, so the getattr default of None keeps their behavior unchanged.
+    # When a baseline is supplied, the gate is AUTHORITATIVE for the exit code —
+    # it overrides the base fixable/unknown exit rule below rather than only
+    # escalating it: 0 when actionable warnings are at or under the baseline,
+    # 1 when they exceed it. Without a baseline the base rule applies unchanged.
+    baseline = getattr(args, 'warning_baseline', None)
+    if baseline is None:
+        exit_code = 1 if fixable_count > 0 or unknown_count > 0 else 0
+    else:
+        actionable = fixable_count + unknown_count
+        gate_status = 'pass' if actionable <= baseline else 'fail'
+        result['gate'] = {
+            'baseline': baseline,
+            'actual': actionable,
+            'status': gate_status,
+        }
+        exit_code = 0 if gate_status == 'pass' else 1
+
     print(serialize_toon(result))
-    return 1 if fixable_count > 0 or unknown_count > 0 else 0
+    return exit_code
