@@ -263,11 +263,14 @@ def _migrate_credentials_home_if_needed() -> str:
       never merge; emit a one-line stderr notice (paths only, no secrets) so an
       operator can remove the stale old dir manually. Reports ``conflict``.
     - **Migrate** — when only the old dir exists, ensure ``home_root()`` exists
-      at 0700, then ``os.rename`` the old dir to the new path. A
-      ``FileNotFoundError`` from a lost race (a concurrent migrator moved the
-      old dir first) is swallowed and reports ``already_migrated``. A
-      cross-filesystem rename (``EXDEV``) falls back to ``shutil.move``, which
-      copies then unlinks the source only after a successful copy. Reports
+      at 0700, then ``os.rename`` the old dir to the new path. A lost race with
+      a concurrent migrator is swallowed and reports ``already_migrated``:
+      ``FileNotFoundError`` (the old dir was moved first) and
+      ``FileExistsError`` / ``OSError`` with ``errno`` in ``(EEXIST, ENOTEMPTY)``
+      (a sibling created or populated the new dir between the ``exists()`` check
+      and the rename). A cross-filesystem rename (``EXDEV``) falls back to
+      ``shutil.move``, which copies then unlinks the source only after a
+      successful copy and carries the same lost-race handling. Reports
       ``migrated``.
     """
     # The explicit override is authoritative — do not migrate.
@@ -303,8 +306,27 @@ def _migrate_credentials_home_if_needed() -> str:
     except OSError as exc:
         if getattr(exc, 'errno', None) == errno.EXDEV:
             # Cross-filesystem: shutil.move copies then removes the source only
-            # after a successful copy.
-            shutil.move(str(old_dir), str(new_dir))
+            # after a successful copy. The move itself carries the same lost-race
+            # exposure as os.rename, so mirror the handling here.
+            try:
+                shutil.move(str(old_dir), str(new_dir))
+            except FileNotFoundError:
+                # Lost race: a concurrent migrator already moved the old dir.
+                return 'already_migrated'
+            except OSError as move_exc:
+                if getattr(move_exc, 'errno', None) in (errno.EEXIST, errno.ENOTEMPTY):
+                    # Lost race: a sibling migrator created/populated new_dir
+                    # between our exists() check and this move.
+                    return 'already_migrated'
+                raise
+        elif getattr(exc, 'errno', None) in (errno.EEXIST, errno.ENOTEMPTY):
+            # Lost race: a sibling migrator created CREDENTIALS_DIR (possibly
+            # empty, then started populating it) between our new_dir.exists()
+            # check and this os.rename. FileExistsError (errno EEXIST) and a
+            # non-empty-target rename (errno ENOTEMPTY) both mean the new dir
+            # is already claimed — treat identically to the FileNotFoundError
+            # lost-race case rather than crashing.
+            return 'already_migrated'
         else:
             raise
     return 'migrated'

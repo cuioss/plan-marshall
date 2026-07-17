@@ -723,6 +723,92 @@ class TestCredentialsHomeMigration:
         assert 'SECRET-DO-NOT-LEAK' not in captured.out
         assert 'SECRET-DO-NOT-LEAK' not in captured.err
 
+    def test_rename_eexist_is_treated_as_lost_race(self, tmp_path, monkeypatch):
+        """A sibling claiming new_dir (EEXIST) during os.rename is a lost race.
+
+        Reproduces the PR #923 gap: a concurrent migrator creates CREDENTIALS_DIR
+        between our new_dir.exists() check and the os.rename, so os.rename raises
+        FileExistsError (errno EEXIST). This must resolve to already_migrated,
+        never crash.
+        """
+        import errno as _errno
+
+        _new_dir, old_dir = _migration_env(tmp_path, monkeypatch)
+        old_dir.mkdir(mode=0o700, parents=True)
+        (old_dir / 'github.json').write_text('{"skill": "github"}')
+
+        def _raise_eexist(src, dst):
+            raise FileExistsError(_errno.EEXIST, 'File exists')
+
+        monkeypatch.setattr('_providers_core.os.rename', _raise_eexist)
+
+        assert _migrate_credentials_home_if_needed() == 'already_migrated'
+
+    def test_rename_enotempty_is_treated_as_lost_race(self, tmp_path, monkeypatch):
+        """A non-empty target (ENOTEMPTY) during os.rename is a lost race.
+
+        A sibling both created AND started populating CREDENTIALS_DIR before our
+        rename, so os.rename raises OSError with errno ENOTEMPTY. This must
+        resolve to already_migrated, never crash.
+        """
+        import errno as _errno
+
+        _new_dir, old_dir = _migration_env(tmp_path, monkeypatch)
+        old_dir.mkdir(mode=0o700, parents=True)
+        (old_dir / 'github.json').write_text('{"skill": "github"}')
+
+        def _raise_enotempty(src, dst):
+            raise OSError(_errno.ENOTEMPTY, 'Directory not empty')
+
+        monkeypatch.setattr('_providers_core.os.rename', _raise_enotempty)
+
+        assert _migrate_credentials_home_if_needed() == 'already_migrated'
+
+    def test_exdev_fallback_move_race_is_treated_as_lost_race(self, tmp_path, monkeypatch):
+        """The EXDEV → shutil.move fallback has the same lost-race exposure.
+
+        os.rename raises EXDEV (cross-filesystem), the shutil.move fallback then
+        loses the same race (ENOTEMPTY). The fallback branch must mirror the
+        rename branch and resolve to already_migrated, never crash.
+        """
+        import errno as _errno
+
+        _new_dir, old_dir = _migration_env(tmp_path, monkeypatch)
+        old_dir.mkdir(mode=0o700, parents=True)
+        (old_dir / 'github.json').write_text('{"skill": "github"}')
+
+        def _raise_exdev(src, dst):
+            raise OSError(_errno.EXDEV, 'Invalid cross-device link')
+
+        def _raise_enotempty_move(src, dst):
+            raise OSError(_errno.ENOTEMPTY, 'Directory not empty')
+
+        monkeypatch.setattr('_providers_core.os.rename', _raise_exdev)
+        monkeypatch.setattr('_providers_core.shutil.move', _raise_enotempty_move)
+
+        assert _migrate_credentials_home_if_needed() == 'already_migrated'
+
+    def test_unrelated_oserror_still_propagates(self, tmp_path, monkeypatch):
+        """An OSError that is NOT a lost race (e.g. EACCES) still propagates.
+
+        Guards against over-swallowing: only EEXIST/ENOTEMPTY (and the existing
+        FileNotFoundError / EXDEV cases) are handled — a genuine permission
+        failure must still surface rather than be silently masked.
+        """
+        import errno as _errno
+
+        _new_dir, old_dir = _migration_env(tmp_path, monkeypatch)
+        old_dir.mkdir(mode=0o700, parents=True)
+        (old_dir / 'github.json').write_text('{"skill": "github"}')
+
+        def _raise_eacces(src, dst):
+            raise OSError(_errno.EACCES, 'Permission denied')
+
+        monkeypatch.setattr('_providers_core.os.rename', _raise_eacces)
+
+        with pytest.raises(OSError):
+            _migrate_credentials_home_if_needed()
+
 
 class TestGetProjectNameCwdFallbackDisambiguation:
     """Tests for the cwd-fallback disambiguation added to get_project_name()."""
