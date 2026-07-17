@@ -22,7 +22,7 @@ class TestEnsureDeniedRules:
 
         The absolute-form rules derive from ``_providers_core.CREDENTIALS_DIR``,
         which the autouse ``_credentials_dir_sandbox`` redirects to a tmp dir.
-        These deny rules exist to protect the REAL ``~/.plan-marshall-credentials``,
+        These deny rules exist to protect the REAL ``~/.plan-marshall/credentials``,
         so pin ``CREDENTIALS_DIR`` back to the real home path and rebuild the
         module's ``DENY_RULES`` against it (no write — DENY_RULES is pure strings).
         """
@@ -35,7 +35,7 @@ class TestEnsureDeniedRules:
         # in the finally block — otherwise _cred_ensure_denied.DENY_RULES would
         # stay pinned to the real home path and leak into subsequent tests.
         sandboxed_dir = _providers_core.CREDENTIALS_DIR
-        real_dir = Path.home() / '.plan-marshall-credentials'
+        real_dir = Path.home() / '.plan-marshall' / 'credentials'
         monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', real_dir)
         importlib.reload(_cred_ensure_denied)
         try:
@@ -64,6 +64,33 @@ class TestEnsureDeniedRules:
         for cmd in bash_commands:
             matching = [r for r in DENY_RULES if f'Bash({cmd} ' in r]
             assert len(matching) >= 1, f'Missing deny rule for Bash({cmd})'
+
+    def test_no_rule_names_the_retired_old_path(self, monkeypatch):
+        """No deny rule may name the retired ``~/.plan-marshall-credentials`` path.
+
+        Rebuild ``DENY_RULES`` against the real home-root credentials path (the
+        autouse sandbox redirects CREDENTIALS_DIR to a tmp dir), then assert every
+        rule names the NEW ``.plan-marshall/credentials`` surface and none names
+        the retired ``.plan-marshall-credentials`` basename.
+        """
+        import importlib
+
+        import _cred_ensure_denied
+        import _providers_core
+
+        sandboxed_dir = _providers_core.CREDENTIALS_DIR
+        real_dir = Path.home() / '.plan-marshall' / 'credentials'
+        monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', real_dir)
+        importlib.reload(_cred_ensure_denied)
+        try:
+            deny_rules = _cred_ensure_denied.DENY_RULES
+            for rule in deny_rules:
+                assert '.plan-marshall-credentials' not in rule, f'Retired path in rule: {rule}'
+            # The new distinctive path segment IS present (python3 -c substring vector).
+            assert any('.plan-marshall/credentials' in r for r in deny_rules)
+        finally:
+            monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', sandboxed_dir)
+            importlib.reload(_cred_ensure_denied)
 
 
 class TestEnsureDeniedCLI:
