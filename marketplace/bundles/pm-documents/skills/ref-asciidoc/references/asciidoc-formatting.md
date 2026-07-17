@@ -297,8 +297,8 @@ Before finalizing any AsciiDoc document:
 - **Grammar Check**: Proper AsciiDoc syntax throughout
 - **Link Validation**: All internal references resolve correctly
 - **Table of Contents**: Generated correctly with proper levels
-- **Delimiter-Ambiguity Scan**: No run of 3+ consecutive `*` adjacent to non-space text — disambiguate bold-plus-literal-asterisk collisions (escape `\*`, or wrap the wildcard in monospace)
-- **Terminology-Casing Sweep**: Initialisms follow project convention in prose ("ID" not "id"; likewise URL, API, JWT) — code spans and identifiers exempt
+- **Delimiter-Ambiguity Scan**: In prose and inline markup only, no run of 3+ consecutive `*` adjacent to non-space text — disambiguate bold-plus-literal-asterisk collisions (escape `\*`, or wrap the wildcard in monospace). Scope the scan to prose and inline markup; EXCLUDE source, listing, literal, passthrough, and code regions (delimited blocks `----`/`....`/`++++`, and inline monospace/code spans). Valid `***` and wildcard/operator text inside those regions MUST NOT be flagged — e.g. a `----`-delimited shell block containing `chmod *** file` or `a * b` is correct as written, while a bold-then-asterisk collision in a prose sentence is the real target.
+- **Terminology-Casing Sweep**: In prose and inline markup only, initialisms follow project convention ("ID" not "id"; likewise URL, API, JWT). Scope the sweep to prose and inline markup; EXCLUDE source, listing, literal, passthrough, and code regions along with code spans and identifiers. An `id` field name, a `getUrlPath()` identifier, or a JSON `"api"` key inside a code span or a `----`-delimited block MUST NOT be flagged — only lowercase initialisms in running prose are corrected.
 
 ### Common Formatting Errors
 
