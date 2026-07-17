@@ -369,6 +369,7 @@ def cmd_update(args: argparse.Namespace) -> dict[str, Any]:
         return _ambiguous_number_error('update', 'updating', args.number, matches)
 
     filepath = matches[0]
+    padded_number = filepath.name.split('-', 1)[0]
     content = filepath.read_text()
 
     if args.status:
@@ -394,7 +395,7 @@ def cmd_update(args: argparse.Namespace) -> dict[str, Any]:
         'script',
         'global',
         'INFO',
-        f'[ADR] Updated ADR-{args.number} status={args.status if args.status else "unchanged"}',
+        f'[ADR] Updated ADR-{padded_number} status={args.status if args.status else "unchanged"}',
     )
     return {
         'status': 'success',
@@ -440,9 +441,10 @@ def cmd_delete(args: argparse.Namespace) -> dict[str, Any]:
         return _ambiguous_number_error('delete', 'deleting', args.number, matches)
 
     filepath = matches[0]
+    padded_number = filepath.name.split('-', 1)[0]
     filepath.unlink()
 
-    log_entry('script', 'global', 'INFO', f'[ADR] Deleted ADR-{args.number}')
+    log_entry('script', 'global', 'INFO', f'[ADR] Deleted ADR-{padded_number}')
     return {
         'status': 'success',
         'operation': 'delete',
