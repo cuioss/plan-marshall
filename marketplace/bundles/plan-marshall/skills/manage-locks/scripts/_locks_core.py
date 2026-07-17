@@ -98,7 +98,7 @@ def _main_plan_local_base() -> Path:
     return resolve_main_anchored_path('')
 
 
-def holder_is_dead(holder: str) -> bool:
+def holder_is_dead(holder: str, project_root: str | Path | None = None) -> bool:
     """Return True when ``holder`` no longer corresponds to a live plan.
 
     Under the move-based model (ADR-002) a live plan's directory resides in
@@ -113,12 +113,22 @@ def holder_is_dead(holder: str) -> bool:
 
     Checking only the main checkout wrongly declares an actively-executing holder
     dead — its plan dir has been MOVED into the worktree — letting a concurrent
-    acquirer steal the lock and break serialization. Both paths are anchored at
-    the main checkout (:func:`_main_plan_local_base`, cwd-independent), matching
-    the main-anchored coordination-file resolution. An empty/malformed holder is
-    treated as dead so a corrupt lock file is reclaimable; resolution failures
-    propagate loudly (a real bug, not transient unavailability) rather than being
-    swallowed as "dead".
+    acquirer steal the lock and break serialization.
+
+    **Liveness base (``project_root``).** When ``project_root`` is ``None`` (the
+    default, and the unchanged merge-lock behaviour) both paths anchor at the
+    CALLER's main checkout via :func:`_main_plan_local_base` (cwd-independent).
+    When ``project_root`` is supplied, both liveness paths resolve under
+    ``Path(project_root) / .plan / local`` instead — this is the machine-global
+    lock case, where a lock file shared across repos records a holder that lives
+    in a DIFFERENT project's checkout: the acquirer must judge that holder's
+    liveness against ITS project, not the acquirer's own, or a foreign live
+    holder would be wrongly reclaimed. ``holder_has_live_worktree`` is left
+    caller-anchored (only merge-lock, which stays per-repo, consumes it).
+
+    An empty/malformed holder is treated as dead so a corrupt lock file is
+    reclaimable; resolution failures propagate loudly (a real bug, not transient
+    unavailability) rather than being swallowed as "dead".
 
     Path-traversal defense: ``holder`` is a plan-id joined directly onto the
     anchored ``.plan/local`` base to build both the main-checkout
@@ -137,7 +147,10 @@ def holder_is_dead(holder: str) -> bool:
     holder = holder.strip()
     if not is_valid_plan_id(holder):
         return True
-    base = _main_plan_local_base()
+    if project_root is None:
+        base = _main_plan_local_base()
+    else:
+        base = Path(project_root) / PLAN_DIR_NAME / 'local'
     main_plan = base / 'plans' / holder
     worktree_plan = base / 'worktrees' / holder / PLAN_DIR_NAME / 'local' / 'plans' / holder
     return not (main_plan.exists() or worktree_plan.exists())
