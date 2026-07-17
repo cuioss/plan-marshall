@@ -302,6 +302,17 @@ throw new TransportException(sanitize(e.getMessage()), e);
 throw new TransportException(sanitize(e.getMessage()));
 ```
 
+When production troubleshooting genuinely needs the original call-site stack trace, you can preserve it without re-injecting the raw message. Construct a new `Throwable` carrying only the sanitized message, copy the original throwable's stack-trace frames onto it, then attach that sanitized carrier as the wrapper's cause:
+
+```java
+// Preferred: Good — keeps the original stack trace for debugging, without re-injecting the raw message
+Throwable sanitizedCause = new Throwable(sanitize(e.getMessage()));
+sanitizedCause.setStackTrace(e.getStackTrace());
+throw new TransportException(sanitize(e.getMessage()), sanitizedCause);
+```
+
+This is safe because stack-trace frames carry only class/method/file/line coordinates — none of it attacker-controlled — while the injection sink is solely the cause's message/`toString()` output, which the sanitized carrier has already scrubbed. This does not weaken the rule above: you still MUST NOT attach the raw, unsanitized throwable as a cause; the carrier pattern is the sanctioned alternative for the case where the stack trace itself is needed.
+
 This is the CUI-specific instance of the generic log-injection principle, which is owned by the `pm-dev-java:java-security` secure-logging surface — apply the generic rule from there; it is not restated here. The boundary with rule 2 (Exception Parameter First): exception-first governs HOW to log a throwable when logging it is intended and still applies whenever the throwable's message chain is trusted or already sanitized; this rule governs WHETHER to pass the raw throwable when its message carries untrusted content.
 
 ---
