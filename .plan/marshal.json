@@ -89,6 +89,9 @@
         "default:finalize-step-security-audit": {
           "lane": "full"
         },
+        "default:architecture-refresh": {
+          "lane": "minimal"
+        },
         "default:push": {
           "lane": "minimal"
         },
@@ -99,9 +102,6 @@
           "lane": "minimal"
         },
         "default:ci-verify": {
-          "lane": "minimal"
-        },
-        "default:architecture-refresh": {
           "lane": "minimal"
         },
         "plan-marshall:automatic-review": {
@@ -298,7 +298,7 @@
       "lessons_superseded_days": 0,
       "temp_on_maintenance": true
     },
-    "provisioned_version": "0.1.1114",
+    "provisioned_version": "0.1.1134",
     "config_seed_fingerprint": "37df1a33"
   }
 }
