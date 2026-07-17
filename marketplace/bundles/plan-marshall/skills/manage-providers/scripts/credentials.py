@@ -16,6 +16,7 @@ Usage:
     credentials.py list [--scope global|project|all]
     credentials.py remove [--skill <name>] [--scope global|project]
     credentials.py ensure-denied [--target global|project]
+    credentials.py migrate-home
 """
 
 import argparse
@@ -120,6 +121,14 @@ def main() -> int:
         '--target', choices=['global', 'project'], default='project', help='Settings target (default: project)'
     )
 
+    # migrate-home
+    subparsers.add_parser(
+        'migrate-home',
+        help='Migrate the pre-home-root credentials dir to the machine-global home root '
+        '(idempotent; reports migrated|already_migrated|conflict)',
+        allow_abbrev=False,
+    )
+
     args = parser.parse_args()
 
     # Route to command module (prefixed _cred_ to avoid PYTHONPATH namespace collisions)
@@ -163,6 +172,15 @@ def main() -> int:
         from _cred_ensure_denied import run_ensure_denied
 
         return run_ensure_denied(args)
+    elif args.command == 'migrate-home':
+        from _providers_core import _migrate_credentials_home_if_needed
+        from file_ops import output_toon
+
+        # Thin wrapper: the migration itself is idempotent and secret-free; the
+        # returned status literal is the only output (no credential content).
+        result = _migrate_credentials_home_if_needed()
+        output_toon({'status': 'success', 'operation': 'migrate-home', 'result': result})
+        return 0
 
     return 1
 

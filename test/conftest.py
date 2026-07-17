@@ -466,7 +466,7 @@ def _restore_cwd():
         os.chdir(original_cwd)
 
 
-_REAL_CREDENTIALS_DIR = Path.home() / '.plan-marshall-credentials'
+_REAL_CREDENTIALS_DIR = Path.home() / '.plan-marshall' / 'credentials'
 
 # NOTE: ``.plan/local/run-configuration.json`` is intentionally NOT watched by
 # the pollution guard. The ``pw`` build harness writes adaptive-timeout
@@ -557,7 +557,7 @@ def _snapshot_real_plan_local() -> set[str]:
 
 @pytest.fixture(autouse=True)
 def _pollution_guard(request):
-    """Fail loudly if a test mutates the real ``~/.plan-marshall-credentials/``
+    """Fail loudly if a test mutates the real ``~/.plan-marshall/credentials/``
     directory or adds entries to the real repo-local ``.plan/local/`` tree.
 
     The ``.plan/local/`` arm backstops the ``_plan_base_dir_sandbox`` autouse
@@ -616,7 +616,7 @@ def pytest_configure(config):
     config.addinivalue_line(
         'markers',
         'allow_pollution: test may legitimately mutate the real '
-        '~/.plan-marshall-credentials/ directory or the tracked .plan/ tree '
+        '~/.plan-marshall/credentials/ directory or the tracked .plan/ tree '
         '(opts out of the autouse PLAN_BASE_DIR and CREDENTIALS_DIR sandboxes '
         'and the pollution guard).',
     )
@@ -691,15 +691,16 @@ def _credentials_dir_sandbox(request, tmp_path_factory, monkeypatch):
     each provider/sonar test to remember to redirect the credential store, EVERY
     test is redirected into an isolated sandbox by default, so a credential
     ``save_credential`` / ``ensure_credentials_dir`` / ``touch_verified_at`` write
-    into the real ``~/.plan-marshall-credentials/`` tree becomes structurally
+    into the real ``~/.plan-marshall/credentials/`` tree becomes structurally
     impossible. This closes the asymmetry the ``_pollution_guard`` exposed: the
     guard caught real-credentials leaks but there was no autouse redirect backing
     it, so a single un-isolated credential write (or a subprocess inheriting the
     real env) leaked into the developer's real credential dir.
 
     ``_providers_core.CREDENTIALS_DIR`` is bound at module-import time
-    (``Path(os.environ.get('PLAN_MARSHALL_CREDENTIALS_DIR') or Path.home()/...)``),
-    so an env-var set alone does not reach already-imported in-process callers;
+    (``Path(PLAN_MARSHALL_CREDENTIALS_DIR)`` when set, else
+    ``home_root()/credentials``), so an env-var set alone does not reach
+    already-imported in-process callers;
     patch the module attribute the same way ``_plan_base_dir_sandbox`` patches
     ``_config_core``. The env-var set additionally propagates to subprocess
     callers (``run_script`` copies ``os.environ``), so child ``execute-script.py``
