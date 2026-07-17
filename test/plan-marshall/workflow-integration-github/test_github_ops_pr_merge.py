@@ -51,16 +51,17 @@ def _install_probe(
     discriminator: str | None = None,
     detail: str = 'no merge_queue rule on branch',
     error: str | None = None,
+    merge_method: str | None = None,
 ) -> dict:
     """Stub ``github_ops._probe_merge_queue_state`` for the safe-merge preflight.
 
     Returns a capture dict recording the ``(owner, repo, branch)`` the probe was
     called with plus a call count, so tests can assert base-branch specificity.
-    The three-tuple return shape ``(discriminator, detail, error)`` mirrors the
-    production ``_probe_merge_queue_state`` signature exactly (lesson
+    The four-tuple return shape ``(discriminator, detail, error, merge_method)``
+    mirrors the production ``_probe_merge_queue_state`` signature exactly (lesson
     2026-07-09-14-001: fixtures must mirror the production data shape). By
-    default the probe reports ``eligible_unconfigured`` so the preflight proceeds
-    to the normal merge path unchanged.
+    default the probe reports ``eligible_unconfigured`` with ``merge_method=None``
+    so the preflight proceeds to the normal merge path unchanged.
     """
     if discriminator is None:
         discriminator = github_ops.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED
@@ -71,7 +72,7 @@ def _install_probe(
         captured['repo'] = repo
         captured['branch'] = branch
         captured['calls'] += 1
-        return discriminator, detail, error
+        return discriminator, detail, error, merge_method
 
     monkeypatch.setattr(github_ops, '_probe_merge_queue_state', probe_stub)
     return captured

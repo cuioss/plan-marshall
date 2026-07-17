@@ -709,7 +709,24 @@ Branch on the operator's selection:
 Read `use_merge_queue` off the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above (default: `false`). This routing branch is documented BEFORE the merge dispatch it selects (bypass-before-dispatch ordering):
 
 - **`use_merge_queue == false`** (default) → issue the immediate `pr safe-merge` call below. The plan merges the PR itself under the widened mutex.
-- **`use_merge_queue == true`** → route the merge through the platform merge queue via the `pr merge-queue` verb INSTEAD of `pr safe-merge`, so the platform re-tests-and-merges against the latest base and serializes a truly-external commit the session-scoped mutex cannot. The widened D4 mutex still guards the pre-enqueue rebase/force-push window; the two mechanisms compose. The enqueue takes no `--strategy` or `--delete-branch` flag: the merge queue's own branch-protection configuration dictates the merge method, GitHub rejects `--delete-branch` when a merge queue is enabled, and the platform auto-deletes the head branch after the queue merge. All engagement is routed through the `ci` abstraction — NEVER a direct `gh`/`glab` call:
+- **`use_merge_queue == true`** → route the merge through the platform merge queue via the `pr merge-queue` verb INSTEAD of `pr safe-merge`, so the platform re-tests-and-merges against the latest base and serializes a truly-external commit the session-scoped mutex cannot. The widened D4 mutex still guards the pre-enqueue rebase/force-push window; the two mechanisms compose. The enqueue takes no `--strategy` or `--delete-branch` flag — unchanged: the platform merges queued PRs with the method configured on the queue itself, GitHub rejects `--delete-branch` when a merge queue is enabled, and the platform auto-deletes the head branch after the queue merge. The queue's configured method is no longer an independent knob, though — `repo merge-queue enable` provisions and reconciles it from `pr_merge_strategy`, and the mismatch warn below catches residual drift. All engagement is routed through the `ci` abstraction — NEVER a direct `gh`/`glab` call.
+
+  **Merge-method mismatch warn (best-effort, advisory)** — BEFORE the enqueue, probe the queue's configured merge method and warn when it disagrees with the configured `pr_merge_strategy`:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} repo merge-queue probe
+  ```
+
+  Parse the returned TOON. When it carries a `merge_method` field whose value differs from the mapped `pr_merge_strategy` (`squash` → `SQUASH`, `merge` → `MERGE`, `rebase` → `REBASE`), log a WARNING decision naming BOTH conflicting values and BOTH remedies, then proceed with the enqueue — the mismatch is warn-only and never blocks the merge:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Merge-queue merge-method mismatch: queue is configured {merge_method} but pr_merge_strategy maps to {mapped_strategy}. The platform will merge with {merge_method}. Remedies: re-run /marshall-steward → Configuration → Merge Queue to reconcile the queue, or change the pr_merge_strategy step param (default:branch-cleanup)."
+  ```
+
+  When the probe fails, returns `status: error`, or returns no `merge_method` field (GitLab, an unconfigured queue, an auth-scope failure), skip the comparison silently and proceed — the probe is advisory here, never a gate.
+
+  Then enqueue:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr merge-queue \

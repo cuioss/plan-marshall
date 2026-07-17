@@ -769,45 +769,64 @@ def _resolve_default_branch(owner: str, repo: str) -> tuple[str | None, str]:
     return str(branch), ''
 
 
-def _probe_merge_queue_state(owner: str, repo: str, branch: str) -> tuple[str, str, str | None]:
+def _probe_merge_queue_state(
+    owner: str, repo: str, branch: str
+) -> tuple[str, str, str | None, str | None]:
     """Probe the merge-queue configuration state for ``branch``.
 
-    Returns ``(discriminator, detail, error)`` where ``discriminator`` is one of
-    the ``MERGE_QUEUE_*`` constants. ``error`` is a non-None actionable error
-    string (the caller converts it to a ``make_error`` result) on every failure
-    that is NOT a confirmed feature-availability verdict — an auth-scope failure,
-    a non-404 ``gh api`` error, or an unparseable / malformed rules response.
-    Only two verdicts carry ``error=None``: a confirmed HTTP 404 on the rules
-    endpoint (mapped to ``ineligible`` — the genuine "this repo does not offer
-    the feature" signal) and the two eligible outcomes. A transient HTTP 500 /
-    timeout / malformed response therefore surfaces as a real, retryable
-    ``unsupported`` error rather than being folded into a permanent ``ineligible``
-    refusal.
+    Returns ``(discriminator, detail, error, merge_method)`` where
+    ``discriminator`` is one of the ``MERGE_QUEUE_*`` constants. ``error`` is a
+    non-None actionable error string (the caller converts it to a ``make_error``
+    result) on every failure that is NOT a confirmed feature-availability
+    verdict — an auth-scope failure, a non-404 ``gh api`` error, or an
+    unparseable / malformed rules response. Only two verdicts carry
+    ``error=None``: a confirmed HTTP 404 on the rules endpoint (mapped to
+    ``ineligible`` — the genuine "this repo does not offer the feature" signal)
+    and the two eligible outcomes. A transient HTTP 500 / timeout / malformed
+    response therefore surfaces as a real, retryable ``unsupported`` error
+    rather than being folded into a permanent ``ineligible`` refusal.
+
+    ``merge_method`` is the found ``merge_queue`` rule's
+    ``parameters.merge_method`` (the ruleset spelling, e.g. ``SQUASH``) on the
+    configured verdict; ``None`` when the queue is unconfigured or the
+    parameter is absent/malformed.
     """
     endpoint = f'repos/{owner}/{repo}/rules/branches/{branch}'
     returncode, stdout, stderr = run_gh(['api', endpoint])
     if returncode != 0:
         if _is_auth_scope_error(stderr):
-            return MERGE_QUEUE_INELIGIBLE, stderr.strip(), _MERGE_QUEUE_AUTH_SCOPE_HINT
+            return MERGE_QUEUE_INELIGIBLE, stderr.strip(), _MERGE_QUEUE_AUTH_SCOPE_HINT, None
         if 'http 404' in stderr.lower():
-            return MERGE_QUEUE_INELIGIBLE, 'branch rules endpoint not found', None
+            return MERGE_QUEUE_INELIGIBLE, 'branch rules endpoint not found', None, None
         detail = stderr.strip() or 'branch rules probe failed'
-        return MERGE_QUEUE_UNSUPPORTED, detail, detail
+        return MERGE_QUEUE_UNSUPPORTED, detail, detail, None
     try:
         rules = json.loads(stdout)
     except json.JSONDecodeError:
         detail = 'could not parse branch rules response'
-        return MERGE_QUEUE_UNSUPPORTED, detail, detail
+        return MERGE_QUEUE_UNSUPPORTED, detail, detail, None
     if not isinstance(rules, list):
         detail = 'branch rules response was not a list'
-        return MERGE_QUEUE_UNSUPPORTED, detail, detail
+        return MERGE_QUEUE_UNSUPPORTED, detail, detail, None
     for rule in rules:
         if isinstance(rule, dict) and rule.get('type') == 'merge_queue':
-            return MERGE_QUEUE_ELIGIBLE_CONFIGURED, 'merge_queue rule active on branch', None
-    return MERGE_QUEUE_ELIGIBLE_UNCONFIGURED, 'no merge_queue rule on branch', None
+            params = rule.get('parameters')
+            raw_method = params.get('merge_method') if isinstance(params, dict) else None
+            merge_method = raw_method if isinstance(raw_method, str) else None
+            return (
+                MERGE_QUEUE_ELIGIBLE_CONFIGURED,
+                'merge_queue rule active on branch',
+                None,
+                merge_method,
+            )
+    return MERGE_QUEUE_ELIGIBLE_UNCONFIGURED, 'no merge_queue rule on branch', None, None
 
 
-def build_merge_queue_ruleset_payload(branch: str, bypass_actor_ids: list[int] | None = None) -> dict:
+def build_merge_queue_ruleset_payload(
+    branch: str,
+    bypass_actor_ids: list[int] | None = None,
+    merge_method: str = 'MERGE',
+) -> dict:
     """Build the ``POST /rulesets`` request body enabling a merge queue on ``branch``.
 
     Pure function (no I/O) so the payload contract is unit-testable independent
@@ -820,6 +839,12 @@ def build_merge_queue_ruleset_payload(branch: str, bypass_actor_ids: list[int] |
     ``bypass_mode == 'always'`` — this is what lets an org release-automation app
     push straight to the ruleset-protected branch without a GH013 rejection. When
     ``None``/empty the key is omitted entirely (today's bypass-less behavior).
+
+    ``merge_method`` is the ruleset spelling of the queue's merge method (one of
+    the :data:`_RULESET_MERGE_METHOD` values). The default preserves the pure
+    function's historical ``MERGE`` behavior; callers pass
+    :func:`_resolve_merge_queue_merge_method` to honor the configured
+    ``pr_merge_strategy``.
     """
     payload: dict = {
         'name': 'plan-marshall-merge-queue',
@@ -835,7 +860,7 @@ def build_merge_queue_ruleset_payload(branch: str, bypass_actor_ids: list[int] |
             {
                 'type': 'merge_queue',
                 'parameters': {
-                    'merge_method': 'MERGE',
+                    'merge_method': merge_method,
                     'max_entries_to_build': 5,
                     'min_entries_to_merge': 1,
                     'max_entries_to_merge': 5,
@@ -884,6 +909,48 @@ def _read_merge_queue_bypass_config() -> tuple[int | None, list[str]]:
         return app_id, slugs
     except Exception:
         return None, []
+
+
+# pr_merge_strategy (marshal.json spelling) → merge_queue rule parameters.merge_method
+# (ruleset spelling). The uppercase values are GitHub's documented enum for the
+# rulesets API's merge_queue rule — confirmed by the pre-existing 'MERGE' literal
+# this mapping parameterizes, which round-trips through the branch-rules probe.
+_RULESET_MERGE_METHOD = {'squash': 'SQUASH', 'merge': 'MERGE', 'rebase': 'REBASE'}
+
+
+def _resolve_merge_queue_merge_method() -> str:
+    """Resolve the merge-queue merge method (ruleset spelling) from marshal.json.
+
+    Mirrors :func:`_read_merge_queue_bypass_config`'s defensive lazy-import seam:
+    ``_config_core`` triggers ``get_base_dir()`` at import time, which raises when
+    no git root is resolvable, so the import is guarded. Reads the configured
+    ``pr_merge_strategy`` from the phase-6-finalize keyed step map
+    (``plan.phase-6-finalize.steps.default:branch-cleanup.pr_merge_strategy``)
+    and maps it through :data:`_RULESET_MERGE_METHOD`.
+
+    Never raises; returns the ``squash`` mapping (``SQUASH``) on an absent,
+    malformed, or unknown value — squash is the strategy default the merge
+    queue exists to enforce.
+    """
+    default = _RULESET_MERGE_METHOD['squash']
+    try:
+        from _config_core import is_initialized, load_config
+    except Exception:
+        return default
+    try:
+        if not is_initialized():
+            return default
+        cfg = load_config()
+        plan_cfg = cfg.get('plan', {}) or {}
+        phase_cfg = plan_cfg.get('phase-6-finalize', {}) or {}
+        steps = phase_cfg.get('steps', {}) or {}
+        step = steps.get('default:branch-cleanup', {}) or {}
+        raw = step.get('pr_merge_strategy')
+        if isinstance(raw, str):
+            return _RULESET_MERGE_METHOD.get(raw.lower(), default)
+        return default
+    except Exception:
+        return default
 
 
 def _resolve_bypass_actor_ids(owner: str) -> list[int]:
@@ -940,19 +1007,21 @@ def _resolve_bypass_actor_ids(owner: str) -> list[int]:
 
 def _resolve_repo_branch_and_probe(
     operation: str,
-) -> tuple[dict | None, str, str, str, str, str]:
+) -> tuple[dict | None, str, str, str, str, str, str | None]:
     """Resolve repo owner/name + default branch, then probe merge-queue state.
 
     Shared by ``cmd_repo_merge_queue_probe`` and ``cmd_repo_merge_queue_enable``,
     which differ only in what they do with the resolved discriminator. Returns
-    ``(error, owner, repo, branch, discriminator, detail)``: on any failure
-    ``error`` is a ready-to-return ``make_error`` dict (remaining fields empty);
-    on success ``error`` is ``None``.
+    ``(error, owner, repo, branch, discriminator, detail, merge_method)``: on any
+    failure ``error`` is a ready-to-return ``make_error`` dict (remaining fields
+    empty); on success ``error`` is ``None``. ``merge_method`` is the probed
+    ``merge_queue`` rule's ``parameters.merge_method`` (``None`` when the queue
+    is unconfigured or the parameter is absent/malformed).
     """
     owner, repo = get_repo_info()
     if not owner or not repo:
         error = make_error(operation, 'Could not determine repository owner/name')
-        return error, '', '', '', '', ''
+        return error, '', '', '', '', '', None
 
     branch, branch_err = _resolve_default_branch(owner, repo)
     if branch is None:
@@ -960,13 +1029,13 @@ def _resolve_repo_branch_and_probe(
             error = make_error(operation, _MERGE_QUEUE_AUTH_SCOPE_HINT, branch_err)
         else:
             error = make_error(operation, 'Could not resolve default branch', branch_err)
-        return error, '', '', '', '', ''
+        return error, '', '', '', '', '', None
 
-    discriminator, detail, scope_error = _probe_merge_queue_state(owner, repo, branch)
+    discriminator, detail, scope_error, merge_method = _probe_merge_queue_state(owner, repo, branch)
     if scope_error is not None:
-        return make_error(operation, scope_error, detail), '', '', '', '', ''
+        return make_error(operation, scope_error, detail), '', '', '', '', '', None
 
-    return None, owner, repo, branch, discriminator, detail
+    return None, owner, repo, branch, discriminator, detail, merge_method
 
 
 def _gh_api_json_body(method: str, endpoint: str, payload: dict) -> tuple[int, str, str]:
@@ -999,8 +1068,8 @@ def _fetch_plan_marshall_ruleset(
     ``(None, None, None)`` when no ruleset carries that name (the merge queue is
     configured via some other ruleset — nothing named to touch); ``(None, None,
     error)`` with a ready-to-return :func:`make_error` dict on a ``gh`` failure;
-    ``(ruleset_id, detail, None)`` on success. Shared by the enable short-circuit
-    and :func:`_self_heal_merge_queue_bypass`.
+    ``(ruleset_id, detail, None)`` on success. The enable path feeds the fetched
+    detail to :func:`_reconcile_merge_queue_ruleset`.
     """
     returncode, stdout, stderr = run_gh(['api', f'repos/{owner}/{repo}/rulesets'])
     if returncode != 0:
@@ -1056,66 +1125,108 @@ def _integration_bypass_present_ids(detail: dict) -> tuple[set, list]:
     return present_ids, existing_actors
 
 
-def _self_heal_merge_queue_bypass(
-    owner: str, repo: str, resolved_ids: list[int]
-) -> tuple[bool, dict | None]:
-    """Ensure the resolved bypass actor(s) are present on an already-configured ruleset.
+def _ruleset_merge_queue_rule(detail: dict) -> dict | None:
+    """Return the first ``merge_queue`` rule dict from a ruleset detail, else None."""
+    rules = detail.get('rules')
+    if not isinstance(rules, list):
+        return None
+    for rule in rules:
+        if isinstance(rule, dict) and rule.get('type') == 'merge_queue':
+            return rule
+    return None
 
-    Fetches the ``plan-marshall-merge-queue`` ruleset and, when any resolved id is
-    NOT already granted as an ``Integration`` / ``always`` bypass actor, rewrites
-    the ruleset with the merged actor set via ``PUT /repos/{o}/{r}/rulesets/{id}``.
 
-    Returns ``(changed, error)``: ``changed`` is ``True`` only when a PUT was
-    actually issued; ``error`` is a ready-to-return :func:`make_error` dict on a
-    ``gh`` failure, else ``None``. A missing ruleset-by-name or an
-    already-present actor is a no-op (``(False, None)``).
+def _reconcile_merge_queue_ruleset(
+    owner: str,
+    repo: str,
+    ruleset_id: int,
+    detail: dict,
+    resolved_ids: list[int],
+    resolved_method: str,
+) -> tuple[bool, bool, dict | None]:
+    """Reconcile an already-configured ruleset's bypass actors AND merge method.
+
+    Operates on a pre-fetched ``plan-marshall-merge-queue`` ruleset ``detail`` so
+    one fetch serves both concerns and at most ONE ``PUT`` is issued:
+
+    - **Bypass self-heal** — when any resolved id is NOT already granted as an
+      ``Integration`` / ``always`` bypass actor, the merged actor set is written.
+      An actor id counts as present only when it already carries the exact bypass
+      shape we grant; an id present with a different ``actor_type`` or
+      ``bypass_mode`` is the GH013 misconfiguration this self-heal exists to
+      correct, so it is treated as missing and re-granted.
+    - **Merge-method reconcile** — when the ruleset's ``merge_queue`` rule
+      carries a ``parameters.merge_method`` differing from ``resolved_method``,
+      the corrected rule parameters are written. A detail without a named
+      ``merge_queue`` rule has nothing to correct (no method drift).
+
+    Returns ``(bypass_healed, method_reconciled, error)``: the two booleans are
+    ``True`` only when the single PUT was issued carrying that correction;
+    ``error`` is a ready-to-return :func:`make_error` dict on a ``gh`` failure,
+    else ``None``. No drift on either concern is a no-op (``(False, False,
+    None)``).
     """
-    ruleset_id, detail, error = _fetch_plan_marshall_ruleset(owner, repo)
-    if error is not None:
-        return False, error
-    if ruleset_id is None or detail is None:
-        # Configured via some other ruleset — nothing named to self-heal.
-        return False, None
-
-    # An actor id counts as present only when it already carries the exact bypass
-    # shape we grant (Integration / always). An id present with a different
-    # actor_type or bypass_mode is the GH013 misconfiguration this self-heal exists
-    # to correct, so treat it as missing and re-grant it.
     present_ids, existing_actors = _integration_bypass_present_ids(detail)
     missing_ids = [actor_id for actor_id in resolved_ids if actor_id not in present_ids]
-    if not missing_ids:
-        return False, None
 
-    # Drop any wrong-shaped existing entry for an id we are about to re-grant so
-    # the merged set carries exactly one Integration/always entry per resolved id.
-    heal_ids = set(missing_ids)
-    retained_actors = [a for a in existing_actors if a.get('actor_id') not in heal_ids]
-    merged_actors = retained_actors + [
-        {'actor_id': actor_id, 'actor_type': 'Integration', 'bypass_mode': 'always'}
-        for actor_id in missing_ids
-    ]
+    merge_queue_rule = _ruleset_merge_queue_rule(detail)
+    method_drift = False
+    if merge_queue_rule is not None:
+        params = merge_queue_rule.get('parameters')
+        current_method = params.get('merge_method') if isinstance(params, dict) else None
+        method_drift = current_method != resolved_method
+
+    if not missing_ids and not method_drift:
+        return False, False, None
+
     # Defensive full-object update. GitHub's ruleset-update endpoint is a
     # documented partial update (PUT /repos/{o}/{r}/rulesets/{id} touches only the
-    # fields present in the body), so sending only bypass_actors leaves the
-    # merge_queue rule and conditions intact — the correct and verified behavior.
-    # We nonetheless echo the existing name/target/enforcement/conditions/rules
-    # back alongside the merged bypass_actors so that even if the endpoint ever
-    # treated the PUT as a full replace, the merge_queue rule and conditions would
-    # survive rather than being silently wiped (the single load-bearing
-    # API-semantics assumption, made robust rather than relied upon).
-    update_body: dict = {'bypass_actors': merged_actors}
+    # fields present in the body), so sending only the corrected fields would
+    # leave the rest intact — the correct and verified behavior. We nonetheless
+    # echo the existing name/target/enforcement/conditions/rules (and, on a
+    # method-only reconcile, the existing bypass_actors) back alongside the
+    # corrections so that even if the endpoint ever treated the PUT as a full
+    # replace, the merge_queue rule, conditions, and bypass grants would survive
+    # rather than being silently wiped (the single load-bearing API-semantics
+    # assumption, made robust rather than relied upon).
+    update_body: dict = {}
     for key in ('name', 'target', 'enforcement', 'conditions', 'rules'):
         value = detail.get(key)
         if value is not None:
             update_body[key] = value
+
+    if missing_ids:
+        # Drop any wrong-shaped existing entry for an id we are about to re-grant
+        # so the merged set carries exactly one Integration/always entry per
+        # resolved id.
+        heal_ids = set(missing_ids)
+        retained_actors = [a for a in existing_actors if a.get('actor_id') not in heal_ids]
+        update_body['bypass_actors'] = retained_actors + [
+            {'actor_id': actor_id, 'actor_type': 'Integration', 'bypass_mode': 'always'}
+            for actor_id in missing_ids
+        ]
+    elif detail.get('bypass_actors') is not None:
+        update_body['bypass_actors'] = existing_actors
+
+    if method_drift:
+        corrected_rules = []
+        for rule in update_body.get('rules', []):
+            if isinstance(rule, dict) and rule.get('type') == 'merge_queue':
+                params = rule.get('parameters')
+                corrected_params = dict(params) if isinstance(params, dict) else {}
+                corrected_params['merge_method'] = resolved_method
+                rule = {**rule, 'parameters': corrected_params}
+            corrected_rules.append(rule)
+        update_body['rules'] = corrected_rules
+
     returncode, _stdout, stderr = _gh_api_json_body(
         'PUT', f'repos/{owner}/{repo}/rulesets/{ruleset_id}', update_body
     )
     if returncode != 0:
         if _is_auth_scope_error(stderr):
-            return False, make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, stderr.strip())
-        return False, make_error('repo_merge_queue_enable', 'Failed to patch merge-queue ruleset bypass_actors', stderr.strip())
-    return True, None
+            return False, False, make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, stderr.strip())
+        return False, False, make_error('repo_merge_queue_enable', 'Failed to update merge-queue ruleset', stderr.strip())
+    return bool(missing_ids), method_drift, None
 
 
 def cmd_repo_merge_queue_probe(args: argparse.Namespace) -> dict:
@@ -1129,13 +1240,13 @@ def cmd_repo_merge_queue_probe(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('repo_merge_queue_probe', err)
 
-    error, _owner, _repo, branch, discriminator, detail = _resolve_repo_branch_and_probe(
-        'repo_merge_queue_probe'
+    error, _owner, _repo, branch, discriminator, detail, merge_method = (
+        _resolve_repo_branch_and_probe('repo_merge_queue_probe')
     )
     if error is not None:
         return error
 
-    return {
+    result = {
         'status': 'success',
         'operation': 'repo_merge_queue_probe',
         'provider': 'github',
@@ -1143,6 +1254,9 @@ def cmd_repo_merge_queue_probe(args: argparse.Namespace) -> dict:
         'eligibility': discriminator,
         'detail': detail,
     }
+    if merge_method is not None:
+        result['merge_method'] = merge_method
+    return result
 
 
 def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
@@ -1156,8 +1270,8 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('repo_merge_queue_enable', err)
 
-    error, owner, repo, branch, discriminator, detail = _resolve_repo_branch_and_probe(
-        'repo_merge_queue_enable'
+    error, owner, repo, branch, discriminator, detail, _probed_method = (
+        _resolve_repo_branch_and_probe('repo_merge_queue_enable')
     )
     if error is not None:
         return error
@@ -1173,55 +1287,61 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
     }
 
     if discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED:
-        # Resolve config-first. A static bypass_app_id needs no API call and goes
-        # straight to self-heal. The slugs-only fallback would otherwise issue an
-        # org-installations lookup on every enable, so short-circuit it when the
-        # existing ruleset already carries an Integration/always bypass actor
-        # (already self-healed) — the ruleset fetch here is the same one self-heal
-        # would make, only reordered so the org-list call can be skipped.
-        app_id, slugs = _read_merge_queue_bypass_config()
-        if app_id is None and not slugs:
+        # The merge-method reconcile runs regardless of bypass-actor config, so
+        # the named ruleset is always fetched here — one fetched detail serves
+        # both the method reconcile and the bypass self-heal, and at most one
+        # PUT is issued for both concerns.
+        resolved_method = _resolve_merge_queue_merge_method()
+        ruleset_id, ruleset_detail, fetch_error = _fetch_plan_marshall_ruleset(owner, repo)
+        if fetch_error is not None:
+            return fetch_error
+        if ruleset_id is None or ruleset_detail is None:
+            # Configured via some other ruleset — nothing named to reconcile.
             return no_change
 
+        # Resolve bypass actors config-first. A static bypass_app_id needs no
+        # API call. The slugs-only fallback would otherwise issue an
+        # org-installations lookup on every enable, so short-circuit it when the
+        # fetched ruleset already carries an Integration/always bypass actor
+        # (already self-healed).
+        app_id, slugs = _read_merge_queue_bypass_config()
         if app_id is not None:
             resolved_ids = [app_id]
-        else:
-            ruleset_id, ruleset_detail, fetch_error = _fetch_plan_marshall_ruleset(owner, repo)
-            if fetch_error is not None:
-                return fetch_error
-            if ruleset_id is None or ruleset_detail is None:
-                # Configured via some other ruleset — nothing named to self-heal.
-                return no_change
+        elif slugs:
             present_ids, _ = _integration_bypass_present_ids(ruleset_detail)
-            if present_ids:
-                # slugs-only AND the ruleset already carries an Integration/always
-                # actor — skip the org-installations API call entirely.
-                return no_change
-            resolved_ids = _resolve_bypass_actor_ids(owner)
+            resolved_ids = [] if present_ids else _resolve_bypass_actor_ids(owner)
+        else:
+            resolved_ids = []
 
-        # Self-heal: when an actor id resolved but the existing ruleset lacks it,
-        # PATCH it in; otherwise this stays the idempotent no-op it was before.
-        if resolved_ids:
-            changed, heal_error = _self_heal_merge_queue_bypass(owner, repo, resolved_ids)
-            if heal_error is not None:
-                return heal_error
-            if changed:
-                return {
-                    'status': 'success',
-                    'operation': 'repo_merge_queue_enable',
-                    'provider': 'github',
-                    'branch': branch,
-                    'eligibility': discriminator,
-                    'changed': True,
-                    'detail': 'merge queue already configured; bypass actor patched into ruleset',
-                }
-        return no_change
+        bypass_healed, method_reconciled, reconcile_error = _reconcile_merge_queue_ruleset(
+            owner, repo, ruleset_id, ruleset_detail, resolved_ids, resolved_method
+        )
+        if reconcile_error is not None:
+            return reconcile_error
+        if not bypass_healed and not method_reconciled:
+            return no_change
+        corrections = []
+        if method_reconciled:
+            corrections.append(f'merge_method reconciled to {resolved_method}')
+        if bypass_healed:
+            corrections.append('bypass actor patched into ruleset')
+        return {
+            'status': 'success',
+            'operation': 'repo_merge_queue_enable',
+            'provider': 'github',
+            'branch': branch,
+            'eligibility': discriminator,
+            'changed': True,
+            'detail': 'merge queue already configured; ' + '; '.join(corrections),
+        }
 
     if discriminator == MERGE_QUEUE_ELIGIBLE_UNCONFIGURED:
         # Resolve the bypass-actor id(s) (config-first, org-list fallback). An
         # empty resolution preserves today's bypass-less create behavior.
         resolved_ids = _resolve_bypass_actor_ids(owner)
-        payload = build_merge_queue_ruleset_payload(branch, resolved_ids)
+        payload = build_merge_queue_ruleset_payload(
+            branch, resolved_ids, merge_method=_resolve_merge_queue_merge_method()
+        )
         # gh api reads a JSON request body from a file via --input; the nested
         # ruleset structure cannot be expressed via field flags.
         returncode, _stdout, stderr = _gh_api_json_body(

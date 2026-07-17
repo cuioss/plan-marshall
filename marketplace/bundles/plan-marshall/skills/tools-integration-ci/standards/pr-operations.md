@@ -245,7 +245,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge-q
     (--pr-number 123 | --head feature/x)
 ```
 
-Supply exactly one of `--pr-number` or `--head`. `pr merge-queue` takes **no** `--strategy` or `--delete-branch` flag: the merge queue's own branch-protection configuration dictates the merge method, GitHub rejects `--delete-branch` when a merge queue is enabled, and the platform auto-deletes the head branch after the queue merge.
+Supply exactly one of `--pr-number` or `--head`. `pr merge-queue` takes **no** `--strategy` or `--delete-branch` flag — that is unchanged: the platform merges queued PRs with the merge method configured on the queue itself, GitHub rejects `--delete-branch` when a merge queue is enabled, and the platform auto-deletes the head branch after the queue merge. The queue's configured method is not an independent knob, though: `repo merge-queue enable` provisions it from — and reconciles it against — the configured `pr_merge_strategy` (see the Repo Merge-Queue Probe / Enable workflow below), and `repo merge-queue probe` surfaces the active value as `merge_method` so residual drift is observable.
 
 ### Step 2: Process Result
 
@@ -288,10 +288,15 @@ detail: no merge_queue rule on branch
 
 | Value | Meaning |
 |-------|---------|
-| `eligible_configured` | The platform merge queue is available AND already configured (a re-run of `enable` is a no-op). |
+| `eligible_configured` | The platform merge queue is available AND already configured (`enable` re-runs only reconcile drift). |
 | `eligible_unconfigured` | Available but not yet configured — `enable` will configure it. |
 | `ineligible` | The platform gates the feature off (GitLab merge trains need Premium/Ultimate; a GitHub org policy or missing Administration scope disallows it). |
 | `unsupported` | Reserved — the abstraction cannot probe/enable the feature. |
+
+On GitHub an `eligible_configured` probe additionally carries `merge_method` —
+the queue rule's configured merge method in the ruleset spelling (`SQUASH` /
+`MERGE` / `REBASE`). The field is absent on GitLab, on an unconfigured queue,
+and when the parameter is absent/malformed.
 
 ### Step 2: Enable (idempotent)
 
@@ -308,10 +313,16 @@ changed: true
 detail: merge_queue ruleset created
 ```
 
-`changed: false` indicates an already-configured repo (idempotent no-op). On
-GitHub, `enable` creates a `merge_queue` ruleset on the default branch; on
-GitLab it sets the per-project `merge_trains_enabled` flag. On an `ineligible`
-probe `enable` refuses with the actionable ineligible error; on an auth-scope
+On GitHub, `enable` creates a `merge_queue` ruleset on the default branch whose
+merge method is the mapped `pr_merge_strategy` (`squash` → `SQUASH`, `merge` →
+`MERGE`, `rebase` → `REBASE`, default `SQUASH`); on GitLab it sets the
+per-project `merge_trains_enabled` flag. On an already-configured GitHub repo,
+`enable` reconciles the named ruleset's merge method against the same mapped
+value: `changed: false` means everything already matches (idempotent no-op),
+while a method drift is corrected via a partial `PUT` and returned as
+`changed: true` with the reconcile detail (e.g. `merge queue already
+configured; merge_method reconciled to SQUASH`). On an `ineligible` probe
+`enable` refuses with the actionable ineligible error; on an auth-scope
 failure both verbs return the actionable remedy (naming the required
 scope/permission), never a stack trace.
 
