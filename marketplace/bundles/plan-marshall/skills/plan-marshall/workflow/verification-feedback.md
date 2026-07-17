@@ -14,15 +14,16 @@ Dispatched under the **phase-scoped** `verification-feedback` role key — the r
 |------------|----------------|-----------------------------|-----------------|
 | `build-runner` | phase-5-execute Step 11 + Step 11b | Build-runner / quality-gate log parse → findings store. **Mechanical, pre-flight** — the orchestrator runs the build, captures findings via `manage-findings add`, dispatches this workflow only when `manage-findings list | count > 0`. Step 1 here is a store-only query. | Count > 0 |
 | `sonar` | phase-6-finalize `sonar-roundtrip` | `workflow-integration-sonar:sonar fetch_findings` — files one `sonar-issue` finding per surviving issue to the ledger with the untrusted message quarantined under `raw_input`. **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
-| `pr-comment` | phase-6-finalize `automated-review` | `workflow-integration-github:github_pr fetch_findings` (or GitLab equivalent) — files one `pr-comment` finding per surviving comment with the untrusted body quarantined under `raw_input`. **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
+| `pr-comment` | phase-6-finalize `automatic-review` | `workflow-integration-github:github_pr fetch_findings` (or GitLab equivalent) — files one `pr-comment` finding per surviving comment with the untrusted body quarantined under `raw_input`. **Mechanical, pre-flight.** Step 1 here is a store-only query. | Count > 0 |
 | `plugin-doctor` | `project:finalize-step-plugin-doctor` + `/plugin-doctor` slash command | Marketplace static analysis — **LLM-heavy**, runs inside this envelope as Step 1: iterate the plugin-doctor rule catalog in-context, scope-filter, emit one finding per violation to the store. | None — analysis IS the producer step. |
 | `pr-state` | `/workflow-pr-doctor` slash command | Wait for CI checks; fetch build status, PR comments, and Sonar issues sequentially; emit each finding-type to the store. Step 1 here orchestrates the multi-source sweep, then the unified triage in Steps 3-6 processes the aggregated set. | None — the producer always runs; Steps 3-6 short-circuit on zero findings. |
+| `finalize-feedback` | phase-6-finalize dispatcher (wait-region), after both `plan-marshall:automatic-review` and `default:sonar-roundtrip` have FILED | **No producer FIND** — the two wait-region producers already filed their `pr-comment` / `sonar-issue` findings via their own per-signal-gated FIND steps. Step 1 here is a single store-only union query over pending `pr-comment` ∪ `sonar-issue`. Collapses the retired per-producer `producer=pr-comment` and `producer=sonar` finalize triage dispatches into ONE pass over the union, mirroring the `pr-state` multi-source→one-triage precedent. | None — the producers already filed; Steps 3-6 short-circuit on zero findings. |
 
 ## Inputs
 
 | Prompt-body field | Required | Description |
 |-------------------|:--------:|-------------|
-| `producer` | Yes | One of `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`. Selects the Step 1 branch and which `ext-triage-{domain}` skills are pre-loaded in Step 2. |
+| `producer` | Yes | One of `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`, `finalize-feedback`. Selects the Step 1 branch and which `ext-triage-{domain}` skills are pre-loaded in Step 2. |
 | `plan_id` | Yes | Forwarded to every `manage-findings` / `manage-tasks` / `tools-integration-ci` call. |
 | `WORKTREE` | Yes | Used verbatim for `git -C {WORKTREE}` and as the root for every Edit/Write/Read. |
 | `pr_number` | Conditional | Required for `pr-comment` (thread replies) and for `pr-state` (CI wait + multi-source fetch). |
@@ -42,6 +43,7 @@ Producer-specific additions:
 - `producer=pr-comment` — also forward the RESPOND-loop provider `plan-marshall:workflow-integration-github` (or `…-gitlab`) for `post_responses`.
 - `producer=sonar` — also forward `plan-marshall:workflow-integration-sonar` for the RESPOND-loop server-side dismissal (`sonar post_responses`).
 - `producer=pr-state` — also forward `plan-marshall:workflow-integration-git`, `plan-marshall:workflow-integration-github` (or `…-gitlab`), `plan-marshall:workflow-integration-sonar`, `plan-marshall:tools-integration-ci`.
+- `producer=finalize-feedback` — also forward BOTH RESPOND-loop providers `plan-marshall:workflow-integration-github` (or `…-gitlab`) and `plan-marshall:workflow-integration-sonar`, since the unified pass responds to both `pr-comment` thread-replies and `sonar-issue` server-side dismissals (mirroring `pr-state`).
 - `producer=plugin-doctor` — also forward `pm-plugin-development:plugin-doctor` (rule catalog + references) and `pm-plugin-development:tools-marketplace-inventory`.
 
 Domain-triage extensions (`{bundle}:ext-triage-{domain}`) are loaded on demand inside Steps 3-6 — they are NOT pre-loaded by the caller.
@@ -149,6 +151,21 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
 ```
 
 If empty, return `status: success`, `display_detail: "PR #{pr_number} clean — nothing to triage"`. Otherwise continue to Step 1.4.
+
+### Branch: `producer=finalize-feedback` (store-only union over pr-comment ∪ sonar-issue)
+
+This is the finalize-scoped store-only sibling of `pr-state`: it does NO producer FIND. Both wait-region producers have already FILED their findings before this dispatch — `plan-marshall:automatic-review` filed the `pr-comment` findings and `default:sonar-roundtrip` filed the `sonar-issue` findings, each gated on its own `_ci_barrier` arm reaching a terminal state (the per-signal FIND gate). This mode collapses the two retired per-producer triage dispatches (`producer=pr-comment` and `producer=sonar`) into ONE triage pass over the union.
+
+Query the store for the union of pending `pr-comment` and `sonar-issue` findings — `--include-qgate` merges the pending per-phase Q-Gate findings into the per-plan read so the union is a single unified query (see `manage-findings` Canonical invocations → `list`):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list \
+  --plan-id {plan_id} --resolution pending --include-qgate
+```
+
+If empty, return `status: success`, `display_detail: "0 finding(s) — nothing to triage"`, `loop_back_needed: false`. Otherwise continue to Step 1.4 — the pass then falls through the shared pipeline unchanged: Step 1.4 batched INGEST, Step 2 extension load (BOTH the `pr-comment` and `sonar` triage extensions load, one per finding-type present), Steps 3-6 TRIAGE with smart-grouping (a defect flagged by both CodeRabbit and Sonar is co-located into one batched LLM decision by the pre-group step), and Step 8 unified RESPOND (BOTH `github_pr post_responses` for the `pr-comment` thread-replies AND `sonar post_responses` for the `sonar-issue` server-side dismissals, each keyed by its own `hash_id`).
+
+**Cross-producer dedup is intentionally deferred.** A defect flagged by BOTH CodeRabbit and Sonar lands as two findings (one `pr-comment`, one `sonar-issue`); this mode does NOT hard-merge them. The Step 2 smart-grouping (`triage.md` § Step 2 pre-group) already co-locates the related findings into one batched LLM decision, so the doubly-flagged defect is triaged coherently WITHOUT a hard dedup, and each finding keeps its own provider RESPOND surface (a `pr-comment` thread-reply vs a `sonar-issue` server-side dismissal keyed by `hash_id`) — merging to one finding would strand one provider's response. A future plan may add dedup against a concrete measured need.
 
 ## Step 1.4: Batched ingestion — promote `raw_input.{field}` to top-level (INGEST)
 
