@@ -48,6 +48,15 @@ def _npm_extra_args(run_parser):
     run_parser.add_argument('--env', help="Environment variables (e.g., 'NODE_ENV=test CI=true')")
 
 
+def _npm_check_warnings_extra_args(warn_parser):
+    warn_parser.add_argument(
+        '--warning-baseline',
+        dest='warning_baseline',
+        type=int,
+        help='Fail (exit 1) when actionable warnings (fixable + unknown) exceed this committed baseline',
+    )
+
+
 def main() -> int:
     """Main entry point."""
     return build_main(
@@ -62,6 +71,7 @@ def main() -> int:
             coverage_handler=cmd_coverage_report,
             coverage_help='Parse JavaScript coverage report',
             check_warnings_handler=cmd_check_warnings,
+            check_warnings_extra_args_fn=_npm_check_warnings_extra_args,
             discover_handler=discover_npm_modules,
             discover_help='Discover npm modules',
             run_config_key_config=_CONFIG,

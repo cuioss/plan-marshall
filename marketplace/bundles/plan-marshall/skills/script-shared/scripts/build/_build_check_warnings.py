@@ -88,5 +88,22 @@ def cmd_check_warnings_base(
         'unknown': unknown_count,
         'categorized': categorized,
     }
+    exit_code = 1 if fixable_count > 0 or unknown_count > 0 else 0
+
+    # Optional caller-baselined warning-count gate. Only tools that register the
+    # --warning-baseline flag (npm) carry the attribute; build-maven/build-gradle
+    # lack it, so the getattr default of None keeps their behavior unchanged.
+    baseline = getattr(args, 'warning_baseline', None)
+    if baseline is not None:
+        actionable = fixable_count + unknown_count
+        gate_status = 'pass' if actionable <= baseline else 'fail'
+        result['gate'] = {
+            'baseline': baseline,
+            'actual': actionable,
+            'status': gate_status,
+        }
+        if actionable > baseline:
+            exit_code = 1
+
     print(serialize_toon(result))
-    return 1 if fixable_count > 0 or unknown_count > 0 else 0
+    return exit_code

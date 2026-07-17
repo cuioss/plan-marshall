@@ -6,15 +6,19 @@ Note: These tests import internal modules directly for detailed testing.
 Public API tests should use npm.py CLI instead.
 """
 
+import json
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 # Cross-skill imports (PYTHONPATH set by conftest)
+from _build_check_warnings import cmd_check_warnings_base
 from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
+from toon_parser import parse_toon
 
-from conftest import load_script_module
+from conftest import get_script_path, load_script_module, run_script
 
 _npm_parse_errors_mod = load_script_module('plan-marshall', 'build-npm', '_npm_parse_errors.py', '_npm_parse_errors')
 _npm_parse_eslint_mod = load_script_module('plan-marshall', 'build-npm', '_npm_parse_eslint.py', '_npm_parse_eslint')
@@ -332,3 +336,102 @@ Test Suites: 1 failed, 2 passed, 3 total
         assert jest_summary.failed >= 1
 
         Path(f.name).unlink()
+
+
+# =========================================================================
+# Caller-baselined warning-count gate (build-npm --warning-baseline)
+# =========================================================================
+
+
+def _warn(message: str, wtype: str = 'javadoc_warning', severity: str = 'WARNING') -> dict:
+    """Build a minimal warning dict (javadoc_warning classifies as fixable)."""
+    return {'type': wtype, 'message': message, 'severity': severity}
+
+
+def _warn_args(warnings: list[dict], *, baseline: int | None = None, with_baseline: bool = True) -> SimpleNamespace:
+    """Build an argparse-like namespace for cmd_check_warnings_base.
+
+    When ``with_baseline`` is False the ``warning_baseline`` attribute is omitted
+    entirely, mirroring build-maven/build-gradle whose parsers never register the
+    flag (getattr default keeps them unaffected).
+    """
+    ns = SimpleNamespace(warnings=json.dumps(warnings), acceptable_warnings=None)
+    if with_baseline:
+        ns.warning_baseline = baseline
+    return ns
+
+
+def test_warning_baseline_satisfied_reports_pass_gate(capsys):
+    """actionable <= baseline → gate.status pass; the gate adds no failure."""
+    args = _warn_args([_warn('one'), _warn('two')], baseline=2)
+
+    exit_code = cmd_check_warnings_base(args, matcher='substring')
+    output = parse_toon(capsys.readouterr().out)
+
+    assert output['gate']['baseline'] == 2
+    assert output['gate']['actual'] == 2
+    assert output['gate']['status'] == 'pass'
+    # actionable == baseline, so the gate does not raise the exit code; the two
+    # fixable warnings still drive exit 1 via the pre-existing base logic.
+    assert exit_code == 1
+
+
+def test_warning_baseline_satisfied_all_acceptable_exits_zero(capsys):
+    """A zero-actionable run under baseline passes the gate and exits 0."""
+    args = SimpleNamespace(
+        warnings=json.dumps([_warn('known issue', wtype='other')]),
+        acceptable_warnings=json.dumps({'g': ['known issue']}),
+        warning_baseline=0,
+    )
+
+    exit_code = cmd_check_warnings_base(args, matcher='substring')
+    output = parse_toon(capsys.readouterr().out)
+
+    assert output['gate']['actual'] == 0
+    assert output['gate']['status'] == 'pass'
+    assert exit_code == 0
+
+
+def test_warning_baseline_exceeded_fails_gate_and_exits_1(capsys):
+    """actionable > baseline → gate.status fail and exit code 1."""
+    args = _warn_args([_warn('one'), _warn('two'), _warn('three')], baseline=1)
+
+    exit_code = cmd_check_warnings_base(args, matcher='substring')
+    output = parse_toon(capsys.readouterr().out)
+
+    assert output['gate']['baseline'] == 1
+    assert output['gate']['actual'] == 3
+    assert output['gate']['status'] == 'fail'
+    assert exit_code == 1
+
+
+def test_no_warning_baseline_leaves_output_and_exit_unchanged(capsys):
+    """Omitting the baseline attribute (maven/gradle case) adds no gate block."""
+    warnings = [_warn('one')]
+
+    args_absent = _warn_args(warnings, with_baseline=False)
+    exit_absent = cmd_check_warnings_base(args_absent, matcher='substring')
+    out_absent = parse_toon(capsys.readouterr().out)
+
+    args_none = _warn_args(warnings, baseline=None)
+    exit_none = cmd_check_warnings_base(args_none, matcher='substring')
+    out_none = parse_toon(capsys.readouterr().out)
+
+    assert 'gate' not in out_absent
+    assert 'gate' not in out_none
+    # A None baseline behaves identically to no baseline attribute at all.
+    assert exit_absent == exit_none == 1
+
+
+def test_npm_cli_warning_baseline_gates():
+    """The npm CLI registers --warning-baseline and routes it to the handler."""
+    warnings = json.dumps([_warn('one'), _warn('two')])
+    script = get_script_path('plan-marshall', 'build-npm', 'npm.py')
+
+    exceeded = run_script(script, 'check-warnings', '--warnings', warnings, '--warning-baseline', '1')
+    assert exceeded.returncode == 1
+    assert 'fail' in exceeded.stdout
+
+    satisfied = run_script(script, 'check-warnings', '--warnings', warnings, '--warning-baseline', '5')
+    # gate passes (actionable 2 <= 5); base logic still exits 1 on fixable warnings.
+    assert 'pass' in satisfied.stdout
