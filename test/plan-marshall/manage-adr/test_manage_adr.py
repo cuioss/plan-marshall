@@ -444,6 +444,22 @@ def test_detect_corpus_width_mixed_returns_max(adr_dir):
     assert _detect_corpus_width() == 4
 
 
+def test_find_adr_by_number_returns_both_ambiguous_widths(adr_dir):
+    """find_adr_by_number surfaces BOTH files when a number is ambiguous.
+
+    A corpus containing a 3-digit (008-) and a 4-digit (0008-) prefix for the
+    same decision number returns two matches — the raw signal the cmd_read /
+    cmd_update / cmd_delete callers reject as ambiguous_number.
+    """
+    _touch_adr(adr_dir, '008-Narrow.adoc')
+    _touch_adr(adr_dir, '0008-Wide.adoc')
+
+    matches = find_adr_by_number(8)
+
+    assert len(matches) == 2
+    assert {p.name for p in matches} == {'008-Narrow.adoc', '0008-Wide.adoc'}
+
+
 def test_generate_filename_zero_pads_to_width(adr_dir):
     """generate_filename zero-pads the number to the supplied width."""
     assert generate_filename(8, 'Some Title', 3) == '008-Some_Title.adoc'

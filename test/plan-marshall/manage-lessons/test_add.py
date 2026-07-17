@@ -469,6 +469,79 @@ class TestCollisionSafeAllocation:
 
 
 # =============================================================================
+# Tier 2: cmd_from_error input validation (non-dict context, non-string component)
+# =============================================================================
+
+
+class TestFromErrorInputValidation:
+    """Regression guard for ``cmd_from_error`` untrusted-JSON validation.
+
+    ``args.context`` is parsed with ``json.loads`` and previously used
+    ``context.get(...)`` unchecked, so a valid JSON array or scalar (e.g.
+    ``"[]"``) crashed with ``AttributeError`` instead of a structured error, and
+    a non-string ``component`` (explicit null / numeric) crashed inside
+    ``guard_component_store_match``. The guards now reject a non-dict context and
+    coerce a non-string component to ``'unknown'``.
+    """
+
+    def test_non_dict_json_array_context_returns_structured_error(self, tmp_path):
+        """A JSON array parses cleanly but is not a dict — reject with invalid_json."""
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_from_error(Namespace(context='[]'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_json'
+        assert result['message'] == 'Context must be a valid JSON object'
+
+    def test_non_dict_json_scalar_context_returns_structured_error(self, tmp_path):
+        """A JSON scalar (number) is not a dict — reject with invalid_json."""
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_from_error(Namespace(context='42'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_json'
+        assert result['message'] == 'Context must be a valid JSON object'
+
+    def test_malformed_json_still_rejected(self, tmp_path):
+        """Truly malformed JSON keeps returning the structured invalid_json error."""
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_from_error(Namespace(context='{not valid'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_json'
+        assert result['message'] == 'Context must be a valid JSON object'
+
+    def test_non_string_component_defaults_to_unknown(self, tmp_path):
+        """An explicit null / numeric component must not crash — it defaults to 'unknown'."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        error_context = json.dumps({'component': None, 'error': 'boom', 'solution': 'fix'})
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_from_error(Namespace(context=error_context))
+
+        assert result['status'] == 'success'
+        assert result['created_from'] == 'error_context'
+        lesson_path = next(lessons_dir.glob(f'{result["id"]}.md'))
+        assert 'component=unknown' in lesson_path.read_text(encoding='utf-8')
+
+    def test_numeric_component_defaults_to_unknown(self, tmp_path):
+        """A numeric component value also coerces to 'unknown' instead of crashing."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        error_context = json.dumps({'component': 7, 'error': 'boom'})
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_from_error(Namespace(context=error_context))
+
+        assert result['status'] == 'success'
+        lesson_path = next(lessons_dir.glob(f'{result["id"]}.md'))
+        assert 'component=unknown' in lesson_path.read_text(encoding='utf-8')
+
+
+# =============================================================================
 # Tier 2: status frontmatter on new lessons
 # =============================================================================
 

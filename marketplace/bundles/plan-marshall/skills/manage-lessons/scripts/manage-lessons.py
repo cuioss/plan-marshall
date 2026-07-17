@@ -778,9 +778,18 @@ def cmd_from_error(args: argparse.Namespace) -> dict:
     try:
         context = json.loads(args.context)
     except json.JSONDecodeError:
-        return {'status': 'error', 'error': 'invalid_json', 'message': 'Context must be valid JSON'}
+        return {'status': 'error', 'error': 'invalid_json', 'message': 'Context must be a valid JSON object'}
 
+    # A valid JSON array or scalar (e.g. "[]") parses cleanly but has no .get,
+    # so reject any non-dict context with the same structured error.
+    if not isinstance(context, dict):
+        return {'status': 'error', 'error': 'invalid_json', 'message': 'Context must be a valid JSON object'}
+
+    # An explicit null or numeric component would crash guard_component_store_match;
+    # coerce any non-string value to the 'unknown' default before the guard.
     component = context.get('component', 'unknown')
+    if not isinstance(component, str):
+        component = 'unknown'
 
     try:
         guard_component_store_match(component, getattr(args, 'allow_foreign_store', False))

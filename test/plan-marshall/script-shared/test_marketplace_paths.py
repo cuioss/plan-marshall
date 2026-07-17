@@ -16,6 +16,7 @@ import marketplace_paths
 import pytest
 from marketplace_paths import (
     CLAUDE_DIR,
+    MARKETPLACE_BUNDLES_PATH,
     PLAN_DIR_NAME,
     PLUGIN_CACHE_SUBPATH,
     _find_plan_root_from_cwd,
@@ -23,6 +24,7 @@ from marketplace_paths import (
     get_base_path,
     get_plugin_cache_path,
     get_temp_dir,
+    main_anchored_store_owns_bundle,
     resolve_main_anchored_path,
     safe_relative_path,
 )
@@ -331,6 +333,50 @@ class TestGetBasePathResolutionOrder:
 
         with pytest.raises(FileNotFoundError):
             get_base_path('auto', marketplace_root=explicit_anchor)
+
+
+class TestMainAnchoredStoreOwnsBundle:
+    """Regression guard for the bundle-name validation in
+    ``main_anchored_store_owns_bundle``.
+
+    An empty bundle string used to resolve to the bundles directory itself
+    (which exists, incorrectly returning True), and pathlib silently discards
+    the left-hand operand when the right-hand side is absolute or contains a
+    separator — either of which could bypass the ownership guard. The guard now
+    rejects an empty bundle or any bundle carrying a path separator BEFORE
+    constructing the path, returning False regardless of any active override.
+    """
+
+    def test_empty_bundle_returns_false_even_under_override(self, tmp_path, monkeypatch):
+        # The validation guard fires before the PLAN_BASE_DIR short-circuit, so
+        # an empty bundle can never be reported as owned.
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        assert main_anchored_store_owns_bundle('') is False
+
+    def test_bundle_with_forward_slash_returns_false(self, tmp_path, monkeypatch):
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        assert main_anchored_store_owns_bundle('a/b') is False
+
+    def test_absolute_path_bundle_returns_false(self, tmp_path, monkeypatch):
+        # An absolute-path bundle would make pathlib discard main_root; the
+        # leading-separator hit in the guard rejects it first.
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        assert main_anchored_store_owns_bundle('/etc') is False
+
+    def test_bundle_with_backslash_returns_false(self, tmp_path, monkeypatch):
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        assert main_anchored_store_owns_bundle('a\\b') is False
+
+    def test_valid_simple_name_preserves_is_dir_behavior(self, tmp_path, monkeypatch):
+        # In the production branch (no override), a valid simple name resolves to
+        # {main_root}/marketplace/bundles/{bundle}.is_dir().
+        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+        monkeypatch.setattr(marketplace_paths, '_override_is_set', lambda: False)
+        monkeypatch.setattr(marketplace_paths, '_main_checkout_root', lambda: tmp_path)
+        (tmp_path / MARKETPLACE_BUNDLES_PATH / 'plan-marshall').mkdir(parents=True)
+
+        assert main_anchored_store_owns_bundle('plan-marshall') is True
+        assert main_anchored_store_owns_bundle('not-a-bundle') is False
 
 
 @pytest.mark.usefixtures('_route_bundle_cache_to_patched_home')

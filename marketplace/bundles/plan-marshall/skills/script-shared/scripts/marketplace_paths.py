@@ -438,6 +438,15 @@ def main_anchored_store_owns_bundle(bundle: str) -> bool:
         RuntimeError: in the production branch when git cannot resolve the main
             checkout (not a repo and no override set).
     """
+    # Reject invalid bundle names before any path construction. An empty string
+    # would resolve to the bundles directory itself (which exists, incorrectly
+    # returning True), and pathlib silently discards the left-hand operand when
+    # the right-hand side is an absolute path or contains a separator — either of
+    # which could bypass the ownership guard. A valid bundle is a single simple
+    # directory name with no path separators.
+    if not bundle or '/' in bundle or '\\' in bundle:
+        return False
+
     if os.environ.get('PLAN_BASE_DIR') or _override_is_set():
         return True
 

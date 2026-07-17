@@ -305,6 +305,18 @@ def cmd_read(args: argparse.Namespace) -> dict[str, Any]:
             'message': f'ADR {args.number} not found',
         }
 
+    if len(matches) > 1:
+        return {
+            'status': 'error',
+            'error': 'ambiguous_number',
+            'operation': 'read',
+            'message': (
+                f'ADR {args.number} matches multiple files with different '
+                f'zero-pad widths: {", ".join(sorted(p.name for p in matches))}. '
+                'Resolve the ambiguity before reading.'
+            ),
+        }
+
     filepath = matches[0]
     adr = parse_adr_file(filepath)
     adr['content'] = filepath.read_text()
@@ -335,6 +347,24 @@ def cmd_update(args: argparse.Namespace) -> dict[str, Any]:
             'error': 'not_found',
             'operation': 'update',
             'message': f'ADR {args.number} not found',
+        }
+
+    if len(matches) > 1:
+        log_entry(
+            'script',
+            'global',
+            'ERROR',
+            f'[ADR] ADR {args.number} ambiguous: {len(matches)} matching files',
+        )
+        return {
+            'status': 'error',
+            'error': 'ambiguous_number',
+            'operation': 'update',
+            'message': (
+                f'ADR {args.number} matches multiple files with different '
+                f'zero-pad widths: {", ".join(sorted(p.name for p in matches))}. '
+                'Resolve the ambiguity before updating.'
+            ),
         }
 
     filepath = matches[0]
@@ -403,6 +433,24 @@ def cmd_delete(args: argparse.Namespace) -> dict[str, Any]:
             'error': 'not_found',
             'operation': 'delete',
             'message': f'ADR {args.number} not found',
+        }
+
+    if len(matches) > 1:
+        log_entry(
+            'script',
+            'global',
+            'ERROR',
+            f'[ADR] ADR {args.number} ambiguous: {len(matches)} matching files',
+        )
+        return {
+            'status': 'error',
+            'error': 'ambiguous_number',
+            'operation': 'delete',
+            'message': (
+                f'ADR {args.number} matches multiple files with different '
+                f'zero-pad widths: {", ".join(sorted(p.name for p in matches))}. '
+                'Resolve the ambiguity before deleting.'
+            ),
         }
 
     filepath = matches[0]
