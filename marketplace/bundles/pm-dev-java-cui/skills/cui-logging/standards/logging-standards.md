@@ -289,6 +289,32 @@ LOGGER.info("User password: %s", password);
 LOGGER.info("User authenticated: %s", username);
 ```
 
+**Sanitize every channel that reaches the log — including the throwable AND the wrapper exception's cause chain.** When sanitizing untrusted content before logging, the format string is not the only sink: `CuiLogger.debug(Throwable, String, Object...)` (and the `info`/`warn`/`error` siblings) render the throwable via `e.toString()`, which INCLUDES the unsanitized exception message (it prefixes the class name, then appends the message) — so passing the raw throwable alongside a sanitized message re-opens the exact log-injection (CWE-117) sink the message-only fix meant to close. The same re-injection recurs one level down the chain: a wrapper/domain exception constructed with the raw throwable as its `cause` prints a `Caused by:` section rendered via the cause's own `toString()`, which again includes the unsanitized original message. Therefore you MUST NOT pass the raw exception as the `cause` of a wrapper/domain exception when the original message is unsanitized — construct the wrapper with the sanitized message only and do not attach the raw cause:
+
+```java
+// Avoid: Bad — sanitized message, but e.toString() re-injects the raw message
+LOGGER.warn(e, WARN.TRANSPORT_FAILED, sanitize(e.getMessage()));
+
+// Avoid: Bad — sanitized message, but the raw cause re-injects via the "Caused by:" chain
+throw new TransportException(sanitize(e.getMessage()), e);
+
+// Preferred: Good — sanitized message, no raw cause attached to re-inject downstream
+throw new TransportException(sanitize(e.getMessage()));
+```
+
+When production troubleshooting genuinely needs the original call-site stack trace, you can preserve it without re-injecting the raw message. Construct a new `Throwable` carrying only the sanitized message, copy the original throwable's stack-trace frames onto it, then attach that sanitized carrier as the wrapper's cause:
+
+```java
+// Preferred: Good — keeps the original stack trace for debugging, without re-injecting the raw message
+Throwable sanitizedCause = new Throwable(sanitize(e.getMessage()));
+sanitizedCause.setStackTrace(e.getStackTrace());
+throw new TransportException(sanitize(e.getMessage()), sanitizedCause);
+```
+
+This is safe **for throwables of trusted provenance** — those whose stack trace was populated by the JVM at the original throw site, where the frames carry only class/method/file/line coordinates that are not attacker-controlled, while the injection sink is solely the cause's message/`toString()` output, which the sanitized carrier has already scrubbed. The frame-safety assumption does NOT hold unconditionally: `StackTraceElement` values can be constructed from caller-supplied strings, and some frameworks replace a throwable's stack trace via `setStackTrace(...)`, so a caller-supplied or framework-replaced stack trace may itself carry untrusted content. When the throwable's provenance is not trusted, sanitize the rendered frame output before treating the carrier as safe. This does not weaken the rule above: you still MUST NOT attach the raw, unsanitized throwable as a cause; the carrier pattern is the sanctioned alternative for the case where the stack trace itself is needed.
+
+This is the CUI-specific instance of the generic log-injection principle, which is owned by the `pm-dev-java:java-security` secure-logging surface — apply the generic rule from there; it is not restated here. The boundary with rule 2 (Exception Parameter First): exception-first governs HOW to log a throwable when logging it is intended and still applies whenever the throwable's message chain is trusted or already sanitized; this rule governs WHETHER to pass the raw throwable when its message carries untrusted content.
+
 ---
 
 For compliance verification patterns (violation detection, coverage analysis, identifier validation), see `logging-maintenance-reference.md`.
@@ -307,6 +333,7 @@ For compliance verification patterns (violation detection, coverage analysis, id
 - Exception parameter comes first
 - %s used for all substitutions
 - No sensitive information logged
+- No raw throwable passed alongside a sanitized message, and no raw unsanitized exception attached as a wrapper/domain exception's cause
 - No System.out or System.err usage
 
 ### Documentation
