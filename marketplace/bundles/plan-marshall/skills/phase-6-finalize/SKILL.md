@@ -440,24 +440,26 @@ cache holds, which is exactly the published bundle definitions.
 
 **Precondition resolution**: before dispatching any step in the FOR loop, parse the step's frontmatter `requires:` list (if present) and resolve each entry against its mapped resolver. The only precondition currently defined is `ci-complete`, mapped to the dispatcher-internal helper `scripts/ci_complete_precondition.py` (notation `plan-marshall:phase-6-finalize:ci_complete_precondition`). The resolver is invoked inline through the executor proxy (no Task agent dispatch — the helper itself is bounded by `ci wait --timeout 600`, matching the host platform's per-call ceiling).
 
-The resolver accepts a `--mode` flag (`strict` | `consume-failures`) selecting how `wait_failed` is mapped to the consumer step's outcome. The dispatcher MUST pass `--mode` per consumer step using the table below — the value depends on which consumer the precondition is being resolved for, NOT on the resolver itself:
+The resolver's **resolution mode** is selected per consumer step. Two dimensions govern it: the `--signal-arm` (which barrier arm the FIND gates on) and, for the `ci` arm only, the `--mode` flag (`strict` | `consume-failures`). The dispatcher MUST pass the resolution below per consumer step — it depends on which consumer the precondition is being resolved for, NOT on the resolver itself:
 
-| Consumer step | `--mode` value | Why |
-|---------------|----------------|------|
-| `default:ci-verify` | `consume-failures` | The step's whole purpose is to classify CI failures into the multi-failure-mode taxonomy and emit one structured finding per failing check. `strict` would skip the step on `wait_failed` and make the classify → file-findings → verification-feedback → loop_back machinery unreachable on red CI. |
-| `plan-marshall:automatic-review` | `strict` (default) | A red CI invalidates the PR-review snapshot the reviewer would consume; short-circuit to `failed` and let the operator address the CI failure first. |
-| `default:sonar-roundtrip` | `strict` (default) | A red CI means Sonar's analysis has not yet completed against the latest tree; short-circuit and let CI recover first. |
-| _Future consumers_ | Default to `strict` unless the consumer's body explicitly handles `wait_failed` envelopes. Add a row above when a new consumer joins the `consume-failures` set. |
+| Consumer step | Resolution | Why |
+|---------------|------------|------|
+| `default:ci-verify` | `--signal-arm ci --mode consume-failures` (global `ci-complete`) | The step's whole purpose is to classify CI failures into the multi-failure-mode taxonomy and emit one structured finding per failing check. `consume-failures` threads `wait_failed` through to the body rather than short-circuiting, so the classify → file-findings → verification-feedback → loop_back machinery stays reachable on red CI. Unchanged. |
+| `plan-marshall:automatic-review` | `--signal-arm review` (per-signal FIND gate) | Gate the comment FIND on the **review arm's own terminal state**, not global CI colour. A terminal (`settled`\|`failed`) arm proceeds to FIND; a red CI unrelated to the review signal no longer skips the comment fetch. |
+| `default:sonar-roundtrip` | `--signal-arm sonar` (per-signal FIND gate) | Gate the Sonar FIND on the **sonar arm's own terminal state**. A `failed` sonar arm STILL proceeds to FIND — a red Sonar gate is exactly when its new-code findings exist (the TokenSheriff-572 deadlock fix). |
+| _Future consumers_ | Default to `--signal-arm ci --mode strict` unless the consumer's body explicitly handles a per-signal (`arm_proceed`/`arm_pending`) or `consume-failures` envelope. |
 
-The dispatcher resolves the value by mapping the consumer step id (`step.name` from frontmatter) to the table above. When a step declares `requires: [ci-complete]` but does not appear in the table, the default is `strict`.
+The dispatcher resolves the value by mapping the consumer step id (`step.name` from frontmatter) to the table above. When a step declares `requires: [ci-complete]` but does not appear in the table, the default is `--signal-arm ci --mode strict`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:phase-6-finalize:ci_complete_precondition \
   resolve --plan-id {plan_id} --worktree-path {worktree_path} --pr-number {pr_number} \
-  --mode {strict|consume-failures} [--timeout 600]
+  [--signal-arm {ci|review|sonar}] [--mode {strict|consume-failures}] [--timeout 600]
 ```
 
-The helper returns a TOON envelope with `status`, `head_sha`, `ci_final_status`, and (on `wait_failed`) `failing_checks`, `wait_outcome`, and `mode` (the value passed in). The underlying `ci wait` envelope partitions GitHub check conclusions per the canonical table (`success | skipped | neutral` → non-failing; `failure | timed_out | cancelled | action_required | stale` → failing; `null | in_progress | queued` → wait); the previous `mixed` outcome is no longer returned by any github_ops function. Outcome mapping:
+The helper returns a TOON envelope whose shape depends on the resolution mode. For the **`ci` arm** (`--signal-arm ci` / absent) it returns `status` (`satisfied`\|`wait_succeeded`\|`wait_failed`), `head_sha`, `ci_final_status`, and (on `wait_failed`) `failing_checks`, `wait_outcome`, and `mode` (the value passed in). For a **per-signal producer arm** (`--signal-arm review|sonar`) it returns `status` (`arm_proceed`\|`arm_pending`), `signal_arm`, `arm_state` (`settled`\|`failed`\|`pending`), `head_sha`, and `ci_final_status`. The underlying `ci wait` envelope partitions GitHub check conclusions per the canonical table (`success | skipped | neutral` → non-failing; `failure | timed_out | cancelled | action_required | stale` → failing; `null | in_progress | queued` → wait); the previous `mixed` outcome is no longer returned by any github_ops function.
+
+**Ci-arm outcome mapping** (`--signal-arm ci`, consumed by `default:ci-verify`):
 
 | Resolver `status` | `ci_final_status` | `--mode` | Dispatcher action |
 |-------------------|--------------------|----------|--------------------|
@@ -468,7 +470,17 @@ The helper returns a TOON envelope with `status`, `head_sha`, `ci_final_status`,
 | `wait_failed` | `no_checks` | `strict` | CI never produced any checks (`final_status: none` from `ci wait`). Distinct from real failure so the dispatcher can surface "no CI configured for this branch" rather than "CI ran red". Same skip-and-mark action; downstream consumers route this to `ci-verify-missing`. |
 | `wait_failed` | `failure` \| `timeout` \| `no_checks` | `consume-failures` | Do NOT skip the consumer step. Thread `failing_checks[]`, `wait_outcome`, and `ci_final_status` into the consumer step's runtime inputs and run it normally; the consumer (currently only `default:ci-verify`, an inline deterministic script) classifies the failures into structured findings and returns a per-producer needs-triage signal. The structured-finding emission below STILL fires so the precondition decision remains audit-traceable; the difference vs `strict` is purely "skip step" → "run the deterministic classifier with the envelope". |
 
-**Structured finding emission on `wait_failed`**: in addition to the `mark-step-done … --outcome failed --display-detail "ci_failure (precondition): {failing_check_names}"` call above, the dispatcher MUST also persist a structured `triage` finding so the precondition decision survives outside the work-log. Emit exactly one finding per `wait_failed` resolution (NOT one per failing check — the failing-check enumeration lives in the message body). Invoke immediately after the `mark-step-done … --outcome failed` call:
+**Per-signal arm outcome mapping** (`--signal-arm review|sonar`, consumed by `plan-marshall:automatic-review` / `default:sonar-roundtrip`):
+
+| Resolver `status` | `arm_state` | Dispatcher action |
+|-------------------|-------------|-------------------|
+| `arm_proceed` | `settled` | The arm settled cleanly (CI green) — dispatch the consumer step's FIND body normally. |
+| `arm_proceed` | `failed` | The arm reached a terminal-but-red state — STILL dispatch the FIND body. A red gate is exactly when that producer's findings exist; the step FINDs and files them for the unified triage. Do NOT skip and do NOT mark the step `failed`. |
+| `arm_pending` | `pending` | The underlying `ci wait` did not reach a terminal state within the budget (`ci_final_status: timeout`) — the arm has not settled. SKIP the consumer step this round WITHOUT marking it `failed` and WITHOUT emitting a finding; leave the step record absent so the resumable re-entry check re-fires it on the next finalize entry (the arm re-polls against the same HEAD). |
+
+The per-signal path emits NO structured `triage` finding — a red arm PROCEEDS to FIND (its findings are filed by the FIND body, not lost), and a pending arm simply re-polls on re-entry, so there is no skip-verdict to audit. The structured finding emission below is therefore ci-arm-only.
+
+**Structured finding emission on `wait_failed`** (ci arm only): in addition to the `mark-step-done … --outcome failed --display-detail "ci_failure (precondition): {failing_check_names}"` call above, the dispatcher MUST also persist a structured `triage` finding so the precondition decision survives outside the work-log. Emit exactly one finding per `wait_failed` resolution (NOT one per failing check — the failing-check enumeration lives in the message body). Invoke immediately after the `mark-step-done … --outcome failed` call:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings add \
@@ -481,7 +493,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings ad
 
 Field-by-field:
 
-- `--type triage` — the precondition decision is a triage event (the operator decides between retry / suppress / accept / taken_into_account between finalize boundaries). Re-using the existing `triage` finding-type keeps the 12-type taxonomy stable; no new type is introduced.
+- `--type triage` — the precondition decision is a triage event (the operator decides between retry / suppress / accept / taken_into_account between finalize boundaries). Re-using the existing `triage` finding-type keeps the 14-type taxonomy stable; no new type is introduced.
 - `--title "..."` — a one-line summary anchored to the failing HEAD; `add` requires it. Substitute `{head_sha}` from the resolver's return envelope.
 - `--severity warning` — a CI failure that blocks the dispatcher is not itself a code defect; the underlying failing checks are the defect. `warning` matches the `[WARNING]` work-log convention this finding complements.
 - `--component "plan-marshall:phase-6-finalize"` — the precondition resolver belongs to phase-6-finalize even though it consults `workflow-integration-{github,gitlab}`.
@@ -548,10 +560,10 @@ For each step reference:
 | `default:create-pr` | `--phase phase-6-finalize` (no `--role`; tracks `phase-6-finalize.default`) | `plan-marshall:phase-6-finalize/workflow/create-pr.md` |
 | `default:lessons-capture` | `--phase phase-6-finalize --role post-run-review` | `plan-marshall:phase-6-finalize/workflow/lessons-capture.md` |
 | `default:adr-propose` | `--phase phase-6-finalize --role post-run-review` | `plan-marshall:phase-6-finalize/workflow/adr-propose.md` |
-| `plan-marshall:automatic-review` | `--phase phase-6-finalize --role verification-feedback` (LLM core; outer wrapper tracks `phase-6-finalize.default`) | `plan-marshall:automatic-review/SKILL.md` |
-| `default:sonar-roundtrip` | `--phase phase-6-finalize --role verification-feedback` (LLM core; outer wrapper tracks `phase-6-finalize.default`) | `plan-marshall:phase-6-finalize/workflow/sonar-roundtrip.md` |
+| `plan-marshall:automatic-review` | `--phase phase-6-finalize` (FIND-only; tracks `phase-6-finalize.default`) | `plan-marshall:automatic-review/SKILL.md` |
+| `default:sonar-roundtrip` | `--phase phase-6-finalize` (FIND-only; tracks `phase-6-finalize.default`) | `plan-marshall:phase-6-finalize/workflow/sonar-roundtrip.md` |
 
-`plan-marshall:automatic-review` and `sonar-roundtrip` are orchestrator workflows — their LLM-judgement core is a single internal `verification-feedback` dispatch (with `producer=pr-comment` / `producer=sonar` runtime input). The outer wrapper resolves under `phase-6-finalize.default` since the body is mostly script execution and one sub-dispatch.
+`plan-marshall:automatic-review` and `sonar-roundtrip` are the two wait-region producers, each **FIND-only**: gated on its own `_ci_barrier` arm (the per-signal precondition — `review` / `sonar` arm respectively), the step fetches its provider's feedback and files `pr-comment` / `sonar-issue` findings to the store, then marks done. Neither step dispatches its own triage any more. The per-finding LLM triage runs ONCE at the dispatcher level as the **Wait-region unified triage** (§ item 7c below), a single `verification-feedback` dispatch with `producer=finalize-feedback` over the union of both producers' pending findings. The outer FIND wrappers resolve under `phase-6-finalize.default` since each body is now pure script execution (fetch + file), no sub-dispatch.
 
 **Dispatch pattern** — resolve the target via the role resolver. Pass `--phase phase-6-finalize` for every dispatched step; add `--role <subkey>` only when the step has its own sub-key in the table above:
 
@@ -793,8 +805,8 @@ FOR each step_id in manifest.phase_6.steps:
 
        Per-step workflow docs and resolver lookups:
          * default:create-pr        -> workflow: workflow/create-pr.md        | --phase phase-6-finalize                              (no --role)
-         * plan-marshall:automatic-review -> workflow: ../automatic-review/SKILL.md | --phase phase-6-finalize                              (outer wrapper; inner verification-feedback dispatch uses --role verification-feedback) | timeout: 900s
-         * default:sonar-roundtrip  -> workflow: workflow/sonar-roundtrip.md  | --phase phase-6-finalize                              (outer wrapper; inner verification-feedback dispatch uses --role verification-feedback) | timeout: 900s
+         * plan-marshall:automatic-review -> workflow: ../automatic-review/SKILL.md | --phase phase-6-finalize                              (FIND-only producer; triage is the dispatcher-owned unified pass — item 7c) | timeout: 900s
+         * default:sonar-roundtrip  -> workflow: workflow/sonar-roundtrip.md  | --phase phase-6-finalize                              (FIND-only producer; triage is the dispatcher-owned unified pass — item 7c) | timeout: 900s
          * default:lessons-capture  -> workflow: workflow/lessons-capture.md  | --phase phase-6-finalize --role post-run-review       | timeout: 300s
          * default:adr-propose      -> workflow: workflow/adr-propose.md      | --phase phase-6-finalize --role post-run-review       | timeout: 300s
 
@@ -1112,6 +1124,44 @@ FOR each step_id in manifest.phase_6.steps:
              Note: the BREAK + RE-ENTER above is a control-flow construct, not a per-step skip. The FOR loop re-iteration uses the same manifest list and the same per-step resumable check; the only state that changes is the `phase_steps["6-finalize"][step_id]` records (the dispatched agent will record a fresh outcome on its next run).
 
       The `loop_back_iteration` counter is held in model context for the duration of the dispatch — it is NOT persisted to status.json. A fresh phase-6-finalize entry (e.g., after a session restart) starts the counter back at 0; the manifest's resumable re-entry check still skips already-`done` steps, so re-entering after a restart re-runs only the steps that recorded `loop_back` or `failed` on the previous invocation.
+
+  7c. Wait-region unified triage hook (fires after the LATER wait-region producer completes):
+
+      The two wait-region producers (`plan-marshall:automatic-review`, `default:sonar-roundtrip`) are FIND-only — each is gated on its own `_ci_barrier` arm (the per-signal precondition: `review` / `sonar` arm), files its `pr-comment` / `sonar-issue` findings, marks done, and dispatches NO triage of its own. After BOTH have FILED, the dispatcher runs ONE unified triage over the union of their pending findings, replacing the two retired per-producer triage dispatches (`producer=pr-comment`, `producer=sonar`) with a single pass via the `producer=finalize-feedback` mode — see [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) § "Producer modes".
+
+      Fire this hook when the just-completed step is the LATER of the two producers present in `manifest.phase_6.steps` (canonically `default:sonar-roundtrip`, which the manifest orders after `plan-marshall:automatic-review`) AND every wait-region producer that IS in the manifest has recorded a terminal `done` outcome on `status.metadata.phase_steps["6-finalize"]`. When only one of the two producers is in the manifest, that one is the "later" producer and the union query naturally covers only its finding-type.
+
+      (1) Resolve the level-bound target under the `verification-feedback` role:
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+            effort resolve-target --phase phase-6-finalize --role verification-feedback
+          ```
+      (2) Emit the standardized `[DISPATCH]` work-log line (see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract).
+      (3) Dispatch ONE `verification-feedback` envelope with `producer=finalize-feedback` over the union — by reference (the subagent issues its own union `manage-findings list` as its first workflow step):
+          ```text
+          Task: plan-marshall:{target}
+            prompt: |
+              name: wait-region-unified-triage
+              plan_id: {plan_id}
+              skills[7]:
+              - plan-marshall:manage-findings
+              - plan-marshall:manage-tasks
+              - plan-marshall:manage-architecture
+              - plan-marshall:manage-config
+              - plan-marshall:manage-execution-manifest
+              - plan-marshall:workflow-integration-github
+              - plan-marshall:workflow-integration-sonar
+              workflow: plan-marshall:plan-marshall/workflow/verification-feedback.md
+
+              producer: finalize-feedback
+              caller_phase: phase-6-finalize
+              pr_number: {pr_number}
+
+              WORKTREE: {worktree_path}
+          ```
+      (4) Consume the return. The unified triage owns the RESPOND loop (both `github_pr post_responses` for `pr-comment` thread-replies AND `sonar post_responses` for `sonar-issue` server-side dismissals, each keyed by `hash_id`). On `status: loop_back` (FIX dispositions created fix tasks OR overflow deferred), route it through the SAME continuation machinery as item 7b: read `loop_back_target` from the return, apply the symmetric `loop_back_without_asking` knob + the `max_iterations` ceiling, then re-enter per the granularity branch (`5-execute` full-phase rollback / `6-finalize` inline replay). A `6-finalize` re-entry re-fires the wait-region producers (they are HEAD-dependent — a fix commit advanced HEAD), which re-FIND against the new tree, and this hook runs the unified triage again. On `status: success`, every pending finding resolved with no loop-back — continue the FOR loop.
+
+      This hook is dispatcher-owned and produces NO `phase_steps["6-finalize"]` record of its own (it is not a manifest step); the wait-region producer steps carry the `done` records. The single unified pass is the ONLY place `pr-comment` and `sonar-issue` findings are triaged in finalize — the retired per-producer `producer=pr-comment` and `producer=sonar` dispatches no longer run.
 END FOR
 ```text
 
@@ -1370,8 +1420,8 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `workflow/create-pr.md` | `default:create-pr` | PR existence check, body generation, CI pr create |
 | `standards/ci-verify.md` | `default:ci-verify` | Inline deterministic executor (`scripts/ci_verify.py`) — green CI marks done with zero dispatch; red CI classifies failures into the multi-failure-mode taxonomy, files one triage finding per failing check, and returns a per-producer needs-triage signal |
 | `standards/architecture-refresh.md` | `default:architecture-refresh` | Tier-0 deterministic `architecture discover --force` + `diff-modules --pre` driven `chore(architecture)` commit; Tier-1 LLM re-enrichment with `prompt`/`auto`/`disabled` modes; respects `architecture_refresh.tier_0` / `tier_1` run-config knobs and `change_type ∈ {bug_fix, verification}` shortcut |
-| `../automatic-review/SKILL.md` | `plan-marshall:automatic-review` | Consume completed-CI signal, then consumer dispatch (FIX / SUPPRESS / ACCEPT / AskUserQuestion); loop-back on FIX or pr-comment-overflow. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
-| `standards/sonar-roundtrip.md` | `default:sonar-roundtrip` | Sonar consumer dispatch (FIX / SUPPRESS / ACCEPT / AskUserQuestion); loop-back on FIX. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
+| `../automatic-review/SKILL.md` | `plan-marshall:automatic-review` | Review-bot comment FIND (per-signal review-arm gate; file `pr-comment` findings); the unified wait-region triage consumes them. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
+| `workflow/sonar-roundtrip.md` | `default:sonar-roundtrip` | Sonar FIND (fetch new-code issues, file `sonar-issue` findings); the unified wait-region triage consumes them. Architectural flow: [`findings-pipeline.md`](../ref-workflow-architecture/standards/findings-pipeline.md) |
 | `standards/lessons-capture.md` | `default:lessons-capture` | manage-lesson add command |
 | `workflow/adr-propose.md` | `default:adr-propose` | manage-adr create command — propose ADRs from plan decisions (advisory, dispatcher-gated) |
 | `standards/branch-cleanup.md` | `default:branch-cleanup` | Branch cleanup with user confirmation — PR mode (merge + CI) or local-only (switch + pull) |
@@ -1403,7 +1453,7 @@ The canonical argparse surface for `ci_complete_precondition.py`. The plugin-doc
 ```bash
 python3 .plan/execute-script.py plan-marshall:phase-6-finalize:ci_complete_precondition resolve \
   --plan-id PLAN_ID --worktree-path WORKTREE_PATH --pr-number PR_NUMBER \
-  [--timeout TIMEOUT] [--mode {strict,consume-failures}]
+  [--timeout TIMEOUT] [--mode {strict,consume-failures}] [--signal-arm {ci,review,sonar}]
 ```
 
 ## Related
