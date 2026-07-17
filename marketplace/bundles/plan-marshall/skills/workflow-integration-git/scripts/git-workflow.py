@@ -10,6 +10,7 @@ Usage:
     git-workflow.py force-push-with-lease (--plan-id <plan-id> | --project-dir <path> --branch <branch>)
     git-workflow.py switch-and-pull (--plan-id <plan-id> | --project-dir <path>) --base <branch>
     git-workflow.py prune-local-and-remote-ref (--plan-id <plan-id> | --project-dir <path> --head <branch>) [--mode local_and_remote|local_only]
+    git-workflow.py branch-sync-state --plan-id <plan-id>
     git-workflow.py worktree-path --plan-id <plan-id>
     git-workflow.py worktree-create --plan-id <plan-id> --branch <branch> [--base <ref>]
     git-workflow.py worktree-remove --plan-id <plan-id> [--force]
@@ -25,6 +26,8 @@ Subcommands:
     force-push-with-lease     Force-push feature branch with lease guard (post-rebase)
     switch-and-pull           Checkout base branch and pull from origin (post-merge cleanup)
     prune-local-and-remote-ref Delete local feature branch and remote-tracking ref (post-merge)
+    branch-sync-state         Report push parity of the plan's feature branch vs its
+                              origin tracking ref (ahead | synced | no_remote); read-only, no fetch
     worktree-path             Resolve the persisted worktree path for a plan
     worktree-create           Create a worktree + feature branch + .plan symlink for a plan
     worktree-remove           Remove a worktree (worktree first, then branch ref)
@@ -955,6 +958,67 @@ def cmd_worktree_path(args):
     }
 
 
+def cmd_branch_sync_state(args):
+    """Report the push-parity state of the plan's feature branch vs origin.
+
+    Pure read-only comparison — no fetch, no working-tree mutation. The
+    branch is resolved from ``status.metadata.worktree_branch`` and the
+    working tree via the canonical worktree-resolution channel
+    (:func:`_resolve_worktree_path_for_plan`). ``git rev-parse HEAD`` is
+    compared against ``git rev-parse origin/{branch}``:
+
+    - the origin tracking ref is absent → ``state: no_remote``
+      (the branch was never pushed);
+    - the SHAs differ → ``state: ahead`` (local commits not on origin);
+    - the SHAs match → ``state: synced``.
+
+    ``remote_sha`` is present only when the tracking ref resolves.
+    """
+    plan_id = args.plan_id
+    worktree, error = _resolve_worktree_path_for_plan(plan_id)
+    if error is not None:
+        return error
+
+    branch = _read_metadata_field(plan_id, 'worktree_branch')
+    if not branch:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'worktree_not_materialized',
+            'message': 'worktree_branch absent from status.metadata',
+        }
+
+    rc, head_sha, stderr = run_git(['-C', str(worktree), 'rev-parse', 'HEAD'])
+    if rc != 0:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'head_unresolvable',
+            'message': stderr or 'git rev-parse HEAD failed',
+        }
+
+    rc, remote_sha, _stderr = run_git(
+        ['-C', str(worktree), 'rev-parse', '--verify', '--quiet', f'origin/{branch}']
+    )
+    if rc != 0:
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'branch': branch,
+            'state': 'no_remote',
+            'head_sha': head_sha,
+        }
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'branch': branch,
+        'state': 'synced' if head_sha == remote_sha else 'ahead',
+        'head_sha': head_sha,
+        'remote_sha': remote_sha,
+    }
+
+
 def cmd_worktree_create(args):
     """Create a worktree + feature branch + .plan symlinks for ``--plan-id``.
 
@@ -1070,6 +1134,14 @@ def cmd_worktree_remove(args):
     Order matters: ``git worktree remove`` refuses to drop a branch ref
     that is still checked out. We remove the worktree first, then delete
     the branch ref so the cleanup is symmetric with ``cmd_worktree_create``.
+
+    Precondition (script-enforced): the plan directory MUST already live on
+    the current checkout (``integrate_into_main`` has landed it back on main)
+    before the worktree may be removed — otherwise the removal would destroy
+    the sole authoritative plan-state copy still resident in the worktree.
+    The refusal (``error: plan_dir_not_moved_back``) is NOT overridable by
+    ``--force``: that flag keeps its dirty-tree meaning only. An abandonment
+    flow moves or deletes the plan dir first, then removes the worktree.
     """
     target, error = _resolve_worktree_path_for_plan(args.plan_id)
     if error is not None:
@@ -1091,6 +1163,23 @@ def cmd_worktree_remove(args):
             'worktree_path': str(target),
             'action': 'noop',
             'message': 'Worktree does not exist',
+        }
+
+    # Script-enforced move-back precondition: refuse while the plan dir has
+    # not landed back on the current checkout. Deliberately NOT overridable
+    # by --force (dirty-tree meaning only) — destroying the sole
+    # authoritative plan-state copy has no legitimate fast path.
+    if not _plan_dir_on_current_checkout(args.plan_id):
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_dir_not_moved_back',
+            'worktree_path': str(target),
+            'message': (
+                'Plan directory has not been moved back to the current checkout — '
+                'run integrate_into_main before worktree-remove. The refusal is '
+                'not overridable by --force.'
+            ),
         }
 
     # Step 1: remove the worktree itself.
@@ -1704,6 +1793,26 @@ Examples:
                             'Deletion scope: local_and_remote (default) deletes both the '
                             'local branch and remote-tracking ref; local_only skips the '
                             'remote-tracking ref deletion (used in local-only plans)'
+                        ),
+                    },
+                ],
+            },
+            {
+                'name': 'branch-sync-state',
+                'help': (
+                    "Report push parity of the plan's feature branch vs its origin "
+                    'tracking ref (ahead | synced | no_remote); read-only, no fetch'
+                ),
+                'handler': cmd_branch_sync_state,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': (
+                            'Plan identifier (mandatory — resolves the branch from '
+                            'status.metadata.worktree_branch and the tree via the '
+                            'canonical worktree-resolution channel)'
                         ),
                     },
                 ],

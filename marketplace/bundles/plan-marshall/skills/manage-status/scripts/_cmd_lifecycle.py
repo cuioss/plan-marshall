@@ -6,10 +6,11 @@ Lifecycle command handlers for manage-status: create, transition, archive, delet
 
 import argparse
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
-from _handshake_commands import cmd_verify
+from _handshake_commands import cmd_capture, cmd_verify
 from _invariants import _BLOCKING_BOUNDARIES
 from _short_description import derive_short_description
 from _status_core import (
@@ -17,6 +18,7 @@ from _status_core import (
     get_archive_dir,
     get_status_path,
     log_entry,
+    normalize_metadata,
     now_utc_iso,
     require_status,
     require_valid_plan_id,
@@ -39,7 +41,134 @@ VERIFY_REFUSAL_ERRORS = frozenset({
     'worktree_unresolved',
     'worktree_metadata_drift',
     'main_checkout_dirtied_during_plan',
+    'worktree_dirty_at_boundary',
 })
+
+
+def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
+    """Clean-tree post-condition for guarded boundaries (5-execute → 6-finalize).
+
+    When the plan runs in an isolated worktree (``metadata.use_worktree``
+    truthy), the working tree at ``metadata.worktree_path`` MUST be clean
+    before the transition into a blocking boundary is allowed: every
+    per-deliverable commit belongs to the phase-5-execute envelope's Step 10a
+    chain-tail, so uncommitted edits at the boundary mean a commit obligation
+    was skipped. Returns the structured refusal dict when the tree is dirty
+    (or when ``git status`` itself fails — the gate fails closed), and
+    ``None`` when the transition may proceed.
+    """
+    metadata = normalize_metadata(status)
+    if not metadata.get('use_worktree'):
+        return None
+    worktree_path = metadata.get('worktree_path')
+    if not worktree_path:
+        # Resolvability is asserted by the strict-verify guard that runs
+        # before this gate (``worktree_unresolved``); an empty path here
+        # means the verify guard already owns the refusal path.
+        return None
+
+    proc = subprocess.run(
+        ['git', '-C', worktree_path, 'status', '--porcelain'],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        # Fail closed: an unreadable tree cannot be proven clean.
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'worktree_dirty_at_boundary',
+            'dirty_files': [],
+            'message': (
+                f'git status failed in worktree {worktree_path} '
+                f'(exit {proc.returncode}): {proc.stderr.strip()} — '
+                'cannot prove the tree is clean; refusing to transition.'
+            ),
+        }
+
+    if not proc.stdout.strip():
+        return None
+
+    # Split the RAW stdout — a global .strip() would eat the leading space
+    # of the first line's "XY " porcelain status prefix (e.g. " M src.py")
+    # and shift the fixed 3-char slice into the path.
+    dirty_files = [line[3:] for line in proc.stdout.splitlines() if len(line) > 3]
+    return {
+        'status': 'error',
+        'plan_id': plan_id,
+        'error': 'worktree_dirty_at_boundary',
+        'dirty_files': dirty_files,
+        'message': (
+            f'Worktree {worktree_path} has {len(dirty_files)} uncommitted '
+            'change(s) at a guarded phase boundary. Every per-deliverable '
+            'commit is owned by phase-5-execute Step 10a — run the boundary '
+            'settlement commit, then retry the transition.'
+        ),
+    }
+
+
+def _loop_back_auto_override(
+    args: argparse.Namespace,
+    status: dict[str, Any],
+    verify_result: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Auto-resolve the structurally-guaranteed loop-back handshake drift.
+
+    A sanctioned loop-back (``cmd_set_phase`` backward move) persists
+    ``metadata.loop_back_reentry``; the re-entered phases then legitimately
+    change the invariants the earlier capture recorded, so ``cmd_verify``
+    reports ``status: drift`` by construction at the next guarded boundary.
+    When BOTH hold — the blocking verify result is invariant drift AND the
+    marker is present — re-capture the handshake with ``override=True`` and a
+    recorded reason, clear the marker (persisted immediately so the override
+    fires exactly once per scheduled loop-back), emit a decision-log WARNING
+    with the drift diff summary, and let the transition proceed by returning
+    ``None``.
+
+    Every other blocking result returns the refusal unchanged: drift WITHOUT
+    the marker keeps today's blocking behavior, and the worktree-resolution /
+    dirty-boundary / main-dirtied refusals (``VERIFY_REFUSAL_ERRORS``) are
+    NEVER bypassed by the marker — only invariant drift is auto-resolved.
+    A failed re-capture also blocks (fail closed) by returning its error
+    payload.
+    """
+    metadata = normalize_metadata(status)
+    marker = metadata.get('loop_back_reentry')
+    if verify_result.get('status') != 'drift' or not marker:
+        return verify_result
+
+    from_phase = marker.get('from_phase', 'unknown') if isinstance(marker, dict) else 'unknown'
+    recapture = cmd_capture(
+        argparse.Namespace(
+            plan_id=args.plan_id,
+            phase=args.completed,
+            override=True,
+            reason=f'loop-back re-entry auto-override (scheduled by {from_phase} loop_back)',
+            strict=False,
+        )
+    )
+    if recapture.get('status') != 'success':
+        # Fail closed: an un-recapturable baseline cannot be auto-resolved.
+        return recapture
+
+    metadata.pop('loop_back_reentry', None)
+    write_status(args.plan_id, status)
+
+    diff_summary = '; '.join(
+        f'{d.get("invariant")}: {d.get("captured")} -> {d.get("observed")}'
+        for d in verify_result.get('diffs', [])
+    )
+    log_entry(
+        'decision',
+        args.plan_id,
+        'WARNING',
+        f'(plan-marshall:manage-status) Loop-back re-entry auto-override at '
+        f'{args.completed}: drift ({verify_result.get("drift_count", 0)} invariant(s)) '
+        f'auto-resolved via override re-capture scheduled by {from_phase} loop_back — '
+        f'{diff_summary}',
+    )
+    return None
 
 
 def verify_blocks_transition(verify_result: dict[str, Any]) -> bool:
@@ -188,7 +317,43 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
         )
         verify_result = cmd_verify(verify_args)
         if verify_blocks_transition(verify_result):
-            return verify_result
+            refusal = _loop_back_auto_override(args, status, verify_result)
+            if refusal is not None:
+                return refusal
+        else:
+            # Consume-on-next-guarded-verification: the loop_back_reentry
+            # marker is consumed at the very next guarded boundary check
+            # REGARDLESS of whether that check found drift. A clean verify
+            # with the marker still present must clear it here — otherwise a
+            # later, genuinely unscheduled drift would find the stale marker
+            # and incorrectly auto-override it.
+            metadata = status.get('metadata')
+            if isinstance(metadata, dict) and metadata.get('loop_back_reentry'):
+                marker = metadata.pop('loop_back_reentry')
+                write_status(args.plan_id, status)
+                from_phase = (
+                    marker.get('from_phase', 'unknown')
+                    if isinstance(marker, dict)
+                    else 'unknown'
+                )
+                log_entry(
+                    'decision',
+                    args.plan_id,
+                    'INFO',
+                    f'(plan-marshall:manage-status) Loop-back re-entry marker '
+                    f'consumed on clean guarded verification at {args.completed} '
+                    f'(scheduled by {from_phase} loop_back) — no drift to '
+                    'auto-resolve; marker cleared without recapture',
+                )
+
+        # Clean-tree post-condition: after the strict-verify guard passes,
+        # the worktree itself must be clean — uncommitted edits at the
+        # boundary mean a phase-5 Step 10a commit obligation was skipped.
+        # On refusal, skip write_status so current_phase stays on the
+        # completed phase (same contract as the verify refusal above).
+        clean_tree_refusal = _clean_tree_refusal(args.plan_id, status)
+        if clean_tree_refusal is not None:
+            return clean_tree_refusal
 
     # Mark completed phase as done
     phases[completed_idx]['status'] = PHASE_STATUS_DONE

@@ -82,7 +82,7 @@ Against the clean tree this barrier asserts, the Commit Changes workflow's Step 
 
 ## Mark Step Complete
 
-Record that this step ran on the live plan. The `push` step is NOT a member of `HEAD_DEPENDENT_STEPS` — it is a pure barrier the dispatcher re-invokes explicitly after a post-PR `mutates_source` step commits (see `phase-6-finalize/SKILL.md` Step 3 item 5f § "Post-PR re-push"), so it does NOT capture or forward `--head-at-completion`.
+Record that this step ran on the live plan. The `push` step is NOT a member of `HEAD_DEPENDENT_STEPS` and stamps no `head_at_completion` — it does NOT capture or forward `--head-at-completion`. Its re-entry decision is the dispatcher's `branch-sync-state` parity check (see `phase-6-finalize/SKILL.md` Step 3 item 1's push-specific branch: `ahead`/`no_remote` → re-fire, `synced` → skip), with the explicit post-PR re-invocation after a `mutates_source` step commits (item 5f § "Post-PR re-push") as the fast path.
 
 Resolve `{branch}` — the feature branch just pushed — from the worktree HEAD:
 

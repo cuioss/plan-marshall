@@ -85,6 +85,24 @@ def write_status(plan_id: str, status: dict[Any, Any]) -> None:
     write_json(get_status_path(plan_id), status)
 
 
+def normalize_metadata(status: dict[Any, Any]) -> dict[Any, Any]:
+    """Return ``status['metadata']`` as a dict, normalizing an explicit JSON
+    ``null`` (or any other non-dict value) to an empty dict in place.
+
+    ``dict.get(key, default)`` / ``dict.setdefault`` only apply their default
+    when the key is ABSENT — an explicit JSON ``null`` for ``status['metadata']``
+    flows through unchanged and crashes a downstream ``.get()``/item-assignment
+    on ``None``. Callers that need a guaranteed-dict metadata view use this
+    helper instead of duplicating the isinstance guard; the correction is
+    written back onto ``status`` so later reads/writes in the same call see it.
+    """
+    metadata = status.get('metadata')
+    if not isinstance(metadata, dict):
+        metadata = {}
+        status['metadata'] = metadata
+    return metadata
+
+
 # =============================================================================
 # Persisted-title-state-write drive seam (best-effort, executor channel)
 # =============================================================================

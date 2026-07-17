@@ -441,6 +441,135 @@ class TestAnalyzeDiffCli:
         assert 'not found' in result.get('error', '').lower()
 
 
+class TestBranchSyncState:
+    """branch-sync-state — push-parity verdicts driving the barrier re-fire rule.
+
+    Repo-fixture tests reproducing the nifi #445 shape: a work repo with a
+    ``file://`` bare origin. Metadata resolution (worktree path + branch) is
+    monkeypatched onto the real fixture repo; the git comparison itself runs
+    against real refs.
+    """
+
+    BRANCH = 'feature/sync-plan'
+
+    def _seed_repo_with_origin(self, tmp_path: Path) -> Path:
+        """Create a work repo on BRANCH with a ``file://`` bare origin."""
+        origin = tmp_path / 'origin.git'
+        origin.mkdir()
+        subprocess.run(['git', 'init', '--bare'], cwd=origin, capture_output=True)
+        work = tmp_path / 'work'
+        work.mkdir()
+        _git_init_with_identity(work)
+        # Worktree fixtures carry a .gitignore covering .plan/ per the
+        # established fixture convention.
+        (work / '.gitignore').write_text('.plan/\n')
+        (work / 'file.txt').write_text('one')
+        subprocess.run(['git', 'add', '.'], cwd=work, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', 'init'], cwd=work, capture_output=True)
+        subprocess.run(['git', 'checkout', '-b', self.BRANCH], cwd=work, capture_output=True)
+        subprocess.run(
+            ['git', 'remote', 'add', 'origin', f'file://{origin}'], cwd=work, capture_output=True
+        )
+        return work
+
+    def _push(self, work: Path) -> None:
+        subprocess.run(['git', 'push', '-u', 'origin', self.BRANCH], cwd=work, capture_output=True)
+
+    def _commit_past_origin(self, work: Path) -> None:
+        (work / 'file.txt').write_text('two')
+        subprocess.run(['git', 'commit', '-am', 'local-only'], cwd=work, capture_output=True)
+
+    def _rev_parse(self, work: Path, ref: str) -> str:
+        result = subprocess.run(
+            ['git', 'rev-parse', ref], cwd=work, capture_output=True, text=True
+        )
+        return result.stdout.strip()
+
+    def _state(self, monkeypatch, work: Path) -> dict:
+        monkeypatch.setattr(
+            git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (work, None)
+        )
+        monkeypatch.setattr(
+            git_workflow, '_read_metadata_field', lambda plan_id, field: self.BRANCH
+        )
+        return dict(git_workflow.cmd_branch_sync_state(Namespace(plan_id='sync-plan')))
+
+    def test_synced_after_push(self, tmp_path: Path, monkeypatch):
+        """Local HEAD equal to origin/{branch} reports state: synced."""
+        work = self._seed_repo_with_origin(tmp_path)
+        self._push(work)
+
+        result = self._state(monkeypatch, work)
+
+        assert result['status'] == 'success'
+        assert result['state'] == 'synced'
+        assert result['branch'] == self.BRANCH
+        assert result['head_sha'] == self._rev_parse(work, 'HEAD')
+        assert result['remote_sha'] == result['head_sha']
+
+    def test_ahead_after_local_commit(self, tmp_path: Path, monkeypatch):
+        """A local commit past origin reports state: ahead (re-fire verdict)."""
+        work = self._seed_repo_with_origin(tmp_path)
+        self._push(work)
+        self._commit_past_origin(work)
+
+        result = self._state(monkeypatch, work)
+
+        assert result['status'] == 'success'
+        assert result['state'] == 'ahead'
+        assert result['head_sha'] == self._rev_parse(work, 'HEAD')
+        assert result['remote_sha'] == self._rev_parse(work, f'origin/{self.BRANCH}')
+        assert result['head_sha'] != result['remote_sha']
+
+    def test_no_remote_when_never_pushed(self, tmp_path: Path, monkeypatch):
+        """A branch with no origin tracking ref reports state: no_remote, no remote_sha."""
+        work = self._seed_repo_with_origin(tmp_path)
+
+        result = self._state(monkeypatch, work)
+
+        assert result['status'] == 'success'
+        assert result['state'] == 'no_remote'
+        assert result['head_sha'] == self._rev_parse(work, 'HEAD')
+        assert 'remote_sha' not in result
+
+    def test_missing_branch_metadata_is_error(self, tmp_path: Path, monkeypatch):
+        """Absent worktree_branch metadata surfaces worktree_not_materialized."""
+        work = self._seed_repo_with_origin(tmp_path)
+        monkeypatch.setattr(
+            git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (work, None)
+        )
+        monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: '')
+
+        result = git_workflow.cmd_branch_sync_state(Namespace(plan_id='sync-plan'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'worktree_not_materialized'
+
+    def test_verdict_token_drives_refire_skip_mapping(self, tmp_path: Path, monkeypatch):
+        """The state token drives the documented barrier mapping.
+
+        Per phase-6-finalize/SKILL.md item 1 (push-specific branch):
+        ahead -> RE-FIRE, no_remote -> RE-FIRE, synced -> SKIP.
+        """
+        documented_mapping = {'ahead': 'RE-FIRE', 'no_remote': 'RE-FIRE', 'synced': 'SKIP'}
+
+        # no_remote: never pushed
+        work = self._seed_repo_with_origin(tmp_path)
+        no_remote_state = self._state(monkeypatch, work)['state']
+        # synced: pushed, no local commits
+        self._push(work)
+        synced_state = self._state(monkeypatch, work)['state']
+        # ahead: committed locally past origin
+        self._commit_past_origin(work)
+        ahead_state = self._state(monkeypatch, work)['state']
+
+        verdicts = {
+            state: ('SKIP' if state == 'synced' else 'RE-FIRE')
+            for state in (no_remote_state, synced_state, ahead_state)
+        }
+        assert verdicts == documented_mapping
+
+
 class TestDetectArtifacts:
     """Test git_workflow.py detect-artifacts via direct import."""
 
@@ -750,6 +879,118 @@ class TestToonContract:
         assert required_fields - set(result.keys()) == set()
         assert 'valid' in result['validation']
         assert 'warnings' in result['validation']
+
+
+class TestWorktreeRemoveMoveBackPrecondition:
+    """worktree-remove — the script-enforced plan-dir move-back precondition.
+
+    Proves (a) removal REFUSES with ``plan_dir_not_moved_back`` while the
+    worktree still holds the sole plan-state copy and main holds no plan dir;
+    (b) the refusal persists under ``--force`` (the flag keeps its dirty-tree
+    meaning only); (c) removal succeeds after the plan dir is moved to main's
+    ``.plan/local/plans/{plan_id}/``; (d) the existing noop branch (target
+    absent) is unchanged. Fixture ``.gitignore`` covers ``.plan/`` so
+    worktree-resident plan state never blocks the non-force removal.
+    """
+
+    PLAN_ID = 'moveback-plan'
+    BRANCH = 'feature/moveback-plan'
+
+    def _seed_main_and_worktree(self, tmp_path: Path) -> tuple[Path, Path]:
+        """Create a main repo plus a registered worktree holding plan state."""
+        main = tmp_path / 'main'
+        main.mkdir()
+        _git_init_with_identity(main)
+        (main / '.gitignore').write_text('.plan/\n')
+        (main / 'file.txt').write_text('one')
+        subprocess.run(['git', 'add', '.'], cwd=main, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', 'init'], cwd=main, capture_output=True)
+
+        worktree = tmp_path / 'wt'
+        subprocess.run(
+            ['git', '-C', str(main), 'worktree', 'add', '-b', self.BRANCH, str(worktree)],
+            capture_output=True,
+            check=True,
+        )
+        # Worktree-resident plan state — the sole authoritative copy pre-move-back.
+        plan_dir = worktree / '.plan' / 'local' / 'plans' / self.PLAN_ID
+        plan_dir.mkdir(parents=True)
+        (plan_dir / 'status.json').write_text('{}')
+        return main, worktree
+
+    def _patch(self, monkeypatch, main: Path, worktree: Path) -> None:
+        monkeypatch.setattr(
+            git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (worktree, None)
+        )
+        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: main)
+        monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: '')
+
+    def _remove(self, force: bool = False) -> dict:
+        return dict(
+            git_workflow.cmd_worktree_remove(Namespace(plan_id=self.PLAN_ID, force=force))
+        )
+
+    def test_refuses_while_plan_dir_not_moved_back(self, tmp_path: Path, monkeypatch):
+        """(a) plan dir only in the worktree, main empty → refusal, tree intact."""
+        main, worktree = self._seed_main_and_worktree(tmp_path)
+        self._patch(monkeypatch, main, worktree)
+
+        result = self._remove()
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'plan_dir_not_moved_back', (
+            f'Expected the move-back precondition refusal, got {result!r}.'
+        )
+        assert 'integrate_into_main' in result['message']
+        assert worktree.exists(), (
+            'The refusal must leave the worktree (the sole plan-state copy) intact.'
+        )
+
+    def test_force_does_not_override_refusal(self, tmp_path: Path, monkeypatch):
+        """(b) --force keeps its dirty-tree meaning only — refusal persists."""
+        main, worktree = self._seed_main_and_worktree(tmp_path)
+        self._patch(monkeypatch, main, worktree)
+
+        result = self._remove(force=True)
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'plan_dir_not_moved_back', (
+            f'--force must NOT bypass the move-back precondition, got {result!r}.'
+        )
+        assert worktree.exists()
+
+    def test_succeeds_after_plan_dir_moved_to_main(self, tmp_path: Path, monkeypatch):
+        """(c) plan dir landed on main → removal proceeds."""
+        main, worktree = self._seed_main_and_worktree(tmp_path)
+        self._patch(monkeypatch, main, worktree)
+        # Simulate integrate_into_main: land the plan dir on main.
+        main_plan_dir = main / '.plan' / 'local' / 'plans' / self.PLAN_ID
+        main_plan_dir.mkdir(parents=True)
+        (main_plan_dir / 'status.json').write_text('{}')
+
+        result = self._remove()
+
+        assert result['status'] == 'success', f'Expected removal to proceed, got {result!r}.'
+        assert result['action'] == 'removed'
+        assert not worktree.exists()
+
+    def test_noop_branch_unchanged_when_target_absent(self, tmp_path: Path, monkeypatch):
+        """(d) absent worktree still short-circuits to the noop success."""
+        main, _worktree = self._seed_main_and_worktree(tmp_path)
+        absent = tmp_path / 'absent-wt'
+        monkeypatch.setattr(
+            git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (absent, None)
+        )
+        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: main)
+        monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: '')
+
+        result = self._remove()
+
+        assert result['status'] == 'success'
+        assert result['action'] == 'noop', (
+            'The target-absent noop branch must fire BEFORE the move-back '
+            f'precondition, got {result!r}.'
+        )
 
 
 # =============================================================================

@@ -13,6 +13,7 @@ from _status_core import (
     _try_read_status_json,
     get_plans_dir,
     log_entry,
+    normalize_metadata,
     require_status,
     write_status,
 )
@@ -21,7 +22,7 @@ from constants import (
     PHASE_STATUS_DONE,
     PHASE_STATUS_IN_PROGRESS,
 )
-from file_ops import get_worktree_root
+from file_ops import get_worktree_root, now_utc_iso
 from marketplace_paths import PLAN_DIR_NAME
 
 # Metadata fields that are semantically boolean. The ``metadata --set`` CLI
@@ -78,6 +79,22 @@ def cmd_set_phase(args: argparse.Namespace) -> dict[str, Any] | None:
     previous = status.get('current_phase')
     status['current_phase'] = args.phase
 
+    # Loop-back detection: a backward move (target phase precedes the current
+    # phase in the plan's phase list) structurally guarantees handshake drift
+    # at the next guarded boundary — the re-entered phase will re-capture its
+    # invariants against a tree that has legitimately moved on. Persist a
+    # scheduling marker alongside the phase write so cmd_transition's inline
+    # guard can auto-resolve exactly that expected-by-construction drift
+    # (see _cmd_lifecycle.cmd_transition). Forward moves never write it.
+    is_loop_back = previous in phase_names and phase_names.index(previous) > phase_names.index(args.phase)
+    if is_loop_back:
+        metadata = normalize_metadata(status)
+        metadata['loop_back_reentry'] = {
+            'from_phase': previous,
+            'to_phase': args.phase,
+            'at': now_utc_iso(),
+        }
+
     # Update phase statuses
     for phase in status['phases']:
         if phase['name'] == args.phase:
@@ -90,6 +107,15 @@ def cmd_set_phase(args: argparse.Namespace) -> dict[str, Any] | None:
     # changes this command's status or exit code.
     _surface_drive(args.plan_id)
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Phase: {previous} -> {args.phase}')
+    if is_loop_back:
+        log_entry(
+            'decision',
+            args.plan_id,
+            'INFO',
+            f'(plan-marshall:manage-status) Loop-back set-phase {previous} -> {args.phase}: '
+            'persisted metadata.loop_back_reentry — the next guarded-boundary handshake '
+            'drift is scheduled for auto-override re-capture',
+        )
 
     return {'status': 'success', 'plan_id': args.plan_id, 'current_phase': args.phase, 'previous_phase': previous}
 

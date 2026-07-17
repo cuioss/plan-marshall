@@ -235,6 +235,7 @@ This matches the operator's mental model ("only flag what changed") and keeps th
 
 When a plan completes and the feature branch is ready for deletion, the operations MUST happen in this order:
 
+0. **Move-back precondition (script-enforced).** The plan directory MUST already have been moved back to the main checkout (via `integrate_into_main`) before the worktree may be removed — until then the worktree holds the sole authoritative plan-state copy (ADR-002 move model), and removing it would destroy that copy. This is no longer a prose-only invariant: `worktree-remove` itself probes the current checkout for `.plan/local/plans/{plan_id}/status.json` and refuses with `error: plan_dir_not_moved_back` while the plan dir has not landed back. The refusal is NOT overridable by `--force` (`--force` keeps its dirty-tree meaning only) — destroying the sole authoritative plan-state copy has no legitimate fast path; an abandonment flow moves or deletes the plan dir first, then removes the worktree.
 1. **Remove the worktree.** `git worktree remove` refuses to operate on a worktree that is the cwd of any shell, and the local branch cannot be deleted while still checked out in a worktree. Any uncommitted state in the worktree at this point is a fail-loud condition — never pass `--force` to salvage; the user may still want to recover the work.
 2. **Switch the main checkout to the base branch.** `git -C {main_checkout} checkout {base_branch}`.
 3. **Pull the merge commit on the base branch.** `git -C {main_checkout} pull`.

@@ -415,6 +415,69 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transi
   --plan-id {plan_id} --completed 5-execute
 ```
 
+**Recovery branch — `worktree_dirty_at_boundary`**: the transition's inline
+clean-tree post-condition refuses to advance when the worktree still carries
+uncommitted changes at the `5-execute → 6-finalize` boundary (a phase-5
+Step 10a commit obligation was skipped; the refusal TOON carries
+`dirty_files[]`). The recovery is deterministic **per-deliverable settlement
+bookkeeping** — in a multi-deliverable plan the dirty files may span several
+deliverables, so a single blanket commit attributed to "the residual
+deliverable" would be wrong or ambiguous:
+
+1. **Build the attribution map.** Map each path in the refusal's
+   `dirty_files[]` back to the deliverable that claims it: match against
+   each deliverable's `affected_files` declaration (from the solution
+   outline / `references.json`), extended by the already-committed
+   `kind=change` ledger rows' `changed_paths` (a path a deliverable already
+   touched in a prior settled commit attributes to that same deliverable).
+   The result partitions `dirty_files[]` into per-deliverable groups plus a
+   possibly-empty *unmappable* remainder.
+
+2. **Halt on any unmappable path.** When ANY dirty path maps to NO
+   deliverable, HALT loudly for the operator — emit an `[ERROR]` work-log
+   line naming the unmappable path(s) and stop. Attribution ambiguity is a
+   contract violation, not a guessing opportunity: committing an
+   unattributable path blind would launder unplanned work into the plan's
+   ledger. Do NOT commit any group before halting — the operator resolves
+   the attribution first.
+
+3. **Commit each group — one settlement commit per deliverable, in
+   deliverable order.** When ALL dirty paths map to ONE deliverable this
+   degenerates to today's single settlement commit with that deliverable's
+   conventional message. When paths map to MULTIPLE deliverables, stage and
+   commit each per-deliverable group separately (ascending deliverable
+   order), each with its own conventional message — the Step 10a commit
+   shape:
+
+   ```text
+   Skill: plan-marshall:workflow-integration-git
+   Parameters:
+     - message: conventional commit derived from that deliverable
+     - push: false
+     - create-pr: false
+   ```
+
+   After EACH group's commit, complete the Step 10a bookkeeping for that
+   commit (resolve `{commit_sha}` via `git rev-parse HEAD` in the worktree,
+   enumerate the commit's paths via
+   `git diff-tree --no-commit-id --name-only -r {commit_sha}`, and append
+   the `kind=change` ledger entry — with that group's `deliverable-id` — per
+   [`manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) §
+   "Canonical invocations" → `append (kind=change)`).
+
+4. **Retry the transition exactly once.** After every group is committed
+   and its ledger entry appended, retry the
+   `manage-status transition --completed 5-execute` call above **exactly
+   once**. A second `worktree_dirty_at_boundary` refusal halts loudly for
+   the operator — do NOT loop, do NOT bypass the guard. (The
+   single-retry-then-halt contract is unchanged; the per-deliverable
+   grouping only changes how the settlement commits are cut, not how many
+   transition attempts are allowed.)
+
+The settlement commits are the recovery path, not the norm: commit ownership
+lives with the phase-5-execute envelope's Step 10a chain-tail (see
+`phase-5-execute/SKILL.md` § Step 10a).
+
 **Config check** — Read `finalize_without_asking` to determine next action:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
