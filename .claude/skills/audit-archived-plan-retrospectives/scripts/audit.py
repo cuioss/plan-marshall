@@ -256,7 +256,7 @@ CROSS_PLAN_CHECKS = {
 # (find-triage D6 step-ownership), `#862` (inline phase-1-init dispatch /
 # routing-order fix), `#863` (merge-queue enablement via marshall-steward), `#872`
 # (self-review promoted to a default finalize step), `#875` (plan-13's boundary —
-# `metrics`, `track-selection-accuracy`, and `lane-lever-effectiveness`),
+# `track-selection-accuracy` and `lane-lever-effectiveness`),
 # `#876` (plan-15's boundary — the `architecture-lookup-ratio` check plan-15
 # bumps), `#877` (plan-14's boundary — the `merge-window-accounting` check plan-14
 # reworks, whose accounting plan-14's D1 merge-queue enqueue-path rework and D3
@@ -264,25 +264,32 @@ CROSS_PLAN_CHECKS = {
 # `finalize-flow-conformance` check plan-17 reworks, whose finalize merge-
 # completeness mechanics plan-17's D1 pre-merge comment barrier and D2
 # completion-aware polling alter), `plan-10` (the roadmap head this plan
-# re-confirms the general checks accurate against), and `PR-PENDING` (plan-8's own
-# boundary, a placeholder resolved to the real PR at finalize by
-# project:finalize-step-era-stamp-fill AFTER create-pr — plan-8 reworks the
-# `token-economics` check, whose finalize_heavy accounting plan-8's finalize-wait
-# consolidation changes, and the `token-efficiency-trend` check, whose
-# tokens-per-phase floor plan-8's per-dispatch context trim lowers). Every key
-# MUST be a member of `CHECK_NAMES`.
+# re-confirms the general checks accurate against), and `PR-PENDING` (this plan's
+# own boundary, a placeholder resolved to the real PR at finalize by
+# project:finalize-step-era-stamp-fill AFTER create-pr — this plan reworks the
+# `metrics` check, whose per-phase token/duration recording accuracy this plan's
+# D1 dispatch-boundary reconciliation, D2 inline main-context attribution, and D3
+# loop-back monotonicity idle guard change). Every key MUST be a member of
+# `CHECK_NAMES`.
 CHECK_ERA: dict[str, str] = {
     # Roadmap-affected checks carry the specific boundary whose mechanics they
     # verify (kept in step with the plan-11 semantic updates).
     # Bumped to #872: the finalize-step-id surface this check re-derives now carries
     # default:pre-submission-self-review (self-review promoted to a default step).
     "execution-context-manifest": "#872",
-    # #875 — this plan (plan-13) reworks these two checks' mechanics, so their era
-    # boundary IS this plan's own PR. `metrics` verifies inline phase-1-init
-    # main-context token recording (the n=6/6 total_tokens surfacing);
-    # `track-selection-accuracy` verifies the classify-before-route lane signals
-    # (change_type + scope_estimate pre-classified before the router runs).
-    "metrics": "#875",
+    # metrics — PR-PENDING (this plan's own boundary, a placeholder resolved to
+    # the real PR at finalize by project:finalize-step-era-stamp-fill AFTER
+    # create-pr): this plan makes per-step token attribution sound — D1
+    # dispatch-boundary reconciliation (same-population max recovering the
+    # accumulator under-count), D2 inline 6-finalize main-context attribution
+    # (inline_main_context_tokens), and D3 the loop-back boundary-monotonicity
+    # idle guard. Those ARE the per-phase token/duration recording mechanics the
+    # `metrics` check verifies, so pre-fix archived rows read as era-expected and
+    # post-fix rows as regressions. (bumped from #875.)
+    "metrics": "#922",
+    # track-selection-accuracy — #875 (plan-13's boundary): verifies the
+    # classify-before-route lane signals (change_type + scope_estimate
+    # pre-classified before the router runs). Unaffected by this plan.
     "track-selection-accuracy": "#875",
     "global-log-analysis": "#849",
     # sequence-and-build-minimality — #887 (plan-7's boundary): plan-7's D1

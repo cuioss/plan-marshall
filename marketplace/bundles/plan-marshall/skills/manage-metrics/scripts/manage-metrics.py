@@ -117,6 +117,47 @@ def _write_accumulator(plan_id: str, phase: str, totals: dict[str, int]) -> None
     atomic_write_file(path, '\n'.join(lines) + '\n')
 
 
+def _read_dispatch_boundary_totals(plan_id: str, phase: str) -> int:
+    """Sum the ``total_tokens`` column across a phase's dispatch-boundaries file.
+
+    The dispatch-boundaries file (``work/metrics-dispatch-boundaries-{phase}.toon``)
+    records one row per phase Task-dispatch termination, each carrying the
+    dispatched agent's ``<usage>`` totals at return (see the writer in
+    ``cmd_record_dispatch_boundary``). This reader sums the ``total_tokens``
+    column — position 2 in the documented row schema
+    ``rows[]{timestamp,termination_cause,total_tokens,...}`` — across every data
+    row and returns the total. The two header lines (``plan_id:`` / ``phase:``),
+    the ``rows[]`` schema line, and any malformed / short row are skipped.
+
+    Returns 0 when the file is absent, empty, or carries no parseable row — the
+    caller (``cmd_generate``) treats 0 as a clean no-op, so a plan that never
+    recorded a dispatch boundary reconciles to nothing.
+
+    Args:
+        plan_id: Plan identifier.
+        phase: Canonical phase name whose boundaries file is summed.
+
+    Returns:
+        The summed ``total_tokens`` across all dispatch-boundary rows, or 0.
+    """
+    path = _dispatch_boundary_path(plan_id, phase)
+    if not path.exists():
+        return 0
+    total = 0
+    for line in path.read_text(encoding='utf-8').splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(('plan_id:', 'phase:', 'rows[]')):
+            continue
+        columns = stripped.split(',')
+        if len(columns) < 3:
+            continue
+        try:
+            total += int(columns[2].strip())
+        except ValueError:
+            continue
+    return total
+
+
 def _resolve_token_field(arg_value: int | None, accumulator: dict[str, int], key: str) -> int | None:
     """Explicit flag wins; fall back to accumulator value when flag is absent."""
     if arg_value is not None:
@@ -466,6 +507,20 @@ def _worked_ms(phase: dict) -> int:
     return max(agent_ms, subagent_ms)
 
 
+def _parse_iso(value: object) -> datetime | None:
+    """Parse an ISO-8601 timestamp string to a datetime, tolerating a ``Z`` suffix.
+
+    Returns ``None`` for a missing / non-string / unparseable value so callers can
+    skip a phase whose boundary timestamp was never recorded.
+    """
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).strip().replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return None
+
+
 def cmd_generate(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
 
@@ -491,6 +546,54 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             continue
         _reconcile_accumulator_into_phase(phases[phase_name], _read_accumulator(plan_id, phase_name))
 
+    # Reconcile each phase's recorded total against the durable
+    # dispatch-boundaries sum. The per-phase accumulator and the
+    # dispatch-boundaries file record the SAME population — every dispatched leaf
+    # appears once in each — so they are reconciled by max(), never summed (a sum
+    # would double-count every leaf). A leaf whose Step-8b
+    # record-dispatch-boundary fired but whose accumulator fold
+    # (accumulate-agent-usage) was missed makes the accumulator UNDER-count
+    # relative to the boundary sum (the #565 evidence); max() recovers that
+    # under-count. The raw total_tokens field is left byte-identical
+    # (explicit-wins — never overwritten); the boundary sum is persisted as a
+    # DISTINCT dispatch_boundary_total field, and the render below prefers the
+    # larger of the two with an explicit "reconciled from dispatch boundaries"
+    # annotation. No-op when the boundary file is absent (sum is 0).
+    for phase_name in PHASE_NAMES:
+        if phase_name not in phases:
+            continue
+        boundary_sum = _read_dispatch_boundary_totals(plan_id, phase_name)
+        if boundary_sum:
+            phases[phase_name]['dispatch_boundary_total'] = boundary_sum
+
+    # Render-time boundary monotonicity detector. A finalize loop-back re-enters
+    # an earlier phase (e.g. 5-execute) under its own phase key, so a LATER
+    # phase's start_time can precede an EARLIER phase's already-closed end_time.
+    # Walking the canonical PHASE_NAMES order, flag any phase whose start_time
+    # precedes the maximum end_time seen so far in the sequence. This is a
+    # READ-ONLY detector — it surfaces the anomaly (a top-level
+    # `boundary_monotonicity` warning listing the phases plus a per-phase
+    # `boundary_non_monotonic` annotation) and guards the idle residual below,
+    # but NEVER mutates the recorded start_time / end_time boundary fields. The
+    # corruption it guards against is upstream, in the phase-row writes, so the
+    # detector only annotates and guards rather than rewriting the boundary. It
+    # does not touch the #812 `end_time`-keyed partial verdict.
+    non_monotonic_phases: list[str] = []
+    prior_end_dt: datetime | None = None
+    for phase_name in PHASE_NAMES:
+        if phase_name not in phases:
+            continue
+        phase = phases[phase_name]
+        start_dt = _parse_iso(phase.get('start_time'))
+        end_dt = _parse_iso(phase.get('end_time'))
+        if start_dt is not None and prior_end_dt is not None and start_dt < prior_end_dt:
+            non_monotonic_phases.append(phase_name)
+            phase['boundary_non_monotonic'] = 'true'
+        if end_dt is not None and (prior_end_dt is None or end_dt > prior_end_dt):
+            prior_end_dt = end_dt
+    if non_monotonic_phases:
+        data['boundary_monotonicity'] = ','.join(non_monotonic_phases)
+
     # Persist the per-phase idle residual back into metrics.toon before
     # rendering: idle = max(0, wall_clock - worked). Derived deterministically
     # from already-persisted fields via session-boundary inference — no new API.
@@ -500,6 +603,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         phase = phases[phase_name]
         wall_ms = _wall_clock_ms(phase)
         if wall_ms is None:
+            continue
+        if phase_name in non_monotonic_phases:
+            # Guard: a re-entered (non-monotonic) phase's wall span overlaps an
+            # earlier phase's already-closed window, so the idle residual derived
+            # from it is corrupt. Zero it rather than emit a meaningless figure;
+            # the boundary_monotonicity warning surfaces the anomaly instead.
+            phase['idle_duration_ms'] = 0
             continue
         idle_ms = max(0, wall_ms - _worked_ms(phase))
         phase['idle_duration_ms'] = idle_ms
@@ -537,6 +647,19 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # report is a floor, not a complete accounting.
     if partial:
         lines.append(f'> Partial: unrecorded phases — {", ".join(unrecorded_phases)}')
+        lines.append('')
+
+    # Boundary-monotonicity warning: when a finalize loop-back re-entered an
+    # earlier phase, a later phase's start_time precedes an earlier phase's
+    # end_time. Surface it under the heading so a reader sees the idle residual
+    # for those phases was guarded (zeroed) rather than derived from a corrupt
+    # overlapping span.
+    if non_monotonic_phases:
+        lines.append(
+            '> Boundary monotonicity warning: re-entered (non-monotonic) phase '
+            f'boundaries detected — {", ".join(non_monotonic_phases)}. Idle residual '
+            'guarded for these phases (a finalize loop-back re-enters an earlier phase).'
+        )
         lines.append('')
 
     # Collect breakdown rows (phases that exist) preserving canonical phase order.
@@ -581,6 +704,10 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     idle_values: list[float] = []
     tokens_values: list[int] = []
     tool_uses_values: list[int] = []
+    # Phases whose Tokens cell renders the dispatch-boundary sum (larger of the
+    # same-population pair) rather than the recorded total_tokens; named in the
+    # reconciliation annotation under the breakdown table.
+    reconciled_phases: list[str] = []
 
     # Two-pass build: first collect all rows as tuples, then pad to uniform per-column width.
     header_row: tuple[str, str, str, str, str, str] = (
@@ -611,10 +738,23 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         if idle_val is not None:
             idle_values.append(idle_val)
 
-        tokens = _numeric(phase.get('total_tokens'))
-        tokens_str = f'{int(tokens):,}' if tokens is not None else '-'
-        if tokens is not None:
-            tokens_values.append(int(tokens))
+        # Same-population reconciliation: prefer the larger of the recorded
+        # total_tokens and the dispatch-boundary sum (never their sum). When the
+        # boundary sum is larger it recovers an accumulator under-count (#565);
+        # the phase is added to reconciled_phases so the annotation footnote
+        # below states the deliberate correction. The larger value is what feeds
+        # the Total aggregation via tokens_values.
+        raw_tokens = _numeric(phase.get('total_tokens'))
+        boundary_total = _numeric(phase.get('dispatch_boundary_total'))
+        if boundary_total is not None and (raw_tokens is None or boundary_total > raw_tokens):
+            reconciled_phases.append(phase_name)
+            tokens_str = f'{int(boundary_total):,}'
+            tokens_values.append(int(boundary_total))
+        elif raw_tokens is not None:
+            tokens_str = f'{int(raw_tokens):,}'
+            tokens_values.append(int(raw_tokens))
+        else:
+            tokens_str = '-'
 
         tool_uses = _numeric(phase.get('tool_uses'))
         tool_uses_str = str(int(tool_uses)) if tool_uses is not None else '-'
@@ -675,6 +815,16 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     lines.append(_format_row(total_row))
     lines.append('')
 
+    # Reconciliation annotation: name the phases whose Tokens cell renders the
+    # dispatch-boundary sum instead of the recorded total, stating the deliberate
+    # under-count correction (same-population max) inline under the table.
+    if reconciled_phases:
+        lines.append(
+            '> Tokens reconciled from dispatch boundaries (same-population max, '
+            f'recovers accumulator under-count): {", ".join(reconciled_phases)}'
+        )
+        lines.append('')
+
     # Phase details
     lines.append('## Phase Details')
     lines.append('')
@@ -706,6 +856,28 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         tokens = phase.get('total_tokens')
         if tokens:
             lines.append(f'- **Total tokens**: {int(tokens):,}')
+
+        boundary_total = phase.get('dispatch_boundary_total')
+        if boundary_total:
+            if phase_name in reconciled_phases:
+                lines.append(
+                    f'- **Dispatch-boundary total**: {int(boundary_total):,} '
+                    '(reconciled from dispatch boundaries; same-population max with total_tokens)'
+                )
+            else:
+                lines.append(
+                    f'- **Dispatch-boundary total**: {int(boundary_total):,} '
+                    '(recorded; not preferred — smaller than total_tokens under same-population max)'
+                )
+
+        inline_main_context = phase.get('inline_main_context_tokens')
+        if inline_main_context:
+            lines.append(
+                f'- **Inline main-context tokens**: {int(inline_main_context):,} '
+                '(inline-step cost attributed via enrich phase-window usage — '
+                'input + output + cache_creation, excludes cache_read; surfaced '
+                'alongside the dispatched total, never replacing it)'
+            )
 
         tool_uses = phase.get('tool_uses')
         if tool_uses:
@@ -750,6 +922,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'phases_recorded': len(phases),
         'partial': partial,
         'unrecorded_phases': unrecorded_phases,
+        'boundary_monotonicity': non_monotonic_phases,
         'total_worked_seconds': round(total_worked, 1),
         'total_wall_seconds': round(total_wall, 1),
         'total_idle_seconds': round(total_idle, 1),
@@ -1443,6 +1616,27 @@ def _run_normalized_tokens_op(
         return per_phase, counters, status
 
 
+_INLINE_MAIN_CONTEXT_FIELDS = ('input_tokens', 'output_tokens', 'cache_creation_input_tokens')
+
+
+def _inline_main_context_sum(phase_row: dict) -> int:
+    """Sum a phase row's inline-attributable four-field usage.
+
+    ``input_tokens + output_tokens + cache_creation_input_tokens`` —
+    ``cache_read_input_tokens`` is EXCLUDED so the figure matches the
+    dispatched-``<usage>`` total definition (fed via ``end-phase
+    --total-tokens``, which also excludes cache reads). Shared by both the
+    inline-only ``total_tokens`` derivation and the mixed-phase
+    ``inline_main_context_tokens`` surfacing below — the two consumers differ
+    only in which field the sum is written to.
+    """
+    return sum(
+        int(phase_row[field])
+        for field in _INLINE_MAIN_CONTEXT_FIELDS
+        if isinstance(phase_row.get(field), (int, float))
+    )
+
+
 def cmd_enrich(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
     session_id = args.session_id
@@ -1515,17 +1709,28 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         # overwritten, so this fires only on the inline-phase signature (no prior
         # total).
         if not phase_row.get('total_tokens'):
-            inline_total = sum(
-                int(phase_row[field])
-                for field in (
-                    'input_tokens',
-                    'output_tokens',
-                    'cache_creation_input_tokens',
-                )
-                if isinstance(phase_row.get(field), (int, float))
-            )
+            inline_total = _inline_main_context_sum(phase_row)
             if inline_total:
                 phase_row['total_tokens'] = inline_total
+        else:
+            # The phase already carries a dispatched total_tokens (subagent
+            # `<usage>` / accumulator). When enrich has ALSO attributed non-zero
+            # main-context four-field usage to this window, the phase ran BOTH
+            # dispatched steps AND inline main-context steps — the 6-finalize
+            # signature: an inline finalize step produces no dispatched `<usage>`
+            # envelope, yet enrich attributes the parent-window `message.usage`
+            # onto the row. Surface that inline contribution as a DISTINCT
+            # inline_main_context_tokens field, derived the same way as the
+            # inline-only branch above — input_tokens + output_tokens +
+            # cache_creation_input_tokens, EXCLUDING cache_read_input_tokens so
+            # the figure matches the dispatched-`<usage>` total definition. This
+            # NEVER overwrites total_tokens (explicit-wins); it is a per-inline
+            # attribution surfaced alongside the dispatched total, not a
+            # replacement. The #812 `end_time`-keyed partial verdict is untouched
+            # — a timestamps-only inline close stays non-`partial`.
+            inline_main_context = _inline_main_context_sum(phase_row)
+            if inline_main_context:
+                phase_row['inline_main_context_tokens'] = inline_main_context
 
     write_metrics(plan_id, data)
 

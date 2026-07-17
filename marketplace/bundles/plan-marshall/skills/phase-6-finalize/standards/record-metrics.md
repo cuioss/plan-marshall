@@ -50,6 +50,8 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enri
   --plan-id {plan_id} --session-id {session_id}
 ```
 
+An **inline** 6-finalize step (one that runs in the orchestrator's own context rather than a dispatched subagent) produces no `<usage>` envelope and no accumulator contribution — there is no per-step `<usage>` source to read. Its cost is nonetheless captured by `enrich`'s phase-window attribution: `enrich` sums the parent-window `message.usage` (input/output/cache_read/cache_creation) into the `6-finalize` row. When a phase carries BOTH a dispatched `total_tokens` (from the agent-dispatched steps above) AND non-zero four-field usage (the inline signature), `enrich` surfaces the inline contribution as a distinct `inline_main_context_tokens` field — `input + output + cache_creation`, excluding `cache_read` to match the dispatched-`<usage>` total definition. This field is surfaced ALONGSIDE the dispatched `total_tokens` (explicit-wins — it never overwrites it) and rendered as a reconciliation line under the phase total in `metrics.md`. See `manage-metrics/standards/data-format.md` § "Inline Main-Context Attribution" for the field schema. Inline step cost is therefore attributed via this phase-window path, NOT via a per-step `<usage>` (which does not exist for an inline step).
+
 ## Generate Final Metrics Report
 
 ```bash
