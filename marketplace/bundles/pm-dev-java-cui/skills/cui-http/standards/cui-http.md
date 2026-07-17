@@ -345,7 +345,7 @@ When adopting `ForwardedRequestResolver` (deriving the effective client request 
 
 ### Secure-default flips in shared transport code
 
-When a change flips a secure-by-default in shared transport/commons code — `allowInsecureHttp` `true` → `false`, `EgressPolicy` moving to default-reject-loopback — enumerate EVERY runtime consumer of that transport (client, resource-server, AND integration harnesses) and add the explicit opt-in to each consumer's config surface, not just the module the triggering finding named. Two legs are easy to miss:
+When a change flips a secure-by-default setting in shared transport/commons code — `allowInsecureHttp` `true` → `false`, `EgressPolicy` moving to default-reject-loopback — enumerate EVERY runtime consumer of that transport (client, resource-server, AND integration harnesses) and add the explicit opt-in to each consumer's config surface, not just the module the triggering finding named. Two legs are easy to miss:
 
 - **Loopback is not the same as service hostnames.** `allowLoopbackEgress` covers `127.0.0.1`/`::1` only — container/service hostnames that resolve to site-local addresses (e.g. a `keycloak` service on a Docker network) are NOT loopback and require an explicit `allowed-egress-hosts` entry.
 - **The `skipITs`-gated blind spot.** The consumer that breaks is often exercised only in the `skipITs`-gated Docker integration tier, so a locally-green full-reactor `verify` does NOT catch the missing opt-in. Run the integration tier (or enumerate its consumers by inspection) before shipping the flip.
