@@ -136,9 +136,20 @@ class TestTriageGranularityClassification:
 
 
 class TestTriageGranularityCallSiteAlignment:
-    """Cross-file alignment — automatic-review.md and sonar-roundtrip.md
-    MUST forward `loop_back_target` to mark-step-done so the dispatcher
-    hook can route on it."""
+    """Cross-file alignment for the `loop_back_target` granularity contract.
+
+    After the ``unified-finalize-triage`` plan the two wait-region producers
+    align asymmetrically:
+
+    - ``automatic-review.md`` still records ``--outcome loop_back`` on its own
+      Branch C intermediate-pass tail and MUST forward
+      ``--loop-back-target`` there (per the manage-status validation contract).
+    - ``sonar-roundtrip.md`` is now **FIND-only** (deliverable 4 removed its
+      inline ``verification-feedback`` triage dispatch and all loop-back
+      bookkeeping): it files ``sonar-issue`` findings and stops. Loop-back is
+      owned by the dispatcher-level unified wait-region triage
+      (``producer=finalize-feedback``), so sonar-roundtrip MUST NOT forward
+      ``--loop-back-target`` itself."""
 
     def test_automated_review_forwards_loop_back_target(self) -> None:
         """`automatic-review.md` Branch C / "Handle findings (loop-back)"
@@ -158,9 +169,15 @@ class TestTriageGranularityCallSiteAlignment:
             'mark-step-done on every loop_back outcome.'
         )
 
-    def test_sonar_roundtrip_forwards_loop_back_target(self) -> None:
-        """`sonar-roundtrip.md` MUST forward `loop_back_target` to
-        `mark-step-done --loop-back-target`."""
+    def test_sonar_roundtrip_is_find_only_and_delegates_loop_back(self) -> None:
+        """`sonar-roundtrip.md` is now FIND-only — it files `sonar-issue`
+        findings and dispatches NO triage of its own. It MUST NOT forward
+        `--loop-back-target` (nor carry any loop-back bookkeeping): the
+        dispatcher-owned unified wait-region triage
+        (`producer=finalize-feedback`) owns triage, loop-back, and RESPOND.
+        A reappearance of `--loop-back-target` here would mean the retired
+        inline `verification-feedback` (producer=sonar) triage dispatch has
+        crept back in."""
         path = (
             Path(__file__).parent.parent.parent
             / 'marketplace'
@@ -172,9 +189,17 @@ class TestTriageGranularityCallSiteAlignment:
             / 'sonar-roundtrip.md'
         )
         text = path.read_text(encoding='utf-8')
-        assert '--loop-back-target' in text, (
-            'sonar-roundtrip.md must forward --loop-back-target to '
-            'mark-step-done on every loop_back outcome.'
+        assert '--loop-back-target' not in text, (
+            'sonar-roundtrip.md is FIND-only and must NOT forward '
+            '--loop-back-target — loop-back is owned by the dispatcher-level '
+            'unified triage (producer=finalize-feedback).'
+        )
+        assert 'FIND-only' in text, (
+            'sonar-roundtrip.md must declare its FIND-only role.'
+        )
+        assert 'finalize-feedback' in text, (
+            'sonar-roundtrip.md must reference the dispatcher-owned unified '
+            'triage (producer=finalize-feedback) that consumes its findings.'
         )
 
     def test_phase_6_skill_md_documents_granularity_branch(self) -> None:
