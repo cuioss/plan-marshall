@@ -109,10 +109,28 @@ def sanitize_title(title: str) -> str:
     return safe_title
 
 
-def generate_filename(number: int, title: str) -> str:
-    """Generate ADR filename from number and title."""
+def generate_filename(number: int, title: str, width: int) -> str:
+    """Generate ADR filename from number, title, and zero-pad width."""
     safe_title = sanitize_title(title)
-    return f'{number:03d}-{safe_title}.adoc'
+    return f'{number:0{width}d}-{safe_title}.adoc'
+
+
+def _detect_corpus_width() -> int:
+    """Detect the prevailing numeric-prefix width of the existing ADR corpus.
+
+    Scans ``ADR_DIR`` for ``*.adoc`` files and returns the maximum digit-prefix
+    width found (e.g. a corpus numbered 001..007 yields 3). An empty or absent
+    corpus defaults to 4.
+    """
+    if not ADR_DIR.exists():
+        return 4
+
+    widths = [
+        len(match.group(1))
+        for filepath in ADR_DIR.glob('*.adoc')
+        if (match := re.match(r'^(\d+)-', filepath.name))
+    ]
+    return max(widths) if widths else 4
 
 
 def get_next_number() -> int:
@@ -126,11 +144,27 @@ def get_next_number() -> int:
 
     numbers: list[int] = []
     for filepath in existing:
-        match = re.match(r'^(\d{3})-', filepath.name)
+        match = re.match(r'^(\d+)-', filepath.name)
         if match:
             numbers.append(int(match.group(1)))
 
     return max(numbers) + 1 if numbers else 1
+
+
+def find_adr_by_number(number: int) -> list[Path]:
+    """Find ADR files whose width-agnostic numeric prefix equals ``number``.
+
+    Matches a decision number regardless of its zero-pad width, so a 3-digit
+    (``008-``) and a 4-digit (``0008-``) prefixed file for the same number are
+    both located. Returns a sorted list (empty when the corpus is absent).
+    """
+    if not ADR_DIR.exists():
+        return []
+    return [
+        filepath
+        for filepath in sorted(ADR_DIR.glob('*.adoc'))
+        if (match := re.match(r'^(\d+)-', filepath.name)) and int(match.group(1)) == number
+    ]
 
 
 def parse_adr_file(filepath: Path) -> dict[str, Any]:
@@ -138,7 +172,7 @@ def parse_adr_file(filepath: Path) -> dict[str, Any]:
     content = filepath.read_text()
 
     # Extract number from filename
-    match = re.match(r'^(\d{3})-(.+)\.adoc$', filepath.name)
+    match = re.match(r'^(\d+)-(.+)\.adoc$', filepath.name)
     number = int(match.group(1)) if match else 0
 
     # Extract title from first line
@@ -187,8 +221,9 @@ def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
     # Get next number
     number = get_next_number()
 
-    # Generate filename
-    filename = generate_filename(number, args.title)
+    # Generate filename using the prevailing corpus prefix width
+    width = _detect_corpus_width()
+    filename = generate_filename(number, args.title, width)
     filepath = ADR_DIR / filename
 
     # Check if file already exists
@@ -215,7 +250,7 @@ def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
     template_content = template_path.read_text()
 
     # Replace placeholders
-    content = template_content.replace('{{NUMBER}}', f'{number:03d}')
+    content = template_content.replace('{{NUMBER}}', f'{number:0{width}d}')
     content = content.replace('{{TITLE}}', args.title)
 
     status = args.status if args.status else 'Proposed'
@@ -238,7 +273,7 @@ def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
     # Write file
     filepath.write_text(content)
 
-    log_entry('script', 'global', 'INFO', f'[ADR] Created ADR-{number:03d}: {args.title}')
+    log_entry('script', 'global', 'INFO', f'[ADR] Created ADR-{number:0{width}d}: {args.title}')
     return {
         'status': 'success',
         'operation': 'create',
@@ -259,9 +294,8 @@ def cmd_read(args: argparse.Namespace) -> dict[str, Any]:
             'message': 'ADR directory does not exist',
         }
 
-    # Find ADR by number
-    pattern = f'{args.number:03d}-*.adoc'
-    matches = list(ADR_DIR.glob(pattern))
+    # Find ADR by number (width-agnostic prefix)
+    matches = find_adr_by_number(args.number)
 
     if not matches:
         return {
@@ -291,9 +325,8 @@ def cmd_update(args: argparse.Namespace) -> dict[str, Any]:
             'message': 'ADR directory does not exist',
         }
 
-    # Find ADR by number
-    pattern = f'{args.number:03d}-*.adoc'
-    matches = list(ADR_DIR.glob(pattern))
+    # Find ADR by number (width-agnostic prefix)
+    matches = find_adr_by_number(args.number)
 
     if not matches:
         log_entry('script', 'global', 'ERROR', f'[ADR] ADR {args.number} not found')
@@ -330,7 +363,7 @@ def cmd_update(args: argparse.Namespace) -> dict[str, Any]:
         'script',
         'global',
         'INFO',
-        f'[ADR] Updated ADR-{args.number:03d} status={args.status if args.status else "unchanged"}',
+        f'[ADR] Updated ADR-{args.number} status={args.status if args.status else "unchanged"}',
     )
     return {
         'status': 'success',
@@ -360,9 +393,8 @@ def cmd_delete(args: argparse.Namespace) -> dict[str, Any]:
             'message': 'ADR directory does not exist',
         }
 
-    # Find ADR by number
-    pattern = f'{args.number:03d}-*.adoc'
-    matches = list(ADR_DIR.glob(pattern))
+    # Find ADR by number (width-agnostic prefix)
+    matches = find_adr_by_number(args.number)
 
     if not matches:
         log_entry('script', 'global', 'ERROR', f'[ADR] ADR {args.number} not found')
@@ -376,7 +408,7 @@ def cmd_delete(args: argparse.Namespace) -> dict[str, Any]:
     filepath = matches[0]
     filepath.unlink()
 
-    log_entry('script', 'global', 'INFO', f'[ADR] Deleted ADR-{args.number:03d}')
+    log_entry('script', 'global', 'INFO', f'[ADR] Deleted ADR-{args.number}')
     return {
         'status': 'success',
         'operation': 'delete',
