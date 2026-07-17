@@ -859,10 +859,16 @@ def cmd_generate(args: argparse.Namespace) -> dict:
 
         boundary_total = phase.get('dispatch_boundary_total')
         if boundary_total:
-            lines.append(
-                f'- **Dispatch-boundary total**: {int(boundary_total):,} '
-                '(reconciled from dispatch boundaries; same-population max with total_tokens)'
-            )
+            if phase_name in reconciled_phases:
+                lines.append(
+                    f'- **Dispatch-boundary total**: {int(boundary_total):,} '
+                    '(reconciled from dispatch boundaries; same-population max with total_tokens)'
+                )
+            else:
+                lines.append(
+                    f'- **Dispatch-boundary total**: {int(boundary_total):,} '
+                    '(recorded; not preferred — smaller than total_tokens under same-population max)'
+                )
 
         inline_main_context = phase.get('inline_main_context_tokens')
         if inline_main_context:
