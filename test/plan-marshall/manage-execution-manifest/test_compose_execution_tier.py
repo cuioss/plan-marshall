@@ -274,7 +274,11 @@ class TestRouteUnmappedOrchestratorVerbs:
         captured = self._patch_routing(monkeypatch, tmp_path)
 
         body: dict = {}
-        mutated = _mem._route_task_verification_commands('X', body)
+        mutated, pending = _mem._route_task_verification_commands('X', body)
+        # The routing pass STAGES the task rewrite; persistence is deferred to the
+        # caller after the compose-time resolution gate. Commit the staged writes
+        # so the on-disk assertion below observes the routed state.
+        _mem._persist_task_rewrites(pending)
 
         assert mutated == 1
         assert body['phase_5']['verification_steps'] == ['verify:perf-suite']
@@ -289,10 +293,14 @@ class TestRouteUnmappedOrchestratorVerbs:
         self._patch_routing(monkeypatch, tmp_path)
 
         body: dict = {}
-        first = _mem._route_task_verification_commands('X', body)
+        first, first_pending = _mem._route_task_verification_commands('X', body)
         assert first == 1
-        second = _mem._route_task_verification_commands('X', body)
+        # Persist between passes to model a real re-compose: the second compose
+        # reads the persisted (already-routed) task files from disk.
+        _mem._persist_task_rewrites(first_pending)
+        second, second_pending = _mem._route_task_verification_commands('X', body)
         assert second == 0
+        assert second_pending == []
         assert body['phase_5']['verification_steps'] == ['verify:perf-suite']
 
     def test_same_verb_across_tasks_dedups_through_seen_steps(self, monkeypatch, tmp_path):
@@ -302,9 +310,10 @@ class TestRouteUnmappedOrchestratorVerbs:
         self._patch_routing(monkeypatch, tmp_path)
 
         body: dict = {}
-        mutated = _mem._route_task_verification_commands('X', body)
+        mutated, pending = _mem._route_task_verification_commands('X', body)
 
         assert mutated == 2
+        assert len(pending) == 2
         assert body['phase_5']['verification_steps'] == ['verify:perf-suite']
 
     def test_raw_shell_command_stays_per_task_untouched(self, monkeypatch, tmp_path):
@@ -313,9 +322,10 @@ class TestRouteUnmappedOrchestratorVerbs:
         self._patch_routing(monkeypatch, tmp_path)
 
         body: dict = {}
-        mutated = _mem._route_task_verification_commands('X', body)
+        mutated, pending = _mem._route_task_verification_commands('X', body)
 
         assert mutated == 0
+        assert pending == []
         assert body['phase_5']['verification_steps'] == []
         unchanged = json.loads(task_path.read_text(encoding='utf-8'))
         assert unchanged['verification']['commands'] == [self._RAW_SHELL_CMD]
@@ -330,9 +340,10 @@ class TestRouteUnmappedOrchestratorVerbs:
         captured = self._patch_routing(monkeypatch, tmp_path)
 
         body: dict = {}
-        mutated = _mem._route_task_verification_commands('X', body)
+        mutated, pending = _mem._route_task_verification_commands('X', body)
 
         assert mutated == 1
+        assert len(pending) == 1
         assert body['phase_5']['verification_steps'] == ['verify:module-tests']
         # The canonical fast path emits NO per-verb non-canonical routing line.
         assert not any('non-canonical' in msg for msg in captured)
