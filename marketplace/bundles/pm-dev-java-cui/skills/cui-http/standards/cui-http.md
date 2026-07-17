@@ -335,6 +335,21 @@ Optional<String> safeHeader = pipelines.headerValuePipeline().validate(request.g
 
 Notes anchored to the current API: `ValidationType.BODY` validation has been removed (HTTP-body content is an application-layer concern), and `ValidationType.COOKIE_NAME` / `COOKIE_VALUE` pipelines are not yet implemented — `createPipeline` throws `IllegalArgumentException` for those types. Validate cookies at the application layer until those pipelines land.
 
+### ForwardedRequestResolver adoption checklist
+
+When adopting `ForwardedRequestResolver` (deriving the effective client request from forwarded headers), two integration points are mandatory:
+
+1. **Thread the application's existing shared `SecurityEventCounter` through the resolver.** Forwarded-header security events MUST aggregate in the same observability surface the `PipelineFactory` pipelines above already report to — pass the one shared counter instance, never construct an isolated local counter for the resolver. A resolver with its own counter silently splits the security-event stream, and monitoring/alerting sees only a partial picture.
+
+2. **Guard every external-value → filesystem-`Path` conversion.** `Path.of(...)` / `Paths.get(...)` on a forwarded or otherwise externally-sourced value throws the unchecked `InvalidPathException` on malformed input; an unguarded conversion turns attacker-controlled bytes into an unhandled runtime failure. Catch `InvalidPathException` and fail closed (reject the request) — never fall through to a default path. This is the CUI-specific instance of the generic external-input→`Path` trust-boundary rule, which is owned by `Skill: pm-dev-java:java-security` — apply the generic rule from there; it is not restated here.
+
+### Secure-default flips in shared transport code
+
+When a change flips a secure-by-default in shared transport/commons code — `allowInsecureHttp` `true` → `false`, `EgressPolicy` moving to default-reject-loopback — enumerate EVERY runtime consumer of that transport (client, resource-server, AND integration harnesses) and add the explicit opt-in to each consumer's config surface, not just the module the triggering finding named. Two legs are easy to miss:
+
+- **Loopback is not the same as service hostnames.** `allowLoopbackEgress` covers `127.0.0.1`/`::1` only — container/service hostnames that resolve to site-local addresses (e.g. a `keycloak` service on a Docker network) are NOT loopback and require an explicit `allowed-egress-hosts` entry.
+- **The `skipITs`-gated blind spot.** The consumer that breaks is often exercised only in the `skipITs`-gated Docker integration tier, so a locally-green full-reactor `verify` does NOT catch the missing opt-in. Run the integration tier (or enumerate its consumers by inspection) before shipping the flip.
+
 ## Troubleshooting
 
 **Content is empty even though isSuccess() returns true**
