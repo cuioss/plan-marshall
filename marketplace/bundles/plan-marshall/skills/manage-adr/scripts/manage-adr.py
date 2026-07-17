@@ -167,6 +167,31 @@ def find_adr_by_number(number: int) -> list[Path]:
     ]
 
 
+def _ambiguous_number_error(operation: str, gerund: str, number: int, matches: list[Path]) -> dict[str, Any]:
+    """Build the structured ``ambiguous_number`` error shared by read/update/delete.
+
+    Logs the ambiguity (except for ``read`, which is log-free like its other
+    branches) and returns the error payload naming every width-variant match.
+    """
+    if operation != 'read':
+        log_entry(
+            'script',
+            'global',
+            'ERROR',
+            f'[ADR] ADR {number} ambiguous: {len(matches)} matching files',
+        )
+    return {
+        'status': 'error',
+        'error': 'ambiguous_number',
+        'operation': operation,
+        'message': (
+            f'ADR {number} matches multiple files with different '
+            f'zero-pad widths: {", ".join(sorted(p.name for p in matches))}. '
+            f'Resolve the ambiguity before {gerund}.'
+        ),
+    }
+
+
 def parse_adr_file(filepath: Path) -> dict[str, Any]:
     """Parse ADR file and extract metadata."""
     content = filepath.read_text()
@@ -306,16 +331,7 @@ def cmd_read(args: argparse.Namespace) -> dict[str, Any]:
         }
 
     if len(matches) > 1:
-        return {
-            'status': 'error',
-            'error': 'ambiguous_number',
-            'operation': 'read',
-            'message': (
-                f'ADR {args.number} matches multiple files with different '
-                f'zero-pad widths: {", ".join(sorted(p.name for p in matches))}. '
-                'Resolve the ambiguity before reading.'
-            ),
-        }
+        return _ambiguous_number_error('read', 'reading', args.number, matches)
 
     filepath = matches[0]
     adr = parse_adr_file(filepath)
@@ -350,22 +366,7 @@ def cmd_update(args: argparse.Namespace) -> dict[str, Any]:
         }
 
     if len(matches) > 1:
-        log_entry(
-            'script',
-            'global',
-            'ERROR',
-            f'[ADR] ADR {args.number} ambiguous: {len(matches)} matching files',
-        )
-        return {
-            'status': 'error',
-            'error': 'ambiguous_number',
-            'operation': 'update',
-            'message': (
-                f'ADR {args.number} matches multiple files with different '
-                f'zero-pad widths: {", ".join(sorted(p.name for p in matches))}. '
-                'Resolve the ambiguity before updating.'
-            ),
-        }
+        return _ambiguous_number_error('update', 'updating', args.number, matches)
 
     filepath = matches[0]
     content = filepath.read_text()
@@ -436,22 +437,7 @@ def cmd_delete(args: argparse.Namespace) -> dict[str, Any]:
         }
 
     if len(matches) > 1:
-        log_entry(
-            'script',
-            'global',
-            'ERROR',
-            f'[ADR] ADR {args.number} ambiguous: {len(matches)} matching files',
-        )
-        return {
-            'status': 'error',
-            'error': 'ambiguous_number',
-            'operation': 'delete',
-            'message': (
-                f'ADR {args.number} matches multiple files with different '
-                f'zero-pad widths: {", ".join(sorted(p.name for p in matches))}. '
-                'Resolve the ambiguity before deleting.'
-            ),
-        }
+        return _ambiguous_number_error('delete', 'deleting', args.number, matches)
 
     filepath = matches[0]
     filepath.unlink()

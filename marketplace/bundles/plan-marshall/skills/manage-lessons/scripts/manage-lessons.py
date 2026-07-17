@@ -1099,6 +1099,18 @@ def cmd_retire_quiet(args: argparse.Namespace) -> dict:
     return result
 
 
+def _add_allow_foreign_store_arg(parser: argparse.ArgumentParser) -> None:
+    """Register the ``--allow-foreign-store`` bypass shared by ``add`` and ``from-error``."""
+    parser.add_argument(
+        '--allow-foreign-store',
+        action='store_true',
+        help=(
+            'Bypass the cross-repo wrong-store guard: file the lesson even when the '
+            "resolved main-anchored store repo does not own the component's bundle."
+        ),
+    )
+
+
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Manage lessons learned', allow_abbrev=False)
@@ -1124,14 +1136,7 @@ def main() -> int:
             'existing lesson instead of allocating a new one.'
         ),
     )
-    add_parser.add_argument(
-        '--allow-foreign-store',
-        action='store_true',
-        help=(
-            'Bypass the cross-repo wrong-store guard: file the lesson even when the '
-            "resolved main-anchored store repo does not own the component's bundle."
-        ),
-    )
+    _add_allow_foreign_store_arg(add_parser)
     add_parser.set_defaults(func=cmd_add)
 
     # update
@@ -1234,14 +1239,7 @@ def main() -> int:
     # from-error
     from_error_parser = subparsers.add_parser('from-error', help='Create from error context', allow_abbrev=False)
     from_error_parser.add_argument('--context', required=True, help='JSON error context')
-    from_error_parser.add_argument(
-        '--allow-foreign-store',
-        action='store_true',
-        help=(
-            'Bypass the cross-repo wrong-store guard: file the lesson even when the '
-            "resolved main-anchored store repo does not own the component's bundle."
-        ),
-    )
+    _add_allow_foreign_store_arg(from_error_parser)
     from_error_parser.set_defaults(func=cmd_from_error)
 
     # remove
