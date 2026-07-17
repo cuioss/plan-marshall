@@ -122,7 +122,13 @@ command: quality-gate
 executable: python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "verify -Ppre-commit"
 resolution_level: module
 mutating: true
+bash_timeout_seconds: 600
+exceeds_bash_ceiling: false
+execution_tier: per_task
+hint: "Pass timeout=600000 (bash_timeout_seconds * 1000) on the Bash call"
 ```
+
+The example carries the four-field execution-tier augmentation (`bash_timeout_seconds` / `exceeds_bash_ceiling` / `execution_tier` / `hint`) because its `executable` is a Bucket B build notation — the `mutating` stamp composes with that augmentation, it does not replace it.
 
 ## Build-class → verification command
 
