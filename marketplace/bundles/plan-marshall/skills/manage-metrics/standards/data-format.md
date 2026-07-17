@@ -60,6 +60,7 @@ session_message_count: 127
 | `cache_creation_input_tokens` | int | `enrich` four-field walk — sum of `message.usage.cache_creation_input_tokens` (same dual-source attribution) |
 | `billing_weighted_total` | int | Derived by `enrich` from the four-field view: `input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)`. A billing-cost figure, NOT a work-comparable measure |
 | `idle_duration_ms` | int | Derived by `generate` — the per-phase idle residual `max(0, wall_clock_ms - worked_ms)` |
+| `dispatch_boundary_total` | int | Derived by `generate` — the sum of the `total_tokens` column across the phase's `work/metrics-dispatch-boundaries-{phase}.toon` rows. Persisted as a DISTINCT field (it never overwrites `total_tokens`); present only when the boundary file exists and sums to a truthy value. See Dispatch-Boundary Reconciliation below |
 
 The four-field usage view (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) lives only in the raw `message.usage` dicts inside the transcripts — the single-figure `<usage>` return tag carries no input/output split and no cache fields. `enrich` accumulates these four fields per phase from BOTH the parent orchestrator turns and every discovered subagent transcript, then records `billing_weighted_total` per phase. These fields exist independently of `total_tokens`, which `enrich` leaves untouched.
 
@@ -77,6 +78,46 @@ Each subagent transcript is summed as a whole and attributed to the single phase
 | `cache_creation_input_tokens` | 1.25 | A cache-creation write is ~1.25× the cost of an input token (request-stated approximation) |
 
 `subagent_*` fields exist independently of the closed-phase `total_tokens` row. The closed-phase row is filled at `end-phase` time from explicit flags (preferred) or the accumulator file (fallback). The `subagent_*` fields are written by `enrich` as a post-hoc safety net so that even when the orchestrator never called `accumulate-agent-usage`, the transcript walk surfaces the missed totals.
+
+### Dispatch-Boundary Reconciliation
+
+`generate` reconciles each phase's recorded `total_tokens` against the durable
+dispatch-boundaries sum (the `total_tokens` column summed across the phase's
+`work/metrics-dispatch-boundaries-{phase}.toon` rows). `generate` is now the
+**first consumer** of the dispatch-boundaries file — previously it was a
+write-only audit trail read only by `plan-retrospective`.
+
+The per-phase accumulator (`work/metrics-accumulator-{phase}.toon`) and the
+dispatch-boundaries file record the **same population**: every dispatched leaf
+appears once in each. They diverge only when a leaf's Step-8b
+`record-dispatch-boundary` fired but the accumulator fold
+(`accumulate-agent-usage`) was missed, which makes the accumulator
+*under-count* relative to the boundary sum. Because the two measure the same
+leaves, the non-double-counting reconciliation is:
+
+```
+reported = max(total_tokens, dispatch_boundary_total)   # NOT a sum
+```
+
+Summing would double-count every leaf; `max()` recovers the under-count while
+staying safe under the same-population invariant. The reconciliation is
+**generate-side / render-time**:
+
+- The raw `total_tokens` field is left **byte-identical** on the row
+  (explicit-wins — a value recorded by `end-phase` / `phase-boundary` is never
+  overwritten).
+- The boundary sum is persisted as the DISTINCT `dispatch_boundary_total`
+  field.
+- When `dispatch_boundary_total > total_tokens`, the Phase Breakdown `Tokens`
+  cell renders the larger (boundary) value and feeds it to the Total, and an
+  annotation line under the table names the reconciled phases
+  (`> Tokens reconciled from dispatch boundaries …`). The Phase Details section
+  also surfaces the `Dispatch-boundary total` bullet.
+- When the boundary file is absent (sum is `0`) the reconciliation is a clean
+  no-op — no field is persisted and the render is unchanged.
+
+The `#812` `partial` / `unrecorded_phases` completeness verdict (which keys off
+`end_time` only) is untouched by this reconciliation.
 
 ### Worked, Reported (Wall), and Idle Time
 
@@ -270,7 +311,7 @@ updated: 2026-03-27T10:25:00+00:00
 
 ## Per-Dispatch Boundary Record (`work/metrics-dispatch-boundaries-{phase}.toon`)
 
-Written by `record-dispatch-boundary`, one TOON-tabular row appended per phase Task dispatch termination. The file is the audit trail `plan-retrospective` correlates with `[OUTCOME]`-log coverage gaps to detect agent-initiated re-dispatch. One file per phase that dispatches Task agents (in practice `5-execute`).
+Written by `record-dispatch-boundary`, one TOON-tabular row appended per phase Task dispatch termination. The file is the audit trail `plan-retrospective` correlates with `[OUTCOME]`-log coverage gaps to detect agent-initiated re-dispatch. `generate` is a second consumer — it sums the `total_tokens` column per phase and reconciles it against the recorded phase total (see Dispatch-Boundary Reconciliation above). One file per phase that dispatches Task agents (in practice `5-execute`).
 
 ### Format
 

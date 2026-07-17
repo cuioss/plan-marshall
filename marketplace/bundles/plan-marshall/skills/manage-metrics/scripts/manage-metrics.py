@@ -117,6 +117,47 @@ def _write_accumulator(plan_id: str, phase: str, totals: dict[str, int]) -> None
     atomic_write_file(path, '\n'.join(lines) + '\n')
 
 
+def _read_dispatch_boundary_totals(plan_id: str, phase: str) -> int:
+    """Sum the ``total_tokens`` column across a phase's dispatch-boundaries file.
+
+    The dispatch-boundaries file (``work/metrics-dispatch-boundaries-{phase}.toon``)
+    records one row per phase Task-dispatch termination, each carrying the
+    dispatched agent's ``<usage>`` totals at return (see the writer in
+    ``cmd_record_dispatch_boundary``). This reader sums the ``total_tokens``
+    column — position 2 in the documented row schema
+    ``rows[]{timestamp,termination_cause,total_tokens,...}`` — across every data
+    row and returns the total. The two header lines (``plan_id:`` / ``phase:``),
+    the ``rows[]`` schema line, and any malformed / short row are skipped.
+
+    Returns 0 when the file is absent, empty, or carries no parseable row — the
+    caller (``cmd_generate``) treats 0 as a clean no-op, so a plan that never
+    recorded a dispatch boundary reconciles to nothing.
+
+    Args:
+        plan_id: Plan identifier.
+        phase: Canonical phase name whose boundaries file is summed.
+
+    Returns:
+        The summed ``total_tokens`` across all dispatch-boundary rows, or 0.
+    """
+    path = _dispatch_boundary_path(plan_id, phase)
+    if not path.exists():
+        return 0
+    total = 0
+    for line in path.read_text(encoding='utf-8').splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(('plan_id:', 'phase:', 'rows[]')):
+            continue
+        columns = stripped.split(',')
+        if len(columns) < 3:
+            continue
+        try:
+            total += int(columns[2].strip())
+        except ValueError:
+            continue
+    return total
+
+
 def _resolve_token_field(arg_value: int | None, accumulator: dict[str, int], key: str) -> int | None:
     """Explicit flag wins; fall back to accumulator value when flag is absent."""
     if arg_value is not None:
@@ -491,6 +532,26 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             continue
         _reconcile_accumulator_into_phase(phases[phase_name], _read_accumulator(plan_id, phase_name))
 
+    # Reconcile each phase's recorded total against the durable
+    # dispatch-boundaries sum. The per-phase accumulator and the
+    # dispatch-boundaries file record the SAME population — every dispatched leaf
+    # appears once in each — so they are reconciled by max(), never summed (a sum
+    # would double-count every leaf). A leaf whose Step-8b
+    # record-dispatch-boundary fired but whose accumulator fold
+    # (accumulate-agent-usage) was missed makes the accumulator UNDER-count
+    # relative to the boundary sum (the #565 evidence); max() recovers that
+    # under-count. The raw total_tokens field is left byte-identical
+    # (explicit-wins — never overwritten); the boundary sum is persisted as a
+    # DISTINCT dispatch_boundary_total field, and the render below prefers the
+    # larger of the two with an explicit "reconciled from dispatch boundaries"
+    # annotation. No-op when the boundary file is absent (sum is 0).
+    for phase_name in PHASE_NAMES:
+        if phase_name not in phases:
+            continue
+        boundary_sum = _read_dispatch_boundary_totals(plan_id, phase_name)
+        if boundary_sum:
+            phases[phase_name]['dispatch_boundary_total'] = boundary_sum
+
     # Persist the per-phase idle residual back into metrics.toon before
     # rendering: idle = max(0, wall_clock - worked). Derived deterministically
     # from already-persisted fields via session-boundary inference — no new API.
@@ -581,6 +642,10 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     idle_values: list[float] = []
     tokens_values: list[int] = []
     tool_uses_values: list[int] = []
+    # Phases whose Tokens cell renders the dispatch-boundary sum (larger of the
+    # same-population pair) rather than the recorded total_tokens; named in the
+    # reconciliation annotation under the breakdown table.
+    reconciled_phases: list[str] = []
 
     # Two-pass build: first collect all rows as tuples, then pad to uniform per-column width.
     header_row: tuple[str, str, str, str, str, str] = (
@@ -611,10 +676,23 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         if idle_val is not None:
             idle_values.append(idle_val)
 
-        tokens = _numeric(phase.get('total_tokens'))
-        tokens_str = f'{int(tokens):,}' if tokens is not None else '-'
-        if tokens is not None:
-            tokens_values.append(int(tokens))
+        # Same-population reconciliation: prefer the larger of the recorded
+        # total_tokens and the dispatch-boundary sum (never their sum). When the
+        # boundary sum is larger it recovers an accumulator under-count (#565);
+        # the phase is added to reconciled_phases so the annotation footnote
+        # below states the deliberate correction. The larger value is what feeds
+        # the Total aggregation via tokens_values.
+        raw_tokens = _numeric(phase.get('total_tokens'))
+        boundary_total = _numeric(phase.get('dispatch_boundary_total'))
+        if boundary_total is not None and (raw_tokens is None or boundary_total > raw_tokens):
+            reconciled_phases.append(phase_name)
+            tokens_str = f'{int(boundary_total):,}'
+            tokens_values.append(int(boundary_total))
+        elif raw_tokens is not None:
+            tokens_str = f'{int(raw_tokens):,}'
+            tokens_values.append(int(raw_tokens))
+        else:
+            tokens_str = '-'
 
         tool_uses = _numeric(phase.get('tool_uses'))
         tool_uses_str = str(int(tool_uses)) if tool_uses is not None else '-'
@@ -675,6 +753,16 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     lines.append(_format_row(total_row))
     lines.append('')
 
+    # Reconciliation annotation: name the phases whose Tokens cell renders the
+    # dispatch-boundary sum instead of the recorded total, stating the deliberate
+    # under-count correction (same-population max) inline under the table.
+    if reconciled_phases:
+        lines.append(
+            '> Tokens reconciled from dispatch boundaries (same-population max, '
+            f'recovers accumulator under-count): {", ".join(reconciled_phases)}'
+        )
+        lines.append('')
+
     # Phase details
     lines.append('## Phase Details')
     lines.append('')
@@ -706,6 +794,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         tokens = phase.get('total_tokens')
         if tokens:
             lines.append(f'- **Total tokens**: {int(tokens):,}')
+
+        boundary_total = phase.get('dispatch_boundary_total')
+        if boundary_total:
+            lines.append(
+                f'- **Dispatch-boundary total**: {int(boundary_total):,} '
+                '(reconciled from dispatch boundaries; same-population max with total_tokens)'
+            )
 
         tool_uses = phase.get('tool_uses')
         if tool_uses:
