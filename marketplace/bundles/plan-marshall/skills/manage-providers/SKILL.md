@@ -48,6 +48,7 @@ Each provider module exports `get_provider_declarations()` returning a list of d
 | `list` | List configured skills by scanning `~/.plan-marshall/credentials/` (no secrets in output) |
 | `remove` | Remove credential file |
 | `ensure-denied` | Add deny rules to the host platform's settings |
+| `migrate-home` | Explicitly run the lazy legacy-path migration (`~/.plan-marshall-credentials/` → `~/.plan-marshall/credentials/`); reports `migrated`, `already_migrated`, or `conflict` |
 
 ## Script Notation
 
@@ -242,6 +243,12 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials remov
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials ensure-denied \
   [--target {global,project}]
+```
+
+### migrate-home
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials migrate-home
 ```
 
 ## Related

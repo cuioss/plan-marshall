@@ -126,14 +126,14 @@ finalize step — `finalize-step-sync-plugin-cache`, run after the cache sync �
 of `integrate_into_main.py`. Only the plan-marshall meta-project's own plans ever modify
 `marketplace/bundles/*/skills/*/scripts/`, so only that project ever needs the on-main mapping
 rebuilt; consumer projects never regenerate. The executor is therefore distinct from BOTH the
-moved plan directory AND the six main-anchored shared corpora below: it is independently derived
+moved plan directory AND the five main-anchored shared corpora below: it is independently derived
 in each tree, never a moved slot and never routed through `resolve_main_anchored_path`.
 
-=== One sanctioned main-anchored resolver utility for six shared corpora
+=== One sanctioned main-anchored resolver utility for five shared corpora
 
 A small, bounded set of `.plan/local` state is genuinely shared across sessions and must
 resolve to the MAIN checkout regardless of which worktree a caller's cwd is pinned to. There
-are exactly SIX such corpora:
+are exactly FIVE such corpora:
 
 * `merge.lock` — the cooperative finalize lock (a single lock file whose contents record the
   holder `plan_id` / session). `merge_lock.py`

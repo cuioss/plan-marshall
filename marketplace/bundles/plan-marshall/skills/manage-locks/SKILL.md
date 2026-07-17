@@ -108,15 +108,24 @@ and ADR-008 (`doc/adr/008-machine-global-home-root-anchor-tier.adoc`).
 The shared core is the TOCTOU / check-then-act mitigation surface for every
 consumer. It exposes:
 
-- `holder_is_dead(holder)` — the plan-liveness predicate. A holder is dead when
-  its plan directory exists in NEITHER `<main>/.plan/local/plans/{holder}` NOR
-  `<main>/.plan/local/worktrees/{holder}/.plan/local/plans/{holder}` (both anchored
-  at main, cwd-independent). An empty/malformed holder is treated as dead (a
-  corrupt lock is reclaimable); resolution failures propagate loudly. Checking
-  both paths is load-bearing — an actively-executing holder's plan dir has been
-  MOVED into the worktree (ADR-002), so a main-only check would wrongly declare it
-  dead and let a concurrent acquirer steal the lock. Its FIFO-prune contract
-  (dropping a crashed waiter's queue entry) is unchanged.
+- `holder_is_dead(holder, project_root=None)` — the plan-liveness predicate. A
+  holder is dead when its plan directory exists in NEITHER
+  `{root}/.plan/local/plans/{holder}` NOR
+  `{root}/.plan/local/worktrees/{holder}/.plan/local/plans/{holder}`, where
+  `{root}` is the supplied `project_root` when given, else the CALLING project's
+  main checkout (cwd-independent). The optional `project_root` parameter
+  project-qualifies the liveness check for machine-global consumers: under the
+  machine-global build queue (ADR-008) a session in project B checking a holder
+  recorded by project A must resolve liveness against A's checkout — the queue
+  stamps each entry with its acquirer's `project_root` and the prune forwards it,
+  so a foreign project's LIVE holder is never falsely reclaimed. The merge-lock
+  caller passes nothing and keeps the caller-anchored behaviour unchanged. An
+  empty/malformed holder is treated as dead (a corrupt lock is reclaimable);
+  resolution failures propagate loudly. Checking both paths is load-bearing — an
+  actively-executing holder's plan dir has been MOVED into the worktree
+  (ADR-002), so a main-only check would wrongly declare it dead and let a
+  concurrent acquirer steal the lock. Its FIFO-prune contract (dropping a
+  crashed waiter's queue entry) is unchanged.
 - `holder_has_live_worktree(holder)` — a STRONGER presence/heartbeat liveness
   signal that gates automatic stale-reclaim. It returns True when the holder's
   git worktree directory `<main>/.plan/local/worktrees/{holder}` is still present
