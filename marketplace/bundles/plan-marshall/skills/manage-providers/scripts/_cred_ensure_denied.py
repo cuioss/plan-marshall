@@ -10,16 +10,16 @@ fundamentally incomplete (blocklist approach).
 import argparse
 import os
 import sys
-from pathlib import Path
 
 from _providers_core import CREDENTIALS_DIR
 from file_ops import output_toon
+from marketplace_paths import resolve_home
 
 # Single-source every deny rule from CREDENTIALS_DIR so the deny surface follows
 # the credentials location automatically. Both the absolute path and its
 # ~-relative spelling are covered.
 CREDENTIALS_DIR_ABS = str(CREDENTIALS_DIR)
-_HOME_PREFIX = str(Path.home())
+_HOME_PREFIX = str(resolve_home())
 CREDENTIALS_DIR_TILDE = (
     '~' + CREDENTIALS_DIR_ABS[len(_HOME_PREFIX):]
     if CREDENTIALS_DIR_ABS.startswith(_HOME_PREFIX)

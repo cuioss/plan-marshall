@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from file_ops import get_marshal_path
-from marketplace_paths import ensure_home_root, home_root
+from marketplace_paths import ensure_home_root, home_root, resolve_home
 
 # === Constants ===
 
@@ -46,7 +46,7 @@ CREDENTIALS_DIR = (
     else home_root() / 'credentials'
 )
 # Pre-home-root credentials location, retained ONLY as the lazy-migration source.
-_OLD_CREDENTIALS_DIR = Path.home() / '.plan-marshall-credentials'
+_OLD_CREDENTIALS_DIR = resolve_home() / '.plan-marshall-credentials'
 VALID_AUTH_TYPES = ('none', 'token', 'basic', 'system')
 SECRET_PLACEHOLDERS = {
     'token': 'REPLACE_WITH_YOUR_TOKEN',

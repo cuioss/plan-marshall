@@ -34,6 +34,26 @@ import sys
 from pathlib import Path
 from typing import Any
 
+
+def resolve_home() -> Path:
+    """Resolve the user home directory, with a fallback for restricted envs.
+
+    ``Path.home()`` raises ``RuntimeError`` when it cannot determine the home
+    directory — minimal containers and CI runners without ``HOME`` set are the
+    common triggers. Several module-level constants in this area (and in the
+    provider scripts that import them) call the home resolver at *import* time,
+    so an unguarded ``Path.home()`` failure crashes the whole import chain
+    before any script logic runs. Fall back to ``$HOME`` (when set) or ``/tmp``
+    so import always succeeds; every module-level home resolution in this area
+    routes through this single helper rather than calling ``Path.home()``
+    directly.
+    """
+    try:
+        return Path.home()
+    except RuntimeError:
+        return Path(os.environ.get('HOME') or '/tmp')
+
+
 # Central configuration
 PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
@@ -65,7 +85,7 @@ _SKILL_ROOTS_CACHE: tuple[str, ...] | None = None
 # Fallback deployed-bundle cache root used when the platform-runtime layout op
 # cannot be reached. This is the Claude default — every supported environment
 # that lacks a resolvable runtime is a Claude checkout.
-_DEFAULT_BUNDLE_CACHE_ROOTS = (str(Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH),)
+_DEFAULT_BUNDLE_CACHE_ROOTS = (str(resolve_home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH),)
 
 # Per-process memoisation cache for the resolved deployed-bundle cache roots.
 _BUNDLE_CACHE_ROOTS_CACHE: tuple[str, ...] | None = None
@@ -401,7 +421,7 @@ def home_root() -> Path:
     every checkout on the machine — distinct from ``resolve_main_anchored_path``,
     which anchors per-repo shared state to one repository's main checkout.
     """
-    return Path(os.environ.get('PLAN_MARSHALL_HOME') or (Path.home() / '.plan-marshall'))
+    return Path(os.environ.get('PLAN_MARSHALL_HOME') or (resolve_home() / '.plan-marshall'))
 
 
 def ensure_home_root() -> Path:

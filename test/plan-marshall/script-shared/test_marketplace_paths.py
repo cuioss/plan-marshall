@@ -26,6 +26,7 @@ from marketplace_paths import (
     get_temp_dir,
     home_root,
     main_checkout_root,
+    resolve_home,
     resolve_main_anchored_path,
     safe_relative_path,
 )
@@ -667,6 +668,45 @@ class TestHomeRoot:
         assert resolved == tmp_path / '.plan-marshall'
         # Not anchored under any checkout's .plan/local (cwd-independent).
         assert resolved != worktree / '.plan' / 'local' / '.plan-marshall'
+
+
+class TestResolveHome:
+    """The shared home-directory resolver — falls back for restricted envs where
+    ``Path.home()`` raises (minimal containers, CI without ``HOME`` set).
+    """
+
+    def test_returns_path_home_when_resolvable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The happy path: Path.home() resolves normally → returned verbatim.
+        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+
+        assert resolve_home() == tmp_path
+
+    def test_falls_back_to_home_env_when_path_home_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Path.home() raises RuntimeError (restricted env) → fall back to $HOME.
+        def _raise() -> Path:
+            raise RuntimeError('home directory undeterminable')
+
+        monkeypatch.setattr(Path, 'home', _raise)
+        fallback = tmp_path / 'env-home'
+        monkeypatch.setenv('HOME', str(fallback))
+
+        assert resolve_home() == fallback
+
+    def test_falls_back_to_tmp_when_path_home_raises_and_no_home_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Path.home() raises AND $HOME is unset → last-resort /tmp.
+        def _raise() -> Path:
+            raise RuntimeError('home directory undeterminable')
+
+        monkeypatch.setattr(Path, 'home', _raise)
+        monkeypatch.delenv('HOME', raising=False)
+
+        assert resolve_home() == Path('/tmp')
 
 
 class TestEnsureHomeRoot:
