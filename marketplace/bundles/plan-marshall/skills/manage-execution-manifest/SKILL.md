@@ -451,7 +451,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   [--aspect {analysis|planning|implementation}]
 ```
 
-`--phase-5-steps` / `--phase-6-steps` on `compose` are **fallback-only** (tests / no-marshal contexts): with a readable `marshal.json` the composer sources its candidate lists authoritatively from `plan.phase-5-execute.steps` / `plan.phase-6-finalize.steps` and ignores the CSVs, so in an inited project forwarding a CSV cannot inject a plan-scoped candidate. The same-named flags on `validate` are a different surface — see `validate` below.
+`--phase-5-steps` / `--phase-6-steps` on `compose` are **fallback-only** (tests / no-marshal contexts): with a readable `marshal.json` the composer sources its candidate lists authoritatively from `plan.phase-5-execute.verification_steps` / `plan.phase-6-finalize.steps` and ignores the CSVs, so in an inited project forwarding a CSV cannot inject a plan-scoped candidate. The same-named flags on `validate` are a different surface — see `validate` below.
 
 ### read
 

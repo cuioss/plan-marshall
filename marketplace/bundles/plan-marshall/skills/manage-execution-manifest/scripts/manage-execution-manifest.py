@@ -791,7 +791,9 @@ def _resolve_command_tier(cmd: str, plan_id: str) -> dict[str, Any] | None:
     return _invoke_architecture_resolve(argv_extra, plan_id)
 
 
-def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> int:
+def _route_task_verification_commands(
+    plan_id: str, body: dict[str, Any]
+) -> tuple[int, list[tuple[Path, str]]]:
     """Walk plan tasks; route verification commands by ``execution_tier``.
 
     For each ``TASK-*.json`` under ``{plan_dir}/tasks/``:
@@ -814,13 +816,20 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> int
     - No tier (non-build / unresolvable) → leave the command in place, no
       annotation.
 
-    The function mutates ``body`` in place and rewrites each task's JSON
-    file when its verification dict changed. Returns the count of task
-    files mutated for downstream logging.
+    The function mutates ``body`` in place but STAGES (does not persist) each
+    task's JSON rewrite. Returns ``(mutated_tasks, pending_writes)`` where
+    ``mutated_tasks`` is the count of tasks whose verification dict changed
+    (for downstream logging) and ``pending_writes`` is the list of
+    ``(task_path, serialized_json)`` rewrites the caller commits via
+    ``_persist_task_rewrites`` only AFTER the compose-time resolution gate
+    passes. Deferring the persistence closes a data-loss bug: an unresolvable
+    routed ``verify:{verb}`` step fails compose after the task files would
+    otherwise already have been rewritten, silently dropping the original
+    verification command from disk.
     """
     tasks_dir = get_plan_dir(plan_id) / 'tasks'
     if not tasks_dir.is_dir():
-        return 0
+        return 0, []
 
     phase_5 = body.setdefault('phase_5', {})
     verification_steps = phase_5.setdefault('verification_steps', [])
@@ -831,6 +840,7 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> int
     seen_steps: set[str] = set(verification_steps)
 
     mutated_tasks = 0
+    pending_writes: list[tuple[Path, str]] = []
     for task_path in sorted(tasks_dir.glob('TASK-*.json')):
         try:
             task = read_json(task_path, default=None)
@@ -914,10 +924,30 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> int
 
         if changed:
             task['verification'] = verification
-            task_path.write_text(json.dumps(task, indent=2) + '\n', encoding='utf-8')
+            # STAGE the rewrite — do NOT persist it here. Committing the task
+            # rewrite mid-routing is a data-loss bug: the later compose-time
+            # resolution gate (``check_emitted_steps_resolvable``) can still fail
+            # the whole compose with ``unresolvable_step`` when a routed
+            # ``verify:{verb}`` canonical is not in ``_verify_canonicals_universe()``.
+            # On that failure path ``write_manifest`` is never reached, but a
+            # command already dropped from disk is gone. The caller persists these
+            # staged writes only AFTER the resolution gate passes.
+            pending_writes.append((task_path, json.dumps(task, indent=2) + '\n'))
             mutated_tasks += 1
 
-    return mutated_tasks
+    return mutated_tasks, pending_writes
+
+
+def _persist_task_rewrites(pending_writes: list[tuple[Path, str]]) -> None:
+    """Commit the staged task-file rewrites accumulated by routing.
+
+    Called by ``cmd_compose`` only AFTER the compose-time step-resolution gate
+    (``check_emitted_steps_resolvable``) passes, so a compose that fails
+    ``unresolvable_step`` never mutates task files on disk — the original
+    verification commands survive for the retry.
+    """
+    for task_path, payload in pending_writes:
+        task_path.write_text(payload, encoding='utf-8')
 
 
 def _log_execution_tier_routing(plan_id: str, mutated_tasks: int, phase_5_steps: list[str]) -> None:
@@ -1400,7 +1430,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # and the touched task files from the live ``architecture resolve``
     # output. The adaptive-timeout infrastructure design carries the
     # recurrence signature and orchestrator-tier rationale.
-    mutated_tasks = _route_task_verification_commands(plan_id, body)
+    mutated_tasks, pending_task_rewrites = _route_task_verification_commands(plan_id, body)
     _log_execution_tier_routing(plan_id, mutated_tasks, list(body['phase_5'].get('verification_steps', [])))
 
     # Generic footprint pre-filter for canonical-verify steps. Runs AFTER the
@@ -1581,6 +1611,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'step_id': resolution_error['step_id'],
             'marshal_key': resolution_error['marshal_key'],
         }
+
+    # Resolution gate passed — NOW commit the staged task-file rewrites from the
+    # execution_tier routing pass. Persisting here (rather than inside the routing
+    # walk) guarantees that a compose which fails ``unresolvable_step`` above never
+    # dropped a task's original verification command from disk.
+    _persist_task_rewrites(pending_task_rewrites)
 
     # Snapshot the resolved per-step params for the FINAL selected steps into the
     # manifest body (write-time snapshot — the same model that governs the step
