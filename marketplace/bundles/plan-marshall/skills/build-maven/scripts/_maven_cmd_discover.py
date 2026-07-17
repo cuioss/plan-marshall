@@ -834,7 +834,8 @@ def _build_commands(
     # entries carry `mutating: true`; unlisted entries stay plain strings so
     # authored-true vs unknown remains distinguishable downstream.
     for canonical in mutating_canonicals:
-        result[canonical] = {'executable': result[canonical], 'mutating': True}
+        if canonical in result:
+            result[canonical] = {'executable': result[canonical], 'mutating': True}
 
     # Report conflicts when multiple profiles map to the same canonical
     conflicts = {c: ps for c, ps in canonical_profiles.items() if len(ps) > 1}
