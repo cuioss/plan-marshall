@@ -77,6 +77,14 @@ Use `:toc: left` for automatic left sidebar TOC.
 * `Monospace text`: Use `` `monospace text` `` for code elements, file paths, and commands
 * Underlined text: Use `[.underline]#text#` sparingly for special emphasis
 
+**Delimiter-Ambiguity Scan**:
+
+A run of 3+ consecutive `*` adjacent to non-space text (`**client/***`, `***bar**`) mixes the bold delimiter with a literal trailing `*` (glob/wildcard), so parser pairing is ambiguous and rendered output can differ from intent. Where bold must wrap text ending in `*`, disambiguate with one of:
+
+* Constrained/unconstrained emphasis forms
+* Escape the literal asterisk (`\*`)
+* Wrap the wildcard in monospace (`` `client/*` ``)
+
 **Code References**:
 
 * File paths: `src/main/java/Example.java`
@@ -289,6 +297,8 @@ Before finalizing any AsciiDoc document:
 - **Grammar Check**: Proper AsciiDoc syntax throughout
 - **Link Validation**: All internal references resolve correctly
 - **Table of Contents**: Generated correctly with proper levels
+- **Delimiter-Ambiguity Scan**: No run of 3+ consecutive `*` adjacent to non-space text — disambiguate bold-plus-literal-asterisk collisions (escape `\*`, or wrap the wildcard in monospace)
+- **Terminology-Casing Sweep**: Initialisms follow project convention in prose ("ID" not "id"; likewise URL, API, JWT) — code spans and identifiers exempt
 
 ### Common Formatting Errors
 
