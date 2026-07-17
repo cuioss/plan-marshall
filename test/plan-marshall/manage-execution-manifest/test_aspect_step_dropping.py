@@ -351,7 +351,7 @@ class TestComposeSelfReadsRequestAspect:
         # No status.json at all → self-read yields None → no-op → full retention.
         plan_context.plan_dir_for('compose-absent')
 
-        result = _mem.cmd_compose(self._compose_args('compose-absent', None))
+        _mem.cmd_compose(self._compose_args('compose-absent', None))
 
         assert captured['manifest']['phase_5']['verification_steps'] == self._FULL_GATES
 
@@ -363,6 +363,6 @@ class TestComposeSelfReadsRequestAspect:
         # _read_recipe_source) — the self-read is never consulted.
         self._write_status(plan_context, 'compose-argwins', {'request_aspect': 'analysis'})
 
-        result = _mem.cmd_compose(self._compose_args('compose-argwins', 'implementation'))
+        _mem.cmd_compose(self._compose_args('compose-argwins', 'implementation'))
 
         assert captured['manifest']['phase_5']['verification_steps'] == self._FULL_GATES
