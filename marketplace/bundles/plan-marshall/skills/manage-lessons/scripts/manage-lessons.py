@@ -56,9 +56,11 @@ from _lessons_crud import (
     retire_quiet_arch_constraints,
 )
 from _lessons_io import (
+    WrongStoreError,
     _build_lesson_content,
     get_lessons_dir,
     get_tombstones_dir,
+    guard_component_store_match,
     read_lesson,
 )
 from _lessons_query import (
@@ -391,6 +393,11 @@ def cmd_add(args: argparse.Namespace) -> dict:
     Returns the absolute path of the created file. The caller writes the body
     directly to that path via the Write tool — there is no inline body API.
     """
+    try:
+        guard_component_store_match(args.component, getattr(args, 'allow_foreign_store', False))
+    except WrongStoreError as exc:
+        return {'status': 'error', 'error': 'wrong_store', 'message': str(exc)}
+
     if args.category not in VALID_CATEGORIES:
         return {
             'status': 'error',
@@ -774,6 +781,12 @@ def cmd_from_error(args: argparse.Namespace) -> dict:
         return {'status': 'error', 'error': 'invalid_json', 'message': 'Context must be valid JSON'}
 
     component = context.get('component', 'unknown')
+
+    try:
+        guard_component_store_match(component, getattr(args, 'allow_foreign_store', False))
+    except WrongStoreError as exc:
+        return {'status': 'error', 'error': 'wrong_store', 'message': str(exc)}
+
     error = context.get('error', 'Unknown error')
     solution = context.get('solution', '')
 
@@ -1102,6 +1115,14 @@ def main() -> int:
             'existing lesson instead of allocating a new one.'
         ),
     )
+    add_parser.add_argument(
+        '--allow-foreign-store',
+        action='store_true',
+        help=(
+            'Bypass the cross-repo wrong-store guard: file the lesson even when the '
+            "resolved main-anchored store repo does not own the component's bundle."
+        ),
+    )
     add_parser.set_defaults(func=cmd_add)
 
     # update
@@ -1204,6 +1225,14 @@ def main() -> int:
     # from-error
     from_error_parser = subparsers.add_parser('from-error', help='Create from error context', allow_abbrev=False)
     from_error_parser.add_argument('--context', required=True, help='JSON error context')
+    from_error_parser.add_argument(
+        '--allow-foreign-store',
+        action='store_true',
+        help=(
+            'Bypass the cross-repo wrong-store guard: file the lesson even when the '
+            "resolved main-anchored store repo does not own the component's bundle."
+        ),
+    )
     from_error_parser.set_defaults(func=cmd_from_error)
 
     # remove
