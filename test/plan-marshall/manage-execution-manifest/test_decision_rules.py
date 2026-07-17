@@ -515,7 +515,7 @@ class TestEarlyTerminateTaskQueueGuard:
 # ``_apply_security_audit_inactive`` is the symmetric peer of
 # ``_apply_simplify_inactive``: it drops ``finalize-step-security-audit`` from
 # the phase-6 candidate list unless BOTH
-# ``change_type ∈ {feature, bug_fix, tech_debt}`` AND
+# ``change_type ∈ {feature, bug_fix, tech_debt, enhancement}`` AND
 # ``affected_files_count > 0``. These tests exercise the helper directly (no
 # compose round-trip) so the gate's truth table and the no-op-when-absent
 # contract are pinned at the unit boundary. See standards/decision-rules.md
@@ -536,13 +536,14 @@ class TestSecurityAuditInactivePreFilter:
             ('feature', 5, True, False),
             ('bug_fix', 1, True, False),
             ('tech_debt', 3, True, False),
+            ('enhancement', 5, True, False),
             # Gate fails on change_type → dropped.
             ('analysis', 5, False, True),
-            ('enhancement', 5, False, True),
             ('verification', 5, False, True),
             # Gate fails on zero affected files (even for a code-touching type).
             ('feature', 0, False, True),
             ('tech_debt', 0, False, True),
+            ('enhancement', 0, False, True),
         ],
     )
     def test_gate_truth_table(

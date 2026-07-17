@@ -1095,13 +1095,11 @@ def test_surgical_enhancement_with_code_candidates_falls_to_default(plan_context
     assert result is not None and result['rule_fired'] == 'default'
     manifest = read_manifest('matrix-surgical-enh')
     assert manifest is not None
-    # Default keeps the full phase_6 candidate list — except finalize-step-simplify
-    # AND finalize-step-security-audit, which the simplify_inactive /
-    # security_audit_inactive pre-filters both drop for change_type=enhancement
-    # (not in {feature, bug_fix, tech_debt}).
-    dropped = {'finalize-step-simplify', 'finalize-step-security-audit'}
-    expected_phase_6 = [s for s in DEFAULT_PHASE_6_STEPS if s not in dropped]
-    assert manifest['phase_6']['steps'] == expected_phase_6
+    # Default keeps the full phase_6 candidate list — enhancement is a member of
+    # the code-touching activation set {feature, bug_fix, tech_debt, enhancement},
+    # so with affected_files_count > 0 the simplify_inactive /
+    # security_audit_inactive pre-filters keep both ceremony steps.
+    assert manifest['phase_6']['steps'] == list(DEFAULT_PHASE_6_STEPS)
 
 
 def test_surgical_enhancement_with_docs_candidates_hits_docs_only(plan_context):
@@ -2172,7 +2170,8 @@ class TestPrePushQualityGatePreFilter:
 #
 # finalize-step-simplify is a candidate by default (it sits in
 # DEFAULT_PHASE_6_STEPS). The simplify_inactive pre-filter DROPS it unless
-# BOTH change_type ∈ {feature, bug_fix, tech_debt} AND affected_files_count > 0.
+# BOTH change_type ∈ {feature, bug_fix, tech_debt, enhancement}
+# AND affected_files_count > 0.
 # These tests enforce the merged plan's never-checked criterion: a
 # code-touching plan composes the step into phase_6.steps; a docs-only /
 # zero-affected-files plan does NOT; and the drop-only decision-log line fires
@@ -2185,23 +2184,24 @@ class TestPrePushQualityGatePreFilter:
 @pytest.mark.parametrize(
     'change_type,affected_files_count,expect_present,expect_omitted',
     [
-        # Gate passes: all three code-touching change types with files > 0.
+        # Gate passes: all four code-touching change types with files > 0.
         ('feature', 5, True, False),
         ('bug_fix', 1, True, False),
         ('tech_debt', 3, True, False),
+        ('enhancement', 5, True, False),
         # Gate fails on change_type: not a code-touching type.
         ('analysis', 5, False, True),
-        ('enhancement', 5, False, True),
         ('verification', 5, False, True),
         # Gate fails on affected_files_count == 0 (even for a code-touching type).
         ('feature', 0, False, True),
         ('bug_fix', 0, False, True),
+        ('enhancement', 0, False, True),
     ],
 )
 def test_simplify_inactive_gate(
     plan_context, change_type, affected_files_count, expect_present, expect_omitted
 ):
-    """finalize-step-simplify lands only when change_type ∈ {feature, bug_fix, tech_debt} AND files > 0."""
+    """finalize-step-simplify lands only when change_type ∈ {feature, bug_fix, tech_debt, enhancement} AND files > 0."""
     slug = f'{change_type}-{affected_files_count}'.replace('_', '-')
     plan_id = f'matrix-simplify-{slug}'
     # Use a non-surgical, code-shaped scope so the surgical Row 5 / docs Row 3
@@ -2307,7 +2307,8 @@ def test_simplify_inactive_no_decision_log_on_kept_branch(plan_context):
 # finalize-step-security-audit is a candidate by default (it sits in
 # DEFAULT_PHASE_6_STEPS). The security_audit_inactive pre-filter is the symmetric
 # peer of simplify_inactive — it DROPS the step unless BOTH
-# change_type ∈ {feature, bug_fix, tech_debt} AND affected_files_count > 0. The
+# change_type ∈ {feature, bug_fix, tech_debt, enhancement} AND
+# affected_files_count > 0. The
 # proactive security sweep has no change surface to audit on a pure-analysis /
 # verification plan or a zero-files plan. These tests enforce: a code-touching
 # plan composes the step into phase_6.steps; a docs-only / zero-affected-files
@@ -2321,23 +2322,24 @@ def test_simplify_inactive_no_decision_log_on_kept_branch(plan_context):
 @pytest.mark.parametrize(
     'change_type,affected_files_count,expect_present,expect_omitted',
     [
-        # Gate passes: all three code-touching change types with files > 0.
+        # Gate passes: all four code-touching change types with files > 0.
         ('feature', 5, True, False),
         ('bug_fix', 1, True, False),
         ('tech_debt', 3, True, False),
+        ('enhancement', 5, True, False),
         # Gate fails on change_type: not a code-touching type.
         ('analysis', 5, False, True),
-        ('enhancement', 5, False, True),
         ('verification', 5, False, True),
         # Gate fails on affected_files_count == 0 (even for a code-touching type).
         ('feature', 0, False, True),
         ('bug_fix', 0, False, True),
+        ('enhancement', 0, False, True),
     ],
 )
 def test_security_audit_inactive_gate(
     plan_context, change_type, affected_files_count, expect_present, expect_omitted
 ):
-    """finalize-step-security-audit lands only when change_type ∈ {feature, bug_fix, tech_debt} AND files > 0."""
+    """finalize-step-security-audit lands only when change_type ∈ {feature, bug_fix, tech_debt, enhancement} AND files > 0."""
     slug = f'{change_type}-{affected_files_count}'.replace('_', '-')
     plan_id = f'matrix-secaudit-{slug}'
     # Use a non-surgical, code-shaped scope so the surgical Row 5 / docs Row 3
@@ -3480,6 +3482,55 @@ def test_duplicate_orchestrator_routings_are_deduped(plan_context, monkeypatch):
     # The bare verify:module-tests appears exactly once (deduped); no prefixed stray.
     assert steps.count('verify:module-tests') == 1
     assert 'default:verify:module-tests' not in steps
+
+
+def test_task_command_survives_when_compose_fails_unresolvable_step(plan_context, monkeypatch):
+    """Regression (8ae9e7): a task's original verification command MUST survive
+    on disk when compose fails ``unresolvable_step`` on a routed ``verify:{verb}``.
+
+    An orchestrator-tier command with a NON-canonical verb routes to the
+    generalized bare ``verify:{verb}`` step, which the composer's routing pass
+    also drops from the task's ``verification.commands``. The trailing verb is
+    not in ``_verify_canonicals_universe()``, so the compose-time resolution gate
+    (``check_emitted_steps_resolvable``) fails the whole compose with
+    ``unresolvable_step`` — AFTER the routing pass ran. Because the task-file
+    rewrite is now STAGED and only persisted once the gate passes, the original
+    command is still on disk for the retry; the previous unconditional in-loop
+    write silently dropped it (a genuine data-loss bug, not just a doc issue).
+    """
+    plan_id = 'tier-unresolvable-command-survives'
+    original_cmd = (
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run '
+        '--command-args "bogus-canonical plan-marshall"'
+    )
+    _write_task(plan_context.plans_dir, plan_id, 1, [original_cmd])
+    # The non-canonical verb resolves to the orchestrator tier, so routing maps
+    # it to the bare ``verify:bogus-canonical`` step and stages dropping the
+    # command from the task.
+    monkeypatch.setattr(
+        _mem, '_resolve_command_tier', _make_tier_stub(orchestrator_verbs={'bogus-canonical'})
+    )
+
+    result = cmd_compose(
+        _compose_ns(
+            plan_id=plan_id,
+            change_type='feature',
+            scope_estimate='multi_module',
+            affected_files_count=3,
+        )
+    )
+
+    # Compose fails loud on the unresolvable routed step.
+    assert result is not None and result['status'] == 'error'
+    assert result['error'] == 'unresolvable_step'
+    assert result['phase'] == 'phase_5'
+    assert result['step_id'] == 'verify:bogus-canonical'
+    # No manifest is written on the fail-loud path.
+    assert read_manifest(plan_id) is None
+    # THE REGRESSION ASSERTION: the original verification command is NOT lost —
+    # the staged rewrite was never committed because the gate failed.
+    task = _read_task(plan_context.plans_dir, plan_id, 1)
+    assert task['verification']['commands'] == [original_cmd]
 
 
 # =============================================================================

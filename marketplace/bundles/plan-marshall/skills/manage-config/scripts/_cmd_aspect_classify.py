@@ -12,7 +12,13 @@ clears the ``>= 0.7`` threshold (overridable via ``--threshold``, default
 ``0.7``). Below the threshold the classifier returns ``aspect:
 implementation`` — the safe fallback that keeps the build / quality-gate /
 test gates in the composed manifest. This mirrors ``change-type-heuristic``'s
-heuristic-first / conservative-default contract.
+heuristic-first / conservative-default contract. One exception: an explicit
+negative build constraint in the raw request text (a fixed negation-phrase
+table, e.g. ``"no build"`` / ``"docs only"``, matched case-insensitively
+BEFORE tokenization) overrides the sub-threshold fallback — the classifier
+then returns the higher-scored non-implementation candidate aspect with
+``drops_build_steps: true`` and reports the matched phrase via
+``negative_constraint_matched``.
 
 Heuristic-first: this verb performs NO LLM call and NO plan-scoped read. The
 bounded LLM fallback for genuinely ambiguous requests is the orchestrator's
@@ -21,6 +27,7 @@ responsibility (phase-1-init), keeping the LLM out of the script body.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from recipe_scoring import tokenize
@@ -59,6 +66,41 @@ _IMPLEMENTATION_KEYWORDS: frozenset[str] = frozenset({
     'rework', 'rewrite', 'test', 'tests', 'testing', 'feature',
     'bugfix', 'install', 'configure', 'deploy', 'release', 'commit',
 })
+
+# Explicit negative build constraints. Matched case-insensitively against the
+# RAW ``--request-text`` BEFORE tokenization: ``recipe_scoring.tokenize``
+# drops ``no`` (length > 2 filter) and ``build`` is itself an
+# ``_IMPLEMENTATION_KEYWORDS`` member, so a token-set approach structurally
+# cannot see the negation — the override keys on the phrase, not the tokens.
+_NEGATION_PHRASES: tuple[str, ...] = (
+    'no build',
+    'no builds',
+    'without build',
+    'do not build',
+    'no verify',
+    'docs only',
+    'docs-only',
+    'documentation only',
+    'documentation-only',
+)
+
+
+def _match_negation_phrase(request_text: str) -> str | None:
+    """Return the matched negation phrase from the raw request text, if any.
+
+    Case-insensitive word-boundary match (``\\b``-anchored regex) over the
+    fixed ``_NEGATION_PHRASES`` table, longest phrase first so the most
+    specific phrase is reported (e.g. ``'no builds'`` wins over its
+    ``'no build'`` prefix). Word boundaries prevent substring false
+    positives where a phrase appears inside a larger token — e.g.
+    ``"mono build"`` contains ``"no build"`` as a substring but MUST NOT
+    trigger the negation override.
+    """
+    lowered = request_text.lower()
+    for phrase in sorted(_NEGATION_PHRASES, key=len, reverse=True):
+        if re.search(r'\b' + re.escape(phrase) + r'\b', lowered):
+            return phrase
+    return None
 
 
 def _overlap_score(request_tokens: set[str], keyword_table: frozenset[str]) -> tuple[float, list[str]]:
@@ -114,7 +156,16 @@ def cmd_aspect_classify(args) -> dict[str, Any]:
     else:
         candidate_aspect, candidate_score = 'analysis', analysis_score
 
-    if candidate_score >= threshold and candidate_score > implementation_score:
+    negation_phrase = _match_negation_phrase(request_text)
+
+    if negation_phrase is not None:
+        # Explicit negative build constraint: override the sub-threshold
+        # implementation fallback — the request text itself rules out build
+        # steps, so the higher-scored non-implementation candidate wins.
+        aspect = candidate_aspect
+        confidence = candidate_score
+        drops_build_steps = True
+    elif candidate_score >= threshold and candidate_score > implementation_score:
         aspect = candidate_aspect
         confidence = candidate_score
         drops_build_steps = True
@@ -123,7 +174,7 @@ def cmd_aspect_classify(args) -> dict[str, Any]:
         confidence = implementation_score
         drops_build_steps = False
 
-    return {
+    result: dict[str, Any] = {
         'status': 'success',
         'request_tokens': sorted(request_tokens),
         'threshold': threshold,
@@ -133,3 +184,6 @@ def cmd_aspect_classify(args) -> dict[str, Any]:
         'scores': scores,
         'breakdown': breakdown,
     }
+    if negation_phrase is not None:
+        result['negative_constraint_matched'] = negation_phrase
+    return result

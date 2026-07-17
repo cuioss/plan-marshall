@@ -791,16 +791,23 @@ def _resolve_command_tier(cmd: str, plan_id: str) -> dict[str, Any] | None:
     return _invoke_architecture_resolve(argv_extra, plan_id)
 
 
-def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> int:
+def _route_task_verification_commands(
+    plan_id: str, body: dict[str, Any]
+) -> tuple[int, list[tuple[Path, str]]]:
     """Walk plan tasks; route verification commands by ``execution_tier``.
 
     For each ``TASK-*.json`` under ``{plan_dir}/tasks/``:
 
     - Skip the task when it has no ``verification.commands`` list.
     - Classify each command via ``_resolve_command_tier``.
-    - ``orchestrator`` → map the verb to its phase-5 step ID, append
-      (de-duped) to ``body['phase_5']['verification_steps']``, and drop the
-      command from the task's ``verification.commands``.
+    - ``orchestrator`` → map the verb to its phase-5 step ID (canonical map
+      first; unmapped verbs generalize to the bare ``verify:{verb}`` step,
+      logged per routed verb), append (de-duped) to
+      ``body['phase_5']['verification_steps']``, and drop the command from
+      the task's ``verification.commands`` — no leaf ever runs an
+      orchestrator-tier command inline. Only the defensive raw-shell /
+      non-``plan-marshall:build-`` fall-through (verb unparseable) leaves
+      an orchestrator-tier command in place.
     - ``per_task`` → set ``verification.bash_timeout_seconds`` on the task
       (overwriting any prior value so re-compose is deterministic). When
       multiple ``per_task`` commands share a task, the maximum
@@ -809,13 +816,20 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> int
     - No tier (non-build / unresolvable) → leave the command in place, no
       annotation.
 
-    The function mutates ``body`` in place and rewrites each task's JSON
-    file when its verification dict changed. Returns the count of task
-    files mutated for downstream logging.
+    The function mutates ``body`` in place but STAGES (does not persist) each
+    task's JSON rewrite. Returns ``(mutated_tasks, pending_writes)`` where
+    ``mutated_tasks`` is the count of tasks whose verification dict changed
+    (for downstream logging) and ``pending_writes`` is the list of
+    ``(task_path, serialized_json)`` rewrites the caller commits via
+    ``_persist_task_rewrites`` only AFTER the compose-time resolution gate
+    passes. Deferring the persistence closes a data-loss bug: an unresolvable
+    routed ``verify:{verb}`` step fails compose after the task files would
+    otherwise already have been rewritten, silently dropping the original
+    verification command from disk.
     """
     tasks_dir = get_plan_dir(plan_id) / 'tasks'
     if not tasks_dir.is_dir():
-        return 0
+        return 0, []
 
     phase_5 = body.setdefault('phase_5', {})
     verification_steps = phase_5.setdefault('verification_steps', [])
@@ -826,6 +840,7 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> int
     seen_steps: set[str] = set(verification_steps)
 
     mutated_tasks = 0
+    pending_writes: list[tuple[Path, str]] = []
     for task_path in sorted(tasks_dir.glob('TASK-*.json')):
         try:
             task = read_json(task_path, default=None)
@@ -860,10 +875,21 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> int
                 verb, _ = parsed
                 step_id = _verb_to_phase_5_step(verb)
                 if step_id is None:
-                    # Unmapped verb (e.g. a custom build target). Leave the
-                    # command per-task so the existing flow handles it.
-                    kept_commands.append(raw)
-                    continue
+                    # Non-canonical verb (e.g. a custom build target) on an
+                    # orchestrator-tier command: route to the generalized bare
+                    # ``verify:{verb}`` step ID (boundary-normalization
+                    # contract — bare, no ``default:`` prefix) so no leaf ever
+                    # runs an orchestrator-tier command inline. Name the routed
+                    # verb in the decision log — the canonical map did not
+                    # cover it, and a silent route would be unobservable.
+                    step_id = f'verify:{verb}'
+                    _emit_decision_log(
+                        plan_id,
+                        '(plan-marshall:manage-execution-manifest:compose) '
+                        'execution_tier routing — routed non-canonical '
+                        f'orchestrator-tier verb {verb!r} to phase-5 step '
+                        f'{step_id!r}',
+                    )
                 if step_id not in seen_steps:
                     verification_steps.append(step_id)
                     seen_steps.add(step_id)
@@ -898,10 +924,30 @@ def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> int
 
         if changed:
             task['verification'] = verification
-            task_path.write_text(json.dumps(task, indent=2) + '\n', encoding='utf-8')
+            # STAGE the rewrite — do NOT persist it here. Committing the task
+            # rewrite mid-routing is a data-loss bug: the later compose-time
+            # resolution gate (``check_emitted_steps_resolvable``) can still fail
+            # the whole compose with ``unresolvable_step`` when a routed
+            # ``verify:{verb}`` canonical is not in ``_verify_canonicals_universe()``.
+            # On that failure path ``write_manifest`` is never reached, but a
+            # command already dropped from disk is gone. The caller persists these
+            # staged writes only AFTER the resolution gate passes.
+            pending_writes.append((task_path, json.dumps(task, indent=2) + '\n'))
             mutated_tasks += 1
 
-    return mutated_tasks
+    return mutated_tasks, pending_writes
+
+
+def _persist_task_rewrites(pending_writes: list[tuple[Path, str]]) -> None:
+    """Commit the staged task-file rewrites accumulated by routing.
+
+    Called by ``cmd_compose`` only AFTER the compose-time step-resolution gate
+    (``check_emitted_steps_resolvable``) passes, so a compose that fails
+    ``unresolvable_step`` never mutates task files on disk — the original
+    verification commands survive for the retry.
+    """
+    for task_path, payload in pending_writes:
+        task_path.write_text(payload, encoding='utf-8')
 
 
 def _log_execution_tier_routing(plan_id: str, mutated_tasks: int, phase_5_steps: list[str]) -> None:
@@ -1075,6 +1121,57 @@ def _apply_lane_resolution(
     return kept, dropped, warnings
 
 
+def _ceremony_prefilter_warnings(
+    fired_steps: tuple[tuple[str, bool], ...],
+    final_phase_6_steps: list[str],
+    posture: str,
+    marshal_phase_6_map: dict[str, dict] | None,
+) -> list[tuple[str, str]]:
+    """Warnings for ceremony pre-filter drops the operator's posture/lane would have kept.
+
+    Second producer on the ``lane_warnings`` channel (peer of
+    :func:`_apply_lane_resolution`, same ``(step, warning)`` tuple shape): when
+    the ``simplify_inactive`` / ``security_audit_inactive`` ceremony pre-filter
+    fired for a step (the change_type + affected_files_count activation gate
+    failed) AND the operator's selected posture/lane would have included the
+    step AND the ceremony ``always`` gate did not force it back into the final
+    step list, the drop would otherwise be silent from the operator's
+    perspective — the lane said "keep", yet the step vanished. One entry per
+    such drop names the ceremony pre-filter — not the lane — as the remover.
+
+    Read-only with respect to the lane machinery: no keep/drop decision is
+    changed here; the same resolvers (:func:`_resolve_element_lane`,
+    :func:`_lane_override_for`, :func:`_lane_keep_decision`) are consulted
+    purely to answer "would the lane have kept it?". An explicit ``off``
+    override means the operator opted the step out (ceremony ``never``), so no
+    warning is emitted for it.
+    """
+    warnings: list[tuple[str, str]] = []
+    for step, fired in fired_steps:
+        if not fired or step in final_phase_6_steps:
+            continue
+        override = _lane_override_for(step, marshal_phase_6_map)
+        if override == 'off':
+            # Operator explicitly opted the step out — not operator-selected.
+            continue
+        if posture != 'full':
+            lane = _resolve_element_lane(step)
+            if lane and 'class' in lane:
+                keep, _ = _lane_keep_decision(lane, override, posture)
+                if not keep:
+                    # The lane itself would have dropped the step under this
+                    # posture — the ceremony pre-filter changed nothing.
+                    continue
+        warnings.append(
+            (
+                step,
+                'ceremony pre-filter (change_type/affected_files gate) removed this '
+                'operator-selected step — the lane did not drop it',
+            )
+        )
+    return warnings
+
+
 def _sum_lane_cost(steps: list[str], table: dict[str, str]) -> int:
     """Sum each element's ``cost_size`` through the token table (§4.6 cost preview)."""
     total = 0
@@ -1214,7 +1311,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     #   3. pre_submission_self_review_inactive — drop pre-submission-self-review
     #      when the live footprint is empty.
     #   4. simplify_inactive — drop finalize-step-simplify when
-    #      change_type ∉ {feature, bug_fix, tech_debt} OR affected_files_count == 0.
+    #      change_type ∉ {feature, bug_fix, tech_debt, enhancement}
+    #      OR affected_files_count == 0.
     #   4b. security_audit_inactive — drop finalize-step-security-audit on the
     #      same change_type + affected_files_count gate as simplify_inactive.
     #   5. scope_gated_finalize — drop heavyweight phase-6 review/audit steps by
@@ -1332,7 +1430,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # and the touched task files from the live ``architecture resolve``
     # output. The adaptive-timeout infrastructure design carries the
     # recurrence signature and orchestrator-tier rationale.
-    mutated_tasks = _route_task_verification_commands(plan_id, body)
+    mutated_tasks, pending_task_rewrites = _route_task_verification_commands(plan_id, body)
     _log_execution_tier_routing(plan_id, mutated_tasks, list(body['phase_5'].get('verification_steps', [])))
 
     # Generic footprint pre-filter for canonical-verify steps. Runs AFTER the
@@ -1445,6 +1543,24 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     )
     body['phase_6']['steps'] = lane_kept
 
+    # Ceremony pre-filter warnings ride the same lane_warnings channel as lane
+    # resolution (second producer, same (step, warning) shape). When the
+    # simplify / security-audit ceremony pre-filter fired but the operator's
+    # selected posture/lane would have included the step — and the ceremony
+    # `always` gate did not force it back in — the entry names the ceremony
+    # pre-filter (not the lane) as the remover, so the drop is never silent.
+    lane_warnings.extend(
+        _ceremony_prefilter_warnings(
+            (
+                ('finalize-step-simplify', simplify_omitted),
+                ('finalize-step-security-audit', security_audit_omitted),
+            ),
+            body['phase_6']['steps'],
+            execution_profile,
+            marshal_phase_6_map,
+        )
+    )
+
     # Enforce ascending frontmatter-order emission on the FINAL phase_6.steps.
     # cmd_compose never re-sorted the marshal.json ``phase_6.steps`` map by
     # frontmatter order, so ``manage-config sync-defaults`` back-filling a
@@ -1495,6 +1611,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'step_id': resolution_error['step_id'],
             'marshal_key': resolution_error['marshal_key'],
         }
+
+    # Resolution gate passed — NOW commit the staged task-file rewrites from the
+    # execution_tier routing pass. Persisting here (rather than inside the routing
+    # walk) guarantees that a compose which fails ``unresolvable_step`` above never
+    # dropped a task's original verification command from disk.
+    _persist_task_rewrites(pending_task_rewrites)
 
     # Snapshot the resolved per-step params for the FINAL selected steps into the
     # manifest body (write-time snapshot — the same model that governs the step

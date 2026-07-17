@@ -695,8 +695,8 @@ This step runs after Step 7 (execution order) and before Step 8 (Q-Gate). It MUS
 - `scope_estimate` — read from `manage-references get --field scope_estimate` (deliverables 2 / 3 wire this in earlier in the plan lifecycle).
 - `recipe_key` — OPTIONAL override only. The composer reads `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`) on its own, so lesson- and recipe-derived plans select the `recipe` rule even when this flag is omitted. Pass `--recipe-key` only to force a recipe rule that status metadata does not already imply.
 - `affected_files_count` — `manage-references get --field affected_files`, count entries.
-- `phase-5-steps` candidate (`{p5_csv}`) — read via the bash call below, comma-join the returned `verification_steps` list (the phase-5 block stores its verification step list under `verification_steps`, not `steps`).
-- `phase-6-steps` candidate (`{p6_csv}`) — read via the bash call below, comma-join the returned `steps` list.
+- `phase-5-steps` CSV (`{p5_csv}`) — read via the bash call below, comma-join the returned `verification_steps` list (the phase-5 block stores its verification step list under `verification_steps`, not `steps`). **Validation/fallback-only on `compose`**: in any inited project the composer sources its candidate list authoritatively from `marshal.json` (`plan.phase-5-execute.verification_steps`) and ignores the CSV, so forwarding a CSV to `compose` cannot inject a plan-scoped candidate. The CSV's live consumer is `validate` (below), where it is `validate`'s own caller-supplied allow-list — a separate surface from compose's candidate source.
+- `phase-6-steps` CSV (`{p6_csv}`) — read via the bash call below, comma-join the returned `steps` list. Same contract as `{p5_csv}`: marshal-authoritative on `compose` (`plan.phase-6-finalize.steps`; CSV is fallback-only), allow-list input on `validate`.
 - `commit_and_push` — read via the bash call below, from the `commit_and_push` field; omit `--commit-and-push` on `compose` when the field is absent (defaults to `true`).
 
 **Read manifest inputs** (run before compose; do NOT skip or improvise alternative reads):
@@ -753,19 +753,29 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   [--commit-and-push {commit_and_push}]
 ```
 
+**Marshal-authoritative candidate source**: the `--phase-5-steps` / `--phase-6-steps` CSVs on `compose` are fallback-only. With a readable `marshal.json` the composer reads its candidate lists authoritatively from `plan.phase-5-execute.verification_steps` / `plan.phase-6-finalize.steps` and ignores the CSVs entirely — the fallback exists solely for callers without a `marshal.json` (tests / no-marshal contexts). Passing the CSVs here keeps the invocation deterministic but cannot inject a plan-scoped candidate in an inited project; their live consumer is the `validate` call below.
+
 **Envelope count**: After the `compose` call succeeds, record `{envelope_count}` — the value cached from Step 7a (`pack-envelopes`), the number of execution envelope groups the bin-packer produced — into the composed manifest. Recording it tells the phase-5-execute orchestrator exactly how many envelope dispatches to drive (one `execution-context` dispatch per `envelope_id` group), so the orchestrator reads `envelope_count` from the manifest rather than re-running the packer. The manifest `envelope_count` field is owned by [`manage-execution-manifest` SKILL.md](../manage-execution-manifest/SKILL.md) (the consumer is the phase-5-execute budget-bounded task loop, which reads `envelope_count` on phase entry); use the manifest skill's canonical write surface for the field — do NOT raw-edit `execution.toon`.
 
-**Validate** (immediately after compose, before Q-Gate):
+**Validate** (immediately after compose, before Q-Gate).
+
+**Validate allow-list contract (separate surface)**: on `validate` the `--phase-5-steps` / `--phase-6-steps` flags are NOT a candidate source — the CSV is `validate`'s own caller-supplied allow-list of permitted step IDs (prefix-agnostic on `default:`; `project:` / `bundle:skill` prefixes compare verbatim). Every manifest step ID must appear in the allow-list or validation fails with `invalid_manifest`. Because compose's `execution_tier` routing can append `verify:{canonical}` step IDs that were never in the configured candidate list (orchestrator-tier task-verification verbs routed to phase-5 steps), the original `{p5_csv}` — read from `marshal.json` **before** compose ran — does NOT cover those routed IDs, and passing it verbatim produces a spurious `invalid_manifest` failure whenever routing appended a verb. Read back the composed manifest's `phase_5.verification_steps` (which already contains any routed `verify:{verb}` IDs) and merge it into the allow-list **before** the `validate` call:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  read \
+  --plan-id {plan_id}
+```
+
+Parse `phase_5.verification_steps` from the returned manifest and union it with `{p5_csv}` to produce the expanded phase-5 allow-list `{p5_allow}` (de-duped; the union preserves the configured candidates while admitting the compose-routed verbs). Then validate against the expanded allow-list:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
   validate \
   --plan-id {plan_id} \
-  --phase-5-steps "{p5_csv}" \
+  --phase-5-steps "{p5_allow}" \
   --phase-6-steps "{p6_csv}"
 ```
-
-**Log manifest path** (after a successful compose+validate):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

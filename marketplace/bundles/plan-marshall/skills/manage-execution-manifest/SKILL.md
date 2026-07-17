@@ -114,7 +114,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--recipe-key` (optional override): Forces the `recipe` rule. When omitted, the composer reads the provenance itself from `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`), so lesson- and recipe-derived plans select the `recipe` rule without the caller forwarding this flag.
 - `--affected-files-count` (optional, default 0): Count of affected files surfaced by the outline; used by the `early_terminate` rule
 - `--phase-5-steps` (optional): Comma-separated candidate Phase 5 verification step IDs. The composer prefers `marshal.json::plan.phase-5-execute.verification_steps` (the phase-aware list-field — phase-5 reads `verification_steps`, every other phase reads `steps`; see [decision-rules.md](standards/decision-rules.md) § "Phase-aware step source"), falling back to this CSV only when no marshal.json is present. The IDs may be the legacy bare role-file forms (`default:quality_check`, …) or the parameterized canonical-verify form `default:verify:{canonical}` (e.g. `default:verify:quality-gate`, `default:verify:module-tests`, `default:verify:coverage`), whose matrix role is derived from the trailing canonical segment (see [decision-rules.md](standards/decision-rules.md) § "Role derivation for canonical-verify steps"). The decision matrix selects a subset, then the generic footprint pre-filter (§ "Generic footprint pre-filter") drops any footprint-gated whole-tree canonical (`integration` / `e2e`) that the live footprint does not exercise.
-- `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs from `marshal.json` (e.g., `push,create-pr,automated-review,sonar-roundtrip,lessons-capture,adr-propose,branch-cleanup,archive-plan`). The decision matrix selects a subset. If omitted, defaults to the full canonical set.
+- `--phase-6-steps` (optional): Comma-separated candidate Phase 6 finalize step IDs (e.g., `push,create-pr,automated-review,sonar-roundtrip,lessons-capture,adr-propose,branch-cleanup,archive-plan`). Same fallback-only contract as `--phase-5-steps`: the composer prefers `marshal.json::plan.phase-6-finalize.steps`, consulting this CSV only when no marshal.json is present — so in an inited project the CSV cannot inject a plan-scoped candidate. The decision matrix selects a subset. If both marshal.json and the CSV are absent, defaults to the full canonical set.
 - `--commit-and-push` (optional, default `true`): `true|false` — the resolved `commit_and_push` boolean from phase-5-execute config. When `false`, `push`, `pre-push-quality-gate`, and `pre-submission-self-review` are all removed from the candidate set by the `commit_push_disabled` pre-filter before the matrix runs (a local-only run).
 - `--envelope-count` (optional, default `1`): Number of phase-5 `execution-context` envelopes the orchestrator should plan for. Persisted into the manifest's `phase_5.envelope_count`. When omitted, defaults to `1` (a single budget-bounded envelope greedily drives the task loop until the queue is empty or a TASK-boundary re-dispatch point fires). A non-positive value is clamped to `1`. The field is written under every decision-matrix rule (including `early_terminate`), so the `phase_5` block always carries it.
 - `--aspect` (optional): `analysis|planning|implementation` — the resolved request aspect from the `manage-config aspect-classify` verb (phase-1-init). When `analysis` or `planning`, the **request-aspect step-dropping** pass (§ "Request-aspect step dropping") removes every build / quality-gate / test canonical-verify step (derived roles `quality-gate` / `module-tests` / `coverage`) from the final `phase_5.verification_steps` — an analysis / planning request carries no production / test footprint, so those gates have nothing to gate. When omitted, or `implementation` (the classifier's safe sub-threshold fallback), every build/verify gate is retained. The drop is role-driven and canonical-agnostic; external (`project:` / `bundle:skill`) steps are passed through untouched.
@@ -295,7 +295,7 @@ The value is coerced (`true`/`false` → bool; integer literal → int; else str
 
 ### validate
 
-Verify the manifest schema and that all step IDs exist in the candidate `marshal.json` set.
+Verify the manifest schema and that all step IDs appear in the caller-supplied allow-list CSVs.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
@@ -306,8 +306,10 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier
-- `--phase-5-steps` (optional): Comma-separated allowed Phase 5 step IDs to validate against
-- `--phase-6-steps` (optional): Comma-separated allowed Phase 6 step IDs to validate against
+- `--phase-5-steps` (optional): Comma-separated allowed Phase 5 step IDs to validate against. This is `validate`'s own caller-supplied allow-list — a separate surface from `compose`'s same-named fallback-only candidate flag. Because `compose`'s `execution_tier` routing can append `verify:{verb}` step IDs that were never in the configured candidate list, the allow-list must also cover those compose-routed IDs.
+- `--phase-6-steps` (optional): Comma-separated allowed Phase 6 step IDs to validate against (same allow-list semantics)
+
+Omitting a flag skips that phase's step-ID check (schema checks always run).
 
 **Prefix-agnostic step-ID comparison**: the unknown-ID check strips the optional `default:` prefix from BOTH the allowed set and the manifest step IDs before the set-membership test, so a bare manifest ID (e.g. `verify:module-tests`) validates against a `default:`-prefixed allowed-list entry (e.g. `default:verify:module-tests`) and vice versa. `project:` / `bundle:skill` prefixes are preserved verbatim, so external steps still compare exactly. This is what lets the composer's boundary-normalized (bare) manifest IDs validate against an allowed-list passed in either prefixed or bare form.
 
@@ -396,13 +398,13 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count] [--aspect]` | Compose and write execution.toon |
+| `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count] [--aspect]` | Compose and write execution.toon (`--phase-5-steps`/`--phase-6-steps` are fallback-only — `marshal.json` is the authoritative candidate source) |
 | `read` | `--plan-id` | Read manifest as TOON |
 | `lanes preview` | `--plan-id [--phase-6-steps]` | Resolve the minimal/auto/full phase-6 step sets + cost sums in one TOON (the posture-dialogue projection) |
 | `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome {executed\|skipped\|error} [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon |
 | `step-params get` | `--plan-id --phase {5-execute\|6-finalize} --step-id` | Return a step's snapshotted param object from the manifest (plan-local read) |
 | `step-params set` | `--plan-id --phase {5-execute\|6-finalize} --step-id --param --value` | Write a per-plan param override into the manifest snapshot |
-| `validate` | `--plan-id [--phase-5-steps] [--phase-6-steps]` | Validate manifest schema + step IDs |
+| `validate` | `--plan-id [--phase-5-steps] [--phase-6-steps]` | Validate manifest schema + step IDs against the caller-supplied allow-list CSVs (a separate surface from compose's candidate source) |
 | `validate-loadable` | `--plan-id (--step-id ID \| --all)` | Verify standards file presence for built-in `phase_6.steps` entries |
 
 ---
@@ -449,6 +451,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   [--aspect {analysis|planning|implementation}]
 ```
 
+`--phase-5-steps` / `--phase-6-steps` on `compose` are **fallback-only** (tests / no-marshal contexts): with a readable `marshal.json` the composer sources its candidate lists authoritatively from `plan.phase-5-execute.verification_steps` / `plan.phase-6-finalize.steps` and ignores the CSVs, so in an inited project forwarding a CSV cannot inject a plan-scoped candidate. The same-named flags on `validate` are a different surface — see `validate` below.
+
 ### read
 
 ```bash
@@ -481,6 +485,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   --plan-id PLAN_ID \
   [--phase-5-steps LIST] [--phase-6-steps LIST]
 ```
+
+On `validate` the `--phase-5-steps` / `--phase-6-steps` CSVs are the **caller-supplied allow-list** of permitted step IDs — a separate input from `compose`'s candidate source (where the same-named flags are fallback-only against the marshal-authoritative seeding above). Omitting a flag skips that phase's step-ID check; when supplied, every manifest step ID must appear in the allow-list (prefix-agnostic on `default:`; `project:` / `bundle:skill` prefixes compare verbatim) or validation fails with `invalid_manifest`. Because `compose`'s `execution_tier` routing can append `verify:{verb}` step IDs that were never in the configured candidate list, the allow-list must also cover the compose-routed `verify:{verb}` IDs.
 
 ### validate-loadable
 
@@ -542,6 +548,14 @@ After the canonical-verify footprint pre-filter produces the final `phase_5.veri
 
 An `implementation` aspect (the classifier's safe sub-threshold fallback — any request below the `>= 0.7` aspect-classify threshold defaults to `implementation`) and an absent `--aspect` are no-ops: every build/verify gate is retained. The drop is role-driven (via the same `_role_of` derivation the footprint pre-filter uses) and canonical-agnostic — it adds no per-canonical branch. External (`project:` / `bundle:skill`) steps and any step whose role is unrecognized are passed through untouched. The composer emits one `decision.log` line when at least one step is dropped (canonical prefix `(plan-marshall:manage-execution-manifest:compose) aspect_step_dropping`) and surfaces `aspect` and `aspect_step_dropping_dropped` in the `compose` result for observability.
 
+### Command-level execution_tier routing (`execution_tier_routing`)
+
+Before the per-step stamping below, the composer walks every task's `verification.commands` and routes each build command by its resolved `execution_tier` (see [standards/decision-rules.md](standards/decision-rules.md) § "execution_tier Routing" for the full predicate). For `orchestrator`-tier commands the verb maps to a bare phase-5 step ID: the four canonical verbs route through the `_VERB_TO_PHASE_5_STEP` fast path (`quality-gate` / `verify` / `module-tests` / `coverage`), and **every other parseable verb generalizes to the bare `verify:{verb}` step** — the command is removed from the task in both cases, so no leaf ever runs an orchestrator-tier command inline. Each non-canonical routed verb is named in its own `decision.log` line (canonical prefix `(plan-marshall:manage-execution-manifest:compose) execution_tier routing`), in addition to the summary line carrying `mutated_tasks` and the final step list.
+
+**Raw-shell limitation**: only commands in the canonical Bucket B build shape (`python3 .plan/execute-script.py plan-marshall:build-*:... run --command-args "..."`) carry a parseable verb. A raw-shell or non-`plan-marshall:build-` command that the tier classifier nonetheless labels `orchestrator` cannot be verb-routed — it is deliberately left in the task's `verification.commands` so the mapping mismatch stays observable at the next compose, rather than being silently dropped.
+
+**Interaction with per-step stamping**: routing runs first and may append `verify:{verb}` entries to `phase_5.verification_steps`; the stamping pass below then resolves a tier for the FINAL list, so every routed step — canonical or generalized — receives a stamped `{step_id, tier}` record. A generalized `verify:{verb}` whose canonical is unresolvable stamps to the `per_task` safe floor per the stamping rule.
+
 ### Per-step execution_tier stamping (`step_execution_tier`)
 
 After the request-aspect step-dropping pass produces the FINAL `phase_5.verification_steps` list, the composer resolves each selected step's `execution_tier` and stamps a `phase_5.step_execution_tier` record list (one `{step_id, tier}` object per verification step). Each built-in canonical-verify step (`verify:{canonical}`) is resolved via a whole-tree `architecture resolve --command {canonical}`, reading the `execution_tier` field the resolve TOON emits; every other step id (an external `project:` / `bundle:skill` step, or a `verify:{canonical}` whose canonical is unresolvable) defaults to `per_task`. The list is total over `verification_steps` — the composer never emits an unresolved tier, and `per_task` is the safe floor (the leaf runs the step inline, matching the pre-stamp behaviour).
@@ -571,7 +585,7 @@ After the change-type / scope pre-filters and `ceremony_finalize_selection` prod
 - `auto` additionally keeps tier-`auto` elements and drops tier-`full` ones (`security-audit`, `plan-retrospective`);
 - `full` keeps everything (a no-op).
 
-An element with no `lane:` block is not lane-participating and is always kept. A weakening `off` override of a `derived-state` / `core` floor element is **immune — the `off` is ignored and the element stays kept at its class-default tier** (§5 of the lane-selection design — `minimal` must never drop required derived state; a weakening `off` on a mandatory floor element cannot disable it, and the composer surfaces an informational note recording the neutralization). `automatic-review` participates in this pass like any other adversarial lane element — its keep/drop is governed purely by its configured `lane` and lane tier, with no separate downstream force-add guard, so a `minimal` posture or an `off` override that drops it is honored as the operator's decision (adversarial elements keep honoring `off` as a real opt-out). The q-gate is never a phase-6 finalize step, so it is never lane-pruned. The composer emits one `decision.log` line when at least one step is dropped (canonical prefix `(plan-marshall:manage-execution-manifest:compose) lane_resolution`), one line per lane warning (including the immune-`off` informational note), and surfaces `execution_profile`, `lane_dropped`, and `lane_warnings` in the `compose` result. The full rule is documented in [standards/decision-rules.md](standards/decision-rules.md) § "Execution-profile lane resolution".
+An element with no `lane:` block is not lane-participating and is always kept. A weakening `off` override of a `derived-state` / `core` floor element is **immune — the `off` is ignored and the element stays kept at its class-default tier** (§5 of the lane-selection design — `minimal` must never drop required derived state; a weakening `off` on a mandatory floor element cannot disable it, and the composer surfaces an informational note recording the neutralization). `automatic-review` participates in this pass like any other adversarial lane element — its keep/drop is governed purely by its configured `lane` and lane tier, with no separate downstream force-add guard, so a `minimal` posture or an `off` override that drops it is honored as the operator's decision (adversarial elements keep honoring `off` as a real opt-out). The q-gate is never a phase-6 finalize step, so it is never lane-pruned. The composer emits one `decision.log` line when at least one step is dropped (canonical prefix `(plan-marshall:manage-execution-manifest:compose) lane_resolution`), one line per lane warning (including the immune-`off` informational note), and surfaces `execution_profile`, `lane_dropped`, and `lane_warnings` in the `compose` result. `lane_warnings` has **two producers**: the lane resolution itself (the immune-`off` neutralization note) and the **ceremony pre-filter** — when the `simplify_inactive` / `security_audit_inactive` pre-filter drops a step that the operator's selected posture/lane would have included (and the ceremony `always` gate did not force it back in), the composer appends a `{step, warning}` entry naming the ceremony pre-filter, not the lane, as the remover, so the drop is never silent (the `simplify_omitted` / `security_audit_omitted` booleans remain in the result unchanged). The full rule is documented in [standards/decision-rules.md](standards/decision-rules.md) § "Execution-profile lane resolution".
 
 **Twice-compose timing.** `compose` runs twice (lane design §4.5): once at **init** (`phase-1-init`, provisional `auto` footprint prunes) and once at **end-of-phase-4** (idempotent re-compose with firm signals). The posture and the `minimal`/`full` shapes are fixed at init and never change on the second call; only `auto`'s footprint-gated prunes can move (in the safe, more-validation direction), and that refinement is **logged, never re-prompted**.
 
