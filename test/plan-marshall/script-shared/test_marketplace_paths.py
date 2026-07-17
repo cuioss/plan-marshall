@@ -23,6 +23,8 @@ from marketplace_paths import (
     get_base_path,
     get_plugin_cache_path,
     get_temp_dir,
+    home_root,
+    main_checkout_root,
     resolve_main_anchored_path,
     safe_relative_path,
 )
@@ -622,3 +624,76 @@ class TestResolveMainAnchoredPath:
 
         with pytest.raises(RuntimeError):
             resolve_main_anchored_path('merge.lock')
+
+
+class TestHomeRoot:
+    """The machine-global home-root tier — a single host-wide directory shared
+    across every checkout, distinct from the per-repo main-anchored exception.
+    """
+
+    def test_defaults_to_plan_marshall_under_home(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # No PLAN_MARSHALL_HOME override → ~/.plan-marshall.
+        monkeypatch.delenv('PLAN_MARSHALL_HOME', raising=False)
+        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+
+        assert home_root() == tmp_path / '.plan-marshall'
+
+    def test_plan_marshall_home_env_override_wins(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # PLAN_MARSHALL_HOME takes precedence over the ~/.plan-marshall default.
+        custom = tmp_path / 'custom-home'
+        monkeypatch.setenv('PLAN_MARSHALL_HOME', str(custom))
+        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+
+        assert home_root() == custom
+
+    def test_independent_of_cwd_and_not_main_anchored(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # home_root() resolves to the host-wide directory regardless of cwd — it
+        # does NOT walk up to a .plan/local ancestor and is NOT main-anchored.
+        monkeypatch.delenv('PLAN_MARSHALL_HOME', raising=False)
+        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+        worktree = tmp_path / 'wt'
+        (worktree / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(worktree)
+
+        resolved = home_root()
+
+        assert resolved == tmp_path / '.plan-marshall'
+        # Not anchored under any checkout's .plan/local (cwd-independent).
+        assert resolved != worktree / '.plan' / 'local' / '.plan-marshall'
+
+
+class TestMainCheckoutRoot:
+    """The public thin wrapper over the private ``_main_checkout_root``."""
+
+    def test_delegates_to_private_resolver(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sentinel = Path('/sentinel/main-checkout')
+        monkeypatch.setattr(marketplace_paths, '_main_checkout_root', lambda: sentinel)
+
+        assert main_checkout_root() == sentinel
+
+    def test_returns_same_root_as_private_resolver_in_real_repo(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A REAL git repo with a REAL linked worktree; the public wrapper must
+        # return the identical root the private resolver computes.
+        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+        main_repo = tmp_path / 'main'
+        main_repo.mkdir()
+        _init_repo(main_repo)
+        worktree = tmp_path / 'wt'
+        subprocess.run(
+            ['git', '-C', str(main_repo), 'worktree', 'add', '-q', '-b', 'feat', str(worktree)],
+            check=True,
+        )
+        monkeypatch.chdir(worktree)
+
+        assert main_checkout_root().resolve() == marketplace_paths._main_checkout_root().resolve()
+        assert main_checkout_root().resolve() == main_repo.resolve()

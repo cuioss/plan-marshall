@@ -15,9 +15,16 @@ working directory IS main, and phase-5+ resolve to the pinned worktree because
 the working directory is pinned there. The single deliberate exception mechanism
 is ``resolve_main_anchored_path`` (below), which always resolves to the main
 checkout for the bounded exception set — ``merge.lock``,
-``run-configuration.json``, ``lessons-learned``, ``build-queue.json``,
-``merge-queue.json``, ``orchestrator`` — every other resolution in the
-codebase is cwd-relative.
+``run-configuration.json``, ``lessons-learned``, ``merge-queue.json``,
+``orchestrator`` — every other resolution in the codebase is cwd-relative.
+
+Distinct from the per-repo main-anchored exception above is the machine-global
+home-root tier: ``home_root()`` returns a single ``~/.plan-marshall`` directory
+(overridable via ``PLAN_MARSHALL_HOME``) shared across every checkout on the
+machine. Where ``resolve_main_anchored_path`` anchors per-repo shared state to
+one repository's main checkout, ``home_root()`` anchors machine-wide state
+(build-queue.json, credentials/) to the host — it is not repo-scoped and does
+not depend on git resolution.
 """
 
 import json
@@ -363,6 +370,40 @@ def _main_checkout_root() -> Path:
     return common_dir.parent
 
 
+def main_checkout_root() -> Path:
+    """Return the MAIN checkout root — public thin wrapper over ``_main_checkout_root``.
+
+    Exposes the git-common-dir main-checkout resolution as a public symbol so
+    callers that need to stamp a holder's originating project (e.g. build-queue
+    holders under the machine-global ``home_root()`` tier) can name the main
+    checkout without reaching a private symbol.
+
+    Raises:
+        RuntimeError: when git cannot resolve the common dir (not a repo).
+    """
+    return _main_checkout_root()
+
+
+# =============================================================================
+# Machine-global home-root tier
+# =============================================================================
+# Distinct from the per-repo main-anchored exception above: ``home_root()`` is a
+# single host-wide directory shared across every checkout on the machine, the
+# home for non-entry-shaped machine-wide state (build-queue.json, credentials/).
+# It is NOT repo-scoped and does not depend on git resolution.
+
+
+def home_root() -> Path:
+    """Return the machine-global plan-marshall home root.
+
+    Resolves to ``$PLAN_MARSHALL_HOME`` when set, otherwise ``~/.plan-marshall``.
+    This is the single host-wide anchor for machine-global state shared across
+    every checkout on the machine — distinct from ``resolve_main_anchored_path``,
+    which anchors per-repo shared state to one repository's main checkout.
+    """
+    return Path(os.environ.get('PLAN_MARSHALL_HOME') or (Path.home() / '.plan-marshall'))
+
+
 def resolve_main_anchored_path(subpath: str | Path) -> Path:
     """Resolve ``subpath`` under the MAIN checkout's ``.plan/local``, cwd-independent.
 
@@ -372,7 +413,9 @@ def resolve_main_anchored_path(subpath: str | Path) -> Path:
     cross-session shared state MUST route through this function rather than
     re-implementing git-common-dir resolution. The bounded exception set is
     exactly: ``merge.lock``, ``run-configuration.json``, ``lessons-learned``,
-    ``build-queue.json``, ``merge-queue.json``, ``orchestrator``.
+    ``merge-queue.json``, ``orchestrator``. (Machine-global state such as
+    ``build-queue.json`` and ``credentials/`` is NOT in this set — it anchors to
+    the host-wide ``home_root()`` tier, not a repository's main checkout.)
 
     Resolution precedence:
 
