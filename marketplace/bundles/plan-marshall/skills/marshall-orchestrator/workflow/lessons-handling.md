@@ -14,7 +14,7 @@ The epic slug is NOT an input — it is derived in Step 1. Every invocation of t
 
 ### Step 1: Derive the dated slug and scaffold the epic
 
-Derive the slug as `lessons-handling-{YY-MM-DD}` from today's date (e.g. `lessons-handling-26-07-16`), per the dated-slug rule in the mode contract. Then scaffold the epic tree (idempotent):
+Derive the slug as `lessons-handling-{YY-MM-DD}-{NN}` from today's date, per the dated-slug rule in the mode contract, where `{NN}` is a collision-safe two-digit per-invocation sequence suffix (`01`, `02`, …). Because every invocation opens a FRESH, distinct epic, the bare `lessons-handling-{YY-MM-DD}` form collides on the second same-day run — reopening the earlier epic instead of starting a new one. Resolve `{NN}` by checking the orchestrator store for existing `lessons-handling-{YY-MM-DD}-*` slugs and taking the next free ordinal (first run of the day is `-01`, e.g. `lessons-handling-26-07-16-01`). Then scaffold the epic tree (idempotent):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator scaffold \
@@ -73,6 +73,8 @@ Write the clustered queue into `status.json` as the `plans` list (one entry per 
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update-field \
   --plan-id {slug} --field plans --value {plans_json_array} --store orchestrator
 ```
+
+The `{plans_json_array}` placeholder is a complete JSON array that MUST be passed as ONE shell-safe `--value` argument — single-quote the whole payload so the shell never word-splits or glob-expands the brackets, commas, and quotes. Never interpolate the raw JSON unquoted onto the command line.
 
 Mirror the queue into `epic.md`'s Ordered Queue table (reconciliation direction is always status.json → epic.md), then regenerate the START-HERE block and paste it verbatim between the generated-block markers:
 

@@ -14,12 +14,12 @@ mode: knowledge
 **Execution mode**: Library module; import functions as documented in usage examples.
 
 **Prohibited actions:**
-- Do not access `.plan/` files directly; use `base_path()` for path construction
+- Do not access `.plan/` files directly; use `base_path()` or the parameterized `get_store_dir(store, entry_id)` resolver for path construction
 - Do not bypass atomic write; always use `atomic_write_file()` for writes
 - Do not construct cross-domain paths manually; use ID-based access pattern
 
 **Constraints:**
-- All path construction goes through `base_path()` or `get_base_dir()`
+- All path construction goes through `base_path()`, `get_base_dir()`, or the sanctioned `get_store_dir(store, entry_id)` store-root resolver (`store='plans'` routes through `base_path`; `store='orchestrator'` routes main-anchored via `resolve_main_anchored_path`)
 - File writes use atomic temp-file-plus-rename pattern
 - Cross-domain access uses IDs, not paths
 

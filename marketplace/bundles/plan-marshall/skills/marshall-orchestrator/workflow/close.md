@@ -35,6 +35,8 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
   --slug {slug}
 ```
 
+Write the returned `summary` verbatim into `epic.md` between the `BEGIN/END GENERATED: resume-summary` markers (Write tool) BEFORE Step 3 freezes `history.md`. `history.md` is derived from the epic's final state, so `epic.md` must already carry the terminal START-HERE block when it is frozen — do not leave this write implicit.
+
 ### Step 3: Freeze into history.md
 
 Write `history.md` via the Write tool: the epic's final state — vision as pursued, the shipped/dropped/parked queue outcome per plan, the decision record, unresolved defects and watches (carried forward as leads, not silently dropped), and the closing rationale. `epic.md` and the rest of the tree remain on disk untouched — close freezes, never deletes; the tree is the audit record.

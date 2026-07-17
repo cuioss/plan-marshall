@@ -42,6 +42,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
   --plan-id {slug} --field plans --value {plans_json_array} --store orchestrator
 ```
 
+The `{workstreams_json_array}` / `{plans_json_array}` placeholders are a complete JSON array that MUST be passed as ONE shell-safe `--value` argument — single-quote the whole payload so the shell never word-splits or glob-expands the brackets, commas, and quotes. Never interpolate the raw JSON unquoted onto the command line.
+
 Advance the epic phase:
 
 ```bash

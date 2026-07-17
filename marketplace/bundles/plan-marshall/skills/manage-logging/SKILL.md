@@ -119,7 +119,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  read --plan-id {plan_id} --type {work|script|decision} [--limit N] [--phase PHASE]
+  read --plan-id {plan_id} --type {work|script|decision} [--limit N] [--phase PHASE] [--store {plans|orchestrator}]
 ```
 
 **Arguments**:

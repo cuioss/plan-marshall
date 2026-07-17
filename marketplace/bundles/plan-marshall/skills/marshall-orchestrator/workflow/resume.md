@@ -45,6 +45,15 @@ For each `launched` plan in the queue, verify the recorded state against ground 
 
 ### Step 5: Report and confirm the anchor
 
+When Step 4's ground-truth verification changed any queue state (a plan transitioned, a reconciliation landed), the Step 3 START-HERE block is now stale — it rendered the pre-reconciliation queue. Regenerate it and replace the block between the generated-block markers BEFORE returning, so the persisted `epic.md` reflects the reconciled queue:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator resume-summary \
+  --slug {slug}
+```
+
+When Step 4 changed nothing, the Step 3 block is already current and this regeneration is skipped.
+
 Report the re-anchored state to the operator: epic phase, queue summary, in-flight plans, open defects/watches, and the next action from `resume_anchor`. When Step 4's verification changed the next action, update the anchor:
 
 ```bash

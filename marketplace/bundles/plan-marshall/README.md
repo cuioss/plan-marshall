@@ -48,7 +48,7 @@ Configuration (`marshall-steward`) and WebFetch permission consolidation (`workf
 
 ## Entry Points and Discoverability
 
-The primary workflow entry points are **skills**, not commands. The `plan-marshall` skill orchestrates the full plan lifecycle (create, outline, execute, finalize), and `marshall-steward` handles project configuration. Both are invoked via `Skill:` directives or by `execution-context-{level}` delegation. The commands in `commands/` serve narrower, tool-specific purposes (IDE diagnostics, agent file sync). To start a planning workflow, load the `plan-marshall:plan-marshall` skill.
+The primary workflow entry points are **skills**, not commands. The `plan-marshall` skill orchestrates the full plan lifecycle (create, outline, execute, finalize), `marshall-orchestrator` tracks multi-plan epics across sessions (decompose, orchestrate, resume, close), and `marshall-steward` handles project configuration. All three are invoked via `Skill:` directives or by `execution-context-{level}` delegation. The commands in `commands/` serve narrower, tool-specific purposes (IDE diagnostics, agent file sync). To start a planning workflow, load the `plan-marshall:plan-marshall` skill.
 
 ## Key Concepts
 
