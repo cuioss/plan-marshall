@@ -18,6 +18,7 @@ from _status_core import (
     get_archive_dir,
     get_status_path,
     log_entry,
+    normalize_metadata,
     now_utc_iso,
     require_status,
     require_valid_plan_id,
@@ -56,14 +57,7 @@ def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] 
     (or when ``git status`` itself fails — the gate fails closed), and
     ``None`` when the transition may proceed.
     """
-    metadata = status.get('metadata')
-    if not isinstance(metadata, dict):
-        # An explicit JSON null (or non-dict) for status['metadata'] would
-        # make .get(..., {}) return None — the default only applies when the
-        # key is ABSENT. Normalize and persist so downstream reads/writes in
-        # the same call stay consistent.
-        metadata = {}
-        status['metadata'] = metadata
+    metadata = normalize_metadata(status)
     if not metadata.get('use_worktree'):
         return None
     worktree_path = metadata.get('worktree_path')
@@ -139,13 +133,7 @@ def _loop_back_auto_override(
     A failed re-capture also blocks (fail closed) by returning its error
     payload.
     """
-    metadata = status.get('metadata')
-    if not isinstance(metadata, dict):
-        # Guard against an explicit JSON null for status['metadata'] — the
-        # .get default applies only when the key is absent. Normalize and
-        # persist so the marker pop below mutates the stored dict.
-        metadata = {}
-        status['metadata'] = metadata
+    metadata = normalize_metadata(status)
     marker = metadata.get('loop_back_reentry')
     if verify_result.get('status') != 'drift' or not marker:
         return verify_result
