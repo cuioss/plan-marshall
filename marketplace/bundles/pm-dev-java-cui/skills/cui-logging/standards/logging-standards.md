@@ -289,14 +289,17 @@ LOGGER.info("User password: %s", password);
 LOGGER.info("User authenticated: %s", username);
 ```
 
-**Sanitize every channel that reaches the log — including the throwable.** When sanitizing untrusted content before logging, the format string is not the only sink: `CuiLogger.debug(Throwable, String, Object...)` (and the `info`/`warn`/`error` siblings) render the throwable via `e.toString()`, which STARTS with the unsanitized exception message — so passing the raw throwable alongside a sanitized message re-opens the exact log-injection (CWE-117) sink the message-only fix meant to close. Preserve the cause on a domain exception instead of handing the raw throwable to the logger:
+**Sanitize every channel that reaches the log — including the throwable AND the wrapper exception's cause chain.** When sanitizing untrusted content before logging, the format string is not the only sink: `CuiLogger.debug(Throwable, String, Object...)` (and the `info`/`warn`/`error` siblings) render the throwable via `e.toString()`, which STARTS with the unsanitized exception message — so passing the raw throwable alongside a sanitized message re-opens the exact log-injection (CWE-117) sink the message-only fix meant to close. The same re-injection recurs one level down the chain: a wrapper/domain exception constructed with the raw throwable as its `cause` prints a `Caused by:` section rendered via the cause's own `toString()`, which again starts with the unsanitized original message. Therefore you MUST NOT pass the raw exception as the `cause` of a wrapper/domain exception when the original message is unsanitized — construct the wrapper with the sanitized message only and do not attach the raw cause:
 
 ```java
 // Avoid: Bad — sanitized message, but e.toString() re-injects the raw message
 LOGGER.warn(e, WARN.TRANSPORT_FAILED, sanitize(e.getMessage()));
 
-// Preferred: Good — cause preserved on a domain exception with a sanitized message
+// Avoid: Bad — sanitized message, but the raw cause re-injects via the "Caused by:" chain
 throw new TransportException(sanitize(e.getMessage()), e);
+
+// Preferred: Good — sanitized message, no raw cause attached to re-inject downstream
+throw new TransportException(sanitize(e.getMessage()));
 ```
 
 This is the CUI-specific instance of the generic log-injection principle, which is owned by the `pm-dev-java:java-security` secure-logging surface — apply the generic rule from there; it is not restated here. The boundary with rule 2 (Exception Parameter First): exception-first governs HOW to log a throwable when logging it is intended and still applies whenever the throwable's message chain is trusted or already sanitized; this rule governs WHETHER to pass the raw throwable when its message carries untrusted content.
@@ -319,7 +322,7 @@ For compliance verification patterns (violation detection, coverage analysis, id
 - Exception parameter comes first
 - %s used for all substitutions
 - No sensitive information logged
-- No raw throwable passed alongside a sanitized message
+- No raw throwable passed alongside a sanitized message, and no raw unsanitized exception attached as a wrapper/domain exception's cause
 - No System.out or System.err usage
 
 ### Documentation
