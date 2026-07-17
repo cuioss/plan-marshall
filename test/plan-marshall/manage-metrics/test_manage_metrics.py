@@ -987,6 +987,16 @@ class TestReconcileAccumulatorIntoPhase:
         manage_metrics._reconcile_accumulator_into_phase(phase_data, {})
         assert phase_data == {'duration_seconds': 600}
 
+    def test_zero_accumulator_values_are_not_backfilled(self):
+        """Falsy accumulator values (zero) never backfill — indistinguishable from absent."""
+        phase_data = {'duration_seconds': 600}
+        manage_metrics._reconcile_accumulator_into_phase(
+            phase_data, {'total_tokens': 0, 'tool_uses': 0, 'duration_ms': 0}
+        )
+        assert 'total_tokens' not in phase_data
+        assert 'tool_uses' not in phase_data
+        assert 'agent_duration_ms' not in phase_data
+
 
 # =============================================================================
 # Test: dispatch-boundary reconciliation (D1) — _read_dispatch_boundary_totals
@@ -1146,16 +1156,6 @@ class TestGenerateReconcilesDispatchBoundaries:
 
         md = (plan_context.plan_dir_for('db-recon-smaller') / 'metrics.md').read_text()
         assert 'reconciled from dispatch boundaries' not in md
-
-    def test_zero_accumulator_values_are_not_backfilled(self):
-        """Falsy accumulator values (zero) never backfill — indistinguishable from absent."""
-        phase_data = {'duration_seconds': 600}
-        manage_metrics._reconcile_accumulator_into_phase(
-            phase_data, {'total_tokens': 0, 'tool_uses': 0, 'duration_ms': 0}
-        )
-        assert 'total_tokens' not in phase_data
-        assert 'tool_uses' not in phase_data
-        assert 'agent_duration_ms' not in phase_data
 
     def test_partial_backfill_only_absent_fields(self):
         """Only the absent fields are folded; present fields win."""
