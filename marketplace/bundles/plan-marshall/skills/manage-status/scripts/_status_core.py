@@ -63,7 +63,8 @@ class StatusData(TypedDict):
 # machinery) to surface a 🔨 build symbol for the duration of a long-running
 # orchestration Bash call; manage-terminal-title renders it as a token-keyed
 # icon-slot override, not a glyph.
-TITLE_TOKEN_STATES = frozenset({'lock-waiting', 'lock-owned', 'build-busy'})
+TITLE_TOKEN_BUILD_BUSY = 'build-busy'
+TITLE_TOKEN_STATES = frozenset({'lock-waiting', 'lock-owned', TITLE_TOKEN_BUILD_BUSY})
 
 
 # =============================================================================
@@ -440,6 +441,24 @@ def _surface_drive(plan_id: str) -> None:
         _drive_repaint(plan_id)
     except Exception as exc:  # noqa: BLE001 — drive seam is best-effort
         logger.debug('drive-seam surface for %s failed: %s', plan_id, exc)
+
+
+def drop_stale_build_busy(status: dict[Any, Any]) -> bool:
+    """Clear a stale ``build-busy`` title-token from ``status`` in place.
+
+    Pops ``status['title_token']`` iff its value equals
+    :data:`TITLE_TOKEN_BUILD_BUSY`, returning ``True`` when it popped and
+    ``False`` otherwise. Called by the phase writers (``cmd_transition`` /
+    ``cmd_set_phase``) immediately before ``write_status`` so a ``build-busy``
+    token left behind by an interrupted long-running orchestration call does not
+    survive the phase transition and freeze a stale 🔨 in the title bar. The
+    lock-coordination tokens (``lock-waiting`` / ``lock-owned``) are deliberately
+    left untouched — the clear is scoped to ``build-busy`` only.
+    """
+    if status.get('title_token') == TITLE_TOKEN_BUILD_BUSY:
+        status.pop('title_token', None)
+        return True
+    return False
 
 
 # Phase routing maps phase names to skills (for route command).

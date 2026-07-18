@@ -57,7 +57,7 @@ belongs entirely to the composer.
 |-------|------------|------|
 | `current_phase` | the plan lifecycle commands (`transition`, etc.) | The active phase name (`5-execute`, `complete`, `archived`, …) |
 | `short_description` | plan metadata setters | The optional short title-body name token |
-| `title_token` | `manage-status title-token set\|clear` | The bare lock-coordination (`lock-waiting`/`lock-owned`) or orchestration-busy (`build-busy`) state string (no glyph/icon) |
+| `title_token` | `manage-status title-token set\|clear` (the explicit writer); `transition`/`set-phase` additionally pop a stale `build-busy` token and `archive` pops any token before persisting | The bare lock-coordination (`lock-waiting`/`lock-owned`) or orchestration-busy (`build-busy`) state string (no glyph/icon) |
 
 ### The `title-token` verb
 
@@ -101,6 +101,14 @@ and emits nothing itself — it delegates the repaint and the bind to
 `platform-runtime`, preserving the state-layer's render-free contract (exactly as
 `merge_lock.py` delegates its own title-token surface).
 
+Additionally, `cmd_transition` and `cmd_set_phase` call `drop_stale_build_busy(status)`
+**before** `write_status` — the phase-boundary safety-net that clears a stale
+`build-busy` token (left behind by an interrupted long-running orchestration call)
+so it cannot leak the 🔨 hammer icon across the phase change. The clear is scoped
+to `build-busy` only; the live lock-coordination tokens (`lock-waiting` /
+`lock-owned`) are left untouched. `cmd_create` performs no such clear (a freshly
+seeded plan holds no in-flight token).
+
 ### Archive interaction
 
 `cmd_archive` (in `manage-status`) performs three mutations to `status.json`
@@ -113,7 +121,12 @@ before moving the plan directory:
    in-flight token (`lock-waiting` / `lock-owned` / `build-busy`) left behind
    would persist a stale glyph or icon-slot override in the archived snapshot.
    The pop is token-agnostic: it covers every `TITLE_TOKEN_STATES` value with a
-   single operation.
+   single operation. This is distinct from the `transition` / `set-phase`
+   phase-writer clear (`drop_stale_build_busy`, see Persisted-title-state-write
+   drive seam above), which is scoped to `build-busy` **only** and leaves the
+   live lock tokens intact — `archive` unconditionally clears every token because
+   the plan is going dormant, whereas the phase writers preserve a live lock
+   state that is still meaningful on the ongoing plan.
 
 After writing the mutated `status.json` back to the live plan directory,
 `cmd_archive` moves the **entire plan directory** to
