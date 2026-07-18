@@ -49,6 +49,7 @@
     "./skills/extension-api",
     "./skills/manage-adr",
     "./skills/manage-architecture",
+    "./skills/manage-build-server",
     "./skills/manage-ci-artifacts",
     "./skills/manage-change-ledger",
     "./skills/manage-config",
