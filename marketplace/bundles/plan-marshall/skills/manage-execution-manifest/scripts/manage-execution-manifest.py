@@ -1462,14 +1462,19 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # execution_tier routing, and the canonical-verify footprint pre-filter have
     # produced the final phase-5 verification list. When the request was
     # classified ``analysis`` / ``planning`` by the ``manage-config
-    # aspect-classify`` verb (forwarded here via ``--aspect``), the build /
-    # quality-gate / test (``module-tests``) / coverage canonical-verify steps
-    # are dropped — an analysis / planning request has no production / test
-    # footprint, so those gates have nothing to gate. An ``implementation``
-    # aspect (the classifier's safe sub-threshold fallback) or an absent
-    # ``--aspect`` is a no-op: every build/verify gate is retained. The drop is
-    # role-driven and canonical-agnostic, reusing the same per-compose role
-    # cache as the footprint pre-filter above.
+    # aspect-classify`` verb, the build / quality-gate / test (``module-tests``)
+    # / coverage canonical-verify steps are dropped — an analysis / planning
+    # request has no production / test footprint, so those gates have nothing to
+    # gate. The aspect is resolved by precedence: an explicit ``--aspect``
+    # argument wins; when it is absent the composer self-reads
+    # ``status.metadata.request_aspect`` via ``_read_request_aspect(plan_id)``
+    # (mirroring the ``recipe_key`` / ``_read_recipe_source`` self-read
+    # precedent), because ``phase-4-plan``'s compose invocation does not forward
+    # ``--aspect``. Only an ``implementation`` aspect (the classifier's safe
+    # sub-threshold fallback) or an absent argument with unset/``implementation``
+    # persisted metadata is a no-op: every build/verify gate is retained. The
+    # drop is role-driven and canonical-agnostic, reusing the same per-compose
+    # role cache as the footprint pre-filter above.
     aspect = getattr(args, 'aspect', None) or _read_request_aspect(plan_id)
     body['phase_5']['verification_steps'], aspect_dropped = _apply_aspect_step_dropping(
         list(body['phase_5'].get('verification_steps', [])),
