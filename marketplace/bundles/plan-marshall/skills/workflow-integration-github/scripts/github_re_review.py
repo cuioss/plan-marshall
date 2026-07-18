@@ -247,17 +247,6 @@ _REGISTERED_TRIGGER_COMMENTS: frozenset[str] = frozenset(
 )
 
 
-def registered_trigger_comments() -> frozenset[str]:
-    """Return the set of registered bot re-review trigger comments.
-
-    Derived once at import from the registry (``bot_registry.trigger_comment``
-    over ``bot_registry.bot_kinds``), excluding empty triggers. This is the
-    single source both the poster (``_ReReviewStrategy.request_fresh_review``)
-    and the producer pre-filter recognizer share.
-    """
-    return _REGISTERED_TRIGGER_COMMENTS
-
-
 def is_registered_trigger_comment(body: str) -> bool:
     """Return True when ``body`` is exactly a registered bot re-review trigger.
 
