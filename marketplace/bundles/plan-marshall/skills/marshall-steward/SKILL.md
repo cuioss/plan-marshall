@@ -518,12 +518,10 @@ First gate on call success: the comparison below is evaluated ONLY when BOTH the
 to the user and skip the clean-pass path entirely — never infer success from
 `marshal_status: fresh` alone, because an error path does not guarantee a
 well-formed `added_count` field. Only once both calls have returned
-`status: success` do the two cases below apply:
-
-The three cases below are evaluated in order; the `marshal_status: unknown`
-gate is checked FIRST and short-circuits, so an unresolvable-manifest verdict is
-never swept into the `marshal_status: fresh → continue silently` branch even when
-`added_count > 0`:
+`status: success` do the three cases below apply, evaluated in order — the
+`marshal_status: unknown` gate is checked FIRST and short-circuits, so an
+unresolvable-manifest verdict is never swept into the
+`marshal_status: fresh → continue silently` branch even when `added_count > 0`:
 
 - **`marshal_status: unknown`** (evaluated first, regardless of `added_count`) →
   the installed `dist-manifest.json` could not be resolved, so version-based
