@@ -1,0 +1,222 @@
+= Windows / WSL Setup
+:nofooter:
+:toc: left
+:toclevels: 2
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
+
+Plan Marshall runs inside Claude Code, which on Windows is **strongly recommended to run under WSL2** (Windows Subsystem for Linux). This page walks a Windows user from nothing to a working Plan Marshall environment.
+
+[IMPORTANT]
+====
+Running under WSL2 is **very strongly recommended** — not merely a convenience. The build-queue server (the component that serializes concurrent plan builds) is **WSL-only**: it does not run natively on Windows. Native-Windows use is unsupported for that path.
+====
+
+The end state is a Linux shell (Ubuntu) in which `python3`, `git`, `gh`, and `claude` all resolve, edited through a WSL-connected editor (VS Code or IntelliJ).
+
+== 1. Install WSL2 and Ubuntu
+
+Open **PowerShell as Administrator** and run:
+
+[source,powershell]
+----
+wsl --install -d Ubuntu
+----
+
+This enables the WSL2 components (reboot if prompted), installs Ubuntu, and on first launch asks you to create a **Linux username and password**.
+
+[NOTE]
+====
+The Linux password is **not** your Windows/domain password — it is a new credential you choose here, used mainly for `sudo` inside WSL.
+====
+
+Verify afterwards from PowerShell:
+
+[source,powershell]
+----
+wsl -l -v
+----
+
+Ubuntu should appear as **VERSION 2**. Set it as the default so a bare `wsl` opens it:
+
+[source,powershell]
+----
+wsl --set-default Ubuntu
+----
+
+== 2. Use the right distribution
+
+Container tools register their own WSL distributions — for example `docker-desktop`, `rancher-desktop`, or `podman-machine-default`. These appear in `wsl -l -v` but are **internal VMs, not general-purpose terminals**; several are minimal images where even `passwd` is missing.
+
+[WARNING]
+====
+Do your work in **Ubuntu**, never in a container-tool distribution. A prompt like `[root@host dir]#` (RHEL/Fedora-style) is a sign you have landed in one of those VMs by accident. Start Ubuntu explicitly with `wsl -d Ubuntu`.
+====
+
+Confirm which distribution you are in:
+
+[source,bash]
+----
+cat /etc/os-release   # should say Ubuntu
+----
+
+== 3. Prepare the distribution
+
+All commands below run **inside the Ubuntu shell**.
+
+=== Python 3 (required by Plan Marshall)
+
+[source,bash]
+----
+python3 --version
+----
+
+Ubuntu ships `python3`. If it is missing, install it with `sudo apt update && sudo apt install python3 -y`. This is Plan Marshall's one hard prerequisite (see xref:installation.adoc[Installation]).
+
+=== Git
+
+[source,bash]
+----
+sudo apt update && sudo apt install git curl -y
+git config --global user.name  "Your Name"
+git config --global user.email "you@example.com"
+----
+
+=== GitHub CLI (`gh`)
+
+There is no official `curl | bash` installer. Simplest first attempt:
+
+[source,bash]
+----
+sudo apt update && sudo apt install gh -y   # works on recent Ubuntu
+----
+
+If the package is not found, use the official GitHub apt repository:
+
+[source,bash]
+----
+sudo mkdir -p -m 755 /etc/apt/keyrings
+curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+  | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
+sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+  | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+sudo apt update && sudo apt install gh -y
+----
+
+Then authenticate (opens a browser on Windows to confirm):
+
+[source,bash]
+----
+gh auth login
+----
+
+=== Claude Code
+
+Install Claude Code **inside WSL** (not the Windows build) so it shares the Linux toolchain:
+
+[source,bash]
+----
+curl -fsSL https://claude.ai/install.sh | bash
+----
+
+If `~/.local/bin` is not on your `PATH`, add it:
+
+[source,bash]
+----
+echo 'export PATH="$PATH:$HOME/.local/bin"' >> ~/.bashrc && source ~/.bashrc
+claude --version
+----
+
+== 4. Where to put your project
+
+Keep repositories in the **WSL (ext4) filesystem**, not on the Windows drive under `/mnt/c`. Cross-boundary file I/O over `/mnt/c` is markedly slower, which shows up in Git status, file watching, and builds.
+
+[source,bash]
+----
+mkdir -p ~/git && cd ~/git
+git clone https://github.com/your-org/your-project.git
+----
+
+[TIP]
+====
+You can still reach these files from Windows Explorer at `\\wsl.localhost\Ubuntu\home\<user>\git\` when you need to — but *edit and build* from within WSL.
+====
+
+== 5. Editor — VS Code (Remote-WSL)
+
+VS Code runs its UI on Windows while everything else (terminal, extensions, language servers, Git) runs inside WSL.
+
+. In VS Code on Windows, install the **WSL** extension (Microsoft).
+. From the Ubuntu shell, open your project:
++
+[source,bash]
+----
+cd ~/git/your-project && code .
+----
++
+The first run installs a small VS Code server into WSL automatically.
+. Confirm the green **`WSL: Ubuntu`** badge in the bottom-left corner.
+. Open the integrated terminal (`Ctrl+Backtick`) — it is now a **WSL shell**, so `claude`, `gh`, and `python3` all resolve.
+
+[IMPORTANT]
+====
+If you open VS Code normally on Windows (no green `WSL: Ubuntu` badge), its terminal is PowerShell and the WSL-side tools are **not** visible. The badge is the signal that you are in the WSL context.
+====
+
+== 6. Editor — IntelliJ IDEA (JetBrains Gateway)
+
+JetBrains offers a direct analogue to Remote-WSL. There are two mechanisms:
+
+[cols="1,3", options="header"]
+|===
+| Mechanism | What it does
+
+| **Remote Development → WSL** (JetBrains Gateway)
+| Runs a headless IDE **backend inside WSL2** with a thin client on Windows. Indexing, build, run/debug, VCS, and the **integrated terminal all execute in WSL** — the true equivalent of VS Code Remote-WSL. From **IntelliJ 2025.3** it opens in the same window rather than a separate one.
+
+| **Open from `\\wsl.localhost\Ubuntu\...`** (+ Run Targets)
+| IntelliJ runs natively on Windows but opens a project in the WSL filesystem and can use the JDK / Git / Maven / Gradle from WSL via *Run Targets*. Lighter, but the IDE itself is not in WSL.
+|===
+
+For Plan Marshall the terminal must live in WSL (that is where `claude` and the build-queue server run), so use **Remote Development**:
+
+. Enable the **Remote Development** plugin (bundled in recent IntelliJ).
+. Welcome screen → **Remote Development** → **WSL** → **New Connection**.
+. Select the **Ubuntu** distribution and the project folder under `~/git`.
+
+[NOTE]
+====
+The WSL backend build is **version-locked** to your IntelliJ version. If they drift you may see an *"IDE build has expired"* error on connect — update IntelliJ (or the backend) so the versions match.
+====
+
+== Troubleshooting
+
+Wrong distribution / `[root@...]#` prompt::
+You are in a container-tool VM (Docker/Rancher/Podman), not Ubuntu. Exit and start Ubuntu explicitly: `wsl -d Ubuntu`. See <<_2_use_the_right_distribution>>.
+
+Forgot the WSL sudo password::
+From PowerShell, log into Ubuntu as root (no password needed) and reset it:
++
+[source,powershell]
+----
+wsl -d Ubuntu -u root
+----
++
+[source,bash]
+----
+passwd <your-linux-username>   # find it with:  ls /home
+----
+
+`passwd: command not found`::
+You are almost certainly in a minimal container-tool distribution, not Ubuntu — `passwd` exists in Ubuntu. Switch to Ubuntu (`wsl -d Ubuntu`) and retry.
+
+`gh`/`claude` not found in the editor terminal::
+Your terminal is not running in WSL. In VS Code, look for the green `WSL: Ubuntu` badge; in IntelliJ, use a Remote-Development (Gateway) connection rather than a native-Windows project.
+
+IntelliJ *"IDE build has expired"* on WSL connect::
+The WSL backend and your local IntelliJ versions differ. Update so they match.
+
+== Next step
+
+With WSL, `python3`, and Claude Code in place, install Plan Marshall and run the wizard: xref:installation.adoc[Installation] → xref:getting-started.adoc[Getting Started].
