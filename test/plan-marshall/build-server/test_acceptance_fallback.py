@@ -24,11 +24,11 @@ from _build_execute import CaptureStrategy  # noqa: E402
 
 
 def _config(**overrides):
-    base = dict(
-        tool_name='maven', unix_wrapper='mvnw', windows_wrapper='mvnw.cmd', system_fallback='mvn',
-        capture_strategy=CaptureStrategy.TOOL_LOG_FLAG, build_command_fn=factory.default_build_command_fn,
-        scope_fn=lambda a: 'default', command_key_fn=factory.default_command_key_fn,
-    )
+    base = {
+        'tool_name': 'maven', 'unix_wrapper': 'mvnw', 'windows_wrapper': 'mvnw.cmd', 'system_fallback': 'mvn',
+        'capture_strategy': CaptureStrategy.TOOL_LOG_FLAG, 'build_command_fn': factory.default_build_command_fn,
+        'scope_fn': lambda a: 'default', 'command_key_fn': factory.default_command_key_fn,
+    }
     base.update(overrides)
     return factory.ExecuteConfig(**base)
 

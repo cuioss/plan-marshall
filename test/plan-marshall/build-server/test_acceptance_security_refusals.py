@@ -16,7 +16,6 @@ from __future__ import annotations
 import os
 import sys
 
-import pytest
 from conftest import get_script_path
 
 _DAEMON_DIR = get_script_path('plan-marshall', 'manage-build-server', 'marshalld.py').parent

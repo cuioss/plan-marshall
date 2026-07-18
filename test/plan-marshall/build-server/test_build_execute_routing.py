@@ -126,16 +126,16 @@ def _make_live_plan(main_repo: Path, plan_id: str) -> None:
 
 def _config(**overrides: Any) -> factory.ExecuteConfig:
     """A minimal ExecuteConfig for driving cmd_run in tests."""
-    base: dict[str, Any] = dict(
-        tool_name='maven',
-        unix_wrapper='mvnw',
-        windows_wrapper='mvnw.cmd',
-        system_fallback='mvn',
-        capture_strategy=CaptureStrategy.TOOL_LOG_FLAG,
-        build_command_fn=factory.default_build_command_fn,
-        scope_fn=lambda a: 'default',
-        command_key_fn=factory.default_command_key_fn,
-    )
+    base: dict[str, Any] = {
+        'tool_name': 'maven',
+        'unix_wrapper': 'mvnw',
+        'windows_wrapper': 'mvnw.cmd',
+        'system_fallback': 'mvn',
+        'capture_strategy': CaptureStrategy.TOOL_LOG_FLAG,
+        'build_command_fn': factory.default_build_command_fn,
+        'scope_fn': lambda a: 'default',
+        'command_key_fn': factory.default_command_key_fn,
+    }
     base.update(overrides)
     return factory.ExecuteConfig(**base)
 
@@ -275,7 +275,7 @@ def test_route_refused_falls_back(use_fake_client):
 
 
 def test_route_wait_degraded_falls_back(use_fake_client):
-    client = use_fake_client(
+    use_fake_client(
         preflight={'status': 'success', 'preflight': 'ready'},
         submit={'status': 'success', 'job_id': 'JOB-3'},
         waits=[{'status': 'degraded', 'reason': 'unreachable'}],
@@ -397,8 +397,8 @@ def test_registered_and_unregistered_contend_on_one_file(isolated_queue, monkeyp
 
 
 def _run_args(**overrides) -> Namespace:
-    base = dict(command_args='verify core', project_dir='/tree', plan_id='plan-x',
-                format='toon', mode='actionable', timeout=None)
+    base = {'command_args': 'verify core', 'project_dir': '/tree', 'plan_id': 'plan-x',
+            'format': 'toon', 'mode': 'actionable', 'timeout': None}
     base.update(overrides)
     return Namespace(**base)
 
