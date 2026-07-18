@@ -1167,6 +1167,8 @@ def stamp_provisioning_fields(config: dict) -> None:
     provisioned_version = read_provisioned_version()
     if provisioned_version:
         system['provisioned_version'] = provisioned_version
+    elif 'provisioned_version' not in system:
+        system['provisioned_version'] = ''
     # An empty read (unstamped/absent executor) preserves any existing stamp
     # instead of blanking a known-good provisioned_version.
     system['config_seed_fingerprint'] = compute_config_seed_fingerprint()
