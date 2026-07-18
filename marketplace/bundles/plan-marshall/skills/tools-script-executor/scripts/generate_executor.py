@@ -1086,13 +1086,20 @@ def find_installed_manifest_path(base_path: Path | None = None, target: str = 'c
     """Locate the installed ``dist-manifest.json``, or ``None`` when absent.
 
     The manifest is emitted by the target generator at the target output root
-    (meta-project: ``target/{target}/``) and rides into the plugin cache on
-    install. Search order:
+    (meta-project: ``target/{target}/``). On a meta-project install it is
+    copied into the plugin-cache tree; on a marketplace install it stays at the
+    marketplace clone root (``.../plugins/marketplaces/<marketplace>/``) and is
+    NOT copied into ``.../plugins/cache/<marketplace>/``. Search order:
 
     1. ``$PM_DIST_MANIFEST`` — explicit override (tests + alternate installs).
     2. The meta-project target tree (``<repo>/target/{target}/dist-manifest.json``)
        when ``base_path`` points inside a ``marketplace/bundles`` checkout.
     3. ``base_path/dist-manifest.json`` and its parent (cache / target root).
+    4. The marketplace clone root: when ``base_path`` resolves inside a
+       plugin-cache layout (``.../plugins/cache/<marketplace>/...``), the
+       ``/plugins/cache/<marketplace>`` segment is mapped to
+       ``/plugins/marketplaces/<marketplace>`` and ``dist-manifest.json`` is
+       appended — where a marketplace install actually keeps its manifest.
 
     Args:
         base_path: The resolved bundles/cache root, or ``None`` when it could
@@ -1119,6 +1126,20 @@ def find_installed_manifest_path(base_path: Path | None = None, target: str = 'c
             candidates.append(repo_root / 'target' / target / 'dist-manifest.json')
         candidates.append(base_path / 'dist-manifest.json')
         candidates.append(base_path.parent / 'dist-manifest.json')
+        # (4) Marketplace clone root: a plugin-cache install keeps the manifest
+        # at ``.../plugins/marketplaces/<marketplace>/`` rather than inside the
+        # cache tree, so map the ``/plugins/cache/<marketplace>`` segment to
+        # ``/plugins/marketplaces/<marketplace>`` and append ``dist-manifest.json``.
+        cache_marker = '/plugins/cache/'
+        cache_idx = base_str.find(cache_marker)
+        if cache_idx >= 0:
+            prefix = base_str[:cache_idx]
+            remainder = base_str[cache_idx + len(cache_marker):]
+            marketplace_name = remainder.split('/', 1)[0]
+            if marketplace_name:
+                candidates.append(
+                    Path(prefix) / 'plugins' / 'marketplaces' / marketplace_name / 'dist-manifest.json'
+                )
 
     for candidate in candidates:
         if candidate.is_file():

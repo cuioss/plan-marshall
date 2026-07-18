@@ -1273,6 +1273,55 @@ def test_find_installed_manifest_path_resolves_cache_root_manifest(tmp_path, mon
     assert resolved == manifest, 'a plugin-cache-root base_path must resolve base_path/dist-manifest.json'
 
 
+def test_find_installed_manifest_path_resolves_marketplace_clone_root(tmp_path, monkeypatch):
+    """A plugin-cache-INSTALL base_path (``.../plugins/cache/<marketplace>/...``)
+    resolves the manifest at the marketplace CLONE ROOT
+    (``.../plugins/marketplaces/<marketplace>/dist-manifest.json``).
+
+    On a marketplace install the sync engine does NOT copy ``dist-manifest.json``
+    into the ``/plugins/cache/<marketplace>`` tree — it stays at the clone root
+    under ``/plugins/marketplaces/<marketplace>``. Without the clone-root
+    candidate the manifest is unresolvable there, ``read_installed_manifest``
+    returns ``{}``, and the executor stamps the empty version sentinel instead
+    of the real version. This pins the (4) clone-root candidate against silent
+    removal.
+    """
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+
+    module = load_module()
+
+    # Plugin-cache-install layout: base_path lives under
+    # .../plugins/cache/<marketplace>/... and carries NO manifest at any
+    # pre-existing candidate — no '/marketplace/bundles' marker, no
+    # base_path/dist-manifest.json, and no base_path.parent/dist-manifest.json.
+    cache_base = tmp_path / 'plugins' / 'cache' / 'plan-marshall' / '0.1.1200' / 'skills'
+    cache_base.mkdir(parents=True)
+    assert '/marketplace/bundles' not in str(cache_base)
+    assert not (cache_base / 'dist-manifest.json').exists()
+    assert not (cache_base.parent / 'dist-manifest.json').exists()
+
+    # The manifest lives ONLY at the marketplace clone root.
+    clone_root = tmp_path / 'plugins' / 'marketplaces' / 'plan-marshall'
+    clone_root.mkdir(parents=True)
+    manifest = clone_root / 'dist-manifest.json'
+    manifest.write_text('{"version": "0.1.1200"}', encoding='utf-8')
+
+    resolved = module.find_installed_manifest_path(cache_base)
+
+    assert resolved == manifest, (
+        'a plugin-cache-install base_path must resolve the marketplace clone-root dist-manifest.json'
+    )
+
+    # Companion: the value the executor stamps as MARSHALL_VERSION is
+    # manifest['version'] (read via read_installed_manifest at generation time),
+    # so a resolvable clone-root manifest yields the real, non-empty version —
+    # never the empty sentinel a fresh install produces.
+    stamped = module.read_installed_manifest(cache_base)
+    assert stamped.get('version') == '0.1.1200', (
+        'the executor must stamp the real manifest version on a marketplace-cache install, not the empty sentinel'
+    )
+
+
 def test_template_declares_version_and_fingerprint_constants():
     """The template carries the MARSHALL_VERSION / MAPPINGS_FINGERPRINT
     placeholder constants beside PLAN_DIR_NAME."""
