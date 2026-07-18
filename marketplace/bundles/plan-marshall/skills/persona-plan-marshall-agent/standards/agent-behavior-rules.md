@@ -254,8 +254,8 @@ For the full anti-pattern catalogue and the Trigger / Detection / Action treatme
 
 **Corrective — establish ground truth, THEN decide:**
 
-- Ask whether the plan itself introduced the failing assertion: `git log origin/main..HEAD -- <failing-test-file>`. A failure the branch authored is a different problem than a failure inherited from `main`.
-- Compare green-on-`main` versus red-on-branch for the exact failing check. Verify the signal against ground truth rather than against a locally-mutated condition.
+- Use `git log origin/main..HEAD -- <failing-test-file>` to determine whether the branch touched the check — this establishes *whether the branch authored the change*, not whether the check passes on `main`. Then verify the exact failing check against a trusted green baseline: a CI result on `origin/main`, or the check run at the merge base. A failure the branch authored is a different problem than a failure inherited from `main`, but only a real baseline result — never git-log's absence-of-touch alone — proves which.
+- Compare the verified baseline result with the branch result before classifying the signal as environmental or branch-introduced. Verify against ground truth rather than against a locally-mutated condition.
 - Only after provenance is established, choose whether to re-attempt, change the hypothesis class, or escalate.
 
 **Explicit rule:** Never blind-retry the same fix, and never "re-verify locally" as a way to explain a real signal away. Establish provenance BEFORE re-attempting — a bigger version of a wrong fix is still wrong.
