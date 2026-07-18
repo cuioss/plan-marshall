@@ -229,6 +229,49 @@ def bot_kind_for_author(author_login: str | None) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Registered trigger-comment recognizer (shared with the producer pre-filter)
+# ---------------------------------------------------------------------------
+#
+# Every bot's re-review trigger comment — the exact string ``_ReReviewStrategy``
+# posts to request a fresh review — is a registered value in the registry
+# (``bot_registry.trigger_comment`` over ``bot_registry.bot_kinds``). The
+# producer pre-filter (``github_pr.fetch_findings``) drops a surviving comment
+# whose whitespace-stripped body EQUALS one of these registered triggers: such a
+# comment is a pipeline-authored re-review request this workflow itself posted,
+# never reviewer feedback. Recognition and posting therefore DERIVE from the same
+# registry source — a trigger string added to a ``standards/{bot_kind}.md`` doc
+# is both posted and recognised with no second code edit. Empty triggers (a bot
+# that declares none) are excluded so a whitespace-only body never matches.
+_REGISTERED_TRIGGER_COMMENTS: frozenset[str] = frozenset(
+    trigger for trigger in (bot_registry.trigger_comment(bot_kind) for bot_kind in bot_registry.bot_kinds()) if trigger
+)
+
+
+def registered_trigger_comments() -> frozenset[str]:
+    """Return the set of registered bot re-review trigger comments.
+
+    Derived once at import from the registry (``bot_registry.trigger_comment``
+    over ``bot_registry.bot_kinds``), excluding empty triggers. This is the
+    single source both the poster (``_ReReviewStrategy.request_fresh_review``)
+    and the producer pre-filter recognizer share.
+    """
+    return _REGISTERED_TRIGGER_COMMENTS
+
+
+def is_registered_trigger_comment(body: str) -> bool:
+    """Return True when ``body`` is exactly a registered bot re-review trigger.
+
+    The comment body is whitespace-stripped and compared for EQUALITY (not
+    substring containment) against :data:`_REGISTERED_TRIGGER_COMMENTS`. An exact
+    match means the comment is a pipeline-authored re-review request this workflow
+    posted — noise for the pre-merge finding pass, not reviewer feedback.
+    Substring matching is deliberately avoided so a genuine review comment that
+    merely quotes a trigger string is not misclassified.
+    """
+    return body.strip() in _REGISTERED_TRIGGER_COMMENTS
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
