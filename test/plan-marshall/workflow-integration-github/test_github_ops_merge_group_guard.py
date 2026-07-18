@@ -144,6 +144,18 @@ def test_helper_ignores_stray_token_outside_on_block(tmp_path):
     assert github_ops._repo_has_merge_group_trigger(workflows_dir) is False
 
 
+def test_helper_ignores_merge_group_as_nested_branch_name(tmp_path):
+    # A branch literally named merge_group under push: branches: is a nested
+    # VALUE, not a trigger — the direct-child anchoring must ignore it so the
+    # guard does not falsely permit enabling the queue on such a repo.
+    workflows_dir = _write_workflow(
+        tmp_path,
+        'ci.yml',
+        'name: CI\non:\n  push:\n    branches:\n      - merge_group\njobs:\n  build: {}\n',
+    )
+    assert github_ops._repo_has_merge_group_trigger(workflows_dir) is False
+
+
 def test_helper_ignores_commented_out_trigger(tmp_path):
     workflows_dir = _write_workflow(
         tmp_path,

@@ -1248,8 +1248,13 @@ def _lines_declare_merge_group_trigger(lines: list[str]) -> bool:
     Locates the top-level ``on`` key (column 0, bare or quoted), then matches a
     ``merge_group`` token only within that key's value — the inline scalar / flow
     sequence on the same line, or the indented block that follows until the next
-    top-level key. This anchoring is what keeps a stray ``merge_group`` elsewhere
-    in the file (a job id, an env var, a comment) from producing a false match.
+    top-level key. In the block form the match is further anchored to the ``on:``
+    block's DIRECT children (the trigger keys / sequence items at the first
+    indent level): a ``merge_group`` token sitting at a DEEPER indent is a nested
+    value (e.g. a branch literally named ``merge_group`` under
+    ``push: branches:``), not a trigger, and is ignored. This two-level anchoring
+    keeps a stray ``merge_group`` elsewhere in the file (a job id, an env var, a
+    comment, a nested branch/property name) from producing a false match.
     """
     for idx, line in enumerate(lines):
         match = _ON_KEY_RE.match(line)
@@ -1260,15 +1265,26 @@ def _lines_declare_merge_group_trigger(lines: list[str]) -> bool:
             # on: merge_group  |  on: [push, merge_group]  |  on: {merge_group: …}
             return bool(_MERGE_GROUP_TOKEN_RE.search(inline))
         # Block form: ``on:`` alone, then an indented mapping key
-        # (``merge_group:``) or sequence item (``- merge_group``). Scan children
-        # until the indentation returns to a top-level key.
+        # (``merge_group:``) or sequence item (``- merge_group``). Match only the
+        # DIRECT children of ``on:`` (the first-indent trigger level); a deeper
+        # indent is a nested value and is skipped. Scan stops at the next
+        # top-level key, or when the indent drops back below the direct-child
+        # level (the ``on:`` block ended).
+        block_indent = None
         for child in lines[idx + 1:]:
             stripped = child.strip()
             if not stripped or stripped.startswith('#'):
                 continue
-            if len(child) - len(child.lstrip()) == 0:
+            indent = len(child) - len(child.lstrip())
+            if indent == 0:
                 break  # next top-level key — the on: block has ended
-            if _MERGE_GROUP_TOKEN_RE.search(_strip_yaml_comment(stripped)):
+            if block_indent is None:
+                block_indent = indent
+            elif indent < block_indent:
+                break  # shallower indent — the on: block's child context ended
+            if indent == block_indent and _MERGE_GROUP_TOKEN_RE.search(
+                _strip_yaml_comment(stripped)
+            ):
                 return True
         return False
     return False
