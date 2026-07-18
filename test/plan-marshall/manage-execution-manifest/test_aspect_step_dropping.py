@@ -4,10 +4,14 @@
 
 ``_apply_aspect_step_dropping`` clears the ENTIRE composed phase-5 verification
 list when the request aspect (resolved by the ``manage-config aspect-classify``
-verb and forwarded via ``--aspect``) is ``analysis`` or ``planning``. The
-rationale is the inverse of the footprint pre-filter: an analysis / planning
-request carries no production / test footprint to gate, so running (and failing)
-build / quality-gate / test commands against a code-free change is pure waste.
+verb) is ``analysis`` or ``planning``. The composer resolves that aspect by
+precedence: an explicit ``--aspect`` argument wins, and when it is absent the
+composer self-reads ``status.metadata.request_aspect`` via
+``_read_request_aspect(plan_id)`` (mirroring the ``recipe_key`` /
+``_read_recipe_source`` precedent). The rationale is the inverse of the footprint
+pre-filter: an analysis / planning request carries no production / test footprint
+to gate, so running (and failing) build / quality-gate / test commands against a
+code-free change is pure waste.
 
 The full-clear (rather than a role-only drop of the build/verify canonicals) is
 load-bearing for the phase-5-execute Step 11b contract: Step 11b fires a
@@ -18,13 +22,19 @@ role-only filter that left any external (``project:`` / ``bundle:skill``)
 build the aspect drop exists to prevent. Clearing the full list keeps the
 enforcement at the manifest layer where it belongs.
 
-An ``implementation`` aspect (the classifier's safe sub-threshold fallback) and
-an absent aspect are no-ops: every step is retained.
+An ``implementation`` aspect (the classifier's safe sub-threshold fallback) is a
+no-op: every step is retained. An absent ``--aspect`` argument is a no-op only
+when the persisted ``status.metadata.request_aspect`` is also unset or
+``implementation`` — otherwise the self-read fallback drives the drop.
 
-These tests drive ``_apply_aspect_step_dropping`` directly via importlib (Tier 2),
-mirroring ``test_canonical_verify_inactive.py``. No live worktree, git history,
-or footprint resolution is involved — the function is a pure transform over the
-step list and the aspect value.
+The ``_apply_aspect_step_dropping`` cases here drive the function directly via
+importlib (Tier 2), mirroring ``test_canonical_verify_inactive.py`` — that pure
+transform needs no live worktree. The file additionally covers the D1 self-read
+wiring: ``TestReadRequestAspect`` exercises ``_read_request_aspect`` against a
+real ``status.json`` (present / absent / corrupt), and
+``TestComposeSelfReadsRequestAspect`` drives the real ``cmd_compose`` to prove an
+absent ``--aspect`` argument still drops the build gates when
+``status.metadata.request_aspect`` is ``analysis`` / ``planning``.
 """
 
 import importlib.util
