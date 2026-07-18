@@ -106,6 +106,7 @@ _ALLOWLIST: frozenset[str] = frozenset(
         'plan-marshall/skills/manage-architecture/scripts/_cmd_client_build.py',
         'plan-marshall/skills/tools-integration-ci/scripts/_ci_log_filter.py',
         'plan-marshall/skills/script-shared/scripts/build/_build_queue_slot.py',
+        'plan-marshall/skills/script-shared/scripts/build/_build_execute_factory.py',
         # 3. Dynamic-introspection tools (import an arbitrary target dir to load it)
         'pm-plugin-development/skills/plan-marshall-plugin/scripts/plugin_discover.py',
         'pm-plugin-development/skills/plugin-doctor/scripts/_analyze_finalize_step_token.py',

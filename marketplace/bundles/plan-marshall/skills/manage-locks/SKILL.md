@@ -47,7 +47,16 @@ Two primitives live here:
   `PLAN_MARSHALL_HOME`). It caps how many build sessions run concurrently across
   every checkout on the host; each entry is stamped with its originating
   checkout's `project_root` so a foreign project's live holder is judged against
-  its own repo and never reclaimed.
+  its own repo and never reclaimed. It is the **single shared reader/writer of the
+  one machine-global slot file**, consumed by BOTH build-execute paths:
+  marshalld's scheduler on the registered path (the daemon coordinates access to
+  the same file for builds it serves) AND the in-process fallback
+  (`_build_queue_slot`) on the unregistered / daemon-down path. There is no
+  separate project-level queue — one file, one slot budget, one path per build,
+  never stacked; a build routed to the daemon takes no fallback slot. The
+  byte-identical-unregistered guarantee holds through this shared file: an
+  unregistered build still touches no daemon or socket, yet acquires its slot
+  against the same global file exactly as before.
 
 ## Enforcement
 
@@ -247,7 +256,8 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue release \
 |---------------------|-----------|----------|
 | `workflow-integration-git:integrate_into_main` | consumes | `merge_lock acquire`/`release` around the move-back |
 | `phase-6-finalize/standards/branch-cleanup.md` Pre-Merge Gate | consumes | `merge_lock acquire` (FIFO poll/backoff loop on `admission: blocked`)/`check`/`release` |
-| build wrappers (`_build_execute_factory`, `_pyproject_execute`) | consume | `build_queue acquire`/`release` around `execute_direct` (D6) |
+| build wrappers (`_build_execute_factory`, `_pyproject_execute`) | consume | `build_queue acquire`/`release` around `execute_direct` — the in-process fallback path (unregistered / daemon-down) |
+| `manage-build-server:_marshalld_scheduler` (via the D5 routing seam) | consumes | the same machine-global `build-queue.json` — the registered path (daemon-served builds) |
 | `_locks_core.rmw_json` | consumed by | both `build_queue` (`build-queue.json`) and `merge_lock` (`merge-queue.json` FIFO layer) |
 
 ## Related

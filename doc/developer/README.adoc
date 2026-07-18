@@ -10,6 +10,7 @@ Working on Plan Marshall itself: build, test, generate, distribute. If you are o
 == Pages
 
 * xref:build.adoc[Build] — Pyprojectx wrapper (`./pw`), project layout, tool configuration, canonical commands.
+* xref:build-architecture.adoc[Build Architecture] — the as-built `marshalld` build-server interaction architecture: the component map, the request flows (F1–F8), the job state machine, verify-not-resolve, and the deliberate-absences table.
 * xref:marketplace-build.adoc[Marketplace Build] — how `marketplace/bundles/` is transformed into per-target deployable artifacts (`target/claude/`, `target/opencode/`), variant emission, dispatch-cost considerations, adapter system.
 * xref:distribution.adoc[Distribution] — publish triggers, versioning, source-vs-dist tag semantics, the `dist-claude` orphan branch, multi-target architecture, what is *not* shipped.
 * xref:testing.adoc[Testing] — pytest infrastructure, shared fixtures, the `ScriptTestCase` base class, test-isolation patterns.

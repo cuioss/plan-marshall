@@ -253,6 +253,22 @@ Then execute the workflow described in that file. Each reference file is loaded 
 
 ---
 
+## Build Server Status (read-only pointer)
+
+The Health Check may surface the machine-global `marshalld` build server's status
+by running `manage-build-server status` and reporting the returned `running` /
+`version` / `registered` fields to the operator:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server status
+```
+
+This is a **read-only pointer only**. Steward carries NO daemon lifecycle logic —
+enrolment (`register` / `unregister`) and control (`start` / `stop` / `drain` /
+`install` / `upgrade`) live exclusively in the user-invocable `manage-build-server`
+control skill. When the operator wants to start, stop, or enrol, direct them to
+`/manage-build-server`; steward never mutates registry or daemon state.
+
 ## Phase 6 Finalize Step Seeding
 
 The wizard seeds `phase-6-finalize.steps` in `marshal.json` from the

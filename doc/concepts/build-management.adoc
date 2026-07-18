@@ -25,6 +25,8 @@ Build skills capture all build output to a log file before returning anything to
 
 The synchronous shape is the load-bearing property here. The LLM is *suspended* on the tool call, not polling, not babysitting, not generating filler tokens while waiting. From the model's perspective the build is one operation that takes however long it takes and returns one structured answer.
 
+Where a build *runs* changes when a project registers the build server: an orchestrator-tier build is then submitted to the `marshalld` daemon and bounded-long-polled instead of run in-process, so a harness-reaped wait costs one re-poll rather than the whole build. The canonical-command vocabulary and the synchronous single-call shape above are unchanged either way — the daemon changes the runner, not the contract. See xref:build-server.adoc[Concepts › Build Server].
+
 [CAUTION]
 ====
 **Zero tokens during the wait does not mean zero cost.**
@@ -37,6 +39,7 @@ One second-order token effect: when a build's wait exceeds the prompt cache's ep
 == Related
 
 * xref:verification.adoc[Concepts › Verification] — encoded, reproducible tests are the verification surface the canonical commands run; interactive exploration stays with the user's own tools.
+* xref:build-server.adoc[Concepts › Build Server] — the opt-in `marshalld` daemon that changes where a registered project's build-class work runs (submit + bounded long-poll), separating the wait from the work.
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/canonical-commands.md[`canonical-commands.md`] — full canonical-command vocabulary (`clean`, `compile`, `module-tests`, `integration-tests`, `e2e`, `coverage`, `quality-gate`, `verify`, `install`, `package`, …) with resolution rules per module type.
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/build-execution.md[`build-execution.md`] — input + output contract: every field in the success and failure TOON shapes, the parsed-errors block, the warnings-mode selector, the log-file conventions, the timeout-learning protocol.
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/build-api-reference.md[`build-api-reference.md`] — shared subcommand API across all build skills (`run`, `parse`, `coverage-report`, `check-warnings`, `discover`).

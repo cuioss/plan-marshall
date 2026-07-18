@@ -1,6 +1,6 @@
 ---
 name: manage-change-ledger
-description: The single append-only change-ledger — one worktree_sha-stamped substrate for kind=build and kind=change entries — plus the first-class worktree-sha freshness API
+description: The single append-only change-ledger — one worktree_sha-stamped substrate for kind=build, kind=change, and kind=job entries — plus the first-class worktree-sha freshness API
 user-invocable: false
 mode: script-executor
 scope: global
@@ -69,7 +69,7 @@ every writer (including a plan-less orchestrator build) appends to the same file
 ## Entry Shapes
 
 Every entry carries a `kind` discriminator, a `worktree_sha`, and a
-`timestamp_iso` (UTC ISO-8601). Two kinds:
+`timestamp_iso` (UTC ISO-8601). Three kinds:
 
 - **`kind=build`** — written by the executor dispatch boundary after every
   build-class invocation that runs to completion. Fields: `kind: "build"`,
@@ -95,9 +95,20 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
   completes-and-commits. Fields: `kind: "change"`, `deliverable_id` (or
   `task_id`), `commit_sha`, `changed_paths` (the **git-sourced** list, stored
   verbatim), `worktree_sha` (post-commit), `timestamp_iso`.
+- **`kind=job`** — written by the `build-server-client` skill's `submit` verb at
+  submit time. Fields: `kind: "job"`, `job_id` (the daemon-assigned id),
+  `plan_id` (str|null), `fingerprint` (the idempotent-submit digest the daemon
+  scheduler keys on), `notation` (the executor notation dispatched),
+  `worktree_sha`, `timestamp_iso`. Unlike `kind=build` (a completed build
+  outcome) this is a **submission** record — the job may still be running — so it
+  carries no `exit_code` or `status`. Its purpose is **re-attach**: a rebuilt or
+  harness-reaped session reads the most recent `kind=job` row for its plan and
+  re-issues `wait` against the recorded `job_id`, recovering the in-flight build
+  from plan state alone rather than losing it.
 
-The freshness gate consumes only `kind=build` entries; `kind=change` entries
-make the ledger a complete, reusable record of working-tree transitions.
+The freshness gate consumes only `kind=build` entries; `kind=change` and
+`kind=job` entries make the ledger a complete, reusable record of working-tree
+transitions and in-flight build submissions.
 
 ## Canonical invocations
 
@@ -132,11 +143,25 @@ python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change
   [--task-id TASK_ID] [--worktree-root WORKTREE_ROOT] [--worktree-sha WORKTREE_SHA]
 ```
 
+### manage-change-ledger — append (kind=job)
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger append \
+  --kind job --job-id JOB_ID \
+  [--plan-id PLAN_ID] [--fingerprint FINGERPRINT] [--notation NOTATION] \
+  [--worktree-root WORKTREE_ROOT] [--worktree-sha WORKTREE_SHA]
+```
+
+Persists a daemon-assigned `job_id` at submit time so a rebuilt session can
+re-attach to the in-flight build. Written by the `build-server-client` skill's
+`submit` verb (which imports `job_record` + `append_entry` from `_ledger_core`
+directly); this verb is the equivalent executor surface for tests and manual use.
+
 ### manage-change-ledger — query
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger query \
-  [--kind build|change] [--exit-code EXIT_CODE]
+  [--kind build|change|job] [--exit-code EXIT_CODE]
 ```
 
 ### manage-change-ledger — classify-outcome
@@ -181,14 +206,15 @@ consumer imports via PYTHONPATH:
 
 ```python
 from _ledger_core import (
-    resolve_ledger_path, append_entry, read_entries, build_record, change_record,
+    resolve_ledger_path, append_entry, read_entries,
+    build_record, change_record, job_record,
 )
 ```
 
 - `resolve_ledger_path()` — `get_tracked_config_dir() / 'work' / 'change-ledger.jsonl'` (NOT plan-scoped).
 - `append_entry(record)` — append exactly one `json.dumps(record) + '\n'` line. Pure-append; no read-modify-write.
 - `read_entries()` — parse the JSONL line-by-line, skip malformed lines, return `[]` when absent. The library reader the gate imports directly.
-- `build_record(...)` / `change_record(...)` — constructors that stamp `kind`, `worktree_sha`, `timestamp_iso` and the kind-specific fields, so every writer and the CLI produce identically-shaped entries. `change_record` stores the caller-supplied `changed_paths` verbatim — it does NOT compute changed paths.
+- `build_record(...)` / `change_record(...)` / `job_record(...)` — constructors that stamp `kind`, `worktree_sha`, `timestamp_iso` and the kind-specific fields, so every writer and the CLI produce identically-shaped entries. `change_record` stores the caller-supplied `changed_paths` verbatim — it does NOT compute changed paths. `job_record` persists a submit-time `job_id` (+ `fingerprint` / `notation`) for build re-attach.
 
 ## Integration
 
@@ -196,6 +222,8 @@ from _ledger_core import (
 |---------------------|-----------|----------|
 | `tools-script-executor` dispatch boundary | produces | `append --kind build` (executor template `kind=build` writer) |
 | `phase-5-execute` Step 10a chain-tail | produces | `append --kind change` after each per-deliverable commit |
+| `build-server-client` `submit` verb | produces | imports `job_record` + `append_entry`; writes `kind=job` at submit time for re-attach |
+| `build-server-client` `wait` re-attach | consumes | imports `read_entries`; reads the latest `kind=job` for the plan to recover `job_id` |
 | `manage-tasks:pre-commit-verify-freshness` gate | consumes | imports `read_entries` + `compute_worktree_sha`; scans `kind=build` by `status == success` + `worktree_sha` |
 
 ## Related

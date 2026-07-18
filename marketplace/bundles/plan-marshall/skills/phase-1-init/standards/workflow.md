@@ -19,6 +19,7 @@ User Request (description, lesson_id, or issue)
 │   6. Initialize references.json (branch only)       │
 │   7. Detect domain from task analysis               │
 │   8. Create status.json with phases                 │
+│   8e. Build-server preflight (ask only if down)     │
 │   9. Store domains in references.json                │
 │  10. Transition phase to "refine"                   │
 │   OUTPUT: plan_id, domain, next_phase               │
@@ -101,6 +102,22 @@ issue: "https://github.com/org/repo/issues/123"
 
 This separation keeps the lesson-conversion mechanics (file ownership) decoupled from the routing policy (which pipeline runs next) — either step can change without breaking the other.
 
+## Build-server preflight
+
+**Where**: Step 8e, after the plan structure and routing metadata are resolved and before Step 9 stores the domains.
+
+**Why**: The `marshalld` build server is opt-in and registration-gated, and the per-build routing seam (D5) already picks daemon-vs-fallback per build. But a project that IS registered yet whose daemon is `down` would otherwise be silently forced onto the in-process fallback for the whole session, with the operator never told. The init preflight surfaces that state ONCE, early, so the operator can start the daemon, continue on the fallback, or unregister — a single deterministic call the workflow only branches on.
+
+**Contract** (the "script decides, the LLM acts on the TOON" model):
+
+1. ONE `build_server preflight` call returns exactly one of `disabled` (project not registered — no daemon probe), `ready` (daemon answered a verified handshake), or `down` + a named `reason`.
+2. **`disabled` / `ready`** → proceed with **no prompt** (both are correctly-configured states). Each emits one console line + one `decision.log` entry.
+3. **`down`** → a native `AskUserQuestion` phrased from the `reason`, with three options: **Start now** (invoke the `manage-build-server` control skill's `start` verb, then re-run preflight once), **Continue without** (session fallback), or **Unregister** (drop the project from the registry). The chosen resolution is applied in-context and recorded in one console line + one `decision.log` entry.
+
+**The daemon is never auto-started silently** — starting is only ever the explicit **Start now** choice. **Every outcome is logged** (all three statuses plus the chosen `down` resolution) so the session's build-server posture is reconstructable from `decision.log`. The preflight is a one-shot session probe; later phases do not re-run it (the routing seam re-checks daemon health per build).
+
+See SKILL.md Step 8e for the full contract (the exact call, the branch table, and the decision-log shapes).
+
 ## Plan ID Derivation
 
 | Source | Derivation Rule | Example |
@@ -158,6 +175,8 @@ See SKILL.md § Error Handling for the canonical error TOON envelopes (invalid l
 | `plan-marshall:manage-references` | Initialize references |
 | `plan-marshall:manage-logging:manage-logging` | Log creation |
 | `plan-marshall:manage-lessons` | Read lesson content |
+| `plan-marshall:build-server-client:build_server` | Step 8e build-server preflight (`preflight` verb) |
+| `plan-marshall:manage-build-server:manage_build_server` | Step 8e `down` resolution — `start` / `unregister` verbs (operator-chosen only) |
 
 ### Complete Initialization
 

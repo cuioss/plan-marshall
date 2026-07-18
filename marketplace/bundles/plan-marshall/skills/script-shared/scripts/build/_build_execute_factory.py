@@ -33,17 +33,196 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
+import importlib.util  # noqa: E402
 import json  # noqa: E402
+import os  # noqa: E402
+import sys  # noqa: E402
+from argparse import Namespace  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Any  # noqa: E402
 
 from _build_execute import BuildCommandFn, CaptureStrategy, ScopeFn, execute_direct_base  # noqa: E402
 from _build_execute import detect_wrapper as _detect_wrapper  # noqa: E402
 from _build_queue_slot import BuildQueueTimeout, build_queue_slot  # noqa: E402
-from _build_result import DirectCommandResult  # noqa: E402
+from _build_result import (  # noqa: E402
+    ERROR_BUILD_FAILED,
+    DirectCommandResult,
+    error_result,
+    success_result,
+    timeout_result,
+)
+from _build_server_protocol import MARSHALLD_JOB_ENV  # noqa: E402
 from _build_shared import cmd_run_common  # noqa: E402
 from toon_parser import serialize_toon  # noqa: E402
 
 # Error type emitted when the build queue is saturated past max_retries.
 ERROR_QUEUE_SATURATED = 'queue_saturated'
+
+# ---------------------------------------------------------------------------
+# marshalld build-execute routing seam (D5)
+# ---------------------------------------------------------------------------
+# A build is routed to the marshalld daemon when the project is registered AND
+# the daemon answers a verified handshake ("ready"); otherwise it runs in-process
+# under a single machine-global build-queue slot (the fallback). A build takes
+# EXACTLY ONE limiter path — never both, never stacked: a routed build's slot is
+# held by the daemon child (which re-runs the executor in-process, acquiring the
+# shared machine-global slot itself), so the routing seam takes no fallback slot.
+
+# tool_name -> the executor notation the daemon re-runs (command[2], verified
+# against the project's notation_allowlist by the daemon's S1 check). An unknown
+# tool has no notation and never routes (safe in-process fallback).
+_TOOL_NOTATIONS = {
+    'maven': 'plan-marshall:build-maven:maven',
+    'gradle': 'plan-marshall:build-gradle:gradle',
+    'npm': 'plan-marshall:build-npm:npm',
+    'python': 'plan-marshall:build-pyproject:pyproject_build',
+}
+
+# build_server.py (the build-server-client verbs) is NOT an executor-registered
+# notation reachable from this build subprocess's PYTHONPATH, so it is reused as
+# the single owner of the submit/wait/preflight contract via an in-process
+# file-path import, mirroring _build_queue_slot._load_build_queue. The sibling
+# scripts dirs it imports transitively are ensured on sys.path before the exec.
+_FACTORY_DIR = Path(__file__).resolve().parent
+_BUILD_SERVER_CLIENT_PATH = (
+    _FACTORY_DIR.parent.parent.parent / 'build-server-client' / 'scripts' / 'build_server.py'
+)
+_BUILD_SERVER_DEP_DIRS: tuple[Path, ...] = (
+    _BUILD_SERVER_CLIENT_PATH.parent,                                   # build_server itself
+    _FACTORY_DIR,                                                       # _build_server_protocol/_registry
+    _FACTORY_DIR.parent,                                               # marketplace_paths, worktree_sha
+    _FACTORY_DIR.parent / 'workflow',                                  # triage_helpers
+    _FACTORY_DIR.parent.parent.parent / 'manage-change-ledger' / 'scripts',  # _ledger_core
+)
+
+# Lazily-imported build_server client module (file-path import; see below).
+_build_server_mod: Any = None
+
+
+def _load_build_server() -> Any:
+    """Import the sibling ``build_server.py`` client by file path (cached).
+
+    Mirrors ``_build_queue_slot._load_build_queue``: the client is reused as the
+    single owner of the submit/wait/preflight contract via an in-process
+    file-path import rather than a subprocess, with its transitive sibling
+    ``scripts`` dirs ensured on ``sys.path`` first (a file-path import does not
+    carry them).
+    """
+    global _build_server_mod
+    if _build_server_mod is not None:
+        return _build_server_mod
+    for dep_dir in _BUILD_SERVER_DEP_DIRS:
+        dep_str = str(dep_dir)
+        if dep_dir.is_dir() and dep_str not in sys.path:
+            sys.path.insert(0, dep_str)
+    spec = importlib.util.spec_from_file_location('build_server', _BUILD_SERVER_CLIENT_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f'cannot load build_server from {_BUILD_SERVER_CLIENT_PATH}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _build_server_mod = module
+    return module
+
+
+def _resolve_notation(config: ExecuteConfig) -> str:
+    """Resolve the executor notation the daemon re-runs for ``config``.
+
+    An explicit ``config.notation`` wins; otherwise it is looked up by
+    ``tool_name``. An empty result means "do not route" — the build runs
+    in-process (the safe default for an unknown build tool).
+    """
+    return config.notation or _TOOL_NOTATIONS.get(config.tool_name, '')
+
+
+def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> DirectCommandResult:
+    """Map a client ``wait`` status-TOON to a ``DirectCommandResult``.
+
+    The daemon's terminal job statuses (``success|failure|timeout|killed``) are
+    rendered into the shared build-result shape so the routed build flows through
+    the SAME ``cmd_run_common`` rendering/parse path as an in-process build. A
+    ``killed`` job carries the no-blind-retry message so a harness reap on the
+    daemon side is never mistaken for a flaky build.
+    """
+    job_status = str(waited.get('job_status', ''))
+    log_file = str(waited.get('log_file', '') or '')
+    duration = int(waited.get('duration_seconds', 0) or 0)
+    exit_code = int(waited.get('exit_code', 0) or 0)
+    if job_status == 'success':
+        return success_result(duration, log_file, command_str)  # type: ignore[return-value]
+    if job_status == 'timeout':
+        return timeout_result(duration, duration, log_file, command_str)  # type: ignore[return-value]
+    result = error_result(
+        'killed' if job_status == 'killed' else ERROR_BUILD_FAILED,
+        exit_code or 1,
+        duration,
+        log_file,
+        command_str,
+    )
+    if job_status == 'killed':
+        result['error'] = 'killed'
+        result['message'] = str(
+            waited.get('message', 'externally killed — not flaky, do not blind-retry')
+        )
+    return result  # type: ignore[return-value]
+
+
+def _route_to_daemon(
+    config: ExecuteConfig, project_dir: str, plan_id: str | None
+) -> tuple[DirectCommandResult | None, str]:
+    """Route a build to marshalld when registered AND ready; else signal fallback.
+
+    Returns ``(result, '')`` when the daemon ran the build to a terminal status
+    (the caller renders that result and takes NO fallback slot). Returns
+    ``(None, reason)`` when routing did not happen and the caller must build
+    in-process, where ``reason`` names why: ``in_daemon_job`` (re-entrancy guard),
+    ``no_notation`` (unroutable tool), or a preflight / submit / wait degradation
+    reason (``disabled``, ``socket_absent``, ``not_registered``, …) that the
+    caller records so the fallback is never silent.
+    """
+    # Re-entrancy guard: a build already running INSIDE a marshalld job child
+    # never routes back to the daemon (that would recurse without bound).
+    if os.environ.get(MARSHALLD_JOB_ENV):
+        return None, 'in_daemon_job'
+
+    notation = _resolve_notation(config)
+    if not notation:
+        return None, 'no_notation'
+
+    client = _load_build_server()
+    exec_root = str(Path(project_dir).resolve())
+    preflight = client.run_preflight(Namespace(project_path=exec_root))
+    if preflight.get('preflight') != 'ready':
+        # disabled (unregistered — no daemon probe) or down + reason → fallback.
+        return None, str(preflight.get('reason') or preflight.get('preflight') or 'unavailable')
+
+    # Reconstruct the executor-form command the daemon re-runs from THIS build
+    # process's own argv tail — argv[0] is the build script path, argv[1:] is the
+    # `run --command-args "<args>" [flags…]` the executor invoked us with.
+    command = ['python3', str(Path(exec_root) / '.plan' / 'execute-script.py'), notation, *sys.argv[1:]]
+    command_str = ' '.join(command)
+
+    submit = client.run_submit(
+        Namespace(
+            command=json.dumps(command),
+            exec_path=exec_root,
+            project_path=exec_root,
+            plan_id=plan_id or '',
+        )
+    )
+    if submit.get('status') != 'success':
+        # refused (verifier) or degraded (unreachable) → in-process fallback.
+        return None, str(submit.get('reason') or submit.get('status') or 'submit_failed')
+
+    job_id = str(submit.get('job_id', ''))
+    # Bounded long-poll: re-issue wait on a live `running` return — NEVER sleep
+    # or background the wait (a reaped wait costs one re-poll, not the build).
+    while True:
+        waited = client.run_wait(Namespace(job_id=job_id, plan_id=plan_id or '', bound=None))
+        if waited.get('status') == 'degraded':
+            return None, str(waited.get('reason') or 'wait_degraded')
+        if str(waited.get('job_status', '')) == 'running':
+            continue
+        return _daemon_result_to_direct(waited, command_str), ''
 
 
 def _emit_queue_timeout(tool_name: str, command_args: str, output_format: str, exc: BuildQueueTimeout) -> int:
@@ -132,6 +311,14 @@ class ExecuteConfig:
 
     default_timeout: int = 300
     """Default timeout in seconds if no learned value exists."""
+
+    notation: str = ''
+    """Executor notation the marshalld daemon re-runs for this build (D5 routing).
+
+    When empty it is resolved by ``tool_name`` (:data:`_TOOL_NOTATIONS`); an
+    unresolvable tool never routes and always builds in-process. Set explicitly
+    to override the tool-name lookup (e.g. in tests, or for a custom build tool
+    the daemon should serve)."""
 
     extra_result_fields: dict = field(default_factory=dict)
     """Static extra fields added to all results. For per-invocation dynamic fields, use extra_result_fn."""
@@ -252,10 +439,45 @@ def create_execute_handlers(
         # Optional working_dir support
         working_dir = getattr(args, 'working_dir', None) if config.supports_working_dir else None
 
-        # Acquire a build-queue slot when a plan_id is set; NO-OP passthrough
-        # otherwise (plan-less builds run unchanged). The slot is released and
-        # the title-token cleared in the context manager's finally.
         plan_id = getattr(args, 'plan_id', None)
+
+        # D5 routing seam: when the project is registered AND the daemon is ready,
+        # route the build to marshalld (submit + bounded long-poll, ledger-recorded
+        # by the client at submit). A routed build takes NO fallback slot — the
+        # daemon child holds the single machine-global slot — so a build takes
+        # exactly one limiter path, never stacked. A build carrying a
+        # client-forwarded env or a working-dir override is NEVER routed: the
+        # daemon's S2 clean baseline env cannot honour it, so it stays in-process.
+        if env_vars is None and working_dir is None:
+            routed, reason = _route_to_daemon(config, project_dir, plan_id)
+            if routed is not None:
+                logger.info(
+                    '[BUILD-SERVER] routed build to marshalld (notation=%s, plan=%s)',
+                    _resolve_notation(config), plan_id,
+                )
+                return cmd_run_common(
+                    result=routed,
+                    parser_fn=parse_log_fn,
+                    tool_name=config.tool_name,
+                    output_format=getattr(args, 'format', 'toon'),
+                    mode=getattr(args, 'mode', 'actionable'),
+                    project_dir=project_dir,
+                    parser_needs_command=config.parser_needs_command,
+                    plan_id=plan_id,
+                )
+            # Record the degradation reason so the in-process fallback is never
+            # silent (a bare re-entrancy / unroutable-tool skip is not a
+            # degradation and is not logged as one).
+            if reason not in ('in_daemon_job', 'no_notation'):
+                logger.info(
+                    '[BUILD-SERVER] fallback to in-process build (reason=%s, plan=%s)',
+                    reason, plan_id,
+                )
+
+        # In-process fallback: acquire a build-queue slot on the single
+        # machine-global queue file when a plan_id is set; NO-OP passthrough
+        # otherwise (plan-less builds run unchanged). The slot is released in the
+        # context manager's finally.
         try:
             with build_queue_slot(plan_id):
                 result = execute_direct(
@@ -277,7 +499,7 @@ def create_execute_handlers(
             mode=getattr(args, 'mode', 'actionable'),
             project_dir=project_dir,
             parser_needs_command=config.parser_needs_command,
-            plan_id=getattr(args, 'plan_id', None),
+            plan_id=plan_id,
         )
 
     # Preserve useful names for debugging

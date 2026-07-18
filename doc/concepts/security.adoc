@@ -73,6 +73,10 @@ The two layers share one engine and differ only in *when* they run and *what ext
 
 Both layers *reuse* the same shared five-stage engine (authored at link:../../marketplace/bundles/plan-marshall/skills/recipe-security-audit/standards/audit-engine.md[`recipe-security-audit/standards/audit-engine.md`]). The finalize step plugs its per-domain skills into stage 3 additively, via the engine's `extra_security_skills` input, without reshaping stages 1, 2, 4, or 5.
 
+== Build-server trust boundary
+
+The opt-in `marshalld` build server (xref:build-server.adoc[Build Server]) adds a machine-level daemon that runs build-class work for registered projects, so it carries its own trust boundary. Two properties contain it. First, a *registration wall*: a project is served only when an operator explicitly registered it through the user-invocable control skill, which is never resolved into a dispatch's `skills[]` — a session can never enrol itself or start the daemon silently. Second, *verify-not-resolve*: the daemon verifies every submit positionally against the project's registration (the interpreter matches the registered baseline, the executor path lives inside the verified tree, the notation is allowlisted, the exec path canonicalises into the registered root or a live linked worktree) and never resolves anything on the client's behalf; the build child runs with a clean server-side baseline environment carrying no client env and no provider secrets, and the state directory and socket are owner-only. Any deviation is refused and logged.
+
 == Audit trail
 
 Because every action routes through the script-executor proxy, every script invocation is logged automatically. Combined with the structured `[STATUS]` / `[DISPATCH]` / `[SKILL]` / `[ARTIFACT]` tags emitted by `execution-context`, the per-plan findings JSONL, and the phase-handshake invariants, this produces a comprehensive, machine-readable record of every plan run. The full story — what's logged, where, how `plan-retrospective` evaluates it — is its own concept page: xref:audit-trail.adoc[Audit Trail].
@@ -91,4 +95,5 @@ Because every action routes through the script-executor proxy, every script invo
 * xref:skill-handling.adoc[Concepts › Skill Handling] — why every subagent loads `persona-plan-marshall-agent` as Tier-1.
 * xref:execution-context.adoc[Concepts › Execution Context] — why every subagent dispatch routes through the same generic dispatcher.
 * xref:audit-trail.adoc[Concepts › Audit Trail] — what every operation records to disk.
+* xref:build-server.adoc[Concepts › Build Server] — the opt-in build daemon whose registration wall and verify-not-resolve trust boundary are summarised above.
 * xref:../user/configuration.adoc[User Guide › Configuration] — surface map of `.claude/settings.json` / `.claude/settings.local.json`.

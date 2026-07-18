@@ -4,23 +4,39 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 # Await Long-Running Workflow (detach-and-notify seam)
 
-The single shared orchestration seam for any long-running orchestrator-tier call: instead of the orchestrator blocking synchronously on a build/verify command or a remote-CI wait, it **detaches** the call (runs it in the background) and **wakes on the completion notification** — the "Hollywood principle" (don't call us, we'll call you). On wake it reads the wrapper's compact TOON, never the raw log flood, and never a hand-rolled poll loop.
+The single shared orchestration seam for a long-running orchestrator-tier call: instead of the orchestrator blocking synchronously on a remote-CI wait, it **detaches** the call (runs it in the background) and **wakes on the completion notification** — the "Hollywood principle" (don't call us, we'll call you). On wake it reads the wrapper's compact TOON, never the raw log flood, and never a hand-rolled poll loop.
 
-This seam is **orchestration guidance the main-context orchestrator follows** — it is not a script that "runs the orchestrator's build". The orchestrator is the LLM following the persona + workflow docs; this document is the recipe it applies whenever a resolved canonical command carries `execution_tier=orchestrator` (a build/verify longer than the per-task Bash ceiling) or a remote-CI wait is about to block. Both consumers share the same seam; only the parameters differ.
+This seam is **orchestration guidance the main-context orchestrator follows** — it is not a script that "runs the orchestrator's build". The orchestrator is the LLM following the persona + workflow docs; this document is the recipe it applies whenever a remote-CI wait (or the phase-6 finalize barrier) is about to block. Both wait-class consumers share the same seam; only the parameters differ.
 
-The wake primitive (the background-completion notification) is **Claude-specific** — Claude Code is the only tested runtime — but the Claude-specificity is **contained behind this seam**: the fallback below degrades to today's synchronous blocking call when the background primitive is unavailable, so the two consumers carry no runtime-specific branching of their own.
+**The build consumer does NOT use this detach-and-notify seam.** A long-running orchestrator-tier build (`compile` / `module-tests` / `verify` / `coverage` / `quality-gate` beyond the per-task Bash ceiling) is instead routed to the `marshalld` build server through `build-server-client` submit/wait — the daemon separates the WAIT from the WORK, so a harness-reaped wait costs one re-poll rather than the whole build. See § "Build consumer — routes through build-server-client" below; the `run_in_background` detach + kill-classification rungs the build arm previously carried are superseded by the daemon's first-class `killed` status.
+
+The wake primitive (the background-completion notification) is **Claude-specific** — Claude Code is the only tested runtime — but the Claude-specificity is **contained behind this seam**: the fallback below degrades to today's synchronous blocking call when the background primitive is unavailable, so the two wait-class consumers carry no runtime-specific branching of their own.
+
+## Build consumer — routes through build-server-client
+
+An orchestrator-tier build is owned by the `marshalld` build server, not this detach-and-notify seam. The build-execute routing seam ([`../../script-shared/scripts/build/_build_execute_factory.py`](../../script-shared/scripts/build/_build_execute_factory.py), D5) does the routing at the build-wrapper level: when the project is **registered AND the daemon is ready**, the build is submitted to marshalld and the caller performs one **server-side bounded long-poll** for its result via the [`build-server-client`](../../build-server-client/SKILL.md) `submit` / `wait` verbs.
+
+The two properties that make this replace the `run_in_background` build detach:
+
+- **The wait and the work are separate processes.** The build runs in the daemon's supervised child; the caller only holds a bounded `wait`. A harness reap of the `wait` therefore costs exactly **one re-poll** (the caller re-issues `wait`, re-attaching via the change-ledger `job_id`) — never the whole build. This is the residual pain the old `run_in_background` build detach could not remove: a reaped background build lost the entire build.
+- **`killed` is a first-class daemon status.** The daemon classifies an externally-killed child as `killed` ("externally killed — not flaky, do not blind-retry") and returns it over `wait`. This **supersedes** the build arm's former deterministic kill-detection classifier (`manage-change-ledger classify-outcome` over the missing-ledger-row / zero-output signature): the build arm no longer needs it, because the daemon reports the kill directly. `classify-outcome` remains only for any residual detached-build path that is not daemon-served.
+
+When the project is **unregistered or the daemon is down**, the routing seam falls back to an in-process build under the single machine-global build-queue slot and records the degradation reason (D5). This fallback is owned at the build-wrapper level, not here; this seam is not re-entered for the build consumer.
+
+Do NOT `run_in_background` or `sleep` the daemon `wait` — the daemon holds the long-poll server-side, and a reaped wait is recovered by re-issuing `wait`, not by backgrounding it. See [`build-server-client/SKILL.md`](../../build-server-client/SKILL.md) for the submit/wait/ping/preflight contract and the status-TOON guarantees.
 
 ## Consumers
 
-| Consumer | What is detached | Build-queue slot | Completion signal |
-|----------|------------------|:----------------:|-------------------|
-| **build/verify** | The architecture-resolved wrapper command (`compile` / `module-tests` / `verify` / `coverage` / `quality-gate`) whose resolved envelope carries `execution_tier=orchestrator` | Yes — acquire before, release after | Background-completion notification → wrapper's compact result TOON |
-| **remote-CI wait** | The provider CI-wait handler (`cmd_ci_wait` for GitHub / GitLab) that seeds its first sleep from the p50 window then tails the provider's terminal-state watch verb | No — a CI wait consumes no local build slot | Background-completion notification → wait handler's return TOON (`final_status`, `duration_sec`, `failing_checks`) |
-| **finalize-wait barrier** | The phase-6 concurrent wait barrier — the three per-signal waits ({CI, review-bot comments, Sonar CE}) detached concurrently off one settled HEAD, coordinated by the `ci barrier` per-signal-proceed / re-settle verb | No — a wait consumes no local build slot | Background-completion notification on ANY signal's state transition (per-signal-proceed) OR barrier budget exhaustion → the `ci barrier` decision TOON (`barrier_status`, `proceed`/`pending`/`failed`/`affected`) |
+| Consumer | What is detached | Completion signal |
+|----------|------------------|-------------------|
+| **remote-CI wait** | The provider CI-wait handler (`cmd_ci_wait` for GitHub / GitLab) that seeds its first sleep from the p50 window then tails the provider's terminal-state watch verb | Background-completion notification → wait handler's return TOON (`final_status`, `duration_sec`, `failing_checks`) |
+| **finalize-wait barrier** | The phase-6 concurrent wait barrier — the three per-signal waits ({CI, review-bot comments, Sonar CE}) detached concurrently off one settled HEAD, coordinated by the `ci barrier` per-signal-proceed / re-settle verb | Background-completion notification on ANY signal's state transition (per-signal-proceed) OR barrier budget exhaustion → the `ci barrier` decision TOON (`barrier_status`, `proceed`/`pending`/`failed`/`affected`) |
+
+Neither wait-class consumer consumes a local build slot, so both skip any build-queue rung. (The build consumer, which does hold a machine-global slot, is served by the routing seam described above — not here.)
 
 ### Finalize-wait barrier consumer specifics
 
-The finalize-wait barrier (see [`phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) § "Wait-region: the concurrent barrier off one settled HEAD") is a **wait-class** consumer — it consumes no local build slot, so it skips the build-queue rungs (a) and (f) exactly like the remote-CI wait. It differs from a single remote-CI wait in three ways:
+The finalize-wait barrier (see [`phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) § "Wait-region: the concurrent barrier off one settled HEAD") is a **wait-class** consumer — it consumes no local build slot. It differs from a single remote-CI wait in three ways:
 
 - **Fan-out concurrency**: the three per-signal arms are detached **concurrently** off the one settled HEAD, so the barrier's wall time approaches `max(signal)` rather than `sum(signal)`. Each arm reuses its own existing ratchet (the CI arm reuses the p50-seeded `cmd_ci_wait`; see the remote-CI wait row).
 - **Wake-on-transition, per-signal-proceed**: the barrier wakes on ANY arm's state transition (a signal reaching a terminal state) — NOT only when all three settle — so the orchestrator proceeds past each settled arm independently. It also wakes on **budget exhaustion**. On each wake it reads the compact `ci barrier` decision TOON (never the raw poll flood) and advances the arms named in `proceed` while continuing to await those in `pending`.
@@ -33,29 +49,18 @@ The **synchronous-blocking fallback (step (g))** applies unchanged: when the bac
 
 | Parameter | Description |
 |-----------|-------------|
-| `plan_id` | Plan identifier — forwarded to every `manage-locks` / `manage-status` / `platform-runtime` call below. |
-| `consumer` | `build`, `ci-wait`, or `finalize-barrier` — selects the build-queue-slot rung (build only) and the completion-TOON shape. `finalize-barrier` follows the same no-build-slot rungs as `ci-wait` but wakes per-signal (see § "Finalize-wait barrier consumer specifics"). |
-| `command` | The resolved wrapper `executable` (build consumer) or the CI-wait handler invocation (ci-wait consumer) to run detached. |
-| `bash_timeout_seconds` | The architecture-resolved timeout, used ONLY on the fallback synchronous path (step 7). |
+| `plan_id` | Plan identifier — forwarded to every `manage-status` / `platform-runtime` call below. |
+| `consumer` | `ci-wait` or `finalize-barrier` — selects the completion-TOON shape. `finalize-barrier` follows the same rungs as `ci-wait` but wakes per-signal (see § "Finalize-wait barrier consumer specifics"). The build consumer is served by `build-server-client` submit/wait (see § "Build consumer — routes through build-server-client") and is not a value here. |
+| `command` | The CI-wait handler invocation to run detached. |
+| `bash_timeout_seconds` | The architecture-resolved timeout, used ONLY on the fallback synchronous path (step g). |
 
 ## Recipe
 
-The seam is a fixed sequence. Steps (a) and (f) apply to the **build** consumer only; the remote-CI wait consumes no local build slot and skips them.
-
-### (a) Acquire the build-queue slot (build consumer only)
-
-Admit a build slot before detaching the wrapper, so the orchestrator honours the bounded-concurrency limiter (it enqueues FIFO when at capacity):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue acquire \
-  --plan-id {plan_id}
-```
-
-Capture the returned admission `id` for the matching release in step (f). The `ci-wait` consumer skips this step.
+The seam is a fixed sequence applied by the two wait-class consumers. Neither consumes a local build slot.
 
 ### (b) Set and live-push the `build-busy` title-token
 
-Persist the `build-busy` state AND live-push the 🔨 glyph to the terminal so the title surfaces the build symbol for the whole detached window. Both calls are **best-effort** — a failure never aborts the detached call.
+Persist the `build-busy` state AND live-push the 🔨 glyph to the terminal so the title surfaces the busy symbol for the whole detached window. Both calls are **best-effort** — a failure never aborts the detached call.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status title-token set \
@@ -68,7 +73,7 @@ The live `/dev/tty` OSC write is the only mechanism that repaints the terminal d
 
 ### (c) Invoke the command detached (background primitive)
 
-Run the resolved wrapper command (build consumer) or the CI-wait handler (ci-wait consumer) with the Claude background primitive — the Bash `run_in_background: true` parameter — so the orchestrator does NOT block on it:
+Run the CI-wait handler with the Claude background primitive — the Bash `run_in_background: true` parameter — so the orchestrator does NOT block on it:
 
 ```text
 Bash(command="{command}", run_in_background: true)
@@ -78,13 +83,9 @@ Bash(command="{command}", run_in_background: true)
 
 Do NOT poll for completion and do NOT `sleep`/`wait` on the backgrounded job — the completion notification is the wake signal (step d).
 
-**Ledger stamping is automatic for jobs that complete (no separate step here).** The detached wrapper `{command}` is itself a `python3 .plan/execute-script.py …` build-class invocation, so when it runs to completion it traverses the executor dispatch boundary exactly as an inline `per_task` build does — the boundary's tier-agnostic `kind=build` writer stamps the change-ledger with `worktree_sha` + the truthful `status` (the detached orchestrator build carries `plan_id: null`). A job whose whole process tree is killed dies BEFORE the boundary runs and stamps **no row at all** — the missing row is itself the kill signal step (e)'s classifier keys on. This seam therefore performs **no separate stamping step**; see [`../../manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) for the entry shape and the whole-tree-kill signature.
-
-**Why the synchronous fallback (step g) is NOT the mandated path.** The resolved `module-tests plan-marshall` envelope carries `bash_timeout_seconds: 1012` with `exceeds_bash_ceiling: true` — beyond the 600s Bash tool ceiling — so a synchronous-only seam cannot carry this repository's own orchestrator-tier builds. The primitive stays, and the kill class is made legible instead. The root-cause seam is the `marshalld` work-server epic, which this seam is independent of and must not block on.
-
 ### (d) On the completion notification, check the state gate FIRST
 
-The persisted `build-busy` title-token state IS the **"not-yet-handled" gate**, and it runs BEFORE any outcome work — classification included. When the background-completion notification arrives, the orchestrator reads the current state, and the gate — not the arrival of a reminder — decides whether to act:
+The persisted `build-busy` title-token state IS the **"not-yet-handled" gate**, and it runs BEFORE any outcome work. When the background-completion notification arrives, the orchestrator reads the current state, and the gate — not the arrival of a reminder — decides whether to act:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
@@ -94,27 +95,15 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
 Read `title_token` from the returned TOON, then branch:
 
 - **`title_token == build-busy` (state present → not yet handled)** — this is the first handling of the completion. Proceed to step (e): handle the outcome exactly once, clear the state, and push the restored repaint.
-- **`title_token` absent (state already cleared → already handled)** — this is a **repeated "still running" reminder**, not a fresh completion. **No-op**: do NOT classify, do NOT read any TOON, do NOT re-clear, do NOT re-release the slot. Gating BEFORE classification is what makes the repeat a true no-op — a classifier invoked ahead of the gate would still re-run on every reminder. An un-gated reminder that re-runs the handling on every repeat is the failure mode behind Claude Code issue #11190, where a leaked reminder re-fired thousands of tokens. The title-token-state gate is the idempotency mechanism that makes the handling fire exactly once regardless of how many reminders arrive.
+- **`title_token` absent (state already cleared → already handled)** — this is a **repeated "still running" reminder**, not a fresh completion. **No-op**: do NOT read any TOON, do NOT re-clear. Gating BEFORE the handling is what makes the repeat a true no-op. An un-gated reminder that re-runs the handling on every repeat is the failure mode behind Claude Code issue #11190, where a leaked reminder re-fired thousands of tokens. The title-token-state gate is the idempotency mechanism that makes the handling fire exactly once regardless of how many reminders arrive.
 
 ### (e) Handle the outcome once (state-present branch only), then clear
 
-This step runs ONLY on the state-present branch of step (d). The outcome handling branches by `consumer` — the killed-job classifier applies to the **build consumer only**, because only build-class invocations traverse the executor dispatch boundary that stamps `kind=build` ledger rows; the ci-wait and finalize-barrier consumers stamp no rows, so the missing-row kill signature is not a valid discriminator for them.
+This step runs ONLY on the state-present branch of step (d). The outcome handling branches by `consumer`:
 
-- **`build`** — classify the outcome FIRST, before consuming any TOON, via the deterministic killed-job classifier:
+- **`ci-wait`** — read the wait handler's return TOON directly: `final_status`, `duration_sec`, and `failing_checks` (per the Consumers table above).
 
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger classify-outcome \
-    --job-status {completed|killed} --output-bytes {N} --worktree-sha {sha}
-  ```
-
-  Pass the harness-reported job state as `--job-status`, the byte count of the job's captured output as `--output-bytes`, and the pre-dispatch `worktree_sha` as the **required** `--worktree-sha` (compute it via the `worktree-sha` verb BEFORE detaching in step (c) and hold it for the wake path — an unscoped cross-check could match a stale row from a different worktree state and misclassify a killed job as `success`). The verdicts (see [`../../manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) § classify-outcome):
-
-  - **`externally_killed`** — the harness killed the job (reported `killed`, no ledger row was stamped AND the output is 0 bytes — the whole-tree-kill signature — or the matching row itself carries `status: killed`). The orchestrator MUST surface the verdict message **"externally killed — not flaky, do not blind-retry"** and MUST NOT re-dispatch the identical command as a retry. A kill is not flakiness; blind re-dispatch feeds the same killer.
-  - **`timeout` / `success` / `undecidable`** — proceed to read the wrapper's **compact result TOON** — analyse `status` (`success` / `error` / `timeout` / `killed`) and the `errors[N]{file,line,message,category}` rows — NEVER the raw build log. The compact TOON is the contract surface; the raw log is consulted only when the TOON's `log_file` pointer is needed for a specific failure investigation.
-
-- **`ci-wait`** — no classifier (this consumer stamps no ledger rows). Read the wait handler's return TOON directly: `final_status`, `duration_sec`, and `failing_checks` (per the Consumers table above).
-
-- **`finalize-barrier`** — no classifier (this consumer stamps no ledger rows). Read the `ci barrier` decision TOON directly: `barrier_status` and the `proceed` / `pending` / `failed` / `affected` buckets, applying the per-arm handled-set gating from § "Finalize-wait barrier consumer specifics" (re-arm while `pending` is non-empty; final clear only at a terminal `barrier_status` with an empty `pending` bucket).
+- **`finalize-barrier`** — read the `ci barrier` decision TOON directly: `barrier_status` and the `proceed` / `pending` / `failed` / `affected` buckets, applying the per-arm handled-set gating from § "Finalize-wait barrier consumer specifics" (re-arm while `pending` is non-empty; final clear only at a terminal `barrier_status` with an empty `pending` bucket).
 
 After the consumer-specific handling, clear the state and push the restored repaint:
 
@@ -129,29 +118,18 @@ The plain `session push-title-token` (no `--icon`) repaints to the current proce
 
 All four title-surface operations (set / clear / both pushes) are **best-effort**, mirroring `merge_lock` — a failure of any one never aborts the wrapped operation.
 
-### (f) Release the build-queue slot (build consumer only)
-
-After the fire-exactly-once handling, release the admitted slot so the FIFO-oldest waiting build is promoted:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue release \
-  --plan-id {plan_id} --id {admission_id}
-```
-
-The `ci-wait` consumer skips this step. The release fires only on the state-present branch of step (d) — a repeated reminder must not double-release.
-
 ### (g) Fallback — synchronous blocking call
 
-When the Claude background primitive is unavailable (a non-Claude runtime, or the `run_in_background` parameter is not honoured), the seam degrades to **today's synchronous blocking call**: run `{command}` **inline** at `timeout: bash_timeout_seconds * 1000` (the architecture-resolved envelope's `bash_timeout_seconds`), still bracketed by the build-busy set (step b) and the clear (step e). On the synchronous path the completion is the Bash call's own return, so the clear is unconditional (there is no reminder to gate against) — but keeping the state-read gate is harmless and preserves one code path. The build-queue acquire/release (steps a, f) still apply for the build consumer.
+When the Claude background primitive is unavailable (a non-Claude runtime, or the `run_in_background` parameter is not honoured), the seam degrades to **today's synchronous blocking call**: run `{command}` **inline** at `timeout: bash_timeout_seconds * 1000` (the architecture-resolved envelope's `bash_timeout_seconds`), still bracketed by the build-busy set (step b) and the clear (step e). On the synchronous path the completion is the Bash call's own return, so the clear is unconditional (there is no reminder to gate against) — but keeping the state-read gate is harmless and preserves one code path.
 
 The synchronous fallback is behaviourally identical to the pre-detach model; it exists so the Claude-specific wake primitive stays contained behind this seam rather than leaking a runtime branch into either consumer.
 
 ## Related
 
+- [`build-server-client` SKILL.md](../../build-server-client/SKILL.md) — the submit/wait/ping/preflight client contract the build consumer routes through (replacing the build arm's former detach on this seam).
 - [`persona-plan-marshall-agent` SKILL.md](../../persona-plan-marshall-agent/SKILL.md) — the build-busy bracketing contract that routes orchestrator-tier long-running calls through this seam (cross-reference, not duplication) and owns the shared title-surface seam semantics.
-- [`phase-5-execute/standards/canonical_verify.md`](../../phase-5-execute/standards/canonical_verify.md) — the `execution_tier=orchestrator` bullet names this seam as the canonical orchestrator-tier consumer (background-and-notify), preserving the "not run inline by the step body" invariant.
+- [`phase-5-execute/standards/canonical_verify.md`](../../phase-5-execute/standards/canonical_verify.md) — the `execution_tier=orchestrator` bullet names the orchestrator-tier build consumer, preserving the "not run inline by the step body" invariant.
 - [`tools-integration-ci/standards/blocking-wait-pattern.md`](../../tools-integration-ci/standards/blocking-wait-pattern.md) — the remote-CI wait's seed-then-watch pattern; the orchestrator detaches the whole CI wait behind this seam.
-- [`manage-locks` SKILL.md](../../manage-locks/SKILL.md) — the build-queue `acquire` / `release` slot verbs.
 
 ## Output
 

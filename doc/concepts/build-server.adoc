@@ -1,0 +1,71 @@
+= Build Server
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
+
+A build that outlives its caller is the problem `marshalld` solves. When a long build runs inline and the harness reaps the session mid-wait, the whole build is lost — the work and the wait died together. The build server separates the two: `marshalld` is a machine-level daemon that owns build-class work for every registered project on the host, and a session only ever holds a bounded *wait* on a job the daemon runs. A reaped wait costs one re-poll, not the whole build.
+
+The build server is strictly opt-in. It changes nothing until a project is registered; an unregistered project runs builds exactly as before. This page describes what it is and how a build flows through it — the wait/work split, the scope criterion, registration-as-enablement, the submit → long-poll call model, and the fallback path.
+
+== The wait and the work are separate processes
+
+In the in-process model, the process that *asks for* a build is the process that *runs* it: the build subprocess is a child of the session, and if the session dies the build dies. `marshalld` breaks that coupling. The daemon runs each build in its own supervised child; the session `submit`s a job and then performs one server-side bounded long-poll (`wait`) for the result. The daemon holds the long-poll for up to its bound and returns either the terminal result or a live running status — so the session is never blocked and never babysitting a subprocess it cannot influence.
+
+The load-bearing consequence: a harness reap of the `wait` is cheap. The build keeps running in the daemon; the session re-issues `wait` and re-attaches to the same job (its `job_id` is recorded in the change-ledger, so even a rebuilt session recovers it). What used to cost the entire build now costs one re-poll.
+
+== Scope: builds and tests in, CI waits out
+
+The daemon owns exactly *build-class* work — the canonical build commands that run a local subprocess (`compile`, `module-tests`, `verify`, `coverage`, `quality-gate`). That is the work whose wait and work are worth separating, because it is local, long, and reap-vulnerable.
+
+Remote-CI waits are deliberately out of scope. Waiting on a GitHub/GitLab CI run or the phase-6 finalize barrier consumes no local build slot and runs no local subprocess — there is nothing to reap that would lose local work — so those waits stay on the existing bounded `ci:wait` primitives (xref:parallelism-and-locking.adoc[Parallelism and Locking]) and are never submitted to `marshalld`.
+
+== Registration is the enable signal
+
+There is no config knob and nothing git-tracked that turns the build server on. A project is served by `marshalld` only when it has been *registered*, and registration IS the enablement — an operator-interactivity wall. Registration lives on the host, per WSL distro / per machine, in a machine-global registry the daemon's verifier reads.
+
+Two skills split cleanly along the operator/session line:
+
+* **The control skill** (`manage-build-server`) is user-invocable only — the operator drives `register` / `unregister` / `start` / `stop` / `drain` / `status` / `install` / `upgrade`. It is the *only* place registration and lifecycle happen, and it is never resolved into a dispatch's `skills[]` (the anti-laundering wall): a session can never enrol itself or silently start the daemon.
+* **The client skill** (`build-server-client`) is the tiny consumption surface a build-dispatching context uses — `submit` / `wait` / `ping` / `preflight`, and nothing else. It never provisions, starts, or registers anything.
+
+At the start of a planning session the xref:planning-workflow.adoc[phase-1-init] build-server preflight makes one deterministic `preflight` call — `disabled` (unregistered), `ready` (daemon answered a verified handshake), or `down` + a named reason. An unregistered or ready project proceeds with no prompt; a `down` daemon (registered but not answering) asks the operator whether to start it, continue on the fallback, or unregister. The daemon is never auto-started silently.
+
+== The submit → long-poll call model
+
+A registered, ready build flows through the client in two steps:
+
+* **`submit`** — the client verifies the daemon's identity (the socket is owned by the caller's own uid and answers the expected protocol version; an impostor socket is treated as unreachable, never trusted), sends the job spec, and persists the daemon-assigned `job_id` to the change-ledger so a reaped or rebuilt session can re-attach from plan state alone.
+* **`wait`** — one server-side bounded long-poll. It returns a terminal status-TOON, or on bound expiry a *live* running status; the caller re-issues `wait` on a running return. It must never `run_in_background` or `sleep` the wait — a reaped wait costs one re-poll, and backgrounding it re-introduces the very loss the daemon removes.
+
+The status-TOON carries two hard guarantees:
+
+* **A bound-expiry wait is never timeout-shaped.** It returns a live `running` status with `elapsed` / `eta` / `last_progress`, not an empty body — so the caller always knows the build is still alive and how far along it is.
+* **`killed` is a first-class terminal status.** A child the supervisor did not itself terminate (a harness reap, a daemon restart) is classified `killed` — rendered "externally killed — not flaky, do not blind-retry" — and is never folded into `failure`. A kill is not flakiness, and the caller must not blind-retry it.
+
+== The fallback path
+
+The build server is optional, so every build must still run when the daemon is absent. When a project is unregistered, or registered but the daemon is `down`, the build-execute routing seam falls back to an *in-process* build under a single machine-global build-queue slot, and records the degradation reason so the fallback is never silent. A build therefore takes exactly one limiter path — the daemon on the registered/ready path, or the in-process slot on the fallback path — never both, never stacked.
+
+The one machine-global `build-queue.json` is the single slot substrate on *every* path (xref:parallelism-and-locking.adoc[Parallelism and Locking] § Build-Queue Limiter): the daemon coordinates slots against it for the builds it serves, and the in-process fallback acquires against the same file. Machine-wide build concurrency stays bounded whether or not the daemon is running, and an unregistered project's build is byte-identical to how it ran before the build server existed.
+
+== Verify, never resolve
+
+The daemon is a trust boundary. It VERIFIES every submit positionally against the submitting project's registration — the interpreter matches the registered baseline, the executor path is `{tree}/.plan/execute-script.py` inside the verified tree, the notation is on the project's allowlist, the exec path canonicalises into the registered root or a live linked worktree — and never resolves anything on the client's behalf. The build child runs with a clean server-side baseline environment (no client env, no provider secrets), and the state directory and socket are owner-only. The security shape is summarised in xref:security.adoc[Security] and specified in the control-skill contract.
+
+== Platform
+
+The build server is a POSIX daemon (a Unix domain socket, a double-forked process re-parented to init). It runs natively on macOS and Linux. On Windows it runs only inside WSL2, scoped per distro — each distro is its own machine with its own registry and daemon, and a `wsl --shutdown` or idle timeout tears the daemon down (a `down` status is routine there, and the init preflight re-asks). The full platform requirement lives in xref:../user/installation.adoc[User Guide › Installation] and is not duplicated here.
+
+== Related
+
+* link:../../marketplace/bundles/plan-marshall/skills/build-server-client/SKILL.md[`build-server-client/SKILL.md`] — the consumption client: `submit` / `wait` / `ping` / `preflight`, the status-TOON guarantees, and the fallback semantics.
+* link:../../marketplace/bundles/plan-marshall/skills/manage-build-server/SKILL.md[`manage-build-server/SKILL.md`] — the user-invocable control skill: `register` / `unregister` / lifecycle, and the anti-laundering wall.
+* xref:build-management.adoc[Concepts › Build Management] — the canonical-command build abstraction the build server runs; the daemon changes *where* a build runs, not the command vocabulary.
+* xref:parallelism-and-locking.adoc[Concepts › Parallelism and Locking] — the machine-global build-queue limiter that is the single slot substrate on both the daemon and fallback paths.
+* xref:../developer/build-architecture.adoc[Developer Guide › Build Architecture] — the as-built interaction architecture (component map, flows F1–F8, job state machine, deliberate-absences table) at developer altitude.
+* xref:../user/installation.adoc[User Guide › Installation] — the POSIX / WSL2 platform requirement.

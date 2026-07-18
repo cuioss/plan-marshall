@@ -721,7 +721,13 @@ def validate_extension_contracts(
                 ext_type = 'outline'
             elif skill_name.startswith('recipe-'):
                 ext_type = 'recipe'
-            elif skill_name.startswith('build-'):
+            elif skill_name.startswith('build-') and not skill_name.startswith('build-server'):
+                # The 'build-' convention names build-SYSTEM extensions
+                # (build-maven / build-npm / build-pyproject / build-gradle) that
+                # implement ext-point-build via ExecuteConfig. The 'build-server'
+                # namespace (e.g. build-server-client) is the marshalld build-server
+                # surface — a client skill, not a build-system extension — so it is
+                # excluded from the build-extension contract (EC-01 / EC-40 et al.).
                 ext_type = 'build'
 
             if ext_type is None:

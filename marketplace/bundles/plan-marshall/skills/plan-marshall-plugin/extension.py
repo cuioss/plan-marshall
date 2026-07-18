@@ -62,6 +62,10 @@ class Extension(ExtensionBase):
                             'skill': 'plan-marshall:ref-code-quality',
                             'description': 'Language-agnostic code quality, refactoring, and documentation principles',
                         },
+                        {
+                            'skill': 'plan-marshall:build-server-client',
+                            'description': 'marshalld build-server consumption client (submit/wait/ping/preflight) — build-dispatch routes builds through the daemon when the project is registered, else falls back in-process',
+                        },
                     ],
                     'optionals': [],
                 },
@@ -74,6 +78,10 @@ class Extension(ExtensionBase):
                         {
                             'skill': 'plan-marshall:persona-module-tester',
                             'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
+                        },
+                        {
+                            'skill': 'plan-marshall:build-server-client',
+                            'description': 'marshalld build-server consumption client (submit/wait/ping/preflight) — test-run dispatch routes through the daemon when the project is registered, else falls back in-process',
                         },
                     ],
                     'optionals': [],
