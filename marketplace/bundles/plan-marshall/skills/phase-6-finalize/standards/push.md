@@ -56,7 +56,7 @@ The freshness gate is **complementary to**, NOT redundant with, the `pre-push-qu
 A `stale` status has two distinct causes, and only ONE is a genuine defect:
 
 - **Genuine un-built source drift** — source was edited after the last successful `verify`, and no build observed the current tree. This MUST stay fail-closed (halt per the table above).
-- **Finalize-internal re-stale (known-safe)** — a finalize-internal `mutates_source: true` step (`era-stamp-fill`, `lessons-capture`, `sync-plugin-cache`) committed DURING finalize, advancing the working-tree `worktree_sha` past the last `kind=build` ledger entry. The source a `verify` DID observe is unchanged; only a finalize-owned commit moved the currency hash. Overriding this silently with `--force` discards the distinction and the audit trail.
+- **Finalize-internal re-stale (known-safe)** — a finalize-internal `mutates_source: true` step (`era-stamp-fill`, `lessons-capture`) committed DURING finalize, advancing the working-tree `worktree_sha` past the last `kind=build` ledger entry. The source a `verify` DID observe is unchanged; only a finalize-owned commit moved the currency hash. Overriding this silently with `--force` discards the distinction and the audit trail.
 
 Before failing closed on `stale`, the executor MUST determine which cause applies by consulting the **reconciliation record** the dispatcher emits at `phase-6-finalize/SKILL.md` Step 3 item 5f(d) immediately after a finalize-internal `mutates_source` commit. Resolve the current HEAD:
 
