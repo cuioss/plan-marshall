@@ -1262,6 +1262,8 @@ The `--threshold` here is **independent of** the `recipe-match` verb's `--thresh
 
 The verb is **heuristic-first**: it performs no LLM call and no plan-scoped read — only the free-form request text drives scoring. The bounded LLM fallback for genuinely ambiguous requests is **orchestrator-driven** (phase-1-init), not part of this script — mirroring `change-type-heuristic`'s heuristic-first / conservative-default contract.
 
+**No plan-scoped read is a deliberate contract, and footprint-consistency lives at the run-time consumer.** aspect-classify is the **compose-time narrative-only** signal — it runs at phase-1-init and end-of-phase-4-plan, both BEFORE phase-5 materialises the worktree, so the live footprint is always empty at classification time; a footprint read here would resolve `[]` and mis-drop. Run-time footprint-consistency is instead delivered by the `build-decision` verb (below), which phase-5 execution consults as the authoritative footprint-necessity authority (Step 11b Final Quality Sweep + the `default:verify:{canonical}` loop). The two signals are complementary and non-contradictory: the narrative aspect-drop clears the phase-5 verification list at compose for a confident `analysis` / `planning` request, while `build-decision` is the run-time backstop that skips the whole-tree build when an `implementation`-classified plan's live footprint turns out to be pure-doc.
+
 Output TOON shape:
 
 ```toon
@@ -1362,7 +1364,9 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-
   --command COMMAND --plan-id PLAN_ID
 ```
 
-Returns a `build` / `not_necessary` verdict for `COMMAND` against `PLAN_ID`'s live footprint. `--audit-plan-id` is accepted as an alias for `--plan-id`.
+Returns a `build` / `not_necessary` verdict for `COMMAND` against `PLAN_ID`'s live footprint. `--audit-plan-id` is accepted as an alias for `--plan-id`. Thin wrapper over `extension_base.should_execute_build` — a pure function of the `build.map` globs ∩ the live plan footprint (the same authority phase-6 uses); on `not_necessary` it carries a populated `reason`, on `build` no `reason`.
+
+This is the **run-time footprint-necessity authority** the phase-5 execution loop consults to gate its one footprint-blind whole-tree build surface — Step 11b (Final Quality Sweep) and the end-of-phase `default:verify:{canonical}` loop skip the whole-tree build when the verdict is `not_necessary` (a docs-only footprint). It is the run-time complement to the compose-time narrative `aspect-classify` signal (above): the two are non-contradictory. It is NOT a new when-to-build mechanism — the four former consumer sites (pre-push-quality-gate activation, phase-4-plan per-task verification derivation, per-bundle classify) share this one entry point.
 
 ---
 

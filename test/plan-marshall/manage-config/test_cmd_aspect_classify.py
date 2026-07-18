@@ -48,6 +48,17 @@ from conftest import load_script_module, run_script
 _cmd_aspect_classify_mod = load_script_module('plan-marshall', 'manage-config', '_cmd_aspect_classify.py')
 cmd_aspect_classify = _cmd_aspect_classify_mod.cmd_aspect_classify
 
+# The build-decision handler + its extension_base seam — used by the
+# non-contradiction invariant test below. extension_base lives in script-shared
+# and is on sys.path (conftest wires every skill scripts dir, including the
+# extension/ subdir); the handler resolves should_execute_build from it at call
+# time, so monkeypatching helpers on this same module object is what the handler
+# actually observes (mirrors test_build_decision.py).
+import extension_base  # noqa: E402
+
+_cmd_build_map_mod = load_script_module('plan-marshall', 'manage-config', '_cmd_build_map.py')
+cmd_build_decision = _cmd_build_map_mod.cmd_build_decision
+
 
 def _ns(request_text: str, threshold: float = 0.7) -> Namespace:
     return Namespace(request_text=request_text, threshold=threshold)
@@ -411,3 +422,122 @@ def test_cli_aspect_classify_missing_request_text_rejected(plan_context, tmp_pat
 
     # argparse rejects the missing required flag with exit code 2.
     assert result.returncode == 2
+
+
+# =============================================================================
+# Purity regression — NO plan-scoped read surface (deliverable 2)
+#
+# aspect-classify is the compose-time narrative-only signal; it deliberately
+# performs no plan-scoped footprint read (the compose-time footprint is always
+# empty, so a read here would mis-drop). These tests guard against a future
+# re-introduction of a plan-scoped read: the CLI argument surface must expose
+# no --plan-id / footprint parameter, and classification is a pure function of
+# --request-text alone.
+# =============================================================================
+
+
+def test_cli_aspect_classify_rejects_plan_id_flag(plan_context, tmp_path):
+    """Constructed-argv: --plan-id is NOT an accepted flag — the argparse surface is footprint-free.
+
+    A future re-introduction of a plan-scoped read would add a --plan-id (or
+    footprint) flag to the verb. This test pins the purity contract at the CLI
+    boundary: passing --plan-id is an argparse rejection (exit 2), proving no
+    such surface exists.
+    """
+    result = run_script(
+        SCRIPT_PATH,
+        'aspect-classify',
+        '--request-text',
+        'analyze audit investigate evaluate',
+        '--plan-id',
+        'some-plan',
+        cwd=tmp_path,
+    )
+
+    # argparse rejects the unknown --plan-id flag with exit code 2.
+    assert result.returncode == 2
+
+
+def test_cli_aspect_classify_rejects_affected_files_flag(plan_context, tmp_path):
+    """Constructed-argv: no --affected-files footprint surface exists either."""
+    result = run_script(
+        SCRIPT_PATH,
+        'aspect-classify',
+        '--request-text',
+        'analyze audit investigate evaluate',
+        '--affected-files',
+        'scripts/foo.py',
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+
+
+def test_classification_is_pure_function_of_request_text():
+    """Representative analysis / planning / implementation requests classify from text alone.
+
+    No plan context, no footprint, no environment is consulted — the same
+    request text always yields the same narrative-only verdict. This is the
+    behavioural half of the purity contract (the CLI-surface half is asserted
+    above).
+    """
+    analysis = cmd_aspect_classify(_ns('analyze audit investigate evaluate'))
+    planning = cmd_aspect_classify(_ns('design roadmap architecture blueprint'))
+    implementation = cmd_aspect_classify(_ns('implement build create refactor'))
+
+    assert (analysis['aspect'], analysis['drops_build_steps']) == ('analysis', True)
+    assert (planning['aspect'], planning['drops_build_steps']) == ('planning', True)
+    assert (implementation['aspect'], implementation['drops_build_steps']) == ('implementation', False)
+
+    # Determinism: a second identical call yields byte-identical output — there is
+    # no plan-scoped / footprint state that could shift the result between calls.
+    assert cmd_aspect_classify(_ns('analyze audit investigate evaluate')) == analysis
+
+
+# =============================================================================
+# Non-contradiction invariant (seam-level) — aspect-classify narrative vs the
+# run-time build-decision footprint gate (deliverable 2)
+#
+# The two signals are complementary and provably non-contradictory: for a
+# pure-doc footprint the RUN-TIME backstop (build-decision --command
+# quality-gate) returns not_necessary, while aspect-classify's COMPOSE-TIME
+# narrative output is unaffected (it reads no footprint). This test documents
+# and pins that division of labour at the seam.
+# =============================================================================
+
+
+def test_pure_doc_footprint_build_decision_not_necessary_while_aspect_unaffected(monkeypatch):
+    """Seam invariant: pure-doc footprint -> build-decision not_necessary; aspect narrative unchanged.
+
+    The run-time footprint backstop (D1) is the authority that skips the
+    whole-tree build for a docs-only footprint; aspect-classify's narrative
+    classification neither reads that footprint nor changes because of it.
+    """
+    # Arrange — a docs-only live footprint: production build globs registered,
+    # but the changed files intersect none of them.
+    monkeypatch.setattr(
+        extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py']
+    )
+    monkeypatch.setattr(
+        extension_base,
+        '_resolve_plan_footprint',
+        lambda _plan: ['doc/developer/build.adoc', 'marketplace/bundles/x/skills/y/SKILL.md'],
+    )
+
+    # Act — the run-time backstop over the same pure-doc footprint.
+    verdict = cmd_build_decision(
+        Namespace(command='quality-gate', plan_id='footprint-driven-build-gating', audit_plan_id=None)
+    )
+    # And the compose-time narrative signal over a representative docs-review request.
+    aspect = cmd_aspect_classify(_ns('Review the getting-started docs wording, no build needed'))
+
+    # Assert — the run-time backstop skips; the narrative signal is unaffected by
+    # the footprint (it drops on the negation phrase, not on any footprint read).
+    assert verdict['status'] == 'success'
+    assert verdict['decision'] == 'not_necessary'
+    assert verdict['reason']
+    assert aspect['drops_build_steps'] is True
+    assert aspect['negative_constraint_matched'] == 'no build'
+    # The two signals AGREE here (both point away from a build) and never contradict:
+    # narrative aspect-drop governs compose-time list membership, build-decision
+    # governs the run-time whole-tree build.

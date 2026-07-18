@@ -23,6 +23,27 @@ then returns the higher-scored non-implementation candidate aspect with
 Heuristic-first: this verb performs NO LLM call and NO plan-scoped read. The
 bounded LLM fallback for genuinely ambiguous requests is the orchestrator's
 responsibility (phase-1-init), keeping the LLM out of the script body.
+
+No-plan-scoped-read is a deliberate contract, not an omission. aspect-classify
+is the **compose-time narrative-only** signal: it runs at ``phase-1-init`` and
+end-of-``phase-4-plan``, both BEFORE phase-5 Step 2.5 materialises the worktree,
+so the live footprint is ALWAYS empty at classification time. A footprint read
+inside this verb would therefore resolve ``[]`` and mis-drop every build step —
+the empty-footprint trap. The classifier deliberately reads only the request
+narrative and stays out of footprint territory.
+
+Run-time footprint-consistency is delivered at the ONE point with footprint
+fidelity: the ``manage-config build-decision`` consult wired into phase-5
+execution (Step 11b Final Quality Sweep + the ``default:verify:{canonical}``
+loop). That consult — a thin wrapper over ``extension_base.should_execute_build``
+— is the authoritative run-time footprint backstop. The two signals are
+complementary and non-contradictory: this narrative aspect-drop clears the
+phase-5 verification list at compose for a confident ``analysis`` / ``planning``
+request (nothing left to gate), while ``build-decision`` corrects an
+``implementation``-classified plan whose live footprint turned out to be
+pure-doc by returning ``not_necessary`` and skipping the whole-tree build. See
+``manage-execution-manifest/scripts/_manifest_rules.py`` ``_apply_aspect_step_dropping``
+for the compose-time half of this division of labour.
 """
 
 from __future__ import annotations
