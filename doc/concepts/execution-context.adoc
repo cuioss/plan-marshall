@@ -53,6 +53,7 @@ The dispatch is synchronous. The orchestrator suspends on the `Task:` call for t
 
 == Related
 
+* xref:build-server.adoc[Concepts › Build Server] — when a project registers the build server, an orchestrator-tier build is submitted to the `marshalld` daemon and bounded-long-polled: the leaf/orchestrator polls a bounded wait instead of holding a long build inline, so a harness-reaped wait costs one re-poll.
 * link:../../marketplace/bundles/plan-marshall/agents/execution-context.md[`plan-marshall/agents/execution-context.md`] — the dispatcher itself
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-dynamic-level-executor.md[`extension-api/standards/ext-point-dynamic-level-executor.md`] — agent-emission contract
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-execution-context-workflow.md[`extension-api/standards/ext-point-execution-context-workflow.md`] — workflow-doc contract
