@@ -95,14 +95,34 @@ On **Enable now**, configure the platform merge queue, then persist the opt-in:
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci repo merge-queue enable
 ```
 
-Assert the response is `status: success`. Then persist `use_merge_queue=true`.
-`use_merge_queue` is a step-owned param of the `default:branch-cleanup` step in
-the phase-6-finalize keyed-map `steps` structure (mirroring `pr_merge_strategy`):
+Inspect the returned `status` rather than asserting `status: success`
+unconditionally — on GitHub the `enable` verb refuses when the target repo's
+`.github/workflows` carry no `merge_group` CI trigger (the bricks-main footgun:
+every queued PR would form a merge group that never receives a required check,
+stalling the queue and blocking all merges to the default branch). This refusal
+is **distinct** from the auth-scope and `ineligible` / `unsupported` refusals
+already documented — the platform allows the feature and auth is sufficient, but
+provisioning the queue anyway would brick the default branch.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize step set --step-id default:branch-cleanup --param use_merge_queue --value true
-```
+- **On `status: error`** naming a missing `merge_group` trigger — surface the
+  actionable message to the operator verbatim and leave `use_merge_queue` at its
+  default (off), exactly as the `ineligible` / `unsupported` branch below does.
+  Do NOT persist `use_merge_queue=true`:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --level WARNING \
+    --message "[STEWARD] (plan-marshall:marshall-steward) Merge queue enable refused — {actionable merge_group message from enable error}; leaving use_merge_queue off"
+  ```
+
+- **On `status: success`** — persist the opt-in. `use_merge_queue` is a step-owned
+  param of the `default:branch-cleanup` step in the phase-6-finalize keyed-map
+  `steps` structure (mirroring `pr_merge_strategy`):
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+    plan phase-6-finalize step set --step-id default:branch-cleanup --param use_merge_queue --value true
+  ```
 
 On **Skip**, leave `use_merge_queue` at its default (off) and make no `enable`
 call.

@@ -331,7 +331,11 @@ merge queue (GitHub: a `merge_queue` ruleset on the default branch; GitLab: the
 per-project `merge_trains_enabled` setting) and is idempotent — an
 already-configured repo is left unchanged. Both verbs return the actionable error
 (never a stack trace) on an auth-scope failure, and `enable` refuses with the
-actionable ineligible message when the platform gates the feature off.
+actionable ineligible message when the platform gates the feature off. On GitHub,
+`enable` additionally refuses with an actionable `merge_group` message when the
+target repo's `.github/workflows` carry no workflow that triggers on
+`merge_group` — provisioning the queue anyway would stall it and block all merges
+to the default branch.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci repo label ensure \

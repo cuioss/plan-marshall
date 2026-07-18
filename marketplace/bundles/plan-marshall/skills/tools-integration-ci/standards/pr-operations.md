@@ -326,6 +326,19 @@ configured; merge_method reconciled to SQUASH`). On an `ineligible` probe
 failure both verbs return the actionable remedy (naming the required
 scope/permission), never a stack trace.
 
+On GitHub, `enable` additionally refuses on an `eligible_unconfigured` repo
+whose `.github/workflows` carry **no `merge_group` CI trigger** — returning
+`status: error` with an actionable message rather than creating the ruleset.
+This is the bricks-main footgun: a merge queue with no workflow that triggers on
+`merge_group` stalls the queue and blocks **all** merges to the default branch,
+because every queued PR forms a merge group that never receives a required
+status check. The message names the remedy — add a `merge_group:` trigger to a
+`.github/workflows/*.yml` (alongside `push` / `pull_request`) before enabling
+the merge queue. This refusal is distinct from the `ineligible` / auth-scope
+refusals above: the platform allows the feature and auth is sufficient, but
+provisioning the queue anyway would brick the default branch. It is GitHub-only
+(GitLab merge trains carry no equivalent `merge_group` trigger requirement).
+
 ---
 
 ## Workflow: Close PR
