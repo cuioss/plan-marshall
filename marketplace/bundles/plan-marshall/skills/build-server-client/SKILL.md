@@ -48,8 +48,8 @@ or an unregistered project, behaves byte-identically to today.
    RE-ATTACH — `wait` with no `--job-id` recovers the id from the latest `kind=job`
    row for the plan. An unreachable daemon or impostor socket returns
    `degraded(reason=…)`; a verifier rejection returns `refused(reason=…)`.
-2. **wait** — ONE server-side bounded long-poll (`bound = min(eta_remaining, 300)`,
-   the caller chooses the bound). The daemon holds the connection up to `bound`
+2. **wait** — ONE server-side bounded long-poll (the caller chooses `--bound`,
+   defaulting to the foreground-safe 300s ceiling). The daemon holds the connection up to `bound`
    seconds; on a terminal result it returns the full status-TOON, and on bound
    expiry it returns a LIVE `running` status — the caller re-issues `wait`. The
    wait NEVER returns an empty / timeout-shaped body on bound expiry.
