@@ -124,6 +124,47 @@ def _is_real_moved_in(dst: Path) -> bool:
     return True
 
 
+def _worktree_holds_moved_in_plan(worktree_path: Path, plan_id: str) -> bool:
+    """Return True when the materialized worktree already holds a real, moved-in
+    plan dir — a resolution-robust recognition of a healthy re-entry.
+
+    Unlike :func:`_is_real_moved_in`, which walks the RAW (unresolved) ancestors
+    and rejects on ANY symlinked ancestor up to ``.plan`` (the strict first-run
+    guard), this canonicalizes the worktree-resident plan dir with ``resolve()``
+    before checking existence. A plan dir legitimately moved into a worktree
+    whose path traverses a symlinked-but-real ancestor (a symlinked worktrees
+    root, or ``/tmp`` -> ``/private/tmp`` on macOS) is a REAL move-in that the
+    strict walk false-negatives; the resolved check recovers it. The worktree's
+    OWN ``.plan/local`` must still be a real (non-symlink) directory — a
+    symlinked ``.plan/local`` is a blocking residue rejected upstream and is
+    re-rejected here so this recognition never green-lights a blocking re-entry.
+
+    Boundary check (CWE-59): resolving ``wt_plan_dir`` alone would follow a
+    symlink placed anywhere along ``.plan/local/plans/{plan_id}`` to a target
+    outside ``worktree_path`` and still report a healthy re-entry. Both sides
+    are resolved and compared with :meth:`Path.is_relative_to` so the legitimate
+    symlinked-but-real-ancestor case (the resolved plan dir still lands under
+    the resolved worktree root) keeps recognising a healthy re-entry, while a
+    plan-dir symlink that escapes the worktree root is rejected. The final
+    ``{plan_id}`` component is additionally rejected when it is ITSELF a symlink
+    (before the ``resolve()`` collapses it), because a ``{plan_id}`` symlink
+    whose target is ANOTHER in-worktree plan dir stays under the worktree root
+    and would pass the containment check while associating ``plan_id`` with the
+    wrong plan's state.
+    """
+    wt_plan_dir = worktree_path / PLAN_DIR_NAME / 'local' / 'plans' / plan_id
+    wt_plan_local = worktree_path / PLAN_DIR_NAME / 'local'
+    try:
+        if wt_plan_local.is_symlink() or wt_plan_dir.is_symlink():
+            return False
+        resolved_plan_dir = wt_plan_dir.resolve()
+        if not resolved_plan_dir.is_relative_to(worktree_path.resolve()):
+            return False
+        return resolved_plan_dir.is_dir()
+    except OSError:
+        return False
+
+
 def _move_in_slot(src: Path, dst: Path) -> None:
     """Move ``src`` to ``dst``, replacing any stale dst first.
 
@@ -178,6 +219,43 @@ _GENERATE_EXECUTOR_PATH = (
 
 def _worktree_executor_path(worktree_path: Path) -> Path:
     return worktree_path / PLAN_DIR_NAME / 'execute-script.py'
+
+
+def _already_moved_in_response(
+    worktree_path: Path, plan_id: str, *, main_copy_absent: bool = False
+) -> dict[str, Any]:
+    """Build the noop/healed success payload for a plan dir already resident in
+    the worktree — shared by the primary idempotence guard (keyed on
+    ``_is_real_moved_in``) and the resolution-robust re-entry recognition (keyed
+    on ``_worktree_holds_moved_in_plan``): both converge on identical noop/healed
+    reporting once "already moved in" is established, differing only in whether
+    the main-checkout copy is legitimately absent (``main_copy_absent``).
+
+    Self-heals a partial materialization the same way both call sites need: when
+    the worktree executor is missing on disk, regenerate/copy it before
+    reporting ``healed`` instead of a bare ``noop``.
+    """
+    suffix = ' (main copy absent on re-entry)' if main_copy_absent else ''
+    wt_executor = _worktree_executor_path(worktree_path)
+    if _executor_landed(wt_executor):
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'worktree_path': str(worktree_path),
+            'action': 'noop',
+            'message': f'plan state already moved into worktree{suffix}',
+        }
+    generated, executor_detail = _generate_worktree_executor(worktree_path, plan_id)
+    healed_suffix = ' (main copy absent)' if main_copy_absent else ''
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'worktree_path': str(worktree_path),
+        'action': 'healed',
+        'message': f'plan state already moved in{healed_suffix}; regenerated missing worktree executor',
+        'worktree_executor_generated': generated,
+        'executor_detail': executor_detail,
+    }
 
 
 def _executor_landed(executor_path: Path) -> bool:
@@ -437,33 +515,11 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
     if _is_real_moved_in(wt_plan_dir):
         # FIX 3: self-heal a partial materialization. A prior run may have moved
         # the plan dir in but left the executor absent (the original defect:
-        # generation reported success for a file that never landed). Before
-        # returning a bare noop, check the worktree executor on disk; when it is
-        # missing, regenerate/copy it and report the heal. This makes the move-in
-        # genuinely self-healing without re-attempting ``git worktree add``.
-        wt_executor = _worktree_executor_path(worktree_path)
-        if _executor_landed(wt_executor):
-            return _assert_cwd_unchanged(
-                {
-                    'status': 'success',
-                    'plan_id': plan_id,
-                    'worktree_path': str(worktree_path),
-                    'action': 'noop',
-                    'message': 'plan state already moved into worktree',
-                }
-            )
-        generated, executor_detail = _generate_worktree_executor(worktree_path, plan_id)
-        return _assert_cwd_unchanged(
-            {
-                'status': 'success',
-                'plan_id': plan_id,
-                'worktree_path': str(worktree_path),
-                'action': 'healed',
-                'message': 'plan state already moved in; regenerated missing worktree executor',
-                'worktree_executor_generated': generated,
-                'executor_detail': executor_detail,
-            }
-        )
+        # generation reported success for a file that never landed). The shared
+        # noop/healed responder checks the worktree executor on disk and, when
+        # missing, regenerates/copies it and reports the heal. This makes the
+        # move-in genuinely self-healing without re-attempting ``git worktree add``.
+        return _assert_cwd_unchanged(_already_moved_in_response(worktree_path, plan_id))
 
     # --- Step 2: move plan-scoped state into the worktree (atomic) ---------
     # Track completed moves so a later failure can roll them back, leaving the
@@ -473,10 +529,32 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
         (main_plan_dir, wt_plan_dir),
     ]
 
-    # Pre-flight: the plan dir MUST exist on main to move it in. Its absence
-    # means the plan was never initialized on main (or already moved by a
-    # concurrent session) — fail loud rather than materialize an empty slot.
+    # Pre-flight: the plan dir MUST exist on main to move it in — BUT its absence
+    # has two distinct causes and only ONE is a genuine error. Enforce the
+    # idempotence recognition BEFORE the main-checkout-presence requirement so a
+    # healthy re-entry is never blocked by a legitimately-absent main copy:
+    #
+    #   * **Healthy re-entry** — a prior run already moved the plan dir into the
+    #     materialized worktree, so the main-checkout copy is LEGITIMATELY absent.
+    #     The primary idempotence guard above keys on the STRICT
+    #     ``_is_real_moved_in(wt_plan_dir)`` ancestor-walk, which false-negatives
+    #     when the worktree-resident plan dir is reachable only through a
+    #     symlinked-but-real ancestor (a symlinked worktrees root, ``/tmp`` ->
+    #     ``/private/tmp``) — dropping a genuinely already-materialised re-entry
+    #     through to this pre-flight. Recognise the already-moved-in worktree HERE
+    #     (resolution-normalized) and return the same noop/healed success WITHOUT
+    #     requiring the main copy to still exist.
+    #   * **Genuine not-found** — the plan is absent from BOTH main AND the
+    #     worktree (never initialized). Fail loud.
+    #
+    # A genuinely dirty/blocking re-entry still blocks: a symlinked ``.plan/local``
+    # was already rejected above, and ``_worktree_holds_moved_in_plan`` re-rejects
+    # it, so this branch never green-lights a blocking state.
     if not main_plan_dir.exists():
+        if _worktree_holds_moved_in_plan(worktree_path, plan_id):
+            return _assert_cwd_unchanged(
+                _already_moved_in_response(worktree_path, plan_id, main_copy_absent=True)
+            )
         return _assert_cwd_unchanged(
             make_error(
                 f'plan directory not found on main checkout: {main_plan_dir}',

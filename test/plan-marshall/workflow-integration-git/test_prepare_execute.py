@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import shutil
 from argparse import Namespace
 from pathlib import Path
 
@@ -274,6 +275,135 @@ class TestPrepareExecuteIdempotent:
         assert second['status'] == 'success'
         assert second['action'] == 'noop'
         assert second['worktree_path'] == first['worktree_path']
+
+
+class TestPrepareExecuteReentryIdempotence:
+    """A healthy re-entry — plan dir already moved into the materialized worktree,
+    main-checkout copy legitimately absent — must be recognised as
+    already-materialised and return noop/healed success WITHOUT requiring the
+    main copy, even when the STRICT ``_is_real_moved_in`` ancestor-walk
+    false-negatives (the worktree-resident plan dir is reachable only through a
+    symlinked-but-real ancestor). A genuinely missing plan still blocks
+    NOT_FOUND. Guards the re-entry idempotency false-negative fix."""
+
+    def test_healthy_reentry_through_symlinked_ancestor_returns_noop(
+        self, isolated_env: dict
+    ) -> None:
+        env = isolated_env
+        plan_id = env['plan_id']
+        worktree_path = env['worktree_path']
+
+        # Materialize the worktree with a REAL .plan/local, but reach the
+        # moved-in plan dir through a symlinked-but-real `plans` ancestor: the
+        # real plan dir lives under `.plan/real-plans/{plan_id}` and
+        # `.plan/local/plans` is a symlink to `.plan/real-plans`. The strict
+        # ancestor-walk rejects the symlinked `plans`; `.resolve()` recovers it.
+        wt_local = worktree_path / '.plan' / 'local'
+        wt_local.mkdir(parents=True)
+        real_plans = worktree_path / '.plan' / 'real-plans'
+        (real_plans / plan_id).mkdir(parents=True)
+        (real_plans / plan_id / 'status.json').write_text('{}\n')
+        (wt_local / 'plans').symlink_to(real_plans, target_is_directory=True)
+        # A worktree-bound executor is present, so recognition returns noop
+        # (not healed — no regeneration needed).
+        (worktree_path / '.plan' / 'execute-script.py').write_text('#!/usr/bin/env python3\n')
+
+        # The main-checkout plan dir is legitimately absent (already moved in).
+        shutil.rmtree(env['plan_dir'])
+
+        # Sanity: the strict primary guard false-negatives on the symlinked
+        # ancestor, while the resolution-robust recognition sees the plan.
+        wt_plan_dir = worktree_path / '.plan' / 'local' / 'plans' / plan_id
+        assert prepare_execute._is_real_moved_in(wt_plan_dir) is False
+        assert prepare_execute._worktree_holds_moved_in_plan(worktree_path, plan_id) is True
+
+        result = prepare_execute.run_prepare_execute(
+            Namespace(plan_id=plan_id, branch='feature/sample-plan', base=None)
+        )
+
+        # A healthy re-entry — recognised as already-materialised, NOT blocked.
+        assert result['status'] == 'success', result
+        assert result['action'] == 'noop'
+        assert result['worktree_path'] == str(worktree_path)
+        # No false-negative move-back: the main copy stays absent.
+        assert not env['plan_dir'].exists()
+
+    def test_healthy_reentry_missing_executor_returns_healed(
+        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        env = isolated_env
+        plan_id = env['plan_id']
+        worktree_path = env['worktree_path']
+
+        wt_local = worktree_path / '.plan' / 'local'
+        wt_local.mkdir(parents=True)
+        real_plans = worktree_path / '.plan' / 'real-plans'
+        (real_plans / plan_id).mkdir(parents=True)
+        (real_plans / plan_id / 'status.json').write_text('{}\n')
+        (wt_local / 'plans').symlink_to(real_plans, target_is_directory=True)
+        # NO worktree executor present — recognition must self-heal it.
+        shutil.rmtree(env['plan_dir'])
+
+        healed_calls: list[Path] = []
+
+        def fake_generate(wt_path: Path, pid: str) -> tuple[bool, str]:
+            healed_calls.append(wt_path)
+            return True, 'regenerated'
+
+        monkeypatch.setattr(prepare_execute, '_generate_worktree_executor', fake_generate)
+
+        result = prepare_execute.run_prepare_execute(
+            Namespace(plan_id=plan_id, branch='feature/sample-plan', base=None)
+        )
+
+        assert result['status'] == 'success', result
+        assert result['action'] == 'healed'
+        assert result['worktree_executor_generated'] is True
+        assert healed_calls == [worktree_path]
+        assert not env['plan_dir'].exists()
+
+    def test_genuine_absence_still_blocks_not_found(self, isolated_env: dict) -> None:
+        env = isolated_env
+        plan_id = env['plan_id']
+        worktree_path = env['worktree_path']
+
+        # Materialize an EMPTY worktree (real .plan/local, no moved-in plan dir),
+        # and remove the main plan dir — the plan is now genuinely nowhere.
+        (worktree_path / '.plan' / 'local').mkdir(parents=True)
+        shutil.rmtree(env['plan_dir'])
+
+        result = prepare_execute.run_prepare_execute(
+            Namespace(plan_id=plan_id, branch='feature/sample-plan', base=None)
+        )
+
+        # The idempotence recognition must NOT mask a genuinely missing plan.
+        assert result['status'] == 'error', result
+        assert result.get('error_code') == prepare_execute.ErrorCode.NOT_FOUND
+        assert 'not found on main checkout' in result['error']
+
+    def test_plan_id_symlink_targeting_in_worktree_dir_is_rejected(
+        self, isolated_env: dict
+    ) -> None:
+        # A `{plan_id}` symlink whose target is ANOTHER in-worktree plan dir
+        # stays under the worktree root, so it passes the `is_relative_to`
+        # containment check — but it associates `plan_id` with the wrong plan's
+        # state. The final-component `is_symlink()` guard rejects it before the
+        # `resolve()` collapses it, so recognition must return False.
+        env = isolated_env
+        plan_id = env['plan_id']
+        worktree_path = env['worktree_path']
+
+        wt_local = worktree_path / '.plan' / 'local'
+        (wt_local / 'plans').mkdir(parents=True)
+        # A real, in-worktree decoy plan dir the symlink will point at.
+        decoy = wt_local / 'plans' / 'other-plan'
+        decoy.mkdir()
+        (decoy / 'status.json').write_text('{}\n')
+        # `.plan/local/plans/{plan_id}` is a symlink to the decoy — target stays
+        # inside the worktree root, so containment alone would accept it.
+        (wt_local / 'plans' / plan_id).symlink_to(decoy, target_is_directory=True)
+
+        assert prepare_execute._worktree_holds_moved_in_plan(worktree_path, plan_id) is False
 
 
 # =============================================================================

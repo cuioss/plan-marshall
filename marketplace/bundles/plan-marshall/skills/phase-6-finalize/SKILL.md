@@ -1008,6 +1008,23 @@ FOR each step_id in manifest.phase_6.steps:
 
       (c) IF the porcelain output is empty, the mutating step produced no net change — record nothing and proceed to item 6. The step's pre-commit `head_at_completion` already equals the live HEAD (no commit was made), so no re-stamp is needed.
 
+      (d) **Freshness reconciliation record** (emit ONLY after a non-empty commit was made at (b); skip on the (c) empty-porcelain path): the instrumentation commit is a finalize-internal `mutates_source` commit that advances the working-tree `worktree_sha` past the last `kind=build` ledger entry, which will make the downstream `push` step's freshness precondition report `stale` even though the source a `verify` already observed is unchanged (see `standards/push.md` § "Finalize-internal re-stale reconciliation"). Emit a legible reconciliation record so `push` reconciles the gate for a documented reason instead of a silent `--force`. Resolve the prior successful-build `worktree_sha` from the ledger:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger query \
+            --kind build
+          ```
+
+          Filter the returned entries to those whose `status` field is `success` (NOT `--exit-code 0` — the build wrapper exits 0 even on a `killed` / `timeout` / `error` outcome, so an exit-code filter can select a non-successful build and record an invalid `prior_build_worktree_sha` the push flow would then trust). Take the most-recent `status: success` entry's `worktree_sha` as `{prior_build_worktree_sha}`. When NO `status: success` entry exists, **fail closed**: skip emitting the reconciliation record entirely so the downstream push freshness gate stays `stale` rather than reconciling against an unverified build. `{new_commit_sha}` is the HEAD resolved at (b). Record the reconciliation decision naming the finalize-internal commit, the producing step, and the prior build sha:
+
+          ```bash
+          python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+            decision --plan-id {plan_id} --level INFO \
+            --message "(plan-marshall:phase-6-finalize:freshness-reconcile) commit_sha={new_commit_sha} step_id={step_id} prior_build_worktree_sha={prior_build_worktree_sha} — finalize-internal mutates_source commit advanced worktree_sha past the last successful build; the downstream push freshness gate is reconciled for this documented reason, not force-overridden."
+          ```
+
+          The `push` step's freshness precondition reads this record — matching `commit_sha` against the live HEAD — to distinguish the known-safe finalize-internal re-stale from genuine un-built source drift, which stays fail-closed. Genuine drift never produces this record (no finalize-internal commit authored it), so the fail-closed path is preserved.
+
       **Post-PR re-push**: when a `mutates_source: true` step that runs AFTER `create-pr` (e.g. `plan-marshall:automatic-review`, `sonar-roundtrip`, or `lessons-capture` on its Branch B3 `architecture enrich` write) commits a loop-back fix or enrichment via this instrumentation, the dispatcher re-invokes the `push` step so the PR HEAD advances (and, for review-bearing steps, re-review fires) inside the normal settle band instead of at the merge gate. The `push` step is a pure barrier (it carries no commit logic and is NOT in `HEAD_DEPENDENT_STEPS`); the dispatcher re-invokes it explicitly here rather than relying on a HEAD-comparison re-fire. This explicit re-invocation is the **fast path**; the item-1 `branch-sync-state` parity check is the **structural backstop** — even if this re-invocation is missed (crash, session loss), the next re-entry observes `state: ahead` and re-fires the push rather than trusting the stale `done` record. Read-only (`mutates_source: false`) steps never reach item 5f's instrumentation and never trigger a re-push.
 
   6. Capture archive result (only when step_id == "archive-plan"):
