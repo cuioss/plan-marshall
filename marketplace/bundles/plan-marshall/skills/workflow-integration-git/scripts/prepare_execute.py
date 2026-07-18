@@ -124,6 +124,31 @@ def _is_real_moved_in(dst: Path) -> bool:
     return True
 
 
+def _worktree_holds_moved_in_plan(worktree_path: Path, plan_id: str) -> bool:
+    """Return True when the materialized worktree already holds a real, moved-in
+    plan dir — a resolution-robust recognition of a healthy re-entry.
+
+    Unlike :func:`_is_real_moved_in`, which walks the RAW (unresolved) ancestors
+    and rejects on ANY symlinked ancestor up to ``.plan`` (the strict first-run
+    guard), this canonicalizes the worktree-resident plan dir with ``resolve()``
+    before checking existence. A plan dir legitimately moved into a worktree
+    whose path traverses a symlinked-but-real ancestor (a symlinked worktrees
+    root, or ``/tmp`` -> ``/private/tmp`` on macOS) is a REAL move-in that the
+    strict walk false-negatives; the resolved check recovers it. The worktree's
+    OWN ``.plan/local`` must still be a real (non-symlink) directory — a
+    symlinked ``.plan/local`` is a blocking residue rejected upstream and is
+    re-rejected here so this recognition never green-lights a blocking re-entry.
+    """
+    wt_plan_dir = worktree_path / PLAN_DIR_NAME / 'local' / 'plans' / plan_id
+    wt_plan_local = worktree_path / PLAN_DIR_NAME / 'local'
+    try:
+        if wt_plan_local.is_symlink():
+            return False
+        return wt_plan_dir.resolve().is_dir()
+    except OSError:
+        return False
+
+
 def _move_in_slot(src: Path, dst: Path) -> None:
     """Move ``src`` to ``dst``, replacing any stale dst first.
 
@@ -473,10 +498,52 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
         (main_plan_dir, wt_plan_dir),
     ]
 
-    # Pre-flight: the plan dir MUST exist on main to move it in. Its absence
-    # means the plan was never initialized on main (or already moved by a
-    # concurrent session) — fail loud rather than materialize an empty slot.
+    # Pre-flight: the plan dir MUST exist on main to move it in — BUT its absence
+    # has two distinct causes and only ONE is a genuine error. Enforce the
+    # idempotence recognition BEFORE the main-checkout-presence requirement so a
+    # healthy re-entry is never blocked by a legitimately-absent main copy:
+    #
+    #   * **Healthy re-entry** — a prior run already moved the plan dir into the
+    #     materialized worktree, so the main-checkout copy is LEGITIMATELY absent.
+    #     The primary idempotence guard above keys on the STRICT
+    #     ``_is_real_moved_in(wt_plan_dir)`` ancestor-walk, which false-negatives
+    #     when the worktree-resident plan dir is reachable only through a
+    #     symlinked-but-real ancestor (a symlinked worktrees root, ``/tmp`` ->
+    #     ``/private/tmp``) — dropping a genuinely already-materialised re-entry
+    #     through to this pre-flight. Recognise the already-moved-in worktree HERE
+    #     (resolution-normalized) and return the same noop/healed success WITHOUT
+    #     requiring the main copy to still exist.
+    #   * **Genuine not-found** — the plan is absent from BOTH main AND the
+    #     worktree (never initialized). Fail loud.
+    #
+    # A genuinely dirty/blocking re-entry still blocks: a symlinked ``.plan/local``
+    # was already rejected above, and ``_worktree_holds_moved_in_plan`` re-rejects
+    # it, so this branch never green-lights a blocking state.
     if not main_plan_dir.exists():
+        if _worktree_holds_moved_in_plan(worktree_path, plan_id):
+            wt_executor = _worktree_executor_path(worktree_path)
+            if _executor_landed(wt_executor):
+                return _assert_cwd_unchanged(
+                    {
+                        'status': 'success',
+                        'plan_id': plan_id,
+                        'worktree_path': str(worktree_path),
+                        'action': 'noop',
+                        'message': 'plan state already moved into worktree (main copy absent on re-entry)',
+                    }
+                )
+            generated, executor_detail = _generate_worktree_executor(worktree_path, plan_id)
+            return _assert_cwd_unchanged(
+                {
+                    'status': 'success',
+                    'plan_id': plan_id,
+                    'worktree_path': str(worktree_path),
+                    'action': 'healed',
+                    'message': 'plan state already moved in (main copy absent); regenerated missing worktree executor',
+                    'worktree_executor_generated': generated,
+                    'executor_detail': executor_detail,
+                }
+            )
         return _assert_cwd_unchanged(
             make_error(
                 f'plan directory not found on main checkout: {main_plan_dir}',
