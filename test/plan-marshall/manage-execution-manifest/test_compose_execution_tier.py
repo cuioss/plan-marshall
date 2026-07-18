@@ -103,6 +103,72 @@ class TestStampTotalityAndOrdering:
         assert _stamp('X', []) == []
 
 
+class TestStampTotalityInvariantLock:
+    """Regression lock: the stamp is TOTAL over ``verification_steps``.
+
+    This is the parity / no-asymmetry invariant the retired ``initial-envelope
+    backgrounding`` marker referred to: because the stamp is composed ONCE over
+    the full step list, the SAME total ``{step_id, tier}`` record list is what
+    every later phase-5 dispatch reads — the initial dispatch and every
+    re-dispatch see an identical, fully-resolved tier for every step, so no
+    dispatch can encounter an un-stamped step to background-and-lose. The
+    guarantees locked here, over a list mixing canonical-verify steps and an
+    external ``project:`` / ``bundle:skill`` step:
+
+    * exactly one record per input step, in input order (totality + ordering);
+    * every record carries a resolved, non-empty tier (``per_task`` |
+      ``orchestrator``) — never absent/empty;
+    * an orchestrator-tier canonical (``verify:module-tests`` / ``verify:coverage``)
+      is stamped ``orchestrator``;
+    * an external / unresolvable step defaults to ``per_task``.
+    """
+
+    _MIXED_STEPS = [
+        'default:verify:quality-gate',
+        'verify:module-tests',
+        'verify:coverage',
+        'project:finalize-step-plugin-doctor',
+        'my-bundle:my-verify-step',
+    ]
+
+    def test_stamp_is_total_over_mixed_step_list(self, monkeypatch):
+        monkeypatch.setattr(_mem, '_resolve_step_execution_tier', _fake_resolver)
+
+        records = _stamp('mixed-plan', self._MIXED_STEPS)
+
+        # Totality + ordering: one record per input step, in list order.
+        assert [r['step_id'] for r in records] == self._MIXED_STEPS
+        assert len(records) == len(self._MIXED_STEPS)
+        # Every record carries a resolved, non-empty tier.
+        for rec in records:
+            assert set(rec.keys()) == {'step_id', 'tier'}
+            assert rec['tier'] in ('per_task', 'orchestrator')
+            assert rec['tier']  # non-empty
+        # Orchestrator-tier canonicals stamp orchestrator; external/unresolvable
+        # steps default to per_task.
+        tier_by_id = {r['step_id']: r['tier'] for r in records}
+        assert tier_by_id['default:verify:quality-gate'] == 'per_task'
+        assert tier_by_id['verify:module-tests'] == 'orchestrator'
+        assert tier_by_id['verify:coverage'] == 'orchestrator'
+        assert tier_by_id['project:finalize-step-plugin-doctor'] == 'per_task'
+        assert tier_by_id['my-bundle:my-verify-step'] == 'per_task'
+
+    def test_stamp_is_dispatch_invariant_composed_once_over_full_list(self, monkeypatch):
+        """The stamp is a pure function of the full step list — re-reading it (as a
+        re-dispatch would) yields a byte-identical total record list. There is no
+        per-dispatch asymmetry: the initial envelope and every re-dispatch resolve
+        the same tier for every step."""
+        monkeypatch.setattr(_mem, '_resolve_step_execution_tier', _fake_resolver)
+
+        first = _stamp('mixed-plan', self._MIXED_STEPS)
+        second = _stamp('mixed-plan', self._MIXED_STEPS)
+
+        assert first == second
+        # No step is left without a tier across either read.
+        assert all(r['tier'] for r in first)
+        assert all(r['tier'] for r in second)
+
+
 class TestOrchestratorTierForCeilingExceedingVerify:
     """A ceiling-exceeding module verify stamps orchestrator; quality-gate stamps per_task."""
 
