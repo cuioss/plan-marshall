@@ -3,8 +3,8 @@
 """Thin scaffolding script for the marshall-orchestrator skill.
 
 Deliberately lean, per the orchestrator's lean posture: everything that
-requires judgement stays LLM-workflow; this script owns exactly three
-deterministic operations against the main-anchored orchestrator store
+requires judgement stays LLM-workflow; this script owns four deterministic
+operations against the main-anchored orchestrator store
 (``.plan/local/orchestrator/{slug}/``, resolved via
 ``file_ops.get_store_dir('orchestrator', slug)``):
 
@@ -14,6 +14,9 @@ deterministic operations against the main-anchored orchestrator store
 - ``resume-summary --slug S`` — generate the "START HERE" block from
   ``status.json`` (the machine authority) for the LLM to paste into
   ``epic.md`` between the generated-block markers.
+- ``archive --slug S`` — relocate a *closed* epic tree to
+  ``.plan/local/archived-orchestrators/{slug}/`` (a mechanical, post-close
+  directory move that requires no judgement; refuses a non-closed epic).
 
 The ``kind=orchestrator`` ``status.json`` schema is owned by
 ``manage-status/standards/status-lifecycle.md``; ``status.json`` is created
@@ -22,10 +25,12 @@ No implementation-side capability (no build/CI/source verbs) exists here.
 """
 
 import argparse
+import shutil
 from pathlib import Path
 from typing import Any
 
 from file_ops import (
+    get_archived_orchestrator_dir,
     get_store_dir,
     now_utc_iso,
     output_toon,
@@ -72,20 +77,32 @@ def _validate_slug(slug: str) -> str | None:
     return None
 
 
-def _epic_root(slug: str) -> Path:
-    """Resolve the epic's store root directory."""
-    return get_store_dir(ORCHESTRATOR_STORE, slug)
+def _epic_root(slug: str, allow_archived: bool = False) -> Path:
+    """Resolve the epic's store root directory.
+
+    ``allow_archived`` threads straight into
+    :func:`file_ops.get_store_dir`'s read-fallback: when ``True`` and the active
+    ``orchestrator/{slug}`` tree is absent, the archived home
+    ``archived-orchestrators/{slug}`` is resolved instead (when it exists).
+    READ verbs pass ``True``; ``scaffold``, ``queue --transition``, and the
+    ``archive`` source resolution stay strict (default ``False``) so a frozen
+    archived epic is never mutated at the active path.
+    """
+    return get_store_dir(ORCHESTRATOR_STORE, slug, allow_archived=allow_archived)
 
 
-def _read_status(slug: str) -> dict[str, Any]:
+def _read_status(slug: str, allow_archived: bool = False) -> dict[str, Any]:
     """Read the epic's status.json (empty dict when absent or malformed).
 
     ``read_json`` degrades a missing/unreadable/unparseable file to ``{}``, but
     a status.json whose top-level JSON is valid-but-non-dict (an array, a bare
     string, ``null``) would otherwise reach ``dict(...)`` and raise. Fall back
     to ``{}`` on any non-dict parse so callers always receive a dict.
+
+    ``allow_archived`` threads into :func:`_epic_root` so READ verbs resolve an
+    archived epic transparently when its active tree is absent.
     """
-    data = read_json(_epic_root(slug) / FILE_STATUS)
+    data = read_json(_epic_root(slug, allow_archived=allow_archived) / FILE_STATUS)
     if not isinstance(data, dict):
         return {}
     return dict(data)
@@ -142,7 +159,9 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
             'wrong_parameters',
             '--transition and --status must be supplied together',
         )
-    status_doc = _read_status(args.slug)
+    # Read-path (no --transition) resolves an archived epic transparently; the
+    # --transition write-path stays strict so an archived epic is never mutated.
+    status_doc = _read_status(args.slug, allow_archived=args.transition is None)
     if not status_doc:
         return _error(
             args.slug, 'file_not_found', 'status.json not found in orchestrator store'
@@ -236,7 +255,7 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
     invalid = _validate_slug(args.slug)
     if invalid:
         return _error(args.slug, 'invalid_slug', invalid)
-    status_doc = _read_status(args.slug)
+    status_doc = _read_status(args.slug, allow_archived=True)
     if not status_doc:
         return _error(
             args.slug, 'file_not_found', 'status.json not found in orchestrator store'
@@ -247,6 +266,69 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
         'slug': args.slug,
         'store': ORCHESTRATOR_STORE,
         'summary': _build_summary(status_doc),
+    }
+
+
+def cmd_archive(args: argparse.Namespace) -> dict[str, Any]:
+    """Relocate a *closed* epic tree to ``archived-orchestrators/{slug}/``.
+
+    A mechanical, post-close directory move (the fourth deterministic
+    operation this script owns) — never a judgement call. Order of checks:
+
+    - source absent, dest present → idempotent success (``already_archived``).
+    - source absent, dest absent → ``error: not_found``.
+    - source present, epic phase is not ``closed`` → ``error: not_closed`` with
+      an actionable message; NO move is performed.
+    - source present AND dest present → ``error: archive_conflict`` (never
+      clobber the frozen audit record).
+    - otherwise → create the archived parent and ``shutil.move`` the tree,
+      returning ``archived_to``.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    source = _epic_root(args.slug)
+    dest = get_archived_orchestrator_dir(args.slug)
+    if not source.exists():
+        if dest.exists():
+            return {
+                'status': 'success',
+                'operation': 'archive',
+                'slug': args.slug,
+                'store': ORCHESTRATOR_STORE,
+                'already_archived': True,
+                'archived_to': str(dest),
+            }
+        return _error(
+            args.slug,
+            'not_found',
+            f'epic {args.slug!r} has no active or archived tree to archive',
+        )
+    phase = _read_status(args.slug).get('phase', '')
+    if phase != 'closed':
+        return _error(
+            args.slug,
+            'not_closed',
+            f'epic {args.slug} is phase={phase}; run close first, then archive',
+            phase=phase,
+        )
+    if dest.exists():
+        return _error(
+            args.slug,
+            'archive_conflict',
+            f'epic {args.slug!r} already has an archived tree at {dest}; '
+            'refusing to clobber the audit record',
+            archived_to=str(dest),
+        )
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(source), str(dest))
+    return {
+        'status': 'success',
+        'operation': 'archive',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'already_archived': False,
+        'archived_to': str(dest),
     }
 
 
@@ -301,6 +383,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     _add_slug_arg(resume)
     resume.set_defaults(handler=cmd_resume_summary)
+
+    archive = subparsers.add_parser(
+        'archive',
+        help='Relocate a closed epic tree to archived-orchestrators/{slug}/ (post-close, mechanical).',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(archive)
+    archive.set_defaults(handler=cmd_archive)
 
     return parser
 

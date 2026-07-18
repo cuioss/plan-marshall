@@ -19,6 +19,7 @@ Usage:
         set_base_dir,
         base_path,
         get_store_dir,
+        get_archived_orchestrator_dir,
         get_temp_dir,
         get_executor_path,
         guard_worktree_cwd
@@ -440,7 +441,7 @@ def get_temp_dir(subdir: str | None = None) -> Path:
     return temp_path
 
 
-def get_store_dir(store: str, entry_id: str) -> Path:
+def get_store_dir(store: str, entry_id: str, allow_archived: bool = False) -> Path:
     """Resolve the root directory for an entry of a named runtime-state store.
 
     This is the ONE parameterized store-root mechanism for entry-shaped stores
@@ -465,6 +466,15 @@ def get_store_dir(store: str, entry_id: str) -> Path:
     Args:
         store: Store name — ``'plans'`` or ``'orchestrator'``.
         entry_id: Entry identifier within the store (a plan id or an epic id).
+        allow_archived: Read-fallback flag, honoured only for
+            ``store='orchestrator'``. When ``True`` and the active
+            ``orchestrator/{entry_id}`` path does not exist, resolve the
+            archived home ``archived-orchestrators/{entry_id}`` instead — but
+            only when that archived path exists; otherwise the active path is
+            returned so a genuine not-found still names the canonical active
+            location. Default ``False`` keeps every write/scaffold caller
+            strict (an archived epic is the frozen audit record and MUST NOT be
+            mutated at the active path). Ignored for ``store='plans'``.
 
     Returns:
         Path to the entry's root directory under the selected store.
@@ -486,10 +496,45 @@ def get_store_dir(store: str, entry_id: str) -> Path:
         # _validate_slug. Reject traversal and separator components here so no
         # caller can escape the orchestrator/ subtree.
         _reject_unsafe_entry_id(entry_id)
-        return resolve_main_anchored_path(f'orchestrator/{entry_id}')
+        active = resolve_main_anchored_path(f'orchestrator/{entry_id}')
+        if allow_archived and not active.exists():
+            archived = get_archived_orchestrator_dir(entry_id)
+            if archived.exists():
+                return archived
+        return active
     raise ValueError(
         f"unknown store {store!r}: expected 'plans' or 'orchestrator'"
     )
+
+
+def get_archived_orchestrator_dir(slug: str) -> Path:
+    """Resolve the unconditional archived-home directory for an epic ``slug``.
+
+    Returns ``<main-root>/.plan/local/archived-orchestrators/{slug}`` — the
+    relocated home of a *closed* epic tree, mirroring the plan-lifecycle
+    ``archived-plans/`` convention. This is the unconditional destination
+    resolver (it never checks existence): the ``archive`` subcommand moves a
+    closed epic here, and the :func:`get_store_dir` read-fallback resolves it
+    when the active ``orchestrator/{slug}`` path is absent.
+
+    Reuses the same resolver family as the active store root
+    (:func:`marketplace_paths.resolve_main_anchored_path`) so the archived tree
+    stays main-anchored regardless of caller cwd, and reuses
+    :func:`_reject_unsafe_entry_id` so a traversal/separator slug cannot escape
+    the ``archived-orchestrators/`` subtree.
+
+    Args:
+        slug: Epic slug identifying the archived epic entry.
+
+    Returns:
+        Path to ``archived-orchestrators/{slug}`` under the main-anchored store.
+
+    Raises:
+        ValueError: when ``slug`` is empty/whitespace-only or contains ``..``,
+            ``/``, ``\\``, or a null byte.
+    """
+    _reject_unsafe_entry_id(slug)
+    return resolve_main_anchored_path(f'archived-orchestrators/{slug}')
 
 
 def _reject_unsafe_entry_id(entry_id: str) -> None:
