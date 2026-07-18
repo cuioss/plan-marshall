@@ -315,7 +315,7 @@ System-level infrastructure settings.
 
 ### Provisioning Fields
 
-Runtime-stamped by `stamp_provisioning_fields()` (in `_config_defaults.py`) at both `init` and `sync-defaults` time — NOT part of `get_default_config()`. They record the marketplace version and default-config-seed fingerprint this `marshal.json` was last provisioned against, so the `generate_executor preflight` verb can signal executor/config staleness against the installed `dist-manifest.json`. Both are re-stamped unconditionally on every `sync-defaults` run (the key-exists preservation in `manage-config/SKILL.md` § "Workflow: Sync Defaults" does not apply to them).
+Runtime-stamped by `stamp_provisioning_fields()` (in `_config_defaults.py`) at both `init` and `sync-defaults` time — NOT part of `get_default_config()`. They record the marketplace version and default-config-seed fingerprint this `marshal.json` was last provisioned against, so the `generate_executor preflight` verb can signal executor/config staleness against the installed `dist-manifest.json`. Neither follows the key-exists preservation in `manage-config/SKILL.md` § "Workflow: Sync Defaults", but their override conditions differ: `config_seed_fingerprint` is re-stamped unconditionally on every `sync-defaults` run, while `provisioned_version` advances only when `read_provisioned_version()` returns a real (non-empty) version — an empty read (unstamped/absent executor) preserves any pre-existing `provisioned_version` instead of blanking it.
 
 | Field | Type | Description |
 |-------|------|-------------|

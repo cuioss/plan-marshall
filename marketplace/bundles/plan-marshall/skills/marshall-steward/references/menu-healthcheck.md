@@ -268,7 +268,15 @@ Run the deterministic staleness preflight. See [SKILL.md § "Executor & Config S
 python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-staleness
 ```
 
-**Interpret results**:
+**Interpret results** (the `marshal_status: unknown` case is evaluated FIRST, regardless of the other fields, so an unresolvable-manifest verdict is never mistaken for a clean `fresh` pass):
+
+- `marshal_status: unknown` → the installed `dist-manifest.json` could not be resolved, so version-based staleness cannot be determined — the preflight failed CLOSED. Surface the cannot-determine warning (echo the returned `warning` field) rather than reporting a clean pass:
+
+```text
+[WARN] Executor/config staleness could not be determined: {warning}.
+       Verify the install, or regenerate the executor manually
+       (Maintenance → Regenerate Executor), then re-run /marshall-steward.
+```
 
 - `executor_action: fresh` → Executor version current PASS
 - `executor_action: regenerated` → Executor was stale and regenerated in place. Surface the session-restart guardrail (see [SKILL.md](../SKILL.md#session-restart-required-after-executor--agent-changes)) — the emitted agent set may have changed, so the running session must restart before dispatching against it.
@@ -282,7 +290,7 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode ch
        auto-mutated.
 ```
 
-A fresh install with no manifest reports `executor_action: fresh` / `marshal_status: fresh` (both `changed_at` values resolve to the empty sentinel). Include `staleness` in the Step 7 summary TOON (e.g., `staleness: {executor_action: fresh, marshal_status: fresh}`).
+A fresh install with no resolvable manifest reports `executor_action: fresh` / `marshal_status: unknown` with a populated `warning` field — the fail-closed verdict, never a vacuous `fresh` (`installed_version` resolves to the `unknown` sentinel rather than the empty sentinel). Include `staleness` in the Step 7 summary TOON (e.g., `staleness: {executor_action: fresh, marshal_status: fresh, warning: ""}`).
 
 ---
 
