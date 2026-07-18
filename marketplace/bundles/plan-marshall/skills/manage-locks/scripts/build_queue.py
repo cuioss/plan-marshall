@@ -5,14 +5,25 @@ waiting queue.
 
 Notation: ``plan-marshall:manage-locks:build_queue``
 
-This standalone script caps how many build sessions run concurrently across the
-machine. It persists ``active`` + ``waiting`` + ``run_log`` state in the
-machine-global ``build-queue.json`` (under ``home_root()``, ADR-008) and mutates it through the shared
-TOCTOU-safe read-modify-write core (:func:`_locks_core.rmw_json`), so two
-sessions racing to claim or free a slot can never both observe the same
-pre-state and both admit. It is modeled on ``merge_lock.py`` (the ``k=1`` merge
-mutex); the build queue is the ``k>=1`` primitive that needs the FIFO waiting
-queue.
+This standalone script is the **single shared reader/writer of the one
+machine-global slot file** (``build-queue.json``): it caps how many build
+sessions run concurrently across the whole host, and it is the ONE slot substrate
+consumed by BOTH build-execute paths — marshalld's scheduler on the registered
+path (the daemon coordinates access to the same file for builds it serves) AND
+the in-process fallback (``_build_queue_slot``) on the unregistered / daemon-down
+path. There is no separate project-level queue: one file, one slot budget, one
+path per build, never stacked. The byte-identical-unregistered guarantee holds
+*through* this shared file — an unregistered project still hits no daemon or
+socket, yet its build acquires a slot against the same global file exactly as
+before.
+
+It persists ``active`` + ``waiting`` + ``run_log`` state in the machine-global
+``build-queue.json`` (under ``home_root()``, ADR-008) and mutates it through the
+shared TOCTOU-safe read-modify-write core (:func:`_locks_core.rmw_json`) — the
+single serialization point over the shared file — so two sessions racing to
+claim or free a slot can never both observe the same pre-state and both admit. It
+is modeled on ``merge_lock.py`` (the ``k=1`` merge mutex); the build queue is the
+``k>=1`` primitive that needs the FIFO waiting queue.
 
 Every entry that enters the ``active`` set records an ``active_since`` activation
 timestamp (distinct from ``ts``, the admit/enqueue time used for FIFO ordering),

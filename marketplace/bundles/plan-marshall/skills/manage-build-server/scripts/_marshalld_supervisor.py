@@ -47,6 +47,7 @@ from _build_result import (
     timeout_result,
 )
 from _build_server_protocol import (
+    MARSHALLD_JOB_ENV,
     STATUS_KILLED,
     status_from_result,
     status_payload,
@@ -197,7 +198,12 @@ async def run_job(
         The terminal status payload (``success | failure | timeout | killed``)
         in the shared result shape.
     """
-    child_env = env if env is not None else build_baseline_env()
+    # Stamp the re-entrancy marker so the child's own build wrapper (when the
+    # child re-runs the executor-form command) never routes back to the daemon —
+    # a build already running inside a marshalld job always runs in-process. The
+    # child env is copied first so a caller-supplied env dict is not mutated.
+    child_env = dict(env if env is not None else build_baseline_env())
+    child_env[MARSHALLD_JOB_ENV] = '1'
     command_str = ' '.join(command)
     if progress is None:
         progress = JobProgress()

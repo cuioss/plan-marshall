@@ -4,15 +4,30 @@
 
 Provides :func:`build_queue_slot` — a context manager every ``cmd_run`` build
 site wraps around its ``execute_direct(...)`` call so that, **only when a
-``plan_id`` is set**, the build participates in the cluster-wide build queue
-(``plan-marshall:manage-locks:build_queue``, the bounded-``k``-slot admitter
-from D5).
+``plan_id`` is set**, the build participates in the machine-global build queue
+(``plan-marshall:manage-locks:build_queue``, the bounded-``k``-slot admitter over
+the single machine-global ``build-queue.json``).
+
+This is the **in-process fallback** limiter path of the D5 build-execute routing
+seam: a build that is NOT routed to the marshalld daemon (the project is
+unregistered, or the daemon is down) acquires its slot here, against the SAME
+machine-global ``build-queue.json`` the daemon's scheduler coordinates on for
+registered builds. ``build_queue.py`` is the shared reader/writer of that one
+file for BOTH paths — one file, one slot budget, one path per build, never
+stacked. A build that DID route to the daemon must not also acquire a fallback
+slot; the ``routed`` guard below (and the routing seam returning before it is
+ever called) enforce the no-stacking invariant.
 
 This module is a **pure concurrency limiter**: it admits, waits, and releases
 build-queue slots and does nothing else. It writes no terminal-title state.
 
 Behaviour:
 
+* **routed → NO-OP passthrough.** When ``routed`` is true the build already ran
+  on (or is being served by) the marshalld daemon, whose child holds the single
+  machine-global slot; taking a fallback slot here would double-count the build
+  (stacking). The context manager therefore yields immediately without touching
+  the queue — the explicit no-stacking guard.
 * **No plan_id → NO-OP passthrough.** When ``plan_id`` is falsy the context
   manager yields immediately and does nothing else. A build invoked without a
   plan (ad-hoc CLI run, the standalone ``run`` subcommand) therefore runs
@@ -258,19 +273,28 @@ def _wait_for_admission(plan_id: str, max_retries: int) -> str:
 
 
 @contextmanager
-def build_queue_slot(plan_id: str | None) -> Iterator[None]:
-    """Context manager wrapping a build in the cluster build queue.
+def build_queue_slot(plan_id: str | None, *, routed: bool = False) -> Iterator[None]:
+    """Context manager wrapping a build in the machine-global build queue.
 
-    When ``plan_id`` is falsy this is a pure no-op passthrough — the body runs
-    unchanged with no queue interaction (the backward-compatibility guarantee
-    for plan-less builds). When ``plan_id`` is set, the body runs only after a
-    slot is admitted; the slot is released in a ``finally`` regardless of how the
-    body exits.
+    When ``routed`` is true this is a pure no-op passthrough — the build was
+    routed to the marshalld daemon, whose child already holds the single
+    machine-global slot, so acquiring a fallback slot here would stack a second
+    slot on the same build (the no-stacking guard). When ``plan_id`` is falsy
+    this is likewise a no-op passthrough — the body runs unchanged with no queue
+    interaction (the backward-compatibility guarantee for plan-less builds). When
+    ``plan_id`` is set and the build was NOT routed, the body runs only after a
+    slot is admitted on the shared machine-global ``build-queue.json``; the slot
+    is released in a ``finally`` regardless of how the body exits.
+
+    Args:
+        plan_id: The plan acquiring a slot, or falsy for a plan-less no-op.
+        routed: When true, the build is served by the daemon — take no fallback
+            slot (the explicit no-stacking guard).
 
     Raises:
         BuildQueueTimeout: when no slot is admitted within ``max_retries``.
     """
-    if not plan_id:
+    if routed or not plan_id:
         yield
         return
 

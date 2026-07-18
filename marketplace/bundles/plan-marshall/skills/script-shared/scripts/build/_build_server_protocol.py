@@ -35,7 +35,7 @@ Usage:
         encode_frame, read_frame, write_frame, recv_frame, send_frame,
         status_from_result, normalize_errors,
         FrameError, FrameTooLargeError, FrameTruncatedError, FrameDecodeError,
-        PROTOCOL_VERSION,
+        PROTOCOL_VERSION, MARSHALLD_JOB_ENV,
         STATUS_RUNNING, STATUS_SUCCESS, STATUS_FAILURE, STATUS_TIMEOUT,
         STATUS_KILLED, STATUS_NOT_FOUND, STATUS_REFUSED, STATUS_QUEUED,
         TERMINAL_STATUSES,
@@ -63,6 +63,21 @@ The daemon reports this string in its ``ping`` response (``marshalld.VERSION``);
 the client's S3 identity handshake compares the reported version against this
 constant and treats a mismatch as an untrusted peer (fallback), never trusting a
 response from a daemon speaking a different protocol version.
+"""
+
+MARSHALLD_JOB_ENV = 'MARSHALLD_JOB'
+"""Re-entrancy marker set on a marshalld build child's environment.
+
+The build-execute routing seam (D5, ``_build_execute_factory``) routes a build
+to marshalld by RE-SUBMITTING the same executor-form command; the daemon's
+supervisor then spawns ``python3 {tree}/.plan/execute-script.py {notation} …`` —
+which runs the build wrapper's ``cmd_run`` AGAIN inside the daemon child. Without
+a guard that second ``cmd_run`` would preflight-``ready`` and route back to the
+daemon, recursing without bound. The supervisor stamps this variable on the
+child's clean baseline env (:mod:`_marshalld_supervisor`), and the routing seam
+skips routing whenever it is present — so a build already running inside a
+marshalld job always runs in-process. The value is unspecified beyond
+truthiness; ``'1'`` is used.
 """
 
 LENGTH_PREFIX_BYTES = 4
