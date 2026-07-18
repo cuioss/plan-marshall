@@ -74,7 +74,7 @@ Boolean fields under each phase that decide whether the next-phase transition pa
 The post-CI merge gate is **not** a flat `plan.phase-6-finalize` field. It is `final_merge_without_asking` (default `false`), a step-owned parameter under the `default:branch-cleanup` finalize step — read and set via the step-params path (see <<step-configuration>>), not the flat phase `set` verb. When `false` (default) the operator is prompted with an inline pre-merge `AskUserQuestion` before the irreversible merge to the base branch; `true` is the explicit opt-in to unattended auto-merge after CI, serialised across concurrent plans by the cross-plan merge-lock.
 ====
 
-Every gate lives under the phase block whose outbound transition it governs; the two auto-continuation knobs (`finalize_without_asking`, `loop_back_without_asking`) are flat fields under `plan.phase-6-finalize`. The post-CI merge gate is `final_merge_without_asking`, a step-owned param under the `default:branch-cleanup` step — not a flat field (see the note above). Set a flat gate via `/marshall-steward` → Configuration → Review Gates, or directly with the standard phase `set` verb:
+Every gate lives under the phase block whose outbound transition it governs; the two auto-continuation knobs (`finalize_without_asking`, `loop_back_without_asking`) are flat fields under `plan.phase-6-finalize` (the post-CI merge gate is a step-owned param — see the note above). Set a flat gate via `/marshall-steward` → Configuration → Review Gates, or directly with the standard phase `set` verb:
 
 [source,bash]
 ----
