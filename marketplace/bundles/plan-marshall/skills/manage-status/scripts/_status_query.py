@@ -11,6 +11,7 @@ from _status_core import (
     TITLE_TOKEN_STATES,
     _surface_drive,
     _try_read_status_json,
+    drop_stale_build_busy,
     get_plans_dir,
     log_entry,
     normalize_metadata,
@@ -99,6 +100,13 @@ def cmd_set_phase(args: argparse.Namespace) -> dict[str, Any] | None:
     for phase in status['phases']:
         if phase['name'] == args.phase:
             phase['status'] = PHASE_STATUS_IN_PROGRESS
+
+    # Clear a stale build-busy title-token before persisting the phase write.
+    # Covers both forward transitions and backward loop-back re-entry: an
+    # interrupted long-running orchestration call can leave a build-busy token
+    # behind that would otherwise freeze a 🔨 in the title bar. Scoped to
+    # build-busy only — lock-coordination tokens are left untouched.
+    drop_stale_build_busy(status)
 
     write_status(args.plan_id, status)
     # Persisted-title-state-write drive seam (best-effort, fire-and-forget):

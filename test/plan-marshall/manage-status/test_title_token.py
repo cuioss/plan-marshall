@@ -31,8 +31,15 @@ _core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', 
 
 cmd_create = _lifecycle.cmd_create
 cmd_archive = _lifecycle.cmd_archive
+cmd_transition = _lifecycle.cmd_transition
 cmd_title_token = _query.cmd_title_token
+cmd_set_phase = _query.cmd_set_phase
 TITLE_TOKEN_STATES = _core.TITLE_TOKEN_STATES
+
+# A multi-phase plan whose adjacent transitions never reach the 6-finalize
+# blocking boundary, so cmd_transition performs a plain phase advance (no
+# strict-verify guard) — the surface these build-busy clearing tests exercise.
+_PHASES = '1-init,2-refine,3-outline'
 
 # The three canonical title-token states: the two lock-coordination phases
 # (lock-waiting / lock-owned) plus the orchestration-busy state (build-busy).
@@ -300,4 +307,109 @@ def test_archive_pops_build_busy_title_token(plan_context):
         f"with a pre-set build-busy token, but found "
         f"{archived_status.get('title_token')!r}. cmd_archive must pop "
         f"title_token before write_status/shutil.move."
+    )
+
+
+# =============================================================================
+# phase writers: cmd_transition / cmd_set_phase clear a stale build-busy token
+# =============================================================================
+#
+# build-busy is armed by the orchestration layer for the duration of a
+# long-running build/push/CI-wait Bash call and is meant to be cleared when
+# that call returns. If the call is interrupted (a killed detached build whose
+# completion never arrives), the token is left armed and would otherwise freeze
+# a stale 🔨 in the title bar across the next phase transition. The phase
+# writers therefore clear a stale build-busy token before persisting each
+# current_phase write. The clear is scoped to build-busy only — the live
+# lock-coordination tokens (lock-waiting / lock-owned) must survive untouched.
+
+
+def test_transition_clears_stale_build_busy_token(plan_context):
+    """``cmd_transition`` pops a stale build-busy token before the phase write."""
+    plan_id = 'tt-transition-build-busy'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases=_PHASES, force=False))
+    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='build-busy'))
+
+    result = cmd_transition(Namespace(plan_id=plan_id, completed='1-init'))
+
+    assert result['status'] == 'success', f'transition failed: {result}'
+    stored = _read_status(plan_context, plan_id)
+    assert stored['current_phase'] == '2-refine'
+    assert 'title_token' not in stored, (
+        f"Expected build-busy title_token cleared after transition, but found "
+        f"{stored.get('title_token')!r}."
+    )
+
+
+def test_set_phase_forward_and_loopback_clear_build_busy(plan_context):
+    """``cmd_set_phase`` clears build-busy on both a forward move and a
+    backward loop-back re-entry."""
+    plan_id = 'tt-set-phase-build-busy'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases=_PHASES, force=False))
+
+    # Forward move: 1-init -> 3-outline.
+    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='build-busy'))
+    cmd_set_phase(Namespace(plan_id=plan_id, phase='3-outline'))
+    stored = _read_status(plan_context, plan_id)
+    assert stored['current_phase'] == '3-outline'
+    assert 'title_token' not in stored, (
+        f"Expected build-busy cleared after forward set-phase, found "
+        f"{stored.get('title_token')!r}."
+    )
+
+    # Backward loop-back: 3-outline -> 2-refine.
+    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='build-busy'))
+    cmd_set_phase(Namespace(plan_id=plan_id, phase='2-refine'))
+    stored = _read_status(plan_context, plan_id)
+    assert stored['current_phase'] == '2-refine'
+    assert 'title_token' not in stored, (
+        f"Expected build-busy cleared after loop-back set-phase, found "
+        f"{stored.get('title_token')!r}."
+    )
+
+
+def test_lock_tokens_preserved_across_transition_and_set_phase(plan_context):
+    """The clear is scoped to build-busy — a live lock token survives both
+    phase writers untouched (the live coordination signal is not weakened)."""
+    # lock-owned survives cmd_transition.
+    plan_id = 'tt-lock-owned-preserved'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases=_PHASES, force=False))
+    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='lock-owned'))
+    cmd_transition(Namespace(plan_id=plan_id, completed='1-init'))
+    stored = _read_status(plan_context, plan_id)
+    assert stored['title_token'] == 'lock-owned', (
+        f"Expected lock-owned preserved across transition, found "
+        f"{stored.get('title_token')!r}."
+    )
+
+    # lock-waiting survives cmd_set_phase.
+    plan_id = 'tt-lock-waiting-preserved'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases=_PHASES, force=False))
+    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='lock-waiting'))
+    cmd_set_phase(Namespace(plan_id=plan_id, phase='2-refine'))
+    stored = _read_status(plan_context, plan_id)
+    assert stored['title_token'] == 'lock-waiting', (
+        f"Expected lock-waiting preserved across set-phase, found "
+        f"{stored.get('title_token')!r}."
+    )
+
+
+def test_killed_detached_build_busy_token_does_not_stay_armed(plan_context):
+    """Killed-detached-build repro: arm build-busy, take no clear action (the
+    orchestration call whose completion never arrives), then transition — the
+    token must not stay armed indefinitely."""
+    plan_id = 'tt-killed-detached-build'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases=_PHASES, force=False))
+    # Arm build-busy as the orchestration layer would before a long-running
+    # build, then simulate the killed detached build: no clear ever fires.
+    cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state='build-busy'))
+    armed = _read_status(plan_context, plan_id)
+    assert armed['title_token'] == 'build-busy'
+
+    # The next phase transition must not carry the stale token forward.
+    cmd_transition(Namespace(plan_id=plan_id, completed='1-init'))
+    stored = _read_status(plan_context, plan_id)
+    assert 'title_token' not in stored, (
+        f"A killed detached build left build-busy armed and the transition "
+        f"failed to clear it — found {stored.get('title_token')!r}."
     )
