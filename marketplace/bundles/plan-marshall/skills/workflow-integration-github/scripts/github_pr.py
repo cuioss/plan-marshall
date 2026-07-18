@@ -59,9 +59,9 @@ from typing import Any
 
 import bot_registry
 import github_ops as _github
-from _github_pr import RESOLVE_THREAD_MUTATION, THREAD_REPLY_MUTATION
+from _github_pr import RESOLVE_THREAD_MUTATION, THREAD_REPLY_MUTATION, _is_coderabbit_rate_limit_notice
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
-from github_re_review import bot_kind_for_author
+from github_re_review import bot_kind_for_author, is_registered_trigger_comment
 from triage_helpers import (
     ErrorCode,
     compile_patterns_from_config,
@@ -199,14 +199,33 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
        fragments the bot emits (a walkthrough heading, a marketing footer, a
        no-op review line), so only that bot's own comments are dropped.
 
+    Two further pipeline-noise classes are folded in ahead of the two layers,
+    both reusing existing data sources rather than new patterns:
+
+    - REGISTERED TRIGGER — a comment whose whitespace-stripped body EQUALS a
+      registered bot re-review trigger (``github_re_review.is_registered_trigger_comment``,
+      derived from ``bot_registry``) is a pipeline-authored re-review request this
+      workflow itself posted, not reviewer feedback. Checked for every comment
+      (bot- or human-authored), since the pipeline may post under either account.
+    - CODERABBIT RATE-LIMIT NOTICE — a CodeRabbit-authored comment that is a
+      rate-limit status notice (``_github_pr._is_coderabbit_rate_limit_notice``,
+      reusing ``_CODERABBIT_RATE_LIMIT_MARKERS``) is posted in place of a review
+      and carries no actionable feedback. Scoped to ``bot_kind == 'coderabbit'``.
+
     Used by ``fetch_findings`` to drop obvious automated/acknowledgment noise
     before each surviving comment is persisted as a ``pr-comment`` finding. This
     is intentionally permissive — the goal is only to skip the most obvious
     noise, not to make the final classification decision (that belongs to the LLM
     consumer). Human comments (``bot_kind is None``) are checked against the
-    shared layer only.
+    shared layer and the registered-trigger recognizer only.
     """
     if not body:
+        return True
+    # Pipeline-authored re-review trigger comment (exact stripped-body match).
+    if is_registered_trigger_comment(body):
+        return True
+    # CodeRabbit rate-limit status notice posted in place of a review.
+    if bot_kind == 'coderabbit' and _is_coderabbit_rate_limit_notice(body):
         return True
     body_lower = body.lower()
     if any(p.search(body_lower) for p in _COMPILED_IGNORE):

@@ -255,6 +255,80 @@ def test_enabled_bots_empty_disables_all_bots(plan_context, monkeypatch):
     assert stored[0].get('bot_kind') in (None, '')
 
 
+def test_pipeline_trigger_and_rate_limit_notice_dropped(plan_context, monkeypatch):
+    """Pipeline-authored re-review triggers and CodeRabbit rate-limit notices are dropped.
+
+    Over a comment set carrying (a) a ``@coderabbitai review`` re-review trigger
+    comment this workflow itself posts, (b) a CodeRabbit rate-limit status notice
+    posted in place of a review, and (c) a genuine substantive reviewer comment,
+    ``fetch_findings`` stores ONLY the genuine comment. The trigger and the
+    rate-limit notice are both counted as skipped noise (breaking the re-review
+    feedback loop) and raise no ``(producer-mismatch)`` Q-Gate false-positive —
+    the barrier's real purpose (surfacing actionable reviewer feedback) is
+    preserved.
+    """
+    plan_id = 'gh-pr-barrier-noise'
+    comments = [
+        # (a) Pipeline-authored re-review trigger — the exact registered coderabbit
+        # trigger string. Dropped regardless of author (the recognizer is
+        # author-agnostic: the pipeline posts it under the authenticated account).
+        {
+            'id': 'trigger-1',
+            'author': 'oliver',
+            'thread_id': '',
+            'kind': 'issue_comment',
+            'body': '@coderabbitai review',
+            'resolved': False,
+        },
+        # (b) CodeRabbit rate-limit status notice — carries BOTH markers (the
+        # ``## Rate limit exceeded`` heading AND the body sentence). Authored by
+        # the coderabbit bot, so bot_kind resolves to 'coderabbit'.
+        {
+            'id': 'ratelimit-1',
+            'author': 'coderabbitai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': (
+                '> [!WARNING]\n'
+                '> ## Rate limit exceeded\n'
+                '>\n'
+                '> @oliver has exceeded the limit for the number of files or '
+                'commits that can be reviewed per hour.'
+            ),
+            'resolved': False,
+        },
+        # (c) Genuine substantive reviewer comment — must be stored.
+        {
+            'id': 'genuine-1',
+            'author': 'coderabbitai',
+            'thread_id': 'PRRT_9',
+            'kind': 'inline',
+            'body': 'This off-by-one in the slice bound drops the last element; use len(items).',
+            'path': 'src/c.py',
+            'line': 20,
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(104, plan_id)
+    assert result['status'] == 'success'
+    # Only the genuine reviewer comment survives.
+    assert result['count_stored'] == 1
+    # Both the trigger comment and the rate-limit notice are dropped as noise.
+    assert result['count_skipped_noise'] == 2
+    # Legitimate non-stores — no producer-mismatch Q-Gate false-positive.
+    assert result['producer_mismatch_hash_id'] is None
+
+    stored = query_findings(plan_id, finding_type='pr-comment')['findings']
+    assert len(stored) == 1
+    # The one stored finding is the genuine comment, not the trigger/notice.
+    detail = stored[0].get('detail') or ''
+    assert 'comment_id: genuine-1' in detail
+    assert 'comment_id: trigger-1' not in detail
+    assert 'comment_id: ratelimit-1' not in detail
+
+
 # =============================================================================
 # bot_completion — per-bot check-run completion read
 # =============================================================================

@@ -70,14 +70,30 @@ _CODERABBIT_RATE_LIMIT_MARKERS: tuple[re.Pattern[str], ...] = (
 )
 
 
+def _is_coderabbit_rate_limit_notice(body: str) -> bool:
+    """Return True when a single comment ``body`` is a CodeRabbit rate-limit notice.
+
+    Matches the body against the narrow rate-limit marker set, requiring ALL
+    markers (the ``## Rate limit exceeded`` heading marker AND the specific
+    "exceeded the limit for the number of ..." body sentence). Requiring both
+    narrows detection to the notice's actual two-part structure, so a genuine
+    review comment that merely mentions one marker in prose is not misclassified.
+
+    Exported for the ``github_pr.fetch_findings`` pre-filter to drop a
+    CodeRabbit-authored rate-limit notice as noise, sharing the one marker set
+    with the :func:`_detect_coderabbit_rate_limited` wait-return discriminator.
+    """
+    return all(marker.search(body) for marker in _CODERABBIT_RATE_LIMIT_MARKERS)
+
+
 def _detect_coderabbit_rate_limited(comments: list[dict]) -> bool:
     """Return True when the newest CodeRabbit-bot comment is a rate-limit notice.
 
     Scans the CodeRabbit-bot-authored comments only, picks the newest by
-    ``created_at``, and matches its body against the narrow rate-limit marker
-    set. Requires ALL markers to match (the heading marker AND the body
-    sentence), so a genuine review that merely mentions one of them in prose is
-    not misclassified. Any absent / malformed field degrades to ``False`` —
+    ``created_at``, and matches its body via :func:`_is_coderabbit_rate_limit_notice`
+    (which requires ALL markers — the heading marker AND the body sentence — so a
+    genuine review that merely mentions one of them in prose is not
+    misclassified). Any absent / malformed field degrades to ``False`` —
     detection is best-effort and never raises into the poll return path.
     """
     bot_comments = [
@@ -90,7 +106,7 @@ def _detect_coderabbit_rate_limited(comments: list[dict]) -> bool:
         return False
     newest = max(bot_comments, key=lambda c: str(c.get('created_at') or ''))
     body = str(newest.get('body') or '')
-    return all(marker.search(body) for marker in _CODERABBIT_RATE_LIMIT_MARKERS)
+    return _is_coderabbit_rate_limit_notice(body)
 
 
 def cmd_pr_create(args: argparse.Namespace) -> dict:
