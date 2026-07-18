@@ -149,6 +149,18 @@ def cmd_project(args) -> dict:
             except ValueError as e:
                 return error_exit(str(e), error_type='invalid_value')
 
+        # Reject any field not in the project schema before persisting it. This
+        # makes `set` symmetric with the `get` branch's field_not_found handling:
+        # a typo'd or retired key (e.g. a dead lane knob) is rejected here rather
+        # than silently written to marshal.json where no reader would ever consult
+        # it. DEFAULT_PROJECT is the canonical field whitelist.
+        if field not in DEFAULT_PROJECT:
+            return error_exit(
+                f"Field '{field}' is not a known project field. "
+                f"Allowed: {sorted(DEFAULT_PROJECT)}",
+                error_type='unknown_field',
+            )
+
         project_config[field] = value
         config['project'] = project_config
         save_config(config)

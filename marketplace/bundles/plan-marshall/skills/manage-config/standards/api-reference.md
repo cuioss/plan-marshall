@@ -120,7 +120,7 @@ absent or unreadable.
 | Verb | Parameters | Description |
 |------|-----------|-------------|
 | `get` | `--field` | Get a project field. Falls back to the canonical default (from `DEFAULT_PROJECT`) when the key is absent from the live `project` block. |
-| `set` | `--field`, `--value` | Set a project field. Scalar fields are coerced (bool/int/str); the list-valued JSON field `working_prefixes` takes a JSON array value that round-trips through `get`. |
+| `set` | `--field`, `--value` | Set a project field. Rejects any `--field` outside the known project field set (`default_base_branch`, `working_prefixes`, `pr_strategy`, `pr_compact_max_changed_files`) with `error_type: unknown_field` before any write — an unknown field name never persists a dead key. Scalar fields are coerced (bool/int/str); the list-valued JSON field `working_prefixes` takes a JSON array value that round-trips through `get`. |
 
 ### Fields
 
@@ -532,3 +532,4 @@ Common errors:
 - `marshal.json not found. Run command /marshall-steward first`
 - `skill_domains not configured. Run command /marshall-steward first`
 - `Unknown domain: {name}`
+- `unknown_field` — `project set` was given a `--field` outside the known project field set (`default_base_branch`, `working_prefixes`, `pr_strategy`, `pr_compact_max_changed_files`). The write is refused before any key is persisted, so an unknown field never masks an operator/doc typo behind a green `status: success`.
