@@ -34,6 +34,7 @@ from _marshalld_verifier import (  # noqa: E402
     REFUSE_EXEC_PATH_ESCAPE,
     REFUSE_NOT_REGISTERED,
     REFUSE_NOTATION_NOT_ALLOWLISTED,
+    REFUSE_PROJECT_PATH_ESCAPE,
     _exec_path_within_registration,
     verify_submit,
 )
@@ -102,6 +103,32 @@ def test_exec_path_escape_is_refused(tmp_path):
     record = {'canonical_root': root, 'notation_allowlist': [_NOTATION], 'worktree_containers': []}
     reason = _exec_path_within_registration(escape, record, None)
     assert reason == REFUSE_EXEC_PATH_ESCAPE
+
+
+def test_project_path_diverging_from_exec_path_is_refused(tmp_path):
+    # exec_path names the registered (legitimate) tree — S1/S2 on exec_path
+    # alone would accept — but project_path (the build child's cwd) points at
+    # an unrelated directory outside any registered tree. The verifier must
+    # refuse: project_path is a separately client-settable job-spec field that
+    # `run_job` uses verbatim as the subprocess cwd, so leaving it unverified
+    # would let a submitter redirect the build's working directory anywhere the
+    # daemon-owning user can access.
+    root = canonicalize_root(tmp_path / 'proj')
+    escape = canonicalize_root(tmp_path / 'outside')
+    spec = _spec(root)
+    spec.project_path = escape
+    outcome = verify_submit(spec, _registry(root), baseline_interpreter='python3')
+    assert not outcome.accepted
+    assert outcome.reason == REFUSE_PROJECT_PATH_ESCAPE
+
+
+def test_empty_project_path_is_refused(tmp_path):
+    root = canonicalize_root(tmp_path / 'proj')
+    spec = _spec(root)
+    spec.project_path = ''
+    outcome = verify_submit(spec, _registry(root), baseline_interpreter='python3')
+    assert not outcome.accepted
+    assert outcome.reason == REFUSE_PROJECT_PATH_ESCAPE
 
 
 def test_registered_root_is_accepted(tmp_path):

@@ -27,6 +27,18 @@ daemon logs it.
    resolves to ``canonical_root`` AND which sits under one of the project's
    registered ``worktree_containers``. Anything that escapes the registered tree
    (``..`` traversal, a symlink out, an unregistered worktree) is refused.
+7. ``project_path`` — the build child's ``cwd`` (:func:`_marshalld_supervisor.run_job`
+   runs the verified command with ``cwd=project_path``) — is independently
+   verified against the SAME registration, using the identical containment
+   check as ``exec_path`` above. ``exec_path`` and ``project_path`` are two
+   separately client-settable job-spec fields (``build_server.py``'s ``submit``
+   verb exposes ``--exec-path`` and ``--project-path`` independently); checking
+   only ``exec_path`` would let a submitter point the build child's working
+   directory at any tree the daemon-owning user can read/write while still
+   satisfying the ``exec_path`` check with a legitimately-registered tree — a
+   genuine cwd-redirection escape, not mere defense-in-depth, since ``cwd`` is a
+   real execution parameter (relative-path resolution, VCS discovery, artifact
+   writes) for the build tools the daemon invokes.
 
 The git-common-dir probe is injected via ``common_dir_resolver`` so the verifier
 stays a pure function in tests — the daemon passes a git-backed resolver in
@@ -58,6 +70,8 @@ REFUSE_NOTATION_NOT_ALLOWLISTED = 'notation_not_allowlisted'
 REFUSE_INVALID_ARGS = 'invalid_args'
 REFUSE_EXEC_PATH_ESCAPE = 'exec_path_escape'
 REFUSE_WORKTREE_NOT_LIVE = 'worktree_not_live'
+REFUSE_PROJECT_PATH_ESCAPE = 'project_path_escape'
+REFUSE_PROJECT_PATH_NOT_LIVE = 'project_path_not_live'
 
 _EXECUTOR_SUBPATH = ('.plan', 'execute-script.py')
 _DEFAULT_INTERPRETER_NAMES = frozenset({'python3', 'python'})
@@ -106,19 +120,27 @@ def _args_schema_valid(args: list[str]) -> bool:
     return all(isinstance(arg, str) and '\x00' not in arg for arg in args)
 
 
-def _exec_path_within_registration(
-    exec_path: str,
+def _path_within_registration(
+    path: str,
     record: dict[str, Any],
     common_dir_resolver: CommonDirResolver | None,
+    *,
+    escape_reason: str,
+    not_live_reason: str,
 ) -> str:
-    """Classify an exec-path against a project's registration (S2).
+    """Classify a path against a project's registration (S2, generic).
 
-    Returns an empty string when the path is accepted, or a ``REFUSE_*`` reason
-    when it escapes the registered tree.
+    Shared containment check used for BOTH ``exec_path`` (where the executor
+    script lives) and ``project_path`` (the build child's ``cwd``) — each field
+    is checked against the SAME registered tree, with a distinct pair of
+    ``REFUSE_*`` reasons so a refusal names which field escaped.
+
+    Returns an empty string when the path is accepted, or the caller-supplied
+    ``escape_reason`` / ``not_live_reason`` when it escapes the registered tree.
     """
-    canonical_exec = Path(canonicalize_root(exec_path))
+    canonical = Path(canonicalize_root(path))
     registered_root = record.get('canonical_root', '')
-    if registered_root and canonical_exec == Path(registered_root):
+    if registered_root and canonical == Path(registered_root):
         return ''
 
     # Not the registered root itself — allow only a live linked worktree whose
@@ -126,21 +148,59 @@ def _exec_path_within_registration(
     # registered container.
     containers = [Path(canonicalize_root(c)) for c in record.get('worktree_containers', []) or []]
     under_container = any(
-        canonical_exec == container or container in canonical_exec.parents
+        canonical == container or container in canonical.parents
         for container in containers
     )
     if not under_container:
-        return REFUSE_EXEC_PATH_ESCAPE
+        return escape_reason
 
     if common_dir_resolver is None:
         # No liveness probe available — a worktree cannot be proven live.
-        return REFUSE_WORKTREE_NOT_LIVE
-    resolved_root = common_dir_resolver(str(canonical_exec))
+        return not_live_reason
+    resolved_root = common_dir_resolver(str(canonical))
     if not resolved_root:
-        return REFUSE_WORKTREE_NOT_LIVE
+        return not_live_reason
     if Path(canonicalize_root(resolved_root)) != Path(registered_root):
-        return REFUSE_WORKTREE_NOT_LIVE
+        return not_live_reason
     return ''
+
+
+def _exec_path_within_registration(
+    exec_path: str,
+    record: dict[str, Any],
+    common_dir_resolver: CommonDirResolver | None,
+) -> str:
+    """Classify an exec-path against a project's registration (S2)."""
+    return _path_within_registration(
+        exec_path,
+        record,
+        common_dir_resolver,
+        escape_reason=REFUSE_EXEC_PATH_ESCAPE,
+        not_live_reason=REFUSE_WORKTREE_NOT_LIVE,
+    )
+
+
+def _project_path_within_registration(
+    project_path: str,
+    record: dict[str, Any],
+    common_dir_resolver: CommonDirResolver | None,
+) -> str:
+    """Classify the build child's cwd against a project's registration (S2).
+
+    Applies the IDENTICAL containment check as :func:`_exec_path_within_registration`
+    to ``project_path`` — the field :func:`_marshalld_supervisor.run_job` uses
+    verbatim as the subprocess ``cwd``. Without this check ``project_path`` is a
+    client-settable field that never touches the verifier, letting a submitter
+    redirect the build child's working directory to any tree the daemon-owning
+    user can access while ``exec_path`` alone still satisfies S1/S2.
+    """
+    return _path_within_registration(
+        project_path,
+        record,
+        common_dir_resolver,
+        escape_reason=REFUSE_PROJECT_PATH_ESCAPE,
+        not_live_reason=REFUSE_PROJECT_PATH_NOT_LIVE,
+    )
 
 
 def verify_submit(
@@ -169,6 +229,7 @@ def verify_submit(
     """
     command: list[str] = list(getattr(job_spec, 'command', []) or [])
     exec_path: str = getattr(job_spec, 'exec_path', '') or ''
+    project_path: str = getattr(job_spec, 'project_path', '') or ''
 
     # S2 registry lookup first — an unregistered tree is refused outright.
     record = find_project_for_root(registry, exec_path)
@@ -200,6 +261,18 @@ def verify_submit(
     escape_reason = _exec_path_within_registration(exec_path, record, common_dir_resolver)
     if escape_reason:
         return VerifyOutcome.refuse(escape_reason)
+
+    # S2 — project_path (the build child's cwd) is independently verified: an
+    # empty value is refused outright (never let an empty string canonicalise to
+    # the daemon process's own unrelated cwd); otherwise it must canonicalise
+    # into the SAME registered tree as exec_path, using the identical
+    # containment check — never an unrelated/arbitrary directory the client
+    # happened to name.
+    if not project_path:
+        return VerifyOutcome.refuse(REFUSE_PROJECT_PATH_ESCAPE)
+    project_escape_reason = _project_path_within_registration(project_path, record, common_dir_resolver)
+    if project_escape_reason:
+        return VerifyOutcome.refuse(project_escape_reason)
 
     return VerifyOutcome.accept(record)
 
