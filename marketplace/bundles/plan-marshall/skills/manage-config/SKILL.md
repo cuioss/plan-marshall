@@ -1370,6 +1370,7 @@ Returns a `build` / `not_necessary` verdict for `COMMAND` against `PLAN_ID`'s li
 | `invalid_domain` | Domain not in skill_domains | Check domain name or run `/marshall-steward` |
 | `skill_domains not configured` | No domains in marshal.json | Run `/marshall-steward` |
 | `invalid_field` | Unknown field for phase/noun | Check field reference table above |
+| `unknown_field` | `project set --field X` where `X` is not a known project field (`default_base_branch`, `working_prefixes`, `pr_strategy`, `pr_compact_max_changed_files`) | Use one of the four known project fields; the write is refused before persisting so no dead key is written |
 | keyed step-map `set --field` rejection | `set --field verification_steps` (phase-5-execute) or `set --field steps` (phase-6-finalize) — those fields are keyed step-maps, not scalars | Use `set-steps` / `add-step` / `remove-step`, or `step set` for a step's nested params |
 | `skill_not_found` | Skill not in domain defaults/optionals | Check with `validate --domain --skill` |
 
