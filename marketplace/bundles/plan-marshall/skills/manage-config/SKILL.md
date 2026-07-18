@@ -58,11 +58,17 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-d
 - **Exception — provisioning stamps**: `system.provisioned_version` and
   `system.config_seed_fingerprint` are the two runtime-stamped provisioning fields
   (written by `stamp_provisioning_fields()` at both `init` and `sync-defaults` time,
-  NOT part of `get_default_config()`). Unlike every other already-present key, these
-  two are re-stamped **unconditionally** on each `sync-defaults` run — the
-  key-exists preservation above does not apply to them — so a live `marshal.json`
-  always reflects the currently provisioned version and config-seed fingerprint
-  after a steward reconcile. See `marshall-steward/SKILL.md` config-reconcile step.
+  NOT part of `get_default_config()`). Unlike every other already-present key,
+  neither follows the key-exists preservation rule above — but their override
+  conditions differ: `config_seed_fingerprint` is re-stamped **unconditionally**
+  on every `sync-defaults` run, while `provisioned_version` advances only when
+  `read_provisioned_version()` returns a real (non-empty) version; on an empty
+  read (an unstamped/absent executor) any pre-existing `provisioned_version` is
+  left intact rather than blanked, so a transient read failure never erases a
+  known-good stamp. A live `marshal.json` therefore always reflects the
+  currently provisioned config-seed fingerprint, and the most recently confirmed
+  executor version, after a steward reconcile. See `marshall-steward/SKILL.md`
+  config-reconcile step.
 - Nested dicts are merged recursively, so a deeply-nested missing sub-key
   (e.g. the `auto_rebase_threshold` param under
   `plan.phase-6-finalize.steps['default:branch-cleanup']` when that step's param

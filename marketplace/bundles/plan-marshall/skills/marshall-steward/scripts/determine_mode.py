@@ -93,13 +93,26 @@ Output (TOON format):
         detail	drift
         missing_keys	working_prefixes
 
-    check-staleness subcommand:
+    check-staleness subcommand (a verbatim pass-through of generate_executor
+    preflight; marshal_status is fresh | stale | unknown, and warning carries
+    the fail-closed message when the installed dist-manifest.json is
+    unresolvable, else the empty string):
         status	success
         executor_action	fresh
         marshal_status	fresh
         installed_version	0.1.42
         executor_version	0.1.42
         marshal_version	0.1.42
+        warning
+
+        # Unresolvable manifest → fail CLOSED (installed_version=unknown):
+        status	success
+        executor_action	fresh
+        marshal_status	unknown
+        installed_version	unknown
+        executor_version	0.1.42
+        marshal_version	0.1.42
+        warning	installed dist-manifest.json could not be resolved; version-based staleness cannot be determined (marshal_status=unknown)
 """
 
 import argparse

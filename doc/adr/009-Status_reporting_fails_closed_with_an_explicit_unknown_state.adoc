@@ -1,0 +1,119 @@
+= ADR-009: Status reporting fails closed with an explicit unknown state
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: A version-based staleness report fails closed — an unresolvable installed manifest yields a distinct unknown verdict plus a legible warning, never a vacuously-fresh positive it cannot substantiate.
+// tags: marshal-status, staleness, fail-closed, preflight, provisioning, contract
+// affects: plan-marshall, tools-script-executor, marshall-steward, manage-config
+// supersedes:
+// end-adr-metadata
+
+// Authoring discipline (see manage-adr SKILL.md → "Authoring Discipline"):
+// ADRs are durable architectural statements, not incident write-ups. No PR numbers,
+// commit SHAs, dates, or lesson IDs anywhere in the body. CLAUDE.md's "current state
+// only" rule applies — describe the architecture, not the chronology.
+
+== Status
+
+Proposed
+
+== Context
+
+The executor-staleness subsystem reports whether the installed provisioning is
+current by comparing a locally-embedded version against the version recorded in
+the installed distribution manifest. That comparison has a precondition the
+report itself cannot guarantee: the installed manifest must be resolvable. On
+some install layouts it is not — the manifest lives at a location the resolver
+does not search — so the comparison is asked to evaluate against a version it
+could not read.
+
+A two-valued health enum (`fresh` | `stale`) has no way to express
+absence-of-evidence. When the installed version is unknown, every comparison
+degenerates to the empty sentinel and the report collapses into a vacuously-true
+`fresh`. The surface then asserts a positive property — "everything is current" —
+precisely in the case where it has no evidence for that property, silently
+disabling the very staleness signal downstream remediation depends on. The
+structural choice point is: how should a status surface represent the state where
+it cannot substantiate the positive it is being asked to report?
+
+== Decision
+
+A status surface that reports a positive property fails closed: when the evidence
+for that property is absent, it emits a distinct third verdict rather than the
+positive.
+
+Concretely, the preflight producer emits `marshal_status: unknown` (never `fresh`)
+whenever the installed version is unresolvable, accompanied by a legible warning
+that names the missing evidence. The verdict is carried as a three-valued
+contract — `fresh` | `stale` | `unknown` — across every point that produces or
+interprets it: the producer, the tool contract that documents the return shape,
+the pass-through consumer's contract, and the remediation-branch prose that acts
+on the value. Because the interpreting branch checks `unknown` first and
+short-circuits, the evidence-absent verdict can never be absorbed into the
+`fresh → normal path` branch.
+
+== Consequences
+
+=== Positive
+
+* Automated consumers that key on the machine-readable verdict see a truthful
+  signal: an evidence gap surfaces as `unknown`, not as a false `fresh`, so the
+  staleness signal stays live exactly when it would otherwise go silently inert.
+* The failure is legible: the warning names what could not be resolved, turning a
+  silent no-op into an actionable diagnostic.
+* The three-valued contract is uniform across producer and every consumer, so a
+  new verdict cannot be silently laundered into the positive branch at any single
+  interpretation site.
+
+=== Negative
+
+* Consumers of the enum must handle a third value; a consumer written against the
+  two-valued shape is incomplete until it accounts for `unknown`.
+* The evidence-absent case now demands an explicit interpretation decision at each
+  consumer rather than defaulting into the positive path.
+
+=== Risks
+
+* A consumer that treats any non-`stale` verdict as "proceed" would fold `unknown`
+  back into the positive; the uniform contract and the check-`unknown`-first
+  ordering mitigate this, but the discipline must be preserved as new consumers are
+  added.
+
+== Alternatives Considered
+
+* *Keep the two-valued enum and emit only a warning.* The human-facing warning
+  helps, but the machine-readable verdict still reports `fresh`, so automated
+  consumers stay blind. Rejected: it fixes the symptom for a human reader while
+  leaving the contract lying to every programmatic consumer.
+
+* *Default the unresolvable case to `stale`.* This at least stops the false
+  positive, but it conflates an evidence gap with a positive staleness finding —
+  the report would assert the provisioning IS stale when it simply cannot tell,
+  producing false remediation churn. Rejected: absence-of-evidence is not evidence
+  of staleness.
+
+* *Add a back-compatibility / deprecation shim for the enum.* Preserve the
+  two-valued surface and layer the third state behind an adapter. Rejected: the
+  enum is a same-bundle contract with an enumerable, bounded consumer set, so a
+  clean-slate replacement is cheaper and clearer than a standing shim that would
+  outlive its purpose.
+
+The alternatives fall in one class: each preserves the positive-or-negative
+framing and tries to bolt evidence-absence onto it. The unifying principle is that
+a surface reporting a positive property must model the third, evidence-absent state
+as a first-class value — never fold it into the positive.
+
+== References
+
+* `tools-script-executor` SKILL.md — the preflight contract that defines the
+  three-valued `marshal_status` return.
+* `marshall-steward` SKILL.md — the remediation branch that interprets the verdict,
+  checking `unknown` first.
+* `manage-config` — the provisioning-stamp path whose non-destructive stamping
+  keeps a known-good provisioned version from being blanked when the executor read
+  is empty.
