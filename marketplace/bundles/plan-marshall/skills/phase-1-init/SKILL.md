@@ -924,6 +924,65 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Manifest timing.** The persisted posture is consumed by the phase-4 Step 7b `compose`, which resolves the lane-pruned `execution.toon` with the firm `change_type` / `affected_files` signals — see [`../manage-execution-manifest/standards/decision-rules.md`](../manage-execution-manifest/standards/decision-rules.md) § "Execution-profile lane resolution" (twice-compose timing) and `manage-execution-manifest` Canonical invocations → `compose`. The `lanes preview` projection shown here and that composed manifest share one resolver, so the preview cannot diverge from the executed finalize flow; the posture is fixed here and never re-prompted at phase-4.
 
+### Step 8e: Build-Server Preflight
+
+Probe whether the `marshalld` build server is available for this session with ONE deterministic call. This is a session-environment readiness check, not plan routing: the build-execute routing seam (D5) re-checks registration + daemon health on every build, but init surfaces a `down` daemon to the operator once, early, so a registered project is not silently forced onto the in-process fallback for the whole session. **The daemon is never auto-started silently** — starting is only ever an explicit operator choice.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-server-client:build_server preflight
+```
+
+Parse `preflight` from the returned TOON — exactly one of `disabled` (project not registered — NO daemon probe was made), `ready` (the daemon answered a verified handshake; carries `version`), or `down` (registered but the daemon did not answer; carries a named `reason`).
+
+**`disabled` or `ready` — proceed with NO prompt.** Both are correctly-configured outcomes: an unregistered project uses the in-process fallback by design, and a `ready` daemon serves builds. Emit one console line and one decision-log entry, then continue to Step 9:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-1-init:build-server) Preflight {disabled|ready} (marshalld v{version} when ready) — no action required; {builds run in-process|builds route to the daemon}"
+```
+
+**`down` — surface the named reason and ask.** The project is registered but the daemon did not answer (`reason` ∈ {`socket_absent`, `unreachable`, `version_mismatch`, `impostor_socket`, `handshake_failed`}). Fire a native `AskUserQuestion` phrased from the reason, and apply the choice in-context — never auto-start:
+
+```text
+AskUserQuestion:
+  question: "The build server is registered for this project but not responding ({reason}). How should I proceed?"
+  options:
+    - label: "Start now"        description: "Start marshalld (version-pinned), then re-run preflight"
+    - label: "Continue without" description: "Run builds in-process this session (the fallback)"
+    - label: "Unregister"       description: "Drop this project from the registry — builds run in-process from now on"
+```
+
+Apply the resolution in-context:
+
+- **Start now** — invoke the `manage-build-server` control skill's `start` verb, then re-run the preflight ONCE to confirm the daemon now answers:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server start
+  ```
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:build-server-client:build_server preflight
+  ```
+
+  On a `ready` re-check the daemon is now serving; on a still-`down` re-check, fall through to the in-process fallback for this session — do NOT loop (a second failure is recorded in the decision log and the session proceeds on the fallback).
+- **Continue without** — take no action; builds use the in-process fallback this session.
+- **Unregister** — drop this project from the registry so no build probes the daemon again:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server unregister
+  ```
+
+Emit exactly one console line and one decision-log entry recording the reason and the chosen resolution:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-1-init:build-server) Preflight down (reason={reason}) — operator chose {start_now|continue_without|unregister} (re-check={ready|down} on start_now)"
+```
+
+Then continue to Step 9. The preflight is a one-shot session probe; it is not re-run on later phases — the per-build routing seam re-checks daemon health on every build.
+
 ### Step 9: Store Domains in References
 
 Store the detected domain SET in references.json. `domains` is a multi-valued union — the detector, `always_on`, and `file_globs` legs (Step 7) all contribute to it, and `set-list` already accepts a comma-separated multi-value `--values`, so ALL resolved domains are persisted in one call (no script-contract change to the persistence call):
