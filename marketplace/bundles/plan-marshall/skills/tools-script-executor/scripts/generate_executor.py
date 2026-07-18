@@ -1554,8 +1554,17 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
     - **``marshal.json`` holds user decisions.** It is never auto-mutated —
       config-seed staleness (``marshal_version < config_changed_at_version``) is
       reported advisory-only as ``marshal_status: stale`` for the caller to
-      route the user to ``/marshall-steward``; otherwise ``marshal_status:
-      fresh``.
+      route the user to ``/marshall-steward``; a resolvable, non-stale manifest
+      reports ``marshal_status: fresh``.
+
+    - **Fail CLOSED on an unresolvable manifest.** When the installed
+      ``dist-manifest.json`` cannot be resolved (``read_installed_manifest``
+      returned ``{}``, so ``installed_version == 'unknown'``), no version-based
+      staleness verdict can be substantiated. Rather than report a vacuous
+      ``fresh`` it can neither confirm nor deny, the verb reports
+      ``marshal_status: unknown`` and emits a legible warning to stderr (also
+      surfaced in the return's ``warning`` field). The verdict never claims a
+      freshness it cannot prove.
 
     - **Multi-version PYTHONPATH pollution is safe derived state too.** When
       more than one version dir per bundle is discoverable in the plugin-cache
@@ -1566,14 +1575,16 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
       current scripts. The regen is skipped when version-staleness already
       regenerated in the same run.
 
-    A fresh install with no manifest resolves both changed_at values to the
-    empty sentinel, so nothing is stale and the verb is a no-op reporting
-    ``fresh``.
+    A fresh install with no manifest resolves ``installed_version`` to the
+    ``unknown`` sentinel, so the verb fails closed and reports
+    ``marshal_status: unknown`` with a warning rather than a vacuous ``fresh``.
 
     Returns:
-        A single six-field TOON dict: ``status``, ``executor_action`` (``fresh``
-        | ``regenerated``), ``marshal_status`` (``fresh`` | ``stale``),
-        ``installed_version``, ``executor_version``, ``marshal_version``.
+        A single seven-field TOON dict: ``status``, ``executor_action``
+        (``fresh`` | ``regenerated``), ``marshal_status`` (``fresh`` | ``stale``
+        | ``unknown``), ``installed_version``, ``executor_version``,
+        ``marshal_version``, and ``warning`` (the fail-closed message when
+        ``marshal_status`` is ``unknown``, else the empty string).
     """
     try:
         base_path: Path | None = get_base_path(
@@ -1631,6 +1642,20 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
     if config_changed_at and _version_tuple(marshal_version) < _version_tuple(config_changed_at):
         marshal_status = 'stale'
 
+    # Fail CLOSED on an unresolvable manifest. read_installed_manifest returned
+    # {} (installed_version is the 'unknown' sentinel), so no version-based
+    # staleness verdict can be substantiated. Never report a vacuous 'fresh' the
+    # verb can neither confirm nor deny: report the dedicated 'unknown' verdict
+    # and emit a legible warning (surfaced both on stderr and in the return).
+    warning = ''
+    if installed_version == 'unknown':
+        marshal_status = 'unknown'
+        warning = (
+            'installed dist-manifest.json could not be resolved; version-based '
+            'staleness cannot be determined (marshal_status=unknown)'
+        )
+        print(f'WARNING: {warning}', file=sys.stderr)
+
     return {
         'status': 'success',
         'executor_action': executor_action,
@@ -1638,6 +1663,7 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
         'installed_version': installed_version,
         'executor_version': executor_version,
         'marshal_version': marshal_version,
+        'warning': warning,
     }
 
 

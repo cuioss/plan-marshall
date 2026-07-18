@@ -1349,6 +1349,7 @@ _PREFLIGHT_FIELDS = frozenset(
         'installed_version',
         'executor_version',
         'marshal_version',
+        'warning',
     }
 )
 
@@ -1374,9 +1375,11 @@ def test_read_executor_version_unknown_on_undecodable_executor(tmp_path, monkeyp
     assert module.read_executor_version() == 'unknown'
 
 
-def test_preflight_returns_six_field_toon_on_fresh_install(tmp_path, monkeypatch):
-    """With no manifest, preflight is a no-op reporting the full six-field TOON
-    with both surfaces fresh."""
+def test_preflight_fails_closed_on_unresolvable_manifest(tmp_path, monkeypatch, capsys):
+    """With no resolvable manifest, preflight fails CLOSED: it reports the full
+    seven-field TOON with marshal_status 'unknown' (never a vacuous 'fresh'),
+    populates the warning field, and emits a legible warning to stderr — so a
+    caller can never mistake "could not determine" for "confirmed fresh"."""
     module = load_module()
 
     monkeypatch.setenv('PM_DIST_MANIFEST', str(tmp_path / 'absent.json'))
@@ -1384,18 +1387,26 @@ def test_preflight_returns_six_field_toon_on_fresh_install(tmp_path, monkeypatch
     (tmp_path / '.plan').mkdir()
     monkeypatch.chdir(tmp_path)
     # Isolate the orthogonal multi-version-pollution scan (which reads the real
-    # plugin-cache tree) so this version-staleness case stays hermetic.
+    # plugin-cache tree) so this fail-closed case stays hermetic.
     monkeypatch.setattr(module, '_detect_multi_version_pollution', lambda *a, **k: [])
 
     result = module.cmd_preflight(_preflight_args())
 
-    assert set(result.keys()) == _PREFLIGHT_FIELDS, f'preflight must return exactly the six fields, got {set(result)}'
+    assert set(result.keys()) == _PREFLIGHT_FIELDS, f'preflight must return exactly the seven fields, got {set(result)}'
     assert result['status'] == 'success'
     assert result['executor_action'] == 'fresh'
-    assert result['marshal_status'] == 'fresh'
     assert result['installed_version'] == 'unknown'
     assert result['executor_version'] == 'unknown'
     assert result['marshal_version'] == 'unknown'
+    # Fail CLOSED: an unresolvable manifest reports 'unknown', never a vacuous 'fresh'.
+    assert result['marshal_status'] == 'unknown', 'unresolvable manifest must not report a vacuous fresh'
+    assert result['warning'], 'the fail-closed warning field must be populated when marshal_status is unknown'
+
+    # The legible warning is also emitted to stderr.
+    captured = capsys.readouterr()
+    assert 'could not be resolved' in captured.err, (
+        f'preflight must emit a legible fail-closed warning to stderr; got: {captured.err!r}'
+    )
 
 
 def test_preflight_reports_executor_fresh_when_embedded_not_older(tmp_path, monkeypatch):
@@ -1585,7 +1596,7 @@ def test_cmd_generate_returns_error_when_base_path_unresolvable(tmp_path):
 
 def test_preflight_subcommand_registered_and_emits_toon(tmp_path):
     """The preflight subparser is registered and the verb emits a TOON carrying
-    the six documented fields end-to-end."""
+    the seven documented fields end-to-end."""
     manifest = tmp_path / 'dist-manifest.json'
     manifest.write_text('{"version": "0.1.7"}', encoding='utf-8')
 
