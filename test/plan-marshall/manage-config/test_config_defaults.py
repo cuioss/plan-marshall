@@ -2609,6 +2609,36 @@ def test_stamp_provisioning_fields_recovers_from_non_dict_system(tmp_path):
     assert 'config_seed_fingerprint' in config['system']
 
 
+def test_stamp_provisioning_fields_preserves_existing_version_on_empty_read(monkeypatch):
+    """An unstamped/absent executor (read_provisioned_version() -> '') must NOT
+    blank a known-good pre-existing provisioned_version — the stamp is
+    non-destructive on an empty read (defense-in-depth against the executor
+    version-stamp regression)."""
+    monkeypatch.setattr(_config_defaults_mod, 'read_provisioned_version', lambda: '')
+    config: dict = {'system': {'provisioned_version': '0.1.1116'}}
+
+    _config_defaults_mod.stamp_provisioning_fields(config)
+
+    assert config['system']['provisioned_version'] == '0.1.1116', (
+        'an empty read must preserve the existing provisioned_version, not blank it to the sentinel'
+    )
+    # config_seed_fingerprint is stamped unconditionally, even on an empty read.
+    assert config['system']['config_seed_fingerprint'] == _config_defaults_mod.compute_config_seed_fingerprint()
+
+
+def test_stamp_provisioning_fields_advances_version_on_real_read(monkeypatch):
+    """A real (non-empty) embedded version advances provisioned_version to it,
+    overwriting any prior stamp."""
+    monkeypatch.setattr(_config_defaults_mod, 'read_provisioned_version', lambda: '0.1.1200')
+    config: dict = {'system': {'provisioned_version': '0.1.1116'}}
+
+    _config_defaults_mod.stamp_provisioning_fields(config)
+
+    assert config['system']['provisioned_version'] == '0.1.1200', (
+        'a real embedded version must advance the provisioned_version stamp'
+    )
+
+
 def test_read_provisioned_version_reads_executor_constant(tmp_path, monkeypatch):
     """read_provisioned_version reads MARSHALL_VERSION from the tracked executor."""
     plan_dir = tmp_path / '.plan'

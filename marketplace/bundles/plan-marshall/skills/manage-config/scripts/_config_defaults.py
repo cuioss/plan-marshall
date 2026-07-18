@@ -1149,6 +1149,14 @@ def stamp_provisioning_fields(config: dict) -> None:
     The stamps are runtime-only and NOT part of :func:`get_default_config`, so
     stamping never perturbs :func:`compute_config_seed_fingerprint`.
 
+    The ``provisioned_version`` stamp is **non-destructive on an empty read**:
+    when :func:`read_provisioned_version` returns ``''`` (an unstamped or absent
+    executor), any pre-existing ``system['provisioned_version']`` is left intact
+    rather than blanked to the empty sentinel — a known-good version is never
+    lost merely because the executor could not be read this run. A real,
+    non-empty version still advances the stamp. The ``config_seed_fingerprint``
+    stamp is unconditional.
+
     Args:
         config: The marshal.json config dict to stamp (mutated in place).
     """
@@ -1156,5 +1164,9 @@ def stamp_provisioning_fields(config: dict) -> None:
     if not isinstance(system, dict):
         system = {}
         config['system'] = system
-    system['provisioned_version'] = read_provisioned_version()
+    provisioned_version = read_provisioned_version()
+    if provisioned_version:
+        system['provisioned_version'] = provisioned_version
+    # An empty read (unstamped/absent executor) preserves any existing stamp
+    # instead of blanking a known-good provisioned_version.
     system['config_seed_fingerprint'] = compute_config_seed_fingerprint()
