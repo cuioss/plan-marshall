@@ -468,7 +468,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest='command', required=True)
 
-    submit = sub.add_parser('submit', help='Verify the daemon and submit a build job.')
+    submit = sub.add_parser('submit', help='Verify the daemon and submit a build job.', allow_abbrev=False)
     submit.add_argument(
         '--command',
         required=True,
@@ -479,7 +479,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     submit.add_argument('--plan-id', help='Submitting plan id (empty for a plan-less build).')
     submit.set_defaults(func=run_submit)
 
-    wait = sub.add_parser('wait', help='One bounded long-poll for a job result.')
+    wait = sub.add_parser('wait', help='One bounded long-poll for a job result.', allow_abbrev=False)
     wait.add_argument('--job-id', help='Job id to wait on (default: re-attach via ledger).')
     wait.add_argument('--plan-id', help='Plan id used to re-attach when --job-id is omitted.')
     wait.add_argument(
@@ -489,12 +489,13 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     wait.set_defaults(func=run_wait)
 
-    ping = sub.add_parser('ping', help='Report the daemon identity, or down + reason.')
+    ping = sub.add_parser('ping', help='Report the daemon identity, or down + reason.', allow_abbrev=False)
     ping.set_defaults(func=run_ping)
 
     preflight = sub.add_parser(
         'preflight',
         help='One call: disabled | ready | down + reason.',
+        allow_abbrev=False,
     )
     preflight.add_argument('--project-path', help='Project root (default: caller main checkout).')
     preflight.set_defaults(func=run_preflight)

@@ -515,7 +515,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest='command', required=True)
 
-    register = sub.add_parser('register', help='Enrol a project (the enable signal).')
+    register = sub.add_parser('register', help='Enrol a project (the enable signal).', allow_abbrev=False)
     register.add_argument('--root', help='Project root (default: caller main checkout).')
     register.add_argument(
         '--container',
@@ -529,26 +529,26 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     register.set_defaults(func=run_register)
 
-    unregister = sub.add_parser('unregister', help='Drop a project from the registry.')
+    unregister = sub.add_parser('unregister', help='Drop a project from the registry.', allow_abbrev=False)
     unregister.add_argument('--root', help='Project root (default: caller main checkout).')
     unregister.set_defaults(func=run_unregister)
 
-    sub.add_parser('start', help='Start the daemon detached (version-pinned).').set_defaults(
+    sub.add_parser('start', help='Start the daemon detached (version-pinned).', allow_abbrev=False).set_defaults(
         func=run_start
     )
-    sub.add_parser('stop', help='Force-stop the daemon (SIGTERM then SIGKILL).').set_defaults(
+    sub.add_parser('stop', help='Force-stop the daemon (SIGTERM then SIGKILL).', allow_abbrev=False).set_defaults(
         func=run_stop
     )
-    sub.add_parser('drain', help='Gracefully stop the daemon (no SIGKILL).').set_defaults(
+    sub.add_parser('drain', help='Gracefully stop the daemon (no SIGKILL).', allow_abbrev=False).set_defaults(
         func=run_drain
     )
-    sub.add_parser('status', help='Report running version + binary path.').set_defaults(
+    sub.add_parser('status', help='Report running version + binary path.', allow_abbrev=False).set_defaults(
         func=run_status
     )
-    sub.add_parser('install', help='Idempotent version-pinned start.').set_defaults(
+    sub.add_parser('install', help='Idempotent version-pinned start.', allow_abbrev=False).set_defaults(
         func=run_install
     )
-    sub.add_parser('upgrade', help='Drain then start the verified version.').set_defaults(
+    sub.add_parser('upgrade', help='Drain then start the verified version.', allow_abbrev=False).set_defaults(
         func=run_upgrade
     )
     return parser

@@ -435,7 +435,7 @@ def build_daemon() -> Daemon:
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='marshalld', allow_abbrev=False)
     sub = parser.add_subparsers(dest='command', required=True)
-    run = sub.add_parser('run', help='Run the daemon (double-forks unless --foreground).')
+    run = sub.add_parser('run', help='Run the daemon (double-forks unless --foreground).', allow_abbrev=False)
     run.add_argument(
         '--foreground',
         action='store_true',
