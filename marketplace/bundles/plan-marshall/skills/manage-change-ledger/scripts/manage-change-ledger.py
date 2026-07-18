@@ -49,9 +49,11 @@ from _ledger_core import (
     BUILD_STATUSES,
     KIND_BUILD,
     KIND_CHANGE,
+    KIND_JOB,
     append_entry,
     build_record,
     change_record,
+    job_record,
     read_entries,
     resolve_ledger_path,
 )
@@ -123,6 +125,19 @@ def run_append(args: Namespace) -> dict[str, Any]:
             status=args.status,
             worktree_sha=worktree_sha,
             log_file=args.log_file,
+        )
+    elif args.kind == KIND_JOB:
+        if not args.job_id:
+            return make_error(
+                '--job-id is required for --kind job',
+                code=ErrorCode.INVALID_INPUT,
+            )
+        record = job_record(
+            job_id=args.job_id,
+            plan_id=args.plan_id,
+            fingerprint=args.fingerprint or '',
+            notation=args.notation or '',
+            worktree_sha=worktree_sha,
         )
     else:  # KIND_CHANGE
         deliverable_id = args.deliverable_id or args.task_id
@@ -237,7 +252,8 @@ Examples:
   manage-change-ledger.py worktree-sha [--worktree-root PATH]
   manage-change-ledger.py append --kind build --notation NOTATION --exit-code 0 --status success [--plan-id ID] [--log-file PATH]
   manage-change-ledger.py append --kind change --deliverable-id 2 --commit-sha SHA --changed-paths a,b,c
-  manage-change-ledger.py query [--kind build|change] [--exit-code 0]
+  manage-change-ledger.py append --kind job --job-id JOB_ID [--plan-id ID] [--fingerprint FP] [--notation NOTATION]
+  manage-change-ledger.py query [--kind build|change|job] [--exit-code 0]
   manage-change-ledger.py classify-outcome --job-status killed --output-bytes 0 --worktree-sha SHA
 """,
         subcommands=[
@@ -262,8 +278,8 @@ Examples:
                         'flags': ['--kind'],
                         'dest': 'kind',
                         'required': True,
-                        'choices': [KIND_BUILD, KIND_CHANGE],
-                        'help': 'Entry discriminator: build (executor) or change (phase-5)',
+                        'choices': [KIND_BUILD, KIND_CHANGE, KIND_JOB],
+                        'help': 'Entry discriminator: build (executor), change (phase-5), or job (client submit)',
                     },
                     {
                         'flags': ['--worktree-root'],
@@ -327,6 +343,16 @@ Examples:
                         'dest': 'changed_paths',
                         'help': 'change: comma-separated git-sourced changed paths (stored verbatim)',
                     },
+                    {
+                        'flags': ['--job-id'],
+                        'dest': 'job_id',
+                        'help': 'job: the daemon-assigned job id to persist for re-attach',
+                    },
+                    {
+                        'flags': ['--fingerprint'],
+                        'dest': 'fingerprint',
+                        'help': 'job: the idempotent-submit fingerprint (plan + command + tree)',
+                    },
                 ],
             },
             {
@@ -364,7 +390,7 @@ Examples:
                     {
                         'flags': ['--kind'],
                         'dest': 'kind',
-                        'choices': [KIND_BUILD, KIND_CHANGE],
+                        'choices': [KIND_BUILD, KIND_CHANGE, KIND_JOB],
                         'help': 'Filter to entries of this kind',
                     },
                     {

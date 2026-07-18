@@ -35,6 +35,7 @@
     "./skills/build-maven",
     "./skills/build-npm",
     "./skills/build-pyproject",
+    "./skills/build-server-client",
     "./skills/ref-code-quality",
     "./skills/persona-auditor",
     "./skills/persona-code-reviewer",

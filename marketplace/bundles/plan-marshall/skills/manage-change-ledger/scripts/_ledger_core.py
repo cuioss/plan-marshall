@@ -41,6 +41,7 @@ from file_ops import get_tracked_config_dir, now_utc_iso
 
 KIND_BUILD = 'build'
 KIND_CHANGE = 'change'
+KIND_JOB = 'job'
 
 # The truthful build-outcome vocabulary carried by every kind=build entry's
 # `status` field. Mirrors the build wrapper's stdout TOON vocabulary
@@ -159,6 +160,42 @@ def change_record(
         'deliverable_id': deliverable_id,
         'commit_sha': commit_sha,
         'changed_paths': list(changed_paths),
+        'worktree_sha': worktree_sha,
+        'timestamp_iso': timestamp_iso if timestamp_iso is not None else now_utc_iso(),
+    }
+
+
+def job_record(
+    *,
+    job_id: str,
+    plan_id: str | None,
+    fingerprint: str,
+    notation: str,
+    worktree_sha: str | None,
+    timestamp_iso: str | None = None,
+) -> dict[str, Any]:
+    """Construct a ``kind=job`` ledger record.
+
+    Written by the ``build-server-client`` skill's ``submit`` verb at submit
+    time, this record persists the daemon-assigned ``job_id`` into the plan's
+    durable artifacts so a rebuilt or harness-reaped session can RE-ATTACH to an
+    in-flight build from plan state alone — it re-issues ``wait`` against the
+    recorded ``job_id`` rather than losing the running build. The ``fingerprint``
+    is the idempotent-submit digest (plan + command + tree) the daemon's
+    scheduler keys on, so a consumer can correlate a ledger row to a specific
+    submission; ``notation`` is the executor notation that was dispatched.
+
+    Unlike ``kind=build`` (a completed build outcome) this is a SUBMISSION
+    record — the job may still be running — so it carries no ``exit_code`` or
+    ``status``. The freshness gate ignores ``kind=job`` entirely (it consumes
+    only ``kind=build``); ``kind=job`` rows exist for re-attach and audit.
+    """
+    return {
+        'kind': KIND_JOB,
+        'job_id': job_id,
+        'plan_id': plan_id,
+        'fingerprint': fingerprint,
+        'notation': notation,
         'worktree_sha': worktree_sha,
         'timestamp_iso': timestamp_iso if timestamp_iso is not None else now_utc_iso(),
     }

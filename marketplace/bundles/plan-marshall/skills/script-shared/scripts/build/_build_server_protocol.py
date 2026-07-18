@@ -35,6 +35,7 @@ Usage:
         encode_frame, read_frame, write_frame, recv_frame, send_frame,
         status_from_result, normalize_errors,
         FrameError, FrameTooLargeError, FrameTruncatedError, FrameDecodeError,
+        PROTOCOL_VERSION,
         STATUS_RUNNING, STATUS_SUCCESS, STATUS_FAILURE, STATUS_TIMEOUT,
         STATUS_KILLED, STATUS_NOT_FOUND, STATUS_REFUSED, STATUS_QUEUED,
         TERMINAL_STATUSES,
@@ -54,6 +55,15 @@ from typing import Any
 # =============================================================================
 # Framing constants
 # =============================================================================
+
+PROTOCOL_VERSION = '1'
+"""The wire/identity version shared by the daemon and the client.
+
+The daemon reports this string in its ``ping`` response (``marshalld.VERSION``);
+the client's S3 identity handshake compares the reported version against this
+constant and treats a mismatch as an untrusted peer (fallback), never trusting a
+response from a daemon speaking a different protocol version.
+"""
 
 LENGTH_PREFIX_BYTES = 4
 """Width of the frame length prefix in bytes (4-byte big-endian unsigned)."""

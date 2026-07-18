@@ -38,7 +38,19 @@ def test_double_fork_reparents_to_pid_1(tmp_path):
     )
 
     env = dict(os.environ)
-    env['PYTHONPATH'] = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
+    # _MARKETPLACE_SCRIPT_DIRS is only the DELTA conftest added to sys.path (the
+    # dirs not already present), not the full marketplace script-dir set — its
+    # composition shifts as skills are added. APPEND the inherited PYTHONPATH
+    # (which carries the full set) rather than overwriting it, so the subprocess
+    # can always resolve marshalld's cross-skill imports (e.g. _build_server_protocol
+    # under script-shared) regardless of the delta's contents.
+    inherited_pythonpath = env.get('PYTHONPATH', '')
+    subprocess_dirs = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
+    env['PYTHONPATH'] = (
+        subprocess_dirs + os.pathsep + inherited_pythonpath
+        if inherited_pythonpath
+        else subprocess_dirs
+    )
 
     # The first fork's parent exits 0 immediately, so run returns fast.
     subprocess.run([sys.executable, '-c', code], env=env, timeout=30, check=True)
