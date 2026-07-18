@@ -1136,7 +1136,19 @@ def find_installed_manifest_path(base_path: Path | None = None, target: str = 'c
             prefix = base_str[:cache_idx]
             remainder = base_str[cache_idx + len(cache_marker):]
             marketplace_name = remainder.split('/', 1)[0]
-            if marketplace_name:
+            # Defense in depth: a segment of '.'/'..' (or one carrying a path
+            # separator) would let the mapped path climb outside
+            # `plugins/marketplaces/` — reject it the same way
+            # `marketplace_paths.main_anchored_store_owns_bundle` rejects a
+            # malformed bundle-name segment, rather than trusting the derived
+            # substring verbatim.
+            is_safe_segment = (
+                marketplace_name
+                and marketplace_name not in ('.', '..')
+                and '/' not in marketplace_name
+                and '\\' not in marketplace_name
+            )
+            if is_safe_segment:
                 candidates.append(
                     Path(prefix) / 'plugins' / 'marketplaces' / marketplace_name / 'dist-manifest.json'
                 )

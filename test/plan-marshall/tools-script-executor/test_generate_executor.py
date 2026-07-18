@@ -1322,6 +1322,40 @@ def test_find_installed_manifest_path_resolves_marketplace_clone_root(tmp_path, 
     )
 
 
+def test_find_installed_manifest_path_rejects_traversal_marketplace_segment(tmp_path, monkeypatch):
+    """The clone-root candidate (4) must reject a ``..``-shaped marketplace-name
+    segment rather than mapping it into a path outside ``plugins/marketplaces/``.
+
+    ``marketplace_name`` is derived from a string split of ``base_path`` — a
+    defense-in-depth guard rejects ``.``/``..`` and any segment carrying a path
+    separator before it is used to build a filesystem path, so a pathologically
+    shaped ``base_path`` (however it arose) can never make candidate (4) climb
+    outside the intended ``plugins/marketplaces/<marketplace>/`` directory.
+    """
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+
+    module = load_module()
+
+    # 'plugins/marketplaces/' must actually exist on disk for the OS to resolve
+    # a '..' segment walked from inside it — otherwise the escape path would
+    # ENOENT regardless of the guard, making the test a false negative.
+    (tmp_path / 'plugins' / 'marketplaces').mkdir(parents=True)
+
+    # A file planted one level above 'plugins/marketplaces/' that a
+    # '..'-shaped segment resolves to (plugins/marketplaces/../dist-manifest.json
+    # == plugins/dist-manifest.json) when the guard is absent.
+    escape_target = tmp_path / 'plugins' / 'dist-manifest.json'
+    escape_target.write_text('{"version": "escaped"}', encoding='utf-8')
+
+    # base_path shaped so the '/plugins/cache/' marker is followed immediately
+    # by '..' as the marketplace-name segment.
+    cache_base = tmp_path / 'plugins' / 'cache' / '..'
+
+    resolved = module.find_installed_manifest_path(cache_base)
+
+    assert resolved is None, 'a .. marketplace-name segment must never resolve to a candidate path'
+
+
 def test_template_declares_version_and_fingerprint_constants():
     """The template carries the MARSHALL_VERSION / MAPPINGS_FINGERPRINT
     placeholder constants beside PLAN_DIR_NAME."""
