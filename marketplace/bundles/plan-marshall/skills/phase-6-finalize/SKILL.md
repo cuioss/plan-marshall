@@ -1012,10 +1012,10 @@ FOR each step_id in manifest.phase_6.steps:
 
           ```bash
           python3 .plan/execute-script.py plan-marshall:manage-change-ledger:manage-change-ledger query \
-            --kind build --exit-code 0
+            --kind build
           ```
 
-          Take the most-recent returned entry's `worktree_sha` as `{prior_build_worktree_sha}`. `{new_commit_sha}` is the HEAD resolved at (b). Record the reconciliation decision naming the finalize-internal commit, the producing step, and the prior build sha:
+          Filter the returned entries to those whose `status` field is `success` (NOT `--exit-code 0` — the build wrapper exits 0 even on a `killed` / `timeout` / `error` outcome, so an exit-code filter can select a non-successful build and record an invalid `prior_build_worktree_sha` the push flow would then trust). Take the most-recent `status: success` entry's `worktree_sha` as `{prior_build_worktree_sha}`. When NO `status: success` entry exists, **fail closed**: skip emitting the reconciliation record entirely so the downstream push freshness gate stays `stale` rather than reconciling against an unverified build. `{new_commit_sha}` is the HEAD resolved at (b). Record the reconciliation decision naming the finalize-internal commit, the producing step, and the prior build sha:
 
           ```bash
           python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

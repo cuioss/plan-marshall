@@ -381,6 +381,30 @@ class TestPrepareExecuteReentryIdempotence:
         assert result.get('error_code') == prepare_execute.ErrorCode.NOT_FOUND
         assert 'not found on main checkout' in result['error']
 
+    def test_plan_id_symlink_targeting_in_worktree_dir_is_rejected(
+        self, isolated_env: dict
+    ) -> None:
+        # A `{plan_id}` symlink whose target is ANOTHER in-worktree plan dir
+        # stays under the worktree root, so it passes the `is_relative_to`
+        # containment check — but it associates `plan_id` with the wrong plan's
+        # state. The final-component `is_symlink()` guard rejects it before the
+        # `resolve()` collapses it, so recognition must return False.
+        env = isolated_env
+        plan_id = env['plan_id']
+        worktree_path = env['worktree_path']
+
+        wt_local = worktree_path / '.plan' / 'local'
+        (wt_local / 'plans').mkdir(parents=True)
+        # A real, in-worktree decoy plan dir the symlink will point at.
+        decoy = wt_local / 'plans' / 'other-plan'
+        decoy.mkdir()
+        (decoy / 'status.json').write_text('{}\n')
+        # `.plan/local/plans/{plan_id}` is a symlink to the decoy — target stays
+        # inside the worktree root, so containment alone would accept it.
+        (wt_local / 'plans' / plan_id).symlink_to(decoy, target_is_directory=True)
+
+        assert prepare_execute._worktree_holds_moved_in_plan(worktree_path, plan_id) is False
+
 
 # =============================================================================
 # Rollback-on-partial-failure

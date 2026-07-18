@@ -130,19 +130,21 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 5: Run the quality-gate
 
-**Scoped invocation** (the common case — Step 1 read succeeded and Step 2 yielded one or more skill directories): run the plugin-doctor `quality-gate` scoped to the skill directories extracted in Step 2, against the marketplace root resolved in Step 4 (`{worktree_path}/marketplace` for a worktree, `marketplace` for the main checkout):
+**Scoped invocation** (the common case — Step 1 read succeeded and Step 2 yielded one or more skill directories): run the plugin-doctor `quality-gate` scoped to the skill directories extracted in Step 2, against the marketplace root resolved in Step 4 (`{worktree_path}/marketplace` for a worktree, `marketplace` for the main checkout).
 
-```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace \
-  quality-gate --paths {space-separated skill directory paths} --marketplace-root {marketplace root}
-```
-
-**Cross-skill divergence WARNING (scoped mode only).** Because the scoped run cannot evaluate plugin-doctor's cross-skill rules (Step 2.5, "Cross-skill divergence gap"), emit a loud finalize WARNING recording that scoped mode did not gate the cross-skill rule class. Emit it in scoped mode ONLY (never for either whole-tree mode, which already covers cross-skill rules), and emit it regardless of the scoped gate's pass/fail outcome — it names the rules that were NOT run, so a #915-class scoped-green / whole-tree-red divergence is surfaced at finalize rather than first at CI. `{N}` is the count of scoped skill directories:
+**Cross-skill divergence WARNING (scoped mode only) — emit BEFORE the scoped gate.** Because the scoped run cannot evaluate plugin-doctor's cross-skill rules (Step 2.5, "Cross-skill divergence gap"), emit a loud finalize WARNING recording that scoped mode did not gate the cross-skill rule class. Emit it in scoped mode ONLY (never for either whole-tree mode, which already covers cross-skill rules), and emit it **before** running the scoped gate below so it fires regardless of the scoped gate's pass/fail outcome — a failing scoped gate records `failed` and aborts finalize (see below), so a warning placed after the invocation would never fire on a red gate. It names the rules that were NOT run, so a #915-class scoped-green / whole-tree-red divergence is surfaced at finalize rather than first at CI. `{N}` is the count of scoped skill directories:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARNING \
   --message "[STATUS] (project:finalize-step-plugin-doctor) scoped plugin-doctor cannot detect cross-skill divergence — scoped mode gated skill-local rules over {N} skill dir(s) only; cross-skill rules whose counterpart lives outside --paths were NOT evaluated. A cross-skill invariant broken by this change would surface first at whole-tree CI (PR #915 class)."
+```
+
+After the WARNING is emitted, run the scoped gate:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace \
+  quality-gate --paths {space-separated skill directory paths} --marketplace-root {marketplace root}
 ```
 
 **Whole-tree invocation** (either whole-tree mode from Step 2.5 — the F1 trigger fired, OR the indeterminate case of Step 3 Case (b) where the `affected_files` read errored / `field_not_found`): run the `quality-gate` with **no `--paths` scoping** against the same resolved marketplace root, so the structural lint runs over the whole tree — catching a doctor / plan-doctor rule change that breaks an otherwise-untouched skill (F1), and not false-skipping off a broken scope-deriving read (indeterminate):

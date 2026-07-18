@@ -145,12 +145,17 @@ def _worktree_holds_moved_in_plan(worktree_path: Path, plan_id: str) -> bool:
     are resolved and compared with :meth:`Path.is_relative_to` so the legitimate
     symlinked-but-real-ancestor case (the resolved plan dir still lands under
     the resolved worktree root) keeps recognising a healthy re-entry, while a
-    plan-dir symlink that escapes the worktree root is rejected.
+    plan-dir symlink that escapes the worktree root is rejected. The final
+    ``{plan_id}`` component is additionally rejected when it is ITSELF a symlink
+    (before the ``resolve()`` collapses it), because a ``{plan_id}`` symlink
+    whose target is ANOTHER in-worktree plan dir stays under the worktree root
+    and would pass the containment check while associating ``plan_id`` with the
+    wrong plan's state.
     """
     wt_plan_dir = worktree_path / PLAN_DIR_NAME / 'local' / 'plans' / plan_id
     wt_plan_local = worktree_path / PLAN_DIR_NAME / 'local'
     try:
-        if wt_plan_local.is_symlink():
+        if wt_plan_local.is_symlink() or wt_plan_dir.is_symlink():
             return False
         resolved_plan_dir = wt_plan_dir.resolve()
         if not resolved_plan_dir.is_relative_to(worktree_path.resolve()):
