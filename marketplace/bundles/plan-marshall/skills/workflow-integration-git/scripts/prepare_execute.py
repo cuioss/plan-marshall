@@ -138,13 +138,24 @@ def _worktree_holds_moved_in_plan(worktree_path: Path, plan_id: str) -> bool:
     OWN ``.plan/local`` must still be a real (non-symlink) directory — a
     symlinked ``.plan/local`` is a blocking residue rejected upstream and is
     re-rejected here so this recognition never green-lights a blocking re-entry.
+
+    Boundary check (CWE-59): resolving ``wt_plan_dir`` alone would follow a
+    symlink placed anywhere along ``.plan/local/plans/{plan_id}`` to a target
+    outside ``worktree_path`` and still report a healthy re-entry. Both sides
+    are resolved and compared with :meth:`Path.is_relative_to` so the legitimate
+    symlinked-but-real-ancestor case (the resolved plan dir still lands under
+    the resolved worktree root) keeps recognising a healthy re-entry, while a
+    plan-dir symlink that escapes the worktree root is rejected.
     """
     wt_plan_dir = worktree_path / PLAN_DIR_NAME / 'local' / 'plans' / plan_id
     wt_plan_local = worktree_path / PLAN_DIR_NAME / 'local'
     try:
         if wt_plan_local.is_symlink():
             return False
-        return wt_plan_dir.resolve().is_dir()
+        resolved_plan_dir = wt_plan_dir.resolve()
+        if not resolved_plan_dir.is_relative_to(worktree_path.resolve()):
+            return False
+        return resolved_plan_dir.is_dir()
     except OSError:
         return False
 
