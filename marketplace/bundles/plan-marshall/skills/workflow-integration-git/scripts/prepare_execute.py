@@ -205,6 +205,43 @@ def _worktree_executor_path(worktree_path: Path) -> Path:
     return worktree_path / PLAN_DIR_NAME / 'execute-script.py'
 
 
+def _already_moved_in_response(
+    worktree_path: Path, plan_id: str, *, main_copy_absent: bool = False
+) -> dict[str, Any]:
+    """Build the noop/healed success payload for a plan dir already resident in
+    the worktree — shared by the primary idempotence guard (keyed on
+    ``_is_real_moved_in``) and the resolution-robust re-entry recognition (keyed
+    on ``_worktree_holds_moved_in_plan``): both converge on identical noop/healed
+    reporting once "already moved in" is established, differing only in whether
+    the main-checkout copy is legitimately absent (``main_copy_absent``).
+
+    Self-heals a partial materialization the same way both call sites need: when
+    the worktree executor is missing on disk, regenerate/copy it before
+    reporting ``healed`` instead of a bare ``noop``.
+    """
+    suffix = ' (main copy absent on re-entry)' if main_copy_absent else ''
+    wt_executor = _worktree_executor_path(worktree_path)
+    if _executor_landed(wt_executor):
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'worktree_path': str(worktree_path),
+            'action': 'noop',
+            'message': f'plan state already moved into worktree{suffix}',
+        }
+    generated, executor_detail = _generate_worktree_executor(worktree_path, plan_id)
+    healed_suffix = ' (main copy absent)' if main_copy_absent else ''
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'worktree_path': str(worktree_path),
+        'action': 'healed',
+        'message': f'plan state already moved in{healed_suffix}; regenerated missing worktree executor',
+        'worktree_executor_generated': generated,
+        'executor_detail': executor_detail,
+    }
+
+
 def _executor_landed(executor_path: Path) -> bool:
     """Return True when ``executor_path`` exists on disk AND is non-empty.
 
@@ -462,33 +499,11 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
     if _is_real_moved_in(wt_plan_dir):
         # FIX 3: self-heal a partial materialization. A prior run may have moved
         # the plan dir in but left the executor absent (the original defect:
-        # generation reported success for a file that never landed). Before
-        # returning a bare noop, check the worktree executor on disk; when it is
-        # missing, regenerate/copy it and report the heal. This makes the move-in
-        # genuinely self-healing without re-attempting ``git worktree add``.
-        wt_executor = _worktree_executor_path(worktree_path)
-        if _executor_landed(wt_executor):
-            return _assert_cwd_unchanged(
-                {
-                    'status': 'success',
-                    'plan_id': plan_id,
-                    'worktree_path': str(worktree_path),
-                    'action': 'noop',
-                    'message': 'plan state already moved into worktree',
-                }
-            )
-        generated, executor_detail = _generate_worktree_executor(worktree_path, plan_id)
-        return _assert_cwd_unchanged(
-            {
-                'status': 'success',
-                'plan_id': plan_id,
-                'worktree_path': str(worktree_path),
-                'action': 'healed',
-                'message': 'plan state already moved in; regenerated missing worktree executor',
-                'worktree_executor_generated': generated,
-                'executor_detail': executor_detail,
-            }
-        )
+        # generation reported success for a file that never landed). The shared
+        # noop/healed responder checks the worktree executor on disk and, when
+        # missing, regenerates/copies it and reports the heal. This makes the
+        # move-in genuinely self-healing without re-attempting ``git worktree add``.
+        return _assert_cwd_unchanged(_already_moved_in_response(worktree_path, plan_id))
 
     # --- Step 2: move plan-scoped state into the worktree (atomic) ---------
     # Track completed moves so a later failure can roll them back, leaving the
@@ -521,28 +536,8 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
     # it, so this branch never green-lights a blocking state.
     if not main_plan_dir.exists():
         if _worktree_holds_moved_in_plan(worktree_path, plan_id):
-            wt_executor = _worktree_executor_path(worktree_path)
-            if _executor_landed(wt_executor):
-                return _assert_cwd_unchanged(
-                    {
-                        'status': 'success',
-                        'plan_id': plan_id,
-                        'worktree_path': str(worktree_path),
-                        'action': 'noop',
-                        'message': 'plan state already moved into worktree (main copy absent on re-entry)',
-                    }
-                )
-            generated, executor_detail = _generate_worktree_executor(worktree_path, plan_id)
             return _assert_cwd_unchanged(
-                {
-                    'status': 'success',
-                    'plan_id': plan_id,
-                    'worktree_path': str(worktree_path),
-                    'action': 'healed',
-                    'message': 'plan state already moved in (main copy absent); regenerated missing worktree executor',
-                    'worktree_executor_generated': generated,
-                    'executor_detail': executor_detail,
-                }
+                _already_moved_in_response(worktree_path, plan_id, main_copy_absent=True)
             )
         return _assert_cwd_unchanged(
             make_error(
