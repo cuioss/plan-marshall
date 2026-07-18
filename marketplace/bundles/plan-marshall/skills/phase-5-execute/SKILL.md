@@ -208,6 +208,22 @@ Each verify step declares an `order: <int>` value in its authoritative source �
 
 **Dispatch detection**: a step ID starting with the `default:verify:` prefix routes to the single parameterized canonical-verify step. The SKILL strips the `default:` prefix and feeds the trailing `{canonical}` segment to `architecture resolve --command {canonical}`. The full step body — canonical resolution, `execution_tier`/`bash_timeout_seconds` handling, the unresolved-canonical skip, and the module-scoped vs whole-tree invocation contract — lives in `standards/canonical_verify.md`; do NOT restate it here. Threshold enforcement for `coverage` is native to the resolved build command (pytest `--cov-fail-under`, JaCoCo build-tool config) — no secondary parse-and-check call is required.
 
+### Footprint gating (build-decision consult) for the end-of-phase `default:verify:{canonical}` loop
+
+The end-of-phase whole-tree verification dispatch — the loop that runs each `default:verify:{canonical}` step from `phase_5.verification_steps` (typically `quality-gate`, `module-tests`, `coverage`) — is **footprint-gated at execution time**. Before resolving or running any whole-tree `default:verify:{canonical}` step, consult the **existing** `manage-config build-decision` verb for that canonical:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-decision \
+  --command {canonical} --plan-id {plan_id}
+```
+
+The verb is a thin wrapper over `extension_base.should_execute_build` — the same `build.map ∩ live-footprint` authority phase-6 uses. It is NOT a new verb, NOT a parallel when-to-build mechanism, and NOT a blanket phase-5 short-circuit; each canonical is gated independently on the live footprint. Parse `decision` and `reason` from the returned TOON:
+
+- **`decision == not_necessary`** — the live footprint is empty or touches no registered `build.map` glob (a docs-only change). SKIP the build for that canonical: do NOT resolve, do NOT run. Emit a decision-log line naming the footprint `reason` and record the step as `skipped` via `manage-execution-manifest record-step --outcome skipped` (see Step 8c). This is the run-time backstop that corrects an `implementation`-classified plan whose live footprint turned out to be pure-doc.
+- **`decision != not_necessary`** (e.g. `build`) — the live footprint touches a buildable glob. Run the step normally per `standards/canonical_verify.md` (whole-tree scope, honouring the stamped `execution_tier`).
+
+This gate applies ONLY to the **whole-tree** end-of-phase surface (Step 11b Final Quality Sweep and this `default:verify:{canonical}` loop) — the one footprint-blind phase-5 build surface. **Steps 10b (focused per-deliverable build) and 11c (Execute-Exit Verify Gate) are already footprint-aware — they derive the live footprint on demand and already skip when no buildable module is present — and are UNCHANGED by this gate.** The build-decision consult is the run-time footprint authority; the compose-time narrative aspect-drop (`_apply_aspect_step_dropping`) is a complementary, non-contradictory signal (see `manage-config` aspect-classify).
+
 ### Per-step `execution_tier` (compose-time structural leaf-build guard)
 
 Every entry of `phase_5.verification_steps` carries a stamped `execution_tier` in the manifest's `phase_5.step_execution_tier` record list (`{step_id, tier}` per step; `tier ∈ {per_task, orchestrator}` — see [`manage-execution-manifest/SKILL.md`](../manage-execution-manifest/SKILL.md) § "Per-step execution_tier stamping"). The stamped tier is the **compose-time structural enforcement** of the leaf-no-background-build invariant — it supersedes the prose-only rule the leaf previously had to remember at run time. This dispatched phase-5 leaf branches on the stamped tier for every whole-tree verification step it would run (Step 11b Final Quality Sweep and Step 11c Execute-Exit Verify Gate) and for each `default:verify:{canonical}` end-of-phase step:
@@ -895,11 +911,32 @@ The orchestrator-side handling — resolving the `verification-feedback` target 
 
 ### Step 11b: Final Quality Sweep (After All Tasks)
 
-After every task in the phase has completed (and Step 11 has resolved any per-task verification failures), but **before** Step 12 transitions the phase, run **one canonical `quality-gate` invocation** as a final sweep — but ONLY when `phase_5.verification_steps` (cached from Step 2) is non-empty.
+After every task in the phase has completed (and Step 11 has resolved any per-task verification failures), but **before** Step 12 transitions the phase, run **one canonical `quality-gate` invocation** as a final sweep — but ONLY when BOTH (a) `phase_5.verification_steps` (cached from Step 2) is non-empty AND (b) the live footprint requires a build. The whole-tree quality sweep is the ONE footprint-blind phase-5 build surface (Steps 10b and 11c already derive the live footprint on demand and skip when no buildable module is present — see the **Footprint gating** note under the Built-in Step Dispatch Table); condition (b) closes that gap by consulting the **existing** `manage-config build-decision` verb (a thin wrapper over `extension_base.should_execute_build`, the same `build.map ∩ footprint` authority phase-6 uses — NOT a new verb and NOT a blanket phase-5 short-circuit).
 
-**Skip rule**: If `phase_5.verification_steps` is empty (e.g., docs-only plans where the manifest composer dropped all verification steps), skip this step entirely — no final sweep, no log, proceed directly to Step 12.
+**Skip rule (empty list)**: If `phase_5.verification_steps` is empty (e.g., docs-only plans where the manifest composer dropped all verification steps), skip this step entirely — no final sweep, no log, proceed directly to Step 12.
 
-**When `phase_5.verification_steps` is non-empty** — exactly one quality sweep, regardless of whether `quality-gate` already appears in the list:
+**Footprint-gate consult (fire condition (b))**: When `phase_5.verification_steps` is non-empty, consult the build-necessity verdict for `quality-gate` BEFORE resolving or running the sweep:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-decision \
+  --command quality-gate --plan-id {plan_id}
+```
+
+Parse `decision` and `reason` from the returned TOON. **When `decision == not_necessary`** (the live footprint is empty or touches no registered `build.map` glob — the docs-only nifi scenario), SKIP the sweep: do NOT resolve, do NOT run any build. Emit a decision-log line naming the footprint `reason`, record the step as `skipped`, and proceed directly to Step 11c:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-5-execute) Final quality sweep skipped — build-decision quality-gate returned not_necessary: {reason}"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest record-step \
+  --plan-id {plan_id} --step-id verify:quality-gate --phase 5-execute --outcome skipped \
+  --total-tokens 0 --tool-uses 0 --duration-ms 0
+```
+
+**When `decision != not_necessary`** (the live footprint touches a buildable glob), the sweep fires — proceed to run exactly one quality sweep, regardless of whether `quality-gate` already appears in the list:
 
 1. Resolve the canonical `quality-gate` build command via the architecture API:
 
