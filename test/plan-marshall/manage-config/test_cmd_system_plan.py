@@ -266,5 +266,98 @@ def test_plan_q_gate_validation_set_rejects_invalid_value(plan_context):
 
 
 # =============================================================================
+# project set field-name whitelist (this plan, D1)
+# =============================================================================
+#
+# `cmd_project`'s set branch rejects any field not in DEFAULT_PROJECT with
+# error_type='unknown_field' before persisting, making set symmetric with the
+# get branch's field_not_found handling. A typo'd or retired key (e.g. a dead
+# lane knob like use_merge_queue) is rejected rather than silently written to
+# marshal.json where no reader would ever consult it. The four known
+# DEFAULT_PROJECT fields must still set successfully.
+
+
+def test_project_set_rejects_unknown_field(plan_context):
+    """`project set --field use_merge_queue` is rejected with error_type='unknown_field'."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    result = cmd_project(Namespace(verb='set', field='use_merge_queue', value='true'))
+
+    assert result['status'] == 'error'
+    assert result['error_type'] == 'unknown_field'
+    assert 'use_merge_queue' in result['error']
+
+
+def test_project_set_unknown_field_not_persisted(plan_context):
+    """A rejected unknown field is never written to marshal.json — a follow-up get is field_not_found."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    set_result = cmd_project(Namespace(verb='set', field='use_merge_queue', value='true'))
+    assert set_result['status'] == 'error'
+
+    # The dead key must not have been persisted: get resolves neither the stored
+    # project config nor DEFAULT_PROJECT, so it surfaces field_not_found.
+    get_result = cmd_project(Namespace(verb='get', field='use_merge_queue'))
+    assert get_result['status'] == 'error'
+    assert get_result['error_type'] == 'field_not_found'
+
+
+def test_project_set_default_base_branch_succeeds(plan_context):
+    """The known `default_base_branch` field still sets and round-trips."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    set_result = cmd_project(Namespace(verb='set', field='default_base_branch', value='develop'))
+    assert set_result['status'] == 'success'
+    assert set_result['value'] == 'develop'
+
+    get_result = cmd_project(Namespace(verb='get', field='default_base_branch'))
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == 'develop'
+
+
+def test_project_set_working_prefixes_succeeds(plan_context):
+    """The known list-valued `working_prefixes` field still sets and round-trips."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    set_result = cmd_project(
+        Namespace(verb='set', field='working_prefixes', value='["feature/", "fix/"]')
+    )
+    assert set_result['status'] == 'success'
+    assert set_result['value'] == ['feature/', 'fix/']
+
+    get_result = cmd_project(Namespace(verb='get', field='working_prefixes'))
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == ['feature/', 'fix/']
+
+
+def test_project_set_pr_strategy_succeeds(plan_context):
+    """The known `pr_strategy` field still sets and round-trips."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    set_result = cmd_project(Namespace(verb='set', field='pr_strategy', value='distinct'))
+    assert set_result['status'] == 'success'
+    assert set_result['value'] == 'distinct'
+
+    get_result = cmd_project(Namespace(verb='get', field='pr_strategy'))
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == 'distinct'
+
+
+def test_project_set_pr_compact_max_changed_files_succeeds(plan_context):
+    """The known `pr_compact_max_changed_files` field still sets and round-trips."""
+    create_marshal_json(plan_context.fixture_dir)
+
+    set_result = cmd_project(
+        Namespace(verb='set', field='pr_compact_max_changed_files', value='200')
+    )
+    assert set_result['status'] == 'success'
+    assert set_result['value'] == 200
+
+    get_result = cmd_project(Namespace(verb='get', field='pr_compact_max_changed_files'))
+    assert get_result['status'] == 'success'
+    assert get_result['value'] == 200
+
+
+# =============================================================================
 # Main
 # =============================================================================
