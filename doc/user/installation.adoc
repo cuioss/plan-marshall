@@ -1,7 +1,10 @@
 = Installation
 :nofooter:
 :toc: left
-:toclevels: 2
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
 
@@ -17,6 +20,23 @@ Python 3 must be available as `python3` in your PATH.
 ----
 python3 --version
 ----
+====
+
+=== Supported platforms
+
+Plan Marshall targets a single POSIX runtime. **macOS** and **Linux** are supported natively.
+
+On **Windows**, Plan Marshall runs **exclusively inside WSL2**. The reason is the one-POSIX-runtime requirement: the planning system, its `python3` executor, its git worktrees, and the build server all assume POSIX process, filesystem, and socket semantics, which the WSL2 Linux distro provides and native Windows does not. There is no native-Windows build. For the end-to-end WSL2 + Ubuntu install and editor-integration walkthrough, see xref:windows-wsl-setup.adoc[Windows / WSL Setup]; this section states the prerequisite and its scoping rules.
+
+The all-in-distro rule: the **entire** runtime lives inside the WSL distro — the cloned repositories, `python3`, and the plan-marshall state directory (`~/.plan-marshall/`) all sit on the distro's own ext4 filesystem, never under the Windows-mounted `/mnt/c`. Editing a repo on the Windows side and running Plan Marshall against its `/mnt/c/...` path is unsupported.
+
+One distro equals one machine. Plan Marshall's machine-global state is scoped **per WSL distro**: each distro has its own `~/.plan-marshall/` (credentials, the machine-global build-queue), its own build-server registry, and its own `marshalld` daemon instance. Two distros on the same physical Windows host are two independent Plan Marshall machines and never share state.
+
+Daemon lifecycle on Windows is different from a long-lived Unix host. A `wsl --shutdown`, a Windows reboot, or the WSL idle timeout tears down the distro and with it any running `marshalld` daemon — so a build-server `down` status is **routine** on Windows, not an error. The xref:../concepts/build-server.adoc[phase-1-init build-server preflight] re-asks whether to start the daemon at the start of each planning session, so recovery after a shutdown is a one-prompt step.
+
+[WARNING]
+====
+Do not place repositories or the plan-marshall state under `/mnt/c` (or any Windows-mounted drive). Cross-boundary filesystem access through the `9p` protocol is dramatically slower than the distro's native filesystem and will make builds, git operations, and plan I/O crawl. Keep everything on the distro filesystem (for example under `~/`).
 ====
 
 == Snapshot (tracks main)
