@@ -70,6 +70,16 @@ _BUILD_DROPPING_ASPECTS = _mem._BUILD_DROPPING_ASPECTS
 _read_request_aspect = _dec._read_request_aspect
 
 
+def _write_status(plan_context, plan_id, metadata):
+    """Write a ``status.json`` with the given ``metadata`` dict for a test plan.
+
+    Shared by ``TestReadRequestAspect`` and ``TestComposeSelfReadsRequestAspect`` —
+    both exercise the same ``status.metadata.request_aspect`` self-read surface.
+    """
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    (plan_dir / _dec.FILE_STATUS).write_text(json.dumps({'metadata': metadata}), encoding='utf-8')
+
+
 # The full build/verify step set an implementation request retains and an
 # analysis/planning request drops — one canonical per build-dropping role.
 _BUILD_STEPS = [
@@ -210,19 +220,12 @@ class TestReadRequestAspect:
     (rather than crashing compose), and a present value is returned trimmed.
     """
 
-    @staticmethod
-    def _write_status(plan_context, plan_id, metadata):
-        plan_dir = plan_context.plan_dir_for(plan_id)
-        (plan_dir / _dec.FILE_STATUS).write_text(
-            json.dumps({'metadata': metadata}), encoding='utf-8'
-        )
-
     def test_reads_persisted_request_aspect(self, plan_context):
-        self._write_status(plan_context, 'aspect-present', {'request_aspect': 'analysis'})
+        _write_status(plan_context, 'aspect-present', {'request_aspect': 'analysis'})
         assert _read_request_aspect('aspect-present') == 'analysis'
 
     def test_trims_surrounding_whitespace(self, plan_context):
-        self._write_status(plan_context, 'aspect-trim', {'request_aspect': '  planning  '})
+        _write_status(plan_context, 'aspect-trim', {'request_aspect': '  planning  '})
         assert _read_request_aspect('aspect-trim') == 'planning'
 
     def test_absent_status_file_is_none(self, plan_context):
@@ -231,11 +234,11 @@ class TestReadRequestAspect:
         assert _read_request_aspect('aspect-absent') is None
 
     def test_missing_request_aspect_key_is_none(self, plan_context):
-        self._write_status(plan_context, 'aspect-nokey', {'plan_source': 'recipe'})
+        _write_status(plan_context, 'aspect-nokey', {'plan_source': 'recipe'})
         assert _read_request_aspect('aspect-nokey') is None
 
     def test_empty_request_aspect_is_none(self, plan_context):
-        self._write_status(plan_context, 'aspect-empty', {'request_aspect': '   '})
+        _write_status(plan_context, 'aspect-empty', {'request_aspect': '   '})
         assert _read_request_aspect('aspect-empty') is None
 
     def test_corrupt_status_file_degrades_to_none(self, plan_context):
@@ -315,17 +318,10 @@ class TestComposeSelfReadsRequestAspect:
             envelope_count=1,
         )
 
-    @staticmethod
-    def _write_status(plan_context, plan_id, metadata):
-        plan_dir = plan_context.plan_dir_for(plan_id)
-        (plan_dir / _dec.FILE_STATUS).write_text(
-            json.dumps({'metadata': metadata}), encoding='utf-8'
-        )
-
     def test_analysis_metadata_clears_verification_steps_without_arg(self, plan_context, monkeypatch):
         captured: dict = {}
         self._neutralize_external_collaborators(monkeypatch, captured)
-        self._write_status(plan_context, 'compose-analysis', {'request_aspect': 'analysis'})
+        _write_status(plan_context, 'compose-analysis', {'request_aspect': 'analysis'})
 
         result = _mem.cmd_compose(self._compose_args('compose-analysis', None))
 
@@ -336,7 +332,7 @@ class TestComposeSelfReadsRequestAspect:
     def test_planning_metadata_clears_verification_steps_without_arg(self, plan_context, monkeypatch):
         captured: dict = {}
         self._neutralize_external_collaborators(monkeypatch, captured)
-        self._write_status(plan_context, 'compose-planning', {'request_aspect': 'planning'})
+        _write_status(plan_context, 'compose-planning', {'request_aspect': 'planning'})
 
         result = _mem.cmd_compose(self._compose_args('compose-planning', None))
 
@@ -347,7 +343,7 @@ class TestComposeSelfReadsRequestAspect:
     def test_implementation_metadata_retains_all_gates(self, plan_context, monkeypatch):
         captured: dict = {}
         self._neutralize_external_collaborators(monkeypatch, captured)
-        self._write_status(plan_context, 'compose-impl', {'request_aspect': 'implementation'})
+        _write_status(plan_context, 'compose-impl', {'request_aspect': 'implementation'})
 
         result = _mem.cmd_compose(self._compose_args('compose-impl', None))
 
@@ -371,7 +367,7 @@ class TestComposeSelfReadsRequestAspect:
         # Persisted analysis metadata would clear the list, but an explicit
         # --aspect implementation takes precedence (mirroring --recipe-key over
         # _read_recipe_source) — the self-read is never consulted.
-        self._write_status(plan_context, 'compose-argwins', {'request_aspect': 'analysis'})
+        _write_status(plan_context, 'compose-argwins', {'request_aspect': 'analysis'})
 
         _mem.cmd_compose(self._compose_args('compose-argwins', 'implementation'))
 
