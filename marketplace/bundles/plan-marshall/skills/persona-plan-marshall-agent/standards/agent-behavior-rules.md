@@ -25,6 +25,7 @@ A plain-English index of the rules below. Each line is a memory hook that links 
 | Reuse existing documents; never create one without approval. | [Principle 5: Don't Proliferate Documents](#principle-5-dont-proliferate-documents) |
 | Never add a dependency without approval. | [Principle 6: Never Add Dependencies Without User Approval](#principle-6-never-add-dependencies-without-user-approval) |
 | Build the minimum, not the maximum. | [Principle 7: Implement the Minimum, Not the Maximum](#principle-7-implement-the-minimum-not-the-maximum) |
+| Establish provenance before re-attempting a failing fix. | [Principle 8: Establish Provenance Before Re-Attempting a Failing Fix](#principle-8-establish-provenance-before-re-attempting-a-failing-fix) |
 | Ad-hoc changes still ship through the full PR flow. | [Ad-hoc changes still get the full PR flow](#ad-hoc-changes-still-get-the-full-pr-flow) |
 | Obey each skill's declared `mode`. | [Skill mode: comply with the declared archetype](#skill-mode-comply-with-the-declared-archetype) |
 | Ask the architecture inventory before reaching for Glob/Grep. | [Structured queries first](#structured-queries-first) |
@@ -241,6 +242,27 @@ Implement only what the present requirement asks for. Do not add error handling 
 For the full anti-pattern catalogue and the Trigger / Detection / Action treatment, see the central standard at `ref-code-quality/standards/code-organization.md` [#minimum-viable-code](../../ref-code-quality/standards/code-organization.md#minimum-viable-code) — enforcement-critical content lives there and is intentionally not duplicated here.
 
 **Example:** Asked to add a single retry, don't introduce a `RetryStrategy` interface with one implementation and a configurable backoff knob no caller sets — write the one retry the requirement asks for.
+
+### Principle 8: Establish Provenance Before Re-Attempting a Failing Fix
+
+**Rule:** When a fix fails, establish the provenance of the failing signal before re-attempting the same hypothesis class. A provenance check is a diagnosis gate, NOT a ban on retrying.
+
+**Trigger signals** (either one demands a provenance check before the next attempt):
+
+- **Identical repeated failure** — N consecutive fixes fail the SAME assertion in the SAME way. Identical repeat failure is evidence that the hypothesis class is wrong, not that the fix must be bigger.
+- **Condition-dependent signal** — a failure that appears or vanishes only under a locally-changed operating condition (background processors stopped vs started, a background build killed by the harness and mentally normalised as "flaky", a service left in a different state between runs). A signal that moves with the environment, not with the code, is a provenance question first.
+
+**Corrective — establish ground truth, THEN decide:**
+
+- Ask whether the plan itself introduced the failing assertion: `git log origin/main..HEAD -- <failing-test-file>`. A failure the branch authored is a different problem than a failure inherited from `main`.
+- Compare green-on-`main` versus red-on-branch for the exact failing check. Verify the signal against ground truth rather than against a locally-mutated condition.
+- Only after provenance is established, choose whether to re-attempt, change the hypothesis class, or escalate.
+
+**Explicit rule:** Never blind-retry the same fix, and never "re-verify locally" as a way to explain a real signal away. Establish provenance BEFORE re-attempting — a bigger version of a wrong fix is still wrong.
+
+This principle owns the *diagnosis* half of the discipline. Its sibling owns the *tool-output* half: when a tool's output itself looks fabricated or contaminated, re-verify disk state with an isolated read before acting on the suspect output. The two are complementary — this one governs a real but misattributed signal, the sibling governs a suspect signal source.
+
+**Example:** Three fixes in a row leave the same integration test red with the identical assertion message. Instead of making the fix larger a fourth time, run `git log origin/main..HEAD -- test/.../the_test.py` — the test was green on `main` and the branch never touched it, so the red is environmental (a background processor was down), not a code defect the fix should chase.
 
 ## Workflow Discipline (Hard Rules)
 
