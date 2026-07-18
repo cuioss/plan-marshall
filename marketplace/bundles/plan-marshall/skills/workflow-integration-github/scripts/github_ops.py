@@ -76,6 +76,7 @@ unchanged.
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 from typing import Any
@@ -1229,6 +1230,97 @@ def _reconcile_merge_queue_ruleset(
     return bool(missing_ids), method_drift, None
 
 
+_ON_KEY_RE = re.compile(r'''^(?:on|["']on["'])\s*:(.*)$''')
+_MERGE_GROUP_TOKEN_RE = re.compile(r'\bmerge_group\b')
+
+
+def _strip_yaml_comment(text: str) -> str:
+    """Drop a trailing ``#`` comment so a commented-out ``merge_group`` mention
+    never counts as a real trigger. Naive (splits on the first ``#``), which is
+    adequate for the terse tokens that appear in a workflow ``on:`` block."""
+    hash_idx = text.find('#')
+    return text if hash_idx < 0 else text[:hash_idx]
+
+
+def _lines_declare_merge_group_trigger(lines: list[str]) -> bool:
+    """Anchored ``on:``-block scan over one workflow file's lines.
+
+    Locates the top-level ``on`` key (column 0, bare or quoted), then matches a
+    ``merge_group`` token only within that key's value — the inline scalar / flow
+    sequence on the same line, or the indented block that follows until the next
+    top-level key. In the block form the match is further anchored to the ``on:``
+    block's DIRECT children (the trigger keys / sequence items at the first
+    indent level): a ``merge_group`` token sitting at a DEEPER indent is a nested
+    value (e.g. a branch literally named ``merge_group`` under
+    ``push: branches:``), not a trigger, and is ignored. This two-level anchoring
+    keeps a stray ``merge_group`` elsewhere in the file (a job id, an env var, a
+    comment, a nested branch/property name) from producing a false match.
+    """
+    for idx, line in enumerate(lines):
+        match = _ON_KEY_RE.match(line)
+        if match is None:
+            continue
+        inline = _strip_yaml_comment(match.group(1)).strip()
+        if inline:
+            # on: merge_group  |  on: [push, merge_group]  |  on: {merge_group: …}
+            return bool(_MERGE_GROUP_TOKEN_RE.search(inline))
+        # Block form: ``on:`` alone, then an indented mapping key
+        # (``merge_group:``) or sequence item (``- merge_group``). Match only the
+        # DIRECT children of ``on:`` (the first-indent trigger level); a deeper
+        # indent is a nested value and is skipped. Scan stops at the next
+        # top-level key, or when the indent drops back below the direct-child
+        # level (the ``on:`` block ended).
+        block_indent = None
+        for child in lines[idx + 1:]:
+            stripped = child.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            indent = len(child) - len(child.lstrip())
+            if indent == 0:
+                break  # next top-level key — the on: block has ended
+            if block_indent is None:
+                block_indent = indent
+            elif indent < block_indent:
+                break  # shallower indent — the on: block's child context ended
+            if indent == block_indent and _MERGE_GROUP_TOKEN_RE.search(
+                _strip_yaml_comment(stripped)
+            ):
+                return True
+        return False
+    return False
+
+
+def _repo_has_merge_group_trigger(workflows_dir: str) -> bool:
+    """Return True when any workflow under ``workflows_dir`` declares a
+    ``merge_group`` trigger in its ``on:`` block.
+
+    Scans every ``*.yml`` / ``*.yaml`` file, anchoring the match to the top-level
+    ``on:`` block (never a bare file-wide token match) and covering the three
+    canonical GitHub-Actions ``on:`` forms: the single string
+    (``on: merge_group``), the flow sequence (``on: [push, merge_group]``), and
+    the block mapping/sequence (``on:`` followed by an indented ``merge_group:``
+    or ``- merge_group``). PyYAML is unavailable in this stdlib-only script, so
+    the scan is a ``re`` pass rather than a YAML parse. A missing
+    ``.github/workflows`` directory returns False.
+    """
+    if not os.path.isdir(workflows_dir):
+        return False
+    for name in sorted(os.listdir(workflows_dir)):
+        if not name.endswith(('.yml', '.yaml')):
+            continue
+        path = os.path.join(workflows_dir, name)
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding='utf-8') as handle:
+                lines = handle.read().splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if _lines_declare_merge_group_trigger(lines):
+            return True
+    return False
+
+
 def cmd_repo_merge_queue_probe(args: argparse.Namespace) -> dict:
     """Handle 'repo merge-queue probe' — report merge-queue eligibility state.
 
@@ -1336,6 +1428,22 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
         }
 
     if discriminator == MERGE_QUEUE_ELIGIBLE_UNCONFIGURED:
+        # Footgun guard: a merge queue with no repository workflow that triggers
+        # on merge_group stalls the queue and blocks ALL merges to the default
+        # branch — every queued PR forms a merge group that never receives a
+        # required status check. Refuse to create the ruleset until such a
+        # trigger exists.
+        workflows_dir = os.path.join(os.getcwd(), '.github', 'workflows')
+        if not _repo_has_merge_group_trigger(workflows_dir):
+            return make_error(
+                'repo_merge_queue_enable',
+                'Refusing to enable the merge queue: no repository workflow '
+                'triggers on merge_group. Every queued PR would form a merge '
+                'group that never receives a required check, stalling the queue '
+                'and blocking all merges to the default branch. Add a '
+                'merge_group: trigger to a .github/workflows/*.yml (alongside '
+                'push/pull_request) before enabling the merge queue.',
+            )
         # Resolve the bypass-actor id(s) (config-first, org-list fallback). An
         # empty resolution preserves today's bypass-less create behavior.
         resolved_ids = _resolve_bypass_actor_ids(owner)
