@@ -67,4 +67,5 @@ The build server is a POSIX daemon (a Unix domain socket, a double-forked proces
 * link:../../marketplace/bundles/plan-marshall/skills/manage-build-server/SKILL.md[`manage-build-server/SKILL.md`] — the user-invocable control skill: `register` / `unregister` / lifecycle, and the anti-laundering wall.
 * xref:build-management.adoc[Concepts › Build Management] — the canonical-command build abstraction the build server runs; the daemon changes *where* a build runs, not the command vocabulary.
 * xref:parallelism-and-locking.adoc[Concepts › Parallelism and Locking] — the machine-global build-queue limiter that is the single slot substrate on both the daemon and fallback paths.
+* xref:../developer/build-architecture.adoc[Developer Guide › Build Architecture] — the as-built interaction architecture (component map, flows F1–F8, job state machine, deliberate-absences table) at developer altitude.
 * xref:../user/installation.adoc[User Guide › Installation] — the POSIX / WSL2 platform requirement.
