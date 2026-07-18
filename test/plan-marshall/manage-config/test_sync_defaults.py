@@ -886,3 +886,95 @@ def test_sync_defaults_leaves_unresolvable_frontmatter_step_lane_less(plan_conte
     assert 'lane' not in steps[unresolvable]
     # and is NOT reported in materialized
     assert not any(unresolvable in entry for entry in result['materialized'])
+
+
+# =============================================================================
+# Fresh-wizard Step 16 materialization (this plan, D2)
+# =============================================================================
+#
+# The first-run wizard's Step 16 now runs `sync-defaults` BEFORE `steps-sort`, so
+# a fresh wizard leaves EVERY plan.phase-6-finalize.steps entry with an explicit
+# lane — the seven core steps included, not just the two ask-tier infra steps the
+# wizard seeds with a lane. These tests simulate the fresh-wizard config (the
+# seven core steps present but lane-less, only the two ask-tier steps carrying a
+# lane) and assert sync-defaults materializes every step's lane and is idempotent.
+
+_SEVEN_CORE_STEPS = (
+    'default:push',
+    'default:create-pr',
+    'default:ci-verify',
+    'default:lessons-capture',
+    'default:branch-cleanup',
+    'default:record-metrics',
+    'default:archive-plan',
+)
+_ASK_TIER_STEPS = ('plan-marshall:automatic-review', 'default:sonar-roundtrip')
+
+
+def _fresh_wizard_finalize_steps() -> dict:
+    """Return a fresh-wizard-shaped phase-6 steps map.
+
+    The seven core steps are present but lane-less (`{}`); only the two ask-tier
+    infra steps carry an explicit `lane: ask` — the state a first-run wizard's
+    finalize-step seeding leaves before Step 16's sync-defaults pass runs.
+    """
+    steps: dict = {step: {} for step in _SEVEN_CORE_STEPS}
+    for infra in _ASK_TIER_STEPS:
+        steps[infra] = {'lane': 'ask'}
+    return steps
+
+
+def test_sync_defaults_fresh_wizard_materializes_every_finalize_step_lane(plan_context):
+    """After the wizard Step 16 sync-defaults pass, every finalize step carries an explicit lane.
+
+    Simulate the fresh-wizard config: the seven core steps present but lane-less,
+    and only the two ask-tier infra steps (automatic-review, sonar-roundtrip)
+    carrying a lane. sync-defaults materializes an explicit lane on every lane-less
+    step, so the seven core steps each gain their frontmatter-class effective lane
+    (core -> minimal) while the ask-tier steps keep `ask`. The result is a fully
+    explicit finalize step-set with no lane-less entry.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': _fresh_wizard_finalize_steps()}}},
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    steps = config['plan']['phase-6-finalize']['steps']
+    # EVERY finalize step now carries an explicit lane — no entry is lane-less.
+    lane_less = [step_id for step_id, params in steps.items() if 'lane' not in params]
+    assert lane_less == [], f'every finalize step must carry an explicit lane; lane-less: {lane_less!r}'
+    # the seven core steps specifically each materialize to their effective (minimal) lane
+    for core in _SEVEN_CORE_STEPS:
+        assert steps[core]['lane'] == 'minimal', (
+            f'core step {core} must materialize to its effective lane minimal, got {steps[core]!r}'
+        )
+    # the two ask-tier infra steps keep their explicit `ask` lane untouched
+    for infra in _ASK_TIER_STEPS:
+        assert steps[infra]['lane'] == 'ask', f'{infra} must keep lane:ask, got {steps[infra]!r}'
+
+
+def test_sync_defaults_fresh_wizard_materialization_is_idempotent(plan_context):
+    """A re-run of the wizard Step 16 sync-defaults pass materializes nothing.
+
+    After the first pass fills a lane on every finalize step, a second pass
+    observes them all explicit and reports `materialized == []` — the Step 16
+    sequencing is safe to re-run.
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'plan': {'phase-6-finalize': {'steps': _fresh_wizard_finalize_steps()}}},
+    )
+
+    first = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    assert first['status'] == 'success'
+    assert first['materialized_count'] > 0
+
+    second = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert second['status'] == 'success'
+    assert second['materialized'] == []
+    assert second['materialized_count'] == 0

@@ -307,6 +307,14 @@ Any built-in step missing from the project's array is surfaced as
 it. This protects existing projects from quietly missing newly-added
 consumer-applicable defaults when their `marshal.json` predates the additions.
 
+**First-run lane materialization.** At the end of the wizard (Step 16),
+`sync-defaults` deep-merges the full default finalize step-set into `marshal.json`
+before the step-sort, so the seeded pipeline becomes fully explicit — a
+newly-materialized `default_on: false` step arrives `lane: off`, growing the step
+count while leaving the effective running set unchanged (opt-in preserved). See
+[`references/wizard-flow.md`](references/wizard-flow.md) Step 16 for the
+materialize-then-sort sequencing.
+
 ## Blocking-Finding Classification (fixed rule — no wizard seed)
 
 The blocking-finding gate is governed by a **fixed, hardcoded** actionable-vs-knowledge rule in `plan-marshall/scripts/_invariants.py` — there is **no** per-phase configuration partition, no `marshal.json` key, and no wizard seed step. **ACTIONABLE** types (`build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `qgate`, `pr-comment`) block when `pending` at a guarded boundary; **KNOWLEDGE** types (`insight`, `tip`, `best-practice`, `improvement`) never block. The wizard does not write any blocking-finding configuration. See [`plan-marshall:plan-marshall/references/phase-handshake.md`](../plan-marshall/references/phase-handshake.md) § `pending_findings_blocking_count` resolution for the full rule.

@@ -595,17 +595,42 @@ next_steps:
 
 ## Step 16: Step-Ordering + End-of-Run Landing Cycle
 
-After the summary, run the deterministic step-ordering pass, then invoke the
+After the summary, run the deterministic config-materialization + step-ordering
+pass — **materialize the finalize lanes first, then sort** — then invoke the
 shared End-of-Run Landing Cycle hook — the SAME behaviour as menu mode — so a
 first-run wizard also offers to land the steward-created artifacts (a freshly
 seeded `marshal.json`, the executor, `.gitignore`) rather than leaving the working
-tree dirty.
+tree dirty. Sequencing sync-defaults ahead of the sort mirrors the menu-mode
+Re-Run Remediation Pass ordering (step (e) `sync-defaults` then step (f)
+`steps-sort`): materializing first makes the finalize step-set fully explicit on
+a fresh wizard, and the sort then restores canonical frontmatter order over the
+now-complete set.
 
-**(a) Sort `phase-6-finalize.steps` into frontmatter order** (silent, idempotent).
-The wizard seeds `phase-6-finalize.steps` in seed/discovery order; this restores
-the canonical ascending frontmatter `order` on disk, reusing the manifest
-composer's sort choke-point (no duplicated order table). Its potential reorder
-diff feeds the landing-cycle detection below:
+**(a) Materialize the finalize step-set via `sync-defaults`** (silent, idempotent).
+Deep-merge every default key — including every default finalize step — into
+`marshal.json`, so a fresh wizard's `plan.phase-6-finalize.steps` becomes the
+fully explicit step-set rather than only the operator-selected subset:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-defaults
+```
+
+See the `manage-config` `sync-defaults` command for the deep-merge + re-stamp
+contract. The call is idempotent — an already-current config is left byte-stable.
+
+> **Interaction note.** `sync-defaults` deep-merges every default finalize step
+> into `plan.phase-6-finalize.steps`, materializing any not-yet-present step (the
+> `default_on: false` ones arrive with `lane: off`), so the post-materialize step
+> count grows but the effective running set is unchanged — a newly-materialized
+> step arrives `lane: off` and stays off until the operator opts in (opt-in
+> preserved).
+
+**(b) Sort `phase-6-finalize.steps` into frontmatter order** (silent, idempotent).
+The wizard seeds `phase-6-finalize.steps` in seed/discovery order and step (a) may
+have appended freshly-materialized steps; this restores the canonical ascending
+frontmatter `order` on disk, reusing the manifest composer's sort choke-point (no
+duplicated order table). Its potential reorder diff feeds the landing-cycle
+detection below:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config steps-sort
@@ -615,7 +640,7 @@ See the `manage-config` Canonical invocations (`steps-sort`) for the verb shape.
 The call is idempotent and value-preserving; `phase-5-execute.verification_steps`
 is out of scope.
 
-**(b) Invoke the End-of-Run Landing Cycle hook.** When an uncommitted
+**(c) Invoke the End-of-Run Landing Cycle hook.** When an uncommitted
 plan-marshall artifact diff is present, offer to land it. Load and execute the
 shared procedure:
 
