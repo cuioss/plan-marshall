@@ -243,7 +243,9 @@ def bot_kind_for_author(author_login: str | None) -> str | None:
 # is both posted and recognised with no second code edit. Empty triggers (a bot
 # that declares none) are excluded so a whitespace-only body never matches.
 _REGISTERED_TRIGGER_COMMENTS: frozenset[str] = frozenset(
-    trigger for trigger in (bot_registry.trigger_comment(bot_kind) for bot_kind in bot_registry.bot_kinds()) if trigger
+    trigger.strip()
+    for trigger in (bot_registry.trigger_comment(bot_kind) for bot_kind in bot_registry.bot_kinds())
+    if trigger.strip()
 )
 
 
