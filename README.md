@@ -22,6 +22,9 @@ Plan Marshall is an orchestration layer for AI coding assistants (currently Clau
 > python3 --version
 > ```
 
+> [!IMPORTANT]
+> **Windows users: run inside WSL2.** Running under WSL2 (Ubuntu) is very strongly recommended — the build-queue server is **WSL-only** and does not run natively on Windows. Work through a WSL-connected editor: **VS Code + Remote-WSL** or **IntelliJ via JetBrains Gateway**. Full walkthrough: [User Guide › Windows / WSL Setup](doc/user/windows-wsl-setup.adoc).
+
 ## Installation (Claude Code)
 
 Plan Marshall is distributed via a `dist-claude` orphan branch that tracks `main`. For the pinned-release flow and full distribution contract see [Developer Documentation › Distribution](doc/developer/distribution.adoc).

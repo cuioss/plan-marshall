@@ -12,6 +12,7 @@ Operating Plan Marshall in a target project. If you are working on Plan Marshall
 
 == Pages
 
+* xref:windows-wsl-setup.adoc[Windows / WSL Setup] — Windows users start here: WSL2 + Ubuntu, `python3`/`git`/`gh`/Claude Code, and a WSL-connected editor (VS Code Remote-WSL or IntelliJ via JetBrains Gateway). The build-queue server is WSL-only.
 * xref:installation.adoc[Installation] — install and update the marketplace via Claude Code's `/plugin` tooling. Snapshot (`dist-claude`) and pinned (`claude/v*`) channels.
 * xref:getting-started.adoc[Getting Started] — first-run setup via `/marshall-steward`.
 * xref:commands.adoc[Commands] — `/marshall-steward` and `/plan-marshall`.
