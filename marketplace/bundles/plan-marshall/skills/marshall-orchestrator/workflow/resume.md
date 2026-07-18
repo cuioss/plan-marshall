@@ -30,6 +30,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
 
 Extract `phase`, `resume_anchor`, `workstreams[]`, and `plans[]`. The `resume_anchor` is the single field a fresh session trusts first — it names the exact next action.
 
+A slug naming an archived (closed-and-relocated) epic resolves from `archived-orchestrators/` via the read-fallback, so `resume --slug {archived}` re-anchors the frozen audit record without error — the read verb finds the archived tree when the active `orchestrator/{slug}/` path is absent. An archived epic is `phase: closed`; the resume is a read-only re-anchor of the frozen record (report and re-orient), not a re-opening.
+
 ### Step 3: Regenerate and reconcile START HERE
 
 ```bash

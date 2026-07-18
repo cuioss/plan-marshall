@@ -20,6 +20,7 @@ Verb router for epic orchestration. Sits ABOVE the plan lifecycle: it manages th
 /marshall-orchestrator analyze slug={slug}      # Analyze a landing or mid-flight observation
 /marshall-orchestrator resume slug={slug}       # Re-anchor a fresh session from the persisted tree
 /marshall-orchestrator close slug={slug}        # Freeze the epic into history.md
+/marshall-orchestrator archive slug={slug}      # Relocate a closed epic to archived-orchestrators/
 /marshall-orchestrator lessons                  # Lessons-handling mode (dated-slug epic)
 ```
 
@@ -62,6 +63,7 @@ Resolve the verb from the invocation (default: `status`), then load and follow t
 | `analyze` | `workflow/analyze.md` | Analyze a landing (pasted / on-disk / cross-repo) or record a mid-flight observation |
 | `resume` | `workflow/resume.md` | Re-anchor a fresh session from status.json + epic.md |
 | `close` | `workflow/close.md` | Freeze epic.md into history.md and mark the epic closed |
+| `archive` | `workflow/archive.md` | Relocate a closed epic tree to `archived-orchestrators/` (post-close, mechanical) |
 | `lessons` | `workflow/lessons-handling.md` | Lessons-handling mode: dated-slug epic, local dedup/aggregate, cross-repo integrate-then-remove |
 
 `status` and `next` share `workflow/orchestrate.md` — the two queue-facing verbs; the doc branches on the invoked verb.
@@ -81,7 +83,7 @@ Authoring templates for the ledger documents live in `templates/` and mirror the
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| orchestrator | `plan-marshall:marshall-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read/transition plan-queue state), `resume-summary` (generate the START-HERE block from status.json) |
+| orchestrator | `plan-marshall:marshall-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read/transition plan-queue state), `resume-summary` (generate the START-HERE block from status.json), `archive` (relocate a closed epic tree to `archived-orchestrators/`) |
 
 ## Canonical invocations
 
@@ -109,6 +111,15 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
 python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator resume-summary \
   --slug SLUG
 ```
+
+### archive
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator archive \
+  --slug SLUG
+```
+
+Relocates a *closed* epic tree to `archived-orchestrators/{slug}/` — a post-close, mechanical move. Refuses a non-closed epic (`not_closed`), a missing epic (`not_found`), or an existing archive (`archive_conflict`); an already-archived slug returns idempotent success (`already_archived`).
 
 ## Related
 
