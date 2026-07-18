@@ -66,11 +66,15 @@ Boolean fields under each phase that decide whether the next-phase transition pa
 | `plan.phase-3-outline.plan_without_asking` | `false` | …from the outline review checkpoint to task creation.
 | `plan.phase-4-plan.execute_without_asking` | `true` | …from `phase-4-plan` to `phase-5-execute`.
 | `plan.phase-6-finalize.finalize_without_asking` | `true` | …from `phase-5-execute` to `phase-6-finalize` (forward direction).
-| `plan.phase-6-finalize.loop_back_without_asking` | `false` | …from a `phase-6-finalize` `loop_back` outcome back into `phase-5-execute` (reverse direction). Defaults differ from `finalize_without_asking` to prevent silent unattended loops.
-| `plan.phase-6-finalize.auto_merge_after_ci` | `true` | …from a green CI run to the `pr merge --delete-branch` step. `true` (default) merges automatically once CI passes, serialised across concurrent plans by the cross-plan merge-lock; `false` prompts the operator before merging.
+| `plan.phase-6-finalize.loop_back_without_asking` | `false` | …from a `phase-6-finalize` `loop_back` outcome back into `phase-5-execute` (reverse direction). Defaults differ from `finalize_without_asking` to prevent silent unattended loops. Note the mechanics: `loop_back_without_asking=false` *halts and instructs* (a Display + STOP prompt, no `AskUserQuestion`), whereas the similarly-suffixed step-owned `final_merge_without_asking=false` fires a genuine inline pre-merge `AskUserQuestion` confirmation — same suffix, opposite mechanics.
 |===
 
-Every gate lives under the phase block whose outbound transition it governs; the three auto-continuation knobs (`finalize_without_asking`, `loop_back_without_asking`, `auto_merge_after_ci`) are flat fields under `plan.phase-6-finalize`. Set any gate via `/marshall-steward` → Configuration → Review Gates, or directly with the standard phase `set` verb:
+[NOTE]
+====
+The post-CI merge gate is **not** a flat `plan.phase-6-finalize` field. It is `final_merge_without_asking` (default `false`), a step-owned parameter under the `default:branch-cleanup` finalize step — read and set via the step-params path (see <<step-configuration>>), not the flat phase `set` verb. When `false` (default) the operator is prompted with an inline pre-merge `AskUserQuestion` before the irreversible merge to the base branch; `true` is the explicit opt-in to unattended auto-merge after CI, serialised across concurrent plans by the cross-plan merge-lock.
+====
+
+Every gate lives under the phase block whose outbound transition it governs; the two auto-continuation knobs (`finalize_without_asking`, `loop_back_without_asking`) are flat fields under `plan.phase-6-finalize` (the post-CI merge gate is a step-owned param — see the note above). Set a flat gate via `/marshall-steward` → Configuration → Review Gates, or directly with the standard phase `set` verb:
 
 [source,bash]
 ----
@@ -78,7 +82,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init set --field init_without_asking --value false
 
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize set --field auto_merge_after_ci --value false
+  plan phase-6-finalize set --field loop_back_without_asking --value true
 ----
 
 [#run-at-all-gates]

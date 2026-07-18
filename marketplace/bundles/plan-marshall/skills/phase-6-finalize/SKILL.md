@@ -915,7 +915,7 @@ FOR each step_id in manifest.phase_6.steps:
       | Cause | Detection rule |
       |-------|----------------|
       | `step_complete` | The dispatched step returned cleanly (its `mark-step-done` call recorded `outcome: done`). |
-      | `blocked_user_review` | The dispatched step raised an `AskUserQuestion` review gate that halted dispatch (e.g., branch-cleanup confirmation, sonar-roundtrip `loop_back` prompt under `loop_back_without_asking=false`, or a `plan-marshall:automatic-review` `escalate_ask{reason: re_review_timeout}` return whose `ask` policy made the dispatcher fire the re-review-timeout `AskUserQuestion` — see item 7a). |
+      | `blocked_user_review` | The dispatched step raised an `AskUserQuestion` review gate that halted dispatch (e.g., branch-cleanup confirmation, or a `plan-marshall:automatic-review` `escalate_ask{reason: re_review_timeout}` return whose `ask` policy made the dispatcher fire the re-review-timeout `AskUserQuestion` — see item 7a). |
       | `blocked_session_restart` | The dispatch was cut short by a session restart, harness cancellation, or the per-agent timeout budget firing (timeout block at item 5 above). |
       | `error` | The dispatched step's `mark-step-done` call recorded `outcome: failed`. |
 
@@ -1192,12 +1192,12 @@ END FOR
 
 | `finalize_without_asking` | `loop_back_without_asking` | Behaviour |
 |---------------------------|----------------------------|-----------|
-| `false` (default) | any | The forward `5-execute → 6-finalize` transition halts and prompts the user. Loop-back never fires inline because finalize is not entered in the same orchestration cycle. |
-| `true` | `false` (default) | Forward auto-continuation; loop-back halts at the inline execute re-entry point and prompts the user. (This is the conservative shape: forward is automated, reverse is interactive.) |
+| `false` | any | The forward `5-execute → 6-finalize` transition halts and prompts the user. Loop-back never fires inline because finalize is not entered in the same orchestration cycle. |
+| `true` (default) | `false` (default) | Forward auto-continuation; loop-back halts at the inline execute re-entry point and prompts the user. (This is the conservative shape: forward is automated, reverse is interactive.) |
 | `true` | `true` | Full unattended cycle. A loop_back outcome re-dispatches execute inline up to `max_iterations` times, then halts even with the flag set. |
 | `false` | `true` | Effectively `false`/`false` from the user's perspective: forward halts and prompts before phase-6-finalize ever runs, so the loop-back hook is unreachable in the same orchestration cycle. |
 
-The conservative default (`loop_back_without_asking=false`) ships an interactive shape so existing plans behave the same as before this knob was added. Projects that want full unattended execution must opt into both knobs.
+The conservative default (`loop_back_without_asking=false`) ships an interactive shape so existing plans behave the same as before this knob was added. Projects that want full unattended execution must opt into both knobs. Note the mechanics differ from the same-suffixed merge knob: `loop_back_without_asking=false` halts the dispatcher and *instructs* the operator via a Display + STOP prompt (no `AskUserQuestion` is fired — see § "Loop-back continuation hook" item 7b), whereas `final_merge_without_asking=false` fires a genuine inline pre-merge `AskUserQuestion` gate (see [standards/branch-cleanup.md](standards/branch-cleanup.md) § "Pre-Merge Confirmation Gate") — same suffix, opposite mechanics.
 
 #### Post-dispatch completion guard
 
