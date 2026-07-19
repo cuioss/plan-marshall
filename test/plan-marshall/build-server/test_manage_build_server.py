@@ -79,14 +79,19 @@ def test_register_round_trip_and_audit(home):
     assert lines[0]['action'] == registry.ACTION_REGISTER
 
 
-def test_register_defaults_repeatable_flags_to_empty(home):
+def test_register_no_flags_populates_default_scope(home):
     root = home / 'proj'
     root.mkdir()
 
     result = mbs.run_register(Namespace(root=str(root), container=None, notation=None))
 
-    assert result['worktree_containers'] == []
-    assert result['notation_allowlist'] == []
+    # Omitting --container / --notation now backfills canonical defaults rather
+    # than storing empty scope (which left a registered project inert). Full
+    # default-population / backfill coverage lives in test_register_defaults.py.
+    assert result['notation_allowlist']
+    assert result['worktree_containers'] == [
+        str(Path(result['canonical_root']) / '.plan' / 'local' / 'worktrees')
+    ]
 
 
 def test_unregister_round_trip_and_audit(home):

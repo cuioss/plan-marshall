@@ -78,6 +78,21 @@ _TOOL_NOTATIONS = {
     'python': 'plan-marshall:build-pyproject:pyproject_build',
 }
 
+
+def routable_notations() -> tuple[str, ...]:
+    """Return the sorted executor notations the daemon may re-run.
+
+    The single source of truth for the "which builds route" set: the sorted
+    values of :data:`_TOOL_NOTATIONS`. Registration derives its default
+    ``notation_allowlist`` from this accessor, so a newly-added build tool
+    becomes routable AND default-allowlisted from one edit, with no drift —
+    without importing the private ``_TOOL_NOTATIONS`` name across modules.
+
+    Returns:
+        The sorted notation tuple.
+    """
+    return tuple(sorted(_TOOL_NOTATIONS.values()))
+
 # build_server.py (the build-server-client verbs) is NOT an executor-registered
 # notation reachable from this build subprocess's PYTHONPATH, so it is reused as
 # the single owner of the submit/wait/preflight contract via an in-process

@@ -60,10 +60,12 @@ from pathlib import Path
 from typing import Any
 
 import marshalld
+from _build_execute_factory import routable_notations
 from _build_server_protocol import FrameError, recv_frame, send_frame
 from _build_server_registry import (
     canonicalize_root,
     find_project_for_root,
+    get_project,
     read_registry,
     register_project,
     unregister_project,
@@ -274,6 +276,63 @@ def _cleanup_stale_state() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _default_notation_allowlist() -> list[str]:
+    """Return the default notation allowlist: the routable build notations.
+
+    Derived from the single source of truth shared with the D5 routing seam
+    (:func:`_build_execute_factory.routable_notations`), so a newly-added build
+    tool becomes routable AND default-allowlisted from one edit, with no drift.
+    """
+    return list(routable_notations())
+
+
+def _default_worktree_containers(root: str) -> list[str]:
+    """Return the default worktree container for ``root``.
+
+    The canonical, platform-neutral worktree location every plan uses:
+    ``<root>/.plan/local/worktrees``.
+
+    Args:
+        root: The canonical project root.
+
+    Returns:
+        A single-element list holding the canonical worktree container path.
+    """
+    return [str(Path(root) / '.plan' / 'local' / 'worktrees')]
+
+
+def _effective_scope_value(
+    explicit: list[str] | None,
+    existing: dict[str, Any] | None,
+    field: str,
+    default: list[str],
+) -> list[str]:
+    """Resolve a scope field by precedence: explicit CLI > existing non-empty > default.
+
+    The backfill/preserve policy that makes re-``register`` a safe repair path:
+    an explicit CLI value always wins; otherwise a non-empty stored value is
+    preserved (never wiped); otherwise the computed default backfills an empty or
+    absent entry.
+
+    Args:
+        explicit: The repeatable CLI value (``--container`` / ``--notation``), or
+            ``None`` when the operator supplied none.
+        existing: The stored project record, or ``None`` when unregistered.
+        field: The record field name to read the stored value from.
+        default: The computed default to backfill when nothing else applies.
+
+    Returns:
+        The effective scope list.
+    """
+    if explicit:
+        return list(explicit)
+    if existing:
+        stored = existing.get(field) or []
+        if stored:
+            return list(stored)
+    return list(default)
+
+
 def run_register(args: Namespace) -> dict[str, Any]:
     """Register (or update) a project in the machine-global registry.
 
@@ -282,15 +341,30 @@ def run_register(args: Namespace) -> dict[str, Any]:
     registration entry point — it lives only in this user-invocable control
     skill, never in a dispatch's ``skills[]`` (the S1 operator-interactivity
     wall).
+
+    When the operator omits ``--container`` / ``--notation``, the scope fields
+    are populated from canonical defaults — the routable build notations and the
+    canonical worktree container (``<root>/.plan/local/worktrees``) — so a plain
+    ``register`` yields a routable project rather than an inert empty-scope entry.
+    Re-running ``register`` is the repair path: it backfills empty fields while
+    preserving any non-empty stored values (precedence:
+    explicit CLI value > existing non-empty stored value > computed default).
     """
     try:
         root = _resolve_root(args.root)
     except RuntimeError as exc:
         return make_error(str(exc), code=ErrorCode.NOT_FOUND)
+    existing = get_project(read_registry(), root)
+    worktree_containers = _effective_scope_value(
+        args.container, existing, 'worktree_containers', _default_worktree_containers(root)
+    )
+    notation_allowlist = _effective_scope_value(
+        args.notation, existing, 'notation_allowlist', _default_notation_allowlist()
+    )
     record = register_project(
         root,
-        worktree_containers=args.container or [],
-        notation_allowlist=args.notation or [],
+        worktree_containers=worktree_containers,
+        notation_allowlist=notation_allowlist,
     )
     return {
         'status': 'success',
