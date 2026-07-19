@@ -210,19 +210,7 @@ Each verify step declares an `order: <int>` value in its authoritative source �
 
 ### Footprint gating (build-decision consult) for the end-of-phase `default:verify:{canonical}` loop
 
-The end-of-phase whole-tree verification dispatch — the loop that runs each `default:verify:{canonical}` step from `phase_5.verification_steps` (typically `quality-gate`, `module-tests`, `coverage`) — is **footprint-gated at execution time**. Before resolving or running any whole-tree `default:verify:{canonical}` step, consult the **existing** `manage-config build-decision` verb for that canonical:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-decision \
-  --command {canonical} --plan-id {plan_id}
-```
-
-The verb is a thin wrapper over `extension_base.should_execute_build` — the same `build.map ∩ live-footprint` authority phase-6 uses. It is NOT a new verb, NOT a parallel when-to-build mechanism, and NOT a blanket phase-5 short-circuit; each canonical is gated independently on the live footprint. Parse `decision` and `reason` from the returned TOON:
-
-- **`decision == not_necessary`** — the live footprint is empty or touches no registered `build.map` glob (a docs-only change). SKIP the build for that canonical: do NOT resolve, do NOT run. Emit a decision-log line naming the footprint `reason` and record the step as `skipped` via `manage-execution-manifest record-step --outcome skipped` (see Step 8c). This is the run-time backstop that corrects an `implementation`-classified plan whose live footprint turned out to be pure-doc.
-- **`decision != not_necessary`** (e.g. `build`) — the live footprint touches a buildable glob. Run the step normally per `standards/canonical_verify.md` (whole-tree scope, honouring the stamped `execution_tier`).
-
-This gate applies ONLY to the **whole-tree** end-of-phase surface (Step 11b Final Quality Sweep and this `default:verify:{canonical}` loop) — the one footprint-blind phase-5 build surface. **Steps 10b (focused per-deliverable build) and 11c (Execute-Exit Verify Gate) are already footprint-aware — they derive the live footprint on demand and already skip when no buildable module is present — and are UNCHANGED by this gate.** The build-decision consult is the run-time footprint authority; the compose-time narrative aspect-drop (`_apply_aspect_step_dropping`) is a complementary, non-contradictory signal (see `manage-config` aspect-classify).
+The end-of-phase whole-tree verification dispatch — Step 11b Final Quality Sweep and the loop that runs each `default:verify:{canonical}` step from `phase_5.verification_steps` — is **footprint-gated at execution time** via the **existing** `manage-config build-decision` verb (the same `build.map ∩ live-footprint` authority phase-6 uses; not a new verb, not a parallel when-to-build mechanism). The consult call, the `not_necessary` skip path, and the `decision != not_necessary` run path are the same mechanics Step 11b spells out below for `quality-gate`; do NOT restate them here for other canonicals — apply the identical shape per-canonical. This gate applies ONLY to the **whole-tree** end-of-phase surface — the one footprint-blind phase-5 build surface. **Steps 10b (focused per-deliverable build) and 11c (Execute-Exit Verify Gate) are already footprint-aware — they derive the live footprint on demand and already skip when no buildable module is present — and are UNCHANGED by this gate.** The build-decision consult is the run-time footprint authority; the compose-time narrative aspect-drop (`_apply_aspect_step_dropping`) is a complementary, non-contradictory signal (see `manage-config` aspect-classify).
 
 ### Per-step `execution_tier` (compose-time structural leaf-build guard)
 
