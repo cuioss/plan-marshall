@@ -162,6 +162,23 @@ def _footprint_has_role(footprint: list[str], suffix_markers: tuple[str, ...]) -
 # aspect-classify threshold contract in
 # ``manage-config/scripts/_cmd_aspect_classify.py`` and the outline's
 # request-aspect classification deliverable.
+#
+# This aspect-step-drop is the COMPOSE-TIME NARRATIVE half of a two-part
+# division of labour; D1's run-time ``manage-config build-decision`` consult
+# (wired into phase-5 Step 11b + the ``default:verify:{canonical}`` loop) is the
+# RUN-TIME FOOTPRINT half. The two are complementary and non-contradictory:
+#   - This narrative drop fires at compose (footprint always empty then, so it
+#     reads only the request narrative) and clears the FULL phase-5 verification
+#     list for a confident ``analysis`` / ``planning`` request — nothing is left
+#     for D1 to gate.
+#   - For an ``implementation``-classified request whose live footprint turns
+#     out to be pure-doc (the classifier kept every gate), D1's run-time
+#     ``build-decision`` consult is the authoritative footprint backstop that
+#     returns ``not_necessary`` and skips the whole-tree build.
+# Neither signal contradicts the other: aspect-drop governs the compose-time
+# list membership for confident code-free requests; build-decision governs the
+# run-time whole-tree build for everything an ``implementation`` classification
+# retained.
 _BUILD_DROPPING_ASPECTS = frozenset({'analysis', 'planning'})
 
 def _apply_aspect_step_dropping(
@@ -189,6 +206,10 @@ def _apply_aspect_step_dropping(
 
     An ``implementation`` aspect (the classifier's safe sub-threshold fallback)
     and an absent aspect are no-ops: every gate is retained.
+
+    See the module-level comment above ``_BUILD_DROPPING_ASPECTS`` for this
+    drop's division of labour with D1, the run-time ``manage-config
+    build-decision`` footprint gate.
 
     Returns ``(kept_steps, dropped_steps)``. ``role_cache`` is retained in the
     signature for call-site symmetry with the other role-driven filters; the

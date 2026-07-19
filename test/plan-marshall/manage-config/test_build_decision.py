@@ -231,3 +231,73 @@ def test_handler_errors_when_plan_id_missing():
 
     assert result['status'] == 'error'
     assert 'plan-id' in result['error']
+
+
+# =============================================================================
+# phase-5 D1 anchoring regression — the exact contract the Step 11b / verify:{canonical}
+# footprint-gate wiring relies on.
+#
+# phase-5-execute Step 11b and the end-of-phase default:verify:{canonical} loop now
+# consult `manage-config build-decision --command {canonical} --plan-id {plan_id}` and
+# SKIP the whole-tree build when the verdict is `not_necessary`. These tests pin the
+# exact handler-level contract (the `--command quality-gate` call shape) that wiring
+# depends on, so a future silent drift of the verdict field names / values would fail
+# here rather than silently un-gating (or over-gating) the phase-5 quality sweep.
+# =============================================================================
+
+
+def test_phase5_gate_pure_doc_footprint_resolves_not_necessary(monkeypatch):
+    """nifi scenario: build globs registered, footprint is docs-only intersecting no glob.
+
+    This is the exact case D1 exists to correct — an `implementation`-classified plan
+    whose live footprint turned out to be pure-doc. `build-decision --command
+    quality-gate` MUST return `not_necessary` with a populated `reason` so Step 11b
+    skips the whole-tree quality sweep.
+    """
+    # Arrange — production build globs exist, but the footprint is docs-only markdown
+    # that intersects none of them.
+    monkeypatch.setattr(
+        extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py']
+    )
+    monkeypatch.setattr(
+        extension_base,
+        '_resolve_plan_footprint',
+        lambda _plan: ['doc/developer/build.adoc', 'marketplace/bundles/x/skills/y/SKILL.md'],
+    )
+
+    # Act — the exact call shape phase-5 Step 11b issues.
+    result = _cmd_build_map_mod.cmd_build_decision(
+        Namespace(command='quality-gate', plan_id='footprint-driven-build-gating', audit_plan_id=None)
+    )
+
+    # Assert — the verdict Step 11b keys its skip on.
+    assert result['status'] == 'success'
+    assert result['decision'] == 'not_necessary'
+    assert result['reason']
+    assert result['canonical_command'] == 'quality-gate'
+
+
+def test_phase5_gate_buildable_footprint_resolves_build(monkeypatch):
+    """A footprint touching a registered build glob resolves `build` so the sweep fires.
+
+    The complementary half of the D1 contract: a live footprint touching a buildable
+    `*.py` under a registered `build.map` glob MUST resolve to `build`, so Step 11b
+    runs the whole-tree quality sweep unchanged.
+    """
+    # Arrange — a changed production .py that matches the registered glob.
+    monkeypatch.setattr(
+        extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py']
+    )
+    monkeypatch.setattr(
+        extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py']
+    )
+
+    # Act — the exact call shape phase-5 Step 11b issues.
+    result = _cmd_build_map_mod.cmd_build_decision(
+        Namespace(command='quality-gate', plan_id='footprint-driven-build-gating', audit_plan_id=None)
+    )
+
+    # Assert — a build verdict so the sweep fires.
+    assert result['status'] == 'success'
+    assert result['decision'] == 'build'
+    assert result['canonical_command'] == 'quality-gate'

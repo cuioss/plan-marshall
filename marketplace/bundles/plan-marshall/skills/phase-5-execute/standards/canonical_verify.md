@@ -54,6 +54,19 @@ Every `manage-*` script call in this document carries the following exit-code co
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
+## Footprint gate (whole-tree scope only)
+
+For a **whole-tree** end-of-phase-5 run (Step 11b / the `verification_steps` `default:verify:{canonical}` loop), the build is gated on the live footprint BEFORE resolution. Consult the **existing** `manage-config build-decision` verb — a thin wrapper over `extension_base.should_execute_build`, the same `build.map ∩ live-footprint` authority phase-6 uses (NOT a new verb, NOT a parallel when-to-build mechanism):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-decision \
+  --command {canonical} --plan-id {plan_id}
+```
+
+Parse `decision` and `reason`. When `decision == not_necessary` (the live footprint is empty or intersects no registered `build.map` glob — a docs-only change), SKIP the canonical: do NOT resolve, do NOT run. Emit a decision-log line naming the footprint `reason` and record the step `skipped` via `manage-execution-manifest record-step --outcome skipped` (phase-5-execute Step 8c), then continue to the next canonical. When `decision != not_necessary`, proceed to the Workflow below.
+
+**Module-scoped** per-deliverable invocations (Step 10b) are **NOT** subject to this whole-tree footprint gate — they already carry the documentation-only short-circuit (a changed-path set with no buildable module yields no module-scoped run) and are unchanged. Step 11c (Execute-Exit Verify Gate) is likewise already footprint-aware (it derives the affected-bundle set from the live footprint) and is unchanged.
+
 ## Workflow
 
 1. **Resolve the canonical.** Read the canonical from the trailing segment of the step ID, then resolve it:
@@ -63,7 +76,7 @@ Every `manage-*` script call in this document carries the following exit-code co
      resolve --command {canonical} --module {module} --audit-plan-id {plan_id}
    ```
 
-   Add `--module {module}` only when invoked **module-scoped** (per-deliverable); omit it for the **whole-tree** end-of-phase-5 sweep. Pass `--audit-plan-id {plan_id}` so the resolved build's execution-log entries stay **plan-scoped regardless of which tier ultimately runs the build**.
+   Add `--module {module}` only when invoked **module-scoped** (per-deliverable); omit it for the **whole-tree** end-of-phase-5 sweep. Pass `--audit-plan-id {plan_id}` so the resolved build's execution-log entries stay **plan-scoped regardless of which tier ultimately runs the build**. For a whole-tree run, the **Footprint gate** above has already returned `decision != not_necessary` — a `not_necessary` verdict skips before this resolution.
 
    **Unresolved-canonical skip:** when the canonical does not resolve for the project (no matching Maven profile / no command for the build system), record the step `skipped` and continue — this is **not** a failure. integration-tests / e2e legitimately do not resolve on a project that lacks the profile.
 
