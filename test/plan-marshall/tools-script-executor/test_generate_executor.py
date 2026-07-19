@@ -1356,6 +1356,77 @@ def test_find_installed_manifest_path_rejects_traversal_marketplace_segment(tmp_
     assert resolved is None, 'a .. marketplace-name segment must never resolve to a candidate path'
 
 
+def test_find_installed_manifest_path_highest_version_wins_over_stale_cache_root(tmp_path, monkeypatch):
+    """Highest-version-wins: a stale cache-root manifest must NOT shadow a newer
+    clone-root manifest merely because the cache-root candidate is iterated
+    first. The resolver reads every existing candidate's ``version`` and returns
+    the path whose ``_version_tuple(version)`` is the maximum.
+
+    Fixture: a plugin-cache-INSTALL base_path (``.../plugins/cache/<mkt>/...``)
+    where BOTH the ``base_path/dist-manifest.json`` (cache-root) candidate AND
+    the ``.../plugins/marketplaces/<mkt>/dist-manifest.json`` (clone-root)
+    candidate exist, at differing versions. The cache-root candidate is iterated
+    first — first-hit-wins would return the stale ``0.1.1144``; highest-version
+    selection returns the newer clone-root ``0.1.1152``.
+    """
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+
+    module = load_module()
+
+    cache_base = tmp_path / 'plugins' / 'cache' / 'plan-marshall' / '0.1.1144' / 'skills'
+    cache_base.mkdir(parents=True)
+    stale = cache_base / 'dist-manifest.json'
+    stale.write_text('{"version": "0.1.1144"}', encoding='utf-8')
+
+    clone_root = tmp_path / 'plugins' / 'marketplaces' / 'plan-marshall'
+    clone_root.mkdir(parents=True)
+    newer = clone_root / 'dist-manifest.json'
+    newer.write_text('{"version": "0.1.1152"}', encoding='utf-8')
+
+    resolved = module.find_installed_manifest_path(cache_base)
+
+    assert resolved == newer, (
+        'a newer clone-root manifest must win over the earlier-iterated stale '
+        f'cache-root manifest; got {resolved}'
+    )
+
+
+def test_find_installed_manifest_path_resolves_lone_stale_cache_root(tmp_path, monkeypatch):
+    """With only a (stale) cache-root manifest present and no newer sibling, the
+    resolver still resolves it — highest-version selection over a single
+    candidate returns that candidate, so the single-manifest path is unchanged."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+
+    module = load_module()
+
+    cache_base = tmp_path / 'plugins' / 'cache' / 'plan-marshall' / '0.1.1144' / 'skills'
+    cache_base.mkdir(parents=True)
+    lone = cache_base / 'dist-manifest.json'
+    lone.write_text('{"version": "0.1.1144"}', encoding='utf-8')
+
+    resolved = module.find_installed_manifest_path(cache_base)
+
+    assert resolved == lone, 'a lone stale cache-root manifest must still resolve'
+
+
+def test_find_installed_manifest_path_none_when_no_candidate_resolvable(tmp_path, monkeypatch):
+    """Fail-closed preserved: with no resolvable manifest at any candidate, the
+    resolver returns ``None`` (→ ``unknown`` downstream), never a fabricated
+    path. Highest-version selection over an empty existing-candidate set yields
+    ``None``."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+
+    module = load_module()
+
+    cache_base = tmp_path / 'plugins' / 'cache' / 'plan-marshall' / '0.1.1144' / 'skills'
+    cache_base.mkdir(parents=True)
+    # No dist-manifest.json at any candidate site.
+
+    resolved = module.find_installed_manifest_path(cache_base)
+
+    assert resolved is None, 'no resolvable manifest must fail closed with None'
+
+
 def test_template_declares_version_and_fingerprint_constants():
     """The template carries the MARSHALL_VERSION / MAPPINGS_FINGERPRINT
     placeholder constants beside PLAN_DIR_NAME."""

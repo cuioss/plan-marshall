@@ -1153,10 +1153,29 @@ def find_installed_manifest_path(base_path: Path | None = None, target: str = 'c
                     Path(prefix) / 'plugins' / 'marketplaces' / marketplace_name / 'dist-manifest.json'
                 )
 
+    # Highest-version-wins selection over the existing candidates: a stale
+    # cache-root manifest must never shadow a newer clone-root manifest just
+    # because it appears earlier in the candidate list. Read each existing
+    # candidate's ``version`` and return the path whose version is the maximum;
+    # ties (equal version) resolve to the earlier candidate, preserving the
+    # clone-root-authoritative ordering intent. An empty candidate set (or
+    # all-unresolvable) still returns ``None`` (→ ``unknown`` downstream) — the
+    # fail-closed behaviour is unchanged.
+    best_path: Path | None = None
+    best_version: tuple[int, ...] | None = None
     for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    return None
+        if not candidate.is_file():
+            continue
+        try:
+            data = json.loads(candidate.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            data = {}
+        version = str(data.get('version', '') or '') if isinstance(data, dict) else ''
+        candidate_version = _version_tuple(version)
+        if best_version is None or candidate_version > best_version:
+            best_path = candidate
+            best_version = candidate_version
+    return best_path
 
 
 def read_installed_manifest(base_path: Path | None = None, target: str = 'claude') -> dict:
