@@ -10,40 +10,21 @@ module-tests divergence gate (PLAN-14):
   isolated module, multi-module, shared-infra, and glob-filter cases.
 * ``classify_divergence`` — the scoped-vs-whole-tree truth table.
 
-The module has no cross-skill dependencies (stdlib only), so it is loaded by
-absolute path and exercised in isolation — no build, no subprocess.
+The module has no cross-skill dependencies (stdlib only) and lives on the
+``script-shared/scripts/build/`` PYTHONPATH entry the root conftest sets up
+for every test, so it is exercised via a plain import — no build, no
+subprocess.
 """
-
-import importlib.util
-from pathlib import Path
 
 import pytest
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
+# Cross-skill import — PYTHONPATH is configured by the root conftest.
+from _test_scope_divergence import (
+    _module_for_path,
+    _touches_shared_infra,
+    classify_divergence,
+    resolve_test_scope,
 )
-_MODULE_PATH = (
-    _SCRIPTS_DIR / 'script-shared' / 'scripts' / 'build' / '_test_scope_divergence.py'
-)
-
-
-def _load(module_name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(module_name, path)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mod = _load('_test_scope_divergence', _MODULE_PATH)
-resolve_test_scope = _mod.resolve_test_scope
-classify_divergence = _mod.classify_divergence
-_module_for_path = _mod._module_for_path
-_touches_shared_infra = _mod._touches_shared_infra
 
 # The Python build extension's real build_map globs (single-``*`` fnmatch, so a
 # ``*`` spans ``/``) — the same globs pre-push-quality-gate derivation filters

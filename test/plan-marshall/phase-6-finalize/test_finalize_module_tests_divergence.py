@@ -11,38 +11,15 @@ routed to the whole-tree target and classified ``caught=True``.
 
 The gate's routing prose (D2) is modelled once by ``_gate_route`` below; the
 decision logic itself lives in the pure D1 seam, so this test exercises the real
-seam behavior end-to-end without spawning pytest.
+seam behavior end-to-end without spawning pytest. The D1 seam lives on the
+``script-shared/scripts/build/`` PYTHONPATH entry the root conftest sets up
+for every test, so it is exercised via a plain import.
 """
-
-import importlib.util
-from pathlib import Path
 
 import pytest
 
-_MODULE_PATH = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'script-shared'
-    / 'scripts'
-    / 'build'
-    / '_test_scope_divergence.py'
-)
-
-
-def _load(module_name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(module_name, path)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mod = _load('_test_scope_divergence', _MODULE_PATH)
-resolve_test_scope = _mod.resolve_test_scope
-classify_divergence = _mod.classify_divergence
+# Cross-skill import — PYTHONPATH is configured by the root conftest.
+from _test_scope_divergence import classify_divergence, resolve_test_scope
 
 # The real Python build_map globs (single-``*`` fnmatch spans ``/``).
 _GLOBS = ['marketplace/bundles/*.py', 'test/*.py', 'pyproject.toml']
