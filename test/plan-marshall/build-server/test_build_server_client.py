@@ -48,6 +48,23 @@ def ledger(tmp_path, monkeypatch) -> Path:
     return ledger_path
 
 
+@pytest.fixture
+def captured_logs(monkeypatch) -> list[tuple[str, str, str, str]]:
+    """Capture every ``plan_logging.log_entry`` call the client makes.
+
+    ``build_server`` imported ``log_entry`` into its own namespace, so patching
+    ``client.log_entry`` intercepts the ``_audit_log`` seam without opening any
+    real log file. Each captured tuple is ``(log_type, plan_id, level, message)``.
+    """
+    calls: list[tuple[str, str, str, str]] = []
+    monkeypatch.setattr(
+        client,
+        'log_entry',
+        lambda log_type, plan_id, level, message: calls.append((log_type, plan_id, level, message)),
+    )
+    return calls
+
+
 def _job_rows() -> list[dict]:
     return [e for e in ledger_core.read_entries() if e.get('kind') == ledger_core.KIND_JOB]
 
@@ -317,3 +334,112 @@ def test_handshake_accepts_matching_version(home, monkeypatch):
     assert reason is None
     assert response is not None
     assert response['pid'] == 3
+
+
+# =============================================================================
+# interaction audit logging — non-silent outcomes, correlated by job_id, secrets
+# =============================================================================
+
+
+def test_submit_success_logs_captured_entry_with_job_id(home, ledger, captured_logs, monkeypatch):
+    root = str(home / 'proj')
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
+    )
+
+    client.run_submit(_submit_args(root))
+
+    work_entries = [c for c in captured_logs if c[0] == 'work']
+    assert work_entries, 'a successful submit must not be silent'
+    _log_type, plan_id, level, message = work_entries[-1]
+    assert plan_id == 'p1'
+    assert level == 'INFO'
+    assert 'JOB-1' in message
+
+
+def test_submit_degraded_fallback_logs_warning(home, ledger, captured_logs, monkeypatch):
+    monkeypatch.setattr(client, '_handshake', lambda _p: (None, client.REASON_IMPOSTOR_SOCKET))
+
+    client.run_submit(_submit_args(str(home / 'proj')))
+
+    assert any(
+        level == 'WARNING' and client.REASON_IMPOSTOR_SOCKET in message
+        for _t, _p, level, message in captured_logs
+    ), 'a degraded fallback must produce a captured WARNING entry'
+
+
+def test_submit_refused_logs_warning(home, ledger, captured_logs, monkeypatch):
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'refused', 'reason': 'not_registered'},
+    )
+
+    client.run_submit(_submit_args(str(home / 'proj')))
+
+    assert any(
+        level == 'WARNING' and 'not_registered' in message
+        for _t, _p, level, message in captured_logs
+    ), 'a refused submit must produce a captured WARNING entry'
+
+
+def test_wait_logs_result_entry_with_job_id(captured_logs, monkeypatch):
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'success', 'job_id': 'JOB-1', 'exit_code': 0},
+    )
+
+    client.run_wait(Namespace(job_id='JOB-1', plan_id='p1', bound=1))
+
+    info_entries = [c for c in captured_logs if c[0] == 'work' and c[2] == 'INFO']
+    assert info_entries, 'a wait must log its result'
+    assert any('JOB-1' in message for _t, _p, _l, message in info_entries)
+
+
+def test_wait_degraded_logs_warning(captured_logs, monkeypatch):
+    monkeypatch.setattr(client, '_handshake', lambda _p: (None, client.REASON_SOCKET_ABSENT))
+
+    client.run_wait(Namespace(job_id='JOB-1', plan_id='p1', bound=1))
+
+    assert any(
+        level == 'WARNING' and client.REASON_SOCKET_ABSENT in message
+        for _t, _p, level, message in captured_logs
+    ), 'a degraded wait must produce a captured WARNING entry'
+
+
+def test_plan_less_submit_is_silent(home, ledger, captured_logs, monkeypatch):
+    # With no plan_id there is no per-plan work log to write to — logging no-ops.
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
+    )
+
+    client.run_submit(_submit_args(str(home / 'proj'), plan_id=''))
+
+    assert captured_logs == []
+
+
+def test_no_logged_message_contains_raw_command_argv(home, ledger, captured_logs, monkeypatch):
+    root = str(home / 'proj')
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
+    )
+
+    client.run_submit(_submit_args(root))
+
+    assert captured_logs, 'submit must log (otherwise this test is vacuous)'
+    for _t, _p, _l, message in captured_logs:
+        assert '.plan/execute-script.py' not in message
+        assert 'python3' not in message
+        assert root not in message

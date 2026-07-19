@@ -71,6 +71,7 @@ from _build_server_registry import (
 )
 from _ledger_core import KIND_JOB, append_entry, job_record, read_entries
 from marketplace_paths import main_checkout_root
+from plan_logging import log_entry
 from triage_helpers import ErrorCode, make_error, print_toon, safe_main
 from worktree_sha import compute_worktree_sha
 
@@ -232,6 +233,30 @@ def _handshake(sock_path: Path) -> tuple[dict[str, Any] | None, str | None]:
 # ---------------------------------------------------------------------------
 
 
+def _audit_log(plan_id: str, level: str, message: str) -> None:
+    """Write one captured work-log entry for a build-server interaction outcome.
+
+    No-ops for a plan-less build (empty ``plan_id``) — there is no per-plan work
+    log to write to. Otherwise it delegates to the same ``plan_logging``
+    substrate the ``manage-logging`` work verb writes through, so no interaction
+    outcome is emitted only at an uncaptured Python log level and silently lost.
+
+    Secrets discipline: callers pass ONLY non-secret correlation fields
+    (``job_id`` / ``job_status`` / ``reason`` / ``notation`` / ``attached`` /
+    ``elapsed`` / ``eta``) — NEVER the raw ``--command`` argv, ``exec_path`` /
+    ``project_path``, env, or any spec field that may carry secrets.
+
+    Args:
+        plan_id: Submitting plan id; empty for a plan-less build (no-op).
+        level: Captured log level — ``INFO`` for a normal outcome, ``WARNING``
+            for a fallback / refusal.
+        message: The pre-formatted, secret-free outcome message.
+    """
+    if not plan_id:
+        return
+    log_entry('work', plan_id, level, message)
+
+
 def _degraded(reason: str) -> dict[str, Any]:
     """Render a degraded (fallback) result the caller acts on by building locally."""
     return {
@@ -337,6 +362,7 @@ def run_submit(args: Namespace) -> dict[str, Any]:
     project_path = args.project_path or os.getcwd()
     exec_path = args.exec_path or project_path
     plan_id = args.plan_id or ''
+    notation = _notation_from_command(command)
     spec = make_job_spec(
         command=command,
         exec_path=exec_path,
@@ -346,26 +372,37 @@ def run_submit(args: Namespace) -> dict[str, Any]:
 
     _, reason = _handshake(_socket_path())
     if reason is not None:
+        _audit_log(plan_id, 'WARNING', f'build-server submit degraded: reason={reason} notation={notation}')
         return _degraded(reason)
 
     try:
         response = _call_daemon({'op': 'submit', 'job': spec.to_dict()}, timeout=_CONNECT_TIMEOUT_SECONDS)
     except (OSError, FrameError):
+        _audit_log(plan_id, 'WARNING', f'build-server submit degraded: reason={REASON_UNREACHABLE} notation={notation}')
         return _degraded(REASON_UNREACHABLE)
 
     status = str(response.get('status', ''))
     if status == STATUS_REFUSED:
+        refused_reason = str(response.get('reason', ''))
+        _audit_log(plan_id, 'WARNING', f'build-server submit refused: reason={refused_reason} notation={notation}')
         return {
             'status': 'refused',
-            'reason': str(response.get('reason', '')),
-            'message': f'submit refused by verifier: {response.get("reason", "")}',
+            'reason': refused_reason,
+            'message': f'submit refused by verifier: {refused_reason}',
         }
     if status != STATUS_QUEUED:
+        _audit_log(plan_id, 'WARNING', f'build-server submit degraded: reason={REASON_UNREACHABLE} notation={notation}')
         return _degraded(REASON_UNREACHABLE)
 
     job_id = str(response.get('job_id', ''))
     attached = bool(response.get('attached', False))
-    _record_job(job_id, plan_id, spec.fingerprint, _notation_from_command(command), project_path)
+    _record_job(job_id, plan_id, spec.fingerprint, notation, project_path)
+    _audit_log(
+        plan_id,
+        'INFO',
+        f'build-server submit queued: job_id={job_id} job_status={STATUS_QUEUED} '
+        f'attached={attached} notation={notation}',
+    )
     return {
         'status': 'success',
         'job_status': STATUS_QUEUED,
@@ -376,7 +413,8 @@ def run_submit(args: Namespace) -> dict[str, Any]:
 
 def run_wait(args: Namespace) -> dict[str, Any]:
     """Do one bounded long-poll, re-attaching via the ledger when no id is given."""
-    job_id = args.job_id or _latest_job_id_for_plan(args.plan_id or '')
+    plan_id = args.plan_id or ''
+    job_id = args.job_id or _latest_job_id_for_plan(plan_id)
     if not job_id:
         return make_error(
             'no --job-id given and no kind=job ledger row to re-attach to'
@@ -387,6 +425,7 @@ def run_wait(args: Namespace) -> dict[str, Any]:
     bound = args.bound if args.bound is not None else _DEFAULT_WAIT_BOUND
     _, reason = _handshake(_socket_path())
     if reason is not None:
+        _audit_log(plan_id, 'WARNING', f'build-server wait degraded: reason={reason}')
         return _degraded(reason)
 
     try:
@@ -395,8 +434,18 @@ def run_wait(args: Namespace) -> dict[str, Any]:
             timeout=float(bound) + _WAIT_TIMEOUT_MARGIN_SECONDS,
         )
     except (OSError, FrameError):
+        _audit_log(plan_id, 'WARNING', f'build-server wait degraded: reason={REASON_UNREACHABLE}')
         return _degraded(REASON_UNREACHABLE)
-    return _render_job_status(response)
+
+    result = _render_job_status(response)
+    _audit_log(
+        plan_id,
+        'INFO',
+        f'build-server wait result: job_id={job_id} '
+        f'job_status={result.get("job_status", "")} '
+        f'elapsed={result.get("elapsed", "")} eta={result.get("eta", "")}',
+    )
+    return result
 
 
 def run_ping(_args: Namespace) -> dict[str, Any]:
