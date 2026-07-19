@@ -157,18 +157,38 @@ def holder_is_dead(holder: str, project_root: str | Path | None = None) -> bool:
 
 
 def holder_has_live_worktree(holder: str) -> bool:
-    """Return True when ``holder``'s git worktree directory still exists on disk.
+    """Return True only for a genuine live/mid-recovery worktree of ``holder``.
 
     A presence/heartbeat signal STRONGER than the plan-dir check
-    :func:`holder_is_dead` consults: it looks for the WORKTREE DIRECTORY itself
-    (``<main>/.plan/local/worktrees/{holder}``), not the plan dir that lives
-    inside it. A holder judged dead-by-plan-dir-absence (its plan dir is in
-    NEITHER the main checkout NOR its worktree's ``.plan``) may still be
-    MID-RECOVERY — its worktree is on disk but the plan dir has been moved out
-    (e.g. an interrupted finalize move-back). Auto-reclaiming such a holder would
-    steal the lock from a live recovery, so the acquire path gates the automatic
-    stale-reclaim on this predicate being False (see ``merge_lock.run_acquire``),
-    and the FIFO prune retains a waiter whose worktree is still present.
+    :func:`holder_is_dead` consults. It does NOT trust the bare existence of the
+    worktree DIRECTORY (``<main>/.plan/local/worktrees/{holder}``): an orphaned
+    empty shell — a worktree dir left on disk after a never-persisted plan
+    (class (a)) or an incomplete/post-migration finalize teardown (class (b)),
+    carrying no git plumbing and no live plan — would masquerade as mid-recovery
+    under a bare ``dir.exists()`` check and permanently block the merge-lock
+    auto-reclaim. Instead it requires a CONCRETE live-worktree marker under
+    ``worktrees/{holder}``, returning True for EITHER:
+
+      * a git-worktree gitdir link — the ``.git`` marker at the worktree root
+        (a ``.git`` file pointing at the registered worktree admin dir, or a
+        ``.git`` directory); its presence means real git plumbing is still
+        wired up, so the holder is a genuine (possibly mid-recovery) worktree; OR
+      * a live plan dir moved into the worktree —
+        ``worktrees/{holder}/.plan/local/plans/{holder}`` — present while the
+        plan is executing or mid-finalize (after move-in, before move-back).
+
+    and False for an orphaned empty shell carrying NEITHER marker.
+
+    A holder judged dead-by-plan-dir-absence (its plan dir is in NEITHER the main
+    checkout NOR its worktree's ``.plan``) may still be MID-RECOVERY — its
+    worktree is on disk with git plumbing intact but the plan dir has been moved
+    out (e.g. an interrupted finalize move-back). Auto-reclaiming such a holder
+    would steal the lock from a live recovery, so the acquire path gates the
+    automatic stale-reclaim on this predicate being False (see
+    ``merge_lock.run_acquire``), and the FIFO prune retains a waiter whose
+    worktree is genuinely live. Strengthening the predicate only NARROWS the
+    "refuse reclaim" set — an orphaned shell now permits reclaim while a genuine
+    mid-recovery worktree stays protected.
 
     Anchored at the main checkout (:func:`_main_plan_local_base`, cwd-independent)
     exactly like :func:`holder_is_dead`, so the judgement is correct regardless of
@@ -193,7 +213,13 @@ def holder_has_live_worktree(holder: str) -> bool:
         return False
     base = _main_plan_local_base()
     worktree_dir = base / 'worktrees' / holder
-    return worktree_dir.exists()
+    # Genuine git-worktree gitdir link: a `.git` file (linked worktree) or a
+    # `.git` directory. Its presence means the worktree's git plumbing is still
+    # wired up — a mid-recovery holder that must NOT be auto-reclaimed.
+    git_marker = worktree_dir / '.git'
+    # Live plan dir moved into the worktree (executing / mid-finalize).
+    live_plan_dir = worktree_dir / PLAN_DIR_NAME / 'local' / 'plans' / holder
+    return git_marker.exists() or live_plan_dir.exists()
 
 
 # ---------------------------------------------------------------------------

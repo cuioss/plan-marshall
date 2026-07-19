@@ -192,22 +192,78 @@ def test_holder_is_dead_project_root_dead_when_absent_in_that_project(tmp_path, 
 
 
 # =============================================================================
-# holder_has_live_worktree — worktree-directory presence heartbeat (D3)
+# holder_has_live_worktree — genuine live/mid-recovery worktree marker (D3, strengthened)
 # =============================================================================
 #
-# A STRONGER presence signal than holder_is_dead: it looks for the WORKTREE
-# DIRECTORY itself (<main>/.plan/local/worktrees/{holder}), not the plan dir that
-# lives inside it. The merge_lock acquire path gates the automatic stale-reclaim
-# on this being False, so a plan-dir-dead-but-live-worktree holder (mid-recovery)
-# is not force-released.
+# A STRONGER presence signal than holder_is_dead: it does NOT trust the bare
+# existence of the worktree DIRECTORY. It returns True ONLY for a genuine
+# live/mid-recovery worktree carrying a concrete marker under worktrees/{holder} —
+# EITHER a git-worktree gitdir link (a `.git` file or dir at the worktree root) OR
+# a live plan dir (worktrees/{holder}/.plan/local/plans/{holder}) — and False for
+# an orphaned empty shell carrying neither. The merge_lock acquire path gates the
+# automatic stale-reclaim on this being False, so an orphaned shell now permits
+# auto-reclaim while a genuine mid-recovery holder stays protected.
 
 
-def test_holder_has_live_worktree_true_when_worktree_dir_exists(plan_context):
-    # The bare worktree directory is present → live-worktree heartbeat True.
+def test_holder_has_live_worktree_false_when_worktree_dir_is_bare_shell(plan_context):
+    # A bare, empty worktree directory carrying NO git-worktree marker and NO live
+    # plan dir is an orphaned shell — under the strengthened contract it must NOT
+    # count as live (previously a bare dir.exists() wrongly reported True and
+    # permanently blocked the merge-lock auto-reclaim).
     base = plan_context.fixture_dir
-    (base / 'worktrees' / 'lc-live-wt-dir').mkdir(parents=True, exist_ok=True)
+    (base / 'worktrees' / 'lc-bare-shell').mkdir(parents=True, exist_ok=True)
 
-    assert holder_has_live_worktree('lc-live-wt-dir') is True
+    assert holder_has_live_worktree('lc-bare-shell') is False
+
+
+def test_holder_has_live_worktree_false_when_orphaned_empty_shell(plan_context):
+    # An orphaned empty shell (the worktree root plus a stray leftover sub-dir, but
+    # neither a `.git` marker nor a live plan dir) → False. This is the exact class
+    # both observed incidents (a never-persisted plan; a post-migration stranded
+    # holder) left on disk.
+    base = plan_context.fixture_dir
+    shell = base / 'worktrees' / 'lc-orphan-shell'
+    (shell / 'some' / 'leftover').mkdir(parents=True, exist_ok=True)
+
+    assert holder_has_live_worktree('lc-orphan-shell') is False
+
+
+def test_holder_has_live_worktree_true_when_git_worktree_marker_present(plan_context):
+    # A `.git` marker file at the worktree root is the git-worktree gitdir link —
+    # its presence means the worktree's git plumbing is still wired up, so the
+    # holder is a genuine (possibly mid-recovery) worktree → True.
+    base = plan_context.fixture_dir
+    worktree = base / 'worktrees' / 'lc-git-marker'
+    worktree.mkdir(parents=True, exist_ok=True)
+    (worktree / '.git').write_text(
+        'gitdir: /main/.git/worktrees/lc-git-marker\n', encoding='utf-8'
+    )
+
+    assert holder_has_live_worktree('lc-git-marker') is True
+
+
+def test_holder_has_live_worktree_true_when_git_marker_is_directory(plan_context):
+    # The `.git` marker may also be a directory (a non-linked worktree layout);
+    # either shape counts as live git plumbing → True.
+    base = plan_context.fixture_dir
+    worktree = base / 'worktrees' / 'lc-git-marker-dir'
+    (worktree / '.git').mkdir(parents=True, exist_ok=True)
+
+    assert holder_has_live_worktree('lc-git-marker-dir') is True
+
+
+def test_holder_has_live_worktree_true_when_live_plan_dir_present(plan_context):
+    # A live plan dir moved into the worktree
+    # (worktrees/{holder}/.plan/local/plans/{holder}) — present while the plan is
+    # executing or mid-finalize — is the second live-worktree marker → True, even
+    # with no `.git` marker staged.
+    base = plan_context.fixture_dir
+    live_plan = (
+        base / 'worktrees' / 'lc-live-plan' / '.plan' / 'local' / 'plans' / 'lc-live-plan'
+    )
+    live_plan.mkdir(parents=True, exist_ok=True)
+
+    assert holder_has_live_worktree('lc-live-plan') is True
 
 
 def test_holder_has_live_worktree_false_when_worktree_dir_absent(plan_context):
@@ -227,12 +283,18 @@ def test_holder_has_live_worktree_whitespace_only_is_false(plan_context):
 
 
 def test_mid_recovery_holder_is_dead_by_plan_dir_but_has_live_worktree(plan_context):
-    # The guard scenario: an interrupted finalize move-back leaves the worktree
-    # DIRECTORY on disk but the plan dir has been moved out of BOTH main and the
-    # worktree's .plan. holder_is_dead is True (plan-dir absent everywhere) while
-    # holder_has_live_worktree is True (the worktree directory is still present).
+    # The guard scenario: an interrupted finalize move-back leaves the worktree on
+    # disk WITH its git plumbing intact (a `.git` marker) but the plan dir has been
+    # moved out of BOTH main and the worktree's .plan. holder_is_dead is True
+    # (plan-dir absent everywhere) while holder_has_live_worktree is True (the
+    # genuine git-worktree marker is still present), so the acquire guard refuses to
+    # auto-reclaim it.
     base = plan_context.fixture_dir
-    (base / 'worktrees' / 'lc-mid-recovery').mkdir(parents=True, exist_ok=True)
+    worktree = base / 'worktrees' / 'lc-mid-recovery'
+    worktree.mkdir(parents=True, exist_ok=True)
+    (worktree / '.git').write_text(
+        'gitdir: /main/.git/worktrees/lc-mid-recovery\n', encoding='utf-8'
+    )
 
     assert holder_is_dead('lc-mid-recovery') is True
     assert holder_has_live_worktree('lc-mid-recovery') is True

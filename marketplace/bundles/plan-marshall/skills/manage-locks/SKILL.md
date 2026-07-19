@@ -35,7 +35,8 @@ Two primitives live here:
   exactly one holder; plan-liveness reclamation (across main + worktree) frees a
   crashed holder's lock AND prunes a crashed waiter's FIFO entry — but a
   live-worktree guard refuses the automatic reclaim on a mid-recovery holder
-  (plan-dir-dead but its worktree directory still present), returning a
+  (plan-dir-dead but its worktree still genuinely live — a git-worktree marker or
+  live plan dir present, not a bare orphaned shell), returning a
   `stale_holder_live_worktree` blocked signal for operator confirmation instead of
   force-releasing it; a `blocked` + `blocking_plan_id` admission payload (distinct
   from a hard error) drives the Pre-Merge Gate's poll loop and last-resort
@@ -136,17 +137,29 @@ consumer. It exposes:
   concurrent acquirer steal the lock. Its FIFO-prune contract (dropping a
   crashed waiter's queue entry) is unchanged.
 - `holder_has_live_worktree(holder)` — a STRONGER presence/heartbeat liveness
-  signal that gates automatic stale-reclaim. It returns True when the holder's
-  git worktree directory `<main>/.plan/local/worktrees/{holder}` is still present
-  (the directory ITSELF, not the plan dir that lives inside it — the check
-  `holder_is_dead` consults). A holder judged dead-by-plan-dir-absence may still
-  be MID-RECOVERY — its worktree is on disk but the plan dir has been moved out
-  (an interrupted finalize move-back). The `merge_lock` acquire path evaluates
-  this guard BEFORE the auto-reclaim branch and REFUSES to reclaim a
-  plan-dir-dead-but-live-worktree holder (see the `stale_holder_live_worktree`
+  signal that gates automatic stale-reclaim. It does NOT trust the bare existence
+  of the worktree directory `<main>/.plan/local/worktrees/{holder}`: an orphaned
+  empty shell (a worktree dir left on disk after a never-persisted plan or an
+  incomplete/post-migration finalize teardown, carrying no git plumbing and no
+  live plan) would masquerade as mid-recovery under a bare `dir.exists()` check
+  and permanently block the merge-lock auto-reclaim. Instead it returns True ONLY
+  for a genuine live/mid-recovery worktree — one carrying a concrete live-worktree
+  marker under `worktrees/{holder}`: EITHER a git-worktree gitdir link (the `.git`
+  marker at the worktree root — a `.git` file pointing at the registered worktree
+  admin dir, or a `.git` directory — meaning the git plumbing is still wired up)
+  OR a live plan dir moved into the worktree
+  (`worktrees/{holder}/.plan/local/plans/{holder}`, present while the plan is
+  executing or mid-finalize). It returns False for an orphaned empty shell
+  carrying NEITHER marker. A holder judged dead-by-plan-dir-absence may still be
+  MID-RECOVERY — its worktree is on disk with git plumbing intact but the plan dir
+  has been moved out (an interrupted finalize move-back). The `merge_lock` acquire
+  path evaluates this guard BEFORE the auto-reclaim branch and REFUSES to reclaim
+  a plan-dir-dead-but-live-worktree holder (see the `stale_holder_live_worktree`
   blocked payload below); the FIFO prune retains such a waiter rather than
-  dropping it. Anchored at main (cwd-independent) exactly like `holder_is_dead`;
-  an empty/malformed holder → False.
+  dropping it. Strengthening the predicate only NARROWS the refuse-reclaim set —
+  an orphaned shell now permits auto-reclaim while a genuine mid-recovery worktree
+  stays protected. Anchored at main (cwd-independent) exactly like
+  `holder_is_dead`; an empty/malformed holder → False.
 - `rmw_json(path, mutate)` — the TOCTOU-safe read-modify-write helper for JSON
   state files. It is path-agnostic: the CALLER resolves the path (main-anchored
   for the merge queue, machine-global under `home_root()` for the build queue). It

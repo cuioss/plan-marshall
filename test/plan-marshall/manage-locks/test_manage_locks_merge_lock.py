@@ -1577,6 +1577,108 @@ class TestTitleTokenSurface:
         assert _stub_title_tokens.pushed_icons == [merge_lock._ICON_LOCK_WAITING]
         assert 'lock-owned' not in _stub_title_tokens.set_states
 
+
+# =============================================================================
+# Live-worktree reclaim guard — orphaned shell auto-reclaims, genuine
+# mid-recovery worktree stays protected (strengthened holder_has_live_worktree)
+# =============================================================================
+
+
+class TestLiveWorktreeReclaimGuard:
+    """Acceptance regression for the strengthened ``holder_has_live_worktree``
+    predicate that gates the merge-lock auto-reclaim. A stale holder whose worktree
+    is an orphaned EMPTY SHELL (no git plumbing, no live plan dir) is now
+    auto-reclaimed on the next ``acquire`` — closing both observed incidents (a
+    vanished/never-persisted plan; a post-migration stranded holder) that
+    previously wedged the merge lock behind a dead holder until a manual
+    ``release-under-holder-id``. A GENUINELY-live holder and a genuine mid-recovery
+    worktree (real git-worktree marker present, plan dir moved out) stay protected
+    from false reclaim — the latter still surfaces ``stale_holder_live_worktree``
+    for operator confirmation."""
+
+    def _hold_dead_lock_then_dequeue(self, holder: str) -> None:
+        """Stage a lock held by a plan-dir-dead ``holder`` and dequeue it so the
+        next acquirer is the FIFO front. The caller stages the holder's worktree
+        shape (orphaned shell vs genuine marker) before the reclaiming acquire."""
+        merge_lock.run_acquire(Namespace(plan_id=holder, timeout=5.0))
+        merge_lock._dequeue_fifo(holder)
+
+    def test_vanished_plan_orphaned_shell_is_auto_reclaimed(self, isolated_base: dict) -> None:
+        # Incident class (a): a plan that never persisted its dir leaves a bare,
+        # empty worktree shell (no .git marker, no live plan dir) while holding the
+        # merge lock. Under the strengthened predicate the shell no longer
+        # masquerades as mid-recovery, so the front acquirer auto-reclaims — no
+        # manual release-under-holder-id required.
+        base = isolated_base['base']
+        self._hold_dead_lock_then_dequeue('vanished')
+        # Orphaned empty shell on disk — worktree dir exists but carries neither a
+        # git-worktree marker nor a live plan dir.
+        (base / 'worktrees' / 'vanished').mkdir(parents=True, exist_ok=True)
+
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
+        assert result['status'] == 'success', result
+        assert result['action'] == 'acquired'
+        assert result['reclaimed'] is True
+        assert result['holder'] == 'plan-b'
+        assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'plan-b'
+
+    def test_post_migration_stranded_shell_is_auto_reclaimed(self, isolated_base: dict) -> None:
+        # Incident class (b): a post-migration / stranded holder — its plan dir is
+        # gone but an incomplete finalize teardown left a worktree shell with stray
+        # leftover content (still no git plumbing, no live plan dir). It must also
+        # be auto-reclaimed rather than blocking the merge forever.
+        base = isolated_base['base']
+        self._hold_dead_lock_then_dequeue('stranded')
+        shell = base / 'worktrees' / 'stranded'
+        (shell / 'leftover' / 'residue').mkdir(parents=True, exist_ok=True)
+
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
+        assert result['status'] == 'success', result
+        assert result['action'] == 'acquired'
+        assert result['reclaimed'] is True
+        assert result['holder'] == 'plan-b'
+
+    def test_genuinely_live_holder_is_not_reclaimed(self, isolated_base: dict) -> None:
+        # A genuinely-live holder (its plan dir exists) is NEVER reclaimed — the
+        # acquirer serializes (blocks) with no false reclaim. This negative guards
+        # against the strengthened predicate over-reclaiming a live holder.
+        merge_lock.run_acquire(Namespace(plan_id='live-holder', timeout=5.0))
+        _make_live_plan(isolated_base['base'], 'live-holder')
+
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=0.3))
+        assert result['status'] == 'blocked'
+        assert result['admission'] == 'blocked'
+        assert result['blocking_plan_id'] == 'live-holder'
+        assert result.get('reclaimed') is not True
+        # A live holder is an ordinary block, NOT the refuse-auto-reclaim sub-case.
+        assert 'stale_holder_live_worktree' not in result
+        # The live holder's lock survives unchanged.
+        assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'live-holder'
+
+    def test_genuine_mid_recovery_worktree_is_still_refused(self, isolated_base: dict) -> None:
+        # A genuine mid-recovery holder: plan-dir-dead everywhere, but its worktree
+        # carries a real git-worktree marker (a `.git` gitdir link) — an interrupted
+        # finalize move-back moved the plan dir out but left the git plumbing. The
+        # guard REFUSES to auto-reclaim it and surfaces `stale_holder_live_worktree`
+        # so the branch-cleanup escalation asks the operator to confirm, retaining
+        # the mid-recovery protection.
+        base = isolated_base['base']
+        self._hold_dead_lock_then_dequeue('mid-rec')
+        worktree = base / 'worktrees' / 'mid-rec'
+        worktree.mkdir(parents=True, exist_ok=True)
+        (worktree / '.git').write_text(
+            'gitdir: /main/.git/worktrees/mid-rec\n', encoding='utf-8'
+        )
+
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
+        assert result['status'] == 'blocked', result
+        assert result['admission'] == 'blocked'
+        assert result['stale_holder_live_worktree'] is True
+        assert result['blocking_plan_id'] == 'mid-rec'
+        assert result.get('reclaimed') is not True
+        # The mid-recovery holder's lock is NOT force-released.
+        assert isolated_base['lock_path'].read_text(encoding='utf-8').strip() == 'mid-rec'
+
     def test_non_front_blocked_acquire_surfaces_lock_waiting(
         self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
     ) -> None:
