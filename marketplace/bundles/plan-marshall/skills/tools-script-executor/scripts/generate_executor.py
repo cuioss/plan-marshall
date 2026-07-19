@@ -1537,6 +1537,26 @@ def cmd_cleanup(args: argparse.Namespace) -> dict:
     return {'status': 'success', 'deleted': deleted}
 
 
+def _live_version_dirs(bundle_dir: Path) -> list[Path]:
+    """Return the LIVE (non-orphaned) version dirs directly under ``bundle_dir``.
+
+    A version dir qualifies when it is a directory, not dot-prefixed, carries a
+    ``skills/`` tree, and does NOT carry the orphan-GC ``.orphaned_at`` deferral
+    marker. Shared by ``_detect_multi_version_pollution`` (which counts them) and
+    ``_mark_superseded_version_dirs`` (which marks every non-newest one) so the
+    "what counts as live" predicate is encoded once. Raises ``OSError`` on an
+    unreadable ``bundle_dir`` — callers catch it.
+    """
+    return [
+        d
+        for d in bundle_dir.iterdir()
+        if d.is_dir()
+        and not d.name.startswith('.')
+        and (d / 'skills').is_dir()
+        and not (d / '.orphaned_at').exists()
+    ]
+
+
 def _detect_multi_version_pollution(base_path: Path | None) -> list[str]:
     """Return the bundle names exposing more than one LIVE version dir on disk.
 
@@ -1565,14 +1585,7 @@ def _detect_multi_version_pollution(base_path: Path | None) -> list[str]:
             if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
                 continue
             try:
-                version_dirs = [
-                    d
-                    for d in bundle_dir.iterdir()
-                    if d.is_dir()
-                    and not d.name.startswith('.')
-                    and (d / 'skills').is_dir()
-                    and not (d / '.orphaned_at').exists()
-                ]
+                version_dirs = _live_version_dirs(bundle_dir)
             except OSError:
                 continue
             if len(version_dirs) > 1:
@@ -1608,14 +1621,7 @@ def _mark_superseded_version_dirs(base_path: Path | None, polluted_bundles: list
         if not bundle_dir.is_dir():
             continue
         try:
-            live_version_dirs = [
-                d
-                for d in bundle_dir.iterdir()
-                if d.is_dir()
-                and not d.name.startswith('.')
-                and (d / 'skills').is_dir()
-                and not (d / '.orphaned_at').exists()
-            ]
+            live_version_dirs = _live_version_dirs(bundle_dir)
         except OSError:
             continue
         if len(live_version_dirs) <= 1:
