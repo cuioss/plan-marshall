@@ -104,9 +104,14 @@ class _InjectedRunner:
 )
 def test_scoped_green_whole_tree_red_is_caught(footprint):
     """A divergent footprint routes to whole-tree and CATCHES the regression."""
-    # Arrange: the scoped target(s) are green, the whole-tree run is red.
+    # Arrange: the scoped target(s) are green, the whole-tree run is red. The
+    # gate routes a divergent footprint to the whole-tree (``None``) run only, so
+    # the injected runner scripts just that key red; the scoped-green side is the
+    # ``scoped_outcome`` literal below. (``recommended_target`` is ``None`` for a
+    # divergent footprint, so keying it here would collide with the whole-tree
+    # ``None`` key and mask the red outcome.)
     resolution = resolve_test_scope(footprint, _GLOBS)
-    runner = _InjectedRunner({None: 'error', resolution.recommended_target: 'success'})
+    runner = _InjectedRunner({None: 'error'})
 
     # Act: the gate routes on divergence risk, then the seam classifies the pair.
     route, target = _gate_route(resolution, whole_tree_available=True)

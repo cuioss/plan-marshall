@@ -101,7 +101,7 @@ def test_resolve_test_scope_dedupes_and_sorts_modules():
     resolution = resolve_test_scope(footprint, _GLOBS)
 
     # Assert
-    assert resolution.scoped_modules == ('pm-dev-python', 'plan-marshall')
+    assert resolution.scoped_modules == ('plan-marshall', 'pm-dev-python')
     assert resolution.divergence_possible is True
     assert resolution.recommended_target is None
 
