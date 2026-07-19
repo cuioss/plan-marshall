@@ -484,9 +484,9 @@ python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_exe
 Safety follows the same `generate_executor preflight` rules described in
 "Executor & Config Staleness Signaling" below (ADR-002: the executor is
 per-tree derived state, never a user decision). When preflight reports
-`executor_action: regenerated`, the "Session Restart Required After Executor /
-Agent Changes" guardrail below applies — surface the session-restart warning
-because the emitted agent set may have changed.
+`executor_action: regenerated`, the "Session Reload Directive After Executor /
+Agent Changes" guardrail below applies — surface the target-resolved session-
+reload directive because the emitted agent set may have changed.
 
 **(e) Refresh provisioning stamps via `sync-defaults`** (silent, unconditional).
 Run the config deep-merge reconcile. It back-fills any missing default keys AND

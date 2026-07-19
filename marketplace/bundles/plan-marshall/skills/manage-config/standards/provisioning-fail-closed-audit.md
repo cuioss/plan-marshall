@@ -23,13 +23,15 @@ surveyed scope appears below with a disposition.
 ## Shared write choke point (the D4 encoding anchor)
 
 Every `manage-config` write ultimately persists through
-`_config_core.save_config(config)`. `save_config` writes ANY config dict with no
-per-field validation — it is the single choke point where the fail-closed
-provisioning-write invariant is encoded (deliverable 4). The invariant to
-generalize already exists at one sibling: `_cmd_system_plan.cmd_project set`
-rejects unknown fields, invalid values, and bad types before persisting (the
-PLAN-07 pattern). The one enumerated write that does NOT yet share that guard is
-`cmd_system retention set`.
+`_config_core.save_config(config)`, but `save_config` itself stays unvalidated —
+it writes ANY config dict with no per-field validation. The fail-closed
+provisioning-write invariant is instead encoded by `_config_core`'s
+`reject_unknown_provisioning_field`, a shared guard each provisioning-write
+handler invokes against its caller-supplied field BEFORE `save_config` (deliverable
+4). The invariant to generalize already exists at one sibling:
+`_cmd_system_plan.cmd_project set` rejects unknown fields, invalid values, and
+bad types before persisting (the PLAN-07 pattern). The one enumerated write that
+did NOT yet share that guard was `cmd_system retention set`.
 
 ## Surveyed sites
 
@@ -47,7 +49,7 @@ PLAN-07 pattern). The one enumerated write that does NOT yet share that guard is
 
 | Site | Shape | Disposition |
 |------|-------|-------------|
-| `save_config` (lines 113-117) | (a) | **ANCHOR (D4).** The shared write choke point — writes any config dict unvalidated. Deliverable 4 encodes the fail-closed invariant here (a validated-write seam the provisioning-write sites route through), not by re-validating at every caller. |
+| `save_config` (lines 113-117) | (a) | **JUSTIFY (D4 anchor is the sibling guard).** The shared write choke point — writes any config dict unvalidated; `save_config` itself is NOT where deliverable 4 encodes the invariant. Instead, `reject_unknown_provisioning_field` (this module) is the shared guard each provisioning-write handler calls against its caller-supplied field before reaching `save_config`, so the invariant is encoded once at the call-site boundary rather than re-derived per handler or inside `save_config`. |
 | `merge_build_map` (lines 580-618) | (b) | **JUSTIFY.** Fails closed: raises `BuildMapMissingError` on an absent or corrupt `build.map` rather than returning an empty dict (which would read as a silent no-build). The fail-closed exemplar this audit generalizes. |
 | `get_build_map` (lines 364-377) | (b) | **JUSTIFY.** Returns `{}` on absent `build.map`, but it is a read-only helper; every caller that REQUIRES the map routes through `merge_build_map`, which fails closed. |
 | `require_initialized` (lines 52-59); `load_config` (lines 62-68) | (b) | **JUSTIFY.** Raise `MarshalNotInitializedError` / `ValueError` on a missing or unparseable `marshal.json` — no vacuous success. |
@@ -99,8 +101,10 @@ PLAN-07 pattern). The one enumerated write that does NOT yet share that guard is
 
 - **One silent-success write requires a fix:** `cmd_system retention set` (shape
   a), fixed by deliverable 4.
-- **The shared boundary deliverable 4 encodes at:** `_config_core.save_config`,
-  generalizing the `cmd_project set` whitelist pattern.
+- **The shared guard deliverable 4 encodes at:** `_config_core`'s
+  `reject_unknown_provisioning_field`, invoked by each provisioning-write call
+  site before `save_config`, generalizing the `cmd_project set` whitelist
+  pattern.
 - Every other enumerated site already fails closed (structured `error` / raised
   exception / explicit `unknown` sentinel) or is out of the provisioning-schema
   invariant's scope (open extension-default keyspace, pure emitters, idempotent
