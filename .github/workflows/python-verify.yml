@@ -14,4 +14,4 @@ permissions:
 
 jobs:
   verify:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@8b9ec112fdbaf868e0abb45b484096c911adceb9 # v0.10.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@dd1b90a37f4c92f785eb935e57af9d3eba5da85c # v0.10.2
