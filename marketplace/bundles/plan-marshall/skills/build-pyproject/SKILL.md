@@ -26,7 +26,7 @@ All commands use `python3 .plan/execute-script.py plan-marshall:build-pyproject:
 
 ## Subcommands
 
-Supports: **run**, **parse**, **coverage-report**, **check-warnings**, **discover**.
+Supports: **run**, **parse**, **coverage-report**, **check-warnings**, **discover**, **resolve-test-scope**.
 See `build-api-reference.md` for the full subcommand API and availability matrix.
 
 ### Pyproject-Specific Behavior
@@ -34,6 +34,7 @@ See `build-api-reference.md` for the full subcommand API and availability matrix
 - **run**: `--command-args` takes pyprojectx commands, e.g., `"verify"`, `"module-tests core"`, `"quality-gate"`. Result includes `wrapper` field showing resolved executable path
 - **coverage-report**: Searches `coverage.xml`, `htmlcov/coverage.xml`. Generate with `pytest --cov --cov-report=xml`
 - **discover**: Modules are directories containing `test/` or `tests/` subdirectories. Metadata from `pyproject.toml` via `tomllib`. Excludes `.venv`, `venv`, `.tox`, cache directories
+- **resolve-test-scope**: Resolves the scoped module set the plan's live footprint would cover and whether a scoped run could diverge from a whole-tree run. The derivation mirrors the bundle-derivation in [`phase-6-finalize/standards/pre-push-quality-gate.md`](../phase-6-finalize/standards/pre-push-quality-gate.md) (fnmatch each footprint entry against the `build.map` globs; `marketplace/bundles/{bundle}/…` → segment 2, `test/{bundle}/…` → segment 1) via the pure `_test_scope_divergence.resolve_test_scope` helper. `divergence_possible` is true when the footprint spans more than one module or touches shared cross-module test infrastructure (`script-shared/scripts/build/…`, `test/**/conftest.py`); a single isolated module yields `recommended_target` = that module (scoped-equals-whole-tree by equivalence). Consumed by the phase-6-finalize whole-tree module-tests divergence gate, mirroring the escalate-only-on-trigger discipline of the `finalize-step-plugin-doctor` reference behavior (PLAN-02)
 
 ### Producer-Side Finding Storage (`run --plan-id`)
 
@@ -113,6 +114,15 @@ python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build ch
 python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build discover \
   [--root ROOT] [--format {toon,json}]
 ```
+
+### resolve-test-scope
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build resolve-test-scope \
+  (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
+```
+
+`--project-dir` and `--plan-id` are mutually exclusive; `--plan-id` is required to resolve the live footprint (the `--project-dir`-only escape hatch cannot resolve a plan footprint on its own). Prints TOON: `scoped_modules[]`, `divergence_possible`, `recommended_target`, `whole_tree_available`. Consumed by the phase-6-finalize whole-tree module-tests divergence gate ([`phase-6-finalize/standards/pre-push-quality-gate.md`](../phase-6-finalize/standards/pre-push-quality-gate.md)).
 
 ### run-config-key
 
