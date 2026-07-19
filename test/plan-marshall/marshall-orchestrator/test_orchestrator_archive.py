@@ -27,6 +27,8 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+from plan_logging import log_entry
+
 from conftest import get_script_path, load_script_module, run_script
 
 ORCH_SCRIPT_PATH = get_script_path('plan-marshall', 'marshall-orchestrator', 'orchestrator.py')
@@ -183,6 +185,34 @@ class TestArchiveIdempotency:
         assert second['status'] == 'success'
         assert second['already_archived'] is True
         assert second['archived_to'] == first['archived_to']
+
+    def test_repeated_log_then_archive_stays_idempotent_and_never_resurrects_active(self, plan_context):
+        # Concrete regression for the CodeRabbit finding: mirror archive.md's
+        # Step 3 (log a decision, --store orchestrator) THEN Step 4 (cmd_archive)
+        # twice in a row. The second pass's log write must resolve the archived
+        # tree via the allow_archived read-fallback rather than scaffolding an
+        # empty active-path directory — otherwise the resurrected active tree
+        # makes cmd_archive's source.exists() probe misread the epic as
+        # not-yet-archived and fall into the not_closed refusal instead of the
+        # idempotent already_archived path.
+        slug = 'log-then-archive-epic'
+        _seed_active_epic(plan_context, slug, phase='closed')
+        active = _active_epic_dir(plan_context, slug)
+
+        # First request: Step 3 (log) then Step 4 (archive).
+        log_entry('decision', slug, 'INFO', 'archive decision (first)', store='orchestrator')
+        first = cmd_archive(Namespace(slug=slug))
+
+        # Repeated request: Step 3 (log) then Step 4 (archive) again.
+        log_entry('decision', slug, 'INFO', 'archive decision (repeat)', store='orchestrator')
+        second = cmd_archive(Namespace(slug=slug))
+
+        assert first['status'] == 'success'
+        assert first['already_archived'] is False
+        assert second['status'] == 'success'
+        assert second['already_archived'] is True
+        # The repeat's log write did NOT resurrect the active tree.
+        assert not active.exists()
 
 
 # =============================================================================

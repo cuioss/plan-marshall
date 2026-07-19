@@ -41,7 +41,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging deci
   --plan-id {slug} --level INFO --message "{archive decision: relocating closed epic {slug} to archived-orchestrators/}" --store orchestrator
 ```
 
-The BEFORE ordering is load-bearing: the archive move relocates the epic's `logs/` tree along with the rest of the epic, so a strict `--store orchestrator` log write issued AFTER the move would resolve the now-empty active path and miss the relocated `logs/`. Logging before the move keeps the decision in the archived audit record.
+The BEFORE ordering keeps the first-time archive's decision in the tree that is about to move: on a first archive the active `orchestrator/{slug}/` tree still exists, so the log write lands there and is relocated into the archived audit record along with the rest of the epic.
+
+The `--store orchestrator` log write resolves transparently for BOTH a first-time archive and a repeated request. `plan_logging.get_log_path` resolves the orchestrator store with the `allow_archived=True` read-fallback (an audit-trail append is not a business-state mutation), so on a REPEAT request — where the active tree is already gone and only `archived-orchestrators/{slug}/` remains — the decision write lands in the archived `logs/` tree instead of scaffolding an empty active-path directory. That transparency is load-bearing for idempotency: without it, the log write would resurrect an empty active `orchestrator/{slug}/` tree, and Step 4's `cmd_archive` `source.exists()` probe would then misread the epic as not-yet-archived (falling into the `not_closed` refusal) instead of reaching the idempotent `already_archived: true` success path.
 
 ### Step 4: Invoke the mechanical relocation
 
@@ -50,7 +52,7 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
   --slug {slug}
 ```
 
-This is the deterministic directory move. It refuses a non-closed epic (`error: not_closed`, no move), a missing epic (`error: not_found`), or an existing archive (`error: archive_conflict`); an already-archived slug returns idempotent success (`already_archived: true`). On success it returns `archived_to` naming the new `archived-orchestrators/{slug}/` home. The read verbs (`status`, `resume`) resolve the archived epic transparently, so archiving never orphans the audit record.
+This is the deterministic directory move. It refuses a non-closed epic (`error: not_closed`, no move), a missing epic (`error: not_found`), or an existing archive (`error: archive_conflict`); an already-archived slug returns idempotent success (`already_archived: true`). On success it returns `archived_to` as the **absolute, main-anchored filesystem path** `str(dest)` — e.g. `/abs/path/.plan/local/archived-orchestrators/{slug}` — not the relative `archived-orchestrators/{slug}` form. `cmd_archive` itself carries **no** `display_detail` field; the `display_detail` in the Output section below is composed by the calling workflow (this LLM), not emitted by the script. The read verbs (`status`, `resume`) resolve the archived epic transparently, so archiving never orphans the audit record.
 
 ### Step 5: Restore the terminal title
 
@@ -76,7 +78,7 @@ status: success | error
 display_detail: "epic {slug} archived to archived-orchestrators/"
 slug: {slug}
 already_archived: true | false
-archived_to: archived-orchestrators/{slug}
+archived_to: /abs/path/.plan/local/archived-orchestrators/{slug}
 ```
 
-`display_detail` is ≤80 chars, ASCII, no trailing period.
+`archived_to` is the absolute, main-anchored filesystem path `cmd_archive` returns via `str(dest)` (not the relative `archived-orchestrators/{slug}` form). `display_detail` is composed by the calling workflow — `cmd_archive` does not emit it — and is ≤80 chars, ASCII, no trailing period.

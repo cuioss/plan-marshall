@@ -143,6 +143,15 @@ def get_log_path(plan_id: str | None, log_type: str = 'script', store: str = 'pl
     resolves the main-anchored orchestrator tree
     (``.plan/local/orchestrator/{entry_id}/logs/``) regardless of caller cwd.
 
+    For ``store='orchestrator'`` the resolution uses the ``allow_archived=True``
+    read-fallback: appending a log entry is an audit-trail continuation, not a
+    status.json business-state mutation, so it transparently resolves an
+    archived-only epic's ``archived-orchestrators/{entry_id}/logs/`` tree instead
+    of scaffolding an empty active-path directory (active wins when both exist;
+    the active path is named when neither exists). This mirrors the read-verb
+    transparency and prevents a log write from resurrecting an active tree for an
+    already-archived epic.
+
     Args:
         plan_id: Entry identifier — a plan id (store='plans') or an epic slug
             (store='orchestrator'). None for global.
@@ -176,7 +185,20 @@ def get_log_path(plan_id: str | None, log_type: str = 'script', store: str = 'pl
         # Orchestrator entries have no status.json sentinel contract — the
         # slug tree is scaffolded by marshall-orchestrator before logging, and
         # the store is main-anchored, so no plans-style orphan-slot hazard.
-        return get_store_dir('orchestrator', plan_id) / 'logs' / filename
+        #
+        # Resolve with allow_archived=True: appending an audit-trail log entry
+        # is a continuation of the record, NOT a status.json business-state
+        # mutation, so it follows the same read-fallback transparency the
+        # manage-status READ verbs use for an archived epic — never a strict
+        # write-refusal. Without the fallback, a decision/work write against an
+        # archived-only epic would scaffold an EMPTY active orchestrator/{slug}/
+        # tree, and that resurrected active dir makes a repeated `archive`
+        # request's source.exists() probe misreport the epic as not-yet-archived
+        # (falling into not_closed instead of the idempotent already_archived
+        # path). The fallback resolves the archived logs/ tree when only it
+        # exists, the active tree when both exist (active wins), and names the
+        # active tree when neither exists (brand-new epic before scaffold).
+        return get_store_dir('orchestrator', plan_id, allow_archived=True) / 'logs' / filename
 
     if plan_id:
         plan_dir = get_store_dir('plans', plan_id)

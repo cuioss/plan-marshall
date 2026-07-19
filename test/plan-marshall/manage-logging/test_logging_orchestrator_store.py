@@ -27,6 +27,10 @@ def _orchestrator_logs_dir(plan_context, slug: str):
     return plan_context.fixture_dir / 'orchestrator' / slug / 'logs'
 
 
+def _archived_orchestrator_logs_dir(plan_context, slug: str):
+    return plan_context.fixture_dir / 'archived-orchestrators' / slug / 'logs'
+
+
 def _init_plan(plan_context, plan_id: str) -> None:
     """Create an initialized plan dir (status.json sentinel) in the plans store."""
     plan_dir = plan_context.plan_dir_for(plan_id)
@@ -90,6 +94,65 @@ class TestOrchestratorLibraryRoundTrip:
 
         plans_read = read_work_log('rt-epic', store='plans')
         assert plans_read['total_entries'] == 0
+
+
+# =============================================================================
+# Archived read-fallback (allow_archived transparency for log appends)
+# =============================================================================
+
+
+class TestOrchestratorArchivedFallback:
+    """get_log_path resolves the orchestrator store with allow_archived=True, so a
+    log append against an archived-only epic lands in the archived logs/ tree
+    instead of scaffolding an empty active-path directory.
+    """
+
+    def test_should_resolve_archived_tree_when_only_archived_exists(self, plan_context):
+        slug = 'archived-only-epic'
+        (plan_context.fixture_dir / 'archived-orchestrators' / slug).mkdir(parents=True, exist_ok=True)
+
+        path = get_log_path(slug, 'decision', store='orchestrator')
+
+        assert path == _archived_orchestrator_logs_dir(plan_context, slug) / 'decision.log'
+
+    def test_should_resolve_active_tree_when_both_active_and_archived_exist(self, plan_context):
+        slug = 'both-exist-epic'
+        (plan_context.fixture_dir / 'orchestrator' / slug).mkdir(parents=True, exist_ok=True)
+        (plan_context.fixture_dir / 'archived-orchestrators' / slug).mkdir(parents=True, exist_ok=True)
+
+        path = get_log_path(slug, 'work', store='orchestrator')
+
+        # Active wins when both trees exist.
+        assert path == _orchestrator_logs_dir(plan_context, slug) / 'work.log'
+
+    def test_should_name_active_tree_when_neither_exists(self, plan_context):
+        slug = 'brand-new-epic'
+
+        path = get_log_path(slug, 'work', store='orchestrator')
+
+        # Brand-new epic before scaffold: fall back to naming the active tree.
+        assert path == _orchestrator_logs_dir(plan_context, slug) / 'work.log'
+
+    def test_log_entry_appends_into_archived_tree_without_resurrecting_active(self, plan_context):
+        slug = 'frozen-log-epic'
+        (plan_context.fixture_dir / 'archived-orchestrators' / slug).mkdir(parents=True, exist_ok=True)
+        active_dir = plan_context.fixture_dir / 'orchestrator' / slug
+
+        log_entry(
+            'decision',
+            slug,
+            'INFO',
+            '(plan-marshall:marshall-orchestrator) archive decision on frozen epic',
+            store='orchestrator',
+        )
+
+        # The append landed in the archived logs/ tree...
+        result = read_decision_log(slug, store='orchestrator')
+        assert result['status'] == 'success'
+        assert result['total_entries'] == 1
+        assert (_archived_orchestrator_logs_dir(plan_context, slug) / 'decision.log').is_file()
+        # ...and did NOT resurrect an active-path directory.
+        assert not active_dir.exists()
 
 
 # =============================================================================
