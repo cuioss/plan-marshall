@@ -339,6 +339,11 @@ def test_factory_cmd_run_emits_timeout_on_saturation(monkeypatch, capsys):
         return _cm()
 
     monkeypatch.setattr(factory, 'build_queue_slot', _saturated)
+    # Hermeticity: force the D5 routing seam to signal fallback so this test
+    # exercises the in-process queue-saturation path regardless of whether a real
+    # marshalld daemon is registered + ready on the host (a live daemon would
+    # otherwise route the build away before build_queue_slot is reached).
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *_a, **_k: (None, 'no_notation'))
 
     args = argparse.Namespace(command_args='module-tests', plan_id='P', format='toon')
     rc = cmd_run(args)
