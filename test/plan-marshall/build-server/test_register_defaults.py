@@ -153,3 +153,23 @@ def test_explicit_flags_override_stored_and_default(home):
     # Explicit CLI values win over both the stored value and the computed default.
     assert result['worktree_containers'] == [str(home / 'explicit-wts')]
     assert result['notation_allowlist'] == ['explicit:cli:notation']
+
+
+# =============================================================================
+# (f) a corrupted non-list stored value falls back to the computed default
+# =============================================================================
+
+
+def test_effective_scope_value_non_list_stored_falls_back_to_default():
+    # A hand-edited / corrupted registry.json may store a bare string instead of
+    # a list. list(stored) would then split it into individual characters; the
+    # isinstance guard makes the corrupted value fall back to the computed default
+    # rather than producing a bogus per-character list.
+    default = ['a:b:c', 'd:e:f']
+    existing = {'notation_allowlist': 'corrupted:string:notation'}
+
+    result = mbs._effective_scope_value(None, existing, 'notation_allowlist', default)
+
+    assert result == default
+    # Explicitly guard against the per-character split the bug produced.
+    assert result != list('corrupted:string:notation')

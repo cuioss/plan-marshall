@@ -328,7 +328,7 @@ def _effective_scope_value(
         return list(explicit)
     if existing:
         stored = existing.get(field) or []
-        if stored:
+        if stored and isinstance(stored, list):
             return list(stored)
     return list(default)
 
