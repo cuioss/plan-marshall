@@ -8,7 +8,7 @@ Covers:
   - _resolve_target: runtime.target extraction from marshal data
   - _make_runtime: registry lookup and unknown target handling
   - _parse_json_list / _parse_context: JSON helpers
-  - _dispatch: correct routing and argparse for all 21 operations
+  - _dispatch: correct routing and argparse for all 22 operations
   - main: full integration — no args, missing marshal, unknown target, dispatch
 """
 from __future__ import annotations  # noqa: I001
@@ -66,6 +66,7 @@ def _mock_runtime() -> MagicMock:
     rt.session_bind.return_value = toon_success("session bind")
     rt.session_resolve_plan.return_value = toon_success("session resolve-plan")
     rt.session_doctor.return_value = toon_success("session doctor")
+    rt.session_reload_directive.return_value = toon_success("session reload-directive")
     rt.permission_configure.return_value = toon_success("permission configure")
     rt.permission_analyze.return_value = toon_success("permission analyze")
     rt.permission_fix.return_value = toon_success("permission fix")
@@ -124,6 +125,12 @@ class TestBuildOperation:
         op, remaining = _build_operation(["metrics", "capture", "--plan-id", "p1", "--phase", "p1"])
         assert op == "metrics capture"
         assert remaining == ["--plan-id", "p1", "--phase", "p1"]
+
+    def test_two_token_operation_session_reload_directive(self):
+        """session reload-directive (the 22nd operation) parses to a two-token op."""
+        op, remaining = _build_operation(["session", "reload-directive"])
+        assert op == "session reload-directive"
+        assert remaining == []
 
     def test_two_token_operation_subagent_dispatch(self):
         """subagent dispatch operation is parsed correctly."""
@@ -343,7 +350,7 @@ class TestParseContext:
 
 
 # =============================================================================
-# Test: _dispatch — all 21 operations
+# Test: _dispatch — all 22 operations
 # =============================================================================
 
 
@@ -498,6 +505,14 @@ class TestDispatch:
         """session doctor --fix forwards fix=True."""
         _dispatch(rt, "session doctor", ["--fix"])
         rt.session_doctor.assert_called_once_with(True)
+
+    # ---- session reload-directive (the 22nd operation) ------------------------
+
+    def test_dispatch_session_reload_directive(self, rt):
+        """The router dispatches the 22nd operation to session_reload_directive()."""
+        result = _dispatch(rt, "session reload-directive", [])
+        rt.session_reload_directive.assert_called_once_with()
+        assert parse_toon(result)["operation"] == "session reload-directive"
 
     # ---- permission configure -------------------------------------------------
 

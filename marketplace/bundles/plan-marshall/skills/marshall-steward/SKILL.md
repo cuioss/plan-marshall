@@ -641,13 +641,13 @@ exception is the detect/warn path (`added_count: 0` AND `marshal_status: stale`)
 where the reconcile could not see the current config seed even after the
 executor-freshness preflight — there, a manual executor regeneration
 (Maintenance → Regenerate Executor) is required before a fresh menu-mode entry
-clears it. When `executor_action` is `regenerated`, surface the session-restart
-guardrail (see "Session Restart Required After Executor / Agent Changes" below)
+clears it. When `executor_action` is `regenerated`, surface the session-reload
+directive (see "Session Reload Directive After Executor / Agent Changes" below)
 because the emitted agent set may have changed.
 
-## Session Restart Required After Executor / Agent Changes
+## Session Reload Directive After Executor / Agent Changes
 
-> **CRITICAL — Restart Claude Code session before dispatching against
+> **CRITICAL — Reload the session's plugin set before dispatching against
 > newly-emitted agents or notations.** Claude Code's agent registry is
 > **session-pinned at session start**: it scans the plugin cache exactly
 > once when the session boots and never re-scans mid-session. Any
@@ -662,14 +662,22 @@ because the emitted agent set may have changed.
 >
 > **Operational guardrail:** after running steward operations from the
 > Maintenance menu (Regenerate Executor) or the wizard's executor-
-> generation step, surface a prominent "Restart Claude Code session
-> before next dispatch" warning to the user when the operation regenerated
-> the executor OR changed the agent set. The restart is the only
-> mechanism that refreshes the registry. The same WHY rationale
-> (registry is session-pinned at startup) is documented at the sister
-> surfaces — `/sync-plugin-cache`, `variant_emitter.py`, and
-> `ext-point-dynamic-level-executor.md` — and MUST stay convergent
-> across all four surfaces.
+> generation step that regenerated the executor OR changed the agent set,
+> resolve the harness-appropriate reload directive through the
+> platform-runtime seam and surface it verbatim to the user:
+>
+> ```bash
+> python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session reload-directive
+> ```
+>
+> On Claude the directive is `/reload-plugins`, which refreshes the
+> session-pinned registry live — only registered monitors force a full
+> session restart, and plan-marshall registers none. On OpenCode the seam
+> returns a `no-op` whose alternative is a full session restart. The WHY
+> rationale (registry is session-pinned at startup) is unchanged and is
+> documented at the sister surfaces — `/sync-plugin-cache`,
+> `variant_emitter.py`, and `ext-point-dynamic-level-executor.md` — and
+> MUST stay convergent across all four surfaces.
 
 ## Artifact Landing Cycle
 

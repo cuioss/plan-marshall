@@ -672,6 +672,30 @@ alternative: Use OpenCode's built-in TUI status surface for plan visibility
 
 ---
 
+### `session reload-directive`
+
+Resolve and surface the harness-appropriate post-upgrade reload directive after the executor / agent set is regenerated. RESOLVES + SURFACES only — a script cannot type a harness-level slash command, so the payload carries the directive TEXT for the operator/orchestrator to act on. Zero-touch is impossible in any harness.
+
+**Arguments**: none
+
+**Success (Claude — resolved directive)**:
+```toon
+status: success
+operation: session reload-directive
+directive: /reload-plugins
+caveat: Only monitors require a full session restart; plan-marshall registers no monitors, so /reload-plugins picks up the regenerated executor / agent set live.
+```
+
+**No-op (OpenCode — restart alternative)**:
+```toon
+status: no-op
+operation: session reload-directive
+reason: OpenCode exposes no live plugin-reload command equivalent to Claude's /reload-plugins
+alternative: Restart the OpenCode session to pick up the regenerated executor / agent set
+```
+
+---
+
 ### `metrics capture`
 
 Record token consumption for a planning phase.

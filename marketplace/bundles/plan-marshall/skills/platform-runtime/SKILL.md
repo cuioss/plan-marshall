@@ -7,7 +7,7 @@ mode: script-executor
 
 # Platform Runtime Skill
 
-Script-based platform abstraction that routes 21 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
+Script-based platform abstraction that routes 22 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
 
 ## Enforcement
 
@@ -27,7 +27,7 @@ Script-based platform abstraction that routes 21 goal-based operations to the co
 
 ## What This Skill Provides
 
-Twenty-one operations covering the full platform lifecycle:
+Twenty-two operations covering the full platform lifecycle:
 
 | Operation | Purpose |
 |-----------|---------|
@@ -48,6 +48,7 @@ Twenty-one operations covering the full platform lifecycle:
 | `session bind` | Bind the running session to `--plan-id` (last-driven-wins) so `render-title` / `resolve-plan` resolve it; no-op on OpenCode |
 | `session resolve-plan` | Read the running session's bound plan id (the read side of `session bind`); no-op on OpenCode |
 | `session doctor` | Scan every per-session active-plan slot, report plan-bound-by-multiple-sessions conflicts, and (with `--fix`) GC stale slots; no-op on OpenCode |
+| `session reload-directive` | Resolve + surface the harness-appropriate post-upgrade reload directive (Claude: `/reload-plugins` plus the monitor caveat); no-op (full-restart alternative) on OpenCode. RESOLVES + SURFACES only — a script cannot type a harness slash command |
 | `metrics capture` | Record token consumption for a planning phase |
 | `metrics normalized-tokens` | Resolve normalized transcript token totals for the active target |
 | `subagent dispatch` | Return platform-specific subagent invocation parameters |
@@ -135,6 +136,7 @@ Platform-runtime operations satisfy: "Would this differ between Claude Code and 
 | Terminal title rendering | `manage-architecture` (architecture data) |
 | Platform-specific subagent invocation | `manage-metrics` (metrics storage) |
 | Platform health verification | `tools-script-executor` (executor regeneration) |
+| Post-upgrade reload directive (harness-appropriate) | `marshall-steward` (upgrade flow that consumes the directive) |
 
 The `session render-title` and `session push-title-token` operations are the
 resolve + emit layer of the terminal-title three-way split. They resolve

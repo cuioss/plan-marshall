@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for claude_runtime.py — ClaudeRuntime implementation of all 21 operations.
+"""Tests for claude_runtime.py — ClaudeRuntime implementation of all 22 operations.
 
 Covers every method defined by the Runtime ABC:
   1.  project_initial_setup       — creates dirs, writes marshal.json, installs hook
@@ -2854,3 +2854,27 @@ class TestReadTitleStateWorktree:
         cr = _titlestate_reader_cwd(tmp_path, monkeypatch)
 
         assert cr._resolve_worktree_status_json("wt-plan") is None
+
+
+# =============================================================================
+# session_reload_directive — Claude resolves /reload-plugins + monitor caveat
+# =============================================================================
+
+
+def test_session_reload_directive_resolves_reload_plugins():
+    """Claude resolves the /reload-plugins directive (a pure resolver — no
+    filesystem), so a plain ClaudeRuntime instance suffices."""
+    result = parse_toon(ClaudeRuntime().session_reload_directive())
+    assert result["status"] == "success"
+    assert result["operation"] == "session reload-directive"
+    assert result["directive"] == "/reload-plugins"
+
+
+def test_session_reload_directive_carries_monitor_caveat():
+    """The success payload carries the monitor caveat verbatim — plan-marshall
+    registers no monitors, so /reload-plugins picks up the regenerated set live."""
+    result = parse_toon(ClaudeRuntime().session_reload_directive())
+    caveat = result["caveat"]
+    assert "monitors require a full session restart" in caveat
+    assert "plan-marshall registers no monitors" in caveat
+    assert "/reload-plugins picks up the regenerated executor / agent set live" in caveat

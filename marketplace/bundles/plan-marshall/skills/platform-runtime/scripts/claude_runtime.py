@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-ClaudeRuntime — Claude Code implementation of all 15 platform-runtime operations.
+ClaudeRuntime — Claude Code implementation of all 22 platform-runtime operations.
 
 Implements every abstract method from Runtime (runtime_base.py) for the Claude Code
 target.  All responses are serialized TOON strings built via the toon_success,

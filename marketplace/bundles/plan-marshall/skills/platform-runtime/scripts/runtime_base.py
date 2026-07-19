@@ -3,7 +3,7 @@
 """
 Abstract base class and shared TOON helpers for platform-runtime.
 
-Defines the Runtime ABC with all 21 platform operations. Concrete subclasses
+Defines the Runtime ABC with all 22 platform operations. Concrete subclasses
 (ClaudeRuntime, OpenCodeRuntime) implement each operation for their target.
 
 TOON helpers delegate to the canonical toon_parser from ref-toon-format — no
@@ -393,6 +393,30 @@ class Runtime(ABC):
         Returns:
             Serialized TOON string carrying the conflict / stale report, or
             ``no-op``.
+        """
+
+    @abstractmethod
+    def session_reload_directive(self) -> str:
+        """Resolve and surface the harness-appropriate post-upgrade reload directive.
+
+        After the executor / agent set is regenerated (a steward upgrade), the
+        running session must pick up the new artifacts. This op RESOLVES and
+        SURFACES the target-appropriate directive only — a script CANNOT invoke a
+        harness-level user-typed slash command, so the payload carries directive
+        TEXT for the operator/orchestrator to act on. Zero-touch is impossible in
+        any harness.
+
+        On Claude: returns ``success`` with the resolved directive
+        (``/reload-plugins``) plus the monitor caveat — only monitors require a
+        full session restart, and plan-marshall registers none, so
+        ``/reload-plugins`` picks up the regenerated executor / agent set live.
+
+        On OpenCode: returns ``no-op`` (no live plugin-reload command); the
+        alternative is a full session restart.
+
+        Returns:
+            Serialized TOON string (success or no-op) carrying the resolved
+            reload directive text.
         """
 
     # ------------------------------------------------------------------
