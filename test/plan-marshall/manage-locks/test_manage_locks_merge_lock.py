@@ -2297,13 +2297,18 @@ class TestLiveWorktreeGuard:
         `stale_holder_live_worktree` discriminator and leaves the lock intact."""
         base = isolated_base['base']
         # 'mid-recovery' holds the lock. Its plan dir exists in NEITHER main NOR
-        # its worktree's .plan (holder_is_dead True), but its worktree DIRECTORY
-        # is present (an interrupted move-back) → holder_has_live_worktree True.
+        # its worktree's .plan (holder_is_dead True), but its worktree carries a
+        # genuine git-worktree marker (an interrupted move-back left the git
+        # plumbing intact) → holder_has_live_worktree True.
         merge_lock.run_acquire(Namespace(plan_id='mid-recovery', timeout=5.0))
         # Drop it from the FIFO queue so 'plan-b' becomes the genuine front and
         # reaches the holder-inspection / guard code below.
         merge_lock._dequeue_fifo('mid-recovery')
-        (base / 'worktrees' / 'mid-recovery').mkdir(parents=True, exist_ok=True)
+        worktree = base / 'worktrees' / 'mid-recovery'
+        worktree.mkdir(parents=True, exist_ok=True)
+        (worktree / '.git').write_text(
+            'gitdir: /main/.git/worktrees/mid-recovery\n', encoding='utf-8'
+        )
 
         result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
 
@@ -2350,7 +2355,13 @@ class TestLiveWorktreeGuard:
         that is both plan-dir-dead AND worktree-absent."""
         base = isolated_base['base']
         _make_live_plan(base, 'live')  # alive by plan dir
-        (base / 'worktrees' / 'mid-recovery').mkdir(parents=True, exist_ok=True)  # live worktree only
+        # 'mid-recovery' is plan-dir-dead but carries a genuine git-worktree marker
+        # → a real mid-recovery worktree that must be retained.
+        _mid_recovery = base / 'worktrees' / 'mid-recovery'
+        _mid_recovery.mkdir(parents=True, exist_ok=True)
+        (_mid_recovery / '.git').write_text(
+            'gitdir: /main/.git/worktrees/mid-recovery\n', encoding='utf-8'
+        )
 
         waiting = [
             {'plan_id': 'live', 'ts': 1.0},
@@ -2371,7 +2382,13 @@ class TestLiveWorktreeGuard:
         FIFO front is NOT pruned during an acquire, so a later live waiter behind
         it does not jump the queue."""
         base = isolated_base['base']
-        (base / 'worktrees' / 'mid-recovery').mkdir(parents=True, exist_ok=True)
+        # 'mid-recovery' is plan-dir-dead but carries a genuine git-worktree marker
+        # (real mid-recovery worktree) → retained at the FIFO front.
+        _mid_recovery = base / 'worktrees' / 'mid-recovery'
+        _mid_recovery.mkdir(parents=True, exist_ok=True)
+        (_mid_recovery / '.git').write_text(
+            'gitdir: /main/.git/worktrees/mid-recovery\n', encoding='utf-8'
+        )
         _make_live_plan(base, 'behind')
         isolated_base['queue_path'].write_text(
             json.dumps({'waiting': [
