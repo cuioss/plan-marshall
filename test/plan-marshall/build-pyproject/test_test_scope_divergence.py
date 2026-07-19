@@ -42,6 +42,8 @@ def _load(module_name: str, path: Path):
 _mod = _load('_test_scope_divergence', _MODULE_PATH)
 resolve_test_scope = _mod.resolve_test_scope
 classify_divergence = _mod.classify_divergence
+_module_for_path = _mod._module_for_path
+_touches_shared_infra = _mod._touches_shared_infra
 
 # The Python build extension's real build_map globs (single-``*`` fnmatch, so a
 # ``*`` spans ``/``) — the same globs pre-push-quality-gate derivation filters
@@ -76,6 +78,10 @@ _DOC = 'marketplace/bundles/plan-marshall/skills/foo/SKILL.md'
         pytest.param([_DOC, _PROD_PLAN_MARSHALL], False, 'plan-marshall', id='doc_filtered_out'),
         # A docs-only footprint resolves no module → no divergence, no target.
         pytest.param([_DOC], False, None, id='docs_only_empty'),
+        # A root-level build-relevant file (pyproject.toml) matches a glob but
+        # resolves to no module → force divergence so no invalid scoped
+        # ``module-tests None`` call is emitted downstream.
+        pytest.param(['pyproject.toml'], True, None, id='root_build_file_no_module'),
     ],
 )
 def test_resolve_test_scope_divergence_and_target(footprint, expected_divergence, expected_target):
@@ -115,6 +121,42 @@ def test_resolve_test_scope_empty_footprint():
     assert resolution.scoped_modules == ()
     assert resolution.divergence_possible is False
     assert resolution.recommended_target is None
+
+
+@pytest.mark.parametrize(
+    ('path', 'expected_module'),
+    [
+        # Nested paths resolve their owning bundle/module.
+        pytest.param(_PROD_PLAN_MARSHALL, 'plan-marshall', id='nested_marketplace_resolves'),
+        pytest.param(_NESTED_CONFTEST, 'plan-marshall', id='nested_test_resolves'),
+        # Root-level files no longer resolve to a spurious module name.
+        pytest.param('test/conftest.py', None, id='root_test_file_no_module'),
+        pytest.param('marketplace/bundles/README.md', None, id='root_marketplace_file_no_module'),
+        pytest.param('pyproject.toml', None, id='repo_root_file_no_module'),
+    ],
+)
+def test_module_for_path_only_resolves_nested_paths(path, expected_module):
+    """_module_for_path resolves a name only for paths nested inside a bundle/module dir."""
+    # Arrange / Act / Assert
+    assert _module_for_path(path) == expected_module
+
+
+@pytest.mark.parametrize(
+    ('path', 'expected'),
+    [
+        # Root and nested conftest.py are both shared cross-module test infra.
+        pytest.param('test/conftest.py', True, id='root_conftest_is_shared'),
+        pytest.param(_NESTED_CONFTEST, True, id='nested_conftest_is_shared'),
+        # Shared build infra segment.
+        pytest.param(_SHARED_BUILD, True, id='shared_build_infra'),
+        # An ordinary production path is not shared infra.
+        pytest.param(_PROD_PLAN_MARSHALL, False, id='ordinary_prod_path_not_shared'),
+    ],
+)
+def test_touches_shared_infra(path, expected):
+    """_touches_shared_infra still recognizes root test/conftest.py after the dead branch removal."""
+    # Arrange / Act / Assert
+    assert _touches_shared_infra(path) is expected
 
 
 @pytest.mark.parametrize(

@@ -145,10 +145,14 @@ def cmd_resolve_test_scope(args) -> int:
         )
         return 2
 
-    globs = _read_build_map_globs(getattr(args, 'project_dir', None))
+    project_dir = getattr(args, 'project_dir', None)
+    globs = _read_build_map_globs(project_dir)
     footprint = _resolve_plan_footprint(plan_id)
     resolution = resolve_test_scope(footprint, globs)
-    whole_tree_available = bool(discover_python_modules(args.project_dir))
+    # discover_python_modules requires a concrete project root; when project_dir
+    # is absent (args constructed dynamically or a test env lacking the
+    # attribute) a whole-tree run is not structurally possible.
+    whole_tree_available = bool(discover_python_modules(project_dir)) if project_dir else False
 
     print(
         serialize_toon(

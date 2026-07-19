@@ -74,10 +74,12 @@ def _touches_shared_infra(path: str) -> bool:
     ``conftest.py`` under ``test/`` (root ``test/conftest.py`` or a nested
     ``test/**/conftest.py``). These are exactly the footprints where a scoped
     run cannot see a cross-module regression.
+
+    The ``test/`` + ``/conftest.py`` predicate already covers the root
+    ``test/conftest.py`` case (``str.endswith`` overlaps at the leading ``/``),
+    so no separate root-conftest branch is needed.
     """
     if _SHARED_BUILD_INFRA_SEGMENT in path:
-        return True
-    if path == 'test/conftest.py':
         return True
     return path.startswith('test/') and path.endswith('/conftest.py')
 
@@ -87,11 +89,17 @@ def _module_for_path(path: str) -> str | None:
 
     ``marketplace/bundles/{bundle}/…`` → segment 2 (the ``{bundle}`` token);
     ``test/{bundle}/…`` → segment 1. Any other shape contributes no module.
+
+    A name is resolved only when ``path`` is nested *inside* a bundle/module
+    directory: ``marketplace/bundles/{bundle}/…`` needs more than three segments
+    and ``test/{bundle}/…`` needs more than two. A root-level file such as
+    ``marketplace/bundles/README.md`` or ``test/conftest.py`` therefore owns no
+    module and returns None.
     """
     segments = path.split('/')
-    if path.startswith('marketplace/bundles/') and len(segments) > 2:
+    if path.startswith('marketplace/bundles/') and len(segments) > 3:
         return segments[2]
-    if path.startswith('test/') and len(segments) > 1:
+    if path.startswith('test/') and len(segments) > 2:
         return segments[1]
     return None
 
@@ -102,9 +110,12 @@ def resolve_test_scope(footprint: list[str], build_map_globs: list[str]) -> Test
     Each footprint entry is fnmatched against ``build_map_globs``; only matching
     entries contribute a module (segment 2 for ``marketplace/bundles/…``,
     segment 1 for ``test/…``). ``divergence_possible`` is True when the resolved
-    set spans more than one module OR any footprint entry touches shared /
-    cross-module test infrastructure. A single-module footprint touching no
-    shared infra yields ``divergence_possible = False`` with that module as the
+    set spans more than one module, OR any footprint entry touches shared /
+    cross-module test infrastructure, OR at least one build-relevant file matched
+    but resolved to no module (e.g. a root-level ``pyproject.toml``) — the last
+    condition forces a whole-tree run rather than emitting an invalid scoped
+    ``module-tests None`` call. A single-module footprint touching no shared
+    infra yields ``divergence_possible = False`` with that module as the
     ``recommended_target`` (match by equivalence); a divergent footprint yields
     ``recommended_target = None`` (whole-tree, no module arg).
 
@@ -117,16 +128,22 @@ def resolve_test_scope(footprint: list[str], build_map_globs: list[str]) -> Test
         A frozen :class:`TestScopeResolution`.
     """
     modules: set[str] = set()
+    has_matching_files = False
     for path in footprint:
         if not any(fnmatch.fnmatch(path, glob) for glob in build_map_globs):
             continue
+        has_matching_files = True
         module = _module_for_path(path)
         if module is not None:
             modules.add(module)
 
     scoped_modules = tuple(sorted(modules))
     shared_infra_touched = any(_touches_shared_infra(path) for path in footprint)
-    divergence_possible = len(scoped_modules) > 1 or shared_infra_touched
+    divergence_possible = (
+        len(scoped_modules) > 1
+        or shared_infra_touched
+        or (has_matching_files and len(scoped_modules) == 0)
+    )
 
     recommended_target: str | None
     if not divergence_possible and len(scoped_modules) == 1:
