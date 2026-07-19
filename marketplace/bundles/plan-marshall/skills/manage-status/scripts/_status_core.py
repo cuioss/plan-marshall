@@ -128,12 +128,19 @@ ORCHESTRATOR_LIST_FIELDS = frozenset({'workstreams', 'plans'})
 ORCHESTRATOR_UPDATABLE_FIELDS = frozenset({'phase', 'resume_anchor'}) | ORCHESTRATOR_LIST_FIELDS
 
 
-def get_store_status_path(store: str, entry_id: str) -> Path:
-    """Get the status.json path for an entry of a named store."""
-    return get_store_dir(store, entry_id) / FILE_STATUS
+def get_store_status_path(store: str, entry_id: str, allow_archived: bool = False) -> Path:
+    """Get the status.json path for an entry of a named store.
+
+    ``allow_archived`` threads into :func:`file_ops.get_store_dir`'s
+    read-fallback: for ``store='orchestrator'``, when ``True`` and the active
+    tree is absent, the archived home is resolved (when it exists). READ verbs
+    opt in; WRITE verbs keep the default ``False`` so an archived epic is never
+    mutated at the active path.
+    """
+    return get_store_dir(store, entry_id, allow_archived=allow_archived) / FILE_STATUS
 
 
-def read_store_status(store: str, entry_id: str) -> dict[Any, Any]:
+def read_store_status(store: str, entry_id: str, allow_archived: bool = False) -> dict[Any, Any]:
     """Read status.json for a store entry (empty dict when absent or malformed).
 
     ``read_json`` already degrades a missing/unreadable/unparseable file to the
@@ -141,8 +148,11 @@ def read_store_status(store: str, entry_id: str) -> dict[Any, Any]:
     (an array, a bare string, ``null``) would otherwise flow straight into
     ``cast(dict, ...)`` and crash every downstream ``.get``/subscript caller.
     Fall back to ``{}`` on any non-dict parse so callers always receive a dict.
+
+    ``allow_archived`` threads into :func:`get_store_status_path` so READ verbs
+    resolve an archived epic transparently when its active tree is absent.
     """
-    data = read_json(get_store_status_path(store, entry_id))
+    data = read_json(get_store_status_path(store, entry_id, allow_archived=allow_archived))
     if not isinstance(data, dict):
         return {}
     return cast(dict[Any, Any], data)
@@ -154,10 +164,19 @@ def write_store_status(store: str, entry_id: str, status: dict[Any, Any]) -> Non
     write_json(get_store_status_path(store, entry_id), status)
 
 
-def _require_orchestrator_status(args: argparse.Namespace) -> dict[Any, Any] | None:
-    """Validate the slug and read the orchestrator status, TOON error when missing."""
+def _require_orchestrator_status(
+    args: argparse.Namespace, allow_archived: bool = False
+) -> dict[Any, Any] | None:
+    """Validate the slug and read the orchestrator status, TOON error when missing.
+
+    ``allow_archived`` threads into :func:`read_store_status`: READ verbs pass
+    ``True`` so an archived-only epic resolves from ``archived-orchestrators/``;
+    WRITE verbs keep the default ``False`` so an archived-only epic is absent at
+    the strict active path and refuses with the existing ``file_not_found``
+    contract (no resurrection at the active path).
+    """
     require_valid_plan_id(args)
-    status = read_store_status(ORCHESTRATOR_STORE, args.plan_id)
+    status = read_store_status(ORCHESTRATOR_STORE, args.plan_id, allow_archived=allow_archived)
     if not status:
         output_toon(
             {
@@ -209,7 +228,7 @@ def cmd_orchestrator_create(args: argparse.Namespace) -> dict[str, Any] | None:
 
 def cmd_orchestrator_read(args: argparse.Namespace) -> dict[str, Any] | None:
     """Read a ``kind=orchestrator`` status.json."""
-    status = _require_orchestrator_status(args)
+    status = _require_orchestrator_status(args, allow_archived=True)
     if status is None:
         return None
     return {
@@ -291,7 +310,25 @@ def cmd_orchestrator_update_field(args: argparse.Namespace) -> dict[str, Any] | 
 
 def cmd_orchestrator_metadata(args: argparse.Namespace) -> dict[str, Any] | None:
     """Get or set a metadata field of a ``kind=orchestrator`` status.json."""
-    status = _require_orchestrator_status(args)
+    # Reject the mutually-exclusive combination BEFORE resolving the store or
+    # computing allow_archived. Otherwise `allow_archived=bool(args.get)` is
+    # True for a combined --get --set call, so the archived read-fallback
+    # resolves the store and control falls into the --set write branch, which
+    # rmw_json's against the STRICT active-path status.json — silently
+    # resurrecting/mutating the active orchestrator tree for an archived-only
+    # epic instead of refusing the malformed request.
+    if args.get and args.set:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'store': ORCHESTRATOR_STORE,
+            'error': 'wrong_parameters',
+            'message': '--get and --set are mutually exclusive; supply exactly one',
+        }
+    # The --get read-path resolves an archived epic transparently; the --set
+    # write-path stays strict so an archived-only epic refuses with
+    # file_not_found (no resurrection at the active path).
+    status = _require_orchestrator_status(args, allow_archived=bool(args.get))
     if status is None:
         return None
     if args.set:

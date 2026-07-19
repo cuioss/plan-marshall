@@ -23,9 +23,11 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {slug} --store orchestrator
 ```
 
+The on-query epic discovery / store scan enumerates BOTH `.plan/local/orchestrator/` and `.plan/local/archived-orchestrators/`, and the `read` verb resolves an archived epic transparently via the read-fallback — so a slug naming an archived (closed-and-relocated) epic is still discoverable and reportable here without re-anchoring.
+
 ### Step 2 (verb = `status`): Report
 
-Render the queue report from the machine authority: per-plan status (staged / launched / shipped / parked), workstream grouping, open defects and watches from `epic.md`, and the `resume_anchor`. When the report reveals stale prose in `epic.md` (a queue row disagreeing with `status.json`), reconcile status.json → epic.md and regenerate the START-HERE block:
+Render the queue report from the machine authority: per-plan status (staged / launched / shipped / parked), workstream grouping, open defects and watches from `epic.md`, and the `resume_anchor`. An archived epic reports identically — its tree is resolved from `archived-orchestrators/` and its `status.json` is the same machine authority. When the report reveals stale prose in `epic.md` (a queue row disagreeing with `status.json`), reconcile status.json → epic.md and regenerate the START-HERE block:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator resume-summary \

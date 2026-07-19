@@ -33,7 +33,15 @@ Each epic lives in one main-anchored tree under the orchestrator store:
 └── logs/                # decision.log, work.log (written via manage-logging)
 ```
 
-The store root resolves through `get_store_dir('orchestrator', slug)` (`plan-marshall:tools-file-ops`) — main-anchored via `resolve_main_anchored_path`, so the same tree is reachable from any worktree cwd across sessions. The orchestrator store is a sibling of `.plan/local/plans/`, never inside it: plan discovery globs only `.plan/local/plans/`, so orchestrator epics are structurally invisible to the plan lifecycle. Epics are discovered by scanning the store root on query, never boot-indexed.
+The store root resolves through `get_store_dir('orchestrator', slug)` (`plan-marshall:tools-file-ops`) — main-anchored via `resolve_main_anchored_path`, so the same tree is reachable from any worktree cwd across sessions. The orchestrator store is a sibling of `.plan/local/plans/`, never inside it: plan discovery globs only `.plan/local/plans/`, so orchestrator epics are structurally invisible to the plan lifecycle. Epics are discovered by scanning the store roots on query — enumerating BOTH `.plan/local/orchestrator/` and `.plan/local/archived-orchestrators/` — never boot-indexed, so an archived epic stays discoverable by slug.
+
+A closed epic MAY be relocated by the optional `archive` verb to a sibling tree under `.plan/local/`:
+
+```text
+.plan/local/archived-orchestrators/{slug}/   # relocated home of a closed epic (identical tree layout)
+```
+
+`archived-orchestrators/{slug}/` resolves through `get_archived_orchestrator_dir(slug)` (same `resolve_main_anchored_path` family, so it is likewise main-anchored). The read verbs resolve an archived epic transparently via the `allow_archived` read-fallback on `get_store_dir` — a slug is looked up at the active `orchestrator/{slug}/` path first, then at the archived path when the active tree is absent.
 
 Document templates for `epic.md`, `workstreams/WS-NN-{slug}.md`, `plans/PLAN-NN-{slug}.md`, and `landings/PLAN-NN.md` live in the `marshall-orchestrator` skill's `templates/` directory and mirror this layout contract one-to-one.
 
@@ -46,6 +54,7 @@ Orchestration is resumable by construction: any session can stop at any point an
 - **`resume_anchor` is kept current.** The `resume_anchor` field in `status.json` names the exact next action a resuming session takes (e.g. "await PR #912 CI, then analyze landing"). Every session updates it before stopping and whenever the next action changes. A stale anchor is a defect, not a cosmetic issue — it is the single field a fresh session trusts first.
 - **Stop is always safe.** Because every decision, interaction, plan-status change, and reconciliation is persisted (to `status.json`, `epic.md`, and `logs/` via `manage-logging --store orchestrator`), no orchestration state lives only in model context. A session that ends mid-thought loses nothing that the resume contract needs.
 - **Close freezes, never deletes.** Closing an epic writes the final state into `history.md` and marks `status.json` phase `closed`; the tree remains on disk as the audit record.
+- **Archive relocates, never deletes.** The optional, post-close `archive` verb moves a closed epic tree to `archived-orchestrators/{slug}/` for store-root tidiness — a mechanical relocation, never a delete. The read verbs (`status`, `resume`) and the on-query store scan resolve an archived epic transparently (the `allow_archived` read-fallback), so archiving never orphans the audit record; write verbs stay strict and refuse an archived-only epic with `file_not_found` (the frozen record is not mutated at the active path). Appending a `logs/` entry is the ONE exception to the strict write-refusal: a `manage-logging --store orchestrator` decision/work append follows the read-verb `allow_archived` transparency instead of refusing, because an audit-trail continuation is not a business-state mutation — so a log write against an archived-only epic lands in the archived `logs/` tree and never resurrects an active-path directory. `resume` on a `phase: closed` epic (archived or not) is likewise read-only: it re-anchors and reports the frozen record but never reconciles the queue and never persists a change — a closed epic's queue is already settled by `close`, so there is no orchestration work to do. NO retention or cleanup policy applies: unlike a transient plan (which carries a dated `archived-plans` GC), an epic is the durable audit record and the archived tree is kept indefinitely. `archive` is opt-in and refuses a non-closed epic — `close` must run first.
 
 ## Carve-Outs
 

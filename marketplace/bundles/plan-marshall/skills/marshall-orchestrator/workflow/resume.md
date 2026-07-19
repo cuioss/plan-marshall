@@ -30,6 +30,16 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
 
 Extract `phase`, `resume_anchor`, `workstreams[]`, and `plans[]`. The `resume_anchor` is the single field a fresh session trusts first — it names the exact next action.
 
+A slug naming an archived (closed-and-relocated) epic resolves from `archived-orchestrators/` via the read-fallback, so `resume --slug {archived}` re-anchors the frozen audit record without error — the read verb finds the archived tree when the active `orchestrator/{slug}/` path is absent. An archived epic is `phase: closed`; the resume is a read-only re-anchor of the frozen record (report and re-orient), not a re-opening.
+
+### Step 2.5: Closed-epic early return (read-only gate)
+
+The read-only gate keys off `phase == closed`, NOT narrowly "is it archived" — a `phase: closed` epic (archived or not) has no further orchestration work. `close` requires that no launched plan remains before it sets `phase: closed` and writes the terminal `resume_anchor` ("epic closed — see history.md"), so a closed epic's queue is already settled.
+
+**When `phase == closed`**: report the frozen state to the operator — the `phase`, the terminal `resume_anchor`, and each entry of `plans[]` with its final per-plan outcome — and STOP. Skip Steps 3, 4, and 5 entirely: no START-HERE regeneration, no queue reconciliation/transition, no `resume_anchor` or work-log write. Emit only the Output section with `plans_launched: 0`, `plans_staged: 0`, and `reconciliations: 0`. The re-anchor is purely read-only — it persists nothing, honouring the "resume on a closed epic never reconciles or persists" contract in [`persona-marshall-orchestrator/standards/orchestration-model.md`](../../persona-marshall-orchestrator/standards/orchestration-model.md) (the "Archive relocates, never deletes" bullet).
+
+**When `phase != closed`** (`init` or `orchestrating`): proceed to Step 3 as documented below.
+
 ### Step 3: Regenerate and reconcile START HERE
 
 ```bash

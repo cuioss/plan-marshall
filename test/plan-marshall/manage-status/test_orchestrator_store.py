@@ -235,6 +235,52 @@ class TestOrchestratorMetadata:
         assert result['status'] == 'error'
         assert result['error'] == 'missing_operation'
 
+    def test_should_reject_combined_get_and_set(self, plan_context):
+        cmd_orchestrator_create(_create_args('meta-both-epic'))
+
+        result = cmd_orchestrator_metadata(
+            Namespace(plan_id='meta-both-epic', set=True, get=True, field='owner', value='operator')
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'wrong_parameters'
+
+    def test_should_reject_combined_get_and_set_without_resurrecting_archived(self, plan_context):
+        # Simulate a prior `archive`: the epic lives ONLY in the archived tree
+        # (phase closed); no active tree exists. A combined --get --set call must
+        # be refused up front — before allow_archived resolution or any write —
+        # so the STRICT active-path write branch never resurrects the active dir.
+        slug = 'meta-archived-both-epic'
+        active_dir = plan_context.fixture_dir / 'orchestrator' / slug
+        archived_dir = plan_context.fixture_dir / 'archived-orchestrators' / slug
+        archived_dir.mkdir(parents=True, exist_ok=True)
+        (archived_dir / 'status.json').write_text(
+            json.dumps(
+                {
+                    'kind': 'orchestrator',
+                    'title': 'Archived Epic',
+                    'phase': 'closed',
+                    'workstreams': [],
+                    'plans': [],
+                    'resume_anchor': 'epic closed — see history.md',
+                    'metadata': {},
+                    'created': '2020-01-01T00:00:00Z',
+                    'updated': '2020-01-01T00:00:00Z',
+                },
+                indent=2,
+            ),
+            encoding='utf-8',
+        )
+
+        result = cmd_orchestrator_metadata(
+            Namespace(plan_id=slug, set=True, get=True, field='owner', value='operator')
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'wrong_parameters'
+        # The refused call performed no read/write: the active tree stays absent.
+        assert not active_dir.exists()
+
 
 # =============================================================================
 # CLI boundary (new verb + --store flags through the entry point)
