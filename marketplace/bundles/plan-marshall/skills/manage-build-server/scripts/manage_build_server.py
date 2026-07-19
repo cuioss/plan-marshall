@@ -616,17 +616,12 @@ def run_logs(args: Namespace) -> dict[str, Any]:
             'records': [],
             'reason': 'log_absent',
         }
-    try:
-        all_records = audit.read_all()
-    except OSError:
-        return {
-            'status': 'success',
-            'action': 'logs',
-            'caller_root': root,
-            'count': 0,
-            'records': [],
-            'reason': 'log_unreadable',
-        }
+    # read_all() is the single hardened read choke point: it fails closed to an
+    # empty list on an unreadable / non-UTF-8-corrupted log (see
+    # _marshalld_audit.InteractionAudit.read_all), so no guard is needed here — a
+    # corrupt log degrades to an empty scoped view rather than raising. The
+    # log-absent case is already reported with its own reason above.
+    all_records = audit.read_all()
 
     scoped = [record for record in all_records if record.get('project_root') == root]
     tail = scoped[-limit:] if limit > 0 else scoped

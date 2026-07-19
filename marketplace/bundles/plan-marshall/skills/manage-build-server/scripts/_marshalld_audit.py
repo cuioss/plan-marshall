@@ -168,15 +168,27 @@ class InteractionAudit:
     def read_all(self) -> list[dict[str, Any]]:
         """Return every stored record in append order (oldest first).
 
-        A malformed line is skipped rather than aborting the read.
+        A malformed line is skipped rather than aborting the read. A corrupted or
+        unreadable log file fails closed to an empty list rather than raising: the
+        read must never abort its callers, because ``gc()`` runs at daemon startup
+        (``Daemon.serve``) — mirroring the sibling ``rotate_log`` best-effort
+        startup guard — and ``run_logs`` is a read-only operator verb that must
+        degrade to an empty view, not crash. ``UnicodeDecodeError`` (not an
+        ``OSError`` subclass) is caught here so a non-UTF-8-corrupted log is
+        tolerated at the single read choke point.
 
         Returns:
-            The list of record dicts (empty when the log is absent).
+            The list of record dicts (empty when the log is absent, unreadable, or
+            corrupted).
         """
         if not self._path.exists():
             return []
+        try:
+            raw = self._path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            return []
         records: list[dict[str, Any]] = []
-        for line in self._path.read_text(encoding='utf-8').splitlines():
+        for line in raw.splitlines():
             stripped = line.strip()
             if not stripped:
                 continue

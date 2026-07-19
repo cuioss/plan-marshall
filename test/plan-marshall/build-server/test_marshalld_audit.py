@@ -102,6 +102,36 @@ def test_read_all_on_absent_log_is_empty(home):
     assert audit.read_all() == []
 
 
+def test_read_all_on_non_utf8_corrupt_log_fails_closed(home):
+    """A non-UTF-8-corrupted log must degrade to an empty list, never raise.
+
+    ``read_all`` is the single read choke point for both ``gc`` (daemon startup)
+    and the operator ``logs`` verb; a ``UnicodeDecodeError`` (not an ``OSError``
+    subclass) leaking out would crash the daemon at startup.
+    """
+    audit = audit_mod.InteractionAudit()
+    audit.record('ping', '', '', '', 'ok')  # materialise the log + parent dir
+    # Overwrite with bytes that are not valid UTF-8.
+    audit.path.write_bytes(b'\xff\xfe not valid utf-8 \x80\x81')
+
+    assert audit.read_all() == []
+
+
+def test_gc_on_corrupt_log_does_not_crash(home):
+    """gc() runs at daemon startup — a corrupt log must not abort it.
+
+    Regression guard for the unguarded-boundary defect: gc() -> read_all() ->
+    read_text() would raise UnicodeDecodeError on a corrupt log and crash
+    Daemon.serve() before the daemon could accept any request.
+    """
+    audit = audit_mod.InteractionAudit()
+    audit.record('ping', '', '', '', 'ok')
+    audit.path.write_bytes(b'\xff\xfe\x00 corrupt \x80')
+
+    # Must not raise; a corrupt log yields no parseable records to prune.
+    assert audit.gc() == 0
+
+
 # =============================================================================
 # InteractionAudit — gc (bounded retention)
 # =============================================================================
