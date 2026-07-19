@@ -48,6 +48,27 @@ control surface (enrolment) and the consumption surface (`build-server-client`
 submit/wait) are deliberately split across two skills so enrolment can never be
 laundered through a build dispatch.
 
+## Default registration scope
+
+`register` populates each project's scope fields so a plain enrolment yields a
+routable project rather than an inert empty-scope entry. When `--container` /
+`--notation` are omitted, registration stores canonical defaults:
+
+- **`notation_allowlist`** — the routable build notations (Maven, Gradle, npm,
+  Python), derived from the single source of truth shared with the daemon's
+  build-routing seam, so a build tool that is routable is default-allowlisted
+  from the same edit.
+- **`worktree_containers`** — the canonical worktree location every plan uses,
+  `<root>/.plan/local/worktrees`.
+
+Re-running `register` is the **repair path** for an already-registered project
+whose scope is empty: it backfills the missing defaults without hand-editing
+`registry.json`. Per-field precedence is explicit CLI value > existing non-empty
+stored value > computed default, so re-registration is idempotent — it backfills
+empty fields, preserves any deliberately-customised non-empty values, and lets an
+explicit `--container` / `--notation` override both the stored value and the
+default.
+
 ## Platform constraint (WSL2)
 
 `marshalld` requires a POSIX runtime (Unix domain sockets, `fork`/`setsid`
@@ -132,7 +153,9 @@ python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_s
 ```
 
 `--container` and `--notation` are repeatable. `--root` defaults to the caller's
-main checkout.
+main checkout. When `--container` / `--notation` are omitted, registration
+populates canonical default scope and re-running `register` backfills an empty
+existing entry — see **Default registration scope** above.
 
 ### unregister
 
