@@ -1,6 +1,6 @@
 ---
 name: manage-build-server
-description: Operator control surface for the marshalld build server — enrol/drop a project in the machine-global registry (the opt-in enable signal and anti-laundering wall) and manage the daemon lifecycle (start, stop, drain, status, install, upgrade), version-pinned to the verified bundle copy
+description: Operator control surface for the marshalld build server — enrol/drop a project in the machine-global registry (the opt-in enable signal and anti-laundering wall), manage the daemon lifecycle (start, stop, drain, status, install, upgrade) version-pinned to the verified bundle copy, and inspect the daemon's per-project interaction-audit log (read-only)
 user-invocable: true
 mode: script-executor
 scope: global
@@ -145,6 +145,7 @@ survive, and any job that was in flight when the daemon died is marked `killed`
 | `status` | Report running version + binary path |
 | `install` | Idempotent version-pinned start |
 | `upgrade` | Drain then start the verified version |
+| `logs` | Read-only, project-scoped view of the daemon's interaction-audit log |
 
 **Script**: `plan-marshall:manage-build-server:marshalld` — the daemon binary,
 launched by `start` (never invoked directly by an operator).
@@ -183,6 +184,19 @@ python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_s
 python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server install
 python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server upgrade
 ```
+
+### logs
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server logs \
+  [--root ROOT] [--limit LIMIT]
+```
+
+Read-only inspection of the daemon's central `interaction-audit.log`, filtered to
+the caller project (the derived project-scoped view) — it never mutates the log.
+`--root` defaults to the caller's main checkout; `--limit` bounds the returned
+newest-first tail (default `50`). When the log is absent or unreadable the verb
+returns an explicit empty `records` list with a named `reason` (fails closed).
 
 ## Related
 
