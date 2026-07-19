@@ -132,6 +132,31 @@ def test_gc_on_corrupt_log_does_not_crash(home):
     assert audit.gc() == 0
 
 
+def test_read_records_or_none_distinguishes_unreadable_from_empty(home):
+    """read_records_or_none() returns None only for a present-but-unreadable log.
+
+    Absent and present-and-readable-but-empty both return [] (indistinguishable to
+    the operator verb's log_absent/empty handling); a non-UTF-8-corrupt present log
+    returns None so the logs verb can report log_unreadable. This is the three-state
+    contract read_all() collapses to [] for its crash-safe callers.
+    """
+    audit = audit_mod.InteractionAudit()
+
+    # Absent → [] (not None).
+    assert audit.read_records_or_none() == []
+
+    # Present, readable, non-empty → the parsed records.
+    audit.record('ping', '', '', '', 'ok')
+    assert audit.read_records_or_none() == audit.read_all()
+    assert len(audit.read_records_or_none()) == 1
+
+    # Present but corrupt (non-UTF-8) → None (the distinguishable unreadable state).
+    audit.path.write_bytes(b'\xff\xfe corrupt \x80')
+    assert audit.read_records_or_none() is None
+    # read_all() still collapses that None to [] for gc()/daemon-startup safety.
+    assert audit.read_all() == []
+
+
 # =============================================================================
 # InteractionAudit — gc (bounded retention)
 # =============================================================================

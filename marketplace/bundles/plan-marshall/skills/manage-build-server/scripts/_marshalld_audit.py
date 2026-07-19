@@ -172,21 +172,38 @@ class InteractionAudit:
         unreadable log file fails closed to an empty list rather than raising: the
         read must never abort its callers, because ``gc()`` runs at daemon startup
         (``Daemon.serve``) — mirroring the sibling ``rotate_log`` best-effort
-        startup guard — and ``run_logs`` is a read-only operator verb that must
-        degrade to an empty view, not crash. ``UnicodeDecodeError`` (not an
-        ``OSError`` subclass) is caught here so a non-UTF-8-corrupted log is
-        tolerated at the single read choke point.
+        startup guard. Callers that need to distinguish "present but unreadable"
+        from "absent or empty" (the operator ``logs`` verb, for its
+        ``log_unreadable`` reason) use :meth:`read_records_or_none` instead.
 
         Returns:
             The list of record dicts (empty when the log is absent, unreadable, or
             corrupted).
+        """
+        records = self.read_records_or_none()
+        return [] if records is None else records
+
+    def read_records_or_none(self) -> list[dict[str, Any]] | None:
+        """Parse all records, distinguishing an unreadable log from an empty one.
+
+        Returns ``[]`` when the log is absent or present-and-readable-but-empty,
+        the parsed record list when present and readable, and ``None`` when the
+        log is present but unreadable/corrupt (an ``OSError`` — permission/IO — or
+        a ``UnicodeDecodeError``, which is NOT an ``OSError`` subclass, from a
+        non-UTF-8-corrupted file). This is the single read+parse choke point:
+        :meth:`read_all` collapses the ``None`` to ``[]`` for its crash-safe
+        callers (``gc`` at daemon startup), while the operator ``logs`` verb keys
+        its ``log_unreadable`` reason off the ``None``.
+
+        Returns:
+            The record list, or ``None`` when the present log could not be read.
         """
         if not self._path.exists():
             return []
         try:
             raw = self._path.read_text(encoding='utf-8')
         except (OSError, UnicodeDecodeError):
-            return []
+            return None
         records: list[dict[str, Any]] = []
         for line in raw.splitlines():
             stripped = line.strip()

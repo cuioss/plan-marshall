@@ -364,6 +364,24 @@ def test_logs_absent_log_fails_closed_with_reason(home):
     assert result['reason'] == 'log_absent'
 
 
+def test_logs_unreadable_log_fails_closed_with_reason(home):
+    # A present-but-corrupt (non-UTF-8) log must fail closed to an explicit
+    # log_unreadable reason — not crash, and not silently masquerade as an empty
+    # readable log. Guards the contract the docstring promises (ADR-9).
+    root = home / 'proj'
+    root.mkdir()
+    audit = mbs.InteractionAudit()
+    audit.record('submit', mbs.canonicalize_root(str(root)), 'p1', 'JOB-A', 'queued')
+    audit.path.write_bytes(b'\xff\xfe not valid utf-8 \x80\x81')
+
+    result = mbs.run_logs(Namespace(root=str(root), limit=None))
+
+    assert result['status'] == 'success'
+    assert result['records'] == []
+    assert result['count'] == 0
+    assert result['reason'] == 'log_unreadable'
+
+
 def test_logs_limit_bounds_the_newest_tail(home):
     root = home / 'proj'
     root.mkdir()

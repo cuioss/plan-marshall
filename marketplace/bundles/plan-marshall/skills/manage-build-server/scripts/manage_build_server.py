@@ -616,12 +616,23 @@ def run_logs(args: Namespace) -> dict[str, Any]:
             'records': [],
             'reason': 'log_absent',
         }
-    # read_all() is the single hardened read choke point: it fails closed to an
-    # empty list on an unreadable / non-UTF-8-corrupted log (see
-    # _marshalld_audit.InteractionAudit.read_all), so no guard is needed here — a
-    # corrupt log degrades to an empty scoped view rather than raising. The
-    # log-absent case is already reported with its own reason above.
-    all_records = audit.read_all()
+    # read_records_or_none() is the single read+parse choke point: it returns None
+    # when the log is present but unreadable/corrupt (OSError OR UnicodeDecodeError,
+    # the latter not an OSError subclass), distinct from an empty [] for a
+    # present-but-empty log. A corrupt log therefore fails closed to an explicit
+    # log_unreadable reason here — never a crash, never a fabricated success that
+    # hides the read failure (ADR-9). gc()/read_all() collapse the same None to []
+    # so daemon startup stays crash-safe.
+    all_records = audit.read_records_or_none()
+    if all_records is None:
+        return {
+            'status': 'success',
+            'action': 'logs',
+            'caller_root': root,
+            'count': 0,
+            'records': [],
+            'reason': 'log_unreadable',
+        }
 
     scoped = [record for record in all_records if record.get('project_root') == root]
     tail = scoped[-limit:] if limit > 0 else scoped
