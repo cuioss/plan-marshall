@@ -16,7 +16,9 @@ Working branches MUST use one of exactly three canonical prefixes (the set is cl
 | `fix/` | Bug fixes. |
 | `chore/` | Maintenance, refactoring, and documentation-only changes. |
 
-The set is closed because `.github/workflows/python-verify.yml` triggers CI only for `main`, `feature/*`, `fix/*`, `chore/*`, and `dependabot/**`; a branch with any other prefix receives no CI run, so its PR can never produce the required `verify / verify` check. The `docs/` prefix is retired — use `chore/` for documentation-only changes.
+The set is closed because `.github/workflows/python-verify.yml` triggers CI only for `main`, `feature/*`, `fix/*`, `chore/*`, and `dependabot/**`; a branch with any other prefix receives no CI run, so its PR can never produce the required `verify / conclusion` check. The `docs/` prefix is retired — use `chore/` for documentation-only changes.
+
+`python-verify.yml` opts in to a footprint gate (`skip-on-docs-only: true` on the reusable workflow): a change whose footprint is entirely non-building (`.plan/**`, `**.md`, `**.adoc`, `doc/**`, `.claude/**`, and peers) skips the heavy pyprojectx build+tests while the always-reporting `verify / conclusion` check still reports green, so the required check is satisfied and the merge queue admits it without stalling. Any change touching buildable source (`**.py`, dependency manifests, `.github/workflows/**`) — and every `merge_group` run — still runs the full verify.
 
 ## Script Execution Convention
 
