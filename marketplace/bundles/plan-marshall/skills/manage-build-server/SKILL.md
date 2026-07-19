@@ -94,8 +94,17 @@ All daemon state lives under the machine-global home root
 | `registry.json` | Machine-global project registry (`0600`) |
 | `registry-audit.log` | Append-only registration audit |
 | `lifecycle-audit.log` | Append-only start/stop/drain/install/upgrade audit |
+| `interaction-audit.log` | Append-only per-request interaction audit (`0600`) |
 | `journal/` | Durable job specs, results, and ETA history |
 | `job-logs/` | Per-job captured build logs |
+
+The **interaction audit** is a central append-only log — the natural third
+sibling of `registry-audit.log` and `lifecycle-audit.log` — into which the daemon
+writes exactly one attributed record for every request it dispatches
+(`ping` / `submit` / `wait`). Each record carries per-project attribution
+(`project_root` + `plan_id` + `job_id`) plus `op` / `outcome` / `timestamp`, and
+never any secret-bearing spec field. Retention is bounded and GC'd on every daemon
+start, parallel to the journal's bounded-retention model.
 
 ## Lifecycle operations
 

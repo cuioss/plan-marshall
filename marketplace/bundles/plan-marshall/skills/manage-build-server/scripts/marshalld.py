@@ -54,7 +54,8 @@ from _build_server_protocol import (
     status_payload,
     write_frame,
 )
-from _build_server_registry import read_registry
+from _build_server_registry import canonicalize_root, read_registry
+from _marshalld_audit import InteractionAudit
 from _marshalld_journal import Journal
 from _marshalld_scheduler import Scheduler, resolve_max_slots
 from _marshalld_supervisor import JobProgress, run_job
@@ -236,6 +237,7 @@ class Daemon:
         *,
         scheduler: Scheduler,
         journal: Journal,
+        interaction_audit: InteractionAudit | None = None,
         baseline_interpreter: str | None = None,
         common_dir_resolver: Any = None,
         job_timeout: int = _DEFAULT_JOB_TIMEOUT,
@@ -247,6 +249,9 @@ class Daemon:
         Args:
             scheduler: The admission scheduler.
             journal: The durable journal.
+            interaction_audit: The central interaction-audit log (injectable for
+                tests, like ``journal``); defaults to a fresh
+                :class:`InteractionAudit` resolving the machine-global home.
             baseline_interpreter: The registered baseline interpreter for the
                 verifier (defaults to this daemon's own ``sys.executable``).
             common_dir_resolver: Worktree-liveness resolver for the verifier
@@ -257,6 +262,7 @@ class Daemon:
         """
         self._scheduler = scheduler
         self._journal = journal
+        self._interaction_audit = interaction_audit or InteractionAudit()
         self._baseline_interpreter = baseline_interpreter or sys.executable
         self._common_dir_resolver = common_dir_resolver or git_common_dir_resolver
         self._job_timeout = job_timeout
@@ -278,15 +284,71 @@ class Daemon:
         """
         op = request.get('op')
         if op == 'ping':
-            return self._ping()
-        if op == 'submit':
-            return await self._submit(request)
-        if op == 'wait':
-            return await self._wait(request)
-        return {'status': 'error', 'error': 'unknown_op', 'op': op}
+            response = self._ping()
+        elif op == 'submit':
+            response = await self._submit(request)
+        elif op == 'wait':
+            response = await self._wait(request)
+        else:
+            response = {'status': 'error', 'error': 'unknown_op', 'op': op}
+        self._audit_interaction(op, request, response)
+        return response
 
     def _ping(self) -> dict[str, Any]:
         return {'status': 'ok', 'pid': os.getpid(), 'version': VERSION}
+
+    # -- interaction audit -------------------------------------------------
+
+    def _audit_interaction(self, op: Any, request: dict[str, Any], response: dict[str, Any]) -> None:
+        """Append exactly one attributed interaction record for this request.
+
+        Attribution (``project_root`` / ``plan_id`` / ``job_id``) is derived from
+        the request/job spec where present and left empty when absent (e.g. a
+        ``ping`` carries none); ``outcome`` is the response ``status``. Audit
+        writing is best-effort — a disk failure must never abort request
+        handling. Secrets discipline lives in :meth:`InteractionAudit.record`:
+        only ``op`` / ``project_root`` / ``plan_id`` / ``job_id`` / ``outcome`` /
+        ``timestamp`` (plus a non-secret ``reason``) are ever written.
+        """
+        project_root, plan_id = self._audit_attribution(op, request)
+        job_id = self._audit_job_id(op, request, response)
+        reason = response.get('reason')
+        try:
+            self._interaction_audit.record(
+                op=str(op or ''),
+                project_root=project_root,
+                plan_id=plan_id,
+                job_id=job_id,
+                outcome=str(response.get('status', '')),
+                reason=str(reason) if reason else None,
+            )
+        except OSError:
+            pass  # audit logging is best-effort — never abort request handling
+
+    @staticmethod
+    def _audit_attribution(op: Any, request: dict[str, Any]) -> tuple[str, str]:
+        """Return the ``(project_root, plan_id)`` attribution for a request.
+
+        Only a ``submit`` carries a job spec; ``ping`` / ``wait`` carry no spec,
+        so both fields are empty for them. ``project_root`` is canonicalised so
+        it matches the caller-canonical root the operator ``logs`` verb filters on.
+        """
+        if op == 'submit':
+            job_raw = request.get('job')
+            if isinstance(job_raw, dict):
+                project_path = str(job_raw.get('project_path', ''))
+                project_root = canonicalize_root(project_path) if project_path else ''
+                return project_root, str(job_raw.get('plan_id', ''))
+        return '', ''
+
+    @staticmethod
+    def _audit_job_id(op: Any, request: dict[str, Any], response: dict[str, Any]) -> str:
+        """Return the ``job_id`` attribution: from the response on ``submit``, the request on ``wait``."""
+        if op == 'submit':
+            return str(response.get('job_id', ''))
+        if op == 'wait':
+            return str(request.get('job_id', ''))
+        return ''
 
     async def _submit(self, request: dict[str, Any]) -> dict[str, Any]:
         job_raw = request.get('job')
@@ -391,6 +453,7 @@ class Daemon:
         rotate_log(log_path())
         stale_socket_takeover(socket_path(), pidfile_path())
         self._journal.replay_on_restart()
+        self._interaction_audit.gc()
 
         server = await asyncio.start_unix_server(self._on_client, path=str(socket_path()))
         os.chmod(socket_path(), _SOCKET_MODE)
@@ -425,11 +488,12 @@ def _command_key(spec_dict: dict[str, Any]) -> str:
 
 
 def build_daemon() -> Daemon:
-    """Construct a :class:`Daemon` with config-resolved slots and a journal."""
+    """Construct a :class:`Daemon` with config-resolved slots, a journal, and an interaction audit."""
     config = read_json(get_marshal_path(), default={})
     scheduler = Scheduler(max_slots=resolve_max_slots(config))
     journal = Journal()
-    return Daemon(scheduler=scheduler, journal=journal)
+    interaction_audit = InteractionAudit()
+    return Daemon(scheduler=scheduler, journal=journal, interaction_audit=interaction_audit)
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
