@@ -276,16 +276,6 @@ def _cleanup_stale_state() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _default_notation_allowlist() -> list[str]:
-    """Return the default notation allowlist: the routable build notations.
-
-    Derived from the single source of truth shared with the D5 routing seam
-    (:func:`_build_execute_factory.routable_notations`), so a newly-added build
-    tool becomes routable AND default-allowlisted from one edit, with no drift.
-    """
-    return list(routable_notations())
-
-
 def _default_worktree_containers(root: str) -> list[str]:
     """Return the default worktree container for ``root``.
 
@@ -358,8 +348,11 @@ def run_register(args: Namespace) -> dict[str, Any]:
     worktree_containers = _effective_scope_value(
         args.container, existing, 'worktree_containers', _default_worktree_containers(root)
     )
+    # The default allowlist is the routable build notations — the single source
+    # of truth shared with the D5 routing seam, so a newly-added build tool
+    # becomes routable AND default-allowlisted from one edit, with no drift.
     notation_allowlist = _effective_scope_value(
-        args.notation, existing, 'notation_allowlist', _default_notation_allowlist()
+        args.notation, existing, 'notation_allowlist', list(routable_notations())
     )
     record = register_project(
         root,
