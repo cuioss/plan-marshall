@@ -88,7 +88,7 @@ The per-bundle `quality-gate` loop above runs mypy + ruff only — it runs **no 
      resolve-test-scope --plan-id {plan_id}
    ```
 
-   Parse `divergence_possible`, `recommended_target`, and `whole_tree_available` from the TOON output. See [`build-pyproject/SKILL.md`](../../build-pyproject/SKILL.md) § "Canonical invocations" → `resolve-test-scope` for the seam's argument surface and output contract.
+   Parse `scoped_modules`, `divergence_possible`, `recommended_target`, and `whole_tree_available` from the TOON output. See [`build-pyproject/SKILL.md`](../../build-pyproject/SKILL.md) § "Canonical invocations" → `resolve-test-scope` for the seam's argument surface and output contract.
 
 2. **`whole_tree_available == false`** (no discoverable pytest module set — e.g. a non-Python project) → do NOT run pytest. Emit a loud, footprint-specific WARNING naming the un-gated modules and the PLAN-08 divergence class, then proceed to **Mark Step Complete (Success)** (honest degradation, never a silent skip). Mirror the wording shape of the `finalize-step-plugin-doctor` cross-skill divergence WARNING:
 
@@ -146,7 +146,7 @@ The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3'
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step pre-push-quality-gate --outcome failed \
-  --display-detail "{quality-gate failed for {bundle} | whole-tree module-tests red}"
+  --display-detail "{quality-gate failed for {bundle} | whole-tree module-tests red | scoped module-tests red for {recommended_target}}"
 ```
 
-Use `quality-gate failed for {bundle}` when a bundle's `quality-gate` failed, or `whole-tree module-tests red` when the module-tests divergence gate caught a scoped-green / whole-tree-red regression. The failure branch does not need `--head-at-completion`: the dispatcher unconditionally retries `failed` records on re-entry regardless of HEAD, so the SHA carries no decision value here. The dispatcher's existing failure handling halts the phase on `outcome=failed` and surfaces the offending file/line (or failing test) through the finalize TOON, matching the contract used by the other gating steps.
+Use `quality-gate failed for {bundle}` when a bundle's `quality-gate` failed, `whole-tree module-tests red` when the whole-tree module-tests divergence gate caught a scoped-green / whole-tree-red regression, or `scoped module-tests red for {recommended_target}` when the step-4 scoped `module-tests {recommended_target}` run failed on a non-divergent footprint. The failure branch does not need `--head-at-completion`: the dispatcher unconditionally retries `failed` records on re-entry regardless of HEAD, so the SHA carries no decision value here. The dispatcher's existing failure handling halts the phase on `outcome=failed` and surfaces the offending file/line (or failing test) through the finalize TOON, matching the contract used by the other gating steps.
