@@ -22,13 +22,16 @@ from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'build-server-client', 'build_server.py')
 SCRIPTS_DIR = SCRIPT_PATH.parent
+_LOGGING_SCRIPTS_DIR = get_script_path('plan-marshall', 'manage-logging', 'plan_logging.py').parent
 
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+for _dir in (SCRIPTS_DIR, _LOGGING_SCRIPTS_DIR):
+    if str(_dir) not in sys.path:
+        sys.path.insert(0, str(_dir))
 
 import _build_server_registry as registry  # noqa: E402
 import _ledger_core as ledger_core  # noqa: E402
 import build_server as client  # noqa: E402
+import plan_logging  # noqa: E402
 
 
 @pytest.fixture
@@ -443,3 +446,50 @@ def test_no_logged_message_contains_raw_command_argv(home, ledger, captured_logs
         assert '.plan/execute-script.py' not in message
         assert 'python3' not in message
         assert root not in message
+
+
+def test_notation_from_command_strips_control_chars():
+    # CWE-117 regression guard: a crafted notation token (command[2]) must never
+    # carry a raw newline/control char into a free-text log message — the
+    # plan-scoped work log is plain-text/line-oriented, not JSON-escaped, so an
+    # embedded newline could otherwise forge a fake log-entry header line.
+    injected = 'a:b:c\n[2000-01-01T00:00:00Z] [ERROR] [abcdef] forged entry'
+
+    sanitized = client._notation_from_command(['python3', '/tree/.plan/execute-script.py', injected, 'run'])
+
+    assert '\n' not in sanitized
+    assert sanitized == 'a:b:c[2000-01-01T00:00:00Z] [ERROR] [abcdef] forged entry'
+
+
+def test_submit_with_control_char_notation_never_forges_a_log_header(home, ledger, captured_logs, monkeypatch):
+    root = str(home / 'proj')
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
+    )
+    forged_header = '[2000-01-01T00:00:00Z] [ERROR] [abcdef] forged entry'
+    command = (
+        '["python3", "' + root + '/.plan/execute-script.py", '
+        '"a:b:c\\n' + forged_header + '", "run"]'
+    )
+
+    client.run_submit(
+        Namespace(command=command, exec_path=root, project_path=root, plan_id='p1')
+    )
+
+    work_entries = [c for c in captured_logs if c[0] == 'work']
+    assert work_entries, 'submit must log (otherwise this test is vacuous)'
+    for _t, _p, level, message in work_entries:
+        # The forged header's non-control-character text may still appear as
+        # inert trailing text on the SAME line (that is expected and harmless);
+        # what matters is that no newline ever splits it into a second,
+        # independently-parseable log-entry line.
+        assert '\n' not in message
+        # Prove the real invariant end-to-end: running the message through the
+        # actual plan_logging formatter/parser yields exactly ONE entry — the
+        # forged header text never becomes a second, independently-recognized
+        # log-entry line.
+        formatted = plan_logging.format_log_entry(level, message)
+        assert len(plan_logging.HEADER_PATTERN.findall(formatted)) == 1

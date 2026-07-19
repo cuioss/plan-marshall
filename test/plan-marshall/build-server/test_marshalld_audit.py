@@ -96,6 +96,19 @@ def test_record_never_writes_secret_bearing_fields(home):
     assert 'env' not in stored
 
 
+@pytest.mark.parametrize('forbidden_key', ['command', 'args', 'argv', 'spec', 'env', 'cwd', 'exec_path', 'project_path'])
+def test_record_rejects_forbidden_secret_shaped_extra_key(home, forbidden_key):
+    """Fail-loud backstop (defense-in-depth): a secret-shaped ``extra`` key must
+    raise immediately rather than ever reach the on-disk audit trail, even from
+    a future caller that violates the secrets-discipline contract."""
+    audit = audit_mod.InteractionAudit()
+
+    with pytest.raises(ValueError, match=forbidden_key):
+        audit.record('submit', '/proj', 'p1', 'JOB-1', 'queued', **{forbidden_key: 'secret-value'})
+
+    assert audit.read_all() == []
+
+
 def test_read_all_on_absent_log_is_empty(home):
     audit = audit_mod.InteractionAudit()
 

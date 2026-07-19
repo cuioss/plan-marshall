@@ -51,6 +51,26 @@ _AUDIT_FILENAME = 'interaction-audit.log'
 _DIR_MODE = 0o700
 _FILE_MODE = 0o600
 
+_FORBIDDEN_EXTRA_KEYS = frozenset({
+    'command',
+    'args',
+    'argv',
+    'spec',
+    'env',
+    'cwd',
+    'exec_path',
+    'project_path',
+})
+"""``**extra`` keys :meth:`InteractionAudit.record` refuses, even from a future
+caller.
+
+The secrets-discipline contract (module docstring) is currently enforced only
+by caller convention — every existing caller passes solely non-secret
+correlation fields. This is the fail-loud backstop: a caller that ever passes
+one of these secret-shaped keys raises immediately rather than silently
+writing it to the on-disk audit trail, so a future regression is caught at the
+call site instead of leaking into a durable log."""
+
 DEFAULT_AUDIT_RETENTION_SECONDS = 7 * 24 * 3600
 """Default interaction-audit retention window in seconds (7 days).
 
@@ -147,7 +167,19 @@ class InteractionAudit:
 
         Returns:
             The stored record dict.
+
+        Raises:
+            ValueError: when ``extra`` carries a forbidden secret-shaped key
+                (see :data:`_FORBIDDEN_EXTRA_KEYS`) — a caller-side programming
+                error, surfaced immediately rather than silently written to the
+                durable audit trail.
         """
+        forbidden = _FORBIDDEN_EXTRA_KEYS & extra.keys()
+        if forbidden:
+            raise ValueError(
+                f'InteractionAudit.record: forbidden secret-shaped extra key(s) {sorted(forbidden)} '
+                '— the audit trail never carries spec/command/env fields'
+            )
         self._ensure_dir()
         record: dict[str, Any] = {
             'op': op,

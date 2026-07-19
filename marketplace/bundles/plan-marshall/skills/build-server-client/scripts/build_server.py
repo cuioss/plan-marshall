@@ -48,6 +48,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 from argparse import Namespace
 from pathlib import Path
@@ -334,9 +335,33 @@ def _latest_job_id_for_plan(plan_id: str) -> str | None:
     return str(matches[-1]) if matches else None
 
 
+_CONTROL_CHAR_PATTERN = re.compile(r'[\x00-\x1f\x7f]')
+"""C0 control characters (incl. ``\\n`` / ``\\r``) plus DEL, stripped from the
+notation before it is interpolated into a free-text ``_audit_log`` message.
+
+The plan-scoped work log (``plan_logging.format_log_entry``) is a plain-text,
+line-oriented format parsed back by a per-line header regex — it is NOT
+JSON-escaped. ``command[2]`` is a client-supplied string (from ``--command``,
+validated only as "a JSON array of strings"), so an unsanitized embedded
+newline could forge a fake ``[timestamp] [LEVEL] [hash]`` header line into the
+work log (CWE-117 log injection). Stripping control characters here closes
+that vector while leaving a well-formed notation (e.g.
+``plan-marshall:build-pyproject:pyproject_build``) byte-identical."""
+
+
 def _notation_from_command(command: list[str]) -> str:
-    """Derive the executor notation (``command[2]``) from an executor-form argv."""
-    return command[2] if len(command) >= 3 else ''
+    """Derive the executor notation (``command[2]``) from an executor-form argv.
+
+    Control characters are stripped (see :data:`_CONTROL_CHAR_PATTERN`) so the
+    returned value is always safe to interpolate into a free-text log message
+    or ledger field. This sanitized value is used ONLY for correlation/logging
+    (``_audit_log`` messages, the ledger ``kind=job`` row) — the original,
+    unmodified ``command`` list is still what is submitted to the daemon, so
+    the S1.4 notation-allowlist check the verifier performs is unaffected.
+    """
+    if len(command) < 3:
+        return ''
+    return _CONTROL_CHAR_PATTERN.sub('', command[2])
 
 
 # ---------------------------------------------------------------------------
