@@ -63,27 +63,6 @@ RULE_ID = REFINE_RULE_ID
 # ---------------------------------------------------------------------------
 
 
-def _make_refine_file(tmp_path: Path, content: str, filename: str = 'SKILL.md') -> Path:
-    """Create ``<tmp>/phase-2-refine/<filename>`` with the given content.
-
-    Returns the path to the created file.
-    """
-    refine_dir = tmp_path / 'phase-2-refine'
-    refine_dir.mkdir(parents=True, exist_ok=True)
-    file_path = refine_dir / filename
-    file_path.write_text(content, encoding='utf-8')
-    return file_path
-
-
-def _make_outside_file(tmp_path: Path, content: str) -> Path:
-    """Create a markdown file OUTSIDE any planning-phase directory."""
-    outside_dir = tmp_path / 'phase-5-execute'
-    outside_dir.mkdir(parents=True, exist_ok=True)
-    file_path = outside_dir / 'SKILL.md'
-    file_path.write_text(content, encoding='utf-8')
-    return file_path
-
-
 def _make_phase_file(
     tmp_path: Path, phase_dir: str, content: str, filename: str = 'SKILL.md'
 ) -> Path:
@@ -95,6 +74,23 @@ def _make_phase_file(
     phase_path = tmp_path / phase_dir
     phase_path.mkdir(parents=True, exist_ok=True)
     file_path = phase_path / filename
+    file_path.write_text(content, encoding='utf-8')
+    return file_path
+
+
+def _make_refine_file(tmp_path: Path, content: str, filename: str = 'SKILL.md') -> Path:
+    """Create ``<tmp>/phase-2-refine/<filename>`` with the given content.
+
+    Returns the path to the created file.
+    """
+    return _make_phase_file(tmp_path, 'phase-2-refine', content, filename)
+
+
+def _make_outside_file(tmp_path: Path, content: str) -> Path:
+    """Create a markdown file OUTSIDE any planning-phase directory."""
+    outside_dir = tmp_path / 'phase-5-execute'
+    outside_dir.mkdir(parents=True, exist_ok=True)
+    file_path = outside_dir / 'SKILL.md'
     file_path.write_text(content, encoding='utf-8')
     return file_path
 
