@@ -706,7 +706,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     logs.add_argument(
         '--limit',
         type=int,
-        help=f'Max records to return, newest tail (default: {_DEFAULT_LOGS_LIMIT}).',
+        help=(
+            'Return the N most recent records (records are ordered oldest-first '
+            f'within the returned window). Default: {_DEFAULT_LOGS_LIMIT}.'
+        ),
     )
     logs.set_defaults(func=run_logs)
     return parser

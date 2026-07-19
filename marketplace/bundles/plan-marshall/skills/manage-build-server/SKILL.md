@@ -194,9 +194,11 @@ python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_s
 
 Read-only inspection of the daemon's central `interaction-audit.log`, filtered to
 the caller project (the derived project-scoped view) — it never mutates the log.
-`--root` defaults to the caller's main checkout; `--limit` bounds the returned
-newest-first tail (default `50`). When the log is absent or unreadable the verb
-returns an explicit empty `records` list with a named `reason` (fails closed).
+`--root` defaults to the caller's main checkout; `--limit` returns the N most
+recent records (default `50`), ordered oldest-first within the returned window
+(so `records[0]` is the oldest of the window, not the newest). When the log is
+absent or unreadable the verb returns an explicit empty `records` list with a
+named `reason` (`log_absent` / `log_unreadable`; fails closed).
 
 ## Related
 
