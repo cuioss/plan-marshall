@@ -518,7 +518,7 @@ AskUserQuestion:
 
 On **Wait and retry**, reset the wall-clock start time and re-enter the **FIFO poll/backoff loop** above (a fresh `{wait_budget}` window; the plan kept its FIFO position throughout). On **Skip merge**, set `{merge_consent} = deferred` and follow the same skip path as the interactive "No, skip merge" branch.
 
-Once `admission: admitted` is reached, proceed directly to **Merge PR (if not yet merged)** below. The `{merge_consent} = explicit_yes` flag is set so the `pr safe-merge` poll-then-merge path (including its GitHub-only stuck-state admin fallback when `admin_merge_on_stuck_state` is enabled) is authorized.
+Once `admission: admitted` is reached, proceed directly to **Merge PR (if not yet merged)** below. The `{merge_consent} = explicit_yes` flag is set so the merge action routed by `use_merge_queue` (see the authoritative **Merge routing (`use_merge_queue`)** section under **Merge PR**) is authorized: the `pr safe-merge` poll-then-merge path (including its GitHub-only stuck-state admin fallback when `admin_merge_on_stuck_state` is enabled) when `use_merge_queue == false`, or the `ci pr merge-queue` enqueue (no `--delete-branch`, no direct-merge/admin fallback) when `use_merge_queue == true`.
 
 > **Sync note**: the merge-lock is the unified `plan-marshall:manage-locks:merge_lock` primitive (the file-based `O_EXCL` mutex). After this plan merges, the `finalize-step-sync-plugin-cache` step syncs the plugin cache and regenerates the executor against main (after the cache sync), so the notation resolves.
 
@@ -542,10 +542,8 @@ AskUserQuestion:
         **Current classifier** (post-rebase): classification={classification}, auto_reconciled={auto_reconciled}, upstream_commits={upstream_commit_count}
 
         **Actions on "Yes, merge"**:
-        {On `use_merge_queue == false` (default):}
-        {- `pr safe-merge --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch` (polls readiness, then merges and deletes the remote branch; GitHub-only `--admin` stuck-state fallback when `admin_merge_on_stuck_state` is enabled)}
-        {On `use_merge_queue == true`:}
-        {- ENQUEUE via `ci pr merge-queue --pr-number {pr_number}` — NO `--delete-branch` and NO direct-merge/admin fallback; the platform re-tests-and-merges against the latest base and deletes the head branch itself after the queue merge (repo `delete_branch_on_merge` / queue auto-delete)}
+        {- `pr safe-merge --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch` (polls readiness, then merges and deletes the remote branch; GitHub-only `--admin` stuck-state fallback when `admin_merge_on_stuck_state` is enabled) (if use_merge_queue == false)}
+        {- ENQUEUE via `ci pr merge-queue --pr-number {pr_number}` — NO `--delete-branch` and NO direct-merge/admin fallback; the platform re-tests-and-merges against the latest base and deletes the head branch itself after the queue merge (repo `delete_branch_on_merge` / queue auto-delete) (if use_merge_queue == true)}
         - Switch to {base_branch}, pull latest, delete local branch {head_branch}
 
         **Actions on "No, skip merge"**:
