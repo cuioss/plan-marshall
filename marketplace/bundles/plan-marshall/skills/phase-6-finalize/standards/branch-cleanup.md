@@ -541,7 +541,7 @@ AskUserQuestion:
         **Merge strategy**: {pr_merge_strategy}
         **Current classifier** (post-rebase): classification={classification}, auto_reconciled={auto_reconciled}, upstream_commits={upstream_commit_count}
 
-        **Actions on "Yes, merge"** (the merge itself is routed by `use_merge_queue` — see the authoritative **Merge routing (`use_merge_queue`)** section under **Merge PR**):
+        **Actions on "Yes, merge"**:
         {On `use_merge_queue == false` (default):}
         {- `pr safe-merge --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch` (polls readiness, then merges and deletes the remote branch; GitHub-only `--admin` stuck-state fallback when `admin_merge_on_stuck_state` is enabled)}
         {On `use_merge_queue == true`:}
