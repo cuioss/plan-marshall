@@ -1,5 +1,7 @@
 {
-  "best_practices": [],
+  "best_practices": [
+    "AskUserQuestion conditional template lines must be enclosed in braces and end with the (if <condition>) suffix INSIDE the braces, e.g. {- do X (if use_merge_queue == true)}. A bare conditional line without the (if ...) suffix is rendered UNCONDITIONALLY by the template engine (the condition is silently ignored). Mirror the existing pattern when authoring branch-conditional prompt/gate templates."
+  ],
   "insights": [
     "phase-3-outline assessment_coverage Q-Gate: a downstream-propagation deliverable that lists external consumer-repo paths (e.g. /other-repo/.plan/marshal.json) as affected files cannot carry CERTAIN_INCLUDE assessments \u2014 the assessment flow is architecture-bound to the plan-marshall worktree and only assesses in-worktree files. Those external paths are legitimate propagation targets per .plan/downstream_propagation.md, so the resulting assessment_coverage gap is a known false positive to resolve as taken_into_account, not a missing assessment requiring re-outline.",
     "Self-review (q-gate) findings are a standing consideration project-wide: across the archived-plan corpus they are consistently folded into the work (taken_into_account) rather than suppressed \u2014 expect q-gate findings to be resolved in-flight, not deferred or dismissed.",
