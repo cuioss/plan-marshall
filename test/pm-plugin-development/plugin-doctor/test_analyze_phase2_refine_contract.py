@@ -1,12 +1,16 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
-"""Tests for the ``refine-contract-violation`` rule analyzer.
+"""Tests for the planning-phase ``*-contract-violation`` rule analyzer.
 
-The analyzer scans ``phase-2-refine/`` workflow files for ``Edit`` / ``Write``
-tool references whose path argument is not prefixed with ``.plan/local/``,
-``{WORKTREE}/.plan/local/``, or ``{worktree_path}/.plan/local/``. The
-contract documented in ``phase-2-refine/SKILL.md`` § Enforcement → Allowed
-write paths restricts refine to writing only inside the plan's own scope.
+The analyzer scans the three planning-phase workflow directories
+(``phase-2-refine`` / ``phase-3-outline`` / ``phase-4-plan``) for ``Edit`` /
+``Write`` tool references whose path argument is not prefixed with
+``.plan/local/``, ``{WORKTREE}/.plan/local/``, or ``{worktree_path}/.plan/local/``.
+It emits one rule id per matched phase directory
+(``refine-contract-violation`` / ``outline-contract-violation`` /
+``plan-contract-violation``). The contract documented in each planning phase's
+§ Enforcement → Allowed write paths restricts the phase to writing only inside
+the plan's own scope.
 
 Test layers:
   * Clean workflow file (no Edit/Write calls)                → no finding.
@@ -18,7 +22,14 @@ Test layers:
   * ``Read`` of any path                                     → no finding.
   * ``rules_filter`` excluding the rule                      → no findings.
   * ``rules_filter`` including the rule                      → findings emitted.
-  * File outside ``phase-2-refine/``                         → out of scope, no findings.
+  * File outside the three planning phases                   → out of scope, no findings.
+
+Generalization regression layers (PLAN-16 WS-08):
+  (a) Edit/Write to a non-plan path in ``phase-3-outline/``  → outline-contract-violation.
+  (b) Edit/Write to a non-plan path in ``phase-4-plan/``     → plan-contract-violation.
+  (c) Edit/Write to ``.plan/local/plans/...`` in phase-3/4   → no finding.
+  (d) Existing ``phase-2-refine`` behavior                   → refine-contract-violation (unchanged).
+  (e) ``RULE_DESCRIPTORS`` exposes all three rule ids and    → registry builds with no duplicate-id error.
 """
 
 from pathlib import Path
@@ -34,9 +45,17 @@ _a = _load_module(
     '_analyze_phase2_refine_contract',
     '_analyze_phase2_refine_contract.py',
 )
+_r = _load_module('_rule_registry', '_rule_registry.py')
 
 analyze_phase2_refine_contract = _a.analyze_phase2_refine_contract
-RULE_ID = _a.RULE_ID
+
+# Per-phase rule ids the generalized analyzer emits. ``RULE_ID`` is retained as
+# a back-compat alias for the phase-2-refine rule id so the existing
+# phase-2-refine regression tests below read unchanged.
+REFINE_RULE_ID = 'refine-contract-violation'
+OUTLINE_RULE_ID = 'outline-contract-violation'
+PLAN_RULE_ID = 'plan-contract-violation'
+RULE_ID = REFINE_RULE_ID
 
 
 # ---------------------------------------------------------------------------
@@ -44,20 +63,31 @@ RULE_ID = _a.RULE_ID
 # ---------------------------------------------------------------------------
 
 
+def _make_phase_file(
+    tmp_path: Path, phase_dir: str, content: str, filename: str = 'SKILL.md'
+) -> Path:
+    """Create ``<tmp>/<phase_dir>/<filename>`` with the given content.
+
+    ``phase_dir`` is one of the three planning-phase directory names
+    (``phase-2-refine`` / ``phase-3-outline`` / ``phase-4-plan``).
+    """
+    phase_path = tmp_path / phase_dir
+    phase_path.mkdir(parents=True, exist_ok=True)
+    file_path = phase_path / filename
+    file_path.write_text(content, encoding='utf-8')
+    return file_path
+
+
 def _make_refine_file(tmp_path: Path, content: str, filename: str = 'SKILL.md') -> Path:
     """Create ``<tmp>/phase-2-refine/<filename>`` with the given content.
 
     Returns the path to the created file.
     """
-    refine_dir = tmp_path / 'phase-2-refine'
-    refine_dir.mkdir(parents=True, exist_ok=True)
-    file_path = refine_dir / filename
-    file_path.write_text(content, encoding='utf-8')
-    return file_path
+    return _make_phase_file(tmp_path, 'phase-2-refine', content, filename)
 
 
 def _make_outside_file(tmp_path: Path, content: str) -> Path:
-    """Create a markdown file OUTSIDE any phase-2-refine directory."""
+    """Create a markdown file OUTSIDE any planning-phase directory."""
     outside_dir = tmp_path / 'phase-5-execute'
     outside_dir.mkdir(parents=True, exist_ok=True)
     file_path = outside_dir / 'SKILL.md'
@@ -348,3 +378,149 @@ def test_finding_is_byte_identical_to_pre_refactor_baseline(tmp_path: Path) -> N
         },
     }
     assert findings[0] == expected
+
+
+# ---------------------------------------------------------------------------
+# Generalization regression cases (PLAN-16 WS-08): outline / plan phases
+# ---------------------------------------------------------------------------
+
+
+def test_edit_in_phase3_outline_emits_outline_rule(tmp_path: Path) -> None:
+    """(a) A non-.plan/local Edit inside phase-3-outline/ → outline-contract-violation."""
+    content = (
+        '# Outline Step\n'
+        '\n'
+        'Edit("marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md")\n'
+    )
+    file_path = _make_phase_file(tmp_path, 'phase-3-outline', content)
+
+    findings = analyze_phase2_refine_contract([file_path])
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding['rule_id'] == OUTLINE_RULE_ID
+    assert finding['type'] == OUTLINE_RULE_ID
+    assert finding['details']['tool'] == 'Edit'
+    assert 'marketplace' in finding['details']['path']
+    # The phase directory name is interpolated into the description.
+    assert 'phase-3-outline' in finding['description']
+    assert f'({OUTLINE_RULE_ID})' in finding['description']
+
+
+def test_write_in_phase3_outline_emits_outline_rule(tmp_path: Path) -> None:
+    """(a) A non-.plan/local Write inside phase-3-outline/ → outline-contract-violation."""
+    content = (
+        '# Outline\n'
+        '\n'
+        'Write(file_path="src/main/foo.py", content="...")\n'
+    )
+    file_path = _make_phase_file(tmp_path, 'phase-3-outline', content)
+
+    findings = analyze_phase2_refine_contract([file_path])
+
+    assert len(findings) == 1
+    assert findings[0]['rule_id'] == OUTLINE_RULE_ID
+    assert findings[0]['details']['tool'] == 'Write'
+    assert findings[0]['details']['path'] == 'src/main/foo.py'
+
+
+def test_edit_in_phase4_plan_emits_plan_rule(tmp_path: Path) -> None:
+    """(b) A non-.plan/local Edit inside phase-4-plan/ → plan-contract-violation."""
+    content = (
+        '# Plan Step\n'
+        '\n'
+        'Edit("marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md")\n'
+    )
+    file_path = _make_phase_file(tmp_path, 'phase-4-plan', content)
+
+    findings = analyze_phase2_refine_contract([file_path])
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding['rule_id'] == PLAN_RULE_ID
+    assert finding['type'] == PLAN_RULE_ID
+    assert finding['details']['tool'] == 'Edit'
+    assert 'phase-4-plan' in finding['description']
+    assert f'({PLAN_RULE_ID})' in finding['description']
+
+
+def test_write_in_phase4_plan_emits_plan_rule(tmp_path: Path) -> None:
+    """(b) A non-.plan/local Write inside phase-4-plan/ → plan-contract-violation."""
+    content = (
+        '# Plan\n'
+        '\n'
+        'Write("build.gradle")\n'
+    )
+    file_path = _make_phase_file(tmp_path, 'phase-4-plan', content)
+
+    findings = analyze_phase2_refine_contract([file_path])
+
+    assert len(findings) == 1
+    assert findings[0]['rule_id'] == PLAN_RULE_ID
+    assert findings[0]['details']['tool'] == 'Write'
+
+
+def test_plan_local_path_allowed_in_phase3_outline(tmp_path: Path) -> None:
+    """(c) A .plan/local plan-workspace write inside phase-3-outline/ is NOT flagged."""
+    content = (
+        '# Outline\n'
+        '\n'
+        'Edit(".plan/local/plans/my-plan/solution_outline.md")\n'
+    )
+    file_path = _make_phase_file(tmp_path, 'phase-3-outline', content)
+
+    findings = analyze_phase2_refine_contract([file_path])
+
+    assert findings == []
+
+
+def test_plan_local_path_allowed_in_phase4_plan(tmp_path: Path) -> None:
+    """(c) A .plan/local plan-workspace write inside phase-4-plan/ is NOT flagged."""
+    content = (
+        '# Plan\n'
+        '\n'
+        'Write(file_path="{worktree_path}/.plan/local/plans/p/TASK-001.json", content="...")\n'
+    )
+    file_path = _make_phase_file(tmp_path, 'phase-4-plan', content)
+
+    findings = analyze_phase2_refine_contract([file_path])
+
+    assert findings == []
+
+
+def test_phase2_refine_behavior_unchanged(tmp_path: Path) -> None:
+    """(d) The existing phase-2-refine path still emits refine-contract-violation."""
+    content = (
+        '# Refine Step\n'
+        '\n'
+        'Edit("marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md")\n'
+    )
+    file_path = _make_phase_file(tmp_path, 'phase-2-refine', content)
+
+    findings = analyze_phase2_refine_contract([file_path])
+
+    assert len(findings) == 1
+    assert findings[0]['rule_id'] == REFINE_RULE_ID
+    assert findings[0]['type'] == REFINE_RULE_ID
+    assert 'phase-2-refine' in findings[0]['description']
+
+
+def test_rule_descriptors_expose_all_three_rule_ids() -> None:
+    """(e) RULE_DESCRIPTORS carries the three per-phase rule ids with the shared shape."""
+    descriptors = _a.RULE_DESCRIPTORS
+    assert len(descriptors) == 3
+    ids = {d.rule_id for d in descriptors}
+    assert ids == {REFINE_RULE_ID, OUTLINE_RULE_ID, PLAN_RULE_ID}
+    for descriptor in descriptors:
+        assert descriptor.severity == 'error'
+        assert descriptor.category == 'safety'
+        assert descriptor.scope == 'file-local'
+
+
+def test_registry_build_tolerates_all_three_descriptors() -> None:
+    """(e) The registry builds without a duplicate-id error and carries all three rules."""
+    registry = _r.get_registry()
+    registry_ids = {descriptor.rule_id for descriptor in registry}
+    assert REFINE_RULE_ID in registry_ids
+    assert OUTLINE_RULE_ID in registry_ids
+    assert PLAN_RULE_ID in registry_ids

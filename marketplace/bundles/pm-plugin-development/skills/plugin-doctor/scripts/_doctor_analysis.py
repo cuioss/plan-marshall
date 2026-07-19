@@ -243,16 +243,18 @@ def analyze_component(component: dict, active_rules: frozenset[str] | None = Non
         if 'manage-findings-invocation-invalid' in active_rules:
             issues.extend(scan_skill_for_manage_findings_invocation(skill_dir))
 
-        # refine-contract-violation: catch Edit/Write tool references in
-        # phase-2-refine workflow files whose path argument is not prefixed
-        # with .plan/local/ (or its worktree-substituted forms). The analyzer
-        # self-filters to phase-2-refine/ files via path matching, so
-        # registration at the broader ``skills`` scope is correct: invoking
-        # plugin-doctor on a non-refine skill produces no findings because
-        # the analyzer's _is_refine_workflow_file predicate excludes them.
-        # Unconditionally active (not gated on active_rules) — the rule
-        # enforces a hard refine-contract requirement that must surface on
-        # every plugin-doctor run.
+        # refine/outline/plan-contract-violation: catch Edit/Write tool
+        # references in planning-phase workflow files (phase-2-refine,
+        # phase-3-outline, phase-4-plan) whose path argument is not prefixed
+        # with .plan/local/ (or its worktree-substituted forms), emitting the
+        # matched phase's rule id. The analyzer self-filters to the three
+        # planning-phase directories via path matching, so registration at the
+        # broader ``skills`` scope is correct: invoking plugin-doctor on a
+        # non-planning skill produces no findings because the analyzer's
+        # _is_planning_workflow_file predicate excludes them. Unconditionally
+        # active (not gated on active_rules) — the rules enforce a hard
+        # planning-phase no-main-mutation contract that must surface on every
+        # plugin-doctor run.
         issues.extend(analyze_phase2_refine_contract([skill_dir]))
 
         # notation-staleness: catch three-part executor notations whose third

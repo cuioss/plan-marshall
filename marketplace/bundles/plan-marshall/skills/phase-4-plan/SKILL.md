@@ -31,6 +31,7 @@ Skill: plan-marshall:persona-plan-marshall-agent
 - Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
 - Never skip the phase transition — use `manage-status transition`
 - Never improvise script subcommands — use only those documented below
+- **Never mutate source files outside `.plan/local/plans/{plan_id}/`** during planning. The plan phase is strictly task-creation: it reads deliverables and writes task documents into the plan workspace. Edits to any path under `marketplace/`, `target/`, `.claude/`, `test/`, `doc/`, or any other repository directory are categorically forbidden — those mutations are the responsibility of phase-5-execute task bodies. If task creation surfaces a fix, capture it as a task step rather than applying it directly.
 
 **Anti-pattern: shell-substitution shortcuts for batch task payloads**
 
