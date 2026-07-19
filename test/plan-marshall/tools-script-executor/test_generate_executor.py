@@ -1680,6 +1680,91 @@ def test_preflight_surfaces_error_when_regeneration_fails(tmp_path, monkeypatch)
     assert 'discovery failed' in result['error']
 
 
+def test_preflight_marks_superseded_version_dirs_and_clears_pollution(tmp_path, monkeypatch):
+    """Deferred-prune: a pollution-triggered regen marks every superseded
+    (non-newest) version dir with the orphan-GC ``.orphaned_at`` deferral marker
+    (never an immediate ``rmtree``), so a SECOND consecutive preflight sees one
+    live version dir per bundle and reports ``executor_action: fresh`` — closing
+    the regenerated-every-run loop where the pollution survived its own remedy.
+    """
+    module = load_module()
+
+    # Seed a plugin-cache-shaped bundles root: one bundle with TWO version dirs
+    # (each carrying a skills/ tree) → multi-version PYTHONPATH pollution.
+    bundles_root = tmp_path / 'cache'
+    for version in ('0.1.100', '0.1.200'):
+        skills = bundles_root / 'plan-marshall' / version / 'skills' / 'some-skill' / 'scripts'
+        skills.mkdir(parents=True)
+        (skills / 'foo.py').write_text('# foo\n')
+
+    # Manifest carries NO executor_changed_at, so the executor stays fresh and the
+    # ONLY regen driver is the pollution path (isolating the behavior under test).
+    manifest = tmp_path / 'dist-manifest.json'
+    manifest.write_text('{"version": "0.1.200"}', encoding='utf-8')
+    monkeypatch.setenv('PM_DIST_MANIFEST', str(manifest))
+
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    (plan_dir / 'execute-script.py').write_text("MARSHALL_VERSION = '0.1.200'\n", encoding='utf-8')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+    monkeypatch.chdir(tmp_path)
+
+    # base_path resolves to the seeded cache tree; cmd_generate is stubbed (its
+    # full discovery pipeline is covered elsewhere) so the pollution regen branch
+    # is isolated to the marking behavior under test.
+    monkeypatch.setattr(module, 'get_base_path', lambda *a, **k: bundles_root)
+    monkeypatch.setattr(module, 'cmd_generate', lambda args: {'status': 'success'})
+
+    superseded = bundles_root / 'plan-marshall' / '0.1.100'
+    newest = bundles_root / 'plan-marshall' / '0.1.200'
+
+    # First preflight: pollution detected → regenerated, and the superseded
+    # (older) version dir now carries the .orphaned_at deferral marker while the
+    # newest stays live (unmarked).
+    first = module.cmd_preflight(_preflight_args())
+    assert first['status'] == 'success'
+    assert first['executor_action'] == 'regenerated', 'multi-version pollution must trigger a regen'
+    assert (superseded / '.orphaned_at').is_file(), 'the superseded version dir must be marked orphaned'
+    assert not (newest / '.orphaned_at').exists(), 'the newest version dir must stay live (unmarked)'
+
+    # Both version dirs still exist on disk — marking defers removal to the
+    # orphan GC, it never rmtree's the superseded dir out from under a live
+    # process's PYTHONPATH.
+    assert superseded.is_dir() and newest.is_dir(), 'deferred prune must NOT delete the superseded dir'
+
+    # Second consecutive preflight, nothing else changed: the marked dir is
+    # excluded from the pollution count, so exactly one live version dir remains
+    # → no repeat regen.
+    second = module.cmd_preflight(_preflight_args())
+    assert second['status'] == 'success'
+    assert second['executor_action'] == 'fresh', (
+        'the pollution signal must clear on the second run — no regenerated-every-run loop'
+    )
+
+
+def test_detect_multi_version_pollution_excludes_marked_dirs(tmp_path):
+    """_detect_multi_version_pollution excludes ``.orphaned_at``-marked version
+    dirs: a bundle with one live dir and one marked-superseded dir is NOT
+    reported as polluted (the marked dir is deferred-GC state, not live
+    pollution)."""
+    module = load_module()
+
+    bundles_root = tmp_path / 'cache'
+    live = bundles_root / 'plan-marshall' / '0.1.200' / 'skills' / 's' / 'scripts'
+    live.mkdir(parents=True)
+    marked = bundles_root / 'plan-marshall' / '0.1.100' / 'skills' / 's' / 'scripts'
+    marked.mkdir(parents=True)
+    (bundles_root / 'plan-marshall' / '0.1.100' / '.orphaned_at').write_text('2026-01-01T00:00:00Z')
+
+    assert module._detect_multi_version_pollution(bundles_root) == [], (
+        'a bundle with one live dir and one marked-superseded dir must not be reported polluted'
+    )
+
+    # Sanity: two LIVE (unmarked) dirs ARE reported polluted.
+    (bundles_root / 'plan-marshall' / '0.1.100' / '.orphaned_at').unlink()
+    assert module._detect_multi_version_pollution(bundles_root) == ['plan-marshall']
+
+
 def test_cmd_generate_returns_error_when_base_path_unresolvable(tmp_path):
     """cmd_generate returns a structured error (not an unhandled exception)
     when the marketplace base path cannot be resolved."""

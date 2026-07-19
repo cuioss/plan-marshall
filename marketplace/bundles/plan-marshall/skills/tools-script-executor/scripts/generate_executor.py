@@ -133,6 +133,7 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 
 # Shared path resolution (from script-shared)
 from marketplace_bundles import (  # noqa: E402, I001
+    _version_sort_key,
     build_pythonpath,
     collect_script_dirs,
     resolve_bundle_path,
@@ -1537,7 +1538,7 @@ def cmd_cleanup(args: argparse.Namespace) -> dict:
 
 
 def _detect_multi_version_pollution(base_path: Path | None) -> list[str]:
-    """Return the bundle names exposing more than one version dir on disk.
+    """Return the bundle names exposing more than one LIVE version dir on disk.
 
     In the plugin-cache layout a bundle resolves as
     ``{base}/{bundle}/{version}/skills/``. A bundle carrying MORE THAN ONE
@@ -1547,6 +1548,14 @@ def _detect_multi_version_pollution(base_path: Path | None) -> list[str]:
     on-disk pollution lets the preflight regenerate the executor (which then
     embeds only the newest version's paths). Returns the sorted list of polluted
     bundle names (empty when the tree is clean or ``base_path`` is unresolved).
+
+    A version dir carrying the orphan-GC ``.orphaned_at`` deferral marker is
+    EXCLUDED from the count: it is a superseded dir already scheduled for
+    removal by the 7-day orphan GC, so it is not live pollution. This is what
+    makes the pollution signal CLEAR after a prior preflight marked the
+    superseded dirs — the second consecutive preflight sees exactly one live
+    (unmarked) version dir per bundle and reports ``executor_action: fresh``
+    instead of regenerating on every run.
     """
     if base_path is None or not base_path.is_dir():
         return []
@@ -1559,7 +1568,10 @@ def _detect_multi_version_pollution(base_path: Path | None) -> list[str]:
                 version_dirs = [
                     d
                     for d in bundle_dir.iterdir()
-                    if d.is_dir() and not d.name.startswith('.') and (d / 'skills').is_dir()
+                    if d.is_dir()
+                    and not d.name.startswith('.')
+                    and (d / 'skills').is_dir()
+                    and not (d / '.orphaned_at').exists()
                 ]
             except OSError:
                 continue
@@ -1568,6 +1580,54 @@ def _detect_multi_version_pollution(base_path: Path | None) -> list[str]:
     except OSError:
         pass
     return sorted(polluted)
+
+
+def _mark_superseded_version_dirs(base_path: Path | None, polluted_bundles: list[str]) -> None:
+    """Mark the superseded (non-newest) version dirs of each polluted bundle.
+
+    For every polluted bundle, keep the numerically-newest live version dir (the
+    one ``collect_script_dirs`` embeds after a regen) and stamp every OTHER live
+    version dir with the orphan-GC ``.orphaned_at`` deferral marker. This does
+    NOT delete anything: the actual removal defers to the existing 7-day orphan
+    GC, sidestepping the check-then-``rmtree`` TOCTOU / delete-live-dir hazard
+    (a superseded dir may still be on a running process's PYTHONPATH). Marking is
+    what clears the pollution signal for the NEXT preflight — a marked dir is
+    excluded by ``_detect_multi_version_pollution``, so the following run sees
+    one live version dir per bundle and no longer regenerates.
+
+    The marker content is a fresh ISO-8601 UTC timestamp (the orphan-GC clock
+    origin). The write is idempotent by construction — an already-marked dir is
+    never re-selected (the newest-live scan excludes marked dirs), so the 7-day
+    clock is never reset on a dir that was already marked.
+    """
+    if base_path is None:
+        return
+    marker_ts = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+    for bundle_name in polluted_bundles:
+        bundle_dir = base_path / bundle_name
+        if not bundle_dir.is_dir():
+            continue
+        try:
+            live_version_dirs = [
+                d
+                for d in bundle_dir.iterdir()
+                if d.is_dir()
+                and not d.name.startswith('.')
+                and (d / 'skills').is_dir()
+                and not (d / '.orphaned_at').exists()
+            ]
+        except OSError:
+            continue
+        if len(live_version_dirs) <= 1:
+            continue
+        newest = max(live_version_dirs, key=lambda d: _version_sort_key(d.name))
+        for version_dir in live_version_dirs:
+            if version_dir == newest:
+                continue
+            try:
+                (version_dir / '.orphaned_at').write_text(marker_ts, encoding='utf-8')
+            except OSError:
+                continue
 
 
 def cmd_preflight(args: argparse.Namespace) -> dict:
@@ -1598,13 +1658,18 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
       freshness it cannot prove.
 
     - **Multi-version PYTHONPATH pollution is safe derived state too.** When
-      more than one version dir per bundle is discoverable in the plugin-cache
-      context the verb regenerates the executor in place (reported through
-      ``executor_action: regenerated``) — the regenerated executor embeds only
-      the newest version's paths (``collect_script_dirs``' newest-only
-      selection), so a stale version dir left on disk can no longer shadow the
-      current scripts. The regen is skipped when version-staleness already
-      regenerated in the same run.
+      more than one LIVE version dir per bundle is discoverable in the
+      plugin-cache context the verb regenerates the executor in place (reported
+      through ``executor_action: regenerated``) — the regenerated executor
+      embeds only the newest version's paths (``collect_script_dirs``'
+      newest-only selection), so a stale version dir left on disk can no longer
+      shadow the current scripts. The regen is skipped when version-staleness
+      already regenerated in the same run. It then marks the superseded
+      (non-newest) version dirs with the orphan-GC ``.orphaned_at`` deferral
+      marker so the NEXT preflight sees exactly one live version dir per bundle
+      and reports ``fresh`` (no regenerated-every-run loop); the actual removal
+      defers to the existing 7-day orphan GC rather than an immediate
+      ``rmtree`` (which would race a live process's PYTHONPATH).
 
     A fresh install with no manifest resolves ``installed_version`` to the
     ``unknown`` sentinel, so the verb fails closed and reports
@@ -1657,16 +1722,27 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
     # selection), so an older version dir left on disk can no longer shadow the
     # current scripts. Skip the redundant regen when staleness already regenerated.
     polluted_bundles = _detect_multi_version_pollution(base_path)
-    if polluted_bundles and executor_action != 'regenerated':
-        regen = cmd_generate(args)
-        if regen.get('status') != 'success':
-            return {
-                'status': 'error',
-                'error': f'preflight pollution regeneration failed: {regen.get("error", "unknown error")}',
-            }
-        executor_action = 'regenerated'
-        # Re-read the freshly stamped version so the report reflects the regen.
-        executor_version = read_executor_version()
+    if polluted_bundles:
+        # Regenerate the executor once so it embeds only the newest version's
+        # paths. Skip the redundant regen when version-staleness already
+        # regenerated in the same run.
+        if executor_action != 'regenerated':
+            regen = cmd_generate(args)
+            if regen.get('status') != 'success':
+                return {
+                    'status': 'error',
+                    'error': f'preflight pollution regeneration failed: {regen.get("error", "unknown error")}',
+                }
+            executor_action = 'regenerated'
+            # Re-read the freshly stamped version so the report reflects the regen.
+            executor_version = read_executor_version()
+        # Mark the superseded (non-newest) version dirs with the orphan-GC
+        # deferral marker so the NEXT preflight sees one live version dir per
+        # bundle and does not regenerate again. This fires whenever pollution is
+        # detected — including when version-staleness already regenerated above —
+        # so the pollution signal always clears rather than re-triggering a regen
+        # on every run. Removal defers to the existing 7-day orphan GC.
+        _mark_superseded_version_dirs(base_path, polluted_bundles)
 
     # Config-seed staleness → advisory only (marshal.json is never auto-mutated).
     marshal_status = 'fresh'
