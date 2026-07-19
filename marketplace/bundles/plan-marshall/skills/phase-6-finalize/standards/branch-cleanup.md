@@ -526,6 +526,8 @@ Once `admission: admitted` is reached, proceed directly to **Merge PR (if not ye
 
 **Release-before-wait / re-acquire-after (widened hold)**: this Pre-Merge Gate is an operator-wait boundary. Under `merge_hold_window == full_window_release_at_waits`, BEFORE presenting the `AskUserQuestion` below, release the merge mutex if held and FIFO-re-enqueue (`merge_lock release --plan-id {plan_id}`), so the plan does not hold the lock across the human confirmation (§ "Merge-Mutex Hold Window" invariant 1). On "Yes, merge", RE-ACQUIRE via the canonical FIFO poll loop above and **re-validate** — re-dispatch `baseline-reconcile` and re-rebase when `origin/{base_branch}` advanced during the released window — before issuing the merge (mirroring the trigger-A re-review-timeout section's wording). Do NOT reuse the pre-wait classifier run from § "Re-run the classifier against the current head": that run was anchored to HEAD BEFORE the human confirmation, and because the confirmation can take an arbitrary amount of time `origin/{base_branch}` may have advanced further during the wait — invariant 1 requires re-running `baseline-reconcile` on resume-after-release, not reusing a stale pre-wait result. Check the `merge_hold_budget_seconds` bound against elapsed-since-`{hold_start}` and escalate if exceeded.
 
+Read `use_merge_queue` off the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above (default: `false`). It selects which action the "Yes, merge" option authorizes below, so the operator-facing description matches the routed action performed by the authoritative **Merge routing (`use_merge_queue`)** section under **Merge PR** — this gate only describes the action; it does not itself route.
+
 Present the merge context and ask the operator to confirm. The prompt is anchored to the current (post-rebase, post-CI) head SHA via the freshly-re-run classifier above:
 
 ```text
@@ -539,8 +541,11 @@ AskUserQuestion:
         **Merge strategy**: {pr_merge_strategy}
         **Current classifier** (post-rebase): classification={classification}, auto_reconciled={auto_reconciled}, upstream_commits={upstream_commit_count}
 
-        **Actions on "Yes, merge"**:
-        - `pr safe-merge --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch` (polls readiness, then merges; GitHub-only `--admin` stuck-state fallback when `admin_merge_on_stuck_state` is enabled)
+        **Actions on "Yes, merge"** (the merge itself is routed by `use_merge_queue` — see the authoritative **Merge routing (`use_merge_queue`)** section under **Merge PR**):
+        {On `use_merge_queue == false` (default):}
+        {- `pr safe-merge --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch` (polls readiness, then merges and deletes the remote branch; GitHub-only `--admin` stuck-state fallback when `admin_merge_on_stuck_state` is enabled)}
+        {On `use_merge_queue == true`:}
+        {- ENQUEUE via `ci pr merge-queue --pr-number {pr_number}` — NO `--delete-branch` and NO direct-merge/admin fallback; the platform re-tests-and-merges against the latest base and deletes the head branch itself after the queue merge (repo `delete_branch_on_merge` / queue auto-delete)}
         - Switch to {base_branch}, pull latest, delete local branch {head_branch}
 
         **Actions on "No, skip merge"**:
@@ -548,7 +553,7 @@ AskUserQuestion:
         - Re-enter finalize later to merge (state == merged short-circuits this prompt if you merged manually)
       options:
         - label: "Yes, merge"
-          description: "Run pr safe-merge --delete-branch (poll-then-merge, GitHub stuck-state admin fallback when enabled)"
+          description: "Authorize the merge — routed by use_merge_queue: safe-merge --delete-branch (+ admin fallback) on false; pr merge-queue enqueue on true"
         - label: "No, skip merge"
           description: "Defer merge; exit cleanly so finalize can be re-entered later"
       multiSelect: false
@@ -563,7 +568,10 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Set `{merge_consent} = deferred`. Skip the **Merge PR**, **Wait for Merge CI**, **Remove Worktree**, and **Switch to Base Branch** sections entirely; the rebased branch is left in place with no further mutation. Emit the `mark-step-done` payload below using **Branch C — declined by user** (deferral is the same shape from the workflow's point of view: cleanup was not completed this run, re-entry is expected) and return.
 
-**If user selects "Yes, merge"**: Set `{merge_consent} = explicit_yes` and proceed to **Merge PR (if not yet merged)** below. The `pr safe-merge` poll-then-merge path — including its GitHub-only stuck-state admin fallback when `admin_merge_on_stuck_state` is enabled — is authorized (explicit consent was given for the merge action; the stuck-state fallback is part of the same merge intent).
+**If user selects "Yes, merge"**: Set `{merge_consent} = explicit_yes` and proceed to **Merge PR (if not yet merged)** below, where the **Merge routing (`use_merge_queue`)** section performs the routed action. The authorization is symmetric with that routing:
+
+- On `use_merge_queue == false` (default): the `pr safe-merge` poll-then-merge path — including its GitHub-only stuck-state admin fallback when `admin_merge_on_stuck_state` is enabled — is authorized (explicit consent was given for the merge action; the stuck-state fallback is part of the same merge intent).
+- On `use_merge_queue == true`: the ENQUEUE via `ci pr merge-queue` is authorized instead — with NO `--delete-branch` and NO direct-merge/admin fallback; the platform re-tests-and-merges against the latest base and performs the head-branch deletion itself after the queue merge.
 
 ### Pre-Merge Comment-Completeness Barrier
 
