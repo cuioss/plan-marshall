@@ -214,7 +214,58 @@ ELSE (qgate_pending_count > 0 — whether the loop broke on the whole-outline ha
 
 The `until_clean` loop runs automatically — do NOT prompt the user for Q-Gate findings unless the loop exits with a non-zero pending count. Q-Gate findings are objective quality failures that the phase must self-correct. The content-hash re-run gate is the key economy: it is what prevents an unchanged outline cycle from triggering a second q-gate dispatch (the observed `q-gate ×2 with 0 findings` waste). The exit is unified on the pending COUNT, not on how the loop terminated: proceed to Step 2c ONLY when `qgate_pending_count == 0`; ANY exit with a non-zero count — the hash-unchanged break (unchanged-and-pending) just as much as iteration exhaustion — escalates to the user. This closes the unchanged-and-pending gap where a hash-unchanged break previously left findings neither cleaned nor handed off (Step 2c only proceeded on zero, and the escalation branch only fired at iteration exhaustion).
 
-**Step 2c**: Transition phase after outline completes AND Q-Gate is clean:
+**Step 2c**: Transition phase after outline completes AND Q-Gate is clean.
+
+**Post-dispatch contract assertion**: phase-3-outline runs on the main checkout (the worktree is not materialized until phase-5 Step 2.5) and its contract restricts writes to `.plan/local/plans/{plan_id}/**` and `.plan/local/worktrees/{plan_id}/**` — the `solution_outline.md` artifact only. The outline phase reaching for `Edit` / `Write` against the main checkout silently advances the orchestrator into phase-4-plan with main-checkout drift. Assert structurally that the main checkout is clean before advancing. Plan-workspace writes under `.plan/local/**` are untracked, so they never appear in porcelain output — only a stray main-tree edit does:
+
+```bash
+git -C . status --porcelain
+```
+
+**Success branch** — empty output (main checkout clean):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[STATUS] (plan-marshall:plan-marshall) Post-outline main-checkout assertion passed (clean)"
+```
+
+Continue to the `manage-status transition --completed 3-outline` call below.
+
+**Violation branch** — non-empty output (the outline phase wrote to the main checkout). The orchestrator MUST emit a `[CRITICAL]` work-log entry naming each modified file, return the structured error TOON, and refuse to advance to phase-4-plan.
+
+`{file_list}` is assembled from the `git -C . status --porcelain` output captured above — join the non-empty lines of that output (the porcelain lines already carry the `XY path` status-and-path encoding) into a single space- or comma-separated string and substitute it into both the log message and the error TOON below:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR \
+  --message "[CRITICAL] (plan-marshall:plan-marshall) Outline contract violation — main checkout dirty after phase-3-outline: {file_list}"
+```
+
+Return:
+
+```toon
+status: error
+error: outline_contract_violation
+display_detail: "outline dispatched edits to main checkout"
+plan_id: {plan_id}
+dirty_files: {file_list}
+```
+
+Do NOT call `manage-status transition` to 4-plan. Do NOT proceed with the metrics fused-call below. The orchestrator stops here; recovery requires the user to inspect the offending files and either revert them or move them into `.plan/local/plans/{plan_id}/**`.
+
+**Named recovery case — `.plan/marshal.json`**: When `dirty_files` contains `.plan/marshal.json`, output an additional recovery line alongside the generic instruction:
+
+```text
+Recovery: git checkout -- .plan/marshal.json
+```
+
+`marshal.json` holds only project-level configuration read by phases; it is never an outline-phase output artifact. Restoring it from HEAD is always safe — the outline phase MUST NOT have touched it. A dirty `marshal.json` after outline is therefore always a spurious write that is safe to revert without losing any outline-phase work.
+
+**Cross-references**:
+- `plan-marshall:plan-marshall/workflow/planning.md` § "Post-dispatch contract assertion" (phase-2-refine) — the canonical clean-main assertion this block mirrors
+- `pm-plugin-development:plugin-doctor` analyzer `outline-contract-violation` (Deliverable 2) — edit-time static complement to this runtime assertion
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} --completed 3-outline
@@ -487,7 +538,58 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Invoked execution-context for phase-4-plan"
 ```
 
-**Step 4b**: Transition phase after tasks created:
+**Step 4b**: Transition phase after tasks created.
+
+**Post-dispatch contract assertion**: phase-4-plan runs on the main checkout (the worktree is not materialized until phase-5 Step 2.5) and its contract restricts writes to `.plan/local/plans/{plan_id}/**` and `.plan/local/worktrees/{plan_id}/**` — the task-plan artifacts only. The plan phase reaching for `Edit` / `Write` against the main checkout silently advances the orchestrator into phase-5-execute with main-checkout drift. Assert structurally that the main checkout is clean before advancing. Plan-workspace writes under `.plan/local/**` are untracked, so they never appear in porcelain output — only a stray main-tree edit does:
+
+```bash
+git -C . status --porcelain
+```
+
+**Success branch** — empty output (main checkout clean):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[STATUS] (plan-marshall:plan-marshall) Post-plan main-checkout assertion passed (clean)"
+```
+
+Continue to the `manage-status transition --completed 4-plan` call below.
+
+**Violation branch** — non-empty output (the plan phase wrote to the main checkout). The orchestrator MUST emit a `[CRITICAL]` work-log entry naming each modified file, return the structured error TOON, and refuse to advance to phase-5-execute.
+
+`{file_list}` is assembled from the `git -C . status --porcelain` output captured above — join the non-empty lines of that output (the porcelain lines already carry the `XY path` status-and-path encoding) into a single space- or comma-separated string and substitute it into both the log message and the error TOON below:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR \
+  --message "[CRITICAL] (plan-marshall:plan-marshall) Plan contract violation — main checkout dirty after phase-4-plan: {file_list}"
+```
+
+Return:
+
+```toon
+status: error
+error: plan_contract_violation
+display_detail: "plan dispatched edits to main checkout"
+plan_id: {plan_id}
+dirty_files: {file_list}
+```
+
+Do NOT call `manage-status transition` to 5-execute. Do NOT proceed to Step 4c. The orchestrator stops here; recovery requires the user to inspect the offending files and either revert them or move them into `.plan/local/plans/{plan_id}/**`.
+
+**Named recovery case — `.plan/marshal.json`**: When `dirty_files` contains `.plan/marshal.json`, output an additional recovery line alongside the generic instruction:
+
+```text
+Recovery: git checkout -- .plan/marshal.json
+```
+
+`marshal.json` holds only project-level configuration read by phases; it is never a plan-phase output artifact. Restoring it from HEAD is always safe — the plan phase MUST NOT have touched it. A dirty `marshal.json` after plan is therefore always a spurious write that is safe to revert without losing any plan-phase work.
+
+**Cross-references**:
+- `plan-marshall:plan-marshall/workflow/planning.md` § "Post-dispatch contract assertion" (phase-2-refine) — the canonical clean-main assertion this block mirrors
+- `pm-plugin-development:plugin-doctor` analyzer `plan-contract-violation` (Deliverable 2) — edit-time static complement to this runtime assertion
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition \
   --plan-id {plan_id} --completed 4-plan
