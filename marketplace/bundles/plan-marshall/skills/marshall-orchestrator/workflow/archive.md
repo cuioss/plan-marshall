@@ -52,7 +52,7 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
   --slug {slug}
 ```
 
-This is the deterministic directory move. It refuses a non-closed epic (`error: not_closed`, no move), a missing epic (`error: not_found`), or an existing archive (`error: archive_conflict`); an already-archived slug returns idempotent success (`already_archived: true`). On success it returns `archived_to` as the **absolute, main-anchored filesystem path** `str(dest)` — e.g. `/abs/path/.plan/local/archived-orchestrators/{slug}` — not the relative `archived-orchestrators/{slug}` form. `cmd_archive` itself carries **no** `display_detail` field; the `display_detail` in the Output section below is composed by the calling workflow (this LLM), not emitted by the script. The read verbs (`status`, `resume`) resolve the archived epic transparently, so archiving never orphans the audit record.
+This is the deterministic directory move. It refuses a non-closed epic (`error: not_closed`, no move), a missing epic (`error: not_found`), or an existing archive (`error: archive_conflict`); an already-archived slug returns idempotent success (`already_archived: true`). The read verbs (`status`, `resume`) resolve the archived epic transparently, so archiving never orphans the audit record. See the Output section below for the `archived_to`/`display_detail` field contract.
 
 ### Step 5: Restore the terminal title
 

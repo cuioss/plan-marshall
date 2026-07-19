@@ -141,16 +141,9 @@ def get_log_path(plan_id: str | None, log_type: str = 'script', store: str = 'pl
     parameterized store-root mechanism. ``store='plans'`` (default) preserves
     the existing plan-scoped behavior byte-identically; ``store='orchestrator'``
     resolves the main-anchored orchestrator tree
-    (``.plan/local/orchestrator/{entry_id}/logs/``) regardless of caller cwd.
-
-    For ``store='orchestrator'`` the resolution uses the ``allow_archived=True``
-    read-fallback: appending a log entry is an audit-trail continuation, not a
-    status.json business-state mutation, so it transparently resolves an
-    archived-only epic's ``archived-orchestrators/{entry_id}/logs/`` tree instead
-    of scaffolding an empty active-path directory (active wins when both exist;
-    the active path is named when neither exists). This mirrors the read-verb
-    transparency and prevents a log write from resurrecting an active tree for an
-    already-archived epic.
+    (``.plan/local/orchestrator/{entry_id}/logs/``) regardless of caller cwd,
+    transparently falling back to the archived tree for a closed-and-relocated
+    epic (see the inline rationale at the resolution call below).
 
     Args:
         plan_id: Entry identifier — a plan id (store='plans') or an epic slug
