@@ -310,6 +310,21 @@ def cmd_orchestrator_update_field(args: argparse.Namespace) -> dict[str, Any] | 
 
 def cmd_orchestrator_metadata(args: argparse.Namespace) -> dict[str, Any] | None:
     """Get or set a metadata field of a ``kind=orchestrator`` status.json."""
+    # Reject the mutually-exclusive combination BEFORE resolving the store or
+    # computing allow_archived. Otherwise `allow_archived=bool(args.get)` is
+    # True for a combined --get --set call, so the archived read-fallback
+    # resolves the store and control falls into the --set write branch, which
+    # rmw_json's against the STRICT active-path status.json — silently
+    # resurrecting/mutating the active orchestrator tree for an archived-only
+    # epic instead of refusing the malformed request.
+    if args.get and args.set:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'store': ORCHESTRATOR_STORE,
+            'error': 'wrong_parameters',
+            'message': '--get and --set are mutually exclusive; supply exactly one',
+        }
     # The --get read-path resolves an archived epic transparently; the --set
     # write-path stays strict so an archived-only epic refuses with
     # file_not_found (no resurrection at the active path).
