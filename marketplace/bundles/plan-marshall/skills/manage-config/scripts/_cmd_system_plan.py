@@ -16,12 +16,14 @@ from _config_core import (
     _coerce_value,
     error_exit,
     load_config,
+    reject_unknown_provisioning_field,
     require_initialized,
     save_config,
     success_exit,
 )
 from _config_defaults import (
     DEFAULT_PROJECT,
+    DEFAULT_SYSTEM_RETENTION,
     pr_compact_rides_existing_pr,
     validate_pr_compact_max_changed_files,
     validate_pr_strategy,
@@ -66,6 +68,14 @@ def cmd_system(args) -> dict:
                     f"{type(retention).__name__}",
                     error_type='invalid_type',
                 )
+            # Fail-closed provisioning-write guard (ADR-009): reject an unknown
+            # retention field before persisting it, rather than silently writing a
+            # typo'd/retired key that no reader would ever consult. Generalizes the
+            # `cmd_project set` whitelist via the shared seam;
+            # DEFAULT_SYSTEM_RETENTION is the canonical retention field whitelist.
+            rejection = reject_unknown_provisioning_field(field, DEFAULT_SYSTEM_RETENTION, 'system.retention')
+            if rejection is not None:
+                return rejection
             retention[field] = value
             system_config['retention'] = retention
             config['system'] = system_config
@@ -149,17 +159,17 @@ def cmd_project(args) -> dict:
             except ValueError as e:
                 return error_exit(str(e), error_type='invalid_value')
 
-        # Reject any field not in the project schema before persisting it. This
-        # makes `set` symmetric with the `get` branch's field_not_found handling:
-        # a typo'd or retired key (e.g. a dead lane knob) is rejected here rather
-        # than silently written to marshal.json where no reader would ever consult
-        # it. DEFAULT_PROJECT is the canonical field whitelist.
-        if field not in DEFAULT_PROJECT:
-            return error_exit(
-                f"Field '{field}' is not a known project field. "
-                f"Allowed: {sorted(DEFAULT_PROJECT)}",
-                error_type='unknown_field',
-            )
+        # Reject any field not in the project schema before persisting it, via
+        # the shared fail-closed provisioning-write seam (ADR-009). This makes
+        # `set` symmetric with the `get` branch's field_not_found handling: a
+        # typo'd or retired key (e.g. a dead lane knob) is rejected rather than
+        # silently written to marshal.json where no reader would ever consult it.
+        # DEFAULT_PROJECT is the canonical field whitelist. Routing through the
+        # single seam (rather than an inline check) is what encodes the invariant
+        # once — the same guard `cmd_system retention set` now uses.
+        rejection = reject_unknown_provisioning_field(field, DEFAULT_PROJECT, 'project')
+        if rejection is not None:
+            return rejection
 
         project_config[field] = value
         config['project'] = project_config
