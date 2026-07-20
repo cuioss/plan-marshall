@@ -232,7 +232,8 @@
       "chore/"
     ],
     "pr_strategy": "compact",
-    "pr_compact_max_changed_files": 150
+    "pr_compact_max_changed_files": 150,
+    "merge_queue_managed_externally": false
   },
   "providers": [
     {
@@ -298,7 +299,7 @@
       "lessons_superseded_days": 0,
       "temp_on_maintenance": true
     },
-    "provisioned_version": "0.1.1152",
-    "config_seed_fingerprint": "37df1a33"
+    "provisioned_version": "0.1.1163",
+    "config_seed_fingerprint": "38d03331"
   }
 }
