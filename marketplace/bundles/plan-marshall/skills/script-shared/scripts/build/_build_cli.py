@@ -105,6 +105,21 @@ def add_run_subparser(
         default='toon',
         help='Output format (default: toon)',
     )
+    # Explicit build-execute routing mode (D5 build-server client API). Declared
+    # once here so all four build tools (maven, gradle, npm, pyproject) inherit
+    # the flag from this single shared 'run' subparser:
+    #   auto        — route to marshalld opportunistically; fall back in-process
+    #                 on any unavailability (the historical default behaviour).
+    #   in_process  — never attempt to route; always build in-process.
+    #   daemon      — require the marshalld daemon; fail loud instead of falling
+    #                 back when the daemon cannot run the build.
+    run_parser.add_argument(
+        '--execution-mode',
+        dest='execution_mode',
+        choices=['auto', 'in_process', 'daemon'],
+        default='auto',
+        help='Build-execute routing mode (default: auto)',
+    )
     # ``add_project_dir_arg`` adds BOTH ``--project-dir`` and ``--plan-id``
     # so the run subparser inherits the canonical two-state routing
     # contract automatically. The same ``--plan-id`` value also drives
