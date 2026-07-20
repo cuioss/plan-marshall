@@ -109,6 +109,100 @@ def _detect_coderabbit_rate_limited(comments: list[dict]) -> bool:
     return _is_coderabbit_rate_limit_notice(body)
 
 
+# ---------------------------------------------------------------------------
+# Bot-agnostic rate-limit / service-notice detection (any reviewer bot)
+# ---------------------------------------------------------------------------
+#
+# When a reviewer bot is rate-limited (or otherwise cannot review) it posts a
+# short status notice IN PLACE OF a review — CodeRabbit's ``## Rate limit
+# exceeded`` callout, a Sourcery weekly-review-limit note, or an arbitrary
+# unknown/renamed bot's equivalent. Such a notice carries no actionable feedback
+# and must be dropped by the ``fetch_findings`` pre-filter regardless of author,
+# so noise classification does not hardcode a single bot's comment shape.
+#
+# The recognizer generalizes the CodeRabbit two-part precision to any bot: it
+# requires BOTH (a) a LIMIT-EXCEEDED STATEMENT — an explicit "<limit>
+# exceeded/reached/hit" or "exceeded the limit for the number of ..." body
+# sentence — AND (b) a NOTICE SHAPE — a status-notice presentation (a GitHub
+# alert callout, a markdown heading whose leading text IS the limit phrase, or a
+# "review will resume / try again / posted in place of a review" service tail).
+# Requiring both (mirroring the CodeRabbit ``all`` requirement) is load-bearing
+# for precision: a genuine review comment that merely mentions "rate limit" in
+# prose — without a limit-EXCEEDED statement AND without a notice shape — is
+# never misclassified as noise. The verbs are notice-voiced ("exceeded",
+# "reached") rather than review-voiced ("exceeds", "may exceed"), so a review
+# discussing a rate limit stays a finding.
+#
+# The comment body is newline-flattened to a single line by
+# ``fetch_pr_comments_data`` before this detector runs, so the markers are
+# searched unanchored (no ``^`` / ``re.MULTILINE``) — the callout prefix, the
+# heading marker, and the limit phrase all land on the same flattened line.
+_RATE_LIMIT_PHRASE = (
+    r'(?:rate[\s-]?limit(?:ed|s)?'
+    r'|(?:weekly|daily|monthly|hourly|usage|review|request|api)(?:[\s-]\w+){0,2}[\s-]limits?)'
+)
+
+# (a) LIMIT-EXCEEDED STATEMENT — the notice's "you hit a limit" sentence.
+_RATE_LIMIT_EXCEEDED_MARKERS: tuple[re.Pattern[str], ...] = (
+    # CodeRabbit's specific body sentence (retained verbatim so the bot-agnostic
+    # recognizer is a strict superset of the CodeRabbit-exact detection).
+    re.compile(r'exceeded the limit for the number of', re.IGNORECASE),
+    # "<limit> [has been|is|was] exceeded/reached/hit" — the limit phrase bound
+    # tightly to a notice-voiced past-tense verb. "exceeds" / "may exceed"
+    # (review voice) deliberately does NOT match.
+    re.compile(
+        rf'\b{_RATE_LIMIT_PHRASE}\s+(?:has\s+been\s+|is\s+|was\s+)?(?:exceeded|reached|hit)\b',
+        re.IGNORECASE,
+    ),
+    # "reached/hit your <limit>" — the bot addressing the account's quota.
+    re.compile(
+        rf'\b(?:exceeded|reached|hit)\s+(?:your|the|its|our|my)\s+(?:\w+\s+){{0,3}}?{_RATE_LIMIT_PHRASE}\b',
+        re.IGNORECASE,
+    ),
+)
+
+# (b) NOTICE SHAPE — the "posted in place of a review" presentation.
+_RATE_LIMIT_NOTICE_SHAPE_MARKERS: tuple[re.Pattern[str], ...] = (
+    # GitHub alert callout (``> [!WARNING]`` etc.) — status-notice presentation.
+    re.compile(r'>\s*\[!(?:WARNING|CAUTION|IMPORTANT|NOTE|TIP)\]', re.IGNORECASE),
+    # Markdown heading whose leading text IS the rate/usage-limit phrase (only a
+    # short emoji/symbol prefix allowed before it), e.g. ``## Rate limit
+    # exceeded`` / ``### Weekly review limit reached``. A heading about something
+    # else does not match, even after newline-flattening.
+    re.compile(rf'#{{1,6}}\s+\W{{0,4}}{_RATE_LIMIT_PHRASE}\b', re.IGNORECASE),
+    # Service-notice tail: the review is deferred/skipped and will resume.
+    re.compile(
+        r'\b(?:will\s+resume|resets?\s+(?:at|in|on)|try\s+again\s+(?:in|later|after)'
+        r'|in\s+place\s+of\s+a\s+review|posted\s+in\s+place'
+        r'|unable\s+to\s+(?:complete|review|generate)|paused\s+(?:the\s+)?review)\b',
+        re.IGNORECASE,
+    ),
+)
+
+
+def _is_rate_limit_notice(body: str) -> bool:
+    """Return True when a comment ``body`` is a bot-agnostic rate-limit / service notice.
+
+    Detects a rate-limit / service notice a reviewer bot posts in place of a
+    review, independent of author. Requires BOTH a LIMIT-EXCEEDED statement
+    (:data:`_RATE_LIMIT_EXCEEDED_MARKERS`) AND a NOTICE-SHAPE signal
+    (:data:`_RATE_LIMIT_NOTICE_SHAPE_MARKERS`) — the same two-part precision as
+    :func:`_is_coderabbit_rate_limit_notice`, generalized so a CodeRabbit notice,
+    a Sourcery weekly-limit note, and an arbitrary unknown bot's notice are all
+    recognized by the same structural signature, with no author-specific literal.
+
+    Precision is load-bearing: a genuine review comment that merely mentions a
+    rate limit in prose (no limit-exceeded statement, no notice shape) is not
+    dropped. Used by the ``github_pr.fetch_findings`` pre-filter for any resolved
+    reviewer ``bot_kind``.
+    """
+    if not body:
+        return False
+    has_exceeded = any(marker.search(body) for marker in _RATE_LIMIT_EXCEEDED_MARKERS)
+    has_shape = any(marker.search(body) for marker in _RATE_LIMIT_NOTICE_SHAPE_MARKERS)
+    return has_exceeded and has_shape
+
+
 def cmd_pr_create(args: argparse.Namespace) -> dict:
     """Handle 'pr create' subcommand.
 

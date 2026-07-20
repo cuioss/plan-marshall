@@ -59,7 +59,7 @@ from typing import Any
 
 import bot_registry
 import github_ops as _github
-from _github_pr import RESOLVE_THREAD_MUTATION, THREAD_REPLY_MUTATION, _is_coderabbit_rate_limit_notice
+from _github_pr import RESOLVE_THREAD_MUTATION, THREAD_REPLY_MUTATION, _is_rate_limit_notice
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
 from github_re_review import bot_kind_for_author, is_registered_trigger_comment
 from triage_helpers import (
@@ -207,25 +207,39 @@ def _is_obvious_noise(body: str, bot_kind: str | None = None) -> bool:
       derived from ``bot_registry``) is a pipeline-authored re-review request this
       workflow itself posted, not reviewer feedback. Checked for every comment
       (bot- or human-authored), since the pipeline may post under either account.
-    - CODERABBIT RATE-LIMIT NOTICE — a CodeRabbit-authored comment that is a
-      rate-limit status notice (``_github_pr._is_coderabbit_rate_limit_notice``,
-      reusing ``_CODERABBIT_RATE_LIMIT_MARKERS``) is posted in place of a review
-      and carries no actionable feedback. Scoped to ``bot_kind == 'coderabbit'``.
+    - RATE-LIMIT / SERVICE NOTICE — a comment that is a rate-limit status notice
+      (``_github_pr._is_rate_limit_notice``) posted in place of a review carries
+      no actionable feedback. Bot-agnostic and author-ungated: the recognizer
+      matches any notice by its structural signature (a limit-exceeded statement
+      paired with a notice shape — callout / limit-heading / service tail), so a
+      CodeRabbit, Sourcery, or unknown/renamed bot's notice is dropped with no
+      code change naming the bot and no dependence on the author resolving to a
+      known ``bot_kind``. Checked for every comment; the recognizer's two-part
+      precision keeps a genuine comment that merely mentions a rate limit from
+      matching.
 
     Used by ``fetch_findings`` to drop obvious automated/acknowledgment noise
     before each surviving comment is persisted as a ``pr-comment`` finding. This
     is intentionally permissive — the goal is only to skip the most obvious
     noise, not to make the final classification decision (that belongs to the LLM
     consumer). Human comments (``bot_kind is None``) are checked against the
-    shared layer and the registered-trigger recognizer only.
+    shared layer, the registered-trigger recognizer, and the author-ungated
+    rate-limit / service-notice recognizer; the per-bot literal-marker layer
+    stays reviewer-bot-scoped.
     """
     if not body:
         return True
     # Pipeline-authored re-review trigger comment (exact stripped-body match).
     if is_registered_trigger_comment(body):
         return True
-    # CodeRabbit rate-limit status notice posted in place of a review.
-    if bot_kind == 'coderabbit' and _is_coderabbit_rate_limit_notice(body):
+    # Rate-limit / service notice posted in place of a review — bot-agnostic.
+    # Ungated by author: the recognizer's two-part precision (a limit-exceeded
+    # statement paired with a notice shape — callout / limit-heading / service
+    # tail) is what drops a CodeRabbit, Sourcery, or unknown/renamed bot's
+    # rate-limit notice by structural signature alone, with no per-bot hardcoding.
+    # The same precision keeps a genuine comment that merely mentions a rate limit
+    # in prose from being dropped, so the check is safe to apply to every comment.
+    if _is_rate_limit_notice(body):
         return True
     body_lower = body.lower()
     if any(p.search(body_lower) for p in _COMPILED_IGNORE):
