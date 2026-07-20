@@ -26,6 +26,7 @@ import argparse
 import json
 
 import pytest
+
 from conftest import load_script_module
 
 github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py', 'github_pr')
