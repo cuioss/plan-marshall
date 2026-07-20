@@ -20,7 +20,7 @@
 
 == Status
 
-Proposed
+Accepted
 
 == Context
 
@@ -56,6 +56,20 @@ the pass-through consumer's contract, and the remediation-branch prose that acts
 on the value. Because the interpreting branch checks `unknown` first and
 short-circuits, the evidence-absent verdict can never be absorbed into the
 `fresh → normal path` branch.
+
+The same fail-closed principle governs the dual case: a provisioning *write*.
+A write that persists a caller-named field into a fixed-schema configuration
+block must refuse an unknown or out-of-schema field (`status: error`) rather than
+return `status: success` while writing a value no reader will ever consult — the
+write-side analogue of a vacuous `fresh`. The invariant is encoded once, at a
+single shared guard the provisioning-write handlers route their field through
+before persisting, rather than re-derived per handler. So a new provisioning
+write cannot silently succeed on an unknown field: it either routes through the
+shared guard (and fails closed) or is caught structurally by the test that
+enumerates the provisioning-write handlers and asserts each refuses an unknown
+field. The generalized invariant spans both faces of a provisioning surface — a
+status *read* never reports a positive it cannot substantiate, and a
+provisioning *write* never reports success for a field it cannot validate.
 
 == Consequences
 
@@ -116,4 +130,11 @@ as a first-class value — never fold it into the positive.
   checking `unknown` first.
 * `manage-config` — the provisioning-stamp path whose non-destructive stamping
   keeps a known-good provisioned version from being blanked when the executor read
-  is empty.
+  is empty; and the shared fail-closed provisioning-write guard
+  (`_config_core.reject_unknown_provisioning_field`) that every provisioning-write
+  handler routes a caller-named field through before persisting, so an
+  unknown/out-of-schema write refuses instead of silently succeeding.
+* `manage-config` `standards/provisioning-fail-closed-audit.md` — the enumeration
+  of every provisioning write + status site across the steward / manage-config /
+  executor-provisioning surface, each with a fix-or-justify disposition against
+  the two failure shapes (silent-success write, vacuous-safe verdict).

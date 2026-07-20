@@ -19,7 +19,7 @@ effort, that level's variant is skipped (the canonical falls back to
 ``inherit`` at runtime). Efforts that are universally available
 (``medium``, ``high``, and the effort-less haiku tier) are never gated.
 
-SESSION RESTART REQUIRED for emitted variants
+SESSION RELOAD REQUIRED for emitted variants
 ---------------------------------------------
 
 Claude Code's agent registry is **session-pinned at session start**: it
@@ -32,11 +32,12 @@ visibility into them. Dispatching ``Task: {bundle}:{base}-{level}``
 against a freshly emitted variant from the same session fails with
 ``Agent type '{bundle}:{base}-{level}' not found`` even though the
 file is present in the cache. The user (or downstream tooling) MUST
-restart the Claude Code session before dispatching against any newly-
-emitted variant. The same WHY rationale (registry is session-pinned at
-startup) is documented at the sister surfaces — ``/sync-plugin-cache``,
-``/marshall-steward``, and
-``ext-point-dynamic-level-executor.md`` — and MUST stay convergent
+reload the session's plugin set (``/reload-plugins`` on Claude, which
+refreshes the session-pinned registry live; a full session restart is
+the fallback) before dispatching against any newly-emitted variant. The
+same WHY rationale (registry is session-pinned at startup) is documented
+at the sister surfaces — ``/sync-plugin-cache``, ``/marshall-steward``,
+and ``ext-point-dynamic-level-executor.md`` — and MUST stay convergent
 across all four surfaces.
 """
 

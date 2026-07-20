@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-OpenCode implementation of all 21 platform-runtime operations.
+OpenCode implementation of all 22 platform-runtime operations.
 
 OpenCode-specific behaviour:
 - Operations requiring a platform session id (session capture, session
@@ -241,6 +241,18 @@ class OpenCodeRuntime(Runtime):
             "OpenCode does not expose a platform-provided session id, so there is"
             " no per-session active-plan cache to scan (issue #9292)",
             "Use OpenCode's built-in session mechanism for plan visibility",
+        )
+
+    def session_reload_directive(self) -> str:
+        """No-op: OpenCode has no live plugin-reload command equivalent to
+        Claude's ``/reload-plugins``; a full session restart is required to pick
+        up the regenerated executor / agent set."""
+        return toon_noop(
+            "session reload-directive",
+            "OpenCode exposes no live plugin-reload command equivalent to Claude's"
+            " /reload-plugins",
+            "Restart the OpenCode session to pick up the regenerated executor /"
+            " agent set",
         )
 
     # ------------------------------------------------------------------

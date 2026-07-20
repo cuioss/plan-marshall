@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for opencode_runtime.py — OpenCode implementation of all 18 operations.
+"""Tests for opencode_runtime.py — OpenCode implementation of all 22 operations.
 
 Asserts the no-op contract for session/display operations that OpenCode does not
 support, the honest no-op contract for the permission operations (OpenCode has no
 validated permission backend), the success/no-op paths for metrics operations, and
-error paths for invalid arguments across all 18 operations defined in the Runtime
+error paths for invalid arguments across all 22 operations defined in the Runtime
 ABC.
 """
 
@@ -170,6 +170,27 @@ def test_session_push_title_token_noop_fields(runtime: OpenCodeRuntime) -> None:
     result = _parse(runtime.session_push_title_token("my-plan", "⏳"))
     assert "reason" in result
     assert "alternative" in result
+
+
+# =============================================================================
+# 4c. session_reload_directive — no-op (full-restart alternative)
+# =============================================================================
+
+
+def test_session_reload_directive_is_noop(runtime: OpenCodeRuntime) -> None:
+    """session_reload_directive returns no-op — OpenCode has no live plugin-reload
+    command equivalent to Claude's /reload-plugins."""
+    result = _parse(runtime.session_reload_directive())
+    assert result["status"] == "no-op"
+    assert result["operation"] == "session reload-directive"
+
+
+def test_session_reload_directive_noop_names_restart_alternative(runtime: OpenCodeRuntime) -> None:
+    """The no-op carries reason + alternative, and the alternative is a full
+    session restart (the OpenCode fallback for picking up regenerated artifacts)."""
+    result = _parse(runtime.session_reload_directive())
+    assert "reason" in result
+    assert "restart" in result["alternative"].lower()
 
 
 # =============================================================================

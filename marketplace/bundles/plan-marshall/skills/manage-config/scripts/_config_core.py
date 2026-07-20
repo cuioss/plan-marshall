@@ -146,6 +146,41 @@ def success_exit(data: dict) -> dict:
     return {'status': 'success', **data}
 
 
+def reject_unknown_provisioning_field(field: str, allowed_fields, block_name: str) -> dict | None:
+    """Fail-closed provisioning-write guard — the single encoding of the ADR-009 invariant.
+
+    A provisioning write that persists a caller-named ``field`` into a
+    fixed-schema config block MUST refuse an unknown / out-of-schema field
+    (``status: error``) rather than persist it silently to ``marshal.json`` where
+    no reader would ever consult it. This is the "silent-success write" shape the
+    provisioning-fail-closed audit enumerates: a typo'd or retired key that
+    returns ``status: success`` while the value is effectively lost.
+
+    Every provisioning-write handler that writes a caller-named field into a
+    fixed-schema block routes that field through this ONE guard before
+    :func:`save_config`, so the invariant is encoded once instead of re-derived
+    per handler. It returns an :func:`error_exit` dict (``error_type:
+    unknown_field``) when ``field`` is not in ``allowed_fields``, and ``None``
+    when the field is known (the caller then proceeds to persist).
+
+    Args:
+        field: The caller-supplied field name being written.
+        allowed_fields: The block's known-field whitelist (any container
+            supporting ``in`` and ``sorted``; e.g. the block's default dict).
+        block_name: Human-readable block name for the rejection message
+            (e.g. ``"project"``, ``"system.retention"``).
+
+    Returns:
+        An ``error_exit`` dict when the field is unknown, else ``None``.
+    """
+    if field not in allowed_fields:
+        return error_exit(
+            f"Field '{field}' is not a known {block_name} field. Allowed: {sorted(allowed_fields)}",
+            error_type='unknown_field',
+        )
+    return None
+
+
 def _parse_skill_md_description(skill_path: Path, fallback: str) -> str:
     """Parse description from a SKILL.md file's YAML frontmatter.
 

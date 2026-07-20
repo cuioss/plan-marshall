@@ -149,11 +149,22 @@ A `consumer` plan runs only `regenerate-executor`; the meta-only
 `marketplace/targets/generate.py` sub-step is absent from its `sub_steps` and
 MUST NOT be attempted (a consumer has no marketplace source tree).
 
-> **Session restart after executor regeneration.** Regenerating the executor may
-> change the emitted agent set. The registry is session-pinned at session start,
-> so surface the session-restart guardrail — see [`../SKILL.md`](../SKILL.md) §
-> "Session Restart Required After Executor / Agent Changes" — after this stage
-> when the executor was regenerated.
+> **Reload directive after executor regeneration.** Regenerating the executor may
+> change the emitted agent set, and the registry is session-pinned at session
+> start — so the running session must pick up the new artifacts. After this stage
+> (when the executor was regenerated), resolve the harness-appropriate directive
+> through the platform-runtime seam and surface it verbatim to the operator:
+>
+> ```bash
+> python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session reload-directive
+> ```
+>
+> On Claude the seam returns `/reload-plugins` (which picks up the regenerated
+> executor / agent set live — only registered monitors would force a full
+> restart, and plan-marshall registers none); on OpenCode it returns a `no-op`
+> whose alternative is a full session restart. See [`../SKILL.md`](../SKILL.md) §
+> "Session Reload Directive After Executor / Agent Changes" for the WHY the
+> registry is session-pinned.
 
 ## Stage 2: reconcile-config (mutating)
 

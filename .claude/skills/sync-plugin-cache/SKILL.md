@@ -110,9 +110,9 @@ synced) or `status: partial` (some failed), inspect the `synced` rows
 and the optional `failed[N]{bundle,error}` table for diagnostics, then
 re-run with `--bundle NAME` to retry the failures individually.
 
-### Step 2b: SESSION RESTART REQUIRED before next dispatch
+### Step 2b: SESSION RELOAD REQUIRED before next dispatch
 
-> **CRITICAL — Restart Claude Code session before next dispatch.** Claude
+> **CRITICAL — Reload the session's plugin set before next dispatch.** Claude
 > Code's agent registry is **session-pinned at session start**: it scans
 > the plugin cache exactly once when the session boots and never re-scans
 > mid-session. A `/sync-plugin-cache` run that adds new agent files —
@@ -124,14 +124,15 @@ re-run with `--bundle NAME` to retry the failures individually.
 > though the file exists on disk in the cache.
 >
 > **Operational guardrail:** after every `/sync-plugin-cache` run that
-> may have altered the agent set, restart the Claude Code session before
+> may have altered the agent set, reload the session's plugin set before
 > issuing a dispatch (`Task: plan-marshall:execution-context-{level}`,
-> any newly-registered agent, etc.). The restart is the only mechanism
-> that refreshes the registry. Sister surfaces (`/marshall-steward`
-> executor regeneration, the `variant_emitter.py` module docstring, and
-> the `ext-point-dynamic-level-executor` standard) converge on the same
+> any newly-registered agent, etc.). On Claude `/reload-plugins` refreshes
+> the session-pinned registry live; a full session restart is the fallback.
+> Sister surfaces (`/marshall-steward` executor regeneration, the
+> `variant_emitter.py` module docstring, and the
+> `ext-point-dynamic-level-executor` standard) converge on the same
 > WHY: the registry is session-pinned at startup, so newly-emitted
-> agents are only visible after a session restart.
+> agents are visible only after the session reloads its plugin set.
 
 ### Step 3: (optional) Enumerate bundle versions
 

@@ -586,6 +586,28 @@ class ClaudeRuntime(Runtime):
             },
         )
 
+    def session_reload_directive(self) -> str:
+        """Resolve the Claude post-upgrade reload directive: ``/reload-plugins``.
+
+        RESOLVES + SURFACES only — a script cannot type a harness-level slash
+        command, so the success payload carries the directive TEXT plus the
+        monitor caveat for the operator/orchestrator to act on. On Claude
+        ``/reload-plugins`` reloads the regenerated executor / agent set live;
+        only registered monitors would force a full session restart, and
+        plan-marshall registers none.
+        """
+        return toon_success(
+            "session reload-directive",
+            {
+                "directive": "/reload-plugins",
+                "caveat": (
+                    "Only monitors require a full session restart; plan-marshall "
+                    "registers no monitors, so /reload-plugins picks up the "
+                    "regenerated executor / agent set live."
+                ),
+            },
+        )
+
     # ------------------------------------------------------------------
     # Permission operations
     # ------------------------------------------------------------------
