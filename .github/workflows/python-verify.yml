@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   verify:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@05fe424dc32f31daa2fc369fb52ca360d84a62f4 # v0.11.1
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@2e471f8bf63cdfef28a2e65a1fca1eff7b24e26b # v0.12.0
     with:
       # Opt in to the footprint gate: skip the heavy build+tests when every
       # changed path is non-building (docs/config). The always-reporting
