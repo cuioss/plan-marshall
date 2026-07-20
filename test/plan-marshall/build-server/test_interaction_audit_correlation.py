@@ -44,6 +44,7 @@ import _ledger_core as ledger_core  # noqa: E402
 import _marshalld_audit as audit_mod  # noqa: E402
 import build_server as client  # noqa: E402
 import marshalld  # noqa: E402
+from _build_server_protocol import JobSpec  # noqa: E402
 from _marshalld_journal import Journal  # noqa: E402
 from _marshalld_scheduler import Scheduler  # noqa: E402
 
@@ -105,16 +106,6 @@ def _submit_args(tmp_path) -> Namespace:
     )
 
 
-def _wire_client_to_daemon(daemon, monkeypatch) -> None:
-    """Route the client's daemon call straight into the daemon dispatch."""
-    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
-    monkeypatch.setattr(
-        client,
-        '_call_daemon',
-        lambda request, timeout: asyncio.run(daemon.handle_request(request)),
-    )
-
-
 def _isolated_daemon(tmp_path, audit) -> marshalld.Daemon:
     return marshalld.Daemon(
         scheduler=Scheduler(max_slots=0),  # keep the job queued — no real subprocess
@@ -124,26 +115,54 @@ def _isolated_daemon(tmp_path, audit) -> marshalld.Daemon:
     )
 
 
+def _spec_dict(tmp_path) -> dict:
+    """Build the daemon-side submit spec matching _submit_args' client command."""
+    return JobSpec(
+        command=[sys.executable, str(tmp_path / '.plan' / 'execute-script.py'), 'a:b:c', 'run'],
+        exec_path=str(tmp_path),
+        project_path=str(tmp_path),
+        plan_id='p1',
+        fingerprint='fp',
+    ).to_dict()
+
+
+def _daemon_submit(daemon, tmp_path) -> dict:
+    """Drive one daemon submit and return its response.
+
+    A single top-level ``asyncio.run`` of the daemon's own dispatch — the same
+    shape the sibling daemon tests use — NOT an ``asyncio.run`` nested inside a
+    monkeypatched synchronous client callback (that nesting spun up and tore down
+    a fresh event loop per client call for no benefit). The daemon assigns the
+    job_id and audits the interaction via handle_request.
+    """
+    return asyncio.run(daemon.handle_request({'op': 'submit', 'job': _spec_dict(tmp_path)}))
+
+
 def test_one_job_id_correlates_all_three_stores(home, ledger, captured_logs, tmp_path, monkeypatch):
     audit = audit_mod.InteractionAudit()
     daemon = _isolated_daemon(tmp_path, audit)
     monkeypatch.setattr(marshalld, 'verify_submit', lambda *a, **k: _Accepted())
-    _wire_client_to_daemon(daemon, monkeypatch)
 
-    submit_result = client.run_submit(_submit_args(tmp_path))
-    assert submit_result['status'] == 'success'
-    job_id = submit_result['job_id']
+    # Server side — the daemon assigns the job_id and writes its audit record.
+    response = _daemon_submit(daemon, tmp_path)
+    assert response['status'] == 'queued'
+    job_id = response['job_id']
     assert job_id
 
-    client.run_wait(Namespace(job_id=job_id, plan_id='p1', bound=0))
+    # Client side — feed the daemon's response back through the client (a canned
+    # return, no live round-trip and no nested loop) so it writes its work-log
+    # entry and the ledger kind=job row with that SAME job_id.
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(client, '_call_daemon', lambda request, timeout: response)
+    submit_result = client.run_submit(_submit_args(tmp_path))
+    assert submit_result['status'] == 'success'
+    assert submit_result['job_id'] == job_id
 
     # Vantage 1 — the client work log carries the job_id.
-    client_messages = [message for _t, _p, _l, message in captured_logs]
-    assert any(job_id in message for message in client_messages)
+    assert any(job_id in message for _t, _p, _l, message in captured_logs)
 
     # Vantage 2 — the server interaction-audit records carry the job_id.
-    audit_job_ids = {record['job_id'] for record in audit.read_all()}
-    assert job_id in audit_job_ids
+    assert job_id in {record['job_id'] for record in audit.read_all()}
 
     # Vantage 3 — the change-ledger kind=job row carries the SAME job_id.
     rows = _job_rows()
@@ -166,8 +185,12 @@ def test_no_secret_field_in_any_correlated_store(home, ledger, captured_logs, tm
     audit = audit_mod.InteractionAudit()
     daemon = _isolated_daemon(tmp_path, audit)
     monkeypatch.setattr(marshalld, 'verify_submit', lambda *a, **k: _Accepted())
-    _wire_client_to_daemon(daemon, monkeypatch)
 
+    # Populate all three stores for the same submit — daemon audit via one
+    # top-level dispatch, client work log + ledger via the canned-response client.
+    response = _daemon_submit(daemon, tmp_path)
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(client, '_call_daemon', lambda request, timeout: response)
     client.run_submit(_submit_args(tmp_path))
 
     executor_path = str(tmp_path / '.plan' / 'execute-script.py')
