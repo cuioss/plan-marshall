@@ -258,16 +258,24 @@ def _run_merge_queue_probe() -> dict:
         return {'status': 'error', 'error': 'could not parse probe output'}
 
 
-def _validate_use_merge_queue(value) -> str | None:
+def _validate_use_merge_queue(value, config: dict | None = None) -> str | None:
     """Return ``None`` when the ``use_merge_queue`` set is permitted, else an error message.
 
     Only enabling (``value is True``) is validated — disabling is always allowed.
-    Runs a live probe: permit on ``eligible_configured`` / ``eligible_unconfigured``;
+
+    When ``project.merge_queue_managed_externally`` is true the org owns the
+    merge queue, so the set defers: the live probe is skipped entirely and the
+    set is permitted unconditionally (a local probe verdict is not the authority
+    over somebody else's provisioning). Otherwise the probe-backed behaviour is
+    unchanged — permit on ``eligible_configured`` / ``eligible_unconfigured``;
     reject (actionable, naming both remedies) on ``ineligible`` / ``unsupported``.
     An auth-scope or otherwise-failed probe returns the actionable error, never a
     stack trace.
     """
     if value is not True:
+        return None
+    project = (config or {}).get('project') or {}
+    if project.get('merge_queue_managed_externally') is True:
         return None
     probe = _run_merge_queue_probe()
     if probe.get('status') != 'success':
@@ -321,8 +329,9 @@ def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config
         # Probe-backed set-time validation: enabling use_merge_queue requires an
         # eligible platform merge queue. Reject with the actionable both-remedies
         # message when the live probe reports ineligible/unsupported (or fails).
+        # Deferred entirely when project.merge_queue_managed_externally is true.
         if param == 'use_merge_queue':
-            merge_queue_error = _validate_use_merge_queue(value)
+            merge_queue_error = _validate_use_merge_queue(value, config)
             if merge_queue_error:
                 return error_exit(merge_queue_error)
         params = dict(steps[step_id])
