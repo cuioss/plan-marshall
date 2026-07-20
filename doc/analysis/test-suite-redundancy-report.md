@@ -220,12 +220,12 @@ delete-duplicates + parametrize combination.
 
 **Members** (each github file has a gitlab mirror)
 
-- `workflow-integration-github/test_github_ops_wait.py` ↔ `workflow-integration-gitlab/test_gitlab_ops_wait.py`
-- `workflow-integration-github/test_github_ops_pr_merge.py` ↔ `workflow-integration-gitlab/test_gitlab_ops_mr_merge.py`
-- `workflow-integration-github/test_github_merge_queue.py` ↔ `workflow-integration-gitlab/test_gitlab_merge_queue.py`
-- `workflow-integration-github/test_github_ops.py` ↔ `workflow-integration-gitlab/test_gitlab_ops.py`
-- `workflow-integration-github/test_github_pr.py` ↔ `workflow-integration-gitlab/test_gitlab_pr.py`
-- `test/plan-marshall/test_workflow_integration_github_ci_aggregation.py` ↔ `test_workflow_integration_gitlab_ci_aggregation.py`
+- `test/plan-marshall/workflow-integration-github/test_github_ops_wait.py` ↔ `test/plan-marshall/workflow-integration-gitlab/test_gitlab_ops_wait.py`
+- `test/plan-marshall/workflow-integration-github/test_github_ops_pr_merge.py` ↔ `test/plan-marshall/workflow-integration-gitlab/test_gitlab_ops_mr_merge.py`
+- `test/plan-marshall/workflow-integration-github/test_github_merge_queue.py` ↔ `test/plan-marshall/workflow-integration-gitlab/test_gitlab_merge_queue.py`
+- `test/plan-marshall/workflow-integration-github/test_github_ops.py` ↔ `test/plan-marshall/workflow-integration-gitlab/test_gitlab_ops.py`
+- `test/plan-marshall/workflow-integration-github/test_github_pr.py` ↔ `test/plan-marshall/workflow-integration-gitlab/test_gitlab_pr.py`
+- `test/plan-marshall/test_workflow_integration_github_ci_aggregation.py` ↔ `test/plan-marshall/test_workflow_integration_gitlab_ci_aggregation.py`
 
 **Overlap rationale.** `test_github_ops_wait.py` and `test_gitlab_ops_wait.py`
 are structural mirror images. The provider-agnostic poll-handler contract tests
