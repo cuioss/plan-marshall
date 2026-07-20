@@ -246,15 +246,27 @@ def _route_to_daemon(
         return _daemon_result_to_direct(waited, command_str), ''
 
 
+def _emit_error_envelope(output_format: str, output: dict) -> int:
+    """Serialize and print a pre-built error envelope; always returns exit 1.
+
+    Shared print/serialize tail for the build-execute error emitters below —
+    the generic TOON/JSON serializer, not the build-result formatter (which
+    filters to known build fields and would drop emitter-specific keys like
+    ``max_retries`` or ``reason``).
+    """
+    if output_format == 'json':
+        print(json.dumps(output, indent=2))
+    else:
+        print(serialize_toon(output))
+    return 1
+
+
 def _emit_queue_timeout(tool_name: str, command_args: str, output_format: str, exc: BuildQueueTimeout) -> int:
     """Render a structured 'try again later' error when no slot was admitted.
 
     The build never ran — the queue stayed saturated past ``max_retries`` — so
     this returns an exit code of 1 (the build did not complete) and prints an
-    error envelope the orchestrator can branch on without a log file. The
-    envelope is serialized with the generic TOON/JSON serializer (not the
-    build-result formatter, which filters to known build fields and would drop
-    the queue-specific ``message`` / ``plan_id`` / ``max_retries`` keys).
+    error envelope the orchestrator can branch on without a log file.
     """
     output = {
         'status': 'error',
@@ -265,11 +277,7 @@ def _emit_queue_timeout(tool_name: str, command_args: str, output_format: str, e
         'max_retries': exc.max_retries,
         'plan_id': exc.plan_id,
     }
-    if output_format == 'json':
-        print(json.dumps(output, indent=2))
-    else:
-        print(serialize_toon(output))
-    return 1
+    return _emit_error_envelope(output_format, output)
 
 
 def _emit_daemon_required(
@@ -287,11 +295,8 @@ def _emit_daemon_required(
     tool, or a build carrying an env / working-dir override the daemon's clean
     baseline cannot honour) is a HARD failure, never a silent in-process
     fallback. The build was not run, so this returns exit 1 and prints an error
-    envelope the orchestrator can branch on. Serialized with the generic
-    TOON/JSON serializer (not the build-result formatter, which filters to known
-    build fields and would drop the daemon-specific ``reason`` / ``plan_id``
-    keys). Records the requested-vs-resolved audit line (resolved=fail-loud)
-    before emitting.
+    envelope the orchestrator can branch on. Records the requested-vs-resolved
+    audit line (resolved=fail-loud) before emitting.
     """
     logger.info(
         '[BUILD-SERVER] resolved build (requested=daemon, resolved=fail-loud, reason=%s, notation=%s, plan=%s)',
@@ -309,11 +314,7 @@ def _emit_daemon_required(
         'reason': reason,
         'plan_id': plan_id or '',
     }
-    if output_format == 'json':
-        print(json.dumps(output, indent=2))
-    else:
-        print(serialize_toon(output))
-    return 1
+    return _emit_error_envelope(output_format, output)
 
 
 def default_command_key_fn(command_args: str) -> str:
