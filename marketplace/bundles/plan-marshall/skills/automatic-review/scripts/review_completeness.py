@@ -17,12 +17,26 @@ name the offending bots:
 - ``pending_bots`` — enabled bots that DID produce a finding but still carry at
   least one ``resolution == 'pending'`` finding (fetched, not yet triaged).
 
-``complete`` is ``true`` only when BOTH lists are empty. The predicate fails
-closed: a plan with no findings yet reports every enabled bot as unfetched and
-``complete: false``, so the guard never marks the step done on an empty store.
+``complete`` is TRIAGE-STATE AWARE (``triage_ran``):
+
+- ``triage_ran == False`` (the default — the FIND-only automatic-review step,
+  BEFORE the dispatcher-owned unified triage runs): a ``pending`` finding is the
+  EXPECTED awaiting-triage state and does NOT count as incompleteness, so
+  ``complete = not unfetched_bots`` — only an enabled bot that produced NO
+  finding blocks. This is what stops the guard manufacturing a loop-back on
+  findings that are pending only because triage has not run yet.
+- ``triage_ran == True`` (triage has run): a still-``pending`` finding IS a real
+  incompleteness, so ``complete = not pending_bots and not unfetched_bots`` —
+  today's behavior.
+
+``pending_bots`` and ``unfetched_bots`` are emitted for visibility in BOTH
+modes; only their contribution to ``complete`` changes with ``triage_ran``. The
+predicate fails closed: a plan with no findings yet reports every enabled bot as
+unfetched and ``complete: false`` in both modes, so the guard never marks the
+step done on an empty store.
 
 Usage:
-    review_completeness.py check --plan-id <id> --enabled-bots <csv>
+    review_completeness.py check --plan-id <id> --enabled-bots <csv> [--triage-ran]
     review_completeness.py --help
 
 Subcommands:
@@ -43,7 +57,7 @@ import sys
 from _findings_core import query_findings
 
 
-def check_completeness(plan_id: str, enabled_bots: list[str]) -> dict:
+def check_completeness(plan_id: str, enabled_bots: list[str], triage_ran: bool = False) -> dict:
     """Classify each enabled bot against the plan's ``pr-comment`` findings store.
 
     Args:
@@ -51,13 +65,22 @@ def check_completeness(plan_id: str, enabled_bots: list[str]) -> dict:
         enabled_bots:  The bot kinds this step drives, in caller order. An empty
                        list is a valid degenerate input (no bots to await →
                        ``complete: true``).
+        triage_ran:    Whether the dispatcher-owned unified triage has already
+                       run. ``False`` (default — the FIND-only step) treats a
+                       ``pending`` finding as the expected awaiting-triage state
+                       that does NOT block completeness (only unfetched bots
+                       block). ``True`` treats a still-``pending`` finding as a
+                       real incompleteness (both pending and unfetched block).
 
     Returns:
         Dict with the TOON-serialisable summary fields ``status``, ``complete``,
         ``pending_bots``, and ``unfetched_bots``. Per-bot membership is
         mutually exclusive: a bot with no finding is ``unfetched``; a bot with a
         finding but an unresolved one is ``pending``; a bot whose findings are
-        all resolved is complete and appears in neither list.
+        all resolved is complete and appears in neither list. ``pending_bots``
+        and ``unfetched_bots`` are reported for visibility regardless of
+        ``triage_ran``; only whether ``pending_bots`` contributes to ``complete``
+        depends on it.
 
         On a findings-store load failure (corrupt or inaccessible store JSON)
         returns the ``_emit_toon`` error-branch payload
@@ -83,7 +106,14 @@ def check_completeness(plan_id: str, enabled_bots: list[str]) -> dict:
         if any(f.get('resolution') == 'pending' for f in bot_findings):
             pending_bots.append(bot)
 
-    complete = not pending_bots and not unfetched_bots
+    # Triage-state-aware completeness. Before triage runs (``triage_ran`` False,
+    # the FIND-only step) a pending finding is the expected awaiting-triage state
+    # and must NOT block — only unfetched enabled bots gate the mark-done. After
+    # triage runs, a still-pending finding is a real incompleteness and blocks.
+    if triage_ran:
+        complete = not pending_bots and not unfetched_bots
+    else:
+        complete = not unfetched_bots
     return {
         'status': 'success',
         'complete': complete,
@@ -114,7 +144,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     enabled_bots: list[str] = []
     if args.enabled_bots:
         enabled_bots = [b.strip() for b in args.enabled_bots.split(',') if b.strip()]
-    payload = check_completeness(args.plan_id, enabled_bots)
+    payload = check_completeness(args.plan_id, enabled_bots, triage_ran=args.triage_ran)
     _emit_toon(payload)
     return 0 if payload.get('status') == 'success' else 1
 
@@ -137,6 +167,18 @@ def main(argv: list[str] | None = None) -> int:
         '--enabled-bots',
         default='',
         help='Comma-separated list of enabled review-bot kinds',
+    )
+    check_parser.add_argument(
+        '--triage-ran',
+        action='store_true',
+        default=False,
+        help=(
+            'Whether the dispatcher-owned unified triage has already run. Omit '
+            '(the FIND-only default) so a pending finding does NOT block '
+            'completeness — only unfetched enabled bots gate the mark-done. Pass '
+            'it once triage has run so a still-pending finding blocks as a real '
+            'incompleteness.'
+        ),
     )
     check_parser.set_defaults(func=cmd_check)
 

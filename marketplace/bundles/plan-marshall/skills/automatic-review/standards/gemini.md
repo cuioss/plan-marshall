@@ -8,8 +8,13 @@ present in the step's `enabled_bots`.
 
 > **Sunset note.** The free/consumer Gemini reviewer's code-review activity ends 2026-07-17. After
 > that date the wiring below goes dormant (no Gemini reviews to fetch) unless the org migrates to
-> the paid Enterprise tier. The registry entry stays in place — harmless but inert once no reviews
-> arrive. To disable Gemini entirely, drop `gemini` from the step's `enabled_bots`.
+> the paid Enterprise tier. Following the sunset, `gemini` is NO LONGER in the shipped
+> `automatic-review` `enabled_bots` default (now `coderabbit,sourcery`) — it is already dropped, so a
+> fresh plan awaits and classifies only CodeRabbit and Sourcery with no manual prune. This registry
+> entry is deliberately KEPT for CLASSIFICATION: a past Gemini-authored comment, or a comment from a
+> plan that re-adds `gemini` to its `enabled_bots` (e.g. on the paid Enterprise tier), still resolves
+> to `bot_kind: gemini` and is triaged normally. Only the default enabled set changed; no
+> comment-ignore logic was added. To re-enable Gemini, add `gemini` back to the step's `enabled_bots`.
 
 ## Registry data block
 

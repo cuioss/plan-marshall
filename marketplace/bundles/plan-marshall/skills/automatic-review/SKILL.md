@@ -19,8 +19,8 @@ implements:
   - plan-marshall:extension-api/standards/ext-point-finalize-step
 configurable:
   - key: enabled_bots
-    default: "coderabbit,sourcery,gemini"
-    description: Comma-separated list of review-bot kinds this step drives. Each entry MUST have a machine-readable registry doc at standards/{bot_kind}.md (bot_kind, author_login, trigger_comment, completion_check_name, honors_skip_label, ignore_patterns, severity_map). Dropping a bot from the list removes it from re-review triggering and triage; the pipeline never awaits or classifies a bot absent from this list.
+    default: "coderabbit,sourcery"
+    description: Comma-separated list of review-bot kinds this step drives. Each entry MUST have a machine-readable registry doc at standards/{bot_kind}.md (bot_kind, author_login, trigger_comment, completion_check_name, honors_skip_label, ignore_patterns, severity_map). Dropping a bot from the list removes it from re-review triggering and triage; the pipeline never awaits or classifies a bot absent from this list. Gemini is registered (standards/gemini.md) but is NOT in the shipped default following its 2026-07-17 sunset — add "gemini" here to re-enable it (e.g. on the paid Enterprise tier).
   - key: review_bot_buffer_seconds
     default: 180
     description: Buffer (seconds) before the automatic-review bot comment poll, consumed by the pr wait-for-comments wait. Also the fallback wait for a bot that declares no completion_check_name (empty registry field) — the completion-aware poll only applies to bots that publish an in-progress check-run.
@@ -329,7 +329,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 
 Call the producer-side `fetch_findings` verb once. It fetches PR review comments, applies pre-filters (already-resolved threads, obvious text noise, and cross-iteration duplicate comments), and files one `pr-comment` finding per surviving comment into the per-plan findings store with the untrusted comment body quarantined under `raw_input.{body}` — the trusted structured metadata (`thread_id`, `comment_id`, `kind`, `author`, `path`, `line`) goes in the finding's `detail`.
 
-Read `enabled_bots` off the same execution-manifest step-params snapshot already fetched for `review_bot_buffer_seconds` and the `re_review_*` knobs (`manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review`; default `coderabbit,sourcery,gemini`) and forward it as `--enabled-bots {enabled_bots}` on the `fetch_findings` call. This is what enforces the "never await or triage a bot absent from the `enabled_bots` config list" invariant at the producer boundary: `github_pr fetch_findings` files no `pr-comment` finding for a comment whose derived `bot_kind` is disabled, so a bot dropped from `enabled_bots` never enters the pipeline. Omitting the flag would file findings for every bot regardless of the config.
+Read `enabled_bots` off the same execution-manifest step-params snapshot already fetched for `review_bot_buffer_seconds` and the `re_review_*` knobs (`manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review`; default `coderabbit,sourcery`) and forward it as `--enabled-bots {enabled_bots}` on the `fetch_findings` call. This is what enforces the "never await or triage a bot absent from the `enabled_bots` config list" invariant at the producer boundary: `github_pr fetch_findings` files no `pr-comment` finding for a comment whose derived `bot_kind` is disabled, so a bot dropped from `enabled_bots` never enters the pipeline. Omitting the flag would file findings for every bot regardless of the config.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
@@ -353,7 +353,7 @@ Read the `findings` count as `{N}` for the `mark-step-done` display detail. This
 
 This FIND-only step performs NO triage. The filed `pr-comment` findings remain `pending` in the store; the dispatcher-owned unified wait-region triage (`producer=finalize-feedback`) consumes them once both wait-region producers have filed — it owns the per-finding LLM decision (FIX / SUPPRESS / ACCEPT / AskUserQuestion), the loop-back on FIX dispositions, the `pr-comment-overflow` pre-emptive handling, the RESPOND loop (thread replies + thread resolution via `github_pr post_responses`), and the pending-findings phase-boundary gate. See [`../phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) Step 3 item 7c and [`../plan-marshall/workflow/verification-feedback.md`](../plan-marshall/workflow/verification-feedback.md) § "Producer modes" (`finalize-feedback`). The per-bot classification overlays (severity maps, ignore patterns, trust-boundary handling) from each enabled bot's registry doc under `standards/` are loaded by that unified triage, not here.
 
-Because triage is dispatcher-owned, this step never emits a `loop_back` outcome of its OWN for a triage disposition — a fix commit from the unified triage advances HEAD and the resumable re-entry check (HEAD-dependent) re-fires this FIND step against the new tree. The only `loop_back` this step records is the completeness-guard loop-back (D3 below), awaiting an enabled bot whose review has not yet surfaced.
+Because triage is dispatcher-owned, this step never emits a `loop_back` outcome of its OWN for a triage disposition — a fix commit from the unified triage advances HEAD and the resumable re-entry check (HEAD-dependent) re-fires this FIND step against the new tree. The only `loop_back` this step records is the completeness-guard loop-back (D3 below), awaiting an enabled bot whose review has not yet been fetched (an `unfetched` bot). A finding that is merely `pending` (fetched but not yet triaged) is the expected awaiting-triage state at this FIND-only step and is NOT a loop-back trigger — resolving pending findings is the downstream unified triage's job.
 
 ## Mark Step Complete
 
@@ -365,18 +365,18 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 
 ### Step-done completeness guard (D3)
 
-Branch A (the terminal clean pass) is gated by a deterministic completeness predicate: this step MUST NOT be marked `done` while an enabled bot's review is still pending or was never fetched. Before the Branch A `mark-step-done`, consult the `review_completeness` helper. Read `enabled_bots` off the same execution-manifest step-params snapshot used above (`manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review`; default `coderabbit,sourcery,gemini`) and forward it as `--enabled-bots`:
+Branch A (the terminal clean pass) is gated by a deterministic, **triage-state-aware** completeness predicate. This is the FIND-only step — the dispatcher-owned unified triage runs AFTER it — so a filed finding that is still `pending` is the EXPECTED awaiting-triage state, NOT a FIND-completeness incompleteness. Accordingly this step MUST NOT be marked `done` only while an enabled bot's review was never fetched (an `unfetched` enabled bot); a `pending` (fetched, un-triaged) bot does NOT block the mark-done here. Before the Branch A `mark-step-done`, consult the `review_completeness` helper. Read `enabled_bots` off the same execution-manifest step-params snapshot used above (`manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review`; default `coderabbit,sourcery`) and forward it as `--enabled-bots`. Invoke WITHOUT `--triage-ran` — triage has not run at this FIND step, so only `unfetched` bots gate completeness:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness check \
   --plan-id {plan_id} --enabled-bots {enabled_bots}
 ```
 
-Read `complete`, `pending_bots`, and `unfetched_bots` from the returned TOON. The predicate is fail-closed — a plan whose store is empty reports every enabled bot as unfetched and `complete: false`.
+Read `complete`, `pending_bots`, and `unfetched_bots` from the returned TOON. `pending_bots` is reported for visibility but does NOT gate the mark-done at this FIND step (the flag is omitted). The predicate is fail-closed — a plan whose store is empty reports every enabled bot as unfetched and `complete: false`.
 
-- **`complete: true`** — every enabled bot produced a fetched finding and none remains `pending`. Proceed to Branch A and mark the step `done`.
-- **`complete: false`** — at least one enabled bot is still `pending` (fetched, un-triaged) or `unfetched` (produced no finding — its review posted after the wait step moved on, or never surfaced). The step is **NOT markable done** on this pass. Take exactly one of two paths:
-  1. **Loop back into FIND** (default): treat the incompleteness as an un-surfaced review — re-enter the FIND pipeline (await the unfetched bot) and record Branch C (`--outcome loop_back`) for this iteration instead of Branch A. The terminal Branch A mark waits for a later pass that returns `complete: true`. (This is a FIND-completeness loop-back — awaiting a bot review — NOT a triage loop-back; triage loop-back is owned by the unified triage.)
+- **`complete: true`** — every enabled bot produced at least one fetched finding. Pending-but-fetched findings do NOT block here; they await the downstream dispatcher-owned unified triage. Proceed to Branch A and mark the step `done`.
+- **`complete: false`** — at least one enabled bot is `unfetched` (produced no finding — its review posted after the wait step moved on, or never surfaced). A pending-but-fetched bot does NOT cause `complete: false` at this FIND step. The step is **NOT markable done** on this pass. Take exactly one of two paths:
+  1. **Loop back into FIND** (default): treat the incompleteness as an un-surfaced review — re-enter the FIND pipeline (await the unfetched bot) and record Branch C (`--outcome loop_back`) for this iteration instead of Branch A. The terminal Branch A mark waits for a later pass that returns `complete: true`. (This is a FIND-completeness loop-back — awaiting an unfetched bot review — NOT a triage loop-back; triage loop-back, including any real still-pending incompleteness after triage runs, is owned by the unified triage.)
   2. **Force-done with an explicit recorded reason** (escape hatch): mark the step `done` ONLY after writing a `decision`-log entry at WARNING naming the blocking bot(s) and the reason. There is no silent force-done — the WARNING decision-log entry is mandatory and must precede the Branch A `mark-step-done`:
 
   ```bash
@@ -511,5 +511,5 @@ The canonical argparse surface for the invocable script this skill registers: `r
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness check \
-  --plan-id PLAN_ID --enabled-bots ENABLED_BOTS
+  --plan-id PLAN_ID --enabled-bots ENABLED_BOTS [--triage-ran]
 ```
