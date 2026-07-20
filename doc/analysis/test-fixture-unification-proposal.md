@@ -71,14 +71,24 @@ M1 is the headline merge (it removes the only *forced* duplication). M2/M3 are
 convention-unification (two loading conventions → one). M4/M5 overlap with the
 D1 redundancy remediation and should be sequenced with it.
 
+**M4 scope (JaCoCo XML subset of Cluster D — explicit).** M4 intentionally
+scopes to the JaCoCo `{high,low}-coverage.xml` fixture shape shared by the four
+build backends' JaCoCo parser (build-gradle / build-maven / build-pyproject /
+pm-dev-java). The remaining Cluster D duplicated-fixture members are **out of
+scope for M4** and require their own remediation units because their formats
+differ from JaCoCo XML and are not reducible to the same shared-fixture dedup:
+`build-npm`'s lcov/json coverage fixtures, `extension-api`'s Cobertura/jest
+fixtures, and `pm-dev-frontend-cui`'s lcov/json fixtures.
+
 ### Shape of the merged `test/_shared/_input_validation_fixtures.py`
 
 The canonical module already contains the full 13-field matrix and the three
 assertion helpers. The merge is a **move + rename** (drop the `_pm_` prefix; the
 `_shared/` location makes the prefix redundant) plus deletion of the two subset
 copies. No behavior changes — the maven copy used only `module`, the interface
-copy only `field`, both of which are already keys in the canonical `_HAPPY`
-table. The canonical module's `_malformed_for` already returns the shared
+copy only `field`, both of which are already keys in the canonical
+`HAPPY_VALUES` table (the module's public export; `_HAPPY` is its private
+backing dict). The canonical module's `_malformed_for` already returns the shared
 `_BASE_MALFORMED` for every field, so the subset consumers get identical values.
 
 ## Decision 3 — Per-consumer migration notes

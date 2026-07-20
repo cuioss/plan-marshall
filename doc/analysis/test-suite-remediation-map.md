@@ -74,6 +74,12 @@ fixtures.
 **Action**: extend `build_test_helpers.py` with
 `assert_run_config_key_contract(...)`; dedupe JaCoCo fixtures into
 `script-shared/fixtures/coverage/`; migrate the four backends' wrapper functions.
+**Scope**: RU-4 intentionally scopes to the JaCoCo `{high,low}-coverage.xml`
+fixture subset of Cluster D (the shape shared by the four build backends'
+JaCoCo parser). **Out of scope** — requiring separate remediation units because
+their formats differ from JaCoCo XML: `build-npm`'s lcov/json fixtures,
+`extension-api`'s Cobertura/jest fixtures, and `pm-dev-frontend-cui`'s lcov/json
+fixtures.
 **Blocked by**: nothing (build_test_helpers already on sys.path).
 
 ### RU-5 — Loader/sys.path convention unification — compliance, P2
