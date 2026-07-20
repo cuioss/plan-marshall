@@ -33,6 +33,8 @@ Verbs:
   version + binary path (S5), or ``down`` with a named reason.
 * ``install`` — idempotent version-pinned start (a no-op when already running).
 * ``upgrade`` — drain the running daemon then start the verified version (S7).
+* ``logs`` — read-only, project-scoped inspection of the daemon's central
+  ``interaction-audit.log`` (the derived per-project view); never mutates it.
 
 Every lifecycle verb appends one JSON-lines entry to the append-only lifecycle
 audit log (``lifecycle-audit.log`` under the daemon state dir) so the daemon's
@@ -70,6 +72,7 @@ from _build_server_registry import (
     register_project,
     unregister_project,
 )
+from _marshalld_audit import InteractionAudit
 from file_ops import now_utc_iso
 from marketplace_paths import main_checkout_root
 from triage_helpers import ErrorCode, make_error, print_toon, safe_main
@@ -82,6 +85,9 @@ _DRAIN_GRACE_SECONDS = 30.0
 _POLL_INTERVAL_SECONDS = 0.2
 _PING_TIMEOUT_SECONDS = 5.0
 _SPAWN_REAP_TIMEOUT_SECONDS = 10.0
+
+_DEFAULT_LOGS_LIMIT = 50
+"""Default bounded tail size for the read-only ``logs`` audit-inspection verb."""
 
 
 # ---------------------------------------------------------------------------
@@ -569,6 +575,78 @@ def run_status(_args: Namespace) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Audit-inspection verb (read-only)
+# ---------------------------------------------------------------------------
+
+
+def run_logs(args: Namespace) -> dict[str, Any]:
+    """Show the caller project's interaction-audit records (read-only, derived view).
+
+    Resolves the caller's canonical root (``--root`` override, else the main
+    checkout), reads the central ``interaction-audit.log`` through the
+    :class:`InteractionAudit` reader, and returns the records whose
+    ``project_root`` matches the caller — the derived project-scoped view. The
+    verb NEVER mutates the log.
+
+    Fail-closed (ADR-9): when the log is absent or unreadable the verb returns an
+    explicit empty ``records`` list with a named ``reason`` (``log_absent`` /
+    ``log_unreadable``), never a fabricated success that hides a read failure. A
+    present log with no matching records is a legitimate empty view (no reason).
+
+    Args:
+        args: Parsed args carrying ``--root`` and ``--limit``.
+
+    Returns:
+        The TOON result with the project-scoped ``records`` tail.
+    """
+    try:
+        root = _resolve_root(args.root)
+    except RuntimeError as exc:
+        return make_error(str(exc), code=ErrorCode.NOT_FOUND)
+
+    limit = args.limit if args.limit is not None else _DEFAULT_LOGS_LIMIT
+    audit = InteractionAudit()
+
+    if not audit.path.exists():
+        return {
+            'status': 'success',
+            'action': 'logs',
+            'caller_root': root,
+            'count': 0,
+            'records': [],
+            'reason': 'log_absent',
+        }
+    # read_records_or_none() is the single read+parse choke point: it returns None
+    # when the log is present but unreadable/corrupt (OSError OR UnicodeDecodeError,
+    # the latter not an OSError subclass), distinct from an empty [] for a
+    # present-but-empty log. A corrupt log therefore fails closed to an explicit
+    # log_unreadable reason here — never a crash, never a fabricated success that
+    # hides the read failure (ADR-9). gc()/read_all() collapse the same None to []
+    # so daemon startup stays crash-safe.
+    all_records = audit.read_records_or_none()
+    if all_records is None:
+        return {
+            'status': 'success',
+            'action': 'logs',
+            'caller_root': root,
+            'count': 0,
+            'records': [],
+            'reason': 'log_unreadable',
+        }
+
+    scoped = [record for record in all_records if record.get('project_root') == root]
+    tail = scoped[-limit:] if limit > 0 else scoped
+    return {
+        'status': 'success',
+        'action': 'logs',
+        'caller_root': root,
+        'count': len(tail),
+        'total_matched': len(scoped),
+        'records': tail,
+    }
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -618,6 +696,22 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     sub.add_parser('upgrade', help='Drain then start the verified version.', allow_abbrev=False).set_defaults(
         func=run_upgrade
     )
+
+    logs = sub.add_parser(
+        'logs',
+        help="Show this project's interaction-audit records (read-only).",
+        allow_abbrev=False,
+    )
+    logs.add_argument('--root', help='Project root (default: caller main checkout).')
+    logs.add_argument(
+        '--limit',
+        type=int,
+        help=(
+            'Return the N most recent records (records are ordered oldest-first '
+            f'within the returned window). Default: {_DEFAULT_LOGS_LIMIT}.'
+        ),
+    )
+    logs.set_defaults(func=run_logs)
     return parser
 
 

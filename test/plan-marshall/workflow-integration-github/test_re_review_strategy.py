@@ -716,6 +716,14 @@ def test_main_re_review_wires_args_and_prints_toon(monkeypatch, capsys):
     fetch returns a fresh review for HEAD so the handler reports matched=True.
     """
     _noop_sleep(monkeypatch)
+    # Freeze the trigger clock: request_fresh_review stamps trigger_time via
+    # _now_iso(), and _match_review only accepts a review whose submitted_at
+    # post-dates it. Without freezing, once the real wall clock passes the
+    # hardcoded 2026-01-01 review timestamp the match can never succeed and
+    # poll_until busy-loops (sleep is a no-op here) until timeout — a time-bomb
+    # that turns this into a multi-minute CPU spin. Pin trigger just before the
+    # mocked review's 00:05 stamp so the match is deterministic and instant.
+    monkeypatch.setattr(github_re_review, '_now_iso', lambda: '2026-01-01T00:00:00Z')
     monkeypatch.setattr(
         github_re_review._github,
         'post_pr_comment',
@@ -759,6 +767,9 @@ def test_main_re_review_accepts_sourcery_bot_kind(monkeypatch, capsys):
     outside ``choices=BOT_KINDS`` would raise SystemExit at parse time).
     """
     _noop_sleep(monkeypatch)
+    # Freeze the trigger clock so the match is deterministic and instant — see
+    # test_main_re_review_wires_args_and_prints_toon for the time-bomb rationale.
+    monkeypatch.setattr(github_re_review, '_now_iso', lambda: '2026-01-01T00:00:00Z')
     post_calls = {'args': []}
 
     def fake_post(pr_number, body):

@@ -325,3 +325,88 @@ def test_status_reports_registration(home, monkeypatch):
     result = mbs.run_status(Namespace())
 
     assert result['registered'] is True
+
+
+# =============================================================================
+# logs — read-only project-scoped interaction-audit view
+# =============================================================================
+
+
+def test_logs_filters_to_the_caller_project(home):
+    root = home / 'proj'
+    root.mkdir()
+    caller = mbs.canonicalize_root(str(root))
+    other = mbs.canonicalize_root(str(home))  # a distinct canonical root
+    audit = mbs.InteractionAudit()
+    audit.record('submit', caller, 'p1', 'JOB-A', 'queued')
+    audit.record('submit', other, 'p2', 'JOB-B', 'queued')
+    audit.record('wait', caller, '', 'JOB-A', 'success')
+
+    result = mbs.run_logs(Namespace(root=str(root), limit=None))
+
+    assert result['status'] == 'success'
+    assert result['action'] == 'logs'
+    # Only the caller-project records — the other project's record is filtered out.
+    assert result['count'] == 2
+    assert all(record['project_root'] == caller for record in result['records'])
+    assert [record['job_id'] for record in result['records']] == ['JOB-A', 'JOB-A']
+
+
+def test_logs_absent_log_fails_closed_with_reason(home):
+    root = home / 'proj'
+    root.mkdir()
+
+    result = mbs.run_logs(Namespace(root=str(root), limit=None))
+
+    assert result['status'] == 'success'
+    assert result['records'] == []
+    assert result['count'] == 0
+    assert result['reason'] == 'log_absent'
+
+
+def test_logs_unreadable_log_fails_closed_with_reason(home):
+    # A present-but-corrupt (non-UTF-8) log must fail closed to an explicit
+    # log_unreadable reason — not crash, and not silently masquerade as an empty
+    # readable log. Guards the contract the docstring promises (ADR-9).
+    root = home / 'proj'
+    root.mkdir()
+    audit = mbs.InteractionAudit()
+    audit.record('submit', mbs.canonicalize_root(str(root)), 'p1', 'JOB-A', 'queued')
+    audit.path.write_bytes(b'\xff\xfe not valid utf-8 \x80\x81')
+
+    result = mbs.run_logs(Namespace(root=str(root), limit=None))
+
+    assert result['status'] == 'success'
+    assert result['records'] == []
+    assert result['count'] == 0
+    assert result['reason'] == 'log_unreadable'
+
+
+def test_logs_limit_bounds_the_newest_tail(home):
+    root = home / 'proj'
+    root.mkdir()
+    caller = mbs.canonicalize_root(str(root))
+    audit = mbs.InteractionAudit()
+    for index in range(5):
+        audit.record('ping', caller, '', f'JOB-{index}', 'ok')
+
+    result = mbs.run_logs(Namespace(root=str(root), limit=2))
+
+    assert result['count'] == 2
+    assert result['total_matched'] == 5
+    # The two newest records (the tail), oldest-first within the tail.
+    assert [record['job_id'] for record in result['records']] == ['JOB-3', 'JOB-4']
+
+
+def test_logs_performs_no_mutation(home):
+    root = home / 'proj'
+    root.mkdir()
+    caller = mbs.canonicalize_root(str(root))
+    audit = mbs.InteractionAudit()
+    audit.record('submit', caller, 'p1', 'JOB-A', 'queued')
+    before = audit.path.read_text(encoding='utf-8')
+
+    mbs.run_logs(Namespace(root=str(root), limit=1))
+
+    after = mbs.InteractionAudit().path.read_text(encoding='utf-8')
+    assert after == before

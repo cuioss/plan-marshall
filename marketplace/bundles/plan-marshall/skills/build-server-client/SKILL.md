@@ -87,6 +87,28 @@ failing the build:
 | `version_mismatch` | The daemon answered a different protocol version. |
 | `handshake_failed` | The daemon did not answer a clean `ping`. |
 
+## Interaction audit logging (non-silent)
+
+Every `submit` and `wait` interaction is logged to the **plan work log** at a
+captured level, through the same `plan_logging` substrate the `manage-logging`
+work verb writes through — so no interaction outcome is emitted only at an
+uncaptured Python log level and silently lost. This closes the field-observed
+defect class where a `degraded` fallback or a `refused` submit vanished because
+it surfaced only below the captured threshold.
+
+- **Normal outcomes log at INFO.** A queued `submit` acceptance and a `wait`
+  result each write one entry carrying the `job_id` — the same id written to the
+  change-ledger `kind=job` row, so the work log, the server-side interaction
+  audit, and the ledger all correlate on one `job_id`.
+- **Every fallback and refusal logs at WARNING.** No `degraded` (fallback) or
+  `refused` branch returns without a captured entry naming the `reason`.
+- **Plan-less builds are silent by design.** When no `--plan-id` is supplied
+  there is no per-plan work log to write to, so the logging is a no-op.
+- **Secrets discipline.** A logged entry carries ONLY non-secret correlation
+  fields — `job_id` / `job_status` / `reason` / `notation` / `attached` /
+  `elapsed` / `eta`. It NEVER contains the raw `--command` argv, `exec_path` /
+  `project_path`, env, or any spec field that may carry secrets.
+
 ## Preflight (F2) — one deterministic call
 
 `preflight` is the single call the init phase branches on. It returns exactly one

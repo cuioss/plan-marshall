@@ -48,6 +48,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 from argparse import Namespace
 from pathlib import Path
@@ -71,6 +72,7 @@ from _build_server_registry import (
 )
 from _ledger_core import KIND_JOB, append_entry, job_record, read_entries
 from marketplace_paths import main_checkout_root
+from plan_logging import log_entry
 from triage_helpers import ErrorCode, make_error, print_toon, safe_main
 from worktree_sha import compute_worktree_sha
 
@@ -232,6 +234,30 @@ def _handshake(sock_path: Path) -> tuple[dict[str, Any] | None, str | None]:
 # ---------------------------------------------------------------------------
 
 
+def _audit_log(plan_id: str, level: str, message: str) -> None:
+    """Write one captured work-log entry for a build-server interaction outcome.
+
+    No-ops for a plan-less build (empty ``plan_id``) — there is no per-plan work
+    log to write to. Otherwise it delegates to the same ``plan_logging``
+    substrate the ``manage-logging`` work verb writes through, so no interaction
+    outcome is emitted only at an uncaptured Python log level and silently lost.
+
+    Secrets discipline: callers pass ONLY non-secret correlation fields
+    (``job_id`` / ``job_status`` / ``reason`` / ``notation`` / ``attached`` /
+    ``elapsed`` / ``eta``) — NEVER the raw ``--command`` argv, ``exec_path`` /
+    ``project_path``, env, or any spec field that may carry secrets.
+
+    Args:
+        plan_id: Submitting plan id; empty for a plan-less build (no-op).
+        level: Captured log level — ``INFO`` for a normal outcome, ``WARNING``
+            for a fallback / refusal.
+        message: The pre-formatted, secret-free outcome message.
+    """
+    if not plan_id:
+        return
+    log_entry('work', plan_id, level, message)
+
+
 def _degraded(reason: str) -> dict[str, Any]:
     """Render a degraded (fallback) result the caller acts on by building locally."""
     return {
@@ -309,9 +335,45 @@ def _latest_job_id_for_plan(plan_id: str) -> str | None:
     return str(matches[-1]) if matches else None
 
 
+_CONTROL_CHAR_PATTERN = re.compile(r'[\x00-\x1f\x7f]')
+"""C0 control characters (incl. ``\\n`` / ``\\r``) plus DEL, stripped from the
+notation before it is interpolated into a free-text ``_audit_log`` message.
+
+The plan-scoped work log (``plan_logging.format_log_entry``) is a plain-text,
+line-oriented format parsed back by a per-line header regex — it is NOT
+JSON-escaped. ``command[2]`` is a client-supplied string (from ``--command``,
+validated only as "a JSON array of strings"), so an unsanitized embedded
+newline could forge a fake ``[timestamp] [LEVEL] [hash]`` header line into the
+work log (CWE-117 log injection). Stripping control characters here closes
+that vector while leaving a well-formed notation (e.g.
+``plan-marshall:build-pyproject:pyproject_build``) byte-identical."""
+
+
+def _sanitize_for_log(value: str) -> str:
+    """Strip control characters so ``value`` is safe to interpolate into a message.
+
+    The plan-scoped work log is a line-oriented plain-text format parsed back by a
+    per-line header regex (see :data:`_CONTROL_CHAR_PATTERN`). Any client-supplied
+    string interpolated into an ``_audit_log`` message — the executor notation OR a
+    ``--job-id`` — could otherwise forge a fake header line (CWE-117 log injection).
+    This is the single sanitization seam for every such value.
+    """
+    return _CONTROL_CHAR_PATTERN.sub('', value)
+
+
 def _notation_from_command(command: list[str]) -> str:
-    """Derive the executor notation (``command[2]``) from an executor-form argv."""
-    return command[2] if len(command) >= 3 else ''
+    """Derive the executor notation (``command[2]``) from an executor-form argv.
+
+    Control characters are stripped (see :func:`_sanitize_for_log`) so the
+    returned value is always safe to interpolate into a free-text log message
+    or ledger field. This sanitized value is used ONLY for correlation/logging
+    (``_audit_log`` messages, the ledger ``kind=job`` row) — the original,
+    unmodified ``command`` list is still what is submitted to the daemon, so
+    the S1.4 notation-allowlist check the verifier performs is unaffected.
+    """
+    if len(command) < 3:
+        return ''
+    return _sanitize_for_log(command[2])
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +399,7 @@ def run_submit(args: Namespace) -> dict[str, Any]:
     project_path = args.project_path or os.getcwd()
     exec_path = args.exec_path or project_path
     plan_id = args.plan_id or ''
+    notation = _notation_from_command(command)
     spec = make_job_spec(
         command=command,
         exec_path=exec_path,
@@ -346,26 +409,37 @@ def run_submit(args: Namespace) -> dict[str, Any]:
 
     _, reason = _handshake(_socket_path())
     if reason is not None:
+        _audit_log(plan_id, 'WARNING', f'build-server submit degraded: reason={reason} notation={notation}')
         return _degraded(reason)
 
     try:
         response = _call_daemon({'op': 'submit', 'job': spec.to_dict()}, timeout=_CONNECT_TIMEOUT_SECONDS)
     except (OSError, FrameError):
+        _audit_log(plan_id, 'WARNING', f'build-server submit degraded: reason={REASON_UNREACHABLE} notation={notation}')
         return _degraded(REASON_UNREACHABLE)
 
     status = str(response.get('status', ''))
     if status == STATUS_REFUSED:
+        refused_reason = str(response.get('reason', ''))
+        _audit_log(plan_id, 'WARNING', f'build-server submit refused: reason={refused_reason} notation={notation}')
         return {
             'status': 'refused',
-            'reason': str(response.get('reason', '')),
-            'message': f'submit refused by verifier: {response.get("reason", "")}',
+            'reason': refused_reason,
+            'message': f'submit refused by verifier: {refused_reason}',
         }
     if status != STATUS_QUEUED:
+        _audit_log(plan_id, 'WARNING', f'build-server submit degraded: reason={REASON_UNREACHABLE} notation={notation}')
         return _degraded(REASON_UNREACHABLE)
 
     job_id = str(response.get('job_id', ''))
     attached = bool(response.get('attached', False))
-    _record_job(job_id, plan_id, spec.fingerprint, _notation_from_command(command), project_path)
+    _record_job(job_id, plan_id, spec.fingerprint, notation, project_path)
+    _audit_log(
+        plan_id,
+        'INFO',
+        f'build-server submit queued: job_id={job_id} job_status={STATUS_QUEUED} '
+        f'attached={attached} notation={notation}',
+    )
     return {
         'status': 'success',
         'job_status': STATUS_QUEUED,
@@ -376,7 +450,8 @@ def run_submit(args: Namespace) -> dict[str, Any]:
 
 def run_wait(args: Namespace) -> dict[str, Any]:
     """Do one bounded long-poll, re-attaching via the ledger when no id is given."""
-    job_id = args.job_id or _latest_job_id_for_plan(args.plan_id or '')
+    plan_id = args.plan_id or ''
+    job_id = args.job_id or _latest_job_id_for_plan(plan_id)
     if not job_id:
         return make_error(
             'no --job-id given and no kind=job ledger row to re-attach to'
@@ -387,6 +462,7 @@ def run_wait(args: Namespace) -> dict[str, Any]:
     bound = args.bound if args.bound is not None else _DEFAULT_WAIT_BOUND
     _, reason = _handshake(_socket_path())
     if reason is not None:
+        _audit_log(plan_id, 'WARNING', f'build-server wait degraded: reason={reason}')
         return _degraded(reason)
 
     try:
@@ -395,8 +471,20 @@ def run_wait(args: Namespace) -> dict[str, Any]:
             timeout=float(bound) + _WAIT_TIMEOUT_MARGIN_SECONDS,
         )
     except (OSError, FrameError):
+        _audit_log(plan_id, 'WARNING', f'build-server wait degraded: reason={REASON_UNREACHABLE}')
         return _degraded(REASON_UNREACHABLE)
-    return _render_job_status(response)
+
+    result = _render_job_status(response)
+    # job_id may be a client-supplied `--job-id`; sanitize before interpolating it
+    # into the line-oriented work log (CWE-117), exactly as notation is sanitized.
+    _audit_log(
+        plan_id,
+        'INFO',
+        f'build-server wait result: job_id={_sanitize_for_log(job_id)} '
+        f'job_status={result.get("job_status", "")} '
+        f'elapsed={result.get("elapsed", "")} eta={result.get("eta", "")}',
+    )
+    return result
 
 
 def run_ping(_args: Namespace) -> dict[str, Any]:

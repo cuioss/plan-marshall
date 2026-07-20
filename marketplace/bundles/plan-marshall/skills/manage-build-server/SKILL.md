@@ -1,6 +1,6 @@
 ---
 name: manage-build-server
-description: Operator control surface for the marshalld build server — enrol/drop a project in the machine-global registry (the opt-in enable signal and anti-laundering wall) and manage the daemon lifecycle (start, stop, drain, status, install, upgrade), version-pinned to the verified bundle copy
+description: Operator control surface for the marshalld build server — enrol/drop a project in the machine-global registry (the opt-in enable signal and anti-laundering wall), manage the daemon lifecycle (start, stop, drain, status, install, upgrade) version-pinned to the verified bundle copy, and inspect the daemon's per-project interaction-audit log (read-only)
 user-invocable: true
 mode: script-executor
 scope: global
@@ -94,8 +94,17 @@ All daemon state lives under the machine-global home root
 | `registry.json` | Machine-global project registry (`0600`) |
 | `registry-audit.log` | Append-only registration audit |
 | `lifecycle-audit.log` | Append-only start/stop/drain/install/upgrade audit |
+| `interaction-audit.log` | Append-only per-request interaction audit (`0600`) |
 | `journal/` | Durable job specs, results, and ETA history |
 | `job-logs/` | Per-job captured build logs |
+
+The **interaction audit** is a central append-only log — the natural third
+sibling of `registry-audit.log` and `lifecycle-audit.log` — into which the daemon
+writes exactly one attributed record for every request it dispatches
+(`ping` / `submit` / `wait`). Each record carries per-project attribution
+(`project_root` + `plan_id` + `job_id`) plus `op` / `outcome` / `timestamp`, and
+never any secret-bearing spec field. Retention is bounded and GC'd on every daemon
+start, parallel to the journal's bounded-retention model.
 
 ## Lifecycle operations
 
@@ -136,6 +145,7 @@ survive, and any job that was in flight when the daemon died is marked `killed`
 | `status` | Report running version + binary path |
 | `install` | Idempotent version-pinned start |
 | `upgrade` | Drain then start the verified version |
+| `logs` | Read-only, project-scoped view of the daemon's interaction-audit log |
 
 **Script**: `plan-marshall:manage-build-server:marshalld` — the daemon binary,
 launched by `start` (never invoked directly by an operator).
@@ -174,6 +184,21 @@ python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_s
 python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server install
 python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server upgrade
 ```
+
+### logs
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-build-server:manage_build_server logs \
+  [--root ROOT] [--limit LIMIT]
+```
+
+Read-only inspection of the daemon's central `interaction-audit.log`, filtered to
+the caller project (the derived project-scoped view) — it never mutates the log.
+`--root` defaults to the caller's main checkout; `--limit` returns the N most
+recent records (default `50`), ordered oldest-first within the returned window
+(so `records[0]` is the oldest of the window, not the newest). When the log is
+absent or unreadable the verb returns an explicit empty `records` list with a
+named `reason` (`log_absent` / `log_unreadable`; fails closed).
 
 ## Related
 

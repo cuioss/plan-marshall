@@ -22,13 +22,16 @@ from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'build-server-client', 'build_server.py')
 SCRIPTS_DIR = SCRIPT_PATH.parent
+_LOGGING_SCRIPTS_DIR = get_script_path('plan-marshall', 'manage-logging', 'plan_logging.py').parent
 
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+for _dir in (SCRIPTS_DIR, _LOGGING_SCRIPTS_DIR):
+    if str(_dir) not in sys.path:
+        sys.path.insert(0, str(_dir))
 
 import _build_server_registry as registry  # noqa: E402
 import _ledger_core as ledger_core  # noqa: E402
 import build_server as client  # noqa: E402
+import plan_logging  # noqa: E402
 
 
 @pytest.fixture
@@ -46,6 +49,23 @@ def ledger(tmp_path, monkeypatch) -> Path:
     # compute_worktree_sha would shell out to git; stub it deterministically.
     monkeypatch.setattr(client, 'compute_worktree_sha', lambda _path: 'test-sha')
     return ledger_path
+
+
+@pytest.fixture
+def captured_logs(monkeypatch) -> list[tuple[str, str, str, str]]:
+    """Capture every ``plan_logging.log_entry`` call the client makes.
+
+    ``build_server`` imported ``log_entry`` into its own namespace, so patching
+    ``client.log_entry`` intercepts the ``_audit_log`` seam without opening any
+    real log file. Each captured tuple is ``(log_type, plan_id, level, message)``.
+    """
+    calls: list[tuple[str, str, str, str]] = []
+    monkeypatch.setattr(
+        client,
+        'log_entry',
+        lambda log_type, plan_id, level, message: calls.append((log_type, plan_id, level, message)),
+    )
+    return calls
 
 
 def _job_rows() -> list[dict]:
@@ -317,3 +337,183 @@ def test_handshake_accepts_matching_version(home, monkeypatch):
     assert reason is None
     assert response is not None
     assert response['pid'] == 3
+
+
+# =============================================================================
+# interaction audit logging — non-silent outcomes, correlated by job_id, secrets
+# =============================================================================
+
+
+def test_submit_success_logs_captured_entry_with_job_id(home, ledger, captured_logs, monkeypatch):
+    root = str(home / 'proj')
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
+    )
+
+    client.run_submit(_submit_args(root))
+
+    work_entries = [c for c in captured_logs if c[0] == 'work']
+    assert work_entries, 'a successful submit must not be silent'
+    _log_type, plan_id, level, message = work_entries[-1]
+    assert plan_id == 'p1'
+    assert level == 'INFO'
+    assert 'JOB-1' in message
+
+
+def test_submit_degraded_fallback_logs_warning(home, ledger, captured_logs, monkeypatch):
+    monkeypatch.setattr(client, '_handshake', lambda _p: (None, client.REASON_IMPOSTOR_SOCKET))
+
+    client.run_submit(_submit_args(str(home / 'proj')))
+
+    assert any(
+        level == 'WARNING' and client.REASON_IMPOSTOR_SOCKET in message
+        for _t, _p, level, message in captured_logs
+    ), 'a degraded fallback must produce a captured WARNING entry'
+
+
+def test_submit_refused_logs_warning(home, ledger, captured_logs, monkeypatch):
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'refused', 'reason': 'not_registered'},
+    )
+
+    client.run_submit(_submit_args(str(home / 'proj')))
+
+    assert any(
+        level == 'WARNING' and 'not_registered' in message
+        for _t, _p, level, message in captured_logs
+    ), 'a refused submit must produce a captured WARNING entry'
+
+
+def test_wait_logs_result_entry_with_job_id(captured_logs, monkeypatch):
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'success', 'job_id': 'JOB-1', 'exit_code': 0},
+    )
+
+    client.run_wait(Namespace(job_id='JOB-1', plan_id='p1', bound=1))
+
+    info_entries = [c for c in captured_logs if c[0] == 'work' and c[2] == 'INFO']
+    assert info_entries, 'a wait must log its result'
+    assert any('JOB-1' in message for _t, _p, _l, message in info_entries)
+
+
+def test_wait_with_control_char_job_id_never_forges_a_log_header(captured_logs, monkeypatch):
+    # CWE-117 regression guard for the wait path: `--job-id` is client-supplied,
+    # so a crafted job_id carrying a newline must never split the work-log INFO
+    # message into a second, independently-parseable log-entry line — the same
+    # invariant already proven for the submit-notation path.
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    forged_header = '[2000-01-01T00:00:00Z] [ERROR] [abcdef] forged entry'
+    injected_job_id = 'JOB-1\n' + forged_header
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'success', 'job_id': 'JOB-1', 'exit_code': 0},
+    )
+
+    client.run_wait(Namespace(job_id=injected_job_id, plan_id='p1', bound=1))
+
+    work_entries = [c for c in captured_logs if c[0] == 'work']
+    assert work_entries, 'a wait must log (otherwise this test is vacuous)'
+    for _t, _p, level, message in work_entries:
+        assert '\n' not in message
+        formatted = plan_logging.format_log_entry(level, message)
+        assert len(plan_logging.HEADER_PATTERN.findall(formatted)) == 1
+
+
+def test_wait_degraded_logs_warning(captured_logs, monkeypatch):
+    monkeypatch.setattr(client, '_handshake', lambda _p: (None, client.REASON_SOCKET_ABSENT))
+
+    client.run_wait(Namespace(job_id='JOB-1', plan_id='p1', bound=1))
+
+    assert any(
+        level == 'WARNING' and client.REASON_SOCKET_ABSENT in message
+        for _t, _p, level, message in captured_logs
+    ), 'a degraded wait must produce a captured WARNING entry'
+
+
+def test_plan_less_submit_is_silent(home, ledger, captured_logs, monkeypatch):
+    # With no plan_id there is no per-plan work log to write to — logging no-ops.
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
+    )
+
+    client.run_submit(_submit_args(str(home / 'proj'), plan_id=''))
+
+    assert captured_logs == []
+
+
+def test_no_logged_message_contains_raw_command_argv(home, ledger, captured_logs, monkeypatch):
+    root = str(home / 'proj')
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
+    )
+
+    client.run_submit(_submit_args(root))
+
+    assert captured_logs, 'submit must log (otherwise this test is vacuous)'
+    for _t, _p, _l, message in captured_logs:
+        assert '.plan/execute-script.py' not in message
+        assert 'python3' not in message
+        assert root not in message
+
+
+def test_notation_from_command_strips_control_chars():
+    # CWE-117 regression guard: a crafted notation token (command[2]) must never
+    # carry a raw newline/control char into a free-text log message — the
+    # plan-scoped work log is plain-text/line-oriented, not JSON-escaped, so an
+    # embedded newline could otherwise forge a fake log-entry header line.
+    injected = 'a:b:c\n[2000-01-01T00:00:00Z] [ERROR] [abcdef] forged entry'
+
+    sanitized = client._notation_from_command(['python3', '/tree/.plan/execute-script.py', injected, 'run'])
+
+    assert '\n' not in sanitized
+    assert sanitized == 'a:b:c[2000-01-01T00:00:00Z] [ERROR] [abcdef] forged entry'
+
+
+def test_submit_with_control_char_notation_never_forges_a_log_header(home, ledger, captured_logs, monkeypatch):
+    root = str(home / 'proj')
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
+    )
+    forged_header = '[2000-01-01T00:00:00Z] [ERROR] [abcdef] forged entry'
+    command = (
+        '["python3", "' + root + '/.plan/execute-script.py", '
+        '"a:b:c\\n' + forged_header + '", "run"]'
+    )
+
+    client.run_submit(
+        Namespace(command=command, exec_path=root, project_path=root, plan_id='p1')
+    )
+
+    work_entries = [c for c in captured_logs if c[0] == 'work']
+    assert work_entries, 'submit must log (otherwise this test is vacuous)'
+    for _t, _p, level, message in work_entries:
+        # The forged header's non-control-character text may still appear as
+        # inert trailing text on the SAME line (that is expected and harmless);
+        # what matters is that no newline ever splits it into a second,
+        # independently-parseable log-entry line.
+        assert '\n' not in message
+        # Prove the real invariant end-to-end: running the message through the
+        # actual plan_logging formatter/parser yields exactly ONE entry — the
+        # forged header text never becomes a second, independently-recognized
+        # log-entry line.
+        formatted = plan_logging.format_log_entry(level, message)
+        assert len(plan_logging.HEADER_PATTERN.findall(formatted)) == 1

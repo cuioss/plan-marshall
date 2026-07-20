@@ -448,6 +448,15 @@ def _install(monkeypatch: pytest.MonkeyPatch, double: _QueueDouble):
     monkeypatch.setattr(bqs, '_acquire', double.acquire)
     monkeypatch.setattr(bqs, '_release_raw', double.release)
 
+    # Hermeticity: these tests exercise the IN-PROCESS build-queue-slot path, so
+    # force the D5 routing seam to signal fallback regardless of whether a real
+    # marshalld daemon is registered + ready on the host. Without this, a live
+    # daemon (e.g. a machine where the meta-project is registered) makes
+    # ``cmd_run`` route the build to the daemon before reaching the mocked
+    # in-process path, and the injected exec recorder / queue double are never
+    # exercised. ``no_notation`` is the benign "do not route" fallback reason.
+    monkeypatch.setattr(factory, '_route_to_daemon', lambda *_a, **_k: (None, 'no_notation'))
+
     exec_recorder = _ExecRecorder()
     monkeypatch.setattr(factory, 'execute_direct_base', exec_recorder)
     # cmd_run_common runs AFTER the slot closes; stub it so the test does not
