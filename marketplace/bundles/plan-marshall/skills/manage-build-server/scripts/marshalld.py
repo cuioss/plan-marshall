@@ -319,7 +319,11 @@ class Daemon:
             # to uphold ("a disk failure must never abort request handling").
             project_root, plan_id = self._audit_attribution(op, request)
             job_id = self._audit_job_id(op, request, response)
-            reason = response.get('reason')
+            # Failure responses are not uniform: status_payload(STATUS_REFUSED)
+            # sets `reason`, but unknown_op / invalid_job / missing_job set
+            # `error`. Fall back to `error` so those failure paths keep their
+            # detail in the audit trail instead of recording reason=None.
+            reason = response.get('reason') or response.get('error')
             self._interaction_audit.record(
                 op=str(op or ''),
                 project_root=project_root,
@@ -459,7 +463,14 @@ class Daemon:
         rotate_log(log_path())
         stale_socket_takeover(socket_path(), pidfile_path())
         self._journal.replay_on_restart()
-        self._interaction_audit.gc()
+        try:
+            self._interaction_audit.gc()
+        except OSError:
+            # Retention GC is best-effort — its prune path rewrites the log via
+            # atomic_write_file()/chmod(), either of which can raise OSError. A
+            # cleanup failure must never abort daemon startup; the stale records
+            # are simply carried to the next start's GC.
+            pass
 
         server = await asyncio.start_unix_server(self._on_client, path=str(socket_path()))
         os.chmod(socket_path(), _SOCKET_MODE)

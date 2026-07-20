@@ -313,6 +313,10 @@ def test_handle_request_unknown_op_is_still_audited(home, tmp_path):
     assert len(records) == 1
     assert records[0]['op'] == 'bogus'
     assert records[0]['outcome'] == 'error'
+    # Failure detail is preserved: unknown_op sets `error` (not `reason`), and the
+    # audit reason-capture falls back to `error`, so the record keeps the detail
+    # instead of dropping it to None.
+    assert records[0].get('reason')
 
 
 def test_audit_interaction_swallows_attribution_failure(home, tmp_path, monkeypatch):
