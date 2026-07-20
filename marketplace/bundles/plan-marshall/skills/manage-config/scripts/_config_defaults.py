@@ -120,11 +120,20 @@ DEFAULT_SYSTEM_RETENTION = {
 # PR-opening guidance references. Both keys are seeded on `init` and back-filled
 # into existing projects by `sync-defaults`' non-destructive deep-merge (the same
 # mechanism `working_prefixes` relies on).
+#
+# `merge_queue_managed_externally` (bool, default `false`) tells plan-marshall
+# that the org — not plan-marshall — owns the platform merge queue. When true,
+# the probe-backed set-time validation of `use_merge_queue` defers: the live
+# probe is skipped entirely and the set is permitted unconditionally, because the
+# queue's provisioning is somebody else's responsibility and a local probe
+# verdict is not the authority. Boolean coercion is handled by `_coerce_value`,
+# so no bespoke `validate_*` helper is warranted.
 DEFAULT_PROJECT = {
     'default_base_branch': 'main',
     'working_prefixes': list(DEFAULT_BRANCH_PREFIX_WORKING),
     'pr_strategy': 'compact',
     'pr_compact_max_changed_files': 150,
+    'merge_queue_managed_externally': False,
 }
 
 

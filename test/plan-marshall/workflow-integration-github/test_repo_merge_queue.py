@@ -846,3 +846,96 @@ def test_probe_omits_merge_method_when_parameter_absent(monkeypatch):
     result = github_ops.cmd_repo_merge_queue_probe(argparse.Namespace())
     assert result['eligibility'] == 'eligible_configured'
     assert 'merge_method' not in result
+
+
+# ---------------------------------------------------------------------------
+# enable — bypass-less create warning (advisory, never a refusal)
+# ---------------------------------------------------------------------------
+
+
+def test_enable_create_with_bypass_grants_actor_and_emits_no_warning(monkeypatch):
+    # Bypass ids resolved: the POST payload carries the Integration/always grant
+    # and the success return omits the warnings key entirely (happy-path shape
+    # unchanged).
+    run_gh_stub, body_stub, _captured, bodies = _make_enable_stubs(rules=[{'type': 'pull_request'}])
+    _install_enable(monkeypatch, run_gh_stub, body_stub)
+    monkeypatch.setattr(github_ops, '_read_merge_queue_bypass_config', lambda: (12345, []))
+
+    result = github_ops.cmd_repo_merge_queue_enable(argparse.Namespace())
+
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    payload = [b for b in bodies if b[0] == 'POST'][0][2]
+    actors = payload['bypass_actors']
+    assert [a['actor_id'] for a in actors] == [12345]
+    assert actors[0]['actor_type'] == 'Integration'
+    assert actors[0]['bypass_mode'] == 'always'
+    assert 'warnings' not in result
+
+
+def test_enable_external_queue_under_foreign_name_never_mutates(monkeypatch):
+    # A configured merge queue whose ruleset carries a name other than
+    # plan-marshall-merge-queue is externally managed: reported, never touched.
+    # _gh_api_json_body is deliberately NOT stubbed here so that any mutation
+    # would surface as a real ['api', '-X', POST|PUT|DELETE] run_gh argv — the
+    # load-bearing assertion is against the captured argv, not the return dict.
+    stub, captured = _make_run_gh(
+        rules=[{'type': 'merge_queue'}],
+        rulesets=[{'id': 7, 'name': 'org-owned-merge-queue'}],
+    )
+    _install(monkeypatch, stub)
+
+    result = github_ops.cmd_repo_merge_queue_enable(argparse.Namespace())
+
+    assert result['status'] == 'success'
+    assert result['changed'] is False
+    assert result['externally_managed'] is True
+    # Zero mutating API calls of any kind reached the gh boundary.
+    mutating = [c for c in captured if c[:2] == ['api', '-X']]
+    assert mutating == []
+
+
+def test_probe_reports_externally_managed_for_foreign_ruleset(monkeypatch):
+    stub, captured = _make_run_gh(
+        rules=[{'type': 'merge_queue'}],
+        rulesets=[{'id': 7, 'name': 'org-owned-merge-queue'}],
+    )
+    _install(monkeypatch, stub)
+
+    result = github_ops.cmd_repo_merge_queue_probe(argparse.Namespace())
+
+    assert result['eligibility'] == 'eligible_configured'
+    assert result['externally_managed'] is True
+    assert [c for c in captured if c[:2] == ['api', '-X']] == []
+
+
+def test_probe_omits_externally_managed_when_unconfigured(monkeypatch):
+    # The field is absent — never False — on any non-configured discriminator.
+    stub, _ = _make_run_gh(rules=[{'type': 'pull_request'}])
+    _install(monkeypatch, stub)
+
+    result = github_ops.cmd_repo_merge_queue_probe(argparse.Namespace())
+    assert result['eligibility'] == 'eligible_unconfigured'
+    assert 'externally_managed' not in result
+
+
+def test_enable_create_without_bypass_still_creates_and_warns_gh013(monkeypatch):
+    # No bypass id resolves: the create is NOT refused — the ruleset is still
+    # created (without a bypass_actors key) and the return carries exactly one
+    # advisory warning naming GH013 and the two config remedies.
+    run_gh_stub, body_stub, _captured, bodies = _make_enable_stubs(rules=[{'type': 'pull_request'}])
+    _install_enable(monkeypatch, run_gh_stub, body_stub)
+    monkeypatch.setattr(github_ops, '_read_merge_queue_bypass_config', lambda: (None, []))
+
+    result = github_ops.cmd_repo_merge_queue_enable(argparse.Namespace())
+
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+    posts = [b for b in bodies if b[0] == 'POST']
+    assert len(posts) == 1
+    assert 'bypass_actors' not in posts[0][2]
+    warnings = result['warnings']
+    assert len(warnings) == 1
+    assert 'GH013' in warnings[0]
+    assert 'bypass_app_id' in warnings[0]
+    assert 'bypass_app_slugs' in warnings[0]

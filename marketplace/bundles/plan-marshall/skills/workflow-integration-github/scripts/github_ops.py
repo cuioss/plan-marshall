@@ -736,6 +736,20 @@ _MERGE_QUEUE_AUTH_SCOPE_HINT = (
 )
 
 
+# Advisory warning surfaced on a bypass-less merge-queue create. The queue GitHub
+# creates is mandatory, so a ruleset with no bypass actor rejects every direct push
+# from release/tag automation to the default branch with GH013. The create is NOT
+# refused — the warning names the two config remedies so the operator can grant the
+# bypass and re-run enable.
+_MERGE_QUEUE_NO_BYPASS_WARNING = (
+    'merge queue created without a bypass actor: the queue is mandatory, so any '
+    'direct push from release/tag automation to the default branch will be '
+    'rejected with GH013. Set merge_queue.bypass_app_id or '
+    'merge_queue.bypass_app_slugs in marshal.json and re-run enable to grant the '
+    'bypass.'
+)
+
+
 def _is_auth_scope_error(stderr: str) -> bool:
     """Return True when *stderr* names an auth/permission-scope failure.
 
@@ -1332,13 +1346,13 @@ def cmd_repo_merge_queue_probe(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('repo_merge_queue_probe', err)
 
-    error, _owner, _repo, branch, discriminator, detail, merge_method = (
+    error, owner, repo, branch, discriminator, detail, merge_method = (
         _resolve_repo_branch_and_probe('repo_merge_queue_probe')
     )
     if error is not None:
         return error
 
-    result = {
+    result: dict = {
         'status': 'success',
         'operation': 'repo_merge_queue_probe',
         'provider': 'github',
@@ -1348,6 +1362,15 @@ def cmd_repo_merge_queue_probe(args: argparse.Namespace) -> dict:
     }
     if merge_method is not None:
         result['merge_method'] = merge_method
+    if discriminator == MERGE_QUEUE_ELIGIBLE_CONFIGURED:
+        # Read-only ownership check (same name lookup the enable path uses): a
+        # configured queue with no ruleset named plan-marshall-merge-queue is
+        # owned externally. The field stays ABSENT on every other discriminator
+        # — and on a fetch failure, where ownership is genuinely unknown — so
+        # unrelated returns are byte-stable.
+        ruleset_id, _detail, fetch_error = _fetch_plan_marshall_ruleset(owner, repo)
+        if fetch_error is None:
+            result['externally_managed'] = ruleset_id is None
     return result
 
 
@@ -1388,8 +1411,22 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
         if fetch_error is not None:
             return fetch_error
         if ruleset_id is None or ruleset_detail is None:
-            # Configured via some other ruleset — nothing named to reconcile.
-            return no_change
+            # Configured under a ruleset plan-marshall does not own. This is NOT
+            # the idempotent no-op: it is a distinct, first-class state, and no
+            # create / PUT / DELETE is ever issued on this arm.
+            return {
+                'status': 'success',
+                'operation': 'repo_merge_queue_enable',
+                'provider': 'github',
+                'branch': branch,
+                'eligibility': discriminator,
+                'changed': False,
+                'externally_managed': True,
+                'detail': (
+                    'merge queue is configured under a ruleset plan-marshall does '
+                    'not own — not created, reconciled, renamed, or deleted'
+                ),
+            }
 
         # Resolve bypass actors config-first. A static bypass_app_id needs no
         # API call. The slugs-only fallback would otherwise issue an
@@ -1459,7 +1496,7 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
             if _is_auth_scope_error(stderr):
                 return make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, stderr.strip())
             return make_error('repo_merge_queue_enable', 'Failed to create merge-queue ruleset', stderr.strip())
-        return {
+        created = {
             'status': 'success',
             'operation': 'repo_merge_queue_enable',
             'provider': 'github',
@@ -1468,6 +1505,12 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
             'changed': True,
             'detail': 'merge_queue ruleset created',
         }
+        # Advisory only — the create already succeeded. The key is omitted
+        # entirely when a bypass actor resolved, so the happy-path success shape
+        # is unchanged.
+        if not resolved_ids:
+            created['warnings'] = [_MERGE_QUEUE_NO_BYPASS_WARNING]
+        return created
 
     # ineligible / unsupported → refuse with the actionable message.
     return make_error(

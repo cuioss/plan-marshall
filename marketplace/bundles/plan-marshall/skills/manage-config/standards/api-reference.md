@@ -120,13 +120,14 @@ absent or unreadable.
 | Verb | Parameters | Description |
 |------|-----------|-------------|
 | `get` | `--field` | Get a project field. Falls back to the canonical default (from `DEFAULT_PROJECT`) when the key is absent from the live `project` block. |
-| `set` | `--field`, `--value` | Set a project field. Rejects any `--field` outside the known project field set (`default_base_branch`, `working_prefixes`, `pr_strategy`, `pr_compact_max_changed_files`) with `error_type: unknown_field` before any write — an unknown field name never persists a dead key. Scalar fields are coerced (bool/int/str); the list-valued JSON field `working_prefixes` takes a JSON array value that round-trips through `get`. |
+| `set` | `--field`, `--value` | Set a project field. Rejects any `--field` outside the known project field set (`default_base_branch`, `working_prefixes`, `pr_strategy`, `pr_compact_max_changed_files`, `merge_queue_managed_externally`) with `error_type: unknown_field` before any write — an unknown field name never persists a dead key. Scalar fields are coerced (bool/int/str); the list-valued JSON field `working_prefixes` takes a JSON array value that round-trips through `get`. |
 
 ### Fields
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `default_base_branch` | string | `main` | Project's canonical base branch; seeds `references.base_branch` at plan init. |
+| `merge_queue_managed_externally` | bool | `false` | Declares that the org — not plan-marshall — owns the platform merge queue. When `true`, the probe-backed set-time validation of `use_merge_queue` defers entirely (see below). |
 | `working_prefixes` | list[string] | `["feature/", "fix/", "chore/"]` | The closed set of allowed working-branch prefixes for plan feature branches (e.g. `feature/`), enforced by the branch-prefix validation in `marshall-steward`. A structural test (`test_branch_prefix_allowlist.py`) asserts every prefix is covered by a `.github/workflows/python-verify.yml` push trigger, so a dropped prefix that would make a PR unmergeable fails CI. The `docs/` prefix is explicitly retired and absent. |
 
 ### Example: get working_prefixes
@@ -218,6 +219,8 @@ manage-config plan phase-6-finalize step set \
 #### Probe-backed set-time validation (`use_merge_queue`)
 
 `step set` applies one probe-backed validation before persisting: setting `use_merge_queue: true` on `default:branch-cleanup` runs a live `ci repo merge-queue probe` (see `tools-integration-ci` SKILL.md § Canonical invocations → `pr merge-queue` and the `repo merge-queue probe/enable` verbs). The set is **permitted** when the probe reports `eligible_configured` / `eligible_unconfigured`, and **rejected** — `step set` returns `status: error` with an actionable message naming both remedies (configure the platform queue via marshall-steward, or leave `use_merge_queue` off) — when the probe reports `ineligible` / `unsupported` OR fails outright (e.g. insufficient token scope; the failure surfaces the actionable message, never a stack trace). Disabling (`use_merge_queue: false`) is always permitted and skips the probe. This is the config-set-time half of the merge-queue guard pair; the finalize-time enqueue-failure half (an actionable abort naming the same two remedies) lives in [`phase-6-finalize/standards/branch-cleanup.md`](../../phase-6-finalize/standards/branch-cleanup.md).
+
+**Defer branch (`project.merge_queue_managed_externally`)**: when the project field `merge_queue_managed_externally` is `true`, the validation defers — the live probe is **not run at all** and the set is permitted unconditionally. The org owns the queue's provisioning, so a local probe verdict is not the authority over it, and an `ineligible` reading must not block the operator from declaring that the queue is in use. When the field is `false` or absent, the probe-backed behaviour above is unchanged.
 
 ### Order-driven step verbs (phase-5-execute, phase-6-finalize)
 
@@ -532,4 +535,4 @@ Common errors:
 - `marshal.json not found. Run command /marshall-steward first`
 - `skill_domains not configured. Run command /marshall-steward first`
 - `Unknown domain: {name}`
-- `unknown_field` — `project set` was given a `--field` outside the known project field set (`default_base_branch`, `working_prefixes`, `pr_strategy`, `pr_compact_max_changed_files`). The write is refused before any key is persisted, so an unknown field never masks an operator/doc typo behind a green `status: success`.
+- `unknown_field` — `project set` was given a `--field` outside the known project field set (`default_base_branch`, `working_prefixes`, `pr_strategy`, `pr_compact_max_changed_files`, `merge_queue_managed_externally`). The write is refused before any key is persisted, so an unknown field never masks an operator/doc typo behind a green `status: success`.

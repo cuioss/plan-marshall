@@ -205,6 +205,77 @@ def test_step_set_permits_enable_on_eligible_and_persists(monkeypatch, plan_cont
     assert params['use_merge_queue'] is True
 
 
+def _seed_managed_externally(fixture_dir: Path, value: bool) -> None:
+    """Set project.merge_queue_managed_externally in the fixture's marshal.json."""
+    path = fixture_dir / 'marshal.json'
+    config = json.loads(path.read_text(encoding='utf-8'))
+    project = config.get('project')
+    if not isinstance(project, dict):
+        project = {}
+    project['merge_queue_managed_externally'] = value
+    config['project'] = project
+    path.write_text(json.dumps(config), encoding='utf-8')
+
+
+def _counting_probe(eligibility='ineligible'):
+    """Return (probe_fn, calls) where calls records each probe invocation."""
+    calls: list[int] = []
+
+    def probe():
+        calls.append(1)
+        return {'status': 'success', 'eligibility': eligibility}
+
+    return probe, calls
+
+
+def test_validate_defers_when_managed_externally(monkeypatch):
+    # The field short-circuits BEFORE the probe seam — an exploding probe proves
+    # the defer, not merely a permissive return value.
+    def _boom():
+        raise AssertionError('probe must not run when the queue is managed externally')
+
+    monkeypatch.setattr(_qp, '_run_merge_queue_probe', _boom)
+    config = {'project': {'merge_queue_managed_externally': True}}
+    assert _qp._validate_use_merge_queue(True, config) is None
+
+
+def test_step_set_defers_probe_when_managed_externally(monkeypatch, plan_context):
+    create_marshal_json(plan_context.fixture_dir)
+    _seed_branch_cleanup_step(plan_context.fixture_dir)
+    _seed_managed_externally(plan_context.fixture_dir, True)
+    # An ineligible probe would normally REJECT — the defer must skip it entirely.
+    probe, calls = _counting_probe('ineligible')
+    monkeypatch.setattr(_qp, '_run_merge_queue_probe', probe)
+
+    result = _qp.cmd_phase(_step_set_ns('true'), 'phase-6-finalize')
+
+    assert result['status'] == 'success'
+    # The load-bearing assertion: the probe seam was never invoked.
+    assert calls == []
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text(encoding='utf-8'))
+    params = config['plan']['phase-6-finalize']['steps']['default:branch-cleanup']
+    assert params['use_merge_queue'] is True
+
+
+def test_step_set_still_probes_when_managed_externally_false(monkeypatch, plan_context):
+    # Negative twin: the defer is genuinely gated on the field, so with it false
+    # an ineligible probe still rejects the set.
+    create_marshal_json(plan_context.fixture_dir)
+    _seed_branch_cleanup_step(plan_context.fixture_dir)
+    _seed_managed_externally(plan_context.fixture_dir, False)
+    probe, calls = _counting_probe('ineligible')
+    monkeypatch.setattr(_qp, '_run_merge_queue_probe', probe)
+
+    result = _qp.cmd_phase(_step_set_ns('true'), 'phase-6-finalize')
+
+    assert result['status'] == 'error'
+    assert 'disable use_merge_queue' in result['error'].lower()
+    assert len(calls) == 1
+    config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text(encoding='utf-8'))
+    params = config['plan']['phase-6-finalize']['steps']['default:branch-cleanup']
+    assert params.get('use_merge_queue') is not True
+
+
 def test_step_set_disable_does_not_probe(monkeypatch, plan_context):
     create_marshal_json(plan_context.fixture_dir)
     _seed_branch_cleanup_step(plan_context.fixture_dir)

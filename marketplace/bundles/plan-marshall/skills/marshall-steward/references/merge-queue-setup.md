@@ -19,6 +19,35 @@ surfaces nothing and mutates nothing.
 
 ## The provisioning flow
 
+### Step MQ-0: Defer gate (externally-managed queue)
+
+Before probing, read the project-level defer signal:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  project get --field merge_queue_managed_externally
+```
+
+**When the value is `true`**, the org — not plan-marshall — owns the merge
+queue. Skip the `AskUserQuestion` entirely and make **no** `enable` call. Run
+only the probe (Step MQ-1) to read the platform's reported state, align
+`use_merge_queue` to it, log the defer as a STEWARD decision, and stop — do not
+continue to Step MQ-2:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --level INFO \
+  --message "[STEWARD] (plan-marshall:marshall-steward) Merge-queue provisioning deferred — merge_queue_managed_externally=true; probe-only, no enable call, no operator prompt"
+```
+
+Aligning means persisting `use_merge_queue=true` when the probe reports
+`eligible_configured`, and leaving it at its default (off) otherwise, via the
+same documented step-set call used in Step MQ-2. The set-time validation defers
+on this field too, so the write is permitted without a probe verdict (see
+[`manage-config` api-reference.md § Probe-backed set-time validation (`use_merge_queue`)](../../manage-config/standards/api-reference.md#probe-backed-set-time-validation-use_merge_queue)).
+
+**When the value is `false` or absent**, continue to Step MQ-1 unchanged.
+
 ### Step MQ-1: Probe eligibility
 
 Probe the platform merge-queue state via the provider-agnostic verb:
@@ -47,7 +76,20 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci repo merge
 ```
 
 Log the outcome the verb actually reports — the `detail` field names what (if
-anything) was reconciled:
+anything) was reconciled. Branch on `externally_managed` first:
+
+- `externally_managed: true` → the queue is configured under a ruleset
+  plan-marshall does not own. Make **no** reconcile call. Persist
+  `use_merge_queue=true` via the documented step-set call below, and log:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --level INFO \
+    --message "[STEWARD] (plan-marshall:marshall-steward) Merge queue externally managed — {detail from enable TOON}; use_merge_queue=true"
+  ```
+
+When `externally_managed` is absent or `false`, plan-marshall owns the ruleset
+and the existing reconcile behaviour applies unchanged:
 
 - `changed: false` →
 
@@ -124,6 +166,19 @@ provisioning the queue anyway would brick the default branch.
     plan phase-6-finalize step set --step-id default:branch-cleanup --param use_merge_queue --value true
   ```
 
+  A successful create may also carry a `warnings[]` field. These are
+  **advisory** — the queue WAS created and `use_merge_queue=true` is still
+  persisted. This is categorically different from the three refusal paths
+  (missing `merge_group` trigger, auth-scope, `ineligible` / `unsupported`),
+  each of which leaves `use_merge_queue` off. Surface every entry to the
+  operator verbatim, one line each:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --level WARNING \
+    --message "[STEWARD] (plan-marshall:marshall-steward) Merge queue created with warning — {warning entry from enable TOON}"
+  ```
+
 On **Skip**, leave `use_merge_queue` at its default (off) and make no `enable`
 call.
 
@@ -149,13 +204,21 @@ Do NOT set `use_merge_queue=true` on an `ineligible` / `unsupported` probe — t
   fresh provision writes the mapped method, and a re-run against a configured
   repo reconciles any drift.
 - The step is **idempotent** in the reconciled sense: a re-run against an
-  `eligible_configured` project mutates nothing when the queue's configured
-  merge method already matches `pr_merge_strategy` (`changed: false`, the
-  "already configured — no change made" note). A method drift is corrected
-  exactly once (`changed: true` with the reconcile detail); the run after that
-  is a no-op again.
+  `eligible_configured` project that plan-marshall owns mutates nothing when the
+  queue's configured merge method already matches `pr_merge_strategy`
+  (`changed: false`, the "already configured — no change made" note). A method
+  drift is corrected exactly once (`changed: true` with the reconcile detail);
+  the run after that is a no-op again. On the **foreign-ruleset** path that
+  "no change made" note does not apply — the verb returns its own
+  `externally_managed: true` envelope with a distinct detail, and nothing is
+  compared or corrected.
 - The `enable` verb is itself idempotent under the same definition, so a
   double-invocation is safe.
 - The step **never clobbers** an operator's prior `use_merge_queue` choice: it
   only writes `use_merge_queue=true` on an explicit "Enable now" answer against
-  an `eligible_unconfigured` probe.
+  an `eligible_unconfigured` probe, on the externally-managed path (Step MQ-0's
+  defer alignment, and the `externally_managed: true` sub-branch), or where the
+  probe already reports the queue configured.
+- The step **never touches a ruleset plan-marshall did not create** — no create,
+  reconcile, rename, or delete. On an externally-managed queue the step reports
+  and aligns local config only.
