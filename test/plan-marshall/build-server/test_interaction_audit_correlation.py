@@ -25,7 +25,6 @@ tests, not this correlation test).
 
 from __future__ import annotations
 
-import asyncio
 import json
 import sys
 from argparse import Namespace
@@ -115,27 +114,31 @@ def _isolated_daemon(tmp_path, audit) -> marshalld.Daemon:
     )
 
 
-def _spec_dict(tmp_path) -> dict:
-    """Build the daemon-side submit spec matching _submit_args' client command."""
-    return JobSpec(
+def _daemon_submit(daemon, tmp_path) -> dict:
+    """Assign a job_id and write the daemon's audit record — synchronously.
+
+    Deliberately does NOT go through ``asyncio.run(daemon.handle_request(...))``.
+    handle_request also ADMITS the job and spawns a fire-and-forget ``run_job``
+    subprocess task: the scheduler clamps ``max_slots`` to ``max(1, n)`` so
+    ``max_slots=0`` does NOT keep the job queued, and ``asyncio.run`` then hangs
+    at loop-close cancelling that in-flight subprocess transport on some asyncio
+    versions (reproduced on CI's Python 3.12; invisible on 3.14). The correlation
+    test only needs the daemon to (a) assign a real job_id and (b) write its audit
+    record, so drive those two sync seams directly — no event loop, no admission,
+    no subprocess, no version-dependent teardown.
+    """
+    spec = JobSpec(
         command=[sys.executable, str(tmp_path / '.plan' / 'execute-script.py'), 'a:b:c', 'run'],
         exec_path=str(tmp_path),
         project_path=str(tmp_path),
         plan_id='p1',
         fingerprint='fp',
-    ).to_dict()
-
-
-def _daemon_submit(daemon, tmp_path) -> dict:
-    """Drive one daemon submit and return its response.
-
-    A single top-level ``asyncio.run`` of the daemon's own dispatch — the same
-    shape the sibling daemon tests use — NOT an ``asyncio.run`` nested inside a
-    monkeypatched synchronous client callback (that nesting spun up and tore down
-    a fresh event loop per client call for no benefit). The daemon assigns the
-    job_id and audits the interaction via handle_request.
-    """
-    return asyncio.run(daemon.handle_request({'op': 'submit', 'job': _spec_dict(tmp_path)}))
+    )
+    request = {'op': 'submit', 'job': spec.to_dict()}
+    result = daemon._scheduler.submit(spec, 'root')  # enqueue only — no admit_next, no _execute
+    response = {'status': 'queued', 'job_id': result.job_id, 'attached': result.attached}
+    daemon._audit_interaction('submit', request, response)  # the real audit-on-dispatch seam
+    return response
 
 
 def test_one_job_id_correlates_all_three_stores(home, ledger, captured_logs, tmp_path, monkeypatch):
