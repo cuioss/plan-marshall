@@ -15,9 +15,12 @@ Analysis-only — no test or production file is modified.
   per-bundle / per-skill `conftest.py` files**, confirming the single-root-conftest
   design.
 - **`test/adapters/conftest.py` does NOT exist.** The `solution_outline.md` D2
-  survey list references it, but `git ls-files 'test/adapters/*'` returns
-  nothing — there is no `test/adapters/` directory. That outline reference is
-  stale and is corrected here.
+  survey list references it, but a direct filesystem existence check confirms
+  there is no `test/adapters/` directory on disk (a `git ls-files
+  'test/adapters/*'` sweep likewise returns nothing — proving only that no
+  tracked files match the pattern, which alone would not rule out an untracked
+  or gitignored directory). That outline reference is stale and is corrected
+  here.
 - **`build_test_helpers.py` and `discovery_test_helpers.py` DO exist** at
   `test/plan-marshall/`. The outline's provisional note that "the originally-named
   `build_test_helpers.py` / `discovery_test_helpers.py` do not exist under those
@@ -38,10 +41,12 @@ Analysis-only — no test or production file is modified.
 **Path constants**: `TEST_ROOT`, `PROJECT_ROOT`, `MARKETPLACE_ROOT`,
 `PLAN_DIR_NAME`, `TEST_FIXTURE_BASE`.
 
-**Collection config**: `collect_ignore[]` — excludes the four integration/real-tree
-smokes (`discover_modules` integration, `module_aggregation`, the three
-`tools-marketplace-inventory` real-tree smokes, and the `plugin-doctor`
-manage-invocation smoke) from the default in-process module-tests run.
+**Collection config**: `collect_ignore[]` — excludes four categories of
+integration/real-tree smokes, seven concrete test files in total, from the
+default in-process module-tests run: `discover_modules` integration (2 files —
+gradle + maven), `module_aggregation` (1 file), the `tools-marketplace-inventory`
+real-tree smokes (3 files), and the `plugin-doctor` manage-invocation smoke
+(1 file).
 
 **Session bootstrap**:
 - `_ensure_executor_present()` — generates `.plan/execute-script.py` if missing
