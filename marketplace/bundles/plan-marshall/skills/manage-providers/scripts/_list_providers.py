@@ -107,7 +107,7 @@ def _build_persisted_entry(p: dict[str, Any]) -> dict[str, Any]:
     Maps default_url to url. For version-control providers without
     default_url, resolves url from git remote origin.
     """
-    entry = {k: p[k] for k in ('skill_name', 'category', 'verify_command', 'description') if k in p}
+    entry: dict[str, Any] = {k: p[k] for k in ('skill_name', 'category', 'verify_command', 'description') if k in p}
     if p.get('default_url'):
         entry['url'] = p['default_url']
     elif p.get('category') == 'version-control':

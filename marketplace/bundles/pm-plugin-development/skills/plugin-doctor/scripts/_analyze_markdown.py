@@ -4,6 +4,7 @@
 
 import re
 from pathlib import Path
+from typing import Any
 
 from _analyze_shared import (
     check_yaml_validity,
@@ -1093,7 +1094,7 @@ def analyze_markdown_file(file_path: Path, component_type: str) -> dict:
 
     frontmatter_present, frontmatter, _ = extract_frontmatter(content)
     yaml_valid = check_yaml_validity(frontmatter) if frontmatter_present else False
-    required_fields = (
+    required_fields: dict[str, Any] = (
         check_frontmatter_fields(frontmatter)
         if frontmatter_present
         else {

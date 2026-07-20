@@ -15,11 +15,27 @@ lock-python-version = "3.12"
 # Dev tools to install
 requirements = [
     "uv",
-    "pytest>=8.0",
+    # Pinned below the 9.x major for the same reason as mypy below: adding an
+    # unrelated dev tool re-resolves this env, and pytest 9 + xdist 3.8 on the CI
+    # Python crashes xdist workers ("node down: Not properly terminated") on
+    # pre-existing tests. Adopting pytest 9 is a deliberate migration, not a
+    # transitive consequence of a plugin bump.
+    "pytest>=8.0,<9",
     "pytest-cov>=4.0",
-    "pytest-xdist>=3.0",
+    # Capped below 3.8: the floated 3.8.0 crashes workers ("node down: Not
+    # properly terminated") and then its loadscope scheduler internal-errors
+    # (KeyError <WorkerController>) aborting the whole session. Same major-cap
+    # rationale as mypy/pytest above.
+    "pytest-xdist>=3.0,<3.8",
+    "pytest-timeout>=2.3",
     "ruff>=0.4",
-    "mypy>=1.10",
+    # Pinned below the 2.x major: the quality gate must not float the type-checker
+    # across a major version as a side effect of adding an unrelated dev tool
+    # (adding pytest-timeout re-resolves this env). mypy 2.x is stricter and
+    # surfaces pre-existing latent findings across the tree; adopting it is a
+    # deliberate project-level decision, not a transitive consequence of a plugin
+    # bump. Raise this ceiling in a dedicated mypy-2.x migration.
+    "mypy>=1.10,<2",
 ]
 
 [tool.pyprojectx.aliases]
@@ -68,6 +84,14 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 norecursedirs = ["fixtures", "__pycache__", ".git"]
 addopts = ["-v", "--tb=short"]
+# Fail (with a traceback at the hang point) instead of wedging a worker forever.
+# The whole suite runs in ~13 min across many xdist workers, so any single test
+# that runs longer than 300s is hung, not slow — surface it as an attributable
+# failure with a stack rather than an opaque job timeout. The default signal
+# method (SIGALRM on each worker's main thread, where xdist runs its tests) is
+# used deliberately: the thread method's watchdog leaves the worker in an
+# unclean state on teardown under xdist.
+timeout = 300
 
 [tool.coverage.run]
 source = ["marketplace/bundles"]
