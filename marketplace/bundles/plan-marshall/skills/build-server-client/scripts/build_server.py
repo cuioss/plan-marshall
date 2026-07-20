@@ -349,10 +349,22 @@ that vector while leaving a well-formed notation (e.g.
 ``plan-marshall:build-pyproject:pyproject_build``) byte-identical."""
 
 
+def _sanitize_for_log(value: str) -> str:
+    """Strip control characters so ``value`` is safe to interpolate into a message.
+
+    The plan-scoped work log is a line-oriented plain-text format parsed back by a
+    per-line header regex (see :data:`_CONTROL_CHAR_PATTERN`). Any client-supplied
+    string interpolated into an ``_audit_log`` message — the executor notation OR a
+    ``--job-id`` — could otherwise forge a fake header line (CWE-117 log injection).
+    This is the single sanitization seam for every such value.
+    """
+    return _CONTROL_CHAR_PATTERN.sub('', value)
+
+
 def _notation_from_command(command: list[str]) -> str:
     """Derive the executor notation (``command[2]``) from an executor-form argv.
 
-    Control characters are stripped (see :data:`_CONTROL_CHAR_PATTERN`) so the
+    Control characters are stripped (see :func:`_sanitize_for_log`) so the
     returned value is always safe to interpolate into a free-text log message
     or ledger field. This sanitized value is used ONLY for correlation/logging
     (``_audit_log`` messages, the ledger ``kind=job`` row) — the original,
@@ -361,7 +373,7 @@ def _notation_from_command(command: list[str]) -> str:
     """
     if len(command) < 3:
         return ''
-    return _CONTROL_CHAR_PATTERN.sub('', command[2])
+    return _sanitize_for_log(command[2])
 
 
 # ---------------------------------------------------------------------------
@@ -463,10 +475,12 @@ def run_wait(args: Namespace) -> dict[str, Any]:
         return _degraded(REASON_UNREACHABLE)
 
     result = _render_job_status(response)
+    # job_id may be a client-supplied `--job-id`; sanitize before interpolating it
+    # into the line-oriented work log (CWE-117), exactly as notation is sanitized.
     _audit_log(
         plan_id,
         'INFO',
-        f'build-server wait result: job_id={job_id} '
+        f'build-server wait result: job_id={_sanitize_for_log(job_id)} '
         f'job_status={result.get("job_status", "")} '
         f'elapsed={result.get("elapsed", "")} eta={result.get("eta", "")}',
     )

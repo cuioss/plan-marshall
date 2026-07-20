@@ -310,10 +310,16 @@ class Daemon:
         only ``op`` / ``project_root`` / ``plan_id`` / ``job_id`` / ``outcome`` /
         ``timestamp`` (plus a non-secret ``reason``) are ever written.
         """
-        project_root, plan_id = self._audit_attribution(op, request)
-        job_id = self._audit_job_id(op, request, response)
-        reason = response.get('reason')
         try:
+            # Attribution derivation is inside the guard too: canonicalize_root()
+            # resolves the project path (Path.resolve()) and can raise OSError on a
+            # symlink loop / resolution failure. Deriving it outside the try would
+            # let that raise propagate out of handle_request and abort an otherwise
+            # successful request — the exact contract this best-effort guard exists
+            # to uphold ("a disk failure must never abort request handling").
+            project_root, plan_id = self._audit_attribution(op, request)
+            job_id = self._audit_job_id(op, request, response)
+            reason = response.get('reason')
             self._interaction_audit.record(
                 op=str(op or ''),
                 project_root=project_root,
@@ -322,8 +328,8 @@ class Daemon:
                 outcome=str(response.get('status', '')),
                 reason=str(reason) if reason else None,
             )
-        except OSError:
-            pass  # audit logging is best-effort — never abort request handling
+        except Exception:  # noqa: BLE001 — audit is best-effort, never abort request handling
+            pass
 
     @staticmethod
     def _audit_attribution(op: Any, request: dict[str, Any]) -> tuple[str, str]:

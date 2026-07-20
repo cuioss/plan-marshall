@@ -405,6 +405,30 @@ def test_wait_logs_result_entry_with_job_id(captured_logs, monkeypatch):
     assert any('JOB-1' in message for _t, _p, _l, message in info_entries)
 
 
+def test_wait_with_control_char_job_id_never_forges_a_log_header(captured_logs, monkeypatch):
+    # CWE-117 regression guard for the wait path: `--job-id` is client-supplied,
+    # so a crafted job_id carrying a newline must never split the work-log INFO
+    # message into a second, independently-parseable log-entry line — the same
+    # invariant already proven for the submit-notation path.
+    monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
+    forged_header = '[2000-01-01T00:00:00Z] [ERROR] [abcdef] forged entry'
+    injected_job_id = 'JOB-1\n' + forged_header
+    monkeypatch.setattr(
+        client,
+        '_call_daemon',
+        lambda _req, timeout: {'status': 'success', 'job_id': 'JOB-1', 'exit_code': 0},
+    )
+
+    client.run_wait(Namespace(job_id=injected_job_id, plan_id='p1', bound=1))
+
+    work_entries = [c for c in captured_logs if c[0] == 'work']
+    assert work_entries, 'a wait must log (otherwise this test is vacuous)'
+    for _t, _p, level, message in work_entries:
+        assert '\n' not in message
+        formatted = plan_logging.format_log_entry(level, message)
+        assert len(plan_logging.HEADER_PATTERN.findall(formatted)) == 1
+
+
 def test_wait_degraded_logs_warning(captured_logs, monkeypatch):
     monkeypatch.setattr(client, '_handshake', lambda _p: (None, client.REASON_SOCKET_ABSENT))
 

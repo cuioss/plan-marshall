@@ -214,6 +214,18 @@ def test_gc_keeps_all_records_within_the_window(home):
     assert len(audit.read_all()) == 2
 
 
+def test_now_utc_iso_round_trips_through_parse_iso_epoch():
+    """Guard the (convention-only) format contract between the writer and GC parser.
+
+    Every other GC test mocks ``now_utc_iso`` to a hand-crafted string, so none
+    proves the REAL, unmocked ``file_ops.now_utc_iso()`` output actually parses
+    back through ``_parse_iso_epoch``. If that contract ever broke, ``_is_expired``
+    would silently read ``None`` for every timestamp and ``gc()`` would degrade to
+    "never prunes anything" — a silent failure this one unmocked assertion catches.
+    """
+    assert audit_mod._parse_iso_epoch(audit_mod.now_utc_iso()) is not None
+
+
 def test_record_preserved_across_gc_rewrite_is_still_readable(home):
     audit = audit_mod.InteractionAudit(retention_seconds=3600)
     audit.record('submit', '/proj', 'p1', 'JOB-KEEP', 'queued')
@@ -301,3 +313,27 @@ def test_handle_request_unknown_op_is_still_audited(home, tmp_path):
     assert len(records) == 1
     assert records[0]['op'] == 'bogus'
     assert records[0]['outcome'] == 'error'
+
+
+def test_audit_interaction_swallows_attribution_failure(home, tmp_path, monkeypatch):
+    """Attribution DERIVATION failure must never abort request handling.
+
+    ``_audit_attribution`` calls ``canonicalize_root`` (``Path.resolve()``), which
+    can raise ``OSError`` on a symlink loop / resolution failure. That derivation
+    runs inside the best-effort guard, so a raise there is swallowed exactly like a
+    ``record()`` disk failure — the daemon's "a disk failure must never abort
+    request handling" contract covers the whole audit path, not just the write.
+    """
+    audit = audit_mod.InteractionAudit()
+    daemon = _daemon(tmp_path, audit)
+
+    def _boom(_op, _request):
+        raise OSError('resolution failure (e.g. symlink loop)')
+
+    monkeypatch.setattr(daemon, '_audit_attribution', _boom)
+
+    # Must NOT raise — the guard now covers attribution derivation, not just record().
+    daemon._audit_interaction('submit', {'op': 'submit'}, {'status': 'queued'})
+
+    # The aborted derivation wrote no record (clean best-effort skip).
+    assert audit.read_all() == []
