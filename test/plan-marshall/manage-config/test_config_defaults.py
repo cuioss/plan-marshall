@@ -1517,7 +1517,7 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
     # plan-marshall:automatic-review; the adversarial infra element additionally
     # seeds a lane:ask override.
     assert _params_for(steps, 'plan-marshall:automatic-review') == {
-        'enabled_bots': 'coderabbit,sourcery,gemini',
+        'enabled_bots': 'coderabbit,sourcery',
         'review_bot_buffer_seconds': 180,
         'review_completion_poll_timeout_seconds': 600,
         're_review_on_loopback': False,
