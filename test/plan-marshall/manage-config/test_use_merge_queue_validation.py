@@ -209,7 +209,9 @@ def _seed_managed_externally(fixture_dir: Path, value: bool) -> None:
     """Set project.merge_queue_managed_externally in the fixture's marshal.json."""
     path = fixture_dir / 'marshal.json'
     config = json.loads(path.read_text(encoding='utf-8'))
-    project = config.setdefault('project', {})
+    project = config.get('project')
+    if not isinstance(project, dict):
+        project = {}
     project['merge_queue_managed_externally'] = value
     config['project'] = project
     path.write_text(json.dumps(config), encoding='utf-8')
