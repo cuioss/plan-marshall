@@ -72,7 +72,7 @@ testpaths = ["test"]
 
 ---
 
-## Verification-Target Trust (promoted from lesson 2026-07-15-12-001)
+## Verification-Target Trust
 
 A verification target that CI does not run gates nothing — it can be latently broken tree-wide for an extended period, and the breakage lands on whichever unrelated plan first happens to invoke it directly. `verify` now wires `test-compile` in as a mandatory stage precisely to close this gap; the same discipline applies to any future lane that is not yet folded into `verify`:
 

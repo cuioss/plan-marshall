@@ -362,7 +362,7 @@ Examples (4-digit corpus):
 - `doc/adr/0002-Adopt_Quarkus_Framework.adoc`
 - `doc/adr/0003-Implement_CQRS_Pattern.adoc`
 
-**Cross-session numbering is provisional until merge (promoted from lesson 2026-07-16-17-005).** `next-number` derives the next value from the numeric prefixes committed on the CURRENT checkout — it cannot see a concurrent session's uncommitted ADR on another branch. Two branches authoring ADRs at the same time can both be handed the same number, and the collision only surfaces at merge. Treat the number `create`/`next-number` returns as provisional, not final: when multiple sessions may be authoring ADRs concurrently, number above any known-pending (uncommitted-on-another-branch) range rather than trusting "highest committed + 1" blindly, and be prepared to renumber by hand at merge time. This is inherent to any tool that reads only the local checkout — it is not a bug to fix in `next-number` itself.
+**Cross-session numbering is provisional until merge.** `next-number` derives the next value from the numeric prefixes committed on the CURRENT checkout — it cannot see a concurrent session's uncommitted ADR on another branch. Two branches authoring ADRs at the same time can both be handed the same number, and the collision only surfaces at merge. Treat the number `create`/`next-number` returns as provisional, not final: when multiple sessions may be authoring ADRs concurrently, number above any known-pending (uncommitted-on-another-branch) range rather than trusting "highest committed + 1" blindly, and be prepared to renumber by hand at merge time. This is inherent to any tool that reads only the local checkout — it is not a bug to fix in `next-number` itself.
 
 ## Scripts
 
