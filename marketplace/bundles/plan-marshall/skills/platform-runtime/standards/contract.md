@@ -740,9 +740,9 @@ alternative: Use OpenCode's built-in TUI status surface for plan visibility
 
 ### `session doctor`
 
-Scan every per-session `active-plan` slot, build a plan→sessions reverse index, flag any plan bound by more than one live session (a conflict), and identify slots whose plan is archived/deleted (stale). With `--fix`, GC each stale slot. Keeps NO shared mutable index — the scan-then-GC is per-file and idempotent. No-op on OpenCode (no platform-provided session id).
+Visit **every directory under the session-cache root** — not just the ones that yield a readable slot — build a plan→sessions reverse index from the live slots, flag any plan bound by more than one live session (a conflict), identify slots whose plan is archived/deleted (stale), and identify orphan directories that carry no binding at all (an absent, empty, or unreadable `active-plan` file). With `--fix`, GC each stale slot and prune each orphan directory. Keeps NO shared mutable index — the scan-then-GC is per-file and idempotent. `scanned` counts the live slots only and does NOT include orphan directories. No-op on OpenCode (no platform-provided session id).
 
-**Arguments**: `--fix` (optional — GC stale slots whose plan is archived/deleted)
+**Arguments**: `--fix` (optional — GC stale slots whose plan is archived/deleted, and prune orphan directories)
 
 **Success (Claude — report)**:
 ```toon
@@ -757,6 +757,10 @@ stale_count: 1
 stale[1]:
 - sid-c=archived-plan
 gc_removed: 0
+orphan_count: 1
+orphans[1]:
+- sid-d
+orphans_removed: 0
 ```
 
 **No-op (OpenCode)**:

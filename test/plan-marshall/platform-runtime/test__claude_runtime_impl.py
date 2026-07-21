@@ -1141,9 +1141,10 @@ class TestSessionBindResolveDoctor:
     """Tests for the relocated session-binding verbs on ClaudeRuntime.
 
     ``session bind`` writes the caller's slot last-driven-wins; ``session
-    resolve-plan`` reads it back; ``session doctor`` scans for conflicts and GCs
-    stale slots. All delegate to the pure ``session_binding`` policy, so the
-    cache root is redirected via ``session_binding._SESSION_CACHE_BASE``.
+    resolve-plan`` reads it back; ``session doctor`` scans for conflicts, GCs
+    stale slots, and reports/prunes orphan directories. All delegate to the pure
+    ``session_binding`` policy, so the cache root is redirected via
+    ``session_binding._SESSION_CACHE_BASE``.
     """
 
     def test_bind_writes_slot_from_env_session(self, rt, tmp_path, monkeypatch):
@@ -1226,6 +1227,36 @@ class TestSessionBindResolveDoctor:
         parsed = parse_toon(rt.session_doctor(fix=True))
         assert parsed["gc_removed"] == 1
         assert session_binding.resolve_plan("sess-gone") is None
+        assert session_binding.resolve_plan("sess-live") == "live-plan"
+
+    def test_doctor_renders_orphan_rows_on_a_plain_scan(self, rt, tmp_path, monkeypatch):
+        """An orphan directory surfaces as a bare session-id row with a zero removal count."""
+        monkeypatch.setattr(session_binding, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "sessions" / "sess-orphan").mkdir(parents=True)
+
+        parsed = parse_toon(rt.session_doctor())
+
+        assert parsed["orphan_count"] == 1
+        assert parsed["orphans"] == ["sess-orphan"]
+        assert parsed["orphans_removed"] == 0
+        # A plain scan reports without mutating.
+        assert (tmp_path / "sessions" / "sess-orphan").is_dir()
+
+    def test_doctor_fix_prunes_orphan_directory(self, rt, tmp_path, monkeypatch):
+        """session doctor --fix prunes the orphan directory and counts it separately."""
+        monkeypatch.setattr(session_binding, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".plan" / "local" / "plans" / "live-plan").mkdir(parents=True)
+        session_binding.bind("sess-live", "live-plan")
+        (tmp_path / "sessions" / "sess-orphan").mkdir(parents=True)
+
+        parsed = parse_toon(rt.session_doctor(fix=True))
+
+        assert parsed["orphans"] == ["sess-orphan"]
+        assert parsed["orphans_removed"] == 1
+        assert parsed["gc_removed"] == 0  # orphans are not stale slots
+        assert not (tmp_path / "sessions" / "sess-orphan").exists()
         assert session_binding.resolve_plan("sess-live") == "live-plan"
 
 

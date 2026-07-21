@@ -9,8 +9,8 @@ Covers:
     live binding) and validation rejection
   - unbind: caller-scoped slot removal + empty-session-dir prune, idempotence,
     validation rejection, and the no-raise contract on I/O failure
-  - doctor: reverse-index conflict scan, stale-slot detection, --fix GC, and
-    the no-index.json invariant
+  - doctor: reverse-index conflict scan, stale-slot detection, --fix GC, the
+    all-directories orphan sweep and prune, and the no-index.json invariant
 """
 from __future__ import annotations
 
@@ -302,3 +302,103 @@ class TestDoctor:
         assert report["scanned"] == 0
         assert report["conflicts"] == []
         assert report["stale"] == []
+        assert report["orphans"] == []
+        assert report["orphans_removed"] == 0
+
+
+# =============================================================================
+# doctor — orphan-directory sweep and prune
+# =============================================================================
+
+
+class TestDoctorOrphans:
+    """Tests for the all-directories sweep that reports and prunes orphan dirs.
+
+    An orphan directory is one that yields no live slot via ``resolve_plan`` —
+    its ``active-plan`` file is absent, empty, or unreadable. The pre-fix scan
+    walked slots only, so these directories were invisible by construction and
+    accumulated in the cache root forever.
+    """
+
+    def test_empty_slot_dir_is_reported_and_pruned(self, cache, project):
+        """A zero-byte active-plan file makes its directory an orphan."""
+        slot = cache / SID_A / "active-plan"
+        slot.parent.mkdir(parents=True)
+        slot.write_text("", encoding="utf-8")
+
+        report = session_binding.doctor()
+        assert report["orphans"] == [SID_A]
+        assert report["orphans_removed"] == 0
+        assert (cache / SID_A).is_dir()  # a plain scan never mutates
+
+        report = session_binding.doctor(fix=True)
+        assert report["orphans"] == [SID_A]
+        assert report["orphans_removed"] == 1
+        assert not (cache / SID_A).exists()
+
+    def test_absent_slot_dir_is_reported_and_pruned(self, cache, project):
+        """A session directory with no active-plan file at all is an orphan."""
+        (cache / SID_A).mkdir(parents=True)
+
+        report = session_binding.doctor()
+        assert report["orphans"] == [SID_A]
+        assert report["orphans_removed"] == 0
+        assert (cache / SID_A).is_dir()
+
+        report = session_binding.doctor(fix=True)
+        assert report["orphans"] == [SID_A]
+        assert report["orphans_removed"] == 1
+        assert not (cache / SID_A).exists()
+
+    def test_unreadable_slot_dir_is_reported_and_pruned(self, cache, project, monkeypatch):
+        """A slot whose read raises OSError makes its directory an orphan."""
+        session_binding.bind(SID_A, "plan-1")
+
+        def _raise(*_args, **_kwargs):
+            raise OSError(13, "Permission denied")
+
+        monkeypatch.setattr(session_binding.Path, "read_text", _raise)
+
+        report = session_binding.doctor()
+        assert report["orphans"] == [SID_A]
+        assert report["orphans_removed"] == 0
+
+        report = session_binding.doctor(fix=True)
+        assert report["orphans_removed"] == 1
+        assert not (cache / SID_A).exists()
+
+    def test_live_slot_dir_is_never_an_orphan(self, cache, project):
+        """A directory holding a live readable slot is not reported and survives --fix."""
+        _make_live_plan(project, "plan-1")
+        session_binding.bind(SID_A, "plan-1")
+
+        report = session_binding.doctor(fix=True)
+
+        assert report["orphans"] == []
+        assert report["orphans_removed"] == 0
+        assert report["scanned"] == 1
+        assert session_binding.resolve_plan(SID_A) == "plan-1"
+
+    def test_orphan_dir_holding_other_files_survives_the_prune(self, cache, project):
+        """The prune is best-effort: a reported orphan holding other files stays."""
+        (cache / SID_A).mkdir(parents=True)
+        (cache / SID_A / "other-file").write_text("keep me", encoding="utf-8")
+
+        report = session_binding.doctor(fix=True)
+
+        assert report["orphans"] == [SID_A]
+        # _remove_slot_and_prune reports success (the absent slot file is not an
+        # error) while the rmdir of the non-empty dir is silently skipped.
+        assert report["orphans_removed"] == 1
+        assert (cache / SID_A / "other-file").is_file()
+
+    def test_stale_slot_is_not_double_counted_as_an_orphan(self, cache, project):
+        """A stale slot resolves to a plan_id, so it is never also an orphan."""
+        session_binding.bind(SID_B, "gone-plan")
+
+        report = session_binding.doctor(fix=True)
+
+        assert [s["plan_id"] for s in report["stale"]] == ["gone-plan"]
+        assert report["gc_removed"] == 1
+        assert report["orphans"] == []
+        assert report["orphans_removed"] == 0

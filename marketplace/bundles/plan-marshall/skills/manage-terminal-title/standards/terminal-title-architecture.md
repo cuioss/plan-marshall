@@ -327,7 +327,7 @@ prevent path traversal and glob injection.
 |------|-----------|------|
 | `session bind --plan-id {id} [--session-id {id}]` | `session_binding.bind` | **Last-driven-wins** unconditional write of the caller's OWN slot — NO protect-active, NO stale-slot reclaim, NO plan-dir-exists check. |
 | `session resolve-plan [--session-id {id}]` | `session_binding.resolve_plan` | Read side — returns the bound `plan_id` (or empty). `session render-title` resolves session→plan through it. |
-| `session doctor [--fix]` | `session_binding.doctor` | Reverse-index conflict scan + stale-slot GC (see below). |
+| `session doctor [--fix]` | `session_binding.doctor` | Reverse-index conflict scan + stale-slot GC + orphan-directory prune (see below). |
 | `session teardown` | `session_binding.unbind` | **Activation-gated** end-of-session retire: resets the tab to the terminal's own default and drops the caller's OWN slot (see below). |
 
 #### `session teardown` — activation-gated title reset + unbind
@@ -376,18 +376,35 @@ switched to drive a second live plan stayed pinned to the first (the sticky-bind
 pollution, Defect 2); last-driven-wins fixes it by making the most recent driver
 authoritative.
 
-#### `session doctor` — reverse-index conflict scan + stale GC
+#### `session doctor` — reverse-index conflict scan + stale GC + orphan prune
 
-`session doctor` walks every `~/.cache/plan-marshall/sessions/*/active-plan` slot,
-builds an **in-memory plan→sessions reverse index**, and reports:
+`session doctor` visits **every directory** under
+`~/.cache/plan-marshall/sessions/` — not only the ones that yield a readable
+slot — builds an **in-memory plan→sessions reverse index** from the live slots,
+and reports a **three-way** health picture:
 
 - **conflicts** — any plan bound by more than one session (two sessions driving
-  the same plan); and
+  the same plan);
 - **stale** slots — a slot whose bound plan is archived or deleted (its live plan
-  dir, on main OR in its phase-5+ worktree, is gone).
+  dir, on main OR in its phase-5+ worktree, is gone); and
+- **orphans** — a session directory that carries no binding at all, because its
+  `active-plan` file is absent, empty, or unreadable. These are the residue the
+  `unbind` prune could not remove, and the all-directories scan is what makes
+  them visible: a slot-only walk skips them by construction, so the cache root
+  accumulates empty directories no verb ever reports.
 
-With `--fix` it GCs each stale slot (removes its `active-plan` file). The scan
-keeps **NO shared mutable index** (no `index.json`) — it is per-file and
+The three categories are disjoint at scan time: a stale slot resolves to a
+`plan_id` while an orphan directory resolves to nothing, so the report never
+double-counts a directory.
+
+With `--fix` it GCs each stale slot (removes its `active-plan` file) and prunes
+each orphan directory. Both prunes share one `_remove_slot_and_prune` body — the
+same unlink-then-rmdir the public `unbind` teardown uses — so slot removal has a
+single home. The `scanned` count keeps its original meaning (live slots scanned)
+and does not include orphan directories; `orphans_removed` is reported separately
+from `gc_removed`.
+
+The scan keeps **NO shared mutable index** (no `index.json`) — it is per-file and
 idempotent, so it introduces no new shared-file TOCTOU hazard. Stale GC delivers
 release-on-exit implicitly: an archived plan's slot becomes GC-eligible, so no
 separate `session release` verb is needed.
