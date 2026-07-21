@@ -17,6 +17,8 @@ These tests cover:
 """
 
 import json
+import logging
+import subprocess
 from argparse import Namespace
 from pathlib import Path
 
@@ -413,3 +415,278 @@ def test_killed_detached_build_busy_token_does_not_stay_armed(plan_context):
         f"A killed detached build left build-busy armed and the transition "
         f"failed to clear it — found {stored.get('title_token')!r}."
     )
+
+
+# =============================================================================
+# drive seam: a non-delivered title repaint is observable, not DEBUG-swallowed
+# =============================================================================
+#
+# ``_drive_repaint`` delegates the push to platform-runtime through the executor.
+# When the delegate reports ``pushed: false`` with a reason OTHER than
+# ``no_title_state`` — in practice ``no_controlling_tty``, the /dev/tty fallback
+# channel failing to reach a terminal — the seam emits ONE WARNING naming the
+# plan and the reason. Every other path stays at DEBUG, and the seam never alters
+# the command's status or exit code.
+
+_LOGGER_NAME = _core.logger.name
+
+
+def _repaint_reply(**fields):
+    """Build a CompletedProcess carrying a push-title-token TOON reply."""
+    lines = ['status: success', 'operation: session push-title-token']
+    lines += [f'{key}: {value}' for key, value in fields.items()]
+    return subprocess.CompletedProcess(
+        args=[], returncode=0, stdout='\n'.join(lines) + '\n', stderr=''
+    )
+
+
+def test_archive_fires_teardown_exactly_once_after_the_move(plan_context, monkeypatch):
+    """``cmd_archive`` fires the live-surface teardown delegation exactly once.
+
+    The persisted-token pop and the live teardown are counterparts: the pop
+    clears ``status.title_token`` in the archived snapshot, the teardown retires
+    the live terminal title and the session's plan binding.
+    """
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setitem(
+        _lifecycle._drive_teardown.__globals__,
+        '_run_executor',
+        lambda notation, *cli_args: calls.append((notation, *cli_args)),
+    )
+
+    plan_id = 'tt-archive-teardown'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
+
+    assert result['status'] == 'success'
+    teardown_calls = [c for c in calls if c[1:] == ('session', 'teardown')]
+    assert len(teardown_calls) == 1
+    # The plan directory really moved before the delegation fired.
+    assert Path(result['archived_to']).is_dir()
+
+
+def test_archive_succeeds_when_teardown_delegation_fails(plan_context, monkeypatch):
+    """A crashing teardown delegation leaves the archive result status: success."""
+
+    def _boom(*_args):
+        raise RuntimeError('teardown delegate exploded')
+
+    monkeypatch.setitem(_lifecycle._drive_teardown.__globals__, '_run_executor', _boom)
+
+    plan_id = 'tt-archive-teardown-fails'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
+
+    assert result['status'] == 'success'
+    assert Path(result['archived_to']).is_dir()
+
+
+def test_repaint_warns_when_delegate_reports_no_controlling_tty(monkeypatch, caplog):
+    """A ``no_controlling_tty`` reply emits exactly one WARNING naming plan + reason."""
+    monkeypatch.setattr(
+        _core,
+        '_run_executor',
+        lambda *_args: _repaint_reply(
+            plan_id='tt-repaint-warn',
+            pushed='false',
+            reason='no_controlling_tty',
+            delivery='dev_tty_fallback',
+        ),
+    )
+
+    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
+        _core._drive_repaint('tt-repaint-warn')
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert 'tt-repaint-warn' in message
+    assert 'no_controlling_tty' in message
+
+
+def test_repaint_does_not_warn_when_delegate_reports_no_title_state(monkeypatch, caplog):
+    """``no_title_state`` is the ordinary nothing-to-paint case — no WARNING."""
+    monkeypatch.setattr(
+        _core,
+        '_run_executor',
+        lambda *_args: _repaint_reply(plan_id='tt-repaint-nostate', pushed='false', reason='no_title_state'),
+    )
+
+    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
+        _core._drive_repaint('tt-repaint-nostate')
+
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+
+def test_repaint_does_not_warn_on_successful_push(monkeypatch, caplog):
+    """A landed push (``pushed: true``) emits no WARNING."""
+    monkeypatch.setattr(
+        _core,
+        '_run_executor',
+        lambda *_args: _repaint_reply(
+            plan_id='tt-repaint-ok', pushed='true', delivery='dev_tty_fallback'
+        ),
+    )
+
+    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
+        _core._drive_repaint('tt-repaint-ok')
+
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+
+def test_repaint_does_not_warn_when_delegate_was_skipped(monkeypatch, caplog):
+    """A skipped spawn (``_run_executor`` returned None) emits no WARNING."""
+    monkeypatch.setattr(_core, '_run_executor', lambda *_args: None)
+
+    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
+        _core._drive_repaint('tt-repaint-skipped')
+
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+
+# =============================================================================
+# drive seam: a non-delivered title teardown is observable, not DEBUG-swallowed
+# =============================================================================
+#
+# ``_drive_teardown`` is the archive-time counterpart of ``_drive_repaint`` and
+# carries the same observable-fallback contract. The teardown delegate reports
+# its two halves independently (``reset`` for the title reset, ``unbound`` for
+# the session-binding release), so either half failing on an ACTIVATED delegate
+# emits ONE WARNING naming the plan and the reason. An inactive delegate
+# (``active: false``) is the ordinary nothing-to-do case and stays at DEBUG, and
+# the seam never alters the archive command's status or exit code.
+
+
+def _teardown_reply(**fields):
+    """Build a CompletedProcess carrying a session-teardown TOON reply."""
+    lines = ['status: success', 'operation: session teardown']
+    lines += [f'{key}: {value}' for key, value in fields.items()]
+    return subprocess.CompletedProcess(
+        args=[], returncode=0, stdout='\n'.join(lines) + '\n', stderr=''
+    )
+
+
+def test_teardown_warns_when_delegate_reports_failed_reset(monkeypatch, caplog):
+    """An activated delegate whose title reset did not land emits one WARNING."""
+    monkeypatch.setattr(
+        _core,
+        '_run_executor',
+        lambda *_args: _teardown_reply(active='true', reset='false', unbound='true'),
+    )
+
+    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
+        _core._drive_teardown('tt-teardown-warn')
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert 'tt-teardown-warn' in message
+    assert 'title_reset_failed' in message
+
+
+def test_teardown_warning_names_both_failed_halves(monkeypatch, caplog):
+    """Both halves failing are named in the single WARNING — reset and unbind are
+    reported independently, so collapsing them would hide which half happened."""
+    monkeypatch.setattr(
+        _core,
+        '_run_executor',
+        lambda *_args: _teardown_reply(active='true', reset='false', unbound='false'),
+    )
+
+    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
+        _core._drive_teardown('tt-teardown-both')
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert 'title_reset_failed' in message
+    assert 'binding_release_failed' in message
+
+
+def test_teardown_does_not_warn_when_feature_inactive(monkeypatch, caplog):
+    """``active: false`` is the ordinary nothing-to-do case — no WARNING."""
+    monkeypatch.setattr(
+        _core,
+        '_run_executor',
+        lambda *_args: _teardown_reply(
+            active='false', reset='false', unbound='false', reason='feature_inactive'
+        ),
+    )
+
+    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
+        _core._drive_teardown('tt-teardown-inactive')
+
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+
+def test_teardown_does_not_warn_on_successful_teardown(monkeypatch, caplog):
+    """A landed teardown (reset and unbind both true) emits no WARNING."""
+    monkeypatch.setattr(
+        _core,
+        '_run_executor',
+        lambda *_args: _teardown_reply(active='true', reset='true', unbound='true'),
+    )
+
+    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
+        _core._drive_teardown('tt-teardown-ok')
+
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+
+def test_teardown_does_not_warn_when_delegate_was_skipped(monkeypatch, caplog):
+    """A skipped spawn (``_run_executor`` returned None) emits no WARNING."""
+    monkeypatch.setattr(_core, '_run_executor', lambda *_args: None)
+
+    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
+        _core._drive_teardown('tt-teardown-skipped')
+
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+
+def test_archive_succeeds_when_teardown_reports_non_delivery(plan_context, monkeypatch, caplog):
+    """A reported teardown non-delivery warns but leaves archive at status: success.
+
+    Only the observability changes — the archive command's status and the moved
+    plan directory are exactly what a landed teardown produces.
+    """
+    monkeypatch.setitem(
+        _lifecycle._drive_teardown.__globals__,
+        '_run_executor',
+        lambda *_args: _teardown_reply(active='true', reset='false', unbound='true'),
+    )
+
+    plan_id = 'tt-archive-teardown-nondelivery'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases='1-init', force=False))
+
+    with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
+        result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
+
+    assert result['status'] == 'success'
+    assert Path(result['archived_to']).is_dir()
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert plan_id in warnings[0].getMessage()
+
+
+def test_crashing_delegate_leaves_transition_outcome_unchanged(plan_context, monkeypatch):
+    """A delegate that crashes outright never changes the status-write outcome.
+
+    ``_surface_drive`` is fully exception-swallowing, so a raising delegate must
+    leave ``cmd_transition`` returning ``status: success`` with the phase advanced
+    exactly as it would with a healthy seam.
+    """
+
+    def _boom(*_args):
+        raise RuntimeError('delegate exploded')
+
+    # Patch the seam's own module globals so the substitution reaches the
+    # _status_core instance cmd_transition actually calls into.
+    monkeypatch.setitem(_lifecycle._surface_drive.__globals__, '_run_executor', _boom)
+
+    plan_id = 'tt-repaint-crash'
+    cmd_create(Namespace(plan_id=plan_id, title='Test', phases=_PHASES, force=False))
+    result = cmd_transition(Namespace(plan_id=plan_id, completed='1-init'))
+
+    assert result['status'] == 'success'
+    stored = _read_status(plan_context, plan_id)
+    assert stored['current_phase'] == '2-refine'

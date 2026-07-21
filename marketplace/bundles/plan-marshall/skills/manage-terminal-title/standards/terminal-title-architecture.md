@@ -19,6 +19,15 @@ owning exactly one concern:
   the result per platform (OSC sequence / statusLine / web-desktop sessionTitle,
   plus a direct `/dev/tty` push). The OpenCode runtime is a no-op.
 
+**Two delivery channels, one primary.** The hook-mode `terminalSequence` envelope
+is the **PRIMARY** delivery channel: Claude Code itself writes those bytes to the
+terminal, so it needs no tty ownership and works from any process the hook fires
+in. The direct `/dev/tty` push is a labelled **FALLBACK** for the blocking windows
+no hook event spans (a long build, a CI wait, a lock hold); off a controlling
+terminal it cannot land, and that non-delivery is now **reported**
+(`pushed: false`, `reason: no_controlling_tty`, `delivery: dev_tty_fallback`)
+rather than silently swallowed.
+
 `status.json` is the **only** persisted contract between the writer side and the
 read+emit side. There is no `title-body.txt` artifact — the title state lives
 inline in `status.json` and is composed on demand by the reader.
@@ -40,12 +49,22 @@ STATE (manage-status)            COMPOSER (manage-terminal-title)   RESOLVE+EMIT
     short_description,  ────────►│  → '{icon} {glyph} {body}'   ──►│     + sessionTitle (UI, gated)        │
     title_token)                │     or None (no-op)          │  │     statusLine: plain '{icon} {body}' │
              │                   └──────────────────────────────┘  │                                      │
-   cmd_archive moves the         (pure; imports neither side)      │ session push-title-token:            │
+   cmd_archive moves the         (pure; imports neither side)      │ session push-title-token (FALLBACK): │
    whole plan dir →                                                │  compose(state, None, icon_override) │
    archived-plans/{date}-                                          │  → /dev/tty OSC push                  │
-   {plan_id}/status.json                                           │ (OpenCode runtime: no-op)            │
+   {plan_id}/status.json                                           │ session teardown (activation-gated): │
+   then fires session teardown                                     │  → OSC-0 reset + session unbind      │
+                                                                   │ (OpenCode runtime: no-op)            │
                                                                    └────────────────────────────────────┘
 ```
+
+Render triggers wired by `project install-hook`: `SessionStart` (ONE matcher-less
+entry — no separate `matcher: "clear"` render entry; the renderer branches on
+`source == "clear"` and performs a session teardown instead), `UserPromptSubmit`,
+`Notification`, `Stop`, `PreToolUse:AskUserQuestion`, `PreToolUse:Bash`, and
+`PostToolUse` (ONE matcher-less entry, so the title refreshes after **every** tool
+call at the same cadence as the statusLine footer). Seven render-trigger labels in
+total, plus `statusLine`.
 
 ## State — `manage-status`
 
@@ -137,6 +156,25 @@ inside the moved directory, the archived `status.json` carries the terminal
 separate body artifact to preserve. The archive name is built from
 `date_prefix = now_utc_iso()[:10]` and `archive_name = f'{date_prefix}-{plan_id}'`.
 
+Immediately **after** the move, `cmd_archive` fires `_drive_teardown(plan_id)` —
+a best-effort `session teardown` delegation through the same executor channel as
+the bind/repaint seam. This is the **live-surface counterpart** of the persisted
+`title_token` pop above: the pop retires the persisted token in the archived
+snapshot, the teardown retires the LIVE terminal title (reset to the terminal's
+own default) and the session's plan binding, so a finished plan leaves neither a
+stale title nor a stale binding behind. It is activation-gated inside the
+delegate and fully exception-swallowing — a delegation failure never changes the
+archive command's status or exit code.
+
+The teardown carries the same **observable-non-delivery** contract as the repaint
+seam: when an *activated* delegate reports a failed title reset (`reset: false`)
+and/or a failed binding release (`unbound: false`), the seam emits one
+`logger.warning` naming the plan and the failed half (both halves are named when
+both failed, matching the delegate's independent reporting). An inactive delegate
+(`active: false` / `reason: feature_inactive`) is the ordinary nothing-to-do case
+and stays at DEBUG, as does every other failure path. Only the observability of a
+non-delivery changes — never the archive command's status or exit code.
+
 ## Composer — `manage-terminal-title`
 
 The composer lives in
@@ -180,9 +218,9 @@ composes `'{icon} {glyph} {body}'` from three independent inputs:
   is **terminal ✅ > build-busy 🔨 > `icon_override` > process icon** — the
   terminal ✅ override still wins, so 🔨 never appears for a finished plan. The ⚙
   busy icon (`_ICON_BUSY`, U+2699) is surfaced on the `PreToolUse:Bash` render
-  trigger while a long-running Bash tool call executes; `PreToolUse:Bash` and
-  `PostToolUse:Bash` bracket the busy window (busy on enter, back to ➤ active on
-  exit). The process icons ➤ and ? MUST NOT appear for a finished plan. The
+  trigger while a long-running Bash tool call executes; `PreToolUse:Bash` and the
+  matcher-less `PostToolUse` trigger bracket the busy window (busy on enter, back
+  to ➤ active on exit). The process icons ➤ and ? MUST NOT appear for a finished plan. The
   `build-busy` state is set/cleared by the orchestration layer — see
   [`persona-plan-marshall-agent`](../../persona-plan-marshall-agent/SKILL.md) for
   the normative orchestration requirement.
@@ -217,6 +255,11 @@ body format (both live in the composer it imports).
       prefix collision) and read the terminal state from there. Absent/unreadable
       → no-op. The returned state dict is `{current_phase, short_description,
       title_token}` — exactly the inputs `compose` consumes.
+3b. **Teardown branch** — in hook mode, a `SessionStart` payload whose `source`
+   is `clear` is a session TEARDOWN, not a render: the reader calls
+   `session_teardown()` and writes **nothing** to stdout. A render here would
+   repaint a title for a session that no longer drives a plan. Every other source
+   falls through to compose + emit.
 4. **Compose** via `compose(state, hook_event_name, tool_name=tool_name)`.
    statusLine mode receives no hook stdin payload and composes with `event=None`
    (the composer applies the active icon for non-terminal phases and the ✅
@@ -245,9 +288,24 @@ default active icon. Three consumers drive this one seam:
 - the orchestration-layer `build-busy` bracketing (see
   [`persona-plan-marshall-agent`](../../persona-plan-marshall-agent/SKILL.md)).
 
-It is best-effort — a silent no-op (`pushed: false`) when the state is absent /
-unrenderable or when `/dev/tty` is not openable (CI, background, no controlling
-terminal), and it never raises.
+This is the **FALLBACK** delivery channel — the primary one is the hook-written
+`terminalSequence` envelope (see Output Channels below), which needs no tty
+ownership. The push exists for the blocking windows no hook event spans.
+
+It is best-effort and never raises, but the outcome is **observable** rather than
+silently swallowed. The two no-push outcomes are distinguished on the return TOON:
+
+| Outcome | `pushed` | `reason` | `delivery` |
+|---------|----------|----------|------------|
+| State absent / unrenderable | `false` | `no_title_state` | _(absent — no channel was attempted)_ |
+| `/dev/tty` not openable (CI, background, dispatched agent) | `false` | `no_controlling_tty` | `dev_tty_fallback` |
+| Push landed | `true` | _(absent)_ | `dev_tty_fallback` |
+
+The `manage-status` drive seam consumes that distinction: a repaint reported as
+non-delivered for any reason **other** than `no_title_state` emits one
+`logger.warning`, so a silently-dead title channel is visible instead of hidden at
+DEBUG. Every other failure path keeps its DEBUG level, and the seam still never
+alters the command's status or exit code.
 
 ### Session-Plan Binding
 
@@ -259,7 +317,7 @@ The session identifier is bound to a plan through a filesystem cache rooted at
 ```
 
 The binding policy lives in one pure, importable module,
-`platform-runtime/scripts/session_binding.py`, wrapped by three testable
+`platform-runtime/scripts/session_binding.py`, wrapped by four testable
 `platform-runtime` verbs. The `session_id` (and the `plan_id`) originate from an
 external hook payload and are each validated as a safe single path segment
 (traversal-sentinel rejection + 120-char cap) before any filesystem use, to
@@ -270,6 +328,33 @@ prevent path traversal and glob injection.
 | `session bind --plan-id {id} [--session-id {id}]` | `session_binding.bind` | **Last-driven-wins** unconditional write of the caller's OWN slot — NO protect-active, NO stale-slot reclaim, NO plan-dir-exists check. |
 | `session resolve-plan [--session-id {id}]` | `session_binding.resolve_plan` | Read side — returns the bound `plan_id` (or empty). `session render-title` resolves session→plan through it. |
 | `session doctor [--fix]` | `session_binding.doctor` | Reverse-index conflict scan + stale-slot GC (see below). |
+| `session teardown` | `session_binding.unbind` | **Activation-gated** end-of-session retire: resets the tab to the terminal's own default and drops the caller's OWN slot (see below). |
+
+#### `session teardown` — activation-gated title reset + unbind
+
+`session teardown` is the end-of-session counterpart of `session bind` /
+`session render-title`. Order is load-bearing — the **activation signal is read
+FIRST**:
+
+- **Inactive** (`_terminal_title_active()` is False — no render-hook entry on any
+  render-trigger event AND no `statusLine` command in either
+  `.claude/settings.json` or `.claude/settings.local.json`): the verb returns
+  `active: false` / `reason: feature_inactive` having written no title escape,
+  opened no `/dev/tty`, mutated no binding, and raised nothing. A project that
+  never opted into terminal titles is never touched. Any settings read failure
+  also reports inactive (fail-safe, not a guess).
+- **Active**: the session id is resolved from `$CLAUDE_CODE_SESSION_ID`, the
+  neutral-default reset escape `\x1b]0;\x07` — a bare OSC-0 with an **empty**
+  payload, which returns the tab to the terminal's own default rather than
+  painting some other string — is written to `/dev/tty` best-effort, and then
+  `session_binding.unbind` drops the caller's own slot (pruning the now-empty
+  session directory). `reset` and `unbound` are reported **independently**, so a
+  title reset that landed while the unbind failed (or the reverse, off a
+  controlling terminal) is visible rather than collapsed into one flag.
+
+Two call sites drive it: the `SessionStart:clear` render trigger (the renderer
+branches on `source == "clear"`, performs the teardown, and writes nothing to
+stdout) and `manage-status cmd_archive` (see Archive interaction above).
 
 #### Binding ownership — bind-on-drive, last-driven-wins
 
@@ -334,8 +419,9 @@ fed from the one composed title:
   and desktop session-picker title, equivalent to `/rename` and **UI-only**. The
   host supports this field on only two events, so the reader gates the emit:
   - `UserPromptSubmit`; and
-  - `SessionStart` when `source ∈ {startup, resume}` (the `clear` and `compact`
-    sources do **not** support it).
+  - `SessionStart` when `source ∈ {startup, resume}` (the `compact` source does
+    **not** support it; the `clear` source never reaches the emit at all — it
+    branches earlier into the session teardown and writes nothing to stdout).
 
   For every other event the envelope stays exactly `{"terminalSequence": ...}`
   and never carries a stray `sessionTitle`. The `sessionTitle` value is the bare

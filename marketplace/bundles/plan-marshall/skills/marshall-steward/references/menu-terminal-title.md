@@ -55,7 +55,7 @@ AskUserQuestion:
   header: "Terminal Title"
   options:
     - label: "Configure hook wiring"
-      description: "Install or repair the SessionStart (matcher-less + clear), UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion, PostToolUse:AskUserQuestion, PostToolUse:Bash render entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE in ./.claude/settings.local.json (Action A)"
+      description: "Install or repair the SessionStart (matcher-less), UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash, PostToolUse render entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE in ./.claude/settings.local.json (Action A)"
     - label: "Override active-plan for this session"
       description: "Write the cache mapping ${XDG_CACHE_HOME:-$HOME/.cache}/plan-marshall/sessions/$CLAUDE_CODE_SESSION_ID/active-plan so the next render trigger uses the selected plan (Action B)"
   multiSelect: false
@@ -104,15 +104,20 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 The `detail` field enumerates all of these labels, in order:
 
 - `SessionStart:matcher-less`
-- `SessionStart:clear`
 - `UserPromptSubmit`
 - `Notification`
 - `Stop`
 - `PreToolUse:AskUserQuestion`
-- `PostToolUse:AskUserQuestion`
-- `PostToolUse:Bash`
+- `PreToolUse:Bash`
+- `PostToolUse`
 - `statusLine`
 - `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`
+
+`PostToolUse` is a single matcher-less entry, so the title refreshes after every
+tool call rather than only after Bash / AskUserQuestion calls. There is no
+`SessionStart:clear` entry — the matcher-less `SessionStart` entry already fires
+for every source, and the renderer turns `source == "clear"` into a session
+teardown.
 
 When `display` reports `healthy: true` (no line contains `MISSING`), everything
 is wired up. Print an "already configured" message and return to the
@@ -139,7 +144,7 @@ AskUserQuestion:
   header: "Terminal Title"
   options:
     - label: "Enable"
-      description: "Install the SessionStart (matcher-less + clear), UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion, PostToolUse:AskUserQuestion, PostToolUse:Bash hook entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE"
+      description: "Install the SessionStart (matcher-less), UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash, PostToolUse hook entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE"
     - label: "Skip"
       description: "Make no changes; the terminal title stays disabled"
   multiSelect: false
@@ -171,14 +176,13 @@ Two fields list which render-trigger events landed and which were already
 present:
 
 - `installed_events` — the events whose render entry was freshly inserted on
-  this call. SessionStart counts once even though it gets two entries
-  (matcher-less + `matcher: "clear"`).
+  this call.
 - `already_present_events` — the events where our render entry was already
   installed (no write was needed).
 
 The union of the two lists is always `["SessionStart", "UserPromptSubmit",
-"Notification", "Stop", "PreToolUse:AskUserQuestion",
-"PostToolUse:AskUserQuestion", "PostToolUse:Bash"]`. Report the breakdown so the
+"Notification", "Stop", "PreToolUse:AskUserQuestion", "PreToolUse:Bash",
+"PostToolUse"]`. Report the breakdown so the
 user can see exactly which entries were added:
 
 ```text

@@ -13,6 +13,12 @@ Claude Code 2.1.141+ delivers terminal-mutating escape sequences from hook subpr
 
 The two modes share a script entry point in practice but differ in payload format. Branch on the invocation mode (typically a `--statusline` flag) and emit exactly one shape per branch.
 
+**`terminalSequence` is the host-written delivery channel and requires no tty ownership.** The hook subprocess never touches the terminal itself — it hands the escape sequence to Claude Code, which writes it on the subprocess's behalf. That is why the envelope works from any process the hook fires in, including ones with no controlling terminal. A direct `/dev/tty` write is a strictly weaker FALLBACK channel: it needs a controlling terminal, so it silently cannot land inside a dispatched agent, a CI runner, or a backgrounded process. Reach for it only for the blocking windows no hook event spans (a long build, a CI wait, a lock hold), and make its non-delivery observable rather than swallowed — see `plan-marshall:platform-runtime`'s `session push-title-token`, which reports `pushed: false` with `reason: no_controlling_tty`.
+
+### Installed render-trigger hook entries
+
+The terminal-title bundle installs seven render-trigger entries (plus `statusLine`): `SessionStart` (ONE matcher-less entry — it fires for every source, and the renderer turns `source == "clear"` into a session teardown rather than a render), `UserPromptSubmit`, `Notification`, `Stop`, `PreToolUse:AskUserQuestion`, `PreToolUse:Bash`, and `PostToolUse` (ONE matcher-less entry, so the title refreshes after **every** tool call at the same cadence as the statusLine footer).
+
 ## Why pre-2.1.139 hooks silently break on upgrade
 
 Before Claude Code 2.1.139, hook subprocesses could open `/dev/tty` and write escape sequences directly to the controlling terminal. The 2.1.139 release removed `/dev/tty` access for hook subprocesses; opening it now fails with an OS-level error. Hooks written against the old contract typically wrap the `/dev/tty` write in a broad `except` clause so a missing or unwritable TTY does not break the user's session. Post-upgrade, that same defensive `except` swallows every write attempt — the hook exits 0 with no stderr, Claude Code records a successful hook invocation, and the terminal sees no change. The failure is silent at every layer.

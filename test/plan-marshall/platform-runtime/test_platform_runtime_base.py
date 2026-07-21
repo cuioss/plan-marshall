@@ -168,6 +168,9 @@ class _ConcreteRuntime(Runtime):
     def session_doctor(self, fix: bool = False) -> str:
         return toon_success("session doctor")
 
+    def session_teardown(self) -> str:
+        return toon_success("session teardown")
+
     def session_reload_directive(self) -> str:
         return toon_success("session reload-directive")
 
@@ -216,6 +219,7 @@ ALL_ABSTRACT_METHODS = [
     "session_bind",
     "session_resolve_plan",
     "session_doctor",
+    "session_teardown",
     "session_reload_directive",
     "permission_configure",
     "permission_analyze",
@@ -231,16 +235,16 @@ ALL_ABSTRACT_METHODS = [
 ]
 
 
-def test_runtime_has_22_abstract_methods():
-    """Runtime ABC exposes exactly 22 abstract methods."""
+def test_runtime_has_23_abstract_methods():
+    """Runtime ABC exposes exactly 23 abstract methods."""
     abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
-    assert len(abstract_methods) == 22, (
-        f"Expected 22 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
+    assert len(abstract_methods) == 23, (
+        f"Expected 23 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
     )
 
 
 def test_all_expected_methods_are_abstract():
-    """Each of the 22 documented operations is abstract on Runtime."""
+    """Each of the 23 documented operations is abstract on Runtime."""
     abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
     for method in ALL_ABSTRACT_METHODS:
         assert method in abstract_methods, (
@@ -266,7 +270,7 @@ def test_subclass_missing_one_method_raises(missing_method: str):
 
 
 def test_concrete_subclass_can_be_instantiated():
-    """A subclass implementing all 22 methods can be instantiated without error."""
+    """A subclass implementing all 23 methods can be instantiated without error."""
     runtime = _ConcreteRuntime()
     assert isinstance(runtime, Runtime)
 
@@ -291,6 +295,7 @@ def test_concrete_returns_valid_toon_for_each_method():
         runtime.session_bind("my-plan"),
         runtime.session_resolve_plan(),
         runtime.session_doctor(),
+        runtime.session_teardown(),
         runtime.session_reload_directive(),
         runtime.permission_configure("project", ["Read(**)"]),
         runtime.permission_analyze("both", ["all"], None),
@@ -305,7 +310,7 @@ def test_concrete_returns_valid_toon_for_each_method():
         runtime.health_check("all"),
     ]
 
-    assert len(outputs) == 22, "Expected output for each of the 22 methods"
+    assert len(outputs) == 23, "Expected output for each of the 23 methods"
     for output in outputs:
         result = parse_toon(output)
         assert result.get("status") == "success", (

@@ -7,6 +7,8 @@ Covers:
   - resolve_plan: read side (bound / unbound / malformed / empty)
   - bind: last-driven-wins unconditional write (never protects a differing
     live binding) and validation rejection
+  - unbind: caller-scoped slot removal + empty-session-dir prune, idempotence,
+    validation rejection, and the no-raise contract on I/O failure
   - doctor: reverse-index conflict scan, stale-slot detection, --fix GC, and
     the no-index.json invariant
 """
@@ -42,6 +44,76 @@ def project(tmp_path, monkeypatch):
 def _make_live_plan(project_root, plan_id: str) -> None:
     """Create a live (non-archived) plan directory under the project root."""
     (project_root / ".plan" / "local" / "plans" / plan_id).mkdir(parents=True, exist_ok=True)
+
+
+# =============================================================================
+# unbind — caller-scoped slot removal (the teardown counterpart of bind)
+# =============================================================================
+
+
+class TestUnbind:
+    """Tests for :func:`session_binding.unbind`.
+
+    ``unbind`` removes the caller's OWN ``active-plan`` slot and prunes the
+    now-empty session directory. Same validation, same per-session scope, and
+    the same best-effort / no-raise contract as ``bind``.
+    """
+
+    def test_unbind_removes_existing_slot_and_prunes_session_dir(self, cache):
+        """An existing slot is removed and its now-empty session dir is pruned."""
+        assert session_binding.bind(SID_A, "plan-a") is True
+        assert (cache / SID_A / "active-plan").is_file()
+
+        assert session_binding.unbind(SID_A) is True
+
+        assert not (cache / SID_A / "active-plan").exists()
+        assert not (cache / SID_A).exists()
+        assert session_binding.resolve_plan(SID_A) is None
+
+    def test_unbind_touches_only_the_callers_own_slot(self, cache):
+        """A sibling session's binding survives the caller's unbind untouched."""
+        session_binding.bind(SID_A, "plan-a")
+        session_binding.bind(SID_B, "plan-b")
+
+        session_binding.unbind(SID_A)
+
+        assert session_binding.resolve_plan(SID_A) is None
+        assert session_binding.resolve_plan(SID_B) == "plan-b"
+
+    def test_unbind_is_idempotent_on_absent_slot(self, cache):
+        """Unbinding an already-absent slot reports success and does not raise."""
+        assert session_binding.unbind(SID_C) is True
+        assert session_binding.unbind(SID_C) is True
+        assert session_binding.resolve_plan(SID_C) is None
+
+    @pytest.mark.parametrize(
+        "bad",
+        ["", "../../etc/passwd", "a/b", "a\\b", "..", ".", "x" * 121, "a\x00b"],
+    )
+    def test_unbind_rejects_malformed_session_id(self, cache, bad):
+        """A malformed session id is rejected before any filesystem touch."""
+        assert session_binding.unbind(bad) is False
+
+    def test_unbind_returns_false_on_io_error(self, cache, monkeypatch):
+        """An I/O error yields False rather than propagating — never raises."""
+        session_binding.bind(SID_A, "plan-a")
+
+        def _raise(*_args, **_kwargs):
+            raise OSError(13, "Permission denied")
+
+        monkeypatch.setattr(session_binding.Path, "unlink", _raise)
+
+        assert session_binding.unbind(SID_A) is False
+
+    def test_unbind_keeps_a_non_empty_session_dir(self, cache):
+        """The dir prune is best-effort: a session dir holding other files stays."""
+        session_binding.bind(SID_A, "plan-a")
+        (cache / SID_A / "other-file").write_text("keep me", encoding="utf-8")
+
+        assert session_binding.unbind(SID_A) is True
+
+        assert not (cache / SID_A / "active-plan").exists()
+        assert (cache / SID_A / "other-file").is_file()
 
 
 # =============================================================================
