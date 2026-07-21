@@ -26,6 +26,7 @@ _REGISTRY = _pyproject_cmd_parse_mod._REGISTRY
 _has_pytest_output = _pyproject_cmd_parse_mod._has_pytest_output
 slice_failure_details = _pyproject_cmd_parse_mod.slice_failure_details
 _pytest_failing_frame = _pyproject_cmd_parse_mod._pytest_failing_frame
+_extract_pytest_summary = _pyproject_cmd_parse_mod._extract_pytest_summary
 
 
 @contextmanager
@@ -555,3 +556,51 @@ def test_failing_frame_returns_deepest_traceback_frame():
 def test_failing_frame_none_without_frame():
     """A block with no `path.py:NN:` frame yields None."""
     assert _pytest_failing_frame('E   AssertionError: boom\n') is None
+
+
+# =============================================================================
+# Summary duration capture
+# =============================================================================
+
+
+def test_extract_summary_captures_duration_from_in_marker():
+    """The `in Ns` marker on the summary line populates duration_seconds."""
+    summary = _extract_pytest_summary('==== 12 passed, 1 skipped in 43.21s ====\n')
+
+    assert summary is not None
+    assert summary.passed == 12
+    assert summary.skipped == 1
+    assert summary.duration_seconds == 43.21
+
+
+def test_extract_summary_captures_integer_duration():
+    """A whole-second duration is captured as a float."""
+    summary = _extract_pytest_summary('==== 3 passed in 7s ====\n')
+
+    assert summary is not None
+    assert summary.duration_seconds == 7.0
+
+
+def test_extract_summary_duration_none_when_marker_malformed():
+    """A summary-shaped line whose `in Ns` marker is malformed yields no duration.
+
+    The line locator itself requires an `in <digits>s` marker, so a malformed
+    duration means no summary line is resolved at all — the whole summary is
+    None rather than a summary carrying a bogus duration.
+    """
+    assert _extract_pytest_summary('==== 3 passed in about a minute ====\n') is None
+
+
+def test_extract_summary_duration_none_when_marker_absent():
+    """A count-bearing line with no duration marker resolves no summary."""
+    assert _extract_pytest_summary('collected 3 items, 3 passed\n') is None
+
+
+def test_parse_log_pytest_summary_carries_duration():
+    """The duration survives the full parse_log path, not just the helper."""
+    content = '==== 5 passed in 1.50s ====\n'
+    with _temp_log(content) as log_path:
+        _, summary, _ = parse_log(log_path)
+
+    assert summary is not None
+    assert summary.duration_seconds == 1.5

@@ -97,9 +97,11 @@ def has_wrapper(project_root: Path, unix_wrapper: str, windows_wrapper: str) -> 
     return (project_root / unix_wrapper).exists()
 
 
-# Minimum timeout floor (seconds) — prevents adaptive learning from producing
-# dangerously short timeouts (e.g., a warm cache run teaching 5s that then
-# fails on a cold start).
+# Tool-agnostic DEFAULT minimum timeout floor (seconds) — prevents adaptive
+# learning from producing dangerously short timeouts (e.g., a warm cache run
+# teaching 5s that then fails on a cold start). It is a default, not a ceiling
+# on the floor: a tool with its own inner timeout backstop overrides it via the
+# ``min_timeout`` parameter of ``execute_direct_base`` / ``ExecuteConfig``.
 MIN_TIMEOUT = 60
 
 # Maximum timeout cap (seconds) — prevents exponential growth from successive
@@ -144,6 +146,7 @@ def execute_direct_base(
     env_vars: dict[str, str] | None = None,
     working_dir: str | None = None,
     extra_result_fields: dict | None = None,
+    min_timeout: int = MIN_TIMEOUT,
 ) -> DirectCommandResult:
     """Execute a build command with adaptive timeout learning.
 
@@ -168,6 +171,12 @@ def execute_direct_base(
         working_dir: Working directory override (defaults to project_dir).
         extra_result_fields: Additional fields to include in all result dicts
             (e.g., {"wrapper": "./mvnw"} or {"command_type": "npm"}).
+        min_timeout: Floor (seconds) applied to the learned/default timeout.
+            Defaults to the tool-agnostic MIN_TIMEOUT. A tool that runs its own
+            inner timeout backstop MUST pass a floor strictly greater than that
+            backstop — otherwise the outer timeout can fire first and kill the
+            run before the inner backstop can report which step hung, leaving an
+            opaque timeout instead of a diagnosable one.
 
     Returns:
         DirectCommandResult with status, exit_code, duration_seconds,
@@ -191,8 +200,8 @@ def execute_direct_base(
             **extras,
         }
 
-    # Step 2: Get timeout from run-config, enforce minimum floor
-    timeout_seconds = max(timeout_get(command_key, default_timeout, project_dir), MIN_TIMEOUT)
+    # Step 2: Get timeout from run-config, enforce the caller's minimum floor
+    timeout_seconds = max(timeout_get(command_key, default_timeout, project_dir), min_timeout)
 
     # Step 3: Build command using tool-specific function
     # log_file is passed so Maven can embed it via -l flag
