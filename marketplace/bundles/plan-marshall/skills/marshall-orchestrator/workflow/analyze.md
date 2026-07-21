@@ -19,18 +19,27 @@ Workflow doc for the `analyze` verb: analyze a landed plan or a mid-flight obser
 
 ## Workflow
 
-### Step 1: Verify against ground truth
+### Step 1: Push the orchestrator terminal title
+
+Per the [Terminal-Title Repaint Contract](../../persona-marshall-orchestrator/standards/orchestration-model.md#terminal-title-repaint-contract), push the `Orchestrator-{SlugName}` title through the platform-runtime seam before the verb's first read:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
+  --store orchestrator --slug {slug}
+```
+
+### Step 2: Verify against ground truth
 
 A pasted or read claim is a **lead, never a fact**. Before recording anything, corroborate each material claim against actual ground truth — the real diff, the real PR state (via the CI abstraction), the real artifacts, the real code. Claims that cannot be corroborated are recorded as unverified leads (a watch), not as findings.
 
-### Step 2: Classify the granularity
+### Step 3: Classify the granularity
 
 Decide which output contract applies:
 
-- **Full ship** — a tracked plan landed (merged PR, closed lifecycle). Follow Step 3.
-- **Mid-flight observation** — a signal about in-flight or adjacent work with NO ship semantics. Follow Step 4.
+- **Full ship** — a tracked plan landed (merged PR, closed lifecycle). Follow Step 4.
+- **Mid-flight observation** — a signal about in-flight or adjacent work with NO ship semantics. Follow Step 5.
 
-### Step 3: Full ship — landing report + full reconciliation
+### Step 4: Full ship — landing report + full reconciliation
 
 1. Write the landing report to `landings/PLAN-NN.md`, instantiated from [`templates/landing-analysis.md`](../templates/landing-analysis.md) via the Write tool: deliverable fidelity vs spec, metrics/anomalies, routing/merge behavior, reconciliation actions.
 2. Mark the plan shipped in the machine authority:
@@ -49,13 +58,13 @@ Decide which output contract applies:
      --slug {slug}
    ```
 
-### Step 4: Mid-flight observation — minimal reconciliation
+### Step 5: Mid-flight observation — minimal reconciliation
 
 1. Record the observation as a Watch or Open Defect entry in `epic.md` — NO ship semantics, no landing report, no queue-status transition for the observed plan.
-2. When the observation warrants new work, either **fold** it into an existing staged `plans/PLAN-NN-{plan_slug}.md` spec or **spawn** a new spec (and queue entry via the `decompose.md` Step 4 queue-write shape) — anything larger than the small-ops carve-out becomes a plan, never inline work.
-3. Regenerate the START-HERE block only when the queue was touched (the Step 3 item 5 invocation).
+2. When the observation warrants new work, either **fold** it into an existing staged `plans/PLAN-NN-{plan_slug}.md` spec or **spawn** a new spec (and queue entry via the `decompose.md` Step 5 queue-write shape) — anything larger than the small-ops carve-out becomes a plan, never inline work.
+3. Regenerate the START-HERE block only when the queue was touched (the Step 4 item 5 invocation).
 
-### Step 5: Log and set the resume anchor
+### Step 6: Log and set the resume anchor
 
 Log the analysis decisions and reconciliations:
 

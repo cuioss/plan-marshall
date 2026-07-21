@@ -14,14 +14,12 @@ Workflow doc for the `archive` verb: relocate a *closed* epic tree from `orchest
 
 ### Step 1: Push the orchestrator terminal title
 
-Session-opening verbs surface the epic in the terminal title for the duration of the verb:
+Per the [Terminal-Title Repaint Contract](../../persona-marshall-orchestrator/standards/orchestration-model.md#terminal-title-repaint-contract), push the `Orchestrator-{SlugName}` title through the platform-runtime seam:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
   --store orchestrator --slug {slug}
 ```
-
-The push is best-effort and gating is inherited: when the terminal-title surface is not configured, the seam is a silent no-op — no push happens and the verb proceeds normally.
 
 ### Step 2: Pre-archive check
 

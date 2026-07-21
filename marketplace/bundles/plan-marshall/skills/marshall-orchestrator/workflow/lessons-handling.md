@@ -28,6 +28,13 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create
   --plan-id {slug} --title "Lessons handling {YY-MM-DD}" --store orchestrator
 ```
 
+Now that `status.json` exists, push the orchestrator terminal title per the [Terminal-Title Repaint Contract](../../persona-marshall-orchestrator/standards/orchestration-model.md#terminal-title-repaint-contract). The placement differs from the other verbs because this mode DERIVES its slug in this step rather than receiving it as an input, so the push cannot precede slug resolution:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
+  --store orchestrator --slug {slug}
+```
+
 Instantiate `epic.md` from `templates/epic.md` via the Write tool (direct file access inside the epic's own tree is covered by the direct-file-access carve-out). Set the epic phase to `orchestrating`:
 
 ```bash

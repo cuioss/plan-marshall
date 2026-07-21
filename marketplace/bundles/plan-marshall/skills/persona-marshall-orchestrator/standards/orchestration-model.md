@@ -1,6 +1,6 @@
 # Orchestration Model
 
-The canonical standard for epic orchestration in plan-marshall. It defines the granularity model, the persisted ledger layout, the persist/stop-resume contract, the two operational carve-outs, the prime directive, and the lessons-handling mode contract. The `marshall-orchestrator` skill's verb workflows and the `persona-marshall-orchestrator` identity both bind to this document — when a workflow doc and this standard disagree, this standard wins.
+The canonical standard for epic orchestration in plan-marshall. It defines the granularity model, the persisted ledger layout, the persist/stop-resume contract, the terminal-title repaint contract, the two operational carve-outs, the prime directive, and the lessons-handling mode contract. The `marshall-orchestrator` skill's verb workflows and the `persona-marshall-orchestrator` identity both bind to this document — when a workflow doc and this standard disagree, this standard wins.
 
 ## Granularity Model: Epic → Workstream → Plan
 
@@ -56,6 +56,21 @@ Orchestration is resumable by construction: any session can stop at any point an
 - **Close freezes, never deletes.** Closing an epic writes the final state into `history.md` and marks `status.json` phase `closed`; the tree remains on disk as the audit record.
 - **Archive relocates, never deletes.** The optional, post-close `archive` verb moves a closed epic tree to `archived-orchestrators/{slug}/` for store-root tidiness — a mechanical relocation, never a delete. The read verbs (`status`, `resume`) and the on-query store scan resolve an archived epic transparently (the `allow_archived` read-fallback), so archiving never orphans the audit record; write verbs stay strict and refuse an archived-only epic with `file_not_found` (the frozen record is not mutated at the active path). Appending a `logs/` entry is the ONE exception to the strict write-refusal: a `manage-logging --store orchestrator` decision/work append follows the read-verb `allow_archived` transparency instead of refusing, because an audit-trail continuation is not a business-state mutation — so a log write against an archived-only epic lands in the archived `logs/` tree and never resurrects an active-path directory. `resume` on a `phase: closed` epic (archived or not) is likewise read-only: it re-anchors and reports the frozen record but never reconciles the queue and never persists a change — a closed epic's queue is already settled by `close`, so there is no orchestration work to do. NO retention or cleanup policy applies: unlike a transient plan (which carries a dated `archived-plans` GC), an epic is the durable audit record and the archived tree is kept indefinitely. `archive` is opt-in and refuses a non-closed epic — `close` must run first.
 
+## Terminal-Title Repaint Contract
+
+**Every epic-resolving verb repaints the terminal title at verb entry, because any verb may open a session.** The obligation is not restricted to `init` and `resume`: an operator routinely opens a session with `status`, `next`, `analyze`, `decompose`, or `lessons`, and each of those must surface the epic in the terminal title exactly as the session-opening verbs do. All nine verbs — `init`, `decompose`, `status`, `next`, `analyze`, `resume`, `close`, `archive`, `lessons` — carry the obligation.
+
+- **Canonical invocation.** The repaint is the single platform-runtime seam, invoked with the orchestrator store and the epic slug:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
+    --store orchestrator --slug {slug}
+  ```
+
+- **Entry-point placement.** The push fires after slug resolution and before the verb's first read, so the title is already correct while the verb does its work. When a verb DERIVES its slug rather than receiving it as an input (`lessons`), the push moves to the first point at which both the slug and the epic's `status.json` exist — the same reason `init` fires a follow-up repaint after `manage-status create`: an entry push cannot resolve epic state before `status.json` exists.
+- **Gating is inherited, never re-derived.** The push is best-effort: when the terminal-title surface is not configured (no controlling terminal, hooks off), the seam is a silent no-op — no push happens and the verb proceeds normally. Verb docs carry the invocation and reference this rule; they do NOT restate the gating.
+- **Restore-push exception — `close` and `archive`.** These two verbs additionally restore the plan-scoped title on the way out: resolve the session's bound plan via `session resolve-plan`, then fire a plain `--plan-id` repaint when a plan id resolves. When no plan resolves, no restore push is needed — the next hook-driven render repaints from the session's state. Both restore pushes are best-effort no-ops under the same gating.
+
 ## Carve-Outs
 
 Two bounded carve-outs define what the orchestrator may do directly. Everything outside them is delegated.
@@ -109,6 +124,7 @@ The `lessons` verb runs a repeatable orchestrator mode over the lessons-learned 
 ## See Also
 
 - [`persona-marshall-orchestrator/SKILL.md`](../SKILL.md) — the orchestrator work identity that loads this standard
+- [`marshall-orchestrator/SKILL.md`](../../marshall-orchestrator/SKILL.md) — the verb router whose per-verb workflow docs bind to this standard
 - [`manage-status/standards/status-lifecycle.md`](../../manage-status/standards/status-lifecycle.md) — the `kind=orchestrator` status.json schema and lifecycle
 - [`manage-logging/standards/log-format.md`](../../manage-logging/standards/log-format.md) — the orchestrator logged-event set
 - [`untrusted-ingestion/SKILL.md`](../../untrusted-ingestion/SKILL.md) — the reader/orchestrator/writer isolation contract for external content

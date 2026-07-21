@@ -13,14 +13,14 @@ Workflow doc for the `init` verb: scaffold a new epic tree under `.plan/local/or
 
 ### Step 1: Push the orchestrator terminal title
 
-Session-opening verbs surface the epic in the terminal title. Push the `Orchestrator-{SlugName}` title through the platform-runtime seam:
+Per the [Terminal-Title Repaint Contract](../../persona-marshall-orchestrator/standards/orchestration-model.md#terminal-title-repaint-contract), push the `Orchestrator-{SlugName}` title through the platform-runtime seam:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
   --store orchestrator --slug {slug}
 ```
 
-The push is best-effort and gating is inherited: when the terminal-title surface is not configured (no controlling terminal, hooks off), the seam is a silent no-op — no push happens and the verb proceeds normally. On first `init` the epic's `status.json` does not exist yet, so this entry push cannot resolve the epic state and no-ops; Step 3 fires a follow-up repaint once `status.json` exists so the first-init title still renders. Re-running `init` on an existing tree (idempotent re-entry) repaints here directly.
+On first `init` the epic's `status.json` does not exist yet, so this entry push cannot resolve the epic state and no-ops; Step 3 fires a follow-up repaint once `status.json` exists so the first-init title still renders. Re-running `init` on an existing tree (idempotent re-entry) repaints here directly.
 
 ### Step 2: Scaffold the epic tree
 
@@ -40,7 +40,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status create
   --plan-id {slug} --title "{title}" --store orchestrator
 ```
 
-Now that `status.json` exists, fire the follow-up terminal-title repaint the Step 1 entry push could not resolve on a first `init` — this is the push that actually renders the `Orchestrator-{SlugName}` title on the very first run (best-effort, silent no-op when the surface is unconfigured):
+Now that `status.json` exists, fire the follow-up terminal-title repaint the Step 1 entry push could not resolve on a first `init` — this is the push that actually renders the `Orchestrator-{SlugName}` title on the very first run:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \

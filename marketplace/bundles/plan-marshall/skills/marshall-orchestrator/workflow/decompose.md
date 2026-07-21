@@ -11,7 +11,16 @@ Workflow doc for the `decompose` verb: decompose the epic into workstream charte
 
 ## Workflow
 
-### Step 1: Read the current epic state
+### Step 1: Push the orchestrator terminal title
+
+Per the [Terminal-Title Repaint Contract](../../persona-marshall-orchestrator/standards/orchestration-model.md#terminal-title-repaint-contract), push the `Orchestrator-{SlugName}` title through the platform-runtime seam before the verb's first read:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
+  --store orchestrator --slug {slug}
+```
+
+### Step 2: Read the current epic state
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
@@ -20,15 +29,15 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
 
 Read `epic.md` (Vision, any existing queue) via the Read tool. Decomposition is re-entrant: an existing queue is extended and reconciled, never blindly overwritten.
 
-### Step 2: Cut workstreams
+### Step 3: Cut workstreams
 
 Partition the epic into workstreams — coherent slices with their own charter (a surface, a theme, a dependency chain). For each workstream, instantiate `workstreams/WS-NN-{ws_slug}.md` from [`templates/workstream.md`](../templates/workstream.md) via the Write tool. A single-plan workstream is legitimate; the tier exists for grouping and charter, not mandatory fan-out.
 
-### Step 3: Stage plan specs
+### Step 4: Stage plan specs
 
-For each shippable unit inside a workstream, instantiate `plans/PLAN-NN-{plan_slug}.md` from [`templates/plan-spec.md`](../templates/plan-spec.md) via the Write tool, recording the plan's **expected surface** (files/modules touched) — the disjointness input `next` consumes. Apply the scope-bloat split guard: a spec approaching six or more deliverables is presumptively split along deliverable-group boundaries; proceeding unsplit requires a recorded decision (Step 6 logging shape).
+For each shippable unit inside a workstream, instantiate `plans/PLAN-NN-{plan_slug}.md` from [`templates/plan-spec.md`](../templates/plan-spec.md) via the Write tool, recording the plan's **expected surface** (files/modules touched) — the disjointness input `next` consumes. Apply the scope-bloat split guard: a spec approaching six or more deliverables is presumptively split along deliverable-group boundaries; proceeding unsplit requires a recorded decision (Step 7 logging shape).
 
-### Step 4: Populate the status.json queue
+### Step 5: Populate the status.json queue
 
 Write the queue into the machine authority — one `plans[]` entry per staged spec (`{id, slug, workstream, status: staged, plan_marshall_plan_id: "", pr: "", landing: ""}`), plus the `workstreams[]` list:
 
@@ -51,7 +60,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
   --plan-id {slug} --field phase --value orchestrating --store orchestrator
 ```
 
-### Step 5: Reconcile epic.md and regenerate START HERE
+### Step 6: Reconcile epic.md and regenerate START HERE
 
 Mirror the queue into `epic.md`'s Ordered Queue table (reconciliation direction is always status.json → epic.md), including each plan's expected surface and sequencing notes. Then regenerate the START-HERE block and paste it verbatim between the generated-block markers:
 
@@ -60,7 +69,7 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
   --slug {slug}
 ```
 
-### Step 6: Log decisions and set the resume anchor
+### Step 7: Log decisions and set the resume anchor
 
 Log every decomposition decision (workstream cuts, split-guard verdicts, sequencing):
 
