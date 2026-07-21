@@ -11,7 +11,16 @@ Shared workflow doc for the two queue-facing verbs: `status` (report the queue a
 
 ## Workflow
 
-### Step 1: Read the queue (shared)
+### Step 1: Push the orchestrator terminal title (shared)
+
+Per the [Terminal-Title Repaint Contract](../../persona-marshall-orchestrator/standards/orchestration-model.md#terminal-title-repaint-contract), push the `Orchestrator-{SlugName}` title through the platform-runtime seam before the first read. The `slug` is an input to both verbs, so this single shared step covers `status` and `next` alike:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime session push-title-token \
+  --store orchestrator --slug {slug}
+```
+
+### Step 2: Read the queue (shared)
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator queue \
@@ -25,7 +34,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
 
 The on-query epic discovery / store scan enumerates BOTH `.plan/local/orchestrator/` and `.plan/local/archived-orchestrators/`, and the `read` verb resolves an archived epic transparently via the read-fallback — so a slug naming an archived (closed-and-relocated) epic is still discoverable and reportable here without re-anchoring.
 
-### Step 2 (verb = `status`): Report
+### Step 3 (verb = `status`): Report
 
 Render the queue report from the machine authority: per-plan status (staged / launched / shipped / parked), workstream grouping, open defects and watches from `epic.md`, and the `resume_anchor`. An archived epic reports identically — its tree is resolved from `archived-orchestrators/` and its `status.json` is the same machine authority. When the report reveals stale prose in `epic.md` (a queue row disagreeing with `status.json`), reconcile status.json → epic.md and regenerate the START-HERE block:
 
@@ -34,13 +43,13 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
   --slug {slug}
 ```
 
-Skip Steps 3–5 and return.
+Skip Steps 4–6 and return.
 
-### Step 3 (verb = `next`): Select the next launchable plan
+### Step 4 (verb = `next`): Select the next launchable plan
 
 Pick the first `staged` plan in queue order whose dependencies (sequencing notes in its `plans/PLAN-NN-{plan_slug}.md` spec) are satisfied. Check **surface disjointness** against every currently-launched plan: the candidate may be emitted while another plan is in flight ONLY when their expected surfaces do not overlap. Overlapping candidates are sequenced — report the overlap and the plan being waited on instead of emitting.
 
-### Step 4 (verb = `next`): Emit the command
+### Step 5 (verb = `next`): Emit the command
 
 EMIT the ready-to-run command for the operator, composed from the staged spec:
 
@@ -55,7 +64,7 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
   --slug {slug} --transition PLAN-NN --status launched
 ```
 
-### Step 5 (verb = `next`): Log and set the resume anchor
+### Step 6 (verb = `next`): Log and set the resume anchor
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging decision \
@@ -67,7 +76,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
   --plan-id {slug} --field resume_anchor --value "{next action}" --store orchestrator
 ```
 
-Regenerate the START-HERE block (Step 2 invocation) after any queue-touching change.
+Regenerate the START-HERE block (Step 3 invocation) after any queue-touching change.
 
 ## Output
 
