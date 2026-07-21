@@ -66,7 +66,8 @@ _STALE_PATTERNS = (
 
 
 def _contract_text() -> str:
-    return _CONTRACT_DOC.read_text(encoding='utf-8')
+    text: str = _CONTRACT_DOC.read_text(encoding='utf-8')
+    return text
 
 
 def _termination_section() -> str:
