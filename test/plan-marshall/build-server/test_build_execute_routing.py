@@ -580,23 +580,22 @@ def test_cmd_run_daemon_routes_successfully(monkeypatch):
     assert seen['result'] is canned
 
 
-def test_cmd_run_records_requested_and_resolved_mode(monkeypatch, caplog):
+def test_cmd_run_records_requested_and_resolved_mode(monkeypatch, capsys):
     # Every resolved outcome records BOTH the requested and the resolved mode
-    # (the F2/F6 requested-vs-resolved audit requirement).
-    import logging as _logging
+    # (the F2/F6 requested-vs-resolved audit requirement). The line is asserted
+    # on the stderr sink, NOT on a logging handler: this build subprocess wires
+    # no handler, so a logger-only emit is discarded by the last-resort WARNING
+    # threshold and the audit line is lost.
 
     # (a) auto + route ⇒ resolved=routed
     canned = {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'}
     monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (canned, ''))
     monkeypatch.setattr(factory, 'cmd_run_common', lambda **kw: 0)
     _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
-    with caplog.at_level(_logging.INFO, logger='_build_execute_factory'):
-        cmd_run(_run_args(execution_mode='auto'))
-    assert any('requested=auto, resolved=routed' in r.message for r in caplog.records)
+    cmd_run(_run_args(execution_mode='auto'))
+    assert 'requested=auto, resolved=routed' in capsys.readouterr().err
 
     # (b) in_process ⇒ resolved=in_process
-    caplog.clear()
-
     def _must_not_route(*a, **k):
         raise AssertionError('in_process must not route')
 
@@ -604,15 +603,12 @@ def test_cmd_run_records_requested_and_resolved_mode(monkeypatch, caplog):
     entered: dict = {'slot': False, 'plan_id': None}
     _install_in_process_stubs(monkeypatch, entered)
     _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
-    with caplog.at_level(_logging.INFO, logger='_build_execute_factory'):
-        cmd_run(_run_args(execution_mode='in_process'))
-    assert any('requested=in_process, resolved=in_process' in r.message for r in caplog.records)
+    cmd_run(_run_args(execution_mode='in_process'))
+    assert 'requested=in_process, resolved=in_process' in capsys.readouterr().err
 
     # (c) daemon + unavailable ⇒ resolved=fail-loud
-    caplog.clear()
     monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
     monkeypatch.setattr(factory, 'build_queue_slot', lambda *a, **k: None)
     _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
-    with caplog.at_level(_logging.INFO, logger='_build_execute_factory'):
-        cmd_run(_run_args(execution_mode='daemon'))
-    assert any('requested=daemon, resolved=fail-loud' in r.message for r in caplog.records)
+    cmd_run(_run_args(execution_mode='daemon'))
+    assert 'requested=daemon, resolved=fail-loud' in capsys.readouterr().err

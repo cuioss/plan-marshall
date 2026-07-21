@@ -59,6 +59,7 @@ from _build_result import (  # noqa: E402
 )
 from _build_server_protocol import MARSHALLD_JOB_ENV  # noqa: E402
 from _build_shared import cmd_run_common  # noqa: E402
+from plan_logging import log_entry  # noqa: E402
 from toon_parser import serialize_toon  # noqa: E402
 
 # Error type emitted when the build queue is saturated past max_retries.
@@ -159,6 +160,48 @@ def _resolve_notation(config: ExecuteConfig) -> str:
     in-process (the safe default for an unknown build tool).
     """
     return config.notation or _TOOL_NOTATIONS.get(config.tool_name, '')
+
+
+def _record_resolution(
+    requested: str,
+    resolved: str,
+    reason: str | None,
+    notation: str,
+    plan_id: str | None,
+) -> None:
+    """Record the requested-vs-resolved build-routing decision to both sinks.
+
+    The routing resolution is the one diagnostic that distinguishes a routed
+    build from an in-process one and names WHY an in-process build was chosen,
+    so it MUST NOT be emitted through ``logging`` alone: this build subprocess
+    configures no handler, so a ``logger.info`` call is discarded by Python's
+    last-resort WARNING threshold and the line is lost. It is therefore emitted
+    twice — unconditionally to stderr (``[EXEC]`` parity, and the only sink a
+    plan-less build has), and to the plan's captured work log when a ``plan_id``
+    is present (mirroring ``build_server._audit_log``, which likewise no-ops for
+    a plan-less build).
+
+    Args:
+        requested: The caller's ``execution_mode`` (``auto`` / ``in_process`` /
+            ``daemon``).
+        resolved: The routing outcome — ``routed``, ``in_process``, or
+            ``fail-loud``.
+        reason: The degradation / refusal reason, or ``None`` when the
+            resolution carries none.
+        notation: The executor notation the daemon re-runs for this build.
+        plan_id: Submitting plan id; falsy for a plan-less build (the work-log
+            emission is skipped, the stderr emission is not).
+    """
+    message = (
+        f'[BUILD-SERVER] resolved build (requested={requested}, resolved={resolved}, '
+        f'reason={reason}, notation={notation}, plan={plan_id})'
+    )
+    print(message, file=sys.stderr)
+    if plan_id:
+        # Every fallback and refusal logs at WARNING — matching the client's
+        # existing level convention; a clean resolution stays INFO.
+        level = 'WARNING' if resolved == 'fail-loud' or reason is not None else 'INFO'
+        log_entry('work', plan_id, level, message)
 
 
 def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> DirectCommandResult:
@@ -304,10 +347,7 @@ def _emit_daemon_required(
     envelope the orchestrator can branch on. Records the requested-vs-resolved
     audit line (resolved=fail-loud) before emitting.
     """
-    logger.info(
-        '[BUILD-SERVER] resolved build (requested=daemon, resolved=fail-loud, reason=%s, notation=%s, plan=%s)',
-        reason, notation, plan_id,
-    )
+    _record_resolution('daemon', 'fail-loud', reason, notation, plan_id)
     output = {
         'status': 'error',
         'error': ERROR_DAEMON_REQUIRED,
@@ -563,10 +603,7 @@ def create_execute_handlers(
         if execution_mode != 'in_process' and not daemon_incompatible:
             routed, reason = _route_to_daemon(config, project_dir, plan_id)
             if routed is not None:
-                logger.info(
-                    '[BUILD-SERVER] resolved build (requested=%s, resolved=routed, notation=%s, plan=%s)',
-                    execution_mode, notation, plan_id,
-                )
+                _record_resolution(execution_mode, 'routed', None, notation, plan_id)
                 return cmd_run_common(
                     result=routed,
                     parser_fn=parse_log_fn,
@@ -593,10 +630,7 @@ def create_execute_handlers(
 
         # Resolved to an in-process build (explicit in_process, auto fallback,
         # or the daemon child). Record the requested-vs-resolved audit line.
-        logger.info(
-            '[BUILD-SERVER] resolved build (requested=%s, resolved=in_process, reason=%s, notation=%s, plan=%s)',
-            execution_mode, fallback_reason, notation, plan_id,
-        )
+        _record_resolution(execution_mode, 'in_process', fallback_reason, notation, plan_id)
 
         # In-process fallback: acquire a build-queue slot on the single
         # machine-global queue file when a plan_id is set; NO-OP passthrough
