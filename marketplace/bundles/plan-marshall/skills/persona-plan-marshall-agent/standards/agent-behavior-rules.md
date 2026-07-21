@@ -103,8 +103,6 @@ Task: plan-marshall:{target}
   prompt: |
     name: {caller_phase}-research              # or research-best-practices when standalone
     plan_id: {plan_id}                          # 'none' sentinel for standalone runs
-    skills[1]:
-    - plan-marshall:persona-plan-marshall-agent
     workflow: plan-marshall:plan-marshall/workflow/research-best-practices.md
     WORKTREE: {worktree_path}
     caller_phase: {caller_phase}                # omit for standalone
