@@ -307,6 +307,57 @@ class TestDoctor:
 
 
 # =============================================================================
+# Benign coexistence — a plan bound by two live sessions needs no guard
+# =============================================================================
+
+
+class TestBenignCoexistence:
+    """A plan bound by more than one live session is diagnostic-only, not a fault.
+
+    Last-driven-wins carries no conflict guard because the surface is correct by
+    construction: the lookup is forward-only (session→plan, never the reverse),
+    ``unbind`` is self-scoped, and no verb acts on "whichever session holds this
+    plan". This pins that coexistence stays benign — the conflict is reported and
+    nothing is destroyed.
+    """
+
+    def test_two_sessions_one_plan_coexist_benignly(self, cache, project):
+        """Both forward lookups stay exact, the conflict is reported, and --fix destroys nothing."""
+        _make_live_plan(project, "shared-plan")
+        assert session_binding.bind(SID_A, "shared-plan") is True
+        assert session_binding.bind(SID_B, "shared-plan") is True
+
+        # (a) The forward lookup is exact for each session independently.
+        assert session_binding.resolve_plan(SID_A) == "shared-plan"
+        assert session_binding.resolve_plan(SID_B) == "shared-plan"
+
+        # (b) The plan is reported as a conflict naming both sessions.
+        report = session_binding.doctor()
+        assert len(report["conflicts"]) == 1
+        assert report["conflicts"][0]["plan_id"] == "shared-plan"
+        assert report["conflicts"][0]["sessions"] == sorted([SID_A, SID_B])
+        assert report["stale"] == []
+
+        # (c) --fix removes neither slot: a conflict is not a GC trigger.
+        fixed = session_binding.doctor(fix=True)
+        assert fixed["gc_removed"] == 0
+        assert fixed["orphans_removed"] == 0
+        assert session_binding.resolve_plan(SID_A) == "shared-plan"
+        assert session_binding.resolve_plan(SID_B) == "shared-plan"
+
+    def test_unbind_of_one_session_leaves_the_coexisting_binding_intact(self, cache, project):
+        """The self-scoped-teardown half: one session's unbind never drops the sibling's slot."""
+        _make_live_plan(project, "shared-plan")
+        session_binding.bind(SID_A, "shared-plan")
+        session_binding.bind(SID_B, "shared-plan")
+
+        assert session_binding.unbind(SID_A) is True
+
+        assert session_binding.resolve_plan(SID_A) is None
+        assert session_binding.resolve_plan(SID_B) == "shared-plan"
+
+
+# =============================================================================
 # doctor — orphan-directory sweep and prune
 # =============================================================================
 

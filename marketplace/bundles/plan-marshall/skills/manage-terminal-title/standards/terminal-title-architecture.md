@@ -376,6 +376,38 @@ switched to drive a second live plan stayed pinned to the first (the sticky-bind
 pollution, Defect 2); last-driven-wins fixes it by making the most recent driver
 authoritative.
 
+#### Why a multi-session conflict is benign — no guard is needed
+
+A plan bound by several live sessions is a **reportable observation, not a fault**.
+Last-driven-wins needs no conflict guard because the binding surface is
+**correct by construction** — three structural properties, each of which
+independently removes the failure mode a guard would defend against:
+
+- **(a) The lookup is forward-only.** `resolve_plan(session_id)` maps a session to
+  a plan. There is no plan→session direction anywhere in the surface, so "which
+  session owns this plan?" is a question no consumer can ask and no consumer does
+  ask: the two callers of `session resolve-plan` —
+  `marshall-orchestrator/workflow/close.md` and
+  `marshall-orchestrator/workflow/archive.md` — both invoke it with **no
+  `--session-id`**, resolving only their own caller session. A second session
+  bound to the same plan is therefore invisible to every read path.
+- **(b) `unbind` is self-scoped.** `unbind` and `session teardown` remove only the
+  **calling** session's own slot. One session tearing down can never drop a
+  sibling session's binding, so coexistence cannot produce a cross-session
+  release.
+- **(c) There is no `session close` verb.** The operations set is `capture` /
+  `render-title` / `push-title-token` / `bind` / `resolve-plan` / `doctor` /
+  `teardown` / `reload-directive`. No verb takes a plan id and acts on *whichever*
+  session holds it, so no operation can be misdirected by a shared binding.
+
+Consequently the `doctor` **conflict list is diagnostic-only by design** — it
+surfaces "two tabs are driving this plan" for a human reading the report, and
+nothing in the system branches on it. Fail-closing `resolve_plan` on a detected
+conflict would add a guard for a consumer that does not exist, which is precisely
+the speculative structure
+[`persona-plan-marshall-agent`](../../persona-plan-marshall-agent/SKILL.md)
+Principle 7 forbids. `bind` stays unconditional.
+
 #### `session doctor` — reverse-index conflict scan + stale GC + orphan prune
 
 `session doctor` visits **every directory** under
