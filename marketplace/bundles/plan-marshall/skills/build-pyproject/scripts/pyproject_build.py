@@ -114,17 +114,21 @@ def _register_pyproject_parse(subparsers) -> None:
 def cmd_resolve_test_scope(args) -> int:
     """Resolve the scoped module set and scoped-vs-whole-tree divergence risk.
 
-    Reads the live footprint and the ``build.map`` globs the same way
-    ``pre-push-quality-gate.md`` does — here through the in-process
-    ``script-shared`` seams that back ``should_execute_build`` — then delegates
-    the derivation to the pure ``resolve_test_scope`` helper. ``whole_tree_available``
-    reflects whether a whole-tree pytest run is structurally possible (a
-    discoverable Python module set exists). Prints the resolution as TOON:
-    ``scoped_modules[]``, ``divergence_possible``, ``recommended_target``,
-    ``whole_tree_available``.
+    Derives the footprint from one of two sources and delegates the resolution
+    to the pure ``resolve_test_scope`` helper. When ``--changed-paths`` is
+    supplied the comma-separated list IS the footprint (a task-scoped footprint —
+    exactly the files a single task's change touched); otherwise the whole-plan
+    live footprint is read the same way ``pre-push-quality-gate.md`` does, here
+    through the in-process ``script-shared`` seams that back
+    ``should_execute_build``. ``--plan-id`` / ``--project-dir`` still resolve the
+    ``build.map`` globs in both modes. ``whole_tree_available`` reflects whether a
+    whole-tree pytest run is structurally possible (a discoverable Python module
+    set exists). Prints the resolution as TOON: ``scoped_modules[]``,
+    ``divergence_possible``, ``recommended_target``, ``whole_tree_available``.
 
-    The footprint is plan-scoped, so ``--plan-id`` is required; the ``--project-dir``
-    escape hatch alone cannot resolve a live footprint.
+    Footprint source: ``--changed-paths`` (task-scoped) supersedes the whole-plan
+    footprint; when it is absent ``--plan-id`` is required to resolve the live
+    plan footprint.
     """
     # In-process form of the manage-references compute-footprint /
     # manage-config build-map read seams — same script-shared bundle, no
@@ -132,22 +136,28 @@ def cmd_resolve_test_scope(args) -> int:
     # cross-module dependency beyond the pure helper.
     from extension_base import _read_build_map_globs, _resolve_plan_footprint
 
-    plan_id = getattr(args, 'plan_id', None)
-    if not plan_id:
-        print(
-            serialize_toon(
-                {
-                    'status': 'error',
-                    'error': 'plan_id_required',
-                    'message': 'resolve-test-scope requires --plan-id to resolve the live footprint',
-                }
-            )
-        )
-        return 2
-
+    changed_paths = getattr(args, 'changed_paths', None)
     project_dir = getattr(args, 'project_dir', None)
     globs = _read_build_map_globs(project_dir)
-    footprint = _resolve_plan_footprint(plan_id)
+
+    if changed_paths is not None:
+        footprint = [p.strip() for p in changed_paths.split(',') if p.strip()]
+    else:
+        plan_id = getattr(args, 'plan_id', None)
+        if not plan_id:
+            print(
+                serialize_toon(
+                    {
+                        'status': 'error',
+                        'error': 'footprint_source_required',
+                        'message': 'resolve-test-scope requires --changed-paths (task-scoped) '
+                        'or --plan-id (whole-plan) to resolve the footprint',
+                    }
+                )
+            )
+            return 2
+        footprint = _resolve_plan_footprint(plan_id)
+
     resolution = resolve_test_scope(footprint, globs)
     # discover_python_modules requires a concrete project root; when project_dir
     # is absent (args constructed dynamically or a test env lacking the
@@ -173,7 +183,9 @@ def _register_resolve_test_scope(subparsers) -> None:
 
     Accepts the canonical ``--project-dir`` / ``--plan-id`` pair (mutually
     exclusive, mirroring ``run``) so ``build_main`` resolves the worktree before
-    the handler runs.
+    the handler runs. The optional ``--changed-paths`` input supplies a
+    task-scoped footprint directly (comma-separated), superseding the whole-plan
+    live footprint when present.
     """
     scope_parser = subparsers.add_parser(
         'resolve-test-scope',
@@ -181,6 +193,13 @@ def _register_resolve_test_scope(subparsers) -> None:
         allow_abbrev=False,
     )
     add_project_dir_arg(scope_parser)
+    scope_parser.add_argument(
+        '--changed-paths',
+        dest='changed_paths',
+        default=None,
+        help='Comma-separated task-scoped footprint; when set it IS the footprint '
+        '(supersedes the whole-plan live footprint resolved from --plan-id)',
+    )
     scope_parser.set_defaults(func=cmd_resolve_test_scope)
 
 

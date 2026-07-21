@@ -243,8 +243,26 @@ Apply throughout all subsequent steps:
 2. **Plan Implementation**: For each step, determine changes needed, domain skill patterns to apply, modification order, and integration considerations.
 3. **Implement Changes**: For each step — create new files with `Write`, modify existing files with `Edit`. Apply domain patterns and maintain existing code style.
 4. **Mark Step Complete** (common step)
-5. **Run Verification** — resolve command: `quality-gate` (static analysis — mypy + ruff on production sources; full tests belong to module_testing). The per-task gate resolves `quality-gate` — **not** `module-tests` — **by design**: this records the operator's token/wall-time decision to keep per-task verification lean (static analysis on the touched production sources only). Cross-module and sibling-regression detection is **not** the per-task gate's job — it is owned by the per-deliverable Step 10b `module-tests` chain-tail in `phase-5-execute`, which runs module-scoped over the changed module (correctly resolved after the D1 `which-module` containment fix). Resolve the command through the architecture-resolved envelope and honour `execution_tier` (run `per_task` inline, hand `orchestrator`-tier back — the leaf-no-background-build invariant in the Enforcement block).
-6. **Handle Verification Results** — fix scope: production code
+5. **Run Verification** — the per-task gate is two complementary checks: (a) the static-analysis `quality-gate` canonical, then (b) a **task-scoped breakable-test** `module-tests` run over exactly the tests the task's own change could break.
+
+   **(a) Static-analysis gate** — resolve command: `quality-gate` (mypy + ruff on the touched production sources). Resolve it through the architecture-resolved envelope and honour `execution_tier` (run `per_task` inline, hand `orchestrator`-tier back — the leaf-no-background-build invariant in the Enforcement block).
+
+   **(b) Task-scoped breakable-test gate** — run the tests the task's own change could break, scoped to the task's changed files (NOT the whole tree):
+
+   1. Resolve the task's changed paths from git — the files this task modified in the worktree — and join them comma-separated as `{changed_paths}`.
+   2. Resolve the scoped test target via the task-scoped footprint:
+
+      ```bash
+      python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build resolve-test-scope \
+        --changed-paths {changed_paths} --plan-id {plan_id}
+      ```
+
+      Parse `scoped_modules[]`, `recommended_target`, and `divergence_possible` from the TOON.
+   3. **Docs-only short-circuit**: when `scoped_modules` is empty (`recommended_target: None`) the change resolves to no buildable module — run NO pytest for this task; the breakable-test gate is a no-op. Proceed to Step 6.
+   4. Otherwise run the scoped `module-tests` build: scope it to `recommended_target` when set, or run whole-tree when `divergence_possible: true` (a multi-module / shared-infra change whose scoped run could diverge from a whole-tree run). Resolve `module-tests` through the architecture-resolved envelope and honour the stamped `execution_tier` — run a `per_task` build inline (synchronously, `timeout: bash_timeout_seconds * 1000`), hand an `orchestrator`-tier build back to the orchestrator's `await-long-running` seam (the same leaf-no-background-build invariant). After the build, read the result TOON `status` / `errors[]` — the wrapper exits 0 even on failure.
+
+   **Seam reconciliation** (supersedes the prior "per-task gate resolves `quality-gate` — **not** `module-tests` — by design" narrative for the breakable-test scope): the per-task gate now runs BOTH static analysis AND the task-scoped breakable-test slice — the narrow slice of tests the task's own change could break, kept lean by scoping to the changed files only. This is **complementary** to, not a replacement for, the per-deliverable Step 10b `module-tests` chain-tail in `phase-5-execute`: the per-task gate is the *breakable slice* (caught at the leaf, immediately, per task), while Step 10b is the *deliverable backstop* (module-scoped over the changed module once all the deliverable's tasks settle, correctly resolved after the D1 `which-module` containment fix). The two seams read as a narrow-then-wider ladder, not as duplicate or contradictory gates.
+6. **Handle Verification Results** — fix scope: production code (a static-analysis or breakable-test failure is a real regression the task must fix before it is marked `done`)
 7. **Record Lessons**, **Return Results**
 
 ### Error Handling
