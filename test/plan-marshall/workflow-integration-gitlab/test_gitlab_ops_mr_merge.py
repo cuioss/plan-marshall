@@ -23,14 +23,11 @@ purely through the REST leaf, never through local git.
 import argparse
 
 import gitlab_ops
+from _ci_wait_contract import _ok_auth
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _ok_auth():
-    return True, ''
 
 
 def _install_common(monkeypatch):

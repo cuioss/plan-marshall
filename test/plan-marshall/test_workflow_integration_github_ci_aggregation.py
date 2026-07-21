@@ -25,10 +25,9 @@ Tests use the conftest run_gh / poll_until monkeypatch seam — no live
 """
 
 import argparse
-import time
 
-import ci_base
 import github_ops
+from _ci_wait_contract import _noop_sleep, _ok_auth
 
 # =============================================================================
 # Helpers
@@ -46,15 +45,6 @@ def _check(state: str, name: str = 'check', link: str = '') -> dict:
         'completedAt': '',
         'workflow': '',
     }
-
-
-def _ok_auth():
-    return True, ''
-
-
-def _noop_sleep(monkeypatch):
-    monkeypatch.setattr(ci_base.time, 'sleep', lambda *_a, **_kw: None)
-    monkeypatch.setattr(time, 'sleep', lambda *_a, **_kw: None)
 
 
 # =============================================================================

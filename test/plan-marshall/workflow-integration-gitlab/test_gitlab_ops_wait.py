@@ -1,426 +1,90 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for gitlab_ops.py ci/issue wait-for-* poll handlers.
+"""GitLab-specific coverage for the ci/issue wait surface of gitlab_ops.py.
 
-GitLab counterpart to the GitHub tests. Covers the three handlers:
-    cmd_ci_wait_for_status_flip
-    cmd_issue_wait_for_close
-    cmd_issue_wait_for_label
+The provider-agnostic poll-handler contract — dispatch-table registration, the
+auth short-circuit, and the flip/timeout/``--expected`` matrix for the three
+wait-for-* handlers — lives in ``_ci_wait_contract`` and is bound into this
+module below, so it executes once for GitLab. What remains here is genuinely
+GitLab-specific:
 
-Scope:
-    - Dispatch-table registration for each (group, subcommand) tuple
-    - Auth short-circuit before any fetch helper / poll_until call
-    - Happy path: fetch helper flips baseline → completed with timed_out=false
-    - Timeout path: fetch helper always returns baseline → timed_out=true
+    - the ``glab``-shaped stub wiring (``run_glab`` / ``_GlStub``)
+    - the ``glab ci trace`` failure-path download + filter wiring, driven
+      against the committed ``ci-logs/gitlab/fail.log`` fixture
+    - the p50-seeded first sleep and the ``glab ci status --wait`` terminal-state
+      tail, whose seams live in ``gitlab_ops``
 
-Tests never shell out to the real ``glab`` CLI: every fetch helper and the
-auth check are monkeypatched, and ``time.sleep`` inside ``poll_until`` is
-neutralised so the timeout branch runs in constant time.
+Tests never shell out to the real ``glab`` CLI: every fetch helper and the auth
+check are monkeypatched, and ``time.sleep`` is neutralised so timeout branches
+run in constant time.
 """
 
 import argparse
 import json
-import time
-from pathlib import Path
 
-import ci_base
 import gitlab_ops
+import pytest
+from _ci_wait_contract import (
+    CI_LOG_FIXTURE_ROOT,
+    CONTRACT_TESTS,
+    _make_incrementing_clock,
+    _noop_sleep,
+    _ok_auth,
+    _resolve_plan_relative,
+    test_ci_wait_for_status_flip_auth_failure_short_circuits,  # noqa: F401
+    test_ci_wait_for_status_flip_completes_on_flip,  # noqa: F401
+    test_ci_wait_for_status_flip_expected_any_accepts_failure,  # noqa: F401
+    test_ci_wait_for_status_flip_expected_any_accepts_success,  # noqa: F401
+    test_ci_wait_for_status_flip_expected_success_rejects_failure,  # noqa: F401
+    test_ci_wait_for_status_flip_times_out_when_status_never_changes,  # noqa: F401
+    test_dispatch_ci_wait_for_status_flip_registered,  # noqa: F401
+    test_dispatch_issue_wait_for_close_registered,  # noqa: F401
+    test_dispatch_issue_wait_for_label_registered,  # noqa: F401
+    test_issue_wait_for_close_auth_failure_short_circuits,  # noqa: F401
+    test_issue_wait_for_close_completes_on_flip,  # noqa: F401
+    test_issue_wait_for_close_times_out_when_state_never_changes,  # noqa: F401
+    test_issue_wait_for_label_absent_completes_when_label_disappears,  # noqa: F401
+    test_issue_wait_for_label_auth_failure_short_circuits,  # noqa: F401
+    test_issue_wait_for_label_present_completes_when_label_appears,  # noqa: F401
+    test_issue_wait_for_label_times_out_when_label_state_never_changes,  # noqa: F401
+)
 
-# Real committed GitLab-job-trace-shaped failure log fixture. Resolved relative
-# to this test file so resolution never depends on cwd. Fed as the mocked
+# Real committed GitLab-job-trace-shaped failure log fixture. Fed as the mocked
 # ``glab ci trace`` raw-trace source so the failure-path download + filter +
 # store wiring is validated against REAL log content (not a toy string).
-_FIXTURE_ROOT = Path(__file__).resolve().parents[1] / 'tools-integration-ci' / 'fixtures' / 'ci-logs'
-_GITLAB_FAIL_LOG = _FIXTURE_ROOT / 'gitlab' / 'fail.log'
+_GITLAB_FAIL_LOG = CI_LOG_FIXTURE_ROOT / 'gitlab' / 'fail.log'
 
 
-def _ok_auth():
-    return True, ''
+@pytest.fixture
+def ci_ops():
+    """Feed the provider-agnostic contract this module's provider ops module."""
+    return gitlab_ops
 
 
-def _noop_sleep(monkeypatch):
-    """Make poll_until's sleep a no-op so timeout-path tests finish fast."""
-    monkeypatch.setattr(ci_base.time, 'sleep', lambda *_a, **_kw: None)
-    monkeypatch.setattr(time, 'sleep', lambda *_a, **_kw: None)
+def test_contract_surface_is_bound_for_gitlab():
+    """Every provider-agnostic contract test is bound in this module.
 
-
-# =============================================================================
-# Dispatch-table registration
-# =============================================================================
-
-
-def _build_handler_map():
-    """Rebuild the GitLab dispatch map slice for the three new wait-for-* entries."""
-    return {
-        ('checks', 'wait-for-status-flip'): gitlab_ops.cmd_ci_wait_for_status_flip,
-        ('issue', 'wait-for-close'): gitlab_ops.cmd_issue_wait_for_close,
-        ('issue', 'wait-for-label'): gitlab_ops.cmd_issue_wait_for_label,
-    }
-
-
-def test_dispatch_ci_wait_for_status_flip_registered():
-    handlers = _build_handler_map()
-    assert handlers[('checks', 'wait-for-status-flip')] is gitlab_ops.cmd_ci_wait_for_status_flip
-
-
-def test_dispatch_issue_wait_for_close_registered():
-    handlers = _build_handler_map()
-    assert handlers[('issue', 'wait-for-close')] is gitlab_ops.cmd_issue_wait_for_close
-
-
-def test_dispatch_issue_wait_for_label_registered():
-    handlers = _build_handler_map()
-    assert handlers[('issue', 'wait-for-label')] is gitlab_ops.cmd_issue_wait_for_label
+    Guards the "the contract runs once per provider" invariant: a contract test
+    added to ``_ci_wait_contract`` but never imported here would otherwise be
+    silently uncollected for GitLab.
+    """
+    missing = [name for name in CONTRACT_TESTS if name not in globals()]
+    assert missing == [], missing
 
 
 # =============================================================================
-# cmd_ci_wait_for_status_flip
-# =============================================================================
-
-
-def _flip_ci_status_args(*, expected='any', timeout=5, interval=0):
-    return argparse.Namespace(pr_number=42, timeout=timeout, interval=interval, expected=expected)
-
-
-def test_ci_wait_for_status_flip_auth_failure_short_circuits(monkeypatch):
-    """Auth failure returns an error result without calling fetch or poll_until."""
-    monkeypatch.setattr(gitlab_ops, 'check_auth', lambda: (False, 'not authenticated'))
-
-    fetch_calls = {'count': 0}
-
-    def fake_fetch(pr_number):
-        fetch_calls['count'] += 1
-        return True, 'pending'
-
-    monkeypatch.setattr(gitlab_ops, '_fetch_pr_overall_ci_status', fake_fetch)
-
-    def exploding_poll(*_a, **_kw):  # pragma: no cover
-        raise AssertionError('poll_until must not be called when auth fails')
-
-    monkeypatch.setattr(gitlab_ops, 'poll_until', exploding_poll)
-
-    result = gitlab_ops.cmd_ci_wait_for_status_flip(_flip_ci_status_args())
-
-    assert result['status'] == 'error'
-    assert result['operation'] == 'ci_wait_for_status_flip'
-    assert 'not authenticated' in result['error']
-    assert fetch_calls['count'] == 0
-
-
-def test_ci_wait_for_status_flip_completes_on_flip(monkeypatch):
-    """Baseline=pending, second fetch=success → handler returns success."""
-    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
-    _noop_sleep(monkeypatch)
-
-    call_counts = {'fetch': 0}
-
-    def fake_fetch(pr_number):
-        assert pr_number == 42
-        call_counts['fetch'] += 1
-        if call_counts['fetch'] == 1:
-            return True, 'pending'
-        return True, 'success'
-
-    monkeypatch.setattr(gitlab_ops, '_fetch_pr_overall_ci_status', fake_fetch)
-
-    result = gitlab_ops.cmd_ci_wait_for_status_flip(_flip_ci_status_args())
-
-    assert result['status'] == 'success', result
-    assert result['operation'] == 'ci_wait_for_status_flip'
-    assert result['pr_number'] == 42
-    assert result['timed_out'] is False
-    assert result['baseline_status'] == 'pending'
-    assert result['final_status'] == 'success'
-    assert result['polls'] >= 1
-    assert call_counts['fetch'] >= 2
-
-
-def test_ci_wait_for_status_flip_times_out_when_status_never_changes(monkeypatch):
-    """Fetch always returns the baseline → timed_out=true, final==baseline."""
-    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
-    _noop_sleep(monkeypatch)
-
-    def fake_fetch(pr_number):
-        return True, 'pending'
-
-    monkeypatch.setattr(gitlab_ops, '_fetch_pr_overall_ci_status', fake_fetch)
-
-    result = gitlab_ops.cmd_ci_wait_for_status_flip(_flip_ci_status_args(timeout=1, interval=0))
-
-    assert result['status'] == 'success', result
-    assert result['timed_out'] is True
-    assert result['baseline_status'] == 'pending'
-    assert result['final_status'] == 'pending'
-
-
-def test_ci_wait_for_status_flip_expected_success_rejects_failure(monkeypatch):
-    """--expected=success must treat a pending→failure transition as no-flip."""
-    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
-    _noop_sleep(monkeypatch)
-
-    call_counts = {'fetch': 0}
-
-    def fake_fetch(pr_number):
-        call_counts['fetch'] += 1
-        if call_counts['fetch'] == 1:
-            return True, 'pending'
-        return True, 'failure'
-
-    monkeypatch.setattr(gitlab_ops, '_fetch_pr_overall_ci_status', fake_fetch)
-
-    result = gitlab_ops.cmd_ci_wait_for_status_flip(_flip_ci_status_args(expected='success', timeout=1, interval=0))
-
-    assert result['status'] == 'success', result
-    # Fresh differs from baseline but is_complete_fn rejects because
-    # --expected=success does not match 'failure' → poll_until must time out.
-    assert result['timed_out'] is True
-    assert result['baseline_status'] == 'pending'
-    assert result['final_status'] == 'failure'
-
-
-def test_ci_wait_for_status_flip_expected_any_accepts_success(monkeypatch):
-    """--expected=any accepts any non-pending / non-baseline status."""
-    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
-    _noop_sleep(monkeypatch)
-
-    call_counts = {'fetch': 0}
-
-    def fake_fetch(pr_number):
-        call_counts['fetch'] += 1
-        if call_counts['fetch'] == 1:
-            return True, 'pending'
-        return True, 'success'
-
-    monkeypatch.setattr(gitlab_ops, '_fetch_pr_overall_ci_status', fake_fetch)
-
-    result = gitlab_ops.cmd_ci_wait_for_status_flip(_flip_ci_status_args(expected='any'))
-
-    assert result['status'] == 'success', result
-    assert result['timed_out'] is False
-    assert result['final_status'] == 'success'
-
-
-def test_ci_wait_for_status_flip_expected_any_accepts_failure(monkeypatch):
-    """--expected=any also accepts a flip to failure."""
-    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
-    _noop_sleep(monkeypatch)
-
-    call_counts = {'fetch': 0}
-
-    def fake_fetch(pr_number):
-        call_counts['fetch'] += 1
-        if call_counts['fetch'] == 1:
-            return True, 'pending'
-        return True, 'failure'
-
-    monkeypatch.setattr(gitlab_ops, '_fetch_pr_overall_ci_status', fake_fetch)
-
-    result = gitlab_ops.cmd_ci_wait_for_status_flip(_flip_ci_status_args(expected='any'))
-
-    assert result['status'] == 'success', result
-    assert result['timed_out'] is False
-    assert result['final_status'] == 'failure'
-
-
-# =============================================================================
-# cmd_issue_wait_for_close
-# =============================================================================
-
-
-def _wait_for_close_args(*, timeout=5, interval=0):
-    return argparse.Namespace(issue_number=101, timeout=timeout, interval=interval)
-
-
-def test_issue_wait_for_close_auth_failure_short_circuits(monkeypatch):
-    monkeypatch.setattr(gitlab_ops, 'check_auth', lambda: (False, 'not authenticated'))
-
-    fetch_calls = {'count': 0}
-
-    def fake_fetch(issue_number):
-        fetch_calls['count'] += 1
-        return True, {'state': 'open', 'labels': []}
-
-    monkeypatch.setattr(gitlab_ops, '_fetch_issue_state_and_labels', fake_fetch)
-
-    def exploding_poll(*_a, **_kw):  # pragma: no cover
-        raise AssertionError('poll_until must not be called when auth fails')
-
-    monkeypatch.setattr(gitlab_ops, 'poll_until', exploding_poll)
-
-    result = gitlab_ops.cmd_issue_wait_for_close(_wait_for_close_args())
-
-    assert result['status'] == 'error'
-    assert result['operation'] == 'issue_wait_for_close'
-    assert 'not authenticated' in result['error']
-    assert fetch_calls['count'] == 0
-
-
-def test_issue_wait_for_close_completes_on_flip(monkeypatch):
-    """Baseline state=open, second fetch=closed → timed_out=false."""
-    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
-    _noop_sleep(monkeypatch)
-
-    call_counts = {'fetch': 0}
-
-    def fake_fetch(issue_number):
-        assert issue_number == 101
-        call_counts['fetch'] += 1
-        if call_counts['fetch'] == 1:
-            return True, {'state': 'open', 'labels': []}
-        return True, {'state': 'closed', 'labels': []}
-
-    monkeypatch.setattr(gitlab_ops, '_fetch_issue_state_and_labels', fake_fetch)
-
-    result = gitlab_ops.cmd_issue_wait_for_close(_wait_for_close_args())
-
-    assert result['status'] == 'success', result
-    assert result['operation'] == 'issue_wait_for_close'
-    assert result['issue_number'] == 101
-    assert result['timed_out'] is False
-    assert result['baseline_state'] == 'open'
-    assert result['final_state'] == 'closed'
-    assert result['polls'] >= 1
-    assert call_counts['fetch'] >= 2
-
-
-def test_issue_wait_for_close_times_out_when_state_never_changes(monkeypatch):
-    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
-    _noop_sleep(monkeypatch)
-
-    def fake_fetch(issue_number):
-        return True, {'state': 'open', 'labels': []}
-
-    monkeypatch.setattr(gitlab_ops, '_fetch_issue_state_and_labels', fake_fetch)
-
-    result = gitlab_ops.cmd_issue_wait_for_close(_wait_for_close_args(timeout=1, interval=0))
-
-    assert result['status'] == 'success', result
-    assert result['timed_out'] is True
-    assert result['baseline_state'] == 'open'
-    assert result['final_state'] == 'open'
-
-
-# =============================================================================
-# cmd_issue_wait_for_label
-# =============================================================================
-
-
-def _wait_for_label_args(*, mode='present', timeout=5, interval=0, label='ready'):
-    return argparse.Namespace(
-        issue_number=202,
-        label=label,
-        mode=mode,
-        timeout=timeout,
-        interval=interval,
-    )
-
-
-def test_issue_wait_for_label_auth_failure_short_circuits(monkeypatch):
-    monkeypatch.setattr(gitlab_ops, 'check_auth', lambda: (False, 'not authenticated'))
-
-    fetch_calls = {'count': 0}
-
-    def fake_fetch(issue_number):
-        fetch_calls['count'] += 1
-        return True, {'state': 'open', 'labels': []}
-
-    monkeypatch.setattr(gitlab_ops, '_fetch_issue_state_and_labels', fake_fetch)
-
-    def exploding_poll(*_a, **_kw):  # pragma: no cover
-        raise AssertionError('poll_until must not be called when auth fails')
-
-    monkeypatch.setattr(gitlab_ops, 'poll_until', exploding_poll)
-
-    result = gitlab_ops.cmd_issue_wait_for_label(_wait_for_label_args())
-
-    assert result['status'] == 'error'
-    assert result['operation'] == 'issue_wait_for_label'
-    assert 'not authenticated' in result['error']
-    assert fetch_calls['count'] == 0
-
-
-def test_issue_wait_for_label_present_completes_when_label_appears(monkeypatch):
-    """--mode=present: labels=[] → ['ready'] completes."""
-    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
-    _noop_sleep(monkeypatch)
-
-    call_counts = {'fetch': 0}
-
-    def fake_fetch(issue_number):
-        call_counts['fetch'] += 1
-        if call_counts['fetch'] == 1:
-            return True, {'state': 'open', 'labels': []}
-        return True, {'state': 'open', 'labels': ['ready']}
-
-    monkeypatch.setattr(gitlab_ops, '_fetch_issue_state_and_labels', fake_fetch)
-
-    result = gitlab_ops.cmd_issue_wait_for_label(_wait_for_label_args(mode='present'))
-
-    assert result['status'] == 'success', result
-    assert result['operation'] == 'issue_wait_for_label'
-    assert result['mode'] == 'present'
-    assert result['timed_out'] is False
-    assert result['baseline_present'] is False
-    assert result['final_present'] is True
-    assert result['polls'] >= 1
-    assert call_counts['fetch'] >= 2
-
-
-def test_issue_wait_for_label_absent_completes_when_label_disappears(monkeypatch):
-    """--mode=absent: labels=['ready'] → [] completes."""
-    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
-    _noop_sleep(monkeypatch)
-
-    call_counts = {'fetch': 0}
-
-    def fake_fetch(issue_number):
-        call_counts['fetch'] += 1
-        if call_counts['fetch'] == 1:
-            return True, {'state': 'open', 'labels': ['ready']}
-        return True, {'state': 'open', 'labels': []}
-
-    monkeypatch.setattr(gitlab_ops, '_fetch_issue_state_and_labels', fake_fetch)
-
-    result = gitlab_ops.cmd_issue_wait_for_label(_wait_for_label_args(mode='absent'))
-
-    assert result['status'] == 'success', result
-    assert result['mode'] == 'absent'
-    assert result['timed_out'] is False
-    assert result['baseline_present'] is True
-    assert result['final_present'] is False
-
-
-def test_issue_wait_for_label_times_out_when_label_state_never_changes(monkeypatch):
-    """Baseline labels never flip → timed_out=true, final_present==baseline."""
-    monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
-    _noop_sleep(monkeypatch)
-
-    def fake_fetch(issue_number):
-        return True, {'state': 'open', 'labels': []}
-
-    monkeypatch.setattr(gitlab_ops, '_fetch_issue_state_and_labels', fake_fetch)
-
-    result = gitlab_ops.cmd_issue_wait_for_label(_wait_for_label_args(mode='present', timeout=1, interval=0))
-
-    assert result['status'] == 'success', result
-    assert result['timed_out'] is True
-    assert result['baseline_present'] is False
-    assert result['final_present'] is False
-
-
-# =============================================================================
-# Failure-path log download + filter wiring (deliverable 5) — GitLab provider
+# Failure-path log download + filter wiring — GitLab provider
 # =============================================================================
 #
-# GitLab counterpart to the GitHub failure-path tests. Drives cmd_ci_status /
-# cmd_ci_wait end-to-end through the failure branch with the REAL committed
-# GitLab failure fixture (fixtures/ci-logs/gitlab/fail.log) standing in for the
-# ``glab ci trace`` raw-trace source. ``check_auth`` and ``run_glab`` are
-# monkeypatched so no real ``glab`` CLI runs, while the download+filter+store
-# hook (ci_base.enrich_failing_checks_with_logs -> manage-ci-artifacts.persist
-# -> _ci_log_filter.filter_log) executes for real against the fixture content.
-# The ``plan_context`` fixture redirects PLAN_BASE_DIR so persist writes the
-# per-run artifact tree under tmp rather than the repo-local .plan/.
+# Drives cmd_ci_status / cmd_ci_wait end-to-end through the failure branch with
+# the REAL committed GitLab failure fixture (fixtures/ci-logs/gitlab/fail.log)
+# standing in for the ``glab ci trace`` raw-trace source. ``check_auth`` and
+# ``run_glab`` are monkeypatched so no real ``glab`` CLI runs, while the
+# download+filter+store hook (ci_base.enrich_failing_checks_with_logs ->
+# manage-ci-artifacts.persist -> _ci_log_filter.filter_log) executes for real
+# against the fixture content. The ``plan_context`` fixture redirects
+# PLAN_BASE_DIR so persist writes the per-run artifact tree under tmp rather
+# than the repo-local .plan/.
 
 
 def _read_gitlab_fail_fixture() -> str:
@@ -473,20 +137,6 @@ def _wire_gitlab_failure(monkeypatch, *, jobs):
 
     monkeypatch.setattr(gitlab_ops, '_fetch_failed_job_trace', fake_fetch_trace)
     return fixture, fetch_calls
-
-
-def _resolve_plan_relative(plan_context, rel_path):
-    """Resolve a plan-dir-relative artifact path under the redirected plan dir.
-
-    The enrichment hook returns paths rooted at ``.plan/local/plans/{plan_id}/``;
-    the ``plan_context`` fixture redirects PLAN_BASE_DIR so the on-disk tree is
-    ``{fixture_dir}/plans/{plan_id}/...``. Splice on the ``plans/{plan_id}/``
-    marker to map one onto the other without hard-coding the prefix shape.
-    """
-    marker = f'plans/{plan_context.plan_id}/'
-    idx = rel_path.find(marker)
-    assert idx != -1, f'unexpected artifact path shape: {rel_path}'
-    return plan_context.fixture_dir / 'plans' / rel_path[idx + len('plans/'):]
 
 
 def _assert_real_gitlab_failure_enrichment(failing_checks, plan_context, *, fixture):
@@ -606,14 +256,14 @@ def test_ci_wait_success_path_failing_checks_empty(monkeypatch, plan_context):
 
 
 # =============================================================================
-# p50-seeded first sleep + terminal-state watch-verb tail (deliverable 3)
+# p50-seeded first sleep + terminal-state watch-verb tail
 # =============================================================================
 #
-# GitLab counterpart to the GitHub p50-seed tests. Drives the reworked
-# cmd_ci_wait: a p50 first-sleep seed then a ``glab ci status --wait``
-# terminal-state tail. The p50 read / record seams, the sleep seam, the
-# watch-pipeline seam, and the monotonic clock all live in ``gitlab_ops`` and
-# are monkeypatched there; ``check_auth`` / ``run_glab`` remain patched too.
+# Drives the reworked cmd_ci_wait: a p50 first-sleep seed then a ``glab ci
+# status --wait`` terminal-state tail. The p50 read / record seams, the sleep
+# seam, the watch-pipeline seam, and the monotonic clock all live in
+# ``gitlab_ops`` and are monkeypatched there; ``check_auth`` / ``run_glab``
+# remain patched too.
 
 
 def _job_row(name, status, *, pipeline_id=5005):
@@ -652,18 +302,6 @@ class _GlStub:
         return 0, json.dumps({}), ''
 
 
-def _make_incrementing_clock(step=60.0):
-    """Monotonic-clock stand-in advancing ``step`` per call, so the recorded
-    wall-clock duration is a positive, deterministic value in tests."""
-    state = {'t': 0.0}
-
-    def clock():
-        state['t'] += step
-        return state['t']
-
-    return clock
-
-
 def _gl_p50_wait_args(*, pr_number=88, plan_id, timeout=600, interval=0):
     return argparse.Namespace(
         pr_number=pr_number,
@@ -676,9 +314,14 @@ def _gl_p50_wait_args(*, pr_number=88, plan_id, timeout=600, interval=0):
 
 
 def test_ci_wait_p50_seed_applied_then_watch_maps_success(monkeypatch, plan_context):
-    """p50 seed is slept once (bounded by --timeout), ``glab ci status --wait``
-    is invoked for the running pipeline, and its terminal SUCCESS maps to
-    final_status; the observed duration is recorded on success."""
+    """The watch tail is what completes the wait, and its terminal SUCCESS maps
+    onto the result envelope.
+
+    The stub only serves terminal jobs once ``glab ci status --wait`` has run
+    against the running pipeline, so ``wait_outcome == 'completed'`` with that
+    pipeline's id is the observable proof that the watch tail drove the
+    completion — no assertion on the watch seam's call sequence is needed.
+    """
     monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     _noop_sleep(monkeypatch)
 
@@ -689,14 +332,10 @@ def test_ci_wait_p50_seed_applied_then_watch_maps_success(monkeypatch, plan_cont
     monkeypatch.setattr(gitlab_ops, 'run_glab', stub)
 
     monkeypatch.setattr(gitlab_ops, '_read_ci_wait_p50_seed', lambda: 120)
-    seed_sleeps: list[int] = []
-    monkeypatch.setattr(gitlab_ops, '_sleep_seed', lambda s: seed_sleeps.append(s))
+    monkeypatch.setattr(gitlab_ops, '_sleep_seed', lambda s: None)
     monkeypatch.setattr(gitlab_ops, '_monotonic', _make_incrementing_clock())
 
-    watch_calls: list[tuple] = []
-
     def fake_watch(pipeline_id, timeout):
-        watch_calls.append((pipeline_id, timeout))
         stub.watched = True
         return 0, '', ''
 
@@ -710,8 +349,7 @@ def test_ci_wait_p50_seed_applied_then_watch_maps_success(monkeypatch, plan_cont
     assert result['final_status'] == 'success'
     assert result['wait_outcome'] == 'completed'
     assert result['run_id'] == '5005'
-    assert seed_sleeps == [120]
-    assert watch_calls and watch_calls[0][0] == '5005'
+    # Observed wall-clock duration recorded back into the p50 window on success.
     assert len(recorded) == 1 and recorded[0] > 0
 
 
@@ -743,12 +381,25 @@ def test_ci_wait_p50_seed_skipped_on_empty_window(monkeypatch, plan_context):
     result = gitlab_ops.cmd_ci_wait(_gl_p50_wait_args(plan_id=plan_context.plan_id))
 
     assert result['final_status'] == 'success'
+    # An absent window must produce no sleep at all — the seam records nothing.
     assert seed_sleeps == []
+    # An already-terminal pipeline has no wait partition, so nothing is watched.
     assert watch_calls == []
 
 
-def test_ci_wait_p50_seed_bounded_by_timeout(monkeypatch, plan_context):
-    """A p50 seed larger than --timeout is clamped to --timeout before sleeping."""
+@pytest.mark.parametrize(
+    ('seed', 'timeout', 'expected_sleep'),
+    [
+        (120, 600, 120),  # seed under the ceiling is slept as-is
+        (900, 300, 300),  # seed above the ceiling is clamped to --timeout
+    ],
+)
+def test_ci_wait_p50_seed_bounded_by_timeout(monkeypatch, plan_context, seed, timeout, expected_sleep):
+    """The p50 seed is slept exactly once, clamped to --timeout.
+
+    The slept value is not surfaced anywhere in the result envelope, so the seed
+    seam is the only surface that can prove the bound.
+    """
     monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     _noop_sleep(monkeypatch)
 
@@ -758,15 +409,15 @@ def test_ci_wait_p50_seed_bounded_by_timeout(monkeypatch, plan_context):
     )
     monkeypatch.setattr(gitlab_ops, 'run_glab', stub)
 
-    monkeypatch.setattr(gitlab_ops, '_read_ci_wait_p50_seed', lambda: 900)
+    monkeypatch.setattr(gitlab_ops, '_read_ci_wait_p50_seed', lambda: seed)
     seed_sleeps: list[int] = []
     monkeypatch.setattr(gitlab_ops, '_sleep_seed', lambda s: seed_sleeps.append(s))
     monkeypatch.setattr(gitlab_ops, '_record_ci_wait_duration', lambda d: None)
 
-    result = gitlab_ops.cmd_ci_wait(_gl_p50_wait_args(plan_id=plan_context.plan_id, timeout=300))
+    result = gitlab_ops.cmd_ci_wait(_gl_p50_wait_args(plan_id=plan_context.plan_id, timeout=timeout))
 
     assert result['final_status'] == 'success'
-    assert seed_sleeps == [300]
+    assert seed_sleeps == [expected_sleep]
 
 
 def test_ci_wait_deadline_exceeded_preserved_when_still_pending(monkeypatch, plan_context):
